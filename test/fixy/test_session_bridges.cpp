@@ -15,6 +15,8 @@
 
 #include <fixy/session/VigilMode.h>
 
+#include "../test_abort_probe.h"
+
 #include <foundation/Platform.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
@@ -94,13 +96,17 @@ static_assert(sizeof(s::SessionFromMachine<double, s::End>) == sizeof(::fixy::Ma
 static_assert(s::AtomicMachineCell<vm::ModeCell>);
 static_assert(!s::AtomicMachineCell<Payload>);
 static_assert(s::WellFormedRunnableProtocol<vm::ModeProtocol>);
-static_assert(sizeof(vm::ModeCell) == sizeof(std::atomic<vm::Mode>));
+static_assert(sizeof(vm::ModeCell) <= 2 * sizeof(::foundation::core::Identity));
 
-// The handle borrows the cell mutably, which is what lets a Send branch
-// reach publish_from_session.  The address of the cell is its identity,
-// so the cell is Pinned and the handle holds a reference to it.
-static_assert(std::is_same_v<typename vm::ModeSessionHandle<>::resource_type, vm::ModeCell&>);
+// The handle holds a lease: the cell and its one writer, which the owner
+// lends for the span of the session.  The address of the cell is its
+// identity, so the cell is Pinned and the lease holds its address.  The
+// lease moves, and a copy of it would give the cell a second writer.
+static_assert(std::is_same_v<typename vm::ModeSessionHandle<>::resource_type, vm::ModeLease>);
 static_assert(std::is_base_of_v<::foundation::Pinned<vm::ModeCell>, vm::ModeCell>);
+static_assert(s::SessionResource<vm::ModeLease>);
+static_assert(!std::is_copy_constructible_v<vm::ModeLease>);
+static_assert(!std::is_copy_constructible_v<vm::ModeWriter>);
 
 // A cell with the read shape that is not Pinned is refused: a copy of
 // such a cell is a second cell, and a pointer to it is a second holder.
@@ -208,22 +214,25 @@ constexpr auto report_seven = [](auto head) noexcept {
 
 // ── Runtime: the mode protocol is actually walked ────────────────────
 
+// The transport is the publish step of the lease.  Each Send branch exists
+// for exactly one of its overloads, so the branch index and the transition
+// type cannot drift apart without a compile error.
+constexpr auto apply = []<typename Transition>(vm::ModeLease& lease, Transition& transition) noexcept {
+    return lease.publish_from_session(transition);
+};
+
 [[nodiscard]] int mode_protocol_round_trip() {
-    vm::ModeCell cell{};
+    vm::ModeWriter writer = vm::mint_mode_writer();
+    vm::ModeCell cell{writer};
     if (s::atomic_machine_state(cell) != vm::Mode::RECORDING) {
         std::fprintf(stderr, "a fresh cell did not start in RECORDING\n");
         return 1;
     }
 
-    // The transport is the cell's own publish step.  Each Send branch
-    // exists for exactly one of its overloads, so the branch index and
-    // the transition type cannot drift apart without a compile error.
-    auto apply = []<typename Transition>(vm::ModeCell& target, Transition& transition) noexcept {
-        return s::publish_atomic_machine_transition(target, transition);
-    };
-
+    // The owner lends its writer to the session for the span of the
+    // session.
     const BgCtx ctx{eff::testing::bg()};
-    auto session = vm::mint_vigil_mode_bridge(ctx, cell);
+    auto session = vm::mint_vigil_mode_bridge(ctx, cell, std::move(writer));
 
     auto to_compiled = std::move(session).select<0>(s::no_label);
     auto after_compiled = std::move(to_compiled).send(vm::ModeRecordingToCompiled{}, apply);
@@ -239,24 +248,49 @@ constexpr auto report_seven = [](auto head) noexcept {
         return 1;
     }
 
-    // Branch 2 is End, which is the protocol's only exit.
+    // Branch 2 is End, which is the protocol's only exit.  The close gives
+    // the lease back, and the lease gives the writer back to the owner.
     auto terminal = std::move(after_recording).select<2>(s::no_label);
-    vm::ModeCell& recovered = std::move(terminal).close();
-    if (&recovered != &cell) {
-        std::fprintf(stderr, "close returned a different cell\n");
-        return 1;
-    }
+    vm::ModeLease lease = std::move(terminal).close();
+    const vm::ModeWriter returned = std::move(lease).return_writer();
 
     // The direct publishers stay available to the thread that owns the
-    // cell.  They publish with release stores.
-    cell.publish_compiled();
+    // cell, with the writer that came back.  The cell checks that the writer
+    // is its own, so a lease of a different cell would end the process here.
+    // They publish with release stores.
+    cell.publish_compiled(returned);
     if (s::atomic_machine_state(cell) != vm::Mode::COMPILED) {
         std::fprintf(stderr, "publish_compiled did not take\n");
         return 1;
     }
-    cell.publish_recording_after_divergence();
+    cell.publish_recording_after_divergence(returned);
     if (s::atomic_machine_state(cell) != vm::Mode::RECORDING) {
         std::fprintf(stderr, "publish_recording_after_divergence did not take\n");
+        return 1;
+    }
+    return 0;
+}
+
+// ── Runtime: one writer, and no edge that the cell did not take ──────
+//
+// The owner publishes COMPILED and then lends the writer.  The session
+// sends the edge RECORDING -> COMPILED, whose source the cell does not
+// hold.  The session holds the one writer, so a later try cannot succeed,
+// and the edge ends the process.  A cell that answered true here would
+// let the session log an edge that it did not take.
+[[nodiscard]] int an_edge_from_another_mode_ends_the_process() {
+    vm::ModeWriter writer = vm::mint_mode_writer();
+    vm::ModeCell cell{writer};
+    cell.publish_compiled(writer);
+    const BgCtx ctx{eff::testing::bg()};
+    const bool is_ended = crucible::test::aborts([&cell, &writer, &ctx] {
+        auto session = vm::mint_vigil_mode_bridge(ctx, cell, std::move(writer));
+        auto to_compiled = std::move(session).select<0>(s::no_label);
+        auto after = std::move(to_compiled).send(vm::ModeRecordingToCompiled{}, apply);
+        std::move(after).detach(s::detach_reason::TestInstrumentation{});
+    });
+    if (!is_ended) {
+        ::fixy::report(::fixy::Sink::Err, "the session took an edge from a mode that the cell does not hold\n");
         return 1;
     }
     return 0;
@@ -270,7 +304,8 @@ constexpr auto report_seven = [](auto head) noexcept {
 // With relaxed accesses the read is a data race, and the tsan preset
 // reports it.
 [[nodiscard]] int published_mode_orders_the_owner_writes() {
-    vm::ModeCell cell{};
+    const vm::ModeWriter writer = vm::mint_mode_writer();
+    vm::ModeCell cell{writer};
     int written_before_publish = 0;
     int observed = 0;
     {
@@ -280,7 +315,7 @@ constexpr auto report_seven = [](auto head) noexcept {
             observed = written_before_publish;
         }};
         written_before_publish = 42;
-        cell.publish_compiled();
+        cell.publish_compiled(writer);
     }
     if (observed != 42) {
         std::fprintf(stderr, "the observer read %d, not the value written before the publish\n", observed);
@@ -295,6 +330,7 @@ int main() {
     if (const int rc = bridge_owns_and_lends(); rc != 0) return rc;
     if (const int rc = terminal_view_ends(); rc != 0) return rc;
     if (const int rc = mode_protocol_round_trip(); rc != 0) return rc;
+    if (const int rc = an_edge_from_another_mode_ends_the_process(); rc != 0) return rc;
     if (const int rc = published_mode_orders_the_owner_writes(); rc != 0) return rc;
     return 0;
 }

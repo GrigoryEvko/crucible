@@ -200,11 +200,11 @@ include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 465 | - | -
-include/fixy/session/ | base-std-object | 194 | - | -
+include/fixy/session/ | base-std-entity | 461 | - | -
+include/fixy/session/ | base-std-object | 193 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
-include/fixy/session/ | replace-pending:<atomic> | 2 | - | -
+include/fixy/session/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/session/ | replace-pending:<bit> | 1 | - | -
 include/fixy/session/ | replace-pending:<cstdio> | 5 | - | -
 include/fixy/session/ | replace-pending:<cstdlib> | 6 | - | -
@@ -333,7 +333,7 @@ test/ct/ | std-entity | 20 | - | -
 test/ct/ | std-object | 13 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 100 | - | -
-test/fixy/ | c-library-call | 1453 | - | -
+test/fixy/ | c-library-call | 1451 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 37 | - | -
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -384,7 +384,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2829 | - | -
+test/fixy/ | std-entity | 2828 | - | -
 test/fixy/ | std-object | 1032 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
@@ -592,7 +592,7 @@ test/layer/checks/fixy/handle/ | std-entity | 2 | - | -
 test/layer/checks/fixy/os/ | c-array-object | 2 | - | -
 test/layer/checks/fixy/os/ | std-entity | 10 | - | -
 test/layer/checks/fixy/session/ | replace-pending:std::source_location | 1 | - | -
-test/layer/checks/fixy/session/ | std-entity | 3 | - | -
+test/layer/checks/fixy/session/ | std-entity | 2 | - | -
 test/layer/checks/fixy/session/ | std-object | 1 | - | -
 test/layer/checks/foundation/ | c-array-object | 2 | - | -
 test/layer/checks/foundation/ | raw-pointer-object | 1 | - | -

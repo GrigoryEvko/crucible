@@ -1236,6 +1236,12 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::vigil_mode::ModeRecordingToCompiled, kModeMessage},
     {^^::fixy::session::vigil_mode::ModeCompiledToRecording, kModeMessage},
     {^^::fixy::session::vigil_mode::ModeCell, kDescriptor},
+    {^^::fixy::session::vigil_mode::ModeWriter,
+     "the one writer of a mode cell: it holds the identity of its mint, a write of the cell takes it by "
+     "reference, and it is never a template argument of a kernel signature"},
+    {^^::fixy::session::vigil_mode::ModeLease,
+     "the Resource of a session over the mode cell: it holds the address of the cell and the lent writer, the "
+     "handle that holds it folds its protocol, and it is never a template argument of a kernel signature"},
 
     {^^::fixy::concurrent::payload_row, kMetafunction},
     {^^::fixy::concurrent::payload_row_under, kMetafunction},

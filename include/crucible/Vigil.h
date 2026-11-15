@@ -118,6 +118,7 @@ public:
     // several regions over one process lifetime.
     using Mode = ::fixy::session::vigil_mode::Mode;
     using ModeCell = ::fixy::session::vigil_mode::ModeCell;
+    using ModeWriter = ::fixy::session::vigil_mode::ModeWriter;
 
     struct Config {
         // The most characters of cipher_path.  It is the bound of the root of
@@ -1172,7 +1173,7 @@ private:
                 deactivate();
                 return false;
             }
-            mode_.publish_compiled();
+            mode_.publish_compiled(mode_writer_);
             return true;
         }
 
@@ -1180,7 +1181,7 @@ private:
         void deactivate() {
             if (!ctx_.is_compiled()) return;
             ctx_.deactivate();
-            mode_.publish_recording_after_divergence();
+            mode_.publish_recording_after_divergence(mode_writer_);
         }
 
         // Moves the replay to alt at div_pos.  The context stays compiled,
@@ -1204,7 +1205,11 @@ private:
 
     private:
         CrucibleContext ctx_;
-        alignas(64) ModeCell mode_;
+        // The one writer of the mode cell.  The producer thread holds it, so
+        // only the producer thread publishes a mode.  It stands before the
+        // cell, which keeps its id.
+        ModeWriter mode_writer_ = ::fixy::session::vigil_mode::mint_mode_writer();
+        alignas(64) ModeCell mode_{mode_writer_};
     };
     ReplayState replay_;
     RegionCache region_cache_;

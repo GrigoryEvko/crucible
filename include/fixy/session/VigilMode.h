@@ -13,10 +13,12 @@
 #include <fixy/session/MachineBridge.h>
 #include <fixy/session/VigilModeCell.h>
 
+#include <foundation/ByteSeal.h>
 #include <foundation/diag/FailClosed.h>
 
 #include <concepts>
 #include <type_traits>
+#include <utility>
 
 namespace fixy::session::vigil_mode {
 
@@ -77,43 +79,93 @@ struct mode_transition {
 template <Mode From, Mode To>
 using ModeTransition = typename detail::mode_transition<From, To>::type;
 
+// The Resource of a session over the mode cell: the cell, and the writer
+// that its owner lends for the span of the session.  mint_vigil_mode_bridge
+// builds one, and the close of the session gives it back.  It is move-only,
+// so it is an owned SessionResource, and the writer in it has one holder.
+// The constructor takes the writer, so a lease gives nothing that the writer
+// does not give.
+//
+// A session that detaches drops its lease, and the writer goes with it.  The
+// cell then has no writer for the rest of its life, and each write of the
+// owner ends the process.  Before a detach, take the writer back with
+// return_writer() of resource() of the handle.
+class [[nodiscard]] ModeLease {
+    ModeCell* cell_ = nullptr;
+    ModeWriter writer_;
+    [[no_unique_address]] MoveOnlyResource move_only_{};
+    // No byte route builds a lease, so no lease reaches a cell with no
+    // writer in it.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+public:
+    // A session over the lease moves the cell and no peer, so each choice
+    // puts no label (Local choices in fixy/session/Handle.h).
+    static constexpr Network session_network = Network::Local;
+
+    // Lends `writer` with the cell that it writes.  The cell checks the id of
+    // the writer at each write.
+    ModeLease(ModeCell& cell, ModeWriter&& writer) noexcept : cell_{&cell}, writer_{std::move(writer)} {}
+
+    [[nodiscard]] Mode load() const noexcept { return cell_->load(); }
+
+    // The transport of a Send step of the mode protocol: the edge of the
+    // transition, written with the lent writer.  The answer is always true,
+    // and a cell that is not at the source of the edge ends the process with
+    // VigilModeBridge_Edge_Not_At_Source.
+    bool publish_from_session(ModeRecordingToCompiled) noexcept {
+        return cell_->take_edge(writer_, Mode::RECORDING, Mode::COMPILED);
+    }
+
+    bool publish_from_session(ModeCompiledToRecording) noexcept {
+        return cell_->take_edge(writer_, Mode::COMPILED, Mode::RECORDING);
+    }
+
+    // Ends the lease, and gives the writer back to the owner.
+    [[nodiscard]] ModeWriter return_writer() && noexcept { return std::move(writer_); }
+};
+
 // The observer drives this protocol, not the thread that owns the cell.
 // It reads the current mode, selects a branch, and either performs one
 // typed transition or ends.
 using ModeProtocol =
     Loop<Select<Send<ModeRecordingToCompiled, Continue>, Send<ModeCompiledToRecording, Continue>, End>>;
 
-// The handle borrows the cell mutably.  The transport that a Send branch
-// needs is publish_from_session of the cell, and it is not const, so a
-// handle over a const cell could walk only the End branch.  The Resource
-// is a reference to the Pinned cell, not a pointer, so no copy of it
-// reaches the cell.  One factory drives each branch of the protocol it
-// names.  The check file of this header checks the Resource type.
+// The handle holds a ModeLease: the cell, and the one writer of the cell
+// that its owner lends for the span of the session.  The transport that a
+// Send branch needs is publish_from_session of the lease, which writes the
+// edge with that writer.  The close of the session gives the lease back,
+// and return_writer() of the lease gives the writer back to the owner.  So
+// the cell has one writer at each time: the owner, or the session.  The
+// check file of this header checks the Resource type.
 //
 // Observing the mode does not need a handle and stays const: that is
 // atomic_machine_state(cell), which takes a const reference.
 //
 // The alias is a template, so that only a translation unit that names the
 // handle opens the protocol to compute its first type.
-template <class Cell = ModeCell>
-using ModeSessionHandle = ::fixy::session::detail::first_handle_t<ModeProtocol, Cell&, DefaultAbandonmentPolicy>;
+template <class Lease = ModeLease>
+using ModeSessionHandle = ::fixy::session::detail::first_handle_t<ModeProtocol, Lease, DefaultAbandonmentPolicy>;
 
 // The factory is a constrained template rather than a plain function
 // taking the cell directly.  The concept pins the parameter to exactly
 // this cell, so a call with some other atomic cell fails at the concept
 // by name instead of as a substitution failure deep inside the
-// substrate.  It also asks the gate of mint_atomic_session of the
-// context.
+// substrate.  It also asks the gate of mint_session of the context over
+// the lease.
 
 template <class Ctx, class Cell>
 concept CtxFitsVigilModeBridge =
-    std::same_as<std::remove_cvref_t<Cell>, ModeCell> && CtxFitsAtomicSession<Ctx, ModeProtocol, Cell>;
+    std::same_as<std::remove_cvref_t<Cell>, ModeCell> && CtxFitsSession<Ctx, ModeProtocol, ModeLease>;
 
+// Opens a session over the cell with the writer that the owner lends.  The
+// cell checks the id of the writer at each write, so a writer of a
+// different cell ends the process at the first edge.
 template <class Ctx, class Cell>
     requires CtxFitsVigilModeBridge<Ctx, Cell>
-[[nodiscard]] constexpr ModeSessionHandle<std::remove_cvref_t<Cell>> mint_vigil_mode_bridge(Ctx const& ctx,
-                                                                                            Cell& cell) noexcept {
-    return mint_atomic_session<ModeProtocol>(ctx, cell);
+[[nodiscard]] ModeSessionHandle<> mint_vigil_mode_bridge(Ctx const& ctx, Cell& cell, ModeWriter writer) noexcept {
+    return mint_session<ModeProtocol, DefaultAbandonmentPolicy, Ctx, ModeLease>(ctx,
+                                                                                ModeLease{cell, std::move(writer)});
 }
 
 }  // namespace fixy::session::vigil_mode

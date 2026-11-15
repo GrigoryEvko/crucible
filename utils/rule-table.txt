@@ -654,6 +654,7 @@ witness <fixy/Mutation.h> private | fixy::WriteOnce<int> | fixy::WriteOnce<int>{
 witness <fixy/Mutation.h> private | fixy::WriteOnceNonNull<int*> | fixy::WriteOnceNonNull<int*>{}
 witness <fixy/session/MachineBridge.h> private | fixy::session::SessionFromMachine<int, fixy::session::End> | fixy::session::SessionFromMachine<int, fixy::session::End>{forge::rvalue<fixy::Machine<int>>()}
 witness <fixy/session/MachineBridge.h> private | fixy::session::MachineLease<int> | fixy::session::MachineLease<int>{forge::lvalue<fixy::Machine<int>>()}
+witness <fixy/session/VigilModeCell.h> private | fixy::session::vigil_mode::ModeWriter | fixy::session::vigil_mode::ModeWriter{forge::lvalue<foundation::core::Identity>()}
 
 # -- The primitive families ------------------------------------------
 # A cursor of an Option comes only from begin() of an Option, so no

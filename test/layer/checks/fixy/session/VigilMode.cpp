@@ -8,6 +8,6 @@ static_assert(is_well_formed_v<ModeProtocol>);
 
 static_assert(AtomicMachineCell<ModeCell>);
 
-static_assert(std::is_same_v<typename ModeSessionHandle<>::resource_type, ModeCell&>);
+static_assert(std::is_same_v<typename ModeSessionHandle<>::resource_type, ModeLease>);
 
 }  // namespace fixy::session::vigil_mode

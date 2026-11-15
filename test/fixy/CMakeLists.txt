@@ -2866,6 +2866,9 @@ fixy_neg_compile_test(neg_sess_mint_door_run_ctx_lacks_row
 
 # ── The machine and Vigil-mode session bridges ────────────────────────
 fixy_test(test_session_bridges)
+# The owner writes with the mode writer that it lent to a session, on
+# purpose, and the write aborts.
+fixy_test(test_session_vigil_mode_writer_lent)
 
 # A view of a machine bridge runs its protocol over a lease of the machine
 # inside a body with no state.
@@ -2938,6 +2941,15 @@ fixy_neg_compile_test(neg_sess_vigil_bridge_lookalike_cell
   "no matching function for call to .mint_vigil_mode_bridge"
   "satisfaction of .CtxFitsVigilModeBridge<Ctx, Cell>."
   "LookalikeCell")
+
+# HS14 for mint_mode_writer.  The mode cell has one writer at each time: the
+# writer does not copy, and each write of the cell takes the writer.
+fixy_neg_compile_test(neg_sess_vigil_mode_writer_copied
+  "use of deleted function .fixy::session::vigil_mode::ModeWriter::ModeWriter\\(const fixy::session::vigil_mode::ModeWriter&\\)"
+  "a copy gives the mode cell a second writer")
+fixy_neg_compile_test(neg_sess_vigil_mode_publish_without_writer
+  "no matching function for call to .fixy::session::vigil_mode::ModeCell::publish_compiled\\(\\)"
+  "candidate expects 1 argument, 0 provided")
 
 # The transition relation itself: DIVERGED has no edge in either
 # direction, so forming the transition type is where the pair is

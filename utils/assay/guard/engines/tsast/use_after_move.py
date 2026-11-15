@@ -219,6 +219,9 @@ PROBE_FILES: dict[str, str] = {
         "a session handle whose endpoint left it is dead, and a use of it aborts"
     ),
     "test/fixy/test_session_hold_consumed_aborts.cpp": "a second take of a consumed session hold aborts",
+    "test/fixy/test_session_vigil_mode_writer_lent.cpp": (
+        "a mode writer that a move lent to a session has no right to write, and a write with it aborts"
+    ),
     "test/fixy/test_shared_region.cpp": "a region that the shared door consumed is empty",
     "test/fixy/test_versioned_budgeted_attacks.cpp": (
         "a moved-from versioned or budgeted value drops its claim to genesis or to unbounded, and a budget stamp "

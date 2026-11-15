@@ -29,7 +29,7 @@ static_assert(s::AtomicMachineCell<LookalikeCell>, "the fixture is pointless unl
 int main() {
     LookalikeCell cell{};
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
-    auto session = vm::mint_vigil_mode_bridge(ctx, cell);
+    auto session = vm::mint_vigil_mode_bridge(ctx, cell, vm::mint_mode_writer());
     (void)session;
     return 0;
 }
