@@ -21,6 +21,7 @@
 #include <foundation/core/Bits.h>
 #include <foundation/core/Branded.h>
 #include <foundation/core/BumpArena.h>
+#include <foundation/core/CallRef.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Compare.h>
 #include <foundation/core/Convert.h>
@@ -94,6 +95,7 @@ using ::foundation::core::Record;
 
 using ::foundation::core::Box;
 using ::foundation::core::BumpArena;
+using ::foundation::core::CallRef;
 using ::foundation::core::Hole;
 using ::foundation::core::mint_box;
 using ::foundation::core::mint_hole;
