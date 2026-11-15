@@ -2869,6 +2869,11 @@ fixy_test(test_session_bridges)
 # The owner writes with the mode writer that it lent to a session, on
 # purpose, and the write aborts.
 fixy_test(test_session_vigil_mode_writer_lent)
+# The one writer of the mode cell and a reader on a second thread, for many
+# rounds, through the publishers of the cell and through the edges of a
+# session that holds the lent writer.  The tsan preset runs it under
+# ThreadSanitizer.
+fixy_test(test_session_vigil_mode_race)
 
 # A view of a machine bridge runs its protocol over a lease of the machine
 # inside a body with no state.
