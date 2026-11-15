@@ -385,6 +385,24 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
             [](fixy::LengthMismatch) noexcept { return std::uint32_t{0}; });
 }
 
+// The parallel columns of one branded scope, as a helper of the scope takes
+// them: each column by value.  A probe function is compiled and never
+// called, so its brand is a named empty class.
+struct BrandedProbeBrand final {};
+using BrandedColumn = fixy::BrandedView<std::uint32_t const, BrandedProbeBrand>;
+
+// A loop over three parallel columns, with a release store of the sum of
+// each row.  Each read keeps the base pointer of its column in a register,
+// so the loop loads and stores no column on the stack.  The release store
+// is one plain store on x86-64, and the vectorizer leaves the loop as it is
+// on each side.
+[[gnu::used]] void branded_columns(fixy::Atomic<std::uint32_t>& cell, BrandedColumn first, BrandedColumn second,
+                                   BrandedColumn third) noexcept {
+    for (auto const index : first.indices()) {
+        cell.store_release(first.at(index) + second.at(index) + third.at(index));
+    }
+}
+
 // A push into a FixedList: one compare of the count, the store of the
 // element, and the step of the count.
 [[gnu::used]] bool fixed_list_push(fixy::FixedList<std::uint32_t, 64>& list, std::uint32_t value) noexcept {
@@ -822,6 +840,12 @@ struct RawHeap final {
     std::size_t count;
 };
 
+// The two words of a BrandedView: the base pointer and the count of 4 bytes.
+struct RawColumn final {
+    std::uint32_t const* first;
+    std::uint32_t count;
+};
+
 [[gnu::used]] std::uint64_t atomic_load_raw(std::atomic<std::uint64_t> const& cell) noexcept {
     return cell.load(std::memory_order_acquire);
 }
@@ -1050,6 +1074,13 @@ struct RawHeap final {
         ++other;
     }
     return sum;
+}
+
+[[gnu::used]] void branded_columns_raw(std::atomic<std::uint32_t>& cell, RawColumn first, RawColumn second,
+                                       RawColumn third) noexcept {
+    for (std::size_t index = 0; index < first.count; ++index) {
+        cell.store(first.first[index] + second.first[index] + third.first[index], std::memory_order_release);
+    }
 }
 
 [[gnu::used]] bool fixed_list_push_raw(RawList& list, std::uint32_t value) noexcept {

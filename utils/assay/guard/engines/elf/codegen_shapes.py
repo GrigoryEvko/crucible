@@ -589,6 +589,13 @@ PROBES: tuple[Probe, ...] = (
         checks=(TRAP,),
     ),
     Probe(
+        "branded_columns",
+        "a loop over three parallel BrandedViews that a function takes by value is the loop of three raw columns.  "
+        "Each read keeps the base pointer of its column in a register, so the loop loads and stores no view on the "
+        "stack.  at() gives its assume a local copy of the count.  An assume that reads the member count_ keeps each "
+        "view in memory, and the loop then loads the base pointer of each column from the stack for each element",
+    ),
+    Probe(
         "box_read",
         f"A read through the dereference of a Box adds one test and one branch to a call of the fatal exit.  {HARDENED_BUILDS}.  On the hot path, "
         "these flags add a copy of the pointer and a second test of the copy, with a branch to a trap",
