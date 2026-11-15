@@ -366,6 +366,7 @@ cases ="".join(f'<testcase name="{name}" status="{"fail" if name in red else "ru
 report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</testsuite>')
 """
 PLANTED = {
+    ".gitignore": "build/\nbuild-*/\n.venv-torch\n",
     "notes.txt": "notes at head\n",
     "utils/registry.txt": REGISTRY,
     DOOR_PATH: DOOR_LEDGER,
@@ -566,11 +567,110 @@ def tree_cases(expect: testing.Expect) -> None:
             and (tree / "notes.txt").read_text(encoding="utf-8") == "notes of the second commit\n"
             and (tree / "utils/registry.txt").stat().st_mtime_ns == before,
         )
+        # A stop of the host can leave the index with no bytes, and git then gives "index file smaller than expected".
+        index = tree / ".git" / "index"
+        index.write_bytes(b"")
+        third = commit_change(root, "notes.txt", "notes of the third commit\n")
+        _, printed = testing.captured(lambda: gate.move_tree(root, tree, third))
+        expect(
+            "a move on an index that git cannot read, such as an index with no bytes after a stop of the host, makes "
+            "the index again from HEAD and gives the tree the commit, and each other file keeps its time of change",
+            git.head(tree) == third
+            and (tree / "notes.txt").read_text(encoding="utf-8") == "notes of the third commit\n"
+            and git.has_no_change(tree)
+            and (tree / "utils/registry.txt").stat().st_mtime_ns == before
+            and "git cannot read the index of the warm tree" in printed,
+        )
+        (tree / ".git" / "HEAD").write_bytes(b"")
+        index.write_bytes(b"")
+        fourth = commit_change(root, "notes.txt", "notes of the fourth commit\n")
+        _, printed = testing.captured(lambda: gate.move_tree(root, tree, fourth))
+        expect(
+            "a move on a HEAD and an index with no bytes, as a stop of the host leaves them, takes HEAD from the "
+            "reflog, makes the index from it, and gives the tree the commit with each other time of change kept",
+            git.head(tree) == fourth
+            and git.has_no_change(tree)
+            and (tree / "utils/registry.txt").stat().st_mtime_ns == before
+            and "names no commit" in printed,
+        )
+        (tree / ".git" / "HEAD").write_bytes(b"")
+        index.write_bytes(b"")
+        (tree / ".git" / "logs" / "HEAD").unlink()
+        fifth = commit_change(root, "notes.txt", "notes of the fifth commit\n")
+        testing.captured(lambda: gate.move_tree(root, tree, fifth))
+        expect(
+            "with no reflog, a HEAD with no bytes names a branch with no commit, and the move still gives the tree the "
+            "commit",
+            git.head(tree) == fifth
+            and (tree / "notes.txt").read_text(encoding="utf-8") == "notes of the fifth commit\n"
+            and git.has_no_change(tree),
+        )
+        kept_index = index.read_bytes()
+        try:
+            gate.move_tree(root, tree, "0" * 40)
+            is_refused = False
+        except git.GitError:
+            is_refused = True
+        expect(
+            "a read-tree that fails for a different cause, such as a commit that is not there, stays an error, and the "
+            "readable index stays as it was",
+            is_refused and index.read_bytes() == kept_index and git.head(tree) == fifth,
+        )
+        stray = tree / "test" / "fixy" / "neg" / "neg_left_by_a_stop.cpp"
+        stray.parent.mkdir(parents=True, exist_ok=True)
+        stray.write_text("int left = 0;\n", encoding="utf-8")
+        (tree / "build").mkdir(exist_ok=True)
+        (tree / "build" / "kept.o").write_bytes(b"\x7fELF")
+        _, printed = testing.captured(lambda: gate.remove_untracked(tree))
+        expect(
+            "a file that the commit does not hold and that no ignore rule names goes, such as a fixture that a stop "
+            "left, and an ignored build directory stays",
+            not stray.exists() and (tree / "build" / "kept.o").is_file() and "neg_left_by_a_stop.cpp" in printed,
+        )
         try:
             gate.move_tree(root, root / "inner", head)
             expect("the gate refuses a warm tree in the work tree of the repository", False)
         except gate.GateError:
             expect("the gate refuses a warm tree in the work tree of the repository", True)
+
+
+def repair_cases(expect: testing.Expect) -> None:
+    """Hold repair_builds(): outputs with no bytes and a reply that does not read go, and a whole build stays."""
+    with tempfile.TemporaryDirectory(prefix="gate-repair-") as work_text:
+        tree = Path(work_text)
+        default, release = gate.BY_NAME["default"], gate.BY_NAME["release"]
+        cut, whole = tree / default.build, tree / release.build
+        for build in (cut, whole):
+            (build / "CMakeFiles" / "x.dir").mkdir(parents=True)
+            (build / "lib").mkdir()
+            (build / "build.ninja").write_text("rule cc\n", encoding="utf-8")
+            reply = build.joinpath(*gate.REPLY_DIRECTORY)
+            reply.mkdir(parents=True)
+            (reply / "index-1.json").write_text('{"objects": []}', encoding="utf-8")
+            (build / "CMakeFiles" / "x.dir" / "kept.cpp.o").write_bytes(b"\x7fELF")
+            (build / "lib" / "libkept.a").write_bytes(b"!<arch>\n")
+        (cut / "CMakeFiles" / "x.dir" / "cut.cpp.o").write_bytes(b"")
+        (cut / "lib" / "libcut.so").write_bytes(b"")
+        (cut / "lib" / "libcut.so.1").write_bytes(b"")
+        (cut / "lib" / "liblink.so").symlink_to("libcut.so.1")
+        (cut / "notes.txt").write_bytes(b"")
+        (cut.joinpath(*gate.REPLY_DIRECTORY) / "index-2.json").write_text("{", encoding="utf-8")
+        _, printed = testing.captured(lambda: gate.repair_builds(tree, (default, release)))
+        left = sorted(str(path.relative_to(cut)) for path in cut.rglob("*") if path.is_file() or path.is_symlink())
+        expect(
+            "the repair removes each object, archive and shared library with no bytes, keeps a link, a text file "
+            "and each output with bytes, and removes a reply whose index does not read with the graph build.ninja: "
+            f"{left}",
+            left == ["CMakeFiles/x.dir/kept.cpp.o", "lib/libkept.a", "lib/liblink.so", "notes.txt"]
+            and "removes 3 outputs with no bytes" in printed
+            and "configures" in printed,
+        )
+        expect(
+            "a whole build keeps each file and its graph, and gives no line",
+            (whole / "build.ninja").is_file()
+            and (whole.joinpath(*gate.REPLY_DIRECTORY) / "index-1.json").is_file()
+            and f"{release.name}:" not in printed,
+        )
 
 
 def change_cases(expect: testing.Expect) -> None:
@@ -2050,6 +2150,7 @@ def main(argv: list[str]) -> int:
             select_cases,
             table_cases,
             tree_cases,
+            repair_cases,
             change_cases,
             run_cases,
             reduce_cases,

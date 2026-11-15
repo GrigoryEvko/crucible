@@ -1446,6 +1446,40 @@ def drop_cases(expect: testing.Expect) -> None:
         )
 
 
+def store_cases(expect: testing.Expect) -> None:
+    """Hold THE STORE: a damaged git store refuses the batch with its reason, runs no gate and moves no branch."""
+    with tempfile.TemporaryDirectory(prefix="land-store-") as work_text:
+        root = Path(work_text) / "repo"
+        head = planted_repository(root)
+        requests = own_requests(root, ("one\n",))
+        config = root / ".git" / "config"
+        kept = config.read_bytes()
+        config.write_bytes(b"")
+        seen: list[tuple[gate.Candidate, bool]] = []
+        decisions, _ = batch_landing(root, requests, passing(seen))
+        config.write_bytes(kept)
+        said = " ".join(line.content for line in decisions[1].lines)
+        expect(
+            f"a store whose file config has no bytes refuses the batch with that reason, runs no gate, and the branch "
+            f"does not move: {said}",
+            decisions[1].status == ExitCode.TOOL_FAILED
+            and "has no bytes" in said
+            and not seen
+            and git.head(root) == head,
+        )
+        tree_hash = git.run(root, "rev-parse", "HEAD^{tree}").decode().strip()
+        loose = root / ".git" / "objects" / tree_hash[:2] / tree_hash[2:]
+        loose.chmod(0o644)
+        loose.write_bytes(b"")
+        decisions, _ = batch_landing(root, requests, passing(seen))
+        said = " ".join(line.content for line in decisions[1].lines)
+        expect(
+            f"a store with an object of no bytes fails `git fsck --connectivity-only`, and the batch is refused with "
+            f"the error of git and runs no gate: {said[:160]}",
+            decisions[1].status == ExitCode.TOOL_FAILED and "git fsck --connectivity-only" in said and not seen,
+        )
+
+
 def other_right(queue: Path, number: int) -> int:
     """Take the right of way of a different batch, as the holder of a different lane does, and return its descriptor."""
     path = land.queue_file(queue, number, land.RIGHT_SUFFIX)
@@ -2415,6 +2449,7 @@ def main(argv: list[str]) -> int:
             flaky_cases,
             confirmation_cases,
             drop_cases,
+            store_cases,
             right_cases,
             queue_cases,
             error_cases,

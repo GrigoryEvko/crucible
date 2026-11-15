@@ -339,6 +339,14 @@ THE COMPARE-AND-SWAP
     others compose again and go to the gate again.  The holder keeps the
     lock of the warm tree for all of the batch.
 
+THE STORE
+    A stop of the host can damage the git store of the repository: a file
+    config with no bytes, or an object with no bytes.  Before each batch,
+    the holder reads the store (store_problem()).  The file config must have
+    bytes, and `git fsck --connectivity-only` must exit 0.  A damaged store
+    refuses each request of the batch with the reason, and the branch does
+    not move.
+
 THE RIGHT OF WAY
     A long run of the gate, such as a run of --all-configurations, can lose
     each swap: a short landing of a different lane moves the branch while it
@@ -534,6 +542,8 @@ VERDICT_SUFFIX = ".verdict"
 JOURNAL_SUFFIX = ".journal"
 CLAIM_SUFFIX = ".claim"
 RIGHT_SUFFIX = ".right"
+# The lines of the error of `git fsck` that the refusal of a damaged store names (THE STORE).
+STORE_LINES = 3
 PATCH_MARK = ".patch-"
 REQUEST_FORMAT = 2
 # The bytes of the random token of a request (THE QUEUE).
@@ -1483,6 +1493,31 @@ def refused(status: int, *texts: str) -> Decision:
     return Decision(status, "", tuple(Line(text, True) for text in texts))
 
 
+def store_problem(repository: Path) -> str | None:
+    """Return why the git store of a repository is damaged, or None for a whole store (THE STORE).
+
+    A stop of the host can leave the file config with no bytes, or an object with no bytes.  The file config must
+    have bytes, and `git fsck --connectivity-only` must exit 0.  The check of the store of the tree takes about 3 s.
+
+    Raises:
+        git.GitError: If git cannot start, or it runs past its limit
+    """
+    config = git.common_dir(repository) / "config"
+    if not config.is_file() or config.stat().st_size == 0:
+        return (
+            f"the file {config} of the git store has no bytes, the damage of a stop of the host, so no landing moves "
+            f"the branch.  Write the configuration of the repository again, then queue the request again"
+        )
+    completed = git.run_any_exit(repository, "fsck", "--connectivity-only", "--no-progress", timeout_s=proc.TOOL_S)
+    if completed.exit == 0:
+        return None
+    shown = " | ".join(completed.err.strip().splitlines()[:STORE_LINES])
+    return (
+        f"`git fsck --connectivity-only` exits {completed.exit} in {repository}, so the git store is damaged and no "
+        f"landing moves the branch: {shown}.  Repair the store, then queue the request again"
+    )
+
+
 def merge_lines(link: Link) -> list[Line]:
     """Return the line that names each file of a request that THE MERGE composed, and each file that the gate writes.
 
@@ -2040,6 +2075,11 @@ class BatchLanding:
             OSError: If a journal or a verdict cannot be written
         """
         try:
+            problem = store_problem(self.repository)
+            if problem is not None:
+                for queued in items:
+                    self.decide(queued, refused(ExitCode.TOOL_FAILED, f"loop land: REFUSED, {problem}"))
+                return
             self.landed_pending(list(items))
         finally:
             if self.right is not None:

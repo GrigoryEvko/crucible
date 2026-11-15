@@ -183,7 +183,14 @@ THE WARM TREE
     the commit with `git read-tree --reset -u` and `git update-ref
     --no-deref HEAD`.  Git writes only the files that the commit changes.
     Each other file keeps its time of change, and Ninja builds again only
-    what the commit changes.  The build directory of each configuration is
+    what the commit changes.  When read-tree fails and git cannot read the
+    index, such as after a stop of the host, the gate makes the index again
+    from HEAD (repair_index()), and the files keep their times of change.
+    A HEAD with no commit gets the last commit of its reflog (repair_head()).
+    After the move, the gate removes each output of a build with no bytes,
+    and a reply of the CMake file API that does not read, with its graph
+    (repair_builds()).  Ninja builds such an output again, and the run
+    configures such a build again.  The build directory of each configuration is
     in the warm tree, at the binaryDir of its preset.  The build directories
     stay from one landing to the next.  A guard that reads the git history
     reads the history of the landing.  The gate refuses a warm tree in the
@@ -511,6 +518,8 @@ import contextlib
 import enum
 import fcntl
 import functools
+import json
+import os
 import shutil
 import sys
 import threading
@@ -581,6 +590,16 @@ VESSEL_TARGETS = ("crucible_vessel", "crucible_dispatch")
 VESSEL_LABEL = "vessel"
 VESSEL_PREFIX = "vessel/"
 TORCH_VENV = ".venv-torch"
+# The forms of a file HEAD that names a commit: a hash of SHA-1 or of SHA-256 in lowercase hexadecimal digits, and the
+# branch with no commit that repair_head() writes when the reflog names no commit (THE WARM TREE).
+HASH_LENGTHS = (40, 64)
+HEX_DIGITS = "0123456789abcdef"
+UNBORN_REF = "refs/heads/main"
+# The outputs that a build never leaves with no bytes, the reply directory of the CMake file API in a build
+# directory, and the number of empty outputs that the line of repair_builds() names (THE WARM TREE).
+OUTPUT_SUFFIXES = (".o", ".a", ".so")
+REPLY_DIRECTORY = (".cmake", "api", "v1", "reply")
+EMPTY_SHOWN = 5
 # The memory of one job of the lease of the vessel, in GB (THE VESSEL).  On 2026-11-15, a compile of one shard of
 # register.cpp in the lanes had a peak of 1.54 GB, and a vessel test of 1.12 GB.
 VESSEL_GB_PER_JOB = 1.7
@@ -1120,10 +1139,141 @@ def move_tree(root: Path, tree: Path, commit: str) -> None:
     info = tree / ".git" / "objects" / "info"
     info.mkdir(parents=True, exist_ok=True)
     (info / "alternates").write_text(f"{git.common_dir(root) / 'objects'}\n", encoding="utf-8")
+    repair_head(tree)
     # A file with a new time of change and the same bytes gets a new entry of the index, and read-tree then keeps it.
     git.run_any_exit(tree, "update-index", "-q", "--refresh", timeout_s=proc.TOOL_S)
-    git.run(tree, "read-tree", "--reset", "-u", commit, timeout_s=proc.TOOL_S)
+    try:
+        git.run(tree, "read-tree", "--reset", "-u", commit, timeout_s=proc.TOOL_S)
+    except git.GitError:
+        if git.run_any_exit(tree, "ls-files", "--stage", timeout_s=proc.TOOL_S).exit == 0:
+            raise
+        repair_index(tree)
+        git.run(tree, "read-tree", "--reset", "-u", commit, timeout_s=proc.TOOL_S)
     git.run(tree, "update-ref", "--no-deref", "HEAD", commit)
+
+
+def repair_head(tree: Path) -> None:
+    """Give a warm tree a HEAD again, when its file HEAD holds no reference and no commit (THE WARM TREE).
+
+    A stop of the host during a write of git can leave HEAD with no bytes, and git then sees no repository in the
+    tree.  The function writes the last commit of the reflog of HEAD into HEAD, so the repair of the index keeps the
+    times of change.  When the reflog names no commit that the tree holds, HEAD names a branch with no commit, and the
+    next read-tree writes each file of the commit.
+
+    Raises:
+        git.GitError: If a git command fails
+    """
+    head = tree / ".git" / "HEAD"
+    held = head.read_bytes().strip() if head.is_file() else b""
+    if held.startswith(b"ref: ") or (len(held) in HASH_LENGTHS and all(chr(byte) in HEX_DIGITS for byte in held)):
+        return
+    check_report.write_line(f"loop land: the file HEAD of the warm tree {tree} names no commit, so the gate writes it")
+    reflog = tree / ".git" / "logs" / "HEAD"
+    lines = reflog.read_bytes().splitlines() if reflog.is_file() else []
+    last = lines[-1].split()[1].decode("ascii", errors="replace") if lines and len(lines[-1].split()) > 1 else ""
+    head.write_text(f"{last}\n" if last else f"ref: {UNBORN_REF}\n", encoding="ascii")
+    if last and git.resolve(tree, last) is None:
+        head.write_text(f"ref: {UNBORN_REF}\n", encoding="ascii")
+
+
+def remove_untracked(tree: Path) -> None:
+    """Remove each file of a warm tree that the commit does not hold and that no ignore rule names (THE WARM TREE).
+
+    read-tree keeps such a file, for example a file of a batch that a stop ended, or a file that a repair of the
+    index by hand left out of the index.  A census of the tree, such as the census of the fixtures, then reads it.
+    The ignored files stay, such as the build directories and the link TORCH_VENV.  The holder of the lane is the only
+    writer of the warm tree.  Complexity: one listing of the files that are not ignored.
+
+    Raises:
+        git.GitError: If git cannot list the files
+    """
+    listed = git.run(tree, "ls-files", "--others", "--exclude-standard", "-z", timeout_s=proc.TOOL_S)
+    names = [name for name in listed.decode("utf-8", errors="surrogateescape").split("\0") if name]
+    for name in names:
+        (tree / name).unlink(missing_ok=True)
+    if names:
+        shown = " ".join(names[:EMPTY_SHOWN])
+        check_report.write_line(
+            f"loop land: the warm tree {tree} held {len(names)} files that its commit does not hold, and the gate "
+            f"removes them: {shown}"
+        )
+
+
+def repair_builds(tree: Path, configurations: Sequence[Configuration]) -> None:
+    """Remove the damage that a stop of the host leaves in the build directories of a warm tree (THE WARM TREE).
+
+    A stop during a build can leave an output with no bytes, and Ninja then sees the output as built.  The function
+    removes each object, archive and shared library of OUTPUT_SUFFIXES with no bytes, and Ninja builds it again.  A
+    stop during a configure can leave a reply of the CMake file API with no bytes, or an index of the reply that does
+    not read as JSON.  The function then removes the reply and the graph build.ninja, so the run configures the
+    build again (THE RUN OF A CONFIGURATION, step 1).  The holder of the lane is the only writer of the warm tree.
+    Complexity: linear in the files of the build directories.
+    """
+    for configuration in configurations:
+        build = build_directory(tree, configuration)
+        if not build.is_dir():
+            continue
+        empty = [path for path in output_files(build) if path.lstat().st_size == 0]
+        for path in empty:
+            path.unlink(missing_ok=True)
+        if empty:
+            shown = " ".join(str(path.relative_to(build)) for path in empty[:EMPTY_SHOWN])
+            check_report.write_line(
+                f"loop land: {configuration.name}: the gate removes {len(empty)} outputs with no bytes, the damage of a "
+                f"stop of the host, and the build makes them again: {shown}"
+            )
+        reply = build.joinpath(*REPLY_DIRECTORY)
+        if reply.is_dir() and not is_reply_whole(reply):
+            shutil.rmtree(reply, ignore_errors=True)
+            (build / "build.ninja").unlink(missing_ok=True)
+            check_report.write_line(
+                f"loop land: {configuration.name}: the reply of the CMake file API does not read, so the gate removes "
+                f"it and the run configures {build} again"
+            )
+
+
+def output_files(build: Path) -> Iterator[Path]:
+    """Give each file of a build directory whose name ends in one of OUTPUT_SUFFIXES or holds `.so.`."""
+    for directory, _, names in os.walk(build):
+        for name in names:
+            if name.endswith(OUTPUT_SUFFIXES) or ".so." in name:
+                yield Path(directory) / name
+
+
+def is_reply_whole(reply: Path) -> bool:
+    """Tell if each file of a reply of the CMake file API has bytes, and its newest index reads as JSON."""
+    files = sorted(path for path in reply.iterdir() if path.is_file())
+    if any(path.stat().st_size == 0 for path in files):
+        return False
+    indexes = [path for path in files if path.name.startswith("index-") and path.suffix == ".json"]
+    if not indexes:
+        return True
+    try:
+        json.loads(indexes[-1].read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return False
+    return True
+
+
+def repair_index(tree: Path) -> None:
+    """Make the index of a warm tree again from its HEAD, when no git command can read it (THE WARM TREE).
+
+    A stop of the host during a write of git can leave an index that git cannot read, such as an index that is
+    shorter than its header says.  Each read-tree then fails.  The holder of the lane is the only writer of the warm
+    tree, so the function removes the index and reads the tree of HEAD into a new one.  A refresh then gives each file
+    that has the bytes of HEAD its time of change, so the next read-tree writes only the files that the commit changes,
+    and Ninja builds again only what the commit changes.  A tree with no HEAD gets no new index.
+
+    Raises:
+        git.GitError: If a git command fails
+    """
+    check_report.write_line(f"loop land: git cannot read the index of the warm tree {tree}, so the gate makes it again")
+    (tree / ".git" / "index").unlink(missing_ok=True)
+    head = git.resolve(tree, "HEAD")
+    if head is None:
+        return
+    git.run(tree, "read-tree", head, timeout_s=proc.TOOL_S)
+    git.run_any_exit(tree, "update-index", "-q", "--refresh", timeout_s=proc.TOOL_S)
 
 
 def gb_per_job_of(name: str) -> float:
@@ -1322,6 +1472,9 @@ class Gate:
                 f"gives it"
             )
         move_tree(self.root, self.tree, candidate.commit)
+        remove_untracked(self.tree)
+        builds = (*CONFIGURATIONS, *(() if self.vessel is None else (self.vessel,)))
+        repair_builds(self.tree, builds)
         if candidate.commit != candidate.head:
             built = careful(
                 lambda: built_selection(self.tree, candidate.changed),
