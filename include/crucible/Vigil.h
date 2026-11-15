@@ -563,18 +563,18 @@ public:
     MetaLog& meta_log(VigilFgCtx const&) && =
         delete("a temporary Vigil releases its log at the end of the statement. Use a Vigil that has a name");
 
-    // The slots into which an adapter decodes the records of one op before
-    // it builds the op.  The thread that holds the producer claim owns them,
-    // as it owns the producer surfaces of the ring and of the metadata log.
-    // The slots are a member, so the decode of an op fills no list on the
-    // stack of each call.  A decode writes the slots from the first one, and
-    // the View that it gives reaches only the slots that it wrote.
+    // The stack of the slots into which an adapter writes the records of an
+    // op before it builds the op.  The thread that holds the producer claim
+    // owns it, as it owns the producer surfaces of the ring and of the
+    // metadata log.  The slots are a member, so the record of an op fills no
+    // list on the stack of each call.  The adapter opens an OpRecordFrame for
+    // each op, so an op that runs inside another op writes other slots.
     //
     // An op path calls this door, so the door does not read the thread
     // identity.  dispatch_op checks the thread again before the ring head
     // can advance.
-    [[nodiscard]] OpRecordSlots& op_record_slots(VigilFgCtx const&) & noexcept { return op_record_slots_; }
-    OpRecordSlots& op_record_slots(VigilFgCtx const&) && =
+    [[nodiscard]] OpRecordStack& op_record_stack(VigilFgCtx const&) & noexcept { return op_record_stack_; }
+    OpRecordStack& op_record_stack(VigilFgCtx const&) && =
         delete("a temporary Vigil releases its slots at the end of the statement. Use a Vigil that has a name");
 
     // Counters that any thread can read with no context.  Each value is a
@@ -1201,10 +1201,10 @@ private:
     ReplayState replay_;
     RegionCache region_cache_;
 
-    // The slots of op_record_slots.  Only the producer thread reads or
-    // writes them, and each slot holds a TensorMeta from the construction of
+    // The stack of op_record_stack.  Only the producer thread reads or
+    // writes it, and each slot holds a TensorMeta from the construction of
     // the Vigil on.
-    OpRecordSlots op_record_slots_{};
+    OpRecordStack op_record_stack_{};
 
     // The regions that the foreground holds, for the sweep of the region
     // store on the publish stage.  The foreground writes the cells at the end

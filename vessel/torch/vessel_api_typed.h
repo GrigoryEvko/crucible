@@ -21,7 +21,7 @@
 //
 //   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> ExternalDataPtr
 //   decode_ffi_meta(record)   : const CrucibleMeta&      -> Option<TensorMeta>
-//   decode_ffi_records(...)   : TypedMeta, count, slots  -> Option<View<TensorMeta const>>
+//   decode_ffi_records(...)   : TypedMeta, slots         -> Option<View<TensorMeta const>>
 //
 //   TypedSchemaName           := SchemaTable::LookupName
 //   schema_name_typed(hash)   : SchemaHash               -> TypedSchemaName
@@ -219,11 +219,11 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
 // exists only where the vessel makes one.  No door of the base starts the
 // life of a TensorMeta over foreign bytes: the checked lifetime start and
 // mint_foreign_view refuse a type with a Tagged pointer, a bool and
-// enumerations, and decode refuses a pointer.  So a thunk decodes each
-// record into the OpRecordSlots of the Vigil (Vigil::op_record_slots), and
-// the View borrows the slots.  The slots hold the most records that the trust
-// ladder admits: kMaxOpInputs inputs and kMaxOpOutputs outputs
-// (entry_is_well_formed).
+// enumerations, and decode refuses a pointer.  So a thunk opens an
+// OpRecordFrame on the stack of the Vigil (Vigil::op_record_stack), decodes
+// each record into a slot of the frame, and the View borrows the slots.  The
+// stack holds the most records that the trust ladder admits: kMaxOpInputs
+// inputs and kMaxOpOutputs outputs (entry_is_well_formed).
 
 // The TensorMeta of one record of a C caller, or no value.  The function reads
 // each field through CrucibleMeta, the type that the caller wrote, and gives
@@ -252,27 +252,25 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n
     return decode_tensor_meta(fields, external_data_ptr(record.data_ptr));
 }
 
-// Decodes the n_metas records at typed into the slots 0 to n_metas - 1, and
-// gives the View of those slots.  A slot at or past n_metas can hold a record
-// of an earlier op, and the View does not reach it.  No value when the count
-// passes the room of the slots or when decode_ffi_meta refuses a record.  The
-// caller then records nothing.  Linear in n_metas.
+// Decodes one record at typed into each slot, in order, and gives the View of
+// the slots.  The caller gives as many slots as it gives records: the slots of
+// the OpRecordFrame of the op.  No value when decode_ffi_meta refuses a
+// record.  The caller then records nothing.  Linear in the count of the slots.
 [[nodiscard]] inline ::fixy::Option<::fixy::View<TensorMeta const>>
-decode_ffi_records(TypedMeta typed, uint32_t n_metas, OpRecordSlots& slots) noexcept {
-    if (n_metas > kMaxOpRecords) return ::fixy::none;
-    for (const ::fixy::Index<kMaxOpRecords> slot : OpRecordSlots::indices()) {
-        if (slot.raw() == n_metas) break;
-        const bool is_decoded = decode_ffi_meta(typed.value()[slot.raw()])
+decode_ffi_records(TypedMeta typed, ::fixy::View<TensorMeta> slots) noexcept {
+    uint32_t position = 0;
+    for (TensorMeta& slot : slots) {
+        const bool is_decoded = decode_ffi_meta(typed.value()[position])
                                     .match(
-                                        [&slots, slot](TensorMeta meta) noexcept {
-                                            slots.at(slot) = meta;
+                                        [&slot](TensorMeta meta) noexcept {
+                                            slot = meta;
                                             return true;
                                         },
                                         [] noexcept { return false; });
         if (!is_decoded) return ::fixy::none;
+        ++position;
     }
-    const OpRecordSlots& written = slots;
-    return written.view().window(0, n_metas);
+    return ::fixy::Option<::fixy::View<TensorMeta const>>::some(slots);
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -326,7 +324,8 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
 //   - schema_hash != 0, because 0 is the invalid sentinel and the
 //     content hash and the region cache both key on this field
 //   - num_inputs at most kMaxOpInputs and num_outputs at most
-//     kMaxOpOutputs, so the records of the op fit the OpRecordSlots
+//     kMaxOpOutputs, so the records of the op fit the slots of an
+//     OpRecordStack
 //   - num_scalar_args at most 5, the width of Entry::scalar_values.
 //     BackgroundThread asserts the same bound when it drains the ring,
 //     so a larger count reaches a contract violation rather than the

@@ -231,6 +231,7 @@ crucible_test(test_vigil_unrepeated_prefix)
 crucible_test(test_vigil_idle_wait)
 crucible_test(test_background_thread_refused_ops)
 crucible_test(test_vigil_record_count)
+crucible_test(test_op_record_stack)
 crucible_test(test_record_into)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
@@ -3964,14 +3965,23 @@ crucible_neg_compile_test(neg_vigil_meta_log_unbranded_ctx
 crucible_neg_compile_test(neg_vigil_meta_log_other_brand
   "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_meta_log_other_brand.cpp:15")
-# op_record_slots() hands out the slots into which the producer thread
-# decodes the records of an op, so it asks for the same context.
-crucible_neg_compile_test(neg_vigil_op_record_slots_unbranded_ctx
+# op_record_stack() hands out the stack into which the producer thread
+# writes the records of an op, so it asks for the same context.
+crucible_neg_compile_test(neg_vigil_op_record_stack_unbranded_ctx
   "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
-  "neg_vigil_op_record_slots_unbranded_ctx.cpp:12")
-crucible_neg_compile_test(neg_vigil_op_record_slots_other_brand
+  "neg_vigil_op_record_stack_unbranded_ctx.cpp:12")
+crucible_neg_compile_test(neg_vigil_op_record_stack_other_brand
   "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
-  "neg_vigil_op_record_slots_other_brand.cpp:16")
+  "neg_vigil_op_record_stack_other_brand.cpp:16")
+# An OpRecordFrame gives its slots back at the end of the scope of its op,
+# so the frames of one stack close in the reverse order of their opens.  A
+# frame neither copies nor moves.
+crucible_neg_compile_test(neg_op_record_frame_copy
+  "use of deleted function .crucible::OpRecordFrame::OpRecordFrame.const crucible::OpRecordFrame&.."
+  "neg_op_record_frame_copy.cpp:13")
+crucible_neg_compile_test(neg_op_record_frame_move
+  "use of deleted function .crucible::OpRecordFrame::OpRecordFrame.crucible::OpRecordFrame&&.."
+  "neg_op_record_frame_move.cpp:15")
 crucible_neg_compile_test(neg_vigil_mint_producer_context_const
   "passing .const crucible::Vigil. as .this. argument discards qualifiers"
   "neg_vigil_mint_producer_context_const.cpp:10")

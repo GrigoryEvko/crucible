@@ -174,16 +174,20 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     // only guard.  It runs before the decode, because the decode writes the
     // record slots that the producer thread owns.
     //
-    // The op borrows its records, so the thunk decodes the records of the
-    // caller into the record slots of the Vigil.  A record that the decode
-    // refuses records nothing.
+    // The op borrows its records, so the thunk opens a frame of n_metas slots
+    // on the record stack of the Vigil and decodes the records of the caller
+    // into it.  A count that does not fit the free slots, or a record that the
+    // decode refuses, records nothing.
     const auto vigil = ::fixy::to(*vigil_typed.value());
     const crucible::VigilFgCtx fg = vigil->mint_producer_context();
-    const auto decoded = crucible::vessel::decode_ffi_records(metas_typed, n_metas, vigil->op_record_slots(fg));
-    for (const ::fixy::View<const crucible::TensorMeta> records : decoded) {
-        for (const crucible::ValidatedOp& op :
-             crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
-            return encode_dispatch_result(vigil->dispatch_op_pure(fg, op));
+    const crucible::OpRecordFrame frame{vigil->op_record_stack(fg), n_metas};
+    for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
+        for (const ::fixy::View<const crucible::TensorMeta> records :
+             crucible::vessel::decode_ffi_records(metas_typed, slots)) {
+            for (const crucible::ValidatedOp& op :
+                 crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
+                return encode_dispatch_result(vigil->dispatch_op_pure(fg, op));
+            }
         }
     }
     return CrucibleDispatchResult{};
@@ -239,11 +243,14 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     // crucible_dispatch_op.
     const auto vigil = ::fixy::to(*vigil_typed.value());
     const crucible::VigilFgCtx fg = vigil->mint_producer_context();
-    const auto decoded = crucible::vessel::decode_ffi_records(metas_typed, n_metas, vigil->op_record_slots(fg));
-    for (const ::fixy::View<const crucible::TensorMeta> records : decoded) {
-        for (const crucible::ValidatedOp& op :
-             crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
-            return encode_dispatch_result(vigil->dispatch_op_pure(fg, op));
+    const crucible::OpRecordFrame frame{vigil->op_record_stack(fg), n_metas};
+    for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
+        for (const ::fixy::View<const crucible::TensorMeta> records :
+             crucible::vessel::decode_ffi_records(metas_typed, slots)) {
+            for (const crucible::ValidatedOp& op :
+                 crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
+                return encode_dispatch_result(vigil->dispatch_op_pure(fg, op));
+            }
         }
     }
     return CrucibleDispatchResult{};

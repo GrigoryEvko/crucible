@@ -43,10 +43,10 @@ static_assert(alignof(TypedMeta) == alignof(const CrucibleMeta*));
 static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
 
 // No door of the base starts the life of a TensorMeta over the bytes of a C
-// record, so the thunks decode each record into the record slots of the
-// Vigil.  The checked lifetime
-// start refuses the Tagged pointer of a TensorMeta.  A foreign View refuses
-// its bool, its enumerations and its pointer.  decode refuses a pointer.
+// record, so the thunks decode each record into a frame of the record stack
+// of the Vigil.  The checked lifetime start refuses the Tagged pointer of a
+// TensorMeta.  A foreign View refuses its bool, its enumerations and its
+// pointer.  decode refuses a pointer.
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<crucible::TensorMeta>);
 static_assert(!::foundation::core::ForeignElement<crucible::TensorMeta>);
 static_assert(!::foundation::core::ForeignElement<CrucibleMeta>);
@@ -237,29 +237,35 @@ void test_data_ptr_typed() {
     EXPECT(typed_bytes == raw_bytes, "ExternalDataPtr layout must be byte-identical to void*");
 }
 
-// The ranks of the records that a decode gives, in order, or no rank when the
-// decode refuses the op.
-[[nodiscard]] ::fixy::FixedList<uint8_t, crucible::kMaxOpRecords>
-collect_ranks(::fixy::Option<::fixy::View<const crucible::TensorMeta>> const& decoded) noexcept {
-    ::fixy::FixedList<uint8_t, crucible::kMaxOpRecords> ranks{};
-    for (const ::fixy::View<const crucible::TensorMeta> records : decoded) {
-        for (const crucible::TensorMeta& record : records) {
-            EXPECT(ranks.push(record.ndim).is_ok(), "a View of the slots holds at most kMaxOpRecords records");
-        }
+// The ranks of some records, in order.
+using Ranks = ::fixy::FixedList<uint8_t, crucible::kMaxOpRecords>;
+
+// The ranks of the records, in order.
+[[nodiscard]] Ranks ranks_of(::fixy::View<const crucible::TensorMeta> records) noexcept {
+    Ranks ranks{};
+    for (const crucible::TensorMeta& record : records) {
+        EXPECT(ranks.push(record.ndim).is_ok(), "a View of the slots holds at most kMaxOpRecords records");
     }
     return ranks;
 }
 
+// The ranks of the records that a decode gives, in order, or no rank when the
+// decode refuses the op.
+[[nodiscard]] Ranks collect_ranks(::fixy::Option<::fixy::View<const crucible::TensorMeta>> const& decoded) noexcept {
+    for (const ::fixy::View<const crucible::TensorMeta> records : decoded) {
+        return ranks_of(records);
+    }
+    return Ranks{};
+}
+
 // True when the ranks are the expected ranks, in order.
 template <std::size_t Count>
-[[nodiscard]] bool has_ranks(::fixy::FixedList<uint8_t, crucible::kMaxOpRecords> const& ranks,
-                             ::fixy::FixedArray<uint8_t, Count> const& expected) noexcept {
+[[nodiscard]] bool has_ranks(Ranks const& ranks, ::fixy::FixedArray<uint8_t, Count> const& expected) noexcept {
     return ::fixy::equal(ranks.view(), ::fixy::View<const uint8_t>{expected.view()});
 }
 
-// The C thunks decode the records of the caller into the record slots of the
-// Vigil, and the View of the op borrows the slots.  A count past the room of
-// the slots decodes nothing, and the thunk then records nothing.
+// The C thunks decode the records of the caller into the slots of a frame of
+// the record stack of the Vigil, and the View of the op borrows the slots.
 void test_ffi_records_copy() {
     // Each record has a different rank, which names it.
     ::fixy::FixedArray<CrucibleMeta, 3> sources{};
@@ -268,13 +274,10 @@ void test_ffi_records_copy() {
     sources.at(::fixy::index<2>()).ndim = 3;
     const TypedMeta typed = crucible::vessel::as_meta_typed(&sources.at(::fixy::index<0>()), 3);
 
-    crucible::OpRecordSlots slots{};
-    const auto ranks = collect_ranks(crucible::vessel::decode_ffi_records(typed, 3, slots));
+    ::fixy::FixedArray<crucible::TensorMeta, 3> slots{};
+    const auto ranks = collect_ranks(crucible::vessel::decode_ffi_records(typed, slots.view()));
     EXPECT(has_ranks(ranks, ::fixy::FixedArray<uint8_t, 3>{1, 2, 3}),
            "the View holds each record of the caller, in order");
-
-    EXPECT(crucible::vessel::decode_ffi_records(typed, crucible::kMaxOpRecords + 1, slots).is_none(),
-           "a count past the room of the slots is refused");
 }
 
 // A C caller writes each record through CrucibleMeta, its own type, and the
@@ -294,10 +297,10 @@ void test_ffi_records_read_the_c_records() {
     callers.at(::fixy::index<0>()) = written;
     callers.at(::fixy::index<1>()) = written;
 
-    crucible::OpRecordSlots slots{};
+    ::fixy::FixedArray<crucible::TensorMeta, 2> slots{};
     const ::fixy::View<const crucible::TensorMeta> records =
-        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2), 2,
-                                             slots)
+        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2),
+                                             slots.view())
             .value_or(::fixy::View<const crucible::TensorMeta>{});
     EXPECT(records.size() == 2, "the View holds each record of the caller");
     for (const crucible::TensorMeta& read : records) {
@@ -379,17 +382,35 @@ void test_ffi_decode_refuses_each_broken_claim() {
     EXPECT(!is_decoded(reserved_flag), "a reserved bit of the flags is refused");
 
     ::fixy::FixedArray<CrucibleMeta, 2> callers{held, wide_grad};
-    crucible::OpRecordSlots slots{};
-    EXPECT(crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2), 2,
-                                                slots)
+    ::fixy::FixedArray<crucible::TensorMeta, 2> slots{};
+    EXPECT(crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&callers.at(::fixy::index<0>()), 2),
+                                                slots.view())
                .is_none(),
            "an op with a refused record is refused");
 }
 
-// The record slots of a Vigil hold the records of one op at a time, and each
-// thunk decodes into the same slots.  A decode writes the slots from the
-// first one, and its View reaches only the slots that it wrote.  So a call
-// with fewer records than the call before reads no record of the call before.
+// The ranks of the records that a thunk decodes into a frame of count slots
+// on the stack, or no value when the frame does not fit or the decode
+// refuses a record.  The frame closes at the return, as at the end of a
+// thunk.
+[[nodiscard]] ::fixy::Option<Ranks> decode_in_frame(crucible::OpRecordStack& stack, TypedMeta typed,
+                                                    uint32_t count) noexcept {
+    const crucible::OpRecordFrame frame{stack, count};
+    for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
+        for (const ::fixy::View<const crucible::TensorMeta> records :
+             crucible::vessel::decode_ffi_records(typed, slots)) {
+            return ::fixy::Option<Ranks>::some(ranks_of(records));
+        }
+    }
+    return ::fixy::none;
+}
+
+// The record stack of a Vigil holds the records of the ops in flight, and
+// each thunk decodes into a frame at its top.  A closed frame gives its slots
+// back, so the next call writes the same slots, and its View reaches only the
+// slots of its own frame.  So a call with fewer records than the call before
+// reads no record of the call before.  A thunk that runs while a frame is
+// open decodes past that frame, and writes no record of it.
 //
 // The test makes a Vigil, and the start of its background thread seals the
 // schema table.  So it runs after test_schema_name_typed.
@@ -405,34 +426,53 @@ void test_ffi_records_reuse_the_slots_of_the_producer() {
     sources.at(::fixy::index<5>()).requires_grad = 2;
     const CrucibleMeta& first = sources.at(::fixy::index<0>());
     const CrucibleMeta& fourth = sources.at(::fixy::index<3>());
+    const auto typed_at = [](const CrucibleMeta& record, uint32_t count) noexcept {
+        return crucible::vessel::as_meta_typed(&record, count);
+    };
 
     crucible::Vigil vigil;
-    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    crucible::OpRecordStack& stack = vigil.op_record_stack(vigil.mint_producer_context());
 
-    const auto three = collect_ranks(
-        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&first, 3), 3, vigil.op_record_slots(fg)));
-    EXPECT(has_ranks(three, ::fixy::FixedArray<uint8_t, 3>{1, 2, 3}), "the first call reads its three records");
-
-    const auto one = collect_ranks(crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&fourth, 1), 1,
-                                                                        vigil.op_record_slots(fg)));
-    EXPECT(has_ranks(one, ::fixy::FixedArray<uint8_t, 1>{4}),
-           "a call with one record reads no record of the call before");
+    EXPECT(has_ranks(decode_in_frame(stack, typed_at(first, 3), 3).value_or(Ranks{}),
+                     ::fixy::FixedArray<uint8_t, 3>{1, 2, 3}),
+           "the first call reads its three records");
+    EXPECT(
+        has_ranks(decode_in_frame(stack, typed_at(fourth, 1), 1).value_or(Ranks{}), ::fixy::FixedArray<uint8_t, 1>{4}),
+        "a call with one record reads no record of the call before");
 
     // Positions 3, 4 and 5: the decode writes two slots and refuses the
     // third record, so the op records nothing.
+    EXPECT(decode_in_frame(stack, typed_at(fourth, 3), 3).is_none(), "a call with a refused record gives no View");
     EXPECT(
-        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&fourth, 3), 3, vigil.op_record_slots(fg))
-            .is_none(),
-        "a call with a refused record gives no View");
-    const auto after_refusal = collect_ranks(
-        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(&first, 1), 1, vigil.op_record_slots(fg)));
-    EXPECT(has_ranks(after_refusal, ::fixy::FixedArray<uint8_t, 1>{1}),
-           "a call after a refused call reads no record of the refused call");
+        has_ranks(decode_in_frame(stack, typed_at(first, 1), 1).value_or(Ranks{}), ::fixy::FixedArray<uint8_t, 1>{1}),
+        "a call after a refused call reads no record of the refused call");
 
-    const auto none_read =
-        crucible::vessel::decode_ffi_records(crucible::vessel::as_meta_typed(nullptr, 0), 0, vigil.op_record_slots(fg));
-    EXPECT(none_read.is_some(), "an op with no tensor decodes");
-    EXPECT(collect_ranks(none_read).size() == 0, "a call with no record reads no record of the call before");
+    const auto none_read = decode_in_frame(stack, crucible::vessel::as_meta_typed(nullptr, 0), 0);
+    const bool is_none_read_empty =
+        none_read.match([](Ranks const& ranks) noexcept { return ranks.size() == 0; }, [] noexcept { return false; });
+    EXPECT(is_none_read_empty, "an op with no tensor decodes, and reads no record of the call before");
+
+    EXPECT(decode_in_frame(stack, typed_at(first, 3), crucible::kMaxOpRecords + 1).is_none(),
+           "a count past the slots of the stack is refused");
+
+    // A thunk that runs while the frame of an outer op is open.
+    {
+        const crucible::OpRecordFrame outer{stack, 3};
+        const auto outer_slots = outer.slots();
+        const auto outer_records = outer_slots.match(
+            [&typed_at, &first](::fixy::View<crucible::TensorMeta> slots) noexcept {
+                return crucible::vessel::decode_ffi_records(typed_at(first, 3), slots);
+            },
+            [] noexcept { return ::fixy::Option<::fixy::View<const crucible::TensorMeta>>{::fixy::none}; });
+        EXPECT(has_ranks(decode_in_frame(stack, typed_at(fourth, 2), 2).value_or(Ranks{}),
+                         ::fixy::FixedArray<uint8_t, 2>{4, 5}),
+               "a nested call reads its own records");
+        EXPECT(has_ranks(collect_ranks(outer_records), ::fixy::FixedArray<uint8_t, 3>{1, 2, 3}),
+               "a nested call writes no record of the op around it");
+        EXPECT(decode_in_frame(stack, typed_at(first, 3), crucible::kMaxOpRecords - 2).is_none(),
+               "a nested call past the free slots is refused");
+    }
+    EXPECT(stack.held() == 0, "each frame gives its slots back");
 }
 
 void test_schema_name_typed() {
