@@ -3077,6 +3077,11 @@ fixy_neg_compile_test(neg_sess_crash_delegation_specialized_after_query
 # coordinated label.  The test runs their Video-on-Demand example.
 fixy_test(test_session_rollback)
 
+# The walk of a checkpoint pair counts its work and stops at a bound, so a
+# large pair gets TooManyConfigurations before the operation limit of a
+# constant evaluation.
+fixy_test(test_session_checkpoint_bound)
+
 # HS14 for mint_checkpoint_session and for the one-endpoint refusal.
 # Each fixture is one way for one side to choose alone, or one rule of
 # the compliance check.

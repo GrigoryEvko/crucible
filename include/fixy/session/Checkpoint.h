@@ -195,7 +195,7 @@ enum class CheckpointVerdict : std::uint8_t {
     RollToImposedCheckpoint,
     // A Continue with no loop, or a loop whose body never reaches a head.
     LoopUnresolved,
-    // The model has more configurations than the bound admits.
+    // The walk of the model needs more work than its bound admits.
     TooManyConfigurations,
 };
 
@@ -218,7 +218,25 @@ enum class Kind : std::uint8_t {
     Unknown
 };
 
-inline constexpr std::size_t configuration_bound = 4096;
+// The bound of the work of one walk.  The walk admits each edge of the
+// model, and the admit compares the next configuration with each
+// configuration that the walk saw.  One compare is one unit of work, and
+// one admit is admit_work units more, for its unfold, its reads of the
+// protocol and its label exchange.  So the work grows with the edges times
+// the configurations, and a wide choice costs as much as a long chain.  A
+// walk past the bound ends with TooManyConfigurations.
+//
+// The bound is below the operation limit of a constant evaluation
+// (-fconstexpr-ops-limit=33554432 in this project) for the shapes that the
+// tests try: a chain, a row of wide choices and a row of shared arms.  A
+// count of configurations cannot do that: a chain of eight branches meets
+// the limit near 800 configurations, and a row of choices with 150 labels
+// near 120.  The work of each of these at the limit is more than 360000
+// units, and the pair of 321 configurations of the tests needs 116132.  The
+// check of the shape before the walk counts admit_work units for each node
+// that it visits, in the same bound.
+inline constexpr std::size_t work_bound = 196608;
+inline constexpr std::size_t admit_work = 64;
 inline constexpr int unfold_bound = 64;
 inline constexpr int depth_bound = 256;
 
@@ -288,16 +306,21 @@ consteval bool payload_admitted(info payload) {
 
 consteval bool is_primitive(Kind kind) { return kind == Kind::Commit || kind == Kind::Roll || kind == Kind::Abort; }
 
-// Complexity: linear in the size of the protocol tree.
-consteval bool shaped(info type, bool at_branch, int depth) {
-    if (depth > depth_bound) return false;
+// The check visits the protocol as a tree, so two branches that share one
+// arm visit it two times, and the tree can be far larger than the protocol.
+// Each visit is admit_work units of `work`, and a visit past work_bound
+// answers false.  Complexity: linear in the size of the protocol tree, and
+// at most work_bound / admit_work visits.
+consteval bool shaped(info type, bool at_branch, int depth, std::size_t& work) {
+    work += admit_work;
+    if (depth > depth_bound || work > work_bound) return false;
     switch (kind_of(type)) {
         case Kind::End:
         case Kind::Continue:
             return true;
         case Kind::Send:
         case Kind::Recv:
-            return payload_admitted(argument(type, 0)) && shaped(argument(type, 1), false, depth + 1);
+            return payload_admitted(argument(type, 0)) && shaped(argument(type, 1), false, depth + 1, work);
         case Kind::Select:
         case Kind::Offer: {
             const BranchList branches = branches_of(type);
@@ -305,14 +328,14 @@ consteval bool shaped(info type, bool at_branch, int depth) {
             const std::size_t branch_count = branches.size();
             if (branch_count == 0) return false;
             for (std::size_t place = 0; place < branch_count; ++place) {
-                if (!shaped(branch[place], true, depth + 1)) return false;
+                if (!shaped(branch[place], true, depth + 1, work)) return false;
             }
             return true;
         }
         case Kind::Loop:
-            return shaped(argument(type, 0), false, depth + 1);
+            return shaped(argument(type, 0), false, depth + 1, work);
         case Kind::Commit:
-            return at_branch && shaped(argument(type, 0), false, depth + 1);
+            return at_branch && shaped(argument(type, 0), false, depth + 1, work);
         case Kind::Roll:
         case Kind::Abort:
             return at_branch;
@@ -371,14 +394,22 @@ consteval Party initial_party(info protocol) {
 // `seen` holds each configuration that the walk admitted, and `pending`
 // each admitted configuration that the walk has not stepped yet.  Each is
 // a stack of fixy/session/Registry.h, read through a pointer, so
-// the walk changes no vector.
+// the walk changes no vector.  `work` counts the units of work_bound.
 struct Exploration {
     tr::stack<Configuration> seen;
     tr::stack<Configuration> pending;
     CheckpointVerdict verdict = CheckpointVerdict::Compliant;
+    std::size_t work = 0;
 };
 
+// Admits one edge into `next`.  The work of the admit is counted before the
+// scan of `seen`, so a walk past work_bound ends before it does the work.
 consteval void admit(Exploration& run, Configuration next) {
+    run.work += admit_work + run.seen.top;
+    if (run.work > work_bound) {
+        run.verdict = CheckpointVerdict::TooManyConfigurations;
+        return;
+    }
     if (!unfold(next.left) || !unfold(next.right)) {
         run.verdict = CheckpointVerdict::LoopUnresolved;
         return;
@@ -386,10 +417,6 @@ consteval void admit(Exploration& run, Configuration next) {
     const Configuration* const known = run.seen.items;
     for (std::size_t place = 0; place < run.seen.top; ++place) {
         if (same_configuration(known[place], next)) return;
-    }
-    if (run.seen.top >= configuration_bound) {
-        run.verdict = CheckpointVerdict::TooManyConfigurations;
-        return;
     }
     tr::push(run.seen, next);
     tr::push(run.pending, next);
@@ -466,16 +493,19 @@ consteval CheckpointVerdict choose(Exploration& run, const Party& active, const 
     return CheckpointVerdict::Compliant;
 }
 
-// Complexity: the number of reachable configurations times the cost of
-// the visited-set lookup, which is linear, so quadratic in the number of
-// configurations.  The bound caps it.
+// The check of the shape and the walk share one bound of work.
+// Complexity: the number of edges times the cost of the visited-set
+// lookup, which is linear in the configurations.  work_bound caps it.
 consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) {
-    if (!shaped(left_protocol, false, 0) || !shaped(right_protocol, false, 0)) {
-        return CheckpointVerdict::NotCheckpointShaped;
+    std::size_t shape_work = 0;
+    if (!shaped(left_protocol, false, 0, shape_work) || !shaped(right_protocol, false, 0, shape_work)) {
+        return shape_work > work_bound ? CheckpointVerdict::TooManyConfigurations
+                                       : CheckpointVerdict::NotCheckpointShaped;
     }
     const Party left_start = initial_party(left_protocol);
     const Party right_start = initial_party(right_protocol);
     Exploration run{};
+    run.work = shape_work;
     admit(run, Configuration{left_start, right_start});
     while (run.verdict == CheckpointVerdict::Compliant && run.pending.top != 0) {
         const Configuration here = run.pending.items[run.pending.top - 1];
