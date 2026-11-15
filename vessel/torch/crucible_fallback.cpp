@@ -119,9 +119,9 @@ using crucible::vessel::phase_flag_bits;
 // =====================================================================
 // Schema hash cache
 //
-// One process-wide table: the address of an OperatorHandle gives its schema
-// hash and its two flags.  Each fact depends only on the operator, so each
-// thread reads the same table.  The table is not thread-local, because the
+// One process-wide table: the key of an operator gives its schema hash and
+// its two flags.  Each fact depends only on the operator, so each thread
+// reads the same table.  The table is not thread-local, because the
 // TLS block of this library goes into the static TLS of the process (the
 // contract flag of foundation has the initial-exec model), and dlopen finds
 // only a small surplus there with the default glibc tunables.
@@ -138,16 +138,26 @@ using crucible::vessel::phase_flag_bits;
 // path answers at compile time.  The table keeps the hot boxed path at one
 // slot read.
 //
-// `key` carries the c10::OperatorHandle pointer that PyTorch handed
-// to us across the boxed-fallback ABI.  It is wrapped in
-// `Tagged<const void*, source::External>` to thread the FFI
-// provenance into the type system: the pointer is owned by ATen's
-// schema registry, never freed for the program's lifetime, and treated
-// as identity-only here (compared, never dereferenced).  The wrapper
-// is regime-1 EBO collapse, so the slot stays at 16B and the cache
-// stays L1-resident.  The alias and mint_external_op_key keep the
-// spelling in one place, so the declaration and the assignment below
-// cannot drift apart.
+// The key of an operator is the address of its c10::OperatorName, which
+// OperatorHandle::operator_name() gives as a reference into the
+// OperatorEntry of the dispatcher.  The dispatcher keeps one OperatorEntry
+// for each operator while the operator has a registration.  The operators
+// of ATen and of each loaded library keep their entries for the life of the
+// process, so the address names one operator.  An operator that loses each
+// registration can free its entry, and a later operator at that address
+// would then read the old facts.
+//
+// The address of the OperatorHandle itself is not a key.  A call through
+// torch.ops gives the fallback a copy of the handle on the stack of the
+// caller, so two operators that Python calls at one stack depth give one
+// handle address.
+//
+// The key is wrapped in `Tagged<const void*, source::External>` to thread
+// the FFI provenance into the type system.  It is identity-only here
+// (compared, never dereferenced).  The wrapper is regime-1 EBO collapse,
+// so the slot stays at 32B and the cache stays L1-resident.  The alias and
+// mint_external_op_key keep the spelling in one place, so the declaration
+// and the assignment below cannot drift apart.
 using ExternalOpKey = ::fixy::Tagged<const void*, ::fixy::tags::source::External>;
 
 [[nodiscard]] constexpr ExternalOpKey mint_external_op_key(const void* op) noexcept {
@@ -197,14 +207,18 @@ struct SchemaInfo {
 // gave the fallback 156 instructions more than this call.
 [[nodiscard, gnu::noinline]] static SchemaInfo get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op,
                                                                const c10::FunctionSchema& schema) {
-    // The handle's address is the cache key. bit_cast reproduces it as an
-    // integer for the index arithmetic; the pointer itself is compared
-    // below, so the integer never turns back into one.
-    const auto idx = (std::bit_cast<std::uintptr_t>(&op) >> 4) & SCHEMA_CACHE_MASK;
+    // The address of the operator name is the cache key.  bit_cast gives it
+    // as an integer for the index arithmetic.  The lookup compares the key
+    // itself, so the integer never turns back into a pointer.
+    const ExternalOpKey key = mint_external_op_key(&op.operator_name());
+    const auto idx = (std::bit_cast<std::uintptr_t>(key.value()) >> 4) & SCHEMA_CACHE_MASK;
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
         SchemaHashSlot& slot = get_schema_slot(idx + probe);
         const uint64_t state = slot.state.load_acquire();
-        if (state == SLOT_READY && slot.key.value() == &op) [[likely]]
+        // The compare reads the whole key of the slot, not only its index.
+        // Two operators whose keys give one index take two slots of the
+        // window, and neither one reads the facts of the other.
+        if (state == SLOT_READY && slot.key.value() == key.value()) [[likely]]
             return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0};
         if (state == SLOT_EMPTY) break;
     }
@@ -260,15 +274,13 @@ struct SchemaInfo {
     // same operator at one time can fill two slots, and each slot holds the
     // same facts.
     //
-    // Re-tag at the FFI source: the OperatorHandle pointer just
-    // crossed the boxed-fallback boundary, so it carries source::External
-    // until something downstream proves otherwise.  Tagged has no public
-    // constructor, so the mint is the one door; the wrapper is
-    // move-assigned into the slot at zero runtime cost.
+    // The key carries source::External: the operator name crossed the
+    // boxed-fallback boundary.  The copy into the slot costs nothing at run
+    // time.
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
         SchemaHashSlot& slot = get_schema_slot(idx + probe);
         if (slot.state.cas_acq_rel(SLOT_EMPTY, SLOT_CLAIMED).is_ok()) {
-            slot.key = mint_external_op_key(&op);
+            slot.key = key;
             slot.hash = schema_hash;
             slot.flags = (mutable_op ? FLAG_MUTABLE : 0) | (foreach_op ? FLAG_FOREACH : 0);
             slot.state.store_release(SLOT_READY);
