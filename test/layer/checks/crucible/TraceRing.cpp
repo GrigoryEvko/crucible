@@ -29,4 +29,12 @@ static_assert(offsetof(TraceRing, head) == 0 && offsetof(TraceRing, tail) == 64
                   && offsetof(TraceRing, meta_starts) == 256 + sizeof(TraceRing::Entry) * TraceRing::CAPACITY,
               "the counters sit on separate cache lines ahead of the arrays");
 
+// A reservation only moves, and its moves are those of its bytes.  An Option
+// of a reservation moves it through the owning slot.
+using HeldReservation = ::fixy::Option<TraceRing::Reservation>;
+static_assert(__is_trivially_copyable(TraceRing::Reservation));
+static_assert(!__is_constructible(TraceRing::Reservation, TraceRing::Reservation const&));
+static_assert(__is_nothrow_constructible(HeldReservation, HeldReservation&&));
+static_assert(__is_nothrow_assignable(HeldReservation&, HeldReservation&&));
+
 }  // namespace crucible

@@ -229,14 +229,10 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         Reservation& operator=(const Reservation&) = delete("one reservation fills one slot of the ring");
         ~Reservation() = default;
 
-        // The moves have a body, so the token is not trivially copyable.  An
-        // Option copies the bytes of a trivially copyable payload with its
-        // copy assignment, and this token has none.
-        Reservation(Reservation&& other) noexcept : head_{other.head_} {}
-        Reservation& operator=(Reservation&& other) noexcept {
-            head_ = other.head_;
-            return *this;
-        }
+        // The moves are those of the bytes.  The token only moves, so an
+        // Option of a token takes the owning slot, which moves it.
+        Reservation(Reservation&&) noexcept = default;
+        Reservation& operator=(Reservation&&) noexcept = default;
 
     private:
         explicit constexpr Reservation(uint64_t reserved_head) noexcept : head_{reserved_head} {}
