@@ -10,11 +10,10 @@
 #   1. Compiles `source.bpf.c` with `clang -target bpf -O2 -g`.
 #   2. Writes the bytes of the object as a list of literals with
 #      `xxd -i`, and writes the embed unit that includes that list.  The
-#      embed unit defines two const symbols with C linkage:
-#          extern const unsigned char  <name>_bpf_bytecode[];
-#          extern const unsigned int   <name>_bpf_bytecode_len;
-#      Userspace loader code references those externs from a
-#      crucible::perf TU.
+#      embed unit defines the function
+#          crucible::perf::detail::ForeignBytes <name>_bpf_object() noexcept;
+#      which include/crucible/perf/detail/BpfLoader.h declares.  The
+#      facade of the program passes its result to the loader.
 #   3. Appends the embed unit to the global property
 #      CRUCIBLE_BPF_EMBED_SOURCES.  After all crucible_bpf_program()
 #      calls finish, the parent CMakeLists pulls that property and
@@ -115,7 +114,7 @@ endif()
 # add_library line, the new embed source will be silently dropped
 # from the static library — the BPF program will compile cleanly,
 # the .o will be embedded, but the userspace loader will get a link
-# error for `<new_name>_bpf_bytecode`.
+# error for `<new_name>_bpf_object`.
 #
 # Discipline: ALL `crucible_bpf_program(...)` calls MUST appear in
 # the root CMakeLists.txt BEFORE the `add_library(crucible_perf ...)`
@@ -141,15 +140,10 @@ set_property(GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES "")
 # wire-contract `meta` map's `layout_hash` gates a runtime mismatch
 # but compile-time agreement is the primary discipline.
 #
-# The embedded array is named exactly `<name>_bpf_bytecode` (with a
-# companion `<name>_bpf_bytecode_len`).  Userspace code uses:
-#
-#     extern "C" {
-#         extern const unsigned char  <name>_bpf_bytecode[];
-#         extern const unsigned int   <name>_bpf_bytecode_len;
-#     }
-#
-# and passes that pair to `bpf_object__open_mem(...)`.
+# The embed unit defines `<name>_bpf_object()`, which gives the bytes of the
+# object as a ForeignBytes of include/crucible/perf/detail/BpfLoader.h.  That
+# header declares the function of each program, and the facade passes its
+# result to `bpf_object__open_mem(...)` through the loader.
 function(crucible_bpf_program name source)
   if (NOT CRUCIBLE_HAVE_BPF)
     return()
@@ -234,15 +228,20 @@ function(crucible_bpf_program name source)
     VERBATIM
     COMMENT "Embedding BPF bytecode for ${name}")
 
-  # The embed unit defines the two symbols that the userspace loader
-  # declares.  The array is const, so the compiler puts it in .rodata and
-  # not in writable .data.  The array has the alignment 8, as the ELF
-  # object of a bpftool skeleton has, because the ELF64 headers hold
-  # 8-byte words and libelf reads them in place.  The unit includes the
-  # list of the embed command, so the dependency file of its compile and
-  # the direct mode of ccache name the list.  The unit does not use an
-  # embed directive, because ccache 4.12 hashes no file that the directive
-  # names.  A changed object then gets a hit on the stale array.
+  # The embed unit defines the function <name>_bpf_object that
+  # include/crucible/perf/detail/BpfLoader.h declares.  The function gives
+  # the address and the length of the bytes of the object as a ForeignBytes,
+  # because bpf_object__open_mem of libbpf reads them in place as a pointer
+  # and a length.  The bytes are a C array of internal linkage, so the unit
+  # holds them in an opt-out region of the class ABI.  The array is
+  # constexpr, so the compiler puts it in .rodata and not in writable .data.
+  # The array has the alignment 8, as the ELF object of a bpftool skeleton
+  # has, because the ELF64 headers hold 8-byte words and libelf reads them
+  # in place.  The unit includes the list of the embed command, so the
+  # dependency file of its compile and the direct mode of ccache name the
+  # list.  The unit does not use an embed directive, because ccache 4.12
+  # hashes no file that the directive names.  A changed object then gets a
+  # hit on the stale array.
   #
   # The configure step writes the unit, and it writes the file again only
   # when its content changes.  The unit keeps the suffix .c, which is its
@@ -250,12 +249,26 @@ function(crucible_bpf_program name source)
   # OBJECT_DEPENDS makes its compile wait for the list.
   file(CONFIGURE OUTPUT ${_BPF_EMBED_C} @ONLY CONTENT
 "// The embed unit of the BPF object @name@.bpf.o.  cmake/CrucibleBpf.cmake writes it.
-extern \"C\" {
-alignas(8) extern const unsigned char @name@_bpf_bytecode[] = {
+#include <crucible/perf/detail/BpfLoader.h>
+#include <foundation/Quarantine.h>
+
+namespace crucible::perf::detail {
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length\")
+
+namespace {
+
+alignas(8) constexpr unsigned char object_bytes[] = {
 #include \"@name@_bpf_bytecode.inc\"
 };
-extern const unsigned int @name@_bpf_bytecode_len = sizeof(@name@_bpf_bytecode);
-}
+
+}  // namespace
+
+ForeignBytes @name@_bpf_object() noexcept { return ForeignBytes{.abi = object_bytes, .size = sizeof(object_bytes)}; }
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+}  // namespace crucible::perf::detail
 ")
   set_source_files_properties(${_BPF_EMBED_C} PROPERTIES
     LANGUAGE CXX

@@ -45,12 +45,29 @@ struct ForeignName {
     ::fixy::TextView text{};
 };
 
-// The bytecode of a BPF object, which the build embeds as an array of C
-// linkage, and which bpf_object__open_mem reads.
+// The bytecode of a BPF object, which an embed unit of the build holds, and
+// which bpf_object__open_mem reads in place.
 struct ForeignBytes {
     const unsigned char* abi = nullptr;
     std::size_t size = 0;
 };
+
+// The bytes of each BPF object that the build embeds.  cmake/CrucibleBpf.cmake
+// compiles each program that CMakeLists.txt names with
+// crucible_bpf_program(NAME ...), and it writes one embed unit for the
+// object.  The unit holds the bytes, and it defines the function
+// NAME_bpf_object.  A new program needs its declaration here, because the
+// build refuses a definition with no declaration (-Wmissing-declarations).
+// A build with no BPF substrate writes no embed unit and compiles no facade,
+// so no unit calls these functions.
+[[nodiscard]] ForeignBytes sense_hub_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes sched_switch_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes pmu_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes lock_contention_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes syscall_latency_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes sched_tp_btf_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes syscall_tp_btf_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes sense_hub_v2_bpf_object() noexcept;
 
 #define CRUCIBLE_PERF_FOREIGN_NAME(literal) \
     (::crucible::perf::detail::ForeignName{.abi = (literal), .text = ::fixy::TextView{literal}})

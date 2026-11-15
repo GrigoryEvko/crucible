@@ -6,11 +6,6 @@
 #include <cstdint>
 #include <utility>
 
-extern "C" {
-extern const unsigned char sched_tp_btf_bpf_bytecode[];
-extern const unsigned int sched_tp_btf_bpf_bytecode_len;
-}
-
 namespace crucible::perf {
 
 namespace {
@@ -29,8 +24,7 @@ SchedTpBtf::~SchedTpBtf() = default;
     const detail::RingSpec spec{
         .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("sched_tp_btf"),
                  .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_sched_tp_btf"),
-                 .bytecode = {.abi = sched_tp_btf_bpf_bytecode,
-                              .size = static_cast<std::size_t>(sched_tp_btf_bpf_bytecode_len)},
+                 .bytecode = detail::sched_tp_btf_bpf_object(),
                  .probe_tracepoints = false,
                  .load_advice = "(apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel < 5.5, "
                                 "CONFIG_DEBUG_INFO_BTF=n, or verifier rejected)",

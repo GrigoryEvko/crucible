@@ -6,11 +6,6 @@
 #include <cstdint>
 #include <utility>
 
-extern "C" {
-extern const unsigned char syscall_tp_btf_bpf_bytecode[];
-extern const unsigned int syscall_tp_btf_bpf_bytecode_len;
-}
-
 namespace crucible::perf {
 
 namespace {
@@ -32,8 +27,7 @@ SyscallTpBtf::~SyscallTpBtf() = default;
     const detail::RingSpec spec{
         .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("syscall_tp_btf"),
                  .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_syscall_tp_btf"),
-                 .bytecode = {.abi = syscall_tp_btf_bpf_bytecode,
-                              .size = static_cast<std::size_t>(syscall_tp_btf_bpf_bytecode_len)},
+                 .bytecode = detail::syscall_tp_btf_bpf_object(),
                  .probe_tracepoints = false,
                  .load_advice = "(apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel < 5.5, "
                                 "CONFIG_DEBUG_INFO_BTF=n, or verifier rejected)",

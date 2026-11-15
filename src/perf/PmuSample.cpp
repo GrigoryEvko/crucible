@@ -15,11 +15,6 @@
 #include <cstdint>
 #include <utility>
 
-extern "C" {
-extern const unsigned char pmu_sample_bpf_bytecode[];
-extern const unsigned int pmu_sample_bpf_bytecode_len;
-}
-
 namespace crucible::perf {
 
 namespace {
@@ -176,7 +171,7 @@ namespace {
     const detail::LoadSpec spec{
         .facade = facade,
         .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_pmu_sample"),
-        .bytecode = {.abi = pmu_sample_bpf_bytecode, .size = static_cast<std::size_t>(pmu_sample_bpf_bytecode_len)},
+        .bytecode = detail::pmu_sample_bpf_object(),
         .probe_tracepoints = false,
         .load_advice = "(apply CAP_BPF+CAP_PERFMON; verifier rejected, missing CAP_BPF, or kernel too old)",
         .attach_advice = "no perf_event programs attached (apply CAP_PERFMON; kernel.perf_event_paranoid > 2 "

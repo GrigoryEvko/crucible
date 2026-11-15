@@ -7,11 +7,6 @@
 #include <cstdint>
 #include <utility>
 
-extern "C" {
-extern const unsigned char sense_hub_bpf_bytecode[];
-extern const unsigned int sense_hub_bpf_bytecode_len;
-}
-
 namespace crucible::perf {
 
 namespace {
@@ -36,7 +31,7 @@ SenseHub::~SenseHub() = default;
     const detail::LoadSpec spec{
         .facade = facade,
         .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_senses"),
-        .bytecode = {.abi = sense_hub_bpf_bytecode, .size = static_cast<std::size_t>(sense_hub_bpf_bytecode_len)},
+        .bytecode = detail::sense_hub_bpf_object(),
         .attach_advice = "no programs attached (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel missing "
                          "every tracepoint, or lacking CAP_PERFMON or CAP_DAC_READ_SEARCH)",
     };

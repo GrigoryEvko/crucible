@@ -6,11 +6,6 @@
 #include <cstdint>
 #include <utility>
 
-extern "C" {
-extern const unsigned char syscall_latency_bpf_bytecode[];
-extern const unsigned int syscall_latency_bpf_bytecode_len;
-}
-
 namespace crucible::perf {
 
 namespace {
@@ -33,8 +28,7 @@ SyscallLatency::~SyscallLatency() = default;
     const detail::RingSpec spec{
         .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("syscall_latency"),
                  .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_syscall_latency"),
-                 .bytecode = {.abi = syscall_latency_bpf_bytecode,
-                              .size = static_cast<std::size_t>(syscall_latency_bpf_bytecode_len)},
+                 .bytecode = detail::syscall_latency_bpf_object(),
                  .min_attached = 2,
                  .attach_advice = "expected 2 tracepoint attachments (raw_syscalls/sys_enter and sys_exit), got "
                                   "fewer (kernel missing raw_syscalls tracepoints, or partial CAP_BPF rejection)"},

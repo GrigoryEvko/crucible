@@ -6,11 +6,6 @@
 #include <cstdint>
 #include <utility>
 
-extern "C" {
-extern const unsigned char sched_switch_bpf_bytecode[];
-extern const unsigned int sched_switch_bpf_bytecode_len;
-}
-
 namespace crucible::perf {
 
 namespace {
@@ -29,8 +24,7 @@ SchedSwitch::~SchedSwitch() = default;
     const detail::RingSpec spec{
         .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("sched_switch"),
                  .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_sched_switch"),
-                 .bytecode = {.abi = sched_switch_bpf_bytecode,
-                              .size = static_cast<std::size_t>(sched_switch_bpf_bytecode_len)},
+                 .bytecode = detail::sched_switch_bpf_object(),
                  .attach_advice = "no programs attached (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; kernel "
                                   "missing sched_switch tracepoint)"},
         .timeline_map = CRUCIBLE_PERF_FOREIGN_NAME("sched_timeline"),

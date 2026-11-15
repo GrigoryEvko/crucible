@@ -6,11 +6,6 @@
 #include <cstdint>
 #include <utility>
 
-extern "C" {
-extern const unsigned char lock_contention_bpf_bytecode[];
-extern const unsigned int lock_contention_bpf_bytecode_len;
-}
-
 namespace crucible::perf {
 
 namespace {
@@ -32,8 +27,7 @@ LockContention::~LockContention() = default;
     const detail::RingSpec spec{
         .load = {.facade = CRUCIBLE_PERF_FOREIGN_NAME("lock_contention"),
                  .object_name = CRUCIBLE_PERF_FOREIGN_NAME("crucible_lock_contention"),
-                 .bytecode = {.abi = lock_contention_bpf_bytecode,
-                              .size = static_cast<std::size_t>(lock_contention_bpf_bytecode_len)},
+                 .bytecode = detail::lock_contention_bpf_object(),
                  .min_attached = 2,
                  .attach_advice = "expected 2 tracepoint attachments (sys_enter_futex and sys_exit_futex), got "
                                   "fewer (kernel missing futex syscall tracepoints, or partial CAP_BPF rejection)"},
