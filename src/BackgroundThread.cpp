@@ -190,6 +190,16 @@ private:
     uint64_t max_sleep_nanos_ = MIN_SLEEP_NANOS;
 };
 
+// True when no start set the slot, or when the slot holds object.  The first
+// start sets the ring and the metadata log of the pipeline.  A start after
+// stop() continues the stream of the last pipeline, so it must name the same
+// ring and the same log: the ring holds the ops that the last pipeline did
+// not read, and the cursor of the detect stage is a position in that log.
+template <class T>
+[[nodiscard]] bool is_unset_or_holds(::fixy::WriteOnceNonNull<T*> const& slot, T const& object) noexcept {
+    return !slot.has_value() || ::fixy::same_object(::fixy::to(*slot), ::fixy::to(object));
+}
+
 }  // namespace detail::bg_pipeline
 
 struct BackgroundThread::Pipeline {
@@ -829,10 +839,12 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
 void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
                              int32_t rank_, int32_t world_size_, uint64_t device_cap) {
     CRUCIBLE_PRE(!pipeline_->thread.is_some());
+    CRUCIBLE_PRE(detail::bg_pipeline::is_unset_or_holds(ring, trace_ring));
+    CRUCIBLE_PRE(detail::bg_pipeline::is_unset_or_holds(meta_log, trace_meta_log));
     global_schema_table().seal();
     global_ckernel_table().value()->seal();
-    ring.set(&trace_ring);
-    meta_log.set(&trace_meta_log);
+    if (!ring.has_value()) ring.set(&trace_ring);
+    if (!meta_log.has_value()) meta_log.set(&trace_meta_log);
     rank = rank_;
     world_size = world_size_;
     device_capability = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(device_cap);

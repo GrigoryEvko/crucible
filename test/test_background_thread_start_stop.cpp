@@ -1,12 +1,16 @@
 // The pipeline thread of a BackgroundThread starts with start() and joins
 // with stop(), and a stop with no thread joins nothing.  A start while a
 // pipeline thread runs breaks the contract of start(), and the end of a
-// BackgroundThread joins a pipeline that runs.
+// BackgroundThread joins a pipeline that runs.  A start after stop() with
+// the same ring and log continues the stream of ops, and a start after
+// stop() with a different ring or log breaks the contract.
 // The tsan preset runs the same binary, so each start and each join has a
 // check of ThreadSanitizer.
 
 #include <crucible/BackgroundThread.h>
+#include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/Time.h>
@@ -92,11 +96,139 @@ void test_end_joins_a_running_pipeline() {
     // The end of bt stops the pipeline and joins its thread.
 }
 
+// The stream of the restart test.  The first pipeline stops in the middle of
+// an iteration.  The ring then takes more ops while no pipeline runs, and the
+// second pipeline reads them and the ops after them.
+constexpr uint64_t kOpsBeforeStop = 8 * kPeriod + 2;
+constexpr uint64_t kOpsWhileStopped = 3 * kPeriod;
+constexpr uint64_t kOpsAfterRestart = 8 * kPeriod;
+constexpr uint64_t kStreamOps = kOpsBeforeStop + kOpsWhileStopped + kOpsAfterRestart;
+
+// The ring, the log and the second ring and log of the restart tests.  Each
+// test reads the counts of its own ring and log.
+TraceRing& restart_ring() {
+    static TraceRing ring{};
+    return ring;
+}
+
+MetaLog& restart_log() {
+    static MetaLog log{::foundation::effects::testing::test().alloc};
+    return log;
+}
+
+TraceRing& control_ring() {
+    static TraceRing ring{};
+    return ring;
+}
+
+MetaLog& control_log() {
+    static MetaLog log{::foundation::effects::testing::test().alloc};
+    return log;
+}
+
+// The metadata of the output tensor of the op at index.  The op has no data
+// pointer, so the build gives it no slot of the memory plan.
+[[nodiscard]] crucible::TensorMeta output_meta(uint64_t index) noexcept {
+    crucible::TensorMeta meta{};
+    meta.ndim = 1;
+    meta.sizes[0] = crucible::tensor_dim(static_cast<int64_t>(64 + index % kPeriod));
+    meta.strides[0] = crucible::tensor_dim(1);
+    meta.dtype = crucible::ScalarType::Float;
+    meta.device_type = crucible::DeviceType::CPU;
+    meta.device_idx = 0;
+    meta.layout = crucible::Layout::Strided;
+    return meta;
+}
+
+// Records the ops of the stream from the op at index first to the op before
+// index end.  Each op before kOpsBeforeStop has one output tensor and a
+// record in the log.  Each later op has no tensor and no record, so the
+// detect stage takes its position in the log from its cursor.
+void record_stream(TraceRing& ring, MetaLog& log, uint64_t first, uint64_t end) {
+    for (uint64_t index = first; index < end; ++index) {
+        TraceRing::Entry entry{};
+        entry.schema_hash = crucible::SchemaHash{kSchemaBase + index % kPeriod};
+        entry.shape_hash = crucible::ShapeHash{0x400 + index % kPeriod};
+        MetaIndex meta_start = MetaIndex::none();
+        if (index < kOpsBeforeStop) {
+            entry.num_outputs = 1;
+            const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(index)};
+            meta_start = log.try_append(record.view());
+            assert(meta_start.is_valid());
+        }
+        assert(ring.try_append(entry, meta_start));
+    }
+}
+
+// A start after stop() with the same ring and log continues the stream.  The
+// detect stage keeps its held ops, its detector and its cursor of the log.
+// So the second pipeline reads each op one time, and it gives the regions and
+// the release of the log of a pipeline that never stops.  The ops after the
+// stop have no record, so each of them holds the cursor of the first run.
+// The last floor is then the head of the log.  A second start that set the
+// cursor to the tail of the log again would hold the floor at that tail.
+void test_start_again_continues_the_stream() {
+    const auto alloc = ::foundation::effects::testing::test().alloc;
+    TraceRing& ring = restart_ring();
+    MetaLog& log = restart_log();
+    BackgroundThread bt{alloc};
+    bt.start(startup(), ring, log);
+    record_stream(ring, log, 0, kOpsBeforeStop);
+    wait_for_pipeline(bt, ring);
+    bt.stop();
+    assert(log.tail.get() < log.head.get() && "the first pipeline holds no op with a record of the log");
+
+    record_stream(ring, log, kOpsBeforeStop, kOpsBeforeStop + kOpsWhileStopped);
+    bt.start(startup(), ring, log);
+    record_stream(ring, log, kOpsBeforeStop + kOpsWhileStopped, kStreamOps);
+    wait_for_pipeline(bt, ring);
+    bt.stop();
+
+    TraceRing& one_ring = control_ring();
+    MetaLog& one_log = control_log();
+    BackgroundThread control{alloc};
+    control.start(startup(), one_ring, one_log);
+    record_stream(one_ring, one_log, 0, kStreamOps);
+    wait_for_pipeline(control, one_ring);
+    control.stop();
+
+    assert(ring.total_produced() == kStreamOps && one_ring.total_produced() == kStreamOps);
+    assert(bt.total_processed.load_acquire() == kStreamOps && "the second pipeline read an op twice or lost one");
+    assert(control.total_processed.load_acquire() == kStreamOps);
+    assert(bt.iterations_completed.get() == control.iterations_completed.get());
+    assert(bt.works_built() == control.works_built());
+    assert(control.uncompiled_regions.total() > 0 && "the stream gave no region");
+    assert(bt.uncompiled_regions.total() == control.uncompiled_regions.total());
+    // Each pipeline is stopped, so the queues can be read.
+    for (uint32_t age = 0; age < control.uncompiled_regions.size(); ++age) {
+        assert(bt.uncompiled_regions.at(age).get().content_hash == control.uncompiled_regions.at(age).get().content_hash
+               && "the second pipeline gave a region that a pipeline with no stop does not give");
+    }
+    assert(one_log.tail.get() == one_log.head.get());
+    assert(log.tail.get() == one_log.tail.get() && "the second start moved the cursor of the log");
+}
+
+// A start after stop() that names a different ring or a different log breaks
+// the contract of start().  A refused start changes nothing, so a start with
+// the first ring and log then runs a pipeline.
+void test_start_again_with_another_ring_breaks_the_contract() {
+    TraceRing& ring = test_ring();
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    bt.start(startup(), ring, test_log());
+    bt.stop();
+    assert(::crucible::test::aborts([&] { bt.start(startup(), control_ring(), test_log()); }));
+    assert(::crucible::test::aborts([&] { bt.start(startup(), ring, control_log()); }));
+    bt.start(startup(), ring, test_log());
+    bt.stop();
+}
+
 }  // namespace
 
 int main() {
     test_start_and_stop();
     test_start_while_running_breaks_the_contract();
     test_end_joins_a_running_pipeline();
+    test_start_again_continues_the_stream();
+    test_start_again_with_another_ring_breaks_the_contract();
     return 0;
 }

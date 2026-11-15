@@ -5,5 +5,6 @@
 # --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.
 format 1
 rule step-memory
+- | test | 1.627 | test_background_thread_start_stop | The restart test gives the pipeline of each start its own trace ring and metadata log, and a control pipeline a third pair.  Under ThreadSanitizer the shadow of the fixed buffers takes the peak to 1.63 GB.  The owner decision of 2026-11-15 raises a budget that a correct change passes, with no trim and no split
 - | test | 1.638 | vessel_test_replay_equivalence | attach() loads the PyTorch dispatch library and makes a Vigil with its fixed buffers.  The first workload alone takes the peak to 1.585 GB, so a split of the workloads gives no smaller test
 @build/lib/libcrucible_dispatch.so | link | 8 | - | The link of the PyTorch dispatch library reads the 96 shard objects of vessel/torch/register.cpp.  The shards compile with -g1, and the link takes about 0.92 GB, near the limit of the kind link with its noise.  The owner set this limit on 2026-11-15 and keeps 8 GB as room for the growth of the vessel.

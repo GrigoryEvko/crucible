@@ -43,7 +43,9 @@ namespace crucible {
 // Scratch buffers (PtrMap, SlotInfo, Edge) are allocated once and reused, so
 // the drain path performs no per-call allocation.
 struct BackgroundThread {
-    // start() sets each pointer one time, and never to null.
+    // The first start() sets each pointer, and never to null.  Each later
+    // start() names the same ring and the same log, so no start sets a
+    // pointer again.
     ::fixy::WriteOnceNonNull<TraceRing*> ring = ::fixy::mint_write_once_non_null<TraceRing*>();
     ::fixy::WriteOnceNonNull<MetaLog*> meta_log = ::fixy::mint_write_once_non_null<MetaLog*>();
 
@@ -856,9 +858,15 @@ public:
     // rule: a late registration is rejected by the table contract instead of
     // racing the lookups this thread performs.
     // The ring and the metadata log are references, so no caller can give
-    // a null pointer.  The thread keeps their addresses until stop().  The
-    // init context is the authority to start the thread.  A start while a
-    // pipeline thread runs breaks the contract: call stop() first.
+    // a null pointer.  The init context is the authority to start the
+    // thread.  A start while a pipeline thread runs breaks the contract:
+    // call stop() first.
+    //
+    // A start after stop() continues the stream of the last pipeline.  The
+    // ring keeps the ops that the last pipeline did not read, and the detect
+    // stage keeps its held ops, its detector and its cursor of the log.  So
+    // a later start names the ring and the log of the first start, and a
+    // start that names a different ring or log breaks the contract.
     void start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank_ = -1,
                int32_t world_size_ = 0, uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
 
