@@ -1,7 +1,9 @@
 // What the descriptor zeroing costs, and which half of it is removable.
 //
-// The recording kernel builds a Recording<Capacity> per intercepted
-// operation and then fills the descriptors it needs.  Two separate zeroings
+// The recording kernel of an operator with an exact bound puts a list of
+// Capacity descriptors on its stack per intercepted operation, and then fills
+// the descriptors it needs.  (A kernel with no exact bound takes its
+// descriptors from the record stack of the Vigil.)  Two separate zeroings
 // happen on that path and only one of them can be taken away:
 //
 //   1. Default-construction of the descriptor array.  TensorDimArray holds

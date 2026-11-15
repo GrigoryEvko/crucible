@@ -770,17 +770,22 @@ inline constexpr bool reflection_agrees_with_codegen_v =
 // =====================================================================
 // How many metadata slots an operation can fill
 //
-// The shared limit is MAX_INLINE_METAS, and a Recording sized to it zeroes
-// 5376 bytes of stack per recorded operation. Most operators cannot come near
-// it: an operator with no tensor-list argument fills exactly one input slot
-// per tensor argument, which the table's masks already state, and a result
-// that is neither a vector nor a list fills a known number of output slots.
-// When both bounds are exact the Recording is sized to their sum, so `mm`
-// carries three slots rather than thirty-two.
+// The shared limit is MAX_INLINE_METAS. Most operators cannot come near it:
+// an operator with no tensor-list argument fills exactly one input slot per
+// tensor argument, which the table's masks already state, and a result that
+// is neither a vector nor a list fills a known number of output slots. When
+// both bounds are exact the Recording has their sum of slots, so `mm` carries
+// three slots rather than thirty-two.
 //
 // The bound is never smaller than what the operation can produce, so
 // truncation behaviour is unchanged: where the bound is exact, neither path
 // truncates, and where it is not, both stop at MAX_INLINE_METAS.
+//
+// Where the bound is exact, the kernel puts the slots on its own stack, and
+// the operation writes almost each slot.  Where it is not, a list of
+// MAX_INLINE_METAS slots on the stack would fill 5632 bytes for each call, and
+// the operation writes few of them.  So such a kernel takes its slots from a
+// frame of the record stack of the Vigil, as the boxed fallback does.
 // =====================================================================
 
 // MAX_INLINE_METAS stands for "no smaller bound", which makes the clamp below
@@ -807,6 +812,13 @@ inline constexpr uint32_t result_meta_bound_v<std::tuple<Ts...>> =
 // folds each scalar and each input tensor past Capacity into the overflow
 // digest of entry_slots.h.  An operation that cannot overflow keeps the
 // state and the code of a Recording with no digest.
+//
+// The Recording writes the records into slots that its caller gives: a list
+// on the stack of the caller, or a frame of the record stack of the Vigil.  A
+// slot of a frame holds the record of an earlier operation until the
+// Recording writes it, and each reader reads only the slots that the
+// Recording wrote.  fill_meta and scalar_result_meta write each byte of a
+// slot, so the lanes of a record past its rank stay zero.
 template <uint32_t Capacity, bool MayOverflow>
 struct Recording {
     static_assert(Capacity <= MAX_INLINE_METAS, "a Recording must not admit more metadata than either path records");
@@ -816,7 +828,14 @@ struct Recording {
     // Capacity.
     static constexpr uint32_t kSlots = Capacity > 0 ? Capacity : 1;
 
-    ::fixy::FixedArray<crucible::TensorMeta, kSlots> metas{};
+    // The slots of the records, and the list of a caller that puts them on
+    // its own stack.
+    using Slots = ::fixy::View<crucible::TensorMeta, kSlots>;
+    using List = ::fixy::FixedArray<crucible::TensorMeta, kSlots>;
+
+    explicit Recording(Slots slots) noexcept : metas{slots} {}
+
+    Slots metas;
     MetaCount counts{};
     ScalarArgs<MayOverflow> scalars{};
     [[no_unique_address]] typename input_overflow_of<MayOverflow>::type overflow{};
@@ -838,8 +857,7 @@ struct Recording {
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const crucible::TensorMeta> input_records() const& noexcept {
         const uint32_t count = counts.inputs;
         [[assume(count <= Capacity)]];
-        return ::fixy::View<const crucible::TensorMeta>{metas.view()}.window(0, count).expect(
-            "the inputs fit the slots");
+        return ::fixy::View<const crucible::TensorMeta>{metas}.window(0, count).expect("the inputs fit the slots");
     }
 
     // The records of the operation: the inputs and then the outputs.  The
@@ -847,8 +865,7 @@ struct Recording {
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const crucible::TensorMeta> records() const& noexcept {
         const uint32_t count = counts.total();
         [[assume(count <= Capacity)]];
-        return ::fixy::View<const crucible::TensorMeta>{metas.view()}.window(0, count).expect(
-            "the records fit the slots");
+        return ::fixy::View<const crucible::TensorMeta>{metas}.window(0, count).expect("the records fit the slots");
     }
 
     void add_input(const at::Tensor& tensor) {
@@ -1282,17 +1299,75 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         schema_name_registered.store(true, std::memory_order_relaxed);
     }
 
+    using OpRecording = Recording<kCapacity, kMayOverflow>;
+
+    // True when the operator has no exact bound of its records: a tensor-list
+    // argument, or a result that is a list.  Then the records go into a frame
+    // of the record stack of the Vigil, and no call fills a list of
+    // MAX_INLINE_METAS slots.
+    static constexpr bool kRecordsInFrame = kCapacity == MAX_INLINE_METAS;
+
     // Outlined so that the not-recording path above stays a gate, a branch and
     // a redispatch. Not cold: when recording is on this is the only path that
     // runs, and `cold` would put it in .text.unlikely on that claim.
+    //
+    // The frame holds the slots from the record of the inputs to the dispatch
+    // to the Vigil.  An operation that the redispatch runs opens its frame
+    // past these slots, and its frame closes before the redispatch returns.
+    // An unwind of a PyTorch error closes the frame too.  When the stack has
+    // fewer free slots than kCapacity, the kernel records through
+    // call_recording_on_stack.
     [[gnu::noinline]] static Ret call_recording(crucible::Vigil* vigil, c10::DispatchKeySet dispatch_keys,
                                                 Args... args) {
         if (!schema_name_registered.load(std::memory_order_relaxed)) [[unlikely]]
             register_schema_name_once(*vigil);
 
+        if constexpr (kRecordsInFrame) {
+            const crucible::OpRecordFrame frame{vigil->op_record_stack(vigil->mint_producer_context()), kCapacity};
+            for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
+                for (const typename OpRecording::Slots metas : slots.template window<OpRecording::kSlots>(0)) {
+                    return record_in_slots(vigil, dispatch_keys, metas, args...);
+                }
+            }
+            return call_recording_on_stack(vigil, dispatch_keys, args...);
+        } else {
+            typename OpRecording::List metas{};
+            return record_operation(vigil, dispatch_keys, metas.view(), args...);
+        }
+    }
+
+    // The record of an operator with no exact bound, into the slots of a frame
+    // or of the list of the cold path.  One body serves the two paths, so the
+    // kernel holds one copy of it.
+    [[gnu::noinline]] static Ret record_in_slots(crucible::Vigil* vigil, c10::DispatchKeySet dispatch_keys,
+                                                 typename OpRecording::Slots metas, Args... args)
+        requires kRecordsInFrame
+    {
+        return record_operation(vigil, dispatch_keys, metas, args...);
+    }
+
+    // Records the operation through a list on the stack of this call.  The
+    // kernel takes this path only when the record stack of the Vigil has
+    // fewer free slots than kCapacity, which a deep nest of operations needs.
+    // The list costs a fill of each of its slots.  The list is in this
+    // function, so the frame of call_recording holds no list.
+    CRUCIBLE_COLD static Ret call_recording_on_stack(crucible::Vigil* vigil, c10::DispatchKeySet dispatch_keys,
+                                                     Args... args)
+        requires kRecordsInFrame
+    {
+        typename OpRecording::List metas{};
+        return record_in_slots(vigil, dispatch_keys, metas.view(), args...);
+    }
+
+    // Records the inputs into the slots, runs the operation, records its
+    // results, and gives the operation to the Vigil.  The slots hold the
+    // records from the first record_argument to the dispatch, and no other
+    // operation writes them in between.
+    CRUCIBLE_INLINE static Ret record_operation(crucible::Vigil* vigil, c10::DispatchKeySet dispatch_keys,
+                                                typename OpRecording::Slots metas, Args... args) {
         // Inputs before the operation runs, because an out= argument is
         // written by it.
-        Recording<kCapacity, kMayOverflow> recording{};
+        OpRecording recording{metas};
         (record_argument(recording, args), ...);
         const auto shape_hash = compute_shape_hash(recording.input_records());
         const auto scope_hash = crucible::ScopeHash{c10::CrucibleState::get_tls_state().scope_hash()};
