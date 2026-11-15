@@ -1,12 +1,12 @@
-// The sink write of the Report family, with a standard error that is a pipe
-// with no reader.
+// The sink write of the Report family, with a standard output or a standard
+// error that is a pipe with no reader.
 //
 // A write to a pipe whose reader has gone raises SIGPIPE in the thread, and
-// the default action ends the process.  A report of an error must not end the
-// process for a second reason.  So a report and a fatal exit to standard error
-// give no SIGPIPE to the thread, and the mask of the thread after the report
-// is the mask before it.  A thread that blocked SIGPIPE before the report keeps
-// its mask, and the signal of the write stays pending for it.
+// the default action ends the process.  A report must not end the process by
+// that signal.  So a report to each stream and a fatal exit give no SIGPIPE
+// to the thread, and the mask of the thread after the report is the mask
+// before it.  A thread that blocked SIGPIPE before the report keeps its mask,
+// and the signal of the write stays pending for it.
 //
 // Each case puts a handler on SIGPIPE that marks the arrival of the signal, so
 // a write that raises the signal fails the case and does not end the process.
@@ -20,7 +20,7 @@
 
 #include "abort_probe.h"
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a report to a standard error with no reader raises no SIGPIPE in its thread")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a report to a stream with no reader raises no SIGPIPE in its thread")
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
@@ -32,10 +32,10 @@ namespace {
 volatile sig_atomic_t pipe_signal_arrived = 0;
 
 // The action of SIGPIPE and the mask of the thread that install_pipe_marker
-// replaced, and the descriptor that holds standard error during a case.
+// replaced, and the descriptor that holds the broken stream during a case.
 struct ::sigaction replaced_pipe_action{};
 ::sigset_t replaced_mask{};
-int saved_standard_error = -1;
+int saved_stream = -1;
 
 void mark_pipe_signal(int) noexcept { pipe_signal_arrived = 1; }
 
@@ -104,23 +104,28 @@ void record_mask_before_body() noexcept { mask_before_body = mask_of_thread(); }
     return ::sigpending(&pending) == 0 && ::sigismember(&pending, SIGPIPE) == 1;
 }
 
-// Makes standard error the write end of a pipe whose read end is closed.
-[[nodiscard]] bool break_standard_error() noexcept {
+// The descriptor of the stream of the sink SINK.
+[[nodiscard]] int stream_of(::foundation::core::Sink sink) noexcept {
+    return sink == ::foundation::core::Sink::Out ? STDOUT_FILENO : STDERR_FILENO;
+}
+
+// Makes the stream STREAM the write end of a pipe whose read end is closed.
+[[nodiscard]] bool break_stream(int stream) noexcept {
     int ends[2] = {-1, -1};
     if (::pipe2(ends, O_CLOEXEC) != 0) return false;
     static_cast<void>(::close(ends[0]));
-    saved_standard_error = ::fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC, 3);
-    bool const is_broken = saved_standard_error >= 0 && ::dup2(ends[1], STDERR_FILENO) == STDERR_FILENO;
+    saved_stream = ::fcntl(stream, F_DUPFD_CLOEXEC, 3);
+    bool const is_broken = saved_stream >= 0 && ::dup2(ends[1], stream) == stream;
     static_cast<void>(::close(ends[1]));
     return is_broken;
 }
 
-// Puts back the standard error that break_standard_error replaced.
-[[nodiscard]] bool repair_standard_error() noexcept {
-    if (saved_standard_error < 0) return false;
-    bool const is_repaired = ::dup2(saved_standard_error, STDERR_FILENO) == STDERR_FILENO;
-    static_cast<void>(::close(saved_standard_error));
-    saved_standard_error = -1;
+// Puts back the stream STREAM that break_stream replaced.
+[[nodiscard]] bool repair_stream(int stream) noexcept {
+    if (saved_stream < 0) return false;
+    bool const is_repaired = ::dup2(saved_stream, stream) == stream;
+    static_cast<void>(::close(saved_stream));
+    saved_stream = -1;
     return is_repaired;
 }
 
@@ -142,14 +147,15 @@ struct PipeOutcome {
 };
 
 // Runs BODY with the marker on SIGPIPE, the mask that SHOULD_BLOCK gives, and
-// a standard error with no reader.  The outcome reads the mask and the pending
+// no reader on the stream of SINK.  The outcome reads the mask and the pending
 // signals of the thread after BODY, before the case puts its state back.
 template <class Body>
-[[nodiscard]] PipeOutcome run_with_broken_pipe(bool should_block, Body const& body) noexcept {
+[[nodiscard]] PipeOutcome run_with_broken_pipe(core::Sink sink, bool should_block, Body const& body) noexcept {
     PipeOutcome outcome{};
+    int const stream = stream_of(sink);
     if (!install_pipe_marker(should_block)) return outcome;
-    if (!break_standard_error()) {
-        static_cast<void>(repair_standard_error());
+    if (!break_stream(stream)) {
+        static_cast<void>(repair_stream(stream));
         static_cast<void>(restore_pipe_action());
         return outcome;
     }
@@ -159,7 +165,7 @@ template <class Body>
     outcome.is_blocked_after = is_pipe_signal_blocked();
     outcome.is_mask_kept = is_mask_kept();
     outcome.is_pending_after = is_pipe_signal_pending();
-    bool const is_repaired = repair_standard_error();
+    bool const is_repaired = repair_stream(stream);
     outcome.is_restored = restore_pipe_action() && is_repaired;
     outcome.has_signal_arrived = has_pipe_signal_arrived();
     return outcome;
@@ -168,8 +174,9 @@ template <class Body>
 // A report to standard error with no reader raises no SIGPIPE, and the thread
 // keeps its mask, which does not block SIGPIPE, and no pending SIGPIPE.
 [[nodiscard]] int check_report_raises_no_signal() noexcept {
-    PipeOutcome const outcome = run_with_broken_pipe(
-        false, [] { core::report(core::Sink::Err, "test_report_sink_pipe: a report that no reader reads\n"); });
+    PipeOutcome const outcome = run_with_broken_pipe(core::Sink::Err, false, [] {
+        core::report(core::Sink::Err, "test_report_sink_pipe: a report that no reader reads\n");
+    });
     if (!outcome.is_prepared) return 1;
     if (outcome.has_signal_arrived) return 2;
     if (outcome.is_blocked_after) return 3;
@@ -179,11 +186,27 @@ template <class Body>
     return 0;
 }
 
+// A report to standard output with no reader raises no SIGPIPE either, so a
+// program whose reader closed standard output continues to its own exit.  The
+// thread keeps its mask and no pending SIGPIPE.
+[[nodiscard]] int check_output_report_raises_no_signal() noexcept {
+    PipeOutcome const outcome = run_with_broken_pipe(core::Sink::Out, false, [] {
+        core::report(core::Sink::Out, "test_report_sink_pipe: an output that no reader reads\n");
+    });
+    if (!outcome.is_prepared) return 31;
+    if (outcome.has_signal_arrived) return 32;
+    if (outcome.is_blocked_after) return 33;
+    if (!outcome.is_mask_kept) return 34;
+    if (outcome.is_pending_after) return 35;
+    if (!outcome.is_restored) return 36;
+    return 0;
+}
+
 // A fatal exit writes its text to standard error with no reader, and it ends
 // the process by SIGABRT and not by SIGPIPE.
 [[nodiscard]] int check_fatal_raises_no_signal() noexcept {
     bool has_aborted = false;
-    PipeOutcome const outcome = run_with_broken_pipe(false, [&has_aborted] {
+    PipeOutcome const outcome = run_with_broken_pipe(core::Sink::Err, false, [&has_aborted] {
         has_aborted =
             ::crucible::test::aborts([] { core::fatal("test_report_sink_pipe: a fatal exit that no reader reads"); });
     });
@@ -201,7 +224,7 @@ template <class Body>
 // SIGPIPE of the write stays pending for it.  The case takes the signal
 // before it unblocks SIGPIPE, so the handler marks no arrival.
 [[nodiscard]] int check_blocked_thread_keeps_its_signal() noexcept {
-    PipeOutcome const outcome = run_with_broken_pipe(true, [] {
+    PipeOutcome const outcome = run_with_broken_pipe(core::Sink::Err, true, [] {
         core::report(core::Sink::Err, "test_report_sink_pipe: a report of a thread that blocks SIGPIPE\n");
     });
     if (!outcome.is_prepared) return 21;
@@ -217,6 +240,7 @@ template <class Body>
 
 int main() {
     int failed = check_report_raises_no_signal();
+    if (failed == 0) failed = check_output_report_raises_no_signal();
     if (failed == 0) failed = check_fatal_raises_no_signal();
     if (failed == 0) failed = check_blocked_thread_keeps_its_signal();
     if (failed != 0) {

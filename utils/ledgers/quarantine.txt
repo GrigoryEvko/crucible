@@ -459,6 +459,7 @@ test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that name
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | opted-out | 40 | PROBE: a report to a standard error with no reader raises no SIGPIPE in its thread | -
+test/foundation/ | opted-out | 40 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
 test/foundation/ | opted-out | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag reads an Option through a member of a local union in a PROBE region
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -480,6 +481,7 @@ test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names n
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: a report to a standard error with no reader raises no SIGPIPE in its thread | -
+test/foundation/ | region | 1 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
 test/foundation/ | region | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
