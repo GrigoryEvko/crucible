@@ -345,8 +345,10 @@ PLANTED = {
 MUCH_MEMORY_GB = 1e6
 SMALL_MEMORY_GB = 3.0
 SMALL_MEMORY_JOBS = 2
-# The slots of the planted pool of a case (THE JOBSERVER of assay.loop.gate).
+# The slots of the planted pool of a case, and the jobs of a planted gate, which are the slice of each lease (THE
+# JOBSERVER of assay.loop.gate).
 POOL_SLOTS = 64
+PLANTED_JOBS = 1
 # The idle ticks of the pump in the case of the greedy configuration: more than a case can run.  The idle tokens of a
 # lease then stay in its jobserver until its job reads them.  The tokens that go back to the pool after IDLE_TICKS are a
 # rule of time, and the test of assay.loop.heavy holds it (THE POOL of assay.loop.heavy).
@@ -618,7 +620,9 @@ def planted_gate(work: Path, root: Path, tree: Path, mode: str, others: Mapping[
     """
     for name, build_mode in {"build": mode, **(others or {})}.items():
         plant_build(work, tree, name, build_mode)
-    return gate.Gate(root, work / "land", 1, False, read=lambda: MUCH_MEMORY_GB, pool=planted_pool(work), vessel=None)
+    return gate.Gate(
+        root, work / "land", PLANTED_JOBS, False, read=lambda: MUCH_MEMORY_GB, pool=planted_pool(work), vessel=None
+    )
 
 
 def planted_pool(work: Path) -> heavy.Pool:
@@ -1689,13 +1693,15 @@ def vessel_run_cases(expect: testing.Expect) -> None:
         alone = (build / "alone-runs.txt").read_text(encoding="utf-8").splitlines()
         expect(
             f"a vessel test that is red alone too rejects the commit with its name, and the run of the base runs only "
-            f"that test: {red_verdict.problems}, {alone}",
+            f"that test.  The capped lease of the vessel gives ctest the jobs of the slice of the gate, and not the "
+            f"{POOL_SLOTS} slots of the pool: {red_verdict.problems}, {alone}",
             not red_verdict.is_accepted
             and red_verdict.problems[0].startswith("vessel: red alone too: vessel_test_red, see ")
             and red_verdict.focus == (gate.Focus(gate.VESSEL, ("vessel_test_red",)),)
             and base_verdict.configurations == (gate.VESSEL,)
             and base_verdict.problems == red_verdict.problems
-            and alone[-1] == f"{POOL_SLOTS} vessel_test_red",
+            and alone == [f"{PLANTED_JOBS} vessel_test_red"] * len(alone)
+            and PLANTED_JOBS < POOL_SLOTS,
         )
         (build / "red.txt").unlink()
         listing_of[0] = vessel_listing(())

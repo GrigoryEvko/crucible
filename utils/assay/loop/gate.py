@@ -145,7 +145,10 @@ THE VESSEL
     of the vessel, or each vessel test after a problem of a different kind.
     The lease of the vessel counts VESSEL_GB_PER_JOB for each job, because a
     shard compile uses more than three times GB_PER_JOB (THE MEMORY of
-    assay.loop.heavy).
+    assay.loop.heavy).  The lease is capped: it never grows past the slice
+    of the gate (THE POOL of assay.loop.heavy).  The shards of a compile with
+    no hit of ccache then use at most the slice times VESSEL_GB_PER_JOB,
+    also on a quiet host, where an uncapped lease grows to each shard.
 
 THE CAREFUL SELECTION
     The selection reads files of the commit with the code of the gate, which
@@ -1400,10 +1403,11 @@ class Step:
             check_report.write_line(text)
 
     @contextlib.contextmanager
-    def leased(self, gb_per_job: float = heavy.GB_PER_JOB) -> Iterator[heavy.Share]:
+    def leased(self, gb_per_job: float = heavy.GB_PER_JOB, is_capped: bool = False) -> Iterator[heavy.Share]:
         """Hold a lease of the slot pool with the slice of the gate for the block (THE JOBSERVER).
 
-        `gb_per_job` is the memory of one job of the lease (THE MEMORY of assay.loop.heavy).
+        `gb_per_job` is the memory of one job of the lease, and a lease with `is_capped` never grows past the slice
+        (THE POOL and THE MEMORY of assay.loop.heavy).
 
         Raises:
             Stopped: If the stop event is set before the lease holds a slot
@@ -1416,6 +1420,7 @@ class Step:
             self.stop,
             is_gate=True,
             gb_per_job=gb_per_job,
+            is_capped=is_capped,
         ) as share:
             if share is None:
                 raise Stopped
@@ -1935,9 +1940,10 @@ class Step:
         began = time.monotonic()
         wait_s = 0.0
         lease: heavy.Lease | None = None
-        gb_per_job = VESSEL_GB_PER_JOB if run.mode is Mode.VESSEL else heavy.GB_PER_JOB
+        is_vessel = run.mode is Mode.VESSEL
+        gb_per_job = VESSEL_GB_PER_JOB if is_vessel else heavy.GB_PER_JOB
         try:
-            with self.leased(gb_per_job) as share:
+            with self.leased(gb_per_job, is_capped=is_vessel) as share:
                 wait_s, lease = round(share.wait_s, 1), share.lease
                 began += share.wait_s
                 problems, red, flaky = self.run_of(run, share, is_again, is_retry)

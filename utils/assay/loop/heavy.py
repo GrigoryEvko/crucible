@@ -19,7 +19,10 @@ THE POOL
     A lease is the slots of one job (leased()).  Its cap is the slice of
     the caller, with SLICE as the usual value, the size of the pool, and the
     jobs that the memory holds (THE MEMORY).  Its most slots (the burst) are
-    the size of the pool, or the jobs of the memory.  The lease waits until
+    the size of the pool, or the jobs of the memory.  A capped lease has its
+    cap as its burst, so it never grows past its cap.  An example is the
+    vessel of the gate, whose large compiles must not take the memory of a
+    quiet host (THE VESSEL of assay.loop.gate).  The lease waits until
     one slot is free, and it takes at most START_SLOTS free slots.  It makes
     a jobserver of its burst with one token for each slot less one
     (assay.core.jobserver, THE SERVER).  Its job gives MAKEFLAGS of that
@@ -751,14 +754,15 @@ def leased(
     pause: Pause = time.sleep,
     is_gate: bool = False,
     gb_per_job: float = GB_PER_JOB,
+    is_capped: bool = False,
 ) -> Iterator[Share | None]:
     """Hold a lease with the cap `want` of the pool for the block, and give its share (THE POOL).
 
     The block gets None when the stop event is set before the lease holds a slot.  The lease also holds LOCK_FILE of
     the repository of root in the shared mode (THE LOCK, THE TURNSTILE).  A lease of the gate goes before each other
     lease (THE PRIORITY OF THE GATE).  The jobs of the share are the most slots of the lease: the size of the pool, or
-    the jobs of the memory.  `gb_per_job` is the memory of one job of the lease, for its cap and for each growth (THE
-    MEMORY).
+    the jobs of the memory.  A lease with `is_capped` never grows past its cap, and its most slots are its cap.
+    `gb_per_job` is the memory of one job of the lease, for its cap and for each growth (THE MEMORY).
 
     Raises:
         jobserver.JobserverError: If the jobserver of the lease cannot be made
@@ -771,7 +775,7 @@ def leased(
     started = time.monotonic()
     value = read()
     cap = jobs_for_memory(max(1, min(want, chosen.size)), lambda: value, gb_per_job)
-    burst = max(cap, jobs_for_memory(chosen.size, lambda: value, gb_per_job))
+    burst = cap if is_capped else max(cap, jobs_for_memory(chosen.size, lambda: value, gb_per_job))
     each = f", {gb_per_job:.2f} GB for each job" if gb_per_job != GB_PER_JOB else ""
     if value is None:
         check_report.write_line(f"memory: {MEMORY_FILE} gives no {MEMORY_FIELD}, so the lease keeps {cap} jobs")

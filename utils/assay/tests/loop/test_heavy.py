@@ -307,12 +307,14 @@ def locked_slots(pool: heavy.Pool) -> int:
     return sum(heavy.is_held(pool.directory / f"{index:0{heavy.SLOT_WIDTH}d}") for index in range(pool.size))
 
 
-def captured_lease(root: Path, want: int, pool: heavy.Pool, body: Callable[[heavy.Share], object]) -> object:
+def captured_lease(
+    root: Path, want: int, pool: heavy.Pool, body: Callable[[heavy.Share], object], is_capped: bool = False
+) -> object:
     """Run the body in a lease with much memory, with the line of the memory captured, and give its result."""
 
     def run() -> object:
         """Hold the lease for the body."""
-        with heavy.leased(root, want, pool, reader([MUCH_MEMORY_GB])) as share:
+        with heavy.leased(root, want, pool, reader([MUCH_MEMORY_GB]), is_capped=is_capped) as share:
             return None if share is None else body(share)
 
     result, _ = testing.captured(run)
@@ -364,6 +366,14 @@ def lease_cases(expect: testing.Expect) -> None:
             f"after IDLE_TICKS ticks, with one slot as the minimum: (jobs taken, slots full, slots idle) "
             f"{grown_result}",
             grown_result == (6, 6, 1),
+        )
+        capped_result = captured_lease(root, 3, pool, grown, is_capped=True)
+        loose_result = captured_lease(root, 3, pool, grown)
+        expect(
+            f"a capped lease of 3 jobs in a pool of 6 slots never grows past its cap, and a lease with no cap grows to "
+            f"the pool while no other lease waits: (jobs taken, slots full, slots idle) {capped_result} and "
+            f"{loose_result}",
+            capped_result == (3, 3, 1) and loose_result == (6, 6, 1),
         )
 
 
