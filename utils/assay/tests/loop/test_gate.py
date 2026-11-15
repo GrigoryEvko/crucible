@@ -112,13 +112,15 @@ COUNTED_REGISTRY = (
 # master writes MAKEFLAGS to makeflags.txt, and the times of its start and its end to times.txt.  The mode hang runs
 # until a stop ends it.  The mode plugin makes the test guard_plugin red.
 # `derive TARGET --write --build-dir BUILD` writes inventory.txt of the build into the tree as the
-# mint inventory, or writes nothing for a build with no inventory.txt.  It exits 3 in the mode unwritten, and in the
-# mode overlap when the release build gives no cmake.txt in its wait.  With inventory.txt in the build, the test
+# mint inventory, or writes nothing for a build with no inventory.txt.  In the mode overlap, it first waits for
+# cmake.txt of each other planted build of the tree, so each other configuration builds before the write ends.  It
+# exits 3 in the mode unwritten, and in the mode overlap when a wait stops.  With inventory.txt in the build, the test
 # test_built, the planted test of the rule derived-files, is red when the tree holds a different inventory.  Each call
 # writes its first words to calls.txt of its build.
 #
-# The modes that follow wait for a file of a different run, and not for a time.  Each wait stops after 30 s, as a bound
-# for a hang.  A wait that stops makes its case fail: seen.txt then gives fewer runs, tokens.txt gives the word late,
+# The modes that follow wait for a file of a different run, and not for a time.  Each wait stops after BOUND_S, only as
+# a bound for a hang.  The bound is far above the time that a run of the gate on a busy host takes to start a different
+# configuration.  A wait that stops makes its case fail: seen.txt then gives fewer runs, tokens.txt gives the word late,
 # and deep.pid gives no pid.
 #   * meet: write met.txt, and wait until each build of the mode meet holds met.txt.  Then write the count of these
 #     builds that hold met.txt to seen.txt.  So each run of the mode meet sees the start of each other one before it
@@ -138,9 +140,11 @@ import pathlib
 import sys
 import time
 
+BOUND_S = 600.0
+
 
 def is_written(path):
-    deadline = time.monotonic() + 30.0
+    deadline = time.monotonic() + BOUND_S
     while not path.is_file() and time.monotonic() < deadline:
         time.sleep(0.02)
     return path.is_file()
@@ -156,8 +160,13 @@ if words[0] == "derive":
     mode = (build / "mode.txt").read_text().strip()
     if mode == "unwritten":
         sys.exit(3)
-    if mode == "overlap" and not is_written(build.parent / "build-release" / "cmake.txt"):
-        sys.exit(3)
+    if mode == "overlap":
+        peers = [path.parent for path in build.parent.glob("*/mode.txt") if path.parent != build]
+        began = time.monotonic()
+        is_seen = all(is_written(peer / "cmake.txt") for peer in peers)
+        (build / "waited.txt").write_text(f"{time.monotonic() - began:.1f}")
+        if not is_seen:
+            sys.exit(3)
     inventory = build / "inventory.txt"
     if inventory.is_file():
         pathlib.Path("misc").mkdir(exist_ok=True)
@@ -175,7 +184,7 @@ mode = (build / "mode.txt").read_text().strip()
 if mode == "meet":
     (build / "met.txt").write_text("1")
     peers = [path.parent for path in build.parent.glob("*/mode.txt") if path.read_text().strip() == "meet"]
-    deadline = time.monotonic() + 30.0
+    deadline = time.monotonic() + BOUND_S
     while not all((peer / "met.txt").is_file() for peer in peers) and time.monotonic() < deadline:
         time.sleep(0.02)
     (build / "seen.txt").write_text(str(sum((peer / "met.txt").is_file() for peer in peers)))
@@ -952,6 +961,16 @@ def calls_of(build: Path) -> list[str]:
     return found
 
 
+def built_targets(build: Path) -> list[str]:
+    """Return the targets of each call of the planted cmake in a build, from cmake.txt, or no target with no call.
+
+    A stop can end the run of a configuration before its build, so a build with no cmake.txt makes its case fail with the
+    output of the gate, and not with an error of the test.
+    """
+    record = build / "cmake.txt"
+    return record.read_text(encoding="utf-8").splitlines() if record.is_file() else []
+
+
 def built_cases(expect: testing.Expect) -> None:
     """Hold THE BUILT FILES: the gate writes a merged generated file from the build of default before the suite."""
     with tempfile.TemporaryDirectory(prefix="gate-built-") as work_text:
@@ -967,7 +986,7 @@ def built_cases(expect: testing.Expect) -> None:
         (build / "inventory.txt").write_text(BUILT_INVENTORY, encoding="utf-8")
         verdict, printed = testing.captured(lambda: planted.check(candidate, False))
         calls = calls_of(build)
-        builds = (build / "cmake.txt").read_text(encoding="utf-8").splitlines()
+        builds = built_targets(build)
         holds = (
             verdict.is_accepted
             and verdict.built == (INVENTORY,)
@@ -1075,7 +1094,8 @@ def built_cases(expect: testing.Expect) -> None:
 def built_fixture_cases(expect: testing.Expect) -> None:
     """Hold THE BUILT FILES for a change that adds a fixture and holds no inventory: the selection and the wait.
 
-    The run of default writes the inventory after its build, and the planted derive waits for the build of release.
+    The run of default writes the inventory after its build, and the planted derive waits for the build of each other
+    configuration.
     Each configuration of objects runs the planted test of the rule derived-files after the fold.
     """
     expect(
@@ -1102,7 +1122,9 @@ def built_fixture_cases(expect: testing.Expect) -> None:
             (tree / name / "inventory.txt").write_text(BUILT_INVENTORY, encoding="utf-8")
         verdict, printed = testing.captured(lambda: planted.check(candidate, False))
         calls = {name: calls_of(tree / name) for name in objects}
-        builds = {name: (tree / name / "cmake.txt").read_text(encoding="utf-8").splitlines() for name in objects}
+        builds = {name: built_targets(tree / name) for name in objects}
+        waited = tree / "build" / "waited.txt"
+        waited_s = waited.read_text(encoding="utf-8") if waited.is_file() else "-"
         holds = (
             verdict.is_accepted
             and verdict.built == (INVENTORY,)
@@ -1118,7 +1140,8 @@ def built_fixture_cases(expect: testing.Expect) -> None:
             f"planted test of the rule derived-files is green in each one: the gate writes {verdict.built}, with the "
             f"calls {calls} and the builds {builds}"
         )
-        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        failed = f"{label}.  The write waited {waited_s} s for the other builds.  The output of the gate:\n{printed}"
+        expect(label if holds else failed, holds)
         focused = planted_gate(work, root, tree, "clean", OTHER_BUILDS)
         alone = replace(candidate, focus=(gate.Focus("release", ("test_built",)),))
         verdict, printed = testing.captured(lambda: focused.check(alone, False))
@@ -1457,7 +1480,7 @@ def thread_cases(expect: testing.Expect) -> None:
         always = times_of(tree / "build")
         bench = times_of(tree / "build-bench-fuzz")
         seen = seen_of(tree, ("build", "build-bench-fuzz"))
-        regenerated = (tree / "build" / "cmake.txt").read_text(encoding="utf-8").splitlines()
+        regenerated = built_targets(tree / "build")
         holds = (
             verdict.is_accepted
             and regenerated[-1:] == ["--target build.ninja"]
