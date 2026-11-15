@@ -1,5 +1,6 @@
 #include <fixy/os/Topology.h>
 
+#include <foundation/core/Algorithms.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
@@ -235,6 +236,13 @@ using Path = os_door::PathText<kPathCapacity>;
     return {base_core::detail::text_first_(text), text.size()};
 }
 
+// The characters of a text of the parsers as a TextView of the base, for
+// the searches of the Region family, which call no function of the C
+// library.
+[[nodiscard]] base_core::TextView text_of(std::string_view text) noexcept {
+    return base_core::detail::text_over_(text.data(), text.size());
+}
+
 // A path that the probe builds piece by piece.  A piece that does not fit
 // makes the path partial, and a partial path reads as a file that is not
 // there.
@@ -444,16 +452,16 @@ constinit std::size_t process_cpu_count_at_load = 0;
 // available, the second one when the allocation asks for it.
 [[nodiscard]] bool probe_hugepage_2mb_available_(std::string_view sysfs_root) noexcept {
     Value const contents = read_value(PathBuilder{sysfs_root}.add("/kernel/mm/transparent_hugepage/enabled"));
-    std::string_view const text = contents.text();
-    return text.find("[always]") != std::string_view::npos || text.find("[madvise]") != std::string_view::npos;
+    base_core::TextView const text = text_of(contents.text());
+    return base_core::find(text, "[always]").is_some() || base_core::find(text, "[madvise]").is_some();
 }
 
 // The text of a line of /proc/cpuinfo after its colon and the space after
 // it, when the line starts with key.  No text when the line is another line.
 [[nodiscard]] std::string_view field_of(std::string_view line, std::string_view key) noexcept {
     if (!line.starts_with(key)) return {};
-    std::size_t const colon = line.find(':');
-    if (colon == std::string_view::npos || colon + 2 >= line.size()) return {};
+    std::size_t const colon = base_core::find(text_of(line), ':').value_or(line.size());
+    if (colon + 2 >= line.size()) return {};
     return tail_of(line, colon + 2);
 }
 
@@ -472,10 +480,9 @@ constinit std::size_t process_cpu_count_at_load = 0;
             last_break == std::string_view::npos ? std::string_view{} : std::string_view{text.data(), last_break + 1};
     }
     while (!text.empty() && (vendor.empty() || model.empty())) {
-        std::size_t const line_end = text.find('\n');
-        std::string_view const line =
-            line_end == std::string_view::npos ? text : std::string_view{text.data(), line_end};
-        text = line_end == std::string_view::npos ? std::string_view{} : tail_of(text, line_end + 1);
+        std::size_t const line_end = base_core::find(text_of(text), '\n').value_or(text.size());
+        std::string_view const line{text.data(), line_end};
+        text = line_end == text.size() ? std::string_view{} : tail_of(text, line_end + 1);
         if (vendor.empty()) {
             vendor = std::string{field_of(line, "vendor_id")};
         }
