@@ -20,5 +20,5 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-- | x86_64-debug-asan | 10038994299147 | fixtures | The migration of the product code onto the base adds the Grow, BumpArena and door types with their tests and the fixtures that the mint rule asks for, and main reached the 5% budget at 5015513ce.
-- | x86_64-debug-asan | 10731388277629 | objects | The migration of the product code onto the base adds the Grow, BumpArena and door types with their tests and the fixtures that the mint rule asks for, and main reached the 5% budget at 5015513ce.
+- | x86_64-debug-asan | 9829992367315 | fixtures | the tree grew on 2026-11-14 and 2026-11-15 by the Check family, the session caches, new tests and fixtures, and main sat just under 5% over the old baseline (run-001831 measured 21812.8 G against 20770.4 G)
+- | x86_64-debug-asan | 11952633701040 | objects | the tree grew on 2026-11-14 and 2026-11-15 by the Check family, the session caches, new tests and fixtures, and main sat just under 5% over the old baseline (run-001831 measured 21812.8 G against 20770.4 G)
