@@ -590,6 +590,69 @@ namespace detail {
 
 struct NoPayload final {};
 
+// THE LEND COUNT
+//     A borrow match gives an arm a reference into the payload.  The rule
+//     borrow-match reads one body, so a write in a callee of the arm or
+//     through a second reference escapes it.  The owning storage counts the
+//     borrow matches that lend its payload.  A write that ends the payload
+//     while the count is not zero ends the process, in each build.  The count
+//     is mutable, because a match takes a const reference, and its changes
+//     are relaxed atomic steps, so two threads can match one sum.  It holds
+//     255 lends, and one more ends the process.
+
+[[noreturn]] CRUCIBLE_COLD inline void report_lent_write_() noexcept {
+    fatal("a write ends the payload of a sum while a borrow match lends that payload to an arm");
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void report_lend_overflow_() noexcept {
+    fatal("more than 255 borrow matches lend the payload of one sum at one time");
+}
+
+constexpr void add_lend_(unsigned char& lend_count) noexcept {
+    if consteval {
+        if (lend_count == 255) report_lend_overflow_();
+        ++lend_count;
+    } else {
+        if (__atomic_fetch_add(&lend_count, 1, __ATOMIC_RELAXED) == 255) [[unlikely]] {
+            report_lend_overflow_();
+        }
+    }
+}
+
+constexpr void drop_lend_(unsigned char& lend_count) noexcept {
+    if consteval {
+        --lend_count;
+    } else {
+        __atomic_fetch_sub(&lend_count, 1, __ATOMIC_RELAXED);
+    }
+}
+
+// Ends the process while a borrow match lends the payload.  The read is a
+// plain load: a write during a match of a different thread is a race on the
+// sum itself, so only the lends of this thread count.
+constexpr void refuse_lent_write_(unsigned char const& lend_count) noexcept {
+    if (lend_count != 0) [[unlikely]] {
+        report_lent_write_();
+    }
+}
+
+// The lend of one borrow match of an owning sum, until its destructor.
+class [[nodiscard]] Lend final {
+    unsigned char& lend_count_;
+
+public:
+    constexpr explicit Lend(unsigned char& lend_count) noexcept : lend_count_{lend_count} {
+        detail::add_lend_(lend_count_);
+    }
+    constexpr ~Lend() { detail::drop_lend_(lend_count_); }
+
+    Lend(Lend const&) = delete("a lend lives in one borrow match");
+    Lend& operator=(Lend const&) = delete("a lend lives in one borrow match");
+};
+
+// A plain or a niche sum has no destructor, so its match counts no lend.
+struct NoLend final {};
+
 // The dispatch tag of the constructor that builds a full Option.
 struct SomeTag final {
     explicit constexpr SomeTag() noexcept = default;
@@ -647,6 +710,7 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
     friend class ::foundation::core::Option;
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return !NicheRead<T>::is_empty_(value_); }
+    [[nodiscard]] constexpr NoLend lend_() const noexcept { return NoLend{}; }
     constexpr void expect_value_(Fmt<> why) const noexcept {
         if (!holds_()) [[unlikely]] {
             fatal(why);
@@ -841,7 +905,8 @@ public:
 
     // The total match of a borrow: on_some gets the payload as a const
     // reference, and the Option keeps it.  The rule borrow-match of the
-    // plugin refuses an arm that assigns, moves or changes this Option.
+    // plugin refuses an arm that assigns, moves or changes this Option, and
+    // an owning Option counts the lend (THE LEND COUNT).
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
@@ -849,6 +914,7 @@ public:
         match(OnSome&& on_some, OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
                                                                   && std::is_nothrow_invocable_v<OnNone>) {
         if (!slot_.holds_()) return static_cast<OnNone&&>(on_none)();
+        [[maybe_unused]] auto const lend = slot_.lend_();
         return static_cast<OnSome&&>(on_some)(slot_.payload_());
     }
 
@@ -1200,6 +1266,7 @@ public:
     // builds.  The key is empty and comes by value, so a read keeps no key on
     // the stack.
     [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return cells_.tag_; }
+    [[nodiscard]] constexpr NoLend lend_(SumKey /*key*/) const noexcept { return NoLend{}; }
     template <std::size_t Index>
     [[nodiscard]] constexpr auto& alternative_(SumKey /*key*/) noexcept {
         return detail::alternative_of_<Index>(cells_.storage_).value_;
@@ -1245,17 +1312,20 @@ public:
 // alternative, which its destructor ends.  A borrow of the source then
 // stays a borrow of a live object.  A move assignment drops the alternative
 // that the slot holds, so a sum with a linear alternative has none.  The tag
-// names one alternative, so the slot carries the mark closed_tag.
+// names one alternative, so the slot carries the mark closed_tag.  The slot
+// counts its lends (THE LEND COUNT), and a moved slot starts with none.
 template <class... Ts>
 class[[= ::foundation::core::closed_tag{}]] SumSlotOf<false, Ts...> {
     Alternatives<Ts...> storage_;
     unsigned char tag_;
+    mutable unsigned char lend_count_ = 0;
 
 public:
     // The tag and the alternative at Index, with the key that only SumDoor
     // builds.  The key is empty and comes by value, so a read keeps no key on
     // the stack.
     [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return tag_; }
+    [[nodiscard]] constexpr Lend lend_(SumKey /*key*/) const noexcept { return Lend{lend_count_}; }
     template <std::size_t Index>
     [[nodiscard]] constexpr auto& alternative_(SumKey /*key*/) noexcept {
         return detail::alternative_of_<Index>(storage_);
@@ -1282,6 +1352,7 @@ public:
         requires(DroppablePayload<Ts> && ...)
     {
         SumSlotOf taken(static_cast<SumSlotOf&&>(other));
+        detail::refuse_lent_write_(lend_count_);
         storage_.destroy_(tag_);
         storage_.move_in_(taken.tag_, taken.storage_);
         tag_ = taken.tag_;
@@ -1296,7 +1367,10 @@ public:
     SumSlotOf(SumSlotOf const&) = delete("an owning sum is move-only: a copy would duplicate what an alternative owns");
     SumSlotOf& operator=(SumSlotOf const&) = delete("an owning sum is move-only");
 
-    constexpr ~SumSlotOf() { storage_.destroy_(tag_); }
+    constexpr ~SumSlotOf() {
+        detail::refuse_lent_write_(lend_count_);
+        storage_.destroy_(tag_);
+    }
 };
 
 // The one slot of the sums of the family.
@@ -1343,6 +1417,7 @@ class OptionSlot<T, OptionForm::plain> {
     }
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return tag_() != 0; }
+    [[nodiscard]] constexpr NoLend lend_() const noexcept { return NoLend{}; }
     // The test of expect is one compare of the tag with 1.  The cold path
     // tells a forged tag from an empty Option.
     constexpr void expect_value_(Fmt<> why) const noexcept {
@@ -1373,16 +1448,19 @@ public:
 // holds, so a linear payload has none.  The destructor is not trivial, so no
 // lifetime start over bytes builds the slot.  The annotation states that
 // fact to the rule linear-forge, which reads an annotation and not a
-// destructor.
+// destructor.  The slot counts its lends (THE LEND COUNT), and a moved slot
+// starts with none.
 template <class T>
 class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionForm::owning> {
     Alternatives<NoPayload, T> storage_{AlternativeAt<0>{}, NoPayload{}};
     bool is_engaged_ = false;
+    mutable unsigned char lend_count_ = 0;
 
     template <ChoicePayload U>
     friend class ::foundation::core::Option;
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return is_engaged_; }
+    [[nodiscard]] constexpr Lend lend_() const noexcept { return Lend{lend_count_}; }
     constexpr void expect_value_(Fmt<> why) const noexcept {
         if (!is_engaged_) [[unlikely]] {
             fatal(why);
@@ -1394,6 +1472,7 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
     [[nodiscard]] constexpr T& payload_() noexcept { return detail::alternative_of_<1>(storage_); }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return detail::alternative_of_<1>(storage_); }
     constexpr void clear_() noexcept {
+        detail::refuse_lent_write_(lend_count_);
         if (is_engaged_) {
             storage_.destroy_(1);
             is_engaged_ = false;
@@ -1441,6 +1520,7 @@ public:
     OptionSlot& operator=(OptionSlot const&) = delete("an owning Option is move-only");
 
     constexpr ~OptionSlot() {
+        detail::refuse_lent_write_(lend_count_);
         if (is_engaged_) storage_.destroy_(1);
     }
 };
@@ -1468,6 +1548,7 @@ class ResultSlot {
     }
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return tag_() != 0; }
+    [[nodiscard]] constexpr auto lend_() const noexcept { return sum_.lend_(SumDoor::key()); }
     // The test of expect is one compare of the tag with 1.  The cold path
     // tells a forged tag from an error.
     constexpr void expect_value_(Fmt<> why) const noexcept {
@@ -1630,13 +1711,14 @@ public:
     // The total match of a borrow: on_ok gets the value and on_err gets the
     // error, each as a const reference, and the Result keeps them.  The rule
     // borrow-match of the plugin refuses an arm that assigns, moves or changes
-    // this Result.
+    // this Result, and an owning Result counts the lend (THE LEND COUNT).
     template <class OnOk, class OnErr>
         requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
               && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnErr, E const&>
         match(OnOk&& on_ok, OnErr&& on_err) const& noexcept(std::is_nothrow_invocable_v<OnOk, T const&>
                                                             && std::is_nothrow_invocable_v<OnErr, E const&>) {
+        [[maybe_unused]] auto const lend = slot_.lend_();
         if (!slot_.holds_()) return static_cast<OnErr&&>(on_err)(slot_.error_());
         return static_cast<OnOk&&>(on_ok)(slot_.value_());
     }

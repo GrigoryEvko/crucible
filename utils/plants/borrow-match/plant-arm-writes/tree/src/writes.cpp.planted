@@ -79,11 +79,33 @@ int opted(Option<int>& held) {
     return value;
 }
 
+// An arm that the call gets by name, as a closure or as an object of a class,
+// and an arm that takes its payload by value, are arms too.
+int named_closure(Option<int>& held) {
+    auto arm = [&](int const& value) { held = none; return value; };
+    return held.match(arm, [] { return 0; });
+}
+
+struct Clearing {
+    Option<int>& target;
+    int operator()(int const& value) const { target = none; return value; }
+};
+
+int named_object(Option<int>& held) {
+    Clearing const arm{held};
+    return held.match(arm, [] { return 0; });
+}
+
+int by_value_arm(Option<int>& held) {
+    return held.match([&](int value) { held = none; return value; }, [] { return 0; });
+}
+
 int instances(Option<int>& source) {
     ::foundation::core::Result<int, Fault> result{6};
     Holder holder;
     return result_instance(result) + holder.member() + holder.whole() + assigned_local() + moved_local()
-         + cursor_of_the_sum(source) + generic_arm(source) + local_reference(source) + one_of() + opted(source);
+         + cursor_of_the_sum(source) + generic_arm(source) + local_reference(source) + one_of() + opted(source)
+         + named_closure(source) + named_object(source) + by_value_arm(source);
 }
 
 }  // namespace planted

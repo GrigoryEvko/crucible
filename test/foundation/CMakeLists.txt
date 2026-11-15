@@ -2372,6 +2372,17 @@ foundation_neg_compile_test(neg_core_result_borrow_match_arm_moves
 foundation_neg_compile_test(neg_core_one_of_borrow_match_arm_assigns
   "neg_core_one_of_borrow_match_arm_assigns\\.cpp:13:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(assignment held\\)"
   "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
+# An arm that the call gets by name, as a closure or as an object of a class,
+# and an arm that takes its payload by value, are arms of the rule too.
+foundation_neg_compile_test(neg_core_option_borrow_match_named_arm_assigns
+  "neg_core_option_borrow_match_named_arm_assigns\\.cpp:12:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(assignment held\\)"
+  "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
+foundation_neg_compile_test(neg_core_option_borrow_match_object_arm_assigns
+  "neg_core_option_borrow_match_object_arm_assigns\\.cpp:13:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(assignment held\\)"
+  "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
+foundation_neg_compile_test(neg_core_option_borrow_match_value_arm_assigns
+  "neg_core_option_borrow_match_value_arm_assigns\\.cpp:13:[0-9]+: error: this arm of a borrow match writes the sum that the match reads \\(assignment held\\)"
+  "an assignment, a move or a mutating call of the sum ends or changes the payload that the reference names")
 foundation_neg_compile_test(neg_core_surface_open_name
   "static assertion failed: the public member constexpr bool Probe::has_value\\(\\) const of Probe is no shared verb, no language protocol and no name of the family list"
   "in expansion of macro .CRUCIBLE_CLOSED_SURFACE.")

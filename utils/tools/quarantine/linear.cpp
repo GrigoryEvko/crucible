@@ -93,6 +93,8 @@
 //     constructor or a destructor, because GCC gives a clone a second event on
 //     a body that cp_genericize lowered.  It skips each body of a unit with an
 //     error.  A parse and an object compile read the same trees.
+//     is_body_read_here of plugin.h gives these bodies, as it gives them to
+//     the rules binding-hook and borrow-match and to the closed tags.
 //
 // THE KINDS
 //     unconsumed           the object leaves its scope at an exit, and no
@@ -3041,18 +3043,6 @@ void note_accessor_field(tree function) {
     accessor_fields[static_cast<int>(DECL_UID(function))] = walk.saw_return ? walk.field : kWholeObject;
 }
 
-// True when the rule reads the body of FUNCTION in this unit (THE BODIES).
-bool is_read_here(tree function, Place& place) {
-    place = place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine);
-    if (place.file == nullptr) {
-        return false;
-    }
-    if (is_in_instantiation(function)) {
-        return place.file_class == FileClass::base || place.file_class == FileClass::quarantined;
-    }
-    return is_walked_file(place);
-}
-
 void on_pre_genericize_linear(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
     // A clone of a constructor or a destructor gets a second event on a copy
@@ -3073,10 +3063,12 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
     if (linear_mode.checks_must_consume && is_accessor(function)) {
         note_accessor_field(function);
     }
-    Place place;
-    if (!is_read_here(function, place)) {
+    // The rule reads the bodies that is_body_read_here of plugin.h gives (THE
+    // BODIES), and the place of the function is the place of its findings.
+    if (!is_body_read_here(function, UNKNOWN_LOCATION)) {
         return;
     }
+    Place place = place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine);
     tree body = DECL_SAVED_TREE(function);
     bool has_linear = has_linear_parameter(function);
     if (linear_mode.checks_shapes) {

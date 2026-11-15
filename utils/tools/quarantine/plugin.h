@@ -2760,9 +2760,10 @@ std::string function_signature(tree function);
 // True when a rule of each body reads the code of FUNCTION in this unit: an
 // instance of a template of a base or a quarantined file in each unit that
 // makes it, and each other body of a walked file (is_walked_file).  FUNCTION
-// is null at namespace scope, where the place LOCATION decides.  The rule
-// binding-hook (binding.cpp) and the closed tags (library.cpp) read these
-// bodies.
+// is null at namespace scope, where the place LOCATION decides.  The rules
+// binding-hook (binding.cpp), borrow-match (borrow.cpp) and the rules of
+// linear.cpp, and the closed tags (library.cpp), read these bodies.  It is the
+// one test of a body for each of them.
 inline bool is_body_read_here(tree function, location_t location) {
     if (function != NULL_TREE && is_in_instantiation(function)) {
         Place place = place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine);

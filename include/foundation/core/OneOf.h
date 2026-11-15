@@ -258,7 +258,8 @@ public:
     // The total match of a borrow: the arm of the active alternative gets its
     // value as a const reference, and the OneOf keeps it.  The rule
     // borrow-match of the plugin refuses an arm that assigns, moves or changes
-    // this OneOf.
+    // this OneOf, and an owning OneOf counts the lend (THE LEND COUNT of
+    // Choice.h).
     template <class... Arms>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
              && (std::same_as<std::invoke_result_t<Arms, Ts const&>, std::invoke_result_t<Arms...[0], Ts...[0] const&>>
@@ -266,6 +267,7 @@ public:
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Arms...[0], Ts...[0] const&>
         match(Arms&&... arms) const& noexcept((std::is_nothrow_invocable_v<Arms, Ts const&> && ...)) {
         using Result = std::invoke_result_t<Arms...[0], Ts...[0] const&>;
+        [[maybe_unused]] auto const lend = slot_.lend_(detail::SumDoor::key());
         return this->template borrowed_from_<0, Result>(static_cast<Arms&&>(arms)...);
     }
 

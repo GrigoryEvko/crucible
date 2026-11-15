@@ -476,6 +476,91 @@ void test_nested_sums() {
     CRUCIBLE_FATAL_INVARIANT(Outer{wrapped}.expect("the Result holds a value").expect("the Option is full") == 9u);
 }
 
+// A payload with a destructor, so an Option of it takes the owning form.  A
+// test that ends the process in the abort probe skips the end of its locals,
+// so this payload counts no object.
+struct Handle {
+    int value = 0;
+
+    constexpr explicit Handle(int initial) noexcept : value{initial} {}
+    Handle(Handle const&) noexcept = default;
+    Handle(Handle&&) noexcept = default;
+    Handle& operator=(Handle const&) noexcept = default;
+    Handle& operator=(Handle&&) noexcept = default;
+    ~Handle() noexcept {}
+};
+
+void clear_handle(Option<Handle>& target) noexcept { target = none; }
+
+void replace_result(::foundation::core::Result<Handle, Refusal>& target) noexcept {
+    target = ::foundation::core::Result<Handle, Refusal>{::foundation::core::err(Refusal::closed)};
+}
+
+// A borrow match of one Option whose arm moves a second Option out.  A caller
+// that gives one Option for the two parameters ends the payload that the arm
+// borrows.
+[[nodiscard]] int match_and_take(Option<Handle> const& held, Option<Handle>& alias) noexcept {
+    return held.match(
+        [&alias](Handle const& handle) noexcept {
+            Option<Handle> const taken{static_cast<Option<Handle>&&>(alias)};
+            return handle.value + (taken.is_some() ? 1 : 0);
+        },
+        [] noexcept { return 0; });
+}
+
+// The rule borrow-match reads one body, so a write of the sum in a callee of
+// the arm, or through a second reference, escapes it.  The owning storage
+// counts the lend of the borrow match, and a write that ends the payload in
+// that time ends the process.  Each Option lives in its probe, so the jump of
+// the probe ends its frame with no end of the Option.
+void test_lent_write_aborts() {
+    bool const callee_aborts = ::crucible::test::aborts([] {
+        Option<Handle> held = Option<Handle>::some(Handle{71});
+        static_cast<void>(held.match(
+            [&held](Handle const& handle) noexcept {
+                clear_handle(held);
+                return handle.value;
+            },
+            [] noexcept { return 0; }));
+    });
+    CRUCIBLE_FATAL_INVARIANT(callee_aborts);
+
+    bool const alias_aborts = ::crucible::test::aborts([] {
+        Option<Handle> held = Option<Handle>::some(Handle{72});
+        static_cast<void>(match_and_take(held, held));
+    });
+    CRUCIBLE_FATAL_INVARIANT(alias_aborts);
+
+    bool const result_aborts = ::crucible::test::aborts([] {
+        ::foundation::core::Result<Handle, Refusal> held{Handle{75}};
+        static_cast<void>(held.match(
+            [&held](Handle const& handle) noexcept {
+                replace_result(held);
+                return handle.value;
+            },
+            [](Refusal const&) noexcept { return 0; }));
+    });
+    CRUCIBLE_FATAL_INVARIANT(result_aborts);
+}
+
+// The lend ends with the borrow match, also with a nested match, so a write
+// after the match keeps the payload that the write gives.
+void test_lend_ends_with_the_match() {
+    Option<Handle> held = Option<Handle>::some(Handle{73});
+    int const seen = held.match(
+        [&held](Handle const& outer) noexcept {
+            return outer.value
+                 + held.match([](Handle const& inner) noexcept { return inner.value; }, [] noexcept { return 0; });
+        },
+        [] noexcept { return 0; });
+    CRUCIBLE_FATAL_INVARIANT(seen == 146);
+    held = Option<Handle>::some(Handle{74});
+    CRUCIBLE_FATAL_INVARIANT(
+        held.match([](Handle const& handle) noexcept { return handle.value; }, [] noexcept { return 0; }) == 74);
+    held = none;
+    CRUCIBLE_FATAL_INVARIANT(held.is_none());
+}
+
 // The property: for each value and each choice of empty or full, the
 // Option agrees with a plain model of one flag and one value.  The loop
 // makes one turn exactly when the model holds a value, and expect,
@@ -719,6 +804,8 @@ int main() {
     test_forged_tag_by_union_member();
     test_forged_result_tag_by_memcpy();
     test_nested_sums();
+    test_lent_write_aborts();
+    test_lend_ends_with_the_match();
     test_agrees_with_plain_model();
     test_result_roads();
     test_result_of_unit();

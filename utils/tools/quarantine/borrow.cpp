@@ -12,11 +12,14 @@
 //     annotation, and it names no function.
 //
 // THE RECEIVER AND THE ARMS
-//     The receiver is the object of a call of a borrow match.  An arm is a
-//     lambda argument of the call whose call operator has a parameter of a
-//     reference type, because only such an arm holds a reference into the
-//     payload.  The arm on_none of an Option gets no reference, so a write
-//     there is no finding.
+//     The receiver is the object of a call of a borrow match.  An arm is an
+//     argument of the call that is an object of a class with a call operator
+//     of at least one parameter: a lambda expression, a braced object of a
+//     class, or a local variable of a closure or a class that the function of
+//     the call initializes.  A parameter by value can hold a borrow too, such
+//     as a View that a conversion makes from the payload, so the arm of a
+//     parameter by value is an arm as well.  The arm on_none of an Option has
+//     no parameter and gets no payload, so a write there is no finding.
 //
 // THE PATHS
 //     A path names an object: a variable or a parameter, and then a field or a
@@ -24,11 +27,14 @@
 //     arm, the use of a capture names a field of the closure, and the call
 //     names the value that initializes each field: the address of an object
 //     for a capture by reference, and the pointer for a capture of this.  A
-//     dereference of such a field is the path of the object that its value
-//     points at.  A capture by copy of an object names the copy, so a write to
-//     it is no finding.  A local reference names the object of its
-//     initializer, as the range of a loop over the sum does.  A static
-//     variable is the root of its own path.
+//     field of a pointer of a class arm names the object of its initializer
+//     in the same way.  The value of each field of a named arm comes from its
+//     initializer in the function of the call: one braced initializer, or one
+//     store to each field.  A dereference of such a field is the path of the
+//     object that its value points at.  A capture by copy of an object names
+//     the copy, so a write to it is no finding.  A local reference names the
+//     object of its initializer, as the range of a loop over the sum does.  A
+//     static variable is the root of its own path.
 //
 // THE WRITES
 //     In the body of an arm, these writes are findings:
@@ -52,17 +58,20 @@
 //     that it holds.
 //
 // THE BODIES
-//     The rule reads the bodies that the rule binding-hook reads (binding.cpp,
-//     THE BODIES), for the arms and for the calls.  The place of a finding is
-//     the place of the write.
+//     The rule reads the bodies that is_body_read_here of plugin.h gives, as
+//     the rule binding-hook does (binding.cpp, THE BODIES), for the arms and
+//     for the calls.  The place of a finding is the place of the write.
 //
 // THE LIMITS
 //     The rule reads the body of the arm only.  A write in a function that the
 //     arm calls, such as a free function that takes the sum by a reference that
 //     is not const, a write through a pointer or a second reference parameter
-//     to the sum, and an arm that is no lambda argument of the call, such as a
-//     named closure, give no finding.  The control control-known-gaps of utils/plants/borrow-match/
-//     pins each of them.
+//     to the sum, and an arm that a function of a different unit or a
+//     parameter of the caller gives, give no finding.  The control
+//     control-known-gaps of utils/plants/borrow-match/ pins each of them.  The
+//     owning storage of a sum (foundation/core/Choice.h) counts the borrow
+//     matches that lend its payload, and a write of the sum while a match
+//     lends the payload ends the process, in each build.
 //
 // THE ERRORS
 //     Each finding is a compile error in each build and each mode
@@ -271,19 +280,18 @@ Path pointee_path(tree node, tree closure, int depth) {
 
 // ── The arms ────────────────────────────────────────────────────────────
 
-// True when the call operator FUNCTION of an arm has a parameter of a
-// reference type (THE RECEIVER AND THE ARMS).
-bool takes_reference(tree function) {
+// True when FUNCTION is the call operator of an arm: a member operator() of a
+// class, with at least one parameter (THE RECEIVER AND THE ARMS).
+bool is_arm_operator(tree function) {
+    if (DECL_LANG_SPECIFIC(function) == nullptr || !DECL_OVERLOADED_OPERATOR_IS(function, CALL_EXPR)
+        || !DECL_FUNCTION_MEMBER_P(function)) {
+        return false;
+    }
     tree parameter = DECL_ARGUMENTS(function);
     if (parameter != NULL_TREE && DECL_OBJECT_MEMBER_FUNCTION_P(function)) {
         parameter = DECL_CHAIN(parameter);
     }
-    for (; parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
-        if (TREE_TYPE(parameter) != NULL_TREE && TYPE_REF_P(TREE_TYPE(parameter))) {
-            return true;
-        }
-    }
-    return false;
+    return parameter != NULL_TREE;
 }
 
 // The state of the walk of the body of one arm.  The instance of a generic arm
@@ -371,7 +379,7 @@ tree walk_arm_writes(tree* node_pointer, int* walk_subtrees, void* data) {
 }
 
 void record_arm(tree function) {
-    if (!takes_reference(function)) {
+    if (!is_arm_operator(function)) {
         return;
     }
     tree closure_type = DECL_CONTEXT(function);
@@ -392,9 +400,46 @@ void record_arm(tree function) {
 
 // ── The calls ───────────────────────────────────────────────────────────
 
-// The closure object of the argument NODE of a call: the CONSTRUCTOR of a
-// lambda expression, or null.
-tree closure_constructor(tree node) {
+// The value of each field of a pointer or a reference type of one arm object:
+// the path of the object that the value points at, by the DECL_UID of the
+// field (THE PATHS).
+using Pointees = std::unordered_map<int, Path>;
+
+// The state of the walk of the calls of one function: the pointees of each
+// local variable of a class type, by the DECL_UID of the variable.  The walk
+// visits an initializer before a later call that names the variable.
+struct CallWalk {
+    std::unordered_map<int, Pointees> named;
+};
+
+// True when TYPE can be the type of an arm: a class.  The join reads only the
+// classes whose call operator recorded the writes of an arm (THE RECEIVER AND
+// THE ARMS, THE JOIN).
+bool is_arm_class(tree type) { return type != NULL_TREE && CLASS_TYPE_P(type); }
+
+// The pointees of the CONSTRUCTOR of an arm object.
+Pointees pointees_of(tree constructor) {
+    Pointees pointees;
+    unsigned position = 0;
+    tree field = NULL_TREE;
+    tree value = NULL_TREE;
+    FOR_EACH_CONSTRUCTOR_ELT(CONSTRUCTOR_ELTS(constructor), position, field, value) {
+        if (field == NULL_TREE || TREE_CODE(field) != FIELD_DECL || TREE_TYPE(field) == NULL_TREE
+            || !(TYPE_PTR_P(TREE_TYPE(field)) || TYPE_REF_P(TREE_TYPE(field)))) {
+            continue;
+        }
+        Path pointee = pointee_path(value, NULL_TREE, 0);
+        if (pointee.root != kNoRoot) {
+            pointees.emplace(static_cast<int>(DECL_UID(field)), pointee);
+        }
+    }
+    return pointees;
+}
+
+// The argument NODE of a call with each wrapper, address and temporary taken
+// off: the CONSTRUCTOR of a lambda expression or of a braced object, or the
+// variable that names the arm.
+tree arm_object(tree node) {
     for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
         node = strip_wrappers(node);
         if (TREE_CODE(node) == ADDR_EXPR) {
@@ -407,14 +452,41 @@ tree closure_constructor(tree node) {
         }
         break;
     }
-    if (node == NULL_TREE || TREE_CODE(node) != CONSTRUCTOR || TREE_TYPE(node) == NULL_TREE
-        || !LAMBDA_TYPE_P(TREE_TYPE(node))) {
-        return NULL_TREE;
-    }
     return node;
 }
 
-void record_call(tree call) {
+// Records the initializer of a local variable of an arm class: a braced
+// initializer of the whole variable, or a store to one field of a pointer or
+// a reference type, as the front end splits an initializer that is no
+// constant.  LEFT is the stored object and RIGHT its value.
+void record_initializer(CallWalk& walk, tree left, tree right) {
+    left = strip_wrappers(left);
+    if (left == NULL_TREE) {
+        return;
+    }
+    if (VAR_P(left) && is_arm_class(TREE_TYPE(left))) {
+        tree value = arm_object(right);
+        if (value != NULL_TREE && TREE_CODE(value) == CONSTRUCTOR) {
+            walk.named[static_cast<int>(DECL_UID(left))] = pointees_of(value);
+        }
+        return;
+    }
+    if (TREE_CODE(left) != COMPONENT_REF) {
+        return;
+    }
+    tree object = strip_wrappers(TREE_OPERAND(left, 0));
+    tree field = TREE_OPERAND(left, 1);
+    if (object == NULL_TREE || !VAR_P(object) || !is_arm_class(TREE_TYPE(object)) || TREE_CODE(field) != FIELD_DECL
+        || TREE_TYPE(field) == NULL_TREE || !(TYPE_PTR_P(TREE_TYPE(field)) || TYPE_REF_P(TREE_TYPE(field)))) {
+        return;
+    }
+    Path pointee = pointee_path(right, NULL_TREE, 0);
+    if (pointee.root != kNoRoot) {
+        walk.named[static_cast<int>(DECL_UID(object))][static_cast<int>(DECL_UID(field))] = pointee;
+    }
+}
+
+void record_call(const CallWalk& walk, tree call) {
     MatchCall record;
     record.receiver = pointee_path(CALL_EXPR_ARG(call, 0), NULL_TREE, 0);
     if (record.receiver.root == kNoRoot) {
@@ -424,23 +496,20 @@ void record_call(tree call) {
         record.receiver.text = "*" + record.receiver.text.substr(0, record.receiver.text.size() - 2);
     }
     for (int index = 1; index < call_expr_nargs(call); ++index) {
-        tree constructor = closure_constructor(CALL_EXPR_ARG(call, index));
-        if (constructor == NULL_TREE) {
+        tree object = arm_object(CALL_EXPR_ARG(call, index));
+        if (object == NULL_TREE || !is_arm_class(TREE_TYPE(object))) {
             continue;
         }
         CallArm arm;
-        arm.closure = TYPE_UID(TYPE_MAIN_VARIANT(TREE_TYPE(constructor)));
-        unsigned position = 0;
-        tree field = NULL_TREE;
-        tree value = NULL_TREE;
-        FOR_EACH_CONSTRUCTOR_ELT(CONSTRUCTOR_ELTS(constructor), position, field, value) {
-            if (field == NULL_TREE || TREE_CODE(field) != FIELD_DECL || TREE_TYPE(field) == NULL_TREE
-                || !(TYPE_PTR_P(TREE_TYPE(field)) || TYPE_REF_P(TREE_TYPE(field)))) {
-                continue;
-            }
-            Path pointee = pointee_path(value, NULL_TREE, 0);
-            if (pointee.root != kNoRoot) {
-                arm.pointees.emplace(static_cast<int>(DECL_UID(field)), pointee);
+        arm.closure = TYPE_UID(TYPE_MAIN_VARIANT(TREE_TYPE(object)));
+        if (TREE_CODE(object) == CONSTRUCTOR) {
+            arm.pointees = pointees_of(object);
+        } else if (VAR_P(object)) {
+            auto found = walk.named.find(static_cast<int>(DECL_UID(object)));
+            if (found != walk.named.end()) {
+                arm.pointees = found->second;
+            } else if (DECL_INITIAL(object) != NULL_TREE && TREE_CODE(DECL_INITIAL(object)) == CONSTRUCTOR) {
+                arm.pointees = pointees_of(DECL_INITIAL(object));
             }
         }
         record.arms.push_back(std::move(arm));
@@ -450,8 +519,9 @@ void record_call(tree call) {
     }
 }
 
-tree walk_calls(tree* node_pointer, int* walk_subtrees, void*) {
+tree walk_calls(tree* node_pointer, int* walk_subtrees, void* data) {
     tree node = *node_pointer;
+    auto& walk = *static_cast<CallWalk*>(data);
     if (node == NULL_TREE) {
         return NULL_TREE;
     }
@@ -459,9 +529,23 @@ tree walk_calls(tree* node_pointer, int* walk_subtrees, void*) {
         *walk_subtrees = 0;
         return NULL_TREE;
     }
-    if (TREE_CODE(node) == CALL_EXPR && call_expr_nargs(node) >= 2
-        && is_borrow_match(cp_get_callee_fndecl_nofold(node))) {
-        record_call(node);
+    switch (TREE_CODE(node)) {
+        case INIT_EXPR:
+        case MODIFY_EXPR:
+            record_initializer(walk, TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
+            break;
+        case DECL_EXPR:
+            if (tree decl = DECL_EXPR_DECL(node); VAR_P(decl) && DECL_INITIAL(decl) != NULL_TREE) {
+                record_initializer(walk, decl, DECL_INITIAL(decl));
+            }
+            break;
+        case CALL_EXPR:
+            if (call_expr_nargs(node) >= 2 && is_borrow_match(cp_get_callee_fndecl_nofold(node))) {
+                record_call(walk, node);
+            }
+            break;
+        default:
+            break;
     }
     return NULL_TREE;
 }
@@ -527,29 +611,18 @@ void finish_borrow_matches_now() {
     arm_writes.clear();
 }
 
-// True when the rule reads the code of FUNCTION in this unit (THE BODIES).
-bool is_read_here(tree function) {
-    if (is_in_instantiation(function)) {
-        Place place = place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine);
-        return place.file_class == FileClass::base || place.file_class == FileClass::quarantined;
-    }
-    Place place = place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine);
-    return place.file != nullptr && is_walked_file(place);
-}
-
 void on_pre_genericize(void* gcc_data, void*) {
     tree function = static_cast<tree>(gcc_data);
     // A clone of a constructor or a destructor gets a second event on a copy
     // of a body that cp_genericize lowered (linear.cpp, on_pre_genericize_linear).
     if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_SAVED_TREE(function) == NULL_TREE
-        || DECL_CLONED_FUNCTION_P(function) || !is_read_here(function)) {
+        || DECL_CLONED_FUNCTION_P(function) || !is_body_read_here(function, UNKNOWN_LOCATION)) {
         return;
     }
-    if (LAMBDA_FUNCTION_P(function)) {
-        record_arm(function);
-    }
+    record_arm(function);
+    CallWalk walk;
     tree body = DECL_SAVED_TREE(function);
-    cp_walk_tree_without_duplicates(&body, walk_calls, nullptr);
+    cp_walk_tree_without_duplicates(&body, walk_calls, &walk);
 }
 
 void on_collection(void*, void*) { borrow_match_answers.clear(); }

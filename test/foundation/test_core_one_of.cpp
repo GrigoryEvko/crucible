@@ -181,6 +181,44 @@ void test_owning_alternative() {
     CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
 }
 
+// A payload with a destructor, so a OneOf of it takes the owning form.  A
+// test that ends the process in the abort probe skips the end of its locals,
+// so this payload counts no object.
+struct Handle {
+    int value = 0;
+
+    constexpr explicit Handle(int initial) noexcept : value{initial} {}
+    Handle(Handle const&) noexcept = default;
+    Handle(Handle&&) noexcept = default;
+    Handle& operator=(Handle const&) noexcept = default;
+    Handle& operator=(Handle&&) noexcept = default;
+    ~Handle() noexcept {}
+};
+
+void replace_reading(OneOf<Handle, Refusal>& target) noexcept { target = OneOf<Handle, Refusal>{Refusal::full}; }
+
+// The borrow match of an owning OneOf counts its lend, so a move assignment
+// in a callee of the arm, which the rule borrow-match does not see, ends the
+// process.  After the match, the same assignment keeps its value.
+void test_lent_alternative_write_aborts() {
+    bool const callee_aborts = ::crucible::test::aborts([] {
+        OneOf<Handle, Refusal> held{Handle{81}};
+        static_cast<void>(held.match(
+            [&held](Handle const& handle) noexcept {
+                replace_reading(held);
+                return handle.value;
+            },
+            [](Refusal const&) noexcept { return 0; }));
+    });
+    CRUCIBLE_FATAL_INVARIANT(callee_aborts);
+
+    OneOf<Handle, Refusal> held{Handle{82}};
+    int const seen = held.match([](Handle const& handle) noexcept { return handle.value; },
+                                [](Refusal const&) noexcept { return 0; });
+    replace_reading(held);
+    CRUCIBLE_FATAL_INVARIANT(seen == 82 && held.is<Refusal>());
+}
+
 // A linear alternative takes the owning form, and only the rvalue match and
 // expect give it out.
 void test_linear_alternative() {
@@ -257,6 +295,7 @@ int main() {
     test_match();
     test_get();
     test_owning_alternative();
+    test_lent_alternative_write_aborts();
     test_linear_alternative();
     test_agrees_with_model();
     return 0;
