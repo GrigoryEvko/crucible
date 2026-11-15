@@ -53,7 +53,6 @@ enum class TscMode : std::uint8_t {
     NotAllowed,
     SerializedPinned,  // rdtscp + lfence
     Raw,  // rdtsc, not serialized
-    SteadyClockFallback,  // chrono::steady_clock — wall-clock nanoseconds, not cycles
 };
 
 // Returns -1 for the sources this reader cannot serve, for two disjoint

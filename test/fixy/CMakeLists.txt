@@ -4641,6 +4641,11 @@ fixy_neg_compile_test(neg_os_pin_meets_posture_specialized
 fixy_neg_compile_test(neg_os_tsc_reader_foreground_ctx
   "no matching function for call to .mint_tsc_reader<fixy::time::TscMode::Raw>\\(const fixy::HotFgCtx&"
   "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+# TscMode has no mode of std::chrono::steady_clock.  A TSC reader reads the
+# counter in each mode, so such a mode is a copy of Raw under a false name.
+fixy_neg_compile_test(neg_os_tsc_mode_steady_clock_fallback
+  ".SteadyClockFallback. is not a member of .fixy::time::TscMode."
+  "neg_os_tsc_mode_steady_clock_fallback\\.cpp:9:[0-9]+: error:")
 
 # ── Every scheduling door reads one gate ─────────────────────────────
 #

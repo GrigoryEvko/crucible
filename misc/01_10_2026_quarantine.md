@@ -850,7 +850,7 @@ QDESIGN and the designs of 2026-10-17 found these defects. Each one is on main a
 - `AtomicMonotonic` of `fixy/Mutation.h` takes a memory order as an argument, and it has relaxed reads. The Atomic family puts the order in the operation name.
 - `foundation/AlignedBuffer.h` merges into `HeapArray` of the Region family (Appendix E, slice 4.3). `AlignedBuffer::allocate` leaves the heap bytes with no initial value. The requirement of the Region family: each mint of a `HeapArray` fills each element with zero or with a fill value. Only an implicit-lifetime element gets a view that only writes.
 - CLAUDE.md §II.4 shows an arena that starts a lifetime with `std::start_lifetime_as`, and `include/crucible/Arena.h` does not. The reset is on main as `ArenaEpoch`. The Ref unit corrects the text.
-- `TscMode::SteadyClockFallback` of `fixy/os/Time.h` reads the TSC. The Os unit deletes the enumerator.
+- `TscMode::SteadyClockFallback` of `fixy/os/Time.h` read the TSC. The Os unit deleted the enumerator on 2026-11-14, and a fixture that names it must not compile.
 - `Result` admits the payload `Err<F>` when `F` is not `E`. A `niche<T>` with no complete protocol falls to the plain form with no message. The flag of a trivial `Result` follows the union, so a 4-byte payload puts the flag at bit 32. The Choice unit fixes the three.
 - `decode` into a payload with a niche gives the empty bits to `Option::some`, which calls `fatal()`. The Scalar unit gives no value for those bits.
 
