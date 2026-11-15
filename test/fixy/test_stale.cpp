@@ -131,8 +131,9 @@ int check_semiring_at_runtime() {
     if (!almost.advance_by(5).is_infinite()) return 31;
     if (!almost.compose_add(Stale<int>::at(2, 5)).is_infinite()) return 32;
 
-    // The default and the two named mints land where they claim.
-    if (Stale<int>{}.staleness() != SS::bottom()) return 33;
+    // The default claims the weakest grade, and the two named mints land
+    // where they claim.
+    if (Stale<int>{}.staleness() != SS::top()) return 33;
     if (!Stale<int>::fresh(42).is_fresh()) return 34;
     if (Stale<int>::at(7, 100).staleness().value != 100) return 35;
 

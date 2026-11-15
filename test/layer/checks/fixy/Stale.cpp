@@ -2,6 +2,9 @@
 
 #include <fixy/Stale.h>
 
+#include <type_traits>
+#include <utility>
+
 namespace fixy {
 
 namespace detail::stale_layout {
@@ -24,11 +27,17 @@ namespace detail::stale_self_test {
 using SS = ::foundation::algebra::lattices::StalenessSemiring;
 using S_i = Stale<int>;
 
+// A default value claims the weakest grade, because nothing measured it.
 inline constexpr S_i s_default{};
-static_assert(s_default.staleness() == SS::bottom());
+static_assert(s_default.staleness() == SS::top());
 static_assert(s_default.peek() == 0);
-static_assert(s_default.is_fresh());
-static_assert(s_default.is_finite());
+static_assert(!s_default.is_fresh());
+static_assert(s_default.is_infinite());
+
+// A grade comes only through a named door, and no constructor takes one.
+// test/fixy/neg holds a fixture for the private constructor from a value
+// and a grade.
+static_assert(!std::is_constructible_v<S_i, int, SS::element_type>);
 
 inline constexpr S_i s_fresh = S_i::fresh(42);
 static_assert(s_fresh.staleness() == SS::bottom());
@@ -43,11 +52,11 @@ inline constexpr S_i s_at7 = S_i::at(123, 7);
 static_assert(s_at7.staleness().value == 7);
 static_assert(s_at7.peek() == 123);
 
-static_assert(s_at7 == S_i{123, ::foundation::algebra::lattices::staleness::at(7)});
+static_assert(s_at7 == S_i::at(123, 7));
 
-static_assert(!(s_at7 == S_i{999, ::foundation::algebra::lattices::staleness::at(7)}));
+static_assert(!(s_at7 == S_i::at(999, 7)));
 
-static_assert(!(s_at7 == S_i{123, ::foundation::algebra::lattices::staleness::at(3)}));
+static_assert(!(s_at7 == S_i::at(123, 3)));
 
 static_assert(s_fresh.fresher_than(s_at7));
 static_assert(s_at7.fresher_than(s_inf));

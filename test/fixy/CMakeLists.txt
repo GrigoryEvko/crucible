@@ -1559,6 +1559,15 @@ fixy_neg_compile_test(neg_stale_weakened_downwards
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .eight_behind\\.fixy::Stale<int>::weaken\\("
   "fixy/Stale\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+# A stored grade comes only through a named door.  The constructors of Stale
+# that take a grade are private, as the constructor of Budgeted that takes a
+# budget is.
+fixy_neg_compile_test(neg_stale_built_fresh_outside_its_door
+  ".constexpr fixy::Stale<T>::Stale\\(T, staleness_t\\) .with T = int. staleness_t = foundation::algebra::lattices::StalenessSemiring::element_type.. is private within this context"
+  "fixy/Stale\\.h:[0-9]+:[0-9]+: note: declared private here")
+fixy_neg_compile_test(neg_budgeted_built_at_zero_outside_its_door
+  ".constexpr fixy::Budgeted<T>::Budgeted\\(T, budget_t\\) .with T = int. budget_t = .* is private within this context"
+  "fixy/Budgeted\\.h:[0-9]+:[0-9]+: note: declared private here")
 
 # EpochVersioned has no door that raises a version without new evidence.
 # A default version, a combine that joins two versions into one payload,

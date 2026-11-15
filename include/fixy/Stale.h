@@ -44,10 +44,9 @@ private:
 
     using key_ = ::foundation::algebra::grade_key<Stale>;
 
-public:
-    constexpr Stale() noexcept(std::is_nothrow_default_constructible_v<T>)
-        : impl_{key_{}, T{}, semiring_type::bottom()} {}
-
+    // A constructor that takes a grade is private, so a grade comes only
+    // through a named door: fresh, at, at_infinity, weaken, or a
+    // composition of two graded values.
     constexpr Stale(T value, staleness_t tau) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{key_{}, std::move(value), tau} {}
 
@@ -57,6 +56,10 @@ public:
                     Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
                                              && std::is_nothrow_move_constructible_v<T>)
         : impl_{key_{}, T(std::forward<Args>(args)...), tau} {}
+
+public:
+    // The weakest claim, because nothing measured the age of this value.
+    constexpr Stale() noexcept(std::is_nothrow_default_constructible_v<T>) : impl_{key_{}, T{}, semiring_type::top()} {}
 
     [[nodiscard]] static constexpr Stale fresh(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         return Stale{std::move(value), semiring_type::bottom()};
@@ -202,9 +205,6 @@ public:
         return Stale{std::move(impl_).consume(), advanced};
     }
 };
-
-template <typename T>
-Stale(T, ::foundation::algebra::lattices::StalenessSemiring::element_type) -> Stale<T>;
 
 // The detection surface of Stale: a concept that asks if a type is a
 // Stale, and the associated types of one.  One reflection query answers
