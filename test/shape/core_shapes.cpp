@@ -6,8 +6,8 @@
 // family of include/foundation/core, of fixy::Linear or of a permission token.
 // The second function does the same work in the raw form that the family
 // replaces: a std::atomic operation, a raw pointer loop, memcpy or memset, a
-// std::unique_ptr or std::optional access, std::unreachable, a plain value or
-// an empty class.  The check compares the instructions of the two functions
+// std::unique_ptr or std::optional access, std::unreachable, a plain value,
+// an empty class or a contract_assert.  The check compares the instructions of the two functions
 // of each pair, and the probe of the pair in the rule declares the
 // differences that the family function can add.
 //
@@ -24,6 +24,7 @@
 #include <fixy/Core.h>
 #include <fixy/Qtt.h>
 #include <foundation/Quarantine.h>
+#include <foundation/contracts/Post.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
@@ -816,6 +817,23 @@ using ProbeToken = ::foundation::permissions::Permission<ProbeRegion, ProbeBrand
 // The move assignment of a token is user-provided, and it moves no byte.
 [[gnu::used]] void token_assign(ProbeToken& target, ProbeToken& source) noexcept { target = std::move(source); }
 
+// ── The contract checks ─────────────────────────────────────────────────────
+
+// A precondition evaluates its condition one time.  Its runtime arm is the
+// contract_assert of the raw form, under the same contract semantic.
+[[gnu::used]] std::uint64_t contract_pre(std::uint64_t index, std::uint64_t count) noexcept {
+    CRUCIBLE_PRE(index < count);
+    return index * 3;
+}
+
+// A postcondition is a precondition before the return, and it also
+// evaluates its condition one time.
+[[gnu::used]] std::uint64_t contract_post(std::uint64_t index, std::uint64_t count) noexcept {
+    std::uint64_t const tripled = index * 3;
+    CRUCIBLE_POST(tripled, tripled != count);
+    return tripled;
+}
+
 // ── The raw forms ───────────────────────────────────────────────────────────
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the raw form that the shape of each family probe is compared with")
@@ -1461,6 +1479,19 @@ struct RawToken final {};
 [[gnu::used]] RawToken token_pass_raw(RawToken token) noexcept { return token; }
 
 [[gnu::used]] void token_assign_raw(RawToken& target, RawToken& source) noexcept { target = source; }
+
+// The raw form of a contract check is the language assertion, which the
+// contract semantic of the unit controls.
+[[gnu::used]] std::uint64_t contract_pre_raw(std::uint64_t index, std::uint64_t count) noexcept {
+    contract_assert(index < count);
+    return index * 3;
+}
+
+[[gnu::used]] std::uint64_t contract_post_raw(std::uint64_t index, std::uint64_t count) noexcept {
+    std::uint64_t const tripled = index * 3;
+    contract_assert(tripled != count);
+    return tripled;
+}
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 

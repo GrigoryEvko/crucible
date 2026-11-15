@@ -31,7 +31,8 @@ THE PAIRS
       * A loop on a raw pointer
       * memcpy or memset
       * An access through std::unique_ptr or std::optional
-      * std::unreachable.
+      * std::unreachable
+      * A contract_assert.
     test/shape/CMakeLists.txt compiles the unit with the flags of the
     foundation library of the build.  Each build then compares the two
     functions of a pair with its own level, `-fharden-` flags and contract
@@ -905,6 +906,18 @@ PROBES: tuple[Probe, ...] = (
     Probe("linear_assign", "the user-provided move assignment of a Linear is the store of its value"),
     Probe("token_pass", "a token is empty and its move constructor is trivial, so a pass moves no byte"),
     Probe("token_assign", "the user-provided move assignment of a token moves no byte"),
+    Probe(
+        "contract_pre",
+        "CRUCIBLE_PRE evaluates its condition one time.  Its runtime arm is the contract_assert of the raw form, under "
+        f"the same contract semantic.  {HARDENED_BUILDS}.  These flags put the same second test on each edge of the "
+        "branch of the two forms",
+    ),
+    Probe(
+        "contract_post",
+        "CRUCIBLE_POST evaluates its condition one time.  It is the contract_assert of the raw form before the "
+        f"return, under the same contract semantic.  {HARDENED_BUILDS}.  These flags put the same second test on each "
+        "edge of the branch of the two forms",
+    ),
 )
 
 
