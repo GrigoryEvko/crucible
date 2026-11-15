@@ -3068,6 +3068,11 @@ fixy_neg_compile_test(neg_sess_crash_keyed_target_unwatched
 fixy_neg_compile_test(neg_sess_crash_cell_of_another_pair
   "no matching function for call to .mint_crash_session<neg_sess_crash_cell_of_another_pair_types::FromPOrCrashOfP,"
   "cannot convert .cell_of_p_for_q. \\(type .const fixy::session::CrashCell<neg_sess_crash_cell_of_another_pair_types::P, neg_sess_crash_cell_of_another_pair_types::Q>.\\) to type .const fixy::session::CrashCell<neg_sess_crash_cell_of_another_pair_types::P, neg_sess_crash_cell_of_another_pair_types::Third>&.")
+# A crash send gives a payload back in the base Option, and no assignment
+# over it drops a token.
+fixy_neg_compile_test(neg_sess_crash_undelivered_token_assigned
+  "an assignment drops the payload that the Option holds, and a linear payload must not be dropped"
+  "Option<fixy::session::Transferable<int, neg_sess_crash_undelivered_token_assigned_types::TokenTag> >")
 fixy_neg_compile_test(neg_sess_crash_third_pair_missing
   "no matching function for call to .mint_crash_session<neg_sess_crash_third_pair_missing_types::ToThird,"
   "is_third_receiver\\(.*\\)\\(\\^\\^ Proto, \\^\\^ Peer, \\^\\^ Third\\) \\[with Proto = fixy::session::Send<fixy::session::PeerMsg<neg_sess_crash_third_pair_missing_types::Third, .*Third = fixy::session::NoThirdRole\\]. evaluated to .false.")

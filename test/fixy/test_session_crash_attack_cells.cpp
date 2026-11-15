@@ -102,7 +102,7 @@ void crash_between_check_and_write_loses_token() {
             // The label went before the crash, so the queue of p holds it
             // and must hold nothing more.
             const bool is_token_queued = to_p.slots.size() > 1;
-            token_lost = !(undelivered.has_value() && undelivered->peek() == 7) || is_token_queued;
+            token_lost = !take_token_back(std::move(undelivered), 7) || is_token_queued;
             (void)std::move(end).close();
         }
     });
@@ -254,7 +254,8 @@ void keyed_word_to_crashed_peer_comes_back() {
     auto p =
         s::mint_crash_session<SendsHello, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto half_sent = std::move(p).send(push_label);
-    const bool is_word_back = half_sent.undelivered == s::step_wire_word_v<SendsHello>;
+    const bool is_word_back =
+        half_sent.undelivered == ::fixy::Option<std::size_t>::some(s::step_wire_word_v<SendsHello>);
     std::move(half_sent.next).detach(s::detach_reason::TestInstrumentation{});
     Port queue_of_q{&to_q, &to_p};
     finish(is_word_back && poll_label(queue_of_q).is_none() ? Outcome::Correct : Outcome::Silent);

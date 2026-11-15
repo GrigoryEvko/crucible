@@ -44,12 +44,21 @@ void send_to_crashed_peer_returns_payload() {
     for (int round = 0; round < 3; ++round) {
         auto sent = std::move(q).select<0>(push_label);
         auto [next, undelivered] = std::move(sent).send(round, push_int);
-        if (undelivered && *undelivered == round) ++returned;
+        if (undelivered == ::fixy::some(round)) ++returned;
         q = std::move(next);
     }
     std::move(q).detach(s::detach_reason::InfiniteLoopProtocol{});
     finish(returned == 3 && to_p.slots.empty() ? Outcome::Correct : Outcome::Silent);
 }
+
+// The payload that a send gives back is in the base Option, which holds a
+// linear payload such as a token, and which no assignment drops.
+template <typename T>
+inline constexpr bool is_base_option_v = false;
+template <typename T>
+inline constexpr bool is_base_option_v<::fixy::Option<T>> = true;
+static_assert(is_base_option_v<decltype(s::CrashSend<int, Token>::undelivered)>,
+              "a crash send gives the payload back in the base Option");
 
 // q relays a token to p, and p has crashed.  The token comes back once,
 // in the undelivered payload, and the queue of p holds nothing.
@@ -72,7 +81,7 @@ void token_relayed_to_crashed_peer() {
             crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
             auto chosen = std::move(reply).template select<0>(push_label);
             auto [end, undelivered] = std::move(chosen).send(std::move(token), push_token);
-            came_back_once = undelivered.has_value() && undelivered->peek() == 7;
+            came_back_once = take_token_back(std::move(undelivered), 7);
             (void)std::move(end).close();
         }
     });

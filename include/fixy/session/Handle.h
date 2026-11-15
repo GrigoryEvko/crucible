@@ -697,6 +697,15 @@ template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy
 class handle_core;
 }  // namespace detail
 
+// The result of a send with a stop test (HandleFactory::send): the
+// successor, and the value when the stop test reported before the
+// transport took it.
+template <typename Next, typename T>
+struct [[nodiscard]] StoppedSend {
+    Next next;
+    ::fixy::Option<T> kept;
+};
+
 // ── The handle factory ───────────────────────────────────────────────
 //
 // The one class that builds a handle.  It is the only friend of
@@ -867,23 +876,43 @@ public:
     // fixy/session/Transport.h.
     // The returned handle sits at the continuation, with Continue and Loop
     // already resolved.
+    //
+    // A send with a stop test takes a trying write, and it tests `stop`
+    // before each try.  The handle steps on in each case.  The result is a
+    // StoppedSend: the successor, and the value when `stop` reported before
+    // the transport took it.  The crash transport of
+    // fixy/session/CrashTransport.h gives a payload to a crashed peer back
+    // with it.  One body holds the two forms, so the value moves to the
+    // transport through one reference in each form.
     template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
-              typename Transport>
+              typename Transport, typename Stop = detail::no_write_stop>
         requires(!is_keyed_step_v<Send<T, R>>) && WriteTransport<Transport, Resource, T>
+             && (std::is_same_v<Stop, detail::no_write_stop>
+                 || (CallableTryWrite<Transport, Resource, T> && WriteStop<Stop>))
     [[nodiscard]] static constexpr auto
-    send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&& handle, T value,
-         Transport transport) noexcept(detail::write_is_nothrow<Transport, Resource, T>()
-                                       && std::is_nothrow_move_constructible_v<Resource>
-                                       && std::is_nothrow_move_constructible_v<T>) {
+    send(SessionHandle<Send<T, R>, Resource, LoopCtx, Policy, PS>&& handle, T value, Transport transport,
+         [[maybe_unused]] Stop stop = Stop{}) noexcept(detail::write_is_nothrow<Transport, Resource, T>()
+                                                       && std::is_nothrow_invocable_v<Stop&>
+                                                       && std::is_nothrow_move_constructible_v<Resource>
+                                                       && std::is_nothrow_move_constructible_v<T>) {
         static_assert(detail::handle_admits_send_v<PS, T>,
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message takes, or the payload walk of fixy/session/Classification.h refuses the message.  "
                       "Hold each permission that the payload moves or lends before the send.");
         auto& core = core_(handle);
-        detail::write_through<T>(transport, core.live_resource_(), value, core.session_().endpoint);
-        const watch::session_ref session = core.session_();
-        return step_<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(core.take_resource_(),
-                                                                                         session);
+        if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
+            detail::write_through<T>(transport, core.live_resource_(), value, core.session_().endpoint);
+            const watch::session_ref session = core.session_();
+            return step_<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(core.take_resource_(),
+                                                                                             session);
+        } else {
+            ::fixy::Option<T> kept =
+                detail::write_unless<T>(transport, stop, core.live_resource_(), value, core.session_().endpoint);
+            const watch::session_ref session = core.session_();
+            auto next = step_<R, Resource, LoopCtx, Policy, detail::perm_set_after_send_t<PS, T>>(core.take_resource_(),
+                                                                                                  session);
+            return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
+        }
     }
 
     // Sends the label word of a keyed message.  The returned handle stands

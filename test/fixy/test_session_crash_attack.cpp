@@ -69,6 +69,17 @@ bool report_counts(const s::CrashCellCore& cell, std::uint64_t count) {
     return witness && std::to_underlying(witness->messages_sent) == count;
 }
 
+bool take_token_back(::fixy::Option<Token> undelivered, int payload) {
+    return std::move(undelivered)
+        .match(
+            [payload](Token token) noexcept {
+                const bool is_same_payload = token.peek() == payload;
+                ::foundation::linear::drop(std::move(token));
+                return is_same_payload;
+            },
+            []() noexcept { return false; });
+}
+
 void p_sends(CellOfP& cell_p, const CellOfQ& cell_q, Mailbox& in, Mailbox& out, int first, int count) {
     using Stream = s::Loop<s::Select<s::Send<int, s::Continue>>>;
     auto p = s::mint_crash_session<Stream, P, Q>(bg_ctx(), Port{&in, &out}, cell_q, s::mint_crash_writer(cell_p));
@@ -130,7 +141,7 @@ void recorder_sees_the_crash() {
             lost_recorded = true;
         if (event.op() == s::SessionOp::Stop && event.crash_cause() == s::CrashCause::Throw) stop_recorded = true;
     }
-    finish(undelivered && lost_recorded && stop_recorded ? Outcome::Correct : Outcome::Silent);
+    finish(undelivered.is_some() && lost_recorded && stop_recorded ? Outcome::Correct : Outcome::Silent);
 }
 
 // Every one-byte corruption of a valid record is refused, or decodes to

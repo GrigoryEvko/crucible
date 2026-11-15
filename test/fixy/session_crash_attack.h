@@ -93,6 +93,10 @@ void crash_endpoint(s::CrashCellCore& cell, Mailbox& inbox, s::CrashCause cause)
 // messages of the sender of the pair that the cell watches.
 [[nodiscard]] bool report_counts(const s::CrashCellCore& cell, std::uint64_t count);
 
+// True when a send gave its token back, and the token holds `payload`.
+// The token ends here, through the drop door of foundation/Linear.h.
+[[nodiscard]] bool take_token_back(::fixy::Option<Token> undelivered, int payload);
+
 // p as a real crash session: it sends `count` messages, each the label 0
 // and the value first, first + 1, and so on, into `out`, and its cell
 // counts each one.  The session then stops with no crash of its own, so a

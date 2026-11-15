@@ -44,7 +44,7 @@ int check_crash_recording() {
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, lost] = std::move(p_sent).send(3, push_int);
-    if (!lost || *lost != 3) return fail("the lost payload did not come back through the recorder");
+    if (lost != ::fixy::some(3)) return fail("the lost payload did not come back through the recorder");
     bool took_crash = false;
     std::move(p_wait).branch(pop_label, [&](auto branch) {
         if constexpr (std::is_same_v<typename decltype(branch)::protocol, s::Recv<s::Crash<Q>, s::End>>) {

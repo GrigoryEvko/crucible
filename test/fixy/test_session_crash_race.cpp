@@ -146,8 +146,8 @@ template <typename Handle>
 template <typename Sent>
 [[nodiscard]] int check_send_outcome(const Sent& sent, const Mailbox& queue, int value) {
     const std::size_t queued = queue.slots.size();
-    if (sent.undelivered.has_value()) {
-        if (*sent.undelivered != value) return fail("the payload that came back is not the one sent");
+    if (sent.undelivered.is_some()) {
+        if (sent.undelivered != ::fixy::some(value)) return fail("the payload that came back is not the one sent");
         if (queued > 1) return fail("a payload came back and also reached the queue");
     } else if (queued != 2 || queue.slots[1] != static_cast<std::uint64_t>(value)) {
         return fail("a payload that did not come back is missing from the queue");
@@ -221,7 +221,7 @@ int run_reports_race_sends() {
         auto late = s::mint_crash_session<Asks<Q>, P, Q>(bg_ctx(), Port{&from_late, &to_late}, cell_q,
                                                          s::mint_crash_writer(cell_p_late));
         auto sent_late = send_value(std::move(late), 300 + run);
-        if (!sent_late.undelivered.has_value() || *sent_late.undelivered != 300 + run)
+        if (sent_late.undelivered != ::fixy::some(300 + run))
             return fail("a send to a peer that crashed before it did not give the payload back");
         if (!to_late.slots.empty()) return fail("a send to a crashed peer reached its queue");
         if (sent_late.next.messages_sent() != 0) return fail("a label that was not written was counted");
@@ -256,7 +256,7 @@ int run_crash_inside_send_transport() {
         });
         detector.join();
 
-        if (sent.undelivered.has_value()) return fail("a payload that the transport took came back");
+        if (sent.undelivered.is_some()) return fail("a payload that the transport took came back");
         if (to_q.slots.size() != 2) return fail("the label and the value did not both reach the queue");
         if (!sent.next.peer_has_crashed()) return fail("the report did not reach the session");
         if (take_crash_branch(std::move(sent.next)) != s::CrashCause::Abort)
@@ -278,7 +278,7 @@ int run_crash_inside_branch_poll() {
             s::mint_crash_session<Streams, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
         auto chosen = std::move(streaming).select<0>(push_label);
         auto q_sent = std::move(chosen).send(500 + run, push_int);
-        if (q_sent.undelivered.has_value()) return fail("a payload to a live peer came back");
+        if (q_sent.undelivered.is_some()) return fail("a payload to a live peer came back");
 
         auto draining =
             s::mint_crash_session<Drains, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
@@ -346,7 +346,7 @@ int run_report_publishes_earlier_messages() {
             for (int message = 0; message < kMessages; ++message) {
                 auto chosen = std::move(q).select<0>(push_label);
                 auto sent = std::move(chosen).send(message, push_int);
-                was_payload_returned = was_payload_returned || sent.undelivered.has_value();
+                was_payload_returned = was_payload_returned || sent.undelivered.is_some();
                 q = std::move(sent.next);
             }
             (void)std::move(q).crash(s::CrashCause::Abort);

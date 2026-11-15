@@ -1102,6 +1102,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::HandleFactory,
      "the builder of every session handle: it has static members only, no object of it exists, and it is never a "
      "value"},
+    {^^::fixy::session::StoppedSend,
+     "the result of a send with a stop test, taken apart at once by its caller: the handle in it folds on its own, "
+     "and the payload that it can hold back is a bare payload"},
     {^^::fixy::session::SessionMintDoor,
      "the door of the session mints to the handle factory: it has static members only, no object of it exists, "
      "and it is never a value"},

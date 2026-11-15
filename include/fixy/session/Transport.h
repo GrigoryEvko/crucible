@@ -57,6 +57,19 @@ concept DeclaredWrite = !TryWrite<F, Resource, T> && std::is_invocable_v<F&, Res
 template <typename F, typename Resource, typename T>
 concept WriteTransport = TryWrite<F, Resource, T> || DeclaredWrite<F, Resource, T>;
 
+// A stop test of a trying write: bool(), true when the write must stop
+// and give the value back to the caller.  A send with a stop test calls
+// the test and the write as plain calls, so each is a callable object.
+template <typename F>
+concept WriteStop = requires(F& stop) {
+    { stop() } -> std::same_as<bool>;
+};
+
+template <typename F, typename Resource, typename T>
+concept CallableTryWrite = TryWrite<F, Resource, T> && requires(F& write, Resource& resource, T& value) {
+    { write(resource, value) } -> std::same_as<bool>;
+};
+
 template <typename F, typename Resource, typename T>
 concept PollRead =
     std::is_invocable_v<F&, Resource&> && std::same_as<std::invoke_result_t<F&, Resource&>, ::fixy::Option<T>>;
@@ -114,6 +127,46 @@ wait_for_room(Transport& transport, Resource& resource, T& value,
     watch::wait_scope wait{endpoint};
     while (!std::invoke(transport, resource, value))
         wait.poll();
+}
+
+// The stop test of a send that has none.  It never reports.
+struct no_write_stop {
+    [[nodiscard]] constexpr bool operator()() const noexcept { return false; }
+};
+
+// Retries a trying write until it takes the value or `stop` reports, as
+// wait_for_room retries a write.  It tests `stop` before each try.  The
+// result holds the value when `stop` reported, and no value when the
+// transport took it.
+template <typename Transport, typename Stop, typename Resource, typename T>
+[[gnu::cold, gnu::noinline]] ::fixy::Option<T>
+wait_for_room_unless(Transport& transport, Stop& stop, Resource& resource, T& value,
+                     watch::endpoint_id endpoint) noexcept(std::is_nothrow_invocable_v<Transport&, Resource&, T&>
+                                                           && std::is_nothrow_invocable_v<Stop&>
+                                                           && std::is_nothrow_move_constructible_v<T>) {
+    watch::wait_scope wait{endpoint};
+    for (;;) {
+        if (stop()) return ::fixy::Option<T>::some(std::move(value));
+        if (transport(resource, value)) return ::fixy::none;
+        wait.poll();
+    }
+}
+
+// Writes `value` through a trying write, unless `stop` reports before a
+// try.  The result holds the value when `stop` reported, and no value when
+// the transport took it.  A write that finds room costs one test of `stop`
+// and one call.
+template <typename T, typename Transport, typename Stop, typename Resource>
+[[nodiscard]] constexpr ::fixy::Option<T>
+write_unless(Transport& transport, Stop& stop, Resource& resource, T& value,
+             watch::endpoint_id endpoint) noexcept(std::is_nothrow_invocable_v<Transport&, Resource&, T&>
+                                                   && std::is_nothrow_invocable_v<Stop&>
+                                                   && std::is_nothrow_move_constructible_v<T>) {
+    if (stop()) [[unlikely]]
+        return ::fixy::Option<T>::some(std::move(value));
+    if (transport(resource, value)) [[likely]]
+        return ::fixy::none;
+    return wait_for_room_unless(transport, stop, resource, value, endpoint);
 }
 
 // Writes `value` through either write shape.  A trying write that finds

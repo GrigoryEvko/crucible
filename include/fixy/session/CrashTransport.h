@@ -754,14 +754,15 @@ template <typename Handle, typename Self, typename Peer, typename Reliable, type
           typename Position = detail::crash_transport::between_messages>
 class CrashWatched;
 
-// The result of a send.  `undelivered` holds the payload when the peer
-// had crashed before the send, or when the transport refused it at the
-// write.  It is empty when the transport took the payload.  For the label
-// step of a keyed message, the payload is the label word.
+// The result of a send.  `undelivered` holds the payload when the
+// receiver had crashed before a try of the write.  It is empty when the
+// transport took the payload.  For the label step of a keyed message, the
+// payload is the label word.  The base Option holds a linear payload, such
+// as a Transferable, so no assignment drops it.
 template <typename Next, typename T>
 struct [[nodiscard]] CrashSend {
     Next next;
-    std::optional<T> undelivered;
+    ::fixy::Option<T> undelivered;
 };
 
 namespace detail::crash_transport {
@@ -910,9 +911,10 @@ public:
 
     // ── send ─────────────────────────────────────────────────────────
     //
-    // The decorator gives the inner handle a trying write that checks the
-    // peer before each try.  When the peer has crashed, the payload goes
-    // back to the caller as `undelivered`, so a token in it is not lost.
+    // The decorator sends through the inner handle with a stop test that
+    // reads the cell of the receiver before each try of the write.  When the
+    // receiver has crashed, the payload goes back to the caller as
+    // `undelivered`, so a token in it is not lost.
     template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position,
               typename Transport>
         requires is_send_v<typename Handle::protocol> && (!is_keyed_step_v<typename Handle::protocol>)
@@ -921,29 +923,27 @@ public:
                                              typename Handle::protocol::message_type value, Transport transport) {
         using T = typename Handle::protocol::message_type;
         using Resource = typename Handle::resource_type;
-        std::optional<T> undelivered;
-        constexpr bool is_nothrow =
-            std::is_nothrow_invocable_v<Transport&, Resource&, T&> && std::is_nothrow_move_constructible_v<T>;
         // The payload of a keyed message goes to the role that the message
         // names, and each other payload goes to the channel peer.
         using Receiver = typename detail::crash_transport::payload_receiver<Position, Peer>::type;
         const CrashCellCore* const receiver_cell = receiver_cell_<Receiver>(watched);
-        auto next = std::move(watched.inner_)
-                        .send(std::move(value), [&](Resource& resource, T& payload) noexcept(is_nothrow) -> bool {
-                            if (receiver_cell != nullptr && receiver_cell->has_crashed()) {
-                                undelivered.emplace(std::move(payload));
-                                return true;
-                            }
-                            return std::invoke(transport, resource, payload);
-                        });
+        // The send with a stop test makes plain calls, and the closure gives
+        // each shape of a trying write one.
+        auto write = [transport = std::move(transport)](Resource& resource, T& payload) mutable noexcept(
+                         std::is_nothrow_invocable_v<Transport&, Resource&, T&>) -> bool {
+            return std::invoke(transport, resource, payload);
+        };
+        auto sent = HandleFactory::send(
+            std::move(watched.inner_), std::move(value), std::move(write),
+            [receiver_cell]() noexcept { return receiver_cell != nullptr && receiver_cell->has_crashed(); });
         // A message counts once it is whole: a bare message at its write, and
         // the message of a label at the write of its payload.  A payload that
         // did not go is no message.  It counts in the cell of the pair of
         // this endpoint and its receiver.
         const detail::crash_transport::message_counts counts =
-            undelivered.has_value() ? watched.counts_ : one_more_sent_<Receiver>(watched);
-        auto wrapped = wrap_(watched, std::move(next), counts);
-        return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(undelivered)};
+            sent.kept.is_some() ? watched.counts_ : one_more_sent_<Receiver>(watched);
+        auto wrapped = wrap_(watched, std::move(sent.next), counts);
+        return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(sent.kept)};
     }
 
     // A keyed Send writes its label word.  The successor then stands at the
@@ -976,8 +976,8 @@ public:
                 return wrap_(watched, std::move(next), counts);
             }
         }();
-        std::optional<std::size_t> undelivered;
-        if (!is_written) undelivered.emplace(step_wire_word_v<P>);
+        ::fixy::Option<std::size_t> undelivered =
+            is_written ? ::fixy::Option<std::size_t>{} : ::fixy::Option<std::size_t>::some(step_wire_word_v<P>);
         return CrashSend<decltype(wrapped), std::size_t>{std::move(wrapped), std::move(undelivered)};
     }
 

@@ -300,9 +300,9 @@ int run_sender_crashes_after_send() {
     auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
     auto [p_value, p_label_lost] = std::move(p).send(push_label);
-    if (p_label_lost) return fail("a label to a live peer came back");
+    if (p_label_lost.is_some()) return fail("a label to a live peer came back");
     auto [p_wait, p_value_lost] = std::move(p_value).send(11, push_int);
-    if (p_value_lost) return fail("a value to a live peer came back");
+    if (p_value_lost.is_some()) return fail("a value to a live peer came back");
     if (to_q.slots.size() != 2 || to_q.slots.front() != s::step_wire_word_v<BinaryP> || to_q.slots.back() != 11) {
         return fail("the keyed send did not write its label word and then its value");
     }
@@ -322,7 +322,7 @@ int run_sender_crashes_after_send() {
             value_on_q = value;
             auto [q_reply_value, q_label_lost] = std::move(q_reply).send(push_label);
             auto [q_end, q_value_lost] = std::move(q_reply_value).send(value + 1, push_int);
-            reply_was_lost = q_label_lost.has_value() && q_value_lost == value + 1;
+            reply_was_lost = q_label_lost.is_some() && q_value_lost == ::fixy::some(value + 1);
             (void)std::move(q_end).close();
         }
     });

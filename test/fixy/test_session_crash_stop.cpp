@@ -337,7 +337,7 @@ int run_without_crash() {
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
-    if (p_undelivered) return fail("a payload to a live peer came back");
+    if (p_undelivered.is_some()) return fail("a payload to a live peer came back");
 
     int reply = 0;
     std::move(q).branch(poll_label, [&](auto q_branch) {
@@ -348,7 +348,7 @@ int run_without_crash() {
             auto [text, q_reply] = std::move(q_branch).recv(read_text);
             auto q_sel = std::move(q_reply).template select<0>(push_label);
             auto [q_end, q_lost] = std::move(q_sel).send(static_cast<int>(text.view().size()) + 39, push_int);
-            if (q_lost) std::abort();
+            if (q_lost.is_some()) std::abort();
             (void)std::move(q_end).close();
         }
     });
@@ -381,7 +381,9 @@ int run_receiver_crashes_first() {
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
-    if (!p_undelivered || p_undelivered->view() != "abc") return fail("the lost payload did not come back");
+    const bool is_payload_back = p_undelivered.match([](Text const& text) noexcept { return text.view() == "abc"; },
+                                                     []() noexcept { return false; });
+    if (!is_payload_back) return fail("the lost payload did not come back");
     if (!to_q.slots.empty()) return fail("a message reached the queue of a crashed peer");
 
     bool took_crash_branch = false;
@@ -410,7 +412,7 @@ int run_sender_crashes_after_send() {
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
-    if (p_undelivered) return fail("a payload to a live peer came back");
+    if (p_undelivered.is_some()) return fail("a payload to a live peer came back");
     (void)std::move(p_wait).crash(s::CrashCause::Abort);
     // The label and its payload are one message, and the session of p
     // wrote the count that the report of its crash carries.
@@ -428,7 +430,7 @@ int run_sender_crashes_after_send() {
             took_message = text.view() == "abc";
             auto q_sel = std::move(q_reply).template select<0>(push_label);
             auto [q_end, q_lost] = std::move(q_sel).send(42, push_int);
-            took_message = took_message && q_lost.has_value();
+            took_message = took_message && q_lost.is_some();
             (void)std::move(q_end).close();
         }
     });
@@ -547,7 +549,7 @@ int run_stream_across_threads() {
                 port.out->push(static_cast<std::uint64_t>(value));
                 return true;
             });
-            was_payload_returned = was_payload_returned || undelivered.has_value();
+            was_payload_returned = was_payload_returned || undelivered.is_some();
             p = std::move(next);
         }
         (void)std::move(p).crash(s::CrashCause::Abort);
