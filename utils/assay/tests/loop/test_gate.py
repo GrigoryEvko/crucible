@@ -1845,15 +1845,15 @@ def vessel_run_cases(expect: testing.Expect) -> None:
         alone = (build / "alone-runs.txt").read_text(encoding="utf-8").splitlines()
         expect(
             f"a vessel test that is red alone too rejects the commit with its name, and the run of the base runs only "
-            f"that test.  The capped lease of the vessel gives ctest the jobs of the slice of the gate, and not the "
-            f"{POOL_SLOTS} slots of the pool: {red_verdict.problems}, {alone}",
+            f"that test.  The capped lease of the vessel gives ctest the jobs of the slice of the gate times "
+            f"VESSEL_WEIGHT, and not the {POOL_SLOTS} slots of the pool: {red_verdict.problems}, {alone}",
             not red_verdict.is_accepted
             and red_verdict.problems[0].startswith("vessel: red alone too: vessel_test_red, see ")
             and red_verdict.focus == (gate.Focus(gate.VESSEL, ("vessel_test_red",)),)
             and base_verdict.configurations == (gate.VESSEL,)
             and base_verdict.problems == red_verdict.problems
-            and alone == [f"{PLANTED_JOBS} vessel_test_red"] * len(alone)
-            and PLANTED_JOBS < POOL_SLOTS,
+            and alone == [f"{PLANTED_JOBS * gate.VESSEL_WEIGHT} vessel_test_red"] * len(alone)
+            and PLANTED_JOBS * gate.VESSEL_WEIGHT < POOL_SLOTS,
         )
         (build / "red.txt").unlink()
         listing_of[0] = vessel_listing(())

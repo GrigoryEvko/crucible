@@ -149,10 +149,14 @@ THE VESSEL
     of the vessel, or each vessel test after a problem of a different kind.
     The lease of the vessel counts VESSEL_GB_PER_JOB for each job, because a
     shard compile uses more than three times GB_PER_JOB (THE MEMORY of
-    assay.loop.heavy).  The lease is capped: it never grows past the slice
-    of the gate (THE POOL of assay.loop.heavy).  The shards of a compile with
-    no hit of ccache then use at most the slice times VESSEL_GB_PER_JOB,
-    also on a quiet host, where an uncapped lease grows to each shard.
+    assay.loop.heavy).  The shards are often the longest path of a landing,
+    so the lease has the weight VESSEL_WEIGHT: its fair share among the
+    leases of the gate is VESSEL_WEIGHT times the share of a different lease
+    of the gate (THE WEIGHT of assay.loop.heavy).  The lease is capped: it
+    never grows past the slice of the gate times VESSEL_WEIGHT (THE POOL of
+    assay.loop.heavy).  The shards of a compile with no hit of ccache then
+    use at most that cap times VESSEL_GB_PER_JOB, also on a quiet host, where
+    an uncapped lease grows to each shard.
 
 THE CAREFUL SELECTION
     The selection reads files of the commit with the code of the gate, which
@@ -578,6 +582,10 @@ TORCH_VENV = ".venv-torch"
 # The memory of one job of the lease of the vessel, in GB (THE VESSEL).  On 2026-11-14, a compile of one shard of
 # register.cpp had a peak of 1.65 GB, and GB_PER_JOB of assay.loop.heavy is 0.5 GB.
 VESSEL_GB_PER_JOB = 1.7
+# The weight of the lease of the vessel in the slot pool (THE WEIGHT of assay.loop.heavy).  On 2026-11-15 the 96 shards
+# of a build with no hit of ccache ran 13 to 15 at a time, the fair share of a lease among the leases of the gate, and
+# took 419 to 517 s.  The vessel was the longest configuration of 23 of 73 runs that day.
+VESSEL_WEIGHT = 2
 # The rule that configures the build of a configuration of objects again after its first build (THE RUN OF A
 # CONFIGURATION).
 RECONFIGURE_RULE = "reconfigure-noop"
@@ -1508,24 +1516,28 @@ class Step:
             check_report.write_line(text)
 
     @contextlib.contextmanager
-    def leased(self, gb_per_job: float = heavy.GB_PER_JOB, is_capped: bool = False) -> Iterator[heavy.Share]:
-        """Hold a lease of the slot pool with the slice of the gate for the block (THE JOBSERVER).
+    def leased(
+        self, gb_per_job: float = heavy.GB_PER_JOB, is_capped: bool = False, weight: int = 1
+    ) -> Iterator[heavy.Share]:
+        """Hold a lease of the slot pool with the slice of the gate times `weight` for the block (THE JOBSERVER).
 
-        `gb_per_job` is the memory of one job of the lease, and a lease with `is_capped` never grows past the slice
-        (THE POOL and THE MEMORY of assay.loop.heavy).
+        `gb_per_job` is the memory of one job of the lease, and a lease with `is_capped` never grows past its slice.
+        `weight` multiplies the fair share of the lease among the leases of the gate (THE POOL, THE MEMORY and THE
+        WEIGHT of assay.loop.heavy).
 
         Raises:
             Stopped: If the stop event is set before the lease holds a slot
         """
         with heavy.leased(
             self.gate.root,
-            self.gate.slice,
+            self.gate.slice * weight,
             self.gate.pool,
             self.gate.read,
             self.stop,
             is_gate=True,
             gb_per_job=gb_per_job,
             is_capped=is_capped,
+            weight=weight,
         ) as share:
             if share is None:
                 raise Stopped
@@ -2138,7 +2150,8 @@ class Step:
         is_vessel = run.mode is Mode.VESSEL
         gb_per_job = VESSEL_GB_PER_JOB if is_vessel else heavy.GB_PER_JOB
         try:
-            with self.leased(gb_per_job, is_capped=is_vessel) as share:
+            weight = VESSEL_WEIGHT if is_vessel else 1
+            with self.leased(gb_per_job, is_capped=is_vessel, weight=weight) as share:
                 wait_s, lease = round(share.wait_s, 1), share.lease
                 began += share.wait_s
                 problems, red, flaky = self.run_of(run, share, is_again, is_retry)

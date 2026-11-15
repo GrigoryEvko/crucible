@@ -39,18 +39,32 @@ THE POOL
         use.
       * A different hungry lease of the same class holds less than its fair
         share: the pump pulls each idle token above its own fair share at
-        once, and it does not grow above that share.  The fair share is the
-        size of the pool divided by the count of the leases of the class.
+        once, and it does not grow above that share.  The fair share of a
+        lease is the size of the pool times the weight of the lease,
+        divided by the sum of the weights of the leases of the class.  A
+        lease has the weight 1, unless its caller gives a larger weight
+        (THE WEIGHT).
       * Idle tokens for IDLE_TICKS ticks: the pump pulls them, with one
         slot as the minimum, and it frees their slots.  It does not grow
         for HOLDOFF_S seconds after that.
     The pump pulls only idle tokens, so it never stops a job that runs.  A
     lease that must give slots back waits on the FIFO between two ticks.  It
     pulls a token that a child gives back before the child takes it again.
-    Each lease writes its slots, its cap, its hunger and its class into a
-    marker file in the directory LEASES_NAME of the pool, which it locks.  A
-    marker with no lock is the marker of a process that ended, and a reader
-    removes it.
+    Each lease writes its slots, its cap, its hunger, its class and its
+    weight into a marker file in the directory LEASES_NAME of the pool,
+    which it locks.  A marker with no lock is the marker of a process that
+    ended, and a reader removes it.  A marker that does not read as these
+    five numbers counts as a lease of the weight 1 of the class of the
+    reader that does not wait.
+
+THE WEIGHT
+    A job whose length sets the length of a larger job can take a weight
+    above 1.  An example is the vessel of the gate: its shard compiles are
+    often the longest path of a landing (THE VESSEL of assay.loop.gate).
+    The weight multiplies the fair share of the lease in its class, and the
+    caller gives the lease a cap of its slice times the weight.  The weight
+    changes no priority between the classes, and it changes no limit of
+    THE MEMORY.
 
     The leases of a run of the gate (leased() with is_gate) go first.  A
     lease of the gate waits when it is hungry and holds less than its cap
@@ -462,16 +476,24 @@ def room_for(read: Reader, gb_per_job: float = GB_PER_JOB) -> int | None:
     return None if value is None else max(0, math.floor((value - RESERVE_GB) / gb_per_job))
 
 
+def fair_share(pool: Pool, weight: int, total: int) -> int:
+    """Return the fair share of a lease of `weight` in a class whose weights sum to `total`, at least one slot.
+
+    THE POOL and THE WEIGHT give the rule.
+    """
+    return max(1, pool.size * weight // max(1, total))
+
+
 @dataclass(frozen=True, slots=True)
 class Demand:
     """The other leases of the pool at one time, from their markers (THE POOL).
 
-    `active` counts the leases of the class of the reader, with the reader.  A lease waits when it is hungry and holds
-    less than its cap.  `peers_below_fair` counts the hungry leases of the class of the reader below the fair share of
-    that class, the size of the pool divided by `active`.
+    `weight` is the sum of the weights of the leases of the class of the reader, with the reader (THE WEIGHT).  A lease
+    waits when it is hungry and holds less than its cap.  `peers_below_fair` counts the hungry leases of the class of
+    the reader below their fair share: the size of the pool times their weight, divided by `weight`.
     """
 
-    active: int
+    weight: int
     waiting_gate: int
     waiting_other: int
     peers_below_fair: int
@@ -486,16 +508,18 @@ class Lease:
     """The slots of the pool that one job holds, and the marker of the job (THE POOL).
 
     `cap` is the slice of the job, and `is_gate` tells that the job is a part of a run of the gate (THE PRIORITY OF THE
-    GATE).  One thread at a time changes the slots: the pump while it runs, else the owner of the lease.
+    GATE).  `weight` multiplies the fair share of the lease in its class (THE WEIGHT).  One thread at a time changes the
+    slots: the pump while it runs, else the owner of the lease.
     """
 
-    __slots__ = ("_held", "_marker", "_marker_path", "cap", "hungry", "is_gate", "pool", "slot_seconds")
+    __slots__ = ("_held", "_marker", "_marker_path", "cap", "hungry", "is_gate", "pool", "slot_seconds", "weight")
 
-    def __init__(self, pool: Pool, cap: int, is_gate: bool) -> None:
-        """Keep the pool, the cap and the class, and hold no slot and no marker."""
+    def __init__(self, pool: Pool, cap: int, is_gate: bool, weight: int = 1) -> None:
+        """Keep the pool, the cap, the class and the weight, and hold no slot and no marker."""
         self.pool = pool
         self.cap = cap
         self.is_gate = is_gate
+        self.weight = weight
         self._held: list[int] = []
         self._marker = -1
         self._marker_path = Path()
@@ -520,9 +544,9 @@ class Lease:
         self.mark()
 
     def mark(self) -> None:
-        """Write the slots, the cap, the hunger and the class of the lease into its marker, in fixed widths."""
+        """Write the slots, the cap, the hunger, the class and the weight of the lease into its marker, in fixed widths."""
         if self._marker >= 0:
-            line = f"{self.held:6d} {self.cap:6d} {int(self.hungry)} {int(self.is_gate)}\n"
+            line = f"{self.held:6d} {self.cap:6d} {int(self.hungry)} {int(self.is_gate)} {self.weight:6d}\n"
             os.pwrite(self._marker, line.encode("ascii"), 0)
 
     def take(self, count: int) -> int:
@@ -558,15 +582,15 @@ class Lease:
     def demand(self) -> Demand:
         """Read the markers of the pool, remove each one with no lock, and give the demand (THE POOL).
 
-        A marker that does not read as four numbers counts as a lease of the class of the reader that does not wait.  A
-        lease of the gate waits only below the smaller of its cap and the fair share of the gate leases, so a busy gate
-        lease at its share does not stop the other leases.  Complexity: linear in the markers.
+        A marker that does not read as five numbers counts as a lease of the weight 1 of the class of the reader that
+        does not wait.  A lease of the gate waits only below the smaller of its cap and its fair share of the gate
+        leases, so a busy gate lease at its share does not stop the other leases.  Complexity: linear in the markers.
         """
-        active = 1
-        gates = int(self.is_gate)
-        gate_rows: list[tuple[int, int]] = []
+        weight = self.weight
+        gate_weight = self.weight if self.is_gate else 0
+        gate_rows: list[tuple[int, int, int]] = []
         waiting_other = 0
-        peers: list[int] = []
+        peers: list[tuple[int, int]] = []
         for path in sorted((self.pool.directory / LEASES_NAME).glob(f"*{MARKER_SUFFIX}")):
             if path == self._marker_path:
                 continue
@@ -581,22 +605,24 @@ class Lease:
                 words = os.pread(descriptor, 32, 0).split()
             finally:
                 os.close(descriptor)
-            if len(words) != 4 or not all(word.isdigit() for word in words):
-                active += 1
+            if len(words) != 5 or not all(word.isdigit() for word in words):
+                weight += 1
                 continue
-            held, cap, hungry, gate = (int(word) for word in words)
-            gates += gate
+            held, cap, hungry, gate, their_weight = (int(word) for word in words)
+            their_weight = max(1, their_weight)
+            gate_weight += their_weight if gate == 1 else 0
             if gate == 1 and hungry == 1:
-                gate_rows.append((held, cap))
+                gate_rows.append((held, cap, their_weight))
             waiting_other += int(gate == 0 and hungry == 1 and held < cap)
             if gate == int(self.is_gate):
-                active += 1
+                weight += their_weight
                 if hungry == 1:
-                    peers.append(held)
-        gate_fair = max(1, self.pool.size // max(1, gates))
-        waiting_gate = sum(1 for held, cap in gate_rows if held < min(cap, gate_fair))
-        fair = max(1, self.pool.size // active)
-        return Demand(active, waiting_gate, waiting_other, sum(1 for held in peers if held < fair))
+                    peers.append((held, their_weight))
+        waiting_gate = sum(
+            1 for held, cap, row_weight in gate_rows if held < min(cap, fair_share(self.pool, row_weight, gate_weight))
+        )
+        below = sum(1 for held, peer_weight in peers if held < fair_share(self.pool, peer_weight, weight))
+        return Demand(weight, waiting_gate, waiting_other, below)
 
     def close(self) -> None:
         """Free each slot, and remove the marker."""
@@ -625,7 +651,7 @@ def pulled_count(lease: Lease, demand: Demand, idle: int, idle_ticks: int) -> in
     tokens above that share while a hungry lease of its class holds less.  Else a lease gives its idle tokens after
     IDLE_TICKS ticks, with one slot as the minimum.
     """
-    fair = max(1, lease.pool.size // demand.active)
+    fair = fair_share(lease.pool, lease.weight, demand.weight)
     if not lease.is_gate and demand.waiting_gate:
         return min(idle, lease.held - 1)
     if lease.held > lease.cap and demand.is_waiting:
@@ -646,7 +672,7 @@ def grown_count(lease: Lease, demand: Demand, burst: int) -> int:
         return 0
     limit = lease.cap if demand.is_waiting else burst
     if demand.peers_below_fair:
-        limit = min(limit, max(1, lease.pool.size // demand.active))
+        limit = min(limit, fair_share(lease.pool, lease.weight, demand.weight))
     return max(0, min(lease.held, limit - lease.held))
 
 
@@ -755,6 +781,7 @@ def leased(
     is_gate: bool = False,
     gb_per_job: float = GB_PER_JOB,
     is_capped: bool = False,
+    weight: int = 1,
 ) -> Iterator[Share | None]:
     """Hold a lease with the cap `want` of the pool for the block, and give its share (THE POOL).
 
@@ -762,7 +789,8 @@ def leased(
     the repository of root in the shared mode (THE LOCK, THE TURNSTILE).  A lease of the gate goes before each other
     lease (THE PRIORITY OF THE GATE).  The jobs of the share are the most slots of the lease: the size of the pool, or
     the jobs of the memory.  A lease with `is_capped` never grows past its cap, and its most slots are its cap.
-    `gb_per_job` is the memory of one job of the lease, for its cap and for each growth (THE MEMORY).
+    `gb_per_job` is the memory of one job of the lease, for its cap and for each growth (THE MEMORY).  `weight`
+    multiplies the fair share of the lease in its class (THE WEIGHT).
 
     Raises:
         jobserver.JobserverError: If the jobserver of the lease cannot be made
@@ -781,7 +809,7 @@ def leased(
         check_report.write_line(f"memory: {MEMORY_FILE} gives no {MEMORY_FIELD}, so the lease keeps {cap} jobs")
     else:
         check_report.write_line(f"memory: available {value:.1f} GB, {cap} of {want} jobs, {burst} at most{each}")
-    lease = Lease(chosen, cap, is_gate)
+    lease = Lease(chosen, cap, is_gate, weight)
     with open(lock, "a", encoding="ascii") as handle, open(turn_path(root), "a", encoding="ascii") as turn:
         try:
             if not held_shared(handle, turn, stop, pause):

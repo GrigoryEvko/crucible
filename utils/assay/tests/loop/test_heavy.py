@@ -460,6 +460,62 @@ def fair_cases(expect: testing.Expect) -> None:
         )
 
 
+def weight_cases(expect: testing.Expect) -> None:
+    """Hold THE WEIGHT: the fair share of a lease is the pool times its weight over the sum of the weights of its class.
+
+    Three hungry leases of the gate share a pool of 12: one of the weight 2 and two of the weight 1.  The fair share of
+    the first is 6 slots, and of each other one 3.  The case calls the pump counts on the markers, with no time.
+    """
+    with tempfile.TemporaryDirectory(prefix="heavy-weight-") as work_text:
+        pool = heavy.Pool(Path(work_text) / "slots", 12)
+        pool.directory.mkdir()
+        heavy_lease = heavy.Lease(pool, 12, True, weight=2)
+        light = heavy.Lease(pool, 12, True)
+        other = heavy.Lease(pool, 12, True)
+        leases = (heavy_lease, light, other)
+        old_marker = pool.directory / heavy.LEASES_NAME / f"old{heavy.MARKER_SUFFIX}"
+        try:
+            for lease in leases:
+                lease.register()
+                lease.take(1)
+                lease.hungry = True
+            heavy_lease.take(2)
+            for lease in leases:
+                lease.mark()
+            grown = heavy.grown_count(heavy_lease, heavy_lease.demand(), pool.size)
+            heavy_lease.take(2)
+            heavy_lease.mark()
+            seen_below = light.demand().peers_below_fair
+            heavy_lease.take(3)
+            heavy_lease.mark()
+            pulled = heavy.pulled_count(heavy_lease, heavy_lease.demand(), heavy_lease.held, 0)
+            with open(old_marker, "w", encoding="ascii") as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                handle.write("     1     12 1 1\n")
+                handle.flush()
+                with_old = heavy_lease.demand()
+            weights = sorted(
+                words[-1]
+                for path in old_marker.parent.glob(f"*{heavy.MARKER_SUFFIX}")
+                if len(words := path.read_text(encoding="ascii").split()) == 5
+            )
+        finally:
+            for lease in leases:
+                lease.close()
+        expect(
+            f"a lease of the weight 2 among two leases of the weight 1 grows to its share of 6 of 12 slots, a peer sees "
+            f"it below its share at 5 slots, and at 8 slots it gives the idle tokens above 6: it grows by {grown}, the "
+            f"peer sees {seen_below} leases below their share, and it gives {pulled}",
+            grown == 3 and seen_below == 2 and pulled == 2,
+        )
+        expect(
+            f"each marker holds the weight of its lease, and a marker of four numbers counts as a lease of the weight 1 "
+            f"that does not wait: the weights {weights}, the sum {with_old.weight} and the waiting leases "
+            f"{with_old.waiting_gate}",
+            weights == ["1", "1", "2"] and with_old.weight == 5 and with_old.waiting_gate == 2,
+        )
+
+
 def priority_cases(expect: testing.Expect) -> None:
     """Hold THE PRIORITY OF THE GATE in the pool and THE TURNSTILE.
 
@@ -576,6 +632,7 @@ def main(argv: list[str]) -> int:
             lease_cases,
             kill_cases,
             fair_cases,
+            weight_cases,
             priority_cases,
             start_cases,
         ),
