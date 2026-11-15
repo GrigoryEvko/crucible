@@ -264,7 +264,7 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
 // The log of the trace is large, so it is not on the stack of main.
 TraceLog g_trace_log{};
 
-[[nodiscard]] crucible::Cipher open_cipher(fixy::TextView root) {
+[[nodiscard]] crucible::CipherOpenResult open_cipher(fixy::TextView root) {
     fixy::TestRunnerCtx const ctx{foundation::effects::testing::test()};
     return crucible::Cipher::open(ctx, ctx.cap().alloc, fixy::mint_tagged<fixy::tags::source::External>(root));
 }
@@ -273,8 +273,9 @@ TraceLog g_trace_log{};
 // session events.  True when the store gives the two hashes.
 [[nodiscard]] bool store_into(PathBuffer const& root) {
     fixy::TestRunnerCtx const ctx{foundation::effects::testing::test()};
-    crucible::Cipher cipher = open_cipher(root.c_text().view());
-    if (!cipher.is_open()) return false;
+    crucible::CipherOpenResult opened = open_cipher(root.c_text().view());
+    if (opened.is_err()) return false;
+    crucible::Cipher cipher = std::move(opened).expect("the test above found the store");
     const auto view = cipher.mint_open_view(ctx);
     fixy::BumpArena arena{1 << 16};
     const fixy::View<crucible::TraceEntry> ops =

@@ -109,8 +109,7 @@ examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 1 | - | -
-include/crucible/ | raw-function-pointer | 2 | - | -
-include/crucible/ | raw-pointer-object | 20 | - | -
+include/crucible/ | raw-pointer-object | 18 | - | -
 include/crucible/ | region | 1 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
@@ -201,8 +200,8 @@ include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 467 | - | -
-include/fixy/session/ | base-std-object | 197 | - | -
+include/fixy/session/ | base-std-entity | 465 | - | -
+include/fixy/session/ | base-std-object | 194 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 2 | - | -
@@ -278,7 +277,7 @@ include/foundation/reflect/ | replace-pending:<string_view> | 5 | - | -
 include/foundation/reflect/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | raw-new-delete | 3 | - | -
-src/ | raw-pointer-object | 8 | - | -
+src/ | raw-pointer-object | 7 | - | -
 src/ | std-entity | 53 | - | -
 src/ | std-object | 10 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
@@ -305,14 +304,14 @@ test/ | door-header | 25 | - | -
 test/ | foreign-symbol | 13 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | opted-out | 47 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
-test/ | opted-out | 13 | PROBE: the current directory of the process is a directory that it cannot read | the test of the root of the Cipher makes its current directory unreadable through the C library, because the base has no door that changes the current directory or the mode of a directory, and an absolute root must open when the current directory does not open
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
+test/ | opted-out | 22 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 339 | - | -
+test/ | raw-pointer-object | 337 | - | -
 test/ | region | 1 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
-test/ | region | 1 | PROBE: the current directory of the process is a directory that it cannot read | the test of the root of the Cipher makes its current directory unreadable through the C library, because the base has no door that changes the current directory or the mode of a directory, and an absolute root must open when the current directory does not open
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
+test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 77 | - | -
 test/ | std-entity | 1481 | - | -
@@ -385,7 +384,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2844 | - | -
+test/fixy/ | std-entity | 2829 | - | -
 test/fixy/ | std-object | 1032 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
@@ -639,7 +638,7 @@ test/tsan/ | std-object | 13 | - | -
 test/types_neg/ | raw-function-pointer | 1 | - | -
 test/vessel_neg/ | c-array-object | 1 | - | -
 test/vigil_neg/ | c-array-object | 1 | - | -
-test/vigil_neg/ | raw-pointer-object | 3 | - | -
+test/vigil_neg/ | raw-pointer-object | 2 | - | -
 test/vigil_neg/ | std-entity | 1 | - | -
 utils/tools/ | c-array-object | 1 | - | -
 utils/tools/ | c-library-call | 9 | - | -

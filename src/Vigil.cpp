@@ -36,12 +36,19 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
 
     // An empty path gives no store.  The configured path is operator-supplied,
     // so it crosses the trust boundary here and is declared external until
-    // the store's own sanitizer promotes it.
+    // the store's own sanitizer promotes it.  A root that does not open gives
+    // no store, and the report tells the operator the reason.
     if (cfg_.cipher_path.size() != 0) {
-        cipher_ = ::fixy::some(::fixy::mint_box<Cipher>(
-            startup.cap().alloc,
-            Cipher::open(startup, startup.cap().alloc,
-                         ::fixy::mint_tagged<::fixy::tags::source::External>(cfg_.cipher_path.view()))));
+        Cipher::open(startup, startup.cap().alloc,
+                     ::fixy::mint_tagged<::fixy::tags::source::External>(cfg_.cipher_path.view()))
+            .match(
+                [&](Cipher opened) {
+                    cipher_ = ::fixy::some(::fixy::mint_box<Cipher>(startup.cap().alloc, std::move(opened)));
+                },
+                [&](Cipher::OpenError reason) {
+                    ::fixy::report(::fixy::Sink::Err, "[crucible] the Cipher store at {} does not open: {}\n",
+                                   cfg_.cipher_path.view(), Cipher::open_error_text(reason));
+                });
     }
 
     // The watchdog is constructed before the background thread starts,

@@ -101,7 +101,8 @@ int main() {
         for (std::size_t index = 0; dir[index] != '\0'; ++index) {
             root.append(A, dir[index]).expect("the text holds each character of the directory");
         }
-        auto cipher = Cipher::open(ctx, A, ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()));
+        auto cipher = Cipher::open(ctx, A, ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()))
+                          .expect("the bench opens its store");
         auto open_view = cipher.mint_open_view(ctx);
 
         ::fixy::BumpArena warm_dag_arena{1 << 18};

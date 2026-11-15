@@ -61,6 +61,21 @@ static std::filesystem::path object_path_for(const std::filesystem::path& root, 
     return root / "objects" / std::string(hex, 2) / std::string(hex + 2, 14);
 }
 
+// A store path under /dev/null, which is no directory, gives a Vigil with no
+// store.  The Vigil reports the reason, and persist gives false.
+static void test_store_that_does_not_open_gives_no_store() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    crucible::Vigil::Config cfg;
+    for (const char character : ::fixy::TextView{"/dev/null/store"}) {
+        cfg.cipher_path.append(ctx.cap().alloc, character).expect("the store path fits the bound of the path");
+    }
+    crucible::Vigil vigil(std::move(cfg));
+    if (vigil.has_store() || static_cast<bool>(vigil.head_hash()) || vigil.persist(ctx)) {
+        ::fixy::fatal("a store path under /dev/null gave a Vigil with a store");
+    }
+    crucible::test::pass("  store_that_does_not_open_gives_no_store: PASSED\n");
+}
+
 int main() {
     test_vigil::test_divergence_drops_the_unobserved_region();
     test_vigil::test_divergence_drops_the_regions_of_the_backlog();
@@ -74,6 +89,7 @@ int main() {
     test_vigil::test_producer_surface_takes_the_claim_context();
     test_vigil::test_foreground_reads_the_iteration_count();
     test_vigil::test_region_keeps_its_metadata_after_the_log_wraps();
+    test_store_that_does_not_open_gives_no_store();
 
     char tmpdir[] = "/tmp/crucible_vigil_XXXXXX";
     char* dir = mkdtemp(tmpdir);

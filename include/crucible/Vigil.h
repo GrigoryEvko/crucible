@@ -205,7 +205,9 @@ public:
 private:
     // Makes the ring and the metadata log, opens the store when the
     // configuration names a path, loads the watchdog when the configuration
-    // asks for it, and starts the background thread.  The body is in
+    // asks for it, and starts the background thread.  A store that does not
+    // open gives a report of the reason and a Vigil with no store, and
+    // has_store tells the caller.  The body is in
     // src/Vigil.cpp, so a translation unit that makes a Vigil compiles no
     // part of the background pipeline.
     //
@@ -411,9 +413,14 @@ public:
     // Advanced only by the background thread, once per region transition.
     [[nodiscard]] uint64_t current_step() const noexcept { return step_.get(); }
 
-    // The head of the store, or the none hash when no store path was
-    // configured.  The body is in src/Vigil.cpp, which includes the store.
+    // The head of the store, or the none hash when the Vigil has no store.
+    // The body is in src/Vigil.cpp, which includes the store.
     [[nodiscard]] ContentHash head_hash() const noexcept;
+
+    // True when the Vigil has a store.  A Vigil has no store when the
+    // configuration names no path, or when the store at the path does not
+    // open.  Then persist and load give false.
+    [[nodiscard]] bool has_store() const noexcept { return cipher_.is_some(); }
 
     // Waits until the background thread has fully processed every entry the
     // ring held when this was called.  Fully processed means drained, fed to

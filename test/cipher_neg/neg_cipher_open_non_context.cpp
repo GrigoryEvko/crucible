@@ -11,5 +11,5 @@ int main() {
     auto cipher = ::crucible::Cipher::open(
         ::foundation::effects::testing::test(), ::foundation::effects::testing::test().alloc,
         ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"/tmp/crucible_neg_open_non_context"}));
-    return cipher.is_open() ? 0 : 1;
+    return cipher.is_ok() ? 0 : 1;
 }

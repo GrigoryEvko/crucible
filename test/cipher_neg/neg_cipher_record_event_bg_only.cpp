@@ -14,7 +14,8 @@ int main() {
     const ::fixy::TestRunnerCtx store_ctx{eff::testing::test()};
     auto cipher = ::crucible::Cipher::open(store_ctx, store_ctx.cap().alloc,
                                            ::fixy::mint_tagged<::fixy::tags::source::External>(
-                                               ::fixy::TextView{"/tmp/crucible_neg_record_event_bg_only"}));
+                                               ::fixy::TextView{"/tmp/crucible_neg_record_event_bg_only"}))
+                      .expect("the fixture opens its store");
     const auto view = cipher.mint_open_view(store_ctx);
     const ::fixy::BgDrainCtx drain{eff::testing::bg()};
     cipher.record_event(drain, view, ::crucible::ContentHash{1u}, std::uint64_t{1u});

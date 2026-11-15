@@ -7,8 +7,13 @@
 // A process of the root user reads each directory, so for it the case
 // passes with no unreadable directory.  The case of a relative root makes
 // the root under a current directory that the process can read.
+//
+// The open follows the link of a parent of the root, as /var/run is a link
+// to /run.  A root that the open cannot make or open gives its reason, and
+// the process goes on.  A name below the root still opens beneath the root.
 
 #include <crucible/Cipher.h>
+#include <crucible/MerkleDag.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/Fs.h>
@@ -17,7 +22,7 @@
 
 #include "scratch_dir.h"
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the current directory of the process is a directory that it cannot read")
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test sets the current directory, the modes and the links of a root")
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -45,6 +50,22 @@ namespace {
     return ::chmod(scratch.file(name).c_str(), 0700) == 0 && ::chdir("/") == 0;
 }
 
+// Gives the directory name of the scratch directory the mode, for a
+// directory in which the process may not make a name.
+[[nodiscard]] bool set_mode(crucible::test::ScratchDir const& scratch, char const* name, unsigned mode) noexcept {
+    return ::chmod(scratch.file(name).c_str(), static_cast<mode_t>(mode)) == 0;
+}
+
+// True when the process is the root user, which may make a name in each
+// directory.
+[[nodiscard]] bool is_root_user() noexcept { return ::geteuid() == 0; }
+
+// Makes the link name in the scratch directory to the entry target of the
+// scratch directory.  The target need not exist.
+[[nodiscard]] bool make_link(crucible::test::ScratchDir const& scratch, char const* target, char const* name) noexcept {
+    return ::symlink(scratch.file(target).c_str(), scratch.file(name).c_str()) == 0;
+}
+
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
@@ -60,9 +81,36 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
     return path;
 }
 
-[[nodiscard]] crucible::Cipher open_cipher(fixy::TextView root) {
+[[nodiscard]] crucible::CipherOpenResult open_cipher(fixy::TextView root) {
     fixy::TestRunnerCtx const ctx{foundation::effects::testing::test()};
     return crucible::Cipher::open(ctx, ctx.cap().alloc, fixy::mint_tagged<fixy::tags::source::External>(root));
+}
+
+// Opens a store at the path below the scratch directory.
+[[nodiscard]] crucible::CipherOpenResult open_below(crucible::test::ScratchDir const& scratch, fixy::TextView below) {
+    PathBuffer const root = joined(text_of(scratch), below);
+    return open_cipher(root.c_text().view());
+}
+
+// Makes the empty file name under dir, and closes it.
+[[nodiscard]] bool make_file(fixy::TestRunnerCtx const& ctx, fixy::fs::Dirfd const& dir, fixy::CText name) {
+    using WriteTruncate = fixy::atom::fs::mode<fixy::fs::open_mode::WriteTruncate>;
+    return fixy::fs::mint_file_at<WriteTruncate>(ctx, dir, name)
+        .match(
+            [](fixy::Linear<fixy::fs::OwnedFd> opened) {
+                fixy::fs::OwnedFd const file = std::move(opened).consume();
+                return file.is_open();
+            },
+            [](foundation::os::Errno) { return false; });
+}
+
+// True when the open gives a store.
+[[nodiscard]] bool opens(crucible::CipherOpenResult const& opened) { return opened.is_ok(); }
+
+// True when the open gives no store, with the reason.
+[[nodiscard]] bool refuses_with(crucible::CipherOpenResult const& opened, crucible::Cipher::OpenError reason) {
+    return opened.match([](crucible::Cipher const&) { return false; },
+                        [reason](crucible::Cipher::OpenError given) { return given == reason; });
 }
 
 // True when the Cipher made the object directory of its root at path.
@@ -89,9 +137,9 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
         fixy::report(fixy::Sink::Err, "the test did not enter the unreadable directory\n");
         return 1;
     }
-    crucible::Cipher const cipher = open_cipher(root.c_text().view());
+    crucible::CipherOpenResult const opened = open_cipher(root.c_text().view());
     bool const is_left = leave(scratch, "unreadable");
-    if (!cipher.is_open() || !has_objects(root)) {
+    if (!opens(opened) || !has_objects(root)) {
         fixy::report(fixy::Sink::Err, "the Cipher did not make its new absolute root\n");
         return 1;
     }
@@ -108,14 +156,155 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
         fixy::report(fixy::Sink::Err, "the test did not enter the scratch directory\n");
         return 1;
     }
-    crucible::Cipher const cipher = open_cipher("relative/first/./second");
+    crucible::CipherOpenResult const opened = open_cipher("relative/first/./second");
     bool const is_left = leave(scratch, ".");
-    if (!cipher.is_open() || !has_objects(joined(text_of(scratch), "/relative/first/second"))) {
+    if (!opens(opened) || !has_objects(joined(text_of(scratch), "/relative/first/second"))) {
         fixy::report(fixy::Sink::Err, "the Cipher did not make its new relative root\n");
         return 1;
     }
     if (!is_left) {
         fixy::report(fixy::Sink::Err, "the test did not leave the scratch directory\n");
+        return 1;
+    }
+    return 0;
+}
+
+// A new root under a parent that is a link, as /var/run is a link to /run,
+// opens, and the open makes the root in the target of the link.
+[[nodiscard]] int root_opens_under_a_linked_parent(crucible::test::ScratchDir const& scratch) {
+    fixy::TestRunnerCtx const ctx{foundation::effects::testing::test()};
+    fixy::Path<fixy::tags::source::Sanitized> const scratch_path =
+        fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(text_of(scratch)))
+            .expect("the scratch path passes the sanitizer");
+    fixy::fs::Dirfd const scratch_dir = fixy::fs::open_dirfd(ctx, scratch_path).expect("the scratch directory opens");
+    if (fixy::fs::make_directory_at(ctx, scratch_dir, "target").is_err() || !make_link(scratch, "target", "linked")) {
+        fixy::report(fixy::Sink::Err, "the test did not make the linked parent\n");
+        return 1;
+    }
+    crucible::CipherOpenResult const opened = open_below(scratch, "/linked/new/store");
+    if (!opens(opened) || !has_objects(joined(text_of(scratch), "/target/new/store"))) {
+        fixy::report(fixy::Sink::Err, "the Cipher did not make its new root under a linked parent\n");
+        return 1;
+    }
+    return 0;
+}
+
+// A root that exists opens under a parent that the process can search and
+// cannot read, because the open of the root reads the root alone.  For the
+// root user the mode changes nothing, and the case also passes.
+[[nodiscard]] int existing_root_opens_under_a_search_only_parent(crucible::test::ScratchDir const& scratch) {
+    if (!opens(open_below(scratch, "/search_only/store"))) {
+        fixy::report(fixy::Sink::Err, "the Cipher did not make the root under the search-only parent\n");
+        return 1;
+    }
+    if (!set_mode(scratch, "search_only", 0100)) return 1;
+    bool const is_open = opens(open_below(scratch, "/search_only/store"));
+    if (!set_mode(scratch, "search_only", 0700) || !is_open) {
+        fixy::report(fixy::Sink::Err, "an existing root under a search-only parent does not open\n");
+        return 1;
+    }
+    return 0;
+}
+
+// A relative root that exists opens in a current directory that the process
+// can search and cannot read.
+[[nodiscard]] int existing_relative_root_opens_in_a_search_only_directory(crucible::test::ScratchDir const& scratch) {
+    if (!opens(open_below(scratch, "/search_only_cwd/store"))) {
+        fixy::report(fixy::Sink::Err, "the Cipher did not make the root in the search-only directory\n");
+        return 1;
+    }
+    if (!enter_unreadable(scratch, "search_only_cwd")) {
+        fixy::report(fixy::Sink::Err, "the test did not enter the search-only directory\n");
+        return 1;
+    }
+    crucible::CipherOpenResult const opened = open_cipher("store");
+    bool const is_left = leave(scratch, "search_only_cwd");
+    if (!opens(opened) || !is_left) {
+        fixy::report(fixy::Sink::Err, "an existing relative root in a search-only directory does not open\n");
+        return 1;
+    }
+    return 0;
+}
+
+// Each root that the open cannot make or open gives its reason, and the
+// process goes on.
+[[nodiscard]] int refused_roots_give_their_reasons(crucible::test::ScratchDir const& scratch) {
+    using crucible::Cipher;
+    fixy::TestRunnerCtx const ctx{foundation::effects::testing::test()};
+    fixy::Path<fixy::tags::source::Sanitized> const scratch_path =
+        fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(text_of(scratch)))
+            .expect("the scratch path passes the sanitizer");
+    fixy::fs::Dirfd const scratch_dir = fixy::fs::open_dirfd(ctx, scratch_path).expect("the scratch directory opens");
+
+    // A part of the path is a link to a name that does not exist.
+    if (!make_link(scratch, "absent", "dangling")) return 1;
+    if (!refuses_with(open_below(scratch, "/dangling/store"), Cipher::OpenError::missing)) {
+        fixy::report(fixy::Sink::Err, "a root through a dangling link does not give missing\n");
+        return 1;
+    }
+
+    // A part of the path is a file.
+    if (!make_file(ctx, scratch_dir, "plain")) return 1;
+    if (!refuses_with(open_below(scratch, "/plain/store"), Cipher::OpenError::not_a_directory)) {
+        fixy::report(fixy::Sink::Err, "a root under a file does not give not_a_directory\n");
+        return 1;
+    }
+
+    // The root itself is a link.
+    if (fixy::fs::make_directory_at(ctx, scratch_dir, "real_root").is_err()
+        || !make_link(scratch, "real_root", "root_link")) {
+        return 1;
+    }
+    if (!refuses_with(open_below(scratch, "/root_link"), Cipher::OpenError::not_a_directory)) {
+        fixy::report(fixy::Sink::Err, "a root that is a link does not give not_a_directory\n");
+        return 1;
+    }
+
+    // The sanitizer refuses a ".." part.
+    if (!refuses_with(open_below(scratch, "/a/../b"), Cipher::OpenError::path_refused)) {
+        fixy::report(fixy::Sink::Err, "a root with a .. part does not give path_refused\n");
+        return 1;
+    }
+
+    // The process may not make a name in the parent.  The root user may.
+    if (!is_root_user()) {
+        if (fixy::fs::make_directory_at(ctx, scratch_dir, "locked").is_err() || !set_mode(scratch, "locked", 0500)) {
+            return 1;
+        }
+        const bool is_refused = refuses_with(open_below(scratch, "/locked/store"), Cipher::OpenError::no_permission);
+        if (!set_mode(scratch, "locked", 0700) || !is_refused) {
+            fixy::report(fixy::Sink::Err, "a root in a directory that the process may not write does not give "
+                                          "no_permission\n");
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// A name below the root still opens beneath the root: a link at objects to a
+// directory outside the root takes no object, and the store gives no hash.
+[[nodiscard]] int name_below_the_root_cannot_escape(crucible::test::ScratchDir const& scratch) {
+    fixy::TestRunnerCtx const ctx{foundation::effects::testing::test()};
+    fixy::Path<fixy::tags::source::Sanitized> const scratch_path =
+        fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(text_of(scratch)))
+            .expect("the scratch path passes the sanitizer");
+    fixy::fs::Dirfd const scratch_dir = fixy::fs::open_dirfd(ctx, scratch_path).expect("the scratch directory opens");
+    if (fixy::fs::make_directory_at(ctx, scratch_dir, "escape_root").is_err()
+        || fixy::fs::make_directory_at(ctx, scratch_dir, "outside").is_err()
+        || !make_link(scratch, "outside", "escape_root/objects")) {
+        fixy::report(fixy::Sink::Err, "the test did not make the escaping link\n");
+        return 1;
+    }
+    crucible::Cipher cipher = open_below(scratch, "/escape_root").expect("a root whose objects is a link still opens");
+    const auto view = cipher.mint_open_view(ctx);
+    fixy::BumpArena arena{1 << 12};
+    const fixy::View<crucible::TraceEntry> ops =
+        arena.array<crucible::TraceEntry>(ctx.cap().alloc, 1, crucible::TraceEntry{});
+    ops.get(0).expect("the region holds one op")->schema_hash = crucible::SchemaHash{0xE5C};
+    const crucible::ContentHash stored = cipher.store(
+        ctx, view, crucible::Cipher::content_addressed(crucible::make_region(ctx.cap().alloc, arena, ops)));
+    if (static_cast<bool>(stored)) {
+        fixy::report(fixy::Sink::Err, "a store through a link at objects gave a hash\n");
         return 1;
     }
     return 0;
@@ -131,5 +320,10 @@ int main() {
     }
     if (int const rc = absolute_root_opens_from_an_unreadable_directory(scratch); rc != 0) return rc;
     if (int const rc = relative_root_opens_under_the_current_directory(scratch); rc != 0) return rc;
+    if (int const rc = root_opens_under_a_linked_parent(scratch); rc != 0) return rc;
+    if (int const rc = existing_root_opens_under_a_search_only_parent(scratch); rc != 0) return rc;
+    if (int const rc = existing_relative_root_opens_in_a_search_only_directory(scratch); rc != 0) return rc;
+    if (int const rc = refused_roots_give_their_reasons(scratch); rc != 0) return rc;
+    if (int const rc = name_below_the_root_cannot_escape(scratch); rc != 0) return rc;
     return 0;
 }

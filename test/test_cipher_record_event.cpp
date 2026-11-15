@@ -42,7 +42,8 @@ namespace eff = ::foundation::effects;
         root.append(store_ctx().cap().alloc, dir[index]).expect("the text holds each character of the directory");
     }
     return Cipher::open(store_ctx(), store_ctx().cap().alloc,
-                        ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()));
+                        ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()))
+        .expect("the test opens its store");
 }
 
 // Records one event and requires that the commit happened.

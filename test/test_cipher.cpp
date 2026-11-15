@@ -35,7 +35,8 @@ static auto g_test = ::foundation::effects::testing::test();
         root.append(g_test.alloc, dir[index]).expect("the text holds each character of the directory");
     }
     return crucible::Cipher::open(store_ctx(), g_test.alloc,
-                                  ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()));
+                                  ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()))
+        .expect("the test opens its store");
 }
 
 // The salt goes into the schema hashes, so two salts give two regions with

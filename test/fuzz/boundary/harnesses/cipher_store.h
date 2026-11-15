@@ -102,8 +102,8 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     for (std::size_t index = 0; root.c_str()[index] != '\0'; ++index) {
         root_text.append(test_alloc(), root.c_str()[index]).expect("the text holds each character of the directory");
     }
-    auto cipher =
-        Cipher::open(ctx, test_alloc(), ::fixy::mint_tagged<::fixy::tags::source::External>(root_text.view()));
+    auto cipher = Cipher::open(ctx, test_alloc(), ::fixy::mint_tagged<::fixy::tags::source::External>(root_text.view()))
+                      .expect("the harness opens its store");
     const auto view = cipher.mint_open_view(ctx);
 
     const std::filesystem::path session_dir = root / "session_events" / hex16(session_raw);

@@ -248,42 +248,135 @@ template <class Ctx>
     return open_level_(ctx, dir, name);
 }
 
-// Makes each directory of root that is missing, from the first part on, as
-// mkdir -p does.  The walk starts at a Dirfd of "/" for an absolute root,
-// and of the current directory for a relative root.  It makes one name at a
-// time under the Dirfd of the directory before it, and then it opens that
-// name, so no door takes a full path.  A name that is there gives eexist.
-// A name that the walk makes is a new entry of the directory before it, so
-// the walk syncs that directory.  A name that is there is no entry of the
-// store, and the walk does not sync its directory.  The open of a name
-// follows no symbolic link, so the walk stops at a link, and at each name
-// that does not open.  The open of the root after the walk reads the full
-// path, so a root that exists opens through a link.  The sanitizer of the
-// root refused each ".." part.  Complexity: one make and one open for each
-// part of the root, one sync for each part that the walk makes, and one
-// copy of each character.
+// The reason of the error of a make or an open of a part of the root.
+[[nodiscard]] Cipher::OpenError open_error_of_(::foundation::os::Errno error) noexcept {
+    using ::foundation::os::Errno;
+    if (error == Errno::enoent) return Cipher::OpenError::missing;
+    if (error == Errno::enotdir || error == Errno::eloop) return Cipher::OpenError::not_a_directory;
+    if (error == Errno::eacces || error == Errno::eperm) return Cipher::OpenError::no_permission;
+    return Cipher::OpenError::open_failed;
+}
+
+// Opens the directory at the full path prefix, which ends in a slash.  The
+// slash makes the open follow a link at the last part, so a part of the root
+// that is a link opens as the directory of its target.
 template <class Ctx>
-void make_root_directories_(Ctx const& ctx, ::fixy::TextView root) noexcept {
-    const ::fixy::TextView start_text = ::fixy::starts_with(root, "/") ? ::fixy::TextView{"/"} : ::fixy::TextView{"."};
-    const ::fixy::Path<::fixy::tags::source::Sanitized> start =
-        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(start_text))
-            .expect("the sanitizer passes the root directory and the current directory");
-    ::fixy::fs::Dirfd level = ::fixy::fs::open_dirfd(ctx, start)
-                                  .match([](::fixy::fs::Dirfd opened) { return opened; },
-                                         [](::foundation::os::Errno) { return ::fixy::fs::Dirfd{}; });
+[[nodiscard]] ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError>
+open_prefix_(Ctx const& ctx, Cipher::RootPath const& prefix) noexcept {
+    using Opened = ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError>;
+    return ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(prefix.c_text().view()))
+        .match(
+            [&](::fixy::Path<::fixy::tags::source::Sanitized> path) -> Opened {
+                return ::fixy::fs::open_dirfd(ctx, path).match(
+                    [](::fixy::fs::Dirfd dir) -> Opened { return dir; },
+                    [](::foundation::os::Errno error) -> Opened { return ::fixy::err(open_error_of_(error)); });
+            },
+            [](::fixy::PathTraversalError) -> Opened { return ::fixy::err(Cipher::OpenError::path_refused); });
+}
+
+// Makes the directory name under dir, and syncs dir, which holds the new
+// entry.  A name that is there gives eexist, and the make then gives no
+// error, so the open after it gives the reason of a name that is no
+// directory.
+template <class Ctx>
+[[nodiscard]] ::fixy::Result<::fixy::Unit, Cipher::OpenError> make_part_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir,
+                                                                         ::fixy::CText name) noexcept {
+    using Made = ::fixy::Result<::fixy::Unit, Cipher::OpenError>;
+    return ::fixy::fs::make_directory_at(ctx, dir, name)
+        .match(
+            [&](::fixy::Unit) -> Made {
+                if (::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).is_err()) {
+                    return ::fixy::err(Cipher::OpenError::open_failed);
+                }
+                return ::fixy::Unit{};
+            },
+            [](::foundation::os::Errno error) -> Made {
+                if (error == ::foundation::os::Errno::eexist) return ::fixy::Unit{};
+                return ::fixy::err(open_error_of_(error));
+            });
+}
+
+// True when opened holds the error reason.
+[[nodiscard]] bool holds_error_(::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError> const& opened,
+                                Cipher::OpenError reason) noexcept {
+    return opened.match([](::fixy::fs::Dirfd const&) { return false; },
+                        [reason](Cipher::OpenError given) { return given == reason; });
+}
+
+// Opens the directory at prefix as open_prefix_ does, but a directory that
+// opens only for search gives a closed Dirfd.  The open of the root needs
+// search permission on each parent and read permission on the root alone,
+// so the walk goes on past such a parent.
+template <class Ctx>
+[[nodiscard]] ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError>
+open_searchable_(Ctx const& ctx, Cipher::RootPath const& prefix) noexcept {
+    ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError> opened = open_prefix_(ctx, prefix);
+    if (holds_error_(opened, Cipher::OpenError::no_permission)) return ::fixy::fs::Dirfd{};
+    return opened;
+}
+
+// Opens the part at prefix, and makes it under parent when it is missing.
+// A missing part under a parent that opens only for search gives
+// no_permission, because the make needs the Dirfd of the parent.
+template <class Ctx>
+[[nodiscard]] ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError>
+open_part_(Ctx const& ctx, ::fixy::fs::Dirfd const& parent, Cipher::RootPath const& prefix,
+           ::fixy::CText name) noexcept {
+    using OpenError = Cipher::OpenError;
+    ::fixy::Result<::fixy::fs::Dirfd, OpenError> opened = open_searchable_(ctx, prefix);
+    if (!holds_error_(opened, OpenError::missing)) return opened;
+    if (!parent.is_open()) return ::fixy::err(OpenError::no_permission);
+    CRUCIBLE_TRY(_, make_part_(ctx, parent, name));
+    return open_searchable_(ctx, prefix);
+}
+
+// Makes each directory of root that is missing, from the first part on, as
+// mkdir -p does.  The path of the root is configuration that an operator
+// gives, and the operator trusts the links of that path.  So the walk opens
+// each part by its full path with a slash at its end, and the open follows
+// a link at the part, such as /var/run.  The walk starts at "/" for an
+// absolute root, and at the current directory for a relative root, so an
+// absolute root does not read the current directory.  open_part_ makes a
+// missing part under the Dirfd of the part before it, and it gives a closed
+// Dirfd for a part that opens only for search.  The open of the root after
+// the walk gives the reason of a root that does not open.  The sanitizer of
+// the root refused each ".." part.  Each name below the root still opens
+// beneath the Dirfd of the root.  The prefix adds "./" and a slash to the
+// root, so a root within three bytes of MAX_ROOT_PATH_BYTES gives
+// path_refused.  Complexity: one or two opens of a full path for each part,
+// one make and one sync for each part that the walk makes, and one copy of
+// each character.
+template <class Ctx>
+[[nodiscard]] ::fixy::Result<::fixy::Unit, Cipher::OpenError> make_root_directories_(Ctx const& ctx,
+                                                                                     ::fixy::TextView root) noexcept {
+    using OpenError = Cipher::OpenError;
+    Cipher::RootPath prefix{};
+    const ::fixy::TextView start = ::fixy::starts_with(root, "/") ? ::fixy::TextView{"/"} : ::fixy::TextView{"./"};
+    if (prefix.append(start).is_err()) return ::fixy::err(OpenError::path_refused);
+    CRUCIBLE_TRY(start_dir, open_searchable_(ctx, prefix));
+    ::fixy::fs::Dirfd level = std::move(start_dir);
     ::fixy::TextView rest = root;
-    while (level.is_open() && rest.size() != 0) {
+    while (rest.size() != 0) {
         const std::size_t length = ::fixy::find(rest, '/').value_or(rest.size());
         const ::fixy::TextView part = rest.window(0, length).expect("a find gives an offset in the text");
         const std::size_t after = ::fixy::min(length + 1, rest.size());
         rest = rest.window(after, rest.size() - after).expect("the offset after the part is in the text");
         if (part.size() == 0 || part == ::fixy::TextView{"."}) continue;
         Cipher::RootPath name{};
-        if (name.append(part).is_err()) return;
-        const bool is_made = ::fixy::fs::make_directory_at(ctx, level, name.c_text()).is_ok();
-        if (is_made && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, level).is_err()) return;
-        level = open_level_(ctx, level, name.c_text());
+        const bool is_named = name.append(part).is_ok() && prefix.append(part).is_ok() && prefix.append('/').is_ok();
+        if (!is_named) return ::fixy::err(OpenError::path_refused);
+        const ::fixy::Option<OpenError> refusal =
+            open_part_(ctx, level, prefix, name.c_text())
+                .match(
+                    [&level](::fixy::fs::Dirfd next_level) -> ::fixy::Option<OpenError> {
+                        level = std::move(next_level);
+                        return ::fixy::none;
+                    },
+                    [](OpenError reason) -> ::fixy::Option<OpenError> { return ::fixy::some(reason); });
+        for (const OpenError reason : refusal)
+            return ::fixy::err(reason);
     }
+    return ::fixy::Unit{};
 }
 
 // The bytes of path under dir, when the file holds more than zero and at
@@ -939,16 +1032,38 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     }
 }
 
-void Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation,
-                        ::fixy::Path<::fixy::tags::source::Sanitized> const& root) {
-    // The root opens with O_NOFOLLOW, so a symlinked root fails with
-    // ELOOP.  Abort rather than continue: the durable-on-return contract
-    // needs a root directory whose identity is stable for this instance's
-    // lifetime.
-    root_dirfd_ = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-                      make_root_directories_(ctx, root.value().c_text().view());
-                      return ::fixy::fs::open_dirfd(ctx, root);
-                  }).expect("the root of the Cipher does not open as a directory");
+::fixy::TextView Cipher::open_error_text(OpenError reason) noexcept {
+    switch (reason) {
+        case OpenError::path_refused:
+            return ::fixy::TextView{"the sanitizer refuses the path of the root"};
+        case OpenError::missing:
+            return ::fixy::TextView{"a part of the root does not exist, and the open cannot make it"};
+        case OpenError::not_a_directory:
+            return ::fixy::TextView{"a part of the root is no directory, or the root is a link"};
+        case OpenError::no_permission:
+            return ::fixy::TextView{"the process may not make or open a part of the root"};
+        case OpenError::open_failed:
+            return ::fixy::TextView{"the make or the open of a part of the root fails"};
+        default:
+            ::fixy::unreachable();
+    }
+}
+
+::fixy::Result<::fixy::Unit, Cipher::OpenError>
+Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation,
+                   ::fixy::Path<::fixy::tags::source::Sanitized> const& root) {
+    // The root opens with O_NOFOLLOW, so a root that is a link gives
+    // not_a_directory: the durable-on-return contract needs a root directory
+    // whose identity is stable for the life of this instance.
+    using Opened = ::fixy::Result<::fixy::fs::Dirfd, OpenError>;
+    Opened opened = with_file_ctx_(file_ctx, [&](auto const& ctx) -> Opened {
+        CRUCIBLE_TRY(_, make_root_directories_(ctx, root.value().c_text().view()));
+        return ::fixy::fs::open_dirfd(ctx, root).match(
+            [](::fixy::fs::Dirfd dir) -> Opened { return dir; },
+            [](::foundation::os::Errno error) -> Opened { return ::fixy::err(open_error_of_(error)); });
+    });
+    CRUCIBLE_TRY(root_dir, std::move(opened));
+    root_dirfd_ = std::move(root_dir);
     // The bound of the root is the bound of the path, so the path of the
     // root is a copy of the path.
     [[maybe_unused]] const bool root_set =
@@ -968,13 +1083,14 @@ void Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc al
     // gives no head.
     head_ = latest_committed_head();
     if (head_) {
-        return;
+        return ::fixy::Unit{};
     }
     ::fixy::GrowText head_text = ::fixy::mint_grow_text(MAX_HEAD_BYTES);
     const bool is_head_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, root_dirfd_, "HEAD", head_text).is_ok();
     });
     head_ = is_head_read ? parse_head_(head_text.view()).value_or(ContentHash{}) : ContentHash{};
+    return ::fixy::Unit{};
 }
 
 void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation) {

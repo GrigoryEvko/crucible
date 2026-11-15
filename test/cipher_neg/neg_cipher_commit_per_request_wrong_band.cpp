@@ -13,9 +13,10 @@
 
 int main() {
     const ::fixy::TestRunnerCtx store_ctx{::foundation::effects::testing::test()};
-    auto cipher = ::crucible::Cipher::open(
-        store_ctx, store_ctx.cap().alloc,
-        ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"/tmp/crucible_neg_request_wrong_band"}));
+    auto cipher = ::crucible::Cipher::open(store_ctx, store_ctx.cap().alloc,
+                                           ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                               ::fixy::TextView{"/tmp/crucible_neg_request_wrong_band"}))
+                      .expect("the fixture opens its store");
     const auto view = cipher.mint_open_view(store_ctx);
 
     // The band holds a Ref of a region, so the lattice is the one fault.

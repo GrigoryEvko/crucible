@@ -14,5 +14,5 @@ int main() {
     auto cipher = ::crucible::Cipher::open(startup, source.alloc,
                                            ::fixy::mint_tagged<::fixy::tags::source::External>(
                                                ::fixy::TextView{"/tmp/crucible_neg_open_ctx_without_block"}));
-    return cipher.is_open() ? 0 : 1;
+    return cipher.is_ok() ? 0 : 1;
 }

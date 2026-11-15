@@ -191,34 +191,62 @@ public:
                       ::foundation::effects::ExecCtx<::foundation::effects::Init, persist_session_events_required_row>,
                       ::foundation::effects::ExecCtx<::foundation::effects::Test, persist_session_events_required_row>>;
 
+    // The reason that open gives no store.  A root is configuration that an
+    // operator gives, so a wrong root can occur, and the caller reports the
+    // reason.
+    enum class OpenError : std::uint8_t {
+        // The sanitizer refuses the text: it is empty, longer than
+        // MAX_ROOT_PATH_BYTES, or it holds a zero byte or a ".." part.
+        path_refused,
+        // A part of the root does not exist, and the open cannot make it,
+        // for example a part that is a link to a path that does not exist.
+        missing,
+        // A part of the root is no directory, or the root itself is a link.
+        not_a_directory,
+        // The process may not make or open a part of the root.
+        no_permission,
+        // The make or the open of a part fails for another reason.
+        open_failed,
+    };
+
+    // The text of a reason, for a report to a person.
+    [[nodiscard]] static ::fixy::TextView open_error_text(OpenError reason) noexcept;
+
     // The open call creates the root and its object directory and reads
     // HEAD and the log.  Its context must admit IO and Block, and the read
-    // of the log takes the allocation capability.
+    // of the log takes the allocation capability.  A root that the open
+    // cannot make or open gives its reason.
     //
-    // The path check here is string-level only.  Symlink defense lives in
+    // The path check here is string-level only.  The operator trusts the
+    // links of the root path, so the open follows the link of each parent,
+    // as mkdir -p does.  The open of the root itself folds in O_NOFOLLOW, so
+    // a root that names a link gives not_a_directory.  A slash at the end of
+    // the root makes the kernel follow that link.  Symlink defense lives in
     // the doors under the root Dirfd, which src/Cipher.cpp calls.  Each door
     // resolves its path beneath the root, and each open of a leaf folds in
     // O_NOFOLLOW.
+    //
+    // The return type is CipherOpenResult, below the class.  A Result checks
+    // its payload type when a declaration names it, and the class is not
+    // complete here, so the body gives the type.
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
-    [[gnu::cold]] static Cipher open(Ctx const& ctx, ::foundation::effects::Alloc allocation, RootText root_text) {
-        Cipher c{allocation};
-        // The sanitizer refuses an empty root, a root longer than
-        // MAX_ROOT_PATH_BYTES, a zero byte and a ".." part.  A refused root
-        // gives a Cipher that is not open.
+    [[gnu::cold]] static auto open(Ctx const& ctx, ::foundation::effects::Alloc allocation, RootText root_text) {
+        using Opened = ::fixy::Result<Cipher, OpenError>;
         const ::fixy::Result<::fixy::Path<::fixy::tags::source::Sanitized>, ::fixy::PathTraversalError> root =
             ::fixy::sanitize_path(root_text);
-        root.match(
-            [&](::fixy::Path<::fixy::tags::source::Sanitized> const& sanitized_root) {
-                c.open_root_(file_ctx_(ctx), allocation, sanitized_root);
+        return root.match(
+            [&](::fixy::Path<::fixy::tags::source::Sanitized> const& sanitized_root) -> Opened {
+                Cipher c{allocation};
+                CRUCIBLE_TRY(_, c.open_root_(file_ctx_(ctx), allocation, sanitized_root));
+                return c;
             },
-            [](::fixy::PathTraversalError const&) {});
-        return c;
+            [](::fixy::PathTraversalError const&) -> Opened { return ::fixy::err(OpenError::path_refused); });
     }
 
     // A closed store that holds the allocation capability of its caller.
-    // open builds one and then opens its root.  A refused root leaves it
-    // closed.
+    // open builds one and then opens its root, and it gives the store only
+    // when the root opens.
     explicit Cipher(::foundation::effects::Alloc allocation) noexcept : allocation_{allocation} {}
     Cipher(const Cipher&) = delete("Cipher holds mutable log state; move instead");
     Cipher& operator=(const Cipher&) = delete("Cipher holds mutable log state; move instead");
@@ -557,15 +585,21 @@ private:
     // the log and HEAD.  The make starts at "/" for an absolute root, and
     // at the current directory for a relative root, and it makes one name
     // at a time.  So an absolute root does not read the current directory.
-    // A root that does not open as a directory ends the process.
-    void open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation,
-                    ::fixy::Path<::fixy::tags::source::Sanitized> const& root);
+    // A root that the make cannot make, or that does not open as a
+    // directory, gives its reason.
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, OpenError>
+    open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation,
+               ::fixy::Path<::fixy::tags::source::Sanitized> const& root);
 
     // Malformed lines are skipped rather than fatal.  A corrupt or
     // truncated log leaves the in-memory state as a proper prefix of what
     // was on disk instead of killing the process.
     void load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation);
 };
+
+// The result of Cipher::open: an open store, or the reason that the open
+// gives no store.
+using CipherOpenResult = ::fixy::Result<Cipher, Cipher::OpenError>;
 
 // Type-level witness that a caller validated a head hash at its source.
 // Zero is the sentinel for "no commit yet", so a zero head is
