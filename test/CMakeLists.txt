@@ -1980,11 +1980,11 @@ crucible_neg_compile_test(neg_cdag_version_external_cross_tag
 #   * neg_deserialize_region_cross_tag.cpp — Loaded provenance cannot
 #     pass as source::External.
 crucible_neg_compile_test(neg_deserialize_region_raw_region_ptr
-  "cannot convert .fixy::Tagged<crucible::RegionNode\\*, fixy::tags::source::Loaded>. to .crucible::RegionNode\\*. in initialization"
+  "cannot convert .fixy::Tagged<foundation::core::Ref<crucible::RegionNode>, fixy::tags::source::Loaded>. to .crucible::RegionNode\\*. in initialization"
   "neg_deserialize_region_raw_region_ptr.cpp:22")
 crucible_neg_compile_test(neg_deserialize_region_cross_tag
   "conversion from .Tagged<\\[...\\],fixy::tags::source::Loaded>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
-  "neg_deserialize_region_cross_tag.cpp:26")
+  "neg_deserialize_region_cross_tag.cpp:27")
 
 # kSchemaNameLenRange is the typed gate of a .crtrace schema-name
 # length, in_range<1, 256>.  load_trace takes each length only through

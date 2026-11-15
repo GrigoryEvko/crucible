@@ -2,7 +2,7 @@
 //
 // Fixture 2 of 2 for the loaded-region door of deserialize_region.
 //
-// Premise: a RegionNode* that the loader rebuilt from Cipher bytes is
+// Premise: a region that the loader rebuilt from Cipher bytes is
 // source::Loaded, not source::External.  Loaded is earned on the
 // Replayed to Loaded edge, and External is raw input.  Keeping the two
 // lanes apart prevents a reload path from being confused with a raw
@@ -19,10 +19,11 @@ int main() {
     ::fixy::BumpArena arena{1024};
     ::fixy::View<const std::byte> bytes{};
 
-    using ExternalRegion = ::fixy::Tagged<crucible::RegionNode*, ::fixy::tags::source::External>;
+    // The payload is the payload of a loaded region, so only the tag differs.
+    using ExternalRegion = ::fixy::Tagged<::fixy::Ref<crucible::RegionNode>, ::fixy::tags::source::External>;
 
     // MUST fail: source::Loaded is not source::External.
     ExternalRegion wrong = crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena)
                                .expect("the fixture names the type of a loaded region");
-    return wrong.value() == nullptr ? 0 : 1;
+    return wrong.value()->content_hash ? 0 : 1;
 }

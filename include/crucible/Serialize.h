@@ -38,8 +38,10 @@ using ExternalCdagVersion = ::fixy::Tagged<uint32_t, ::fixy::tags::source::Exter
 // Loaded is an earned tag.  deserialize_region builds the node from Cipher
 // bytes, so the node is Replayed first.  It becomes Loaded only after the
 // fold of its operations matches the content hash that the image records,
-// which is the discharge of the Replayed to Loaded edge.
-using LoadedRegionNode = ::fixy::Tagged<RegionNode*, ::fixy::tags::source::Loaded>;
+// which is the discharge of the Replayed to Loaded edge.  The node is in the
+// arena of the load, and a loaded value always holds a node, so the tag holds
+// a Ref and not an address that can be null.
+using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::source::Loaded>;
 // 10 (2026-09-15): the content-hash fold changed mixer.  Every region on
 // disk carries a content hash the current code no longer computes, so a
 // version-9 file would deserialize into regions whose hashes disagree with
@@ -709,22 +711,22 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         return ::fixy::err(LoadError::first_schema_mismatch);
     }
 
-    RegionNode& node = *arena.make<RegionNode>(a);
-    node.kind = TraceNodeKind::REGION;
-    node.merkle_hash = hdr.merkle_hash;
-    node.content_hash = hdr.content_hash;
-    node.next = ::fixy::none;
-    node.ops = ops;
-    node.first_op_schema = first_op_schema;
-    node.measured_ms = measured_ms;
+    const ::fixy::Ref<RegionNode> node = arena.make<RegionNode>(a);
+    node->kind = TraceNodeKind::REGION;
+    node->merkle_hash = hdr.merkle_hash;
+    node->content_hash = hdr.content_hash;
+    node->next = ::fixy::none;
+    node->ops = ops;
+    node->first_op_schema = first_op_schema;
+    node->measured_ms = measured_ms;
     // A new node holds the counter at zero, and each value on disk is at
     // least zero, so the advance does not go back.  A value of zero means
     // that no variant was selected when the region was written.
-    node.variant_id.advance(variant_id);
-    node.plan = plan;
+    node->variant_id.advance(variant_id);
+    node->plan = plan;
     // The node is rebuilt from Cipher bytes, and the fold above matched the
     // content hash that the image records, so it crosses the edge to Loaded.
-    return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(&node).retag<::fixy::tags::source::Loaded>();
+    return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(node).retag<::fixy::tags::source::Loaded>();
 }
 
 // Writes the image of the branch into the first bytes of image.  Returns the

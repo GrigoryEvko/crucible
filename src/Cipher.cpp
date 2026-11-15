@@ -623,7 +623,7 @@ Cipher::LoadResult Cipher::load_content_addressed_(FileCtx const& file_ctx, Open
     if (cached.size() != 0) {
         for (const LoadedRegionNode& loaded_region : deserialize_region(a, cached, arena).ok()) {
             if (loaded_region.value()->content_hash == content_hash) {
-                return LoadedContentAddressedRegionPayload{::fixy::to(*loaded_region.value()), true};
+                return LoadedContentAddressedRegionPayload{loaded_region.value(), true};
             }
         }
     }
@@ -647,7 +647,7 @@ Cipher::LoadResult Cipher::load_content_addressed_(FileCtx const& file_ctx, Open
     // returns another region.
     if (loaded_region.value()->content_hash != content_hash) return ::fixy::err(LoadError::object_hash_mismatch);
     remember_cached_bytes(content_hash, image.view());
-    return LoadedContentAddressedRegionPayload{::fixy::to(*loaded_region.value()), false};
+    return LoadedContentAddressedRegionPayload{loaded_region.value(), false};
 }
 
 ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView const&,

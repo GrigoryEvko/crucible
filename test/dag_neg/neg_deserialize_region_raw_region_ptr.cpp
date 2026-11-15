@@ -4,8 +4,8 @@
 //
 // Premise: deserialize_region returns a Result of a region under the
 // earned source::Loaded tag, or of the reason of a refusal.  A caller reads
-// the pointer with value() after it has seen that a region came back.  The
-// region never converts to a raw RegionNode* by itself.
+// the Ref of the region with value() after it has seen that a region came
+// back.  The region never converts to a raw RegionNode* by itself.
 //
 // Distinct mismatch class from neg_deserialize_region_cross_tag.cpp:
 //   * This fixture: the result converts to no raw pointer.
