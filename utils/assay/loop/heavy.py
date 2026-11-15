@@ -50,12 +50,12 @@ THE POOL
     The pump pulls only idle tokens, so it never stops a job that runs.  A
     lease that must give slots back waits on the FIFO between two ticks.  It
     pulls a token that a child gives back before the child takes it again.
-    Each lease writes its slots, its cap, its hunger, its class and its
-    weight into a marker file in the directory LEASES_NAME of the pool,
-    which it locks.  A marker with no lock is the marker of a process that
-    ended, and a reader removes it.  A marker that does not read as these
-    five numbers counts as a lease of the weight 1 of the class of the
-    reader that does not wait.
+    Each lease writes its slots, its cap, its hunger, its class, its weight
+    and the memory of one job into a marker file in the directory
+    LEASES_NAME of the pool, which it locks.  A marker with no lock is the
+    marker of a process that ended, and a reader removes it.  A marker that
+    does not read as four to six numbers counts as a lease of the weight 1
+    of the class of the reader that does not wait (parsed_marker()).
 
 THE WEIGHT
     A job whose length sets the length of a larger job can take a weight
@@ -147,8 +147,8 @@ THE COMMAND OF A STEP
 
 THE MEMORY
     While heavy_step() holds the lock, it reads one time the memory that the
-    host keeps available.  The available memory is the field
-    MemAvailable of /proc/meminfo.  The step keeps RESERVE_GB for the host,
+    host keeps available.  The available memory is the free memory of THE
+    BUDGET (available_gb()).  The step keeps RESERVE_GB for the host,
     and it gives GB_PER_JOB of the remaining memory to each job.  The job
     count is the smaller of the count of the caller and the count of the
     memory, with a minimum of one (jobs_for_memory()).  The step writes the
@@ -160,15 +160,46 @@ THE MEMORY
     does.  heavy_lock() holds only the lock and reads no memory.
 
     A lease reads the memory when it starts, and its cap holds the jobs
-    of the memory.  The pump reads the memory again before each growth.  It
-    adds at most the jobs that the remaining memory holds less RESERVE_GB,
-    because the jobs that run already use their memory.
+    of the memory.  Each slot that it takes, at its start and at each growth,
+    goes through THE BUDGET.
 
     A lease can give the memory of one of its jobs, when its jobs are larger
-    than GB_PER_JOB (the parameter gb_per_job of leased()).  Its cap and each
-    growth then count that memory.  An example is the vessel of the gate,
-    whose shard compiles use more than 1.6 GB each (THE VESSEL of
-    assay.loop.gate).
+    than GB_PER_JOB (the parameter gb_per_job of leased()).  Its cap, its
+    reservation and each growth then count that memory.  An example is the
+    vessel of the gate, whose shard compiles use more than 1.5 GB each (THE
+    VESSEL of assay.loop.gate).
+
+THE BUDGET
+    The leases of the host share one memory budget.  A lease reserves its
+    slots times the memory of one of its jobs, and its marker holds that
+    memory as its sixth number, in MB.  A dead lease loses its marker with
+    its lock, so it loses its reservation with its slots.  Each take of
+    slots holds the lock BUDGET_LOCK_NAME of the pool while it reads the
+    other markers, takes the slots and writes its marker.  Two leases then
+    never count the same memory.
+
+    A take fits two limits (budget_jobs()):
+      * The sum of the reservations of the pool after the take stays at
+        most the ceiling of the pool less RESERVE_GB.  The ceiling is the
+        smallest of MemTotal and the memory.max of each group of the
+        control group chain of the process (memory_ceiling_gb()).  This
+        limit holds also when many leases start together, before a job
+        holds its memory.
+      * The new jobs fit in the free memory less RESERVE_GB.  The free
+        memory is the smallest of MemAvailable and, for each group of the
+        chain, memory.max less memory.current plus its inactive page cache
+        (available_gb()).  This limit holds when processes with no lease use
+        the memory.
+    The free memory already holds the memory of the jobs that run, so the
+    first limit does not count it again.  A pool where each job holds its
+    memory then still grows to its ceiling, not to half of it.
+
+    A lease with no slot takes one slot when no other lease holds a
+    reservation, so a job runs also on a host whose ceiling is below the
+    reserve.  Else it waits, and it counts as a waiting lease (THE PRIORITY
+    OF THE GATE).  A marker of older code has no memory field, and it counts
+    each slot at UNKNOWN_GB_PER_JOB.  Such a lease does not obey the budget
+    until it ends.
 
 Usage
     loop heavy [-C DIR] [-j N] -- COMMAND [ARGUMENT]...
@@ -189,7 +220,7 @@ import secrets
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -205,15 +236,27 @@ LOCK_FILE = Path(".worktrees/.grun/heavy.lock")
 GATE_FILE = Path(".worktrees/.grun/gate.lock")
 # The turnstile in front of LOCK_FILE, relative to the main work tree of the repository (THE TURNSTILE).
 TURN_FILE = Path(".worktrees/.grun/turn.lock")
-# The memory of one job, in GB (THE MEMORY).  On 2026-11-11, 1030 compile records of the Debug build gave a mean peak
-# memory of 0.23 GB and a 90th percentile of 0.40 GB.  The 99th percentile was 0.51 GB, and the largest peak was
-# 0.76 GB.  GB_PER_JOB is approximately that 99th percentile.
-GB_PER_JOB = 0.5
-# The memory that a heavy step keeps for the host, in GB (THE MEMORY).
-RESERVE_GB = 2.0
+# The memory of one job, in GB (THE MEMORY).  On 2026-11-15 the heaviest compile of the Debug build with ASan in the
+# lanes of the gate peaked at 0.74 GB, and its heaviest test at 0.64 GB.
+GB_PER_JOB = 0.8
+# The memory of one job of a lease whose marker gives no memory, in GB (THE BUDGET): the largest memory of one job of
+# the gate, a compile of a shard of the vessel.
+UNKNOWN_GB_PER_JOB = 1.7
+# The memory that the pool keeps for the processes that hold no lease, in GB (THE MEMORY, THE BUDGET).
+RESERVE_GB = 8.0
 MEMORY_FILE = Path("/proc/meminfo")
 MEMORY_FIELD = "MemAvailable:"
+TOTAL_FIELD = "MemTotal:"
 KB_PER_GB = 1024 * 1024
+BYTES_PER_GB = 1024**3
+MB_PER_GB = 1024
+# The file that names the control group of this process, and the root of the control groups (THE BUDGET).
+CGROUP_FILE = Path("/proc/self/cgroup")
+CGROUP_ROOT = Path("/sys/fs/cgroup")
+# The page cache that the kernel can take back before an out-of-memory kill, in memory.stat of a control group.
+RECLAIMABLE_FIELD = "inactive_file"
+# The lock of the pool for each change of the slots under the budget (THE BUDGET).
+BUDGET_LOCK_NAME = "budget.lock"
 # The exit of a command that ends on a signal: this base plus the number of the signal, as a shell gives it.
 SIGNAL_EXIT_BASE = 128
 # The variable that the command of a step gets, and its value (THE COMMAND OF A STEP).
@@ -257,16 +300,93 @@ type Pause = Callable[[float], None]
 type SessionCheck = Callable[[IO[str]], bool]
 
 
-def available_gb(path: Path = MEMORY_FILE) -> float | None:
-    """Return the available memory of the host in GB, from the field MemAvailable, or None when it cannot be read."""
+def meminfo_gb(field: str, path: Path = MEMORY_FILE) -> float | None:
+    """Return one field of /proc/meminfo in GB, such as MemAvailable, or None when it cannot be read."""
     try:
         with open(path, encoding="ascii") as handle:
             for line in handle:
-                if line.startswith(MEMORY_FIELD):
+                if line.startswith(field):
                     return int(line.split()[1]) / KB_PER_GB
     except OSError, ValueError, IndexError:
         return None
     return None
+
+
+def cgroup_chain(cgroup_file: Path = CGROUP_FILE, cgroup_root: Path = CGROUP_ROOT) -> list[Path]:
+    """Return the control group of this process and each parent with a file memory.max, the innermost first.
+
+    The chain goes up to the user slice and above, and it does not hold the root, which has no limit (THE BUDGET).  A
+    host with no control group of version 2 gives no group.  Complexity: linear in the depth of the group.
+    """
+    try:
+        text = cgroup_file.read_text(encoding="ascii")
+    except OSError:
+        return []
+    relative = next((line.split("::", 1)[1].strip() for line in text.splitlines() if line.startswith("0::")), None)
+    if relative is None:
+        return []
+    chain: list[Path] = []
+    directory = cgroup_root / relative.lstrip("/")
+    while directory != cgroup_root and cgroup_root in directory.parents:
+        if (directory / "memory.max").is_file():
+            chain.append(directory)
+        directory = directory.parent
+    return chain
+
+
+def cgroup_bytes(path: Path) -> int | None:
+    """Return the number of bytes of one file of a control group, or None for the value max or a file that does not
+    read."""
+    try:
+        text = path.read_text(encoding="ascii").strip()
+    except OSError:
+        return None
+    return int(text) if text.isdigit() else None
+
+
+def reclaimable_bytes(directory: Path) -> int:
+    """Return the page cache of a control group that the kernel can take back (RECLAIMABLE_FIELD), or 0."""
+    try:
+        for line in (directory / "memory.stat").read_text(encoding="ascii").splitlines():
+            name, _, value = line.partition(" ")
+            if name == RECLAIMABLE_FIELD and value.strip().isdigit():
+                return int(value)
+    except OSError:
+        return 0
+    return 0
+
+
+def available_gb(
+    path: Path = MEMORY_FILE, cgroup_file: Path = CGROUP_FILE, cgroup_root: Path = CGROUP_ROOT
+) -> float | None:
+    """Return the free memory of this process in GB, or None when nothing can be read (THE BUDGET).
+
+    The free memory is the smallest of MemAvailable of the host and, for each group of the control group chain with a
+    limit, its memory.max less its memory.current, plus the page cache that the group can give back.
+    """
+    values = [meminfo_gb(MEMORY_FIELD, path)]
+    for directory in cgroup_chain(cgroup_file, cgroup_root):
+        limit, current = cgroup_bytes(directory / "memory.max"), cgroup_bytes(directory / "memory.current")
+        if limit is not None and current is not None:
+            values.append((limit - current + reclaimable_bytes(directory)) / BYTES_PER_GB)
+    known = [value for value in values if value is not None]
+    return min(known) if known else None
+
+
+def memory_ceiling_gb(
+    path: Path = MEMORY_FILE, cgroup_file: Path = CGROUP_FILE, cgroup_root: Path = CGROUP_ROOT
+) -> float | None:
+    """Return the most memory that this process can use in GB, or None when nothing can be read (THE BUDGET).
+
+    The ceiling is the smallest of MemTotal of the host and the memory.max of each group of the control group chain.
+    """
+    values = [meminfo_gb(TOTAL_FIELD, path)]
+    for directory in cgroup_chain(cgroup_file, cgroup_root):
+        limit = cgroup_bytes(directory / "memory.max")
+        if limit is not None:
+            values.append(limit / BYTES_PER_GB)
+    known = [value for value in values if value is not None]
+    return min(known) if known else None
 
 
 def main_work_tree(root: Path) -> Path:
@@ -433,19 +553,25 @@ def heavy_step(
 
 @dataclass(frozen=True, slots=True)
 class Pool:
-    """The slot pool of a host: its directory and its count of slots (THE POOL)."""
+    """The slot pool of a host: its directory, its count of slots, and its memory ceiling in GB (THE POOL, THE BUDGET).
+
+    A ceiling of None puts no limit on the sum of the reservations of the leases.
+    """
 
     directory: Path
     size: int
+    ceiling_gb: float | None = None
 
 
 def host_pool() -> Pool:
     """Return the slot pool of this host, with SLOTS_PER_CPU slots for each CPU of the process (THE POOL).
 
-    The directory is the value of POOL_VARIABLE when the variable is set, else POOL_NAME in the work root.
+    The directory is the value of POOL_VARIABLE when the variable is set, else POOL_NAME in the work root.  The
+    ceiling is memory_ceiling_gb() (THE BUDGET).
     """
     moved = os.environ.get(POOL_VARIABLE)
-    return Pool(Path(moved) if moved else cache.work_root() / POOL_NAME, proc.DEFAULT_JOBS * SLOTS_PER_CPU)
+    directory = Path(moved) if moved else cache.work_root() / POOL_NAME
+    return Pool(directory, proc.DEFAULT_JOBS * SLOTS_PER_CPU, memory_ceiling_gb())
 
 
 @contextlib.contextmanager
@@ -469,11 +595,19 @@ def private_pool() -> Iterator[Path]:
                 os.environ[POOL_VARIABLE] = saved
 
 
-def room_for(read: Reader, gb_per_job: float = GB_PER_JOB) -> int | None:
-    """Return the count of new jobs of `gb_per_job` GB that the available memory holds less RESERVE_GB, or None when
-    it cannot be read."""
-    value = read()
-    return None if value is None else max(0, math.floor((value - RESERVE_GB) / gb_per_job))
+def budget_jobs(pool: Pool, reserved_gb: float, free_gb: float | None, gb_per_job: float, count: int) -> int:
+    """Return how many of `count` new jobs of `gb_per_job` GB the memory budget of the pool holds (THE BUDGET).
+
+    The sum of the reservations of the pool after the growth stays at most the ceiling of the pool less RESERVE_GB.
+    The growth also fits in the free memory less RESERVE_GB.  `reserved_gb` is the sum of the reservations of each
+    lease, with the lease that grows.  A ceiling or a free memory of None gives no limit of its kind.
+    """
+    fits = count
+    if pool.ceiling_gb is not None:
+        fits = min(fits, math.floor((pool.ceiling_gb - RESERVE_GB - reserved_gb) / gb_per_job))
+    if free_gb is not None:
+        fits = min(fits, math.floor((free_gb - RESERVE_GB) / gb_per_job))
+    return max(0, fits)
 
 
 def fair_share(pool: Pool, weight: int, total: int) -> int:
@@ -504,22 +638,71 @@ class Demand:
         return self.waiting_gate + self.waiting_other > 0
 
 
+@dataclass(frozen=True, slots=True)
+class Marker:
+    """The marker of a different live lease: its slots, cap, hunger, class, weight and memory of a job (THE POOL).
+
+    `is_read` is False for a marker that does not read as numbers.  Such a marker counts as a lease of the weight 1 that
+    does not wait and holds no reservation.
+    """
+
+    held: int = 0
+    cap: int = 0
+    is_hungry: bool = False
+    is_gate: bool = False
+    weight: int = 1
+    gb_per_job: float = UNKNOWN_GB_PER_JOB
+    is_read: bool = False
+
+    @property
+    def reserved_gb(self) -> float:
+        """The reservation of the lease: its slots times the memory of one of its jobs (THE BUDGET)."""
+        return self.held * self.gb_per_job
+
+
+def parsed_marker(words: Sequence[bytes]) -> Marker:
+    """Return the marker of the words of a marker file: four, five or six numbers (THE POOL, THE BUDGET).
+
+    The fifth number is the weight, and the sixth the memory of one job in MB.  A lease of code that writes no weight
+    has the weight 1, and one that writes no memory has UNKNOWN_GB_PER_JOB.
+    """
+    if not 4 <= len(words) <= 6 or not all(word.isdigit() for word in words):
+        return Marker()
+    numbers = [int(word) for word in words]
+    weight = max(1, numbers[4]) if len(numbers) > 4 else 1
+    gb_per_job = numbers[5] / MB_PER_GB if len(numbers) > 5 else UNKNOWN_GB_PER_JOB
+    return Marker(numbers[0], numbers[1], numbers[2] == 1, numbers[3] == 1, weight, gb_per_job, True)
+
+
 class Lease:
     """The slots of the pool that one job holds, and the marker of the job (THE POOL).
 
     `cap` is the slice of the job, and `is_gate` tells that the job is a part of a run of the gate (THE PRIORITY OF THE
-    GATE).  `weight` multiplies the fair share of the lease in its class (THE WEIGHT).  One thread at a time changes the
-    slots: the pump while it runs, else the owner of the lease.
+    GATE).  `weight` multiplies the fair share of the lease in its class (THE WEIGHT).  `gb_per_job` is the memory of
+    one job, for the reservation of the lease (THE BUDGET).  One thread at a time changes the slots: the pump while it
+    runs, else the owner of the lease.
     """
 
-    __slots__ = ("_held", "_marker", "_marker_path", "cap", "hungry", "is_gate", "pool", "slot_seconds", "weight")
+    __slots__ = (
+        "_held",
+        "_marker",
+        "_marker_path",
+        "cap",
+        "gb_per_job",
+        "hungry",
+        "is_gate",
+        "pool",
+        "slot_seconds",
+        "weight",
+    )
 
-    def __init__(self, pool: Pool, cap: int, is_gate: bool, weight: int = 1) -> None:
-        """Keep the pool, the cap, the class and the weight, and hold no slot and no marker."""
+    def __init__(self, pool: Pool, cap: int, is_gate: bool, weight: int = 1, gb_per_job: float = GB_PER_JOB) -> None:
+        """Keep the pool, the cap, the class, the weight and the memory of a job, and hold no slot and no marker."""
         self.pool = pool
         self.cap = cap
         self.is_gate = is_gate
         self.weight = weight
+        self.gb_per_job = gb_per_job
         self._held: list[int] = []
         self._marker = -1
         self._marker_path = Path()
@@ -544,9 +727,16 @@ class Lease:
         self.mark()
 
     def mark(self) -> None:
-        """Write the slots, the cap, the hunger, the class and the weight of the lease into its marker, in fixed widths."""
+        """Write the slots, the cap, the hunger, the class, the weight and the memory of a job in MB into the marker.
+
+        Each field has a fixed width, so one write of 32 bytes replaces the line, and a reader sees the old line or the
+        new one.
+        """
         if self._marker >= 0:
-            line = f"{self.held:6d} {self.cap:6d} {int(self.hungry)} {int(self.is_gate)} {self.weight:6d}\n"
+            megabytes = math.ceil(self.gb_per_job * MB_PER_GB)
+            line = (
+                f"{self.held:6d} {self.cap:6d} {int(self.hungry)} {int(self.is_gate)} {self.weight:6d} {megabytes:6d}\n"
+            )
             os.pwrite(self._marker, line.encode("ascii"), 0)
 
     def take(self, count: int) -> int:
@@ -579,18 +769,13 @@ class Lease:
             fcntl.flock(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)
 
-    def demand(self) -> Demand:
-        """Read the markers of the pool, remove each one with no lock, and give the demand (THE POOL).
+    def markers(self) -> list[Marker]:
+        """Read the marker of each different live lease of the pool, and remove each marker with no lock (THE POOL).
 
-        A marker that does not read as five numbers counts as a lease of the weight 1 of the class of the reader that
-        does not wait.  A lease of the gate waits only below the smaller of its cap and its fair share of the gate
-        leases, so a busy gate lease at its share does not stop the other leases.  Complexity: linear in the markers.
+        The kernel frees the lock of a lease that ends, so a dead lease loses its slots and its reservation at once.
+        Complexity: linear in the markers.
         """
-        weight = self.weight
-        gate_weight = self.weight if self.is_gate else 0
-        gate_rows: list[tuple[int, int, int]] = []
-        waiting_other = 0
-        peers: list[tuple[int, int]] = []
+        found: list[Marker] = []
         for path in sorted((self.pool.directory / LEASES_NAME).glob(f"*{MARKER_SUFFIX}")):
             if path == self._marker_path:
                 continue
@@ -602,27 +787,61 @@ class Lease:
                 if not is_locked_descriptor(descriptor):
                     path.unlink(missing_ok=True)
                     continue
-                words = os.pread(descriptor, 32, 0).split()
+                found.append(parsed_marker(os.pread(descriptor, 64, 0).split()))
             finally:
                 os.close(descriptor)
-            if len(words) != 5 or not all(word.isdigit() for word in words):
+        return found
+
+    def demand(self) -> Demand:
+        """Read the markers of the pool, remove each one with no lock, and give the demand (THE POOL).
+
+        A marker that does not read as numbers counts as a lease of the weight 1 of the class of the reader that does
+        not wait.  A lease of the gate waits only below the smaller of its cap and its fair share of the gate leases, so
+        a busy gate lease at its share does not stop the other leases.  Complexity: linear in the markers.
+        """
+        weight = self.weight
+        gate_weight = self.weight if self.is_gate else 0
+        gate_rows: list[tuple[int, int, int]] = []
+        waiting_other = 0
+        peers: list[tuple[int, int]] = []
+        for marker in self.markers():
+            if not marker.is_read:
                 weight += 1
                 continue
-            held, cap, hungry, gate, their_weight = (int(word) for word in words)
-            their_weight = max(1, their_weight)
-            gate_weight += their_weight if gate == 1 else 0
-            if gate == 1 and hungry == 1:
-                gate_rows.append((held, cap, their_weight))
-            waiting_other += int(gate == 0 and hungry == 1 and held < cap)
-            if gate == int(self.is_gate):
-                weight += their_weight
-                if hungry == 1:
-                    peers.append((held, their_weight))
+            gate_weight += marker.weight if marker.is_gate else 0
+            if marker.is_gate and marker.is_hungry:
+                gate_rows.append((marker.held, marker.cap, marker.weight))
+            waiting_other += int(not marker.is_gate and marker.is_hungry and marker.held < marker.cap)
+            if marker.is_gate == self.is_gate:
+                weight += marker.weight
+                if marker.is_hungry:
+                    peers.append((marker.held, marker.weight))
         waiting_gate = sum(
             1 for held, cap, row_weight in gate_rows if held < min(cap, fair_share(self.pool, row_weight, gate_weight))
         )
         below = sum(1 for held, peer_weight in peers if held < fair_share(self.pool, peer_weight, weight))
         return Demand(weight, waiting_gate, waiting_other, below)
+
+    def take_within_budget(self, count: int, read: Reader) -> int:
+        """Take at most `count` free slots that the memory budget of the pool holds, and return the count (THE BUDGET).
+
+        The lease holds the lock BUDGET_LOCK_NAME of the pool while it reads the reservations of the other live leases,
+        takes its slots and writes its marker.  Two leases then never count the same free memory.  A lease with no slot
+        takes one slot when no other lease holds a reservation, so a job on a small host still runs.
+        """
+        with open(self.pool.directory / BUDGET_LOCK_NAME, "a", encoding="ascii") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                others_gb = sum(marker.reserved_gb for marker in self.markers())
+                reserved_gb = others_gb + self.held * self.gb_per_job
+                fits = budget_jobs(self.pool, reserved_gb, read(), self.gb_per_job, count)
+                if fits == 0 and self.held == 0 and others_gb == 0 and count > 0:
+                    fits = 1
+                taken = self.take(fits)
+                self.mark()
+                return taken
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
     def close(self) -> None:
         """Free each slot, and remove the marker."""
@@ -682,13 +901,12 @@ def pumped(
     burst: int,
     read: Reader,
     stop: threading.Event,
-    gb_per_job: float = GB_PER_JOB,
 ) -> None:
     """Change the slots of a lease to the use of its job, each TICK_S seconds, until the stop event (THE POOL).
 
     The lease holds one slot more than the tokens of its jobserver.  The function puts one token for each new slot,
     and it frees one slot for each token that it pulls.  `burst` is the most slots of the lease, the jobs of its
-    jobserver.  A growth adds at most the jobs of `gb_per_job` GB that the available memory holds (THE MEMORY).
+    jobserver.  A growth adds at most the jobs that the memory budget of the pool holds (THE BUDGET).
     """
     idle_ticks = 0
     hold_until = 0.0
@@ -718,8 +936,7 @@ def pumped(
             idle_ticks = 0
             lease.hungry = lease.held < burst
             count = grown_count(lease, demand, burst) if lease.hungry and now >= hold_until else 0
-            room = room_for(read, gb_per_job) if count > 0 else None
-            opened.put(lease.take(count if room is None else min(count, room)))
+            opened.put(lease.take_within_budget(count, read) if count > 0 else 0)
         lease.mark()
         is_yielding = not lease.is_gate and demand.waiting_gate > 0 and lease.held > 1
         is_draining = is_yielding or (lease.held > lease.cap and demand.is_waiting)
@@ -809,7 +1026,7 @@ def leased(
         check_report.write_line(f"memory: {MEMORY_FILE} gives no {MEMORY_FIELD}, so the lease keeps {cap} jobs")
     else:
         check_report.write_line(f"memory: available {value:.1f} GB, {cap} of {want} jobs, {burst} at most{each}")
-    lease = Lease(chosen, cap, is_gate, weight)
+    lease = Lease(chosen, cap, is_gate, weight, gb_per_job)
     with open(lock, "a", encoding="ascii") as handle, open(turn_path(root), "a", encoding="ascii") as turn:
         try:
             if not held_shared(handle, turn, stop, pause):
@@ -818,7 +1035,7 @@ def leased(
             lease.register()
             while True:
                 is_yielding = not lease.is_gate and lease.demand().waiting_gate > 0
-                if lease.take(1 if is_yielding else min(START_SLOTS, cap)):
+                if lease.take_within_budget(1 if is_yielding else min(START_SLOTS, cap), read):
                     break
                 if stop is not None and stop.is_set():
                     yield None
@@ -833,7 +1050,7 @@ def leased(
                 jobserver.valve(server.path) as opened,
                 jobserver.connected(server.path) as client,
             ):
-                pump = threading.Thread(target=pumped, args=(lease, opened, burst, read, halt, gb_per_job), daemon=True)
+                pump = threading.Thread(target=pumped, args=(lease, opened, burst, read, halt), daemon=True)
                 pump.start()
                 try:
                     yield Share(server, client, burst, wait_s, lease)

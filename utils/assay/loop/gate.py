@@ -148,11 +148,13 @@ THE VESSEL
     configurations of the gate only.  The run of the base runs the red tests
     of the vessel, or each vessel test after a problem of a different kind.
     The lease of the vessel counts VESSEL_GB_PER_JOB for each job, because a
-    shard compile uses more than three times GB_PER_JOB (THE MEMORY of
-    assay.loop.heavy).  The shards are often the longest path of a landing,
-    so the lease has the weight VESSEL_WEIGHT: its fair share among the
-    leases of the gate is VESSEL_WEIGHT times the share of a different lease
-    of the gate (THE WEIGHT of assay.loop.heavy).  The lease is capped: it
+    shard compile uses about two times GB_PER_JOB (THE MEMORY and THE BUDGET
+    of assay.loop.heavy).  Each other configuration counts its row of
+    CONFIGURATION_GB_PER_JOB.  The lease has the weight VESSEL_WEIGHT among the
+    leases of the gate (THE WEIGHT of assay.loop.heavy).  The weight stays 1
+    while each lease counts the available memory of the host for itself
+    alone, because leases that start together then over-commit the memory
+    of the host.  The lease is capped: it
     never grows past the slice of the gate times VESSEL_WEIGHT (THE POOL of
     assay.loop.heavy).  The shards of a compile with no hit of ccache then
     use at most that cap times VESSEL_GB_PER_JOB, also on a quiet host, where
@@ -579,13 +581,19 @@ VESSEL_TARGETS = ("crucible_vessel", "crucible_dispatch")
 VESSEL_LABEL = "vessel"
 VESSEL_PREFIX = "vessel/"
 TORCH_VENV = ".venv-torch"
-# The memory of one job of the lease of the vessel, in GB (THE VESSEL).  On 2026-11-14, a compile of one shard of
-# register.cpp had a peak of 1.65 GB, and GB_PER_JOB of assay.loop.heavy is 0.5 GB.
+# The memory of one job of the lease of the vessel, in GB (THE VESSEL).  On 2026-11-15, a compile of one shard of
+# register.cpp in the lanes had a peak of 1.54 GB, and a vessel test of 1.12 GB.
 VESSEL_GB_PER_JOB = 1.7
-# The weight of the lease of the vessel in the slot pool (THE WEIGHT of assay.loop.heavy).  On 2026-11-15 the 96 shards
-# of a build with no hit of ccache ran 13 to 15 at a time, the fair share of a lease among the leases of the gate, and
-# took 419 to 517 s.  The vessel was the longest configuration of 23 of 73 runs that day.
-VESSEL_WEIGHT = 2
+# The memory of one job of the lease of each configuration of the gate, in GB (THE BUDGET of assay.loop.heavy).  On
+# 2026-11-15 the heaviest compile, link or test of the lanes had a peak of 0.74 GB in default, 0.73 GB in release,
+# 0.72 GB in ubsan-strict, 0.98 GB in bench-fuzz, and 1.11 GB in tsan, a test.  A configuration with no row, such as a
+# parse configuration, has GB_PER_JOB of assay.loop.heavy.
+CONFIGURATION_GB_PER_JOB = {"default": 0.8, "release": 0.8, "ubsan-strict": 0.8, "bench-fuzz": 1.1, "tsan": 1.2}
+# The weight of the lease of the vessel in the slot pool (THE WEIGHT of assay.loop.heavy).  With the weight 2, four runs
+# of the gate built the vessel at the same time with 64 jobs each, and the host ran out of memory two times on
+# 2026-11-15.  Each lease reads the available memory one time at its start, so leases that start together each count
+# all of it.  The weight is 1 until the pool holds one memory budget for all leases.
+VESSEL_WEIGHT = 1
 # The rule that configures the build of a configuration of objects again after its first build (THE RUN OF A
 # CONFIGURATION).
 RECONFIGURE_RULE = "reconfigure-noop"
@@ -1116,6 +1124,12 @@ def move_tree(root: Path, tree: Path, commit: str) -> None:
     git.run_any_exit(tree, "update-index", "-q", "--refresh", timeout_s=proc.TOOL_S)
     git.run(tree, "read-tree", "--reset", "-u", commit, timeout_s=proc.TOOL_S)
     git.run(tree, "update-ref", "--no-deref", "HEAD", commit)
+
+
+def gb_per_job_of(name: str) -> float:
+    """Return the memory of one job of the lease of a configuration of the gate, in GB (THE BUDGET of
+    assay.loop.heavy)."""
+    return CONFIGURATION_GB_PER_JOB.get(name, heavy.GB_PER_JOB)
 
 
 def build_directory(tree: Path, configuration: Configuration) -> Path:
@@ -1658,7 +1672,7 @@ class Step:
         self.say(f"loop land: {ALWAYS}: build and write {' '.join(self.candidate.built)}")
         began = time.monotonic()
         try:
-            with self.leased() as share:
+            with self.leased(gb_per_job_of(ALWAYS)) as share:
                 problems = self.written_built(BY_NAME[ALWAYS], share)
         finally:
             self.built_ready.set()
@@ -2148,7 +2162,7 @@ class Step:
         wait_s = 0.0
         lease: heavy.Lease | None = None
         is_vessel = run.mode is Mode.VESSEL
-        gb_per_job = VESSEL_GB_PER_JOB if is_vessel else heavy.GB_PER_JOB
+        gb_per_job = VESSEL_GB_PER_JOB if is_vessel else gb_per_job_of(name)
         try:
             weight = VESSEL_WEIGHT if is_vessel else 1
             with self.leased(gb_per_job, is_capped=is_vessel, weight=weight) as share:

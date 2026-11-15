@@ -374,9 +374,10 @@ PLANTED = {
     BUILD_RULE_MODULE: "VALUE = 1\n",
 }
 # The available memory of the heavy step of a run.  With much memory, the step gets the jobs of the gate.  With a small
-# memory, the step gets (3.0 - RESERVE_GB) / GB_PER_JOB = 2 jobs (THE MEMORY of assay.loop.heavy).
+# memory, the step of default gets (10.0 - RESERVE_GB) / 0.8 = 2 jobs (THE MEMORY of assay.loop.heavy, and
+# CONFIGURATION_GB_PER_JOB of assay.loop.gate).
 MUCH_MEMORY_GB = 1e6
-SMALL_MEMORY_GB = 3.0
+SMALL_MEMORY_GB = 10.0
 SMALL_MEMORY_JOBS = 2
 # The slots of the planted pool of a case, and the jobs of a planted gate, which are the slice of each lease (THE
 # JOBSERVER of assay.loop.gate).

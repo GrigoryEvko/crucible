@@ -67,34 +67,40 @@ def memory_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="heavy-memory-") as scratch_text:
         scratch = Path(scratch_text)
         planted = scratch / "meminfo"
+        no_group = scratch / "no-cgroup"
         planted.write_text("MemTotal:       33554432 kB\nMemAvailable:   16777216 kB\n", encoding="ascii")
-        expect("the read gives the field MemAvailable in GB", heavy.available_gb(planted) == 16.0)
+        expect(
+            "with no control group, the read gives the field MemAvailable in GB, and the ceiling the field MemTotal",
+            heavy.available_gb(planted, no_group) == 16.0 and heavy.memory_ceiling_gb(planted, no_group) == 32.0,
+        )
         planted.write_text("MemTotal:       33554432 kB\n", encoding="ascii")
         expect(
             "a file with no field MemAvailable, and a file that does not exist, give no value",
-            heavy.available_gb(planted) is None and heavy.available_gb(scratch / "missing") is None,
+            heavy.available_gb(planted, no_group) is None and heavy.available_gb(scratch / "missing", no_group) is None,
         )
     counts = [
         heavy.jobs_for_memory(224, reader([14.0])),
         heavy.jobs_for_memory(224, reader([191.0])),
-        heavy.jobs_for_memory(8, reader([14.0])),
+        heavy.jobs_for_memory(8, reader([24.0])),
         heavy.jobs_for_memory(224, reader([None])),
         heavy.jobs_for_memory(224, reader([1.0])),
     ]
     expect(
         f"the memory less RESERVE_GB gives one job for each GB_PER_JOB, with the count of the caller as the maximum, "
         f"no value gives the count of the caller, and memory below the reserve gives one job: {counts}",
-        counts == [24, 224, 8, 224, 1],
+        counts == [7, 224, 8, 224, 1],
     )
+    plain = heavy.Pool(Path("/nonexistent"), 64)
     large = [
         heavy.jobs_for_memory(224, reader([14.0]), 1.7),
-        heavy.room_for(reader([14.0]), 1.7),
-        heavy.room_for(reader([14.0])),
-        heavy.room_for(reader([None]), 1.7),
+        heavy.budget_jobs(plain, 0.0, 14.0, 1.7, 224),
+        heavy.budget_jobs(plain, 0.0, 14.0, heavy.GB_PER_JOB, 224),
+        heavy.budget_jobs(plain, 0.0, None, 1.7, 224),
     ]
     expect(
-        f"a larger memory of each job gives fewer jobs and less room for a growth: {large}",
-        large == [7, 7, 24, None],
+        f"a larger memory of each job gives fewer jobs and less room for a growth, and no free memory and no ceiling "
+        f"give no limit: {large}",
+        large == [3, 3, 7, 224],
     )
 
 
@@ -116,8 +122,8 @@ def large_job_cases(expect: testing.Expect) -> None:
         expect(
             f"a lease with jobs of 1.7 GB in 20 GB of memory has the cap and the most jobs of that memory, and its line "
             f"gives the memory of one job, but a plain lease keeps its line: {shares}, {large.strip()!r}",
-            shares == [(32, 36), (10, 10)]
-            and "memory: available 20.0 GB, 10 of 32 jobs, 10 at most, 1.70 GB for each job" in large
+            shares == [(15, 15), (7, 7)]
+            and "memory: available 20.0 GB, 7 of 32 jobs, 7 at most, 1.70 GB for each job" in large
             and "for each job" not in plain,
         )
 
@@ -127,7 +133,7 @@ def step_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="heavy-step-") as root_text:
         root = Path(root_text)
         cases = (
-            (14.0, 24, "memory: available 14.0 GB, 24 of 224 jobs"),
+            (14.0, 7, "memory: available 14.0 GB, 7 of 224 jobs"),
             (191.0, 224, "memory: available 191.0 GB, 224 of 224 jobs"),
             (None, 224, "so the step keeps 224 jobs"),
         )
@@ -491,13 +497,13 @@ def weight_cases(expect: testing.Expect) -> None:
             pulled = heavy.pulled_count(heavy_lease, heavy_lease.demand(), heavy_lease.held, 0)
             with open(old_marker, "w", encoding="ascii") as handle:
                 fcntl.flock(handle, fcntl.LOCK_EX)
-                handle.write("     1     12 1 1\n")
+                handle.write("     1     12 hungry 1\n")
                 handle.flush()
                 with_old = heavy_lease.demand()
             weights = sorted(
-                words[-1]
+                words[4]
                 for path in old_marker.parent.glob(f"*{heavy.MARKER_SUFFIX}")
-                if len(words := path.read_text(encoding="ascii").split()) == 5
+                if len(words := path.read_text(encoding="ascii").split()) == 6
             )
         finally:
             for lease in leases:
@@ -509,10 +515,122 @@ def weight_cases(expect: testing.Expect) -> None:
             grown == 3 and seen_below == 2 and pulled == 2,
         )
         expect(
-            f"each marker holds the weight of its lease, and a marker of four numbers counts as a lease of the weight 1 "
-            f"that does not wait: the weights {weights}, the sum {with_old.weight} and the waiting leases "
+            f"each marker holds the weight of its lease, and a marker that does not read as numbers counts as a lease "
+            f"of the weight 1 that does not wait: the weights {weights}, the sum {with_old.weight} and the waiting leases "
             f"{with_old.waiting_gate}",
             weights == ["1", "1", "2"] and with_old.weight == 5 and with_old.waiting_gate == 2,
+        )
+
+
+def planted_leases(pool: heavy.Pool, *gb_per_job: float) -> list[heavy.Lease]:
+    """Register one lease of the gate with a cap of the pool size for each memory of a job, and return them."""
+    leases = [heavy.Lease(pool, pool.size, True, gb_per_job=gb) for gb in gb_per_job]
+    for lease in leases:
+        lease.register()
+    return leases
+
+
+def budget_cases(expect: testing.Expect) -> None:
+    """Hold THE BUDGET: the reservations of the pool stay at most its ceiling less RESERVE_GB, and a growth fits in the
+    free memory.
+
+    The cases plant leases in a pool and call the admission of the lease directly, with no thread and no time.
+    """
+    with tempfile.TemporaryDirectory(prefix="heavy-budget-") as work_text:
+        work = Path(work_text)
+        pool = heavy.Pool(work / "slots", 128, ceiling_gb=40.0)
+        pool.directory.mkdir()
+        leases = planted_leases(pool, 2.0, 2.0, 2.0, 2.0)
+        taken = [lease.take_within_budget(8, reader([40.0])) for lease in leases]
+        reserved = sum(lease.held * lease.gb_per_job for lease in leases)
+        for lease in leases:
+            lease.close()
+        expect(
+            f"four leases of jobs of 2 GB that start together, before a job holds memory, reserve at most the ceiling "
+            f"of 40 GB less RESERVE_GB: they take {taken} and reserve {reserved:.0f} GB",
+            taken == [8, 8, 0, 0] and reserved <= 40.0 - heavy.RESERVE_GB,
+        )
+        steady = heavy.Pool(work / "steady", 128, ceiling_gb=100.0)
+        steady.directory.mkdir()
+        running, growing = planted_leases(steady, 1.0, 1.0)
+        running.take(50)
+        running.mark()
+        grown = growing.take_within_budget(40, reader([50.0]))
+        running.close()
+        growing.close()
+        expect(
+            f"when the 50 jobs of 1 GB of one lease hold their memory and 50 GB stay free, a second lease grows by 40 "
+            f"jobs, so the pool does not stop at half of the memory: it takes {grown}",
+            grown == 40,
+        )
+        alone = heavy.Pool(work / "alone", 128, ceiling_gb=100.0)
+        alone.directory.mkdir()
+        (lone,) = planted_leases(alone, 1.0)
+        short = lone.take_within_budget(32, reader([20.0]))
+        lone.close()
+        expect(
+            f"when other processes use the memory and 20 GB stay free, a growth fits in the free memory less "
+            f"RESERVE_GB: it takes {short} of 32",
+            short == 12,
+        )
+        markers = pool.directory / heavy.LEASES_NAME
+        dead = markers / f"dead{heavy.MARKER_SUFFIX}"
+        dead.write_text("    30     32 1 1      1   1024\n", encoding="ascii")
+        (fresh,) = planted_leases(pool, 1.0)
+        with_dead = fresh.take_within_budget(32, reader([40.0]))
+        fresh.give(fresh.held)
+        fresh.mark()
+        with open(markers / f"old{heavy.MARKER_SUFFIX}", "w", encoding="ascii") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            handle.write("    10     32 1 1      1\n")
+            handle.flush()
+            with_old = fresh.take_within_budget(32, reader([40.0]))
+        fresh.close()
+        expect(
+            f"a marker with no lock is the marker of a dead lease, so its reservation goes with it, and a live marker "
+            f"of older code with no memory field counts each slot at UNKNOWN_GB_PER_JOB: {with_dead} and {with_old}",
+            with_dead == 32 and not dead.exists() and with_old == 15,
+        )
+        tiny = heavy.Pool(work / "tiny", 8, ceiling_gb=4.0)
+        tiny.directory.mkdir()
+        first, second = planted_leases(tiny, 1.0, 1.0)
+        minimum = [first.take_within_budget(4, reader([4.0])), second.take_within_budget(4, reader([4.0]))]
+        first.close()
+        second.close()
+        expect(
+            f"a lease with no slot takes one slot when no other lease holds a reservation, also with a ceiling below "
+            f"the reserve, and waits when one does: {minimum}",
+            minimum == [1, 0],
+        )
+        cgroups = work / "cgroup"
+        group = cgroups / "user.slice" / "user-1000.slice"
+        (group / "app.scope").mkdir(parents=True)
+        gib = 1024**3
+        files = {
+            cgroups / "user.slice" / "memory.max": "max\n",
+            cgroups / "user.slice" / "memory.current": f"{31 * gib}\n",
+            group / "memory.max": f"{40 * gib}\n",
+            group / "memory.current": f"{30 * gib}\n",
+            group / "memory.stat": f"anon {19 * gib}\ninactive_file {10 * gib}\n",
+            group / "app.scope" / "memory.max": "max\n",
+            group / "app.scope" / "memory.current": f"{1 * gib}\n",
+        }
+        for path, text in files.items():
+            path.write_text(text, encoding="ascii")
+        own = work / "self-cgroup"
+        own.write_text("0::/user.slice/user-1000.slice/app.scope\n", encoding="ascii")
+        meminfo = work / "meminfo"
+        meminfo.write_text(f"MemTotal: {64 * 1024 * 1024} kB\nMemAvailable: {50 * 1024 * 1024} kB\n", encoding="ascii")
+        chain = [path.relative_to(cgroups).as_posix() for path in heavy.cgroup_chain(own, cgroups)]
+        free = heavy.available_gb(meminfo, own, cgroups)
+        ceiling = heavy.memory_ceiling_gb(meminfo, own, cgroups)
+        expect(
+            f"the chain of control groups goes from the own group to the user slice, the free memory is the smallest "
+            f"of MemAvailable and each limit less its use plus its inactive page cache, and the ceiling is the smallest "
+            f"of MemTotal and each limit: the chain {chain}, free {free} GB, ceiling {ceiling} GB",
+            chain == ["user.slice/user-1000.slice/app.scope", "user.slice/user-1000.slice", "user.slice"]
+            and free == 20.0
+            and ceiling == 40.0,
         )
 
 
@@ -633,6 +751,7 @@ def main(argv: list[str]) -> int:
             kill_cases,
             fair_cases,
             weight_cases,
+            budget_cases,
             priority_cases,
             start_cases,
         ),
