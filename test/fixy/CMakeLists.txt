@@ -2186,8 +2186,8 @@ fixy_test(test_transition)
 # stable id refuses a type that names a closure, so two closure keys that
 # print one name never share a word on the wire.
 fixy_neg_compile_test(neg_label_word_of_a_closure_key
-  "a stable id refuses the type"
-  "has no declared name")
+  "fixy::session::diagnostic \\[Label_Key_Without_Identity\\]: a label key of a keyed step has no stable identity"
+  "rule 7 of the section on branches and labels, fixy/session/Fold.h")
 
 # A combinator and its dual agree on whether a plain protocol may hold
 # them.  The coherence check names the pair from each side.
@@ -2554,6 +2554,15 @@ fixy_neg_compile_test(neg_sess_wf_mixed_label_keys
 fixy_neg_compile_test(neg_sess_wf_label_key_without_identity
   "fixy::session::diagnostic \\[Protocol_Choice_Ill_Formed\\]: the choice fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<neg_sess_wf_label_key_without_identity_types::Bob, neg_sess_wf_label_key_without_identity_types::<lambda\\(\\)>, int>"
   "a label key of the choice has no stable identity, so it has no label word")
+# A keyed step outside a choice reads the label word of its key when it
+# moves its message.  A key with no stable identity stops that read with a
+# refusal that names rule 7 of the section on branches and labels.
+fixy_neg_compile_test(neg_sess_keyed_send_label_without_identity
+  "fixy::session::diagnostic \\[Label_Key_Without_Identity\\]: a label key of a keyed step has no stable identity, so it has no label word \\(rule 7 of the section on branches and labels, fixy/session/Fold.h\\)"
+  "\\[with T = fixy::session::PeerMsg<neg_sess_keyed_send_label_without_identity_types::Q, neg_sess_keyed_send_label_without_identity_types::.anonymous.::Hidden, void>")
+fixy_neg_compile_test(neg_sess_keyed_recv_label_without_identity
+  "fixy::session::diagnostic \\[Label_Key_Without_Identity\\]: a label key of a keyed step has no stable identity, so it has no label word \\(rule 7 of the section on branches and labels, fixy/session/Fold.h\\)"
+  "\\[with T = fixy::session::PeerMsg<neg_sess_keyed_recv_label_without_identity_types::Q, neg_sess_keyed_recv_label_without_identity_types::.anonymous.::Hidden, void>")
 fixy_neg_compile_test(neg_sess_mint_mixed_label_keys
   "no matching function for call to .mint_session<Mixed>"
   "is_well_formed_v<Proto>. \\[with Proto = fixy::session::Select<fixy::session::Send<fixy::session::PeerMsg<.*Hello, int>, fixy::session::End>, fixy::session::Send<int, fixy::session::End>")

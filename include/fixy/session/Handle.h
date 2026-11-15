@@ -899,7 +899,12 @@ public:
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message takes, or the payload walk of fixy/session/Classification.h refuses the message.");
         auto& core = core_(handle);
-        std::size_t word = detail::step_wire_word_of(^^Send<T, R>);
+        // A constant variable, so a label key that has no word stops the
+        // build here with the refusal of fixy/session/Fold.h, which names
+        // its rule.  A call in the body would make this step an immediate
+        // function, and the compiler would print no reason.
+        constexpr std::uint64_t step_word = detail::step_wire_word_of(^^Send<T, R>);
+        std::size_t word = step_word;
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
         const watch::session_ref session = core.session_();
         return step_<keyed_landing_t<Send<T, R>>, Resource, LoopCtx, Policy, PS>(core.take_resource_(), session);
@@ -941,11 +946,12 @@ public:
                       "fixy::session::diagnostic [PermissionImbalance]: the permission set does not hold what the "
                       "message closes, or the payload walk of fixy/session/Classification.h refuses the message.");
         auto& core = core_(handle);
+        // A constant variable, for the reason of the keyed send above.
+        constexpr std::uint64_t step_word = detail::step_wire_word_of(^^Recv<T, R>);
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
-        if (word != detail::step_wire_word_of(^^Recv<T, R>)) [[unlikely]] {
-            detail::report_foreign_label_word(word, detail::step_wire_word_of(^^Recv<T, R>),
-                                              type_display_text_v<Recv<T, R>>);
+        if (word != step_word) [[unlikely]] {
+            detail::report_foreign_label_word(word, step_word, type_display_text_v<Recv<T, R>>);
         }
         const watch::session_ref session = core.session_();
         return step_<keyed_landing_t<Recv<T, R>>, Resource, LoopCtx, Policy, PS>(core.take_resource_(), session);

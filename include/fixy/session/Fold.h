@@ -73,8 +73,9 @@
 //      name that is not a function of the type.  Two such keys can print
 //      one name and share a word, so a choice that names one is not
 //      well-formed, and the check reads no word.  A keyed step outside a
-//      choice reads its word when it sends, and the stable id refuses
-//      such a key there.
+//      choice reads its word when it moves its message, and label_word_of
+//      refuses such a key there with Label_Key_Without_Identity, which
+//      names this rule.
 //
 // A keyed step is a choice with one branch.  In the papers a message is
 // a choice with one label, p⊕q:m(B) and p&q:m(B) (Barwell, Hou, Yoshida
@@ -612,9 +613,23 @@ template <class Algebra>
 inline constexpr std::uint64_t label_word_bit = std::uint64_t{1} << 63;
 
 // The wire word of a label key: its stable type id, with the top bit
-// set.  Complexity: linear in the length of the printed name of the key.
+// set.  A key with no stable identity has no word, by rule 7 of the
+// section on branches and labels.  The choice check refuses such a key
+// before it reads a word, and a keyed step outside a choice reads its word
+// here, so the evaluation that asks stops with a refusal that names the
+// rule.  Complexity: linear in the length of the printed name of the key.
 [[nodiscard]] consteval std::uint64_t label_word_of(std::meta::info key) {
-    const std::uint64_t id = ::foundation::reflect::stable_type_id(std::meta::dealias(key));
+    const std::meta::info label = std::meta::dealias(key);
+    if (!::foundation::reflect::has_stable_identity(label)) {
+        // The context of the diagnostic names the step and its key.
+        throw std::meta::exception(
+            u8"fixy::session::diagnostic [Label_Key_Without_Identity]: a label key of a keyed step has no stable "
+            u8"identity, so it has no label word (rule 7 of the section on branches and labels, fixy/session/Fold.h).  "
+            u8"A closure type, an unnamed class and a class with internal linkage print a name that is not a "
+            u8"function of the type.  Give the label a declared name in a named namespace.",
+            label);
+    }
+    const std::uint64_t id = ::foundation::reflect::stable_type_id(label);
     return id | label_word_bit;
 }
 
