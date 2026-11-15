@@ -147,18 +147,17 @@ THE VESSEL
     REDUCE reads no build of it.  The ledgers then hold the counts of the
     configurations of the gate only.  The run of the base runs the red tests
     of the vessel, or each vessel test after a problem of a different kind.
-    The lease of the vessel counts VESSEL_GB_PER_JOB for each job, because a
-    shard compile uses about two times GB_PER_JOB (THE MEMORY and THE BUDGET
-    of assay.loop.heavy).  Each other configuration counts its row of
-    CONFIGURATION_GB_PER_JOB.  The lease has the weight VESSEL_WEIGHT among the
-    leases of the gate (THE WEIGHT of assay.loop.heavy).  The weight stays 1
-    while each lease counts the available memory of the host for itself
-    alone, because leases that start together then over-commit the memory
-    of the host.  The lease is capped: it
-    never grows past the slice of the gate times VESSEL_WEIGHT (THE POOL of
-    assay.loop.heavy).  The shards of a compile with no hit of ccache then
-    use at most that cap times VESSEL_GB_PER_JOB, also on a quiet host, where
-    an uncapped lease grows to each shard.
+    A lease reserves the memory of one job of its configuration for each
+    slot: the largest kind of KIND_GB_PER_JOB of the step that holds it
+    (gb_per_job_of(), THE MEMORY and THE BUDGET of assay.loop.heavy).  A
+    lease of `loop test` builds and tests, so it reserves the largest of
+    the three kinds.  The vessel builds with the memory of a shard compile,
+    and its lease then reserves the memory of a vessel test for the ctest
+    step.  The lease has the weight VESSEL_WEIGHT among the leases of the
+    gate (THE WEIGHT of assay.loop.heavy).  The weight stays 1, because
+    the shards of four runs at the same time hold much of the memory of the
+    host.  The lease is capped: it never grows past the slice of the gate
+    times VESSEL_WEIGHT (THE POOL of assay.loop.heavy).
 
 THE CAREFUL SELECTION
     The selection reads files of the commit with the code of the gate, which
@@ -320,7 +319,11 @@ THE KILL FOR MEMORY
     the count runs one time again, with the same lease, before its problem
     stops the others, and a line tells of the kill.  The second run gives
     the outcome.  A kill in a different process at that time also gives the
-    second run, and a correct red run then stays red.
+    second run, and a correct red run then stays red.  Each such kill adds
+    one JSON line to KILL_LOG of the work directory, with the configuration,
+    the memory of a job of its lease and the first problem.  A count of the
+    lines of one kind tells if the reservation of that kind is too small
+    (KIND_GB_PER_JOB).
 
 THE REDUCE
     A ledger fails only on a growth (THE POLICIES of assay.core.ledger).  A
@@ -530,6 +533,7 @@ import enum
 import fcntl
 import functools
 import json
+import math
 import os
 import shutil
 import sys
@@ -601,6 +605,29 @@ VESSEL_TARGETS = ("crucible_vessel", "crucible_dispatch")
 VESSEL_LABEL = "vessel"
 VESSEL_PREFIX = "vessel/"
 TORCH_VENV = ".venv-torch"
+# The memory of one job of each kind of each configuration, in GB (THE BUDGET of assay.loop.heavy): the 99th
+# percentile of the peaks of the compiles and of the tests, and the largest peak of the links.  The records of the build
+# launcher of the seven lanes gave them on 2026-11-15, from 926 to 2461 compiles, 3081 to 3817 links and about 23000
+# tests for each configuration.  A link is about as heavy as each other link, so its peak counts.  The vessel compiles
+# 96 shards of the same size, so its compile counts at a peak too: 1.65 GB, the peak of a shard on 2026-11-14 with the
+# full debug information, above the 1.56 GB with -g1.
+KIND_GB_PER_JOB = {
+    "default": {"compile": 0.56, "link": 0.50, "test": 0.35},
+    "release": {"compile": 0.52, "link": 0.32, "test": 0.31},
+    "tsan": {"compile": 0.49, "link": 0.36, "test": 0.40},
+    "ubsan-strict": {"compile": 0.51, "link": 0.38, "test": 0.31},
+    "bench-fuzz": {"compile": 0.81, "link": 0.50, "test": 0.30},
+    "vessel": {"compile": 1.65, "link": 0.96, "test": 1.13},
+}
+# The kinds of jobs of each step of a lease.  A token of the jobserver names no kind, so a lease reserves the largest
+# kind of the step that holds it.  `loop test` builds and tests in one command, and the vessel builds and tests in two.
+BUILD_KINDS = ("compile", "link")
+EACH_KIND = ("compile", "link", "test")
+TEST_KINDS = ("test",)
+# The share of a GB that the memory of a job of KIND_GB_PER_JOB rounds up to.
+GB_STEP = 0.1
+# The file of the work directory with one JSON line for each kill for lack of memory (THE KILL FOR MEMORY).
+KILL_LOG = "oom-kills.jsonl"
 # The forms of a file HEAD that names a commit: a hash of SHA-1 or of SHA-256 in lowercase hexadecimal digits, and the
 # branch with no commit that repair_head() writes when the reflog names no commit (THE WARM TREE).
 HASH_LENGTHS = (40, 64)
@@ -611,14 +638,6 @@ UNBORN_REF = "refs/heads/main"
 OUTPUT_SUFFIXES = (".o", ".a", ".so")
 REPLY_DIRECTORY = (".cmake", "api", "v1", "reply")
 EMPTY_SHOWN = 5
-# The memory of one job of the lease of the vessel, in GB (THE VESSEL).  On 2026-11-15, a compile of one shard of
-# register.cpp in the lanes had a peak of 1.54 GB, and a vessel test of 1.12 GB.
-VESSEL_GB_PER_JOB = 1.7
-# The memory of one job of the lease of each configuration of the gate, in GB (THE BUDGET of assay.loop.heavy).  On
-# 2026-11-15 the heaviest compile, link or test of the lanes had a peak of 0.74 GB in default, 0.73 GB in release,
-# 0.72 GB in ubsan-strict, 0.98 GB in bench-fuzz, and 1.11 GB in tsan, a test.  A configuration with no row, such as a
-# parse configuration, has GB_PER_JOB of assay.loop.heavy.
-CONFIGURATION_GB_PER_JOB = {"default": 0.8, "release": 0.8, "ubsan-strict": 0.8, "bench-fuzz": 1.1, "tsan": 1.2}
 # The weight of the lease of the vessel in the slot pool (THE WEIGHT of assay.loop.heavy).  With the weight 2, four runs
 # of the gate built the vessel at the same time with 64 jobs each, and the host ran out of memory two times on
 # 2026-11-15.  Each lease reads the available memory one time at its start, so leases that start together each count
@@ -1163,6 +1182,20 @@ def move_tree(root: Path, tree: Path, commit: str) -> None:
     git.run(tree, "update-ref", "--no-deref", "HEAD", commit)
 
 
+def gb_per_job_of(name: str, kinds: Sequence[str] = EACH_KIND) -> float:
+    """Return the memory of one job of a lease of a configuration that runs jobs of `kinds`, in GB (THE BUDGET of
+    assay.loop.heavy).
+
+    The memory is the largest of the kinds in KIND_GB_PER_JOB, rounded up to GB_STEP.  A configuration with no row,
+    such as a parse configuration, has GB_PER_JOB of assay.loop.heavy.
+    """
+    row = KIND_GB_PER_JOB.get(name)
+    if row is None:
+        return heavy.GB_PER_JOB
+    largest = max(row[kind] for kind in kinds)
+    return round(math.ceil(round(largest / GB_STEP, 6)) * GB_STEP, 6)
+
+
 def repair_head(tree: Path) -> None:
     """Give a warm tree a HEAD again, when its file HEAD holds no reference and no commit (THE WARM TREE).
 
@@ -1285,12 +1318,6 @@ def repair_index(tree: Path) -> None:
         return
     git.run(tree, "read-tree", head, timeout_s=proc.TOOL_S)
     git.run_any_exit(tree, "update-index", "-q", "--refresh", timeout_s=proc.TOOL_S)
-
-
-def gb_per_job_of(name: str) -> float:
-    """Return the memory of one job of the lease of a configuration of the gate, in GB (THE BUDGET of
-    assay.loop.heavy)."""
-    return CONFIGURATION_GB_PER_JOB.get(name, heavy.GB_PER_JOB)
 
 
 def build_directory(tree: Path, configuration: Configuration) -> Path:
@@ -2275,6 +2302,7 @@ class Step:
             return [f"{configuration.name}: the build of {targets} gives an error, see {logs / log}"], (), ()
         if is_read_by_vessel(self.candidate.built):
             self.wait_built(configuration)
+        share.lease.set_gb_per_job(gb_per_job_of(VESSEL, TEST_KINDS))
         report = logs / log_name(configuration, "test.junit.xml", is_again)
         report.unlink(missing_ok=True)
         words = ["--label-regex", f"^{VESSEL_LABEL}$"]
@@ -2315,6 +2343,23 @@ class Step:
         words = self.gate.loop_words(run, is_retry or is_again, is_again)
         return self.run_objects(configuration, words, share, is_again)
 
+    def log_kill(self, name: str, problem: str, gb_per_job: float) -> None:
+        """Append one line of a kill for lack of memory to KILL_LOG of the work directory (THE KILL FOR MEMORY).
+
+        The line holds the time, the logs of the run, the configuration, the memory of a job of its lease, and the first
+        problem, which names the red test or the log of the build.  One write of a short line with the mode a keeps the
+        lines of the threads apart.
+        """
+        line = {
+            "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "logs": str(self.gate.logs),
+            "configuration": name,
+            "gb_per_job": gb_per_job,
+            "problem": problem,
+        }
+        with open(self.gate.work / KILL_LOG, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(line) + "\n")
+
     def outcome_of(self, run: Run, is_again: bool, is_retry: bool) -> Outcome:
         """Run one configuration in the thread of the caller, with a lease of its own, and give its outcome.
 
@@ -2328,7 +2373,7 @@ class Step:
         wait_s = 0.0
         lease: heavy.Lease | None = None
         is_vessel = run.mode is Mode.VESSEL
-        gb_per_job = VESSEL_GB_PER_JOB if is_vessel else gb_per_job_of(name)
+        gb_per_job = gb_per_job_of(VESSEL, BUILD_KINDS) if is_vessel else gb_per_job_of(name)
         try:
             weight = VESSEL_WEIGHT if is_vessel else 1
             with self.leased(gb_per_job, is_capped=is_vessel, weight=weight) as share:
@@ -2341,6 +2386,7 @@ class Step:
                         f"loop land: {name}: the kernel ended a process for lack of memory during the run, so the run "
                         f"runs one time again: {problems[0]}"
                     )
+                    self.log_kill(name, problems[0], share.lease.gb_per_job)
                     problems, red, flaky = self.run_of(run, share, is_again, True)
         except Stopped:
             seconds = round(time.monotonic() - began, 1)

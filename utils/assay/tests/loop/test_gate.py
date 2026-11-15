@@ -381,10 +381,10 @@ PLANTED = {
     BUILD_RULE_MODULE: "VALUE = 1\n",
 }
 # The available memory of the heavy step of a run.  With much memory, the step gets the jobs of the gate.  With a small
-# memory, the step of default gets (10.0 - RESERVE_GB) / 0.8 = 2 jobs (THE MEMORY of assay.loop.heavy, and
-# CONFIGURATION_GB_PER_JOB of assay.loop.gate).
+# memory, the step of default gets (9.5 - RESERVE_GB) / 0.6 = 2 jobs (THE MEMORY of assay.loop.heavy, and
+# KIND_GB_PER_JOB of assay.loop.gate).
 MUCH_MEMORY_GB = 1e6
-SMALL_MEMORY_GB = 10.0
+SMALL_MEMORY_GB = 9.5
 SMALL_MEMORY_JOBS = 2
 # The slots of the planted pool of a case, and the jobs of a planted gate, which are the slice of each lease (THE
 # JOBSERVER of assay.loop.gate).
@@ -1628,10 +1628,18 @@ def oom_cases(expect: testing.Expect) -> None:
         killed = replace(planted_gate(work, root, tree, "killed-once"), oom_kills=kills)
         verdict, printed = testing.captured(lambda: killed.check(candidate, False))
         calls = calls_of(build)
-        holds = verdict.is_accepted and calls.count("test") == 2 and "for lack of memory during the run" in printed
+        logged = [json.loads(line) for line in (work / "land" / gate.KILL_LOG).read_text(encoding="utf-8").splitlines()]
+        holds = (
+            verdict.is_accepted
+            and calls.count("test") == 2
+            and "for lack of memory during the run" in printed
+            and [(kill["configuration"], kill["gb_per_job"]) for kill in logged] == [(gate.ALWAYS, 0.6)]
+            and logged[0]["problem"].startswith(f"{gate.ALWAYS}: ")
+        )
         label = (
             f"a run that the kernel ends for lack of memory, with exit 137 and a rise of the kill count, runs one time "
-            f"again and gives the verdict of the second run, with a line of the kill: the calls {calls}"
+            f"again and gives the verdict of the second run, with a line of the kill and one line of KILL_LOG with its "
+            f"configuration and the memory of a job of its lease: the calls {calls}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         (build / "killed.txt").unlink()
@@ -1662,6 +1670,35 @@ def oom_cases(expect: testing.Expect) -> None:
             f"and missing files give 0: {counts}",
             counts == [4, 0],
         )
+
+
+def kind_cases(expect: testing.Expect) -> None:
+    """Hold the memory of a job of each lease of the gate: the largest kind of its step, rounded up to GB_STEP."""
+    values = {
+        "default": gate.gb_per_job_of("default"),
+        "release": gate.gb_per_job_of("release"),
+        "tsan": gate.gb_per_job_of("tsan"),
+        "ubsan-strict": gate.gb_per_job_of("ubsan-strict"),
+        "bench-fuzz": gate.gb_per_job_of("bench-fuzz"),
+        "vessel build": gate.gb_per_job_of(gate.VESSEL, gate.BUILD_KINDS),
+        "vessel tests": gate.gb_per_job_of(gate.VESSEL, gate.TEST_KINDS),
+        "parse": gate.gb_per_job_of("syntax-x86-64-v3"),
+    }
+    expect(
+        f"a lease of `loop test` reserves the largest kind of its configuration, the vessel reserves a shard to build "
+        f"and a vessel test to test, and a configuration with no row reserves GB_PER_JOB: {values}",
+        values
+        == {
+            "default": 0.6,
+            "release": 0.6,
+            "tsan": 0.5,
+            "ubsan-strict": 0.6,
+            "bench-fuzz": 0.9,
+            "vessel build": 1.7,
+            "vessel tests": 1.2,
+            "parse": heavy.GB_PER_JOB,
+        },
+    )
 
 
 def memory_cases(expect: testing.Expect) -> None:
@@ -2226,6 +2263,7 @@ def main(argv: list[str]) -> int:
             touched_cases,
             thread_cases,
             memory_cases,
+            kind_cases,
             oom_cases,
             stop_cases,
             masked_error_cases,

@@ -236,9 +236,10 @@ LOCK_FILE = Path(".worktrees/.grun/heavy.lock")
 GATE_FILE = Path(".worktrees/.grun/gate.lock")
 # The turnstile in front of LOCK_FILE, relative to the main work tree of the repository (THE TURNSTILE).
 TURN_FILE = Path(".worktrees/.grun/turn.lock")
-# The memory of one job, in GB (THE MEMORY).  On 2026-11-15 the heaviest compile of the Debug build with ASan in the
-# lanes of the gate peaked at 0.74 GB, and its heaviest test at 0.64 GB.
-GB_PER_JOB = 0.8
+# The memory of one job, in GB (THE MEMORY).  On 2026-11-15 the compiles of the Debug build with ASan in the lanes of
+# the gate had a 99th percentile of 0.56 GB, its links a peak of 0.50 GB, and its tests a 99th percentile of 0.35 GB.
+# The row default of KIND_GB_PER_JOB of assay.loop.gate holds the same values.
+GB_PER_JOB = 0.6
 # The memory of one job of a lease whose marker gives no memory, in GB (THE BUDGET): the largest memory of one job of
 # the gate, a compile of a shard of the vessel.
 UNKNOWN_GB_PER_JOB = 1.7
@@ -699,7 +700,8 @@ class Lease:
     `cap` is the slice of the job, and `is_gate` tells that the job is a part of a run of the gate (THE PRIORITY OF THE
     GATE).  `weight` multiplies the fair share of the lease in its class (THE WEIGHT).  `gb_per_job` is the memory of
     one job, for the reservation of the lease (THE BUDGET).  One thread at a time changes the slots: the pump while it
-    runs, else the owner of the lease.
+    runs, else the owner of the lease.  The owner can change `gb_per_job` while the pump runs, under the lock of the
+    budget (set_gb_per_job()).
     """
 
     __slots__ = (
@@ -840,6 +842,19 @@ class Lease:
         )
         below = sum(1 for held, peer_weight in peers if held < fair_share(self.pool, peer_weight, weight))
         return Demand(weight, waiting_gate, waiting_other, below)
+
+    def set_gb_per_job(self, gb_per_job: float) -> None:
+        """Give the lease a new memory of one job, such as a step of tests after a build, and write its marker.
+
+        The lease holds the lock BUDGET_LOCK_NAME while it changes its reservation, as a take does (THE BUDGET).
+        """
+        with open(self.pool.directory / BUDGET_LOCK_NAME, "a", encoding="ascii") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                self.gb_per_job = gb_per_job
+                self.mark()
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
     def take_within_budget(self, count: int, read: Reader) -> int:
         """Take at most `count` free slots that the memory budget of the pool holds, and return the count (THE BUDGET).

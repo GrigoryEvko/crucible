@@ -88,7 +88,7 @@ def memory_cases(expect: testing.Expect) -> None:
     expect(
         f"the memory less RESERVE_GB gives one job for each GB_PER_JOB, with the count of the caller as the maximum, "
         f"no value gives the count of the caller, and memory below the reserve gives one job: {counts}",
-        counts == [7, 224, 8, 224, 1],
+        counts == [10, 224, 8, 224, 1],
     )
     plain = heavy.Pool(Path("/nonexistent"), 64)
     large = [
@@ -100,7 +100,7 @@ def memory_cases(expect: testing.Expect) -> None:
     expect(
         f"a larger memory of each job gives fewer jobs and less room for a growth, and no free memory and no ceiling "
         f"give no limit: {large}",
-        large == [3, 3, 7, 224],
+        large == [3, 3, 10, 224],
     )
 
 
@@ -122,7 +122,7 @@ def large_job_cases(expect: testing.Expect) -> None:
         expect(
             f"a lease with jobs of 1.7 GB in 20 GB of memory has the cap and the most jobs of that memory, and its line "
             f"gives the memory of one job, but a plain lease keeps its line: {shares}, {large.strip()!r}",
-            shares == [(15, 15), (7, 7)]
+            shares == [(20, 20), (7, 7)]
             and "memory: available 20.0 GB, 7 of 32 jobs, 7 at most, 1.70 GB for each job" in large
             and "for each job" not in plain,
         )
@@ -133,7 +133,7 @@ def step_cases(expect: testing.Expect) -> None:
     with tempfile.TemporaryDirectory(prefix="heavy-step-") as root_text:
         root = Path(root_text)
         cases = (
-            (14.0, 7, "memory: available 14.0 GB, 7 of 224 jobs"),
+            (14.0, 10, "memory: available 14.0 GB, 10 of 224 jobs"),
             (191.0, 224, "memory: available 191.0 GB, 224 of 224 jobs"),
             (None, 224, "so the step keeps 224 jobs"),
         )
@@ -590,6 +590,24 @@ def budget_cases(expect: testing.Expect) -> None:
             f"a marker with no lock is the marker of a dead lease, so its reservation goes with it, and a live marker "
             f"of older code with no memory field counts each slot at UNKNOWN_GB_PER_JOB: {with_dead} and {with_old}",
             with_dead == 32 and not dead.exists() and with_old == 15,
+        )
+        phases = heavy.Pool(work / "phases", 64, ceiling_gb=40.0)
+        phases.directory.mkdir()
+        builder, peer = planted_leases(phases, 2.0, 1.0)
+        built = builder.take_within_budget(16, reader([40.0]))
+        before = peer.take_within_budget(32, reader([40.0]))
+        builder.set_gb_per_job(1.0)
+        after = peer.take_within_budget(32, reader([40.0]))
+        rows = [
+            path.read_text(encoding="ascii").split() for path in phases.directory.glob(f"leases/*{heavy.MARKER_SUFFIX}")
+        ]
+        builder.close()
+        peer.close()
+        expect(
+            f"a lease that moves from its build to its tests lowers its memory of a job, and its marker and its "
+            f"reservation follow, so a peer grows into the freed memory: the builder takes {built}, the peer {before} "
+            f"and then {after} more, and the markers give the megabytes {sorted(row[5] for row in rows)}",
+            built == 16 and before == 0 and after == 16 and sorted(row[5] for row in rows) == ["1024", "1024"],
         )
         tiny = heavy.Pool(work / "tiny", 8, ceiling_gb=4.0)
         tiny.directory.mkdir()
