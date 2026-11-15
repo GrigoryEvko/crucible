@@ -128,9 +128,8 @@ struct ReplayEngine {
 
         // The pointers of the slot ids and their counts end on the line after
         // the hashes of this entry, and the caller asks for them almost
-        // immediately. The casts are byte arithmetic for the builtin's
-        // address. No array of characters begins life here.
-        __builtin_prefetch(static_cast<const char*>(static_cast<const void*>(cursor_)) + 64, 0, 3);
+        // immediately. Byte 64 of the entry is on that line.
+        ::fixy::prefetch_byte<::fixy::PrefetchAccess::read, 3, 64>(*cursor_);
 
         ++cursor_;
 

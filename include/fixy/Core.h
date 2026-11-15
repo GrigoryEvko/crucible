@@ -100,6 +100,7 @@ using ::foundation::core::mint_hole;
 using ::foundation::core::Address;
 using ::foundation::core::address_of;
 using ::foundation::core::prefetch;
+using ::foundation::core::prefetch_byte;
 using ::foundation::core::PrefetchAccess;
 using ::foundation::core::Ref;
 using ::foundation::core::same_object;

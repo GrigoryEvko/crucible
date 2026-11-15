@@ -8,6 +8,7 @@
 
 #include "philox_stream.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -18,6 +19,7 @@ using ::foundation::core::address_of;
 using ::foundation::core::none;
 using ::foundation::core::Option;
 using ::foundation::core::prefetch;
+using ::foundation::core::prefetch_byte;
 using ::foundation::core::PrefetchAccess;
 using ::foundation::core::Ref;
 using ::foundation::core::same_object;
@@ -186,6 +188,15 @@ concept PrefetchesObject = requires(T const& object) { prefetch<Access, Locality
 template <PrefetchAccess Access, int Locality, class T>
 concept PrefetchesTemporary = requires { prefetch<Access, Locality>(T{}); };
 
+// True when a prefetch of the byte at Offset of a named object of type T
+// compiles.
+template <PrefetchAccess Access, int Locality, std::size_t Offset, class T>
+concept PrefetchesByte = requires(T const& object) { prefetch_byte<Access, Locality, Offset>(object); };
+
+// True when a prefetch of the byte at Offset of a temporary compiles.
+template <PrefetchAccess Access, int Locality, std::size_t Offset, class T>
+concept PrefetchesByteOfTemporary = requires { prefetch_byte<Access, Locality, Offset>(T{}); };
+
 // A prefetch compiles for each access and each locality from 0 to 3, and it
 // changes no value.  A locality outside 0 to 3, an access outside the two
 // enumerators and a temporary do not compile.
@@ -212,6 +223,35 @@ void test_prefetch() {
     static_assert(!PrefetchesObject<static_cast<PrefetchAccess>(2), 3, Pair>);
     static_assert(!PrefetchesTemporary<PrefetchAccess::read, 3, Pair>);
     static_assert(!PrefetchesTemporary<PrefetchAccess::write, 0, Pair>);
+}
+
+// Two lines: the second line starts at byte 64.
+struct TwoLines {
+    LineAligned first{};
+    LineAligned second{};
+};
+
+// A prefetch of a byte of an object compiles for each offset below the size
+// of the object, and it changes no value.  An offset at or past the size, a
+// locality outside 0 to 3 and a temporary do not compile.
+void test_prefetch_byte() {
+    TwoLines lines{};
+    lines.first.value = 11;
+    lines.second.value = 12;
+    Pair pair{3, 4};
+    prefetch_byte<PrefetchAccess::read, 3, 64>(lines);
+    prefetch_byte<PrefetchAccess::write, 0, 127>(lines);
+    prefetch_byte<PrefetchAccess::read, 1, 0>(pair);
+    prefetch_byte<PrefetchAccess::read, 2, sizeof(Pair) - 1>(pair);
+    CRUCIBLE_FATAL_INVARIANT(lines.first.value == 11 && lines.second.value == 12);
+    CRUCIBLE_FATAL_INVARIANT(pair.first == 3 && pair.second == 4);
+
+    static_assert(PrefetchesByte<PrefetchAccess::read, 3, 64, TwoLines>);
+    static_assert(PrefetchesByte<PrefetchAccess::write, 0, sizeof(TwoLines) - 1, TwoLines>);
+    static_assert(!PrefetchesByte<PrefetchAccess::read, 3, sizeof(TwoLines), TwoLines>);
+    static_assert(!PrefetchesByte<PrefetchAccess::read, 3, sizeof(Pair), Pair>);
+    static_assert(!PrefetchesByte<PrefetchAccess::read, 4, 0, Pair>);
+    static_assert(!PrefetchesByteOfTemporary<PrefetchAccess::read, 3, 0, Pair>);
 }
 
 // Four slots, which a plain index selects.
@@ -264,6 +304,7 @@ int main() {
     test_option_of_ref();
     test_address();
     test_prefetch();
+    test_prefetch_byte();
     test_agrees_with_plain_model();
     return 0;
 }

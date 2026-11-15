@@ -108,7 +108,6 @@ examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 1 | - | -
-include/crucible/ | compiler-builtin | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
 include/crucible/ | raw-pointer-object | 52 | - | -
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -

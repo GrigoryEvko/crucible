@@ -23,7 +23,8 @@
 // back.
 //
 // prefetch<Access, Locality>(object) asks the cache for the line of one
-// object.  The hint changes no value.
+// object, and prefetch_byte<Access, Locality, Offset>(object) asks for the
+// line of the byte at Offset of one object.  The hint changes no value.
 //
 // Box<T> owns one object of type T on the heap.  The one door is
 // mint_box<T>(alloc, args...): it takes the storage from the allocation
@@ -304,6 +305,24 @@ template <PrefetchAccess Access, int Locality, class T>
     requires(!std::is_lvalue_reference_v<T>)
 void prefetch(T&& object) = delete("a prefetch of a temporary asks for a line that the full expression ends: "
                                    "prefetch an object that has a name");
+
+// Asks the cache for the line that holds the byte at Offset of one object,
+// such as the second line of an object that is wider than one line.  The
+// offset is below the size of the object, so the byte is a byte of the
+// object.  The hint changes no value, and a call gives the one instruction
+// of the builtin.
+template <PrefetchAccess Access, int Locality, std::size_t Offset, RefTarget T>
+    requires(Access == PrefetchAccess::read || Access == PrefetchAccess::write) && (Locality >= 0 && Locality <= 3)
+         && (Offset < sizeof(T))
+[[gnu::always_inline]] inline void prefetch_byte(T const& object) noexcept {
+    __builtin_prefetch(static_cast<char const*>(static_cast<void const*>(__builtin_addressof(object))) + Offset,
+                       static_cast<int>(Access), Locality);
+}
+
+template <PrefetchAccess Access, int Locality, std::size_t Offset, class T>
+    requires(!std::is_lvalue_reference_v<T>)
+void prefetch_byte(T&& object) = delete("a prefetch of a temporary asks for a line that the full expression ends: "
+                                        "prefetch an object that has a name");
 
 // The empty value of an Option of a Ref: the null pointer, which no Ref
 // holds.  Option<Ref<T, Brand>> then has the size of one pointer.  The
