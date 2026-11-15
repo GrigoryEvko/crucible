@@ -272,6 +272,7 @@ layer X3_os 13 include/fixy/os/ src/fixy/os/
 layer X4_concurrent 14 include/fixy/concurrent/ include/fixy/handle/
 layer X5_session 15 include/fixy/session/ src/fixy/session/
 layer X6_channels 16 include/fixy/channels/
+layer X7_check 17 include/fixy/check/ src/fixy/check/
 
 allow F0_floor <cstddef>
 allow F0_floor <cstdint>
@@ -862,6 +863,11 @@ witness <fixy/os/Process.h> private | fixy::process::ChildReport | fixy::process
 # and only spawn_child calls it, after the fork.  The empty Child of the
 # default constructor names no process.
 witness <fixy/os/Process.h> private | fixy::process::Child | fixy::process::Child{forge::rvalue<std::int32_t>(), forge::rvalue<std::int32_t>()}
+# A replay of a property gives the body the words of a shrunk choice
+# sequence.  Its constructor from those words is private, and only the
+# runner of fixy/check/Property.h replays a failure.  The public constructor
+# from a seed and a run gives only the fixed stream of Philox values.
+witness <fixy/check/Property.h> private | fixy::check::Draw | fixy::check::Draw{forge::rvalue<fixy::check::ChoiceWords>()}
 # A TSC reader reads the counter of the core that its pin names.  Its one
 # door is mint_tsc_reader, which refuses a pin that is not in force on the
 # calling thread.

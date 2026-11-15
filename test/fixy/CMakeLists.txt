@@ -4440,6 +4440,32 @@ fixy_neg_compile_test(neg_exit_now_without_test_context
   "no matching function for call to .exit_now"
   "CtxFitsChildProcess")
 
+# The Check family of fixy/check/Check.h: pass, CRUCIBLE_TEST_ASSERT and
+# expect_dies, with the refusal of an exit, of a different text and of an end
+# with an exit code.  Only a context that owns the Test capability calls an
+# operation of the family.
+fixy_test(test_check_family)
+fixy_neg_compile_test(neg_check_expect_dies_without_test_context
+  "no matching function for call to .expect_dies"
+  "TestContext")
+fixy_neg_compile_test(neg_check_assert_without_test_context
+  "no matching function for call to .fail_assertion"
+  "TestContext")
+fixy_neg_compile_test(neg_check_pass_without_test_context
+  "no matching function for call to .pass"
+  "TestContext")
+
+# The property tests of fixy/check/Property.h: a property that holds, the
+# determinism and the ranges of the draws, the shrink of a failure to its
+# least input, and an oracle that agrees and one that finds a difference.
+fixy_test(test_check_property)
+fixy_neg_compile_test(neg_check_property_without_test_context
+  "no matching function for call to .property"
+  "TestContext")
+fixy_neg_compile_test(neg_check_property_body_without_bool
+  "no matching function for call to .property"
+  "PropertyBody")
+
 # ── The publication handles ───────────────────────────────────────────
 #
 # The double-publish abort is deliberately not a contract clause — a

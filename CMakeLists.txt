@@ -440,6 +440,8 @@ target_link_libraries(foundation PUBLIC crucible_dialect)
 target_link_libraries(crucible PUBLIC foundation)
 
 add_library(fixy STATIC
+  src/fixy/check/Check.cpp
+  src/fixy/check/Property.cpp
   src/fixy/os/CpuPinned.cpp
   src/fixy/os/ExitHooks.cpp
   src/fixy/os/Fd.cpp

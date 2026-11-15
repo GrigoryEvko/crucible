@@ -536,7 +536,7 @@ For the edit build (16.8 s and 2,285 CPU-s, a CPU bound of approximately 12 s at
 ### 8.1 Unit 1a: the rule table
 
 1. Write `utils/scripts/layer-rules.txt`, one row for each fact, in a line format that the plugin (C++) and the guards (Python) can both read without a library:
-   - `layer <name> <rank> <directory>...`: the layers of section 12 (F0 floor, F0 core, F0 primitives, F1 algebra, X1 wrappers, X2 binding, X3 os, X4 concurrent, X5 session, X6 channels)
+   - `layer <name> <rank> <directory>...`: the layers of section 12 (F0 floor, F0 core, F0 primitives, F1 algebra, X1 wrappers, X2 binding, X3 os, X4 concurrent, X5 session, X6 channels, X7 check)
    - `allow <layer> <header>`: an allowed header for a layer
    - `door <header> <owner file>`: the one owner of a system header
    - `admit <std name>`: taken from the audited list of unit 1b
@@ -1686,17 +1686,19 @@ QDESIGN and the designs of 2026-10-17 gave no design to five features. Each one 
 
 **The idea.** The tests get one language for a death test, a property test, a std oracle and the pass line. Each operation takes a Test context, so no production code can call it. The owner approved the family on 2026-11-12 (P2 of section 11.11).
 
-**The home.** Group G8 builds the family after G6 (section 10.1). A death test uses the process door of the Os family, so the layer of the family is above X3 os. The unit chooses the header and the layer.
+**The home.** Group G8 builds the family after G6 (section 10.1). A death test uses the process door of the Os family, so the layer of the family is above X3 os. The family is in the layer X7 check: `fixy/check/Check.h` and `fixy/check/Property.h`, with their cold reports in `src/fixy/check/`.
 
-**The API.**
+**The API.** Each operation takes a context that owns the Test capability (the concept `TestContext`). Only the testing door of `foundation/effects/Effect.h` mints the Test source, and the rule `owners` refuses that door in a unit that ships.
 
 | Operation | Contract | Cost | State |
 |---|---|---|---|
-| `expect_dies(body, text)` | Runs the body in a child, and expects `SIGABRT` with the text on standard error | one child process | new |
-| `property(seed, count, body)` | Philox generators of the base give the inputs. A failure shrinks to a minimal input with the same seed | the count of the runs | new |
-| `oracle(...)` | Runs a family operation and its std form over Philox inputs, inside one `ORACLE:` region (section 16) | the count of the runs | new |
-| `pass(name)` | Writes the `PASSED` line through `report` | one write | new |
-| the assert macro of the tests | Calls `fatal()` with its text | one branch to a cold call | new |
+| `expect_dies(test, body, text)` | Runs the body in a child through the process door, and expects `SIGABRT` with the text in the last 16 KiB of standard error. Each other end ends the test with the end and the output of the child | one child process | main |
+| `property(test, seed, count, body)` | The body takes a `Draw` and gives true when the property holds. Philox4x32-10 of the key `seed` gives the words of each run. A failure shrinks its choice sequence to a minimal input with the same seed, and the test ends with the values of that input | the count of the runs, and at most 4096 replays to shrink | main |
+| `oracle(test, seed, count, generate, family, model)` | A property: the family operation and its model give the same result on each input that `generate` draws. The test file holds a std model inside one `ORACLE:` region (section 16) | the count of the runs | main |
+| `pass(test, text, args...)` | Writes the pass line through `report` | one write | main |
+| `CRUCIBLE_TEST_ASSERT(test, cond)` | Calls `fatal()` with the text of the condition and the site | one branch to a cold call | main |
+
+`test/test_assert.h` keeps its `assert` macro and `pass()` until the harness unit moves its 218 includers onto the family and deletes the header. No alias joins the two forms (the decision of 2026-11-14).
 
 **Depends on.** The process door of the Os family (P4, group G6), Philox in the Scalar family (section 11.7), and Report.
 
@@ -1725,6 +1727,7 @@ QDESIGN and the designs of 2026-10-17 gave no design to five features. Each one 
 | X4 concurrent | `fixy/concurrent/`, `fixy/handle/` | the base allowance. Threads start through X3 |
 | X5 session | `fixy/session/`, `src/fixy/session/` | the base allowance |
 | X6 channels | `fixy/channels/` | the base allowance |
+| X7 check | `fixy/check/`, `src/fixy/check/` | the base allowance. The Check family of the tests, above the process door of X3 os |
 
 A layer can include a lower layer and itself. It cannot include a higher layer.
 

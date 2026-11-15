@@ -87,6 +87,11 @@
       "constructor": "\\bWriterHandle\\("
     },
     {
+      "name": "neg_witness_check_draw_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bDraw\\("
+    },
+    {
       "name": "neg_witness_clocksource_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bClockSource\\("
@@ -1437,6 +1442,10 @@
     {
       "type": "fixy::process::Child",
       "header": "fixy/os/Process.h"
+    },
+    {
+      "type": "fixy::check::Draw",
+      "header": "fixy/check/Property.h"
     },
     {
       "type": "fixy::time::TscReader<fixy::time::TscMode::Raw, fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>>",

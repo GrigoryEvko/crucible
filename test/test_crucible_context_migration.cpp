@@ -7,24 +7,18 @@
 // semantic, where no contract assertion checks and a CRUCIBLE_PRE gives its
 // condition to the optimizer as an assumption.
 //
-// Each refusal ends the process, so each attack runs in a child process.  The
-// parent reads the standard error of the child, and it requires SIGABRT and a
-// report that names the bound.
+// Each refusal ends the process, so each attack runs in a child process
+// through expect_dies of the Check family, which requires SIGABRT and a report
+// that names the bound.
 
 #include <crucible/CrucibleContext.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 
-#include <cerrno>
-#include <csignal>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <string_view>
-
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace {
 
@@ -131,51 +125,8 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     return was_switched && context.active_region().try_get() == &new_region;
 }
 
-struct ChildResult {
-    bool was_aborted = false;
-    char report[8192]{};
-};
-
-// Runs attack in a child process, with the standard error of the child on a
-// pipe.  The child ends with exit status 0 when the attack returns.
-ChildResult run_in_child(void (*attack)()) {
-    ChildResult result{};
-    int pipe_ends[2] = {-1, -1};
-    if (::pipe(pipe_ends) != 0) std::abort();
-    std::fflush(stderr);
-    const pid_t pid = ::fork();
-    if (pid < 0) std::abort();
-    if (pid == 0) {
-        ::close(pipe_ends[0]);
-        if (::dup2(pipe_ends[1], STDERR_FILENO) < 0) std::_Exit(3);
-        attack();
-        std::_Exit(0);
-    }
-    ::close(pipe_ends[1]);
-    std::size_t used = 0;
-    while (used + 1 < sizeof(result.report)) {
-        const ssize_t count = ::read(pipe_ends[0], result.report + used, sizeof(result.report) - 1 - used);
-        if (count > 0) {
-            used += static_cast<std::size_t>(count);
-        } else if (count == 0 || errno != EINTR) {
-            break;
-        }
-    }
-    ::close(pipe_ends[0]);
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) std::abort();
-    result.was_aborted = WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
-    return result;
-}
-
-[[nodiscard]] bool is_refused(void (*attack)()) {
-    const ChildResult result = run_in_child(attack);
-    const bool names_the_bound = std::string_view{result.report}.find("MIGRATION_MAX_SLOTS") != std::string_view::npos;
-    if (!result.was_aborted || !names_the_bound) {
-        std::fprintf(stderr, "child: aborted=%d report:\n%s\n", result.was_aborted ? 1 : 0, result.report);
-    }
-    return result.was_aborted && names_the_bound;
-}
+// The text of each refusal names the bound.
+constexpr ::fixy::TextView kBoundName{"MIGRATION_MAX_SLOTS"};
 
 // A plan at the bound of the bitset migrates.  This shows that the attacks
 // below fail for the width of the plan and for no other reason.
@@ -186,15 +137,15 @@ void test_plan_at_the_bound_migrates() {
 
 // The shared prefix writes a slot that the bitset can record, and the plan is
 // still too wide.  The switch is refused before it copies the slot.
-void test_wide_plan_is_refused() {
-    assert(is_refused([] { (void)switch_to_plan(kWideSlots, 5); }));
+void test_wide_plan_is_refused(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(test, [] noexcept { (void)switch_to_plan(kWideSlots, 5); }, kBoundName);
     crucible::test::pass("  test_wide_plan_is_refused: PASSED\n");
 }
 
 // The shared prefix writes a slot past the end of the bitset.  Without the
 // refusal, the migration sets a bit outside the bitset on the stack.
-void test_slot_past_the_bitset_is_refused() {
-    assert(is_refused([] { (void)switch_to_plan(kWideSlots, kBitsetSlots + 476); }));
+void test_slot_past_the_bitset_is_refused(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(test, [] noexcept { (void)switch_to_plan(kWideSlots, kBitsetSlots + 476); }, kBoundName);
     crucible::test::pass("  test_slot_past_the_bitset_is_refused: PASSED\n");
 }
 
@@ -235,10 +186,11 @@ void test_smaller_new_slot_takes_its_own_size() {
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::report(::fixy::Sink::Out, "test_crucible_context_migration:\n");
     test_plan_at_the_bound_migrates();
-    test_wide_plan_is_refused();
-    test_slot_past_the_bitset_is_refused();
+    test_wide_plan_is_refused(test);
+    test_slot_past_the_bitset_is_refused(test);
     test_smaller_new_slot_takes_its_own_size();
     crucible::test::pass("test_crucible_context_migration: all tests passed\n");
     return 0;

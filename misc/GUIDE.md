@@ -3179,7 +3179,7 @@ Each change moves each producer and each consumer of an API at one time. It keep
 
 ### The layers and the include policy (R2, R3)
 
-The `layer` rows of the rule table give the layers of the base, from F0 floor to X6 channels, each with a rank. A base file can include a header of its own layer and of each layer with a lower rank. It cannot include a header of a higher layer, or a file outside the base.
+The `layer` rows of the rule table give the layers of the base, from F0 floor to X7 check, each with a rank. A base file can include a header of its own layer and of each layer with a lower rank. It cannot include a header of a higher layer, or a file outside the base.
 
 The `allow` rows give the headers outside the source root that each layer can include. A layer also gets the `allow` rows of each lower layer. An `allow` row with `until FAMILY` names the family of the base that replaces its header. Each include of such a header is then a finding of the kind `replace-pending:HEADER`, and the ratchet refuses a new one. Each runtime std header that a base file includes has such a row on the lowest layer that includes it. A file of the language reads no row with `until`, so such an include is an error there. The rows of F0 floor are the allowance of R2. Of `<utility>`, R2 permits only the casts, `declval` and the index sequences. Other names of `<utility>` that the base uses at this time are `std::exchange`, `std::pair`, `std::in_place`, `std::to_underlying`, `std::cmp_less`, `std::in_range` and `std::swap`. Outside the files of the language, the rule `quarantine` counts each such name with a base kind (The base kinds). The audit can make the allowance shorter. Only the owner can make it longer.
 

@@ -498,6 +498,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                         "words of the kernel interface that carry no claim to fold"},
     {^^::fixy::env, "the switches of the environment that the environment door reads one time at the start: "
                     "settings of the process, which carry no claim to fold"},
+    {^^::fixy::check, "the test language: the source of the inputs of a property and its runner, which only a test "
+                      "holds, and which carry no claim to fold"},
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
     {^^::fixy::session::detach_reason, kGradeVocabulary},
