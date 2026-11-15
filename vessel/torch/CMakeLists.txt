@@ -70,6 +70,14 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     # in 144.5 s, so more shards give a longer wall time.  The rows of
     # utils/ledgers/step-cost.txt keep the shards above the limit of the kind
     # compile, and each object stays below the limit of the rule object-size.
+    #
+    # Each shard compiles with -g1: the debug information of the lines and of
+    # the functions, and none of the types and the variables.  With -g, each
+    # shard held the debug types of the PyTorch headers again, and the link of
+    # the dispatch library read them 96 times.  On 2026-11-15 that link took
+    # 3.02 GB of peak memory and wrote a library of 760 MB.  With -g1 it took
+    # 0.92 GB and wrote 236 MB.  The shards ran 11.2 T instructions in place
+    # of about 13.8 T, and the largest compile took 1.54 GB in place of 1.66.
     set(_crucible_register_shards 96)
     math(EXPR _crucible_register_last "${_crucible_register_shards} - 1")
     foreach(_crucible_shard RANGE 0 ${_crucible_register_last})
@@ -78,6 +86,7 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
         target_compile_definitions(${_crucible_shard_target} PRIVATE
             CRUCIBLE_VESSEL_REGISTER_SHARD=${_crucible_shard}
             CRUCIBLE_VESSEL_REGISTER_SHARDS=${_crucible_register_shards})
+        target_compile_options(${_crucible_shard_target} PRIVATE -g1)
         target_link_libraries(${_crucible_shard_target} PRIVATE crucible fixy crucible_torch_headers)
         target_link_libraries(crucible_dispatch PRIVATE ${_crucible_shard_target})
     endforeach()
