@@ -777,6 +777,11 @@
       "constructor": "\\bTagged\\("
     },
     {
+      "name": "neg_witness_thread_ownedthread_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bOwnedThread\\("
+    },
+    {
       "name": "neg_witness_threadnamed_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bThreadNamed\\("
@@ -1339,6 +1344,10 @@
     {
       "type": "fixy::ThreadNamed<\"forged\">",
       "header": "fixy/os/ThreadName.h"
+    },
+    {
+      "type": "fixy::thread::OwnedThread",
+      "header": "fixy/os/OwnedThread.h"
     },
     {
       "type": "fixy::NumaPlacement<fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy>",

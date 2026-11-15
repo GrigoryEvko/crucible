@@ -5193,6 +5193,7 @@ fixy_test(test_concurrent_spawn)
 # that starts one thread per child.  test_core_atomic runs the Atomic family
 # of foundation alone and on four threads, which the fork starts.
 fixy_test(test_os_thread_tasks)
+fixy_test(test_os_owned_thread)
 fixy_test(test_concurrent_permission_fork)
 fixy_test(test_core_atomic)
 
@@ -5201,6 +5202,12 @@ fixy_test(test_core_atomic)
 fixy_neg_compile_test(neg_thread_run_joined_from_the_foreground
   "no matching function for call to .run_joined"
   "required for the satisfaction of .CtxStartsThreads<Ctx>.")
+fixy_neg_compile_test(neg_owned_thread_from_the_foreground
+  "no matching function for call to .mint_owned_thread"
+  "required for the satisfaction of .CtxStartsThreads<Ctx>.")
+fixy_neg_compile_test(neg_owned_thread_copied
+  "use of deleted function .fixy::thread::OwnedThread::OwnedThread.const fixy::thread::OwnedThread&."
+  "one thread has one owner of its join.  A copy would join it two times")
 fixy_neg_compile_test(neg_thread_name_too_long
   "conversion from .const char \\[17\\]. to non-scalar type .const fixy::thread::ThreadName. requested"
   "neg_thread_name_too_long\\.cpp:12:[0-9]+: error:")

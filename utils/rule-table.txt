@@ -825,6 +825,10 @@ witness <fixy/os/ClockSource.h> private | fixy::ClockSource<foundation::algebra:
 # thread.  Its one constructor is private, and mint_thread_name, which
 # names the thread first, is the sole friend.
 witness <fixy/os/ThreadName.h> private | fixy::ThreadNamed<"forged"> | fixy::ThreadNamed<"forged">{}
+# An owned thread claims that the thread door started its thread, and that
+# its frame is the frame that the thread reads.  Its value constructor is
+# private, and the door of mint_owned_thread is the sole friend.
+witness <fixy/os/OwnedThread.h> private | fixy::thread::OwnedThread | fixy::thread::OwnedThread{forge::rvalue<std::uint64_t>(), forge::rvalue<void*>(), forge::rvalue<void (*)(void*) noexcept>()}
 # A placement proof claims that mbind bound its region to one node.  Its
 # value constructor is private, and mint_numa_placement, which makes the
 # call first, is the sole friend.

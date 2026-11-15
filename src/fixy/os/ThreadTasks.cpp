@@ -123,15 +123,28 @@ run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions cons
         }
     }
     for (thread_task& task : tasks) {
-        int const code = ::pthread_join(task.handle, nullptr);
-        if (code != 0) [[unlikely]] {
-            ::foundation::core::fatal("run_thread_tasks: the join of a thread that the door started failed with the "
-                                      "code {}",
-                                      code);
-        }
+        join_thread_task(task.handle);
         task.handle = 0;
     }
     return ::foundation::core::Unit{};
+}
+
+::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
+start_thread_task(thread_task& task, ThreadOptions const& options) noexcept {
+    if (options.guard_bytes == 0) return ::foundation::core::err(::foundation::os::Errno::einval);
+    StartAttributes const attributes{options};
+    if (attributes.code() != 0) return ::foundation::core::err(error_of(attributes.code()));
+    ::pthread_t handle{};
+    int const code = ::pthread_create(&handle, attributes.attributes(), &start_task, &task);
+    if (code != 0) return ::foundation::core::err(error_of(code));
+    return handle;
+}
+
+void join_thread_task(std::uint64_t handle) noexcept {
+    int const code = ::pthread_join(handle, nullptr);
+    if (code != 0) [[unlikely]] {
+        ::foundation::core::fatal("the join of a thread that the thread door started failed with the code {}", code);
+    }
 }
 
 ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>

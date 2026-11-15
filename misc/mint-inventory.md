@@ -243,6 +243,7 @@ that the axis does not apply to the row.
 | `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
+| `mint_owned_thread` | `include/fixy/os/OwnedThread.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_perf_event` | `include/fixy/os/PerfEvent.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
@@ -347,4 +348,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 75 | 43 | 23 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 133 | 54 | 75 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 134 | 55 | 75 | 4 | 0 | 3 |

@@ -46,6 +46,13 @@
 //     of the door when its task returns.  A thread that the base does not
 //     start gets no alternate stack from the door.
 //
+// THE OWNED THREAD
+//     start_thread_task starts one thread and gives its handle, and
+//     join_thread_task joins it later.  The two are the door of the
+//     OwnedThread of fixy/os/OwnedThread.h, which holds the task, the name
+//     and the body in a frame of its own.  The errors of a start and of a
+//     join are the errors above.
+//
 // THE FORK HOOK
 //     run_in_fork_child registers a function that the child of a fork runs
 //     before fork returns in the child, through pthread_atfork.  A child has
@@ -54,10 +61,11 @@
 //
 // THE GATE
 //     run_joined takes a context that owns Bg or Init, the authority to start
-//     threads.  The list form in detail has no gate of its own.  Its callers
-//     in the base hold the gate: the fork of fixy/concurrent/PermissionFork.h,
-//     the parallel loop of fixy/concurrent/Spawn.h and the pipeline of
-//     fixy/concurrent/Pipeline.h.  run_in_fork_child changes the process
+//     threads.  The list form and the owned form in detail have no gate of
+//     their own.  Their callers in the base hold the gate: the fork of
+//     fixy/concurrent/PermissionFork.h, the parallel loop of
+//     fixy/concurrent/Spawn.h, the pipeline of fixy/concurrent/Pipeline.h and
+//     the mint of fixy/os/OwnedThread.h.  run_in_fork_child changes the process
 //     for each fork after it, so it takes a context that owns Init.
 
 #include <foundation/algebra/lattices/AffinityLattice.h>
@@ -177,6 +185,19 @@ struct thread_task {
 // Complexity: one start and one join for each task.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept;
+
+// Starts one thread that runs the task with the options, and gives the
+// handle of the thread (THE OWNED THREAD).  The caller writes the frame, the
+// function and the name of the task, and the task lives until
+// join_thread_task returns for the handle.  A refused option or a start that
+// fails is the error, with the error number of the call, and then no thread
+// runs.  Complexity: one start.
+[[nodiscard]] ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
+start_thread_task(thread_task& task, ThreadOptions const& options) noexcept;
+
+// Joins the thread of a handle that start_thread_task gave.  A join that
+// fails ends the process, as a join of run_thread_tasks does.
+void join_thread_task(std::uint64_t handle) noexcept;
 
 // Gives the calling thread a name.  The type holds the bound of the name,
 // so ERANGE, the only failure of the call, cannot occur, and the door reads
