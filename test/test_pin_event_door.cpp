@@ -78,15 +78,16 @@ int main() {
 
     // A restore on another thread changes nothing and says so.
     auto prior = fixy::sched::apply_affinity_to_cpu(background, 0);
-    require(prior.has_value() && prior->is_held(), "the runtime pin holds the prior mask");
-    if (prior.has_value()) {
-        fixy::sched::PriorAffinity moved{std::move(*prior)};
-        require(!prior->is_held() && moved.is_held(), "a move takes the prior mask from its source");
+    require(prior.is_ok(), "the runtime pin to CPU 0 succeeds");
+    if (prior.is_ok()) {
+        fixy::sched::PriorAffinity source = std::move(prior).expect("the test above found the pin");
+        require(source.is_held(), "the runtime pin holds the prior mask");
+        fixy::sched::PriorAffinity moved{std::move(source)};
+        require(moved.is_held(), "a move gives the prior mask to its target");
         int restore_errno = 0;
         {
             std::jthread other{[&moved, &restore_errno]() noexcept {
-                const auto restored = std::move(moved).restore();
-                restore_errno = restored.has_value() ? 0 : restored.error();
+                restore_errno = foundation::os::error_number_of(std::move(moved).restore());
             }};
         }
         require(restore_errno == EPERM, "a restore on another thread is refused with EPERM");

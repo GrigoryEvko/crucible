@@ -451,9 +451,10 @@ int main() {
 
     // The data is in place, so the pin ends.  Each Run pins again, and a
     // fan-out Run starts from the whole affinity of the thread.
-    if (const auto restored = placement_pin.restore(); !restored.has_value()) {
+    const ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> restored = placement_pin.restore();
+    for (::foundation::os::Errno const error : restored.err()) {
         std::fprintf(stderr, "  warning: the placement pin stays (errno %d), so a fan-out arm runs on one CPU\n",
-                     restored.error());
+                     ::foundation::os::error_number(error));
     }
 
     std::vector<bench::Report> reports(workloads.size() * 3);

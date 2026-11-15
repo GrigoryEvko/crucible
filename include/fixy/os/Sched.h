@@ -324,11 +324,7 @@ apply_sched_attributes(Ctx const&, ::foundation::os::KernelSchedAttr const& attr
     return detail::sched_setattr_sys(attributes);
 }
 
-class PriorAffinity;
-
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsRuntimeAffinity<Ctx>
-[[nodiscard]] auto apply_affinity_to_mask(Ctx const&, AffinityMask mask) noexcept -> std::expected<PriorAffinity, int>;
+class PriorAffinityDoor;
 
 // The affinity mask that one pin of apply_affinity_to_mask replaced, and the
 // authority to put it back.  Only that door builds one, from the mask that
@@ -357,11 +353,8 @@ public:
     // False for a call that asked for no pin, and after a move or a restore.
     [[nodiscard]] bool is_held() const noexcept { return is_held_; }
 
-    [[nodiscard]] std::expected<void, int> restore() && noexcept {
-        if (int const error = ::foundation::os::error_number_of(restore_mask_()); error != 0) {
-            return std::unexpected(error);
-        }
-        return {};
+    [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> restore() && noexcept {
+        return restore_mask_();
     }
 
 private:
@@ -377,16 +370,37 @@ private:
           owner_{::foundation::effects::detail::producer_claim::calling_thread_identity()},
           is_held_{true} {}
 
-    template <eff::IsExecCtx FriendCtx>
-        requires CtxFitsRuntimeAffinity<FriendCtx>
-    friend auto apply_affinity_to_mask(FriendCtx const&, AffinityMask mask) noexcept
-        -> std::expected<PriorAffinity, int>;
+    // The door below is the one friend.  A friend function with a result of
+    // this class would name the class before it is complete, and the Result
+    // of the base needs a complete payload.
+    friend class PriorAffinityDoor;
 
     AffinityMask mask_{};
     // The identity of the thread that pinned, from foundation/effects/Ctx.h.
     // Zero names no thread.
     std::uintptr_t owner_ = 0;
     bool is_held_ = false;
+};
+
+template <eff::IsExecCtx Ctx>
+    requires CtxFitsRuntimeAffinity<Ctx>
+[[nodiscard]] auto apply_affinity_to_mask(Ctx const&, AffinityMask mask) noexcept
+    -> ::foundation::core::Result<PriorAffinity, ::foundation::os::Errno>;
+
+// The door of a prior mask.  No object of it exists.  Its members are
+// private, and its one friend is apply_affinity_to_mask, so only that door
+// builds a PriorAffinity.
+class PriorAffinityDoor final : ::foundation::NoObject<PriorAffinityDoor> {
+    template <eff::IsExecCtx FriendCtx>
+        requires CtxFitsRuntimeAffinity<FriendCtx>
+    friend auto apply_affinity_to_mask(FriendCtx const&, AffinityMask mask) noexcept
+        -> ::foundation::core::Result<PriorAffinity, ::foundation::os::Errno>;
+
+    // The result of a call that asked for no pin.
+    [[nodiscard]] static PriorAffinity none_() noexcept { return PriorAffinity{}; }
+
+    // The mask that a pin of the calling thread replaced.
+    [[nodiscard]] static PriorAffinity held_(AffinityMask const& mask) noexcept { return PriorAffinity{mask}; }
 };
 
 // The mask arrives at runtime, so no compile-time pinning proof can be
@@ -396,33 +410,38 @@ private:
 // An empty mask asks for no pin, and the call changes nothing.  A pin
 // goes through the same helper as mint_affinity, so it records a new pin
 // event, and a proof of an earlier pin on this thread stops being in
-// force.  The result holds the mask of the thread before the pin.
+// force.  The result holds the mask of the thread before the pin, or the
+// error of the kernel.
 //
 // The two door calls stand in the body and not in a lambda, because the walk
 // of the rule syscalls does not read the body of a lambda, and
 // the grant of crucible/warden/Hardening.h names the two calls of this door.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
-[[nodiscard]] auto apply_affinity_to_mask(Ctx const&, AffinityMask mask) noexcept -> std::expected<PriorAffinity, int> {
-    if (mask == AffinityMask{}) return PriorAffinity{};
+[[nodiscard]] auto apply_affinity_to_mask(Ctx const&, AffinityMask mask) noexcept
+    -> ::foundation::core::Result<PriorAffinity, ::foundation::os::Errno> {
+    if (mask == AffinityMask{}) return PriorAffinityDoor::none_();
     ::foundation::core::Result<AffinityMask, ::foundation::os::Errno> prior = sf::detail::sched_getaffinity_sys();
-    if (int const error = ::foundation::os::error_number_of(prior); error != 0) {
-        return std::unexpected(error);
+    for (::foundation::os::Errno const error : prior.err()) {
+        return ::foundation::core::err(error);
     }
-    if (int const error = ::foundation::os::error_number_of(sf::detail::sched_setaffinity_sys(mask)); error != 0) {
-        return std::unexpected(error);
+    ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> const pin_event =
+        sf::detail::sched_setaffinity_sys(mask);
+    for (::foundation::os::Errno const error : pin_event.err()) {
+        return ::foundation::core::err(error);
     }
-    return PriorAffinity{std::move(prior).expect("the read of the prior mask succeeded above")};
+    return PriorAffinityDoor::held_(std::move(prior).expect("the read of the prior mask succeeded above"));
 }
 
 // A pin to one CPU, through apply_affinity_to_mask.  A negative index asks
-// for no pin, and an index past the kernel set is EINVAL.
+// for no pin, and an index past the kernel set is einval.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
-[[nodiscard]] auto apply_affinity_to_cpu(Ctx const& ctx, int cpu) noexcept -> std::expected<PriorAffinity, int> {
+[[nodiscard]] auto apply_affinity_to_cpu(Ctx const& ctx, int cpu) noexcept
+    -> ::foundation::core::Result<PriorAffinity, ::foundation::os::Errno> {
     if (cpu < 0) return apply_affinity_to_mask(ctx, AffinityMask{});
     if (static_cast<unsigned>(cpu) > AffinityMask::kMaxCore) [[unlikely]] {
-        return std::unexpected(::foundation::os::error_number(::foundation::os::Errno::einval));
+        return ::foundation::core::err(::foundation::os::Errno::einval);
     }
     return apply_affinity_to_mask(ctx, AffinityMask::single(static_cast<std::uint16_t>(cpu)));
 }

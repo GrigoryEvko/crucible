@@ -161,7 +161,7 @@ void test_allowed_cpus_reads_the_calling_thread() {
     crucible::warden::CpuSet worker_allowed{};
     std::jthread worker{[&is_narrowed, &worker_allowed, chosen_cpu] {
         const auto prior = ::fixy::sched::apply_affinity_to_cpu(kStartup, chosen_cpu);
-        is_narrowed = prior.has_value();
+        is_narrowed = prior.is_ok();
         worker_allowed = allowed_cpus(kStartup);
     }};
     worker.join();

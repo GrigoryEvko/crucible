@@ -1317,6 +1317,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::sched::SchedProofDoor,
      "a door of the scheduling proof mints: it has static members only, no object of it exists, and it is never a "
      "value"},
+    {^^::fixy::sched::PriorAffinityDoor,
+     "the door of a prior affinity mask: it has static members only, no object of it exists, and it is never a "
+     "value"},
     {^^::fixy::sched::PriorAffinity,
      "the mask that one pin replaced: it holds the authority to undo that pin on its thread, and it is never a value "
      "in a kernel signature"},

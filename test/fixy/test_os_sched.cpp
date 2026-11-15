@@ -80,6 +80,13 @@ static_assert(can_apply_mask<fixy::ColdInitCtx>);
 static_assert(!can_apply_mask<fixy::HotFgCtx>);
 static_assert(!can_apply_mask<int>);
 
+// True when the result of a pin holds the mask that the pin replaced.
+[[nodiscard]] bool
+holds_prior_mask(foundation::core::Result<fixy::sched::PriorAffinity, foundation::os::Errno> const& result) noexcept {
+    return result.match([](fixy::sched::PriorAffinity const& prior) noexcept { return prior.is_held(); },
+                        [](foundation::os::Errno const&) noexcept { return false; });
+}
+
 // The highest CPU in the set, or -1 for an empty set.
 [[nodiscard]] int highest_cpu_in(::cpu_set_t const& set) noexcept {
     for (int cpu = CPU_SETSIZE - 1; cpu >= 0; --cpu) {
@@ -106,14 +113,14 @@ static_assert(!can_apply_mask<int>);
     // An empty mask asks for no pin.  The call succeeds, holds no mask and
     // changes nothing.
     auto no_pin = fixy::sched::apply_affinity_to_mask(bg, ml::AffinityMask{});
-    if (!no_pin || no_pin->is_held()) {
+    if (no_pin.is_err() || std::move(no_pin).expect("the test above found a prior mask").is_held()) {
         std::fprintf(stderr, "an empty mask did not give a result that holds no mask\n");
         return 1;
     }
 
     // An index past the kernel set is refused before the system call.
     auto past_the_set = fixy::sched::apply_affinity_to_cpu(bg, CPU_SETSIZE);
-    if (past_the_set || past_the_set.error() != EINVAL) {
+    if (past_the_set.err().value_or(foundation::os::Errno::eio) != foundation::os::Errno::einval) {
         std::fprintf(stderr, "a pin to a CPU past the kernel set was not refused with EINVAL\n");
         return 1;
     }
@@ -127,12 +134,14 @@ static_assert(!can_apply_mask<int>);
         return 0;
     }
 
-    auto prior = fixy::sched::apply_affinity_to_mask(bg, ml::AffinityMask::single(static_cast<std::uint16_t>(highest)));
-    if (!prior || !prior->is_held()) {
+    auto pinned_mask =
+        fixy::sched::apply_affinity_to_mask(bg, ml::AffinityMask::single(static_cast<std::uint16_t>(highest)));
+    if (!holds_prior_mask(pinned_mask)) {
         std::fprintf(stderr, "the mask door did not pin the thread to CPU %d (errno %d)\n", highest,
-                     prior ? 0 : prior.error());
+                     foundation::os::error_number_of(pinned_mask));
         return 1;
     }
+    fixy::sched::PriorAffinity prior = std::move(pinned_mask).expect("the test above found the pin");
     ::cpu_set_t pinned;
     CPU_ZERO(&pinned);
     if (::sched_getaffinity(0, sizeof(pinned), &pinned) != 0 || CPU_COUNT(&pinned) != 1
@@ -142,7 +151,7 @@ static_assert(!can_apply_mask<int>);
     }
 
     // The restore gives the thread its whole set back.
-    if (!std::move(*prior).restore()) {
+    if (std::move(prior).restore().is_err()) {
         std::fprintf(stderr, "the restore of the prior mask failed\n");
         return 1;
     }
@@ -154,12 +163,13 @@ static_assert(!can_apply_mask<int>);
     }
 
     // The one-CPU door gets to the same CPU through the mask door.
-    auto again = fixy::sched::apply_affinity_to_cpu(bg, highest);
-    if (!again || !again->is_held() || ::sched_getcpu() != highest) {
+    auto pinned_cpu = fixy::sched::apply_affinity_to_cpu(bg, highest);
+    if (!holds_prior_mask(pinned_cpu) || ::sched_getcpu() != highest) {
         std::fprintf(stderr, "the one-CPU door did not pin the thread to CPU %d\n", highest);
         return 1;
     }
-    if (!std::move(*again).restore()) {
+    fixy::sched::PriorAffinity again = std::move(pinned_cpu).expect("the test above found the pin");
+    if (std::move(again).restore().is_err()) {
         std::fprintf(stderr, "the restore after the one-CPU pin failed\n");
         return 1;
     }
@@ -320,11 +330,11 @@ static_assert(!can_apply_mask<int>);
     // A negative index asks for no pin: the call changes nothing, and it
     // succeeds.  A pin through the runtime door records a new pin event,
     // so the proof above stops being in force.
-    if (!fixy::sched::apply_affinity_to_cpu(bg, -1)) {
+    if (fixy::sched::apply_affinity_to_cpu(bg, -1).is_err()) {
         std::fprintf(stderr, "a runtime affinity call that asks for no pin failed\n");
         return 1;
     }
-    if (pin && fixy::sched::apply_affinity_to_cpu(bg, 0) && pin->is_in_force()) {
+    if (pin && fixy::sched::apply_affinity_to_cpu(bg, 0).is_ok() && pin->is_in_force()) {
         std::fprintf(stderr, "a pin proof stayed in force after its thread pinned again\n");
         return 1;
     }

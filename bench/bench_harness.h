@@ -1251,17 +1251,18 @@ public:
     struct PinResult {
         CpuId cpu{};
         size_t cpu_count = 0;
-        std::optional<::fixy::sched::PriorAffinity> prior{};
+        ::fixy::Option<::fixy::sched::PriorAffinity> prior{};
 
         [[nodiscard]] static PinResult one(CpuId pinned) noexcept {
             return PinResult{.cpu = pinned, .cpu_count = pinned.is_valid() ? size_t{1} : size_t{0}};
         }
 
-        [[nodiscard]] std::expected<void, int> restore() noexcept {
-            if (!prior.has_value()) return {};
-            auto restored = std::move(*prior).restore();
-            prior.reset();
-            return restored;
+        // A restore takes the mask from prior, so a second restore changes
+        // nothing.
+        [[nodiscard]] ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> restore() noexcept {
+            return std::move(prior).match(
+                [](::fixy::sched::PriorAffinity held) noexcept { return std::move(held).restore(); },
+                []() noexcept -> ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> { return ::fixy::Unit{}; });
         }
     };
 
@@ -1710,8 +1711,9 @@ private:
         }
         if (target < 0) return PinResult{};
 
-        auto prior = ::fixy::sched::apply_affinity_to_cpu(startup, target);
-        if (!prior.has_value()) {
+        ::fixy::Result<::fixy::sched::PriorAffinity, ::foundation::os::Errno> prior =
+            ::fixy::sched::apply_affinity_to_cpu(startup, target);
+        if (prior.is_err()) {
             return PinResult{};  // fail loudly, not silently
         }
         // Re-read — scheduler may not have migrated us yet. This is a
@@ -1724,7 +1726,7 @@ private:
         // burning a context switch inside every .measure().
         const int actual = sched_getcpu();
         PinResult pinned = PinResult::one((actual >= 0) ? CpuId{actual} : CpuId{target});
-        pinned.prior = std::move(*prior);
+        pinned.prior = std::move(prior).ok();
         return pinned;
 #else
         return PinResult{};
@@ -1763,9 +1765,10 @@ private:
             start_cpu = crucible::warden::select_hot_cpu(startup, selector, isolated);
             if (!is_free(start_cpu)) return PinResult{};
         }
-        auto prior = ::fixy::sched::apply_affinity_to_cpu(startup, start_cpu);
-        if (!prior.has_value()) return PinResult{};
-        if (!std::move(*prior).restore().has_value()) {
+        ::fixy::Result<::fixy::sched::PriorAffinity, ::foundation::os::Errno> prior =
+            ::fixy::sched::apply_affinity_to_cpu(startup, start_cpu);
+        if (prior.is_err()) return PinResult{};
+        if (std::move(prior).expect("the test above found the pin").restore().is_err()) {
             // The thread keeps the pin to the start CPU, and the body runs
             // on that one CPU.
             return PinResult::one(CpuId{start_cpu});

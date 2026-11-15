@@ -596,7 +596,7 @@ void test_fan_out_keeps_the_worker_affinity() {
     bench::Run::PinResult held = bench::Run("held pin").pin_calling_thread();
     if (held.cpu.is_valid()) {
         CHECK(affinity_cpu_count() == 1u);
-        CHECK(held.restore().has_value());
+        CHECK(held.restore().is_ok());
     }
     CHECK(affinity_cpu_count() == unpinned_count);
 }

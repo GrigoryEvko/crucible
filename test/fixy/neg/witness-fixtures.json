@@ -637,6 +637,11 @@
       "constructor": "\\bPriorAffinity\\("
     },
     {
+      "name": "neg_witness_sched_prioraffinitydoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bPriorAffinityDoor\\("
+    },
+    {
       "name": "neg_witness_sched_schedpriority_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bSchedPriority\\("
@@ -1469,6 +1474,10 @@
     },
     {
       "type": "fixy::sched::PriorAffinity",
+      "header": "fixy/os/Sched.h"
+    },
+    {
+      "type": "fixy::sched::PriorAffinityDoor",
       "header": "fixy/os/Sched.h"
     },
     {

@@ -198,13 +198,15 @@ public:
             // mask first, and revert puts it back through the same door.
             const int cpu = select_hot_cpu(ctx, p.hot_core);
             if (cpu >= 0) {
-                auto prior = ::fixy::sched::apply_affinity_to_cpu(ctx, cpu);
-                if (prior) {
-                    g.prior_affinity_ = ::fixy::Option<::fixy::sched::PriorAffinity>::some(std::move(*prior));
-                    g.pinned_cpu_ = cpu;
-                } else {
-                    detail::warn("sched_getaffinity or sched_setaffinity", prior.error());
+                ::fixy::Result<::fixy::sched::PriorAffinity, ::foundation::os::Errno> prior =
+                    ::fixy::sched::apply_affinity_to_cpu(ctx, cpu);
+                for (::foundation::os::Errno const error : prior.err()) {
+                    detail::warn("sched_getaffinity or sched_setaffinity", error);
                 }
+                if (prior.is_ok()) {
+                    g.pinned_cpu_ = cpu;
+                }
+                g.prior_affinity_ = std::move(prior).ok();
             }
         }
 

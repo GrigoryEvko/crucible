@@ -168,7 +168,7 @@ static_assert(RECORD_BODIES < RING_CAPACITY,
     // The pin goes through the door that records the pin event.  The
     // process keeps the pin, so the prior mask in the result is dropped.
     const ::fixy::ColdInitCtx startup{::foundation::effects::testing::init()};
-    if (!::fixy::sched::apply_affinity_to_mask(startup, set).has_value()) return -1;
+    if (::fixy::sched::apply_affinity_to_mask(startup, set).is_err()) return -1;
     return last;
 }
 

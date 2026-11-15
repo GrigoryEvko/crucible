@@ -497,7 +497,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
         std::fprintf(stderr, "a reader over a pin in force did not read\n");
         return 1;
     }
-    if (!fixy::sched::apply_affinity_to_cpu(bg, 0)) {
+    if (fixy::sched::apply_affinity_to_cpu(bg, 0).is_err()) {
         std::fprintf(stderr, "a runtime pin to CPU 0 failed where a mint to CPU 0 succeeded\n");
         return 1;
     }

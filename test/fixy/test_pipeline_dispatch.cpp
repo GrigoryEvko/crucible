@@ -212,8 +212,10 @@ static void test_threaded_stages_stay_in_the_caller_mask() {
     if (target < 0) target = allowed.front();
 
     const fixy::BgDrainCtx bg{::foundation::effects::testing::bg()};
-    auto prior = fixy::sched::apply_affinity_to_cpu(bg, target);
-    require(prior.has_value() && prior->is_held(), "cannot narrow the affinity mask of the caller");
+    auto pinned = fixy::sched::apply_affinity_to_cpu(bg, target);
+    require(pinned.is_ok(), "cannot narrow the affinity mask of the caller");
+    fixy::sched::PriorAffinity prior = std::move(pinned).expect("the require above found the pin");
+    require(prior.is_held(), "the pin of the caller holds no prior mask");
 
     pinned_calls.store(0, std::memory_order_release);
     auto s0 = cc::mint_stage<&pinned_body>(bg, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
@@ -221,7 +223,7 @@ static void test_threaded_stages_stay_in_the_caller_mask() {
     auto p = cc::mint_pipeline(bg, std::move(s0), std::move(s1));
     std::move(p).run(bg);
 
-    require(std::move(*prior).restore().has_value(), "cannot restore the affinity mask of the caller");
+    require(std::move(prior).restore().is_ok(), "cannot restore the affinity mask of the caller");
     require(pinned_calls.load(std::memory_order_acquire) == kPinnedStages, "each pinned stage should run once");
     if (!can_tell_apart) return;
     for (std::size_t i = 0; i < kPinnedStages; ++i) {

@@ -66,10 +66,14 @@ static_assert(!std::is_default_constructible_v<PriorAffinity> && !std::is_copy_c
               "a prior affinity mask comes only from apply_affinity_to_mask, and one mask is restored at most once");
 static_assert(!std::is_trivially_copyable_v<PriorAffinity> && !std::is_implicit_lifetime_v<PriorAffinity>,
               "std::bit_cast and std::start_lifetime_as must not build a prior affinity mask");
+// The two runtime doors and the restore give the error of the kernel in the
+// one error form of the base.
 static_assert(std::is_same_v<decltype(apply_affinity_to_mask(std::declval<BgWitness const&>(), AffinityMask{})),
-                             std::expected<PriorAffinity, int>>);
+                             ::foundation::core::Result<PriorAffinity, ::foundation::os::Errno>>);
 static_assert(std::is_same_v<decltype(apply_affinity_to_cpu(std::declval<BgWitness const&>(), 0)),
-                             std::expected<PriorAffinity, int>>);
+                             ::foundation::core::Result<PriorAffinity, ::foundation::os::Errno>>);
+static_assert(std::is_same_v<decltype(std::declval<PriorAffinity>().restore()),
+                             ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>>);
 
 static_assert(CtxFitsRuntimeAffinity<BgWitness>);
 static_assert(CtxFitsRuntimeAffinity<InitWitness>);

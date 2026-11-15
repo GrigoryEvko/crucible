@@ -882,9 +882,11 @@ witness <fixy/os/SchedClass.h> no-match | fixy::SchedClass<foundation::algebra::
 witness <fixy/os/Sched.h> no-match | fixy::sched::SchedPriority<5> | fixy::sched::SchedPriority<5>{}
 witness <fixy/os/Sched.h> deleted | fixy::sched::SchedProofDoor | fixy::sched::SchedProofDoor{}
 # A prior affinity mask is the authority to undo one pin.  Its constructors
-# are private, and apply_affinity_to_mask, which makes the pin, is the sole
-# friend.
+# are private, and its sole friend is PriorAffinityDoor.  No object of the
+# door exists, its members are private, and its sole friend is
+# apply_affinity_to_mask, which makes the pin.
 witness <fixy/os/Sched.h> private | fixy::sched::PriorAffinity | fixy::sched::PriorAffinity{}
+witness <fixy/os/Sched.h> deleted | fixy::sched::PriorAffinityDoor | fixy::sched::PriorAffinityDoor{}
 witness <fixy/os/OwnedMmap.h> private | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>{static_cast<void*>(nullptr), std::size_t{0}}
 witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{{3, nullptr, 0, nullptr, 0, nullptr, 0, 0, 0}}
 witness <fixy/os/Fd.h> private | fixy::fs::OwnedFd | fixy::fs::OwnedFd{3}
