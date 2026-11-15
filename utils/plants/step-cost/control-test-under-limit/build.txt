@@ -1,4 +1,4 @@
-# The record of one test of the build gives 10 G user instructions, under the limit 500 G of the kind test.  A
+# The record of one test of the build gives 10 G user instructions, under the limit 600 G of the kind test.  A
 # second test sleeps for 40 s with the same count, and no rule judges its wall time.  A third test has no count, as
 # on a host with no counter.  judge() of `loop test-step` gives no finding.  A light compile gives the kind compile an
 # input.

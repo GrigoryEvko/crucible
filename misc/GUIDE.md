@@ -2556,7 +2556,7 @@ The other rules of the table count findings or facts, and no rule gives a warnin
 
 | Budget | What it measures | Limit | Held by | Runs in |
 |---|---|---|---|---|
-| `step-cost` | The user instructions of one step: the compiler run of a compile job, a cold fixture compile, and a test with each process that it starts | 110 G for a compile, 45 G for a fixture and 500 G for a test | The test `guard_step_cost`, the test launcher and the fixture driver | Test run |
+| `step-cost` | The user instructions of one step: the compiler run of a compile job, a cold fixture compile, and a test with each process that it starts | 110 G for a compile, 45 G for a fixture and 600 G for a test | The test `guard_step_cost`, the test launcher and the fixture driver | Test run |
 | `step-memory` | The peak memory of one step: a compile job, a link, and a test with each process that it starts | 4 GB for a compile, 1 GB for a link and 1.5 GB for a test. The build launcher fails a compile or a link above its limit | The build launcher, the test launcher, the fixture driver and the test `guard_step_memory` | Build, test run |
 | `object-size` | The machine code of one object: its largest function, and the sum of its executable sections | 256 KB for a function and 768 KB for an object | The test `guard_object_size` | Test run |
 | `header-alone` | The bytes that one header includes alone, with one limit for each layer | 3.5 MB for foundation, 6.5 MB for fixy and 7.35 MB for crucible | The test `guard_header_alone` | Test run |

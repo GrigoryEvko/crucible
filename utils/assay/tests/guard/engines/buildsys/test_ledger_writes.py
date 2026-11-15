@@ -38,7 +38,7 @@ test-record slow_test wall=40 cpu=1 peak=0.1
 test-record big_test wall=1 cpu=1 peak=2
 test-record fast_test wall=1 cpu=1 peak=0.1 instructions=1
 test-record counted_slow_test wall=40 cpu=1 peak=0.1 instructions=1
-test-record heavy_test wall=1 cpu=1 peak=0.1 instructions=600
+test-record heavy_test wall=1 cpu=1 peak=0.1 instructions=700
 test-record gone_test wall=50 cpu=1 peak=3
 """
 # A ledger of step-memory with a row of the kind test of a test that the build does not register, which each write
@@ -120,7 +120,7 @@ def record_cases(expect: testing.Expect) -> None:
             "guard write writes the ledger of step-cost: a row of the kind test with the count in G of each "
             "registered test over the limit, and no row of a test whose record holds no count",
             status == 0
-            and ledger_values(context, "step-cost") == {("test", "heavy_test"): (600.0, "a planted reason")}
+            and ledger_values(context, "step-cost") == {("test", "heavy_test"): (700.0, "a planted reason")}
             and "step-cost.txt holds 1 rows" in said,
         )
         run_write(context, "step-memory", "a different reason")
