@@ -307,7 +307,6 @@ allow F1_permissions <optional> until Choice | std::optional, a value or no valu
 allow F1_rest <csignal> until Os | std::sig_atomic_t of the contract handler
 allow X1_wrappers <cmath> until Scalar | std::isnan, std::sqrt, std::fma and the other operations on a floating value
 allow X1_wrappers <memory> until Ref | std::construct_at and std::destroy_at
-allow X1_wrappers <ranges> until Region | the range concepts and the range access of std::ranges
 allow X1_wrappers <variant> until Choice | std::variant, one value of a closed set of types
 allow X3_os <algorithm> until Region | std::sort, std::lower_bound and the other operations on a sequence
 allow X3_os <cerrno> until Os | errno and the error numbers
