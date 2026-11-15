@@ -2098,6 +2098,11 @@ fixy_neg_compile_test(neg_sess_rewind_unresumable
 fixy_neg_compile_test(neg_sess_rewind_branded
   "no matching function for call to .fixy::session::HandleFactory::rewind<fixy::session::End, void>"
   "satisfaction of .carries_brand<EndLoopCtx, void>. .with EndLoopCtx = fixy::session::detail::session_brand<neg_sess_rewind_branded_types::Body, void>.")
+# A rewind of a channel rewinds its two ends together and links the two new
+# records.  The two ends of a channel share one priority.
+fixy_neg_compile_test(neg_sess_rewind_channel_priorities_differ
+  "no matching function for call to .fixy::session::HandleFactory::rewind_channel<fixy::session::End, void>"
+  "satisfaction of .ChannelEndsShareAPriority<Resource, PeerResource>. \\[with Resource = neg_sess_rewind_channel_priorities_differ_types::LowWire; PeerResource = neg_sess_rewind_channel_priorities_differ_types::HighWire\\]")
 
 # Delegate.h: a message that carries a live endpoint.  The test hands an
 # endpoint over a channel, hands an endpoint with the token of its set,

@@ -896,6 +896,35 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
     return 0;
 }
 
+// Two handles at End rewind together, as the two ends of a channel, to the
+// start of Once.  Each rewound end has a live record of its own, and the
+// self end sends its Ping.  The detach of each end releases its record.
+[[nodiscard]] int rewind_test_channel() {
+    Pipe pipe{};
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto self_end = s::mint_session<s::End>(ctx, SelfEnd{&pipe});
+    auto peer_end = s::mint_session<s::End>(ctx, PeerEnd{&pipe});
+    auto [self_again, peer_again] =
+        s::HandleFactory::rewind_channel<Once, void>(std::move(self_end), std::move(peer_end));
+    const bool is_each_end_live =
+        s::watch::is_live(self_again.watch_endpoint()) && s::watch::is_live(peer_again.watch_endpoint());
+    auto self_waits = std::move(self_again).send(Ping{20}, [](SelfEnd& e, Ping& p) noexcept {
+        return put(e.pipe->to_peer, p.value);
+    });
+    const bool is_ping_sent = try_take(pipe.to_peer) == ::fixy::some(20);
+    std::move(self_waits).detach(s::detach_reason::TestInstrumentation{});
+    std::move(peer_again).detach(s::detach_reason::TestInstrumentation{});
+    if (!is_each_end_live) {
+        ::fixy::report(::fixy::Sink::Err, "a rewound end of the test channel has no live record\n");
+        return 1;
+    }
+    if (!is_ping_sent) {
+        ::fixy::report(::fixy::Sink::Err, "the rewound self end did not send its Ping\n");
+        return 1;
+    }
+    return 0;
+}
+
 // The fork-shaped mint: each side runs on its own thread and never sees
 // the other endpoint.
 [[nodiscard]] int walk_forked_channel() {
@@ -1195,6 +1224,7 @@ template <typename Body>
     std::move(second).detach(s::detach_reason::TestInstrumentation{});
 
     if (walk_test_channel() != 0 || !live_count_is(baseline, "a test channel")) return 1;
+    if (rewind_test_channel() != 0 || !live_count_is(baseline, "a rewound test channel")) return 1;
     if (walk_forked_channel() != 0 || !live_count_is(baseline, "a forked channel")) return 1;
     return 0;
 }

@@ -632,6 +632,26 @@ template <Receive How>
 // before the transport runs.
 [[noreturn]] void one_thread_holds_both_ends_declared_wait() { run_one_thread_holds_both_ends<Receive::Declared>(); }
 
+// Two handles at End are rewound together, as the two ends of a channel.
+// The rewind links the two new records, so the watch sees the channel.
+// The thread holds the rewound left end and waits on the rewound right
+// end, for room that only a read of the left end can make.  The watch
+// refuses the wait as a wait on a held peer.  A rewind of each end alone
+// gives two records with no link, and the watch then names only the
+// priority order.
+[[noreturn]] void one_thread_holds_both_rewound_ends() {
+    Pipe pipe{};
+    const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
+    auto left_end = s::mint_session<s::End>(ctx, LeftEnd{&pipe});
+    auto right_end = s::mint_session<s::End>(ctx, RightEnd{&pipe});
+    auto [left_again, right_again] =
+        s::HandleFactory::rewind_channel<LeftProto, void>(std::move(left_end), std::move(right_end));
+    auto right_done = std::move(right_again).send(Ping{1}, [](RightEnd&, Ping&) noexcept { return false; });
+    std::move(right_done).detach(s::detach_reason::TestInstrumentation{});
+    std::move(left_again).detach(s::detach_reason::TestInstrumentation{});
+    ::fixy::fatal("the watch let a thread wait on a rewound end while it held the other end");
+}
+
 // Two forked sessions, each run from its own thread.  Each right body
 // gives its endpoint to the left body of the OTHER session.  Each left
 // body then waits on its own session for the message that its partner's
@@ -1156,6 +1176,7 @@ struct wait_refusal_case {
 constexpr wait_refusal_case kWaitRefusals[] = {
     {"one_thread_holds_both_ends_after_fork", "[Wait_On_Held_Peer]", one_thread_holds_both_ends_after_fork},
     {"one_thread_holds_both_ends_declared_wait", "[Wait_On_Held_Peer]", one_thread_holds_both_ends_declared_wait},
+    {"one_thread_holds_both_rewound_ends", "[Wait_On_Held_Peer]", one_thread_holds_both_rewound_ends},
     {"two_forked_sessions_in_a_cycle", "[Wait_Breaks_Priority_Order]", two_forked_sessions_in_a_cycle},
     {"wait_low_while_holding_high", "[Wait_Breaks_Priority_Order]", wait_low_while_holding_high},
     {"keyed_recv_reads_a_foreign_label_word", "[Keyed_Label_Word_Mismatch]: a keyed reception read the word 7",

@@ -718,6 +718,8 @@ class handle_core;
 //     methods here, so a direct call is the same operation as the method.
 //   - rewind takes a handle at End and opens a new session on its
 //     Resource at a position that the gate of rewind admits.
+//     rewind_channel does the same for the two ends of a channel, and
+//     links the two new records in the watch.
 //
 // No object of the class exists, and foundation/NoObject.h tells why no
 // constructor and no byte route makes one.
@@ -814,6 +816,29 @@ public:
     [[nodiscard]] static constexpr auto
     rewind(SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
            std::source_location loc = std::source_location::current()) noexcept;
+
+    // Rewinds the two ends of a channel together.  It takes the handle at
+    // End of each end and opens a new session on each Resource: one at
+    // position R in the loop context LoopCtx, and one at the dual of R.  The
+    // step into End released the record of each end, so a rewind of one end
+    // alone claims a record with no peer, and the watch no longer sees the
+    // channel.  This rewind links the two new records, as a channel mint
+    // does.  The gate is RewindableChannelTo of fixy/session/Admission.h.
+    // The result holds the two handles, in the order of the arguments, and a
+    // structured binding gives them out.
+    template <typename Rewound, typename PeerRewound>
+    struct RewoundChannel {
+        Rewound rewound;
+        PeerRewound peer_rewound;
+    };
+
+    template <typename R, typename LoopCtx, typename Resource, typename PeerResource, typename EndLoopCtx,
+              typename PeerEndLoopCtx, AbandonmentPolicy Policy>
+        requires RewindableChannelTo<R, LoopCtx, EndLoopCtx, PeerEndLoopCtx, Resource, PeerResource>
+    [[nodiscard]] static constexpr auto
+    rewind_channel(SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
+                   SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&&
+                       peer_at_end) noexcept;
 
     // Enters branch I of an Offer, a branch that is no label, with no word
     // read.  The crash transport of fixy/session/CrashTransport.h enters a
@@ -1746,6 +1771,26 @@ constexpr auto HandleFactory::rewind(
     Resource resource = std::move(at_end).close();
     return step_<R, Resource, LoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
         std::forward<Resource>(resource), claim_<R, Resource, Policy>(loc), loc);
+}
+
+// Each end rewinds to its position with a record of its own, which names
+// the calling thread as its holder.  The gate gives the two Resources one
+// priority, so the two records have the priority of one channel, and the
+// link makes them its two ends.  A position at End has no record, and the
+// link of no record does nothing.
+template <typename R, typename LoopCtx, typename Resource, typename PeerResource, typename EndLoopCtx,
+          typename PeerEndLoopCtx, AbandonmentPolicy Policy>
+    requires RewindableChannelTo<R, LoopCtx, EndLoopCtx, PeerEndLoopCtx, Resource, PeerResource>
+constexpr auto HandleFactory::rewind_channel(
+    SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
+    SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&&
+        peer_at_end) noexcept {
+    auto rewound = rewind<R, LoopCtx>(std::move(at_end));
+    auto peer_rewound = rewind<dual_of_t<R>, detail::dual_loop_ctx_t<LoopCtx>>(std::move(peer_at_end));
+    if !consteval {
+        watch::link(rewound.watch_endpoint(), peer_rewound.watch_endpoint());
+    }
+    return RewoundChannel<decltype(rewound), decltype(peer_rewound)>{std::move(rewound), std::move(peer_rewound)};
 }
 
 namespace detail {

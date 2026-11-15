@@ -269,7 +269,7 @@ that the axis does not apply to the row.
 | `mint_permission_hold` | `include/fixy/session/Flow.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permissioned_session` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | HS14: 8 |
-| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 61 |
+| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 62 |
 | `mint_session_event_writer` | `include/fixy/session/EventLog.h` | Y | - | Y | · | token | · | HS14: 11 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_test_channel` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |

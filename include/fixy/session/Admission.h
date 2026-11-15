@@ -307,6 +307,24 @@ concept ResumablePosition = (std::is_void_v<LoopCtx> && !std::is_same_v<R, Conti
 template <typename R, typename LoopCtx, typename EndLoopCtx>
 concept RewindableTo = ResumablePosition<R, LoopCtx> && detail::carries_brand<EndLoopCtx, void>;
 
+namespace detail {
+
+// The loop context of the peer of a channel end: none for none, and the
+// dual Loop for a Loop.
+template <typename LoopCtx>
+struct dual_loop_ctx {
+    using type = dual_of_t<LoopCtx>;
+};
+template <>
+struct dual_loop_ctx<void> {
+    using type = void;
+};
+
+template <typename LoopCtx>
+using dual_loop_ctx_t = typename dual_loop_ctx<LoopCtx>::type;
+
+}  // namespace detail
+
 // ── The Resource ─────────────────────────────────────────────────────
 //
 // The Resource is what a handle stores at runtime.  The concept stops a
@@ -402,6 +420,16 @@ concept SessionResource = OwnedSessionResource<Resource> || PinnedSessionResourc
 // priority.
 template <typename ResourceA, typename ResourceB>
 concept ChannelEndsShareAPriority = session_priority(^^ResourceA) == session_priority(^^ResourceB);
+
+// The gate of HandleFactory::rewind_channel.  Each end can start at its
+// position: R in the loop context LoopCtx, and the peer at the dual of R in
+// the dual loop context.  The two Resources share one priority, as the two
+// ends of a channel mint do.
+template <typename R, typename LoopCtx, typename EndLoopCtx, typename PeerEndLoopCtx, typename Resource,
+          typename PeerResource>
+concept RewindableChannelTo =
+    RewindableTo<R, LoopCtx, EndLoopCtx> && RewindableTo<dual_of_t<R>, detail::dual_loop_ctx_t<LoopCtx>, PeerEndLoopCtx>
+    && ChannelEndsShareAPriority<Resource, PeerResource>;
 
 // ── The effect row of a protocol ────────────────────────────────────
 //
