@@ -22,7 +22,11 @@ reconfigure-noop, and a failure of that rule must reject the commit.  A
 registry that the code of the gate cannot read must give the widest
 selection and no reduce.  A candidate that names a built file must get the
 write of that file from the build of default before the suite, and the fold
-of the write into its commit.  A change of a header that renames a function
+of the write into its commit.  A change that adds a fixture must get that
+write too, while the other configurations build, and each configuration
+must run its suite after the fold.  A focus with no run of default must get
+the write before each configuration, and the run of the base must get no
+write.  A change of a header that renames a function
 that the planted vessel calls must fail the build of the vessel, and the gate
 must reject it.  The planted cmake compiles that vessel.
 """
@@ -104,8 +108,10 @@ COUNTED_REGISTRY = (
 # build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.  The
 # master writes MAKEFLAGS to makeflags.txt, and the times of its start and its end to times.txt.  The mode hang runs
 # until a stop ends it.  `derive TARGET --write --build-dir BUILD` writes inventory.txt of the build into the tree as the
-# mint inventory, or exits 3 in the mode unwritten.  With inventory.txt in the build, the test test_built is red when
-# the tree holds a different inventory.  Each call writes its first words to calls.txt of its build.
+# mint inventory, or writes nothing for a build with no inventory.txt.  It exits 3 in the mode unwritten, and in the
+# mode overlap when the release build gives no cmake.txt in its wait.  With inventory.txt in the build, the test
+# test_built, the planted test of the rule derived-files, is red when the tree holds a different inventory.  Each call
+# writes its first words to calls.txt of its build.
 #
 # The modes that follow wait for a file of a different run, and not for a time.  Each wait stops after 30 s, as a bound
 # for a hang.  A wait that stops makes its case fail: seen.txt then gives fewer runs, tokens.txt gives the word late,
@@ -143,9 +149,15 @@ if words[0] == "derive":
     build = pathlib.Path(words[words.index("--build-dir") + 1])
     with open(build / "calls.txt", "a") as handle:
         handle.write(" ".join(words[:3]) + "\\n")
-    if (build / "mode.txt").read_text().strip() == "unwritten":
+    mode = (build / "mode.txt").read_text().strip()
+    if mode == "unwritten":
         sys.exit(3)
-    pathlib.Path("misc/mint-inventory.md").write_text((build / "inventory.txt").read_text())
+    if mode == "overlap" and not is_written(build.parent / "build-release" / "cmake.txt"):
+        sys.exit(3)
+    inventory = build / "inventory.txt"
+    if inventory.is_file():
+        pathlib.Path("misc").mkdir(exist_ok=True)
+        pathlib.Path("misc/mint-inventory.md").write_text(inventory.read_text())
     sys.exit(0)
 build = pathlib.Path(words[1])
 with open(build / "calls.txt", "a") as handle:
@@ -263,6 +275,7 @@ sys.exit(0 if words[0] == "warnings" else 77)
 VESSEL_CALLS = "vessel/torch/calls.txt"
 VESSEL_HEADER = "include/record.h"
 # The planted cmake: `cmake --build BUILD --target TARGET` writes its target to cmake.txt of the build, and exits 0.
+# `cmake --build BUILD` of a build with the mode build gives an error and exits 1.
 # A build of the target crucible_dispatch compiles the planted vessel: each name of VESSEL_CALLS of the tree must be a
 # function of VESSEL_HEADER, else the build gives an error and exits 1.
 CMAKE = """import pathlib
@@ -272,6 +285,10 @@ words = sys.argv[1:]
 build = pathlib.Path(words[words.index("--build") + 1])
 with open(build / "cmake.txt", "a", encoding="utf-8") as handle:
     handle.write(" ".join(words[words.index("--build") + 2 :]) + "\\n")
+mode = build / "mode.txt"
+if words[-1] == str(build) and mode.is_file() and mode.read_text().strip() == "build":
+    print("the build gives an error")
+    sys.exit(1)
 calls, header = pathlib.Path("@CALLS@"), pathlib.Path("@HEADER@")
 if "crucible_dispatch" in words and calls.is_file():
     declared = header.read_text() if header.is_file() else ""
@@ -932,11 +949,12 @@ def built_cases(expect: testing.Expect) -> None:
             verdict.is_accepted
             and verdict.built == (INVENTORY,)
             and calls == ["derive mint-inventory --write", "test"]
-            and builds[:1] == [""]
+            and builds == ["--target build.ninja", ""]
         )
         label = (
-            f"the gate builds the target all of default with no -j, writes the merged inventory, and then runs the "
-            f"suite, which judges the written inventory: the calls {calls} and the builds {builds}"
+            f"the run of default builds build.ninja for the touched tests, then the target all with no -j, writes the "
+            f"merged inventory, and then runs the suite, which judges the written inventory: the calls {calls} and the "
+            f"builds {builds}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         note = f"The gate wrote {INVENTORY} from the build of the composed tree."
@@ -988,13 +1006,27 @@ def built_cases(expect: testing.Expect) -> None:
         verdict, printed = testing.captured(lambda: clean.check(gate.Candidate(commit, stale, (INVENTORY,)), False))
         calls = calls_of(build)
         holds = (
+            verdict.is_accepted
+            and verdict.built == (INVENTORY,)
+            and git.show(root, verdict.final, INVENTORY) == BUILT_INVENTORY.encode()
+            and calls == ["derive mint-inventory --write", "test"]
+        )
+        label = (
+            f"a hand change of the inventory is a change that can change it, so the gate writes the bytes of the build "
+            f"in its place: the calls {calls} and the gate writes {verdict.built}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        notes = commit_change(root, "notes.txt", "a change that no built file reads\n", "Change the notes")
+        verdict, printed = testing.captured(lambda: clean.check(gate.Candidate(stale, notes, ("notes.txt",)), False))
+        calls = calls_of(build)
+        holds = (
             not verdict.is_accepted
             and any("red alone too: test_built" in problem for problem in verdict.problems)
             and not verdict.built
             and calls == ["test"]
         )
         label = (
-            f"a candidate that names no built file gets no write, and the suite rejects an inventory that the build "
+            f"a change that can change no built file gets no write, and the suite rejects an inventory that the build "
             f"does not give: the calls {calls} and the problems {verdict.problems}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
@@ -1015,6 +1047,130 @@ def built_cases(expect: testing.Expect) -> None:
             f"a candidate that names a file that no row of BUILT_FILES gives is an error of the gate: {refusal}",
             "misc/other.md" in refusal,
         )
+
+
+def built_fixture_cases(expect: testing.Expect) -> None:
+    """Hold THE BUILT FILES for a change that adds a fixture and holds no inventory: the selection and the wait.
+
+    The run of default writes the inventory after its build, and the planted derive waits for the build of release.
+    Each configuration of objects runs the planted test of the rule derived-files after the fold.
+    """
+    expect(
+        "a change of a header, of a fixture, of the ledger of the rule mint or of a module of the deriver can change "
+        "the inventory, and a change of a source file, of a different test or of the notes cannot",
+        gate.built_selection(paths.REPO_ROOT, ["include/fixy/Core.h"]) == (INVENTORY,)
+        and gate.built_selection(paths.REPO_ROOT, ["test/foundation/neg/mint_refused.cpp"]) == (INVENTORY,)
+        and gate.built_selection(paths.REPO_ROOT, ["utils/ledgers/mint.txt"]) == (INVENTORY,)
+        and gate.built_selection(paths.REPO_ROOT, ["utils/assay/guard/engines/plugin/declarations.py"]) == (INVENTORY,)
+        and gate.built_selection(paths.REPO_ROOT, ["src/fixy/Arena.cpp", "test/test_arena.cpp", "notes.txt"]) == (),
+    )
+    with tempfile.TemporaryDirectory(prefix="gate-fixture-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root, {INVENTORY: STALE_INVENTORY})
+        fixture = "test/fixy/neg/mint_a_refused.cpp"
+        commit = commit_change(root, fixture, "int refused = mint_a();\n", "Add a fixture of mint_a")
+        candidate = gate.Candidate(head, commit, (fixture,))
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = planted_gate(work, root, tree, "overlap", OTHER_BUILDS)
+        objects = ["build", *OTHER_BUILDS]
+        for name in objects:
+            (tree / name / "inventory.txt").write_text(BUILT_INVENTORY, encoding="utf-8")
+        verdict, printed = testing.captured(lambda: planted.check(candidate, False))
+        calls = {name: calls_of(tree / name) for name in objects}
+        builds = {name: (tree / name / "cmake.txt").read_text(encoding="utf-8").splitlines() for name in objects}
+        holds = (
+            verdict.is_accepted
+            and verdict.built == (INVENTORY,)
+            and git.show(root, verdict.final, INVENTORY) == BUILT_INVENTORY.encode()
+            and git.parent(root, verdict.final) == head
+            and calls["build"] == ["derive mint-inventory --write", "test"]
+            and all(calls[name] == ["test"] for name in OTHER_BUILDS)
+            and all(builds[name] == [""] for name in objects)
+        )
+        label = (
+            f"a change that adds a fixture and holds no inventory gets the inventory from the build of default.  Each "
+            f"other configuration builds while default builds and writes, and it runs its suite after the fold, so the "
+            f"planted test of the rule derived-files is green in each one: the gate writes {verdict.built}, with the "
+            f"calls {calls} and the builds {builds}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        focused = planted_gate(work, root, tree, "clean", OTHER_BUILDS)
+        alone = replace(candidate, focus=(gate.Focus("release", ("test_built",)),))
+        verdict, printed = testing.captured(lambda: focused.check(alone, False))
+        calls = {name: calls_of(tree / name) for name in ("build", "build-release")}
+        holds = (
+            verdict.is_accepted
+            and verdict.built == (INVENTORY,)
+            and verdict.configurations == ("release",)
+            and calls == {"build": ["derive mint-inventory --write"], "build-release": ["test"]}
+        )
+        label = (
+            f"a focus with no run of default writes the inventory before each configuration, so the request that runs "
+            f"alone gets the inventory too: the gate runs {verdict.configurations}, writes {verdict.built} and calls "
+            f"{calls}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        base = gate.Candidate(commit, commit, (fixture,), focus=(gate.Focus("release", ("test_passes",)),))
+        verdict, printed = testing.captured(lambda: focused.check(base, False))
+        calls = {name: calls_of(tree / name) for name in ("build", "build-release")}
+        holds = verdict.final == commit and not verdict.built and calls == {"build": [], "build-release": ["test"]}
+        label = f"the run of the base writes no built file: the gate writes {verdict.built} and calls {calls}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        broken = planted_gate(work, root, tree, "build", OTHER_BUILDS)
+        verdict, printed = testing.captured(lambda: broken.check(candidate, False))
+        base = gate.Candidate(head, head, (fixture,), focus=verdict.focus)
+        base_verdict, base_printed = testing.captured(lambda: broken.check(base, True))
+        calls_of(tree / "build")
+
+        def shown(item: gate.Verdict) -> set[str]:
+            """Return the problems of a verdict with a mark in place of the directory of its logs."""
+            return {problem.replace(item.logs, "LOGS") for problem in item.problems}
+
+        holds = (
+            not verdict.is_accepted
+            and verdict.focus == (gate.Focus(gate.ALWAYS),)
+            and not base_verdict.is_accepted
+            and shown(verdict) == shown(base_verdict)
+        )
+        label = (
+            f"a build error of default before the write of a built file gives the problem of a build error of `loop "
+            f"test`, so the run of the base, which writes no built file, gives the same problem: {verdict.problems} "
+            f"and {base_verdict.problems}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}\n{base_printed}", holds)
+    built_touch_cases(expect)
+
+
+def built_touch_cases(expect: testing.Expect) -> None:
+    """Hold the touched tests of a change with no compiled file that can change a built file (THE BUILT FILES).
+
+    The planted rule plan-check has the inventory in its scope, as the rule derived-files has.  A change of the ledger
+    of the rule mint touches no input of it, but the written inventory does.
+    """
+    with tempfile.TemporaryDirectory(prefix="gate-touch-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        registry = REGISTRY.replace(
+            "plan-check engine=meta scope=builddir", f"plan-check engine=meta scope=builddir,{INVENTORY}"
+        )
+        head = planted_repository(root, {INVENTORY: STALE_INVENTORY, rule_registry.REGISTRY_PATH: registry})
+        ledger = "utils/ledgers/mint.txt"
+        commit = commit_change(root, ledger, "format 1\nrule mint\n", "Change the ledger of the rule mint")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = planted_gate(work, root, tree, "clean", OTHER_BUILDS)
+        (tree / "build" / "inventory.txt").write_text(BUILT_INVENTORY, encoding="utf-8")
+        verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, (ledger,)), False))
+        only = planted.logs / gate.log_name(gate.BY_NAME["release"], "only.txt")
+        named = only.read_text(encoding="utf-8").split() if only.is_file() else []
+        holds = verdict.is_accepted and verdict.built == (INVENTORY,) and named == [BUILD_RULE_TEST]
+        label = (
+            f"a change of the ledger of the rule mint writes the inventory, and each other configuration runs the "
+            f"tests that read the written inventory: the gate writes {verdict.built}, and release runs {named}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
 def changed_tests_cases(expect: testing.Expect) -> None:
@@ -1742,6 +1898,7 @@ def main(argv: list[str]) -> int:
             counted_cases,
             reduce_parse_cases,
             built_cases,
+            built_fixture_cases,
             changed_tests_cases,
             touched_cases,
             thread_cases,

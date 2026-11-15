@@ -7,6 +7,7 @@ planted mint records to a context of the engine plugin with a planted
 census.  The fixtures parse with the pinned tree-sitter kit.  The cases hold:
   * The layer and the section of a header path
   * The fixture directories of each layer, and the files that are not fixtures
+  * The paths whose change can change the inventory (THE INPUTS)
   * The count of the fixtures of a member mint of a name that two classes have
   * The rows of the records: the count of each mint, the carve-out of the
     ledger, the cx cell and the label of an overload
@@ -140,6 +141,49 @@ def fixture_cases(expect: testing.Expect) -> None:
         )
 
 
+def input_cases(expect: testing.Expect) -> None:
+    """Hold THE INPUTS: each fixture of fixture_files() is an input, and a path of src/ or of a test is not."""
+    with tempfile.TemporaryDirectory(prefix="mint-inventory-") as scratch_text:
+        root = Path(scratch_text)
+        scratch_tree(root)
+        listed = [path.as_posix() for family in inventory.fixture_files(root).values() for path in family]
+        expect(
+            f"each fixture of fixture_files() is a fixture and an input: {listed}",
+            len(listed) == 7 and all(inventory.is_fixture(path) and inventory.is_input(path) for path in listed),
+        )
+    expect(
+        "a file outside a fixture directory is no fixture, also a file of test/ with the name neg",
+        not inventory.is_fixture("test/fixy/notes/neg_lonely.cpp")
+        and not inventory.is_fixture("test/neg")
+        and not inventory.is_fixture("bench/neg/a.cpp"),
+    )
+    expect(
+        "a header, a check unit of test/layer/, a file of the plugin, a build file, the ledger of the rule mint, the "
+        "registry, the rule table and the inventory are inputs",
+        all(
+            inventory.is_input(path)
+            for path in (
+                "include/fixy/A.h",
+                "test/layer/checks/fixy/A.cpp",
+                "utils/tools/quarantine/declaration.cpp",
+                "test/CMakeLists.txt",
+                "cmake/Guards.cmake",
+                "utils/ledgers/mint.txt",
+                "utils/registry.txt",
+                "utils/rule-table.txt",
+                inventory.INVENTORY,
+            )
+        ),
+    )
+    expect(
+        "a source file, a different test, a bench and a different ledger are no inputs",
+        not any(
+            inventory.is_input(path)
+            for path in ("src/fixy/A.cpp", "test/test_arena.cpp", "bench/bench_a.cpp", "utils/ledgers/owners.txt")
+        ),
+    )
+
+
 def count_cases(expect: testing.Expect) -> None:
     """Hold the count of a member mint of a name that two classes have, through its class and an alias of it."""
     names = [frozenset({"Holder", "mint_member"}), frozenset({"Kept", "mint_member"}), frozenset({"mint_member"})]
@@ -221,5 +265,7 @@ def command_cases(expect: testing.Expect) -> None:
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (layer_cases, fixture_cases, count_cases, row_cases, command_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (layer_cases, fixture_cases, input_cases, count_cases, row_cases, command_cases),
     )

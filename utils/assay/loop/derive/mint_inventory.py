@@ -41,6 +41,24 @@ THE CHECK
     rule derived-files (assay.guard.engines.meta.derived_files) reads the
     same finding (drift()), and the rule mint reads the same rows.
 
+THE INPUTS
+    The landing gate writes the inventory for each change that can change it
+    (THE BUILT FILES of assay.loop.gate).  is_input() tells if a change of
+    one path can change it:
+      * a file of include/, which holds the mints
+      * a file of test/layer/, which compiles each header alone, so each
+        mint of include/ has records
+      * a fixture: a file in a directory of test/ with the name neg or a
+        name that ends with _neg (THE FIXTURES)
+      * a file of the quarantine plugin, which writes the records
+      * a build file, which can change the arms that a build compiles
+      * the ledger of the rule mint (THE CARVE-OUTS), the registry, the rule
+        table, and the inventory itself.
+    A change of a file of src/ or of a different test changes no record,
+    because the unit of each header of test/layer/ compiles the header
+    alone.  The gate adds the modules of the import closure of this module,
+    which give the bytes of the inventory.
+
 Exit 0 when the mode did its work, 1 on drift and 2 on a usage error.  Exit 3
 when the build or the pinned tree-sitter kit is not available.
 """
@@ -49,7 +67,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
@@ -78,6 +96,12 @@ CRUCIBLE = "crucible"
 SUBSTRATE = "substrate"
 CARVE_RQ = "mint-unconstrained"
 WRITER = "python3 utils/bin/loop derive mint-inventory --write"
+# The files and the prefixes of the paths whose change can change the inventory, and the names of the build files
+# (THE INPUTS).  is_fixture() gives the fixtures.
+INPUT_FILES = frozenset({INVENTORY, "utils/ledgers/mint.txt", "utils/registry.txt", "utils/rule-table.txt"})
+INPUT_PREFIXES = ("include/", "test/layer/", "utils/tools/quarantine/")
+BUILD_FILE_NAMES = ("CMakeLists.txt", "CMakePresets.json")
+BUILD_FILE_SUFFIX = ".cmake"
 
 
 class InventoryError(Exception):
@@ -121,6 +145,19 @@ def group_of(path: str) -> str:
     parts = Path(path).parts
     depth = 3 if len(parts) > 3 else 2
     return "/".join(parts[:depth]) + "/"
+
+
+def is_fixture(path: str) -> bool:
+    """Tell if a path of the tree is a fixture: a file in a directory of test/ named neg or *_neg (THE FIXTURES)."""
+    parts = PurePosixPath(path).parts
+    return len(parts) > 2 and parts[0] == "test" and (parts[-2] == "neg" or parts[-2].endswith("_neg"))
+
+
+def is_input(path: str) -> bool:
+    """Tell if a change of a path of the tree can change the inventory, other than a module of the code (THE INPUTS)."""
+    name = PurePosixPath(path).name
+    is_build_file = name in BUILD_FILE_NAMES or name.endswith(BUILD_FILE_SUFFIX)
+    return path in INPUT_FILES or path.startswith(INPUT_PREFIXES) or is_build_file or is_fixture(path)
 
 
 def fixture_files(root: Path) -> dict[str, list[Path]]:

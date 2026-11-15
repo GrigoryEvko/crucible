@@ -312,10 +312,11 @@ THE GATE
     builds each of its configurations, it writes the falls of the counted
     ledgers into a new commit (THE REDUCE of assay.loop.gate).  That commit
     has the parents and the message of the last commit of the batch.  The
-    gate also writes each file that THE MERGE names for it into that commit,
-    and the message then names each such file.  The candidate names such a
-    file of each link of the batch, so the last commit holds the written
-    file.
+    gate also writes each file that THE MERGE names for it, and each built
+    file that the change can change, into that commit (THE BUILT FILES of
+    assay.loop.gate).  The message then names each such file.  The candidate
+    names such a file of each link of the batch, so the last commit holds
+    the written file.
 
     The verdict gives it, and the compare-and-swap moves the branch to it.
     Each run of the gate writes its logs into a directory of its own

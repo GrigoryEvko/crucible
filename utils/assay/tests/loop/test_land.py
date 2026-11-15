@@ -17,7 +17,9 @@ a red branch, or a branch that moves.  The cases count the runs of the gate
 of each batch.  They cut a batch at a second change of a C++ file.  They drop
 a request when its process goes from the queue.  They land the falls of the
 gate.  Two requests that change the summary row of the mint inventory must
-compose and land with the inventory that the gate writes.  The verdict of a
+compose and land with the inventory that the gate writes.  A batch that adds
+a fixture and loses its swap to a lane that adds a different fixture must
+compose again and land with the inventory of the two.  The verdict of a
 landed request must name each flaky test of its run.
 A red run that a green run of the same tree does not repeat must land its
 request, with a line that names the problem as flaky.
@@ -1137,6 +1139,86 @@ def built_cases(expect: testing.Expect) -> None:
         )
 
 
+def fixture_inventory(root: Path, commit: str) -> str:
+    """Return the planted inventory of the fixtures of a commit, as the build of a gate gives it.
+
+    Each file of the directory fixtures/ names one mint on each line, and the count of a mint is the count of its lines.
+    """
+    names = git.run(root, "ls-tree", "--name-only", commit, "fixtures/").decode().split()
+    counts: dict[str, int] = {}
+    for name in names:
+        for mint in (git.show(root, commit, name) or b"").decode().split():
+            counts[mint] = counts.get(mint, 0) + 1
+    return inventory_text(counts)
+
+
+def writing_gate(root: Path, seen: list[gate.Candidate], before: Callable[[], None]) -> land.Check:
+    """Return a planted gate that writes the inventory of the fixtures of each candidate, as THE BUILT FILES does.
+
+    The gate calls `before` at the start of each run.  It folds the inventory only when the bytes change.
+    """
+
+    def check(candidate: gate.Candidate, _is_retry: bool) -> gate.Verdict:
+        seen.append(candidate)
+        before()
+        written = fixture_inventory(root, candidate.commit)
+        if git.show(root, candidate.commit, INVENTORY) == written.encode():
+            return gate.Verdict(("debug",), (), 1.0, (), candidate.commit)
+        final = git.replaced_commit(root, candidate.commit, {INVENTORY: written.encode()})
+        return gate.Verdict(("debug",), (), 1.0, (), final, built=(INVENTORY,))
+
+    return check
+
+
+def built_race_cases(expect: testing.Expect) -> None:
+    """Hold two batches that each add a fixture, with a lost compare-and-swap between them (THE BUILT FILES).
+
+    The request of the batch adds a fixture of mint_a and the copy of the inventory of its own build.  While its gate
+    runs, a different lane lands a fixture of mint_b with the inventory that its gate wrote.  The summary rows of the
+    two inventories differ.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-built-race-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        (root / "fixtures").mkdir()
+        (root / "fixtures" / "first.txt").write_text("mint_a\nmint_b\nmint_b\n", encoding="utf-8")
+        (root / INVENTORY).parent.mkdir(parents=True, exist_ok=True)
+        (root / INVENTORY).write_text(inventory_text({"mint_a": 1, "mint_b": 2}), encoding="utf-8")
+        git.commit_all(root, "Add the fixtures and the inventory")
+        own_inventory = inventory_text({"mint_a": 2, "mint_b": 2})
+        fixtures = "mint_a\nmint_a\nmint_b\nmint_b\n"
+        patch = patch_of(root, work, "fixture.patch", {"fixtures/first.txt": fixtures, INVENTORY: own_inventory})
+        request = request_of(("Add a fixture of mint_a",), patches=(patch,))
+        moved: list[str] = []
+
+        def other_lane() -> None:
+            """Land a fixture of mint_b with its written inventory on the first run, as a different lane does."""
+            if moved:
+                return
+            (root / "fixtures" / "b.txt").write_text("mint_b\n", encoding="utf-8")
+            (root / INVENTORY).write_text(inventory_text({"mint_a": 1, "mint_b": 3}), encoding="utf-8")
+            tip = git.head(root)
+            composed = land.compose(root, request_of(("Add b",), own=("fixtures/b.txt", INVENTORY)), tip)
+            land.swap(root, land.branch_of(root), land.commit_tree(root, composed, "Add b\n"), tip, "Add b")
+            moved.append(git.head(root))
+
+        seen: list[gate.Candidate] = []
+        decisions, _ = landed(root, [request], writing_gate(root, seen, other_lane))
+        lines = [line.content for line in decisions[1].lines]
+        expect(
+            f"a batch that adds a fixture loses its swap to a lane that adds a different fixture, composes again "
+            f"through THE MERGE of the inventory, and lands with the inventory of the two fixtures: {lines}",
+            decisions[1].status == 0
+            and len(seen) == 2
+            and seen[1].head == moved[0]
+            and seen[1].built == (INVENTORY,)
+            and git.parent(root, "HEAD") == moved[0]
+            and git.show(root, "HEAD", INVENTORY) == inventory_text({"mint_a": 2, "mint_b": 3}).encode()
+            and git.show(root, "HEAD", "fixtures/first.txt") == fixtures.encode(),
+        )
+
+
 def flaky_once(root: Path, name: str, seen: list[tuple[gate.Candidate, bool]]) -> land.Check:
     """Return a planted gate that rejects the first run of a commit that holds a file, as a flaky test does.
 
@@ -2250,6 +2332,7 @@ def main(argv: list[str]) -> int:
             falls_cases,
             merge_cases,
             built_cases,
+            built_race_cases,
             flaky_cases,
             confirmation_cases,
             drop_cases,

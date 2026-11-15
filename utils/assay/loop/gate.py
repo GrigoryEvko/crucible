@@ -341,27 +341,58 @@ THE REDUCE
 THE BUILT FILES
     BUILT_FILES gives each generated file that the gate writes from the
     build of ALWAYS, with its target of `loop derive`.  The mint inventory
-    is such a file.  It needs the mint records of a build, and two changes
-    that add fixtures at one time each change its summary row.  When the two
-    sides of THE MERGE of assay.loop.land change such a file, the
-    composition keeps its own copy.  The candidate then names the file
-    (Candidate.built).
+    is such a file.  It needs the mint records of a full build, and a full
+    build of a work tree takes hours on a busy host.  Thus the change of a
+    landing does not hold the file, and the gate writes it.
 
-    Before each configuration runs, the gate writes each
-    such file (Step.write_built()).  It configures the build of ALWAYS when
-    that build has no graph of Ninja.  It builds the target all with no -j
-    (THE JOBSERVER), and it runs `loop derive TARGET --write --build-dir
-    BUILD` of the warm tree.  A build or a write that gives an error is a
-    problem of ALWAYS, and no configuration runs.
+    The gate writes each file of BUILT_FILES for each commit whose change
+    can change it (built_selection()).  The module of the target gives the
+    function is_input() of the paths that can change the file.  The modules
+    of its import closure can change the file too.  A read of the selection
+    that gives an error selects each file (THE CAREFUL SELECTION).  The run
+    of the base writes no file, because its commit is the commit that the
+    change starts from.  When the two sides of THE MERGE of
+    assay.loop.land change such a file, the composition keeps its own copy,
+    and the candidate names the file (Candidate.built).  The gate writes
+    each such file too.  The changed paths of the candidate hold each file
+    that the gate writes, as they hold a merged file.  The tests that read
+    such a file are then touched tests, and each configuration runs them on
+    the written file (THE SELECTION).
 
-    The write comes before the suite, because the test of the rule
-    derived-files reads the file in each configuration of objects.  The gate
-    folds each written file that changed into a new commit (built_commit()).
-    The new commit has the parents of the commit, and its message adds the
-    sentence of BUILT_NOTE.  The warm tree moves to that commit, and each
-    configuration judges it.  The rule derived-files of the suite then
-    compares the written file with each build.  The verdict gives each
-    written file that changed (Verdict.built).
+    The test of the rule derived-files reads the file in each configuration
+    of objects.  Thus no step of a configuration other than its compile runs
+    before the write ends.  The run of ALWAYS writes each file (Step.
+    settle_built()):
+      1. Its configure, and the target build.ninja when the others wait for
+         it (THE THREADS)
+      2. `cmake --build BUILD` of the target all, with no -j (THE JOBSERVER)
+      3. `loop derive TARGET --write --build-dir BUILD` of the warm tree
+      4. The fold of each written file that changed into a new commit
+         (built_commit()).  The new commit has the parents of the commit,
+         and its message adds the sentence of BUILT_NOTE.  The warm tree
+         moves to that commit.
+    Each other configuration compiles at the same time: the configure and
+    `cmake --build BUILD` of a configuration of objects, `loop syntax BUILD`
+    of a parse configuration, and the build of the vessel targets.  Then it
+    waits for the end of the write, and it runs its tests and its checks on
+    the new commit.  A compile reads no git state and no file of
+    BUILT_FILES, so the move of the warm tree does not change it.  A build
+    or a write that gives an error is a problem of ALWAYS, and the stop ends
+    the other configurations.  The wait watches the stop event.
+
+    The build of a configuration of objects writes its output to the log
+    test.log, as `loop test` does.  A build error then gives the problem of
+    a build error of `loop test` (BUILD_PROBLEM).  The run of the base writes
+    no built file, and `loop test` builds there.  The two runs then give the
+    same problem for one build error, and the landing compares them (THE RUN
+    OF THE BASE).
+
+    A plan with no run of ALWAYS, such as the focus of a request that runs
+    alone (THE CONFIRMATION of assay.loop.land), writes each file before
+    each configuration runs (Step.write_built()).  The round after THE
+    REDUCE writes no file.  The rule derived-files of the suite compares the
+    written file with each build.  The verdict gives each written file that
+    changed (Verdict.built).
 
 THE RUN OF THE BASE
     A candidate with a focus is the commit of a run of the base (THE RUN OF
@@ -488,10 +519,11 @@ SANITIZED_PREFIXES = ("include/", "src/", "cmake/")
 BENCH_PREFIXES = ("bench/", "test/fuzz/")
 EVERY_PREFIXES = ("utils/tools/quarantine/", "utils/rule-table.txt")
 LEDGER_PREFIX = "utils/ledgers/"
-# The generated files that the gate writes from the build of ALWAYS, with the target of `loop derive` of each, and the
-# sentence that the gate adds to the message of a commit with a written file (THE BUILT FILES).
-BUILT_FILES = {"misc/mint-inventory.md": "mint-inventory"}
+# The sentence that the gate adds to the message of a commit with a written file (THE BUILT FILES).
 BUILT_NOTE = "The gate wrote {paths} from the build of the composed tree."
+# The words of the problem of a build error of a configuration of objects, in `loop test` and before it (THE BUILT
+# FILES).  The two give the same words, so the run of the base compares them (THE RUN OF THE BASE).
+BUILD_PROBLEM = "the build or the test run gives an error"
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (THE
 # SELECTION).
 ALWAYS = "default"
@@ -634,7 +666,8 @@ class Candidate:
 
     `focus` is empty for the commit of a batch, and it gives the configurations of a run of the base (THE RUN OF THE
     BASE).  `is_every` selects each configuration, as --all-configurations does (THE SELECTION).  `built` names each
-    file of BUILT_FILES that the gate writes before the configurations run (THE BUILT FILES).
+    file of BUILT_FILES that THE MERGE of assay.loop.land leaves to the gate.  The gate adds each file that the change
+    can change, and it writes each one before the tests of each configuration (THE BUILT FILES).
     """
 
     head: str
@@ -697,8 +730,23 @@ class Outcome:
     slot_seconds: float = 0.0
 
 
+@dataclass(frozen=True, slots=True)
+class BuiltFile:
+    """One generated file that the gate writes from the build of ALWAYS (THE BUILT FILES).
+
+    `target` is the target of `loop derive` that writes the file.  `module` is the module of the target.  Its function
+    is_input(path) tells if a change of a path can change the file, and the modules of its import closure can change
+    the file too.
+    """
+
+    target: str
+    module: str
+
+
 # ── The selection ──────────────────────────────────────────────────────────
 
+# The generated files that the gate writes from the build of ALWAYS (THE BUILT FILES).
+BUILT_FILES = {"misc/mint-inventory.md": BuiltFile("mint-inventory", "assay.loop.derive.mint_inventory")}
 CONFIGURATIONS = configurations(paths.REPO_ROOT)
 BY_NAME = {configuration.name: configuration for configuration in CONFIGURATIONS}
 VESSEL_CONFIGURATION = vessel_configuration(paths.REPO_ROOT)
@@ -782,6 +830,33 @@ def reaches_vessel(changed: Sequence[str], is_each: bool) -> bool:
     Complexity: linear in the paths.
     """
     return is_each or any(path.startswith(VESSEL_PREFIX) for path in changed)
+
+
+def built_selection(tree: Path, changed: Sequence[str]) -> tuple[str, ...]:
+    """Return each file of BUILT_FILES that a change can change, sorted (THE BUILT FILES).
+
+    The function is_input() of the module of a row judges each path.  A path of a module of the import closure of that
+    module selects the file too.  The code of the gate imports each module of a row here, and only here.
+
+    Raises:
+        GateError: If the module of a row cannot be imported, or it gives no function is_input()
+        git.GitError: If the tree is not a git work tree
+
+    Complexity: linear in the paths for each row, and one parse of each module of the closure of a row.
+    """
+    import importlib
+
+    deriver = guard_inputs.Deriver(tree)
+    found: list[str] = []
+    for path, row in sorted(BUILT_FILES.items()):
+        try:
+            is_input: Callable[[str], bool] = importlib.import_module(row.module).is_input
+        except (ImportError, AttributeError) as problem:
+            raise GateError(f"the module {row.module} of {path} gives no function is_input(): {problem}") from None
+        code = {file for name in deriver.closure([row.module]) if (file := deriver.module_file(name)) is not None}
+        if any(item in code or is_input(item) for item in changed):
+            found.append(path)
+    return tuple(found)
 
 
 def link_torch(root: Path, tree: Path) -> str | None:
@@ -1123,8 +1198,8 @@ class Gate:
     def check(self, candidate: Candidate, is_retry: bool) -> Verdict:
         """Give the warm tree the commit, select the configurations, and run them at the same time (THE THREADS).
 
-        A candidate with a focus runs only its focus (THE RUN OF THE BASE).  A candidate with a built file gets its write
-        before each configuration (THE BUILT FILES).
+        A candidate with a focus runs only its focus (THE RUN OF THE BASE).  The gate writes each built file that the
+        change can change, or that the candidate names, before the tests of each configuration (THE BUILT FILES).
 
         Raises:
             GateError: If the warm tree cannot hold the commit, a step cannot start, or the candidate names a built file
@@ -1139,6 +1214,15 @@ class Gate:
                 f"gives it"
             )
         move_tree(self.root, self.tree, candidate.commit)
+        if candidate.commit != candidate.head:
+            built = careful(
+                lambda: built_selection(self.tree, candidate.changed),
+                tuple(BUILT_FILES),
+                "the inputs of the built files",
+                "each built file",
+            )
+            files = tuple(sorted({*candidate.built, *built}))
+            candidate = replace(candidate, changed=tuple(dict.fromkeys((*candidate.changed, *files))), built=files)
         based = proc.environment({git.CHANGE_BASE_VARIABLE: candidate.head})
         environment = {name: value for name, value in based.items() if name != git.CHANGE_BASE_VARIABLE}
         others: tuple[Configuration, ...] = ()
@@ -1191,8 +1275,13 @@ class Gate:
                 f"loop land: the commit {candidate.commit[:9]} runs in {shown}{rest} at the same time, logs in "
                 f"{self.logs}"
             )
+        if candidate.built:
+            check_report.write_line(
+                f"loop land: the change can change {' '.join(candidate.built)}, so the gate writes it from the build "
+                f"of {ALWAYS} before the tests of each configuration"
+            )
+        step = Step(self, candidate, environment)
         try:
-            step = Step(self, candidate, environment)
             if is_each:
                 step.always_ready.set()
 
@@ -1200,7 +1289,8 @@ class Gate:
                 """Return the runs of the other configurations of the first round."""
                 return self.other_plan(candidate, others, (), is_each)
 
-            outcomes, built = step.write_built() if candidate.built else ([], ())
+            has_always = any(run.configuration.name == ALWAYS for run in plan)
+            outcomes = step.write_built() if candidate.built and not has_always else []
             if not outcomes:
                 outcomes = step.run_all(plan, first_plan if others else None, False, is_retry)
                 step.require_problem(outcomes)
@@ -1250,7 +1340,7 @@ class Gate:
             str(self.logs),
             tuple(Focus(item.name, item.red) for item in outcomes if item.problems),
             tuple(dict.fromkeys(f"{item.name}: {name}" for item in outcomes for name in item.flaky)),
-            built,
+            step.built,
             tuple(item.wait_s for item in ended),
             tuple(round(item.slot_seconds, 1) for item in ended),
         )
@@ -1275,12 +1365,16 @@ class Step:
 
     `environment` is the environment of each command, without MAKEFLAGS.  Each command gets MAKEFLAGS of the lease of
     its configuration (THE JOBSERVER).  `always_ready` tells that the build of ALWAYS holds the configure of the change
-    (THE THREADS).
+    (THE THREADS).  `built_ready` tells that the write of THE BUILT FILES ended, and it is set from the start for a
+    candidate with no built file.  `built` holds each written file that changed, and the run of ALWAYS or
+    write_built() is its one writer.
     """
 
     __slots__ = (
         "_said",
         "always_ready",
+        "built",
+        "built_ready",
         "candidate",
         "environment",
         "gate",
@@ -1294,6 +1388,10 @@ class Step:
         self.environment = {name: value for name, value in environment.items() if name != jobserver.VARIABLE}
         self.stop = threading.Event()
         self.always_ready = threading.Event()
+        self.built_ready = threading.Event()
+        self.built: tuple[str, ...] = ()
+        if not candidate.built:
+            self.built_ready.set()
         self._said = threading.Lock()
 
     def say(self, text: str) -> None:
@@ -1425,70 +1523,135 @@ class Step:
             return f"{configuration.name}: the configure gives an error, see {self.gate.logs / log}"
         return None
 
-    def write_built(self) -> tuple[list[Outcome], tuple[str, ...]]:
-        """Write each built file of the candidate from the build of ALWAYS, and fold each one that changed.
+    def write_built(self) -> list[Outcome]:
+        """Write each built file of the candidate from the build of ALWAYS before each configuration runs.
 
-        THE BUILT FILES gives the rules.  The result is an outcome of ALWAYS with each problem and no file, or no
-        outcome and each written file that changed.  After a fold, `candidate` holds the new commit.
+        THE BUILT FILES gives the rules: a plan with no run of ALWAYS writes the files here.  The result is an outcome
+        of ALWAYS with each problem, or no outcome.
 
         Raises:
             GateError: If the CMake cache of the build names no cmake
             git.GitError: If a git command of the fold fails
         """
-        configuration = BY_NAME[ALWAYS]
         self.say(f"loop land: {ALWAYS}: build and write {' '.join(self.candidate.built)}")
         began = time.monotonic()
-        with self.leased() as share:
-            problems = self.built_problems(configuration, share)
-        seconds = round(time.monotonic() - began, 1)
+        try:
+            with self.leased() as share:
+                problems = self.written_built(BY_NAME[ALWAYS], share)
+        finally:
+            self.built_ready.set()
         if problems:
-            return [Outcome(ALWAYS, tuple(problems), (), seconds, False)], ()
-        return [], self.fold_built(seconds)
+            return [Outcome(ALWAYS, tuple(problems), (), round(time.monotonic() - began, 1), False)]
+        return []
 
-    def built_problems(self, configuration: Configuration, share: heavy.Share) -> list[str]:
-        """Build the target all of a configuration and run the write of each built file of the candidate in its build.
+    def settle_built(self, configuration: Configuration, share: heavy.Share) -> list[str]:
+        """Settle THE BUILT FILES before the tests of a configuration of objects, and give each problem.
 
-        The build gets no -j, because ninja obeys the jobserver only with no -j (THE JOBSERVER).  The result holds a
-        problem for a configure or a build that gives an error, or for each write that gives an error.
+        The run of ALWAYS writes each built file and folds each one that changed (written_built()).  Each other run
+        builds the target all, and then waits for the end of that write (wait_built()).
+
+        Raises:
+            Stopped: If the stop event is set while the run waits
+            GateError: If the CMake cache of the build names no cmake
+            git.GitError: If a git command of the fold fails
+        """
+        if configuration.name == ALWAYS:
+            try:
+                return self.written_built(configuration, share)
+            finally:
+                self.built_ready.set()
+        problem = self.build_all(configuration, share)
+        if problem is not None:
+            return [problem]
+        self.wait_built(configuration)
+        return []
+
+    def wait_built(self, configuration: Configuration) -> None:
+        """Wait for the end of the write of THE BUILT FILES, watch the stop event, and write the time of a wait.
+
+        Raises:
+            Stopped: If the stop event is set before or after the end of the write
+        """
+        began = time.monotonic()
+        while not self.built_ready.wait(STOP_POLL_S):
+            if self.stop.is_set():
+                raise Stopped
+        if self.stop.is_set():
+            raise Stopped
+        waited = time.monotonic() - began
+        if waited >= STOP_POLL_S:
+            self.say(f"loop land: {configuration.name}: the run waited {waited:.0f} s for the write of the built files")
+
+    def build_all(self, configuration: Configuration, share: heavy.Share) -> str | None:
+        """Build the target all of a configuration of objects, and give a problem (THE BUILT FILES).
+
+        The build gets no -j, because ninja obeys the jobserver only with no -j (THE JOBSERVER).  It writes its output
+        to the log of `loop test`, and a build error gives the problem of a build error of `loop test`.  A run of the
+        base writes no built file, so its build error then gives the same problem (THE RUN OF THE BASE).
 
         Raises:
             GateError: If the CMake cache of the build names no cmake
         """
-        problem = self.configure(configuration, share)
-        if problem is not None:
-            return [problem]
         build = build_directory(self.gate.tree, configuration)
-        log = log_name(configuration, "built-build.log")
+        log = log_name(configuration, "test.log")
         command = [configured_program(build, "cmake"), "--build", str(build)]
         if self.run_logged(command, log, share, proc.BUILD_S) != 0:
-            return [f"{configuration.name}: the build of the built files gives an error, see {self.gate.logs / log}"]
+            return f"{configuration.name}: {BUILD_PROBLEM}, see {self.gate.logs / log}"
+        return None
+
+    def written_built(self, configuration: Configuration, share: heavy.Share) -> list[str]:
+        """Build the target all of ALWAYS, write each built file of the candidate, and fold each one that changed.
+
+        THE BUILT FILES gives the steps.  The result holds a problem for a configure or a build that gives an error, or
+        for each write that gives an error.  After a fold, `candidate` holds the new commit, and `built` holds each
+        written file that changed.
+
+        Raises:
+            GateError: If the CMake cache of the build names no cmake
+            git.GitError: If a git command of the fold fails
+        """
+        began = time.monotonic()
+        problem = self.configure(configuration, share) or self.build_all(configuration, share)
+        if problem is not None:
+            return [problem]
+        built_s = time.monotonic() - began
+        build = build_directory(self.gate.tree, configuration)
         problems: list[str] = []
         for path in self.candidate.built:
-            target = BUILT_FILES[path]
+            target = BUILT_FILES[path].target
             log = log_name(configuration, f"write-{target}.log")
             command = [*self.gate.master("loop"), "derive", target, "--write", "--build-dir", str(build)]
             if self.run_logged(command, log, share, proc.TOOL_S) != 0:
                 problems.append(
                     f"{configuration.name}: the gate cannot write {path} from the build, see {self.gate.logs / log}"
                 )
+        if not problems:
+            self.built = self.fold_built(built_s, time.monotonic() - began - built_s)
         return problems
 
-    def fold_built(self, seconds: float) -> tuple[str, ...]:
+    def fold_built(self, built_s: float, write_s: float) -> tuple[str, ...]:
         """Fold each built file that the write changed in the warm tree into a new commit, and give these files.
 
         The warm tree and `candidate` move to the new commit (built_commit()).  With no changed file, the commit stays.
-        `seconds` is the time of the build and the writes, for the line of the gate.
+        `built_s` is the time of the configure and the build, and `write_s` the time of the writes and the fold, for the
+        line of the gate.
 
         Raises:
             GateError: If the warm tree is in the work tree of the repository
             git.GitError: If a git command fails
         """
+        began = time.monotonic()
+
+        def times() -> str:
+            """Return the words that give the time of the build, and of the writes and the fold until now."""
+            return f"the build took {built_s:.0f} s, and the write took {write_s + time.monotonic() - began:.0f} s"
+
         tree = self.gate.tree
         written = tuple(sorted(git.work_changes(tree, "HEAD", list(self.candidate.built))))
         if not written:
             self.say(
                 f"loop land: the build of {ALWAYS} gives the bytes of the commit for {' '.join(self.candidate.built)}, "
-                f"so the gate folds nothing"
+                f"so the gate folds nothing: {times()}"
             )
             return ()
         files = {name: (tree / name).read_bytes() if (tree / name).is_file() else None for name in written}
@@ -1496,8 +1659,8 @@ class Step:
         move_tree(self.gate.root, tree, commit)
         self.candidate = replace(self.candidate, commit=commit)
         self.say(
-            f"loop land: the gate wrote {' '.join(written)} from the build of {ALWAYS} in {seconds:.0f} s, folded into "
-            f"the commit {commit[:9]}"
+            f"loop land: the gate wrote {' '.join(written)} from the build of {ALWAYS}, folded into the commit "
+            f"{commit[:9]}: {times()}"
         )
         return written
 
@@ -1598,6 +1761,7 @@ class Step:
         command = [*self.gate.master("loop"), "syntax", str(build), "-j", str(share.jobs)]
         if self.run_logged(command, log, share, TEST_RUN_S) != 0:
             return [f"{configuration.name}: a unit does not parse, see {self.gate.logs / log}"]
+        self.wait_built(configuration)
         return self.checked(configuration, COUNTED_RULES, share)
 
     def run_objects(
@@ -1607,8 +1771,8 @@ class Step:
 
         `words` are the words of the mode after `loop test BUILD` (Gate.loop_words()).  A run again after the fold does
         not run RECONFIGURE_RULE.  The run of ALWAYS first builds the target build.ninja when the other configurations
-        wait for it (THE THREADS).  The second result holds the tests that are red alone too, and the third result the
-        flaky tests: red in the suite and green alone.
+        wait for it (THE THREADS).  Then each run settles THE BUILT FILES (settle_built()).  The second result holds the
+        tests that are red alone too, and the third result the flaky tests: red in the suite and green alone.
         """
         problem = self.configure(configuration, share, is_again)
         if problem is not None:
@@ -1618,6 +1782,10 @@ class Step:
             self.always_ready.set()
             if problem is not None:
                 return [problem], (), ()
+        if not self.built_ready.is_set():
+            problems = self.settle_built(configuration, share)
+            if problems:
+                return problems, (), ()
         build = build_directory(self.gate.tree, configuration)
         report = build / affected.STATE_DIRECTORY / "junit.xml"
         report.unlink(missing_ok=True)
@@ -1632,7 +1800,7 @@ class Step:
             except ctest_reader.CtestError as problem_text:
                 return [f"{configuration.name}: the test report does not read: {problem_text}"], (), ()
         elif status != 0:
-            return [f"{configuration.name}: the build or the test run gives an error, see {logs / log}"], (), ()
+            return [f"{configuration.name}: {BUILD_PROBLEM}, see {logs / log}"], (), ()
         problems, still, flaky = self.judge(
             configuration, report, statuses, status, log, "`loop test`", share, is_again
         )
@@ -1714,6 +1882,7 @@ class Step:
         if self.run_logged(command, log, share, TEST_RUN_S) != 0:
             targets = " and ".join(VESSEL_TARGETS)
             return [f"{configuration.name}: the build of {targets} gives an error, see {logs / log}"], (), ()
+        self.wait_built(configuration)
         report = logs / log_name(configuration, "test.junit.xml", is_again)
         report.unlink(missing_ok=True)
         words = ["--label-regex", f"^{VESSEL_LABEL}$"]
@@ -1782,6 +1951,7 @@ class Step:
         finally:
             if name == ALWAYS:
                 self.always_ready.set()
+                self.built_ready.set()
         seconds = round(time.monotonic() - began, 1)
         slot_seconds = lease.slot_seconds if lease is not None else 0.0
         self.say(f"loop land: {name}: {seconds:.0f} s after a wait of {wait_s:.0f} s for its first slot")
