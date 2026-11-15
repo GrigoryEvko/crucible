@@ -112,9 +112,11 @@ struct InputOverflow {
             digest = ::foundation::reflect::combine_ids(
                 digest, static_cast<uint64_t>(crucible::raw_tensor_dim(meta.strides[d])));
         }
+        // The device comes through device_of, as in the content hash.
+        const crucible::TensorDevice device = crucible::device_of(meta);
         const uint64_t placement = static_cast<uint64_t>(static_cast<uint8_t>(meta.dtype))
-                                 | (static_cast<uint64_t>(static_cast<uint8_t>(meta.device_type)) << 8)
-                                 | (static_cast<uint64_t>(static_cast<uint8_t>(meta.device_idx)) << 16);
+                                 | (static_cast<uint64_t>(static_cast<uint8_t>(device.type)) << 8)
+                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index)) << 16);
         digest = ::foundation::reflect::combine_ids(digest, placement);
         count = ::fixy::saturating_add(count, uint32_t{1});
     }

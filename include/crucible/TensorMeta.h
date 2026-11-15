@@ -194,9 +194,18 @@ struct TensorMeta {
     return raw_data_ptr(meta.data_ptr);
 }
 
-// The device that holds the bytes of the tensor.
+// The index of a device of the type, as Crucible keeps it.  The host has one
+// device, and PyTorch names it with the index -1 or 0.  Each host index thus
+// becomes -1.  A device of a different type keeps its index.
+[[nodiscard]] inline constexpr int8_t normalize_device_index(DeviceType type, int8_t index) noexcept {
+    return type == DeviceType::CPU ? int8_t{-1} : index;
+}
+
+// The device that holds the bytes of the tensor, with the index of
+// normalize_device_index.  Each equality and each hash of a device reads it
+// through this door, so the two agree on what one device is.
 [[nodiscard]] inline constexpr TensorDevice device_of(const TensorMeta& meta) noexcept {
-    return TensorDevice{.type = meta.device_type, .index = meta.device_idx};
+    return TensorDevice{.type = meta.device_type, .index = normalize_device_index(meta.device_type, meta.device_idx)};
 }
 
 // The address of the bytes of the tensor on its device, or no address for a
@@ -325,7 +334,8 @@ struct UncheckedTensorMeta {
 //   - each size and each stride below the rank is at most kMaxTensorDimExtent
 //   - each lane past the rank holds zero, so equal descriptors write equal bytes
 //   - the element type, the device and the layout each name an enumerator
-//   - the device index is -1 for the host, or zero or more
+//   - the device index is -1 for the host, or zero or more.  The door
+//     stores -1 for each index of the host (normalize_device_index)
 //   - the gradient byte is 0 or 1, because a bool with another byte is
 //     undefined behaviour to read
 //   - no reserved bit of the flags is set.
@@ -356,7 +366,9 @@ struct UncheckedTensorMeta {
     constexpr uint8_t known_flags = meta_flags::IS_LEAF | meta_flags::IS_CONTIGUOUS | meta_flags::HAS_GRAD_FN
                                   | meta_flags::IS_VIEW | meta_flags::IS_NEG | meta_flags::IS_CONJ;
     if (fields.device_idx < -1 || fields.requires_grad > 1 || (fields.flags & ~known_flags) != 0) return ::fixy::none;
-    meta.device_idx = fields.device_idx;
+    // The record keeps one index for the host, so each stored device is the
+    // device that device_of gives.
+    meta.device_idx = normalize_device_index(meta.device_type, fields.device_idx);
     meta.requires_grad = fields.requires_grad == 1;
     meta.flags = fields.flags;
 

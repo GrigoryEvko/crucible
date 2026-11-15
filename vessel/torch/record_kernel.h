@@ -266,8 +266,11 @@ struct MetaCount {
     const bool is_each_enumeration_named = dtype.is_some() && device_type.is_some() && layout.is_some();
     meta.dtype = std::move(dtype).value_or(crucible::ScalarType::Undefined);
     meta.device_type = std::move(device_type).value_or(crucible::DeviceType::CPU);
-    // c10::DeviceIndex is already int8_t (c10/core/Device.h).
-    meta.device_idx = tensor.device().has_index() ? tensor.device().index() : int8_t{-1};
+    // c10::DeviceIndex is already int8_t (c10/core/Device.h).  The record
+    // keeps one index for the host, so each stored device is the device that
+    // device_of gives.
+    meta.device_idx = crucible::normalize_device_index(
+        meta.device_type, tensor.device().has_index() ? tensor.device().index() : int8_t{-1});
     meta.layout = std::move(layout).value_or(crucible::Layout::Strided);
 
     // -- Extended fields (autograd + storage) --------------------------

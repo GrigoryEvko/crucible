@@ -695,9 +695,12 @@ private:
 
         for (const TensorMeta& input_meta : op_record.input_metas()) {
             const uint64_t per_dim_hash_xor = raw_dim_hash(detail::dim_hash_simd_det(input_meta));
+            // The device comes through device_of, so the hash agrees with
+            // the equality of a device: one index for the host.
+            const TensorDevice device = device_of(input_meta);
             uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(input_meta.dtype))
-                                 | (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8)
-                                 | (static_cast<uint64_t>(static_cast<uint8_t>(input_meta.device_idx)) << 16);
+                                 | (static_cast<uint64_t>(std::to_underlying(device.type)) << 8)
+                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index)) << 16);
             content_hash_state = detail::combine_ids(content_hash_state, per_dim_hash_xor ^ meta_packed);
         }
 

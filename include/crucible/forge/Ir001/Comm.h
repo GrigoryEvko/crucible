@@ -233,8 +233,10 @@ template <typename E>
 [[nodiscard]] constexpr std::uint64_t hash_tensor_meta(std::uint64_t h, TensorMeta const& meta) noexcept {
     h = combine_ids(h, meta.ndim);
     h = combine_ids(h, enum_hash_word(meta.dtype));
-    h = combine_ids(h, enum_hash_word(meta.device_type));
-    h = combine_ids(h, static_cast<std::uint64_t>(static_cast<std::int64_t>(meta.device_idx)));
+    // The device comes through device_of: one index for the host.
+    const TensorDevice device = device_of(meta);
+    h = combine_ids(h, enum_hash_word(device.type));
+    h = combine_ids(h, static_cast<std::uint64_t>(static_cast<std::int64_t>(device.index)));
     h = combine_ids(h, enum_hash_word(meta.layout));
     h = combine_ids(h, meta.requires_grad ? 1U : 0U);
     h = combine_ids(h, meta.flags);
