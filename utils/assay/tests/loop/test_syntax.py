@@ -308,6 +308,37 @@ def check_cases(expect: testing.Expect) -> None:
         )
 
 
+def plugin_cases(expect: testing.Expect) -> None:
+    """Hold a report of a different plugin: other bytes of the plugin of the build parse the unit again.
+
+    A stop of a configure could leave a plugin of different sources under the stamp of the earlier plugin (THE KEY OF
+    THE PLUGIN of utils/tools/quarantine/Quarantine.cmake).  The next configure builds the plugin of the tree again,
+    with the same stamp.  A report of the stale plugin must not stay, so a batch that changed the plugin and then a
+    batch that did not parse the second batch with the plugin of the tree.
+    """
+    import os
+
+    with tempfile.TemporaryDirectory(prefix="syntax-plugin-") as scratch_text:
+        scratch = Path(scratch_text)
+        build, _output = planted_build(scratch)
+        source = scratch / "a.cpp"
+        source.write_text("int a;\n", encoding="utf-8")
+        os.utime(source, ns=(1, 1))
+        plugin = build / syntax.PLUGIN_FILE
+        plugin.parent.mkdir(parents=True, exist_ok=True)
+        plugin.write_bytes(b"the plugin of a change of its sources")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            status = syntax.run(build, scratch, 2)
+        same = syntax.locked_plan(build, scratch, 2)
+        plugin.write_bytes(b"the plugin of the sources of the tree")
+        other = syntax.locked_plan(build, scratch, 2)
+        expect(
+            "a report stays with the plugin that made it, and a plugin of other bytes under the same stamp plans the "
+            "parse again",
+            status == 0 and not same.planned and len(same.kept) == 1 and len(other.planned) == 1 and not other.kept,
+        )
+
+
 # A cmake that writes the words of each call to argv.txt of the build, and then does what RECONFIGURE_CMAKE does.
 ARGV_CMAKE = """
 import pathlib, sys
@@ -447,6 +478,7 @@ def main(argv: list[str]) -> int:
             unit_cases,
             stamp_cases,
             check_cases,
+            plugin_cases,
             jobserver_cases,
             macro_cases,
             change_cases,

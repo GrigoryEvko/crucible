@@ -79,8 +79,13 @@ THE CHECK
     reports.
 
 THE KEPT REPORTS
-    The key of a parse is the hash of the words of the parse and of the
-    enforce rows of the build (quarantine/enforce.txt).  KEY_FILE also holds
+    The key of a parse is the hash of the words of the parse, of the enforce
+    rows of the build (ENFORCE_FILE) and of the bytes of the plugin of the
+    build (PLUGIN_FILE).  The stamp in the words names the key of the sources
+    of the plugin, and a stop of a configure could leave a plugin of different
+    sources under that stamp (THE KEY OF THE PLUGIN of
+    utils/tools/quarantine/Quarantine.cmake).  A report of a different plugin
+    then never stays.  KEY_FILE also holds
     the time when the parse started.  That time is the change time of
     STARTED_FILE, which the run writes before the parse.  The file system
     then gives the two times that the run compares, and the run reads no
@@ -161,8 +166,9 @@ NATIVE_FLAGS = frozenset({"-march=native", "-mcpu=native", "-mtune=native"})
 DEPENDENCY_FILE = "parse.d"
 KEY_FILE = "key"
 STARTED_FILE = "started"
-# The enforce rows of a build, below the build directory (utils/tools/quarantine/Quarantine.cmake).
+# The enforce rows and the plugin of a build, below the build directory (utils/tools/quarantine/Quarantine.cmake).
 ENFORCE_FILE = Path("quarantine") / "enforce.txt"
+PLUGIN_FILE = Path("quarantine") / "crucible_quarantine.so"
 # The time limit of one parse, in seconds.
 PARSE_TIMEOUT_S = 900.0
 # The time limit of the build of the input targets, in seconds.
@@ -327,21 +333,27 @@ def parse_words(words: tuple[str, ...], report_dir: Path, drops_native: bool = F
     ]
 
 
-def words_key(words: list[str], enforce_hash: str) -> str:
-    """Return the hash of the words of a parse and of the enforce rows of the build (THE KEPT REPORTS)."""
+def words_key(words: list[str], build_hash: str) -> str:
+    """Return the hash of the words of a parse and of the build_key() of the build (THE KEPT REPORTS)."""
     import hashlib
 
-    return hashlib.sha256("\0".join([*words, enforce_hash]).encode("utf-8", "surrogateescape")).hexdigest()
+    return hashlib.sha256("\0".join([*words, build_hash]).encode("utf-8", "surrogateescape")).hexdigest()
 
 
-def enforce_hash(build_dir: Path) -> str:
-    """Return the hash of the enforce rows of a build, or an empty text when the build has none."""
+def build_key(build_dir: Path) -> str:
+    """Return the hash of the enforce rows and of the bytes of the plugin of a build (THE KEPT REPORTS).
+
+    A file that is not there gives an empty part.  Complexity: one read of each of the two files.
+    """
     import hashlib
 
-    try:
-        return hashlib.sha256((build_dir / ENFORCE_FILE).read_bytes()).hexdigest()
-    except OSError:
-        return ""
+    parts: list[str] = []
+    for name in (ENFORCE_FILE, PLUGIN_FILE):
+        try:
+            parts.append(hashlib.sha256((build_dir / name).read_bytes()).hexdigest())
+        except OSError:
+            parts.append("")
+    return " ".join(parts)
 
 
 def is_kept(unit: Unit, report_dir: Path, key: str, changed_ns: dict[str, int | None]) -> bool:
@@ -550,19 +562,19 @@ def prune_reports(build_dir: Path, kept_dirs: set[Path]) -> None:
 
 
 def partition(
-    units: Sequence[Unit], report_dirs: Mapping[Unit, Path], native_refusers: frozenset[str], enforce: str
+    units: Sequence[Unit], report_dirs: Mapping[Unit, Path], native_refusers: frozenset[str], build_hash: str
 ) -> tuple[tuple[Unit, ...], tuple[Planned, ...]]:
     """Return the units that keep their reports, and the parse of each other unit (THE KEPT REPORTS).
 
-    `native_refusers` holds each compiler that refuses -march=native, and `enforce` is the hash of the enforce rows of
-    the build.  Complexity: linear in the units and their dependencies, one stat of each different dependency.
+    `native_refusers` holds each compiler that refuses -march=native, and `build_hash` is the build_key() of the
+    build.  Complexity: linear in the units and their dependencies, one stat of each different dependency.
     """
     kept: list[Unit] = []
     planned: list[Planned] = []
     changed_ns: dict[str, int | None] = {}
     for unit in units:
         words = parse_words(unit.words, report_dirs[unit], bool(unit.words) and unit.words[0] in native_refusers)
-        key = words_key(words, enforce)
+        key = words_key(words, build_hash)
         if is_kept(unit, report_dirs[unit], key, changed_ns):
             kept.append(unit)
         else:
@@ -594,7 +606,7 @@ def plan_of(build_dir: Path, root: Path, jobs: int) -> Plan:
     report_dirs = {unit: quarantine_sections.report_directory(build_dir, unit.object_path) for unit in units}
     compilers = sorted({unit.words[0] for unit in units if unit.words})
     native_refusers = frozenset(compiler for compiler in compilers if refuses_native(compiler))
-    kept, planned = partition(units, report_dirs, native_refusers, enforce_hash(build_dir))
+    kept, planned = partition(units, report_dirs, native_refusers, build_key(build_dir))
     return Plan(kept, planned, report_dirs, input_s)
 
 

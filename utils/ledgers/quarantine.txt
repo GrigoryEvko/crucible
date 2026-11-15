@@ -279,8 +279,8 @@ include/foundation/reflect/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | raw-new-delete | 3 | - | -
 src/ | raw-pointer-object | 8 | - | -
-src/ | std-entity | 57 | - | -
-src/ | std-object | 11 | - | -
+src/ | std-entity | 53 | - | -
+src/ | std-object | 10 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
 src/fixy/os/ | base-std-object | 63 | - | -
 src/fixy/os/ | replace-pending:<algorithm> | 1 | - | -

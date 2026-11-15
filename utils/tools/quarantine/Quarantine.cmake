@@ -37,6 +37,20 @@
 #   the plugin headers of the cross compiler, and the cc1plus of the cross
 #   compiler loads it.  With no such name, the compiler of the plugin builds it.
 #
+# THE KEY OF THE PLUGIN
+#   The key of the plugin names the hash of each source, the compiler and the
+#   flags.  The key file beside the plugin records that key and the hash of the
+#   bytes of the plugin (utils/tools/quarantine/PluginKey.cmake).  A configure
+#   builds the plugin when the plugin is not current: no plugin, no key file, a
+#   different key, or bytes that do not give the recorded hash.  The build
+#   removes the key file first and writes it last.  A stop of a configure during
+#   or after the link, such as the stop of a run of the landing gate, then
+#   leaves no plugin that the next configure takes as current.  A plugin of an
+#   earlier build under the key file of a different build gave findings of a
+#   rule that the sources of the tree did not have.  The hash of the bytes is
+#   not part of the stamp, so a rebuild for the same key compiles no object
+#   again.
+#
 # THE INPUTS OF A COMPILE
 #   `loop stamps` (utils/assay/loop/stamps.py) runs at each configure.  It writes the
 #   facts of the rule table (facts.txt), its enforce rows (enforce.txt) and a
@@ -121,6 +135,8 @@ if(NOT DEFINED CRUCIBLE_RULE_TABLE)
   set(CRUCIBLE_RULE_TABLE "${_crucible_quarantine_utils}/rule-table.txt")
 endif()
 find_program(CRUCIBLE_PYTHON3 NAMES python3 REQUIRED)
+# The key file of the plugin (THE KEY OF THE PLUGIN).
+include("${CMAKE_CURRENT_LIST_DIR}/PluginKey.cmake")
 
 # The compiler of the plugin (THE COMPILER OF THE PLUGIN).
 if(DEFINED CRUCIBLE_TOOLCHAIN_CXX)
@@ -151,7 +167,9 @@ set(CRUCIBLE_QUARANTINE_LINK_FLAGS -fno-rtti -shared "-Wl,-rpath,${_crucible_qua
 
 crucible_script_test(NAME quarantine_stamps_self_test
   COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_GUARD}" selftest loop.stamps)
-set_tests_properties(quarantine_stamps_self_test PROPERTIES LABELS "ci_guard")
+crucible_script_test(NAME quarantine_plugin_key_self_test
+  COMMAND "${CMAKE_COMMAND}" "-DWORK=${CMAKE_BINARY_DIR}" -P "${CMAKE_CURRENT_LIST_DIR}/PluginKeySelfTest.cmake")
+set_tests_properties(quarantine_stamps_self_test quarantine_plugin_key_self_test PROPERTIES LABELS "ci_guard")
 
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   message(FATAL_ERROR "The quarantine rule and the contract rule of the tree load a GCC plugin, and the compiler is "
@@ -195,7 +213,7 @@ if(EXISTS "${_crucible_quarantine_cc1plus}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_crucible_quarantine_cc1plus}")
 endif()
 
-# The plugin builds when its key changed.  Each unit compiles in the directory
+# The plugin builds when it is not current (THE KEY OF THE PLUGIN).  Each unit compiles in the directory
 # of the sources, which the compile maps to `.`, so the plugin bytes hold no
 # path of the work tree, and two work trees build the same bytes.  The result
 # store of the negative fixtures keys these bytes (utils/assay/loop/fixture/store.py).
@@ -213,13 +231,12 @@ endforeach()
 string(APPEND _crucible_quarantine_key "${_crucible_quarantine_compiler_key} -ffile-prefix-map=SOURCE_DIRECTORY=.")
 set(CRUCIBLE_QUARANTINE_PLUGIN "${_crucible_quarantine_out}/crucible_quarantine.so")
 set(_crucible_quarantine_kinds "${_crucible_quarantine_out}/kinds.txt")
-set(_crucible_quarantine_recorded_key "")
-if(EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}.key")
-  file(READ "${CRUCIBLE_QUARANTINE_PLUGIN}.key" _crucible_quarantine_recorded_key)
-endif()
+crucible_quarantine_plugin_is_current(_crucible_quarantine_is_current "${CRUCIBLE_QUARANTINE_PLUGIN}"
+  "${_crucible_quarantine_key}")
 unset(_crucible_quarantine_build_start)
-if(NOT EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}" OR NOT _crucible_quarantine_recorded_key STREQUAL _crucible_quarantine_key)
+if(NOT _crucible_quarantine_is_current)
   string(TIMESTAMP _crucible_quarantine_build_start "%s.%f" UTC)
+  file(REMOVE "${CRUCIBLE_QUARANTINE_PLUGIN}.key")
   set(_crucible_quarantine_objects_dir "${_crucible_quarantine_out}/plugin-objects")
   file(REMOVE_RECURSE "${_crucible_quarantine_objects_dir}")
   file(MAKE_DIRECTORY "${_crucible_quarantine_objects_dir}")
@@ -259,7 +276,7 @@ if(NOT EXISTS "${CRUCIBLE_QUARANTINE_PLUGIN}" OR NOT _crucible_quarantine_record
   endif()
   file(REMOVE_RECURSE "${_crucible_quarantine_objects_dir}")
   file(REMOVE "${_crucible_quarantine_kinds}")
-  file(WRITE "${CRUCIBLE_QUARANTINE_PLUGIN}.key" "${_crucible_quarantine_key}")
+  crucible_quarantine_write_plugin_key("${CRUCIBLE_QUARANTINE_PLUGIN}" "${_crucible_quarantine_key}")
 endif()
 
 # The kinds of each rule (THE KINDS).
