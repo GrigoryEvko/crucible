@@ -27,6 +27,9 @@
 //                     byte takes one memset, the code of the raw form
 //   byte_view(run)    the bytes of a run of unsigned chars as std::byte, of
 //                     the same count and extent and the same const
+//   offset_of(whole, part)
+//                     the position of part inside whole, or no value when
+//                     part does not lie inside whole
 //
 // A View<T> converts to a View<T const>, and a View<T, N> converts to a
 // View<T>.  No conversion adds a const or removes it the other way, and no
@@ -461,6 +464,38 @@ template <std::size_t Extent, class T>
 }
 
 }  // namespace detail
+
+// ── The position of a run inside a run ─────────────────────────────────
+
+// The two Views of offset_of: Views of one element type, with or without a
+// const on each.
+template <class Whole, class Part>
+concept SameElement = std::same_as<std::remove_const_t<Whole>, std::remove_const_t<Part>>;
+
+// The position of the first element of part inside whole, or no value when
+// the elements of part do not all lie inside whole.  The position counts
+// elements, not bytes.  The function compares the two address ranges as
+// integers, so two Views of different objects give no value and no
+// undefined compare of pointers.  A part that starts between two elements
+// of whole gives no value.  An empty part at the end of whole gives the
+// count of whole.  An empty View with no address, such as a default View,
+// lies inside each other View with no address, at the position zero.  The
+// address of a run is no constant of the compile, so the function runs
+// only at run time.  Complexity: O(1).
+template <class Whole, std::size_t WholeExtent, class Part, std::size_t PartExtent>
+    requires SameElement<Whole, Part>
+[[nodiscard]] Option<std::size_t> offset_of(View<Whole, WholeExtent> whole, View<Part, PartExtent> part) noexcept {
+    std::uintptr_t const whole_first = __builtin_bit_cast(std::uintptr_t, first_of_(detail::ViewDoor::key(), whole));
+    std::uintptr_t const part_first = __builtin_bit_cast(std::uintptr_t, first_of_(detail::ViewDoor::key(), part));
+    // The door of a View bounds its bytes by __PTRDIFF_MAX__, and an object
+    // ends below the top of the address space, so no sum overflows.
+    std::uintptr_t const whole_end = whole_first + whole.size() * sizeof(Whole);
+    std::uintptr_t const part_end = part_first + part.size() * sizeof(Part);
+    if (part_first < whole_first || part_end > whole_end) return Option<std::size_t>{none};
+    std::size_t const bytes = part_first - whole_first;
+    if (bytes % sizeof(Whole) != 0) return Option<std::size_t>{none};
+    return Option<std::size_t>::some(bytes / sizeof(Whole));
+}
 
 // ── The doors of a foreign run ─────────────────────────────────────────
 

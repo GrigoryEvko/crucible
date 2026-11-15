@@ -2951,6 +2951,12 @@ foundation_neg_compile_test(neg_core_view_zero_extent
 foundation_neg_compile_test(neg_core_view_mutable_from_const
   "conversion from .View<const int>. to non-scalar type .View<int>. requested"
   "In function .void write_through\\(foundation::core::View<const int>\\).")
+foundation_neg_compile_test(neg_core_offset_of_different_elements
+  "no matching function for call to .offset_of\\(const foundation::core::View<int>&, const foundation::core::View<long int>&\\)."
+  "required for the satisfaction of .SameElement<Whole, Part>. \\[with Whole = int; Part = long int\\]")
+foundation_neg_compile_test(neg_core_offset_of_pointer
+  "no matching function for call to .offset_of\\(int\\*, int\\*\\)."
+  "mismatched types .foundation::core::View<T, Extent>. and .int\\*.")
 foundation_neg_compile_test(neg_core_copy_extent_mismatch
   "no matching function for call to .copy\\(foundation::core::View<int, 4>&, foundation::core::View<const int, 8>&\\)."
   "In function .void copy_four_from_eight\\(foundation::core::View<int, 4>, foundation::core::View<const int, 8>\\).")

@@ -135,9 +135,50 @@ void test_view_of_an_empty_mapping() {
     CRUCIBLE_FATAL_INVARIANT(turns == 0);
 }
 
+// offset_of gives the position of a window inside its View, for each window
+// that lies inside it, and no value for a View of a different mapping and
+// for a View that runs past the end.  The case maps two pages under the
+// permission of test_windows.
+template <class Owner>
+void test_offset_of(IoBlockCtx const& ctx, Owner const& owner) {
+    auto region = map_region(ctx, owner, page_bytes);
+    auto other_region = map_region(ctx, owner, page_bytes);
+    fixy::View<std::uint64_t> words = region.template view<std::uint64_t>().expect("a page holds whole words");
+    fixy::View<std::uint64_t const> other =
+        other_region.template view<std::uint64_t const>().expect("a page holds words");
+
+    for (std::size_t position = 0; position <= words.size(); position += 37) {
+        fixy::View<std::uint64_t const> part = words.window(position, 0).expect("an empty window fits");
+        CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(words, part).value_or(fixy::dynamic_extent) == position);
+    }
+    fixy::View<std::uint64_t, 8> fixed = words.window<8>(100).expect("the fixed window fits");
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(words, fixed).value_or(fixy::dynamic_extent) == 100);
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(words, words).value_or(fixy::dynamic_extent) == 0);
+    fixy::View<std::uint64_t> tail = words.window(words.size() - 4, 4).expect("the last four words fit");
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(words, tail).value_or(fixy::dynamic_extent) == words.size() - 4);
+
+    // A View of a different mapping, and a View that covers the whole and
+    // more, do not lie inside the window.
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(words, other).is_none());
+    fixy::View<std::uint64_t> head = words.window(0, 16).expect("sixteen words fit");
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(head, words).is_none());
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(head, tail).is_none());
+
+    // A View of bytes that starts in the middle of a word lies inside the
+    // bytes of the page, and the position counts bytes.
+    fixy::View<std::uint8_t> bytes = region.template view<std::uint8_t>().expect("a page holds whole bytes");
+    fixy::View<std::uint8_t> odd = bytes.window(3, 5).expect("five bytes fit");
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(bytes, odd).value_or(fixy::dynamic_extent) == 3);
+
+    // Two empty Views with no address lie one inside the other.
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(fixy::View<int>{}, fixy::View<int const>{}).value_or(1) == 0);
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(words, fixy::View<std::uint64_t>{}).is_none());
+}
+
 void test_windows() {
     IoBlockCtx const ctx{eff::testing::test()};
     auto const owner = perm::mint_permission_root<ScratchRegion>();
+    test_offset_of(ctx, owner);
     auto region = map_region(ctx, owner, page_bytes);
     fixy::View<std::uint64_t> words = region.view<std::uint64_t>().expect("a page holds whole words");
     std::uint64_t position = 0;

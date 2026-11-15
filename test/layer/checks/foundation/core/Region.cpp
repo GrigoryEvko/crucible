@@ -349,6 +349,15 @@ concept ReadsInsideReverse = requires { typename std::integral_constant<int, rea
 static_assert(ReadsInsideReverse<1> && !ReadsInsideReverse<2> && !ReadsInsideReverse<3>);
 static_assert(read_reverse_after_steps(0) == 8 && read_reverse_after_steps(1) == 7);
 
+// ── The position of a run inside a run ───────────────────────────────
+
+// offset_of takes two Views of one element type, with or without a const
+// and of each extent, and gives an Option of a position.  The fixtures
+// neg_core_offset_of_different_elements and neg_core_offset_of_pointer show
+// the two refusals.
+static_assert(std::is_same_v<decltype(offset_of(std::declval<View<int>>(), std::declval<View<int const, 4>>())),
+                             Option<std::size_t>>);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.4, with the names of the headers of

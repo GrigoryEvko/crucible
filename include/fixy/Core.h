@@ -158,6 +158,7 @@ using ::foundation::core::lower_bound_by_key;
 using ::foundation::core::MaskedArray;
 using ::foundation::core::mint_branded_scope;
 using ::foundation::core::mint_foreign_view;
+using ::foundation::core::offset_of;
 using ::foundation::core::mint_heap_array;
 using ::foundation::core::mint_heap_array_copy;
 using ::foundation::core::mint_heap_array_with;
