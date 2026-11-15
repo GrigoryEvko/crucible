@@ -19,9 +19,11 @@ bound puts its records on its own stack.  The checks:
                     lane of a size or a stride past the rank is zero
     cold path       the loop also runs crucible_frame::level_0, a chain of four
                     boxed operations whose frames fill the stack.  The last
-                    one runs aten::cat, whose kernel records through the list of
-                    its cold path.  The region holds that aten::cat with the
-                    records of its own tensors
+                    one runs aten::cat.  Just before it, crucible_dispatch_op
+                    with one record gives the action REFUSED, so the stack has
+                    no free slot, and the kernel can record only through the
+                    list of its cold path.  The region holds that aten::cat
+                    with the records of its own tensors
 
 Usage:
     python test_unboxed_record_frame.py
@@ -90,6 +92,23 @@ LEVEL_INPUTS = [(level + 2, 2) for level in range(DEPTH)]
 LEVEL_OUTPUTS = [(level + 30,) for level in range(DEPTH)]
 
 
+class DeepProbe:
+    """The probe that the last level of the chain runs just before its aten::cat, while a recording binds it."""
+
+    def __init__(self) -> None:
+        """Start with no probe and no action."""
+        self.probe = None
+        self.actions: list[int] = []
+
+    def run(self) -> None:
+        """Run the probe, when a recording binds one, and keep the action that it gives."""
+        if self.probe is not None:
+            self.actions.append(self.probe())
+
+
+DEEP_PROBE = DeepProbe()
+
+
 def define_level(level: int) -> None:
     """Define crucible_frame::level_N, which runs level_N+1, or aten::cat at the end of the chain."""
 
@@ -97,7 +116,9 @@ def define_level(level: int) -> None:
         if level + 1 < DEPTH:
             getattr(torch.ops.crucible_frame, f"level_{level + 1}")(torch.ones(LEVEL_INPUTS[level + 1]))
         else:
-            torch.cat([torch.ones(part) for part in DEEP_PARTS])
+            parts = [torch.ones(part) for part in DEEP_PARTS]
+            DEEP_PROBE.run()
+            torch.cat(parts)
         return torch.zeros(LEVEL_OUTPUTS[level]) + source.sum()
 
     run_level.__name__ = f"level_{level}"
@@ -188,15 +209,21 @@ def record(directory: Path) -> list[TraceOp]:
     level_source = torch.ones(LEVEL_INPUTS[0])
     wide = wide_metas()
     wide_hash = schema_hash("crucible_frame::wide_records")
+    single = full_record_metas()
+    single_hash = schema_hash("crucible_frame::single_record")
     with CrucibleNative() as ctx:
         dispatch_op = bind_dispatch_op(ctx)
-        for _ in range(MAX_ITERATIONS):
-            dispatch_op(ctx._handle, wide_hash, wide_hash, WIDE_RECORDS // 2, WIDE_RECORDS // 2, wide, len(wide))
-            torch.cat(parts)
-            torch.ops.crucible_frame.level_0(level_source)
-            if ctx.active_num_ops() > 0:
-                break
-            ctx.flush()
+        DEEP_PROBE.probe = lambda: dispatch_op(ctx._handle, single_hash, single_hash, 1, 0, single, 1).action
+        try:
+            for _ in range(MAX_ITERATIONS):
+                dispatch_op(ctx._handle, wide_hash, wide_hash, WIDE_RECORDS // 2, WIDE_RECORDS // 2, wide, len(wide))
+                torch.cat(parts)
+                torch.ops.crucible_frame.level_0(level_source)
+                if ctx.active_num_ops() > 0:
+                    break
+                ctx.flush()
+        finally:
+            DEEP_PROBE.probe = None
         if not ctx.export_trace(str(path)):
             raise RuntimeError(f"no region after {MAX_ITERATIONS} iterations")
     return read_trace(path)
@@ -247,6 +274,11 @@ def main() -> int:
             problems.append(f"the probe inside {func} gives the action {name}, not {expected.name}: {failure}")
     with tempfile.TemporaryDirectory(prefix="crucible-unboxed-record-frame-") as scratch:
         ops = record(Path(scratch))
+    free = [action for action in DEEP_PROBE.actions if action != DispatchAction.REFUSED]
+    if not DEEP_PROBE.actions or free:
+        problems.append(f"the stack has a free slot just before the aten::cat at the end of the chain in "
+                        f"{len(free)} of {len(DEEP_PROBE.actions)} iterations, so the check does not reach the cold "
+                        f"path")
     problems += check_cat(ops, TOP_PARTS, TOP_RESULT, "aten::cat of the loop, which records through a frame")
     problems += check_cat(ops, DEEP_PARTS, DEEP_RESULT, "aten::cat at the end of the chain, which takes the cold path")
     for line in problems:
