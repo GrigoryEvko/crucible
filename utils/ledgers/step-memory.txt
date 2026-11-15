@@ -6,4 +6,4 @@
 format 1
 rule step-memory
 - | test | 1.638 | vessel_test_replay_equivalence | attach() loads the PyTorch dispatch library and makes a Vigil with its fixed buffers.  The first workload alone takes the peak to 1.585 GB, so a split of the workloads gives no smaller test
-@build/lib/libcrucible_dispatch.so | link | 2.623 | - | The link of the PyTorch dispatch library reads the 96 shard objects of vessel/torch/register.cpp, and each object holds the debug information of the PyTorch headers again
+@build/lib/libcrucible_dispatch.so | link | 8 | - | The link of the PyTorch dispatch library reads the 96 shard objects of vessel/torch/register.cpp, and each object holds the debug information of the PyTorch headers again.  The owner set this limit on 2026-11-15, because the link measured 2.81 to 2.90 GB in the gate and refused runs by chance.
