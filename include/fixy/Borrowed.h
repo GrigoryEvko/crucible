@@ -47,11 +47,12 @@
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
 
+// <span> gives the range concepts and the range access of std::ranges
+// (bits/ranges_base.h of libstdc++), with no view of <ranges>.
 #include <concepts>
 #include <cstddef>
 #include <initializer_list>
 #include <meta>
-#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>

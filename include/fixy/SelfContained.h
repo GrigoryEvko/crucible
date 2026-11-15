@@ -56,13 +56,14 @@
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
 
+// <optional> of C++26 gives the range concepts and the range access of
+// std::ranges (bits/ranges_base.h of libstdc++), with no view of <ranges>.
 #include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
 #include <optional>
-#include <ranges>
 #include <type_traits>
 #include <utility>
 #include <variant>

@@ -132,7 +132,6 @@ include/fixy/ | replace-pending:<functional> | 1 | - | -
 include/fixy/ | replace-pending:<limits> | 2 | - | -
 include/fixy/ | replace-pending:<memory> | 2 | - | -
 include/fixy/ | replace-pending:<optional> | 4 | - | -
-include/fixy/ | replace-pending:<ranges> | 2 | - | -
 include/fixy/ | replace-pending:<span> | 6 | - | -
 include/fixy/ | replace-pending:<string> | 5 | - | -
 include/fixy/ | replace-pending:<string_view> | 12 | - | -
