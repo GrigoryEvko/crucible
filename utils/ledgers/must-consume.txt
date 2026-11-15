@@ -22,7 +22,7 @@ test/ | unconsumed | 38 | - | -
 test/fixy/ | assign-over-live | 1 | - | -
 test/fixy/ | discarded-temporary | 5 | - | -
 test/fixy/ | double-consume | 5 | - | -
-test/fixy/ | unconsumed | 199 | - | -
+test/fixy/ | unconsumed | 201 | - | -
 test/fixy/ | unconsumed-on-path | 1 | - | -
 test/foundation/ | discarded-temporary | 2 | - | -
 test/foundation/ | unconsumed | 12 | - | -

@@ -132,11 +132,12 @@ public:
                 delete("KernelCacheSlot::WriterHandle owns the linear writer permission");
             WriterHandle&
             operator=(WriterHandle const&) = delete("KernelCacheSlot::WriterHandle owns the linear writer permission");
-            // The move is user-provided, so the handle is not trivially
-            // copyable and keeps the shape of a linear class with no
-            // assignment.  An assignment would drop the token of the target.
-            constexpr WriterHandle(WriterHandle&& other) noexcept
-                : slot_{other.slot_}, perm_{static_cast<decltype(other.perm_)&&>(other.perm_)} {}
+            // The move of the token is trivial and its move assignment is
+            // user-provided.  So GCC 16 counts the handle as not trivially
+            // copyable, and the ABI passes it in a register.  An assignment
+            // would drop the token of the target.  The check file of this
+            // header asserts the three facts.
+            constexpr WriterHandle(WriterHandle&&) noexcept = default;
             WriterHandle& operator=(WriterHandle&&) = delete(
                 "KernelCacheSlot::WriterHandle owns the linear writer permission, and an assignment would drop "
                 "the token of the target");

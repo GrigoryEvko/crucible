@@ -2,15 +2,22 @@
 
 #include <crucible/KernelCache.h>
 
+#include <foundation/Linear.h>
+
 #include <type_traits>
 
 namespace crucible::detail::kernel_cache_checks {
 
 // The writer handle moves, and no assignment writes over the writer token of
-// a live handle.  The move is user-provided, so the handle is not trivially
-// copyable, and it keeps the shape of a linear class.
+// a live handle.  The move and the destructor are trivial, so the Itanium ABI
+// passes the handle in a register.  The move assignment of the token is
+// user-provided, so GCC 16 counts the handle as not trivially copyable, and
+// the handle keeps the shape of a linear class.  A compiler that counts it as
+// trivially copyable fails the build here.
 using Writer = KernelCache::KernelCacheSlot::WriterHandle;
 static_assert(std::is_nothrow_move_constructible_v<Writer> && !std::is_move_assignable_v<Writer>);
 static_assert(!std::is_copy_constructible_v<Writer> && !std::is_trivially_copyable_v<Writer>);
+static_assert(std::is_trivially_move_constructible_v<Writer> && std::is_trivially_destructible_v<Writer>);
+static_assert(::foundation::linear::is_linear_v<Writer>);
 
 }  // namespace crucible::detail::kernel_cache_checks
