@@ -4466,6 +4466,12 @@ fixy_neg_compile_test(neg_check_property_body_without_bool
   "no matching function for call to .property"
   "PropertyBody")
 
+# The argument door of fixy/os/Args.h, run with no argument and with three
+# arguments, one of them empty.
+fixy_test(test_os_args)
+add_test(NAME test_os_args_given COMMAND test_os_args one "" "three four")
+set_tests_properties(test_os_args_given PROPERTIES LABELS "fixy")
+
 # ── The publication handles ───────────────────────────────────────────
 #
 # The double-publish abort is deliberately not a contract clause — a

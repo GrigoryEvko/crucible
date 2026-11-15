@@ -500,6 +500,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                     "settings of the process, which carry no claim to fold"},
     {^^::fixy::check, "the test language: the source of the inputs of a property and its runner, which only a test "
                       "holds, and which carry no claim to fold"},
+    {^^::fixy::os, "the arguments of main: a view of argv and its cursor, which carry no claim to fold"},
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
     {^^::fixy::session::detach_reason, kGradeVocabulary},

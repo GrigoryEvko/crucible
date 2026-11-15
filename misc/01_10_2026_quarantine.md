@@ -1558,7 +1558,7 @@ A wait on a value is the futex door of the Os family (`fixy/os/Futex.h`, main), 
 | `open_at`, `read_at`, `write_at`, `unlink_at`, `rename_at`, `make_dir_at`, `make_dirs`, `exists`, `temp_file`, `temp_dir` | The calls of the `*at` and `p*` forms that x86_64 and aarch64 have. `EINTR` and a partial transfer are handled inside the door | design |
 | `read_all(ctx, alloc, fd)` | `Result<GrowList<std::byte>, Errno>` | design |
 | `switches()` | The record `Switches` of the switches of the environment, each with its parsed type. A start-up hook reads each switch one time with `getenv` (D12), and no code reads the environment after it | main |
-| `args(argc, argv)` | `View<CText const>`, the one door from `main` | design |
+| `args(argc, argv)` | `Args`, a view of `argv` with no copy and no allocation: `size()`, `get(i)` gives `Option<CText>`, and a loop gives each `CText`. The one door from `main` (the decision of 2026-11-14) | main |
 | `Thread` | A long-lived thread, linear. `mint_thread(bg_ctx, permission, body)` starts it, and `join() &&` gives the permission back. A stop goes through a `OneShotFlag` | design |
 | the socket doors | `bind`, `send`, `recv`, `recvmsg`, `setsockopt`, `getsockopt`, `if_nametoindex` and `ioctl` | design |
 | the doors of the kernel facilities | `perf_event_open`, `mlock`, `prctl`, `sched_getattr` | design |
