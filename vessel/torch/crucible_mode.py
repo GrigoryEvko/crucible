@@ -33,7 +33,7 @@ import struct
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
-from crucible_native import RELEASE_BUILD, DispatchAction, DispatchStatus, checked_lib_path
+from crucible_native import DispatchAction, DispatchStatus, load_vessel_library
 
 
 # ─── ctypes bindings ────────────────────────────────────────────────
@@ -69,9 +69,14 @@ class _VesselLib:
             ("op_index", ctypes.c_uint32),
         ]
 
-    def __init__(self, lib_path=None):
-        self._lib = ctypes.CDLL(checked_lib_path(
-            "libcrucible_vessel.so", lib_path, RELEASE_BUILD))
+    def __init__(self, lib_path: str | None = None) -> None:
+        """Load the vessel library after the check of its ABI stamp.
+
+        The layout of Meta and DispatchResult below is the layout of one ABI
+        version, so a library of a different version is refused before any
+        dispatch (crucible_native.load_vessel_library).
+        """
+        self._lib = load_vessel_library(lib_path)
         self._setup_signatures()
 
     def _setup_signatures(self):

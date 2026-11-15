@@ -240,6 +240,61 @@ def _is_runtime_loaded(runtime: SanitizerRuntime) -> bool:
     return hasattr(ctypes.CDLL(None), runtime.start)
 
 
+def check_abi_version(library: Any, path: str) -> None:
+    """Refuse a vessel library whose ABI stamp is not EXPECTED_ABI_VERSION.
+
+    LIBRARY is the loaded libcrucible_vessel.so, and PATH is the file that it
+    came from, for the message.  A library from before the stamp has no
+    crucible_abi_version symbol, and the check refuses it too.  The check
+    runs before a caller declares any other symbol, so a stale library gives
+    this message and not the error of a missing symbol.
+
+    Raises:
+        CrucibleAbiMismatchError: If the stamp is missing or names a
+            different version.  The message names the two versions.
+    """
+    try:
+        stamp = library.crucible_abi_version
+    except AttributeError:
+        raise CrucibleAbiMismatchError(
+            f"libcrucible_vessel.so has no ABI stamp:\n"
+            f"  loaded from   : {path}\n"
+            f"  observed ABI  : none (no crucible_abi_version symbol)\n"
+            f"  expected ABI  : {EXPECTED_ABI_VERSION}\n"
+            f"Rebuild Crucible after a vessel_api.h change:\n"
+            f"  cmake --build --preset release") from None
+    stamp.restype = ctypes.c_uint64
+    stamp.argtypes = []
+    observed = int(stamp())
+    if observed != EXPECTED_ABI_VERSION:
+        raise CrucibleAbiMismatchError(
+            f"libcrucible_vessel.so ABI mismatch:\n"
+            f"  loaded from   : {path}\n"
+            f"  observed ABI  : {observed}\n"
+            f"  expected ABI  : {EXPECTED_ABI_VERSION}\n"
+            f"Rebuild Crucible after a vessel_api.h change:\n"
+            f"  cmake --build --preset release")
+
+
+def load_vessel_library(lib_path: str | None = None) -> ctypes.CDLL:
+    """Load libcrucible_vessel.so, and return it once its ABI stamp agrees.
+
+    LIB_PATH names the library, or None to search the build directories
+    (_find_lib).  Each wrapper of the vessel library loads it through this
+    function, so no wrapper reads a library of a different layout.
+
+    Raises:
+        RuntimeError: If no library is found, or if it needs a sanitizer
+            runtime that the process does not hold (checked_lib_path).
+        CrucibleAbiMismatchError: If the ABI stamp of the library is not
+            EXPECTED_ABI_VERSION (check_abi_version).
+    """
+    path = checked_lib_path("libcrucible_vessel.so", lib_path, RELEASE_BUILD)
+    library = ctypes.CDLL(path)
+    check_abi_version(library, path)
+    return library
+
+
 # =====================================================================
 # Vessel C API wrapper (Vigil lifecycle + trace export)
 # =====================================================================
@@ -248,35 +303,13 @@ class _VesselLib:
     """Ctypes wrapper for libcrucible_vessel.so — Vigil lifecycle + queries."""
 
     def __init__(self, lib_path: str | None = None) -> None:
-        """Load the vessel library and check its ABI stamp."""
-        path = checked_lib_path("libcrucible_vessel.so", lib_path, RELEASE_BUILD)
-        self._lib = ctypes.CDLL(path)
+        """Load the vessel library after the check of its ABI stamp."""
+        self._lib = load_vessel_library(lib_path)
         self._setup()
-        self._check_abi(path)
-
-    def _check_abi(self, path: str) -> None:
-        """Verify the loaded .so's CRUCIBLE_VESSEL_ABI_VERSION matches
-        EXPECTED_ABI_VERSION.  Raises CrucibleAbiMismatchError on
-        drift — usually means the .so was rebuilt with a different
-        ABI than this .py knows about.  Runs immediately after
-        argtypes are declared so the call signature is well-formed."""
-        observed = int(self._lib.crucible_abi_version())
-        if observed != EXPECTED_ABI_VERSION:
-            raise CrucibleAbiMismatchError(
-                f"libcrucible_vessel.so ABI mismatch:\n"
-                f"  loaded from   : {path}\n"
-                f"  observed ABI  : {observed}\n"
-                f"  expected ABI  : {EXPECTED_ABI_VERSION}\n"
-                f"Rebuild Crucible after a vessel_api.h change:\n"
-                f"  cmake --build --preset release")
 
     def _setup(self) -> None:
         """Declare the restype and argtypes of every symbol this class calls."""
         L = self._lib
-
-        # ABI version (declared first so _check_abi can call it).
-        L.crucible_abi_version.restype = ctypes.c_uint64
-        L.crucible_abi_version.argtypes = []
 
         # Lifecycle
         L.crucible_create.restype = ctypes.c_void_p
