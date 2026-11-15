@@ -24,14 +24,13 @@ utils/assay/core/ruletable.py | SIM114 | 1 | parse_admit | An issue of ruff of t
 utils/assay/core/ruletable.py | format | 1 | _check_path | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/check.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/tsast/derived_pins.py | format | 1 | literal_of | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/guard/engines/tsast/lock_free_asserts.py | format | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/tsast/parse_clean.py | format | 1 | findings | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/tsast/runner.py | I001 | 1 | <module> | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/tsast/runner.py | RUF023 | 1 | TsastContext | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/engines/tsast/runner.py | format | 1 | TsastContext | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/explain.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/guard/listing.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/loop/affected.py | F541 | 3 | SelfTest.write_tests | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
+utils/assay/loop/affected.py | F541 | 2 | SelfTest.write_tests | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/affected.py | format | 1 | read_trees | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/bench.py | format | 1 | Settings.from_environment | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/aten_ops.py | PLR0402 | 1 | load_schema_model | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

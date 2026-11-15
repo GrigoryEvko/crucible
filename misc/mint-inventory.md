@@ -294,7 +294,7 @@ that the axis does not apply to the row.
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_grow_list` | `include/foundation/core/Grow.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_grow_text` | `include/foundation/core/Grow.h` | Y | Y | Y | · | token | · | HS14: 2 |
-| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 10 |
+| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 11 |
 | `mint_heap_array_copy` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_array_with` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_array_written` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 3 |
@@ -315,6 +315,7 @@ that the axis does not apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
+| `AtomOwner::mint_atom` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | member | · | HS14: 2 |
 | `BackgroundOwner::mint_background_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | HS14: 2 |
 | `Computation::mint_computation` | `include/foundation/effects/Computation.h` | Y | Y | Y | · | token | · | HS14: 10 |
 | `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
@@ -345,4 +346,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 75 | 43 | 23 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 131 | 54 | 74 | 3 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 132 | 54 | 74 | 4 | 0 | 3 |

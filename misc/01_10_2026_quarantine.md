@@ -1834,7 +1834,6 @@ Appendix E gives each base header a verdict, a family and a slice. The last colu
 - 5C starts when 5A lands. It can run while 5B runs, because the files do not overlap.
 - 5D runs last. It needs the families in their final form.
 - At most six heavy units run at the same time (section 5.3).
-- The rule `lock-free-asserts` of Stage 1B reads `include/crucible/{canopy,cntp,topology,warden}/` (section 8.6a). The units cntp, observe and rest move the atomics of these directories to `fixy::Atomic`. The last of the three deletes the rule, with its module, its plants, its ledger, its registry row and its `path` rows.
 - A unit that moves a raw system call into an Os door removes the claim of that call from the ledger of the rule `syscalls`, in the same commit.
 
 ### 14.4 The S5 gate

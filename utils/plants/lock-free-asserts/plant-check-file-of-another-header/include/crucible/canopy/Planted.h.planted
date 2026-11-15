@@ -1,2 +1,0 @@
-#pragma once
-struct Bar { std::atomic<int> head_{0}; };

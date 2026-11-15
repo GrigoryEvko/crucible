@@ -1,3 +1,0 @@
-#pragma once
-struct Bar { std::atomic<int> head_{0}; };
-static_assert(std::atomic<int>::is_always_lock_free);

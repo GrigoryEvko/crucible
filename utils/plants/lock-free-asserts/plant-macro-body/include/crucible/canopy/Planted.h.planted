@@ -1,3 +1,0 @@
-#pragma once
-#include <atomic>
-#define ATOMIC_IN_MACRO(T) std::atomic<T> macro_field_
