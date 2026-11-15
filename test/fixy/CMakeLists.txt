@@ -3141,6 +3141,11 @@ fixy_neg_compile_test(neg_sess_checkpoint_handle_friend_specialized
 # source file of its own.
 fixy_test(test_session_recording test_session_recording.cpp test_session_recording_decorators.cpp)
 
+# A log has one writer, and a second writer for it ends the process.  Two
+# threads record into two logs, and the merge of the two logs gives the
+# same sequence on each run.  The tsan preset runs the same test.
+fixy_test(test_session_event_log_writers)
+
 # HS14 for mint_recorded_session: a value that is no handle, a handle
 # that already has a recorder, and a log that dies before the recorder
 # does.
@@ -3167,8 +3172,21 @@ fixy_neg_compile_test(neg_sess_recorded_friend_specialized
   "fixy::session::Recorded<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_recorded_friend_specialized_types::Wire")
 
 fixy_neg_compile_test(neg_sess_record_temporary_log
-  "no matching function for call to .mint_recorded_session"
-  "cannot convert .fixy::session::SessionEventLog\\(fixy::session::SessionTagId\\{0\\}\\). \\(type .fixy::session::SessionEventLog.\\) to type .fixy::session::SessionEventLog&.")
+  "use of deleted function .void fixy::session::mint_session_event_writer\\(SessionEventLog&&\\)"
+  "\\[Event_Log_Writer_From_Temporary_Log\\] the log is a temporary")
+
+# A log has one writer, so no two recorders append to one log from two
+# threads.  The recorder mint takes the writer, and a log alone gives no
+# right to append.  The writer does not copy, and a const log mints none.
+fixy_neg_compile_test(neg_sess_record_log_without_writer
+  "use of deleted function .void fixy::session::mint_recorded_session\\(H, SessionEventLog&, RoleTagId, RoleTagId\\)"
+  "\\[Event_Log_Needs_Its_Writer\\] mint_recorded_session takes the one writer of a log")
+fixy_neg_compile_test(neg_sess_event_writer_copied
+  "use of deleted function .fixy::session::SessionEventWriter::SessionEventWriter\\(const fixy::session::SessionEventWriter&\\)"
+  "a session event log has one writer, and a copy is a second")
+fixy_neg_compile_test(neg_sess_event_writer_from_const_log
+  "use of deleted function .void fixy::session::mint_session_event_writer\\(const SessionEventLog&\\)"
+  "\\[Event_Log_Writer_From_Const_Log\\] a const log is a view of the record")
 
 # An event exists only through a factory or the decoder, and a log does
 # not copy its step counter.
@@ -3991,7 +4009,7 @@ fixy_neg_compile_test(neg_recording_endpoint_non_endpoint
   "is not derived from .fixy::channels::Endpoint<Substr, Dir, Ctx>.")
 fixy_neg_compile_test(neg_recording_endpoint_wrong_log_type
   "no matching function for call to .mint_recording_endpoint"
-  "cannot convert .not_a_log. .type .int.. to type .fixy::session::SessionEventLog&.")
+  "cannot convert .not_a_log. .type .int.. to type .fixy::session::SessionEventWriter.")
 
 # ── The snapshot and the single-writer many-reader channel ────────────
 #

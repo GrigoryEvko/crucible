@@ -317,7 +317,7 @@ using RecordSpsc = c::spsc_channel_t<int, 8, decltype(record_root())>;
     auto recorded =
         channels::mint_recording_endpoint(channels::mint_endpoint<RecordSpsc, channels::Direction::Producer>(
                                               ctx, channel.producer(std::move(producer_perm))),
-                                          log, s::RoleTagId{1}, s::RoleTagId{2});
+                                          s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
     auto after_send = std::move(recorded).send(11, push_int);
     std::move(after_send).detach(s::detach_reason::InfiniteLoopProtocol{});
 

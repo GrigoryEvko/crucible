@@ -237,19 +237,20 @@ concept RecordableHandle = requires {
 // direct call is the same operation as the method.  No object of the
 // class exists.
 class RecordingDoor final : ::foundation::NoObject<RecordingDoor> {
+    // Moves the writer of the log from the recorder of a step to the
+    // recorder of its successor, so each step records before it wraps.
     template <typename Inner, typename Next>
-    [[nodiscard]] static constexpr Recorded<Next> wrap_(const Recorded<Inner>& from, Next next) noexcept {
-        return Recorded<Next>{std::move(next), *from.log_, from.self_, from.peer_};
+    [[nodiscard]] static constexpr Recorded<Next> wrap_(Recorded<Inner>& from, Next next) noexcept {
+        return Recorded<Next>{std::move(next), std::move(from.writer_), from.self_, from.peer_};
     }
 
     template <typename Inner>
-    static void record_(const Recorded<Inner>& recorder, SessionEvent event) {
+    static void record_(Recorded<Inner>& recorder, SessionEvent event) {
         recorder.record_(event);
     }
 
     template <typename Branches, typename Inner, std::size_t... Is>
-    static void record_passive_checkpoint_(const Recorded<Inner>& recorder, std::size_t taken,
-                                           std::index_sequence<Is...>) {
+    static void record_passive_checkpoint_(Recorded<Inner>& recorder, std::size_t taken, std::index_sequence<Is...>) {
         (
             [&] {
                 using Branch = std::tuple_element_t<Is, Branches>;
@@ -264,13 +265,13 @@ class RecordingDoor final : ::foundation::NoObject<RecordingDoor> {
 
 public:
     // mint_recorded_session: puts the recorder around the handle.  The
-    // recorder writes each step of the handle to the log, with self and
-    // peer as the two roles.
+    // recorder writes each step of the handle to the log of the writer, with
+    // self and peer as the two roles.
     template <typename H>
         requires RecordableHandle<H>
-    [[nodiscard]] static constexpr Recorded<H> make(H handle, SessionEventLog& log, RoleTagId self,
+    [[nodiscard]] static constexpr Recorded<H> make(H handle, SessionEventWriter writer, RoleTagId self,
                                                     RoleTagId peer) noexcept {
-        return Recorded<H>{std::move(handle), log, self, peer};
+        return Recorded<H>{std::move(handle), std::move(writer), self, peer};
     }
 
     // The recorder hands the inner handle a write of the same shape as the
@@ -428,7 +429,9 @@ public:
 template <typename Inner>
 class [[nodiscard]] Recorded {
     Inner inner_;
-    SessionEventLog* log_;
+    // The one writer of the log.  Each step moves it to the recorder of
+    // the successor.
+    SessionEventWriter writer_;
     RoleTagId self_;
     RoleTagId peer_;
 
@@ -436,10 +439,10 @@ class [[nodiscard]] Recorded {
     // no specialization of this template reaches another.
     friend class RecordingDoor;
 
-    constexpr Recorded(Inner inner, SessionEventLog& log, RoleTagId self, RoleTagId peer) noexcept
-        : inner_{std::move(inner)}, log_{&log}, self_{self}, peer_{peer} {}
+    constexpr Recorded(Inner inner, SessionEventWriter writer, RoleTagId self, RoleTagId peer) noexcept
+        : inner_{std::move(inner)}, writer_{std::move(writer)}, self_{self}, peer_{peer} {}
 
-    void record_(SessionEvent event) const { log_->record_now(event); }
+    void record_(SessionEvent event) { writer_.record_now(event); }
 
 public:
     using inner_type = Inner;
@@ -598,12 +601,21 @@ public:
 
 // ── The mint ─────────────────────────────────────────────────────────
 
+// The mint takes the one writer of a log (mint_session_event_writer of
+// fixy/session/EventLog.h), so each recorded endpoint writes its own log.
 template <typename H>
     requires RecordableHandle<H>
-[[nodiscard]] constexpr auto mint_recorded_session(H handle, SessionEventLog& log, RoleTagId self,
+[[nodiscard]] constexpr auto mint_recorded_session(H handle, SessionEventWriter writer, RoleTagId self,
                                                    RoleTagId peer) noexcept {
-    return RecordingDoor::make<H>(std::move(handle), log, self, peer);
+    return RecordingDoor::make<H>(std::move(handle), std::move(writer), self, peer);
 }
+
+// A log alone gives no right to append: two recorders on one log append
+// from two threads with no order.
+template <typename H>
+void mint_recorded_session(H, SessionEventLog&, RoleTagId, RoleTagId) =
+    delete("[Event_Log_Needs_Its_Writer] mint_recorded_session takes the one writer of a log, not the log.  Mint the "
+           "writer with mint_session_event_writer, and give each recorded endpoint a log of its own.");
 
 // ── Replay of a choice ───────────────────────────────────────────────
 

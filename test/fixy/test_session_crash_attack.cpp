@@ -110,8 +110,8 @@ void recorder_sees_the_crash() {
     report_crash(cell_p, s::CrashCause::Throw);
     s::SessionEventLog log{s::SessionTagId{9}};
     auto q = s::mint_recorded_session(
-        s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q)), log,
-        s::RoleTagId{2}, s::RoleTagId{1});
+        s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q)),
+        s::mint_session_event_writer(log), s::RoleTagId{2}, s::RoleTagId{1});
     auto chosen = std::move(q).select<0>(push_label);
     auto [waiting, undelivered] = std::move(chosen).send(5, push_int);
     std::move(waiting).branch(poll_label, [](auto branch) noexcept {
@@ -436,7 +436,7 @@ static_assert(std::is_same_v<s::dual_of_t<s::Stop>, s::Stop>);
 // only by mint_crash_session, from a Resource, so nothing puts it around
 // a recorded handle.  A recorded handle is built only by its mint.
 using Plain = s::SessionHandle<s::End, int*>;
-static_assert(!std::is_constructible_v<s::Recorded<Plain>, Plain, s::SessionEventLog&, s::RoleTagId, s::RoleTagId>);
+static_assert(!std::is_constructible_v<s::Recorded<Plain>, Plain, s::SessionEventWriter, s::RoleTagId, s::RoleTagId>);
 
 // ── The ledger ──────────────────────────────────────────────────────
 //

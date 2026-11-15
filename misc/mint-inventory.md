@@ -267,8 +267,9 @@ that the axis does not apply to the row.
 | `mint_forked_channel` | `include/fixy/session/Mint.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_permission_hold` | `include/fixy/session/Flow.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permissioned_session` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
-| `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | HS14: 7 |
-| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 60 |
+| `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | HS14: 8 |
+| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 61 |
+| `mint_session_event_writer` | `include/fixy/session/EventLog.h` | Y | - | Y | · | token | · | HS14: 11 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_test_channel` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
@@ -346,4 +347,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 75 | 43 | 23 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 132 | 54 | 74 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 133 | 54 | 75 | 4 | 0 | 3 |

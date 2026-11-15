@@ -11,7 +11,7 @@ struct Wire {};
 
 int main() {
     s::SessionEventLog log;
-    auto recorded = s::mint_recorded_session(42, log, s::RoleTagId{1}, s::RoleTagId{2});
+    auto recorded = s::mint_recorded_session(42, s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
     (void)recorded;
     return 0;
 }

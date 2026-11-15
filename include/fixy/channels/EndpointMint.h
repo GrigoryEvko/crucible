@@ -22,17 +22,19 @@
 
 namespace fixy::channels {
 
-// The log is held by reference rather than owned, so the two sides of one
-// channel can share a log and produce a single ordered record of the
+// The mint takes the one writer of a log, so each side of a channel
+// records into a log of its own, on its own thread.  merge_session_logs of
+// fixy/session/EventLog.h reads the two logs as one ordered record of the
 // exchange.  The requires-clause restates what the parameter type already
 // asks, so that the gate of this mint is one named concept.
 
 template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
     requires IsBridgeableDirection<Substr, Dir>
 [[nodiscard]] constexpr auto
-mint_recording_endpoint(Endpoint<Substr, Dir, Ctx>&& ep, ::fixy::session::SessionEventLog& log,
+mint_recording_endpoint(Endpoint<Substr, Dir, Ctx>&& ep, ::fixy::session::SessionEventWriter writer,
                         ::fixy::session::RoleTagId self_role, ::fixy::session::RoleTagId peer_role) noexcept {
-    return ::fixy::session::mint_recorded_session(std::move(ep).into_session(), log, self_role, peer_role);
+    return ::fixy::session::mint_recorded_session(std::move(ep).into_session(), std::move(writer), self_role,
+                                                  peer_role);
 }
 
 }  // namespace fixy::channels

@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::Recorded<fixy::session::SessionHandle<fixy::session::End, int*>>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int*>>(), forge::lvalue<fixy::session::SessionEventLog>(), fixy::session::RoleTagId{}, fixy::session::RoleTagId{}};
+    [[maybe_unused]] auto forged = fixy::session::Recorded<fixy::session::SessionHandle<fixy::session::End, int*>>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int*>>(), forge::rvalue<fixy::session::SessionEventWriter>(), fixy::session::RoleTagId{}, fixy::session::RoleTagId{}};
     return 0;
 }

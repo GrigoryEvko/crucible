@@ -18,7 +18,8 @@ int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_record_door_states_the_gate_types;
     s::SessionEventLog log;
-    auto forged = s::RecordingDoor::make<NotAHandle>(NotAHandle{}, log, s::RoleTagId{1}, s::RoleTagId{2});
+    auto forged = s::RecordingDoor::make<NotAHandle>(NotAHandle{}, s::mint_session_event_writer(log), s::RoleTagId{1},
+                                                     s::RoleTagId{2});
     static_cast<void>(forged);
     return 0;
 }

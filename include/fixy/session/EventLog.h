@@ -55,8 +55,18 @@
 //
 // ── One writer ──────────────────────────────────────────────────────
 //
-// The log has one writer.  next_step mints a step id atomically, but an
-// append is a plain vector push, so the caller serialises its appends.
+// A log has one writer: the SessionEventWriter that
+// mint_session_event_writer gives.  A second mint for one log ends the
+// process with Event_Log_Writer_Twice, so no two recorders append to one
+// log from two threads.  The writer is move-only, and a recorder moves it
+// from each handle to the next, so one handle at a time appends.  Each
+// endpoint of a run records into its own log.
+//
+// merge_session_logs reads the logs of a run as one sequence: by step id,
+// and for one step id in the order of the logs in its arguments.  The
+// sequence depends on no schedule of the threads.  An append is a plain
+// vector push, so a reader reads a log after its writer ends, or on the
+// thread of its writer.
 
 #include <fixy/Mutation.h>
 #include <fixy/session/CrashCause.h>
@@ -65,6 +75,8 @@
 #include <foundation/algebra/lattices/CipherTierLattice.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Atomic.h>
+#include <foundation/core/Fatal.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Region.h>
@@ -652,15 +664,44 @@ namespace detail::event_log {
     std::abort();
 }
 
+[[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_second_writer() noexcept {
+    ::foundation::core::fatal(
+        "fixy::session: diagnostic [Event_Log_Writer_Twice]: a second writer was minted for a session event log "
+        "that already has one.  Two writers append from two threads with no order.  Give each endpoint a log of "
+        "its own, and read the logs as one sequence with merge_session_logs.");
+}
+
 }  // namespace detail::event_log
 
-// The atomic step counter is the ordering identity of the log, so the
-// log does not move.  A drain moves the events out instead.
+class SessionEventWriter;
+
+// The step counter is the ordering identity of the log, so the log does
+// not move.  A drain moves the events out instead.  Only the one writer of
+// the log appends (One writer, in the head of this header).
 class [[nodiscard]] SessionEventLog : ::foundation::Pinned<SessionEventLog> {
     ::fixy::OrderedAppendOnly<SessionEvent, StepIdKeyFn, StepIdLess> log_ =
         ::fixy::mint_ordered_append_only<SessionEvent, StepIdKeyFn, StepIdLess>();
     SessionTagId session_id_{};
     ::fixy::AtomicMonotonic<std::uint64_t> step_counter_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+    // Set when the one writer of this log is minted.
+    ::foundation::core::Atomic<bool> has_writer_{false};
+
+    friend class SessionEventWriter;
+
+    [[nodiscard]] StepId next_step_() noexcept {
+        const std::uint64_t prior = step_counter_.bump();
+        if (prior == std::numeric_limits<std::uint64_t>::max()) [[unlikely]]
+            detail::event_log::abort_on_step_overflow();
+        return StepId{prior + 1};
+    }
+
+    void record_now_(SessionEvent event) {
+        event.step_id_ = next_step_();
+        event.session_ = session_id_;
+        log_.append(event);
+    }
+
+    void record_(SessionEvent event) { log_.append(event); }
 
 public:
     using event_type = SessionEvent;
@@ -672,25 +713,6 @@ public:
     // implicit deletion would also list each member that cannot copy.
     SessionEventLog(const SessionEventLog&) =
         delete("the step counter is the ordering identity of a session event log, and a copy would fork the counter");
-
-    // Atomic, so several threads may mint.  An append is not atomic.
-    [[nodiscard]] StepId next_step() noexcept {
-        const std::uint64_t prior = step_counter_.bump();
-        if (prior == std::numeric_limits<std::uint64_t>::max()) [[unlikely]]
-            detail::event_log::abort_on_step_overflow();
-        return StepId{prior + 1};
-    }
-
-    // Stamps the next step and this log's session, then appends.
-    void record_now(SessionEvent event) {
-        event.step_id_ = next_step();
-        event.session_ = session_id_;
-        log_.append(event);
-    }
-
-    // Appends an event whose step the caller chose, for a replay from a
-    // snapshot.  The step must not go backward.
-    void record(SessionEvent event) { log_.append(event); }
 
     [[nodiscard]] SessionTagId session() const noexcept { return session_id_; }
     [[nodiscard]] std::size_t size() const noexcept { return log_.size(); }
@@ -704,5 +726,105 @@ public:
         return std::move(log_).drain();
     }
 };
+
+// The one writer of one session event log.  Only mint_session_event_writer
+// builds it, and each log has one, so no two recorders append to one log.
+// The writer is move-only: a recorder moves it from each handle to the
+// next, so one handle at a time appends.  A moved-from writer names no log,
+// and an append through it ends the process.
+//
+// The move constructor is user-provided, so the class is not trivially
+// copyable and std::bit_cast cannot build one.
+class [[nodiscard]] SessionEventWriter {
+    SessionEventLog* log_ = nullptr;
+
+    constexpr explicit SessionEventWriter(SessionEventLog& log) noexcept : log_{&log} {}
+
+    // Claims the one writer of a log.  A second claim for the same log ends
+    // the process with Event_Log_Writer_Twice.
+    [[nodiscard]] static SessionEventWriter claim_(SessionEventLog& log) noexcept {
+        if (log.has_writer_.exchange_acq_rel(true)) [[unlikely]]
+            detail::event_log::abort_on_second_writer();
+        return SessionEventWriter{log};
+    }
+
+    friend SessionEventWriter mint_session_event_writer(SessionEventLog& log) noexcept;
+
+public:
+    constexpr SessionEventWriter(SessionEventWriter&& other) noexcept : log_{other.log_} { other.log_ = nullptr; }
+    constexpr SessionEventWriter& operator=(SessionEventWriter&& other) noexcept {
+        SessionEventLog* const taken = other.log_;
+        other.log_ = nullptr;
+        log_ = taken;
+        return *this;
+    }
+    SessionEventWriter(const SessionEventWriter&) =
+        delete("a session event log has one writer, and a copy is a second");
+    SessionEventWriter&
+    operator=(const SessionEventWriter&) = delete("a session event log has one writer, and a copy is a second");
+    constexpr ~SessionEventWriter() = default;
+
+    // Stamps the next step and the session of the log, then appends.
+    void record_now(SessionEvent event) {
+        CRUCIBLE_PRE(log_ != nullptr);
+        log_->record_now_(event);
+    }
+
+    // Appends an event whose step the caller chose, for a replay from a
+    // snapshot.  The step must not go backward.
+    void record(SessionEvent event) {
+        CRUCIBLE_PRE(log_ != nullptr);
+        log_->record_(event);
+    }
+};
+
+// Mints the one writer of a log.  A second mint for the same log ends the
+// process with Event_Log_Writer_Twice.
+[[nodiscard]] inline SessionEventWriter mint_session_event_writer(SessionEventLog& log) noexcept {
+    return SessionEventWriter::claim_(log);
+}
+
+void mint_session_event_writer(const SessionEventLog&) noexcept = delete(
+    "[Event_Log_Writer_From_Const_Log] a const log is a view of the record, and a view gives no right to "
+    "append.  Mint the writer from the log that this endpoint owns.");
+
+void mint_session_event_writer(SessionEventLog&&) noexcept = delete(
+    "[Event_Log_Writer_From_Temporary_Log] the log is a temporary.  The writer keeps its address, so the log "
+    "must outlive each handle that records into it.");
+
+// ── The reader of the logs of a run ──────────────────────────────────
+
+// The events of `first` and `rest` as one sequence: by step id, and for
+// one step id in the order of the logs in the arguments.  Each log has one
+// writer and steps that do not decrease, so the sequence depends on no
+// schedule of the threads.  Read the logs after their writers end.  The
+// events take one allocation.  Each argument after the first is a log too:
+// the list of the logs below refuses another type.  Complexity: O(n * k)
+// for n events in k logs.
+template <typename... Rest>
+[[nodiscard]] ::foundation::core::HeapArray<SessionEvent>
+merge_session_logs(::foundation::core::Alloc allocation, const SessionEventLog& first, const Rest&... rest) {
+    constexpr std::size_t log_count = 1 + sizeof...(Rest);
+    const SessionEventLog* const logs[log_count] = {&first, &rest...};
+    std::size_t next[log_count]{};
+    std::size_t total = 0;
+    for (const SessionEventLog* const log : logs)
+        total += log->size();
+    ::foundation::core::HeapArray<SessionEvent> events =
+        ::foundation::core::mint_heap_array(allocation, total, SessionEvent::close(RoleTagId{}, RoleTagId{}));
+    for (std::size_t place = 0; place < total; ++place) {
+        // The first log, in the order of the arguments, whose next event has
+        // the least step.  A tie keeps the earlier log.
+        std::size_t chosen = log_count;
+        for (std::size_t index = 0; index < log_count; ++index) {
+            if (next[index] == logs[index]->size()) continue;
+            const StepId step = (*logs[index])[next[index]].step_id();
+            if (chosen == log_count || StepIdLess{}(step, (*logs[chosen])[next[chosen]].step_id())) chosen = index;
+        }
+        *events.get(place).expect("the events hold a slot for each event of the logs") = (*logs[chosen])[next[chosen]];
+        ++next[chosen];
+    }
+    return events;
+}
 
 }  // namespace fixy::session

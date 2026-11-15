@@ -1195,6 +1195,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::SessionEvent,
      "one record of a session event log: it holds the fields of one step, and it makes no claim about a value"},
     {^^::fixy::session::SessionEventLog, kDescriptor},
+    {^^::fixy::session::SessionEventWriter,
+     "the one writer of one session event log: it holds a pointer to the log, a recorder mint consumes it, and it "
+     "is never a template argument of a kernel signature"},
     {^^::fixy::session::EventLogDecodeFailure, kPayload},
     {^^::fixy::session::StepIdKeyFn,
      "the stateless key that orders an event log: it reads the step of an event and holds nothing"},

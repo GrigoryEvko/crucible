@@ -21,9 +21,10 @@ int main() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     s::SessionEventLog first_log;
     s::SessionEventLog second_log;
-    auto once =
-        s::mint_recorded_session(s::mint_session<s::End>(ctx, Wire{}), first_log, s::RoleTagId{1}, s::RoleTagId{2});
-    auto twice = s::mint_recorded_session(std::move(once), second_log, s::RoleTagId{1}, s::RoleTagId{2});
+    auto once = s::mint_recorded_session(s::mint_session<s::End>(ctx, Wire{}), s::mint_session_event_writer(first_log),
+                                         s::RoleTagId{1}, s::RoleTagId{2});
+    auto twice = s::mint_recorded_session(std::move(once), s::mint_session_event_writer(second_log), s::RoleTagId{1},
+                                          s::RoleTagId{2});
     static_cast<void>(std::move(twice).close());
     return 0;
 }

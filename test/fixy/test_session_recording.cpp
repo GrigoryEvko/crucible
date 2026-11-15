@@ -211,8 +211,9 @@ int check_log_decode() {
 
 int check_log_steps() {
     s::SessionEventLog log{s::SessionTagId{77}};
-    log.record_now(s::SessionEvent::close(kSelf, kPeer));
-    log.record_now(s::SessionEvent::close(kSelf, kPeer));
+    s::SessionEventWriter writer = s::mint_session_event_writer(log);
+    writer.record_now(s::SessionEvent::close(kSelf, kPeer));
+    writer.record_now(s::SessionEvent::close(kSelf, kPeer));
     if (log.size() != 2) return fail("the log lost an event");
     if (log[0].step_id().value != 1 || log[1].step_id().value != 2) return fail("the steps are not 1 and 2");
     if (log[1].session().value != 77) return fail("record_now did not stamp the session");
@@ -231,8 +232,8 @@ int check_plain_recording() {
     Mailbox to_self;
     Mailbox to_peer;
     s::SessionEventLog log;
-    auto handle =
-        s::mint_recorded_session(s::mint_session<Proto>(bg_ctx(), Port{&to_self, &to_peer}), log, kSelf, kPeer);
+    auto handle = s::mint_recorded_session(s::mint_session<Proto>(bg_ctx(), Port{&to_self, &to_peer}),
+                                           s::mint_session_event_writer(log), kSelf, kPeer);
     auto waiting = std::move(handle).send(5, push_int);
     to_self.slots.push_back(0);
     to_self.slots.push_back(9);
@@ -287,11 +288,13 @@ int check_handoff_recording() {
     Mailbox to_self;
     Mailbox to_peer;
     std::optional<Parcel> held;
-    s::SessionEventLog log;
-    auto sender = s::mint_recorded_session(s::mint_session<s::Send<Parcel, s::End>>(bg_ctx(), ParcelPort{&held}), log,
-                                           kSelf, kPeer);
-    auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Parcel, s::End>>(bg_ctx(), ParcelPort{&held}), log,
-                                             kPeer, kSelf);
+    // Each endpoint records into a log of its own.
+    s::SessionEventLog sender_log;
+    s::SessionEventLog receiver_log;
+    auto sender = s::mint_recorded_session(s::mint_session<s::Send<Parcel, s::End>>(bg_ctx(), ParcelPort{&held}),
+                                           s::mint_session_event_writer(sender_log), kSelf, kPeer);
+    auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Parcel, s::End>>(bg_ctx(), ParcelPort{&held}),
+                                             s::mint_session_event_writer(receiver_log), kPeer, kSelf);
 
     auto parcel = s::mint_delegated_session(s::mint_session<Carried>(bg_ctx(), Port{&to_self, &to_peer}));
     (void)std::move(sender)
@@ -314,13 +317,33 @@ int check_handoff_recording() {
     constexpr s::StateHash carried_hash = s::default_proto_hash<Carried>;
     constexpr s::InnerPermSetHash no_permissions_hash{::foundation::reflect::stable_type_id(^^NoPermissions)};
     static_assert(carried_hash != s::default_proto_hash<s::End>);
-    if (log.size() != 4) return fail("the hand-off did not record four events");
-    if (log[0].op() != s::SessionOp::Delegate || log[0].from_role() != kSelf || log[0].to_role() != kPeer
-        || log[0].delegated_proto() != carried_hash || log[0].inner_perm_set() != no_permissions_hash)
+    if (sender_log.size() != 2 || receiver_log.size() != 2)
+        return fail("the hand-off did not record two events a side");
+    if (sender_log[0].op() != s::SessionOp::Delegate || sender_log[0].from_role() != kSelf
+        || sender_log[0].to_role() != kPeer || sender_log[0].delegated_proto() != carried_hash
+        || sender_log[0].inner_perm_set() != no_permissions_hash)
         return fail("the send of a parcel was not recorded as the hand-off of the carried protocol");
-    if (log[2].op() != s::SessionOp::Accept || log[2].from_role() != kSelf || log[2].to_role() != kPeer
-        || log[2].delegated_proto() != carried_hash || log[2].inner_perm_set() != no_permissions_hash)
+    if (receiver_log[0].op() != s::SessionOp::Accept || receiver_log[0].from_role() != kSelf
+        || receiver_log[0].to_role() != kPeer || receiver_log[0].delegated_proto() != carried_hash
+        || receiver_log[0].inner_perm_set() != no_permissions_hash)
         return fail("the receive of a parcel was not recorded as the accept of the carried protocol");
+
+    // The merge reads the two logs as one sequence: by step, and for one
+    // step in the order of the arguments.
+    const auto alloc = ::foundation::effects::testing::test().alloc;
+    const auto merged = s::merge_session_logs(alloc, sender_log, receiver_log);
+    // Step 1 of the sender, step 1 of the receiver, then the two closes.
+    const auto expected_at = [](std::size_t place) noexcept {
+        if (place == 0) return s::SessionOp::Delegate;
+        if (place == 1) return s::SessionOp::Accept;
+        return s::SessionOp::Close;
+    };
+    if (merged.size() != 4) return fail("the merge lost an event");
+    for (std::size_t place = 0; place < 4; ++place) {
+        const s::SessionEvent& event = *merged.get(place).expect("the merge holds four events");
+        if (event.op() != expected_at(place) || event.step_id().value != place / 2 + 1)
+            return fail("the merge did not order the events by step, and by the order of the logs for one step");
+    }
     return 0;
 }
 
@@ -343,10 +366,10 @@ int check_keyed_recording() {
     Mailbox to_right;
     s::SessionEventLog log_left;
     s::SessionEventLog log_right;
-    auto left = s::mint_recorded_session(s::mint_session<KeyedAsk>(bg_ctx(), Port{&to_left, &to_right}), log_left,
-                                         kSelf, kPeer);
-    auto right = s::mint_recorded_session(s::mint_session<KeyedHear>(bg_ctx(), Port{&to_right, &to_left}), log_right,
-                                          kPeer, kSelf);
+    auto left = s::mint_recorded_session(s::mint_session<KeyedAsk>(bg_ctx(), Port{&to_left, &to_right}),
+                                         s::mint_session_event_writer(log_left), kSelf, kPeer);
+    auto right = s::mint_recorded_session(s::mint_session<KeyedHear>(bg_ctx(), Port{&to_right, &to_left}),
+                                          s::mint_session_event_writer(log_right), kPeer, kSelf);
     // A keyed message is its label word and then its value, so each side
     // stands at the value step of its branch.
     auto left_value = std::move(left).select<1>(push_label);
@@ -389,8 +412,8 @@ int check_keyed_recording() {
     Mailbox step_in;
     s::SessionEventLog log_step;
     using SayNo = s::Send<s::PeerMsg<Carol, No, int>, s::End>;
-    auto stepper =
-        s::mint_recorded_session(s::mint_session<SayNo>(bg_ctx(), Port{&step_in, &step_out}), log_step, kSelf, kPeer);
+    auto stepper = s::mint_recorded_session(s::mint_session<SayNo>(bg_ctx(), Port{&step_in, &step_out}),
+                                            s::mint_session_event_writer(log_step), kSelf, kPeer);
     (void)std::move(stepper).send(push_label).send(9, push_int).close();
     if (step_out.slots.size() != 2 || step_out.slots.front() != s::step_wire_word_v<SayNo>
         || step_out.slots.front() != s::branch_wire_word_v<KeyedAsk, 1> || step_out.slots.back() != 9)

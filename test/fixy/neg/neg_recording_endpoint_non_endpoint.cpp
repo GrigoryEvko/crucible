@@ -32,8 +32,9 @@ int main() {
         perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     (void)consumer_perm;
     s::SessionEventLog log;
-    auto recorded = channels::mint_recording_endpoint(channel.producer(std::move(producer_perm)), log, s::RoleTagId{1},
-                                                      s::RoleTagId{2});
+    auto recorded =
+        channels::mint_recording_endpoint(channel.producer(std::move(producer_perm)), s::mint_session_event_writer(log),
+                                          s::RoleTagId{1}, s::RoleTagId{2});
     (void)recorded;
     return 0;
 }

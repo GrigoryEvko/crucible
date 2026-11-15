@@ -1,0 +1,135 @@
+// The one writer of a session event log (fixy/session/EventLog.h).
+//
+// A log has one writer.  A second writer for one log ends the process with
+// Event_Log_Writer_Twice, so no two recorders append to one log from two
+// threads.  Each endpoint records into a log of its own, on its own
+// thread, and merge_session_logs reads the logs as one sequence: by step,
+// and for one step in the order of the arguments.  The test runs two
+// recorded sessions on two threads many times, and each merge gives the
+// same sequence.  The tsan preset runs the same test, so the shape with
+// one log for each thread is the shape that ThreadSanitizer checks.
+
+#include <fixy/Ctx.h>
+#include <fixy/session/Entry.h>
+#include <fixy/session/EventLog.h>
+#include <fixy/session/Recording.h>
+
+#include <foundation/effects/Ctx.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <thread>
+#include <utility>
+
+#include "../foundation/abort_probe.h"
+#include "../test_assert.h"
+
+namespace test_session_event_log_writers {
+
+namespace s = ::fixy::session;
+
+// The count of the sends of each recorded session.
+constexpr int kSends = 64;
+
+// The count of the runs of the two threads.
+constexpr int kRuns = 32;
+
+constexpr s::RoleTagId kLeft{1};
+constexpr s::RoleTagId kRight{2};
+constexpr s::RoleTagId kSink{3};
+
+// The Resource of a session that sends ints into a sum.
+struct Tally {
+    std::int64_t sum = 0;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+
+using Counting = s::Loop<s::Send<int, s::Continue>>;
+
+namespace {
+
+// Records kSends sends of one session into the log of `writer`, then
+// detaches the session.  The session and its log belong to the calling
+// thread.
+void record_one_session(s::SessionEventWriter writer, s::RoleTagId self) {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto handle = s::mint_recorded_session(s::mint_session<Counting>(ctx, Tally{}), std::move(writer), self, kSink);
+    for (int value = 0; value < kSends; ++value) {
+        handle = std::move(handle).send(value, [](Tally& tally, int& sent) noexcept {
+            tally.sum += sent;
+            return true;
+        });
+    }
+    std::move(handle).detach(s::detach_reason::InfiniteLoopProtocol{});
+}
+
+// A log has one writer.  The second mint for it ends the process, and the
+// abort probe catches the end.
+void a_second_writer_of_one_log_ends_the_process() {
+    s::SessionEventLog log;
+    s::SessionEventWriter first = s::mint_session_event_writer(log);
+    const bool is_refused = crucible::test::aborts([&log] { static_cast<void>(s::mint_session_event_writer(log)); });
+    assert(is_refused);
+    first.record_now(s::SessionEvent::close(kLeft, kSink));
+    assert(log.size() == 1);
+}
+
+// Two recorded sessions on two threads, each with a log of its own.  After
+// the join, the merge reads the two logs by step, and for one step the left
+// log first.  So each run gives the same sequence.
+void two_threads_record_into_their_own_logs() {
+    const auto alloc = ::foundation::effects::testing::test().alloc;
+    for (int run = 0; run < kRuns; ++run) {
+        s::SessionEventLog left_log{s::SessionTagId{1}};
+        s::SessionEventLog right_log{s::SessionTagId{2}};
+        {
+            std::jthread left{record_one_session, s::mint_session_event_writer(left_log), kLeft};
+            std::jthread right{record_one_session, s::mint_session_event_writer(right_log), kRight};
+        }
+        assert(left_log.size() == kSends + 1);
+        assert(right_log.size() == kSends + 1);
+        const auto merged = s::merge_session_logs(alloc, left_log, right_log);
+        assert(merged.size() == 2 * (kSends + 1));
+        for (std::size_t place = 0; place < merged.size(); ++place) {
+            const s::SessionEvent& event = *merged.get(place).expect("the merge holds each event of the two logs");
+            const bool is_left = place % 2 == 0;
+            const bool is_last_step = place / 2 == kSends;
+            assert(event.step_id().value == place / 2 + 1);
+            assert(event.session().value == (is_left ? 1u : 2u));
+            assert(event.from_role() == (is_left ? kLeft : kRight));
+            assert(event.op() == (is_last_step ? s::SessionOp::Detach : s::SessionOp::Send));
+        }
+    }
+}
+
+// An empty log adds nothing, and a tie of steps keeps the order of the
+// arguments.
+void a_merge_keeps_the_order_of_the_arguments_for_one_step() {
+    const auto alloc = ::foundation::effects::testing::test().alloc;
+    s::SessionEventLog empty_log;
+    s::SessionEventLog first_log{s::SessionTagId{7}};
+    s::SessionEventLog second_log{s::SessionTagId{8}};
+    s::SessionEventWriter first = s::mint_session_event_writer(first_log);
+    s::SessionEventWriter second = s::mint_session_event_writer(second_log);
+    second.record_now(s::SessionEvent::close(kRight, kSink));
+    first.record_now(s::SessionEvent::close(kLeft, kSink));
+    first.record_now(s::SessionEvent::close(kLeft, kSink));
+    const auto merged = s::merge_session_logs(alloc, empty_log, second_log, first_log);
+    assert(merged.size() == 3);
+    assert(merged.get(0).expect("three events")->session().value == 8);
+    assert(merged.get(1).expect("three events")->session().value == 7);
+    assert(merged.get(2).expect("three events")->step_id().value == 2);
+}
+
+}  // namespace
+
+}  // namespace test_session_event_log_writers
+
+int main() {
+    using namespace test_session_event_log_writers;
+    a_second_writer_of_one_log_ends_the_process();
+    two_threads_record_into_their_own_logs();
+    a_merge_keeps_the_order_of_the_arguments_for_one_step();
+    crucible::test::pass("test_session_event_log_writers: OK\n");
+    return 0;
+}

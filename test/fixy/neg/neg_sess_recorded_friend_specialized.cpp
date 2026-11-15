@@ -37,8 +37,8 @@ int main() {
     using namespace neg_sess_recorded_friend_specialized_types;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     s::SessionEventLog log;
-    auto recorded = s::mint_recorded_session(s::mint_session<s::Send<int, s::End>>(ctx, Wire{}), log, s::RoleTagId{1},
-                                             s::RoleTagId{2});
+    auto recorded = s::mint_recorded_session(s::mint_session<s::Send<int, s::End>>(ctx, Wire{}),
+                                             s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
     auto stolen = s::Recorded<Tag>::steal(std::move(recorded));
     std::move(stolen).detach(s::detach_reason::TestInstrumentation{});
     return 0;

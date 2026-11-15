@@ -1,10 +1,11 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// The recorder writes each step to a session event log.  An int is not a
-// log, so mint_recording_endpoint does not accept it.
+// The recorder writes each step to a session event log through the one
+// writer of the log.  An int is not a writer, so mint_recording_endpoint
+// does not accept it.
 //
 // Expected diagnostic: no overload of mint_recording_endpoint takes an int
-// as the log.
+// as the writer.
 
 #include <fixy/channels/EndpointMint.h>
 
