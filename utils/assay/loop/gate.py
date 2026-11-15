@@ -131,7 +131,11 @@ THE VESSEL
          PyTorch stops the configure with the reason
       2. The configure of the build directory, when it has no graph of Ninja
       3. `cmake --build BUILD --target` of each target of VESSEL_TARGETS,
-         with no -j (THE JOBSERVER)
+         with no -j (THE JOBSERVER).  Then the wait for the write of THE
+         BUILT FILES, only when the vessel reads a written file
+         (is_read_by_vessel()).  The vessel reads no other file of
+         BUILT_FILES, so its tests on the commit give the result of its tests
+         on the commit of the fold
       4. `ctest --label-regex` of VESSEL_LABEL, with the jobs of the lease.
          Each red test runs one more time apart from the suite, as in step 3
          of THE RUN OF A CONFIGURATION.  A disabled test, and a run in which
@@ -378,7 +382,8 @@ THE BUILT FILES
     `cmake --build BUILD` of a configuration of objects, `loop syntax BUILD`
     of a parse configuration, and the build of the vessel targets.  Then it
     waits for the end of the write, and it runs its tests and its checks on
-    the new commit.  A compile reads no git state and no file of
+    the new commit.  The vessel waits only for a file that it reads (THE
+    VESSEL).  A compile reads no git state and no file of
     BUILT_FILES, so the move of the warm tree does not change it.  A build
     or a write that gives an error is a problem of ALWAYS, and the stop ends
     the other configurations.  The wait watches the stop event.
@@ -773,17 +778,21 @@ class BuiltFile:
 
     `target` is the target of `loop derive` that writes the file.  `module` is the module of the target.  Its function
     is_input(path) tells if a change of a path can change the file, and the modules of its import closure can change
-    the file too.
+    the file too.  `is_vessel_input` tells if the build of the vessel targets or a vessel test reads the file.  The
+    tests of the vessel then wait for the write (THE VESSEL).
     """
 
     target: str
     module: str
+    is_vessel_input: bool
 
 
 # ── The selection ──────────────────────────────────────────────────────────
 
 # The generated files that the gate writes from the build of ALWAYS (THE BUILT FILES).
-BUILT_FILES = {"misc/mint-inventory.md": BuiltFile("mint-inventory", "assay.loop.derive.mint_inventory")}
+BUILT_FILES = {
+    "misc/mint-inventory.md": BuiltFile("mint-inventory", "assay.loop.derive.mint_inventory", is_vessel_input=False)
+}
 CONFIGURATIONS = configurations(paths.REPO_ROOT)
 BY_NAME = {configuration.name: configuration for configuration in CONFIGURATIONS}
 VESSEL_CONFIGURATION = vessel_configuration(paths.REPO_ROOT)
@@ -867,6 +876,15 @@ def reaches_vessel(changed: Sequence[str], is_each: bool) -> bool:
     Complexity: linear in the paths.
     """
     return is_each or any(path.startswith(VESSEL_PREFIX) for path in changed)
+
+
+def is_read_by_vessel(built: Sequence[str], rows: Mapping[str, BuiltFile] = BUILT_FILES) -> bool:
+    """Tell if the vessel reads a file that the gate writes for a candidate, so its tests wait for the write.
+
+    THE VESSEL gives the rule.  `built` holds the paths of the files that the gate writes, and each one is a key of
+    `rows`.  Complexity: linear in the paths.
+    """
+    return any(rows[path].is_vessel_input for path in built)
 
 
 def built_selection(tree: Path, changed: Sequence[str]) -> tuple[str, ...]:
@@ -2063,7 +2081,8 @@ class Step:
         if self.run_logged(command, log, share, TEST_RUN_S) != 0:
             targets = " and ".join(VESSEL_TARGETS)
             return [f"{configuration.name}: the build of {targets} gives an error, see {logs / log}"], (), ()
-        self.wait_built(configuration)
+        if is_read_by_vessel(self.candidate.built):
+            self.wait_built(configuration)
         report = logs / log_name(configuration, "test.junit.xml", is_again)
         report.unlink(missing_ok=True)
         words = ["--label-regex", f"^{VESSEL_LABEL}$"]

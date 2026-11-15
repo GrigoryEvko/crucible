@@ -113,8 +113,9 @@ COUNTED_REGISTRY = (
 # until a stop ends it.  The mode plugin makes the test guard_plugin red.
 # `derive TARGET --write --build-dir BUILD` writes inventory.txt of the build into the tree as the
 # mint inventory, or writes nothing for a build with no inventory.txt.  In the mode overlap, it first waits for
-# cmake.txt of each other planted build of the tree, so each other configuration builds before the write ends.  It
-# exits 3 in the mode unwritten, and in the mode overlap when a wait stops.  With inventory.txt in the build, the test
+# cmake.txt of each other planted build of the tree, so each other configuration builds before the write ends.  In the
+# mode after-vessel, it first waits for ran.txt of the planted ctest in the build of the vessel.  It exits 3 in the mode
+# unwritten, and in the modes overlap and after-vessel when a wait stops.  With inventory.txt in the build, the test
 # test_built, the planted test of the rule derived-files, is red when the tree holds a different inventory.  Each call
 # writes its first words to calls.txt of its build.
 #
@@ -167,6 +168,8 @@ if words[0] == "derive":
         (build / "waited.txt").write_text(f"{time.monotonic() - began:.1f}")
         if not is_seen:
             sys.exit(3)
+    if mode == "after-vessel" and not is_written(build.parent / "build-vessel" / "ran.txt"):
+        sys.exit(3)
     inventory = build / "inventory.txt"
     if inventory.is_file():
         pathlib.Path("misc").mkdir(exist_ok=True)
@@ -329,7 +332,8 @@ if "crucible_dispatch" in words and calls.is_file():
 # unless it is test_broken, test_ledger before the write of its ledger, or test_built before the write of the inventory.  A fall of door-unit makes no test red,
 # because a ledger fails only on a growth (THE POLICIES of assay.core.ledger).  Each run of red tests adds one line to
 # alone-runs.txt of the build: the value of -j and the names of the tests.  A run of --label-regex runs each test of
-# the listing with that label.  Each name in red.txt of the build is red too.
+# the listing with that label, and writes the label to ran.txt of the build.  Each name in red.txt of the build is red
+# too.
 CTEST = """import json
 import pathlib
 import sys
@@ -344,6 +348,7 @@ if "--label-regex" in words:
     listed = json.loads((tests / "tests.json").read_text())["tests"]
     labelled = [test for test in listed if {"name": "LABELS", "value": [label]} in test["properties"]]
     names = [test["name"] for test in labelled]
+    (tests / "ran.txt").write_text(label)
 else:
     names = pathlib.Path(words[words.index("--tests-from-file") + 1]).read_text().split()
     jobs = words[words.index("-j") + 1] if "-j" in words else "-"
@@ -1802,6 +1807,34 @@ def vessel_run_cases(expect: testing.Expect) -> None:
         )
         label = f"a change of a script of the vessel builds the vessel targets and runs the vessel tests: {built!r}"
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        widened = commit_change(root, VESSEL_HEADER, "int lanes();\nint widths();\n", "Declare one more function")
+        (build / "ran.txt").unlink(missing_ok=True)
+        ordered = replace(planted_gate(work, root, tree, "after-vessel", OTHER_BUILDS), vessel=vessel)
+        plant_build(work, tree, vessel.build, "clean")
+        (build / "tests.json").write_text(listing_of[0], encoding="utf-8")
+        header = gate.Candidate(renamed, widened, (VESSEL_HEADER,))
+        header_verdict, printed = testing.captured(lambda: ordered.check(header, False))
+        holds = (
+            header_verdict.is_accepted
+            and f"the change can change {INVENTORY}" in printed
+            and gate.VESSEL in header_verdict.configurations
+            and (build / "ran.txt").is_file()
+        )
+        label = (
+            "the vessel reads no file that the gate writes, so its tests run before the write of the inventory ends: "
+            "the planted derive of default waits for the vessel tests, and the gate accepts the change"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        rows = {
+            **gate.BUILT_FILES,
+            "vessel/torch/table.py": gate.BuiltFile("table", "assay.loop.derive.mint_inventory", is_vessel_input=True),
+        }
+        expect(
+            "the tests of the vessel wait for the write only when a written file is an input of the vessel",
+            not gate.is_read_by_vessel((INVENTORY,))
+            and not gate.is_read_by_vessel(())
+            and gate.is_read_by_vessel((INVENTORY, "vessel/torch/table.py"), rows),
+        )
         (build / "red.txt").write_text("vessel_test_red\n", encoding="utf-8")
         red_verdict, _ = checked(gate.Candidate(notes, moded, (script,)))
         base_verdict, _ = testing.captured(
