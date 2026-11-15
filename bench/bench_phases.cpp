@@ -492,11 +492,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             for (const TraceEntry& te : ref_ops) {
                 content_h = detail::combine_ids(content_h, te.schema_hash.raw());
                 for (const TensorMeta& m : te.input_metas()) {
-                    uint64_t dim_h = 0;
-                    for (uint8_t d = 0; d < m.ndim; d++) {
-                        dim_h ^= static_cast<uint64_t>(raw_tensor_dim(m.sizes[d])) * detail::kDimMix[d];
-                        dim_h ^= static_cast<uint64_t>(raw_tensor_dim(m.strides[d])) * detail::kDimMix[d + 8];
-                    }
+                    const uint64_t dim_h = detail::dim_hash_scalar(m);
                     const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(m.dtype))
                                                | (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8)
                                                | (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);

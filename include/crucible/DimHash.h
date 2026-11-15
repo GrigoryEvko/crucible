@@ -41,6 +41,26 @@ using DimHashDet = ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, DimHash>;
 
 namespace crucible::detail {
 
+// A distinct constant per lane, so an extent and a stride at the same index
+// cannot cancel when the fold xors them together. One table is for the
+// extents and one for the strides. Lane d of the extents holds the seed times
+// d + 1, and lane d of the strides holds the seed times d + 9. The seed is
+// odd, so a multiplication by it is a bijection of the 64-bit words, and the
+// sixteen constants are distinct.
+//
+// Folding with xor rather than mixing each term keeps the sixteen products
+// independent of one another, leaving a single mix at the end instead of a
+// chain of them.
+inline constexpr uint64_t kDimMixSeed = 0x9E3779B97F4A7C15ULL;
+inline constexpr ::fixy::FixedArray<uint64_t, kMaxTensorNDim> kDimMixExtents{
+    kDimMixSeed * 1, kDimMixSeed * 2, kDimMixSeed * 3, kDimMixSeed * 4,
+    kDimMixSeed * 5, kDimMixSeed * 6, kDimMixSeed * 7, kDimMixSeed * 8,
+};
+inline constexpr ::fixy::FixedArray<uint64_t, kMaxTensorNDim> kDimMixStrides{
+    kDimMixSeed * 9,  kDimMixSeed * 10, kDimMixSeed * 11, kDimMixSeed * 12,
+    kDimMixSeed * 13, kDimMixSeed * 14, kDimMixSeed * 15, kDimMixSeed * 16,
+};
+
 // The descriptor's dimension count must not exceed the lane count, which its
 // own layout already guarantees.
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {
@@ -62,8 +82,8 @@ namespace crucible::detail {
 
     // The first half of the constant table is for extents and the second
     // half for strides. Element-aligned again: the table is a plain global.
-    auto mix_lo = ::foundation::simd::load<u64x8>(detail::kDimMix);
-    auto mix_hi = ::foundation::simd::load<u64x8>(detail::kDimMix + 8);
+    auto mix_lo = ::foundation::simd::load<u64x8>(kDimMixExtents.view());
+    auto mix_hi = ::foundation::simd::load<u64x8>(kDimMixStrides.view());
 
     // Reinterpreted as unsigned to match the scalar routine's arithmetic.
     u64x8 sizes_u(sizes);
@@ -86,9 +106,10 @@ namespace crucible::detail {
 // vector routine in one step, or the two stop agreeing.
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE uint64_t dim_hash_scalar(const TensorMeta& meta) noexcept {
     uint64_t result = 0;
-    for (uint8_t d = 0; d < meta.ndim; ++d) {
-        result ^= static_cast<uint64_t>(raw_tensor_dim(meta.sizes[d])) * detail::kDimMix[d];
-        result ^= static_cast<uint64_t>(raw_tensor_dim(meta.strides[d])) * detail::kDimMix[d + 8];
+    for (::fixy::Index<kMaxTensorNDim> d : kDimMixExtents.indices()) {
+        if (d.raw() >= meta.ndim) break;
+        result ^= static_cast<uint64_t>(raw_tensor_dim(meta.sizes[d.raw()])) * kDimMixExtents.at(d);
+        result ^= static_cast<uint64_t>(raw_tensor_dim(meta.strides[d.raw()])) * kDimMixStrides.at(d);
     }
     return result;
 }

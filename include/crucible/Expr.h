@@ -92,21 +92,6 @@ constexpr uint64_t fmix64(uint64_t k) {
     return fmix64(a);
 }
 
-// A distinct constant per lane, so an extent and a stride at the same index
-// cannot cancel when the fold xors them together. The first eight are for
-// extents and the second eight for strides. Each is an odd multiple of the
-// same seed, so all sixteen are distinct and coprime to the word size.
-//
-// Folding with xor rather than mixing each term keeps the sixteen products
-// independent of one another, leaving a single mix at the end instead of a
-// chain of them.
-inline constexpr uint64_t kDimMix[16] = {
-    0x9E3779B97F4A7C15ULL * 1,  0x9E3779B97F4A7C15ULL * 2,  0x9E3779B97F4A7C15ULL * 3,  0x9E3779B97F4A7C15ULL * 4,
-    0x9E3779B97F4A7C15ULL * 5,  0x9E3779B97F4A7C15ULL * 6,  0x9E3779B97F4A7C15ULL * 7,  0x9E3779B97F4A7C15ULL * 8,
-    0x9E3779B97F4A7C15ULL * 9,  0x9E3779B97F4A7C15ULL * 10, 0x9E3779B97F4A7C15ULL * 11, 0x9E3779B97F4A7C15ULL * 12,
-    0x9E3779B97F4A7C15ULL * 13, 0x9E3779B97F4A7C15ULL * 14, 0x9E3779B97F4A7C15ULL * 15, 0x9E3779B97F4A7C15ULL * 16,
-};
-
 }  // namespace detail
 
 }  // namespace crucible
