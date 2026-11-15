@@ -56,6 +56,12 @@ static_assert(ByteLaneRegister<vec<std::int8_t, 16>> && ByteLaneRegister<vec<cha
 static_assert(!ByteLaneRegister<vec<std::int8_t, 8>>, "a register of 8 bytes is no register of a target");
 static_assert(!ByteLaneRegister<u64x4>, "a lane of 8 bytes gives no one bit");
 
+// A lookup in a table of 16 bytes reads one register of 16, 32 or 64 byte
+// lanes, and gives a register of the same lanes.
+static_assert(NibbleLookupLanes<16> && NibbleLookupLanes<32> && NibbleLookupLanes<64>);
+static_assert(!NibbleLookupLanes<8> && !NibbleLookupLanes<128>, "a lookup reads one register of a target");
+static_assert(std::is_same_v<decltype(lookup_nibbles(u8x16{}, u8x32{})), u8x32>);
+
 // Bit 7 of each byte reaches its own bit.  The top byte needs bit 0 of the
 // multiplier: a multiplier with no bit 0 drops it.
 static_assert(collect_word_sign_bits(0x0000000000000080u) == 0x01u);

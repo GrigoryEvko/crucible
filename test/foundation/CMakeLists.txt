@@ -58,6 +58,11 @@ foundation_test(test_simd_reduction_limits)
 # the limits of each lane type.  In the preset ubsan-strict, a signed overflow
 # ends the test.
 foundation_test(test_simd_operator_limits)
+# lookup_nibbles of foundation/Simd.h against a scalar loop, for each of the
+# 256 index bytes in each lane, at 16, 32 and 64 lanes.  The Debug build runs
+# the generic shuffle, and the Release build runs vpshufb of AVX2 and of
+# AVX-512BW.
+foundation_test(test_simd_lookup_nibbles)
 
 # Negative-compile fixtures for the foundation layer.
 #

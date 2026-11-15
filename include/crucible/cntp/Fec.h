@@ -18,12 +18,6 @@
 #include <type_traits>
 #include <utility>
 
-// The AVX2 kernels call GCC builtins, so they include no intrinsics header.
-// Only the NEON kernels include one.
-#if (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-#include <arm_neon.h>
-#endif
-
 namespace crucible::cntp {
 
 template <std::uint8_t K, std::uint8_t M>
@@ -230,146 +224,78 @@ template <std::size_t N>
 }
 
 #if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
-using NibbleTable = ::fixy::FixedArray<std::uint8_t, 32>;
-
-struct alignas(32) NibbleTables {
-    alignas(32) NibbleTable lo{};
-    alignas(32) NibbleTable hi{};
+// The products of coeff and each low nibble, and of coeff and each high
+// nibble: the two tables of 16 bytes of a GF(2^8) multiply by nibbles.
+struct NibbleTables {
+    ::fixy::FixedArray<std::uint8_t, 16> lo{};
+    ::fixy::FixedArray<std::uint8_t, 16> hi{};
 };
 
 template <class Field = void>
 [[nodiscard]] inline NibbleTables make_nibble_tables(std::uint8_t coeff) noexcept {
     NibbleTables tables{};
-    for (::fixy::Index<16> low : ::fixy::IndexRange<16>{}) {
-        const auto value = static_cast<std::uint8_t>(low.raw());
-        const auto lo = mul<Field>(coeff, value);
-        const auto hi = mul<Field>(coeff, static_cast<std::uint8_t>(value << 4U));
-        auto const upper = ::fixy::Index<32>::check(low.raw() + 16U).expect("the upper half holds 16 entries");
-        tables.lo.at(low) = lo;
-        tables.hi.at(low) = hi;
-        tables.lo.at(upper) = lo;
-        tables.hi.at(upper) = hi;
+    for (::fixy::Index<16> nibble : ::fixy::IndexRange<16>{}) {
+        const auto value = static_cast<std::uint8_t>(nibble.raw());
+        tables.lo.at(nibble) = mul<Field>(coeff, value);
+        tables.hi.at(nibble) = mul<Field>(coeff, static_cast<std::uint8_t>(value << 4U));
     }
     return tables;
 }
-#endif
 
+// One register of byte lanes: 32 lanes with AVX2, and 16 lanes with NEON.
 // A vector kernel steps one register per iteration, so its stride is the
-// size of the register type that its loads use.
+// size of the register.  The kernels use the operations of
+// foundation/Simd.h only, so one kernel serves the two targets.
 #if defined(__AVX2__)
-// One AVX2 register as 32 byte lanes, and as the 16 halfword lanes that the
-// shift builtin takes.  Each operation of a kernel is a function call.  GCC
-// evaluates the arguments of a call from right to left, and that order sets
-// the register allocation of the kernel.
-using Avx2Bytes = ::foundation::simd::vec<char, 32>;
-using Avx2Halfwords = ::foundation::simd::vec<short, 16>;
+using KernelBytes = ::foundation::simd::vec<std::uint8_t, 32>;
+using KernelHalfwords = ::foundation::simd::vec<std::uint16_t, 16>;
+#else
+using KernelBytes = ::foundation::simd::vec<std::uint8_t, 16>;
+using KernelHalfwords = ::foundation::simd::vec<std::uint16_t, 8>;
+#endif
+using NibbleTableBytes = ::foundation::simd::vec<std::uint8_t, 16>;
 
-// The facade of foundation/Simd.h has no byte shuffle, and the GF(2^8)
-// nibble-table lookup needs one.  So the kernel calls the builtin of
-// vpshufb.  Each 128-bit half of the table serves the indices of its own
-// half, and the nibble tables hold the same 16 bytes in each half.
-[[nodiscard]] CRUCIBLE_INLINE Avx2Bytes shuffle_bytes_avx2(Avx2Bytes table, Avx2Bytes indices) noexcept {
-    return Avx2Bytes{__builtin_ia32_pshufb256(table.raw(), indices.raw())};
-}
-
-// A logical right shift of each 16-bit lane, as vpsrlw does it.
-[[nodiscard]] CRUCIBLE_INLINE Avx2Bytes shift_halfwords_right_avx2(Avx2Bytes value, int count) noexcept {
-    return ::foundation::simd::bit_cast<Avx2Bytes>(
-        Avx2Halfwords{__builtin_ia32_psrlwi256(::foundation::simd::bit_cast<Avx2Halfwords>(value).raw(), count)});
-}
-
-// The bitwise operations of two registers.
-[[nodiscard]] CRUCIBLE_INLINE Avx2Bytes and_avx2(Avx2Bytes lhs, Avx2Bytes rhs) noexcept { return lhs & rhs; }
-
-[[nodiscard]] CRUCIBLE_INLINE Avx2Bytes xor_avx2(Avx2Bytes lhs, Avx2Bytes rhs) noexcept { return lhs ^ rhs; }
-
-CRUCIBLE_HOT void xor_bytes_avx2(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
+CRUCIBLE_HOT void xor_bytes_simd(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
     namespace simd = ::foundation::simd;
     auto const [target_rest, source_rest] =
-        simd::for_each_register_run<Avx2Bytes>(dst, src, [](auto target, auto source) noexcept {
-            simd::store(xor_avx2(simd::load<Avx2Bytes>(target), simd::load<Avx2Bytes>(source)), target);
+        simd::for_each_register_run<KernelBytes>(dst, src, [](auto target, auto source) noexcept {
+            simd::store(simd::load<KernelBytes>(target) ^ simd::load<KernelBytes>(source), target);
         });
     for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
         *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
     }
 }
 
+// The product of each byte and coeff is the exclusive or of the products
+// of its low nibble and of its high nibble, which lookup_nibbles reads from
+// the two tables.  The lookup reads the low four bits of each lane, so the
+// low nibble needs no mask.  A shift of each 16-bit halfword by four puts
+// the high nibble of each byte in the low four bits of that byte, and the
+// bits that come from the next byte are above them.  That shift is one
+// vpsrlw with AVX2.  A shift of each byte is a slower affine instruction
+// on a host with GFNI.
 template <class Field = void>
-CRUCIBLE_HOT void mul_xor_avx2(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src,
+CRUCIBLE_HOT void mul_xor_simd(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src,
                                std::uint8_t coeff) noexcept {
     namespace simd = ::foundation::simd;
     if (coeff == 0) {
         return;
     }
     if (coeff == 1) {
-        xor_bytes_avx2(dst, src);
+        xor_bytes_simd(dst, src);
         return;
     }
 
     const auto tables = make_nibble_tables<Field>(coeff);
-    const Avx2Bytes lo_table = simd::load<Avx2Bytes>(tables.lo.view());
-    const Avx2Bytes hi_table = simd::load<Avx2Bytes>(tables.hi.view());
-    const Avx2Bytes mask{char{0x0f}};
+    const NibbleTableBytes lo_table = simd::load<NibbleTableBytes>(tables.lo.view());
+    const NibbleTableBytes hi_table = simd::load<NibbleTableBytes>(tables.hi.view());
 
     auto const [target_rest, source_rest] =
-        simd::for_each_register_run<Avx2Bytes>(dst, src, [&](auto target, auto source) noexcept {
-            const Avx2Bytes bytes = simd::load<Avx2Bytes>(source);
-            const Avx2Bytes lo = and_avx2(bytes, mask);
-            const Avx2Bytes hi = and_avx2(shift_halfwords_right_avx2(bytes, 4), mask);
-            const Avx2Bytes prod = xor_avx2(shuffle_bytes_avx2(lo_table, lo), shuffle_bytes_avx2(hi_table, hi));
-            const Avx2Bytes old = simd::load<Avx2Bytes>(target);
-            simd::store(xor_avx2(old, prod), target);
-        });
-    for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
-        *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
-    }
-}
-#elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-// One NEON register as 16 byte lanes.  Its raw vector converts to and from
-// uint8x16_t, the type of the intrinsics.
-using NeonBytes = ::foundation::simd::vec<std::uint8_t, 16>;
-
-CRUCIBLE_HOT void xor_bytes_neon(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
-    namespace simd = ::foundation::simd;
-    auto const [target_rest, source_rest] =
-        simd::for_each_register_run<NeonBytes>(dst, src, [](auto target, auto source) noexcept {
-            const NeonBytes::raw_type sum =
-                veorq_u8(simd::load<NeonBytes>(target).raw(), simd::load<NeonBytes>(source).raw());
-            simd::store(NeonBytes{sum}, target);
-        });
-    for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
-        *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
-    }
-}
-
-template <class Field = void>
-CRUCIBLE_HOT void mul_xor_neon(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src,
-                               std::uint8_t coeff) noexcept {
-    namespace simd = ::foundation::simd;
-    if (coeff == 0) {
-        return;
-    }
-    if (coeff == 1) {
-        xor_bytes_neon(dst, src);
-        return;
-    }
-
-    const auto tables = make_nibble_tables<Field>(coeff);
-    const auto lo_table =
-        simd::load<NeonBytes>(tables.lo.view().template window<16>(0).expect("the low half of the table")).raw();
-    const auto hi_table =
-        simd::load<NeonBytes>(tables.hi.view().template window<16>(0).expect("the low half of the table")).raw();
-    const auto mask = vdupq_n_u8(0x0f);
-
-    auto const [target_rest, source_rest] =
-        simd::for_each_register_run<NeonBytes>(dst, src, [&](auto target, auto source) noexcept {
-            const auto bytes = simd::load<NeonBytes>(source).raw();
-            const auto lo = vandq_u8(bytes, mask);
-            const auto hi = vandq_u8(vshrq_n_u8(bytes, 4), mask);
-            const auto prod = veorq_u8(vqtbl1q_u8(lo_table, lo), vqtbl1q_u8(hi_table, hi));
-            const auto old = simd::load<NeonBytes>(target).raw();
-            const NeonBytes::raw_type sum = veorq_u8(old, prod);
-            simd::store(NeonBytes{sum}, target);
+        simd::for_each_register_run<KernelBytes>(dst, src, [&](auto target, auto source) noexcept {
+            const KernelBytes bytes = simd::load<KernelBytes>(source);
+            const KernelBytes high = simd::bit_cast<KernelBytes>(simd::bit_cast<KernelHalfwords>(bytes) >> 4);
+            const KernelBytes prod = simd::lookup_nibbles(lo_table, bytes) ^ simd::lookup_nibbles(hi_table, high);
+            simd::store(simd::load<KernelBytes>(target) ^ prod, target);
         });
     for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
         *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
@@ -390,10 +316,8 @@ CRUCIBLE_HOT void mul_xor(::fixy::View<std::byte> dst, ::fixy::View<std::byte co
     if (coeff == 0) {
         return;
     }
-#if defined(__AVX2__)
-    mul_xor_avx2<Field>(dst, src, coeff);
-#elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
-    mul_xor_neon<Field>(dst, src, coeff);
+#if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
+    mul_xor_simd<Field>(dst, src, coeff);
 #else
     if (coeff == 1) {
         xor_bytes_scalar(dst, src);

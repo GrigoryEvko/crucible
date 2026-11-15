@@ -339,6 +339,74 @@ template <typename To, typename From>
     return To{__builtin_bit_cast(typename To::raw_type, value.raw())};
 }
 
+// The lane counts of a lookup in a table of 16 bytes: one register of 16,
+// 32 or 64 byte lanes.
+template <int Lanes>
+concept NibbleLookupLanes = Lanes == 16 || Lanes == 32 || Lanes == 64;
+
+namespace detail {
+
+// The numbers of the lanes of a register, from 0 to Lanes - 1, as a pack.
+// __integer_pack of GCC gives the pack, as it does for the integer sequence
+// of libstdc++.
+template <int... Lane>
+struct LaneList {};
+
+template <int Lanes>
+using lane_list_t = LaneList<__integer_pack(Lanes)...>;
+
+// The table of 16 bytes in each run of 16 lanes: lane i holds entry i % 16.
+// For 16 lanes the shuffle is the identity, and it emits nothing.
+template <int Lanes, int... Lane>
+[[nodiscard]] CRUCIBLE_INLINE raw_vector_t<std::uint8_t, Lanes>
+repeat_nibble_table(raw_vector_t<std::uint8_t, 16> table, LaneList<Lane...> /*lanes*/) noexcept {
+    return __builtin_shufflevector(table, table, (Lane % 16)...);
+}
+
+}  // namespace detail
+
+// The lookup of each byte lane in a table of 16 bytes.  Lane i of the result
+// is the entry of table at the low four bits of lane i of indices.  The high
+// four bits play no part, so each of the 256 values of a lane has a result.
+// A multiply in GF(2^8) looks up the low and the high nibble of each byte in
+// this way.
+//
+// The table repeats in each run of 16 lanes, and the lookup stays inside the
+// run of its lane.  So 32 lanes take one vpshufb with AVX2, and 64 lanes take
+// one vpshufb with AVX-512BW.  Each other width and target takes the generic
+// shuffle of GCC: pshufb with SSSE3, tbl with NEON, and a split by the rules
+// of GCC elsewhere.  The and with 15 merges with an and of the caller.  A loop
+// that keeps one table repeats it one time, outside the loop.
+template <int Lanes>
+    requires NibbleLookupLanes<Lanes>
+[[nodiscard]] CRUCIBLE_INLINE vec<std::uint8_t, Lanes> lookup_nibbles(vec<std::uint8_t, 16> table,
+                                                                      vec<std::uint8_t, Lanes> indices) noexcept {
+    using Bytes = vec<std::uint8_t, Lanes>;
+    using Chars [[maybe_unused]] = detail::raw_vector_t<char, Lanes>;
+    typename Bytes::raw_type const nibbles = (indices & Bytes{std::uint8_t{0x0f}}).raw();
+    typename Bytes::raw_type const repeated =
+        detail::repeat_nibble_table<Lanes>(table.raw(), detail::lane_list_t<Lanes>{});
+#if defined(__AVX512BW__)
+    // The masked form is the one builtin of the 512-bit vpshufb.  Each bit
+    // of the mask is set, so each lane comes from the shuffle and none from
+    // the merge source.
+    if constexpr (Lanes == 64) {
+        Chars const table_chars = __builtin_bit_cast(Chars, repeated);
+        return Bytes{__builtin_bit_cast(
+            typename Bytes::raw_type,
+            __builtin_ia32_pshufb512_mask(table_chars, __builtin_bit_cast(Chars, nibbles), table_chars, ~0ULL))};
+    }
+#endif
+#if defined(__AVX2__)
+    if constexpr (Lanes == 32) {
+        return Bytes{
+            __builtin_bit_cast(typename Bytes::raw_type, __builtin_ia32_pshufb256(__builtin_bit_cast(Chars, repeated),
+                                                                                  __builtin_bit_cast(Chars, nibbles)))};
+    }
+#endif
+    return Bytes{__builtin_shuffle(repeated, nibbles)};
+}
+
 // A vec or a mask of one-byte lanes that fills one register of 16, 32 or 64
 // bytes.  Each lane gives one bit of a 64-bit word.
 template <typename V>
