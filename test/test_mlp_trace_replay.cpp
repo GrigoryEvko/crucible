@@ -6,6 +6,7 @@
 #include <crucible/Vigil.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -56,7 +57,7 @@ void run_compiled_iterations(Vigil& vigil) {
 
             // The buffer already exists.  A real kernel would write its
             // result here rather than producing a new tensor.
-            void* out = vigil.output_ptr(vigil.mint_producer_context(), 0);
+            void* out = crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0));
             assert(out != nullptr);
 
             uint64_t tensor_bytes = 0;
@@ -107,12 +108,12 @@ void verify_data_flow(Vigil& vigil) {
     auto p0 = build_op(7, 0);
     auto r0 = crucible::test::dispatch_synthetic(vigil, p0.entry, p0.metas, p0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
-    std::memset(vigil.output_ptr(vigil.mint_producer_context(), 0), 0xAB, BATCH * HIDDEN * 4);
+    std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)), 0xAB, BATCH * HIDDEN * 4);
 
     auto p1 = build_op(7, 1);
     auto r1 = crucible::test::dispatch_synthetic(vigil, p1.entry, p1.metas, p1.n_metas);
     assert(r1.action == DispatchResult::Action::COMPILED);
-    auto* in_data = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(), 0));
+    auto* in_data = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
     bool flow_ok = true;
     for (uint32_t b = 0; b < BATCH * HIDDEN * 4; b++) {
         if (in_data[b] != 0xAB) {

@@ -506,34 +506,35 @@ public:
         return false;
     }
 
-    // Pre-allocated pointer for output j of the current op.  Valid only
-    // after dispatch_op returned COMPILED with a matching or complete
+    // The pre-allocated data address of output j of the current op.  Valid
+    // only after dispatch_op returned COMPILED with a matching or complete
     // status, which is what the minted view's precondition checks.  The
-    // context proves that the caller holds this Vigil's producer claim.
+    // context proves that the caller holds this Vigil's producer claim.  The
+    // pool gives the device of a slot (PoolAllocator::slot_data).
     //
-    // Each pointer and each reference that the members that follow return
+    // Each address and each reference that the members that follow return
     // points into a member of this Vigil.  A temporary Vigil releases its
     // members at the end of the statement.  A deleted twin refuses each call
     // on a temporary Vigil.
-    [[nodiscard]] void* output_ptr(VigilFgCtx const& fg, uint16_t j) const& {
+    [[nodiscard]] ::fixy::Option<::fixy::RunAddress> output_ptr(VigilFgCtx const& fg, uint16_t j) const& {
         auto compiled_view = replay_.context().mint_compiled_view(fg);
         return replay_.context().output_ptr(j, compiled_view);
     }
 
-    void* output_ptr(VigilFgCtx const&, uint16_t) const&& =
+    ::fixy::Option<::fixy::RunAddress> output_ptr(VigilFgCtx const&, uint16_t) const&& =
         delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
-    [[nodiscard]] void* input_ptr(VigilFgCtx const& fg, uint16_t j) const& {
+    [[nodiscard]] ::fixy::Option<::fixy::RunAddress> input_ptr(VigilFgCtx const& fg, uint16_t j) const& {
         auto compiled_view = replay_.context().mint_compiled_view(fg);
         return replay_.context().input_ptr(j, compiled_view);
     }
 
-    void* input_ptr(VigilFgCtx const&, uint16_t) const&& =
+    ::fixy::Option<::fixy::RunAddress> input_ptr(VigilFgCtx const&, uint16_t) const&& =
         delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
-    void register_external(VigilFgCtx const& fg, SlotId sid, ::fixy::NonNull<void*> ptr) {
+    void register_external(VigilFgCtx const& fg, SlotId sid, TensorData data) {
         auto compiled_view = replay_.context().mint_compiled_view(fg);
-        replay_.register_external(sid, ptr, compiled_view);
+        replay_.register_external(sid, data, compiled_view);
     }
 
     [[nodiscard]] uint32_t compiled_iterations() const { return replay_.context().compiled_iterations(); }
@@ -1019,7 +1020,7 @@ private:
         return 0;
     }
 
-    // Walks the region's ops to recover each external slot's data pointer
+    // Walks the region's ops to recover each external slot's data address
     // from the recorded tensor metadata.  Runs once per activation.
     [[gnu::cold]] void register_externals_from_region_(VigilFgCtx const& fg, const RegionNode& region) {
         if (region.plan.is_none()) return;
@@ -1029,27 +1030,27 @@ private:
             if (!slot.is_external) continue;
 
             SlotId target = slot.slot_id;
-            void* ptr = nullptr;
+            ::fixy::Option<TensorData> data{::fixy::none};
 
-            for (uint32_t i = 0; i < region.num_ops() && !ptr; i++) {
+            for (uint32_t i = 0; i < region.num_ops() && data.is_none(); i++) {
                 const auto& te = region.op_at(i);
                 // An op with no slot ids or no metadata of its inputs has no
                 // pair of the two, and the zip gives an error.
                 for (auto const& pairs : ::fixy::zip(te.input_slot_ids(), te.input_metas()).ok()) {
                     for (auto [slot_id, meta] : pairs) {
                         if (*slot_id == target) {
-                            ptr = raw_data_ptr(*meta);
+                            data = data_address(*meta);
                             break;
                         }
                     }
                 }
             }
 
-            if (ptr != nullptr) {
+            for (const TensorData found : data) {
                 // Every call site activates the context immediately before
                 // calling here, so it is compiled.
                 auto compiled_view = replay_.context().mint_compiled_view(fg);
-                replay_.register_external(target, ::fixy::mint_refined<::fixy::non_null>(ptr), compiled_view);
+                replay_.register_external(target, found, compiled_view);
             }
         }
     }
@@ -1190,8 +1191,8 @@ private:
             return ctx_.advance(schema_hash, shape_hash);
         }
 
-        void register_external(SlotId sid, ::fixy::NonNull<void*> ptr, CrucibleContext::CompiledView const& view) {
-            ctx_.register_external(sid, ptr, view);
+        void register_external(SlotId sid, TensorData data, CrucibleContext::CompiledView const& view) {
+            ctx_.register_external(sid, data, view);
         }
 
     private:

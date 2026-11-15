@@ -74,7 +74,7 @@ void test_pipeline_basic() {
         } else {
             assert(s == ReplayStatus::COMPLETE);
         }
-        assert(ctx.output_ptr(0, cv) != nullptr);
+        assert(ctx.output_ptr(0, cv).is_some());
     }
     assert(ctx.compiled_iterations() == 1);
 

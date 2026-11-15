@@ -66,13 +66,13 @@ static void test_slot_ptr_pinned_bit_equality() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
-    void* raw_0 = pool.slot_ptr(SlotId{0}, pv);
-    void* raw_1 = pool.slot_ptr(SlotId{1}, pv);
+    const ::fixy::Option<::fixy::RunAddress> raw_0 = pool.slot_ptr(SlotId{0}, pv);
+    const ::fixy::Option<::fixy::RunAddress> raw_1 = pool.slot_ptr(SlotId{1}, pv);
 
     auto pinned_0 = pool.slot_ptr_pinned(SlotId{0}, pv);
     auto pinned_1 = pool.slot_ptr_pinned(SlotId{1}, pv);
 
-    // The wrapper preserves the underlying address bit-for-bit.
+    // The wrapper preserves the underlying address and its device.
     assert(std::move(pinned_0).consume() == raw_0);
     assert(std::move(pinned_1).consume() == raw_1);
 
@@ -88,8 +88,8 @@ static void test_slot_ptr_pinned_type_identity() {
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     using Got = decltype(pool.slot_ptr_pinned(SlotId{0}, pv));
-    using Want = AllocClass<AllocClassTag_v::Pool, void*>;
-    static_assert(std::is_same_v<Got, Want>, "slot_ptr_pinned must return AllocClass<Pool, void*>");
+    using Want = AllocClass<AllocClassTag_v::Pool, ::fixy::Option<::fixy::RunAddress>>;
+    static_assert(std::is_same_v<Got, Want>, "slot_ptr_pinned must return AllocClass<Pool, Option<RunAddress>>");
     static_assert(band_tier_v<Got> == AllocClassTag_v::Pool);
 
     pool.destroy();
@@ -150,6 +150,8 @@ static void test_negative_tier_witnesses() {
 static void test_layout_invariant() {
     static_assert(sizeof(AllocClass<AllocClassTag_v::Pool, void*>) == sizeof(void*));
     static_assert(sizeof(AllocClass<AllocClassTag_v::HugePage, void*>) == sizeof(void*));
+    static_assert(sizeof(PoolAllocator::PinnedAddress) == sizeof(::fixy::Option<::fixy::RunAddress>));
+    static_assert(sizeof(PoolAllocator::HugePinnedAddress) == sizeof(::fixy::Option<::fixy::RunAddress>));
 }
 
 static void test_pool_base_pinned_small_pool() {
@@ -160,15 +162,15 @@ static void test_pool_base_pinned_small_pool() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
 
     auto pinned = pool.pool_base_pinned();
-    static_assert(std::is_same_v<decltype(pinned), AllocClass<AllocClassTag_v::Pool, void*>>);
+    static_assert(std::is_same_v<decltype(pinned), PoolAllocator::PinnedAddress>);
 
-    void* raw = pool.pool_base();
+    const ::fixy::Option<::fixy::RunAddress> raw = pool.pool_base();
     assert(std::move(pinned).consume() == raw);
-    assert(raw != nullptr);
+    assert(raw.is_some());
 
     // The pool base is aligned at least to the allocator's own
     // granularity, whatever the pool size.
-    assert(std::bit_cast<uintptr_t>(raw) % PoolAllocator::ALIGNMENT == 0);
+    assert(pool.pool_base().expect("the pool holds bytes").is_aligned<PoolAllocator::ALIGNMENT>());
 
     pool.destroy();
 }
@@ -186,13 +188,13 @@ static void test_pool_base_huge_pinned() {
     // The accessor has a precondition on the pool being at least one
     // huge page, which the plan above satisfies.
     auto pinned = pool.pool_base_huge_pinned();
-    static_assert(std::is_same_v<decltype(pinned), AllocClass<AllocClassTag_v::HugePage, void*>>);
+    static_assert(std::is_same_v<decltype(pinned), PoolAllocator::HugePinnedAddress>);
 
-    void* raw = pool.pool_base();
-    void* wrapped = std::move(pinned).consume();
+    const ::fixy::Option<::fixy::RunAddress> raw = pool.pool_base();
+    const ::fixy::Option<::fixy::RunAddress> wrapped = std::move(pinned).consume();
     assert(wrapped == raw);
-    assert(raw != nullptr);
-    assert(std::bit_cast<uintptr_t>(raw) % HP == 0);
+    assert(raw.is_some());
+    assert(pool.pool_base().expect("the pool holds bytes").is_aligned<HP>());
 
     pool.destroy();
 }
@@ -210,7 +212,8 @@ static void test_pool_relax_to_weaker() {
     // stronger one is refused, which a negative-compile fixture proves
     // separately.
     auto relaxed = ::fixy::relax<AllocClassTag_v::Heap>(std::move(pinned));
-    static_assert(std::is_same_v<decltype(relaxed), AllocClass<AllocClassTag_v::Heap, void*>>);
+    static_assert(
+        std::is_same_v<decltype(relaxed), AllocClass<AllocClassTag_v::Heap, ::fixy::Option<::fixy::RunAddress>>>);
 
     pool.destroy();
 }
@@ -231,12 +234,11 @@ static void test_chain_composition() {
 }
 
 // A consumer shaped like a production call site, admitting a pool
-// pointer or anything stronger.
+// address or anything stronger.
 template <typename Slot>
     requires(satisfies_v<Slot, AllocClassTag_v::Pool>)
-static uintptr_t pool_consumer(Slot slot) {
-    void* p = std::move(slot).consume();
-    return std::bit_cast<uintptr_t>(p);
+static ::fixy::Option<::fixy::RunAddress> pool_consumer(Slot slot) {
+    return std::move(slot).consume();
 }
 
 static void test_e2e_fence_checked_consumer() {
@@ -248,8 +250,8 @@ static void test_e2e_fence_checked_consumer() {
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     auto slot_pinned = pool.slot_ptr_pinned(SlotId{0}, pv);
-    uintptr_t addr = pool_consumer(std::move(slot_pinned));
-    assert(addr != 0);
+    const ::fixy::Option<::fixy::RunAddress> data = pool_consumer(std::move(slot_pinned));
+    assert(data.is_some());
 
     pool.destroy();
 }
@@ -267,15 +269,15 @@ static void test_pool_base_pinned_with_huge_alignment() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
 
     auto pool_pinned = pool.pool_base_pinned();
-    static_assert(std::is_same_v<decltype(pool_pinned), AllocClass<AllocClassTag_v::Pool, void*>>);
+    static_assert(std::is_same_v<decltype(pool_pinned), PoolAllocator::PinnedAddress>);
 
     auto huge_pinned = pool.pool_base_huge_pinned();
-    static_assert(std::is_same_v<decltype(huge_pinned), AllocClass<AllocClassTag_v::HugePage, void*>>);
+    static_assert(std::is_same_v<decltype(huge_pinned), PoolAllocator::HugePinnedAddress>);
 
-    void* p1 = std::move(pool_pinned).consume();
-    void* p2 = std::move(huge_pinned).consume();
+    const ::fixy::Option<::fixy::RunAddress> p1 = std::move(pool_pinned).consume();
+    const ::fixy::Option<::fixy::RunAddress> p2 = std::move(huge_pinned).consume();
     assert(p1 == p2);
-    assert(std::bit_cast<uintptr_t>(p1) % HP == 0);
+    assert(pool.pool_base().expect("the pool holds bytes").is_aligned<HP>());
 
     pool.destroy();
 }

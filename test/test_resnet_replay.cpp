@@ -7,6 +7,7 @@
 #include <crucible/Vigil.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include "tensor_data.h"
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -70,13 +71,13 @@ void verify_data_flow(Vigil& vigil, const std::vector<OpDef>& ops) {
     auto p0 = build_pkt(ops[0], 9999);
     auto r0 = crucible::test::dispatch_synthetic(vigil, p0.entry, p0.metas, p0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
-    std::memset(vigil.output_ptr(vigil.mint_producer_context(), 0), 0xAB, 64);
+    std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)), 0xAB, 64);
 
     auto p1 = build_pkt(ops[1], 9999);
     auto r1 = crucible::test::dispatch_synthetic(vigil, p1.entry, p1.metas, p1.n_metas);
     assert(r1.action == DispatchResult::Action::COMPILED);
 
-    auto* d = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(), 0));
+    auto* d = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
     bool flow_ok = true;
     for (int i = 0; i < 64; i++)
         if (d[i] != 0xAB) {

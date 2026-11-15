@@ -5,8 +5,8 @@
 // the production hot-path admission gate.
 //
 // THE LOAD-BEARING REJECTION FOR "no malloc on hot path"
-// (CLAUDE.md §VIII).  PoolAllocator::slot_ptr_pinned returns
-// alloc_class::Pool<void*>; the hot-path consumer requires Pool tier
+// (CLAUDE.md §VIII).  PoolAllocator::slot_ptr_pinned returns the data
+// address of a slot in the Pool band.  The hot-path consumer requires Pool tier
 // (or stronger).  A heap band coming from jemalloc MUST be rejected at
 // the call boundary: its setup cost (50-200 ns) is two orders of
 // magnitude above the per-call shape budget.

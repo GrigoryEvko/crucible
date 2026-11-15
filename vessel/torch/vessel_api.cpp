@@ -303,14 +303,21 @@ uint32_t crucible_metalog_size(CrucibleHandle h) noexcept {
 
 // Each call proves that it runs on the thread that holds the producer claim.
 // A call from any other thread ends the process, as a dispatch from one does.
+// The C caller gets the pointer of the data address, or null for no
+// address.  The C caller knows the device of its own tensor.
 void* crucible_output_ptr(CrucibleHandle h, uint16_t j) noexcept {
     const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
-    return vigil->output_ptr(vigil->mint_producer_context(), j);
+    const ::fixy::Option<::fixy::RunAddress> output = vigil->output_ptr(vigil->mint_producer_context(), j);
+    return output.match(
+        [](::fixy::RunAddress address) noexcept { return ::foundation::core::foreign_pointer(address); },
+        [] noexcept -> void* { return nullptr; });
 }
 
 void* crucible_input_ptr(CrucibleHandle h, uint16_t j) noexcept {
     const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
-    return vigil->input_ptr(vigil->mint_producer_context(), j);
+    const ::fixy::Option<::fixy::RunAddress> input = vigil->input_ptr(vigil->mint_producer_context(), j);
+    return input.match([](::fixy::RunAddress address) noexcept { return ::foundation::core::foreign_pointer(address); },
+                       [] noexcept -> void* { return nullptr; });
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

@@ -89,7 +89,7 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/ | region | 7 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
 @build/test/fuzz/generated/ | std-object | 14 | - | -
-bench/ | c-array-object | 92 | - | -
+bench/ | c-array-object | 91 | - | -
 bench/ | c-library-call | 664 | - | -
 bench/ | c-library-object | 17 | - | -
 bench/ | compiler-builtin | 12 | - | -
@@ -97,7 +97,7 @@ bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 111 | - | -
+bench/ | raw-pointer-object | 102 | - | -
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
 bench/ | std-entity | 751 | - | -
@@ -110,7 +110,8 @@ examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 1 | - | -
 include/crucible/ | raw-function-pointer | 3 | - | -
-include/crucible/ | raw-pointer-object | 47 | - | -
+include/crucible/ | raw-pointer-object | 22 | - | -
+include/crucible/ | region | 1 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
 include/crucible/ | std-entity | 1 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
@@ -309,12 +310,12 @@ test/ | opted-out | 13 | PROBE: the current directory of the process is a direct
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | raw-function-pointer | 21 | - | -
 test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 345 | - | -
+test/ | raw-pointer-object | 339 | - | -
 test/ | region | 1 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
 test/ | region | 1 | PROBE: the current directory of the process is a directory that it cannot read | the test of the root of the Cipher makes its current directory unreadable through the C library, because the base has no door that changes the current directory or the mode of a directory, and an absolute root must open when the current directory does not open
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | replace-pending:<limits> | 12 | - | -
-test/ | replace-pending:std::bit_cast | 84 | - | -
+test/ | replace-pending:std::bit_cast | 77 | - | -
 test/ | std-entity | 1481 | - | -
 test/ | std-object | 531 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
@@ -639,7 +640,7 @@ test/tsan/ | std-object | 13 | - | -
 test/types_neg/ | raw-function-pointer | 1 | - | -
 test/vessel_neg/ | c-array-object | 1 | - | -
 test/vigil_neg/ | c-array-object | 1 | - | -
-test/vigil_neg/ | raw-pointer-object | 4 | - | -
+test/vigil_neg/ | raw-pointer-object | 3 | - | -
 test/vigil_neg/ | std-entity | 1 | - | -
 utils/tools/ | c-array-object | 1 | - | -
 utils/tools/ | c-library-call | 9 | - | -
@@ -650,7 +651,7 @@ utils/tools/lsp_code_action_plugin/ | std-entity | 97 | - | -
 utils/tools/lsp_code_action_plugin/ | std-object | 27 | - | -
 vessel/torch/ | c-library-call | 3 | - | -
 vessel/torch/ | c-library-object | 1 | - | -
-vessel/torch/ | opted-out | 33 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
+vessel/torch/ | opted-out | 37 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | opted-out | 9 | ABI: the helpers give a type to the handle and the meta array of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | opted-out | 51 | C-HEADER: a C caller and ctypes read these declarations, so they hold only C types | vessel_api.h is a header that a C compiler and ctypes read, so its declarations hold only C types
 vessel/torch/ | raw-pointer-object | 2 | - | -

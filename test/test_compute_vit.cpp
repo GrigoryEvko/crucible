@@ -29,6 +29,7 @@
 
 #include "entry_arrays.h"
 #include "test_assert.h"
+#include "tensor_data.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -168,7 +169,7 @@ int main() {
 
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     const auto bind = [&](uint32_t slot, void* ptr) {
-        ctx.register_external(SlotId{slot}, ::fixy::mint_refined<::fixy::non_null>(ptr), cv);
+        ctx.register_external(SlotId{slot}, crucible::test::host_data(ptr), cv);
     };
 
     bind(SL_X, weights.X);
@@ -196,7 +197,7 @@ int main() {
     compute_reference(weights, reference);
 
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
-    auto* pool_probs = static_cast<const float*>(ctx.pool().slot_ptr(SlotId{SL_PROBS}, pv));
+    auto* pool_probs = crucible::test::host_ptr<const float>(ctx.pool().slot_ptr(SlotId{SL_PROBS}, pv));
 
     float max_err = 0.0f;
     for (int i = 0; i < B * N_CLS; i++) {
@@ -217,7 +218,7 @@ int main() {
         assert(std::abs(row_sum - 1.0f) < 1e-5f && "softmax row does not sum to 1");
     }
 
-    auto* pool_res2 = static_cast<const float*>(ctx.pool().slot_ptr(SlotId{SL_RES2}, pv));
+    auto* pool_res2 = crucible::test::host_ptr<const float>(ctx.pool().slot_ptr(SlotId{SL_RES2}, pv));
     float max_res2_err = 0.0f;
     for (int i = 0; i < B * S * D; i++) {
         float err = std::abs(pool_res2[i] - reference.res2[i]);

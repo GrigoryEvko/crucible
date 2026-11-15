@@ -5,6 +5,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 #include <foundation/contracts/Pre.h>
 
 #include <cstddef>
@@ -191,6 +192,23 @@ struct TensorMeta {
 
 [[nodiscard]] inline constexpr void* raw_data_ptr(const TensorMeta& meta) noexcept {
     return raw_data_ptr(meta.data_ptr);
+}
+
+// The device that holds the bytes of the tensor.
+[[nodiscard]] inline constexpr TensorDevice device_of(const TensorMeta& meta) noexcept {
+    return TensorDevice{.type = meta.device_type, .index = meta.device_idx};
+}
+
+// The address of the bytes of the tensor on its device, or no address for a
+// tensor with no data pointer.  The front end gave the address, so the door
+// cannot prove that the bytes live.
+[[nodiscard]] inline ::fixy::Option<TensorData> data_address(const TensorMeta& meta) noexcept {
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the front end gave the data pointer of the tensor at the record of the op")
+    const ::fixy::Option<::fixy::RunAddress> address = ::fixy::mint_foreign_run_address(meta.data_ptr.value());
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return address.match(
+        [&meta](::fixy::RunAddress found) noexcept { return ::fixy::some(TensorData{found, device_of(meta)}); },
+        [] noexcept { return ::fixy::Option<TensorData>{::fixy::none}; });
 }
 
 [[nodiscard]] inline constexpr GradFnHash grad_fn_hash(uint64_t hash) noexcept {

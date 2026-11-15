@@ -3,6 +3,7 @@
 #include <foundation/effects/Effect.h>
 #include "entry_arrays.h"
 #include "test_assert.h"
+#include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -119,7 +120,7 @@ static void test_linear_match() {
         assert(engine.ops_matched() == i + 1);
         assert(engine.matched_op_index().value() == OpIndex{i});
 
-        void* ptr = engine.output_ptr(0, av);
+        const ::fixy::Option<::fixy::RunAddress> ptr = engine.output_ptr(0, av);
         assert(ptr == pool.slot_ptr(SlotId{i}, pv));
     }
 
@@ -128,7 +129,7 @@ static void test_linear_match() {
         assert(status == ReplayStatus::COMPLETE);
         assert(engine.ops_matched() == 3);
         assert(engine.matched_op_index().value() == OpIndex{2});
-        void* ptr = engine.output_ptr(0, av);
+        const ::fixy::Option<::fixy::RunAddress> ptr = engine.output_ptr(0, av);
         assert(ptr == pool.slot_ptr(SlotId{2}, pv));
     }
     assert(engine.is_complete());
@@ -302,8 +303,8 @@ static void test_invalid_slot() {
     auto av = engine.mint_active_view(kVigilForeground);
     assert(engine.advance(SchemaHash{77}, ShapeHash{88}, av) == ReplayStatus::COMPLETE);
 
-    assert(engine.output_ptr(0, av) != nullptr);
-    assert(engine.output_ptr(1, av) == nullptr);
+    assert(engine.output_ptr(0, av).is_some());
+    assert(engine.output_ptr(1, av).is_none());
 
     crucible::test::pass("  test_invalid_slot: PASSED\n");
 }
@@ -398,7 +399,7 @@ static void test_integration_with_pool() {
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
-    pool.register_external(SlotId{2}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), pv);
+    pool.register_external(SlotId{2}, crucible::test::host_data(fake_param), pv);
 
     ::foundation::core::FixedArray<SlotId, 1> op0_out{SlotId{0}};
     ::foundation::core::FixedArray<SlotId, 1> op0_in{SlotId{2}};
@@ -425,9 +426,9 @@ static void test_integration_with_pool() {
     assert(engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av) == ReplayStatus::MATCH);
     assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
     // The external slot resolves to registered storage, not into the pool.
-    assert(engine.input_ptr(0, av) == fake_param);
+    assert(crucible::test::host_ptr(engine.input_ptr(0, av)) == fake_param);
 
-    std::memset(engine.output_ptr(0, av), 0x11, 512);
+    std::memset(crucible::test::host_ptr(engine.output_ptr(0, av)), 0x11, 512);
 
     assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}, av) == ReplayStatus::COMPLETE);
     assert(engine.output_ptr(0, av) == pool.slot_ptr(SlotId{1}, pv));
@@ -435,7 +436,7 @@ static void test_integration_with_pool() {
 
     // Reading op 1's input back finds op 0's fill, which is what proves
     // the two entries name the same pool bytes.
-    auto* p = static_cast<uint8_t*>(engine.input_ptr(0, av));
+    auto* p = crucible::test::host_ptr<uint8_t>(engine.input_ptr(0, av));
     for (uint32_t i = 0; i < 512; i++)
         assert(p[i] == 0x11);
 

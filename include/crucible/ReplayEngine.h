@@ -145,36 +145,39 @@ struct ReplayEngine {
         return ReplayStatus::MATCH;
     }
 
-    // The pointer for one of the last matched operation's outputs.  It points
-    // into the pool, and the engine does not own the pool.  An op with no
-    // array of slot ids gives the empty View, so the bound refuses each index
-    // of it.  The window folds into the bound, so the read has no second
-    // check.  The member is read into a local, so no contract reads a member
-    // through this.
-    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const {
+    // The address of the data of one of the last matched operation's
+    // outputs.  It points into the pool, and the engine does not own the
+    // pool.  An output with no slot, or an external slot that its owner did
+    // not register, gives no address.  An op with no array of slot ids gives
+    // the empty View, so the bound refuses each index of it.  The window
+    // folds into the bound, so the read has no second check.  The member is
+    // read into a local, so no contract reads a member through this.
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t j) const {
         const ::fixy::WeakRef<const TraceEntry> matched = current_;
         CRUCIBLE_PRE(matched.has_value());
         ::fixy::View<const SlotId> const slot_ids = matched->output_slot_ids();
         CRUCIBLE_PRE(j < slot_ids.size());
         SlotId const sid =
             slot_ids.window<1>(j).expect("the precondition bounds the output index").at(::fixy::index<0>());
-        void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
+        ::fixy::Option<::fixy::RunAddress> const result =
+            sid.is_valid() ? slot_table_[sid.raw()] : ::fixy::Option<::fixy::RunAddress>{::fixy::none};
         // Dropping the validity test would index the table with the sentinel
         // and return either a stale slot or a read past the end of the table.
-        CRUCIBLE_POST(result, result == nullptr || sid.is_valid());
+        CRUCIBLE_POST(result, result.is_none() || sid.is_valid());
         return result;
     }
 
     // The same for one of the inputs.
-    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const {
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t j) const {
         const ::fixy::WeakRef<const TraceEntry> matched = current_;
         CRUCIBLE_PRE(matched.has_value());
         ::fixy::View<const SlotId> const slot_ids = matched->input_slot_ids();
         CRUCIBLE_PRE(j < slot_ids.size());
         SlotId const sid =
             slot_ids.window<1>(j).expect("the precondition bounds the input index").at(::fixy::index<0>());
-        void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
-        CRUCIBLE_POST(result, result == nullptr || sid.is_valid());
+        ::fixy::Option<::fixy::RunAddress> const result =
+            sid.is_valid() ? slot_table_[sid.raw()] : ::fixy::Option<::fixy::RunAddress>{::fixy::none};
+        CRUCIBLE_POST(result, result.is_none() || sid.is_valid());
         return result;
     }
 
@@ -242,9 +245,13 @@ struct ReplayEngine {
         return advance(schema_hash, shape_hash);
     }
 
-    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, ActiveView const&) const { return output_ptr(j); }
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t j, ActiveView const&) const {
+        return output_ptr(j);
+    }
 
-    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, ActiveView const&) const { return input_ptr(j); }
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t j, ActiveView const&) const {
+        return input_ptr(j);
+    }
 
     CRUCIBLE_INLINE void reset(ActiveView const&) { reset(); }
 
@@ -269,7 +276,7 @@ private:
     const TraceEntry* cursor_ = nullptr;  // where the next operation is read
     const TraceEntry* end_ = nullptr;  // one past the last operation
     ::fixy::WeakRef<const TraceEntry> current_{};  // the last operation that matched
-    void* const* slot_table_ = nullptr;
+    ::fixy::Option<::fixy::RunAddress> const* slot_table_ = nullptr;
     const TraceEntry* ops_ = nullptr;  // the base, for rewinding
     uint64_t pad_replay_ = 0;
 };

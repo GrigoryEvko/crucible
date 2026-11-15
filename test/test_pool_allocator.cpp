@@ -3,7 +3,7 @@
 #include <foundation/effects/Effect.h>
 #include "test_assert.h"
 #include "test_abort_probe.h"
-#include <bit>
+#include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -16,6 +16,8 @@ using crucible::OpIndex;
 using crucible::ScalarType;
 using crucible::DeviceType;
 using crucible::Layout;
+using crucible::test::host_data;
+using crucible::test::host_ptr;
 
 // The offsets here are written by hand rather than produced by the
 // planner, so these tests exercise the allocator on its own.
@@ -82,24 +84,24 @@ static void test_basic_init() {
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
-    assert(pool.pool_base() != nullptr);
-    assert(std::bit_cast<uintptr_t>(pool.pool_base()) % PoolAllocator::ALIGNMENT == 0);
+    assert(pool.pool_base().is_some());
+    assert(pool.pool_base().expect("the pool holds bytes").is_aligned<PoolAllocator::ALIGNMENT>());
     assert(pool.pool_bytes() == 3072);
     assert(pool.num_slots() == 3);
     assert(pool.num_external() == 1);
 
-    auto* base = static_cast<char*>(pool.pool_base());
-    assert(pool.slot_ptr(SlotId{0}, pv) == base + 0);
-    assert(pool.slot_ptr(SlotId{1}, pv) == base + 1024);
+    auto* base = host_ptr<char>(pool.pool_base());
+    assert(host_ptr(pool.slot_ptr(SlotId{0}, pv)) == base + 0);
+    assert(host_ptr(pool.slot_ptr(SlotId{1}, pv)) == base + 1024);
 
     // The base is aligned and both offsets are multiples of the
     // alignment, so every internal slot inherits the alignment.
-    assert(std::bit_cast<uintptr_t>(pool.slot_ptr(SlotId{0}, pv)) % 256 == 0);
-    assert(std::bit_cast<uintptr_t>(pool.slot_ptr(SlotId{1}, pv)) % 256 == 0);
+    assert(pool.slot_ptr(SlotId{0}, pv).expect("slot 0 is pooled").is_aligned<256>());
+    assert(pool.slot_ptr(SlotId{1}, pv).expect("slot 1 is pooled").is_aligned<256>());
 
-    // An external slot has no place in the pool, so it reads null until
-    // someone registers storage for it.
-    assert(pool.slot_ptr(SlotId{2}, pv) == nullptr);
+    // An external slot has no place in the pool, so it holds no address
+    // until someone registers storage for it.
+    assert(pool.slot_ptr(SlotId{2}, pv).is_none());
 
     crucible::test::pass("  test_basic_init: PASSED\n");
 }
@@ -137,13 +139,13 @@ static void test_external_registration() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
-    assert(pool.slot_ptr(SlotId{1}, pv) == nullptr);
+    assert(pool.slot_ptr(SlotId{1}, pv).is_none());
 
     // This buffer stands in for a parameter tensor the pool does not own.
     alignas(256) char fake_param[512];
-    pool.register_external(SlotId{1}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), pv);
+    pool.register_external(SlotId{1}, host_data(fake_param), pv);
 
-    assert(pool.slot_ptr(SlotId{1}, pv) == fake_param);
+    assert(host_ptr(pool.slot_ptr(SlotId{1}, pv)) == fake_param);
 
     crucible::test::pass("  test_external_registration: PASSED\n");
 }
@@ -195,13 +197,13 @@ static void test_write_read_isolation() {
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
-    std::memset(pool.slot_ptr(SlotId{0}, pv), 0xAA, 256);
-    std::memset(pool.slot_ptr(SlotId{1}, pv), 0xBB, 512);
-    std::memset(pool.slot_ptr(SlotId{2}, pv), 0xCC, 256);
+    std::memset(host_ptr(pool.slot_ptr(SlotId{0}, pv)), 0xAA, 256);
+    std::memset(host_ptr(pool.slot_ptr(SlotId{1}, pv)), 0xBB, 512);
+    std::memset(host_ptr(pool.slot_ptr(SlotId{2}, pv)), 0xCC, 256);
 
-    auto* p0 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{0}, pv));
-    auto* p1 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{1}, pv));
-    auto* p2 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{2}, pv));
+    auto* p0 = host_ptr<uint8_t>(pool.slot_ptr(SlotId{0}, pv));
+    auto* p1 = host_ptr<uint8_t>(pool.slot_ptr(SlotId{1}, pv));
+    auto* p2 = host_ptr<uint8_t>(pool.slot_ptr(SlotId{2}, pv));
 
     for (uint32_t i = 0; i < 256; i++)
         assert(p0[i] == 0xAA);
@@ -249,19 +251,19 @@ static void test_all_external() {
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
     assert(pool.is_initialized());
-    assert(pool.pool_base() == nullptr);
+    assert(pool.pool_base().is_none());
     assert(pool.pool_bytes() == 0);
     assert(pool.num_slots() == 2);
 
-    assert(pool.slot_ptr(SlotId{0}, pv) == nullptr);
-    assert(pool.slot_ptr(SlotId{1}, pv) == nullptr);
+    assert(pool.slot_ptr(SlotId{0}, pv).is_none());
+    assert(pool.slot_ptr(SlotId{1}, pv).is_none());
 
     alignas(256) char buf_a[1024];
     alignas(256) char buf_b[2048];
-    pool.register_external(SlotId{0}, ::fixy::mint_refined<::fixy::non_null, void*>(buf_a), pv);
-    pool.register_external(SlotId{1}, ::fixy::mint_refined<::fixy::non_null, void*>(buf_b), pv);
-    assert(pool.slot_ptr(SlotId{0}, pv) == buf_a);
-    assert(pool.slot_ptr(SlotId{1}, pv) == buf_b);
+    pool.register_external(SlotId{0}, host_data(buf_a), pv);
+    pool.register_external(SlotId{1}, host_data(buf_b), pv);
+    assert(host_ptr(pool.slot_ptr(SlotId{0}, pv)) == buf_a);
+    assert(host_ptr(pool.slot_ptr(SlotId{1}, pv)) == buf_b);
 
     crucible::test::pass("  test_all_external: PASSED\n");
 }
@@ -286,7 +288,7 @@ static void test_reinit() {
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan_a);
     assert(pool.pool_bytes() == 512);
-    void* old_base = pool.pool_base();
+    const ::fixy::Option<::fixy::RunAddress> old_base = pool.pool_base();
 
     pool.destroy();
     assert(!pool.is_initialized());
@@ -328,9 +330,9 @@ static void test_reinit() {
     // allocator is free to hand the same address back after the release.
     (void)old_base;
 
-    auto* base = static_cast<char*>(pool.pool_base());
-    assert(pool.slot_ptr(SlotId{0}, pv_b) == base);
-    assert(pool.slot_ptr(SlotId{1}, pv_b) == base + 1024);
+    auto* base = host_ptr<char>(pool.pool_base());
+    assert(host_ptr(pool.slot_ptr(SlotId{0}, pv_b)) == base);
+    assert(host_ptr(pool.slot_ptr(SlotId{1}, pv_b)) == base + 1024);
 
     crucible::test::pass("  test_reinit: PASSED\n");
 }
@@ -406,19 +408,19 @@ static void test_integration_with_sweep_line() {
     assert(pool.is_initialized());
     assert(pool.pool_bytes() == plan.pool_bytes);
 
-    assert(pool.slot_ptr(SlotId{3}, pv) == nullptr);
+    assert(pool.slot_ptr(SlotId{3}, pv).is_none());
 
     alignas(256) char fake_param[512];
-    pool.register_external(SlotId{3}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), pv);
-    assert(pool.slot_ptr(SlotId{3}, pv) == fake_param);
+    pool.register_external(SlotId{3}, host_data(fake_param), pv);
+    assert(host_ptr(pool.slot_ptr(SlotId{3}, pv)) == fake_param);
 
     // Slot 0 is alive alongside slot 1 and then alongside slot 2, while
     // slots 1 and 2 are never alive at the same time.  So only the pairs
     // that overlap are required to stay isolated.
 
     // Both slots are alive here.
-    auto* p0 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{0}, pv));
-    auto* p1 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{1}, pv));
+    auto* p0 = host_ptr<uint8_t>(pool.slot_ptr(SlotId{0}, pv));
+    auto* p1 = host_ptr<uint8_t>(pool.slot_ptr(SlotId{1}, pv));
     std::memset(p0, 0x11, 1024);
     std::memset(p1, 0x22, 2048);
     for (uint32_t i = 0; i < 1024; i++)
@@ -428,7 +430,7 @@ static void test_integration_with_sweep_line() {
 
     // Slot 1 is dead by now, so writing slot 2 is allowed to overwrite
     // its bytes and nothing below reads them again.
-    auto* p2 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{2}, pv));
+    auto* p2 = host_ptr<uint8_t>(pool.slot_ptr(SlotId{2}, pv));
     std::memset(p2, 0x33, 1024);
     // Slot 0 is still alive, so its bytes must survive that write.
     for (uint32_t i = 0; i < 1024; i++)
@@ -437,6 +439,57 @@ static void test_integration_with_sweep_line() {
         assert(p2[i] == 0x33);
 
     crucible::test::pass("  test_integration_with_sweep_line: PASSED\n");
+}
+
+// The pool is memory of the host, so each pooled slot is on the host
+// device, also when the plan records a different device for the slot.  A
+// registered slot keeps the device that its owner states.
+static void test_device_of_slots() {
+    const crucible::TensorDevice accelerator{.type = DeviceType::CUDA, .index = 0};
+    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 256,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{3},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CUDA,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+                                                .nbytes = 256,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{3},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CUDA,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
+
+    MemoryPlan plan = make_manual_plan(slots.view(), 256, 1);
+    PoolAllocator pool;
+    pool.init(::foundation::effects::testing::test().alloc, plan);
+    auto pv = pool.mint_initialized_view(kVigilForeground);
+
+    const crucible::TensorData pooled = pool.slot_data(SlotId{0}, pv).expect("slot 0 is pooled");
+    assert(pooled.device() == crucible::kHostDevice);
+    assert(::fixy::some(pooled.address()) == pool.slot_ptr(SlotId{0}, pv));
+    assert(pool.slot_data(SlotId{1}, pv).is_none());
+
+    ::fixy::FixedArray<unsigned char, 256> fake_param{};
+    const ::fixy::RunAddress param =
+        ::fixy::mint_run_address(fake_param.view(), 0).expect("the buffer holds 256 bytes");
+    pool.register_external(SlotId{1}, crucible::TensorData{param, accelerator}, pv);
+    assert(pool.slot_data(SlotId{1}, pv) == ::fixy::some(crucible::TensorData{param, accelerator}));
+    assert(pool.slot_ptr(SlotId{1}, pv) == ::fixy::some(param));
+
+    crucible::test::pass("  test_device_of_slots: PASSED\n");
 }
 
 // The slot-bounds checks in PoolAllocator::init are CRUCIBLE_FATAL_INVARIANT
@@ -502,6 +555,7 @@ int main() {
     test_all_external();
     test_reinit();
     test_integration_with_sweep_line();
+    test_device_of_slots();
     test_slot_bounds_guard_is_armed();
     crucible::test::pass("test_pool_allocator: all tests passed\n");
     return 0;

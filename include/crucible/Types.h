@@ -130,6 +130,23 @@ enum class DeviceType : int8_t {
     PrivateUse1 = 20,
 };
 
+// The device that holds the bytes of a tensor: the type of the device and
+// its index.  The index is -1 for the host, and zero or more for a device of
+// the type.  TensorMeta, TensorSlot and MemoryPlan hold the same two values
+// in two fields.
+struct TensorDevice {
+    DeviceType type = DeviceType::CPU;
+    int8_t index = -1;
+
+    [[nodiscard]] friend constexpr bool operator==(TensorDevice const&, TensorDevice const&) noexcept = default;
+};
+
+// The memory of the host, which holds the bytes of a pool.
+inline constexpr TensorDevice kHostDevice{};
+
+// The address of the bytes of a tensor, and the device that holds them.
+using TensorData = ::fixy::DataAddress<TensorDevice>;
+
 // The ordinals mirror the foreign runtime's up to SparseCsr.  The foreign
 // runtime puts Mkldnn at 3, which crucible does not name, so the ordinals
 // differ from SparseCsc on, and the vessel maps a foreign layout by name.

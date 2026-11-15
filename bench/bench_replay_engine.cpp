@@ -114,10 +114,10 @@ ReplayStatus walk_advance_only(ReplayEngine& engine, ::fixy::View<const TraceEnt
     return last;
 }
 
-void* walk_advance_output(ReplayEngine& engine, ::fixy::View<const TraceEntry> ops) {
+::fixy::Option<::fixy::RunAddress> walk_advance_output(ReplayEngine& engine, ::fixy::View<const TraceEntry> ops) {
     auto av = engine.mint_active_view(kVigilForeground);
     engine.reset(av);
-    void* last_ptr = nullptr;
+    ::fixy::Option<::fixy::RunAddress> last_ptr{::fixy::none};
     for (const TraceEntry& op : ops) {
         (void)engine.advance(op.schema_hash, op.shape_hash, av);
         last_ptr = engine.output_ptr(0, av);
@@ -125,10 +125,10 @@ void* walk_advance_output(ReplayEngine& engine, ::fixy::View<const TraceEntry> o
     return last_ptr;
 }
 
-void* walk_advance_both(ReplayEngine& engine, ::fixy::View<const TraceEntry> ops) {
+::fixy::Option<::fixy::RunAddress> walk_advance_both(ReplayEngine& engine, ::fixy::View<const TraceEntry> ops) {
     auto av = engine.mint_active_view(kVigilForeground);
     engine.reset(av);
-    void* last_ptr = nullptr;
+    ::fixy::Option<::fixy::RunAddress> last_ptr{::fixy::none};
     for (const TraceEntry& op : ops) {
         (void)engine.advance(op.schema_hash, op.shape_hash, av);
         last_ptr = engine.output_ptr(0, av);
@@ -138,9 +138,9 @@ void* walk_advance_both(ReplayEngine& engine, ::fixy::View<const TraceEntry> ops
 }
 
 // CrucibleContext drives its internal ReplayEngine; no external reset.
-void* walk_context(CrucibleContext& ctx, ::fixy::View<const TraceEntry> ops) {
+::fixy::Option<::fixy::RunAddress> walk_context(CrucibleContext& ctx, ::fixy::View<const TraceEntry> ops) {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
-    void* last_ptr = nullptr;
+    ::fixy::Option<::fixy::RunAddress> last_ptr{::fixy::none};
     for (const TraceEntry& op : ops) {
         auto s = ctx.advance(op.schema_hash, op.shape_hash, cv);
         last_ptr = ctx.output_ptr(0, cv);

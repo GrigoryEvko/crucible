@@ -16,12 +16,15 @@
 
 #include "entry_arrays.h"
 #include "test_assert.h"
+#include "tensor_data.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <random>
 
 using namespace crucible;
+using crucible::test::host_data;
+using crucible::test::host_ptr;
 
 // The views of the replay chain are minted on the thread that holds a
 // Vigil's producer claim.  This test drives the context without a Vigil,
@@ -227,46 +230,46 @@ int main() {
     // is only reachable in compiled mode.
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
-    ctx.register_external(SlotId{SL_X}, ::fixy::mint_refined<::fixy::non_null, void*>(X), cv);
-    ctx.register_external(SlotId{SL_W1}, ::fixy::mint_refined<::fixy::non_null, void*>(W1), cv);
-    ctx.register_external(SlotId{SL_W2}, ::fixy::mint_refined<::fixy::non_null, void*>(W2), cv);
+    ctx.register_external(SlotId{SL_X}, host_data(X), cv);
+    ctx.register_external(SlotId{SL_W1}, host_data(W1), cv);
+    ctx.register_external(SlotId{SL_W2}, host_data(W2), cv);
 
     // A read-only view, so that even these checks reach the pool the
     // way the hot path does.
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
-    assert(ctx.pool().slot_ptr(SlotId{SL_X}, pv) == X);
-    assert(ctx.pool().slot_ptr(SlotId{SL_W1}, pv) == W1);
-    assert(ctx.pool().slot_ptr(SlotId{SL_W2}, pv) == W2);
+    assert(host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_X}, pv)) == X);
+    assert(host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_W1}, pv)) == W1);
+    assert(host_ptr<float>(ctx.pool().slot_ptr(SlotId{SL_W2}, pv)) == W2);
 
     for (int iter = 0; iter < 100; iter++) {
         // The trailing names below say which slot each index reaches,
         // which the index alone does not.
         auto s = ctx.advance(H_MM1, S_MM1, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),  // X
-                static_cast<const float*>(ctx.input_ptr(1, cv)),  // W1
-                static_cast<float*>(ctx.output_ptr(0, cv)),  // mm1_out
+        cpu::mm(host_ptr<const float>(ctx.input_ptr(0, cv)),  // X
+                host_ptr<const float>(ctx.input_ptr(1, cv)),  // W1
+                host_ptr<float>(ctx.output_ptr(0, cv)),  // mm1_out
                 BATCH, HIDDEN, IN_DIM);
 
         s = ctx.advance(H_RELU, S_RELU, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::relu(static_cast<const float*>(ctx.input_ptr(0, cv)),  // mm1_out
-                  static_cast<float*>(ctx.output_ptr(0, cv)),  // relu_out
+        cpu::relu(host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm1_out
+                  host_ptr<float>(ctx.output_ptr(0, cv)),  // relu_out
                   BATCH * HIDDEN);
 
         s = ctx.advance(H_MM2, S_MM2, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),  // relu_out
-                static_cast<const float*>(ctx.input_ptr(1, cv)),  // W2
-                static_cast<float*>(ctx.output_ptr(0, cv)),  // mm2_out
+        cpu::mm(host_ptr<const float>(ctx.input_ptr(0, cv)),  // relu_out
+                host_ptr<const float>(ctx.input_ptr(1, cv)),  // W2
+                host_ptr<float>(ctx.output_ptr(0, cv)),  // mm2_out
                 BATCH, OUT_DIM, HIDDEN);
 
         // The last operation of an iteration completes it rather
         // than matching.
         s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv);
         assert(s == ReplayStatus::COMPLETE);
-        cpu::softmax(static_cast<const float*>(ctx.input_ptr(0, cv)),  // mm2_out
-                     static_cast<float*>(ctx.output_ptr(0, cv)),  // softmax_out
+        cpu::softmax(host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm2_out
+                     host_ptr<float>(ctx.output_ptr(0, cv)),  // softmax_out
                      BATCH, OUT_DIM);
     }
 
@@ -283,7 +286,7 @@ int main() {
     cpu::mm(ref_relu, W2, ref_mm2, BATCH, OUT_DIM, HIDDEN);
     cpu::softmax(ref_mm2, ref_sm, BATCH, OUT_DIM);
 
-    auto* pool_sm = static_cast<const float*>(ctx.pool().slot_ptr(SlotId{SL_SM}, pv));
+    auto* pool_sm = host_ptr<const float>(ctx.pool().slot_ptr(SlotId{SL_SM}, pv));
 
     float max_err = 0.0f;
     for (int i = 0; i < BATCH * OUT_DIM; i++) {

@@ -219,7 +219,7 @@ int main() {
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
-        void* const* tbl = pool.table(pv);
+        ::fixy::Option<::fixy::RunAddress> const* tbl = pool.table(pv);
         bench::do_not_optimize(tbl);
         auto r = bench::run("table[sid] (100, captured raw)", [&] {
             for (uint32_t i = 0; i < N; i++)
@@ -298,12 +298,17 @@ int main() {
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
 
-        alignas(256) static char ext_bufs[N_EXT][256];
+        // The external buffers: one run of bytes, 256 bytes for each slot.
+        struct alignas(256) ExternalBuffers {
+            ::fixy::FixedArray<unsigned char, size_t{N_EXT} * 256> bytes{};
+        };
+        static ExternalBuffers ext_bufs{};
 
         auto r = bench::run("register_external(20 slots)", [&] {
             for (uint32_t i = 0; i < N_EXT; i++) {
-                pool.register_external(SlotId{N_INT + i}, ::fixy::mint_refined<::fixy::non_null, void*>(ext_bufs[i]),
-                                       pv);
+                const ::fixy::RunAddress address = ::fixy::mint_run_address(ext_bufs.bytes.view(), size_t{i} * 256)
+                                                       .expect("the run holds 256 bytes for each external slot");
+                pool.register_external(SlotId{N_INT + i}, crucible::TensorData{address, crucible::kHostDevice}, pv);
             }
         });
         pool.destroy();

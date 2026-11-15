@@ -1,12 +1,21 @@
 #pragma once
 
 // Turns a memory plan into one aligned block of bytes plus a table that maps
-// each slot to an address. Slots owned elsewhere are registered by the owner
-// and point outside the pool. The rest point into it.
+// each slot to the address of its data and to its device. Slots owned
+// elsewhere are registered by the owner and point outside the pool. The
+// rest point into it.
 //
 // The block is a foundation::AlignedBytes, and detach() gives it to the
 // caller, so the caller can keep the old bytes alive while it builds the
-// replacement. The table is a fixy::HeapArray of addresses.
+// replacement. The table has two columns of one length: the addresses and
+// the devices. The replay reads only the address of a slot, so the column of
+// addresses holds one word for each slot and a cache line holds eight of
+// them. The device is read at the start of a plan or at a check, and one
+// branded index reads the two columns with one bound check.
+//
+// The block is memory of the host, so each pooled slot is on the host
+// device, also when the plan records a different device for the slot. A
+// registered slot keeps the device that its owner states.
 //
 // One thread builds it and the replay path only reads it once initialisation
 // has returned.
@@ -16,7 +25,6 @@
 #include <crucible/warden/Registry.h>
 #include <fixy/Bands.h>
 #include <fixy/Core.h>
-#include <fixy/Refined.h>
 #include <fixy/ScopedView.h>
 #include <fixy/os/Pages.h>
 #include <foundation/AlignedBytes.h>
@@ -44,8 +52,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
 
     PoolAllocator(const PoolAllocator&) = delete("interior pointers into pool_ would alias");
     PoolAllocator& operator=(const PoolAllocator&) = delete("interior pointers into pool_ would alias");
-    PoolAllocator(PoolAllocator&&) = delete("table_ entries are interior pointers into pool_");
-    PoolAllocator& operator=(PoolAllocator&&) = delete("table_ entries are interior pointers into pool_");
+    PoolAllocator(PoolAllocator&&) = delete("the entries of addresses_ are interior pointers into pool_");
+    PoolAllocator& operator=(PoolAllocator&&) = delete("the entries of addresses_ are interior pointers into pool_");
 
     // The planner lays out slot offsets on this boundary, and it is what
     // coalesced device access and wide vector loads require.
@@ -102,10 +110,12 @@ struct CRUCIBLE_OWNER PoolAllocator {
         }
 
         if (plan_slots > 0) {
-            table_ = ::fixy::mint_heap_array<void*>(allocation, plan_slots, nullptr);
+            addresses_ = ::fixy::mint_heap_array<::fixy::Option<::fixy::RunAddress>>(
+                allocation, plan_slots, ::fixy::Option<::fixy::RunAddress>{::fixy::none});
+            devices_ = ::fixy::mint_heap_array<TensorDevice>(allocation, plan_slots, kHostDevice);
 
-            // Externally owned slots stay null. The rest are the address of
-            // the byte at their offset.
+            // Externally owned slots hold no address. The rest are the
+            // address of the byte at their offset, on the host.
             //
             // The sum is checked for wrap before it is compared. An offset
             // near the top of the range plus a modest size wraps to a small
@@ -134,8 +144,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
                                   slot_index, slot.offset_bytes, slot.nbytes, plan.pool_bytes, ALIGNMENT);
                 }
                 if (!slot.is_external) {
-                    *table_.get(slot_index).expect("the table holds one entry for each slot of the plan") =
-                        address_in_(pool, slot.offset_bytes);
+                    *addresses_.get(slot_index).expect("the column holds one entry for each slot of the plan") =
+                        ::fixy::mint_run_address(pool, slot.offset_bytes);
                 }
                 ++slot_index;
             }
@@ -154,12 +164,14 @@ struct CRUCIBLE_OWNER PoolAllocator {
     void destroy() noexcept {
         crucible::warden::unregister_hot_region(::fixy::pages::storage_of(pool_.view()));
         pool_.reset();
-        table_ = ::fixy::HeapArray<void*>{};
+        addresses_ = ::fixy::HeapArray<::fixy::Option<::fixy::RunAddress>>{};
+        devices_ = ::fixy::HeapArray<TensorDevice>{};
         num_external_ = 0;
         // Back to the default-constructed shape, which is what a subsequent
         // initialisation requires.
         CRUCIBLE_POST(0, pool_.size() == 0u);
-        CRUCIBLE_POST(0, table_.size() == 0u);
+        CRUCIBLE_POST(0, addresses_.size() == 0u);
+        CRUCIBLE_POST(0, devices_.size() == 0u);
         CRUCIBLE_POST(0, num_external_ == 0u);
     }
 
@@ -175,15 +187,13 @@ struct CRUCIBLE_OWNER PoolAllocator {
         return initialized_view_();
     }
 
-    // The alignment promise holds on both kinds of slot: an internal one is
-    // the aligned base plus an offset the initialisation loop asserts is a
-    // multiple of the alignment, and an external one is registered by an owner
-    // that aligns it. A null pointer satisfies any alignment, so the promise
-    // survives an external slot that has not been registered yet.
+    // The address of the data of a slot, or no address for an external slot
+    // that its owner did not register yet.  Callers test for that case.
     //
-    // There is deliberately no non-null promise. An external slot that has not
-    // been registered returns null and callers test for it, so promising
-    // non-null would make that legitimate path undefined.
+    // A pooled address is on the aligned base plus an offset that the
+    // initialisation loop checks to be a multiple of the alignment, so it is
+    // a multiple of ALIGNMENT.  An external one is registered by an owner
+    // that aligns it.
     //
     // The read of the table refuses an id at or past the count of slots, so
     // an id from outside the plan ends the process.
@@ -191,87 +201,120 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // The pool owns its memory and its table, and a temporary pool releases
     // the two at the end of the statement.  A deleted `const&&` twin refuses
     // each read from a temporary pool, here and in the members that follow.
-    [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline, gnu::assume_aligned(ALIGNMENT)]]
-    inline void* slot_ptr(SlotId sid, InitializedView const&) const& noexcept {
-        return *table_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
+    [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
+    inline ::fixy::Option<::fixy::RunAddress> slot_ptr(SlotId sid, InitializedView const&) const& noexcept {
+        return *addresses_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
     }
 
-    void* slot_ptr(SlotId, InitializedView const&) const&& =
+    ::fixy::Option<::fixy::RunAddress> slot_ptr(SlotId, InitializedView const&) const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
-    CRUCIBLE_INLINE void register_external(SlotId sid, ::fixy::NonNull<void*> ptr, InitializedView const&) noexcept {
-        auto entry = table_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
-        *entry = ptr.value();
-        CRUCIBLE_POST(0, *entry == ptr.value());
+    // The address of the data of a slot and its device, or no address for an
+    // external slot that its owner did not register yet.  One branded index
+    // reads the two columns: the scope checks that the id is below the count
+    // of slots, and that the two columns have one length, and each column
+    // then reads with no check.  The device is not on the replay path, so
+    // the second compare costs nothing there.
+    [[nodiscard]] ::fixy::Option<TensorData> slot_data(SlotId sid, InitializedView const&) const& noexcept {
+        return ::fixy::mint_branded_scope(addresses_.view(), [this, sid](auto const& addresses) noexcept {
+            const auto devices =
+                addresses.parallel(devices_.view()).expect("the two columns hold one entry for each slot");
+            const auto index =
+                addresses.index(sid.raw()).expect("a slot id of the plan is below the count of its slots");
+            const TensorDevice device = devices.at(index);
+            return addresses.at(index).match(
+                [device](::fixy::RunAddress address) noexcept { return ::fixy::some(TensorData{address, device}); },
+                [] noexcept { return ::fixy::Option<TensorData>{::fixy::none}; });
+        });
     }
 
-    // The raw table, for an inner loop that wants to hoist the indirection out
-    // of itself. It escapes the per-call bounds and alignment guarantees, so
-    // the caller owns those on every dereference from then on. The view is
-    // required so that the escape is at least gated on the pool being live.
-    [[nodiscard, gnu::pure, gnu::returns_nonnull]] CRUCIBLE_INLINE void* const*
+    ::fixy::Option<TensorData> slot_data(SlotId, InitializedView const&) const&& =
+        delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
+
+    // The data of an external slot: its address and the device of its owner.
+    // The two columns take the two values.
+    CRUCIBLE_INLINE void register_external(SlotId sid, TensorData data, InitializedView const&) noexcept {
+        auto address = addresses_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
+        auto device = devices_.get(sid.raw()).expect("the two columns hold one entry for each slot");
+        *address = ::fixy::some(data.address());
+        *device = data.device();
+        CRUCIBLE_POST(0, *address == ::fixy::some(data.address()));
+    }
+
+    // The first entry of the column of addresses, for an inner loop that
+    // wants to hoist the indirection out of itself. It escapes the per-call
+    // bounds check, so the caller owns the bound on every read from then on.
+    // The view is required so that the escape is at least gated on the pool
+    // being live.
+    [[nodiscard, gnu::pure, gnu::returns_nonnull]] CRUCIBLE_INLINE ::fixy::Option<::fixy::RunAddress> const*
     table(InitializedView const&) const& noexcept {
         // The view proves at least one slot, so the read of the first entry
         // does not fail.  The table is read once for each activation of a
         // region, not for each op.
-        return &*table_.get(0).expect("an initialized pool holds at least one slot");
+        return &*addresses_.get(0).expect("an initialized pool holds at least one slot");
     }
 
-    void* const* table(InitializedView const&) const&& =
+    ::fixy::Option<::fixy::RunAddress> const* table(InitializedView const&) const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
-    // The bytes of the pool, and the address of its first byte (null for a
-    // pool of no bytes).  A const allocator lends writable memory here, as
+    // The bytes of the pool, and the address of its first byte (no address
+    // for a pool of no bytes).  The pool is memory of the host
+    // (kHostDevice).  A const allocator lends writable memory here, as
     // slot_ptr does.
     [[nodiscard]] ::fixy::View<uint8_t> bytes() const& noexcept { return pool_.view(); }
     ::fixy::View<uint8_t> bytes() const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
-    [[nodiscard, gnu::pure]] void* pool_base() const& noexcept { return pool_address_(); }
-    void* pool_base() const&& =
+    [[nodiscard, gnu::pure]] ::fixy::Option<::fixy::RunAddress> pool_base() const& noexcept { return pool_address_(); }
+    ::fixy::Option<::fixy::RunAddress> pool_base() const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
     [[nodiscard, gnu::pure]] uint64_t pool_bytes() const noexcept { return pool_.size(); }
     // init bounds the count by kMaxNumSlots, so it fits 32 bits.
     [[nodiscard, gnu::pure]] uint32_t num_slots() const noexcept {
-        return ::fixy::narrow<uint32_t>(table_.size()).expect("init bounds the count of slots by kMaxNumSlots");
+        return ::fixy::narrow<uint32_t>(addresses_.size()).expect("init bounds the count of slots by kMaxNumSlots");
     }
     [[nodiscard, gnu::pure]] uint32_t num_external() const noexcept { return num_external_; }
-    [[nodiscard, gnu::pure]] constexpr bool is_initialized() const noexcept { return table_.size() > 0u; }
+    [[nodiscard, gnu::pure]] constexpr bool is_initialized() const noexcept { return addresses_.size() > 0u; }
 
     // The same values, with their allocation tier carried in the return type.
-    // A slot pointer comes out of a preallocated table, which is the pool
+    // A slot address comes out of a preallocated table, which is the pool
     // tier, and pinning it there rejects a caller that would take it as stack
     // memory, which is the stronger claim of having no allocator behind it.
     //
-    // The pool tier is also the safe claim for the base pointer. When the pool
-    // is large enough to be huge-page aligned its tier is weaker than pool, so
-    // the pool claim holds either way. The huge-page variant below states the
-    // stronger one and fences the small case out with a precondition.
+    // The pool tier is also the safe claim for the base address. When the
+    // pool is large enough to be huge-page aligned its tier is weaker than
+    // pool, so the pool claim holds either way. The huge-page variant below
+    // states the stronger one and fences the small case out with a
+    // precondition.
+    using PinnedAddress = ::fixy::alloc_class::Pool<::fixy::Option<::fixy::RunAddress>>;
+    using HugePinnedAddress = ::fixy::alloc_class::HugePage<::fixy::Option<::fixy::RunAddress>>;
+
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
-    inline ::fixy::alloc_class::Pool<void*> slot_ptr_pinned(SlotId sid, InitializedView const& view) const& noexcept {
-        return ::fixy::mint_band<::fixy::alloc_class::Pool<void*>>(slot_ptr(sid, view));
+    inline PinnedAddress slot_ptr_pinned(SlotId sid, InitializedView const& view) const& noexcept {
+        return ::fixy::mint_band<PinnedAddress>(slot_ptr(sid, view));
     }
 
-    ::fixy::alloc_class::Pool<void*> slot_ptr_pinned(SlotId, InitializedView const&) const&& =
+    PinnedAddress slot_ptr_pinned(SlotId, InitializedView const&) const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
-    // Null when the pool has no bytes, so the caller inspects the result.
+    // No address when the pool has no bytes, so the caller inspects the
+    // result.
     [[nodiscard, gnu::pure]]
-    inline ::fixy::alloc_class::Pool<void*> pool_base_pinned() const& noexcept {
-        return ::fixy::mint_band<::fixy::alloc_class::Pool<void*>>(pool_address_());
+    inline PinnedAddress pool_base_pinned() const& noexcept {
+        return ::fixy::mint_band<PinnedAddress>(pool_address_());
     }
 
-    ::fixy::alloc_class::Pool<void*> pool_base_pinned() const&& =
+    PinnedAddress pool_base_pinned() const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
     // The precondition is what makes the stronger claim true: it is exactly
     // the condition under which initialisation chose the huge-page alignment.
     [[nodiscard, gnu::pure]]
-    inline ::fixy::alloc_class::HugePage<void*> pool_base_huge_pinned() const& noexcept {
+    inline HugePinnedAddress pool_base_huge_pinned() const& noexcept {
         CRUCIBLE_PRE(pool_.size() >= crucible::warden::kHugePageBytes);
-        return ::fixy::mint_band<::fixy::alloc_class::HugePage<void*>>(pool_address_());
+        return ::fixy::mint_band<HugePinnedAddress>(pool_address_());
     }
 
-    ::fixy::alloc_class::HugePage<void*> pool_base_huge_pinned() const&& =
+    HugePinnedAddress pool_base_huge_pinned() const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
     // Found by argument-dependent lookup from the view factory.
@@ -308,17 +351,10 @@ private:
         return ::fixy::mint_view<pool_state::Initialized>(*this);
     }
 
-    // The address of the first byte of the pool, or null for a pool of no
-    // bytes.
-    [[nodiscard]] void* pool_address_() const noexcept { return address_in_(pool_.view(), 0); }
-
-    // The address of the byte at offset in the pool.  A slot of zero bytes
-    // can start at the end of the pool, and its address is then one past the
-    // last byte.  A pool of no bytes gives null.
-    [[nodiscard]] static void* address_in_(::fixy::View<uint8_t> pool, uint64_t offset) noexcept {
-        if (pool.size() == 0) return nullptr;
-        if (offset < pool.size()) return &*pool.get(offset).expect("the offset is below the size of the pool");
-        return &*pool.get(pool.size() - 1).expect("the pool holds its last byte") + 1;
+    // The address of the first byte of the pool, or no address for a pool of
+    // no bytes.
+    [[nodiscard]] ::fixy::Option<::fixy::RunAddress> pool_address_() const noexcept {
+        return ::fixy::mint_run_address(pool_.view(), 0);
     }
 
     // The bytes of the pool.  A const allocator lends writable tensor
@@ -326,9 +362,13 @@ private:
     // the caller writes through.  The bytes are no part of the value of the
     // allocator, so the owner is mutable.
     mutable ::foundation::AlignedBytes pool_{};
-    // The address of each slot, or null for an external slot that its owner
-    // did not register yet.
-    ::fixy::HeapArray<void*> table_{};
+    // The address of each slot, or no address for an external slot that its
+    // owner did not register yet.  The replay reads this column.
+    ::fixy::HeapArray<::fixy::Option<::fixy::RunAddress>> addresses_{};
+    // The device of each slot, with the length of the column of addresses.
+    // A pooled slot is on the host, and a registered slot is on the device of
+    // its owner.
+    ::fixy::HeapArray<TensorDevice> devices_{};
     uint32_t num_external_ = 0;
     [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad_{};
 };

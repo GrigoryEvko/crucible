@@ -3,6 +3,7 @@
 #include <foundation/effects/Effect.h>
 #include "entry_arrays.h"
 #include "test_assert.h"
+#include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -159,7 +160,7 @@ static void test_full_replay() {
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
     assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
-    void* p0 = ctx.output_ptr(0, cv);
+    const ::fixy::Option<::fixy::RunAddress> p0 = ctx.output_ptr(0, cv);
     assert(p0 == ctx.pool().slot_ptr(SlotId{0}, pv));
 
     assert(ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
@@ -167,7 +168,7 @@ static void test_full_replay() {
 
     // The rewind is lazy, so after COMPLETE the position still sits on
     // the final op and its output pointer is still readable.
-    void* p1 = ctx.output_ptr(0, cv);
+    const ::fixy::Option<::fixy::RunAddress> p1 = ctx.output_ptr(0, cv);
     assert(p1 == ctx.pool().slot_ptr(SlotId{1}, pv));
 
     assert(ctx.is_compiled());
@@ -324,13 +325,13 @@ static void test_external_slots() {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
-    ctx.register_external(SlotId{1}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), cv);
+    ctx.register_external(SlotId{1}, crucible::test::host_data(fake_param), cv);
 
     assert(ctx.advance(SchemaHash{50}, ShapeHash{60}, cv) == ReplayStatus::COMPLETE);
     // The registration is checked through the pool, which is where an
     // external pointer has to land for any op to resolve it.
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
-    assert(ctx.pool().slot_ptr(SlotId{1}, pv) == fake_param);
+    assert(crucible::test::host_ptr(ctx.pool().slot_ptr(SlotId{1}, pv)) == fake_param);
 
     crucible::test::pass("  test_external_slots: PASSED\n");
 }
@@ -412,15 +413,15 @@ static void test_integration_sweep_line() {
 
     alignas(256) char fake_param[128];
     std::memset(fake_param, 0xEE, 128);
-    ctx.register_external(SlotId{2}, ::fixy::mint_refined<::fixy::non_null, void*>(fake_param), cv);
+    ctx.register_external(SlotId{2}, crucible::test::host_data(fake_param), cv);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
     assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
     assert(ctx.output_ptr(0, cv) == ctx.pool().slot_ptr(SlotId{0}, pv));
     // The external slot resolves to registered storage, not into the pool.
-    assert(ctx.input_ptr(0, cv) == fake_param);
+    assert(crucible::test::host_ptr(ctx.input_ptr(0, cv)) == fake_param);
 
-    std::memset(ctx.output_ptr(0, cv), 0x11, 512);
+    std::memset(crucible::test::host_ptr(ctx.output_ptr(0, cv)), 0x11, 512);
 
     assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
     assert(ctx.compiled_iterations() == 1);
@@ -428,8 +429,8 @@ static void test_integration_sweep_line() {
     assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
     // Nothing is claimed about the bytes across iterations, only that the
     // address is stable: a real op would run eagerly and overwrite them.
-    auto* p = static_cast<uint8_t*>(ctx.output_ptr(0, cv));
-    assert(p == ctx.pool().slot_ptr(SlotId{0}, pv));
+    auto* p = crucible::test::host_ptr<uint8_t>(ctx.output_ptr(0, cv));
+    assert(p == crucible::test::host_ptr(ctx.pool().slot_ptr(SlotId{0}, pv)));
 
     assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
     assert(ctx.compiled_iterations() == 2);

@@ -119,24 +119,24 @@ struct CrucibleContext {
 
     // Binds one of the operation's tensors to its slot in the memory plan.
     //
-    // Each pointer points into the pool, and the pool is a member of this
+    // Each address points into the pool, and the pool is a member of this
     // context.  A temporary context releases its pool at the end of the
     // statement.  A deleted `const&&` twin refuses each call on a temporary
     // context.
-    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const& {
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t j) const& {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return engine_.output_ptr(j);
     }
 
-    void* output_ptr(uint16_t) const&& =
+    ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t) const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
-    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const& {
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t j) const& {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return engine_.input_ptr(j);
     }
 
-    void* input_ptr(uint16_t) const&& =
+    ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t) const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     // Safe to call part-way through an iteration.  A region with no memory
@@ -216,25 +216,25 @@ struct CrucibleContext {
         return advance_(schema_hash, shape_hash);
     }
 
-    [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, CompiledView const&) const& {
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t j, CompiledView const&) const& {
         auto av = engine_.active_view_();
         return engine_.output_ptr(j, av);
     }
 
-    void* output_ptr(uint16_t, CompiledView const&) const&& =
+    ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t, CompiledView const&) const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
-    [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, CompiledView const&) const& {
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t j, CompiledView const&) const& {
         auto av = engine_.active_view_();
         return engine_.input_ptr(j, av);
     }
 
-    void* input_ptr(uint16_t, CompiledView const&) const&& =
+    ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t, CompiledView const&) const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
-    CRUCIBLE_INLINE void register_external(SlotId sid, ::fixy::NonNull<void*> ptr, CompiledView const&) {
+    CRUCIBLE_INLINE void register_external(SlotId sid, TensorData data, CompiledView const&) {
         auto pv = pool_.initialized_view_();
-        pool_.register_external(sid, ptr, pv);
+        pool_.register_external(sid, data, pv);
     }
 
     [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_.get(); }
@@ -382,7 +382,7 @@ private:
     static_assert(alignof(ActiveRegionPtr) == alignof(const RegionNode*),
                   "a tagged region pointer must be aligned as the pointer it wraps");
     ActiveRegionPtr active_region_{};  // offset 80
-    PoolAllocator pool_;  // 48 bytes, offset 88
+    PoolAllocator pool_;  // 64 bytes, offset 88
     // The allocation capability that the constructor received.  The pool of
     // each activated region allocates only through it.  The tag is empty, so
     // it adds no storage.  It has no initializer, because the one

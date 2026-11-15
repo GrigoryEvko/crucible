@@ -6,6 +6,7 @@
 #include <crucible/CrucibleContext.h>
 #include <crucible/BackgroundThread.h>
 #include "test_assert.h"
+#include "tensor_data.h"
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -39,22 +40,22 @@ void test_pipeline_data_flow() {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     assert(ctx.advance(SCHEMA[0], SHAPE[0], cv) == ReplayStatus::MATCH);
-    std::memset(ctx.output_ptr(0, cv), 0x11, 4096);
+    std::memset(crucible::test::host_ptr(ctx.output_ptr(0, cv)), 0x11, 4096);
 
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
         assert(ctx.advance(SCHEMA[i], SHAPE[i], cv) == ReplayStatus::MATCH);
 
-        auto* in_data = static_cast<uint8_t*>(ctx.input_ptr(0, cv));
+        auto* in_data = crucible::test::host_ptr<uint8_t>(ctx.input_ptr(0, cv));
         uint8_t expected = static_cast<uint8_t>(0x11 + i - 1);
         for (uint32_t b = 0; b < 4096; b++) {
             assert(in_data[b] == expected);
         }
 
-        std::memset(ctx.output_ptr(0, cv), static_cast<int>(0x11 + i), 4096);
+        std::memset(crucible::test::host_ptr(ctx.output_ptr(0, cv)), static_cast<int>(0x11 + i), 4096);
     }
 
     assert(ctx.advance(SCHEMA[7], SHAPE[7], cv) == ReplayStatus::COMPLETE);
-    auto* in_last = static_cast<uint8_t*>(ctx.input_ptr(0, cv));
+    auto* in_last = crucible::test::host_ptr<uint8_t>(ctx.input_ptr(0, cv));
     uint8_t expected_last = static_cast<uint8_t>(0x11 + NUM_OPS - 2);
     for (uint32_t b = 0; b < 4096; b++) {
         assert(in_last[b] == expected_last);
@@ -89,7 +90,7 @@ void test_pipeline_pool_bounds() {
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     assert(ctx.activate(*region));
 
-    auto* pool_base = static_cast<uint8_t*>(ctx.pool().pool_base());
+    auto* pool_base = crucible::test::host_ptr<uint8_t>(ctx.pool().pool_base());
     uint64_t pool_bytes = ctx.pool().pool_bytes();
     assert(pool_base != nullptr);
     assert(pool_bytes > 0);
@@ -99,7 +100,7 @@ void test_pipeline_pool_bounds() {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv2);
         (void)s;
-        auto* p = static_cast<uint8_t*>(ctx.output_ptr(0, cv2));
+        auto* p = crucible::test::host_ptr<uint8_t>(ctx.output_ptr(0, cv2));
         assert(p >= pool_base);
         assert(p + 4096 <= pool_base + pool_bytes);
     }
@@ -110,7 +111,7 @@ void test_pipeline_pool_bounds() {
         auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv2);
         (void)s;
         if (i > 0) {
-            auto* p = static_cast<uint8_t*>(ctx.input_ptr(0, cv2));
+            auto* p = crucible::test::host_ptr<uint8_t>(ctx.input_ptr(0, cv2));
             assert(p >= pool_base);
             assert(p + 4096 <= pool_base + pool_bytes);
         }

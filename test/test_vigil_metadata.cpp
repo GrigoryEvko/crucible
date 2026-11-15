@@ -18,6 +18,7 @@
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include "tensor_data.h"
 
 #include <bit>
 #include <cstdint>
@@ -172,7 +173,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     const auto head_result =
         crucible::test::dispatch_synthetic(vigil, next_head.entry, next_head.metas, next_head.n_metas);
     assert(head_result.action == DispatchResult::Action::COMPILED);
-    assert(vigil.input_ptr(fg, 0) == parameter_ptr()
+    assert(crucible::test::host_ptr(vigil.input_ptr(fg, 0)) == parameter_ptr()
            && "the activation registered the data pointer of a record that the foreground wrote after the release");
 
     crucible::test::pass("  test_region_keeps_its_metadata_after_the_log_wraps: PASSED\n");

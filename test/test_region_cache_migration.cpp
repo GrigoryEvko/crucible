@@ -6,6 +6,7 @@
 #include <crucible/Vigil.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -50,7 +51,8 @@ void test_cache_data_migration() {
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
         // A prefix output holds 1024 floats, which is 4096 bytes.
-        std::memset(vigil.output_ptr(vigil.mint_producer_context(), 0), static_cast<int>(0xA0 + i), 4096);
+        std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)),
+                    static_cast<int>(0xA0 + i), 4096);
     }
 
     auto dA3 = make_op(SHAPE_A, 0, 18, 3);
@@ -59,7 +61,7 @@ void test_cache_data_migration() {
 
     // Op 3's input is op 2's output, so it must still carry the pattern
     // written for i equal to two.
-    auto* in_data = static_cast<uint8_t*>(vigil.input_ptr(vigil.mint_producer_context(), 0));
+    auto* in_data = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
     for (uint32_t b = 0; b < 4096; b++) {
         assert(in_data[b] == 0xA2 && "Data migration failed: op 2's output not preserved");
     }
