@@ -87,6 +87,7 @@ void align_and_activate(Vigil& vigil, uint32_t iter) {
         auto d = make_op(iter, i);
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::RECORD && "alignment ops should return RECORD");
+        CRUCIBLE_FATAL_INVARIANT(!r.op_index.is_valid());
     }
     assert(vigil.context().is_compiled() && "CrucibleContext should be compiled after K alignment ops");
     assert(vigil.is_compiled() && "the mode must report the replay once the context activates");
@@ -95,6 +96,7 @@ void align_and_activate(Vigil& vigil, uint32_t iter) {
         auto d = make_op(iter, i);
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_FATAL_INVARIANT(r.compiled_op_index() == OpIndex{i});
     }
 }
 

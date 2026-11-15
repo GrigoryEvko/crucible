@@ -43,6 +43,8 @@ struct DispatchResult {
     Action action = Action::RECORD;
     ReplayStatus status = ReplayStatus::MATCH;
     ::fixy::FixedArray<uint8_t, 2> pad{};
+    // On the compiled arm, the position of the matched op in the region that
+    // the Vigil replays.  After a COMPLETE, it is the last op of the region.
     OpIndex op_index;
 
     [[nodiscard, gnu::pure]] constexpr bool is_record() const noexcept { return action == Action::RECORD; }

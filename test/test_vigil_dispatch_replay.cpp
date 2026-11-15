@@ -33,6 +33,9 @@ void test_dispatch_basic() {
         auto d = make_op(4, i);
         auto result = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(result.action == DispatchResult::Action::COMPILED);
+        // Each compiled result names its op, and the COMPLETE of the last op
+        // names the last op, although the reset put the cursor on the first.
+        CRUCIBLE_FATAL_INVARIANT(result.compiled_op_index() == OpIndex{i});
 
         if (result.status == ReplayStatus::MATCH)
             match_count++;
@@ -43,6 +46,16 @@ void test_dispatch_basic() {
     assert(match_count == NUM_OPS - 1);
     assert(complete_count == 1);
     assert(vigil.compiled_iterations() == 2);
+
+    // The recorded op of a divergence carries no op index.
+    TraceRing::Entry bad{};
+    bad.schema_hash = SchemaHash{0xBAD};
+    bad.shape_hash = SHAPE[0];
+    bad.num_inputs = 0;
+    bad.num_outputs = 1;
+    const ::fixy::FixedArray<TensorMeta, 1> bad_meta{make_meta(fake_ptr(5, 0))};
+    const DispatchResult recorded = crucible::test::dispatch_synthetic(vigil, bad, bad_meta, 1);
+    CRUCIBLE_FATAL_INVARIANT(recorded.is_record() && !recorded.op_index.is_valid());
 
     crucible::test::pass("  test_dispatch_basic: PASSED\n");
 }

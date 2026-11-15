@@ -120,7 +120,9 @@ enum {
     // and the op index are zero.
     CRUCIBLE_ACTION_RECORD = 1,
     // The Vigil replays a region and checked the guard of the op.  The status
-    // gives the result of the guard.
+    // gives the result of the guard, and the op index gives the position of
+    // the op in the region.  An op with the status COMPLETE is the last op of
+    // the region.
     CRUCIBLE_ACTION_COMPILED = 2
 };
 
@@ -139,7 +141,7 @@ typedef struct {
     uint8_t action;  // CRUCIBLE_ACTION_*
     uint8_t status;  // CRUCIBLE_STATUS_*, zero for an action other than COMPILED
     uint8_t pad[2];
-    uint32_t op_index;
+    uint32_t op_index;  // the position of the op in the region for COMPILED, zero for another action
 } CrucibleDispatchResult;
 
 // ── ABI version ──────────────────────────────────────────────────────

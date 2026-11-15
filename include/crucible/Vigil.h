@@ -296,7 +296,7 @@ public:
             auto status = replay_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
                 return handle_divergence_(fg, entry.schema_hash, entry.shape_hash);
-            return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {}, .op_index = OpIndex{}};
+            return compiled_result_(status);
         }
 
         // The acquire load pairs with the release store on the background
@@ -763,6 +763,15 @@ private:
         }
     }
 
+    // The result of an op that the replay matched: the status of its guard
+    // and the position of the op in the region.  The reset at the end of an
+    // iteration keeps the matched op, so a COMPLETE gives the last op of the
+    // region.  The two COMPILED results of dispatch_op and of the switch
+    // after a divergence come from this one door.
+    [[nodiscard]] CRUCIBLE_INLINE DispatchResult compiled_result_(ReplayStatus status) const noexcept {
+        return DispatchResult::compiled(status, replay_.context().engine().matched_op_index().value());
+    }
+
     // The cold dispatch paths below are noinline so the hot path needs no
     // callee-saved registers for them.
 
@@ -822,10 +831,7 @@ private:
             auto status = replay_.advance(schema_hash, shape_hash, compiled_view);
             if (status != ReplayStatus::DIVERGED) {
                 publish_held_regions_();
-                return {.action = DispatchResult::Action::COMPILED,
-                        .status = status,
-                        .pad = {},
-                        .op_index = OpIndex{replay_.context().engine().ops_matched()}};
+                return compiled_result_(status);
             }
             // Diverging twice in a row falls through to the reset below.
         }

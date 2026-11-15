@@ -58,6 +58,9 @@ void test_cache_data_migration() {
     auto dA3 = make_op(SHAPE_A, 0, 18, 3);
     auto r_switch = crucible::test::dispatch_synthetic(vigil, dA3.entry, dA3.metas, dA3.n_metas);
     assert(r_switch.action == DispatchResult::Action::COMPILED && "Expected cache switch from B to A at pos 3");
+    // The switch replays the prefix and then matches op 3 of A, so the
+    // result names op 3.
+    CRUCIBLE_FATAL_INVARIANT(r_switch.compiled_op_index() == OpIndex{3});
 
     // Op 3's input is op 2's output, so it must still carry the pattern
     // written for i equal to two.
@@ -70,6 +73,7 @@ void test_cache_data_migration() {
         auto d = make_op(SHAPE_A, 0, 18, i);
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
+        CRUCIBLE_FATAL_INVARIANT(r.compiled_op_index() == OpIndex{i});
     }
 
     crucible::test::pass("  test_cache_data_migration: PASSED\n");
