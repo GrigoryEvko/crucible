@@ -48,6 +48,13 @@ static topology::DropCounters drops(std::uint64_t packets, std::uint64_t dropped
     return counters;
 }
 
+// The source of the positions of the samples of one test.
+static ::fixy::SequenceSource& advance_to(::fixy::SequenceSource& sequences, std::uint64_t target) {
+    while (sequences.stamp().position() < target)
+        static_cast<void>(sequences.advance());
+    return sequences;
+}
+
 // The log spelling of both enums comes from reflection.
 static void test_name_accessors() {
     static_assert(::foundation::reflect::enum_name(topology::HealthState::Quarantined) == "Quarantined");
@@ -72,13 +79,16 @@ static void test_healthy_snapshot_is_stale_wrapped() {
     assert(scorer.update_wear(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                               topology::WearSample{.used_ppm = 100000, .sequence = 6}));
 
-    auto snapshot = scorer.compute(p, 2500, 7);
+    ::fixy::SequenceSource sequences =
+        ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
+    auto snapshot = scorer.compute(p, 2500, advance_to(sequences, 7));
     assert(snapshot.peek().state == topology::HealthState::Healthy);
     assert(snapshot.peek().score.raw() > 900);
     assert(snapshot.peek().phi.raw() < test_policy().suspect_phi.raw());
     assert(snapshot.peek().issues.none());
-    assert(snapshot.is_finite());
-    auto current = scorer.current(p, 9);
+    assert(snapshot.is_fresh());
+    assert(snapshot.peek().sequence == 7);
+    auto current = scorer.current(p, advance_to(sequences, 9));
     assert(current.peek().state == topology::HealthState::Healthy);
     assert(current.staleness().value == 2);
     crucible::test::pass("  test_healthy_snapshot_is_stale_wrapped: PASSED\n");
@@ -95,7 +105,9 @@ static void test_phi_delay_drives_suspect_state() {
     assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 4)));
     assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 5)));
 
-    auto snapshot = scorer.compute(p, 7000, 6);
+    ::fixy::SequenceSource sequences =
+        ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
+    auto snapshot = scorer.compute(p, 7000, advance_to(sequences, 6));
     assert(snapshot.peek().phi.raw() >= test_policy().suspect_phi.raw());
     assert(snapshot.peek().state == topology::HealthState::Suspect
            || snapshot.peek().state == topology::HealthState::Quarantined);
@@ -124,7 +136,9 @@ static void test_thermal_ecc_and_drops_degrade_score() {
     assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 6)));
     assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(200000, 1200, 7)));
 
-    auto snapshot = scorer.compute(p, 2200, 8);
+    ::fixy::SequenceSource sequences =
+        ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
+    auto snapshot = scorer.compute(p, 2200, advance_to(sequences, 8));
     assert(snapshot.peek().score.raw() < 900);
     assert(snapshot.peek().drop_rate_ppm >= test_policy().drop_critical_ppm);
     assert(snapshot.peek().issues.test(topology::HealthIssue::ThermalWarn));
@@ -164,12 +178,14 @@ static void test_permanent_fault_is_sticky() {
                                  topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 5}));
     assert(scorer.update_drops(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, drops(100000, 0, 6)));
 
-    auto failed = scorer.compute(p, 2500, 7);
+    ::fixy::SequenceSource sequences =
+        ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
+    auto failed = scorer.compute(p, 2500, advance_to(sequences, 7));
     assert(failed.peek().state == topology::HealthState::Permanent);
     assert(failed.peek().issues.test(topology::HealthIssue::UncorrectedEcc));
 
     assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 1, 8)));
-    auto still_failed = scorer.compute(p, 2600, 9);
+    auto still_failed = scorer.compute(p, 2600, advance_to(sequences, 9));
     assert(still_failed.peek().state == topology::HealthState::Permanent);
     assert(scorer.transition_event_count() == 1);
     crucible::test::pass("  test_permanent_fault_is_sticky:    PASSED\n");
@@ -186,7 +202,9 @@ static std::uint16_t score_after_corrected_delta(std::uint64_t delta) {
     auto const p = peer(5);
     assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(0, 0, 1)));
     assert(scorer.update_ecc(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p, ecc(delta, 0, 2)));
-    auto snapshot = scorer.compute(p, 2000, 3);
+    ::fixy::SequenceSource sequences =
+        ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
+    auto snapshot = scorer.compute(p, 2000, advance_to(sequences, 3));
     assert(snapshot.peek().issues.test(topology::HealthIssue::CorrectedEccTrend));
     return snapshot.peek().score.raw();
 }
@@ -208,6 +226,29 @@ static void test_large_corrected_delta_gives_full_risk() {
     crucible::test::pass("  test_large_corrected_delta_gives_full_risk: PASSED\n");
 }
 
+// Only the source grades a snapshot.  A peer with no sample, and a sample of a
+// position that the source has not reached, give the infinite grade, which
+// claims nothing about the age of the snapshot.
+static void test_grade_comes_from_the_source() {
+    auto scorer = topology::mint_topology_health<eff::ColdInitCtx, 2, 4>(
+        eff::ColdInitCtx{::foundation::effects::testing::init()}, test_policy());
+    ::fixy::SequenceSource sequences =
+        ::fixy::mint_sequence_source(eff::ColdInitCtx{::foundation::effects::testing::init()});
+    advance_to(sequences, 3);
+
+    auto const unknown = scorer.current(peer(40), sequences);
+    assert(unknown.peek().issues.test(topology::HealthIssue::MissingSample));
+    assert(unknown.is_infinite());
+    assert(unknown.peek().sequence == 3);
+
+    auto const p = peer(41);
+    assert(scorer.update_thermal(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
+                                 topology::ThermalSample{.temperature_millicelsius = 40000, .sequence = 5}));
+    assert(scorer.current(p, sequences).is_infinite());
+    assert(scorer.current(p, advance_to(sequences, 6)).staleness().value == 1);
+    crucible::test::pass("  test_grade_comes_from_the_source:  PASSED\n");
+}
+
 int main() {
     static_assert(topology::CtxFitsHealthMint<eff::ColdInitCtx>);
     static_assert(!topology::CtxFitsHealthMint<eff::BgDrainCtx>);
@@ -215,7 +256,7 @@ int main() {
     static_assert(!topology::CtxFitsHealthUpdate<eff::HotFgCtx>);
     static_assert(::foundation::diag::is_diagnostic_class_v<topology::Health_Degraded>);
 
-    ::fixy::report(::fixy::Sink::Out, "test_topology_health: 7 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_topology_health: 8 groups\n");
     test_name_accessors();
     test_healthy_snapshot_is_stale_wrapped();
     test_phi_delay_drives_suspect_state();
@@ -223,6 +264,7 @@ int main() {
     test_counter_regression_is_rejected();
     test_permanent_fault_is_sticky();
     test_large_corrected_delta_gives_full_risk();
+    test_grade_comes_from_the_source();
     crucible::test::pass("test_topology_health: all passed\n");
     return 0;
 }

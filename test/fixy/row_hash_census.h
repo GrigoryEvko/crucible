@@ -1062,6 +1062,11 @@ inline constexpr StatedZero kZeros[] = {
                                 "and it is never a template argument of a kernel signature"},
     {^^::fixy::BudgetStamp, "a proof of one budget that an authority granted: the constructor of a Budgeted "
                             "spends it and folds the budget, and it is never a value in a signature"},
+    {^^::fixy::SequenceSource, "the owner of the sequence of one producer: only a context that owns Init mints it, "
+                               "it stays beside the values it grades, and it is never a template argument of a "
+                               "kernel signature"},
+    {^^::fixy::SequenceStamp, "a proof of one position that a source issued: it goes by reference into a door of "
+                              "Stale, which folds the grade, and it is never a value in a signature"},
 
     {^^::fixy::session::Send, kProtocol},
     {^^::fixy::session::Recv, kProtocol},

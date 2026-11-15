@@ -1,6 +1,9 @@
 #include <crucible/observe/Metrics.h>
 #include <crucible/observe/Observation.h>
+#include <fixy/Ctx.h>
+#include <fixy/Stale.h>
 #include <foundation/Brand.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
 #include <cstdio>
@@ -85,7 +88,9 @@ void test_metric_payload_is_snapshot_safe() {
 }
 
 void test_writer_publish_keeper_and_canopy_readers() {
-    auto initial = observe::fresh_metrics_sample(make_metrics(0.0));
+    ::fixy::SequenceSource steps =
+        ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    auto initial = observe::fresh_metrics_sample(make_metrics(0.0), steps);
     Channel channel{metrics_reader_root(), initial};
 
     auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
@@ -93,7 +98,12 @@ void test_writer_publish_keeper_and_canopy_readers() {
     auto keeper = observe::mint_keeper_metrics_reader(channel).expect("a fresh channel has a free reader share");
     auto canopy = observe::mint_canopy_metrics_reader(channel).expect("a fresh channel has a free reader share");
 
-    auto sample = observe::metrics_sample_at(make_metrics(100.0), 7);
+    // The sample of step zero, graded seven steps later.
+    ::fixy::SequenceStamp const sampled = steps.stamp();
+    for (int step = 0; step < 7; ++step)
+        static_cast<void>(steps.advance());
+    auto sample = observe::metrics_sample_at(make_metrics(100.0), steps, sampled);
+    CRUCIBLE_REQUIRE(sample.staleness().value == 7);
     writer.publish(sample);
 
     auto keeper_sample = keeper.load();
@@ -109,7 +119,9 @@ void test_writer_publish_keeper_and_canopy_readers() {
 }
 
 void test_exclusive_drain_waits_for_readers() {
-    Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(make_metrics(0.0))};
+    ::fixy::SequenceSource const steps =
+        ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(make_metrics(0.0), steps)};
 
     bool drained = false;
     {

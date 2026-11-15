@@ -481,21 +481,31 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
     }
 
     // The snapshot for a peer the scorer has no slot for: quarantined,
-    // scored zero and flagged as missing, one step stale.
-    [[nodiscard]] static constexpr ::fixy::Stale<HealthSnapshot> missing_snapshot(cog::CogIdentity const& peer,
-                                                                                  std::uint64_t sequence) noexcept {
+    // scored zero and flagged as missing.  No sample of the peer exists, so
+    // the snapshot has the infinite grade.
+    [[nodiscard]] static constexpr ::fixy::Stale<HealthSnapshot>
+    missing_snapshot(cog::CogIdentity const& peer, ::fixy::SequenceSource const& sequences) noexcept {
         HealthSnapshot missing{};
         missing.cog_uuid = peer.uuid;
         missing.state = HealthState::Quarantined;
         missing.score = HealthScore{0};
         missing.issues.set(HealthIssue::MissingSample);
-        missing.sequence = sequence;
-        return ::fixy::Stale<HealthSnapshot>::at(missing, 1);
+        missing.sequence = sequences.stamp().position();
+        return ::fixy::Stale<HealthSnapshot>::at_infinity(missing);
     }
 
-    // How many sequence steps the slot's last sample lags `sequence`.
-    [[nodiscard]] static constexpr std::uint64_t lag_behind(Slot const& slot, std::uint64_t sequence) noexcept {
-        return sequence >= slot.sequence.get() ? sequence - slot.sequence.get() : 0;
+    // The last snapshot of the slot, at the grade of its newest sample: the
+    // distance from the position of the sample to the current position of
+    // the source.  A sample of a position that the source has not reached
+    // has the infinite grade.
+    [[nodiscard]] static constexpr ::fixy::Stale<HealthSnapshot>
+    graded_last_snapshot(Slot const& slot, ::fixy::SequenceSource const& sequences) noexcept {
+        return sequences.stamp_at(slot.sequence.get())
+            .match(
+                [&](::fixy::SequenceStamp sampled) {
+                    return ::fixy::Stale<HealthSnapshot>::at(slot.last_snapshot, sequences, sampled);
+                },
+                [&] { return ::fixy::Stale<HealthSnapshot>::at_infinity(slot.last_snapshot); });
     }
 
     constexpr void append_event(Slot& slot, HealthState from, HealthState to, HealthSnapshot const& snapshot) noexcept {
@@ -709,22 +719,21 @@ public:
             [] { return false; });
     }
 
+    // The score of the peer at now_ns and at the current position of the
+    // source.  The caller owns the source of the positions of the samples,
+    // and only that source grades a snapshot.
     [[nodiscard]] constexpr ::fixy::Stale<HealthSnapshot> compute(cog::CogIdentity const& peer, std::uint64_t now_ns,
-                                                                  std::uint64_t sequence) noexcept {
+                                                                  ::fixy::SequenceSource const& sequences) noexcept {
         return claim(peer).match(
-            [&](::fixy::Index<MaxPeers> index) { return compute_in(slots_.at(index), peer, now_ns, sequence); },
-            [&] { return missing_snapshot(peer, sequence); });
+            [&](::fixy::Index<MaxPeers> index) { return compute_in(slots_.at(index), peer, now_ns, sequences); },
+            [&] { return missing_snapshot(peer, sequences); });
     }
 
-    [[nodiscard]] constexpr ::fixy::Stale<HealthSnapshot> current(cog::CogIdentity const& peer,
-                                                                  std::uint64_t sequence) const noexcept {
+    [[nodiscard]] constexpr ::fixy::Stale<HealthSnapshot>
+    current(cog::CogIdentity const& peer, ::fixy::SequenceSource const& sequences) const noexcept {
         return detail::find_peer_slot(slots_, peer.uuid)
-            .match(
-                [&](::fixy::Index<MaxPeers> index) {
-                    Slot const& slot = slots_.at(index);
-                    return ::fixy::Stale<HealthSnapshot>::at(slot.last_snapshot, lag_behind(slot, sequence));
-                },
-                [&] { return missing_snapshot(peer, sequence); });
+            .match([&](::fixy::Index<MaxPeers> index) { return graded_last_snapshot(slots_.at(index), sequences); },
+                   [&] { return missing_snapshot(peer, sequences); });
     }
 
     // The events in the order of their slots in the ring.
@@ -737,8 +746,10 @@ public:
 private:
     // The score of the peer of slot at now_ns.  A change of state appends a
     // transition event.
-    [[nodiscard]] constexpr ::fixy::Stale<HealthSnapshot>
-    compute_in(Slot& slot, cog::CogIdentity const& peer, std::uint64_t now_ns, std::uint64_t sequence) noexcept {
+    [[nodiscard]] constexpr ::fixy::Stale<HealthSnapshot> compute_in(Slot& slot, cog::CogIdentity const& peer,
+                                                                     std::uint64_t now_ns,
+                                                                     ::fixy::SequenceSource const& sequences) noexcept {
+        std::uint64_t const sequence = sequences.stamp().position();
         ::fixy::Bits<HealthIssue> issues{};
         PhiMilli const phi = phi_.suspicion_phi(peer, now_ns);
         if (phi.raw() >= policy_.quarantine_phi.raw()) {
@@ -782,7 +793,7 @@ private:
         }
         slot.last_snapshot = snapshot;
         static_cast<void>(slot.sequence.try_advance(sequence));
-        return ::fixy::Stale<HealthSnapshot>::at(snapshot, lag_behind(slot, sequence));
+        return graded_last_snapshot(slot, sequences);
     }
 };
 

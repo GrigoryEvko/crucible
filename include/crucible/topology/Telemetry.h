@@ -170,16 +170,21 @@ class NicTelemetryHistory;
 
 // A Result of NicTelemetrySnapshot, or the error InvalidNicCog.  The return
 // type is deduced, because the snapshot is incomplete here and in the class.
-[[nodiscard]] constexpr auto mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps,
-                                                         DeclaredNetdevCounters netdev, DeclaredQdiscBacklog qdisc,
-                                                         DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
-                                                         DeclaredNicThermalSample thermal, std::uint64_t sequence,
-                                                         NicTelemetryPolicy policy = {}) noexcept;
+[[nodiscard]] constexpr auto
+mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps, DeclaredNetdevCounters netdev,
+                            DeclaredQdiscBacklog qdisc, DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
+                            DeclaredNicThermalSample thermal, ::fixy::SequenceSource const& samples,
+                            ::fixy::SequenceStamp const& sampled, NicTelemetryPolicy policy = {}) noexcept;
 
-// One NIC at one sequence number. The mint is the only door: it checks
-// that the cog is a NIC and computes the effective bandwidth from the
-// samples, so the two cannot disagree. Callers read the fields through
-// the accessors, and nothing outside the mint writes them.
+// One NIC at one position of the sequence of its sampler. The mint is the
+// only door: it checks that the cog is a NIC and computes the effective
+// bandwidth from the samples, so the two cannot disagree. Callers read the
+// fields through the accessors, and nothing outside the mint writes them.
+//
+// The sampler owns the source of its positions.  Each sample has the grade
+// of its stamp at the mint: the distance from the stamp to the current
+// position of the source.  The sequence number of the snapshot is the
+// position of the stamp, and it is not a grade.
 class NicTelemetrySnapshot {
 public:
     using line_rate_type = ::fixy::Tagged<std::uint64_t, ::fixy::tags::source::Calibrated>;
@@ -200,21 +205,22 @@ public:
 private:
     constexpr NicTelemetrySnapshot(cog::Uuid nic_uuid, std::uint64_t line_rate_bps, DeclaredNetdevCounters netdev,
                                    DeclaredQdiscBacklog qdisc, DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
-                                   DeclaredNicThermalSample thermal, std::uint64_t sequence) noexcept
+                                   DeclaredNicThermalSample thermal, ::fixy::SequenceSource const& samples,
+                                   ::fixy::SequenceStamp const& sampled) noexcept
         : nic_uuid_{nic_uuid},
           line_rate_bps_{::fixy::mint_tagged<::fixy::tags::source::Calibrated>(line_rate_bps)},
-          netdev_{::fixy::Stale<DeclaredNetdevCounters>::at(netdev, sequence)},
-          qdisc_{::fixy::Stale<DeclaredQdiscBacklog>::at(qdisc, sequence)},
-          sysctl_{::fixy::Stale<DeclaredSysctlSnapshot>::at(sysctl, sequence)},
-          tcp_{::fixy::Stale<TcpInfoSnapshot>::at(tcp, sequence)},
-          thermal_{::fixy::Stale<DeclaredNicThermalSample>::at(thermal, sequence)},
-          sequence_{sequence} {}
+          netdev_{::fixy::Stale<DeclaredNetdevCounters>::at(netdev, samples, sampled)},
+          qdisc_{::fixy::Stale<DeclaredQdiscBacklog>::at(qdisc, samples, sampled)},
+          sysctl_{::fixy::Stale<DeclaredSysctlSnapshot>::at(sysctl, samples, sampled)},
+          tcp_{::fixy::Stale<TcpInfoSnapshot>::at(tcp, samples, sampled)},
+          thermal_{::fixy::Stale<DeclaredNicThermalSample>::at(thermal, samples, sampled)},
+          sequence_{sampled.position()} {}
 
-    friend constexpr auto mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps,
-                                                      DeclaredNetdevCounters netdev, DeclaredQdiscBacklog qdisc,
-                                                      DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
-                                                      DeclaredNicThermalSample thermal, std::uint64_t sequence,
-                                                      NicTelemetryPolicy policy) noexcept;
+    friend constexpr auto
+    mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps, DeclaredNetdevCounters netdev,
+                                DeclaredQdiscBacklog qdisc, DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
+                                DeclaredNicThermalSample thermal, ::fixy::SequenceSource const& samples,
+                                ::fixy::SequenceStamp const& sampled, NicTelemetryPolicy policy) noexcept;
 
     cog::Uuid nic_uuid_{};
     line_rate_type line_rate_bps_{};
@@ -246,16 +252,16 @@ compute_effective_bandwidth(NicTelemetrySnapshot const& snapshot, NicTelemetryPo
     return ::fixy::mint_refined<::fixy::positive>(static_cast<double>(base));
 }
 
-[[nodiscard]] constexpr auto mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps,
-                                                         DeclaredNetdevCounters netdev, DeclaredQdiscBacklog qdisc,
-                                                         DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
-                                                         DeclaredNicThermalSample thermal, std::uint64_t sequence,
-                                                         NicTelemetryPolicy policy) noexcept {
+[[nodiscard]] constexpr auto
+mint_nic_telemetry_snapshot(cog::CogIdentity const& nic, std::uint64_t line_rate_bps, DeclaredNetdevCounters netdev,
+                            DeclaredQdiscBacklog qdisc, DeclaredSysctlSnapshot sysctl, TcpInfoSnapshot tcp,
+                            DeclaredNicThermalSample thermal, ::fixy::SequenceSource const& samples,
+                            ::fixy::SequenceStamp const& sampled, NicTelemetryPolicy policy) noexcept {
     using Minted = ::fixy::Result<NicTelemetrySnapshot, NicTelemetryError>;
     if (!is_nic_cog(nic) || nic.uuid.is_zero()) {
         return Minted{::fixy::err(NicTelemetryError::InvalidNicCog)};
     }
-    NicTelemetrySnapshot snapshot{nic.uuid, line_rate_bps, netdev, qdisc, sysctl, tcp, thermal, sequence};
+    NicTelemetrySnapshot snapshot{nic.uuid, line_rate_bps, netdev, qdisc, sysctl, tcp, thermal, samples, sampled};
     PositiveEffectiveBandwidthBps const effective = compute_effective_bandwidth(snapshot, policy);
     snapshot.effective_bandwidth_bps_ = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(effective.value());
     return Minted{snapshot};

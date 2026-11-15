@@ -2,10 +2,65 @@
 
 #include <fixy/Stale.h>
 
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
+
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
 namespace fixy {
+
+namespace detail::sequence_source_checks {
+
+namespace fe = ::foundation::effects;
+
+// A stamp comes only from a source, and no byte route builds one.
+static_assert(!std::is_default_constructible_v<SequenceStamp>);
+static_assert(!std::is_constructible_v<SequenceStamp, std::uint64_t>);
+static_assert(!std::is_trivially_copyable_v<SequenceStamp>);
+
+// A source is the one owner of its sequence, so it neither copies nor moves.
+static_assert(!std::is_default_constructible_v<SequenceSource>);
+static_assert(!std::is_copy_constructible_v<SequenceSource> && !std::is_move_constructible_v<SequenceSource>);
+static_assert(!std::is_copy_assignable_v<SequenceSource> && !std::is_move_assignable_v<SequenceSource>);
+static_assert(!std::is_trivially_copyable_v<SequenceSource>);
+
+// Only a context that owns Init mints a source.  test/fixy/neg holds the two
+// fixtures of the mint, for a foreground and a background context.
+
+// The grade of a stamp is its distance from the current position, so an old
+// stamp gives a larger grade at a later read.
+[[nodiscard]] consteval bool old_stamp_grows_its_grade() noexcept {
+    SequenceSource source = mint_sequence_source(ColdInitCtx{fe::testing::init()});
+    SequenceStamp const first = source.stamp();
+    static_cast<void>(source.advance());
+    std::uint64_t const one_behind = source.steps_behind(first).value;
+    static_cast<void>(source.advance());
+    return one_behind == 1 && source.steps_behind(first).value == 2 && source.steps_behind(source.stamp()).value == 0;
+}
+static_assert(old_stamp_grows_its_grade());
+
+// A source vouches only for a position that it has reached.
+[[nodiscard]] consteval bool stamp_at_refuses_a_later_position() noexcept {
+    SequenceSource source = mint_sequence_source(ColdInitCtx{fe::testing::init()});
+    static_cast<void>(source.advance());
+    return source.stamp_at(1).is_some() && source.stamp_at(0).is_some() && !source.stamp_at(2).is_some();
+}
+static_assert(stamp_at_refuses_a_later_position());
+
+// A stamp of a second source that is ahead of this source gets the infinite
+// grade, never a fresh one.
+[[nodiscard]] consteval bool stamp_of_a_source_ahead_is_infinite() noexcept {
+    SequenceSource real = mint_sequence_source(ColdInitCtx{fe::testing::init()});
+    SequenceSource rogue = mint_sequence_source(ColdInitCtx{fe::testing::init()});
+    static_cast<void>(rogue.advance());
+    static_cast<void>(rogue.advance());
+    return real.steps_behind(rogue.stamp()).is_infinite() && Stale<int>::at(5, real, rogue.stamp()).is_infinite();
+}
+static_assert(stamp_of_a_source_ahead_is_infinite());
+
+}  // namespace detail::sequence_source_checks
 
 namespace detail::stale_layout {
 
@@ -27,6 +82,33 @@ namespace detail::stale_self_test {
 using SS = ::foundation::algebra::lattices::StalenessSemiring;
 using S_i = Stale<int>;
 
+// A value of the grade `steps`: the stamp of position zero, read when its
+// source is `steps` positions further.
+[[nodiscard]] consteval S_i stale_at(int value, std::uint64_t steps) noexcept {
+    SequenceSource source = mint_sequence_source(ColdInitCtx{::foundation::effects::testing::init()});
+    SequenceStamp const sampled = source.stamp();
+    for (std::uint64_t step = 0; step < steps; ++step)
+        static_cast<void>(source.advance());
+    return S_i::at(value, source, sampled);
+}
+
+// A value at the current position of its source.
+[[nodiscard]] consteval S_i stale_fresh(int value) noexcept {
+    SequenceSource const source = mint_sequence_source(ColdInitCtx{::foundation::effects::testing::init()});
+    return S_i::fresh(value, source);
+}
+
+// at_in_place builds the value from its arguments, at the grade of at.
+[[nodiscard]] consteval bool at_in_place_takes_the_grade_of_at() noexcept {
+    SequenceSource source = mint_sequence_source(ColdInitCtx{::foundation::effects::testing::init()});
+    SequenceStamp const sampled = source.stamp();
+    static_cast<void>(source.advance());
+    static_cast<void>(source.advance());
+    S_i const built = S_i::at_in_place(source, sampled, 77);
+    return built.peek() == 77 && built.staleness().value == 2 && built == S_i::at(77, source, sampled);
+}
+static_assert(at_in_place_takes_the_grade_of_at());
+
 // A default value claims the weakest grade, because nothing measured it.
 inline constexpr S_i s_default{};
 static_assert(s_default.staleness() == SS::top());
@@ -36,10 +118,13 @@ static_assert(s_default.is_infinite());
 
 // A grade comes only through a named door, and no constructor takes one.
 // test/fixy/neg holds a fixture for the private constructor from a value
-// and a grade.
+// and a grade.  No door takes a grade as a number.
 static_assert(!std::is_constructible_v<S_i, int, SS::element_type>);
+template <typename S>
+concept takes_a_number_as_grade = requires { S::at(1, std::uint64_t{7}); };
+static_assert(!takes_a_number_as_grade<S_i>);
 
-inline constexpr S_i s_fresh = S_i::fresh(42);
+inline constexpr S_i s_fresh = stale_fresh(42);
 static_assert(s_fresh.staleness() == SS::bottom());
 static_assert(s_fresh.peek() == 42);
 
@@ -48,15 +133,15 @@ static_assert(s_inf.is_infinite());
 static_assert(!s_inf.is_finite());
 static_assert(s_inf.peek() == 99);
 
-inline constexpr S_i s_at7 = S_i::at(123, 7);
+inline constexpr S_i s_at7 = stale_at(123, 7);
 static_assert(s_at7.staleness().value == 7);
 static_assert(s_at7.peek() == 123);
 
-static_assert(s_at7 == S_i::at(123, 7));
+static_assert(s_at7 == stale_at(123, 7));
 
-static_assert(!(s_at7 == S_i::at(999, 7)));
+static_assert(!(s_at7 == stale_at(999, 7)));
 
-static_assert(!(s_at7 == S_i::at(123, 3)));
+static_assert(!(s_at7 == stale_at(123, 3)));
 
 static_assert(s_fresh.fresher_than(s_at7));
 static_assert(s_at7.fresher_than(s_inf));
@@ -65,8 +150,8 @@ static_assert(s_fresh.no_staler_than(s_fresh));
 static_assert(s_fresh.no_staler_than(s_at7));
 static_assert(!s_at7.no_staler_than(s_fresh));
 
-inline constexpr S_i s_a = S_i::at(10, 3);
-inline constexpr S_i s_b = S_i::at(20, 8);
+inline constexpr S_i s_a = stale_at(10, 3);
+inline constexpr S_i s_b = stale_at(20, 8);
 inline constexpr S_i s_combined = s_a.combine_max(s_b);
 static_assert(s_combined.staleness().value == 8);
 static_assert(s_combined.peek() == 10);
@@ -124,16 +209,16 @@ static_assert(S_i::value_type_name().ends_with("int"));
 static_assert(S_i::lattice_name() == "StalenessSemiring");
 
 [[nodiscard]] consteval bool swap_exchanges_both_components() noexcept {
-    S_i a = S_i::at(10, 3);
-    S_i b = S_i::at(20, 8);
+    S_i a = stale_at(10, 3);
+    S_i b = stale_at(20, 8);
     a.swap(b);
     return a.peek() == 20 && a.staleness().value == 8 && b.peek() == 10 && b.staleness().value == 3;
 }
 static_assert(swap_exchanges_both_components());
 
 [[nodiscard]] consteval bool free_swap_works() noexcept {
-    S_i a = S_i::at(10, 3);
-    S_i b = S_i::at(20, 8);
+    S_i a = stale_at(10, 3);
+    S_i b = stale_at(20, 8);
     using std::swap;
     swap(a, b);
     return a.peek() == 20 && b.peek() == 10;

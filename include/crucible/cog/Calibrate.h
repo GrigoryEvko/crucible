@@ -265,11 +265,14 @@ validate_latency_entry(OpcodeLatencyEntry<K> const& entry) noexcept {
     return ::fixy::Unit{};
 }
 
+// The result of a calibration that ran at the current update cycle.  The
+// caller owns the source of the update cycles, and the age of the table is
+// fresh at that source.
 template <CogKind K>
     requires CalibratableCogKind<K>
 [[nodiscard]] constexpr ::fixy::Result<CalibrationResult<K>, CalibrationError>
 build_calibration_result(CogIdentity identity, caps_for_t<K> caps, ::fixy::View<OpcodeLatencyEntry<K> const> entries,
-                         CalibrationPlan plan = {}) noexcept {
+                         ::fixy::SequenceSource const& cycles, CalibrationPlan plan = {}) noexcept {
     CRUCIBLE_TRY(_, validate_identity_for<K>(identity));
     if (entries.size() == 0) {
         return ::fixy::err(CalibrationError::EmptyEntrySet);
@@ -286,7 +289,7 @@ build_calibration_result(CogIdentity identity, caps_for_t<K> caps, ::fixy::View<
         .opcode_table =
             OpcodeLatencyTable<K>{
                 .entries = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(entries),
-                .calibration_age_seconds = ::fixy::Stale<double>::fresh(0.0),
+                .calibration_age_seconds = ::fixy::Stale<double>::fresh(0.0, cycles),
             },
         .plan = plan,
         .entry_count =

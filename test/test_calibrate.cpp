@@ -130,15 +130,20 @@ void test_latency_entry_and_result() {
     caps.features.set(cog::GpuFeature::Fp8);
 
     ::foundation::core::FixedArray<cog::OpcodeLatencyEntry<cog::CogKind::Gpu>, 1> rows{entry};
-    auto result = cog::build_calibration_result<cog::CogKind::Gpu>(gpu_identity(), caps, rows.view())
+    ::fixy::SequenceSource cycles = ::fixy::mint_sequence_source(eff::ColdInitCtx{testing::init()});
+    auto result = cog::build_calibration_result<cog::CogKind::Gpu>(gpu_identity(), caps, rows.view(), cycles)
                       .expect("a Gpu identity and one valid row make a result");
     assert(result.identity.kind == cog::CogKind::Gpu);
     assert(result.entry_count.value() == 1u);
     assert(result.opcode_table.size() == 1u);
     assert(result.opcode_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).is_some());
     assert(result.opcode_table.calibration_age_seconds.is_fresh());
+    // The table of an earlier cycle is one cycle old at the next cycle.
+    ::fixy::SequenceStamp const calibrated = cycles.stamp();
+    static_cast<void>(cycles.advance());
+    assert(::fixy::Stale<double>::at(0.0, cycles, calibrated).staleness().value == 1);
 
-    auto mismatched = cog::build_calibration_result<cog::CogKind::Gpu>(nic_identity(), caps, rows.view());
+    auto mismatched = cog::build_calibration_result<cog::CogKind::Gpu>(nic_identity(), caps, rows.view(), cycles);
     assert(mismatched.err() == ::fixy::some(cog::CalibrationError::KindMismatch));
 
     crucible::test::pass("  test_latency_entry_and_result: PASSED\n");
@@ -168,7 +173,8 @@ void test_nic_result() {
         ::fixy::mint_tagged<::fixy::tags::source::Calibrated, std::uint64_t>(6250000000ull);
     caps.features.set(cog::NicFeature::Roce);
 
-    auto result = cog::build_calibration_result<cog::CogKind::NicPort>(nic_identity(), caps, rows.view())
+    ::fixy::SequenceSource const cycles = ::fixy::mint_sequence_source(eff::ColdInitCtx{testing::init()});
+    auto result = cog::build_calibration_result<cog::CogKind::NicPort>(nic_identity(), caps, rows.view(), cycles)
                       .expect("a NicPort identity and one valid row make a result");
     auto found = result.opcode_table
                      .latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,

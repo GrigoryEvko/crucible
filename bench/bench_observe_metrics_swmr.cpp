@@ -1,5 +1,8 @@
 #include <crucible/observe/Metrics.h>
+#include <fixy/Ctx.h>
+#include <fixy/Stale.h>
 #include <foundation/Brand.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
@@ -27,7 +30,10 @@ int main() {
     metrics.delta_g_count = 1;
     metrics.delta_g.at(::fixy::index<0>()) = 1.0;
 
-    Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(metrics)};
+    // Each sample of the loop is at the current step of the producer.
+    ::fixy::SequenceSource const steps =
+        ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(metrics, steps)};
     auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
     auto minted = observe::mint_keeper_metrics_reader(channel);
     if (minted.is_none()) {
@@ -36,12 +42,12 @@ int main() {
     }
     auto reader = std::move(minted).expect("the reader share is present");
 
-    auto sample = observe::fresh_metrics_sample(metrics);
+    auto sample = observe::fresh_metrics_sample(metrics, steps);
     std::uint64_t seq = 0;
     auto report =
         bench::Run{"RuntimeMetrics SWMR publish"}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
             metrics.meb_lambda_max = static_cast<double>(seq++);
-            sample = observe::fresh_metrics_sample(metrics);
+            sample = observe::fresh_metrics_sample(metrics, steps);
             writer.publish(sample);
             bench::do_not_optimize(seq);
         });

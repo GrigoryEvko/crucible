@@ -111,9 +111,11 @@ static void test_parsers_and_drop_rate() {
 
 static void test_snapshot_mint() {
     Samples samples{};
+    ::fixy::SequenceSource sampler = ::fixy::mint_sequence_source(init_ctx());
+    ::fixy::SequenceStamp const at_one = sampler.advance();
     auto const first =
         topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
-                                              tcp_sample(80000000000ull, 1000, 1000), samples.thermal, 1)
+                                              tcp_sample(80000000000ull, 1000, 1000), samples.thermal, sampler, at_one)
             .expect("a nic gives a snapshot");
     assert(first.nic_uuid() == nic().uuid);
     assert(first.sequence() == 1);
@@ -125,17 +127,47 @@ static void test_snapshot_mint() {
     auto gpu = nic();
     gpu.kind = cog::CogKind::Gpu;
     auto wrong_kind = topology::mint_nic_telemetry_snapshot(gpu, 1, samples.counters, samples.backlog, samples.sysctl,
-                                                            tcp_sample(1, 1, 0), samples.thermal, 1);
+                                                            tcp_sample(1, 1, 0), samples.thermal, sampler, at_one);
     assert(wrong_kind.is_err());
     assert(error_of(wrong_kind) == topology::NicTelemetryError::InvalidNicCog);
 
     auto zero = nic();
     zero.uuid = cog::Uuid{};
     auto zero_uuid = topology::mint_nic_telemetry_snapshot(zero, 1, samples.counters, samples.backlog, samples.sysctl,
-                                                           tcp_sample(1, 1, 0), samples.thermal, 1);
+                                                           tcp_sample(1, 1, 0), samples.thermal, sampler, at_one);
     assert(zero_uuid.is_err());
     assert(error_of(zero_uuid) == topology::NicTelemetryError::InvalidNicCog);
     crucible::test::pass("  test_snapshot_mint:                   PASSED\n");
+}
+
+// The grade of each sample of a snapshot is the distance from its stamp to
+// the current position of the sampler.  The sequence number of the snapshot
+// is the position of the stamp, and it is no grade.
+static void test_snapshot_grade_comes_from_the_sampler() {
+    Samples samples{};
+    ::fixy::SequenceSource sampler = ::fixy::mint_sequence_source(init_ctx());
+    for (int step = 0; step < 5; ++step)
+        static_cast<void>(sampler.advance());
+    ::fixy::SequenceStamp const at_five = sampler.stamp();
+    for (int step = 0; step < 2; ++step)
+        static_cast<void>(sampler.advance());
+
+    auto const current = topology::mint_nic_telemetry_snapshot(
+                             nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
+                             tcp_sample(80000000000ull, 1000, 1000), samples.thermal, sampler, sampler.stamp())
+                             .expect("a nic gives a snapshot");
+    assert(current.sequence() == 7);
+    assert(current.netdev().is_fresh() && current.qdisc().is_fresh() && current.sysctl().is_fresh());
+    assert(current.tcp().is_fresh() && current.thermal().is_fresh());
+
+    auto const older =
+        topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
+                                              tcp_sample(80000000000ull, 1000, 1000), samples.thermal, sampler, at_five)
+            .expect("a nic gives a snapshot");
+    assert(older.sequence() == 5);
+    assert(older.netdev().staleness().value == 2 && older.tcp().staleness().value == 2);
+    assert(older.thermal().staleness().value == 2);
+    crucible::test::pass("  test_snapshot_grade_comes_from_the_sampler: PASSED\n");
 }
 
 static void test_effective_bandwidth_and_history() {
@@ -149,13 +181,16 @@ static void test_effective_bandwidth_and_history() {
     assert(history.detect_drift(bg).is_err());
 
     Samples samples{};
+    ::fixy::SequenceSource sampler = ::fixy::mint_sequence_source(init);
+    ::fixy::SequenceStamp const at_one = sampler.advance();
     auto const first =
         topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
-                                              tcp_sample(80000000000ull, 1000, 1000), samples.thermal, 1)
+                                              tcp_sample(80000000000ull, 1000, 1000), samples.thermal, sampler, at_one)
             .expect("a nic gives a snapshot");
+    ::fixy::SequenceStamp const at_two = sampler.advance();
     auto const second =
         topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
-                                              tcp_sample(50000000000ull, 1000, 1000), samples.thermal, 2)
+                                              tcp_sample(50000000000ull, 1000, 1000), samples.thermal, sampler, at_two)
             .expect("a nic gives a snapshot");
     assert(first.effective_bandwidth_bps().value() > second.effective_bandwidth_bps().value());
 
@@ -180,10 +215,12 @@ static void test_effective_bandwidth_and_history() {
     // The ring keeps the last four, so the oldest after five records is
     // the second one.
     for (std::uint64_t sequence = 3; sequence <= 5; ++sequence) {
+        ::fixy::SequenceStamp const sampled = sampler.advance();
         auto const next = topology::mint_nic_telemetry_snapshot(
                               nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
-                              tcp_sample(50000000000ull, 1000, 1000), samples.thermal, sequence)
+                              tcp_sample(50000000000ull, 1000, 1000), samples.thermal, sampler, sampled)
                               .expect("a nic gives a snapshot");
+        assert(next.sequence() == sequence);
         assert(history.record(bg, next) == topology::NicTelemetryError::None);
     }
     assert(history.count(bg) == 4);
@@ -222,6 +259,7 @@ int main() {
     test_enumerator_names();
     test_parsers_and_drop_rate();
     test_snapshot_mint();
+    test_snapshot_grade_comes_from_the_sampler();
     test_effective_bandwidth_and_history();
     test_static_gates();
     crucible::test::pass("test_topology_telemetry: all PASSED\n");

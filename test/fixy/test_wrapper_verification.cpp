@@ -20,6 +20,7 @@
 // test/foundation/test_permission_shared.cpp.
 
 #include <fixy/Bands.h>
+#include <fixy/Ctx.h>
 #include <fixy/Mutation.h>
 #include <fixy/Qtt.h>
 #include <fixy/Refined.h>
@@ -30,6 +31,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
+#include <foundation/effects/Ctx.h>
 
 #include <compare>
 #include <cstdint>
@@ -494,9 +496,13 @@ static_assert(!satisfies_v<opaque_lifetime::PerRequest<int>, Lifetime_v::PER_FLE
 }
 
 [[nodiscard]] bool smoke_stale() {
-    Stale<int> fresh = Stale<int>::fresh(42);
+    SequenceSource samples = mint_sequence_source(ColdInitCtx{::foundation::effects::testing::init()});
+    SequenceStamp const sampled = samples.stamp();
+    for (int step = 0; step < 3; ++step)
+        static_cast<void>(samples.advance());
+    Stale<int> fresh = Stale<int>::fresh(42, samples);
     if (fresh.peek() != 42) return false;
-    Stale<int> older = Stale<int>::at(42, 3);
+    Stale<int> older = Stale<int>::at(42, samples, sampled);
     if (older.staleness() == fresh.staleness()) return false;
     return std::move(older).consume() == 42;
 }

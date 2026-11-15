@@ -1565,6 +1565,21 @@ fixy_neg_compile_test(neg_stale_weakened_downwards
 fixy_neg_compile_test(neg_stale_built_fresh_outside_its_door
   ".constexpr fixy::Stale<T>::Stale\\(T, staleness_t\\) .with T = int. staleness_t = foundation::algebra::lattices::StalenessSemiring::element_type.. is private within this context"
   "fixy/Stale\\.h:[0-9]+:[0-9]+: note: declared private here")
+# at_in_place takes its grade from a source and a stamp of it.  A number in
+# the place of the stamp, or a stamp with no source, gives no grade.
+fixy_neg_compile_test(neg_stale_at_in_place_from_a_number
+  "no matching function for call to .fixy::Stale<int>::at_in_place\\(const fixy::SequenceSource&, uint64_t, int\\)."
+  "cannot convert .0. \\(type .uint64_t. \\{aka .long unsigned int.\\}\\) to type .const fixy::SequenceStamp&.")
+fixy_neg_compile_test(neg_stale_at_in_place_without_a_source
+  "no matching function for call to .fixy::Stale<int>::at_in_place\\(const fixy::SequenceStamp&, int\\)."
+  "cannot convert .sampled. \\(type .const fixy::SequenceStamp.\\) to type .const fixy::SequenceSource&.")
+# A sequence source is minted only with a context that owns Init.
+fixy_neg_compile_test(neg_sequence_source_without_init
+  "no matching function for call to .mint_sequence_source"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+fixy_neg_compile_test(neg_sequence_source_in_foreground
+  "no matching function for call to .mint_sequence_source"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Init>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >.")
 fixy_neg_compile_test(neg_budgeted_built_at_zero_outside_its_door
   ".constexpr fixy::Budgeted<T>::Budgeted\\(T, budget_t\\) .with T = int. budget_t = .* is private within this context"
   "fixy/Budgeted\\.h:[0-9]+:[0-9]+: note: declared private here")

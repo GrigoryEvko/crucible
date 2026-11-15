@@ -109,11 +109,10 @@ examples/fn/ | replace-pending:std::bit_cast | 2 | - | -
 examples/fn/ | std-entity | 10 | - | -
 examples/fn/ | std-object | 3 | - | -
 include/crucible/ | c-array-object | 1 | - | -
-include/crucible/ | raw-function-pointer | 3 | - | -
-include/crucible/ | raw-pointer-object | 22 | - | -
+include/crucible/ | raw-function-pointer | 2 | - | -
+include/crucible/ | raw-pointer-object | 20 | - | -
 include/crucible/ | region | 1 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/ | replace-pending:std::bit_cast | 1 | - | -
-include/crucible/ | std-entity | 1 | - | -
 include/crucible/cntp/ | c-library-call | 9 | - | -
 include/crucible/cntp/ | compiler-builtin | 2 | - | -
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
@@ -125,7 +124,7 @@ include/crucible/perf/detail/ | std-object | 1 | - | -
 include/crucible/warden/ | std-entity | 1 | - | -
 include/crucible/warden/ | std-object | 1 | - | -
 include/fixy/ | base-std-entity | 352 | - | -
-include/fixy/ | base-std-object | 202 | - | -
+include/fixy/ | base-std-object | 201 | - | -
 include/fixy/ | replace-pending:<array> | 6 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
 include/fixy/ | replace-pending:<bit> | 4 | - | -

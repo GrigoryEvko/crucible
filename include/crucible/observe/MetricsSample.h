@@ -28,14 +28,21 @@ struct RuntimeMetrics {
     ::foundation::core::FixedArray<double, 16> delta_g{};
 };
 
+// The grade of a sample counts the steps of the producer since the sample.
+// The producer owns the source of its steps, and only that source grades a
+// sample.
 using RuntimeMetricsSample = ::fixy::Stale<RuntimeMetrics>;
 
-[[nodiscard]] inline RuntimeMetricsSample fresh_metrics_sample(RuntimeMetrics metrics) noexcept {
-    return RuntimeMetricsSample::fresh(metrics);
+// A sample of the current step of the source.
+[[nodiscard]] inline RuntimeMetricsSample fresh_metrics_sample(RuntimeMetrics metrics,
+                                                               ::fixy::SequenceSource const& steps) noexcept {
+    return RuntimeMetricsSample::fresh(metrics, steps);
 }
 
-[[nodiscard]] inline RuntimeMetricsSample metrics_sample_at(RuntimeMetrics metrics, std::uint64_t staleness) noexcept {
-    return RuntimeMetricsSample::at(metrics, staleness);
+// A sample of the step of the stamp, graded at the current step of the source.
+[[nodiscard]] inline RuntimeMetricsSample metrics_sample_at(RuntimeMetrics metrics, ::fixy::SequenceSource const& steps,
+                                                            ::fixy::SequenceStamp const& sampled) noexcept {
+    return RuntimeMetricsSample::at(metrics, steps, sampled);
 }
 
 }  // namespace crucible::observe

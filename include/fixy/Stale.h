@@ -4,12 +4,37 @@
 // extended with infinity.  The grade is a position in time, not an
 // ownership claim, so two instances carrying the same value and grade
 // are the same event and copying one is replay rather than duplication.
+//
+// The grade is a claim about the value: a grade that is too low makes an
+// old value read as fresh.  So the claim does not come from the caller.
+// It comes from a SequenceSource, the owner of the sequence of one
+// producer:
+//
+//   - A SequenceSource is minted only with a context that owns Init, the
+//     capability of process startup.  The producer then owns it on one
+//     thread, and advances it at each sample.
+//   - It hands out a SequenceStamp, a proof type that no caller can build:
+//     its constructor is private, and its copy is user-provided, so
+//     neither std::bit_cast nor a lifetime start over bytes makes one.
+//   - A stamp holds a position and no age.  The grade of a value is the
+//     distance from its stamp to the current position of the source, so a
+//     later read of an old stamp gives a larger grade.  An old stamp is a
+//     weaker claim, never a false one.
+//
+// fresh, at and at_in_place take the grade only from a source.  The
+// default value and at_infinity hold the infinite grade, which is the
+// weakest claim and needs no source.  weaken, advance_by and the
+// compositions only move a grade to a weaker claim, or keep the grade of
+// a value with that value.
 
 #include <fixy/GradedFacade.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/StalenessSemiring.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Choice.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -19,6 +44,106 @@
 #include <utility>
 
 namespace fixy {
+
+class SequenceSource;
+
+// A position in the sequence of one producer, which a SequenceSource
+// vouches for.  No caller can build one.
+class SequenceStamp {
+public:
+    SequenceStamp() = delete("a stamp comes only from a SequenceSource");
+
+    // User-provided, so that the stamp is neither trivially copyable nor
+    // implicit-lifetime, and no route builds one from bytes.
+    constexpr SequenceStamp(SequenceStamp const& other) noexcept : position_{other.position_} {}
+    constexpr SequenceStamp& operator=(SequenceStamp const& other) noexcept {
+        position_ = other.position_;
+        return *this;
+    }
+    ~SequenceStamp() = default;
+
+    [[nodiscard]] constexpr std::uint64_t position() const noexcept { return position_; }
+
+private:
+    friend class SequenceSource;
+    explicit constexpr SequenceStamp(std::uint64_t position) noexcept : position_{position} {}
+
+    std::uint64_t position_ = 0;
+};
+
+template <typename Ctx>
+    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+[[nodiscard]] constexpr SequenceSource mint_sequence_source(Ctx const& ctx) noexcept;
+
+// The owner of the sequence of one producer, and the one authority of a
+// finite grade of Stale.  Its address is its identity, so it neither
+// copies nor moves.  One thread owns it.
+//
+// A stamp of a second source can reach this source, as a stamp of a second
+// VersionSource can.  A stamp ahead of this source gets the infinite grade.
+class [[nodiscard]] SequenceSource {
+public:
+    using staleness_t = ::foundation::algebra::lattices::StalenessSemiring::element_type;
+
+    // The last position.  It is one below the value that encodes the
+    // infinite grade, so each distance from a stamp is a finite grade.
+    static constexpr std::uint64_t last_position =
+        ::foundation::algebra::lattices::StalenessSemiring::element_type::infinity().value - 1;
+
+    SequenceSource(SequenceSource const&) = delete("the source is the one owner of its sequence, and a copy would be "
+                                                   "a second owner that advances on its own");
+    SequenceSource(SequenceSource&&) = delete("the source is the one owner of its sequence, so it stays in place");
+    SequenceSource& operator=(SequenceSource const&) = delete("the position of a source only rises");
+    SequenceSource& operator=(SequenceSource&&) = delete("the position of a source only rises");
+    ~SequenceSource() = default;
+
+    // The current position.
+    [[nodiscard]] constexpr SequenceStamp stamp() const noexcept { return SequenceStamp{position_}; }
+
+    // The stamp of a sample that the producer took at an earlier position.
+    // A position that the source has not reached gets no stamp: a producer
+    // vouches only for what it has reached.
+    [[nodiscard]] constexpr ::foundation::core::Option<SequenceStamp> stamp_at(std::uint64_t position) const noexcept {
+        if (position > position_) return ::foundation::core::none;
+        return ::foundation::core::Option<SequenceStamp>::some(SequenceStamp{position});
+    }
+
+    // The next sample.  The source does not pass its last position.
+    constexpr SequenceStamp advance() noexcept {
+        CRUCIBLE_PRE(position_ < last_position);
+        ++position_;
+        return stamp();
+    }
+
+    // The grade of a value with the stamp: the number of positions from the
+    // stamp to the current position.  A stamp ahead of the source gets the
+    // infinite grade, which is the weakest claim.
+    [[nodiscard]] constexpr staleness_t steps_behind(SequenceStamp const& stamp) const noexcept {
+        if (stamp.position() > position_) return ::foundation::algebra::lattices::StalenessSemiring::top();
+        return ::foundation::algebra::lattices::staleness::at(position_ - stamp.position());
+    }
+
+private:
+    template <typename Ctx>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+    friend constexpr SequenceSource mint_sequence_source(Ctx const& ctx) noexcept;
+
+    constexpr SequenceSource() noexcept = default;
+
+    std::uint64_t position_ = 0;
+    // GCC counts a class whose copies and moves are all deleted as trivially
+    // copyable.  The seal makes the source not trivially copyable, so
+    // std::bit_cast builds no source from bytes.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
+// A source at position zero.  The context must own Init, which only
+// process startup and the test witness hold.
+template <typename Ctx>
+    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Init>
+[[nodiscard]] constexpr SequenceSource mint_sequence_source(Ctx const&) noexcept {
+    return SequenceSource{};
+}
 
 template <typename T>
 class [[nodiscard]] Stale : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
@@ -45,35 +170,52 @@ private:
     using key_ = ::foundation::algebra::grade_key<Stale>;
 
     // A constructor that takes a grade is private, so a grade comes only
-    // through a named door: fresh, at, at_infinity, weaken, or a
-    // composition of two graded values.
+    // through a named door: fresh, at, at_in_place, at_infinity, weaken,
+    // advance_by, or a composition of two graded values.
     constexpr Stale(T value, staleness_t tau) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{key_{}, std::move(value), tau} {}
 
+    // The tag of the in-place constructor.  Only at_in_place names it.
+    struct in_place_tag_ final {};
+
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr Stale(std::in_place_t, staleness_t tau,
-                    Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
-                                             && std::is_nothrow_move_constructible_v<T>)
+    constexpr Stale(in_place_tag_, staleness_t tau, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                             && std::is_nothrow_move_constructible_v<T>)
         : impl_{key_{}, T(std::forward<Args>(args)...), tau} {}
 
 public:
     // The weakest claim, because nothing measured the age of this value.
     constexpr Stale() noexcept(std::is_nothrow_default_constructible_v<T>) : impl_{key_{}, T{}, semiring_type::top()} {}
 
-    [[nodiscard]] static constexpr Stale fresh(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
-        return Stale{std::move(value), semiring_type::bottom()};
+    // A value that the producer took at the current position of its source.
+    [[nodiscard]] static constexpr Stale
+    fresh(T value, SequenceSource const& source) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Stale{std::move(value), source.steps_behind(source.stamp())};
     }
 
+    // The weakest claim, which needs no source.
     [[nodiscard]] static constexpr Stale at_infinity(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         return Stale{std::move(value), semiring_type::top()};
     }
 
-    // The grade constructor rejects the reserved value that encodes
-    // infinity, so reach for at_infinity rather than passing it here.
-    [[nodiscard]] static constexpr Stale at(T value,
-                                            std::uint64_t n) noexcept(std::is_nothrow_move_constructible_v<T>) {
-        return Stale{std::move(value), ::foundation::algebra::lattices::staleness::at(n)};
+    // A value that the producer took at the position of the stamp.  The
+    // grade is the distance from the stamp to the current position of the
+    // source.
+    [[nodiscard]] static constexpr Stale
+    at(T value, SequenceSource const& source,
+       SequenceStamp const& stamp) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Stale{std::move(value), source.steps_behind(stamp)};
+    }
+
+    // The grade of at, with the value built in place from the arguments.
+    template <typename... Args>
+        requires std::is_constructible_v<T, Args...>
+    [[nodiscard]] static constexpr Stale
+    at_in_place(SequenceSource const& source, SequenceStamp const& stamp,
+                Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                         && std::is_nothrow_move_constructible_v<T>) {
+        return Stale{in_place_tag_{}, source.steps_behind(stamp), std::forward<Args>(args)...};
     }
 
     constexpr Stale(const Stale&) = default;

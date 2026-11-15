@@ -3,6 +3,9 @@
 // so a bad lookup fails at runtime, not only at consteval time.
 
 #include <crucible/cog/OpcodeLatencyTable.h>
+#include <fixy/Ctx.h>
+#include <fixy/Stale.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/reflect/EnumName.h>
 
 #include "test_assert.h"
@@ -127,9 +130,11 @@ static void test_gpu_opcode_table_construction() {
         },
     };
 
+    ::fixy::SequenceSource const cycles =
+        ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     cog::OpcodeLatencyTable<cog::CogKind::Gpu> table{
         .entries = calibrated<::fixy::View<Entry const>>(rows.view()),
-        .calibration_age_seconds = ::fixy::Stale<double>::at(12.5, 0),
+        .calibration_age_seconds = ::fixy::Stale<double>::at(12.5, cycles, cycles.stamp()),
     };
 
     volatile auto sz = table.size();
@@ -203,9 +208,11 @@ static void test_nic_opcode_table_construction() {
         },
     };
 
+    ::fixy::SequenceSource const cycles =
+        ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     cog::OpcodeLatencyTable<cog::CogKind::NicPort> table{
         .entries = calibrated<::fixy::View<Entry const>>(rows.view()),
-        .calibration_age_seconds = ::fixy::Stale<double>::fresh(0.0),
+        .calibration_age_seconds = ::fixy::Stale<double>::fresh(0.0, cycles),
     };
 
     auto small = table

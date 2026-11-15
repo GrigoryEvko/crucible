@@ -6,9 +6,11 @@
 // weaken contract is shown to abort at runtime; its constant-expression
 // form is test/fixy/neg/neg_stale_weakened_downwards.cpp.
 
+#include <fixy/Ctx.h>
 #include <fixy/Stale.h>
 
 #include <foundation/algebra/GradedTrait.h>
+#include <foundation/effects/Ctx.h>
 
 #include "../foundation/abort_probe.h"
 
@@ -23,6 +25,24 @@ using ::fixy::Stale;
 using ::crucible::test::aborts;
 using SS = fa::lattices::StalenessSemiring;
 namespace st = fa::lattices::staleness;
+
+// A value of the grade `steps`: the stamp of position zero, read when its
+// source is `steps` positions further.  Complexity: linear in steps.
+[[nodiscard]] constexpr Stale<int> stale_at(int value, std::uint64_t steps) noexcept {
+    ::fixy::SequenceSource source =
+        ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    ::fixy::SequenceStamp const sampled = source.stamp();
+    for (std::uint64_t step = 0; step < steps; ++step)
+        static_cast<void>(source.advance());
+    return Stale<int>::at(value, source, sampled);
+}
+
+// A value at the current position of its source.
+[[nodiscard]] constexpr Stale<int> stale_fresh(int value) noexcept {
+    ::fixy::SequenceSource const source =
+        ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    return Stale<int>::fresh(value, source);
+}
 
 // Regime 4: the grade is stored beside the value.
 static_assert(sizeof(Stale<int>) == sizeof(int) + sizeof(SS::element_type) + 4);
@@ -69,15 +89,15 @@ static_assert(std::is_same_v<::fixy::stale_semiring_t<Stale<int>>, SS>);
 static_assert(std::is_same_v<::fixy::stale_staleness_t<Stale<int>>, SS::element_type>);
 
 // The mint surface is usable in a constant expression.
-constexpr Stale<int> fresh = Stale<int>::fresh(7);
+constexpr Stale<int> fresh = stale_fresh(7);
 static_assert(fresh.is_fresh() && fresh.peek() == 7);
 constexpr Stale<int> weakened = fresh.weaken(st::at(4));
 static_assert(weakened.staleness() == st::at(4) && weakened.peek() == 7);
-static_assert(std::move(Stale<int>::at(1, 2)).weaken(SS::top()).is_infinite());
+static_assert(std::move(stale_at(1, 2)).weaken(SS::top()).is_infinite());
 
 int check_weaken_aborts_downwards() {
     volatile std::uint64_t seed = 8;
-    Stale<int> stale = Stale<int>::at(1, seed);
+    Stale<int> stale = stale_at(1, seed);
 
     // Upwards and level are admitted.
     Stale<int> up = stale.weaken(st::at(seed + 1));
@@ -99,8 +119,8 @@ int check_semiring_at_runtime() {
     volatile std::uint64_t seed = 3;
     const auto near_top = SS::top().value - 2;
 
-    Stale<int> a = Stale<int>::at(10, static_cast<std::uint64_t>(seed));
-    Stale<int> b = Stale<int>::at(20, static_cast<std::uint64_t>(seed) + 5);
+    Stale<int> a = stale_at(10, static_cast<std::uint64_t>(seed));
+    Stale<int> b = stale_at(20, static_cast<std::uint64_t>(seed) + 5);
     Stale<int> inf = Stale<int>::at_infinity(99);
 
     if (!a.is_finite() || a.is_fresh()) return 20;
@@ -132,15 +152,16 @@ int check_semiring_at_runtime() {
 
     // The saturating arm: a step past the top of the range clamps to
     // infinity rather than wrapping to a fresh grade.
-    Stale<int> almost = Stale<int>::at(1, near_top);
+    Stale<int> almost = stale_at(1, 0).advance_by(near_top);
+    if (almost.staleness().value != near_top) return 41;
     if (!almost.advance_by(5).is_infinite()) return 31;
-    if (!almost.compose_add(Stale<int>::at(2, 5)).is_infinite()) return 32;
+    if (!almost.compose_add(stale_at(2, 5)).is_infinite()) return 32;
 
     // The default claims the weakest grade, and the two named mints land
     // where they claim.
     if (Stale<int>{}.staleness() != SS::top()) return 33;
-    if (!Stale<int>::fresh(42).is_fresh()) return 34;
-    if (Stale<int>::at(7, 100).staleness().value != 100) return 35;
+    if (!stale_fresh(42).is_fresh()) return 34;
+    if (stale_at(7, 100).staleness().value != 100) return 35;
 
     chain.peek_mut() = 99;
     if (chain.peek() != 99) return 36;
@@ -153,10 +174,33 @@ int check_semiring_at_runtime() {
     return 0;
 }
 
+// The doors that take a grade from a source, with a count of steps that the
+// compiler cannot fold.
+int check_source_doors() {
+    ::fixy::SequenceSource source =
+        ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
+    ::fixy::SequenceStamp const first = source.stamp();
+    volatile std::uint64_t steps = 3;
+    for (std::uint64_t step = 0; step < steps; ++step)
+        static_cast<void>(source.advance());
+
+    Stale<int> const built = Stale<int>::at_in_place(source, first, 5);
+    if (built.peek() != 5 || built.staleness().value != 3) return 50;
+    if (!Stale<int>::fresh(9, source).is_fresh()) return 51;
+    if (source.stamp_at(steps + 1).is_some()) return 52;
+    if (!source.stamp_at(steps).is_some()) return 53;
+
+    // A later read of the same stamp gives a larger grade.
+    static_cast<void>(source.advance());
+    if (Stale<int>::at(5, source, first).staleness().value != 4) return 54;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     if (int rc = check_semiring_at_runtime(); rc != 0) return rc;
+    if (int rc = check_source_doors(); rc != 0) return rc;
     if (int rc = check_weaken_aborts_downwards(); rc != 0) return rc;
 
     return 0;
