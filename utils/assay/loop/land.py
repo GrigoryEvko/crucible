@@ -349,10 +349,15 @@ THE RIGHT OF WAY
     way.  A batch that holds a right of way waits only for a right of way
     with a smaller number, so the oldest batch goes first and no two batches
     wait for each other.  The wait looks again each POLL_S seconds, for at
-    most RIGHT_WAIT_S seconds.  After the wait, the swap of the waiting batch
-    usually fails, and that batch composes again on the new commit.  Its next
-    run tests only the inputs that changed, so the wait costs it one short
-    run.
+    most RIGHT_WAIT_S seconds.  Each line of the wait names the holders that
+    no earlier line of that wait named.
+
+    When the branch moves from the base of the waiting batch, its swap
+    cannot succeed, so the wait ends at once.  The batch counts a refused
+    swap and composes again on the new commit.  Its next run tests only the
+    inputs that changed, and it runs while the holder runs.  Before its next
+    swap, the batch waits again for each right of way that goes first.  Thus
+    it does not move the branch ahead of such a holder.
 
 THE JOURNAL
     Before the swap, the holder writes the file NUMBER.journal of each
@@ -1604,24 +1609,38 @@ class RightOfWay:
                 found.append(number)
         return sorted(found)
 
-    def wait(self) -> None:
-        """Wait while a right of way of a different batch goes first, for at most RIGHT_WAIT_S seconds."""
+    def wait(self, is_moved: Callable[[], bool]) -> bool:
+        """Wait while a right of way of a different batch goes first, for at most RIGHT_WAIT_S seconds.
+
+        The wait ends early when is_moved() tells that the branch moved from the base of the batch, because the swap
+        of the batch then cannot succeed.  Each line of the wait names the holders that no earlier line named.
+
+        Returns:
+            True if the branch moved during the wait, and False if the batch can try its swap
+        """
         waited = 0.0
-        shown = False
+        shown: set[int] = set()
         while waited < RIGHT_WAIT_S:
             first = self.first()
             if not first:
-                return
-            if not shown:
-                names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in first)
+                return False
+            new = [number for number in first if number not in shown]
+            if new:
+                names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in new)
                 check_report.write_line(f"loop land: the batch waits before its swap for the right of way of {names}")
-                shown = True
+                shown.update(new)
+            if is_moved():
+                check_report.write_line(
+                    "loop land: the branch moved while the batch waited for a right of way, so its swap cannot succeed"
+                )
+                return True
             self.pause(POLL_S)
             waited += POLL_S
         check_report.write_line(
             f"loop land: the batch waited {RIGHT_WAIT_S:.0f} seconds for a right of way, and it tries its swap",
             is_error=True,
         )
+        return False
 
 
 class BatchLanding:
@@ -2027,7 +2046,8 @@ class BatchLanding:
         """Run the rounds of land() until the swap, a refusal of each request, or ATTEMPTS refused swaps.
 
         After RIGHT_AFTER refused swaps, the batch takes its right of way before its next round.  Before each swap, it
-        waits for each right of way that goes first (THE RIGHT OF WAY).  The caller frees the right of way.
+        waits for each right of way that goes first (THE RIGHT OF WAY).  A move of the branch during that wait counts
+        as a refused swap.  The caller frees the right of way.
         """
         swaps_refused = 0
         while pending:
@@ -2060,24 +2080,9 @@ class BatchLanding:
                 return
             final = verdict.final or accepted[-1].commit
             decisions = self.landed_decisions(accepted, verdict, final)
-            if self.right is not None:
-                self.right.wait()
-            if self.journal is not None:
-                for queued, decision in decisions:
-                    self.journal.write(queued, self.branch, final, decision)
-            shown = accepted[0].queued.request.subject
-            subject = shown if len(accepted) == 1 else f"a batch of {len(accepted)} requests from {shown}"
-            if swap(self.repository, self.branch, final, self.base, subject):
-                self.landed_run = run
-                self.landed = {queued.number: decision for queued, decision in decisions}
-                for queued, decision in decisions:
-                    given_update(queued, decision)
-                for queued, decision in decisions:
-                    self.decide(queued, decision)
+            is_moved = self.right is not None and self.right.wait(lambda: self.tip() != self.base)
+            if not is_moved and self.landed_swap(accepted, decisions, final, run):
                 return
-            if self.journal is not None:
-                for queued, _decision in decisions:
-                    self.journal.clear(queued)
             swaps_refused += 1
             pending = [link.queued for link in accepted]
             if swaps_refused >= ATTEMPTS:
@@ -2090,6 +2095,33 @@ class BatchLanding:
                 is_error=True,
             )
             self.pause(random.uniform(*PAUSE_RANGE_S))
+
+    def landed_swap(
+        self, accepted: Sequence[Link], decisions: Sequence[tuple[Queued, Decision]], final: str, run: int
+    ) -> bool:
+        """Move the branch from the base of the batch to the final commit, and give each verdict (THE JOURNAL).
+
+        Returns:
+            True if the swap moved the branch.  False if a different lane moved the branch first, and the journals
+            of the batch then go.
+        """
+        if self.journal is not None:
+            for queued, decision in decisions:
+                self.journal.write(queued, self.branch, final, decision)
+        shown = accepted[0].queued.request.subject
+        subject = shown if len(accepted) == 1 else f"a batch of {len(accepted)} requests from {shown}"
+        if swap(self.repository, self.branch, final, self.base, subject):
+            self.landed_run = run
+            self.landed = {queued.number: decision for queued, decision in decisions}
+            for queued, decision in decisions:
+                given_update(queued, decision)
+            for queued, decision in decisions:
+                self.decide(queued, decision)
+            return True
+        if self.journal is not None:
+            for queued, _decision in decisions:
+                self.journal.clear(queued)
+        return False
 
     def records(self) -> list[RunRecord]:
         """Return each run of the gate with the result of each of its requests (THE RECORD)."""
