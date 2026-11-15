@@ -169,8 +169,10 @@ class Ref {
 public:
     // A Ref of an object, with the key that only RefDoor builds.  A reference
     // is never null, so no key makes a null Ref.  The niche of a Ref states
-    // that no door builds the null pointer, so an Option of a Ref has no null
-    // test.  The constructor has no [[assume]] that the pointer is not null.
+    // that no door builds the null pointer.  The storage of a full Option
+    // still tests the pointer, and a caller that knows the address states it
+    // with an [[assume]], as get() of a OneOf does.  The constructor has no
+    // [[assume]] that the pointer is not null.
     // That condition reads a member through this, so GCC makes it an .ASSUME
     // call, and -fharden-conditional-branches then keeps a branch that the
     // optimizer removes with no assume, such as the null test of the decode
@@ -331,8 +333,9 @@ void prefetch_byte(T&& object) = delete("a prefetch of a temporary asks for a li
 // No door of Ref builds the null pointer.  RefDoor builds a Ref from a
 // reference, the widening constructor copies the address of a Ref, the seal
 // refuses std::bit_cast and the checked lifetime start, and only the storage
-// of an Option builds the key of niche_null_.  So the storage of a full
-// Option trusts each Ref and has no test of the null pointer.
+// of an Option builds the key of niche_null_.  So a loop over a mutable
+// Option of a Ref gets a cursor that writes the Ref.  The storage of a full
+// Option still tests each Ref for the null pointer, in each build.
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
 struct niche<Ref<T, Brand>> {
     static constexpr bool is_empty_never_built = true;

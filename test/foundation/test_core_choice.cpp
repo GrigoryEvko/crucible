@@ -339,6 +339,34 @@ void test_member_niche_payload() {
     CRUCIBLE_FATAL_INVARIANT(empty_value_aborts);
 }
 
+// A class of the member protocol that states that no door builds the empty
+// value, while its aggregate can still build it.  The statement gives a loop
+// over a mutable Option a cursor that writes the payload.  The niche slot
+// tests each payload in each build, so the false statement ends the process
+// at the first Option of the empty value.
+struct StatedSlot {
+    std::uint32_t raw = 0;
+    static constexpr bool is_niche_empty_never_built = true;
+    [[nodiscard]] static constexpr StatedSlot niche_empty(::foundation::core::niche_key<StatedSlot> const&) noexcept {
+        return StatedSlot{0xFFFFFFFFu};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(::foundation::core::niche_key<StatedSlot> const&) const noexcept {
+        return raw == 0xFFFFFFFFu;
+    }
+};
+
+void test_member_niche_statement() {
+    static_assert(sizeof(Option<StatedSlot>) == sizeof(StatedSlot));
+    Option<StatedSlot> held = Option<StatedSlot>::some(StatedSlot{8});
+    for (StatedSlot& slot : held) {
+        slot.raw += 1;
+    }
+    CRUCIBLE_FATAL_INVARIANT(static_cast<Option<StatedSlot>&&>(held).expect("the slot was built").raw == 9);
+    bool const false_statement_aborts =
+        ::crucible::test::aborts([] { static_cast<void>(Option<StatedSlot>::some(StatedSlot{0xFFFFFFFFu})); });
+    CRUCIBLE_FATAL_INVARIANT(false_statement_aborts);
+}
+
 // The validity test of a value that a bit copy made.  A decode copies wire
 // bytes into a value, and the bytes can hold the empty value of its niche,
 // which no valid value holds.  The test reads the niche of a test type and
@@ -685,6 +713,7 @@ int main() {
     test_niche_payload();
     test_niche_empty_value_aborts();
     test_member_niche_payload();
+    test_member_niche_statement();
     test_niche_validity_of_bit_copy();
     test_forged_tag_by_memcpy();
     test_forged_tag_by_union_member();

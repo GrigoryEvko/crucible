@@ -2158,6 +2158,14 @@ foundation_neg_compile_test(neg_core_option_niche_owning_payload
 foundation_neg_compile_test(neg_core_option_niche_member_half_protocol
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
+# The statement of the member protocol is a bool, and it names the protocol,
+# so a statement with no member pair is a niche that is not well formed.
+foundation_neg_compile_test(neg_core_option_niche_member_statement_not_bool
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
+foundation_neg_compile_test(neg_core_option_niche_member_statement_alone
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
+  "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
 foundation_neg_compile_test(neg_core_option_niche_member_wrong_type
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "required for the satisfaction of .WellFormedNiche<T>. \\[with T = SlotNumber\\]")
@@ -2296,6 +2304,14 @@ foundation_neg_compile_test(neg_core_option_member_lifetime_start
 foundation_neg_compile_test(neg_core_bit_cast_into_one_of
   "no matching function for call to .bit_cast<Reading>\\(ForgedReading\\)."
   "required for the satisfaction of .BitValid<To>. \\[with To = foundation::core::OneOf<")
+# niche_key has no open mark, so the rule specialization-home refuses an
+# explicit and a partial specialization of it outside Choice.h.
+foundation_neg_compile_test(neg_core_niche_key_explicit_specialization
+  "this file specializes the template .foundation::core::niche_key. outside its home .include/foundation/core/Choice\\.h."
+  "C\\+\\+ has no orphan rule")
+foundation_neg_compile_test(neg_core_niche_key_partial_specialization
+  "this file specializes the template .foundation::core::niche_key. outside its home .include/foundation/core/Choice\\.h."
+  "C\\+\\+ has no orphan rule")
 foundation_neg_compile_test(neg_core_text_niche_key_forged
   "error: redefinition of .class foundation::core::niche_key<T>."
   "Choice\\.h:[0-9]+:[0-9]+: note: previous definition of .class foundation::core::niche_key<T>.")

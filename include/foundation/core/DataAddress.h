@@ -144,8 +144,9 @@ public:
 
 // The empty value of an Option of a RunAddress: the null pointer, which no
 // RunAddress holds.  No door builds the null pointer: each mint gives no
-// value for it, and the seal refuses std::bit_cast.  So the storage of a full
-// Option trusts each RunAddress and has no test of the null pointer.
+// value for it, and the seal refuses std::bit_cast.  So a loop over a mutable
+// Option of a RunAddress gets a cursor that writes the RunAddress.  The
+// storage of a full Option still tests each RunAddress for the null pointer.
 template <>
 struct niche<RunAddress> {
     static constexpr bool is_empty_never_built = true;

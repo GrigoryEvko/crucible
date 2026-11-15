@@ -738,8 +738,12 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "option_ref_some",
-        "a full Option of a Ref is the address in one register, as the raw address is.  The niche of Ref states that "
-        "no door builds the null pointer, so the niche slot has no test of the empty value",
+        "a full Option of a Ref is the address in one register, as the raw address is, after one test of the null "
+        "pointer with a branch to a call of the fatal exit.  The niche of Ref states that no door builds the null "
+        "pointer, and the niche slot still tests each payload in each build, so a false statement ends the process.  "
+        "A caller that states the address with an [[assume]], as get() of a OneOf does, has no test.  "
+        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch to a trap",
+        checks=("fatal",),
     ),
     Probe(
         "option_try",

@@ -971,17 +971,34 @@ static_assert(Option<Ticket>{} == Option<Ticket>{} && Option<Ticket>::some(Ticke
 
 // ── The statement that no door builds the empty value ─────────────────
 
-// A niche that states it has no run-time test of the empty value.  The
-// statement is a constant of type bool, and the payload gate refuses a
-// statement of a different type.
+// A niche that states that no door builds the empty value.  The statement is
+// a constant of type bool, and the payload gate refuses a statement of a
+// different type.  A class of the member protocol states it with the member
+// is_niche_empty_never_built, which niche<T> reads.
 static_assert(NicheRead<TrustedSlot>::is_empty_never_built());
 static_assert(!NicheRead<SlotNumber>::is_empty_never_built() && !NicheRead<Ticket>::is_empty_never_built());
 static_assert(ChoicePayload<TrustedSlot> && !ChoicePayload<MisstatedSlot>);
 static_assert(sizeof(Option<TrustedSlot>) == sizeof(TrustedSlot));
 static_assert(Option<TrustedSlot>::some(TrustedSlot{3}).is_some() && Option<TrustedSlot>{}.is_none());
 
-// A constant evaluation still tests the payload, so a false statement fails
-// a constant test.  At run time, the author of the type answers for it.
+// A slot number of the member protocol that states the fact.
+struct TrustedMemberSlot {
+    std::uint32_t raw = 0;
+    static constexpr bool is_niche_empty_never_built = true;
+    [[nodiscard]] static constexpr TrustedMemberSlot niche_empty(niche_key<TrustedMemberSlot> const&) noexcept {
+        return TrustedMemberSlot{0xFFFFFFFFu};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(niche_key<TrustedMemberSlot> const&) const noexcept {
+        return raw == 0xFFFFFFFFu;
+    }
+};
+
+static_assert(NicheRead<TrustedMemberSlot>::is_empty_never_built() && !NicheRead<MemberSlot>::is_empty_never_built());
+static_assert(ChoicePayload<TrustedMemberSlot> && sizeof(Option<TrustedMemberSlot>) == sizeof(TrustedMemberSlot));
+
+// The niche slot tests the payload in each build, also with the statement,
+// so a false statement fails a constant test, and at run time it ends the
+// process.
 template <std::uint32_t Raw>
 constexpr bool builds_trusted =
     requires { typename std::bool_constant<Option<TrustedSlot>::some(TrustedSlot{Raw}).is_some()>; };

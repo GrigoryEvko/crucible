@@ -160,13 +160,17 @@ public:
 // niche carries the open mark: only the file that defines a type can
 // specialize niche for it (the rule specialization-home).  So the author of
 // T writes niche<T>, and the author also writes each door that builds a T.
-// A specialization can then state that no door of T builds the empty value:
+// The author can then state that no door of T builds the empty value, in the
+// specialization or in the class of the member protocol:
 //
-//   static constexpr bool is_empty_never_built = true;
+//   static constexpr bool is_empty_never_built = true;          in niche<T>
+//   static constexpr bool is_niche_empty_never_built = true;    in T
 //
-// The storage of a full Option then trusts its payload and has no test of
-// the empty value.  Without the statement, the storage tests each payload,
-// and a payload equal to the empty value ends the process.
+// The statement gives a loop over a mutable Option a cursor that writes the
+// payload.  The storage of a full Option tests each payload in each build,
+// also with the statement, and a payload equal to the empty value ends the
+// process.  So a false statement ends the process at the first door that
+// builds the empty value.
 template <class T>
 struct[[= detail::UndeclaredNiche{}]]
       [[= ::foundation::open_extension{"a payload type states its empty value beside its own definition"}]] niche {};
@@ -177,9 +181,26 @@ namespace detail {
 template <class T>
 concept UndeclaredNicheOf = ::foundation::linear::carries_annotation(^^niche<T>, ^^UndeclaredNiche);
 
-// A class that names a member of the member protocol.
+// A class that names a member of the member protocol, also only the statement
+// is_niche_empty_never_built, so a statement with no member pair declares a
+// niche that is not well formed, and the payload gate refuses it.
 template <class T>
-concept NamesMemberNiche = requires { &T::niche_empty; } || requires { &T::is_niche_empty; };
+concept NamesMemberNiche =
+    requires { &T::niche_empty; } || requires { &T::is_niche_empty; } || requires { &T::is_niche_empty_never_built; };
+
+// The statement of the member protocol that no door of T builds the empty
+// value, as the member is_empty_never_built of niche<T>.  A class that states
+// nothing gives no member, and NicheRead then reads no statement.  The member
+// keeps the type of the statement, so the payload gate refuses a statement of
+// a type other than bool.
+template <class T>
+struct MemberNicheStatement {};
+
+template <class T>
+    requires requires { T::is_niche_empty_never_built; }
+struct MemberNicheStatement<T> {
+    static constexpr auto is_empty_never_built = T::is_niche_empty_never_built;
+};
 
 // A type whose copy, move and end are those of its bytes, and whose copy
 // assignment does not throw.  The assignment can be user-provided, as the
@@ -195,9 +216,10 @@ concept TrivialCopyShape = std::is_trivially_copy_constructible_v<T> && std::is_
 // The niche of a class that gives the members of the protocol.  A class
 // that gives only one of the two members, or a member of the wrong type,
 // declares a niche that is not well formed, and the payload gate refuses it.
+// The base gives the statement of the class, when the class states it.
 template <class T>
     requires detail::NamesMemberNiche<T>
-struct niche<T> {
+struct niche<T> : detail::MemberNicheStatement<T> {
     [[nodiscard]] static constexpr T empty(niche_key<T> const& key) noexcept
         requires requires(niche_key<T> const& held_key) {
             { T::niche_empty(held_key) } noexcept -> std::same_as<T>;
@@ -643,20 +665,11 @@ public:
     template <class U>
     constexpr OptionSlot(SomeTag, U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>)
         : value_(static_cast<U&&>(value)) {
-        // A payload equal to the empty value would read as no value.  A niche
-        // that states that no door of T builds the empty value needs no test
-        // at run time.  A constant evaluation still tests the payload, so a
-        // false statement fails in a constant test, with no run-time cost.
-        if constexpr (!NicheRead<T>::is_empty_never_built()) {
-            if (NicheRead<T>::is_empty_(value_)) [[unlikely]] {
-                fatal("Option::some got the empty value of the niche of its payload");
-            }
-        } else {
-            if consteval {
-                if (NicheRead<T>::is_empty_(value_)) {
-                    fatal("a niche that states that no door builds the empty value got the empty value");
-                }
-            }
+        // A payload equal to the empty value would read as no value.  The
+        // test runs in each build, also for a niche that states that no door
+        // of T builds the empty value, so a false statement ends the process.
+        if (NicheRead<T>::is_empty_(value_)) [[unlikely]] {
+            fatal("Option::some got the empty value of the niche of its payload");
         }
     }
 };
