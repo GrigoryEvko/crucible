@@ -4393,8 +4393,9 @@ endforeach()
 # vessel libraries of this build, and the loader of crucible_native refuses a
 # library with a sanitizer runtime.  The interpreter runs with -E, so the
 # directory of the script is on sys.path and the test imports crucible_mode.
-# -B writes no compiled module into the tree.  The lock vessel_torch runs the
-# tests one at a time, because they share the vessel libraries.
+# -B writes no compiled module into the tree.  A test only reads the vessel
+# libraries, and it writes each file into a temporary directory of its own.
+# Thus the tests run at the same time.
 #
 # A build with no TORCH_DIR does not compile the vessel, and it has no vessel
 # test.  A build with a TORCH_DIR that cannot operate the tests gets each one
@@ -4439,7 +4440,7 @@ if(NOT "${TORCH_DIR}" STREQUAL "")
     crucible_script_test(NAME vessel_${_vessel_stem}
       COMMAND ${CRUCIBLE_VESSEL_PYTHON} -E -B ${_vessel_test}
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/vessel/torch)
-    set_tests_properties(vessel_${_vessel_stem} PROPERTIES LABELS vessel TIMEOUT 1800 RESOURCE_LOCK vessel_torch
+    set_tests_properties(vessel_${_vessel_stem} PROPERTIES LABELS vessel TIMEOUT 1800
       ENVIRONMENT "CRUCIBLE_BUILD_DIR=${CMAKE_BINARY_DIR}")
     if(_vessel_blocker)
       set_tests_properties(vessel_${_vessel_stem} PROPERTIES DISABLED TRUE)
