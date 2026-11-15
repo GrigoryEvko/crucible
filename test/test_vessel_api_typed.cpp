@@ -43,7 +43,8 @@ static_assert(alignof(TypedMeta) == alignof(const CrucibleMeta*));
 static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
 
 // No door of the base starts the life of a TensorMeta over the bytes of a C
-// record, so the thunks decode each record into a list.  The checked lifetime
+// record, so the thunks decode each record into the record slots of the
+// Vigil.  The checked lifetime
 // start refuses the Tagged pointer of a TensorMeta.  A foreign View refuses
 // its bool, its enumerations and its pointer.  decode refuses a pointer.
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<crucible::TensorMeta>);

@@ -21,7 +21,7 @@
 //
 //   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> ExternalDataPtr
 //   decode_ffi_meta(record)   : const CrucibleMeta&      -> Option<TensorMeta>
-//   decode_ffi_records(...)   : TypedMeta, count, list   -> bool
+//   decode_ffi_records(...)   : TypedMeta, count, slots  -> Option<View<TensorMeta const>>
 //
 //   TypedSchemaName           := SchemaTable::LookupName
 //   schema_name_typed(hash)   : SchemaHash               -> TypedSchemaName
