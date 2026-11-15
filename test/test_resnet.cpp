@@ -50,8 +50,8 @@ int main() {
     feed_trigger(vigil, net.ops, 2);
     flush_and_wait_region_published(vigil);
 
-    const auto* region = vigil.active_region();
-    assert(region && region->plan.is_some());
+    const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
+    assert(region->plan.is_some());
     const ::fixy::Ref<MemoryPlan> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
     ::fixy::report(::fixy::Sink::Out, "  region: {} ops, pool {} B, {} slots ({} ext)\n", region->num_ops(),
                    static_cast<unsigned long long>(plan->pool_bytes), plan->num_slots(), plan->num_external);

@@ -394,14 +394,19 @@ public:
     // has it.  After that, the caller can read it until the producer thread
     // next gets a region, diverges, does a rollback or loads.  Each of those
     // writes the regions that the foreground holds, and the publish stage can
-    // then release the region.
-    [[nodiscard]] const RegionNode* active_region() const noexcept { return newest_region_(); }
+    // then release the region.  No region before the first publication.
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<const RegionNode>> active_region() const noexcept {
+        for (const ::fixy::Ref<RegionNode> region : newest_region_()) {
+            return ::fixy::some(::fixy::Ref<const RegionNode>{region});
+        }
+        return ::fixy::none;
+    }
 
     // replay needs a writable view, because the caller's execution lambda
     // mutates the region as it writes outputs.  The const accessor above
     // serves introspection, and its rule for a read of the region applies
     // here too.
-    [[nodiscard]] RegionNode* active_region_mut() noexcept { return newest_region_(); }
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> active_region_mut() noexcept { return newest_region_(); }
 
     // Advanced only by the background thread, once per region transition.
     [[nodiscard]] uint64_t current_step() const noexcept { return step_.get(); }
@@ -450,9 +455,11 @@ public:
     // with no guard mismatch.
     template <typename GuardEval, typename RegionExec>
     [[nodiscard]] bool replay(GuardEval&& eval_guard, RegionExec&& exec_region) {
-        RegionNode* region = active_region_mut();
-        if (!region) return false;
-        return crucible::replay(*region, std::forward<GuardEval>(eval_guard), std::forward<RegionExec>(exec_region));
+        for (const ::fixy::Ref<RegionNode> region : active_region_mut()) {
+            return crucible::replay(*region, std::forward<GuardEval>(eval_guard),
+                                    std::forward<RegionExec>(exec_region));
+        }
+        return false;
     }
 
     // Serializes the active region to the store and advances its head.
@@ -468,9 +475,10 @@ public:
         requires ::crucible::cipher::CtxFitsCipherCommit<Ctx>
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
         for (::fixy::Box<Cipher>& cipher : cipher_) {
-            const RegionNode* region = active_region();
-            if (!region) return false;
-            return persist_into_(ctx, *cipher, ::fixy::to(*region));
+            for (const ::fixy::Ref<const RegionNode> region : active_region()) {
+                return persist_into_(ctx, *cipher, region);
+            }
+            return false;
         }
         return false;
     }
@@ -638,12 +646,19 @@ private:
 
     // The body of active_region.  The producer thread is the one writer of
     // the requested reset, so on that thread the comparison cannot race it.
-    [[nodiscard]] RegionNode* newest_region_() const noexcept {
+    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> newest_region_() const noexcept {
         const PendingRegion pending = pending_region_.load_acquire();
         for (const auto& published : pending) {
-            if (published->reset_point == bg_.requested_reset()) return published->region.try_get();
+            if (published->reset_point == bg_.requested_reset()) return region_of_(published->region);
         }
-        return taken_region_.load_acquire().try_get();
+        return region_of_(taken_region_.load_acquire());
+    }
+
+    // The region of a slot that can be empty, or no region for an empty
+    // slot.
+    [[nodiscard]] static ::fixy::Option<::fixy::Ref<RegionNode>> region_of_(::fixy::WeakRef<RegionNode> slot) noexcept {
+        if (!slot.has_value()) return ::fixy::none;
+        return ::fixy::some(::fixy::Ref<RegionNode>{::fixy::to(slot.get())});
     }
 
     // The store parts of persist and load.  The store is a template

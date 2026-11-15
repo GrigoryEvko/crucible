@@ -89,7 +89,7 @@ int main() {
 
     assert(!vigil.is_compiled());
     assert(vigil.current_step() == 0);
-    assert(vigil.active_region() == nullptr);
+    assert(vigil.active_region().is_none());
 
     // Fifteen ops, as three repeats of the same five schema hashes. The
     // detector needs a signature of five, then a first match, then a second
@@ -118,9 +118,10 @@ int main() {
     assert(vigil.has_pending_region());
     assert(!vigil.is_compiled() && "publication alone must not report a replay");
     assert(!vigil.context().is_compiled());
-    assert(vigil.active_region() != nullptr);
+    assert(vigil.active_region().is_some());
     assert(vigil.current_step() >= 1);
-    const crucible::RegionNode* active_region = vigil.active_region();
+    const ::fixy::Ref<const crucible::RegionNode> active_region =
+        vigil.active_region().expect("the flush published a region");
     const auto object_path = object_path_for(dir, active_region->content_hash);
     assert(!std::filesystem::exists(object_path) && "background Vigil callback must not pre-store Cipher objects");
     assert(!std::filesystem::exists(std::string(dir) + "/HEAD")
@@ -153,7 +154,8 @@ int main() {
 
     assert(replayed && "replay() must return true for a linear region");
     assert(region_exec_count == 1 && "RegionExec must be called exactly once for a single-region DAG");
-    assert(exec_region_ptr == vigil.active_region() && "replay() must execute the active region");
+    assert(exec_region_ptr == &*vigil.active_region().expect("the flush published a region")
+           && "replay() must execute the active region");
 
     // The stored region has no memory plan: its tensors have no data.  A load
     // of it while the context replays a different region stops that replay,
@@ -171,7 +173,8 @@ int main() {
     assert(vigil.load(::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
                       ::foundation::effects::testing::test().alloc)
            && "load() must find the stored head");
-    assert(vigil.active_region()->content_hash == stored_hash && "load() must make the stored region active");
+    assert(vigil.active_region().expect("the load made a region active")->content_hash == stored_hash
+           && "load() must make the stored region active");
     assert(!vigil.context().is_compiled() && "the context replays a region that is not the active region");
     assert(!vigil.is_compiled() && "the mode reports a replay of a region that is not the active region");
 

@@ -147,8 +147,8 @@ void test_alignment_bound_returns_to_replay() {
     }
     flush_and_wait_region_published(vigil);
 
-    assert(vigil.active_region() != nullptr);
-    const RegionNode& region = *vigil.active_region();
+    assert(vigil.active_region().is_some());
+    const RegionNode& region = *vigil.active_region().expect("the flush published a region");
     assert(region.num_ops() == NUM_OPS && "the region holds one iteration of the new trace");
     for (const crucible::TraceEntry& op : region.ops) {
         const uint64_t schema = op.schema_hash.raw();

@@ -357,8 +357,12 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
     vigil->flush();
 
-    const auto* region = vigil->active_region();
-    if (!region || region->num_ops() == 0) return 0;
+    ::fixy::Option<::fixy::Ref<const crucible::RegionNode>> active = vigil->active_region();
+    if (active.is_none()) return 0;
+    const ::fixy::Ref<const crucible::RegionNode> region =
+        static_cast<::fixy::Option<::fixy::Ref<const crucible::RegionNode>>&&>(active).expect(
+            "the test above found the region");
+    if (region->num_ops() == 0) return 0;
     const uint32_t num_ops = region->num_ops();
 
     std::FILE* f = std::fopen(path, "wb");
@@ -461,8 +465,10 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers o
 uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
-    const auto* region = vigil_typed.value()->active_region();
-    return region ? region->num_ops() : 0;
+    for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
+        return region->num_ops();
+    }
+    return 0;
 }
 
 }  // extern "C"

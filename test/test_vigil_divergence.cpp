@@ -446,19 +446,20 @@ void test_divergence_leaves_no_stale_active_region() {
     }
     assert(vigil.context().is_compiled() && "the foreground aligns on the region of the first cycle");
     const crucible::ContentHash replayed_hash = vigil.context().active_region()->content_hash;
-    assert(vigil.active_region()->content_hash == replayed_hash);
+    assert(vigil.active_region().expect("the first cycle published a region")->content_hash == replayed_hash);
 
     const uint64_t step_before = vigil.current_step();
     feed_cycle_region(vigil, 1, 4);
     vigil.flush();
     assert(vigil.current_step() > step_before && "the region of the second cycle must be published");
-    assert(vigil.active_region()->content_hash != replayed_hash && "the slot holds the newest region");
+    assert(vigil.active_region().expect("the second cycle published a region")->content_hash != replayed_hash
+           && "the slot holds the newest region");
 
     OpData foreign_op = op_at(7, 0);
     foreign_op.entry.schema_hash = FOREIGN_SCHEMA;
     auto diverged = crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
     assert(diverged.status == crucible::ReplayStatus::DIVERGED);
-    assert(vigil.active_region()->content_hash == replayed_hash
+    assert(vigil.active_region().expect("the producer took a region")->content_hash == replayed_hash
            && "the active region names the region of ops recorded before the divergence");
 
     crucible::test::pass("  test_divergence_leaves_no_stale_active_region: PASSED\n");

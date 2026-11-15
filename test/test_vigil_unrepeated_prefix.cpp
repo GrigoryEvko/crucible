@@ -99,7 +99,7 @@ uint32_t iterations_of_loop_to_region(Vigil& vigil) {
         for (uint64_t op = 0; op < 8; ++op)
             (void)record(vigil, 0x100 + op, 0x200 + op, base + op * 0x100, base + (op + 1) * 0x100);
         wait_for_pipeline(vigil);
-        if (vigil.active_region() != nullptr) return iteration + 1;
+        if (vigil.active_region().is_some()) return iteration + 1;
     }
     return 0;
 }

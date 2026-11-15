@@ -53,10 +53,10 @@ int main() {
     flush_and_wait_region_published(vigil);
 
     std::printf("\n   >>> Iteration boundary detected! <<<\n");
-    std::printf("   BackgroundThread built RegionNode with %u ops\n", vigil.active_region()->num_ops());
+    const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
+    std::printf("   BackgroundThread built RegionNode with %u ops\n", region->num_ops());
 
-    const auto* region = vigil.active_region();
-    assert(region && region->plan.is_some());
+    assert(region->plan.is_some());
     const ::fixy::Ref<MemoryPlan> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
 
     std::printf("\n── Memory Plan ──\n");
