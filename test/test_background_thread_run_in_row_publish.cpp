@@ -55,34 +55,39 @@ struct Gate {
     static constexpr uint64_t FAMILY_A = 0x00A00000ULL;
     static constexpr uint64_t FAMILY_B = 0x00B00000ULL;
     static constexpr uint64_t FAMILY_MASK = 0x00FF0000ULL;
+
+    // The region callback.  A test declares its Gate and the CallRef of this
+    // function before its BackgroundThread, so the two outlive the join of
+    // the pipeline thread.
+    void on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&,
+                         BackgroundThread::PublishedRegion const& ready) noexcept;
 };
 
-static void on_region_ready(void* ctx, eff::Bg const&, crucible::BackgroundThread::PublishStage,
-                            crucible::BackgroundThread::PublishedRegion const& published) noexcept {
-    auto* gate = static_cast<Gate*>(ctx);
-    const crucible::RegionNode* const region = published.region.try_get();
+void Gate::on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&,
+                           BackgroundThread::PublishedRegion const& ready) noexcept {
+    const crucible::RegionNode* const region = ready.region.try_get();
 
     // The hash the background thread folded while streaming the ops must
     // equal the hash the canonical span fold produces over the same ops.
     // This is the assertion that binds the production producer to the
     // canonical one on a region that really came off the pipeline.
     const crucible::ContentHash canonical = crucible::compute_content_hash(region->ops);
-    if (canonical != region->content_hash) (void)gate->hash_mismatches.fetch_add_acq_rel(1u);
+    if (canonical != region->content_hash) (void)hash_mismatches.fetch_add_acq_rel(1u);
 
-    const bool after_reset = gate->reset_observed.load_acquire();
-    const uint64_t family = region->op_at(0).schema_hash.raw() & Gate::FAMILY_MASK;
+    const bool after_reset = reset_observed.load_acquire();
+    const uint64_t family = region->op_at(0).schema_hash.raw() & FAMILY_MASK;
 
-    (void)gate->published.fetch_add_acq_rel(1u);
+    (void)published.fetch_add_acq_rel(1u);
     if (after_reset) {
-        (void)gate->published_after_reset.fetch_add_acq_rel(1u);
-        if (family == Gate::FAMILY_A) (void)gate->stale_after_reset.fetch_add_acq_rel(1u);
+        (void)published_after_reset.fetch_add_acq_rel(1u);
+        if (family == FAMILY_A) (void)stale_after_reset.fetch_add_acq_rel(1u);
     }
 
-    if (!gate->hold_next.load_acquire()) return;
-    gate->hold_next.store_release(false);
-    gate->held_reset_point.store_release(published.reset_point.ops_before());
-    gate->in_callback.store_release(true);
-    while (!gate->release.load_acquire()) {
+    if (!hold_next.load_acquire()) return;
+    hold_next.store_release(false);
+    held_reset_point.store_release(ready.reset_point.ops_before());
+    in_callback.store_release(true);
+    while (!release.load_acquire()) {
         CRUCIBLE_SPIN_PAUSE;
     }
 }
@@ -125,12 +130,13 @@ namespace test_background_thread_run_in_row {
 void test_reset_drops_inflight_regions() {
     using namespace publish_rig;
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    Gate gate;
+    const BackgroundThread::RegionReadyCall on_ready =
+        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    Gate gate;
 
-    bt.set_region_ready_callback(&gate, &on_region_ready);
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < A_ITERS; ++iter)
@@ -212,12 +218,13 @@ void test_reset_applies_at_its_point() {
     constexpr uint32_t BACKLOG_ITERS = 400;
 
     const auto test = ::foundation::effects::testing::test();
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    Gate gate;
+    const BackgroundThread::RegionReadyCall on_ready =
+        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
     ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
     ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
-    Gate gate;
 
-    bt.set_region_ready_callback(&gate, &on_region_ready);
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
@@ -268,12 +275,13 @@ void test_mark_keeps_an_unapplied_restart() {
     using StreamPoint = BackgroundThread::StreamPoint;
 
     const auto test = ::foundation::effects::testing::test();
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    Gate gate;
+    const BackgroundThread::RegionReadyCall on_ready =
+        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
     ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
     ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
-    Gate gate;
 
-    bt.set_region_ready_callback(&gate, &on_region_ready);
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
@@ -325,12 +333,13 @@ void test_reset_skips_the_stale_backlog() {
     constexpr uint32_t BACKLOG_ITERS = 400;
 
     const auto test = ::foundation::effects::testing::test();
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    Gate gate;
+    const BackgroundThread::RegionReadyCall on_ready =
+        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
     ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
     ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
-    Gate gate;
 
-    bt.set_region_ready_callback(&gate, &on_region_ready);
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
@@ -360,15 +369,16 @@ void test_reset_skips_the_stale_backlog() {
 void test_published_regions_keep_their_hashes() {
     using namespace publish_rig;
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
     Gate gate;
     // Nothing is parked here.  The test reads each callback, and holding one
     // would only keep the pipeline waiting.
     gate.hold_next.store_release(false);
+    const BackgroundThread::RegionReadyCall on_ready =
+        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
+    auto ring = std::make_unique<TraceRing>();
+    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
 
-    bt.set_region_ready_callback(&gate, &on_region_ready);
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < A_ITERS; ++iter)

@@ -3090,19 +3090,18 @@ crucible_neg_compile_test(neg_costmodel_fusion_benefit_block_row
   "required for the satisfaction of .CtxFitsCostModel<Ctx>."
   "is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) \\[with R1 = foundation::effects::Row<foundation::effects::Effect::Block>. R2 = foundation::effects::Row<>\\]. evaluated to .false.")
 
-# BackgroundThread::RegionReadyCallback::Fn is a noexcept function
-# pointer, because the callback runs on the publish stage in the middle
-# of a publication.  The first fixture shows that a function that is not
-# noexcept does not convert to Fn.  The second shows that Fn is not the
-# same type as the plain function pointer.
-set(BG_CALLBACK_PARAMS "void\\*, const foundation::effects::Bg&, crucible::BackgroundThread::PublishStage, const crucible::BackgroundThread::PublishedRegion&")
-set(BG_CALLBACK_CLASS_PARAMS "void\\*, const class foundation::effects::Bg&, class crucible::BackgroundThread::PublishStage, const struct crucible::BackgroundThread::PublishedRegion&")
+# BackgroundThread::RegionReadyCall is a CallRef of a noexcept signature,
+# because the callback runs on the publish stage in the middle of a
+# publication.  The first fixture shows that a function that is not
+# noexcept does not fit the CallRef.  The second shows that RegionReadyCall
+# is not the CallRef of the signature without noexcept.
+set(BG_CALLBACK_PARAMS "const foundation::effects::Bg&, const crucible::BackgroundThread::PublishStage&, const crucible::BackgroundThread::PublishedRegion&")
 crucible_neg_compile_test(neg_background_thread_callback_throwing_fnptr_rejected
-  "invalid conversion from .void \\(\\*\\)\\(${BG_CALLBACK_PARAMS}\\). to .crucible::BackgroundThread::RegionReadyCallback::Fn."
-  "aka .void \\(\\*\\)\\(${BG_CALLBACK_PARAMS}\\) noexcept.")
+  "no matching function for call to .foundation::core::CallRef<void\\(${BG_CALLBACK_PARAMS}\\) noexcept>::of<.anonymous.::throwing_callback>\\(\\)."
+  "..anonymous.::throwing_callback\\(.*\\). is not .noexcept.")
 crucible_neg_compile_test(neg_background_thread_callback_type_identity_drift
-  "static assertion failed: RegionReadyCallback::Fn carries noexcept, so it is not the plain function pointer type"
-  ".void \\(\\*\\)\\(${BG_CALLBACK_CLASS_PARAMS}\\) noexcept. is not the same as .void \\(\\*\\)\\(${BG_CALLBACK_CLASS_PARAMS}\\).")
+  "static assertion failed: RegionReadyCall carries noexcept, so it is not the CallRef of the plain signature"
+  ".class foundation::core::CallRef<void\\(${BG_CALLBACK_PARAMS}\\) noexcept>. is not the same as .class foundation::core::CallRef<void\\(${BG_CALLBACK_PARAMS}\\)>.")
 
 # Transaction::ts_ns holds an Option of a reading of the monotonic clock.
 # Option::some takes only a value that builds a reading.

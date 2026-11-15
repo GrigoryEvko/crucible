@@ -337,8 +337,13 @@ struct BackgroundThread::Pipeline {
     static void MakeRegionFn(GraphPublishInput&& in, BgSinkProducerHandle&& out);
 };
 
+// ignore_regions_ comes before region_ready_ in the class, so it is built
+// before the Ref of it.
 BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation)
-    : pipeline_{::fixy::mint_box<Pipeline>(allocation)} {}
+    : region_ready_{::fixy::to(ignore_regions_)}, pipeline_{::fixy::mint_box<Pipeline>(allocation)} {}
+
+BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready)
+    : region_ready_{::fixy::to(on_region_ready)}, pipeline_{::fixy::mint_box<Pipeline>(allocation)} {}
 
 BackgroundThread::BgBuildWork* BackgroundThread::make_commit_work(uint32_t count) {
     auto* work = new BgBuildWork{};
@@ -520,9 +525,8 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     uncompiled_regions.push(published.get());
     active_region.store_release(published);
     owner_marks_ = RegionMarks{};
-    if (region_ready_cb) {
-        region_ready_cb(bg, stage, memory.published);
-    }
+    // The callback gets a proof of its own, which dies with the call.
+    (*region_ready_)(bg, PublishStage{}, memory.published);
     sweep_regions_(stage);
 }
 

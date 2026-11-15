@@ -702,7 +702,7 @@ private:
     // region to the foreground, and observes the watchdog when it is
     // loaded.  The body is in src/Vigil.cpp.
     [[gnu::cold]] void on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
-                                       BackgroundThread::PublishedRegion const& published);
+                                       BackgroundThread::PublishedRegion const& published) noexcept;
 
     // Makes a region from outside the pipeline active: the region of a
     // rollback or of a load.  The caller first requests a mark at the
@@ -1249,6 +1249,13 @@ private:
     // no storage.  It has no initializer, because only the constructor of
     // the Vigil holds the startup context, and it sets the tag.
     [[no_unique_address]] ::foundation::effects::Alloc allocation_;
+
+    // The region callback of bg_: on_region_ready of this Vigil.  bg_
+    // borrows it, so it must precede bg_.  Destroying bg_ first joins the
+    // pipeline thread, the one caller of the callback, and only then do this
+    // member and the rest of the Vigil end.  The CallRef holds the address of
+    // this Vigil, so a Vigil has no copy and no move.
+    BackgroundThread::RegionReadyCall const region_ready_;
 
     BackgroundThread bg_;  // Must stay last.
 };

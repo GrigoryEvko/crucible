@@ -115,13 +115,12 @@ struct BackgroundThread {
     //
     // Only this class builds one, and it builds a fresh one for each call
     // that runs on the owning thread: the region callback, and each job
-    // that run_on_publish_stage posts.  The region callback takes the proof
-    // by value, as a prvalue that guaranteed elision builds in the
-    // parameter.  A job takes a reference to a temporary that its call
-    // builds.  So the proof dies when the call returns.  A job that keeps the address of
-    // its proof then keeps an invalid pointer, and no later use of it is
-    // legal C++.  While no publish stage runs, run_on_publish_stage builds
-    // one for its caller, who then owns that state.  The class cannot be
+    // that run_on_publish_stage posts.  The callee takes a reference to a
+    // temporary that its call builds, so the proof dies when the call
+    // returns.  A callee that keeps the address of its proof then keeps an
+    // invalid pointer, and no later use of it is legal C++.  While no
+    // publish stage runs, run_on_publish_stage builds one for its caller,
+    // who then owns that state.  The class cannot be
     // copied or moved, so a thread cannot pass it to another thread by
     // value, and it is not trivially copyable and not an implicit-lifetime
     // type, so no bit_cast and no lifetime start over bytes can make one.
@@ -155,39 +154,47 @@ struct BackgroundThread {
     static_assert(!std::is_implicit_lifetime_v<PublishStage>,
                   "an implicit-lifetime proof is forgeable by a lifetime start over bytes");
 
-    struct RegionReadyCallback {
-        // The noexcept is load-bearing.  The callback runs on the publish
-        // stage in the middle of a publication, so an exception out of it
-        // would leave the transaction commit and the mode state half done.
-        // Nothing in the tree throws, and the rule artifact-symbols refuses
-        // an artifact that references __cxa_throw.  The noexcept
-        // also puts the rule in the type: a function that is not noexcept
-        // does not convert to Fn.
-        //
-        // The callback receives the background context of the thread that
-        // runs it.  A callee that acts under a background context takes that
-        // one, and never builds its own.  It also receives the publish-stage
-        // proof, which is what lets it write state that the publish stage
-        // owns.  The record of the region lives in the region store.
-        using Fn = void (*)(void*, ::foundation::effects::Bg const&, PublishStage, PublishedRegion const&) noexcept;
+    // The call of the callback of each published region.
+    //
+    // The noexcept is load-bearing.  The callback runs on the publish stage
+    // in the middle of a publication, so an exception out of it would leave
+    // the transaction commit and the mode state half done.  Nothing in the
+    // tree throws, and the rule artifact-symbols refuses an artifact that
+    // references __cxa_throw.  The noexcept also puts the rule in the type:
+    // a callable that is not noexcept does not fit a CallRef of a noexcept
+    // signature.
+    //
+    // The callback receives the background context of the thread that runs
+    // it.  A callee that acts under a background context takes that one, and
+    // never builds its own.  It also receives the publish-stage proof, which
+    // is what lets it write state that the publish stage owns.  The record of
+    // the region lives in the region store.
+    using RegionReadyCall =
+        ::fixy::CallRef<void(::foundation::effects::Bg const&, PublishStage const&, PublishedRegion const&) noexcept>;
 
-        void* ctx = nullptr;
-        Fn fn = nullptr;
+    // The callback of a BackgroundThread that its holder gives no callback.
+    static void ignore_region_(::foundation::effects::Bg const&, PublishStage const&, PublishedRegion const&) noexcept {
+    }
 
-        [[nodiscard]] constexpr explicit operator bool() const noexcept { return fn != nullptr; }
+    // The call of ignore_region_.  It has no object, so it cannot dangle.
+    // region_ready_ refers to it when the holder gives no callback.
+    RegionReadyCall const ignore_regions_ = RegionReadyCall::of<&ignore_region_>();
 
-        // The caller proves that it runs on the stage, and the callback
-        // gets a proof of its own that dies with the call.
-        void operator()(::foundation::effects::Bg const& bg, PublishStage const&,
-                        PublishedRegion const& published) const noexcept {
-            fn(ctx, bg, PublishStage{}, published);
-        }
-    };
-
+    // The callback, borrowed from the holder of this BackgroundThread.
+    //
+    // The holder keeps the CallRef and its callable alive while the pipeline
+    // thread runs.  stop() and the destructor join the pipeline thread, and
+    // only that thread calls the callback, so no call comes after the join.
+    // Vigil declares region_ready_ before bg_, and bg_ is its last member.
+    // So bg_ ends first, and its destructor joins the pipeline thread before
+    // region_ready_ and the rest of the Vigil end.  A test declares its
+    // CallRef and the object of the CallRef before its BackgroundThread, for
+    // the same reason.
+    //
     // Own cache line: background-only state.  Sharing a line with
-    // active_region would drag the callback object into the foreground's
-    // cache on every acquire load.
-    alignas(64) RegionReadyCallback region_ready_cb;
+    // active_region would drag the callback into the foreground's cache on
+    // every acquire load.
+    alignas(64)::fixy::Ref<RegionReadyCall const> region_ready_;
 
     // The call of a job: the job takes the publish-stage proof of the call.
     using OwnerJobCall = ::fixy::CallRef<void(PublishStage const&) noexcept>;
@@ -864,19 +871,18 @@ public:
 
     ~BackgroundThread() CRUCIBLE_NO_THREAD_SAFETY;
 
-    // src/BackgroundThread.cpp defines it, where the pipeline is a complete
-    // type.  The caller gives the allocation capability of its context, and
-    // the pipeline takes its storage through it.
+    // src/BackgroundThread.cpp defines the two, where the pipeline is a
+    // complete type.  The caller gives the allocation capability of its
+    // context, and the pipeline takes its storage through it.  The first
+    // has no region callback.  The second borrows the callback of the
+    // caller, which outlives this BackgroundThread (region_ready_).
     explicit BackgroundThread(::foundation::effects::Alloc allocation);
+    BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready);
     BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns the pipeline thread");
     BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns the pipeline thread");
     BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns the pipeline thread with captured this");
     BackgroundThread&
     operator=(BackgroundThread&&) = delete("BackgroundThread owns the pipeline thread with captured this");
-
-    void set_region_ready_callback(void* ctx, RegionReadyCallback::Fn fn) noexcept {
-        region_ready_cb = RegionReadyCallback{.ctx = ctx, .fn = fn};
-    }
 
     // The bytes of blocks that the two scratch arenas hold.  The build stage
     // and the publish stage write the arenas, so read the value only when no

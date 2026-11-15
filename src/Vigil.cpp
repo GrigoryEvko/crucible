@@ -29,7 +29,8 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
       tx_log_{startup},
       replay_{startup.cap().alloc},
       allocation_{startup.cap().alloc},
-      bg_{startup.cap().alloc} {
+      region_ready_{BackgroundThread::RegionReadyCall::bind<&Vigil::on_region_ready>(*this)},
+      bg_{startup.cap().alloc, region_ready_} {
     ring_->reset();
     meta_log_->reset();
 
@@ -42,12 +43,6 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
             Cipher::open(startup, startup.cap().alloc,
                          ::fixy::mint_tagged<::fixy::tags::source::External>(cfg_.cipher_path.view()))));
     }
-
-    bg_.set_region_ready_callback(this, [](void* self, ::foundation::effects::Bg const& bg,
-                                           BackgroundThread::PublishStage stage,
-                                           BackgroundThread::PublishedRegion const& published) noexcept {
-        static_cast<Vigil*>(self)->on_region_ready(bg, stage, published);
-    });
 
     // The watchdog is constructed before the background thread starts,
     // so on_region_ready can observe on the very first region transition
@@ -124,7 +119,7 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode& region) {
 }
 
 void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
-                            BackgroundThread::PublishedRegion const& published) {
+                            BackgroundThread::PublishedRegion const& published) noexcept {
     RegionNode& region = published.region.get();
     // bump returns the previous value, which is the index this call
     // reserved.  The background thread is the sole writer.

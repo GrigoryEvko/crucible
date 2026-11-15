@@ -40,12 +40,12 @@ namespace {
 // call returns.  A job or a callback that keeps the address of its proof
 // keeps an invalid pointer, and no later use of it is legal C++, so no test
 // runs one.  These assertions pin the shape that makes that true: the
-// region callback takes the proof by value, and the call of a job takes a
-// reference to a temporary proof that its caller builds for that call.
+// region callback and the call of a job each take a reference to a
+// temporary proof that the caller builds for that call.
 using Stage = crucible::BackgroundThread::PublishStage;
-static_assert(std::is_same_v<crucible::BackgroundThread::RegionReadyCallback::Fn,
-                             void (*)(void*, ::foundation::effects::Bg const&, Stage,
-                                      crucible::BackgroundThread::PublishedRegion const&) noexcept>);
+static_assert(std::is_same_v<crucible::BackgroundThread::RegionReadyCall,
+                             ::fixy::CallRef<void(::foundation::effects::Bg const&, Stage const&,
+                                                  crucible::BackgroundThread::PublishedRegion const&) noexcept>>);
 static_assert(
     std::is_same_v<decltype(crucible::BackgroundThread::OwnerJob::call), ::fixy::CallRef<void(Stage const&) noexcept>>);
 static_assert(!std::is_copy_constructible_v<Stage> && !std::is_move_constructible_v<Stage>);
