@@ -36,16 +36,18 @@ using crucible::ShapeHash;
 
 namespace {
 
-// Each call on the stage gets its own proof, by value, and the proof dies
-// when the call returns.  A job or a callback that keeps the address of
-// its proof keeps an invalid pointer, and no later use of it is legal
-// C++, so no test runs one.  These assertions pin the shape that makes
-// that true: no signature takes the proof by reference.
+// Each call on the stage gets its own proof, and the proof dies when the
+// call returns.  A job or a callback that keeps the address of its proof
+// keeps an invalid pointer, and no later use of it is legal C++, so no test
+// runs one.  These assertions pin the shape that makes that true: the
+// region callback takes the proof by value, and the call of a job takes a
+// reference to a temporary proof that its caller builds for that call.
 using Stage = crucible::BackgroundThread::PublishStage;
 static_assert(std::is_same_v<crucible::BackgroundThread::RegionReadyCallback::Fn,
                              void (*)(void*, ::foundation::effects::Bg const&, Stage,
                                       crucible::BackgroundThread::PublishedRegion const&) noexcept>);
-static_assert(std::is_same_v<decltype(crucible::BackgroundThread::OwnerJob::fn), void (*)(void*, Stage) noexcept>);
+static_assert(
+    std::is_same_v<decltype(crucible::BackgroundThread::OwnerJob::call), ::fixy::CallRef<void(Stage const&) noexcept>>);
 static_assert(!std::is_copy_constructible_v<Stage> && !std::is_move_constructible_v<Stage>);
 
 constexpr uint32_t kOps = 8;

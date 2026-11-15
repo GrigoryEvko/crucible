@@ -115,9 +115,10 @@ struct BackgroundThread {
     //
     // Only this class builds one, and it builds a fresh one for each call
     // that runs on the owning thread: the region callback, and each job
-    // that run_on_publish_stage posts.  The call takes the proof by value,
-    // as a prvalue that guaranteed elision builds in the parameter, so the
-    // proof dies when the call returns.  A job that keeps the address of
+    // that run_on_publish_stage posts.  The region callback takes the proof
+    // by value, as a prvalue that guaranteed elision builds in the
+    // parameter.  A job takes a reference to a temporary that its call
+    // builds.  So the proof dies when the call returns.  A job that keeps the address of
     // its proof then keeps an invalid pointer, and no later use of it is
     // legal C++.  While no publish stage runs, run_on_publish_stage builds
     // one for its caller, who then owns that state.  The class cannot be
@@ -188,12 +189,21 @@ struct BackgroundThread {
     // cache on every acquire load.
     alignas(64) RegionReadyCallback region_ready_cb;
 
+    // The call of a job: the job takes the publish-stage proof of the call.
+    using OwnerJobCall = ::fixy::CallRef<void(PublishStage const&) noexcept>;
+
+    // The call of the two sentinels of the mailbox.  No path runs a
+    // sentinel, so a run of one ends the process.
+    static void run_sentinel_job_(PublishStage const&) noexcept {
+        ::fixy::fatal("a sentinel of the owner mailbox ran as a job");
+    }
+
     // A job that a caller hands to the owner of the publish-stage state.
     // It lives on the caller's stack, and the caller waits on done, so the
-    // record outlives every read the publish stage makes of it.
+    // record outlives every read the publish stage makes of it.  The call
+    // borrows the job of the caller, which lives in the same frame.
     struct OwnerJob {
-        void* ctx = nullptr;
-        void (*fn)(void*, PublishStage) noexcept = nullptr;
+        OwnerJobCall call = OwnerJobCall::of<&run_sentinel_job_>();
         ::fixy::Atomic<bool> done{};
     };
 
@@ -212,10 +222,7 @@ struct BackgroundThread {
         requires std::is_nothrow_invocable_v<Job&, PublishStage const&>
     void run_on_publish_stage(Job&& job) noexcept {
         CRUCIBLE_PRE(stage_held_by_this_thread_ != ::fixy::WeakRef<const BackgroundThread>{*this});
-        using JobType = std::remove_reference_t<Job>;
-        OwnerJob request{};
-        request.ctx = static_cast<void*>(std::addressof(job));
-        request.fn = [](void* ctx, PublishStage stage) noexcept { (*static_cast<JobType*>(ctx))(stage); };
+        OwnerJob request{.call = OwnerJobCall{job}};
         const ::fixy::WeakRef<OwnerJob> posted{request};
         while (true) {
             const ::fixy::WeakRef<OwnerJob> seen = owner_mailbox_.load_acquire();
@@ -232,7 +239,7 @@ struct BackgroundThread {
                 if (owner_mailbox_.cas_acq_rel(seen, inline_mark_()).is_ok()) {
                     const ::fixy::WeakRef<const BackgroundThread> held_before = stage_held_by_this_thread_;
                     stage_held_by_this_thread_ = ::fixy::WeakRef<const BackgroundThread>{*this};
-                    request.fn(request.ctx, PublishStage{});
+                    request.call(PublishStage{});
                     stage_held_by_this_thread_ = held_before;
                     owner_mailbox_.store_release(closed_mark_());
                     return;
@@ -648,7 +655,7 @@ public:
         const ::fixy::WeakRef<OwnerJob> job = owner_mailbox_.load_acquire();
         if (!job.has_value()) return;
         CRUCIBLE_FATAL_INVARIANT(job != closed_mark_() && job != inline_mark_());
-        job->fn(job->ctx, PublishStage{});
+        job->call(PublishStage{});
         owner_mailbox_.store_release(::fixy::WeakRef<OwnerJob>{});
         // The caller returns once it reads done, and its record dies with
         // its stack frame, so nothing reads the record after this store.
@@ -658,7 +665,7 @@ public:
     void close_owner_mailbox_(PublishStage const&) noexcept {
         const ::fixy::WeakRef<OwnerJob> last = owner_mailbox_.exchange_acq_rel(closed_mark_());
         if (!last.has_value()) return;
-        last->fn(last->ctx, PublishStage{});
+        last->call(PublishStage{});
         last->done.store_release(true);
     }
 
