@@ -842,9 +842,11 @@ public:
     // rule: a late registration is rejected by the table contract instead of
     // racing the lookups this thread performs.
     // The ring and the metadata log are references, so no caller can give
-    // a null pointer.  The thread keeps their addresses until stop().
-    void start(TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank_ = -1, int32_t world_size_ = 0,
-               uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
+    // a null pointer.  The thread keeps their addresses until stop().  The
+    // init context is the authority to start the thread.  A start while a
+    // pipeline thread runs breaks the contract: call stop() first.
+    void start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank_ = -1,
+               int32_t world_size_ = 0, uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Signals the drain stage to stop and joins the pipeline thread.  The
     // pipeline joins its stage threads before the thread ends.  The signal
@@ -859,11 +861,11 @@ public:
     // type.  The caller gives the allocation capability of its context, and
     // the pipeline takes its storage through it.
     explicit BackgroundThread(::foundation::effects::Alloc allocation);
-    BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns a pipeline jthread");
-    BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns a pipeline jthread");
-    BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns a pipeline jthread with captured this");
+    BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns the pipeline thread");
+    BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns the pipeline thread");
+    BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns the pipeline thread with captured this");
     BackgroundThread&
-    operator=(BackgroundThread&&) = delete("BackgroundThread owns a pipeline jthread with captured this");
+    operator=(BackgroundThread&&) = delete("BackgroundThread owns the pipeline thread with captured this");
 
     void set_region_ready_callback(void* ctx, RegionReadyCallback::Fn fn) noexcept {
         region_ready_cb = RegionReadyCallback{.ctx = ctx, .fn = fn};

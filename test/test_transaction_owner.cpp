@@ -164,7 +164,7 @@ void job_runs_on_the_stage_while_it_runs() {
     auto ring = std::make_unique<crucible::TraceRing>();
     auto meta_log = std::make_unique<crucible::MetaLog>(::foundation::effects::testing::test().alloc);
     crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
-    background.start(*ring, *meta_log);
+    background.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     const std::thread::id caller = std::this_thread::get_id();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};

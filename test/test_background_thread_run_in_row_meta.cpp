@@ -215,7 +215,7 @@ void test_pipeline_releases_after_overflow() {
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     auto ring = std::make_unique<TraceRing>();
     auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    bt.start(*ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     // The detector accepts the period of one iteration and then cuts each
     // iteration after it.  The last iteration below meets the overflow at

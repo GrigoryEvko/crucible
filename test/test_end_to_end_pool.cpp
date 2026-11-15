@@ -28,7 +28,7 @@ void test_pipeline_data_flow() {
     feed_iteration(ring, meta_log, 1);
     feed_trigger(ring, meta_log, 2);
 
-    bt.start(*ring, *meta_log);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
     auto* region = bt.active_region.load_acquire().try_get();
@@ -80,7 +80,7 @@ void test_pipeline_pool_bounds() {
     feed_iteration(ring, meta_log, 1);
     feed_trigger(ring, meta_log, 2);
 
-    bt.start(*ring, *meta_log);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
     auto* region = bt.active_region.load_acquire().try_get();

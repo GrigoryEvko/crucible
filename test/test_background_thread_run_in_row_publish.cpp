@@ -131,7 +131,7 @@ void test_reset_drops_inflight_regions() {
     Gate gate;
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
-    bt.start(*ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < A_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -218,7 +218,7 @@ void test_reset_applies_at_its_point() {
     Gate gate;
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
-    bt.start(*ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -274,7 +274,7 @@ void test_mark_keeps_an_unapplied_restart() {
     Gate gate;
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
-    bt.start(*ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -331,7 +331,7 @@ void test_reset_skips_the_stale_backlog() {
     Gate gate;
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
-    bt.start(*ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -369,7 +369,7 @@ void test_published_regions_keep_their_hashes() {
     gate.hold_next.store_release(false);
 
     bt.set_region_ready_callback(&gate, &on_region_ready);
-    bt.start(*ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
 
     for (uint32_t iter = 0; iter < A_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -403,7 +403,7 @@ void test_published_regions_keep_their_hashes() {
 // processed each op, and stops bt.  Gives the count of published regions.
 static uint64_t run_family_a(BackgroundThread& bt, TraceRing& ring, MetaLog& metalog, uint32_t iters) {
     using namespace publish_rig;
-    bt.start(ring, metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, metalog);
     for (uint32_t iter = 0; iter < iters; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
             push(ring, Gate::FAMILY_A, op);

@@ -17,6 +17,7 @@
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
 #include <fixy/os/Futex.h>
+#include <fixy/os/OwnedThread.h>
 #include <fixy/os/Time.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Lifetime.h>
@@ -28,7 +29,6 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
-#include <thread>
 #include <utility>
 
 namespace crucible {
@@ -193,11 +193,13 @@ private:
 }  // namespace detail::bg_pipeline
 
 struct BackgroundThread::Pipeline {
-    // The thread that runs run_in_row.  start() sets it, and stop() joins it.
-    std::jthread thread;
     // True after the first start().  Only the thread that owns the
     // BackgroundThread reads and writes it.
     bool has_started = false;
+    // The thread that runs run_in_row, while one runs.  start() sets it, and
+    // stop() takes it and joins it.  It is the last data member, so it
+    // joins first.
+    ::fixy::Option<::fixy::thread::OwnedThread> thread{};
 
     using StartChannel =
         ::fixy::concurrent::spsc_channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
@@ -820,8 +822,9 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
     }
 }
 
-void BackgroundThread::start(TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank_, int32_t world_size_,
-                             uint64_t device_cap) {
+void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
+                             int32_t rank_, int32_t world_size_, uint64_t device_cap) {
+    CRUCIBLE_PRE(!pipeline_->thread.is_some());
     global_schema_table().seal();
     global_ckernel_table().value()->seal();
     ring.set(&trace_ring);
@@ -838,17 +841,18 @@ void BackgroundThread::start(TraceRing& trace_ring, MetaLog& trace_meta_log, int
         meta_cursor_ = meta_log.get()->tail.get();
     }
     // The lambda is the entry of the pipeline thread, so it takes the
-    // background context of that thread from the door.
-    pipeline_->thread = std::jthread([this]() noexcept {
-        run_in_row(::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
-    });
+    // background context of that thread from the door.  The process ends
+    // when the host has no resource for one more thread.
+    pipeline_->thread = ::fixy::Option<::fixy::thread::OwnedThread>::some(
+        ::fixy::thread::mint_owned_thread(startup, ::fixy::thread::ThreadOptions{}, [this]() noexcept {
+            run_in_row(::fixy::BgLoadCtx{::foundation::effects::host::BackgroundOwner::mint_background_context()});
+        }).expect("the thread door starts the pipeline thread"));
 }
 
 void BackgroundThread::stop() {
     stop_requested.signal();
-    if (pipeline_->thread.joinable()) {
-        pipeline_->thread.join();
-    }
+    std::move(pipeline_->thread)
+        .match([](::fixy::thread::OwnedThread thread) noexcept { std::move(thread).join(); }, []() noexcept {});
 }
 
 BackgroundThread::~BackgroundThread() { stop(); }

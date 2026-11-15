@@ -66,7 +66,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
         senses_ = ::fixy::some(std::move(senses));
     }
 
-    bg_.start(*ring_, *meta_log_, cfg_.rank, cfg_.world_size, cfg_.device_capability);
+    bg_.start(startup, *ring_, *meta_log_, cfg_.rank, cfg_.world_size, cfg_.device_capability);
 }
 
 Vigil::~Vigil() = default;

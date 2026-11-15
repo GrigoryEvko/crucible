@@ -95,7 +95,7 @@ void test_refused_ops_give_no_wrong_region() {
     assert(refused == kRefused);
 
     // The pipeline publishes the regions of the iterations in the full ring.
-    bt.start(ring, test_log());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, test_log());
     wait_for_pipeline(bt, ring);
     const uint64_t regions_before_gap = bt.uncompiled_regions.total();
 

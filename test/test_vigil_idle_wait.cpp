@@ -133,7 +133,7 @@ void wait_for_pipeline(BackgroundThread& bt, TraceRing& ring) {
 void check_idle_count(fixy::TestRunnerCtx const& runner, fixy::fs::OwnedFd const& counter) {
     TraceRing& ring = test_ring();
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(ring, test_log());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, test_log());
     for (uint64_t index = 0; index < kPeriod * kIterations; ++index)
         assert(record(ring, index));
     wait_for_pipeline(bt, ring);
