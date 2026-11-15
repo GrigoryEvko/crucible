@@ -136,6 +136,8 @@ COUNTED_REGISTRY = (
 #   * greedy: wait for ready.txt of the release build.  Then read each token that the jobserver gives for 1.5 s, and
 #     write their count to tokens.txt.  Then write greedy.held, and hold the tokens until the release build writes
 #     tokens.txt.
+# The mode killed-once ends the first run of `test BUILD` with the exit 137 of a kill for lack of memory, and writes
+# killed.txt.  Each later run is clean.
 LOOP_MASTER = """import os
 import pathlib
 import sys
@@ -184,6 +186,10 @@ began = time.monotonic()
 with open(build / "words.txt", "a") as handle:
     handle.write(" ".join(words[2:]) + "\\n")
 mode = (build / "mode.txt").read_text().strip()
+if mode == "killed-once" and not (build / "killed.txt").is_file():
+    (build / "killed.txt").write_text("1")
+    print("Killed")
+    sys.exit(137)
 if mode == "meet":
     (build / "met.txt").write_text("1")
     peers = [path.parent for path in build.parent.glob("*/mode.txt") if path.read_text().strip() == "meet"]
@@ -1602,6 +1608,62 @@ def thread_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
+def oom_cases(expect: testing.Expect) -> None:
+    """Hold THE KILL FOR MEMORY: a red run with a rise of the kill count runs one time again, and a red run with no
+    rise stays red."""
+    with tempfile.TemporaryDirectory(prefix="gate-oom-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        commit = commit_change(root, "notes.txt", "a change of the notes\n")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        build = tree / "build"
+
+        def kills() -> int:
+            """Give 1 after the planted kill of the first run, as the kernel counts it, and 0 before it."""
+            return int((build / "killed.txt").is_file())
+
+        candidate = gate.Candidate(head, commit, ("notes.txt",))
+        killed = replace(planted_gate(work, root, tree, "killed-once"), oom_kills=kills)
+        verdict, printed = testing.captured(lambda: killed.check(candidate, False))
+        calls = calls_of(build)
+        holds = verdict.is_accepted and calls.count("test") == 2 and "for lack of memory during the run" in printed
+        label = (
+            f"a run that the kernel ends for lack of memory, with exit 137 and a rise of the kill count, runs one time "
+            f"again and gives the verdict of the second run, with a line of the kill: the calls {calls}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        (build / "killed.txt").unlink()
+        flat = replace(planted_gate(work, root, tree, "killed-once"), oom_kills=lambda: 0)
+        flat_verdict, printed = testing.captured(lambda: flat.check(candidate, False))
+        flat_calls = calls_of(build)
+        holds = not flat_verdict.is_accepted and flat_calls.count("test") == 1 and "lack of memory" not in printed
+        label = (
+            f"the same red run with no rise of the kill count does not run again, and the commit is red: the calls "
+            f"{flat_calls} and the problems {flat_verdict.problems}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        (build / "killed.txt").unlink(missing_ok=True)
+    with tempfile.TemporaryDirectory(prefix="gate-oom-count-") as work_text:
+        work = Path(work_text)
+        groups = work / "cgroup"
+        group = groups / "user.slice"
+        group.mkdir(parents=True)
+        (group / "memory.max").write_text("max\n", encoding="ascii")
+        (group / "memory.events").write_text("low 0\nhigh 0\nmax 4\noom 2\noom_kill 3\n", encoding="ascii")
+        own = work / "self-cgroup"
+        own.write_text("0::/user.slice\n", encoding="ascii")
+        vmstat = work / "vmstat"
+        vmstat.write_text("pgfault 10\noom_kill 1\n", encoding="ascii")
+        counts = [heavy.oom_kills(vmstat, own, groups), heavy.oom_kills(work / "missing", work / "missing", groups)]
+        expect(
+            f"the kill count is the sum of oom_kill of /proc/vmstat and of memory.events of each group of the chain, "
+            f"and missing files give 0: {counts}",
+            counts == [4, 0],
+        )
+
+
 def memory_cases(expect: testing.Expect) -> None:
     """Hold THE JOBSERVER with a small memory: the jobserver and each -j get the jobs that the memory holds."""
     with tempfile.TemporaryDirectory(prefix="gate-memory-") as work_text:
@@ -2164,6 +2226,7 @@ def main(argv: list[str]) -> int:
             touched_cases,
             thread_cases,
             memory_cases,
+            oom_cases,
             stop_cases,
             masked_error_cases,
             base_run_cases,

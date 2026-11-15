@@ -257,6 +257,9 @@ CGROUP_ROOT = Path("/sys/fs/cgroup")
 RECLAIMABLE_FIELD = "inactive_file"
 # The lock of the pool for each change of the slots under the budget (THE BUDGET).
 BUDGET_LOCK_NAME = "budget.lock"
+# The counters of the kills of the kernel for lack of memory: the host and each control group (oom_kills()).
+VMSTAT_FILE = Path("/proc/vmstat")
+OOM_FIELD = "oom_kill"
 # The exit of a command that ends on a signal: this base plus the number of the signal, as a shell gives it.
 SIGNAL_EXIT_BASE = 128
 # The variable that the command of a step gets, and its value (THE COMMAND OF A STEP).
@@ -344,16 +347,21 @@ def cgroup_bytes(path: Path) -> int | None:
     return int(text) if text.isdigit() else None
 
 
-def reclaimable_bytes(directory: Path) -> int:
-    """Return the page cache of a control group that the kernel can take back (RECLAIMABLE_FIELD), or 0."""
+def counter_of(path: Path, field: str) -> int:
+    """Return the number of one line `FIELD NUMBER` of a file of counters, or 0 when the file or the line is missing."""
     try:
-        for line in (directory / "memory.stat").read_text(encoding="ascii").splitlines():
+        for line in path.read_text(encoding="ascii").splitlines():
             name, _, value = line.partition(" ")
-            if name == RECLAIMABLE_FIELD and value.strip().isdigit():
+            if name == field and value.strip().isdigit():
                 return int(value)
     except OSError:
         return 0
     return 0
+
+
+def reclaimable_bytes(directory: Path) -> int:
+    """Return the page cache of a control group that the kernel can take back (RECLAIMABLE_FIELD), or 0."""
+    return counter_of(directory / "memory.stat", RECLAIMABLE_FIELD)
 
 
 def available_gb(
@@ -371,6 +379,17 @@ def available_gb(
             values.append((limit - current + reclaimable_bytes(directory)) / BYTES_PER_GB)
     known = [value for value in values if value is not None]
     return min(known) if known else None
+
+
+def oom_kills(vmstat: Path = VMSTAT_FILE, cgroup_file: Path = CGROUP_FILE, cgroup_root: Path = CGROUP_ROOT) -> int:
+    """Return the sum of the counts of the processes that the kernel ended for lack of memory.
+
+    The sum holds the count of the host in /proc/vmstat and the count of memory.events of each group of the control
+    group chain.  Each count only grows, so a rise of the sum during a job tells of a kill in that time (THE KILL FOR
+    MEMORY of assay.loop.gate).
+    """
+    groups = cgroup_chain(cgroup_file, cgroup_root)
+    return counter_of(vmstat, OOM_FIELD) + sum(counter_of(group / "memory.events", OOM_FIELD) for group in groups)
 
 
 def memory_ceiling_gb(

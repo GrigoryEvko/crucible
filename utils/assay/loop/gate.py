@@ -311,6 +311,17 @@ THE STOP
     master with no such step.  Its children run in process groups of their
     own, and they then go on in the warm tree.
 
+THE KILL FOR MEMORY
+    The kernel can end a process when the host or its control group runs
+    out of memory, and the process then exits 137.  Such a kill tells that
+    the host was short of memory, not that the change has a defect.  Each
+    configuration reads the count of such kills before its run and after it
+    (Gate.oom_kills, heavy.oom_kills()).  A run with a problem and a rise of
+    the count runs one time again, with the same lease, before its problem
+    stops the others, and a line tells of the kill.  The second run gives
+    the outcome.  A kill in a different process at that time also gives the
+    second run, and a correct red run then stays red.
+
 THE REDUCE
     A ledger fails only on a growth (THE POLICIES of assay.core.ledger).  A
     count below its row, and a row of the policy admit that admits no
@@ -1340,7 +1351,8 @@ class Gate:
     `read` is the reader of the available memory, which gives the cap of a lease (THE MEMORY of assay.loop.heavy).
     `run` names the directory of the logs of one run in LOGS, or it is "" for LOGS itself (THE LOGS).  `pool` is the
     slot pool of the leases, or None for the pool of the host (THE JOBSERVER).  `lane` names the warm tree (THE
-    LANES).  `vessel` is the configuration of the vessel, or None for a gate with no vessel (THE VESSEL).
+    LANES).  `vessel` is the configuration of the vessel, or None for a gate with no vessel (THE VESSEL).  `oom_kills`
+    gives the count of the kills of the kernel for lack of memory (THE KILL FOR MEMORY).
     """
 
     root: Path
@@ -1352,6 +1364,7 @@ class Gate:
     pool: heavy.Pool | None = None
     lane: int = 0
     vessel: Configuration | None = VESSEL_CONFIGURATION
+    oom_kills: Callable[[], int] = heavy.oom_kills
 
     @property
     def slice(self) -> int:
@@ -2321,7 +2334,14 @@ class Step:
             with self.leased(gb_per_job, is_capped=is_vessel, weight=weight) as share:
                 wait_s, lease = round(share.wait_s, 1), share.lease
                 began += share.wait_s
+                kills = self.gate.oom_kills()
                 problems, red, flaky = self.run_of(run, share, is_again, is_retry)
+                if problems and not self.stop.is_set() and self.gate.oom_kills() > kills:
+                    self.say(
+                        f"loop land: {name}: the kernel ended a process for lack of memory during the run, so the run "
+                        f"runs one time again: {problems[0]}"
+                    )
+                    problems, red, flaky = self.run_of(run, share, is_again, True)
         except Stopped:
             seconds = round(time.monotonic() - began, 1)
             self.say(f"loop land: {name}: the stop ends the run after {seconds:.0f} s")
