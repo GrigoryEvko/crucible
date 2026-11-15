@@ -107,12 +107,17 @@ int check_semiring_at_runtime() {
     if (!inf.is_infinite()) return 21;
     if (!a.fresher_than(b) || !a.no_staler_than(b)) return 22;
 
-    // join keeps the staler grade, meet the fresher one, and neither
-    // touches the value.
+    // combine_max keeps the value of the left operand with the staler grade.
+    // combine_min keeps the fresher value with its own grade, from each side.
     const Stale<int> watermark = a.combine_max(b);
     if (watermark.staleness().value != 8 || watermark.peek() != 10) return 23;
     const Stale<int> freshest = a.combine_min(b);
     if (freshest.staleness().value != 3 || freshest.peek() != 10) return 24;
+    const Stale<int> fresher_on_right = b.combine_min(a);
+    if (fresher_on_right.staleness().value != 3 || fresher_on_right.peek() != 10) return 39;
+    Stale<int> staler = b;
+    const Stale<int> moved_fresher = std::move(staler).combine_min(a);
+    if (moved_fresher.staleness().value != 3 || moved_fresher.peek() != 10) return 40;
 
     // Infinity absorbs under join and is ignored under meet.
     if (!a.combine_max(inf).is_infinite()) return 25;

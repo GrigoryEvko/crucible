@@ -78,9 +78,16 @@ inline constexpr S_i s_min_pair = s_a.combine_min(s_b);
 static_assert(s_min_pair.staleness().value == 3);
 static_assert(s_min_pair.peek() == 10);
 
+// The fresher value keeps its own grade when it is the right operand.
+inline constexpr S_i s_min_swapped = s_b.combine_min(s_a);
+static_assert(s_min_swapped.staleness().value == 3);
+static_assert(s_min_swapped.peek() == 10);
+static_assert(S_i{s_b}.combine_min(s_a).peek() == 10);
+
 inline constexpr S_i s_min_with_inf = s_a.combine_min(s_inf);
 static_assert(s_min_with_inf.staleness().value == 3);
 static_assert(s_min_with_inf.is_finite());
+static_assert(s_inf.combine_min(s_a).peek() == 10);
 
 static_assert(s_a.combine_min(s_a).staleness() == s_a.staleness());
 

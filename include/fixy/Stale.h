@@ -161,16 +161,19 @@ public:
         return Stale{std::move(impl_).consume(), maxed};
     }
 
+    // The fresher of the two values, with its own grade.  A tie keeps the
+    // value of `*this`.  A grade measures the value that it came with, so
+    // the result never gives one value the grade of the other.
     [[nodiscard]] constexpr Stale
     combine_min(Stale const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
-        return Stale{this->peek(), semiring_type::meet(this->staleness(), other.staleness())};
+        return no_staler_than(other) ? *this : other;
     }
 
-    [[nodiscard]] constexpr Stale combine_min(Stale const& other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
-        staleness_t minned = semiring_type::meet(this->staleness(), other.staleness());
-        return Stale{std::move(impl_).consume(), minned};
+    [[nodiscard]] constexpr Stale combine_min(Stale other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        if (no_staler_than(other)) return std::move(*this);
+        return other;
     }
 
     // Multiplication in this semiring is saturating addition, which is
