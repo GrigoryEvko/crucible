@@ -611,7 +611,10 @@ target_compile_options(test_bench_check PRIVATE -DNDEBUG)
 # (SCHED_FIFO/RR priority clamp, mlock, CPU-pin helpers). Header-only,
 # no special capabilities required at test time (the smoke checks the
 # policy arithmetic / guard object semantics, not live scheduler calls).
+# The environment door reads the switches one time at the start of the
+# process, so the quiet switch is set here and not in the test.
 crucible_test(test_warden_policy)
+set_tests_properties(test_warden_policy PROPERTIES ENVIRONMENT_MODIFICATION "CRUCIBLE_WARDEN_QUIET=set:1")
 # Each affinity change outside fixy/os goes through the recording door, so
 # an older pin proof stops being in force.
 crucible_test(test_pin_event_door)
@@ -664,6 +667,14 @@ set_property(TEST
     test_perf_sched_tp_btf_smoke test_perf_syscall_tp_btf_smoke test_warden_deadline_watchdog_smoke
     test_perf_workload_profiler_smoke
   APPEND PROPERTY LABELS bpf)
+# A failed load is the common case in a restricted sandbox, and its
+# diagnostic would mislead there.  The environment door reads the switches
+# one time at the start of the process, so the quiet switch is set here.
+set_tests_properties(
+    test_perf_sense_hub_smoke test_perf_sched_switch_smoke test_perf_pmu_sample_smoke
+    test_perf_lock_contention_smoke test_perf_syscall_latency_smoke test_perf_senses_smoke
+    test_perf_sched_tp_btf_smoke test_perf_syscall_tp_btf_smoke
+  PROPERTIES ENVIRONMENT_MODIFICATION "CRUCIBLE_PERF_QUIET=set:1")
 
 # MetaLogSession.h — the typed-session facade over the production MetaLog
 # TensorMeta side channel.  Covers the permissioned endpoints, a session

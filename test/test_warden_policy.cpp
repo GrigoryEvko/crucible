@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -391,8 +390,6 @@ void test_revert_clears_observers() {
     using namespace crucible::warden;
 
 #ifdef __linux__
-    ::setenv("CRUCIBLE_WARDEN_QUIET", "1", 1);
-
     // Explicit early revert.
     {
         auto g = mint_hardening(kStartup, Policy::dev_quiet());
@@ -420,8 +417,6 @@ void test_revert_clears_observers() {
         CHECK(rhs.regions_locked() == 0, "moved-from rhs must report zero locked regions");
         CHECK(rhs.pinned_cpu() == -1, "moved-from rhs must report pinned_cpu == -1");
     }
-
-    ::unsetenv("CRUCIBLE_WARDEN_QUIET");
 #endif
 }
 
@@ -434,11 +429,7 @@ void test_policy_production_degrades_gracefully() {
     Policy p = Policy::production();
     p.on_missing_capability = OnMissingCap::DegradeAndWarn;
 
-    // The quiet flag is scoped tightly around mint_hardening() so that later
-    // tests still surface a warning if one fires.
-    ::setenv("CRUCIBLE_WARDEN_QUIET", "1", 1);
     auto g = mint_hardening(kStartup, p);
-    ::unsetenv("CRUCIBLE_WARDEN_QUIET");
 
     CHECK(g.pinned_cpu() >= -1, "pinned_cpu is plausible after production()");
 }
@@ -528,14 +519,12 @@ void test_registry_applies_on_mint_hardening() {
 
     // This policy enables the region lock while staying on SCHED_OTHER,
     // so the walk runs without needing CAP_SYS_NICE.
-    ::setenv("CRUCIBLE_WARDEN_QUIET", "1", 1);
     {
         auto g = mint_hardening(kStartup, Policy::dev_quiet());
         // The count is nonzero only where CAP_IPC_LOCK or memlock
         // headroom exists, so it carries no claim here.
         (void)g.regions_locked();
     }
-    ::unsetenv("CRUCIBLE_WARDEN_QUIET");
 
     unregister_hot_region(bytes);
     CHECK(HotRegionRegistry::instance().size() == baseline, "registry clean after unregister");

@@ -30,17 +30,11 @@ namespace crucible::warden {
 
 namespace detail {
 
-// True when the environment variable name holds the text "1".
-[[nodiscard]] inline bool is_env_set_to_one(::fixy::CText name) noexcept {
-    return ::fixy::env::read_variable(name).match([](::fixy::TextView value) noexcept { return value == "1"; },
-                                                  [] noexcept { return false; });
-}
-
 // Log scanners match on the "[warden] " prefix and the "unavailable"
 // infix, so the format is fixed:
 //   "[warden] <mechanism> unavailable[: error <number>]\n"
 [[gnu::cold]] inline void warn(::fixy::TextView mechanism, int err) noexcept {
-    if (is_env_set_to_one("CRUCIBLE_WARDEN_QUIET")) return;
+    if (::fixy::env::switches().is_warden_quiet) return;
     if (err != 0) {
         ::fixy::report(::fixy::Sink::Err, "[warden] {} unavailable: error {}\n", mechanism, err);
     } else {
@@ -187,7 +181,8 @@ concept CtxFitsHardeningMint = ::foundation::effects::IsExecCtx<Ctx>
 class Hardening {
 public:
     // Hold the returned guard for as long as the policy is to stay in
-    // effect. Setting CRUCIBLE_WARDEN_QUIET to 1 suppresses the
+    // effect.  The switch CRUCIBLE_WARDEN_QUIET=1 of the environment at the
+    // start of the process (fixy/os/Environment.h) suppresses the
     // warnings that a skipped knob emits.
     template <class Ctx>
         requires CtxFitsHardeningMint<Ctx>
@@ -215,11 +210,12 @@ public:
 
         // A real-time class on a shared core starves everything else
         // that runs there, so it is skipped unless the core is
-        // isolated. Setting CRUCIBLE_WARDEN_FORCE to 1 overrides this.
+        // isolated.  The switch CRUCIBLE_WARDEN_FORCE=1 of the environment
+        // at the start of the process overrides this.
         bool realtime_allowed = true;
         if (p.hot_sched != SchedClass::Other && g.pinned_cpu_ >= 0) {
             const bool on_isolcpu = isolated_cpus(ctx).contains(g.pinned_cpu_);
-            if (!on_isolcpu && !detail::is_env_set_to_one("CRUCIBLE_WARDEN_FORCE")) {
+            if (!on_isolcpu && !::fixy::env::switches().is_warden_forced) {
                 ::fixy::report(::fixy::Sink::Err,
                                "[warden] CPU {} not isolated — skipping RT class "
                                "(set CRUCIBLE_WARDEN_FORCE=1 or boot isolcpus={}).\n",

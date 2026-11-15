@@ -493,6 +493,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                       "that carry no claim to fold"},
     {^^::fixy::signal, "the alternate signal stack of a thread that the signal door sets: process state of the door, "
                        "which carries no claim to fold"},
+    {^^::fixy::env, "the switches of the environment that the environment door reads one time at the start: "
+                    "settings of the process, which carry no claim to fold"},
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
     {^^::fixy::session::detach_reason, kGradeVocabulary},

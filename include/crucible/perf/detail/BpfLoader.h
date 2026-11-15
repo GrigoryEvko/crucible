@@ -85,25 +85,13 @@ concept CtxFitsBpfLoad =
     return ::fixy::mint_foreign_text(name, count);
 }
 
-// A function-local static in an inline function has one instance
-// across every translation unit that includes this header, so the
-// first of these calls anywhere decides the answer for every caller.
-// A setenv after that first call has no effect.
+// The switches CRUCIBLE_PERF_QUIET and CRUCIBLE_PERF_VERBOSE of the
+// environment at the start of the process (fixy/os/Environment.h).  A
+// setenv after the start has no effect.
 
-[[nodiscard]] inline bool env_true(::fixy::CText name) noexcept {
-    return ::fixy::env::read_variable(name).match(
-        [](::fixy::TextView value) noexcept { return ::fixy::starts_with(value, "1"); }, [] noexcept { return false; });
-}
+[[nodiscard]] inline bool quiet() noexcept { return ::fixy::env::switches().is_perf_quiet; }
 
-[[nodiscard]] inline bool quiet() noexcept {
-    static const bool kQuiet = env_true("CRUCIBLE_PERF_QUIET");
-    return kQuiet;
-}
-
-[[nodiscard]] inline bool verbose() noexcept {
-    static const bool kVerbose = env_true("CRUCIBLE_PERF_VERBOSE");
-    return kVerbose;
-}
+[[nodiscard]] inline bool verbose() noexcept { return ::fixy::env::switches().is_perf_verbose; }
 
 // libbpf prints to stderr by default, which is loud on a host without
 // CAP_BPF, so every libbpf line passes through this gate instead.

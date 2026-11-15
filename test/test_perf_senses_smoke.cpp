@@ -7,7 +7,6 @@
 #include <crucible/perf/Senses.h>
 
 #include <cstdio>
-#include <cstdlib>  // setenv
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -54,8 +53,6 @@ static_assert(crucible::perf::PMU_SAMPLE_MASK == crucible::perf::PMU_SAMPLE_CAPA
 
 int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
-
     const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
     auto s = crucible::perf::Senses::load_all(startup);
     static_assert(std::is_same_v<decltype(s), crucible::perf::Senses>);

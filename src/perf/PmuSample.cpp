@@ -29,48 +29,25 @@ using ::crucible::perf::detail::verbose;
 struct PmuSampleRingTag {};
 using PmuSampleRing = detail::RingLayout<PmuSampleHeader, PmuSampleEvent, PMU_SAMPLE_CAPACITY>;
 
-// The class of the period of an event, and the environment variable that
-// can override the period of each class.
+// The class of the period of an event.  A switch of the environment can
+// override the period of each class (fixy/os/Environment.h).
 enum class PeriodClass : uint8_t {
     hardware,
     software,
     dynamic,
 };
 
-// The period that the variable name of the environment gives, or fallback
-// when the variable is absent, is no decimal number, or is zero.  The grammar
-// of fixy::parse refuses a sign, so "-5" does not become a value near the
-// maximum of the type, which would suppress sampling altogether.
-[[nodiscard]] uint64_t env_period(::fixy::CText name, uint64_t fallback) noexcept {
-    return ::fixy::env::read_variable(name).match(
-        [fallback](::fixy::TextView text) noexcept {
-            return ::fixy::parse<uint64_t>(text).match(
-                [fallback](uint64_t period) noexcept { return period == 0 ? fallback : period; },
-                [fallback](::fixy::ParseError) noexcept { return fallback; });
-        },
-        [fallback] noexcept { return fallback; });
-}
-[[nodiscard]] uint64_t period_hw(uint64_t fallback) noexcept {
-    static const uint64_t kP = env_period("CRUCIBLE_PERF_PMU_PERIOD_HW", fallback);
-    return kP;
-}
-[[nodiscard]] uint64_t period_ibs(uint64_t fallback) noexcept {
-    static const uint64_t kP = env_period("CRUCIBLE_PERF_PMU_PERIOD_IBS", fallback);
-    return kP;
-}
-[[nodiscard]] uint64_t period_sw(uint64_t fallback) noexcept {
-    static const uint64_t kP = env_period("CRUCIBLE_PERF_PMU_PERIOD_SW", fallback);
-    return kP;
-}
+// The period of a switch of the environment for the class of an event, or
+// the default period of the event when the switch gives no period.
 [[nodiscard]] uint64_t resolve_period(PeriodClass period_class, uint64_t default_period) noexcept {
     switch (period_class) {
         case PeriodClass::dynamic:
-            return period_ibs(default_period);
+            return ::fixy::env::switches().pmu_period_dynamic.value_or(default_period);
         case PeriodClass::software:
-            return period_sw(default_period);
+            return ::fixy::env::switches().pmu_period_software.value_or(default_period);
         case PeriodClass::hardware:
         default:
-            return period_hw(default_period);
+            return ::fixy::env::switches().pmu_period_hardware.value_or(default_period);
     }
 }
 

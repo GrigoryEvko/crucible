@@ -300,7 +300,7 @@ src/perf/ | foreign-symbol | 14 | - | -
 src/perf/ | raw-pointer-object | 3 | - | -
 src/perf/ | replace-pending:std::bit_cast | 2 | - | -
 test/ | c-array-object | 158 | - | -
-test/ | c-library-call | 853 | - | -
+test/ | c-library-call | 839 | - | -
 test/ | c-library-object | 14 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 19 | - | -

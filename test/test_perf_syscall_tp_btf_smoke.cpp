@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -35,7 +34,6 @@ static_assert(sizeof(crucible::perf::SyscallTpBtf) == sizeof(::fixy::Option<::fi
 
 int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
     ::fixy::Option<crucible::perf::SyscallTpBtf> loaded =
         crucible::perf::load_syscall_tp_btf(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SyscallTpBtf>>);

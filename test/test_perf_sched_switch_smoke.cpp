@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -66,7 +65,6 @@ static_assert(sizeof(crucible::perf::SchedSwitch) == sizeof(::fixy::Option<::fix
 
 int main() {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
     ::fixy::Option<crucible::perf::SchedSwitch> loaded =
         crucible::perf::load_sched_switch(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SchedSwitch>>);

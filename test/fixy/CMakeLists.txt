@@ -4985,11 +4985,11 @@ fixy_neg_compile_test(neg_os_perf_event_read_count_ctx_lacks_block
   "no matching function for call"
   "read_count\\(\\{anonymous\\}::IoOnlyCtx&, const fixy::fs::OwnedFd&\\)")
 
-# The environment door reads the variables that the test sets, and an
-# absent variable.
+# The environment door reads each switch that the test sets before the
+# start of the process, and an absent switch.
 fixy_test(test_os_environment)
 set_tests_properties(test_os_environment PROPERTIES ENVIRONMENT_MODIFICATION
-  "CRUCIBLE_TEST_DOOR_VALUE=set:door value;CRUCIBLE_TEST_DOOR_EMPTY=set:;CRUCIBLE_TEST_DOOR_ABSENT=unset:")
+  "CRUCIBLE_PERF_QUIET=set:10;CRUCIBLE_PERF_VERBOSE=unset:;CRUCIBLE_WARDEN_QUIET=set:10;CRUCIBLE_WARDEN_FORCE=set:1;CRUCIBLE_PERF_PMU_PERIOD_HW=set:12345;CRUCIBLE_PERF_PMU_PERIOD_IBS=set:0;CRUCIBLE_PERF_PMU_PERIOD_SW=set:-5")
 
 fixy_neg_compile_test(neg_os_fs_mint_file_duplicate_mode
   "no matching function for call"

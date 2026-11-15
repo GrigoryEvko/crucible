@@ -434,6 +434,9 @@ TSAN_WORD = "tsan"
 #     threads.
 #   * The exit hook door of fixy/os/ExitHooks.h registers a hook for std::exit and std::quick_exit.  The C library
 #     keeps the list of the exit hooks.
+#   * The environment door of fixy/os/Environment.h, in the member of the exit hook door, reads each switch of the
+#     environment one time at the start of the process.  The C library owns environ.  A host process such as Python
+#     changes it before the dlopen of the vessel, so the initial block of the process does not give it.
 #   * The monotonic clock door of fixy/os/MonotonicClock.h reads the clock through the vDSO of the C library.
 DOOR_CALLS = (
     DoorCall("abort", FOUNDATION, "Abort.cpp.o"),
@@ -469,6 +472,7 @@ DOOR_CALLS = (
     ),
     DoorCall("atexit", FIXY, "ExitHooks.cpp.o"),
     DoorCall("at_quick_exit", FIXY, "ExitHooks.cpp.o"),
+    DoorCall("getenv", FIXY, "ExitHooks.cpp.o"),
     DoorCall("clock_gettime", FIXY, "MonotonicClock.cpp.o"),
 )
 # The door of each door call.  A call has one door.

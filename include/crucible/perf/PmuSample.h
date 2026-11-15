@@ -119,8 +119,9 @@ private:
 // a host with perf_event_paranoid above 2, or when the verifier rejects
 // the program.
 //
-// Three environment variables override the per-event sample period.  They
-// are read once during the load, so setting them afterwards has no effect.
+// Three environment variables override the per-event sample period.  The
+// environment door reads them one time at the start of the process
+// (fixy/os/Environment.h), so a change after the start has no effect.
 //
 //   CRUCIBLE_PERF_PMU_PERIOD_HW    cache, branch and TLB, default 10000
 //   CRUCIBLE_PERF_PMU_PERIOD_IBS   the two AMD events, default 100000

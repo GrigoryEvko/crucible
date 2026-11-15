@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <type_traits>
 #include <utility>
 #include "perf_capabilities.h"
@@ -108,11 +107,10 @@ int main() {
     //
     // Whether the load succeeds depends on the process capabilities and
     // on the kernel's tracepoints, so only the link and the return type
-    // are asserted.  The quiet flag is set first, because a failed load
-    // is the common case in a restricted sandbox and its diagnostic
-    // would be misleading here.
+    // are asserted.  The CMake list sets CRUCIBLE_PERF_QUIET=1, because a
+    // failed load is the common case in a restricted sandbox and its
+    // diagnostic would be misleading here.
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    setenv("CRUCIBLE_PERF_QUIET", "1", /*overwrite=*/0);
     // The loader takes the startup load context, and main is a startup
     // frame.  The call site is also the check that the gated signature
     // compiles from an ordinary startup frame.

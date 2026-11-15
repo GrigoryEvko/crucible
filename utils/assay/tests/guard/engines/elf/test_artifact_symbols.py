@@ -265,7 +265,8 @@ def class_cases(expect: testing.Expect) -> None:
     for library, symbol, family, wanted in (
         ("foundation", "memcpy", module.RUNTIME, module.LIBC_ALLOW),
         ("foundation", "__udivti3", module.RUNTIME, module.LIBC_ALLOW),
-        ("foundation", "getenv", module.RUNTIME, module.LIBC_RATCHET),
+        ("foundation", "setenv", module.RUNTIME, module.LIBC_RATCHET),
+        ("foundation", "getenv", module.RUNTIME, module.DOOR_RATCHET),
         ("foundation", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
         ("fixy", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
         ("crucible", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
@@ -275,7 +276,8 @@ def class_cases(expect: testing.Expect) -> None:
         ("crucible", "__cxa_atexit", module.RUNTIME, module.LIBC_ALLOW),
         ("fixy", "__cxa_atexit", module.RUNTIME, module.LIBC_RATCHET),
         ("crucible_vigil", "__cxa_atexit", module.RUNTIME, module.LIBC_ALLOW),
-        ("crucible_vigil", "getenv", module.RUNTIME, module.LIBC_RATCHET),
+        ("crucible_vigil", "setenv", module.RUNTIME, module.LIBC_RATCHET),
+        ("crucible_vigil", "getenv", module.RUNTIME, module.DOOR_RATCHET),
         ("crucible", "__cxa_guard_acquire", module.LIBSTDCXX, module.ALLOW),
         ("crucible", "_ZSt9terminatev", module.LIBSTDCXX, module.RATCHET),
         ("crucible", "__gxx_personality_v0", module.LIBSTDCXX, module.ALLOW),
@@ -293,7 +295,7 @@ def class_cases(expect: testing.Expect) -> None:
         )
     door, routes, other = frozenset({"Abort.cpp.o"}), frozenset({"Intercepted.cpp.o"}), frozenset({"Platform.cpp.o"})
     clock, threads = frozenset({"MonotonicClock.cpp.o"}), frozenset({"ThreadTasks.cpp.o"})
-    heap = frozenset({"Heap.cpp.o"})
+    heap, hooks = frozenset({"Heap.cpp.o"}), frozenset({"ExitHooks.cpp.o"})
     for library, symbol, members, kind, wanted in (
         ("foundation", "abort", door, "x86_64-debug-asan", module.LIBC_ALLOW),
         ("foundation", "malloc", heap, "x86_64-release", module.LIBC_ALLOW),
@@ -312,6 +314,9 @@ def class_cases(expect: testing.Expect) -> None:
         ("fixy", "clock_gettime", clock | frozenset({"Topology.cpp.o"}), "x86_64-release", module.DOOR_RATCHET),
         ("crucible", "clock_gettime", frozenset({"Ptp.cpp.o"}), "x86_64-debug-asan", module.DOOR_RATCHET),
         ("crucible", "clock_gettime", clock, "x86_64-debug-asan", module.DOOR_RATCHET),
+        ("fixy", "getenv", hooks, "x86_64-debug-asan", module.LIBC_ALLOW),
+        ("fixy", "getenv", hooks | frozenset({"Topology.cpp.o"}), "x86_64-release", module.DOOR_RATCHET),
+        ("crucible_perf", "getenv", frozenset({"PmuSample.cpp.o"}), "x86_64-debug-asan", module.DOOR_RATCHET),
         ("fixy", "pthread_self", threads, "x86_64-debug-tsan", module.LIBC_ALLOW),
         ("fixy", "pthread_self", clock, "x86_64-debug-tsan", module.DOOR_RATCHET),
         (
