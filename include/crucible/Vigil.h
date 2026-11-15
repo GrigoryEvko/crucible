@@ -29,6 +29,7 @@
 #include <crucible/CrucibleContext.h>
 #include <crucible/ForegroundCtx.h>
 #include <crucible/IterationDetector.h>
+#include <crucible/LoadError.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/RegionCache.h>
@@ -494,9 +495,10 @@ public:
     // Loads the most recent stored region and makes it active, activating
     // replay too when that region carries a memory plan.  A region with no
     // plan leaves the context recording, also when it replayed a region
-    // before the load.  The activation is foreground state, so this runs on
-    // the producer thread.  The row is the row that an open view of the
-    // store requires.
+    // before the load.  A store that refuses the object of its head gives
+    // false, and the Vigil reports the reason to standard error.  The
+    // activation is foreground state, so this runs on the producer thread.
+    // The row is the row that an open view of the store requires.
     template <class Ctx>
         requires ::foundation::effects::CtxAdmits<Ctx, ::crucible::CipherSessionEventPersistenceRow>
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, ::foundation::effects::Alloc a) {
@@ -690,14 +692,18 @@ private:
                                                                      Store& store) {
         if (store.empty()) return ::fixy::none;
         auto open_view = store.mint_open_view(ctx);
-        // A load needs the region or no region, so the reason of a refusal
-        // goes.
+        // A refusal gives no region, and the report tells the person why the
+        // store gave no region of its head.
         const auto loaded = store.load_content_addressed(ctx, open_view, a, store.head(), load_arena_);
         return loaded.match(
             [](auto const& payload) -> ::fixy::Option<::fixy::Ref<RegionNode>> {
                 return ::fixy::Option<::fixy::Ref<RegionNode>>::some(payload.get());
             },
-            [](auto const&) -> ::fixy::Option<::fixy::Ref<RegionNode>> { return ::fixy::none; });
+            [](LoadError reason) -> ::fixy::Option<::fixy::Ref<RegionNode>> {
+                ::fixy::report(::fixy::Sink::Err, "[crucible] the Cipher store gives no region of its head: {}\n",
+                               load_error_text(reason));
+                return ::fixy::none;
+            });
     }
 
     // Runs on the background thread when a new region is ready.  It must

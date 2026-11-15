@@ -13,6 +13,7 @@
 
 #include <crucible/Cipher.h>
 #include <crucible/Vigil.h>
+#include <fixy/os/Process.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include <cstddef>
@@ -76,6 +77,47 @@ static void test_store_that_does_not_open_gives_no_store() {
     crucible::test::pass("  store_that_does_not_open_gives_no_store: PASSED\n");
 }
 
+// The head of a store names an object that the store does not hold, so a
+// load gives no region, and the Vigil reports the reason.  A Cipher of the
+// test commits that head under directory.  The load runs in a child, so the
+// test reads the report.  The child only loads: it reads files, allocates
+// and writes the report, and it starts no thread and waits for none.
+static void test_refused_load_reports_its_reason(::fixy::TextView directory) {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    crucible::Vigil::Config cfg;
+    for (const char character : directory) {
+        cfg.cipher_path.append(ctx.cap().alloc, character).expect("the store path fits the bound of the path");
+    }
+    for (const char character : ::fixy::TextView{"/refused"}) {
+        cfg.cipher_path.append(ctx.cap().alloc, character).expect("the store path fits the bound of the path");
+    }
+    {
+        crucible::Cipher store =
+            crucible::Cipher::open(ctx, ctx.cap().alloc,
+                                   ::fixy::mint_tagged<::fixy::tags::source::External>(cfg.cipher_path.view()))
+                .expect("the test opens its store");
+        const auto open_view = store.mint_open_view(ctx);
+        store.record_event(ctx, open_view, crucible::ContentHash{0x0123456789ABCDEFULL}, 1)
+            .expect("the store commits a head that names no object");
+    }
+    crucible::Vigil vigil(std::move(cfg));
+    if (!vigil.has_store()) ::fixy::fatal("the store of the test does not open");
+    const ::fixy::process::ChildReport report =
+        ::fixy::process::wait(::fixy::process::spawn_child(ctx,
+                                                           [&vigil, &ctx] noexcept {
+                                                               if (vigil.load(ctx, ctx.cap().alloc)) {
+                                                                   ::fixy::fatal("a head with no object gave a region");
+                                                               }
+                                                           })
+                                  .expect("the test starts a child"))
+            .expect("the test waits for its child");
+    assert(report.is_exit_with(0));
+    assert(::fixy::find(report.output(), ::fixy::TextView{"[crucible] the Cipher store gives no region of its head: "})
+               .is_some());
+    assert(::fixy::find(report.output(), crucible::load_error_text(crucible::LoadError::file_open_failed)).is_some());
+    crucible::test::pass("  refused_load_reports_its_reason: PASSED\n");
+}
+
 int main() {
     test_vigil::test_divergence_drops_the_unobserved_region();
     test_vigil::test_divergence_drops_the_regions_of_the_backlog();
@@ -101,6 +143,7 @@ int main() {
         cfg.cipher_path.append(::foundation::effects::testing::test().alloc, dir[index])
             .expect("the directory fits the bound of the path");
     }
+    test_refused_load_reports_its_reason(cfg.cipher_path.view());
     crucible::Vigil vigil(std::move(cfg));
 
     assert(!vigil.is_compiled());

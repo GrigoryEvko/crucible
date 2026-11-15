@@ -4,6 +4,10 @@
 // and deserialize_branch of crucible/Serialize.h, and load_content_addressed
 // of crucible/Cipher.h.  A report of a damaged cache names the reason, so a
 // person can act on it.  Each value is a condition that a loader tests.
+// load_error_text gives the text of a reason for report() of the Report
+// family.
+
+#include <fixy/Core.h>
 
 #include <cstdint>
 
@@ -46,5 +50,44 @@ enum class LoadError : std::uint8_t {
     // The object of the hash holds a region with a different content hash.
     object_hash_mismatch,
 };
+
+// The text of a reason, for a report to a person.  Each reason has its own
+// text.  A value that names no reason ends the process.
+[[nodiscard]] constexpr ::fixy::TextView load_error_text(LoadError reason) noexcept {
+    switch (reason) {
+        case LoadError::truncated:
+            return ::fixy::TextView{"the image ends before a field that its header or a count names"};
+        case LoadError::bad_magic:
+            return ::fixy::TextView{"the first four bytes of the image are not the CDAG magic number"};
+        case LoadError::version_mismatch:
+            return ::fixy::TextView{"the image has a format version that this build does not read"};
+        case LoadError::wrong_kind:
+            return ::fixy::TextView{"the header names a node kind that is not the kind of the loader"};
+        case LoadError::count_above_limit:
+            return ::fixy::TextView{"a count of the image is above its ceiling"};
+        case LoadError::field_out_of_range:
+            return ::fixy::TextView{"a byte of the image is outside the values of its field"};
+        case LoadError::plan_unservable:
+            return ::fixy::TextView{"the memory plan names a pool or a slot that the pool allocator cannot serve"};
+        case LoadError::slot_out_of_range:
+            return ::fixy::TextView{"an op names a slot past the slots of the memory plan"};
+        case LoadError::content_hash_mismatch:
+            return ::fixy::TextView{"the ops do not fold to the content hash that the header names"};
+        case LoadError::first_schema_mismatch:
+            return ::fixy::TextView{"the schema of the first op is not the schema that the image names"};
+        case LoadError::arms_unsorted:
+            return ::fixy::TextView{"the arms of the branch are not in the order of their values"};
+        case LoadError::none_hash:
+            return ::fixy::TextView{"the load asks for the none hash, which names no object"};
+        case LoadError::file_open_failed:
+            return ::fixy::TextView{"the file of the object does not open"};
+        case LoadError::file_size:
+            return ::fixy::TextView{"the file of the object is empty, above its limit, or shorter than its size"};
+        case LoadError::object_hash_mismatch:
+            return ::fixy::TextView{"the object of the hash holds a region with a different content hash"};
+        default:
+            ::fixy::unreachable();
+    }
+}
 
 }  // namespace crucible
