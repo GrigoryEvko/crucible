@@ -34,17 +34,28 @@ sys.exit(3 if "bad.cpp" in sys.argv else 0)
 """
 
 
-# A cmake for `cmake --build`.  It writes its targets to calls.txt.  Then it configures the build again, as Ninja does
-# before each build after a change of a glob or a CMake file.  The graph then names only the new input target.  The
-# cmake refuses a target that the new graph does not name, with the error of Ninja.
+# A cmake for `cmake --build` and for the configure `cmake BUILD`.  The configure writes the word configure to calls.txt
+# and writes the graph.  `cmake --build` writes its targets to calls.txt, and it fails with the error of Ninja when the
+# build has no graph.  Then it configures the build again, as Ninja does before each build after a change of a glob or
+# a CMake file.  The graph then names only the new input target.  The cmake refuses a target that the new graph does
+# not name, with the error of Ninja.
 FAKE_CMAKE = """
 import pathlib, sys
 words = sys.argv[1:]
+if "--build" not in words:
+    build = pathlib.Path(words[-1])
+    with (build / "calls.txt").open("a", encoding="utf-8") as calls:
+        calls.write("configure\\n")
+    (build / "build.ninja").write_text("build cmake_object_order_depends_target_new: phony\\n", encoding="utf-8")
+    sys.exit(0)
 build = pathlib.Path(words[words.index("--build") + 1])
 targets = words[words.index("--target") + 1 :]
 with (build / "calls.txt").open("a", encoding="utf-8") as calls:
     calls.write(" ".join(targets) + "\\n")
 graph = build / "build.ninja"
+if not graph.is_file():
+    print("ninja: error: loading 'build.ninja': No such file or directory")
+    sys.exit(1)
 graph.write_text("build cmake_object_order_depends_target_new: phony\\n", encoding="utf-8")
 unknown = [target for target in targets if target != "build.ninja" and f"build {target}:" not in graph.read_text()]
 if unknown:
@@ -114,7 +125,10 @@ def build_cases(expect: testing.Expect) -> None:
 
 
 def stale_graph_cases(expect: testing.Expect) -> None:
-    """Hold the build of the input targets of a warm build.  Its graph names a target that a configure removes."""
+    """Hold the build of the input targets of a warm build.  Its graph names a target that a configure removes.
+
+    A build with a cache and no graph gets a configure before the build of its graph.
+    """
     with tempfile.TemporaryDirectory(prefix="syntax-stale-") as scratch_text:
         scratch = Path(scratch_text)
         cmake.plant(scratch, cache={"CMAKE_COMMAND": testing.planted_program(scratch, "cmake", FAKE_CMAKE)})
@@ -131,6 +145,22 @@ def stale_graph_cases(expect: testing.Expect) -> None:
         expect(
             "the run builds build.ninja first, and then only the input target of the new graph",
             calls == [syntax.REGENERATE_TARGET, "cmake_object_order_depends_target_new"],
+        )
+    with tempfile.TemporaryDirectory(prefix="syntax-no-graph-") as scratch_text:
+        scratch = Path(scratch_text)
+        cmake.plant(scratch, cache={"CMAKE_COMMAND": testing.planted_program(scratch, "cmake", FAKE_CMAKE)})
+        try:
+            syntax.build_input_targets(scratch, 1)
+            problem_text = ""
+        except syntax.ParseError as problem:
+            problem_text = str(problem)
+        calls_file = scratch / "calls.txt"
+        calls = calls_file.read_text(encoding="utf-8").splitlines() if calls_file.is_file() else []
+        expect(
+            f"a build with a cache and no graph, as an interrupted configure leaves it, gets a configure first, and "
+            f"then the run builds build.ninja and the input target: the calls {calls} and the problem {problem_text!r}",
+            problem_text == ""
+            and calls == ["configure", syntax.REGENERATE_TARGET, "cmake_object_order_depends_target_new"],
         )
 
 

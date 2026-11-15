@@ -24,6 +24,10 @@ THE RUN
        inputs of the compiles, and they do no compile and no link.  The rule build-graph holds that no such target waits for a
        link.  The compile database holds the stamp of the last configure,
        and the run reads the compile commands after this step.
+       A build with a CMake cache and no graph gets a configure first:
+       `cmake BUILD_DIR` reads the source directory from the cache.  An
+       interrupt of a configure, such as the stop of a run of the gate, can
+       leave such a build, and Ninja cannot load a graph that is not there.
     2. The run removes each report directory of SYNTAX_DIRECTORY that no
        unit of the build has.  No report of an object that is not in the
        build then stays.
@@ -411,7 +415,7 @@ def units_of(build_dir: Path, root: Path) -> list[Unit]:
 
 
 def build_input_targets(build_dir: Path, jobs: int) -> float:
-    """Configure the build again if it is stale, then build each input target with Ninja (THE RUN, step 1).
+    """Configure the build again if it is stale or has no graph, then build each input target with Ninja (THE RUN, step 1).
 
     Return the wall time of the two builds.
 
@@ -425,6 +429,8 @@ def build_input_targets(build_dir: Path, jobs: int) -> float:
     except pins.PinError as problem:
         raise ParseError(f"the input targets of {build_dir} cannot be read: {problem}") from None
     start = time.monotonic()
+    if not ninja.graph_file(build_dir).is_file():
+        _configure(cmake, build_dir)
     _build_targets(cmake, build_dir, jobs, [REGENERATE_TARGET], "the graph")
     try:
         graph = ninja.graph(build_dir)
@@ -442,6 +448,29 @@ def build_job_words(jobs: int, environment: Mapping[str, str]) -> list[str]:
     ninja obeys the jobserver of MAKEFLAGS only when its command line gives no -j.
     """
     return [] if jobserver.client_path(environment) is not None else ["-j", str(jobs)]
+
+
+def _configure(cmake: str, build_dir: Path) -> None:
+    """Configure a build with a CMake cache and no graph again, from the source directory of its cache (THE RUN, step 1).
+
+    Raises:
+        ParseError: If the configure does not run or does not exit with 0
+    """
+    try:
+        done = proc.run(
+            proc.Command(
+                [cmake, str(build_dir)],
+                timeout_s=INPUT_TIMEOUT_S,
+                stdout=proc.Output.CAPTURE,
+                stderr=proc.Output.MERGE,
+            )
+        )
+    except proc.ToolFailed as problem:
+        raise ParseError(f"the configure of {build_dir}, which has no graph, does not run: {problem}") from None
+    if done.exit != 0:
+        raise ParseError(
+            f"the configure of {build_dir}, which has no graph, exits with {done.exit}:\n{done.out[-4000:]}"
+        )
 
 
 def _build_targets(cmake: str, build_dir: Path, jobs: int, targets: list[str], what: str) -> None:
