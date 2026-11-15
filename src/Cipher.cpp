@@ -26,23 +26,50 @@ namespace {
 // ".tmp" (4), 57 characters.
 using EntryPath = ::foundation::os::PathText<64>;
 
+// The name of the shard directory of the object of hash under objects: the
+// first two hexadecimal digits of the hash.
+[[nodiscard]] EntryPath object_shard_(std::uint64_t hash) noexcept {
+    EntryPath name{};
+    name.append_hex<2>(hash >> 56U).expect("the shard name fits its path");
+    return name;
+}
+
+// The name of the object of hash in its shard directory: the last fourteen
+// hexadecimal digits of the hash.
+[[nodiscard]] EntryPath object_leaf_(std::uint64_t hash) noexcept {
+    EntryPath name{};
+    name.append_hex<14>(hash).expect("the object name fits its path");
+    return name;
+}
+
 // The entry of the object of hash: "objects/<2 digits>/<14 digits>", the
 // sixteen hexadecimal digits of the hash.
 [[nodiscard]] EntryPath object_entry_(std::uint64_t hash) noexcept {
+    const EntryPath shard = object_shard_(hash);
+    const EntryPath leaf = object_leaf_(hash);
     EntryPath path{};
     path.append(::fixy::TextView{"objects/"}).expect("the object entry fits its path");
-    path.append_hex<2>(hash >> 56U).expect("the object entry fits its path");
+    path.append(shard.c_text().view()).expect("the object entry fits its path");
     path.append('/').expect("the object entry fits its path");
-    path.append_hex<14>(hash).expect("the object entry fits its path");
+    path.append(leaf.c_text().view()).expect("the object entry fits its path");
     return path;
+}
+
+// The name of the directory of the events of a session under
+// session_events: the sixteen hexadecimal digits of the session.
+[[nodiscard]] EntryPath session_name_(::fixy::session::SessionTagId session) noexcept {
+    EntryPath name{};
+    name.append_hex<16>(session.value).expect("the session name fits its path");
+    return name;
 }
 
 // The entry of the directory of the events of a session:
 // "session_events/<16 digits>".
 [[nodiscard]] EntryPath session_entry_(::fixy::session::SessionTagId session) noexcept {
+    const EntryPath name = session_name_(session);
     EntryPath path{};
     path.append(::fixy::TextView{"session_events/"}).expect("the session entry fits its path");
-    path.append_hex<16>(session.value).expect("the session entry fits its path");
+    path.append(name.c_text().view()).expect("the session entry fits its path");
     return path;
 }
 
@@ -105,7 +132,9 @@ template <class Ctx>
 // The parent dirfd fsync is not optional.  renameat returns before the
 // directory entry necessarily reaches storage, and POSIX permits a crash
 // in between.  The rename would be lost, the old content would stand,
-// and the new bytes would be orphaned in the tmp file.
+// and the new bytes would be orphaned in the tmp file.  The fsync reaches
+// the directory of the rename only when path is one name in dir, so a path
+// with a slash ends the process.
 //
 // The doors retry EINTR on write, fdatasync, renameat and fsync.  If any
 // step fails after the tmp file exists, it is unlinked so a later run does
@@ -114,6 +143,7 @@ template <class Ctx>
 template <class Ctx, class Bytes>
 [[nodiscard]] bool replace_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::TextView path,
                                      Bytes bytes) noexcept {
+    CRUCIBLE_PRE(::fixy::find(path, '/').is_none());
     EntryPath target{};
     EntryPath temporary{};
     const bool is_named = target.append(path).is_ok() && temporary.append(path).is_ok()
@@ -171,10 +201,13 @@ template <class Ctx, class Bytes>
 //
 // The doors retry EINTR on write, fdatasync and fsync.  Failure needs no
 // cleanup, since the file is append-only by construction.  Returns true
-// only when both the record bytes and the directory entry are durable.
+// only when both the record bytes and the directory entry are durable.  The
+// fsync reaches the directory of the file only when path is one name in
+// dir, so a path with a slash ends the process.
 template <class Ctx>
 [[nodiscard]] bool append_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::CText path,
                                     ::fixy::TextView record) noexcept {
+    CRUCIBLE_PRE(::fixy::find(path.view(), '/').is_none());
     using WriteAppend = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteAppend>;
     // With O_APPEND and a record smaller than a block, a write either fails
     // outright or writes every byte.  The door writes again after a short
@@ -201,16 +234,34 @@ template <class Ctx>
                [](::foundation::os::Errno) { return ::fixy::fs::Dirfd{}; });
 }
 
+// Makes the directory name under dir when it is missing, syncs dir, and
+// opens the directory.  A new directory is a new entry of dir, and the sync
+// of dir makes that entry durable.  The sync runs also when the directory
+// is there, because the process that made it can have ended before its own
+// sync.  A closed Dirfd stands for a directory that does not open, or for a
+// sync that fails.  The store owns each directory that it opens here.
+template <class Ctx>
+[[nodiscard]] ::fixy::fs::Dirfd open_durable_directory_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir,
+                                                           ::fixy::CText name) noexcept {
+    static_cast<void>(::fixy::fs::make_directory_at(ctx, dir, name).is_ok());
+    if (::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).is_err()) return ::fixy::fs::Dirfd{};
+    return open_level_(ctx, dir, name);
+}
+
 // Makes each directory of root that is missing, from the first part on, as
 // mkdir -p does.  The walk starts at a Dirfd of "/" for an absolute root,
 // and of the current directory for a relative root.  It makes one name at a
 // time under the Dirfd of the directory before it, and then it opens that
 // name, so no door takes a full path.  A name that is there gives eexist.
-// The open of a name follows no symbolic link, so the walk stops at a link,
-// and at each name that does not open.  The open of the root after the walk
-// reads the full path, so a root that exists opens through a link.  The
-// sanitizer of the root refused each ".." part.  Complexity: one make and
-// one open for each part of the root, and one copy of each character.
+// A name that the walk makes is a new entry of the directory before it, so
+// the walk syncs that directory.  A name that is there is no entry of the
+// store, and the walk does not sync its directory.  The open of a name
+// follows no symbolic link, so the walk stops at a link, and at each name
+// that does not open.  The open of the root after the walk reads the full
+// path, so a root that exists opens through a link.  The sanitizer of the
+// root refused each ".." part.  Complexity: one make and one open for each
+// part of the root, one sync for each part that the walk makes, and one
+// copy of each character.
 template <class Ctx>
 void make_root_directories_(Ctx const& ctx, ::fixy::TextView root) noexcept {
     const ::fixy::TextView start_text = ::fixy::starts_with(root, "/") ? ::fixy::TextView{"/"} : ::fixy::TextView{"."};
@@ -229,7 +280,8 @@ void make_root_directories_(Ctx const& ctx, ::fixy::TextView root) noexcept {
         if (part.size() == 0 || part == ::fixy::TextView{"."}) continue;
         Cipher::RootPath name{};
         if (name.append(part).is_err()) return;
-        static_cast<void>(::fixy::fs::make_directory_at(ctx, level, name.c_text()).is_ok());
+        const bool is_made = ::fixy::fs::make_directory_at(ctx, level, name.c_text()).is_ok();
+        if (is_made && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, level).is_err()) return;
         level = open_level_(ctx, level, name.c_text());
     }
 }
@@ -408,17 +460,29 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     const ContentHash hash = region.content_hash;
     if (!hash) return ContentHash{};
 
-    const EntryPath object = object_entry_(hash.raw());
+    // The object is objects/<shard>/<leaf>.  The shard directory holds the
+    // objects of one first byte of the hash, and it holds the rename of the
+    // object, so its sync makes the object durable.  The open makes the
+    // shard when it is missing and syncs objects, which holds the shard.
+    const EntryPath shard = object_shard_(hash.raw());
+    const EntryPath leaf = object_leaf_(hash.raw());
+    const ::fixy::fs::Dirfd shard_dir = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return open_durable_directory_at_(ctx, open_level_(ctx, root_dirfd_, "objects"), shard.c_text());
+    });
+    if (!shard_dir.is_open()) return ContentHash{};
 
-    // The skip path also fdatasyncs.  Another process may have written
-    // these bytes and died before the kernel flushed them, and this
-    // process is about to return the hash as durable.
+    // The skip path also flushes the bytes and the entry of the object.
+    // Another process may have written them and died before the kernel
+    // flushed them, and this process is about to return the hash as
+    // durable.
     const bool is_present = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return ::fixy::fs::has_entry_at(ctx, root_dirfd_, object.c_text()).value_or(false);
+        return ::fixy::fs::has_entry_at(ctx, shard_dir, leaf.c_text()).value_or(false);
     });
     if (is_present) {
-        const bool is_flushed = with_file_ctx_(
-            file_ctx, [&](auto const& ctx) { return flush_entry_at_(ctx, root_dirfd_, object.c_text()); });
+        const bool is_flushed = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+            return flush_entry_at_(ctx, shard_dir, leaf.c_text())
+                && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, shard_dir).is_ok();
+        });
         return is_flushed ? hash : ContentHash{};
     }
 
@@ -429,21 +493,12 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     const ::fixy::View<const std::byte> written =
         image.view().window(0, n).expect("the writer writes inside its image");
 
-    // The directory of the object holds the objects of one first byte of
-    // the hash.  A directory that is there gives eexist, and a directory
-    // that the make cannot make fails the write below.
-    EntryPath directory{};
-    directory.append(::fixy::TextView{"objects/"}).expect("the object directory fits its path");
-    directory.append_hex<2>(hash.raw() >> 56U).expect("the object directory fits its path");
-
-    // The replace writes a temporary file, flushes its bytes, and renames
-    // it onto the object.  A reader then sees the whole object or no
-    // object, and a hash that this function returns is loadable after a
-    // crash.
-    const bool is_written = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dirfd_, directory.c_text()).is_ok());
-        return replace_entry_at_(ctx, root_dirfd_, object.c_text().view(), written);
-    });
+    // The replace writes a temporary file in the shard, flushes its bytes,
+    // renames it onto the object, and syncs the shard.  A reader then sees
+    // the whole object or no object, and a hash that this function returns
+    // is loadable after a crash.
+    const bool is_written = with_file_ctx_(
+        file_ctx, [&](auto const& ctx) { return replace_entry_at_(ctx, shard_dir, leaf.c_text().view(), written); });
     if (!is_written) {
         return ContentHash{};
     }
@@ -572,35 +627,31 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
             .expect("an index line fits 96 characters");
 
     const EntryPath batch = batch_entry_(hash.raw());
-    const EntryPath session_directory = session_entry_(session);
+    const EntryPath session_name = session_name_(session);
 
     // The session subdirectory anchors the batch and the index at two
     // levels: root dirfd, then session dirfd, then the leaf under
     // O_NOFOLLOW.  Substituting the intermediate session_events directory
     // needs write access to the Cipher root, which is outside the threat
-    // model.  A directory that is there gives eexist.  A batch file of the
-    // hash must hold the same bytes, and the replace makes a new batch
-    // file durable before the index names it.
+    // model.  The open of each level makes it when it is missing and syncs
+    // the directory that holds it.  A batch file of the hash must hold the
+    // same bytes, and the replace makes a new batch file durable before the
+    // index names it.
     const bool is_indexed = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dirfd_, "session_events").is_ok());
-        static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dirfd_, session_directory.c_text()).is_ok());
-        return ::fixy::fs::open_dirfd_at(ctx, root_dirfd_, session_directory.c_text())
-            .match(
-                [&](::fixy::fs::Dirfd session_dir) {
-                    const bool is_batch_present =
-                        ::fixy::fs::has_entry_at(ctx, session_dir, batch.c_text()).value_or(false);
-                    const bool is_batch_stored =
-                        is_batch_present ? read_batch_at_(ctx, allocation, session_dir, batch.c_text(), encoded.size())
-                                               .match(
-                                                   [&encoded](::fixy::HeapArray<std::byte> stored) {
-                                                       return ::fixy::equal(stored.view(), encoded.view());
-                                                   },
-                                                   [](LoadError) { return false; })
-                                         : replace_entry_at_(ctx, session_dir, batch.c_text().view(),
-                                                             ::fixy::View<std::byte const>{encoded.view()});
-                    return is_batch_stored && append_entry_at_(ctx, session_dir, "index", index_line);
-                },
-                [](::foundation::os::Errno) { return false; });
+        const ::fixy::fs::Dirfd session_dir = open_durable_directory_at_(
+            ctx, open_durable_directory_at_(ctx, root_dirfd_, "session_events"), session_name.c_text());
+        if (!session_dir.is_open()) return false;
+        const bool is_batch_present = ::fixy::fs::has_entry_at(ctx, session_dir, batch.c_text()).value_or(false);
+        const bool is_batch_stored = is_batch_present
+                                       ? read_batch_at_(ctx, allocation, session_dir, batch.c_text(), encoded.size())
+                                             .match(
+                                                 [&encoded](::fixy::HeapArray<std::byte> stored) {
+                                                     return ::fixy::equal(stored.view(), encoded.view());
+                                                 },
+                                                 [](LoadError) { return false; })
+                                       : replace_entry_at_(ctx, session_dir, batch.c_text().view(),
+                                                           ::fixy::View<std::byte const>{encoded.view()});
+        return is_batch_stored && append_entry_at_(ctx, session_dir, "index", index_line);
     });
     if (!is_indexed) {
         return ContentHash{};
@@ -903,8 +954,11 @@ void Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc al
     [[maybe_unused]] const bool root_set =
         root_.try_set(::fixy::mint_tagged<::fixy::tags::source::Durable>(RootPath{root.value()}));
     [[assume(root_set)]];
+    // The open makes objects when it is missing and syncs the root, which
+    // holds it.  A store opens objects again, so a failure here shows in
+    // the first store.
     static_cast<void>(with_file_ctx_(
-        file_ctx, [&](auto const& ctx) { return ::fixy::fs::make_directory_at(ctx, root_dirfd_, "objects").is_ok(); }));
+        file_ctx, [&](auto const& ctx) { return open_durable_directory_at_(ctx, root_dirfd_, "objects").is_open(); }));
 
     load_log(file_ctx, allocation);
 
