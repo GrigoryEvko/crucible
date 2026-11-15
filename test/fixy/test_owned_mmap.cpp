@@ -112,6 +112,81 @@ int check_the_kernel_maps_the_claimed_protection() {
     return 0;
 }
 
+// The header and the records of a ring in one mapping: a header of 16
+// bytes, then records of 8 bytes.
+struct RingHeader {
+    std::uint64_t write_index = 0;
+    std::uint64_t spare = 0;
+};
+struct RingRecord {
+    std::uint32_t stamp = 0;
+    std::uint32_t value = 0;
+};
+
+constexpr std::size_t kNoView = ~std::size_t{0};
+
+// The count of elements of an Option of a View, or kNoView when the Option
+// holds no View.
+template <typename T, std::size_t Extent>
+[[nodiscard]] std::size_t count_of(::foundation::core::Option<::foundation::core::View<T, Extent>> const& view) {
+    for (::foundation::core::View<T, Extent> const held : view) {
+        return held.size();
+    }
+    return kNoView;
+}
+
+// view_at gives the elements at an offset when they fit and the offset is
+// aligned, and no value otherwise.  One mapping of LEN bytes holds a header
+// and records of a different type after it.  A write through one View shows
+// in a later View of the same bytes, so the lifetime start keeps the value of
+// each byte.  The case takes the mapping of check_live_mapping.
+template <typename Mapping>
+int check_view_at(Mapping& region, std::size_t len) {
+    for (::foundation::core::View<RingHeader, 1> const headers : region.template view_at<RingHeader, 1>(0)) {
+        for (RingHeader& header : headers)
+            header.write_index = 3;
+    }
+    for (::foundation::core::View<RingRecord> const records :
+         region.template view_at<RingRecord>(sizeof(RingHeader), 3)) {
+        std::uint32_t stamp = 10;
+        for (RingRecord& record : records)
+            record.stamp = stamp++;
+    }
+
+    Mapping const& read = region;
+    std::uint64_t seen_index = 0;
+    for (::foundation::core::View<RingHeader const, 1> const headers : read.template view_at<RingHeader const, 1>(0)) {
+        for (RingHeader const& header : headers)
+            seen_index = header.write_index;
+    }
+    if (seen_index != 3) return 60;
+    std::uint32_t stamp_sum = 0;
+    for (::foundation::core::View<RingRecord const, 3> const records :
+         read.template view_at<RingRecord const, 3>(sizeof(RingHeader))) {
+        for (RingRecord const& record : records)
+            stamp_sum += record.stamp;
+    }
+    if (stamp_sum != 10 + 11 + 12) return 61;
+
+    // The bounds: the last record fits, one past it does not, the end of the
+    // mapping gives an empty View, and an offset past the end gives none.
+    std::size_t const last = len - sizeof(RingRecord);
+    if (count_of(region.template view_at<RingRecord>(last, 1)) != 1) return 62;
+    if (count_of(region.template view_at<RingRecord>(last, 2)) != kNoView) return 63;
+    if (count_of(region.template view_at<RingRecord>(len, 0)) != 0) return 64;
+    if (count_of(region.template view_at<RingRecord>(len + 8, 0)) != kNoView) return 65;
+    if (count_of(region.template view_at<RingRecord, 1>(len)) != kNoView) return 66;
+
+    // A count or an offset near the largest value overflows no sum.
+    if (count_of(region.template view_at<std::uint64_t>(0, ~std::size_t{0})) != kNoView) return 67;
+    if (count_of(region.template view_at<std::uint64_t>(~std::size_t{0} - 7, 1)) != kNoView) return 68;
+
+    // The alignment: an offset of 4 holds a word of 4 bytes, not of 8.
+    if (count_of(region.template view_at<std::uint64_t>(4, 1)) != kNoView) return 69;
+    if (count_of(region.template view_at<std::uint32_t>(4, 1)) != 1) return 70;
+    return 0;
+}
+
 int check_live_mapping() {
     const std::size_t len = page_bytes();
     auto const owner = perm::mint_permission_root<PageTag>();
@@ -123,6 +198,7 @@ int check_live_mapping() {
     if (!r.is_mapped()) return 10;
     if (addr == nullptr) return 11;
     if (r.size() != len) return 12;
+    if (int rc = check_view_at(r, len); rc != 0) return rc;
 
     // The destructor unmaps.  A second region moved from this one must
     // leave the source empty so the unmap happens exactly once.
@@ -175,6 +251,17 @@ int check_move_assign_unmaps_the_replaced_region() {
     return 0;
 }
 
+// The empty region gives an empty View at the offset zero, and no value
+// for each element or offset past it.
+int check_view_at_of_empty_region() {
+    Region empty{};
+    if (count_of(empty.view_at<std::byte>(0, 0)) != 0) return 71;
+    if (count_of(empty.view_at<std::byte>(0, 1)) != kNoView) return 72;
+    if (count_of(empty.view_at<std::byte>(1, 0)) != kNoView) return 73;
+    if (count_of(empty.view_at<std::byte, 1>(0)) != kNoView) return 74;
+    return 0;
+}
+
 // The empty state is reachable without a syscall, and every query
 // answers on it.  The release of the empty state unmaps nothing, so the
 // destructor of an empty region issues no syscall.
@@ -206,6 +293,7 @@ int main() {
     if (int rc = check_live_mapping(); rc != 0) return rc;
     if (int rc = check_release_hands_the_region_back(); rc != 0) return rc;
     if (int rc = check_move_assign_unmaps_the_replaced_region(); rc != 0) return rc;
+    if (int rc = check_view_at_of_empty_region(); rc != 0) return rc;
 
     return 0;
 }

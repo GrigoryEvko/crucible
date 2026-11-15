@@ -71,6 +71,11 @@ static_assert(std::is_constructible_v<Borrowed<int, detail::borrowed_layout::Own
 static_assert(
     !std::is_constructible_v<Borrowed<int const, detail::borrowed_layout::OwnerA>, std::initializer_list<int>>);
 
+// A View of the Region family gives only an erased borrow, so no View gives
+// a branded borrow.
+static_assert(!std::is_constructible_v<Borrowed<int, detail::borrowed_layout::OwnerA, detail::borrowed_layout::brand_a>,
+                                       ::foundation::core::View<int>>);
+
 // A branded borrow has no public constructor over its target: the brand
 // is claimed by a mint and cannot be spelled onto another object.
 static_assert(!std::is_constructible_v<BorrowedRef<int, detail::borrowed_layout::brand_a>, int&>,

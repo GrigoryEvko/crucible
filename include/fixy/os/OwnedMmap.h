@@ -350,6 +350,59 @@ public:
     template <typename T>
     void view() const&& = delete("a View of a temporary mapping dangles when the mapping unmaps");
 
+    // The count elements of T from the byte offset of the mapping, as a
+    // View, or no value when they do not fit in the mapping or when the
+    // offset is not a multiple of the alignment of T.  A mapping starts on a
+    // page, and the gate refuses an alignment above 4096, so an aligned
+    // offset gives an aligned address.  The call starts the lifetime of the
+    // count elements over their bytes, and of no other byte, so a mapping can
+    // hold a header and then an array of a different type.  A count of zero
+    // at an offset inside the mapping gives an empty View.
+    //
+    // The View borrows the mapping, as the View of view() does.  The checks
+    // are two compares and one test of the low bits of the offset.
+    template <typename T>
+        requires mmap::MappingViewElement<Prot, T>
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view_at(std::size_t offset,
+                                                                                  std::size_t count) & noexcept {
+        return view_at_<T>(offset, count);
+    }
+
+    template <typename T>
+        requires mmap::MappingViewElement<Prot, T> && std::is_const_v<T>
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view_at(std::size_t offset,
+                                                                                  std::size_t count) const& noexcept {
+        return view_at_<T>(offset, count);
+    }
+
+    // The Count elements of T from the byte offset, as a View of the fixed
+    // extent Count, with the checks of view_at(offset, count).
+    template <typename T, std::size_t Count>
+        requires mmap::MappingViewElement<Prot, T> && (Count != ::foundation::core::dynamic_extent)
+              && ::foundation::core::ViewExtent<T, Count>
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T, Count>>
+    view_at(std::size_t offset) & noexcept {
+        return view_at_<T, Count>(offset);
+    }
+
+    template <typename T, std::size_t Count>
+        requires mmap::MappingViewElement<Prot, T> && std::is_const_v<T>
+              && (Count != ::foundation::core::dynamic_extent) && ::foundation::core::ViewExtent<T, Count>
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T, Count>>
+    view_at(std::size_t offset) const& noexcept {
+        return view_at_<T, Count>(offset);
+    }
+
+    template <typename T>
+    void view_at(std::size_t, std::size_t) && = delete("a View of a temporary mapping dangles when the mapping unmaps");
+    template <typename T>
+    void view_at(std::size_t,
+                 std::size_t) const&& = delete("a View of a temporary mapping dangles when the mapping unmaps");
+    template <typename T, std::size_t Count>
+    void view_at(std::size_t) && = delete("a View of a temporary mapping dangles when the mapping unmaps");
+    template <typename T, std::size_t Count>
+    void view_at(std::size_t) const&& = delete("a View of a temporary mapping dangles when the mapping unmaps");
+
     // Hands the region to something that will unmap it on its own
     // schedule, such as a subsystem the kernel takes over.  Almost
     // every transfer of ownership is a move instead.
@@ -378,9 +431,42 @@ private:
         if (!is_mapped()) return Result::some(::foundation::core::View<T>{});
         if (this->state_.length % sizeof(T) != 0) return Result{::foundation::core::none};
         std::size_t const count = this->state_.length / sizeof(T);
-        T* const first =
-            ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(this->state_.address, count).data();
-        return Result::some(::foundation::core::detail::view_over_<T>(first, count));
+        return Result::some(::foundation::core::detail::view_over_<T>(start_at_<T>(0, count), count));
+    }
+
+    // True when count elements of T from the byte offset lie inside the
+    // mapping, and the offset is a multiple of the alignment of T.  The
+    // compares take no sum, so no count overflows.
+    template <typename T>
+    [[nodiscard]] bool fits_at_(std::size_t offset, std::size_t count) const noexcept {
+        std::size_t const length = this->state_.length;
+        return offset <= length && count <= (length - offset) / sizeof(T) && (offset & (alignof(T) - 1)) == 0;
+    }
+
+    // Starts the lifetime of count elements of T at the byte offset, which
+    // fits_at_ accepted, and gives the first of them.
+    template <typename T>
+    [[nodiscard]] T* start_at_(std::size_t offset, std::size_t count) const noexcept {
+        unsigned char* const bytes = static_cast<unsigned char*>(this->state_.address) + offset;
+        return ::foundation::lifetime::start_as_array<std::remove_const_t<T>>(bytes, count).data();
+    }
+
+    template <typename T>
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view_at_(std::size_t offset,
+                                                                                   std::size_t count) const noexcept {
+        using Result = ::foundation::core::Option<::foundation::core::View<T>>;
+        if (!fits_at_<T>(offset, count)) return Result{::foundation::core::none};
+        return Result::some(::foundation::core::detail::view_over_<T>(start_at_<T>(offset, count), count));
+    }
+
+    // A View of a fixed extent holds at least one element, so a fit gives
+    // a mapping with an address that is not null.
+    template <typename T, std::size_t Count>
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T, Count>>
+    view_at_(std::size_t offset) const noexcept {
+        using Result = ::foundation::core::Option<::foundation::core::View<T, Count>>;
+        if (!fits_at_<T>(offset, Count)) return Result{::foundation::core::none};
+        return Result::some(::foundation::core::detail::view_over_<Count>(start_at_<T>(offset, Count)));
     }
 };
 

@@ -4975,6 +4975,15 @@ fixy_neg_compile_test(neg_owned_mmap_view_proof_element
 fixy_neg_compile_test(neg_owned_mmap_view_writes_a_read_only_mapping
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, \\{anonymous\\}::RegionBrand>::view<int>\\(\\)."
   "required for the satisfaction of .MappingViewElement<Prot, T>. \\[with Prot = fixy::mmap::prot::ReadOnly; T = int\\]")
+fixy_neg_compile_test(neg_owned_mmap_view_at_of_temporary
+  "use of deleted function .void fixy::OwnedMmap<Tag, Prot, Share, Brand>::view_at\\(std::size_t, std::size_t\\) &&"
+  "a View of a temporary mapping dangles when the mapping unmaps")
+fixy_neg_compile_test(neg_owned_mmap_view_at_writes_a_read_only_mapping
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, \\{anonymous\\}::RegionBrand>::view_at<int, 4>\\(int\\)."
+  "MappingViewElement<Prot, T>")
+fixy_neg_compile_test(neg_owned_mmap_view_at_extent_zero
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadWrite, fixy::mmap::share::Anonymous, \\{anonymous\\}::RegionBrand>::view_at<int, 0>\\(int\\)."
+  "ViewExtent<T, Count>")
 fixy_neg_compile_test(neg_owned_mmap_view_writes_through_a_const_mapping
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadWrite, fixy::mmap::share::Anonymous, \\{anonymous\\}::RegionBrand>::view<int>\\(\\) const."
   "the expression .is_const_v<T> \\[with T = int\\]. evaluated to .false.")

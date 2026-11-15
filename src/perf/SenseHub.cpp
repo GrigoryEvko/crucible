@@ -2,7 +2,6 @@
 
 #include <crucible/perf/detail/BpfHub.h>
 
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -53,11 +52,13 @@ Snapshot SenseHub::read() const noexcept {
             // The BPF producer bumps each counter with a full-barrier add, so
             // an acquire load here makes every kernel-side store that
             // precedes a bump visible, and stops the compiler hoisting later
-            // reads above it.  __atomic_load_n through a volatile-qualified
-            // pointer is a GCC extension.
-            const volatile uint64_t* __restrict src = std::bit_cast<const volatile uint64_t*>(mapped.data());
-            for (::fixy::Index<NUM_COUNTERS> const i : ::fixy::IndexRange<NUM_COUNTERS>{}) {
-                snapshot.counters.at(i) = __atomic_load_n(&src[i.raw()], __ATOMIC_ACQUIRE);
+            // reads above it.  view_at of the mapping checks the bounds and
+            // the alignment, and it starts the lifetime of the counters.
+            for (::fixy::View<const uint64_t, NUM_COUNTERS> const counters :
+                 mapped.template view_at<const uint64_t, NUM_COUNTERS>(0)) {
+                for (::fixy::Index<NUM_COUNTERS> const i : counters.indices()) {
+                    snapshot.counters.at(i) = __atomic_load_n(&counters.at(i), __ATOMIC_ACQUIRE);
+                }
             }
         }
     }
@@ -67,8 +68,10 @@ Snapshot SenseHub::read() const noexcept {
 ::fixy::Borrowed<const volatile uint64_t, SenseHub> SenseHub::counters_view() const noexcept {
     for (::fixy::Box<State> const& state : state_) {
         for (detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped : state->counters) {
-            return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{std::bit_cast<volatile uint64_t*>(mapped.data()),
-                                                                       NUM_COUNTERS};
+            for (::fixy::View<const uint64_t, NUM_COUNTERS> const counters :
+                 mapped.template view_at<const uint64_t, NUM_COUNTERS>(0)) {
+                return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{counters};
+            }
         }
     }
     return ::fixy::Borrowed<const volatile uint64_t, SenseHub>{};

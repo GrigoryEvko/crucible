@@ -22,7 +22,6 @@
 #include <foundation/os/Auxiliary.h>
 #include <foundation/permissions/Permission.h>
 
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -339,34 +338,35 @@ struct RingLayout {
     static constexpr std::size_t bytes = sizeof(Header) + std::size_t{Capacity} * sizeof(Event);
 
     // The mapping starts with the header, and the events follow it, so
-    // the view covers only the events.  The mapping is untyped byte
-    // storage, so the checked lifetime start begins the typed array
-    // inside it.  The bit_cast drops volatile, because libstdc++ has no
-    // span<const volatile T> for a non-scalar T.  A consumer does its own
-    // atomic load at each field access.
+    // the view covers only the events.  view_at of the mapping checks the
+    // bounds and the alignment, and it starts the lifetime of the events
+    // over their bytes.  A View holds no volatile element, so a consumer
+    // does its own atomic load at each field access.
     template <class Owner, class Tag>
     [[nodiscard]] static ::fixy::Borrowed<const Event, Owner>
     events(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
         for (ReadOnlyMapping<Tag> const& mapped : mapping) {
-            auto* const base = std::bit_cast<volatile uint8_t*>(mapped.data());
-            auto* const first = ::foundation::lifetime::start_as_array<Event>(
-                                    std::bit_cast<const uint8_t*>(base + sizeof(Header)), Capacity)
-                                    .data();
-            return ::fixy::Borrowed<const Event, Owner>{first, Capacity};
+            for (::fixy::View<const Event, Capacity> const ring :
+                 mapped.template view_at<const Event, Capacity>(sizeof(Header))) {
+                return ::fixy::Borrowed<const Event, Owner>{ring};
+            }
         }
         return ::fixy::Borrowed<const Event, Owner>{};
     }
 
-    // The volatile load needs no acquire fence.  The BPF program advances
-    // write_idx with a barriered add, and a timestamp marks a finished
-    // event, so a reader checks it before it trusts the rest of an event.
+    // The header binds to a reference to volatile, so the read of write_idx
+    // is a volatile load.  The volatile load needs no acquire fence.  The
+    // BPF program advances write_idx with a barriered add, and a timestamp
+    // marks a finished event, so a reader checks it before it trusts the
+    // rest of an event.
     template <class Tag>
     [[nodiscard]] static uint64_t write_index(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
         for (ReadOnlyMapping<Tag> const& mapped : mapping) {
-            auto* const base = std::bit_cast<volatile uint8_t*>(mapped.data());
-            const volatile Header* const header =
-                ::foundation::lifetime::start_as_array<Header>(std::bit_cast<const uint8_t*>(base), 1).data();
-            return header->write_idx;
+            for (::fixy::View<const Header, 1> const headers : mapped.template view_at<const Header, 1>(0)) {
+                for (const volatile Header& header : headers) {
+                    return header.write_idx;
+                }
+            }
         }
         return 0;
     }

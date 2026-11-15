@@ -44,6 +44,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Region.h>
 #include <foundation/reflect/Anchor.h>
 #include <foundation/reflect/Instance.h>
 
@@ -333,6 +334,16 @@ public:
     constexpr explicit Borrowed(T (&array CRUCIBLE_LIFETIMEBOUND)[N]) noexcept
         requires std::is_same_v<Brand, ::foundation::brand::DefaultBrand>
         : span_{array, N} {}
+
+    // The elements of a View of the Region family, so a caller that holds
+    // a View and no pointer can give a borrow.  The element of the View
+    // converts to T by a qualification conversion, such as from const U to
+    // const volatile U.  The View borrows already, so the borrow lives no
+    // longer than the owner of the View.
+    template <class U, std::size_t Extent>
+        requires std::is_same_v<Brand, ::foundation::brand::DefaultBrand> && std::is_convertible_v<U (*)[], T (*)[]>
+    constexpr explicit Borrowed(::foundation::core::View<U, Extent> view) noexcept
+        : span_{first_of_(::foundation::core::detail::ViewDoor::key(), view), view.size()} {}
 
     // std::span of a const element type accepts an rvalue owning range
     // and a braced list, both of which die at the end of the statement,
