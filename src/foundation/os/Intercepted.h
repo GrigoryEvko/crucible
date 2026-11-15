@@ -1,15 +1,52 @@
 #pragma once
 
-// The routes of the raw system call primitive in a build with
-// ThreadSanitizer, for a call that can block, for a map and an unmap, and for
-// a call that opens or closes a descriptor (THE SANITIZERS of
-// foundation/os/Syscall.h).  Only
-// src/foundation/os/Syscall.cpp includes this header, and only a build with
-// ThreadSanitizer calls the functions.
+// The calls of the floor that go to the C library (src/foundation/os/Intercepted.cpp).
+//
+// THE ROUTES
+//   The routes of the raw system call primitive in a build with
+//   ThreadSanitizer, for a call that can block, for a map and an unmap, and
+//   for a call that opens or closes a descriptor (THE SANITIZERS of
+//   foundation/os/Syscall.h).  Only src/foundation/os/Syscall.cpp calls them,
+//   and only a build with ThreadSanitizer.
+//
+// THE PROCESS CALLS
+//   fork, waitpid and _exit of the C library, in each build.  The deny rows
+//   of utils/rule-table.txt refuse a raw clone, fork, exit and exit_group: the
+//   C library runs the fork hooks, keeps the state of its threads, and the
+//   sanitizers intercept each of the three calls.  Only the child door
+//   src/foundation/os/ChildProcess.cpp calls them.
 
 #include <cstdint>
 
 namespace foundation::os::detail {
+
+// How a child process ended: by an exit with a code, or by a signal.
+enum class ProcessEnd : std::uint8_t {
+    exited,
+    signaled,
+};
+
+// The end of a child process: the exit code or the number of the signal.
+struct ProcessStatus {
+    ProcessEnd end = ProcessEnd::exited;
+    std::uint8_t number = 0;
+};
+
+// fork of the C library.  In the parent, the id of the child, above zero.  In
+// the child, zero.  On an error, -E for the error number E.
+[[nodiscard]] long fork_process() noexcept;
+
+// waitpid of the C library for the child CHILD, with no option, so the call
+// waits until the child ends.  The word is zero, and STATUS holds the end, or
+// -E for the error number E.  An eintr comes back to the caller.  The
+// function has the attribute nothrow and no noexcept specifier, for the
+// reason that src/foundation/os/Intercepted.cpp gives at read_intercepted.
+[[nodiscard, gnu::nothrow]] long wait_process(std::int32_t child, ProcessStatus& status);
+
+// _exit of the C library: the process ends with CODE, and no exit hook and
+// no static destructor runs.  The attribute nothrow has the same reason as
+// at wait_process.
+[[noreturn, gnu::nothrow]] void exit_process(std::uint8_t code);
 
 // Issues a read or a write through the function of the C library that
 // ThreadSanitizer intercepts, with the descriptor, the address and the count

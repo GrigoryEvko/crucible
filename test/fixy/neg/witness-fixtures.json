@@ -592,6 +592,16 @@
       "constructor": "\\bWriteView\\("
     },
     {
+      "name": "neg_witness_process_child_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bChild\\("
+    },
+    {
+      "name": "neg_witness_process_childreport_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bChildReport\\("
+    },
+    {
       "name": "neg_witness_qtt_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bQtt\\("
@@ -1360,6 +1370,14 @@
     {
       "type": "fixy::time::PtpClockReader",
       "header": "fixy/os/Time.h"
+    },
+    {
+      "type": "fixy::process::ChildReport",
+      "header": "fixy/os/Process.h"
+    },
+    {
+      "type": "fixy::process::Child",
+      "header": "fixy/os/Process.h"
     },
     {
       "type": "fixy::time::TscReader<fixy::time::TscMode::Raw, fixy::CpuPinned<foundation::algebra::lattices::AffinityMask::single(0), fixy::PinningPosture::PinnedExplicit, int>>",

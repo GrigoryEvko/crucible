@@ -4367,6 +4367,18 @@ fixy_neg_compile_test(neg_pipeline_dag_mint_stage_pack_mismatch
   "required for the satisfaction of .graph_stage_pack_is<Graph, Stages \\.\\.\\.>."
   "Graph = fixy::concurrent::StageGraph<fixy::concurrent::StagePack<fixy::concurrent::Stage<&pass_through")
 
+# The child door of fixy/os/Process.h: the exit code, the abort and the
+# output of a child, an output larger than the report, a Child that no wait
+# takes, and the empty Child.  Only a context that owns the Test capability
+# starts a child or ends a process with no exit hook.
+fixy_test(test_child_process)
+fixy_neg_compile_test(neg_spawn_child_without_test_context
+  "no matching function for call to .spawn_child"
+  "CtxFitsChildProcess")
+fixy_neg_compile_test(neg_exit_now_without_test_context
+  "no matching function for call to .exit_now"
+  "CtxFitsChildProcess")
+
 # ── The publication handles ───────────────────────────────────────────
 #
 # The double-publish abort is deliberately not a contract clause — a

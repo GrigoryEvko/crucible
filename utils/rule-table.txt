@@ -332,6 +332,7 @@ door <linux/time_types.h> src/foundation/os/Syscall.cpp
 door <errno.h> src/foundation/os/Intercepted.cpp
 door <unistd.h> src/foundation/os/Intercepted.cpp
 door <sys/mman.h> src/foundation/os/Intercepted.cpp
+door <sys/wait.h> src/foundation/os/Intercepted.cpp
 door <linux/auxvec.h> src/foundation/os/Auxiliary.cpp
 door <asm/stat.h> src/fixy/os/Fs.cpp
 door <linux/fs.h> src/fixy/os/Fs.cpp
@@ -841,6 +842,15 @@ witness <fixy/os/Time.h> private | fixy::time::ClockReader<foundation::algebra::
 # one door is mint_ptp_clock_reader, which opens /dev/ptpN itself, so a
 # forger who holds another descriptor cannot build a reader over it.
 witness <fixy/os/Time.h> private | fixy::time::PtpClockReader | fixy::time::PtpClockReader{forge::rvalue<fixy::fs::OwnedFd>()}
+# A child report claims that a wait read the output and the end of a real
+# child.  Its default constructor is private, and only the child door of
+# src/fixy/os/Process.cpp builds one, after the wait.
+witness <fixy/os/Process.h> private | fixy::process::ChildReport | fixy::process::ChildReport{}
+# A child names a process that the door started, and its read end of the
+# standard error.  The constructor from the id and the read end is private,
+# and only spawn_child calls it, after the fork.  The empty Child of the
+# default constructor names no process.
+witness <fixy/os/Process.h> private | fixy::process::Child | fixy::process::Child{forge::rvalue<std::int32_t>(), forge::rvalue<std::int32_t>()}
 # A TSC reader reads the counter of the core that its pin names.  Its one
 # door is mint_tsc_reader, which refuses a pin that is not in force on the
 # calling thread.

@@ -168,8 +168,10 @@ rule artifact-symbols
 @build/libfixy.a | throw | admit | Topology.cpp.o | The sysfs probe of src/fixy/os/Topology.cpp grows std::vector<int> and builds std::string, and the two throw std::length_error and std::logic_error through libstdc++.  The Region family and the path type of the Os family replace them
 @build/libfoundation.a | libc-allow | 1 | __errno_location | -
 @build/libfoundation.a | libc-allow | 1 | __stack_chk_fail | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
+@build/libfoundation.a | libc-allow | 1 | _exit | -
 @build/libfoundation.a | libc-allow | 1 | abort | -
 @build/libfoundation.a | libc-allow | 1 | aligned_alloc | -
+@build/libfoundation.a | libc-allow | 1 | fork | -
 @build/libfoundation.a | libc-allow | 1 | free | -
 @build/libfoundation.a | libc-allow | 1 | malloc | -
 @build/libfoundation.a | libc-allow | 1 | memcpy | -
@@ -177,4 +179,5 @@ rule artifact-symbols
 @build/libfoundation.a | libc-allow | 1 | mmap | -
 @build/libfoundation.a | libc-allow | 1 | munmap | -
 @build/libfoundation.a | libc-allow | 1 | read | -
+@build/libfoundation.a | libc-allow | 1 | waitpid | -
 @build/libfoundation.a | libc-allow | 1 | write | -

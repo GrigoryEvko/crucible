@@ -418,6 +418,7 @@ add_library(foundation STATIC
   src/foundation/os/Abort.cpp
   src/foundation/os/Auxiliary.cpp
   src/foundation/os/BumpArena.cpp
+  src/foundation/os/ChildProcess.cpp
   src/foundation/os/Directory.cpp
   src/foundation/os/Errno.cpp
   src/foundation/os/File.cpp

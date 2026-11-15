@@ -260,6 +260,10 @@ constexpr long kNoCall = -1;
             return __NR_openat2;
         case Syscall::socket:
             return __NR_socket;
+        case Syscall::pipe2:
+            return __NR_pipe2;
+        case Syscall::dup3:
+            return __NR_dup3;
         case Syscall::clock_gettime:
             return __NR_clock_gettime;
         case Syscall::clock_nanosleep:
@@ -451,7 +455,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // architecture and the release that added the call.  openat, renameat,
 // unlinkat, mkdirat and newfstatat came in 2.6.16.  mbind came in 2.6.7, and
 // the memory policy door uses
-// MPOL_MF_MOVE, which came in 2.6.16.  move_pages came in 2.6.18.  futex came
+// MPOL_MF_MOVE, which came in 2.6.16.  move_pages came in 2.6.18, and pipe2
+// and dup3 came in 2.6.27.  futex came
 // in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
 // perf_event_open came in 2.6.31, sched_setattr and sched_getattr in 3.14,
 // renameat2 in 3.15, mlock2 in 4.4, copy_file_range in 4.5, io_uring_setup in
@@ -473,6 +478,10 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             break;
         case Syscall::move_pages:
             added = KernelVersion{2, 6, 18};
+            break;
+        case Syscall::pipe2:
+        case Syscall::dup3:
+            added = KernelVersion{2, 6, 27};
             break;
         case Syscall::futex:
             added = KernelVersion{2, 6, 25};

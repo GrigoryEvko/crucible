@@ -10,12 +10,15 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Report.h>
+#include <foundation/os/Abort.h>
 #include <foundation/os/Auxiliary.h>
 
 #include <signal.h>
 
 #include <cstddef>
 #include <cstdint>
+
+static_assert(::foundation::os::kAbortSignal == SIGABRT, "foundation::os::kAbortSignal is not SIGABRT of <signal.h>");
 
 namespace fixy::signal::detail {
 

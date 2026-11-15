@@ -130,6 +130,8 @@ enum class Syscall : std::uint8_t {
     perf_event_open,
     openat2,
     socket,
+    pipe2,
+    dup3,
     clock_gettime,
     clock_nanosleep,
 };

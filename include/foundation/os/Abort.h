@@ -26,7 +26,14 @@
 //
 // This header is in the layer F0_doors of utils/rule-table.txt.
 
+#include <cstdint>
+
 namespace foundation::os {
+
+// The number of the signal SIGABRT, which abort_process sends.  The number is
+// the same on x86_64 and aarch64, and src/fixy/os/Signal.cpp, the door of
+// <signal.h>, checks it.
+inline constexpr std::uint8_t kAbortSignal = 6;
 
 // Ends the process with SIGABRT.  The function does not return.
 [[noreturn, gnu::cold]] void abort_process() noexcept;

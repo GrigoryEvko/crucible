@@ -149,11 +149,13 @@ THE DOORS
     library is the library of the door, and each member that imports it is
     the member of the door.  Each other import of a door call, in each
     library, has the mark `door-ratchet`.  An example is the inline clock
-    read of fixy/os/Time.h in an object of crucible.  A call of the door
-    src/foundation/os/Intercepted.cpp is a door call only in a build kind
-    with the word tsan, because only a build with ThreadSanitizer compiles
-    it (rule R18).  The plan names each door call in decision D12.  The
-    change that adds a door adds its calls to DOOR_CALLS and to D12.
+    read of fixy/os/Time.h in an object of crucible.  A read or a write of
+    the door src/foundation/os/Intercepted.cpp is a door call only in a
+    build kind with the word tsan, because only a build with
+    ThreadSanitizer compiles the routes (rule R18).  Its fork, waitpid,
+    _exit and __errno_location are door calls in each build.  The plan names
+    each door call in decision D12.  The change that adds a door adds its
+    calls to DOOR_CALLS and to D12.
 
 THE HIDDEN IMPORTS
     The quarantine plugin writes the records of the library code into the
@@ -423,10 +425,13 @@ TSAN_WORD = "tsan"
 #     signals of the process to the C library, and no raw call can send SIGABRT.
 #   * The allocation door of foundation/core/Heap.h calls malloc, aligned_alloc and free.  The allocator of the C
 #     library owns the state of the heap, and the deny row of brk keeps its program break.
-#   * In a build with ThreadSanitizer, the door src/foundation/os/Intercepted.cpp of rule R18 calls read and write,
-#     and it reads errno through __errno_location.  It also calls mmap and munmap (the owner decision of
-#     2026-11-14): only the interceptors of the two functions reset the shadow of a range, and the system call
-#     hooks of the two calls are empty.
+#   * In a build with ThreadSanitizer, the door src/foundation/os/Intercepted.cpp of rule R18 calls read and write.
+#     It also calls mmap and munmap (the owner decision of 2026-11-14): only the interceptors of the two functions
+#     reset the shadow of a range, and the system call hooks of the two calls are empty.
+#   * In each build, the same door forks, waits for and ends a child process for the child door of
+#     foundation/os/ChildProcess.h.  The C library runs the fork hooks and keeps the state of its threads, and the
+#     deny rows of the rule table refuse a raw clone, fork, exit and exit_group.  The door reads errno through
+#     __errno_location after a fork, a wait or a route.
 #   * The thread door of fixy/os/ThreadTasks.h starts each thread with the attributes of the call, names it, joins
 #     it, and registers the fork hook of a caller.  The C library starts the thread and holds its TLS.
 #   * The signal door of fixy/os/Signal.h installs the handlers of the signals that end a process, and it sets the
@@ -445,7 +450,8 @@ DOOR_CALLS = (
     DoorCall("write", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
     DoorCall("mmap", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
     DoorCall("munmap", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
-    DoorCall("__errno_location", FOUNDATION, "Intercepted.cpp.o", TSAN_WORD),
+    DoorCall("__errno_location", FOUNDATION, "Intercepted.cpp.o"),
+    *(DoorCall(symbol, FOUNDATION, "Intercepted.cpp.o") for symbol in ("fork", "waitpid", "_exit")),
     *(
         DoorCall(symbol, FIXY, "ThreadTasks.cpp.o")
         for symbol in (

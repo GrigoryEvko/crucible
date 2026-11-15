@@ -1,11 +1,21 @@
-// The routes of the raw system call primitive in a build with
-// ThreadSanitizer (src/foundation/os/Intercepted.h).
+// The calls of the floor that go to the C library
+// (src/foundation/os/Intercepted.h): the process calls in each build, and the
+// routes of the raw system call primitive in a build with ThreadSanitizer.
+// This file is the one door of <errno.h>, <unistd.h>, <sys/mman.h> and
+// <sys/wait.h>.
 //
-// ThreadSanitizer delivers a signal only inside a call that it intercepts, or
-// inside a call that it knows to block.  A read or a write that blocks on a
-// pipe goes through read(2) or write(2) of the C library, which the sanitizer
-// intercepts.  The C library has no function for futex, so a futex call stays
-// raw, and this file tells the sanitizer of it through its hooks.
+// THE PROCESS CALLS.  fork, waitpid and _exit stay in the C library (decision
+// D12 of misc/01_10_2026_quarantine.md).  The C library runs the fork hooks
+// and keeps the state of its threads in the child, and the sanitizers
+// intercept the three calls.  The deny rows of utils/rule-table.txt refuse a
+// raw clone, fork, exit and exit_group.
+//
+// THE ROUTES.  ThreadSanitizer delivers a signal only inside a call that it
+// intercepts, or inside a call that it knows to block.  A read or a write that
+// blocks on a pipe goes through read(2) or write(2) of the C library, which
+// the sanitizer intercepts.  The C library has no function for futex, so a
+// futex call stays raw, and this file tells the sanitizer of it through its
+// hooks.
 //
 // The sanitizer intercepts sleep, usleep and nanosleep, and not
 // clock_nanosleep.  The hooks of clock_nanosleep check the read of the
@@ -30,17 +40,46 @@
 // the struct open_how.  No hook gives the state of a new descriptor, and the
 // clear of the close keeps a reused number free of an old state.
 //
-// Each other build compiles no code from this file.  A unit of the C library
-// and a unit of the kernel headers stay apart, so this file includes no
-// header of the kernel.
+// Each other build compiles no route.  A unit of the C library and a unit of
+// the kernel headers stay apart, so this file includes no header of the
+// kernel.
 
 #include "Intercepted.h"
 
-#if defined(__SANITIZE_THREAD__)
-
 #include <errno.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+namespace foundation::os::detail {
+
+long fork_process() noexcept {
+    ::pid_t const child = ::fork();
+    return child < 0 ? -static_cast<long>(errno) : static_cast<long>(child);
+}
+
+// waitpid is a cancellation point of the C library, and _exit has no
+// __THROW, so <unistd.h> and <sys/wait.h> declare them without __THROW.  The
+// attributes nothrow and no_sanitize_thread have the reason that
+// read_intercepted below gives.
+[[gnu::no_sanitize_thread]] long wait_process(std::int32_t child, ProcessStatus& status) {
+    int word = 0;
+    if (::waitpid(child, &word, 0) < 0) {
+        return -static_cast<long>(errno);
+    }
+    if (WIFSIGNALED(word)) {
+        status = ProcessStatus{ProcessEnd::signaled, static_cast<std::uint8_t>(WTERMSIG(word))};
+    } else {
+        status = ProcessStatus{ProcessEnd::exited, static_cast<std::uint8_t>(WEXITSTATUS(word))};
+    }
+    return 0;
+}
+
+[[gnu::no_sanitize_thread]] void exit_process(std::uint8_t code) { ::_exit(code); }
+
+}  // namespace foundation::os::detail
+
+#if defined(__SANITIZE_THREAD__)
 
 // The system call hooks of ThreadSanitizer for futex(2), which libtsan
 // defines.  GCC installs no <sanitizer/linux_syscall_hooks.h>, so this file
