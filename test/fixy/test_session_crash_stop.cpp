@@ -275,8 +275,12 @@ constexpr auto poll_label = [](Port& port) noexcept -> ::fixy::Option<std::size_
     return ::fixy::some(static_cast<std::size_t>(slot));
 };
 
+// The cell of a pair watches its first role for its second role.
+using CellOfP = s::CrashCell<P, Q>;
+using CellOfQ = s::CrashCell<Q, P>;
+
 using CheckedP = decltype(s::mint_crash_session<ProtoP, P, Q>(
-    std::declval<const BgCtx&>(), Port{}, std::declval<const s::PeerCrashCell&>(), std::declval<s::CrashWriter>()));
+    std::declval<const BgCtx&>(), Port{}, std::declval<const CellOfQ&>(), std::declval<s::CrashWriter<P, Q>>()));
 static_assert(std::is_same_v<CheckedP::protocol, ProtoP>);
 
 // The context of a crash session admits the effect row of each payload,
@@ -284,10 +288,11 @@ static_assert(std::is_same_v<CheckedP::protocol, ProtoP>);
 using IoPayload = eff::Computation<eff::Row<eff::Effect::IO>, int>;
 using ReceivesIo = s::Offer<s::Recv<IoPayload, s::End>, s::Recv<s::Crash<P>, s::End>>;
 static_assert(s::CrashSessionAdmissible<ReceivesIo, Q, P, s::ReliableSet<>>);
-static_assert(!s::CtxFitsCrashSession<BgCtx, ReceivesIo, Q, P, s::ReliableSet<>, Port>,
+static_assert(!s::CtxFitsCrashSession<BgCtx, ReceivesIo, Q, P, s::ReliableSet<>, Port, s::NoThirdRole>,
               "the background context holds no IO");
-static_assert(s::CtxFitsCrashSession<BgIoCtx, ReceivesIo, Q, P, s::ReliableSet<>, Port>);
-static_assert(!s::CtxFitsCrashSession<int, ProtoQ, Q, P, s::ReliableSet<>, Port>, "an int is not an execution context");
+static_assert(s::CtxFitsCrashSession<BgIoCtx, ReceivesIo, Q, P, s::ReliableSet<>, Port, s::NoThirdRole>);
+static_assert(!s::CtxFitsCrashSession<int, ProtoQ, Q, P, s::ReliableSet<>, Port, s::NoThirdRole>,
+              "an int is not an execution context");
 static_assert(!std::is_copy_constructible_v<CheckedP>);
 static_assert(std::is_move_constructible_v<CheckedP>);
 
@@ -325,8 +330,8 @@ int fail(const char* what) {
 int run_without_crash() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;  // watched by q
-    s::PeerCrashCell cell_q;  // watched by p
+    CellOfP cell_p;  // watched by q
+    CellOfQ cell_q;  // watched by p
     auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
@@ -366,8 +371,8 @@ int run_without_crash() {
 int run_receiver_crashes_first() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
@@ -398,8 +403,8 @@ int run_receiver_crashes_first() {
 int run_sender_crashes_after_send() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
@@ -474,7 +479,7 @@ struct WirePort {
 using StreamP = s::Loop<s::Select<s::Send<int, s::Continue>>>;
 using StreamQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
 using StreamQHandle = decltype(s::mint_crash_session<StreamQ, Q, P>(
-    std::declval<const BgCtx&>(), WirePort{}, std::declval<const s::PeerCrashCell&>(), std::declval<s::CrashWriter>()));
+    std::declval<const BgCtx&>(), WirePort{}, std::declval<const CellOfP&>(), std::declval<s::CrashWriter<Q, P>>()));
 
 constexpr int kStreamMessages = 200;
 constexpr int kStreamRuns = 50;
@@ -487,8 +492,8 @@ int run_stream_across_threads() {
     for (int run = 0; run < kStreamRuns; ++run) {
         WireQueue to_p;
         WireQueue to_q;
-        s::PeerCrashCell cell_p;
-        s::PeerCrashCell cell_q;
+        CellOfP cell_p;
+        CellOfQ cell_q;
         int received = 0;
         bool is_in_order = true;
         bool took_crash_branch = false;
@@ -560,7 +565,7 @@ int run_stream_across_threads() {
 // the count that the session of the endpoint wrote.  An endpoint with no
 // session sent nothing, so its report carries the count zero.
 int run_cell() {
-    s::PeerCrashCell cell;
+    CellOfP cell;
     if (cell.has_crashed() || cell.crash_cause() || cell.witness()) return fail("a fresh cell reports a crash");
     if (!s::mint_crash_reporter(cell).report(s::CrashCause::ErrorReturn)) return fail("the first report was refused");
     const std::optional<s::CrashWitness> witness = cell.witness();

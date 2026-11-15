@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::CrashWatched<fixy::session::SessionHandle<fixy::session::End, int*>, int, long, fixy::session::ReliableSet<>, int>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int*>>(), forge::lvalue<const fixy::session::PeerCrashCell>(), forge::lvalue<fixy::session::PeerCrashCell>(), forge::lvalue<const int>()};
+    [[maybe_unused]] auto forged = fixy::session::CrashWatched<fixy::session::SessionHandle<fixy::session::End, int*>, int, long, fixy::session::ReliableSet<>, int>{forge::rvalue<fixy::session::SessionHandle<fixy::session::End, int*>>(), forge::lvalue<const fixy::session::CrashCellCore>(), forge::lvalue<fixy::session::CrashCellCore>(), forge::rvalue<fixy::session::CrashCellCore*>(), forge::lvalue<const int>()};
     return 0;
 }

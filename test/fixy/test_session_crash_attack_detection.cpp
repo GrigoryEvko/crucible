@@ -17,8 +17,8 @@ void reliable_peer_crashes_while_waited_on() {
     using ProtoQ = s::Offer<s::Recv<int, s::End>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(bg_ctx(), Port{&to_q, &to_p}, cell_p,
                                                                     s::mint_crash_writer(cell_q));
@@ -36,8 +36,8 @@ void send_to_crashed_peer_returns_payload() {
     using ProtoQ = s::Loop<s::Select<s::Send<int, s::Continue>>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     report_crash(cell_p, s::CrashCause::Throw);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
     int returned = 0;
@@ -59,8 +59,8 @@ void token_relayed_to_crashed_peer() {
     Mailbox to_q;
     to_q.slots.push_back(0);  // the label of the message branch
     to_q.slots.push_back(7);  // the value of the token's payload
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto q = s::mint_crash_session<Relay, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
     bool came_back_once = false;
     std::move(q).branch(poll_label, [&](auto branch) noexcept {
@@ -86,8 +86,8 @@ void crash_detected_twice() {
     using ProtoQ = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, Again>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     report_crash(cell_p, s::CrashCause::ErrorReturn);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
     int detections = 0;
@@ -120,8 +120,8 @@ void queue_drains_before_detection() {
     using ProtoQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     p_sends(cell_p, cell_q, to_p, to_q, 1, 4);
     report_crash(cell_p, s::CrashCause::Abort);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
@@ -150,8 +150,8 @@ void peer_sends_the_crash_label() {
     Mailbox to_p;
     Mailbox to_q;
     to_q.slots.push_back(1);
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
     std::move(q).branch(
         poll_label, [](auto branch) noexcept { std::move(branch).detach(s::detach_reason::TestInstrumentation{}); });
@@ -199,8 +199,8 @@ void reliable_message_does_not_drain_the_peer() {
     using ProtoP = s::Select<s::Send<int, s::End>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     r_sends_seven(to_q);
     auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto chosen = std::move(p).select<0>(push_label);
@@ -232,8 +232,8 @@ void reliable_message_does_not_drain_the_peer() {
 void reliable_offer_while_the_peer_is_crashed() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     report_crash(cell_p, s::CrashCause::Abort);
     r_sends_seven(to_q);
     auto q = s::mint_crash_session<FromR<s::End>, Q, P, s::ReliableSet<R>>(bg_ctx(), Port{&to_q, &to_p}, cell_p,

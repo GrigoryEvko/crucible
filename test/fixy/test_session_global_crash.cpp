@@ -294,8 +294,8 @@ int fail(const char* what) {
 int run_sender_crashes_after_send() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    s::CrashCell<P, Q> cell_p;
+    s::CrashCell<Q, P> cell_q;
     auto p = s::mint_crash_session<BinaryP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
@@ -335,8 +335,8 @@ int run_sender_crashes_after_send() {
 int run_sender_crashes_first() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    s::CrashCell<P, Q> cell_p;
+    s::CrashCell<Q, P> cell_q;
     auto p = s::mint_crash_session<BinaryP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
     (void)std::move(p).crash(s::CrashCause::ErrorReturn);

@@ -2974,7 +2974,7 @@ fixy_neg_compile_test(neg_sess_crash_door_derived_look_alike
   "CrashSessionDoor")
 fixy_neg_compile_test(neg_sess_crash_watched_friend_specialized
   "is private within this context"
-  "fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::CrashWatched\\(Handle, const fixy::session::PeerCrashCell&")
+  "fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::CrashWatched\\(Handle, const fixy::session::CrashCellCore&")
 
 # Rules 1 and 2, and Stop as runtime syntax, hold in every session, so
 # the plain handle factory refuses them.
@@ -3037,6 +3037,16 @@ fixy_neg_compile_test(neg_sess_crash_keyed_sender_unwatched
 fixy_neg_compile_test(neg_sess_crash_keyed_target_unwatched
   "no matching function for call to .mint_crash_session<neg_sess_crash_keyed_target_unwatched_types::ToQ,"
   "required for the satisfaction of .is_every_sender_watched_v<Proto, Peer, Reliable>. \\[with Proto = fixy::session::Send<fixy::session::PeerMsg<neg_sess_crash_keyed_target_unwatched_types::Q,")
+# Each pair of a sender and a receiver has its own crash cell, and the type
+# of a cell names its pair.  A third role cannot read the cell of another
+# pair, and a protocol that sends to a third role takes the writer of the
+# cell of that pair.
+fixy_neg_compile_test(neg_sess_crash_cell_of_another_pair
+  "no matching function for call to .mint_crash_session<neg_sess_crash_cell_of_another_pair_types::FromPOrCrashOfP,"
+  "cannot convert .cell_of_p_for_q. \\(type .const fixy::session::CrashCell<neg_sess_crash_cell_of_another_pair_types::P, neg_sess_crash_cell_of_another_pair_types::Q>.\\) to type .const fixy::session::CrashCell<neg_sess_crash_cell_of_another_pair_types::P, neg_sess_crash_cell_of_another_pair_types::Third>&.")
+fixy_neg_compile_test(neg_sess_crash_third_pair_missing
+  "no matching function for call to .mint_crash_session<neg_sess_crash_third_pair_missing_types::ToThird,"
+  "is_third_receiver\\(.*\\)\\(\\^\\^ Proto, \\^\\^ Peer, \\^\\^ Third\\) \\[with Proto = fixy::session::Send<fixy::session::PeerMsg<neg_sess_crash_third_pair_missing_types::Third, .*Third = fixy::session::NoThirdRole\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_sess_crash_between_label_and_payload
   "fixy::session::diagnostic \\[Crash_Splits_A_Message\\]"
   "CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::crash\\(")
@@ -3240,7 +3250,7 @@ fixy_neg_compile_test(neg_sess_crash_writer_from_const_cell
   "use of deleted function .void fixy::session::mint_crash_writer"
   "\\[Crash_Writer_From_Const_Cell\\]")
 fixy_neg_compile_test(neg_sess_crash_writer_copied
-  "use of deleted function .fixy::session::CrashWriter::CrashWriter\\(const fixy::session::CrashWriter&\\)"
+  "use of deleted function .fixy::session::CrashWriter<Sender, Receiver>::CrashWriter\\(const fixy::session::CrashWriter<Sender, Receiver>&\\)"
   "one session counts into a cell, so the cell has one writer")
 fixy_neg_compile_test(neg_sess_crash_report_with_count
   "no matching function for call to .fixy::session::CrashReporter::report"

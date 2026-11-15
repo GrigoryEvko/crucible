@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::CrashReporter{forge::lvalue<fixy::session::PeerCrashCell>()};
+    [[maybe_unused]] auto forged = fixy::session::CrashReporter{forge::lvalue<fixy::session::CrashCellCore>()};
     return 0;
 }

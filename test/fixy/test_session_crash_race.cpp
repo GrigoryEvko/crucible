@@ -104,10 +104,14 @@ static_assert(s::CrashSessionAdmissible<Asks<Q>, P, Q, s::NoReliableRoles>);
 static_assert(s::CrashSessionAdmissible<Streams, Q, P, s::NoReliableRoles>);
 static_assert(s::CrashSessionAdmissible<Drains, P, Q, s::NoReliableRoles>);
 
+// The cell of a pair watches its first role for its second role.
+using CellOfP = s::CrashCell<P, Q>;
+using CellOfQ = s::CrashCell<Q, P>;
+
 using DrainHandle = decltype(s::mint_crash_session<Drains, P, Q>(
-    std::declval<const BgCtx&>(), Port{}, std::declval<const s::PeerCrashCell&>(), std::declval<s::CrashWriter>()));
+    std::declval<const BgCtx&>(), Port{}, std::declval<const CellOfQ&>(), std::declval<s::CrashWriter<P, Q>>()));
 using StreamHandle = decltype(s::mint_crash_session<Streams, Q, P>(
-    std::declval<const BgCtx&>(), Port{}, std::declval<const s::PeerCrashCell&>(), std::declval<s::CrashWriter>()));
+    std::declval<const BgCtx&>(), Port{}, std::declval<const CellOfP&>(), std::declval<s::CrashWriter<Q, P>>()));
 
 int fail(const char* what) {
     std::fprintf(stderr, "test_session_crash_race: %s\n", what);
@@ -177,8 +181,10 @@ template <typename Handle>
 int run_reports_race_sends() {
     for (int run = 0; run < kRuns; ++run) {
         Mailbox from_q, to_q, from_r, to_r, from_late, to_late;
-        s::PeerCrashCell cell_q, cell_r;
-        s::PeerCrashCell cell_p_to_q, cell_p_to_r, cell_p_late;
+        CellOfQ cell_q;
+        s::CrashCell<R, P> cell_r;
+        CellOfP cell_p_to_q, cell_p_late;
+        s::CrashCell<P, R> cell_p_to_r;
         std::atomic<bool> is_started{false};
         bool is_first_report_q = false;
         bool is_first_report_r = false;
@@ -229,7 +235,8 @@ int run_reports_race_sends() {
 int run_crash_inside_send_transport() {
     for (int run = 0; run < kRuns; ++run) {
         Mailbox from_q, to_q;
-        s::PeerCrashCell cell_q, cell_p;
+        CellOfQ cell_q;
+        CellOfP cell_p;
         TransportBarrier barrier;
 
         auto to_peer =
@@ -263,7 +270,8 @@ int run_crash_inside_send_transport() {
 int run_crash_inside_branch_poll() {
     for (int run = 0; run < kRuns; ++run) {
         Mailbox to_p, to_q;
-        s::PeerCrashCell cell_p, cell_q;
+        CellOfP cell_p;
+        CellOfQ cell_q;
         TransportBarrier barrier;
 
         auto streaming =
@@ -326,7 +334,8 @@ int run_crash_inside_branch_poll() {
 int run_report_publishes_earlier_messages() {
     for (int run = 0; run < kRuns; ++run) {
         Mailbox to_p, to_q;
-        s::PeerCrashCell cell_p, cell_q;
+        CellOfP cell_p;
+        CellOfQ cell_q;
         bool was_payload_returned = false;
 
         auto draining =

@@ -6,9 +6,14 @@
 
 namespace s = ::fixy::session;
 
+namespace {
+struct Alice {};
+struct Bob {};
+}  // namespace
+
 int main() {
-    s::PeerCrashCell cell;
-    const s::PeerCrashCell& view = cell;
+    s::CrashCell<Alice, Bob> cell;
+    const s::CrashCell<Alice, Bob>& view = cell;
     auto reporter = s::mint_crash_reporter(view);
     static_cast<void>(reporter);
     return 0;

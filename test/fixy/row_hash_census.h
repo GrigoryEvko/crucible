@@ -1181,9 +1181,15 @@ inline constexpr StatedZero kZeros[] = {
      "the one author of the reports of one crash cell: it holds a pointer to the cell, a report consumes it, and "
      "it is never a template argument of a kernel signature"},
     {^^::fixy::session::CrashWriter,
-     "the one writer of the message count of one crash cell: it holds a pointer to the cell, a crash mint consumes "
-     "it, and it is never a template argument of a kernel signature"},
-    {^^::fixy::session::PeerCrashCell, kDescriptor},
+     "the one writer of the message count of one pair crash cell: it holds a pointer to the cell, a crash mint "
+     "consumes it, and it is never a template argument of a kernel signature"},
+    {^^::fixy::session::CrashCellCore, kDescriptor},
+    {^^::fixy::session::CrashCell,
+     "the crash cell of one pair of roles: its type names the pair so that a mint takes the cell of its own pair, "
+     "and it is never a template argument of a kernel signature"},
+    {^^::fixy::session::NoThirdRole,
+     "the receiver of a crash session that sends to no third role: it names no cell, and it is a template argument "
+     "of a crash writer only"},
     {^^::fixy::session::CrashSession, kQuery},
     {^^::fixy::session::CrashSend,
      "the result of a crash-watched send, destructured at the call site: the handle in it folds on its own, and "

@@ -21,8 +21,8 @@ using Proto = s::Select<s::Send<int, s::End>>;
 using namespace neg_sess_crash_recorded_send_transport_result_types;
 
 int main() {
-    s::PeerCrashCell cell;
-    s::PeerCrashCell own;
+    s::CrashCell<Bob, Alice> cell;
+    s::CrashCell<Alice, Bob> own;
     s::SessionEventLog log;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     auto handle =

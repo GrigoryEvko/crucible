@@ -17,8 +17,8 @@ void transport_fabricates_messages_after_crash() {
     using ProtoQ = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     report_crash(cell_p, s::CrashCause::Abort);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
     bool took_message = false;
@@ -46,8 +46,8 @@ void transport_fabricates_after_queued_messages() {
     using ProtoQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     p_sends(cell_p, cell_q, to_p, to_q, 5, 2);
     report_crash(cell_p, s::CrashCause::Abort);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
@@ -78,8 +78,8 @@ void crash_branch_waits_for_an_owed_message() {
     Mailbox to_p;
     Mailbox in_flight;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     // p sent one message, which is still in flight when the report comes.
     p_sends(cell_p, cell_q, to_p, in_flight, 11, 1);
     report_crash(cell_p, s::CrashCause::Throw);
@@ -124,8 +124,8 @@ void endpoint_reports_its_own_count() {
     using ProtoQ = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::Recv<s::Crash<P>, s::End>>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     for (int round = 0; round < 3; ++round) {
         auto chosen = std::move(p).select<0>(push_label);
@@ -168,8 +168,8 @@ void bare_recv_refuses_a_fabricated_message() {
     using ProtoQ = s::Recv<int, s::End>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     report_crash(cell_p, s::CrashCause::Abort);
     auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(bg_ctx(), Port{&to_q, &to_p}, cell_p,
                                                                     s::mint_crash_writer(cell_q));

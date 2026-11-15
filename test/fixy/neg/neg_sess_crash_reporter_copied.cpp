@@ -5,8 +5,13 @@
 
 namespace s = ::fixy::session;
 
+namespace {
+struct Alice {};
+struct Bob {};
+}  // namespace
+
 int main() {
-    s::PeerCrashCell cell;
+    s::CrashCell<Alice, Bob> cell;
     auto reporter = s::mint_crash_reporter(cell);
     auto second = reporter;
     static_cast<void>(std::move(second).report(s::CrashCause::Abort));

@@ -18,8 +18,8 @@ using PeerEnd = s::SessionHandle<s::Recv<int, s::End>, Wire>;
 using Proto = s::Offer<s::Recv<PeerEnd, s::End>, s::Recv<s::Crash<Bob>, s::End>>;
 
 int main() {
-    s::PeerCrashCell cell;
-    s::PeerCrashCell own;
+    s::CrashCell<Bob, Alice> cell;
+    s::CrashCell<Alice, Bob> own;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     auto handle = s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, cell, s::mint_crash_writer(own));
     (void)handle;

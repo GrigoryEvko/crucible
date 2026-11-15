@@ -31,8 +31,8 @@ using FromQ = s::Recv<s::PeerMsg<Q, Hello, int>, s::End>;
 int main() {
     using namespace neg_sess_crash_keyed_sender_unwatched_types;
     const eff::detail::ctx_witnesses::BgWitness ctx{eff::testing::bg()};
-    const s::PeerCrashCell cell_of_r;
-    s::PeerCrashCell cell_of_p;
+    const s::CrashCell<R, P> cell_of_r;
+    s::CrashCell<P, R> cell_of_p;
     auto watched =
         s::mint_crash_session<FromQ, P, R, s::ReliableSet<R>>(ctx, Wire{}, cell_of_r, s::mint_crash_writer(cell_of_p));
     static_cast<void>(watched);

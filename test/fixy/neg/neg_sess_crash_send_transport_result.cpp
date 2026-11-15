@@ -22,8 +22,8 @@ using Proto = s::Select<s::Send<int, s::End>>;
 using namespace neg_sess_crash_send_transport_result_types;
 
 int main() {
-    s::PeerCrashCell cell;
-    s::PeerCrashCell own;
+    s::CrashCell<Bob, Alice> cell;
+    s::CrashCell<Alice, Bob> own;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     auto handle = s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, cell, s::mint_crash_writer(own));
     auto chosen = std::move(handle).template select<0>([](Wire&, std::size_t) noexcept { return true; });

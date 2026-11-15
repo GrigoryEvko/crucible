@@ -30,11 +30,11 @@ class CrashWatched<neg_sess_crash_watched_friend_specialized_types::Tag,
                    neg_sess_crash_watched_friend_specialized_types::Tag, detail::crash_transport::between_messages> {
 public:
     template <typename H>
-    static auto forge(H inner, const PeerCrashCell& cell, PeerCrashCell& own) {
+    static auto forge(H inner, const CrashCellCore& cell, CrashCellCore& own) {
         return CrashWatched<H, neg_sess_crash_watched_friend_specialized_types::Alice,
                             neg_sess_crash_watched_friend_specialized_types::Bob, ReliableSet<>,
                             neg_sess_crash_watched_friend_specialized_types::Tag>{
-            std::move(inner), cell, own, neg_sess_crash_watched_friend_specialized_types::Tag{}};
+            std::move(inner), cell, own, nullptr, neg_sess_crash_watched_friend_specialized_types::Tag{}};
     }
 };
 }  // namespace fixy::session
@@ -43,8 +43,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_crash_watched_friend_specialized_types;
-    s::PeerCrashCell cell;
-    s::PeerCrashCell own;
+    s::CrashCell<Bob, Alice> cell;
+    s::CrashCell<Alice, Bob> own;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto plain = s::mint_session<s::Recv<int, s::End>>(ctx, Wire{});
     auto forged = s::CrashWatched<Tag, Tag, Tag, s::ReliableSet<>, Tag>::forge(std::move(plain), cell, own);

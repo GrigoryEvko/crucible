@@ -12,7 +12,7 @@ namespace test_session_crash_attack {
 // A cell has one reporter.  A second mint for the same cell ends the
 // process with Crash_Reporter_Twice.
 void second_reporter_for_one_cell() {
-    s::PeerCrashCell cell;
+    CellOfP cell;
     auto first = s::mint_crash_reporter(cell);
     auto second = s::mint_crash_reporter(cell);
     static_cast<void>(std::move(first).report(s::CrashCause::Abort));
@@ -23,7 +23,7 @@ void second_reporter_for_one_cell() {
 // One session counts into a cell.  A second writer for the same cell ends
 // the process with Crash_Writer_Twice.
 void second_writer_for_one_cell() {
-    s::PeerCrashCell cell;
+    CellOfP cell;
     auto first = s::mint_crash_writer(cell);
     auto second = s::mint_crash_writer(cell);
     static_cast<void>(first);
@@ -37,8 +37,8 @@ void mint_takes_a_moved_from_writer() {
     using ProtoQ = s::Loop<s::Select<s::Send<int, s::Continue>>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto writer = s::mint_crash_writer(cell_q);
     auto kept = std::move(writer);
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, std::move(writer));
@@ -55,8 +55,8 @@ void false_suspicion_fences_the_sender() {
     using ProtoP = s::Loop<s::Select<s::Send<int, s::Continue>>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p = s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto chosen = std::move(p).select<0>(push_label);
     auto [next, undelivered] = std::move(chosen).send(1, push_int);
@@ -83,8 +83,8 @@ void crash_between_check_and_write_loses_token() {
     Mailbox to_q;
     to_q.slots.push_back(0);
     to_q.slots.push_back(7);
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto q = s::mint_crash_session<Relay, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
     bool token_lost = true;
     std::move(q).branch(poll_label, [&](auto branch) noexcept {
@@ -119,8 +119,8 @@ void bare_recv_from_crashed_reliable_peer() {
     using ProtoQ = s::Recv<int, s::End>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     report_crash(cell_p, s::CrashCause::Abort);
     auto q = s::mint_crash_session<ProtoQ, Q, P, s::ReliableSet<P>>(bg_ctx(), Port{&to_q, &to_p}, cell_p,
                                                                     s::mint_crash_writer(cell_q));
@@ -142,7 +142,7 @@ using TakesLabelThenPayload = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>
 // The process ends with Correct from the crash branch.  A label branch
 // reads the payload, which never comes, and ends with
 // Crash_Splits_A_Message.
-[[noreturn]] void take_crash_branch_or_split(Port port, s::PeerCrashCell& cell_p, s::PeerCrashCell& cell_q) {
+[[noreturn]] void take_crash_branch_or_split(Port port, CellOfP& cell_p, CellOfQ& cell_q) {
     auto q = s::mint_crash_session<TakesLabelThenPayload, Q, P>(bg_ctx(), std::move(port), cell_p,
                                                                 s::mint_crash_writer(cell_q));
     std::move(q).branch(poll_label, [](auto branch) noexcept {
@@ -168,8 +168,8 @@ using TakesLabelThenPayload = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>
 void peer_dies_between_label_and_payload() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p = s::mint_crash_session<LabelThenPayload, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q,
                                                            s::mint_crash_writer(cell_p));
     auto half_sent = std::move(p).select<0>(push_label);
@@ -184,8 +184,8 @@ void peer_dies_between_label_and_payload() {
 void false_report_between_label_and_payload() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p = s::mint_crash_session<LabelThenPayload, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q,
                                                            s::mint_crash_writer(cell_p));
     auto half_sent = std::move(p).select<0>(push_label);
@@ -201,8 +201,8 @@ void false_report_between_label_and_payload() {
 void reported_sender_stops_at_the_payload() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p = s::mint_crash_session<LabelThenPayload, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q,
                                                            s::mint_crash_writer(cell_p));
     auto half_sent = std::move(p).select<0>(push_label);
@@ -227,8 +227,8 @@ using SendsHello = s::Send<s::PeerMsg<Q, Hello, int>, s::End>;
 void reported_sender_stops_at_the_keyed_value() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p =
         s::mint_crash_session<SendsHello, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
     auto half_sent = std::move(p).send(push_label);
@@ -248,8 +248,8 @@ void reported_sender_stops_at_the_keyed_value() {
 void keyed_word_to_crashed_peer_comes_back() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     report_crash(cell_q, s::CrashCause::Abort);
     auto p =
         s::mint_crash_session<SendsHello, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
@@ -277,33 +277,40 @@ using SendsToThird =
                                                              s::Send<s::PeerMsg<Third, Refused, void>, s::End>>>>;
 using FromPOrCrashOfP = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>;
 
-// The cell of p counts the messages of p to q, which reads the cell.  The
-// three messages went to the third role, so the report of p counts none,
-// and q takes its crash branch.  A count of the messages to the third role
+// The cell of the pair of p and the third role.
+using CellOfPForThird = s::CrashCell<P, Third>;
+
+// The cell of p for q counts the messages of p to q, which reads the cell.
+// The three messages went to the third role, so they count in the cell of
+// that pair, and the report of p for q counts none.  q takes its crash
+// branch.  A count of the messages to the third role in the cell of q
 // makes q wait for a message that p never sent to it.
-void keyed_messages_to_a_third_role_count_nowhere() {
+void keyed_messages_to_a_third_role_count_in_its_pair() {
     Mailbox to_p;
     Mailbox to_q;
     Mailbox to_third;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
+    CellOfPForThird cell_p_for_third;
     // The port of the third role: its queue takes each message of p to it.
     Port third_port{&to_third, &to_third};
     const auto push_to_third = [&third_port](Port&, std::size_t word) noexcept { return push_label(third_port, word); };
     const auto push_int_to_third = [&third_port](Port&, int& value) noexcept { return push_int(third_port, value); };
-    auto p = s::mint_crash_session<SendsToThird, P, Q, s::ReliableSet<Third>>(bg_ctx(), Port{&to_p, &to_q}, cell_q,
-                                                                              s::mint_crash_writer(cell_p));
+    auto p = s::mint_crash_session<SendsToThird, P, Q, s::ReliableSet<Third>>(
+        bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p), s::mint_crash_writer(cell_p_for_third));
     auto ready = std::move(p).send(push_to_third);
     auto hello = std::move(ready.next).send(push_to_third);
     auto valued = std::move(hello.next).send(5, push_int_to_third);
     auto chosen = std::move(valued.next).select<0>(push_to_third);
     static_cast<void>(std::move(chosen).close());
     report_crash(cell_p, s::CrashCause::Abort);
+    report_crash(cell_p_for_third, s::CrashCause::Abort);
     int messages_to_third = 0;
     while (poll_label(third_port).is_some())
         ++messages_to_third;
     Port queue_of_q{&to_q, &to_p};
-    if (messages_to_third != 4 || poll_label(queue_of_q).is_some()) finish(Outcome::Silent);
+    const bool is_each_pair_counted = report_counts(cell_p, 0) && report_counts(cell_p_for_third, 3);
+    if (messages_to_third != 4 || poll_label(queue_of_q).is_some() || !is_each_pair_counted) finish(Outcome::Silent);
     auto q = s::mint_crash_session<FromPOrCrashOfP, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p,
                                                           s::mint_crash_writer(cell_q));
     std::move(q).branch(poll_label, [](auto branch) noexcept {
@@ -318,6 +325,61 @@ void keyed_messages_to_a_third_role_count_nowhere() {
     finish(Outcome::Silent);
 }
 
+// The channel peer q crashed before p sends.  The three keyed messages go
+// to the third role, which p counts reliable and which is alive.  So each
+// word and each value reaches the queue of the third role, and no send
+// gives back an undelivered part.
+void keyed_messages_to_a_third_role_survive_the_peer_crash() {
+    Mailbox to_p;
+    Mailbox to_q;
+    Mailbox to_third;
+    CellOfP cell_p;
+    CellOfQ cell_q;
+    CellOfPForThird cell_p_for_third;
+    report_crash(cell_q, s::CrashCause::Abort);
+    Port third_port{&to_third, &to_third};
+    const auto push_to_third = [&third_port](Port&, std::size_t word) noexcept { return push_label(third_port, word); };
+    const auto push_int_to_third = [&third_port](Port&, int& value) noexcept { return push_int(third_port, value); };
+    auto p = s::mint_crash_session<SendsToThird, P, Q, s::ReliableSet<Third>>(
+        bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p), s::mint_crash_writer(cell_p_for_third));
+    auto ready = std::move(p).send(push_to_third);
+    auto hello = std::move(ready.next).send(push_to_third);
+    auto valued = std::move(hello.next).send(5, push_int_to_third);
+    auto chosen = std::move(valued.next).select<0>(push_to_third);
+    static_cast<void>(std::move(chosen).close());
+    // The queue holds the word of Ready, the word of Hello, its value, and
+    // the word of Accepted, in that order, and nothing more.  A part that a
+    // send gives back is a part that the transport did not take, so a whole
+    // queue also tells that no send gave a part back.
+    const bool is_queue_whole =
+        poll_label(third_port).value_or(0) == s::step_wire_word_v<SendsToThird>
+        && poll_label(third_port).value_or(0) == s::step_wire_word_v<s::Send<s::PeerMsg<Third, Hello, int>, s::End>>
+        && poll_label(third_port).value_or(0) == 5
+        && poll_label(third_port).value_or(0) == s::step_wire_word_v<s::Send<s::PeerMsg<Third, Accepted, void>, s::End>>
+        && poll_label(third_port).is_none();
+    finish(is_queue_whole ? Outcome::Correct : Outcome::Silent);
+}
+
+// The detector reports p on its cell for q, while p is alive.  The report
+// fences p, so the next message that p finishes stops the process with
+// Crash_Endpoint_Reported, also when that message goes to the third role.
+void reported_sender_stops_at_a_message_to_the_third_role() {
+    Mailbox to_p;
+    Mailbox to_q;
+    Mailbox to_third;
+    CellOfP cell_p;
+    CellOfQ cell_q;
+    CellOfPForThird cell_p_for_third;
+    Port third_port{&to_third, &to_third};
+    const auto push_to_third = [&third_port](Port&, std::size_t word) noexcept { return push_label(third_port, word); };
+    auto p = s::mint_crash_session<SendsToThird, P, Q, s::ReliableSet<Third>>(
+        bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p), s::mint_crash_writer(cell_p_for_third));
+    report_crash(cell_p, s::CrashCause::Unknown);
+    auto ready = std::move(p).send(push_to_third);
+    std::move(ready.next).detach(s::detach_reason::TestInstrumentation{});
+    finish(Outcome::Silent);
+}
+
 // A transport that shows a label to the peer before its payload breaks
 // the trust of the crash transport.  q reads the label, then p dies before
 // the payload.  The branch of the label has no crash branch, so the wait
@@ -325,8 +387,8 @@ void keyed_messages_to_a_third_role_count_nowhere() {
 void peer_reads_label_before_the_report() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     auto p = s::mint_crash_session<LabelThenPayload, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q,
                                                            s::mint_crash_writer(cell_p));
     auto q = s::mint_crash_session<TakesLabelThenPayload, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p,

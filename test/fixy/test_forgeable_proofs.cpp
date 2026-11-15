@@ -183,6 +183,7 @@ inline constexpr std::meta::info template_witnesses[] = {
     ^^sess::Borrowed<int, Region>,
     ^^sess::PermHold<fp::PermSet<Region>>,
     ^^sess::SharedReader<Region>,
+    ^^sess::CrashWriter<Region, int>,
 };
 
 // The class templates of the two namespaces that anyone may build.  Each

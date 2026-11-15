@@ -103,7 +103,7 @@
 // be declared reliable, and then no crash branch is needed for it.  A
 // role that runs on one Relay is unreliable, because the Relay can die.
 //
-// The Keeper's failure detector marks a peer crashed (PeerCrashCell in
+// The Keeper's failure detector marks a peer crashed (CrashCell in
 // CrashTransport.h).  The survivor then runs the crash branch that the
 // protocol declares.
 //

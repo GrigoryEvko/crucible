@@ -55,22 +55,21 @@
 
 namespace test_session_crash_attack {
 
-void report_crash(s::PeerCrashCell& cell, s::CrashCause cause) {
+void report_crash(s::CrashCellCore& cell, s::CrashCause cause) {
     static_cast<void>(s::mint_crash_reporter(cell).report(cause));
 }
 
-void crash_endpoint(s::PeerCrashCell& cell, Mailbox& inbox, s::CrashCause cause) {
+void crash_endpoint(s::CrashCellCore& cell, Mailbox& inbox, s::CrashCause cause) {
     report_crash(cell, cause);
     inbox.is_closed = true;
 }
 
-bool report_counts(const s::PeerCrashCell& cell, std::uint64_t count) {
+bool report_counts(const s::CrashCellCore& cell, std::uint64_t count) {
     const std::optional<s::CrashWitness> witness = cell.witness();
     return witness && std::to_underlying(witness->messages_sent) == count;
 }
 
-void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& in, Mailbox& out, int first,
-             int count) {
+void p_sends(CellOfP& cell_p, const CellOfQ& cell_q, Mailbox& in, Mailbox& out, int first, int count) {
     using Stream = s::Loop<s::Select<s::Send<int, s::Continue>>>;
     auto p = s::mint_crash_session<Stream, P, Q>(bg_ctx(), Port{&in, &out}, cell_q, s::mint_crash_writer(cell_p));
     for (int round = 0; round < count; ++round) {
@@ -105,8 +104,8 @@ void recorder_sees_the_crash() {
     using ProtoQ = s::Select<s::Send<int, s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>>>;
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    CellOfP cell_p;
+    CellOfQ cell_q;
     report_crash(cell_p, s::CrashCause::Throw);
     s::SessionEventLog log{s::SessionTagId{9}};
     auto q = s::mint_recorded_session(

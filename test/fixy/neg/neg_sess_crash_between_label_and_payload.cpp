@@ -18,8 +18,8 @@ using Proto = s::Select<s::Send<int, s::End>>;
 }  // namespace
 
 int main() {
-    s::PeerCrashCell peer_cell;
-    s::PeerCrashCell own_cell;
+    s::CrashCell<Bob, Alice> peer_cell;
+    s::CrashCell<Alice, Bob> own_cell;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     auto handle = s::mint_crash_session<Proto, Alice, Bob>(ctx, Wire{}, peer_cell, s::mint_crash_writer(own_cell));
     auto half_sent = std::move(handle).template select<0>([](Wire&, std::size_t) noexcept { return true; });

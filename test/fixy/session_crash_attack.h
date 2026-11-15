@@ -75,24 +75,29 @@ struct Port {
 
 using Token = s::Transferable<int, X>;
 
-// The failure detector reports the crash of the endpoint that `cell`
-// watches.  The report carries the count that the session of that
-// endpoint wrote into the cell, or zero when no session counted there.
-void report_crash(s::PeerCrashCell& cell, s::CrashCause cause);
+// The cells of the two pairs of p and q.  The cell of p watches p for q:
+// the crash of p and the count of the messages of p to q.
+using CellOfP = s::CrashCell<P, Q>;
+using CellOfQ = s::CrashCell<Q, P>;
+
+// The failure detector reports the crash of the sender of the pair that
+// `cell` watches.  The report carries the count that the session of the
+// sender wrote into the cell, or zero when no session counted there.
+void report_crash(s::CrashCellCore& cell, s::CrashCause cause);
 
 // The crash of the endpoint whose inbound queue is `inbox`: the detector
 // reports it, and the queue closes.
-void crash_endpoint(s::PeerCrashCell& cell, Mailbox& inbox, s::CrashCause cause);
+void crash_endpoint(s::CrashCellCore& cell, Mailbox& inbox, s::CrashCause cause);
 
 // True when the cell holds a report, and the report counts `count`
-// messages of the endpoint that the cell watches.
-[[nodiscard]] bool report_counts(const s::PeerCrashCell& cell, std::uint64_t count);
+// messages of the sender of the pair that the cell watches.
+[[nodiscard]] bool report_counts(const s::CrashCellCore& cell, std::uint64_t count);
 
 // p as a real crash session: it sends `count` messages, each the label 0
 // and the value first, first + 1, and so on, into `out`, and its cell
 // counts each one.  The session then stops with no crash of its own, so a
 // report of the detector is the crash, and the report carries this count.
-void p_sends(s::PeerCrashCell& cell_p, const s::PeerCrashCell& cell_q, Mailbox& in, Mailbox& out, int first, int count);
+void p_sends(CellOfP& cell_p, const CellOfQ& cell_q, Mailbox& in, Mailbox& out, int first, int count);
 
 // Ends the child process of an attack with the exit of its outcome.
 [[noreturn]] void finish(Outcome outcome);
@@ -188,7 +193,9 @@ void run_loop_to_crash(Loop handle, const Poll& poll, const OnMessage& on_messag
 [[noreturn]] void reported_sender_stops_at_the_payload();
 [[noreturn]] void reported_sender_stops_at_the_keyed_value();
 [[noreturn]] void keyed_word_to_crashed_peer_comes_back();
-[[noreturn]] void keyed_messages_to_a_third_role_count_nowhere();
+[[noreturn]] void keyed_messages_to_a_third_role_count_in_its_pair();
+[[noreturn]] void keyed_messages_to_a_third_role_survive_the_peer_crash();
+[[noreturn]] void reported_sender_stops_at_a_message_to_the_third_role();
 [[noreturn]] void peer_reads_label_before_the_report();
 
 // test_session_crash_attack.cpp: the event log.
@@ -226,7 +233,12 @@ inline constexpr attack_case kAttacks[] = {
     {"reported_sender_stops_at_the_payload", Outcome::Caught, reported_sender_stops_at_the_payload},
     {"reported_sender_stops_at_the_keyed_value", Outcome::Caught, reported_sender_stops_at_the_keyed_value},
     {"keyed_word_to_crashed_peer_comes_back", Outcome::Correct, keyed_word_to_crashed_peer_comes_back},
-    {"keyed_messages_to_a_third_role_count_nowhere", Outcome::Correct, keyed_messages_to_a_third_role_count_nowhere},
+    {"keyed_messages_to_a_third_role_count_in_its_pair", Outcome::Correct,
+     keyed_messages_to_a_third_role_count_in_its_pair},
+    {"keyed_messages_to_a_third_role_survive_the_peer_crash", Outcome::Correct,
+     keyed_messages_to_a_third_role_survive_the_peer_crash},
+    {"reported_sender_stops_at_a_message_to_the_third_role", Outcome::Caught,
+     reported_sender_stops_at_a_message_to_the_third_role},
     {"peer_reads_label_before_the_report", Outcome::Caught, peer_reads_label_before_the_report},
     {"recorder_sees_the_crash", Outcome::Correct, recorder_sees_the_crash},
     {"corrupt_event_bytes", Outcome::Correct, corrupt_event_bytes},

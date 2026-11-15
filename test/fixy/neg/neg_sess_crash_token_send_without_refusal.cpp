@@ -30,8 +30,8 @@ using Relay = s::Recv<Token, s::Select<s::Send<Token, s::End>>>;
 using namespace neg_sess_crash_token_send_without_refusal_types;
 
 int main() {
-    s::PeerCrashCell cell;
-    s::PeerCrashCell own;
+    s::CrashCell<Bob, Alice> cell;
+    s::CrashCell<Alice, Bob> own;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     auto handle =
         s::mint_crash_session<Relay, Alice, Bob, s::ReliableSet<Bob>>(ctx, Wire{}, cell, s::mint_crash_writer(own));

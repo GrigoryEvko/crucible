@@ -8,8 +8,13 @@
 
 namespace s = fixy::session;
 
+namespace {
+struct Alice {};
+struct Bob {};
+}  // namespace
+
 int main() {
-    s::PeerCrashCell cell;
+    s::CrashCell<Alice, Bob> cell;
     static_cast<void>(s::mint_crash_reporter(cell).report(s::CrashCause::Abort, s::MessageCount{3}));
     return 0;
 }

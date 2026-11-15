@@ -40,12 +40,13 @@
 // returns the value itself waits inside the transport, where no crash is
 // seen, so the exact return type refuses it.
 //
-// The detector is a PeerCrashCell.  One cell watches one endpoint.  The
-// session of that endpoint writes the count of the messages it sent into
-// the cell, through the CrashWriter that its mint consumed.  The report of
-// a crash comes from the one CrashReporter of the cell, held by the
-// Keeper's failure detector, or from the endpoint itself when it crashes.
-// The peer of the endpoint reads the cell.
+// The detector is a CrashCell<Sender, Receiver>.  One cell watches one
+// pair: the crash of Sender as Receiver learns it, and the messages of
+// Sender to Receiver.  The session of Sender writes the count of those
+// messages into the cell, through the CrashWriter that its mint consumed.
+// The report of a crash comes from the one CrashReporter of the cell, held
+// by the Keeper's failure detector, or from the endpoint itself when it
+// crashes.  The session of Receiver reads the cell.
 //
 // ── The witness of a crash ──────────────────────────────────────────
 //
@@ -88,13 +89,27 @@
 // its crash branch: the label and the payload that the transport reports
 // are past the count.
 //
-// The cell counts the messages of this endpoint to its channel peer, the
-// role that reads the cell.  A keyed message names its receiver, and a
-// message to a reliable third role counts nowhere, as the peer counts only
-// the messages that it receives from this endpoint.  This is a limit: no
-// type ties the cell to the channel peer.  A third role that takes this
-// cell as the cell of its own peer reads a count of the messages to
-// another role.
+// A keyed message names its receiver, and a protocol can send to a
+// reliable third role as well as to the channel peer.  So the session
+// holds one cell for each pair of this endpoint and a receiver, and a
+// message counts in the cell of its own receiver.  The type of a cell
+// names its pair, and the mint takes the cell of the pair of the peer and
+// this endpoint, the writer of the pair of this endpoint and the peer, and
+// the writer of the pair of this endpoint and the third role.  A third
+// role that watches this endpoint reads the cell of its own pair, which
+// counts the messages to it and no others.
+//
+// A send to the peer reads the cell of the peer, and a message to a
+// crashed peer is lost.  A third role is reliable, as the crash walk
+// demands of each role that the protocol names, so a send to it reads no
+// crash and its message always goes.
+//
+// A report on any pair cell of this endpoint fences the endpoint.  The
+// count of the next message that it finishes, to either receiver, reads
+// the fence of the cell of that receiver and the report of the other pair
+// cell, and stops the process.  A report fences each pair cell that it
+// writes, and the failure detector reports an endpoint on each of its pair
+// cells.
 //
 // ── One class for every head ────────────────────────────────────────
 //
@@ -177,22 +192,38 @@ struct CrashWitness {
 };
 
 class CrashReporter;
+template <typename Sender, typename Receiver>
 class CrashWriter;
+template <typename Sender, typename Receiver>
+class CrashCell;
 class CrashSessionDoor;
 
-// The cell that watches one endpoint.  It has two words, each on its own
+// The receiver of a crash session that sends to no role but its channel
+// peer.  The writer of a pair with this receiver names no cell, and the
+// mint takes it in place of the writer of a third pair.
+struct NoThirdRole {};
+
+// The two roles of a crash cell: the endpoint that sends, and the
+// endpoint that receives and reads the cell.  A role is not its own peer,
+// and NoThirdRole is no role.
+template <typename Sender, typename Receiver>
+concept CrashPairRoles =
+    !std::is_same_v<Sender, Receiver> && !std::is_same_v<Sender, NoThirdRole> && !std::is_same_v<Receiver, NoThirdRole>;
+
+// The part of a pair cell that names no role.  Only CrashCell builds one,
+// so each core is the core of one pair.  It has two words, each on its own
 // cache line.
 //
 //   - The report: the cause in the top byte, the message count in the low
-//     56 bits, or all ones while the endpoint is alive.  A cause is at
-//     most crash_cause_top_value, so no report is all ones.  The report is
-//     one compare-and-swap, so the first report wins whole, and a reader
-//     never sees the cause of one report beside the count of another.
-//   - The count: the messages that the endpoint finished sending, in the
-//     low 56 bits, and the fence bit in the top bit.  Only the session of
-//     the endpoint adds to it, and a report sets the fence (the witness of
-//     a crash, above).
-class PeerCrashCell : public ::foundation::Pinned<PeerCrashCell> {
+//     56 bits, or all ones while the sender is alive.  A cause is at most
+//     crash_cause_top_value, so no report is all ones.  The report is one
+//     compare-and-swap, so the first report wins whole, and a reader never
+//     sees the cause of one report beside the count of another.
+//   - The count: the messages that the sender finished sending to the
+//     receiver, in the low 56 bits, and the fence bit in the top bit.  Only
+//     the session of the sender adds to it, and a report sets the fence
+//     (the witness of a crash, above).
+class CrashCellCore : public ::foundation::Pinned<CrashCellCore> {
     static constexpr std::uint64_t alive_state = ~std::uint64_t{0};
     static constexpr unsigned count_bits = 56;
     static constexpr std::uint64_t count_mask = (std::uint64_t{1} << count_bits) - 1;
@@ -206,8 +237,13 @@ class PeerCrashCell : public ::foundation::Pinned<PeerCrashCell> {
     std::atomic<bool> has_writer_{false};
 
     friend class CrashReporter;
+    template <typename Sender, typename Receiver>
     friend class CrashWriter;
+    template <typename Sender, typename Receiver>
+    friend class CrashCell;
     friend class CrashSessionDoor;
+
+    constexpr CrashCellCore() noexcept = default;
 
     // Sets the fence and publishes the count that the fence read.  Returns
     // true when this report is the first.
@@ -220,7 +256,7 @@ class PeerCrashCell : public ::foundation::Pinned<PeerCrashCell> {
 
     // Counts one more finished message.  Returns false when a report set
     // the fence before this message, so the message is past the count that
-    // the peer reads.
+    // the receiver reads.
     [[nodiscard]] bool count_one_sent_() noexcept {
         const std::uint64_t before = sent_.fetch_add(1, std::memory_order_acq_rel);
         CRUCIBLE_FATAL_INVARIANT((before & count_mask) != count_mask);
@@ -231,7 +267,11 @@ public:
     // The largest message count a report can carry.
     static constexpr std::uint64_t max_message_count = count_mask;
 
-    constexpr PeerCrashCell() noexcept = default;
+    // User-provided, so the core is not trivially copyable.  GCC counts a
+    // class whose copies are all deleted as trivially copyable, and
+    // std::bit_cast or std::start_lifetime_as would then build a core with
+    // no constructor.
+    constexpr ~CrashCellCore() noexcept {}
 
     [[nodiscard]] bool has_crashed() const noexcept { return state_.load(std::memory_order_acquire) != alive_state; }
 
@@ -251,6 +291,24 @@ public:
         if (!report) return std::nullopt;
         return report->cause;
     }
+};
+
+// The cell of one pair: the crash of Sender as Receiver learns it, and the
+// count of the messages of Sender to Receiver.  The session of Sender
+// counts into it, and the session of Receiver reads it.  The type names the
+// pair, so a session cannot read the cell of a pair that is not its own.
+template <typename Sender, typename Receiver>
+class CrashCell final : public CrashCellCore {
+    static_assert(CrashPairRoles<Sender, Receiver>,
+                  "fixy::session::diagnostic [Crash_Cell_Roles]: CrashCell<Sender, Receiver>: the two roles of a "
+                  "crash cell are the same role, or one of them is NoThirdRole.  A cell watches the messages of "
+                  "one endpoint to another.");
+
+public:
+    using sender_role = Sender;
+    using receiver_role = Receiver;
+
+    constexpr CrashCell() noexcept = default;
 };
 
 namespace detail::crash_transport {
@@ -281,9 +339,9 @@ namespace detail::crash_transport {
 [[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_reported_endpoint() noexcept {
     std::fprintf(stderr,
                  "fixy::session: diagnostic [Crash_Endpoint_Reported]: this endpoint finished a message after a "
-                 "report of its crash.  The report is a fence: the peer reads the count of messages that the report "
-                 "took, and it never takes this one.  Under crash-stop a reported endpoint does not go on, so the "
-                 "process stops.\n");
+                 "report of its crash on one of its pair cells.  The report is a fence: the receiver reads the count "
+                 "of messages that the report took, and it never takes a message past it.  Under crash-stop a "
+                 "reported endpoint does not go on, so the process stops.\n");
     std::abort();
 }
 
@@ -294,18 +352,19 @@ namespace detail::crash_transport {
 // report: it would need the reporter, and the reporter is held by the
 // failure detector.  A report consumes the reporter, because an endpoint
 // crashes once.  It carries no count: the cell reads the count that the
-// session of the endpoint wrote.
+// session of the sender wrote.  The failure detector holds one reporter
+// for each pair cell of an endpoint.
 //
 // The move constructor is user-provided, so the class is not trivially
 // copyable and std::bit_cast cannot build one.  It has no trivial
 // constructor, so it is not an implicit-lifetime type and no lifetime
 // start over bytes can make one.
 class [[nodiscard]] CrashReporter {
-    PeerCrashCell* cell_ = nullptr;
+    CrashCellCore* cell_ = nullptr;
 
-    explicit CrashReporter(PeerCrashCell& cell) noexcept : cell_{&cell} {}
+    explicit CrashReporter(CrashCellCore& cell) noexcept : cell_{&cell} {}
 
-    friend CrashReporter mint_crash_reporter(PeerCrashCell& cell) noexcept;
+    friend CrashReporter mint_crash_reporter(CrashCellCore& cell) noexcept;
 
 public:
     CrashReporter(CrashReporter&& other) noexcept : cell_{std::exchange(other.cell_, nullptr)} {}
@@ -315,34 +374,46 @@ public:
     ~CrashReporter() = default;
 
     // Publishes the crash with its cause and the count that the session of
-    // the endpoint wrote, and fences the count.  Returns true when this is
+    // the sender wrote, and fences the count.  Returns true when this is
     // the first report of the cell.
     bool report(CrashCause cause) && noexcept {
         CRUCIBLE_PRE(cell_ != nullptr);
         CRUCIBLE_PRE(static_cast<std::uint8_t>(cause) <= crash_cause_top_value);
-        PeerCrashCell* const cell = std::exchange(cell_, nullptr);
+        CrashCellCore* const cell = std::exchange(cell_, nullptr);
         return cell->publish_(cause);
     }
 
 private:
-    [[nodiscard]] static bool claim_(PeerCrashCell& cell) noexcept {
+    [[nodiscard]] static bool claim_(CrashCellCore& cell) noexcept {
         return !cell.has_reporter_.exchange(true, std::memory_order_acq_rel);
     }
 };
 
-// The one writer of the count of one cell.  Only mint_crash_writer builds
-// it, and each cell has one.  mint_crash_session takes it by value, so no
-// two sessions count into one cell: the writer is move-only, and a writer
-// that a move emptied stops the mint with Crash_Writer_Moved_From.
+// The one writer of the count of one pair cell.  Only mint_crash_writer
+// builds it, and each cell has one.  mint_crash_session takes it by value,
+// so no two sessions count into one cell: the writer is move-only, and a
+// writer that a move emptied stops the mint with Crash_Writer_Moved_From.
+// The type names the pair, so the mint takes the writer of each pair of
+// its own endpoint and no other.  The writer of a pair with NoThirdRole is
+// the one writer that names no cell, and anyone can build it.
+template <typename Sender, typename Receiver>
 class [[nodiscard]] CrashWriter {
-    PeerCrashCell* cell_ = nullptr;
+    CrashCellCore* cell_ = nullptr;
 
-    explicit CrashWriter(PeerCrashCell& cell) noexcept : cell_{&cell} {}
+    explicit CrashWriter(CrashCellCore& cell) noexcept : cell_{&cell} {}
 
-    friend CrashWriter mint_crash_writer(PeerCrashCell& cell) noexcept;
+    template <typename S, typename R>
+        requires CrashPairRoles<S, R>
+    friend auto mint_crash_writer(CrashCell<S, R>& cell) noexcept -> CrashWriter<S, R>;
     friend class CrashSessionDoor;
 
 public:
+    using sender_role = Sender;
+    using receiver_role = Receiver;
+
+    constexpr CrashWriter() noexcept
+        requires std::is_same_v<Receiver, NoThirdRole>
+    = default;
     CrashWriter(CrashWriter&& other) noexcept : cell_{std::exchange(other.cell_, nullptr)} {}
     CrashWriter(const CrashWriter&) = delete("one session counts into a cell, so the cell has one writer");
     CrashWriter& operator=(const CrashWriter&) = delete("one session counts into a cell, so the cell has one writer");
@@ -350,26 +421,30 @@ public:
     ~CrashWriter() = default;
 
 private:
-    [[nodiscard]] static bool claim_(PeerCrashCell& cell) noexcept {
+    [[nodiscard]] static bool claim_(CrashCellCore& cell) noexcept {
         return !cell.has_writer_.exchange(true, std::memory_order_acq_rel);
     }
 };
 
-// Mints the one writer of a cell.  A second mint for the same cell ends
-// the process with Crash_Writer_Twice.
-[[nodiscard]] inline CrashWriter mint_crash_writer(PeerCrashCell& cell) noexcept {
-    if (!CrashWriter::claim_(cell)) [[unlikely]]
+// Mints the one writer of a pair cell.  A second mint for the same cell
+// ends the process with Crash_Writer_Twice.
+template <typename Sender, typename Receiver>
+    requires CrashPairRoles<Sender, Receiver>
+[[nodiscard]] inline auto mint_crash_writer(CrashCell<Sender, Receiver>& cell) noexcept
+    -> CrashWriter<Sender, Receiver> {
+    if (!CrashWriter<Sender, Receiver>::claim_(cell)) [[unlikely]]
         detail::crash_transport::abort_on_second_writer();
-    return CrashWriter{cell};
+    return CrashWriter<Sender, Receiver>{cell};
 }
 
-void mint_crash_writer(const PeerCrashCell&) noexcept = delete(
+template <typename Sender, typename Receiver>
+void mint_crash_writer(const CrashCell<Sender, Receiver>&) noexcept = delete(
     "[Crash_Writer_From_Const_Cell] a const cell is a view of the detector, and a view gives no right to count "
-    "the messages of an endpoint.  Mint the writer from the cell that watches this endpoint.");
+    "the messages of an endpoint.  Mint the writer from the cell of the pair of this endpoint and its receiver.");
 
 // Mints the one reporter of a cell.  A second mint for the same cell
 // ends the process with Crash_Reporter_Twice.
-[[nodiscard]] inline CrashReporter mint_crash_reporter(PeerCrashCell& cell) noexcept {
+[[nodiscard]] inline CrashReporter mint_crash_reporter(CrashCellCore& cell) noexcept {
     if (!CrashReporter::claim_(cell)) [[unlikely]]
         detail::crash_transport::abort_on_second_reporter();
     return CrashReporter{cell};
@@ -377,7 +452,7 @@ void mint_crash_writer(const PeerCrashCell&) noexcept = delete(
 
 // A const cell is the survivor's view of the detector.  It gives no right
 // to report.
-void mint_crash_reporter(const PeerCrashCell&) noexcept = delete(
+void mint_crash_reporter(const CrashCellCore&) noexcept = delete(
     "[Crash_Reporter_From_Const_Cell] a const cell is a view of the detector, and a view gives no right to "
     "report a crash.  Mint the reporter from the cell that the failure detector owns.");
 
@@ -412,6 +487,37 @@ using keyed_sender_t = typename[:role_of_step(^^P, ^^Peer):];
 
 template <typename P, typename Peer>
 using keyed_receiver_t = typename[:role_of_step(^^P, ^^Peer):];
+
+// The role other than the channel peer that a send of the protocol names:
+// the receiver of a keyed send, or of a branch of a keyed Select.  The null
+// reflection when the protocol sends to no such role.  Admission refuses a
+// local type that names two roles (NamesAtMostOnePeer of
+// fixy/session/Admission.h), so the walk finds one role at most.
+// Complexity: one visit for each distinct node of the protocol.
+[[nodiscard]] consteval std::meta::info third_receiver_of(std::meta::info proto, std::meta::info peer) {
+    namespace tr = crash::tr;
+    tr::stack<std::meta::info> visited{};
+    std::meta::info found{};
+    const std::meta::info channel_peer = std::meta::dealias(peer);
+    auto look = [&found, channel_peer](const tr::node& view) consteval {
+        const bool is_send = view.is_registered && view.entry.kind == tr::shape_kind::step
+                          && view.entry.direction == tr::polarity::output;
+        if (!is_send) return true;
+        const std::meta::info role = crash::named_role(view);
+        if (role != std::meta::info{} && std::meta::dealias(role) != channel_peer) found = std::meta::dealias(role);
+        return true;
+    };
+    static_cast<void>(::fixy::session::detail::walk_protocol_spine(proto, visited, look));
+    return found;
+}
+
+// True when Third is the third receiver of the protocol, or NoThirdRole
+// when the protocol sends to no role but the channel peer.
+[[nodiscard]] consteval bool is_third_receiver(std::meta::info proto, std::meta::info peer, std::meta::info third) {
+    const std::meta::info found = third_receiver_of(proto, peer);
+    const std::meta::info named = std::meta::dealias(third);
+    return found == std::meta::info{} ? named == ^^NoThirdRole : named == found;
+}
 
 // The number of message branches of an Offer.  Rule 6 puts the crash
 // branches last, so this is also the index of the first crash branch.
@@ -545,7 +651,7 @@ struct message_counts {
 // against the priority order.  A read that finds its payload at once
 // never touches the watch.
 template <typename Position, typename Peer, typename Sender, typename Read, typename Resource>
-[[nodiscard]] constexpr auto await_payload(Read& read, Resource& resource, const PeerCrashCell& cell,
+[[nodiscard]] constexpr auto await_payload(Read& read, Resource& resource, const CrashCellCore& cell,
                                            std::uint64_t received, watch::endpoint_id endpoint) {
     constexpr bool is_new_message = std::is_same_v<Position, between_messages>;
     std::optional<watch::wait_scope> wait;
@@ -608,9 +714,14 @@ concept CrashSessionAdmissible =
 // context of mint_session does.  The decorator keeps a copy of the
 // context, and enters each crash branch with it through
 // HandleFactory::recover, so the context has a copy that cannot fail.
-template <typename Ctx, typename Proto, typename Self, typename Peer, typename Reliable, typename Resource>
+// Third is the third role that the protocol sends to, or NoThirdRole, so
+// the mint takes the writer of each pair that a message of the session
+// counts in.
+template <typename Ctx, typename Proto, typename Self, typename Peer, typename Reliable, typename Resource,
+          typename Third>
 concept CtxFitsCrashSession = CrashSessionAdmissible<Proto, Self, Peer, Reliable> && SessionResource<Resource>
-                           && CtxAdmitsProtocolRow<Ctx, Proto> && std::is_nothrow_copy_constructible_v<Ctx>;
+                           && CtxAdmitsProtocolRow<Ctx, Proto> && std::is_nothrow_copy_constructible_v<Ctx>
+                           && detail::crash_transport::is_third_receiver(^^Proto, ^^Peer, ^^Third);
 
 // The same question as one type, so that the predicate below takes one
 // argument and can hold an armed cell.
@@ -663,15 +774,17 @@ namespace detail::crash_transport {
     return {counts.received + 1, counts.sent};
 }
 
-// A trying write of a word, guarded by the peer cell.  To a crashed peer
-// it writes nothing and reports the word taken, so the inner handle steps
-// on.  `is_written` says whether the transport took the word.
+// A trying write of a word, guarded by the cell of the receiver.  To a
+// crashed receiver it writes nothing and reports the word taken, so the
+// inner handle steps on.  `receiver_cell` is null for a reliable third
+// role, whose crash this endpoint does not watch.  `is_written` says
+// whether the transport took the word.
 template <typename Resource, typename Transport>
-[[nodiscard]] constexpr auto watched_word_write(const PeerCrashCell& cell, Transport& transport,
+[[nodiscard]] constexpr auto watched_word_write(const CrashCellCore* receiver_cell, Transport& transport,
                                                 bool& is_written) noexcept {
-    return [&cell, &transport, &is_written](Resource& resource, std::size_t& word) noexcept(
+    return [receiver_cell, &transport, &is_written](Resource& resource, std::size_t& word) noexcept(
                std::is_nothrow_invocable_v<Transport&, Resource&, std::size_t&>) -> bool {
-        if (cell.has_crashed()) return true;
+        if (receiver_cell != nullptr && receiver_cell->has_crashed()) return true;
         is_written = std::invoke(transport, resource, word);
         return is_written;
     };
@@ -700,45 +813,89 @@ class CrashSessionDoor final : ::foundation::NoObject<CrashSessionDoor> {
               typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
     [[nodiscard]] static constexpr auto wrap_(const CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>& from,
                                               Next next, detail::crash_transport::message_counts counts) noexcept {
-        return CrashWatched<Next, Self, Peer, Reliable, Ctx, NextPosition>{std::move(next), *from.peer_cell_,
-                                                                           *from.own_cell_, from.ctx_, counts};
+        return CrashWatched<Next, Self, Peer, Reliable, Ctx, NextPosition>{
+            std::move(next), *from.peer_cell_, *from.own_cell_, from.third_cell_, from.ctx_, counts};
     }
 
-    // The counts after one more message that this endpoint finished.  The
-    // cell of the endpoint counts the message too.  A report that fenced
-    // the count before it stops the process (the witness of a crash, in
-    // the head of this header).
-    template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
+    // The counts after one more message that this endpoint finished to
+    // Receiver.  The cell of the pair of this endpoint and Receiver counts
+    // the message too.  A report on either pair cell of this endpoint fences
+    // it, so a report before this count stops the process (the witness of a
+    // crash, in the head of this header).  The count of the cell of the
+    // receiver reads its fence, and the other pair cell tells its report.
+    // Only a message to the peer is in the counts of the decorator.
+    template <typename Receiver, typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx,
+              typename Position>
     [[nodiscard]] static detail::crash_transport::message_counts
     one_more_sent_(const CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>& watched) noexcept {
-        if (!watched.own_cell_->count_one_sent_()) [[unlikely]]
+        constexpr bool is_to_peer = std::is_same_v<Receiver, Peer>;
+        CrashCellCore* const counted = is_to_peer ? watched.own_cell_ : watched.third_cell_;
+        // The mint took the writer of the third pair when the protocol sends
+        // to a third role, so a message to that role has its cell.
+        CRUCIBLE_FATAL_INVARIANT(counted != nullptr);
+        const CrashCellCore* const other = is_to_peer ? watched.third_cell_ : watched.own_cell_;
+        const bool is_counted_before_a_report = counted->count_one_sent_();
+        if (!is_counted_before_a_report || (other != nullptr && other->has_crashed())) [[unlikely]]
             detail::crash_transport::abort_on_reported_endpoint();
-        return detail::crash_transport::one_more_sent(watched.counts_);
+        if constexpr (is_to_peer) {
+            return detail::crash_transport::one_more_sent(watched.counts_);
+        } else {
+            return watched.counts_;
+        }
+    }
+
+    // The cell that tells whether Receiver crashed: the cell of the peer,
+    // or null for a third role.  The crash walk admits a third role only
+    // when it is reliable, so this endpoint watches no crash of it.
+    template <typename Receiver, typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx,
+              typename Position>
+    [[nodiscard]] static constexpr const CrashCellCore*
+    receiver_cell_(const CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>& watched) noexcept {
+        if constexpr (std::is_same_v<Receiver, Peer>) {
+            return watched.peer_cell_;
+        } else {
+            return nullptr;
+        }
+    }
+
+    // The cell that a writer names, taken out of the writer.  A writer that
+    // a move emptied names no cell and stops the process.
+    template <typename Sender, typename Receiver>
+    [[nodiscard]] static CrashCellCore& take_cell_(CrashWriter<Sender, Receiver>& writer) noexcept {
+        CrashCellCore* const cell = std::exchange(writer.cell_, nullptr);
+        if (cell == nullptr) [[unlikely]]
+            detail::crash_transport::abort_on_moved_writer();
+        return *cell;
     }
 
 public:
     // mint_crash_session: opens the plain handle of Proto, and puts around
-    // it the decorator that reads the cell of the watched peer and counts
-    // into the cell of this endpoint.
+    // it the decorator that reads the cell of the pair of the peer and this
+    // endpoint, and counts into the cell of the pair of this endpoint and
+    // each receiver.
     template <typename Proto, typename Self, typename Peer, typename Reliable, AbandonmentPolicy Policy, typename Ctx,
-              typename Resource>
-        requires CtxFitsCrashSession<Ctx, Proto, Self, Peer, Reliable, Resource>
-    [[nodiscard]] static auto open(Ctx const& ctx, Resource resource, const PeerCrashCell& peer_cell, CrashWriter own,
+              typename Resource, typename Third>
+        requires CtxFitsCrashSession<Ctx, Proto, Self, Peer, Reliable, Resource, Third>
+    [[nodiscard]] static auto open(Ctx const& ctx, Resource resource, const CrashCell<Peer, Self>& peer_cell,
+                                   CrashWriter<Self, Peer> own, CrashWriter<Self, Third> third,
                                    std::source_location loc) noexcept {
-        PeerCrashCell* const own_cell = std::exchange(own.cell_, nullptr);
-        if (own_cell == nullptr) [[unlikely]]
-            detail::crash_transport::abort_on_moved_writer();
+        CrashCellCore& own_cell = take_cell_(own);
+        CrashCellCore* third_cell = nullptr;
+        if constexpr (!std::is_same_v<Third, NoThirdRole>) third_cell = &take_cell_(third);
         auto inner = mint_session<Proto, Policy, Ctx, Resource>(ctx, std::forward<Resource>(resource), loc);
-        return CrashWatched<decltype(inner), Self, Peer, Reliable, Ctx>{std::move(inner), peer_cell, *own_cell, ctx};
+        return CrashWatched<decltype(inner), Self, Peer, Reliable, Ctx>{std::move(inner), peer_cell, own_cell,
+                                                                        third_cell, ctx};
     }
 
     template <typename Proto, typename Self, typename Peer, typename Reliable, AbandonmentPolicy Policy, typename Ctx,
-              typename Resource>
-    static void open(Ctx const&, Resource, const PeerCrashCell&&, CrashWriter, std::source_location) =
+              typename Resource, typename Third>
+    static void open(Ctx const&, Resource, const CrashCell<Peer, Self>&&, CrashWriter<Self, Peer>,
+                     CrashWriter<Self, Third>, std::source_location) =
         delete("[Crash_Cell_Temporary] the detector cell is a temporary.  The decorator keeps its address, so the "
                "cell must outlive every handle of the session.");
 
-    // crash(): stops the endpoint and reports it through its own cell.
+    // crash(): stops the endpoint and reports it through each of its pair
+    // cells, so each receiver that watches it learns of the crash.
     template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
     [[nodiscard]] static typename Handle::resource_type
     crash(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched, CrashCause cause) noexcept {
@@ -747,6 +904,7 @@ public:
         Resource resource = std::forward<Resource>(watched.inner_.resource());
         std::move(watched.inner_).detach(detach_reason::LocalCrashStop{});
         static_cast<void>(watched.own_cell_->publish_(cause));
+        if (watched.third_cell_ != nullptr) static_cast<void>(watched.third_cell_->publish_(cause));
         return std::forward<Resource>(resource);
     }
 
@@ -766,10 +924,13 @@ public:
         std::optional<T> undelivered;
         constexpr bool is_nothrow =
             std::is_nothrow_invocable_v<Transport&, Resource&, T&> && std::is_nothrow_move_constructible_v<T>;
-        const PeerCrashCell& cell = *watched.peer_cell_;
+        // The payload of a keyed message goes to the role that the message
+        // names, and each other payload goes to the channel peer.
+        using Receiver = typename detail::crash_transport::payload_receiver<Position, Peer>::type;
+        const CrashCellCore* const receiver_cell = receiver_cell_<Receiver>(watched);
         auto next = std::move(watched.inner_)
                         .send(std::move(value), [&](Resource& resource, T& payload) noexcept(is_nothrow) -> bool {
-                            if (cell.has_crashed()) {
+                            if (receiver_cell != nullptr && receiver_cell->has_crashed()) {
                                 undelivered.emplace(std::move(payload));
                                 return true;
                             }
@@ -777,13 +938,10 @@ public:
                         });
         // A message counts once it is whole: a bare message at its write, and
         // the message of a label at the write of its payload.  A payload that
-        // did not go is no message.  The cell counts only the messages to the
-        // peer that reads it, so the payload of a keyed message to a reliable
-        // third role counts nowhere.
-        using Receiver = typename detail::crash_transport::payload_receiver<Position, Peer>::type;
-        constexpr bool is_to_peer = std::is_same_v<Receiver, Peer>;
+        // did not go is no message.  It counts in the cell of the pair of
+        // this endpoint and its receiver.
         const detail::crash_transport::message_counts counts =
-            (undelivered.has_value() || !is_to_peer) ? watched.counts_ : one_more_sent_(watched);
+            undelivered.has_value() ? watched.counts_ : one_more_sent_<Receiver>(watched);
         auto wrapped = wrap_(watched, std::move(next), counts);
         return CrashSend<decltype(wrapped), T>{std::move(wrapped), std::move(undelivered)};
     }
@@ -800,18 +958,17 @@ public:
     [[nodiscard]] static constexpr auto send(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                              Transport transport) {
         using P = typename Handle::protocol;
+        using Receiver = detail::crash_transport::keyed_receiver_t<P, Peer>;
         bool is_written = false;
         auto next = std::move(watched.inner_)
                         .send(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
-                            *watched.peer_cell_, transport, is_written));
+                            receiver_cell_<Receiver>(watched), transport, is_written));
         // A word with a value is half of its message, and the send of the
         // value counts the message.  A word with no value is the whole
-        // message.  The cell counts only the messages to the peer that reads
-        // it, so a message to a reliable third role counts nowhere.
-        using Receiver = detail::crash_transport::keyed_receiver_t<P, Peer>;
-        constexpr bool is_to_peer = std::is_same_v<Receiver, Peer>;
+        // message, and it counts in the cell of the pair of this endpoint and
+        // its receiver.
         const detail::crash_transport::message_counts counts =
-            (is_written && !keyed_step_has_value_v<P> && is_to_peer) ? one_more_sent_(watched) : watched.counts_;
+            (is_written && !keyed_step_has_value_v<P>) ? one_more_sent_<Receiver>(watched) : watched.counts_;
         auto wrapped = [&] {
             if constexpr (keyed_step_has_value_v<P>) {
                 return wrap_<detail::crash_transport::payload_to_send<Receiver>>(watched, std::move(next), counts);
@@ -832,19 +989,7 @@ public:
     [[nodiscard]] static constexpr auto select(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                                Transport transport) {
         using P = typename Handle::protocol;
-        bool is_written = false;
-        auto next = std::move(watched.inner_)
-                        .template select<I>(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
-                            *watched.peer_cell_, transport, is_written));
-        using Next = decltype(next);
         using Branch = std::tuple_element_t<I, typename P::branches_tuple>;
-        constexpr bool is_inside_message = [] {
-            if constexpr (is_keyed_choice_v<P>) {
-                return keyed_step_has_value_v<Branch>;
-            } else {
-                return is_send_v<typename Next::protocol>;
-            }
-        }();
         // The label of a keyed branch goes to the role that the branch names,
         // and a positional label goes to the channel peer.
         using Receiver = typename decltype([] {
@@ -854,13 +999,24 @@ public:
                 return std::type_identity<Peer>{};
             }
         }())::type;
-        constexpr bool is_to_peer = std::is_same_v<Receiver, Peer>;
+        bool is_written = false;
+        auto next = std::move(watched.inner_)
+                        .template select<I>(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
+                            receiver_cell_<Receiver>(watched), transport, is_written));
+        using Next = decltype(next);
+        constexpr bool is_inside_message = [] {
+            if constexpr (is_keyed_choice_v<P>) {
+                return keyed_step_has_value_v<Branch>;
+            } else {
+                return is_send_v<typename Next::protocol>;
+            }
+        }();
         // A label with a payload to go is half of its message, and the send
         // of the payload counts the message.  A label alone is the whole
-        // message.  The cell counts only the messages to the peer that reads
-        // it, so a label to a reliable third role counts nowhere.
+        // message, and it counts in the cell of the pair of this endpoint and
+        // its receiver.
         const detail::crash_transport::message_counts counts =
-            (is_written && !is_inside_message && is_to_peer) ? one_more_sent_(watched) : watched.counts_;
+            (is_written && !is_inside_message) ? one_more_sent_<Receiver>(watched) : watched.counts_;
         if constexpr (is_inside_message) {
             return wrap_<detail::crash_transport::payload_to_send<Receiver>>(watched, std::move(next), counts);
         } else {
@@ -1067,11 +1223,18 @@ class [[nodiscard]] CrashWatched {
                   "Reliable must be a ReliableSet<Roles...>.");
 
     Handle inner_;
-    const PeerCrashCell* peer_cell_;
-    // The cell that watches this endpoint.  The session counts its
-    // messages there, and its crash reports there.  The mint took the one
-    // writer of the cell, so no other session counts into it.
-    PeerCrashCell* own_cell_;
+    // The cell of the pair of the peer and this endpoint.  The session reads
+    // the crash of the peer and the count of its messages there.
+    const CrashCellCore* peer_cell_;
+    // The cell of the pair of this endpoint and the peer.  The session
+    // counts its messages to the peer there, and its crash reports there.
+    // The mint took the one writer of the cell, so no other session counts
+    // into it.
+    CrashCellCore* own_cell_;
+    // The cell of the pair of this endpoint and the third role that the
+    // protocol sends to, or null when it sends to no third role.  The mint
+    // took its one writer too.
+    CrashCellCore* third_cell_;
     // The context of the mint.  The door enters a crash branch with it.
     [[no_unique_address]] Ctx ctx_;
     detail::crash_transport::message_counts counts_{};
@@ -1080,9 +1243,15 @@ class [[nodiscard]] CrashWatched {
     // so no specialization of this template reaches another.
     friend class CrashSessionDoor;
 
-    constexpr CrashWatched(Handle inner, const PeerCrashCell& peer_cell, PeerCrashCell& own_cell, const Ctx& ctx,
+    constexpr CrashWatched(Handle inner, const CrashCellCore& peer_cell, CrashCellCore& own_cell,
+                           CrashCellCore* third_cell, const Ctx& ctx,
                            detail::crash_transport::message_counts counts = {}) noexcept
-        : inner_{std::move(inner)}, peer_cell_{&peer_cell}, own_cell_{&own_cell}, ctx_{ctx}, counts_{counts} {}
+        : inner_{std::move(inner)},
+          peer_cell_{&peer_cell},
+          own_cell_{&own_cell},
+          third_cell_{third_cell},
+          ctx_{ctx},
+          counts_{counts} {}
 
 public:
     using handle_type = Handle;
@@ -1291,25 +1460,30 @@ public:
 
 // ── The mint ─────────────────────────────────────────────────────────
 
-// The mint takes the cell of the peer, which it reads, and the one writer
-// of the cell of this endpoint, which it counts into.  The body reads the
-// writer at run time, so the mint is not constexpr.
+// The mint takes the cell of the pair of the peer and this endpoint, which
+// it reads, and the one writer of the cell of each pair of this endpoint
+// and a receiver, which it counts into: the peer, and the third role that
+// the protocol sends to.  A protocol that sends to no third role takes no
+// third writer.  The body reads the writers at run time, so the mint is not
+// constexpr.
 template <typename Proto, typename Self, typename Peer, typename Reliable = NoReliableRoles,
-          AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource>
-    requires CtxFitsCrashSession<Ctx, Proto, Self, Peer, Reliable, Resource>
-[[nodiscard]] auto mint_crash_session(Ctx const& ctx, Resource resource, const PeerCrashCell& peer_cell,
-                                      CrashWriter own,
+          AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
+          typename Third = NoThirdRole>
+    requires CtxFitsCrashSession<Ctx, Proto, Self, Peer, Reliable, Resource, Third>
+[[nodiscard]] auto mint_crash_session(Ctx const& ctx, Resource resource, const CrashCell<Peer, Self>& peer_cell,
+                                      CrashWriter<Self, Peer> own, CrashWriter<Self, Third> third = {},
                                       std::source_location loc = std::source_location::current()) noexcept {
     return CrashSessionDoor::open<Proto, Self, Peer, Reliable, Policy>(ctx, std::forward<Resource>(resource), peer_cell,
-                                                                       std::move(own), loc);
+                                                                       std::move(own), std::move(third), loc);
 }
 
 // The decorator keeps the cell's address, so a temporary cell would
 // dangle before the first step.
 template <typename Proto, typename Self, typename Peer, typename Reliable = NoReliableRoles,
-          AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource>
-void mint_crash_session(Ctx const&, Resource, const PeerCrashCell&&, CrashWriter,
-                        std::source_location = std::source_location::current()) =
+          AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx, typename Resource,
+          typename Third = NoThirdRole>
+void mint_crash_session(Ctx const&, Resource, const CrashCell<Peer, Self>&&, CrashWriter<Self, Peer>,
+                        CrashWriter<Self, Third> = {}, std::source_location = std::source_location::current()) =
     delete("[Crash_Cell_Temporary] mint_crash_session: the detector cell is a temporary.  The decorator keeps its "
            "address, so the cell must outlive every handle of the session.");
 

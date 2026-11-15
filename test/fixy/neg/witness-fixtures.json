@@ -652,6 +652,11 @@
       "constructor": "\\bCheckpointHandle\\("
     },
     {
+      "name": "neg_witness_session_crashcellcore_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCrashCellCore\\("
+    },
+    {
       "name": "neg_witness_session_crashreporter_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bCrashReporter\\("
@@ -1468,11 +1473,15 @@
       "header": "fixy/session/Delegate.h"
     },
     {
+      "type": "fixy::session::CrashCellCore",
+      "header": "fixy/session/CrashTransport.h"
+    },
+    {
       "type": "fixy::session::CrashReporter",
       "header": "fixy/session/CrashTransport.h"
     },
     {
-      "type": "fixy::session::CrashWriter",
+      "type": "fixy::session::CrashWriter<int, long>",
       "header": "fixy/session/CrashTransport.h"
     },
     {

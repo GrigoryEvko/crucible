@@ -14,8 +14,8 @@ struct Wire {};
 using Proto = s::Select<s::Send<int, s::End>>;
 
 int main() {
-    s::PeerCrashCell watched;
-    s::PeerCrashCell own;
+    s::CrashCell<Bob, Alice> watched;
+    s::CrashCell<Alice, Bob> own;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     auto handle = s::mint_crash_session<Proto, Alice, Bob, s::ReliableSet<Alice>>(ctx, Wire{}, watched,
                                                                                   s::mint_crash_writer(own));

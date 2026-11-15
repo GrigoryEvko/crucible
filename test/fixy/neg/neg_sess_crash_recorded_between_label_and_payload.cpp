@@ -17,8 +17,8 @@ using Proto = s::Select<s::Send<int, s::End>>;
 }  // namespace
 
 int main() {
-    s::PeerCrashCell peer_cell;
-    s::PeerCrashCell own_cell;
+    s::CrashCell<Bob, Alice> peer_cell;
+    s::CrashCell<Alice, Bob> own_cell;
     s::SessionEventLog log;
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     auto handle = s::mint_recorded_session(

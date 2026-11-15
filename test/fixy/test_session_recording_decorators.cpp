@@ -25,8 +25,8 @@ using ProtoQ = s::Offer<s::Recv<int, s::Select<s::Send<int, s::End>>>, s::Recv<s
 int check_crash_recording() {
     Mailbox to_p;
     Mailbox to_q;
-    s::PeerCrashCell cell_p;
-    s::PeerCrashCell cell_q;
+    s::CrashCell<P, Q> cell_p;
+    s::CrashCell<Q, P> cell_q;
     s::SessionEventLog log_p;
     s::SessionEventLog log_q;
     auto p = s::mint_recorded_session(

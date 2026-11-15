@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// fixy::session::CrashWriter in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::session::CrashWriter<int, long> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// fixy::session::CrashWriter attests to a fact that it cannot see.  The expression below is
+// fixy::session::CrashWriter<int, long> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::CrashWriter{forge::lvalue<fixy::session::PeerCrashCell>()};
+    [[maybe_unused]] auto forged = fixy::session::CrashWriter<int, long>{forge::lvalue<fixy::session::CrashCellCore>()};
     return 0;
 }
