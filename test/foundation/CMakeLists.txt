@@ -2072,6 +2072,7 @@ foundation_neg_compile_test(neg_core_fixed_text_zero_capacity
 # throw, and an Option and a Result do not convert to each other.
 # CRUCIBLE_TRY consumes an rvalue of an Option or a Result, in a function
 # whose return takes the failure.
+foundation_test(test_core_call_ref)
 foundation_test(test_core_choice)
 foundation_test(test_core_try)
 foundation_test(test_core_one_of)
@@ -2514,6 +2515,12 @@ foundation_test(test_core_run_set)
 foundation_neg_compile_test(neg_core_ref_of_temporary
   "use of deleted function .void foundation::core::to\\(T&&\\) \\[with Refused = \\{\\}; T = int\\]."
   "a Ref of a temporary dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_call_ref_of_temporary
+  "use of deleted function .foundation::core::CallRef<R\\(Args \\.\\.\\.\\) noexcept>::CallRef\\(F&&\\)"
+  "a CallRef of a temporary callable dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_call_ref_wrong_signature
+  "no matching function for call to .foundation::core::CallRef<int\\(int\\) noexcept>::CallRef\\("
+  "required for the satisfaction of .CallRefTarget<F, R, Args \\.\\.\\.>.")
 foundation_neg_compile_test(neg_core_ref_drops_const
   "no matching function for call to .foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >::Ref\\(<brace-enclosed initializer list>\\)."
   "required for the satisfaction of .RefWidens<U, UBrand, T, Brand>. \\[with U = const int; UBrand = [^;]+; T = int; ")

@@ -144,6 +144,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/CallRef.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/diag/Insights.h>
@@ -885,6 +886,8 @@ inline constexpr StatedZero kZeros[] = {
      "the blocks of an arena: it holds storage and makes no claim about the objects in it"},
     {^^::foundation::core::Ref,
      "a borrow of one object: it owns nothing and makes no claim about what the object holds"},
+    {^^::foundation::core::CallRef,
+     "a borrow of one callable: it owns nothing, it lives in a frame, and it is never a value in a kernel signature"},
     {^^::foundation::core::Address,
      "the address of one object for an alignment query: it changes from run to run, so it is never a value in a "
      "kernel signature"},
