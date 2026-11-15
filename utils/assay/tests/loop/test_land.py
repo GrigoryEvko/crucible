@@ -19,7 +19,8 @@ a request when its process goes from the queue.  They land the falls of the
 gate.  Two requests that change the summary row of the mint inventory must
 compose and land with the inventory that the gate writes.  A batch that adds
 a fixture and loses its swap to a lane that adds a different fixture must
-compose again and land with the inventory of the two.  The verdict of a
+compose again and land with the inventory of the two.  A refusal must give
+the rows of the ratchet ledgers after its problems.  The verdict of a
 landed request must name each flaky test of its run.
 A red run that a green run of the same tree does not repeat must land its
 request, with a line that names the problem as flaky.
@@ -1219,6 +1220,32 @@ def built_race_cases(expect: testing.Expect) -> None:
         )
 
 
+def ratchet_rows_cases(expect: testing.Expect) -> None:
+    """Hold THE RATCHET ROWS of assay.loop.gate in a refusal: the lines of the rows come after the problems."""
+    with tempfile.TemporaryDirectory(prefix="land-rows-") as work_text:
+        root = Path(work_text) / "repo"
+        planted_repository(root)
+        requests = own_requests(root, ("a use of a door\n",))
+        rows = (
+            "loop land: debug: the build gives these rows of utils/ledgers/owners.txt:",
+            "  src/a.cpp | door-use | 1 | a: b | REASON",
+        )
+        problem = "debug: red alone too: guard_plugin, see /work/logs/debug.test.log"
+
+        def check(candidate: gate.Candidate, _is_retry: bool) -> gate.Verdict:
+            """Accept the run of the base, and refuse each other run with a red test of the plugin rules and rows."""
+            if candidate.commit == candidate.head:
+                return gate.Verdict(("debug",), (), 1.0)
+            return gate.Verdict(("debug",), (problem,), 1.0, focus=(gate.Focus("debug", ("guard_plugin",)),), rows=rows)
+
+        decisions, _ = landed(root, requests, check)
+        lines = [line.content for line in decisions[1].lines]
+        expect(
+            f"a refusal gives the rows of the ratchet ledgers of its run after its problems: {lines}",
+            decisions[1].status == ExitCode.FINDINGS and lines == [f"loop land: REJECTED, {problem}", *rows],
+        )
+
+
 def flaky_once(root: Path, name: str, seen: list[tuple[gate.Candidate, bool]]) -> land.Check:
     """Return a planted gate that rejects the first run of a commit that holds a file, as a flaky test does.
 
@@ -2384,6 +2411,7 @@ def main(argv: list[str]) -> int:
             merge_cases,
             built_cases,
             built_race_cases,
+            ratchet_rows_cases,
             flaky_cases,
             confirmation_cases,
             drop_cases,

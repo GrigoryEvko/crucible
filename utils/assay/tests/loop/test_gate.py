@@ -26,7 +26,10 @@ of the write into its commit.  A change that adds a fixture must get that
 write too, while the other configurations build, and each configuration
 must run its suite after the fold.  A focus with no run of default must get
 the write before each configuration, and the run of the base must get no
-write.  A change of a header that renames a function
+write.  A red test of the plugin rules must give the rows that the build
+gives for each counted plugin rule, with no row of a refused kind, and the
+ledgers of the warm tree must keep the bytes of the commit.  A change of a
+header that renames a function
 that the planted vessel calls must fail the build of the vessel, and the gate
 must reject it.  The planted cmake compiles that vessel.
 """
@@ -107,7 +110,8 @@ COUNTED_REGISTRY = (
 # The planted master loop: `syntax --changed` names no preset, and `test BUILD` writes the report of the mode of the
 # build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.  The
 # master writes MAKEFLAGS to makeflags.txt, and the times of its start and its end to times.txt.  The mode hang runs
-# until a stop ends it.  `derive TARGET --write --build-dir BUILD` writes inventory.txt of the build into the tree as the
+# until a stop ends it.  The mode plugin makes the test guard_plugin red.
+# `derive TARGET --write --build-dir BUILD` writes inventory.txt of the build into the tree as the
 # mint inventory, or writes nothing for a build with no inventory.txt.  It exits 3 in the mode unwritten, and in the
 # mode overlap when the release build gives no cmake.txt in its wait.  With inventory.txt in the build, the test
 # test_built, the planted test of the rule derived-files, is red when the tree holds a different inventory.  Each call
@@ -221,6 +225,8 @@ if mode == "build":
 statuses = {"test_passes": "run"}
 if mode in ("flaky", "broken"):
     statuses["test_" + mode] = "fail"
+if mode == "plugin":
+    statuses["guard_plugin"] = "fail"
 if mode == "both":
     statuses["test_flaky"] = statuses["test_broken"] = "fail"
 if mode == "moves":
@@ -241,7 +247,9 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # apply.  In a build with the mode parse-falls, `check` gives findings when the commit of the warm tree holds the fall
 # of the planted ledger, as after the fold of the gate.  In a build with the mode reconfigure, `check` of the rule
 # reconfigure-noop gives findings.  `write` of door-unit lowers the count 2 of its ledger to 1, as the reduce of the
-# gate does.  Each write writes its rule and the count of its build directories to writes.txt of each of them.
+# gate does.  `write --admit --reason TEXT` adds a row of door-unit, or two rows of owners, with that reason.  Each
+# write writes its rule, the count of its build directories, and the word admit and the reason of the mode admit to
+# writes.txt of each of them.
 UTILS_MARK = "@UTILS@"
 GUARD_MASTER = """import os
 import pathlib
@@ -262,12 +270,23 @@ if words[0] == "check":
             sys.exit(1)
 if words[0] == "write":
     builds = [pathlib.Path(words[index + 1]) for index, word in enumerate(words) if word == "--build-dir"]
-    if words[2] == "door-unit":
+    if "--admit" in words:
+        reason = words[words.index("--reason") + 1]
+        ledger = pathlib.Path("utils/ledgers") / f"{words[2]}.txt"
+        rows = {
+            "door-unit": [f"src/new.cpp | header-door | 1 | new.h | {reason}"],
+            "owners": [
+                f"src/a.cpp | door-use | 1 | a: b | {reason}",
+                f"src/a.cpp | lifetime-start | 1 | a: c | {reason}",
+            ],
+        }
+        ledger.write_text(ledger.read_text() + "".join(f"{row}\\n" for row in rows.get(words[2], [])))
+    elif words[2] == "door-unit":
         ledger = pathlib.Path("utils/ledgers/door-unit.txt")
         ledger.write_text(ledger.read_text().replace("| 2 |", "| 1 |"))
     for build in builds:
         with open(build / "writes.txt", "a", encoding="utf-8") as handle:
-            handle.write(f"{words[2]} {len(builds)}\\n")
+            handle.write(f"{words[2]} {len(builds)}{' admit ' + reason if '--admit' in words else ''}\\n")
     sys.exit(0)
 sys.exit(0 if words[0] == "warnings" else 77)
 """
@@ -1177,6 +1196,83 @@ def built_touch_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
+# The registry, the ledger and the path of the ledger of the rule owners of the cases of THE RATCHET ROWS.  The module
+# of the rule owners of this tree gives its refused kinds, such as lifetime-start.
+RATCHET_REGISTRY = (
+    f"{REGISTRY}rule owners engine=plugin scope=tracked ledger=count kinds=door-use,lifetime-start doc=L0 | a use | "
+    f"use the door\n"
+)
+OWNERS_PATH = "utils/ledgers/owners.txt"
+OWNERS_LEDGER = "format 1\nrule owners\nsrc/old.cpp | door-use | 1 | a: z | a reviewed use\n"
+
+
+def ratchet_cases(expect: testing.Expect) -> None:
+    """Hold THE RATCHET ROWS: a red test of the plugin rules gives the rows of the build, and a different one gives none."""
+    with tempfile.TemporaryDirectory(prefix="gate-ratchet-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        ledgers = {DOOR_PATH: COUNTED_DOORS, OWNERS_PATH: OWNERS_LEDGER}
+        head = planted_repository(root, {rule_registry.REGISTRY_PATH: RATCHET_REGISTRY, **ledgers})
+        commit = commit_change(root, "src/a.cpp", "int a;\n", "Add a use of a door")
+        candidate = gate.Candidate(head, commit, ("src/a.cpp",))
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = planted_gate(work, root, tree, "plugin", OTHER_BUILDS)
+        (tree / "build" / "red.txt").write_text(f"{gate.PLUGIN_TEST}\n", encoding="utf-8")
+        verdict, printed = testing.captured(lambda: planted.check(candidate, False))
+        writes = tree / "build" / "writes.txt"
+        written = sorted(writes.read_text(encoding="utf-8").splitlines()) if writes.is_file() else []
+        reason = gate.ROW_REASON
+        head_line = (
+            "loop land: default: the build gives these rows of {path}.  Put each row in the ledger of the change, and "
+            f"write the reason of a new row in place of {reason}.  The rows come from one build, and a different "
+            "configuration can give a higher count:"
+        )
+        rows = (
+            head_line.format(path=DOOR_PATH),
+            f"  src/new.cpp | header-door | 1 | new.h | {reason}",
+            head_line.format(path=OWNERS_PATH),
+            f"  src/a.cpp | door-use | 1 | a: b | {reason}",
+            (
+                f"loop land: default: no row of {OWNERS_PATH} admits a finding of the kind lifetime-start, so correct "
+                f"the code: src/a.cpp | lifetime-start | 1 | a: c | {reason}"
+            ),
+        )
+        held = {path: (tree / path).read_text(encoding="utf-8") for path in ledgers}
+        holds = (
+            not verdict.is_accepted
+            and any(f"red alone too: {gate.PLUGIN_TEST}" in problem for problem in verdict.problems)
+            and verdict.rows == rows
+            and written == [f"door-unit 1 admit {reason}", f"owners 1 admit {reason}"]
+            and held == ledgers
+            and not any((tree / name / "writes.txt").is_file() for name in OTHER_BUILDS)
+        )
+        label = (
+            f"a red test of the plugin rules gives the rows that the build of its configuration gives for each counted "
+            f"plugin rule, with no row of a refused kind, and the ledgers of the warm tree keep the bytes of the commit: "
+            f"the writes {written} and the rows {verdict.rows}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        planted_error = RuntimeError("a planted error of the rows")
+        with mock.patch.object(gate.Step, "ratchet_rows", side_effect=planted_error):
+            verdict, printed = testing.captured(lambda: planted.check(candidate, False))
+        holds = (
+            not verdict.is_accepted
+            and any(f"red alone too: {gate.PLUGIN_TEST}" in problem for problem in verdict.problems)
+            and verdict.rows == ()
+            and f"the gate cannot give the rows of the ratchet ledgers: {planted_error}" in printed
+        )
+        label = f"an error of the rows gives one line and no row, and the problems stay: {verdict.problems}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        (tree / "build" / "red.txt").unlink()
+        writes.unlink(missing_ok=True)
+        broken = planted_gate(work, root, tree, "broken", OTHER_BUILDS)
+        verdict, printed = testing.captured(lambda: broken.check(candidate, False))
+        holds = not verdict.is_accepted and verdict.rows == () and not writes.is_file()
+        label = f"a different red test gives no row and no write: the rows {verdict.rows}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+
+
 def changed_tests_cases(expect: testing.Expect) -> None:
     """Hold a configuration of the tests of the changed inputs: no --all, and a red test rejects."""
     with tempfile.TemporaryDirectory(prefix="gate-changed-") as work_text:
@@ -1905,6 +2001,7 @@ def main(argv: list[str]) -> int:
             reduce_parse_cases,
             built_cases,
             built_fixture_cases,
+            ratchet_cases,
             changed_tests_cases,
             touched_cases,
             thread_cases,

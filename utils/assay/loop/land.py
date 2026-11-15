@@ -321,7 +321,9 @@ THE GATE
     The verdict gives it, and the compare-and-swap moves the branch to it.
     Each run of the gate writes its logs into a directory of its own
     (assay.loop.gate, THE LOGS).  The problems of a refusal then name logs
-    that the next run does not change.
+    that the next run does not change.  After the problems, a refusal gives
+    the rows of the ratchet ledgers that the build gives (THE RATCHET ROWS of
+    assay.loop.gate).
 
 THE COMPARE-AND-SWAP
     The branch moves to the commit only when the branch holds the commit that
@@ -1815,7 +1817,7 @@ class BatchLanding:
             lines.insert(0, self.red_base_line())
         if lead:
             lines.insert(0, lead)
-        self.decide(queued, refused(ExitCode.FINDINGS, *lines))
+        self.decide(queued, refused(ExitCode.FINDINGS, *lines, *verdict.rows))
 
     def note_noise(self, queued: Queued, red_run: int, green_run: int) -> None:
         """Keep a line for each problem of a red run that a green run of the same tree did not repeat (THE CONFIRMATION).
@@ -1895,6 +1897,7 @@ class BatchLanding:
             for item in batch_verdict.problems
             if not shown_problems(replace(batch_verdict, problems=(item,))) <= base
         ]
+        lines += batch_verdict.rows
         for queued in items:
             self.refused_by[queued.number] = batch_run
             self.decide(queued, refused(ExitCode.FINDINGS, *lines))
@@ -2803,7 +2806,8 @@ def checked(root: Path, request: Request, options: Options, work: Path) -> int:
             if verdict.is_accepted:
                 accepted_line = Line(f"loop land: the gate accepts HEAD {head[:SHORT_HASH]}")
                 return written(Decision(ExitCode.OK, head, (accepted_line, *flaky_of(verdict))))
-            return written(refused(ExitCode.FINDINGS, *(f"loop land: REJECTED, {item}" for item in verdict.problems)))
+            problems = (f"loop land: REJECTED, {item}" for item in verdict.problems)
+            return written(refused(ExitCode.FINDINGS, *problems, *verdict.rows))
         landing = BatchLanding([queued], run_check, lambda _queued, decision: decisions.append(decision), time.sleep)
         try:
             landing.land([queued])

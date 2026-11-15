@@ -397,6 +397,33 @@ THE BUILT FILES
     written file with each build.  The verdict gives each written file that
     changed (Verdict.built).
 
+THE RATCHET ROWS
+    A row of a counted ledger that must rise, or a new row, is a decision of
+    the author of the change.  Examples are a row of the rule escape-doors
+    and a count of the rule owners.  The gate thus writes no such row.  But
+    the write of such a row needs the records of a full build, and the gate
+    has that build.  When the first round of a commit gives a problem, the
+    gate gives the rows that the build of each red configuration of objects
+    gives (Step.ratchet_rows()):
+      * The test PLUGIN_TEST of the suite checks each rule of the engine
+        plugin, and the test guard_ID checks the rule ID of the engine elf.
+        Each counted rule whose test is red alone too gets one write on the
+        build of that configuration.
+      * The write is `guard write --rule ID --build-dir BUILD --admit
+        --reason ROW_REASON` of the warm tree.  The gate keeps the bytes of
+        the ledger, and it puts them back after the write.
+      * Each line of the written ledger that the ledger of the commit does
+        not hold is a row of the verdict (Verdict.rows).  No row admits a
+        finding of a kind of REFUSED_KINDS of the module of the rule.  The
+        verdict then tells the author to correct the code.
+    The writes start after each configuration ended, with a stop event of
+    their own, so the stop of the first round does not end them.  An error
+    of the writes gives one line and no row, and it does not change the
+    verdict (Gate.ratchet()).  The rows
+    of one build are partial, and a different configuration can give a
+    higher count (THE WRITE of assay.core.ledger).  The refusal of the
+    landing gives the rows after the problems (assay.loop.land).
+
 THE RUN OF THE BASE
     A candidate with a focus is the commit of a run of the base (THE RUN OF
     THE BASE of assay.loop.land).  The focus gives each configuration with
@@ -527,6 +554,11 @@ BUILT_NOTE = "The gate wrote {paths} from the build of the composed tree."
 # The words of the problem of a build error of a configuration of objects, in `loop test` and before it (THE BUILT
 # FILES).  The two give the same words, so the run of the base compares them (THE RUN OF THE BASE).
 BUILD_PROBLEM = "the build or the test run gives an error"
+# The test of the suite that checks each rule of the engine plugin, the prefix of the test of a rule of the engine elf,
+# and the reason cell of a new row that the gate gives (THE RATCHET ROWS).
+PLUGIN_TEST = "guard_plugin"
+RULE_TEST_PREFIX = "guard_"
+ROW_REASON = "REASON"
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (THE
 # SELECTION).
 ALWAYS = "default"
@@ -691,7 +723,8 @@ class Verdict:
     last, and `ledgers` holds each ledger that THE REDUCE folded into it.  `final` is "" for a verdict of no commit.
     `logs` is the directory of the logs of the run (THE LOGS).  `focus` gives each configuration with a problem (THE
     VERDICT).  `flaky` gives each test that was red in the suite and green alone, as CONFIGURATION: TEST.  `built`
-    holds each file that the gate wrote from the build of ALWAYS and folded into `final` (THE BUILT FILES).
+    holds each file that the gate wrote from the build of ALWAYS and folded into `final` (THE BUILT FILES).  `rows`
+    holds the lines of THE RATCHET ROWS of a refused commit.
     """
 
     configurations: tuple[str, ...]
@@ -706,6 +739,7 @@ class Verdict:
     built: tuple[str, ...] = ()
     wait_seconds: tuple[float, ...] = ()
     slot_seconds: tuple[float, ...] = ()
+    rows: tuple[str, ...] = ()
 
     @property
     def is_accepted(self) -> bool:
@@ -973,6 +1007,37 @@ def counted_rules(tree: Path) -> tuple[str, ...]:
         if ledger.base:
             counted.append(rule_id)
     return tuple(counted)
+
+
+def ratchet_tests(tree: Path, counted: Sequence[str]) -> dict[str, tuple[rule_registry.Rule, ...]]:
+    """Return the counted rules of each test of the suite that checks them (THE RATCHET ROWS).
+
+    PLUGIN_TEST checks each rule of the engine plugin, and RULE_TEST_PREFIX with the identifier of a rule of the engine
+    elf, with "_" in place of "-", names the test of that rule.  Complexity: one read of the registry, and linear in the
+    counted rules.
+
+    Raises:
+        GateError: If the registry of the tree does not read
+    """
+    try:
+        registry = rule_registry.load(tree / rule_registry.REGISTRY_PATH)
+    except (OSError, ValueError) as problem:
+        raise GateError(f"the registry of {tree} does not read: {problem}") from None
+    found: dict[str, list[rule_registry.Rule]] = {}
+    for rule_id in counted:
+        rule = registry.rules.get(rule_id)
+        if rule is None:
+            continue
+        is_plugin = rule.engine is rule_registry.Engine.PLUGIN
+        test = PLUGIN_TEST if is_plugin else f"{RULE_TEST_PREFIX}{rule_id.replace('-', '_')}"
+        found.setdefault(test, []).append(rule)
+    return {test: tuple(rules) for test, rules in found.items()}
+
+
+def row_kind(line: str) -> str:
+    """Return the KIND cell of a row of a ledger, PATH | KIND | VALUE | ENTITY | REASON, or "" for a different line."""
+    cells = line.split(" | ", 2)
+    return cells[1] if len(cells) > 1 else ""
 
 
 def is_checked(configuration: Configuration, rule_id: str) -> bool:
@@ -1297,6 +1362,9 @@ class Gate:
             if not outcomes:
                 outcomes = step.run_all(plan, first_plan if others else None, False, is_retry)
                 step.require_problem(outcomes)
+            rows: tuple[str, ...] = ()
+            if not candidate.focus and counted and any(item.red for item in outcomes):
+                rows = self.ratchet(step.candidate, environment, outcomes, counted)
             final: str = step.candidate.commit
             ledgers: tuple[str, ...] = ()
             if not candidate.focus and not any(item.problems for item in outcomes):
@@ -1346,7 +1414,26 @@ class Gate:
             step.built,
             tuple(item.wait_s for item in ended),
             tuple(round(item.slot_seconds, 1) for item in ended),
+            rows,
         )
+
+    def ratchet(
+        self,
+        candidate: Candidate,
+        environment: Mapping[str, str],
+        outcomes: Sequence[Outcome],
+        counted: Sequence[str],
+    ) -> tuple[str, ...]:
+        """Return THE RATCHET ROWS of a red round, from a step with a stop event of its own.
+
+        The rows only aid the author.  An error of their step gives one line and no row, and the problems of the round
+        stay the verdict.
+        """
+        try:
+            return Step(self, candidate, environment).ratchet_rows(outcomes, counted)
+        except Exception as problem:  # noqa: BLE001
+            check_report.write_line(f"loop land: the gate cannot give the rows of the ratchet ledgers: {problem}")
+            return ()
 
     def check_in_run(self, candidate: Candidate, is_retry: bool) -> Verdict:
         """Check a candidate with its logs in a new run, which stays live until the check ends (THE LOGS).
@@ -1723,6 +1810,95 @@ class Step:
         final = git.replaced_commit(self.gate.root, self.candidate.commit, files)
         move_tree(self.gate.root, tree, final)
         return final, ledgers
+
+    def ratchet_rows(self, outcomes: Sequence[Outcome], counted: Sequence[str]) -> tuple[str, ...]:
+        """Return the lines of THE RATCHET ROWS of the red configurations of objects of a round.
+
+        The writes of the rules run at the same time in one lease, and the writes of one rule run one after the other,
+        because each one writes the ledger of the rule.  The caller gives the step a stop event of its own.
+        Complexity: one write for each counted rule and each configuration whose test of the rule is red alone too.
+
+        Raises:
+            GateError: If the registry of the tree does not read, or the CMake cache of a build names no cmake
+        """
+        tests = ratchet_tests(self.gate.tree, counted)
+        plan: dict[str, tuple[rule_registry.Rule, list[Configuration]]] = {}
+        for item in outcomes:
+            configuration = BY_NAME.get(item.name)
+            if item.is_stopped or configuration is None or configuration.is_parse:
+                continue
+            for name in item.red:
+                for rule in tests.get(name, ()):
+                    plan.setdefault(rule.id, (rule, []))[1].append(configuration)
+        if not plan:
+            return ()
+        self.say(f"loop land: the gate gives the rows of {' '.join(sorted(plan))} from the build of each red run")
+        with self.leased() as share:
+
+            def rows_of(rule_id: str) -> list[str]:
+                """Return the lines of the rows of one rule from the build of each of its configurations."""
+                rule, configurations = plan[rule_id]
+                return [line for item in configurations for line in self.rule_rows(rule, item, share)]
+
+            found = self.concurrently(sorted(plan), rows_of)
+        return tuple(line for lines in found for line in lines)
+
+    def rule_rows(self, rule: rule_registry.Rule, configuration: Configuration, share: heavy.Share) -> list[str]:
+        """Write the ledger of a rule from the build of a configuration in the mode admit, and give its new rows.
+
+        THE RATCHET ROWS gives the rules.  The ledger of the warm tree gets its bytes back after the write.
+        Complexity: one write, and linear in the lines of the ledger.
+        """
+        from assay.guard.engines.meta import runner as meta_runner
+
+        path = rule_ledger.shown_path(rule.id)
+        ledger = self.gate.tree / path
+        before = ledger.read_bytes() if ledger.is_file() else None
+        build = build_directory(self.gate.tree, configuration)
+        log = log_name(configuration, f"rows-{rule.id}.log")
+        command = [*self.gate.master("guard"), "write", "--rule", rule.id, "--build-dir", str(build)]
+        command += ["--admit", "--reason", ROW_REASON]
+        try:
+            status = self.run_logged(command, log, share, proc.TOOL_S)
+            after = ledger.read_bytes() if ledger.is_file() else None
+        finally:
+            if before is None:
+                ledger.unlink(missing_ok=True)
+            else:
+                ledger.write_bytes(before)
+        name = configuration.name
+        if status == ExitCode.SKIPPED:
+            return []
+        if status != ExitCode.OK:
+            return [
+                f"loop land: {name}: the gate cannot give the rows of {path} from the build, see {self.gate.logs / log}"
+            ]
+        held = set((before or b"").decode("utf-8").splitlines())
+        added = [
+            line
+            for line in (after or b"").decode("utf-8").splitlines()
+            if line not in held and not line.startswith("#")
+        ]
+        try:
+            refused = meta_runner.refused_kinds(rule)
+        except ImportError:
+            # The code of the gate has no module of a rule that the commit adds, and the check of that rule judges it.
+            refused = frozenset()
+        kept = [line for line in added if row_kind(line) not in refused]
+        lines = [
+            f"loop land: {name}: no row of {path} admits a finding of the kind {row_kind(line)}, so correct the code: "
+            f"{line}"
+            for line in added
+            if row_kind(line) in refused
+        ]
+        if not kept:
+            return lines
+        head = (
+            f"loop land: {name}: the build gives these rows of {path}.  Put each row in the ledger of the change, and "
+            f"write the reason of a new row in place of {ROW_REASON}.  The rows come from one build, and a different "
+            f"configuration can give a higher count:"
+        )
+        return [head, *(f"  {line}" for line in kept), *lines]
 
     def red_alone(
         self, configuration: Configuration, names: Sequence[str], share: heavy.Share, is_again: bool = False
