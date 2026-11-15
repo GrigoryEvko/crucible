@@ -63,6 +63,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Record.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
@@ -264,7 +265,7 @@ public:
     // back.  The reader is consumed for the call, so the body cannot end
     // the share through a capture while the view lives.  A body that
     // returns nothing gives the reader back, and a body that returns a
-    // value gives a pair of that value and the reader.
+    // value gives a Record of that value and the reader.
     template <class Body>
         requires ::foundation::permissions::ReadViewBody<Body, Tag, Brand>
     [[nodiscard]] auto
@@ -274,7 +275,8 @@ public:
         if constexpr (std::is_same_v<decltype(lent), ::foundation::permissions::SharedPermissionGuard<Tag, Brand>>) {
             return SharedReader{std::move(lent)};
         } else {
-            return std::pair{std::move(lent.first), SharedReader{std::move(lent.second)}};
+            auto [value, guard] = std::move(lent);
+            return ::foundation::core::Record{std::move(value), SharedReader{std::move(guard)}};
         }
     }
 
@@ -824,8 +826,8 @@ public:
     template <class Tag, class Set>
         requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
     [[nodiscard]] static constexpr auto take(PermHold<Set>&& hold) noexcept
-        -> std::pair<::foundation::permissions::Permission<Tag>,
-                     PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
+        -> ::foundation::core::Record<::foundation::permissions::Permission<Tag>,
+                                      PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
         hold.require_live_();
         ::foundation::permissions::Permission<Tag> token = std::move(slot_<Tag>(hold));
         auto rest = transition_<::foundation::permissions::perm_set_remove_t<Set, Tag>>(hold);
@@ -998,7 +1000,7 @@ public:
     // and hands the hold back.  The hold is consumed for the call, so a
     // body that names the hold through a capture finds it spent, and a
     // transition on it aborts.  A body that returns nothing gives the
-    // hold back, and a body that returns a value gives a pair of that
+    // hold back, and a body that returns a value gives a Record of that
     // value and the hold.
     template <class Tag, class Body>
         requires(::foundation::permissions::perm_set_contains(^^Set, ^^BorrowedIn<Tag>))
@@ -1013,8 +1015,9 @@ public:
             slot = std::move(lent);
             return held;
         } else {
-            slot = std::move(lent.second);
-            return std::pair{std::move(lent.first), std::move(held)};
+            auto [value, loan] = std::move(lent);
+            slot = std::move(loan);
+            return ::foundation::core::Record{std::move(value), std::move(held)};
         }
     }
 
@@ -1026,16 +1029,18 @@ public:
 
     // ── The end of the hold ────────────────────────────────────────
 
-    // Hands every token back.  A hold with a loan open has no tokens to
-    // hand back for the loan, so it cannot end here.
-    [[nodiscard]] constexpr std::tuple<::foundation::permissions::Permission<Elems>...> into_permissions() && noexcept
+    // Hands every token back, in a Record in the order of the set.  A hold
+    // with a loan open has no tokens to hand back for the loan, so it
+    // cannot end here.
+    [[nodiscard]] constexpr ::foundation::core::Record<::foundation::permissions::Permission<Elems>...>
+    into_permissions() && noexcept
         requires(!perm_set_has_open_loan_v<Set>)
     {
         require_live_();
         live_ = false;
         return std::apply(
-            [](auto&... slot) {
-                return std::tuple<::foundation::permissions::Permission<Elems>...>{std::move(slot)...};
+            [](auto&... slot) noexcept {
+                return ::foundation::core::Record<::foundation::permissions::Permission<Elems>...>{std::move(slot)...};
             },
             slots_);
     }

@@ -110,6 +110,37 @@ static_assert(
                    branded_loan_record>);
 static_assert(sizeof(branded_loan_record) == 1);
 
+// A body that returns a value gives a Record of the value and the source.
+// A const result goes into the Record with no const.  A body that returns
+// nothing gives the source alone.
+struct DoorCount {
+    int count = 0;
+};
+using DoorToken = Permission<read_view_test_tag, read_view_brand_a>;
+using DoorView = ReadView<read_view_test_tag, read_view_brand_a>;
+using counted_door_result =
+    decltype(with_read_view(std::declval<DoorToken>(), [](DoorView const&) noexcept { return DoorCount{}; }));
+static_assert(std::is_same_v<counted_door_result, ::foundation::core::Record<DoorCount, DoorToken>>);
+using const_door_result = decltype(with_read_view(
+    std::declval<DoorToken>(), [](DoorView const&) noexcept -> DoorCount const { return DoorCount{}; }));
+static_assert(std::is_same_v<const_door_result, ::foundation::core::Record<DoorCount, DoorToken>>);
+using void_door_result = decltype(with_read_view(std::declval<DoorToken>(), [](DoorView const&) noexcept {}));
+static_assert(std::is_same_v<void_door_result, DoorToken>);
+
+// A result whose move or end can throw is no part of a Record, so the door
+// refuses it.
+struct MovesWithThrow {
+    MovesWithThrow(MovesWithThrow&&) noexcept(false);
+};
+struct EndsWithThrow {
+    ~EndsWithThrow() noexcept(false);
+};
+static_assert(ReadViewResultFitsARecord<void>);
+static_assert(ReadViewResultFitsARecord<int>);
+static_assert(ReadViewResultFitsARecord<DoorCount const>);
+static_assert(!ReadViewResultFitsARecord<MovesWithThrow>);
+static_assert(!ReadViewResultFitsARecord<EndsWithThrow>);
+
 // ── The gates answer ────────────────────────────────────────────────
 
 template <typename Tag>

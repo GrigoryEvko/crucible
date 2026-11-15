@@ -180,22 +180,22 @@ concept ReadViewResultStaysInside =
     std::is_void_v<R>
     || (!std::is_reference_v<R> && !::foundation::reflect::any_component_satisfies<detail::may_carry_a_read_view>(^^R));
 
+// The door gives a result and the source back in one Record, so a result is
+// a part of a Record.  A result whose move or end can throw is refused.  A
+// const result goes into the Record with no const, because a const part
+// would block the move of the Record and of the source in it.
+template <typename R>
+concept ReadViewResultFitsARecord = std::is_void_v<R> || ::foundation::core::RecordElement<std::remove_cv_t<R>>;
+
 // ── The door ─────────────────────────────────────────────────────────
 
 namespace detail {
 
-// The door throws only if the body throws, or if the move of its result
-// throws.
+// The door throws only if the body throws.  The result goes into the
+// Record with no move, and a moved Record moves its parts with no throw.
 template <typename Source, typename Body>
-inline constexpr bool read_view_door_nothrow_v = [] {
-    using Result = read_view_result_t<Body, typename Source::tag_type, typename Source::brand_type>;
-    using View = ReadView<typename Source::tag_type, typename Source::brand_type>;
-    if constexpr (std::is_void_v<Result>) {
-        return std::is_nothrow_invocable_v<Body, View const&>;
-    } else {
-        return std::is_nothrow_invocable_v<Body, View const&> && std::is_nothrow_move_constructible_v<Result>;
-    }
-}();
+inline constexpr bool read_view_door_nothrow_v =
+    std::is_nothrow_invocable_v<Body, ReadView<typename Source::tag_type, typename Source::brand_type> const&>;
 
 struct read_view_door {
     // Complexity: the cost of the body.  The frame holds the source and
@@ -212,6 +212,13 @@ struct read_view_door {
                       "holds an untyped address (a pointer to void or to a function, as in std::function, "
                       "std::any or a coroutine handle), or a lambda whose captures cannot be read.  The result "
                       "leaves the frame of the door, so return a value that does not hold the view");
+        // A reference result fails the first assertion, so the second one
+        // judges only a result that stays inside.
+        constexpr bool is_refused = !ReadViewResultStaysInside<Result> || !ReadViewResultFitsARecord<Result>;
+        static_assert(!ReadViewResultStaysInside<Result> || ReadViewResultFitsARecord<Result>,
+                      "with_read_view: the body returns a value whose move or end can throw.  The door gives the "
+                      "value and the source back in one Record, and a part of a Record moves and ends with no "
+                      "throw, so return a value whose move and destructor are noexcept");
         if constexpr (std::is_same_v<Source, SharedPermissionGuard<Tag, Brand>>) {
             CRUCIBLE_PRE(source.holds_share());
         }
@@ -220,8 +227,13 @@ struct read_view_door {
         if constexpr (std::is_void_v<Result>) {
             std::forward<Body>(body)(view);
             return held;
+        } else if constexpr (is_refused) {
+            // An assertion above refuses the result.  This arm builds no
+            // Record, so the refusal is the one error.
+            return held;
         } else {
-            return std::pair<Result, Source>{std::forward<Body>(body)(view), std::move(held)};
+            return ::foundation::core::Record<std::remove_cv_t<Result>, Source>{std::forward<Body>(body)(view),
+                                                                                std::move(held)};
         }
     }
 };
@@ -230,7 +242,7 @@ struct read_view_door {
 
 // Lends the source to the body and hands it back.  A body that returns
 // nothing gives the source back.  A body that returns a value gives a
-// pair of that value and the source.
+// Record of that value and the source.
 template <typename Source, typename Body>
     requires ReadViewSource<Source> && ReadViewNeedsNoCtx<typename Source::tag_type>
           && ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>

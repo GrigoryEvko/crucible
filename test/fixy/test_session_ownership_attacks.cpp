@@ -708,9 +708,9 @@ int read_region(fp::ReadView<X> const& proof) {
 void borrowed_prefix_on_another_thread() {
     const Watchdog watchdog{"borrowed_prefix_on_another_thread", std::chrono::seconds{20}};
     auto hold = sess::mint_permission_hold(fp::mint_permission_root<X>());
-    auto token_first = std::move(hold).template take<X>();
-    write_region(token_first.first, 10);
-    auto lender = std::move(token_first.second).put(std::move(token_first.first));
+    auto [first_token, without_token] = std::move(hold).template take<X>();
+    write_region(first_token, 10);
+    auto lender = std::move(without_token).put(std::move(first_token));
 
     Slot<BX> to_borrower;
     Slot<RX> to_lender;

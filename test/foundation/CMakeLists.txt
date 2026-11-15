@@ -1201,6 +1201,9 @@ foundation_neg_compile_test(neg_read_view_body_returns_a_type_erased_callable
 foundation_neg_compile_test(neg_read_view_body_returns_an_untyped_pointer
   "static assertion failed"
   "a type that holds an untyped address .a pointer to void or to a function")
+foundation_neg_compile_test(neg_read_view_body_result_moves_with_throw
+  "static assertion failed"
+  "the body returns a value whose move or end can throw")
 foundation_neg_compile_test(neg_read_view_stored_past_the_callback
   "no matching function for call to .std::optional<foundation::permissions::ReadView<.anonymous.::Region> >::emplace\\("
   "enable_if<false, foundation::permissions::ReadView<.anonymous.::Region>&>")
