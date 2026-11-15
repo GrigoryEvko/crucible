@@ -2545,6 +2545,37 @@ foundation_neg_compile_test(neg_core_address_ordered
 foundation_neg_compile_test(neg_core_address_of_pointer
   "no matching function for call to .address_of\\(int\\*\\)."
   "mismatched types .foundation::core::Ref<[A-Za-z]+, [A-Za-z]+>. and .int\\*.")
+# The address of a run of data, alone and with its device.  The gate of a
+# device and the gate of a run of bytes are disjunctions, so their fixtures
+# take a concept depth of 3, and each regex names the part that fails.
+foundation_test(test_core_data_address)
+foundation_neg_compile_test(neg_core_data_address_integer_device
+  "template constraint failure for .template<class Device>  requires  DeviceIdentity<Device> class foundation::core::DataAddress."
+  "the expression .is_enum_v<Device> \\[with Device = int\\]. evaluated to .false.")
+set_property(TEST neg_core_data_address_integer_device APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
+foundation_neg_compile_test(neg_core_data_address_wide_device
+  "template constraint failure for .template<class Device>  requires  DeviceIdentity<Device> class foundation::core::DataAddress."
+  "the expression .sizeof \\(Device\\) < sizeof \\(void\\*\\) \\[with Device = WideDevice\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_run_address_const_bytes
+  "no matching function for call to .mint_run_address\\(const foundation::core::View<const unsigned char>&, int\\)."
+  "the expression .is_same_v<_Tp, _Up> \\[with _Tp = const unsigned char; _Up = unsigned char\\]. evaluated to .false.")
+set_property(TEST neg_core_run_address_const_bytes APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
+foundation_neg_compile_test(neg_core_run_address_int_bytes
+  "no matching function for call to .mint_run_address\\(foundation::core::View<int, 8>, int\\)."
+  "the expression .is_same_v<_Tp, _Up> \\[with _Tp = int; _Up = unsigned char\\]. evaluated to .false.")
+set_property(TEST neg_core_run_address_int_bytes APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
+foundation_neg_compile_test(neg_core_run_address_const_pointer
+  "no matching function for call to .mint_foreign_run_address\\(const unsigned char\\*\\)."
+  "the expression .!\\(is_const_v<typename std::remove_pointer<_Tp>::type>\\) \\[with Pointer = const unsigned char\\*\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_run_address_from_integer
+  "no matching function for call to .mint_foreign_run_address\\(long unsigned int\\)."
+  "the expression .is_pointer_v<Pointer> \\[with Pointer = long unsigned int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_run_address_ordered
+  "no match for .operator<."
+  "operand types are .const foundation::core::RunAddress. and .const foundation::core::RunAddress.")
 foundation_neg_compile_test(neg_core_ref_compared
   "no match for .operator==."
   "operand types are .const foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >. and .const foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >.")

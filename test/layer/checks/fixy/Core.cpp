@@ -37,6 +37,12 @@ static_assert(std::is_same_v<::fixy::Ref<int, CoreCheckBrand>, ::foundation::cor
 static_assert(std::is_same_v<::fixy::Address, ::foundation::core::Address>);
 static_assert(std::is_same_v<decltype(::fixy::address_of(::fixy::to(core_number))), ::fixy::Address>);
 static_assert(std::is_same_v<decltype(::fixy::same_object(::fixy::to(core_number), ::fixy::to(core_number))), bool>);
+static_assert(std::is_same_v<::fixy::DataAddress<std::byte>, ::foundation::core::DataAddress<std::byte>>);
+static_assert(std::is_same_v<::fixy::RunAddress, ::foundation::core::RunAddress>);
+static_assert(::fixy::DeviceIdentity<std::byte>);
+static_assert(std::is_same_v<decltype(::fixy::mint_foreign_run_address(static_cast<void*>(nullptr))),
+                             ::fixy::Option<::fixy::RunAddress>>);
+static_assert(::fixy::mint_run_address(::fixy::View<unsigned char>{}, 0).is_none());
 static_assert(std::is_same_v<::fixy::Atomic<int>, ::foundation::core::Atomic<int>>);
 static_assert(std::is_same_v<::fixy::CacheLine<int>, ::foundation::core::CacheLine<int>>);
 static_assert(std::is_same_v<::fixy::CasRefusal<int>, ::foundation::core::CasRefusal<int>>);

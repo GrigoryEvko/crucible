@@ -25,6 +25,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Compare.h>
 #include <foundation/core/Convert.h>
+#include <foundation/core/DataAddress.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Format.h>
 #include <foundation/core/Grow.h>
@@ -107,6 +108,14 @@ using ::foundation::core::PrefetchAccess;
 using ::foundation::core::Ref;
 using ::foundation::core::same_object;
 using ::foundation::core::to;
+
+// The door foreign_pointer of a RunAddress stays in foundation::core, as
+// foreign_c_str does.
+using ::foundation::core::DataAddress;
+using ::foundation::core::DeviceIdentity;
+using ::foundation::core::mint_foreign_run_address;
+using ::foundation::core::mint_run_address;
+using ::foundation::core::RunAddress;
 
 using ::foundation::core::Atomic;
 using ::foundation::core::AtomicBits;

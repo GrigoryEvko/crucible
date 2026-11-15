@@ -177,6 +177,11 @@
       "constructor": "\\bCText\\("
     },
     {
+      "name": "neg_witness_core_dataaddress_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bDataAddress\\("
+    },
+    {
       "name": "neg_witness_core_detail_addresskey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bAddressKey\\("
@@ -240,6 +245,11 @@
       "name": "neg_witness_core_detail_reversecursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bReverseCursor\\("
+    },
+    {
+      "name": "neg_witness_core_detail_runaddresskey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bRunAddressKey\\("
     },
     {
       "name": "neg_witness_core_detail_sumkey_direct_construction",
@@ -320,6 +330,11 @@
       "name": "neg_witness_core_ref_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bRef\\("
+    },
+    {
+      "name": "neg_witness_core_runaddress_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bRunAddress\\("
     },
     {
       "name": "neg_witness_core_sole_writer_key_direct_construction",
@@ -1155,6 +1170,18 @@
     {
       "type": "foundation::core::detail::AddressKey",
       "header": "foundation/core/Ref.h"
+    },
+    {
+      "type": "foundation::core::RunAddress",
+      "header": "foundation/core/DataAddress.h"
+    },
+    {
+      "type": "foundation::core::detail::RunAddressKey",
+      "header": "foundation/core/DataAddress.h"
+    },
+    {
+      "type": "foundation::core::DataAddress<std::byte>",
+      "header": "foundation/core/DataAddress.h"
     },
     {
       "type": "foundation::AlignedBytes",

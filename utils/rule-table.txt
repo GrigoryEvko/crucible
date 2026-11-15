@@ -686,6 +686,13 @@ witness <foundation/core/Ref.h> private | foundation::core::detail::RefKey | fou
 # comes through address_of.
 witness <foundation/core/Ref.h> no-match | foundation::core::Address | foundation::core::Address{forge::rvalue<unsigned long>()}
 witness <foundation/core/Ref.h> private | foundation::core::detail::AddressKey | foundation::core::detail::AddressKey{}
+# A RunAddress has no constructor from a pointer, so no RunAddress holds the
+# null pointer.  Its constructor takes the key that only RunAddressDoor
+# builds, so each RunAddress comes through a mint.  A DataAddress comes from
+# a RunAddress and a device, so it holds no null pointer either.
+witness <foundation/core/DataAddress.h> no-match | foundation::core::RunAddress | foundation::core::RunAddress{forge::rvalue<void*>()}
+witness <foundation/core/DataAddress.h> private | foundation::core::detail::RunAddressKey | foundation::core::detail::RunAddressKey{}
+witness <foundation/core/DataAddress.h> no-match | foundation::core::DataAddress<std::byte> | foundation::core::DataAddress<std::byte>{forge::rvalue<void*>(), forge::rvalue<std::byte>()}
 # An AlignedBytes has no constructor from a count and an alignment, so the
 # destructor gives back only a block that an AlignedBytes allocated.  Its
 # constructor takes the key that only AlignedBytesDoor builds, so each block
