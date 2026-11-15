@@ -126,13 +126,15 @@ using crucible::vessel::phase_flag_bits;
 // contract flag of foundation has the initial-exec model), and dlopen finds
 // only a small surplus there with the default glibc tunables.
 //
-// A slot is empty, claimed by the one thread that writes it, or ready.  The
-// writer writes the key, the hash and the flags, then stores the state ready
-// with release order.  A reader loads the state with acquire order, so it
-// reads the facts only after they are complete.  A ready slot never changes
-// again.  A hit at the home slot of an operator is one acquire load and one
-// comparison.  A lookup reads at most SCHEMA_CACHE_PROBES slots, and an
-// operator with no slot in that window gets its facts computed again.
+// A slot is empty, claimed by the one thread that writes it, ready, or
+// retired.  The writer writes the key, the hash and the flags, then stores
+// the state ready with release order.  A reader loads the state with acquire
+// order, so it reads the facts only after they are complete.  The key, the
+// hash and the flags of a ready slot never change again, and a retired slot
+// never changes again.  A hit at the home slot of an operator is one acquire
+// load and one comparison.  A lookup reads at most SCHEMA_CACHE_PROBES slots,
+// and an operator with no ready slot in that window gets its facts computed
+// again.
 //
 // is_foreach is a substring search over the operator name, which the unboxed
 // path answers at compile time.  The table keeps the hot boxed path at one
@@ -141,11 +143,14 @@ using crucible::vessel::phase_flag_bits;
 // The key of an operator is the address of its c10::OperatorName, which
 // OperatorHandle::operator_name() gives as a reference into the
 // OperatorEntry of the dispatcher.  The dispatcher keeps one OperatorEntry
-// for each operator while the operator has a registration.  The operators
-// of ATen and of each loaded library keep their entries for the life of the
-// process, so the address names one operator.  An operator that loses each
-// registration can free its entry, and a later operator at that address
-// would then read the old facts.
+// for each operator while the operator has a registration.  The address
+// names one schema only while that schema is registered.  When the last
+// definition of an operator goes, the dispatcher can free its entry, and a
+// later operator can get an entry at that address.  An implementation can
+// also keep the entry, and a later definition then gives the same entry a
+// different schema.  So the dispatcher calls SchemaCacheListener before it
+// removes a schema, and the listener retires each slot of that key.  A
+// lookup then reads no fact of the old schema.
 //
 // The address of the OperatorHandle itself is not a key.  A call through
 // torch.ops gives the fallback a copy of the handle on the stack of the
@@ -164,10 +169,13 @@ using ExternalOpKey = ::fixy::Tagged<const void*, ::fixy::tags::source::External
     return ::fixy::mint_tagged<::fixy::tags::source::External>(op);
 }
 
-// The states of a slot, and the bits of its flags.
+// The states of a slot, and the bits of its flags.  A retired slot held the
+// facts of a schema that the dispatcher removed.  A lookup passes it as it
+// passes a ready slot of a different key, and no writer claims it again.
 static constexpr uint64_t SLOT_EMPTY = 0;
 static constexpr uint64_t SLOT_CLAIMED = 1;
 static constexpr uint64_t SLOT_READY = 2;
+static constexpr uint64_t SLOT_RETIRED = 3;
 static constexpr uint64_t FLAG_MUTABLE = 1;
 static constexpr uint64_t FLAG_FOREACH = 2;
 
@@ -195,6 +203,13 @@ static constinit ::fixy::FixedArray<SchemaHashSlot, SCHEMA_CACHE_CAP> schema_cac
                                .expect("a masked probe is below SCHEMA_CACHE_CAP"));
 }
 
+// The first slot of the probe window of a key.  bit_cast gives the address
+// as an integer for the index arithmetic.  Each reader compares the key
+// itself, so the integer never turns back into a pointer.
+[[nodiscard]] static uint64_t home_probe(ExternalOpKey key) noexcept {
+    return (std::bit_cast<std::uintptr_t>(key.value()) >> 4) & SCHEMA_CACHE_MASK;
+}
+
 struct SchemaInfo {
     crucible::SchemaHash hash;
     bool is_mutable = false;
@@ -207,17 +222,16 @@ struct SchemaInfo {
 // gave the fallback 156 instructions more than this call.
 [[nodiscard, gnu::noinline]] static SchemaInfo get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op,
                                                                const c10::FunctionSchema& schema) {
-    // The address of the operator name is the cache key.  bit_cast gives it
-    // as an integer for the index arithmetic.  The lookup compares the key
-    // itself, so the integer never turns back into a pointer.
+    // The address of the operator name is the cache key.
     const ExternalOpKey key = mint_external_op_key(&op.operator_name());
-    const auto idx = (std::bit_cast<std::uintptr_t>(key.value()) >> 4) & SCHEMA_CACHE_MASK;
+    const uint64_t idx = home_probe(key);
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
         SchemaHashSlot& slot = get_schema_slot(idx + probe);
         const uint64_t state = slot.state.load_acquire();
         // The compare reads the whole key of the slot, not only its index.
         // Two operators whose keys give one index take two slots of the
-        // window, and neither one reads the facts of the other.
+        // window, and neither one reads the facts of the other.  A retired
+        // slot of this key is not ready, so the lookup passes it.
         if (state == SLOT_READY && slot.key.value() == key.value()) [[likely]]
             return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0};
         if (state == SLOT_EMPTY) break;
@@ -289,6 +303,47 @@ struct SchemaInfo {
     }
     return {schema_hash, mutable_op, foreach_op};
 }
+
+// Retires each ready slot of the key, so no lookup reads its facts again.
+// O(SCHEMA_CACHE_PROBES).
+//
+// A writer claims the first empty slot of the window, and no slot turns
+// empty again.  So each slot of the key comes before the first empty slot of
+// its window, and the walk stops there.  The walk reads the key of a slot
+// only when the slot is ready, so it reads no key that a writer writes.  A
+// writer that fills a slot of this key at the same time runs the operator
+// while the dispatcher removes its schema, which PyTorch does not permit.
+static void retire_schema_slots(ExternalOpKey key) noexcept {
+    const uint64_t idx = home_probe(key);
+    for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
+        SchemaHashSlot& slot = get_schema_slot(idx + probe);
+        const uint64_t state = slot.state.load_acquire();
+        if (state == SLOT_EMPTY) break;
+        if (state == SLOT_READY && slot.key.value() == key.value()) slot.state.store_release(SLOT_RETIRED);
+    }
+}
+
+// The dispatcher calls onOperatorDeregistered when the last definition of an
+// operator goes, before it removes the schema and before it can free the
+// entry.  The listener retires the slots of the operator, so a later schema
+// at the address of the same operator name gets its facts computed again.
+// The dispatcher holds its lock during each call, so the calls of the
+// listener run one at a time.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the dispatcher of PyTorch calls a listener through its virtual functions")
+class SchemaCacheListener final : public c10::OpRegistrationListener {
+public:
+    void onOperatorRegistered(const c10::OperatorHandle&) override {}
+    void onOperatorDeregistered(const c10::OperatorHandle& op) override {
+        retire_schema_slots(mint_external_op_key(&op.operator_name()));
+    }
+};
+
+// The handle keeps the listener in the dispatcher until this library unloads.
+// The dispatcher exists before the first static object of this library, so
+// it outlives the handle.
+const c10::RegistrationHandleRAII schema_cache_listener =
+    c10::Dispatcher::singleton().addRegistrationListener(std::make_unique<SchemaCacheListener>());
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // Scalar extraction
