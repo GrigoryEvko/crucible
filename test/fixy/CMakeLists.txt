@@ -2728,15 +2728,15 @@ fixy_neg_compile_test(neg_sess_mint_unselected_arm_sends_unheld_permission
 fixy_neg_compile_test(neg_sess_loop_iteration_sends_permission
   "no matching function for call to .mint_permissioned_session<loop_iteration_fixture::Forever>"
   "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Loop<fixy::session::Send<"
-  "flow_closes_cached\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Loop<.*evaluated to .false.")
+  "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Loop<.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_unselected_arm_leaves_loan_open
   "no matching function for call to .mint_permissioned_session<unselected_arm_fixture::Proto>"
   "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Select<fixy::session::End, fixy::session::Send<fixy::session::Borrowed<int, unselected_arm_fixture::Region>"
-  "flow_closes_cached\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Select<.*evaluated to .false.")
+  "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Select<.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_permissioned_session_flow_open
   "no matching function for call to .mint_permissioned_session<flow_open_fixture::SendsTwice>"
   "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Send<foundation::permissions::Permission<flow_open_fixture::Region"
-  "flow_closes_cached\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Send<.*evaluated to .false.")
+  "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Send<.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_permissioned_session_row_refused
   "no matching function for call to .mint_permissioned_session<row_refused_fixture::SendsRegion>"
   "CtxAdmitsPermission<Tags, Ctx> && \\.\\.\\.\\) .with Tags = \\{row_refused_fixture::DiskRegion\\}"
@@ -2759,7 +2759,7 @@ fixy_neg_compile_test(neg_sess_mint_session_not_a_context
 fixy_neg_compile_test(neg_sess_mint_session_flow_open
   "no matching function for call to .mint_session<flow_open_fixture::SendsRegion>"
   "satisfaction of .PermissionFlowCloses<Proto, foundation::permissions::PermSet<Tags ...> >. .with Proto = fixy::session::Send<fixy::session::Transferable<int, flow_open_fixture::Region>, fixy::session::End>. Tags = \\{\\}"
-  "flow_closes_cached\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Send<.*PS = foundation::permissions::PermSet<>.*evaluated to .false.")
+  "permission_flow_closes\\(.*\\)\\(\\^\\^ Proto, \\^\\^ PS, \\^\\^ void\\) .with Proto = fixy::session::Send<.*PS = foundation::permissions::PermSet<>.*evaluated to .false.")
 fixy_neg_compile_test(neg_sess_mint_session_pointer_resource
   "no matching function for call to .mint_session<pointer_resource_fixture::Proto>"
   "satisfaction of .SessionResource<Resource>. .with Resource = pointer_resource_fixture::Channel\\*."

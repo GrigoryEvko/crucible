@@ -288,7 +288,7 @@ static_assert(s::PermissionFlowCloses<s::VendorPinned<::fixy::session::VendorBac
 // Each level of doubled_arms is a Select whose two arms are one protocol.
 // The protocol of 16 levels has 17 distinct nodes, and its expanded tree
 // has 2^16 leaves.  A walk of the expanded tree passes the operation limit
-// of a constant evaluation.  The walk reads its cache at each child, so it
+// of a constant evaluation.  The walk keeps the answer of each node, so it
 // visits each distinct node one time.
 template <int Depth>
 struct doubled_arms {
@@ -301,6 +301,19 @@ struct doubled_arms<0> {
 static_assert(s::PermissionFlowCloses<doubled_arms<16>::type, HoldsRegion>,
               "the walk visits each shared continuation one time");
 static_assert(!s::PermissionFlowCloses<doubled_arms<16>::type, NoPerms>, "each leaf sends a region that no set holds");
+
+// A chain of 300 messages with no shared node.  The walk steps into each
+// message one call deep, in one evaluation, so a deep protocol stays under
+// the depth limit of a constant evaluation and nests no instantiation.
+template <int Length>
+struct message_chain {
+    using type = s::Send<Ping, typename message_chain<Length - 1>::type>;
+};
+template <>
+struct message_chain<0> {
+    using type = s::End;
+};
+static_assert(s::PermissionFlowCloses<message_chain<300>::type, NoPerms>, "a deep protocol walks in one evaluation");
 
 // The same rules hold for each payload that moves the token: a bare
 // Permission, a Transferable and a Returned.  A send needs the region.  A
