@@ -235,6 +235,10 @@ PROBE_FILES: dict[str, str] = {
     "test/foundation/test_core_hole.cpp": (
         "a second spend of a Hole and the mint of a Hole from a moved-from Box abort"
     ),
+    "test/foundation/test_core_choice_oracle.cpp": (
+        "value_or and ok_or of an Option leave it empty, and the move of a plain sum and of its std type keeps the "
+        "value in the source, which the differential test compares"
+    ),
     "test/foundation/test_core_one_of.cpp": (
         "the move of an owning OneOf leaves the moved-from alternative in the source, which the source still holds"
     ),

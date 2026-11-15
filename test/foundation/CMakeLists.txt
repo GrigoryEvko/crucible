@@ -2075,6 +2075,9 @@ foundation_neg_compile_test(neg_core_fixed_text_zero_capacity
 foundation_test(test_core_choice)
 foundation_test(test_core_try)
 foundation_test(test_core_one_of)
+# The differential test of the sums against std::optional, std::expected and
+# std::variant, with a fixed Philox seed.
+foundation_test(test_core_choice_oracle)
 
 foundation_neg_compile_test(neg_core_option_reference_payload
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."

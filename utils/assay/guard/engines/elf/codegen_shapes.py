@@ -657,6 +657,18 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
+        "option_take",
+        "a take of an Option of a word through a reference is the check of the tag, one test of the tag, the load of "
+        "the payload and the clear of the Option.  The clear writes the empty Option of 16 bytes with one store of a "
+        "zero vector, so each empty Option of at most 16 bytes has the same bytes, as a compare of the bytes in an "
+        "Atomic cell needs.  The raw form writes the one byte of its flag, so the family side has one more plain "
+        "instruction, the clear of the vector register.  The family form falls through to the take and the raw form "
+        f"falls through to the empty case, so the targets of the branches are different.  {TAG_CHECK}.  "
+        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch to a trap",
+        checks=("fatal",),
+        branches=True,
+    ),
+    Probe(
         "option_is_some",
         "is_some of an Option of a word in memory is the check of the tag word after the payload and a test of the "
         "tag.  The flag of std::optional is a bool, so has_value loads its byte with no compare.  At -O3 the low bit "
@@ -894,7 +906,10 @@ PROBES: tuple[Probe, ...] = (
         "scalar_decode_bool",
         "decode of a bool is the one compare of the byte with 1 of the raw form, and the Option comes back in one "
         "register.  At -O3 the empty Option builds its byte and its tag in two cleared registers and merges them, "
-        "where std::optional clears one register, so the family side has three more plain instructions",
+        "where std::optional clears one register, so the family side has three more plain instructions.  The full "
+        "Option takes the same merge with no extra instruction.  GCC does not fold the merge of two constant bytes "
+        "into one cleared register, and the zero byte of the empty alternative gives each empty Option the same "
+        "bytes, so the cost stays",
         longer=3,
     ),
     Probe(

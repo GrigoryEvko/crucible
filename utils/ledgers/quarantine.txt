@@ -453,6 +453,7 @@ test/foundation/ | opted-out | 21 | ORACLE: std::to_chars and std::from_chars gi
 test/foundation/ | opted-out | 18 | ORACLE: the differential test of Record and Pack against std::tuple and std::pair | -
 test/foundation/ | opted-out | 88 | ORACLE: the differential test of the Scalar family against the std forms | the std forms that the differential test of the Scalar family compares with
 test/foundation/ | opted-out | 8 | ORACLE: the std algorithms are the model of the scans | -
+test/foundation/ | opted-out | 79 | ORACLE: the std types that the Choice family replaces give the state of each step | the differential test of the sums runs each step on std::optional, std::expected and std::variant as its oracle, in one ORACLE region
 test/foundation/ | opted-out | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
@@ -473,6 +474,7 @@ test/foundation/ | region | 1 | ORACLE: std::to_chars and std::from_chars give t
 test/foundation/ | region | 1 | ORACLE: the differential test of Record and Pack against std::tuple and std::pair | -
 test/foundation/ | region | 1 | ORACLE: the differential test of the Scalar family against the std forms | the std forms that the differential test of the Scalar family compares with
 test/foundation/ | region | 1 | ORACLE: the std algorithms are the model of the scans | -
+test/foundation/ | region | 1 | ORACLE: the std types that the Choice family replaces give the state of each step | the differential test of the sums runs each step on std::optional, std::expected and std::variant as its oracle, in one ORACLE region
 test/foundation/ | region | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
@@ -625,7 +627,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 9 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
-test/shape/ | opted-out | 204 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 207 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -
 test/tensor_neg/ | raw-pointer-object | 1 | - | -

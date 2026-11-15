@@ -494,6 +494,12 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
     return std::move(option).value_or(7u);
 }
 
+// A take of an Option of a word through a reference moves the payload out,
+// and the Option is empty after it.
+[[gnu::used]] std::uint64_t option_take(fixy::Option<std::uint64_t>& held) noexcept {
+    return std::move(held).value_or(0u);
+}
+
 // is_some of an Option of a word that the caller keeps in memory reads the
 // tag word after the payload.
 [[gnu::used]] bool option_is_some(fixy::Option<std::uint64_t> const& option) noexcept { return option.is_some(); }
@@ -1171,6 +1177,12 @@ struct RawColumn final {
 
 [[gnu::used]] std::uint32_t option_value_or_raw(std::optional<std::uint32_t> option) noexcept {
     return option.value_or(7u);
+}
+
+[[gnu::used]] std::uint64_t option_take_raw(std::optional<std::uint64_t>& held) noexcept {
+    std::uint64_t const value = held.value_or(0u);
+    held.reset();
+    return value;
 }
 
 [[gnu::used]] bool option_is_some_raw(std::optional<std::uint64_t> const& option) noexcept {
