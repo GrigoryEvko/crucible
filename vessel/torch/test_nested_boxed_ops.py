@@ -20,6 +20,10 @@ as a .crtrace file, and reads the file back:
                     closes the frame of the fallback.  Then a C caller can
                     still decode the most records of one operation into the
                     stack, and the region holds that operation
+    deep nest       crucible_deep::level_0 runs a chain of DEPTH nested
+                    operations.  The frames of the first four fill the stack,
+                    so the fifth and the sixth record through the list of the
+                    cold path.  Each level holds the records of its own tensors
 
 Usage:
     python test_nested_boxed_ops.py
@@ -76,6 +80,13 @@ OUTER_RESULT = (11,)
 INNER_SOURCE = (2, 2, 2)
 FULL_RECORD = (4,)
 
+# The levels of the deep nest, each with its own input shape and output
+# shape.  Each frame of the fallback holds 32 of the 128 slots of the stack,
+# so DEPTH levels past four take the cold path.
+DEPTH = 6
+LEVEL_INPUTS = [(level + 2, 3) for level in range(DEPTH)]
+LEVEL_OUTPUTS = [(level + 20,) for level in range(DEPTH)]
+
 
 @torch.library.custom_op("crucible_nest::inner", mutates_args=())
 def inner(source: torch.Tensor) -> torch.Tensor:
@@ -100,6 +111,22 @@ def scale(source: torch.Tensor) -> torch.Tensor:
 def fail(source: torch.Tensor) -> torch.Tensor:
     """Raise on each call."""
     raise RuntimeError("crucible_nest::fail raises on each call")
+
+
+def define_level(level: int) -> None:
+    """Define crucible_deep::level_N, which runs level_N+1 and returns a tensor of LEVEL_OUTPUTS[N]."""
+
+    def run_level(source: torch.Tensor) -> torch.Tensor:
+        if level + 1 < DEPTH:
+            getattr(torch.ops.crucible_deep, f"level_{level + 1}")(torch.ones(LEVEL_INPUTS[level + 1]))
+        return torch.zeros(LEVEL_OUTPUTS[level]) + source.sum()
+
+    run_level.__name__ = f"level_{level}"
+    torch.library.custom_op(f"crucible_deep::level_{level}", mutates_args=())(run_level)
+
+
+for deep_level in range(DEPTH):
+    define_level(deep_level)
 
 
 def full_record_metas() -> ctypes.Array:
@@ -136,6 +163,7 @@ def record(directory: Path) -> list[TraceOp]:
     first = torch.ones(OUTER_FIRST)
     second = torch.ones(OUTER_SECOND)
     source = torch.ones(SCALE_SOURCE)
+    level_source = torch.ones(LEVEL_INPUTS[0])
     metas = full_record_metas()
     full_hash = schema_hash("crucible_nest::full_records")
     with CrucibleNative() as ctx:
@@ -149,6 +177,7 @@ def record(directory: Path) -> list[TraceOp]:
             dispatch_op(ctx._handle, full_hash, full_hash, MAX_OP_INPUTS, MAX_OP_OUTPUTS, metas, len(metas))
             torch.ops.crucible_nest.scale(source)
             torch.ops.crucible_nest.outer(first, second)
+            torch.ops.crucible_deep.level_0(level_source)
             if ctx.active_num_ops() > 0:
                 break
             ctx.flush()
@@ -194,6 +223,9 @@ def main() -> int:
     problems += check_records(ops, "crucible_nest::inner", [INNER_SOURCE], [INNER_SOURCE])
     problems += check_records(ops, "crucible_nest::full_records", [FULL_RECORD] * MAX_OP_INPUTS,
                               [FULL_RECORD] * MAX_OP_OUTPUTS)
+    for level in range(DEPTH):
+        problems += check_records(ops, f"crucible_deep::level_{level}", [LEVEL_INPUTS[level]],
+                                  [LEVEL_OUTPUTS[level]])
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:
