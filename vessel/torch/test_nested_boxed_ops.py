@@ -19,7 +19,8 @@ as a .crtrace file, and reads the file back:
     unwind          crucible_nest::fail raises in its kernel.  The unwind
                     closes the frame of the fallback.  Then a C caller can
                     still decode the most records of one operation into the
-                    stack, and the region holds that operation
+                    stack: no call gives the action REFUSED, and the region
+                    holds that operation
     deep nest       crucible_deep::level_0 runs a chain of DEPTH nested
                     operations.  The frames of the first four fill the stack,
                     so the fifth and the sixth record through the list of the
@@ -45,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import crucible_mode  # noqa: E402
 import torch  # noqa: E402
-from crucible_native import CrucibleNative  # noqa: E402
+from crucible_native import CrucibleNative, DispatchAction  # noqa: E402
 
 # The import sets one intra-op thread and one inter-op thread, so the
 # instruction count of the test is the same in each run.  PyTorch refuses a
@@ -157,8 +158,12 @@ def bind_dispatch_op(ctx: CrucibleNative):
     return function
 
 
-def record(directory: Path) -> list[TraceOp]:
-    """Record the loop under CrucibleNative until a region is active, and return its operations."""
+def record(directory: Path) -> tuple[list[TraceOp], list[int]]:
+    """Record the loop under CrucibleNative until a region is active.
+
+    Return the operations of the region, and the action of each call of
+    crucible_dispatch_op with the most records.
+    """
     path = directory / "nested.crtrace"
     first = torch.ones(OUTER_FIRST)
     second = torch.ones(OUTER_SECOND)
@@ -166,6 +171,7 @@ def record(directory: Path) -> list[TraceOp]:
     level_source = torch.ones(LEVEL_INPUTS[0])
     metas = full_record_metas()
     full_hash = schema_hash("crucible_nest::full_records")
+    actions = []
     with CrucibleNative() as ctx:
         dispatch_op = bind_dispatch_op(ctx)
         for _ in range(MAX_ITERATIONS):
@@ -174,7 +180,8 @@ def record(directory: Path) -> list[TraceOp]:
                     torch.ops.crucible_nest.fail(source)
                 except RuntimeError:
                     pass
-            dispatch_op(ctx._handle, full_hash, full_hash, MAX_OP_INPUTS, MAX_OP_OUTPUTS, metas, len(metas))
+            result = dispatch_op(ctx._handle, full_hash, full_hash, MAX_OP_INPUTS, MAX_OP_OUTPUTS, metas, len(metas))
+            actions.append(result.action)
             torch.ops.crucible_nest.scale(source)
             torch.ops.crucible_nest.outer(first, second)
             torch.ops.crucible_deep.level_0(level_source)
@@ -183,7 +190,7 @@ def record(directory: Path) -> list[TraceOp]:
             ctx.flush()
         if not ctx.export_trace(str(path)):
             raise RuntimeError(f"no region after {MAX_ITERATIONS} iterations")
-    return read_trace(path)
+    return read_trace(path), actions
 
 
 def shape_of(meta: bytes) -> tuple[int, ...]:
@@ -217,8 +224,11 @@ def check_records(ops: list[TraceOp], name: str, inputs: list[tuple[int, ...]],
 def main() -> int:
     """Run each check and report."""
     with tempfile.TemporaryDirectory(prefix="crucible-nested-boxed-ops-") as scratch:
-        ops = record(Path(scratch))
-    problems = check_records(ops, "crucible_nest::scale", [SCALE_SOURCE], [SCALE_SOURCE])
+        ops, actions = record(Path(scratch))
+    refusals = actions.count(DispatchAction.REFUSED)
+    problems = [f"crucible_dispatch_op refused the most records of one op in {refusals} of {len(actions)} calls"
+                ] if refusals else []
+    problems += check_records(ops, "crucible_nest::scale", [SCALE_SOURCE], [SCALE_SOURCE])
     problems += check_records(ops, "crucible_nest::outer", [OUTER_FIRST, OUTER_SECOND], [OUTER_RESULT])
     problems += check_records(ops, "crucible_nest::inner", [INNER_SOURCE], [INNER_SOURCE])
     problems += check_records(ops, "crucible_nest::full_records", [FULL_RECORD] * MAX_OP_INPUTS,

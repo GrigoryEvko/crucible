@@ -42,13 +42,32 @@ static_assert(sizeof(CrucibleDispatchResult) == 8);
 static_assert(alignof(crucible::Vigil) == crucible::vessel::detail::kVigilHandleAlignment,
               "vessel_api_typed.h: kVigilHandleAlignment must equal alignof(crucible::Vigil)");
 
-// The C form of the answer of a dispatch.
+// The C enumerators name the same statuses as crucible::ReplayStatus, so the
+// encode below copies the status ordinal.
+static_assert(CRUCIBLE_STATUS_MATCH == static_cast<int>(crucible::ReplayStatus::MATCH));
+static_assert(CRUCIBLE_STATUS_DIVERGED == static_cast<int>(crucible::ReplayStatus::DIVERGED));
+static_assert(CRUCIBLE_STATUS_COMPLETE == static_cast<int>(crucible::ReplayStatus::COMPLETE));
+
+// The C form of the answer of a dispatch.  The Vigil saw the op, so the
+// action is RECORD or COMPILED, never REFUSED.
 [[nodiscard]] static CrucibleDispatchResult encode_dispatch_result(const crucible::DispatchResult& result) noexcept {
     CrucibleDispatchResult encoded{};
-    encoded.action = static_cast<uint8_t>(result.action);
-    encoded.status = static_cast<uint8_t>(result.status);
-    encoded.op_index = result.op_index.raw();
+    if (result.is_compiled()) {
+        encoded.action = CRUCIBLE_ACTION_COMPILED;
+        encoded.status = static_cast<uint8_t>(result.compiled_status());
+        encoded.op_index = result.compiled_op_index().raw();
+    } else {
+        encoded.action = CRUCIBLE_ACTION_RECORD;
+    }
     return encoded;
+}
+
+// The C answer for an op that the thunk refused before the Vigil saw it.
+// Each byte is zero, as the action REFUSED is.
+[[nodiscard]] static constexpr CrucibleDispatchResult refused_dispatch_result() noexcept {
+    CrucibleDispatchResult refused{};
+    refused.action = CRUCIBLE_ACTION_REFUSED;
+    return refused;
 }
 
 // The C caller owns the Vigil of a handle from crucible_create to
@@ -153,9 +172,9 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     // refused here rather than one line further on. as_meta_typed states
     // the C ABI invariant that the pointer and the count travel together
     // and holds it with a debug assert, which ends the process. This is
-    // the FFI, so the answer to a caller that broke the invariant is an
-    // empty result in every build mode.
-    if (metas == nullptr && n_metas > 0) return CrucibleDispatchResult{};
+    // the FFI, so the answer to a caller that broke the invariant is the
+    // action REFUSED in every build mode.
+    if (metas == nullptr && n_metas > 0) return refused_dispatch_result();
 
     // metas crosses the FFI as `CrucibleMeta*` and takes the typed-meta
     // helper for the provenance tag.
@@ -163,9 +182,9 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
 
     // The trust ladder.  Every field above came from a caller this
     // process does not control, so the Entry starts at the first tag and
-    // reaches the second only by passing the checks.  An empty result
-    // (action=RECORD, status=DIVERGED by default-init of uint8_t) tells
-    // the Python side the operation was not recorded.
+    // reaches the second only by passing the checks.  An op that a check
+    // refuses gives the action REFUSED, so the caller knows that the Vigil
+    // holds no record of it.
     //
     // The thunk first takes the context of the Vigil's producer claim.  The
     // mint claims the calling thread, or ends the process when another
@@ -190,7 +209,7 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
             }
         }
     }
-    return CrucibleDispatchResult{};
+    return refused_dispatch_result();
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
@@ -226,21 +245,17 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
                 scalar_values[i];
     }
 
-    // A count with no array behind it is a corrupt caller, and it is
-    // refused here rather than one line further on. as_meta_typed states
-    // the C ABI invariant that the pointer and the count travel together
-    // and holds it with a debug assert, which ends the process. This is
-    // the FFI, so the answer to a caller that broke the invariant is an
-    // empty result in every build mode.
-    if (metas == nullptr && n_metas > 0) return CrucibleDispatchResult{};
+    // A count with no array behind it is a corrupt caller, as in
+    // crucible_dispatch_op, and it gives the action REFUSED.
+    if (metas == nullptr && n_metas > 0) return refused_dispatch_result();
 
     // metas crosses the FFI as `CrucibleMeta*` and takes the typed-meta
     // helper for the provenance tag.
     auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
 
-    // The trust ladder; see the sister site in crucible_dispatch_op.  The
-    // producer claim gates this entry and its decode as it gates
-    // crucible_dispatch_op.
+    // The trust ladder of crucible_dispatch_op.  The producer claim gates
+    // this entry and its decode as it gates crucible_dispatch_op, and an op
+    // that a check refuses gives the action REFUSED.
     const auto vigil = ::fixy::to(*vigil_typed.value());
     const crucible::VigilFgCtx fg = vigil->mint_producer_context();
     const crucible::OpRecordFrame frame{vigil->op_record_stack(fg), n_metas};
@@ -253,7 +268,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
             }
         }
     }
-    return CrucibleDispatchResult{};
+    return refused_dispatch_result();
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")

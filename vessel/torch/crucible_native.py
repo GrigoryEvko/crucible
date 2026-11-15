@@ -41,6 +41,7 @@ both recording paths read.
 
 import contextlib
 import ctypes
+import enum
 import logging
 import os
 from collections.abc import Callable, Iterable, Iterator
@@ -77,7 +78,26 @@ _MASK64     = (1 << 64) - 1
 # ".py was redeployed but libcrucible_vessel.so is stale" failure
 # before any dispatch runs.
 
-EXPECTED_ABI_VERSION = 2
+EXPECTED_ABI_VERSION = 3
+
+
+class DispatchAction(enum.IntEnum):
+    """The action of a CrucibleDispatchResult (CRUCIBLE_ACTION_* of vessel_api.h)."""
+
+    # The C entry refused the op, and the Vigil holds no record of it.
+    REFUSED = 0
+    # The Vigil recorded the op.
+    RECORD = 1
+    # The Vigil replays a region and checked the guard of the op.
+    COMPILED = 2
+
+
+class DispatchStatus(enum.IntEnum):
+    """The status of a CrucibleDispatchResult with the action COMPILED (CRUCIBLE_STATUS_*)."""
+
+    MATCH = 0
+    DIVERGED = 1
+    COMPLETE = 2
 
 
 class CrucibleAbiMismatchError(RuntimeError):

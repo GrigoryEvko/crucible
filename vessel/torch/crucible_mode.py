@@ -33,7 +33,7 @@ import struct
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
-from crucible_native import RELEASE_BUILD, checked_lib_path
+from crucible_native import RELEASE_BUILD, DispatchAction, DispatchStatus, checked_lib_path
 
 
 # ─── ctypes bindings ────────────────────────────────────────────────
@@ -476,17 +476,18 @@ class CrucibleMode(TorchDispatchMode):
 
         # Log mode transitions
         compiled_now = self.is_compiled()
+        action = DispatchAction(dr.action)
         if compiled_now and not self._prev_compiled:
-            action_str = "COMPILED" if dr.action == 1 else "RECORD"
             print(f"  [crucible] COMPILED mode activated at op #{self._op_count} "
-                  f"({op_name}), action={action_str}")
+                  f"({op_name}), action={action.name}")
         self._prev_compiled = compiled_now
 
         if self._verbose:
-            action_str = "COMPILED" if dr.action == 1 else "RECORD"
-            status_str = ["MATCH", "DIVERGED", "COMPLETE"][dr.status]
+            # The status is a field of the action COMPILED only.
+            label = (f"{action.name}:{DispatchStatus(dr.status).name}"
+                     if action == DispatchAction.COMPILED else action.name)
             extra = f" scalars={scalars[:num_scalars]}" if num_scalars > 0 else ""
-            print(f"  [{action_str}:{status_str}] {op_name} "
+            print(f"  [{label}] {op_name} "
                   f"in={num_inputs} out={num_outputs}{extra}")
 
         return result

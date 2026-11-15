@@ -106,10 +106,38 @@ typedef struct {
     uint64_t grad_fn_hash;  // FNV-1a hash of grad_fn class name
 } CrucibleMeta;
 
+// The action of a CrucibleDispatchResult: what the Vigil did with the op.
+// A result with all bytes zero is a refused op, so no result claims a record
+// that the Vigil did not take.
+enum {
+    // The thunk refused the op before the Vigil saw it: a count that the
+    // records do not hold, a record that the decode refuses, or more records
+    // than the free slots of the record stack.  The Vigil holds no record of
+    // the op.  The caller runs the op eagerly.  The status and the op index
+    // are zero.
+    CRUCIBLE_ACTION_REFUSED = 0,
+    // The Vigil recorded the op.  The caller runs the op eagerly.  The status
+    // and the op index are zero.
+    CRUCIBLE_ACTION_RECORD = 1,
+    // The Vigil replays a region and checked the guard of the op.  The status
+    // gives the result of the guard.
+    CRUCIBLE_ACTION_COMPILED = 2
+};
+
+// The status of a CrucibleDispatchResult with the action COMPILED.
+enum {
+    // The op matches the region, and its outputs are ready.
+    CRUCIBLE_STATUS_MATCH = 0,
+    // A guard failed.  The Vigil records again.
+    CRUCIBLE_STATUS_DIVERGED = 1,
+    // The op ends the region, which ends the iteration.
+    CRUCIBLE_STATUS_COMPLETE = 2
+};
+
 // Result from crucible_dispatch_op (8 bytes).
 typedef struct {
-    uint8_t action;  // 0=RECORD, 1=COMPILED
-    uint8_t status;  // 0=MATCH, 1=DIVERGED, 2=COMPLETE
+    uint8_t action;  // CRUCIBLE_ACTION_*
+    uint8_t status;  // CRUCIBLE_STATUS_*, zero for an action other than COMPILED
     uint8_t pad[2];
     uint32_t op_index;
 } CrucibleDispatchResult;
@@ -125,7 +153,7 @@ typedef struct {
 // Python ctypes consumers cross-check via crucible_abi_version() at
 // load.  The constant is also exposed as a #define so C consumers can
 // bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 2ULL
+#define CRUCIBLE_VESSEL_ABI_VERSION 3ULL
 
 // Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
 // Never aborts — pure constant return.  Used by crucible_native.py
@@ -159,6 +187,7 @@ CRUCIBLE_VESSEL_API uint64_t crucible_hash_shapes(const int64_t* all_sizes, cons
 // Unified dispatch: records in RECORDING mode, checks guards in COMPILED.
 // metas: array of CrucibleMeta, [inputs..., outputs...].
 // n_metas: num_inputs + num_outputs.
+// An op that the checks of the thunk refuse gives the action REFUSED.
 CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle h, uint64_t schema_hash,
                                                                 uint64_t shape_hash, uint16_t num_inputs,
                                                                 uint16_t num_outputs, const CrucibleMeta* metas,
