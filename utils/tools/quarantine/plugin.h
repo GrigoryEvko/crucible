@@ -154,13 +154,16 @@
 //     base-std-object       the same, for a std-object
 //     base-c-library-object the same, for a c-library-object
 //     base-c-library-call   the same, for a c-library-call
-//     forged-tag            a bit copy into a type that holds the tag of a sum:
-//                           a call of a function whose admit row has
-//                           plain-result, or a __builtin_bit_cast, whose
-//                           result holds a class with the annotation
-//                           foundation::core::closed_tag.  It is an error in
-//                           each file under the root and in each mode (THE
-//                           CLOSED TAGS of library.cpp)
+//     forged-tag            a copy of bytes into a type that holds the tag of a
+//                           sum, a class with the annotation
+//                           foundation::core::closed_tag: a call of a function
+//                           whose admit row has plain-result, a
+//                           __builtin_bit_cast, a memcpy, memmove, mempcpy or
+//                           memset onto such a type from a different type, and
+//                           a member of such a type of a union with a second
+//                           member of bytes.  It is an error in each file under
+//                           the root and in each mode (THE CLOSED TAGS of
+//                           library.cpp)
 //     opted-out           a finding of each kind of each rule, inside a region
 //                           that CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason")
 //                           opens.  Its entity is the kind and the entity of the

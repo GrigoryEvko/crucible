@@ -494,6 +494,10 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
     return std::move(option).value_or(7u);
 }
 
+// is_some of an Option of a word that the caller keeps in memory reads the
+// tag word after the payload.
+[[gnu::used]] bool option_is_some(fixy::Option<std::uint64_t> const& option) noexcept { return option.is_some(); }
+
 // A clear of an Option of a payload of 64 bytes writes only its tag.  Its sum
 // goes through memory, so its empty marker writes no zero word.
 [[gnu::used]] void option_clear_block(fixy::Option<Block64>& held) noexcept { held = {}; }
@@ -1167,6 +1171,10 @@ struct RawColumn final {
 
 [[gnu::used]] std::uint32_t option_value_or_raw(std::optional<std::uint32_t> option) noexcept {
     return option.value_or(7u);
+}
+
+[[gnu::used]] bool option_is_some_raw(std::optional<std::uint64_t> const& option) noexcept {
+    return option.has_value();
 }
 
 [[gnu::used]] void option_clear_block_raw(std::optional<Block64>& held) noexcept { held = std::nullopt; }

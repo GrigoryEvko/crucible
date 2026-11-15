@@ -64,6 +64,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/OpenExtension.h>
+#include <foundation/Platform.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/reflect/Instance.h>
 #include <foundation/reflect/TypeComponents.h>
@@ -560,15 +561,8 @@ public:
     return Err<decltype(error)>{static_cast<decltype(error)&&>(error)};
 }
 
-// The mark of a class whose bytes hold the tag of a sum: a word that names
-// one alternative of a closed set.  A bit copy can write a tag outside that
-// set, so no bit copy makes a value that holds a marked class.  The quarantine
-// plugin refuses std::bit_cast and __builtin_bit_cast into such a type
-// (utils/tools/quarantine/library.cpp, THE CLOSED TAGS), and the walk of the
-// Scalar family refuses it (Scalar.h).  Each class that holds the tag of a
-// sum slot carries the mark, so a sum on the slot of the family needs no mark
-// of its own.
-struct closed_tag final {};
+// The mark closed_tag of a class whose bytes hold the tag of a sum is in
+// foundation/ByteSeal.h, so the checked lifetime start reads it too.
 
 namespace detail {
 
@@ -631,6 +625,11 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
     friend class ::foundation::core::Option;
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return !NicheRead<T>::is_empty_(value_); }
+    constexpr void expect_value_(Fmt<> why) const noexcept {
+        if (!holds_()) [[unlikely]] {
+            fatal(why);
+        }
+    }
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
         return holds_() == other.holds_();
     }
@@ -758,9 +757,7 @@ public:
     // of the call to fatal(), and the process ends.  The Option is empty
     // after the call.  A passing expect() costs one branch.
     [[nodiscard]] constexpr T expect(Fmt<> why) && noexcept {
-        if (!slot_.holds_()) [[unlikely]] {
-            fatal(why);
-        }
+        slot_.expect_value_(why);
         T taken(static_cast<T&&>(slot_.payload_()));
         slot_.clear_();
         return taken;
@@ -944,7 +941,9 @@ struct MoveActive final {
 // trivially destructible.  Else it does nothing, and the slot destroys the
 // active alternative.  Complexity: the depth of the nest, and each walk of
 // an index, are linear in the number of alternatives.  The alternatives are
-// private, and only alternative_of_ reads one.
+// private, and only alternative_of_ reads one.  The tag of the slot names the
+// active member, so the union carries the mark closed_tag, and the quarantine
+// plugin reads a member of it as no copy of bytes.
 template <class... Ts>
 union Alternatives;
 
@@ -953,7 +952,7 @@ template <std::size_t Index, class Storage>
 [[nodiscard]] constexpr auto& alternative_of_(Storage& storage) noexcept;
 
 template <class Last>
-union Alternatives<Last> {
+union[[= ::foundation::core::closed_tag{}]] Alternatives<Last> {
 private:
     Last head_;
 
@@ -985,7 +984,7 @@ public:
 };
 
 template <class Head, class Next, class... Rest>
-union Alternatives<Head, Next, Rest...> {
+union[[= ::foundation::core::closed_tag{}]] Alternatives<Head, Next, Rest...> {
 private:
     Head head_;
     Alternatives<Next, Rest...> tail_;
@@ -1291,9 +1290,30 @@ public:
 template <class... Ts>
 using SumSlot = SumSlotOf<is_plain_sum_v<Ts...>, Ts...>;
 
+// The fatal exits of a tag that names no alternative of an Option or a
+// Result.  The calls take no argument, so each inlined read of a tag adds
+// only a compare and a branch to one call.  The names start with report_,
+// as each cold fatal exit of the family does, so the rule codegen-shapes
+// reads a call of one as a fatal path.
+[[noreturn]] CRUCIBLE_COLD inline void report_forged_option_tag_() noexcept {
+    fatal("Option: the tag names no alternative, so a copy of bytes made this Option");
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void report_forged_result_tag_() noexcept {
+    fatal("Result: the tag names no alternative, so a copy of bytes made this Result");
+}
+
 // A plain Option is the plain sum of the empty marker and the payload.  The
 // tag is 0 for no value and 1 for a value, as the tag of a Result is.  The
 // special members are implicit and trivial.
+//
+// Each constructor writes the tag 0 or 1.  But a copy of bytes over the sum,
+// such as a memcpy or a union member, can write a different word.  Such a tag
+// would read as a value, and two equal values could compare unequal.  So each
+// read of the state compares the tag with 1, and a larger tag ends the
+// process, as which() of a OneOf does.  The optimizer folds the second check
+// of one tag, and the check of a tag that a constructor of the same function
+// wrote.
 template <class T>
 class OptionSlot<T, OptionForm::plain> {
     SumSlot<NoPayload, T> sum_{AlternativeAt<0>{}, NoPayload{}};
@@ -1301,12 +1321,27 @@ class OptionSlot<T, OptionForm::plain> {
     template <ChoicePayload U>
     friend class ::foundation::core::Option;
 
-    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_(SumDoor::key()) != 0; }
-    // The tag is the state, so one compare of the two tags tests the two
-    // states, and no bool of a state is built for the compare.
-    [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
-        return sum_.index_(SumDoor::key()) == other.sum_.index_(SumDoor::key());
+    [[nodiscard]] constexpr std::size_t tag_() const noexcept {
+        std::size_t const tag = sum_.index_(SumDoor::key());
+        if (tag > 1) [[unlikely]] {
+            report_forged_option_tag_();
+        }
+        return tag;
     }
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return tag_() != 0; }
+    // The test of expect is one compare of the tag with 1.  The cold path
+    // tells a forged tag from an empty Option.
+    constexpr void expect_value_(Fmt<> why) const noexcept {
+        std::size_t const tag = sum_.index_(SumDoor::key());
+        if (tag != 1) [[unlikely]] {
+            static_cast<void>(tag_());
+            fatal(why);
+        }
+    }
+    // The tag is the state, so one compare of the two checked tags tests the
+    // two states, and no bool of a state is built for the compare.
+    [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept { return tag_() == other.tag_(); }
     [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     constexpr void clear_() noexcept { sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}}; }
@@ -1335,6 +1370,11 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
     friend class ::foundation::core::Option;
 
     [[nodiscard]] constexpr bool holds_() const noexcept { return is_engaged_; }
+    constexpr void expect_value_(Fmt<> why) const noexcept {
+        if (!is_engaged_) [[unlikely]] {
+            fatal(why);
+        }
+    }
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
         return is_engaged_ == other.is_engaged_;
     }
@@ -1396,7 +1436,9 @@ public:
 // value at index 1.  A tag that is not zero then tells that a value is
 // there, as the tag of a plain Option does, so a full Option and a Result
 // of a value have one tag, and a test of the tag reads the same in each.
-// The special members follow the sum.
+// The special members follow the sum.  Each read of the state compares the
+// tag with 1, and a larger tag, which only a copy of bytes writes, ends the
+// process, as in the plain Option.
 template <class T, class E>
 class ResultSlot {
     SumSlot<E, T> sum_;
@@ -1404,10 +1446,25 @@ class ResultSlot {
     template <ChoicePayload U, ErrorValue F>
     friend class ::foundation::core::Result;
 
-    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_(SumDoor::key()) != 0; }
-    [[nodiscard]] constexpr bool same_state_(ResultSlot const& other) const noexcept {
-        return sum_.index_(SumDoor::key()) == other.sum_.index_(SumDoor::key());
+    [[nodiscard]] constexpr std::size_t tag_() const noexcept {
+        std::size_t const tag = sum_.index_(SumDoor::key());
+        if (tag > 1) [[unlikely]] {
+            report_forged_result_tag_();
+        }
+        return tag;
     }
+
+    [[nodiscard]] constexpr bool holds_() const noexcept { return tag_() != 0; }
+    // The test of expect is one compare of the tag with 1.  The cold path
+    // tells a forged tag from an error.
+    constexpr void expect_value_(Fmt<> why) const noexcept {
+        std::size_t const tag = sum_.index_(SumDoor::key());
+        if (tag != 1) [[unlikely]] {
+            static_cast<void>(tag_());
+            fatal(why);
+        }
+    }
+    [[nodiscard]] constexpr bool same_state_(ResultSlot const& other) const noexcept { return tag_() == other.tag_(); }
     [[nodiscard]] constexpr T& value_() noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     [[nodiscard]] constexpr T const& value_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     [[nodiscard]] constexpr E& error_() noexcept { return sum_.template alternative_<0>(SumDoor::key()); }
@@ -1508,18 +1565,14 @@ public:
     [[nodiscard]] constexpr T expect(Fmt<> why) && noexcept
         requires(!std::same_as<T, Unit>)
     {
-        if (!slot_.holds_()) [[unlikely]] {
-            fatal(why);
-        }
+        slot_.expect_value_(why);
         return static_cast<T&&>(slot_.value_());
     }
 
     constexpr void expect(Fmt<> why) && noexcept
         requires std::same_as<T, Unit>
     {
-        if (!slot_.holds_()) [[unlikely]] {
-            fatal(why);
-        }
+        slot_.expect_value_(why);
     }
 
     // The total match: on_ok gets the value, or on_err gets the error, and

@@ -34,7 +34,11 @@
 // Such a class carries the annotation no_start_over_bytes of
 // foundation/ByteSeal.h, and the walk refuses it wherever it sits: alone, in
 // an array, as a base or as a member.  A class that only carries the
-// annotation or holds a byte_seal includes foundation/ByteSeal.h.
+// annotation or holds a byte_seal includes foundation/ByteSeal.h.  The walk
+// refuses a class with the mark closed_tag of foundation/ByteSeal.h in the
+// same way: its bytes hold the tag of a sum, and bytes can hold a tag that
+// names no alternative.  So no lifetime start over bytes makes an Option or
+// a Result of the plain form, or a type that holds one.
 //
 // start_as_array does not call std::start_lifetime_as_array, so this header
 // does not include <memory>.  It gives the same guarantee with a builtin and
@@ -78,6 +82,9 @@ inline constexpr int max_subobject_depth = 64;
         return false;
     }
     if (is_class_or_union && !std::meta::annotations_of_with_type(type, ^^no_start_over_bytes).empty()) return false;
+    if (is_class_or_union && !std::meta::annotations_of_with_type(type, ^^::foundation::core::closed_tag).empty()) {
+        return false;
+    }
     if (!std::meta::extract<bool>(std::meta::substitute(^^std::is_implicit_lifetime_v, {type}))) return false;
     if (!is_class_or_union) return true;
     for (const std::meta::info base : std::meta::bases_of(type, std::meta::access_context::unchecked())) {

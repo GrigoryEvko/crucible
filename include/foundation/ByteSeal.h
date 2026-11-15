@@ -11,10 +11,28 @@
 // start of foundation/Lifetime.h refuses the class wherever it sits: alone,
 // in an array, as a base or as a member.
 //
-// This header holds only the two types, so that a class can carry the
+// This header holds only these types, so that a class can carry the
 // annotation without the <memory> that the checked lifetime start includes.
+// It also holds the mark closed_tag of the Choice family, which the checked
+// lifetime start refuses in the same way.
 
 #include <foundation/Platform.h>
+
+namespace foundation::core {
+
+// The mark of a class whose bytes hold the tag of a sum: a word that names
+// one alternative of a closed set, and of the union of the alternatives that
+// such a tag names.  A copy of bytes can write a tag outside that set, so no
+// copy of bytes makes a value that holds a marked class.  The quarantine
+// plugin refuses std::bit_cast, __builtin_bit_cast, memcpy and a member of a
+// different union into such a type (utils/tools/quarantine/library.cpp, THE
+// CLOSED TAGS).  The walk of the Scalar family (foundation/core/Scalar.h) and
+// the checked lifetime start (foundation/Lifetime.h) refuse it.  Each class
+// that holds the tag of a sum slot of foundation/core/Choice.h carries the
+// mark, so a sum on the slot of the family needs no mark of its own.
+struct closed_tag final {};
+
+}  // namespace foundation::core
 
 namespace foundation::lifetime {
 

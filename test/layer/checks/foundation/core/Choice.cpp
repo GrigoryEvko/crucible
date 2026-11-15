@@ -210,11 +210,12 @@ struct NonZeroCount {
     [[nodiscard]] constexpr bool is_niche_empty(niche_key<NonZeroCount> const&) const noexcept { return raw == 0; }
 };
 
-// A lifetime start over bytes.  Zero bytes are an empty plain Option and an
-// empty niche Option whose empty value has zero bytes.  For each other
-// niche, zero bytes are a full Option that no constructor made, so the
-// checked lifetime start refuses the Option.
-static_assert(::foundation::lifetime::ImplicitLifetimeThroughout<Option<std::uint64_t>>);
+// A lifetime start over bytes.  Zero bytes are an empty niche Option whose
+// empty value has zero bytes.  For each other niche, zero bytes are a full
+// Option that no constructor made, so the checked lifetime start refuses the
+// Option.  The bytes of a plain Option hold its tag, and bytes can hold a tag
+// that names no alternative, so the mark closed_tag of the tag refuses it too.
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Option<std::uint64_t>>);
 static_assert(::foundation::lifetime::ImplicitLifetimeThroughout<Option<NonZeroCount>>);
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Option<SlotNumber>>);
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Option<MemberSlot>>);

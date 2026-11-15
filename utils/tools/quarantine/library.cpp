@@ -61,12 +61,27 @@ int parameter_count(tree decl) {
 //     a bit copy into such a type is the finding forged-tag, an error in each
 //     file under the root and in each mode: a call of a function whose admit
 //     row has plain-result, such as std::bit_cast, and a __builtin_bit_cast.
-//     The rule reads the bodies that is_body_read_here of plugin.h gives, so
-//     a bit copy whose result a template parameter gives is judged in each
-//     instance.  The event PLUGIN_FOLDED_INITIALIZER gives an initializer
-//     before the front end folds it.  A copy of bytes through memcpy, a union
-//     member or a buffer of bytes is no bit copy of this rule, so which() of
-//     a OneOf compares its tag with the count at run time.
+//     Two more copies of bytes are the same finding:
+//       a copy of bytes  a call of memcpy, memmove, mempcpy or memset, or of
+//                        their checked forms, whose first argument points at
+//                        such a type before its conversion to void*.  A copy
+//                        from an object of the same type copies a value that
+//                        a constructor made, and it is no finding.
+//       a union member   a member of such a type of a union that has a second
+//                        member of bytes, so a write of the second member can
+//                        write the tag.  The union of the storage of a sum
+//                        carries the annotation closed_tag itself, because the
+//                        tag of its slot names its active member, and its
+//                        members are no finding.
+//     The entity of a finding of these two routes starts with the text of its
+//     route, and the entity of a bit copy is the type alone.  The rule reads
+//     the bodies that is_body_read_here of plugin.h gives, so a copy whose
+//     type a template parameter gives is judged in each instance.  The event
+//     PLUGIN_FOLDED_INITIALIZER gives an initializer before the front end
+//     folds it.  A copy through a pointer that is void* already, and a buffer
+//     of bytes that the checked lifetime start reads, are no finding of this
+//     rule.  So the plain sums compare their tags with the count at run time
+//     too, and foundation/Lifetime.h refuses a lifetime start over such a type.
 
 // The bits of the answer of unnamed_bit_parts.
 inline constexpr std::uint8_t kBoolOrEnumeration = 1;
@@ -913,9 +928,79 @@ bool is_bit_copy_function(tree function) {
     return row != nullptr && row->is_plain_result;
 }
 
-// The callback of cp_walk_tree: each bit copy whose result holds a closed tag
-// is the finding forged-tag (THE CLOSED TAGS).  DATA is the location of a node
-// with no location of its own.
+// The texts that start the entity of a copy of bytes and of a union member
+// (THE CLOSED TAGS).  report_forged_tag reads them.
+constexpr const char* kByteCopyRoute = "copy of bytes into ";
+constexpr const char* kUnionMemberRoute = "union member ";
+
+// The type that the pointer value NODE points at, before each conversion to
+// a different pointer type, or null when NODE is no pointer to an object
+// type, such as a void* that the source spells.
+tree pointee_of(tree node) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        if (TREE_CODE(node) != NOP_EXPR && TREE_CODE(node) != CONVERT_EXPR && TREE_CODE(node) != VIEW_CONVERT_EXPR
+            && TREE_CODE(node) != NON_LVALUE_EXPR) {
+            break;
+        }
+        node = TREE_OPERAND(node, 0);
+    }
+    tree type = node != NULL_TREE ? TREE_TYPE(node) : NULL_TREE;
+    if (type == NULL_TREE || !TYPE_PTR_P(type) || VOID_TYPE_P(TREE_TYPE(type))) {
+        return NULL_TREE;
+    }
+    return TREE_TYPE(type);
+}
+
+// The destination of the copy of bytes CALL (THE CLOSED TAGS): the type that
+// the first argument of a call of memcpy, memmove, mempcpy or memset points
+// at, or null.  A copy from an object of the same type gives null, because
+// it copies a value that a constructor made.
+tree byte_copy_destination(tree call) {
+    tree callee = cp_get_callee_fndecl_nofold(call);
+    if (callee == NULL_TREE || call_expr_nargs(call) < 2) {
+        return NULL_TREE;
+    }
+    bool is_copy = fndecl_built_in_p(callee, BUILT_IN_MEMCPY, BUILT_IN_MEMMOVE, BUILT_IN_MEMPCPY, BUILT_IN_MEMCPY_CHK,
+                                     BUILT_IN_MEMMOVE_CHK, BUILT_IN_MEMPCPY_CHK);
+    bool is_fill = fndecl_built_in_p(callee, BUILT_IN_MEMSET, BUILT_IN_MEMSET_CHK);
+    if (!is_copy && !is_fill) {
+        return NULL_TREE;
+    }
+    tree destination = pointee_of(CALL_EXPR_ARG(call, 0));
+    if (destination == NULL_TREE || !is_copy) {
+        return destination;
+    }
+    tree source = pointee_of(CALL_EXPR_ARG(call, 1));
+    bool is_same_type = source != NULL_TREE && same_type_ignoring_top_level_qualifiers_p(source, destination);
+    return is_same_type ? NULL_TREE : destination;
+}
+
+// The type of the member that the COMPONENT_REF NODE names, when its object
+// is a union with no annotation closed_tag and with a second member of bytes,
+// or null (THE CLOSED TAGS).  A member of an empty class holds no byte, so
+// no write of it reaches the tag.  Complexity: linear in the members of the
+// union.
+tree union_member_type(tree node) {
+    tree object = TREE_OPERAND(node, 0);
+    tree field = TREE_OPERAND(node, 1);
+    tree union_type = object != NULL_TREE ? TREE_TYPE(object) : NULL_TREE;
+    if (union_type == NULL_TREE || TREE_CODE(union_type) != UNION_TYPE || field == NULL_TREE
+        || TREE_CODE(field) != FIELD_DECL || carries_closed_tag(TYPE_MAIN_VARIANT(union_type))) {
+        return NULL_TREE;
+    }
+    for (tree other = TYPE_FIELDS(TYPE_MAIN_VARIANT(union_type)); other != NULL_TREE; other = DECL_CHAIN(other)) {
+        bool is_other_member = TREE_CODE(other) == FIELD_DECL && other != field;
+        if (is_other_member && TREE_TYPE(other) != NULL_TREE && !is_empty_class(TREE_TYPE(other))) {
+            return TREE_TYPE(field);
+        }
+    }
+    return NULL_TREE;
+}
+
+// The callback of cp_walk_tree: each copy of bytes whose result holds a closed
+// tag is the finding forged-tag (THE CLOSED TAGS).  DATA is the location of a
+// node with no location of its own.
 tree walk_bit_copies(tree* node_pointer, int* walk_subtrees, void* data) {
     tree node = *node_pointer;
     if (node == NULL_TREE) {
@@ -926,11 +1011,19 @@ tree walk_bit_copies(tree* node_pointer, int* walk_subtrees, void* data) {
         return NULL_TREE;
     }
     tree result = NULL_TREE;
+    const char* route = "";
     if (TREE_CODE(node) == BIT_CAST_EXPR) {
         result = TREE_TYPE(node);
     } else if (TREE_CODE(node) == CALL_EXPR || TREE_CODE(node) == AGGR_INIT_EXPR) {
         tree callee = cp_get_callee_fndecl_nofold(node);
         result = is_bit_copy_function(callee) ? TREE_TYPE(TREE_TYPE(callee)) : NULL_TREE;
+        if (result == NULL_TREE && TREE_CODE(node) == CALL_EXPR) {
+            result = byte_copy_destination(node);
+            route = kByteCopyRoute;
+        }
+    } else if (TREE_CODE(node) == COMPONENT_REF) {
+        result = union_member_type(node);
+        route = kUnionMemberRoute;
     }
     if (result == NULL_TREE || (unnamed_bit_parts(result, 0) & kClosedTag) == 0) {
         return NULL_TREE;
@@ -938,7 +1031,7 @@ tree walk_bit_copies(tree* node_pointer, int* walk_subtrees, void* data) {
     location_t location = EXPR_HAS_LOCATION(node) ? EXPR_LOCATION(node) : *static_cast<location_t*>(data);
     Place place = place_of(location, Scope::quarantine);
     if (place.file != nullptr) {
-        add_finding(Kind::forged_tag, nullptr, place, type_text(result));
+        add_finding(Kind::forged_tag, nullptr, place, route + type_text(result));
     }
     return NULL_TREE;
 }
@@ -974,10 +1067,24 @@ void on_folded_initializer_tags(void* gcc_data, void*) {
 }  // namespace
 
 void report_forged_tag(const Finding& finding) {
-    error_at(finding.spelling,
-             "this bit copy makes a %qs, whose bytes hold the tag of a sum, and a bit copy can write a tag that names "
-             "no alternative",
-             finding.entity.c_str());
+    const std::string byte_copy(kByteCopyRoute);
+    const std::string union_member(kUnionMemberRoute);
+    if (finding.entity.compare(0, byte_copy.size(), byte_copy) == 0) {
+        error_at(finding.spelling,
+                 "this copy of bytes writes a %qs from bytes of a different type, and the bytes of the type hold the "
+                 "tag of a sum, so the copy can write a tag that names no alternative",
+                 finding.entity.substr(byte_copy.size()).c_str());
+    } else if (finding.entity.compare(0, union_member.size(), union_member) == 0) {
+        error_at(finding.spelling,
+                 "this member of a union is a %qs, whose bytes hold the tag of a sum, and a write of a different "
+                 "member of the union can write a tag that names no alternative",
+                 finding.entity.substr(union_member.size()).c_str());
+    } else {
+        error_at(finding.spelling,
+                 "this bit copy makes a %qs, whose bytes hold the tag of a sum, and a bit copy can write a tag that "
+                 "names no alternative",
+                 finding.entity.c_str());
+    }
     inform(finding.spelling,
            "a class that carries the annotation %<foundation::core::closed_tag%> holds the tag, and only a "
            "constructor of the sum writes it");

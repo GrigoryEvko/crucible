@@ -2269,6 +2269,26 @@ foundation_neg_compile_test(neg_core_one_of_get_of_temporary
 foundation_neg_compile_test(neg_core_one_of_bit_cast_forged_tag
   "this bit copy makes a .foundation::core::OneOf<[^>]*>., whose bytes hold the tag of a sum"
   "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+# A memcpy, a memset and a member of a union reach the tag of a plain sum
+# too, and the checked lifetime start refuses a plain Option over bytes.
+foundation_neg_compile_test(neg_core_option_memcpy_forged_tag
+  "this copy of bytes writes a .foundation::core::Option<[^>]*>. from bytes of a different type"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_result_memset_forged_tag
+  "this copy of bytes writes a .Reply. from bytes of a different type"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_option_union_forged_tag
+  "this member of a union is a .foundation::core::Option<[^>]*>., whose bytes hold the tag of a sum"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_one_of_union_member_forged_tag
+  "this member of a union is a .foundation::core::OneOf<[^>]*>., whose bytes hold the tag of a sum"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_option_plain_lifetime_start
+  "no matching function for call to .start_as_array<foundation::core::Option<long unsigned int> >"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Option<long unsigned int>\\]")
+foundation_neg_compile_test(neg_core_option_member_lifetime_start
+  "no matching function for call to .start_as_array<Record>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = Record\\]")
 foundation_neg_compile_test(neg_core_bit_cast_into_one_of
   "no matching function for call to .bit_cast<Reading>\\(ForgedReading\\)."
   "required for the satisfaction of .BitValid<To>. \\[with To = foundation::core::OneOf<")

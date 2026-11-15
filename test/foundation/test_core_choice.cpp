@@ -362,6 +362,92 @@ void test_niche_validity_of_bit_copy() {
     CRUCIBLE_FATAL_INVARIANT(NicheRead<Copied>::holds_empty(copied));
 }
 
+// The bytes of a plain Option of a word and of a plain Result of a word: the
+// payload, and then a tag word of 2, which names no alternative.  No
+// constructor writes such a tag, but a copy of bytes can.
+struct ForgedWords {
+    std::uint64_t payload = 7;
+    std::uint64_t tag = 2;
+};
+
+// The routes of a copy of bytes over a plain Option and a plain Result: a
+// memcpy and a union member.  The quarantine plugin refuses each of them out
+// of a PROBE region, and the checked lifetime start refuses a third route at
+// compile time (neg_core_option_plain_lifetime_start).  Each read of the state
+// of a forged sum ends the process: is_some or is_ok, and == in each order of
+// the operands.  So a forged tag never reads as a value.
+template <class Sum>
+void expect_forged_compares_abort(Sum const& forged, Sum const& real) {
+    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged, &real] { static_cast<void>(forged == real); }));
+    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged, &real] { static_cast<void>(real == forged); }));
+}
+
+void test_forged_tag_by_memcpy() {
+    static_assert(sizeof(Option<std::uint64_t>) == sizeof(ForgedWords));
+    Option<std::uint64_t> const real = Option<std::uint64_t>::some(std::uint64_t{7});
+    Option<std::uint64_t> forged{};
+    ForgedWords const words{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of an Option")
+    __builtin_memcpy(static_cast<void*>(&forged), &words, sizeof(words));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged] { static_cast<void>(forged.is_some()); }));
+    expect_forged_compares_abort(forged, real);
+}
+
+void test_forged_tag_by_union_member() {
+    Option<std::uint64_t> const real = Option<std::uint64_t>::some(std::uint64_t{7});
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a union member reads the bytes of a different member as an Option")
+    union Punned {
+        ForgedWords words;
+        Option<std::uint64_t> option;
+    };
+    Punned const punned{ForgedWords{}};
+    Option<std::uint64_t> const& forged = punned.option;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged] { static_cast<void>(forged.is_some()); }));
+    expect_forged_compares_abort(forged, real);
+}
+
+// The error of the Result tests.
+enum class Refusal : std::uint8_t {
+    full,
+    closed
+};
+
+void test_forged_result_tag_by_memcpy() {
+    using Word = ::foundation::core::Result<std::uint64_t, Refusal>;
+    static_assert(sizeof(Word) == sizeof(ForgedWords));
+    Word const real{std::uint64_t{7}};
+    Word forged{std::uint64_t{1}};
+    ForgedWords const words{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of a Result")
+    __builtin_memcpy(static_cast<void*>(&forged), &words, sizeof(words));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged] { static_cast<void>(forged.is_ok()); }));
+    expect_forged_compares_abort(forged, real);
+}
+
+// A sum whose payload is a sum: an Option of a Result and a Result of an
+// Option.  The union of the outer sum holds the tag of the inner sum in a
+// member, and that union carries the mark closed_tag, so the quarantine
+// plugin reads each member of it as no copy of bytes in each build.
+void test_nested_sums() {
+    using Inner = ::foundation::core::Result<std::uint32_t, Refusal>;
+    Option<Inner> const held = Option<Inner>::some(Inner{std::uint32_t{7}});
+    std::uint32_t const value = held.match(
+        [](Inner const& inner) noexcept {
+            return inner.match([](std::uint32_t const& word) noexcept { return word; },
+                               [](Refusal const&) noexcept { return std::uint32_t{0}; });
+        },
+        [] noexcept { return std::uint32_t{0}; });
+    CRUCIBLE_FATAL_INVARIANT(value == 7u);
+
+    using Outer = ::foundation::core::Result<Option<std::uint32_t>, Refusal>;
+    Outer const wrapped{Option<std::uint32_t>::some(std::uint32_t{9})};
+    CRUCIBLE_FATAL_INVARIANT(wrapped.is_ok());
+    CRUCIBLE_FATAL_INVARIANT(Outer{wrapped}.expect("the Result holds a value").expect("the Option is full") == 9u);
+}
+
 // The property: for each value and each choice of empty or full, the
 // Option agrees with a plain model of one flag and one value.  The loop
 // makes one turn exactly when the model holds a value, and expect,
@@ -394,12 +480,6 @@ void test_agrees_with_plain_model() {
         }
     }
 }
-
-// The error of the Result tests.
-enum class Refusal : std::uint8_t {
-    full,
-    closed
-};
 
 using ::foundation::core::err;
 using ::foundation::core::Result;
@@ -606,6 +686,10 @@ int main() {
     test_niche_empty_value_aborts();
     test_member_niche_payload();
     test_niche_validity_of_bit_copy();
+    test_forged_tag_by_memcpy();
+    test_forged_tag_by_union_member();
+    test_forged_result_tag_by_memcpy();
+    test_nested_sums();
     test_agrees_with_plain_model();
     test_result_roads();
     test_result_of_unit();
