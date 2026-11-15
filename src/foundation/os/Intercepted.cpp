@@ -7,6 +7,16 @@
 // intercepts.  The C library has no function for futex, so a futex call stays
 // raw, and this file tells the sanitizer of it through its hooks.
 //
+// The sanitizer intercepts sleep, usleep and nanosleep, and not
+// clock_nanosleep.  The hooks of clock_nanosleep check the read of the
+// requested time and the write of the time that remains, and they mark no
+// blocking call.  The hook pair of futex is the one public pair that marks a
+// blocking call, and its two hooks read no word of the call.  So a sleep
+// stays raw between the blocking marks of the futex hooks, and the hooks of
+// clock_nanosleep go around them (the owner decision of 2026-11-14).  Each
+// check of an access stays outside the mark, because the sanitizer ignores
+// the hooks of an access inside a blocking call.
+//
 // The sanitizer keeps a shadow of each address that a thread reads or
 // writes, and only its interceptors of mmap(2) and munmap(2) reset the shadow
 // of a range.  So a map and an unmap go through the two functions of the C
@@ -48,13 +58,17 @@
 // throws no exception.  A noexcept function then has no table of the exception
 // path, and the member imports no personality routine of libstdc++.
 //
-// The hooks of close(2), openat(2) and openat2(2) take the words of their
-// call as long, and the post hook takes the result first, in the same form.
+// The hooks of clock_nanosleep(2), close(2), openat(2) and openat2(2) take
+// the words of their call as long, and the post hook takes the result first,
+// in the same form.
 extern "C" {
 void __sanitizer_syscall_pre_impl_futex(long address, long operation, long value, long timeout, long second_address,
                                         long third_value) noexcept;
 void __sanitizer_syscall_post_impl_futex(long result, long address, long operation, long value, long timeout,
                                          long second_address, long third_value) noexcept;
+void __sanitizer_syscall_pre_impl_clock_nanosleep(long clock, long flags, long request, long remain) noexcept;
+void __sanitizer_syscall_post_impl_clock_nanosleep(long result, long clock, long flags, long request,
+                                                   long remain) noexcept;
 void __sanitizer_syscall_pre_impl_close(long descriptor) noexcept;
 void __sanitizer_syscall_post_impl_close(long result, long descriptor) noexcept;
 void __sanitizer_syscall_pre_impl_openat(long directory, long path, long flags, long mode) noexcept;
@@ -136,6 +150,23 @@ void leave_futex(FutexCall const& call, long result) noexcept {
     if (call.role == FutexRole::wait && result == 0) {
         __tsan_acquire(__builtin_bit_cast(void*, call.address));
     }
+}
+
+// The futex hooks get words of zero, because they read none.  The pre hook of
+// futex runs the handler of each pending signal, and then it marks the
+// blocking call.  So the sanitizer does not hold a signal that comes before
+// the raw call until the end of the sleep.
+void enter_sleep(SleepWords const& words) noexcept {
+    __sanitizer_syscall_pre_impl_clock_nanosleep(static_cast<long>(words.clock), static_cast<long>(words.flags),
+                                                 static_cast<long>(words.request), static_cast<long>(words.remain));
+    __sanitizer_syscall_pre_impl_futex(0, 0, 0, 0, 0, 0);
+}
+
+void leave_sleep(SleepWords const& words, long result) noexcept {
+    __sanitizer_syscall_post_impl_futex(result, 0, 0, 0, 0, 0, 0);
+    __sanitizer_syscall_post_impl_clock_nanosleep(result, static_cast<long>(words.clock),
+                                                  static_cast<long>(words.flags), static_cast<long>(words.request),
+                                                  static_cast<long>(words.remain));
 }
 
 void enter_close(std::uint64_t descriptor) noexcept {

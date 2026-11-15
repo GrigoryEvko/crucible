@@ -17,8 +17,11 @@
 #include <fixy/Refined.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Sched.h>
+#include <fixy/os/ThreadTasks.h>
 #include <fixy/os/Time.h>
+#include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/Atomic.h>
 
 #include <atomic>
 #include <cstdint>
@@ -35,8 +38,11 @@
 #include "../test_assert.h"
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a signal interrupts a thread that sleeps in the bounded sleeper")
+#include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 namespace {
 
@@ -56,6 +62,75 @@ void ignore_the_signal(int) noexcept {}
 [[nodiscard]] std::uint64_t calling_thread() noexcept { return ::pthread_self(); }
 
 [[nodiscard]] bool send_the_signal(std::uint64_t thread) noexcept { return ::pthread_kill(thread, SIGUSR1) == 0; }
+
+// The two flags of the case of a handler during a sleep.  Only the thread
+// that sleeps and the handler that runs on it touch them.  They are not
+// atomic, because ThreadSanitizer runs each held handler at the start of an
+// atomic operation.  A handler that the sanitizer held to the end of the
+// sleep could then run before the store that ends the sleep.
+volatile ::sig_atomic_t is_asleep = 0;
+volatile ::sig_atomic_t has_run_asleep = 0;
+
+void record_the_sleep(int) noexcept {
+    if (is_asleep != 0) {
+        has_run_asleep = 1;
+    }
+}
+
+// Installs the handler of SIGUSR2, which records whether it ran during a
+// sleep.
+[[nodiscard]] bool install_the_recording_handler() noexcept {
+    struct ::sigaction action{};
+    action.sa_handler = &record_the_sleep;
+    static_cast<void>(::sigemptyset(&action.sa_mask));
+    return ::sigaction(SIGUSR2, &action, nullptr) == 0;
+}
+
+void mark_the_sleep(bool is_in_sleep) noexcept { is_asleep = is_in_sleep ? 1 : 0; }
+
+[[nodiscard]] bool has_handler_run_asleep() noexcept { return has_run_asleep != 0; }
+
+[[nodiscard]] bool send_the_recorded_signal(std::uint64_t thread) noexcept {
+    return ::pthread_kill(thread, SIGUSR2) == 0;
+}
+
+// The id of the calling thread for the kernel.
+[[nodiscard]] std::uint64_t calling_thread_id() noexcept { return static_cast<std::uint64_t>(::gettid()); }
+
+// True when the kernel reports the thread with the id THREAD_ID asleep in
+// clock_nanosleep.  The first field of /proc/self/task/ID/syscall is the
+// number of the call in which the thread sleeps, and the file of a thread
+// that runs holds "running".
+[[nodiscard]] bool sleeps_in_clock_nanosleep(std::uint64_t thread_id) noexcept {
+    char path[64] = "/proc/self/task/";
+    std::size_t length = 16;
+    char digits[24]{};
+    std::size_t count = 0;
+    do {
+        digits[count] = static_cast<char>('0' + thread_id % 10U);
+        ++count;
+        thread_id /= 10U;
+    } while (thread_id != 0U);
+    while (count > 0) {
+        --count;
+        path[length] = digits[count];
+        ++length;
+    }
+    __builtin_memcpy(path + length, "/syscall", 9);
+    int const descriptor = ::open(path, O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0) return false;
+    char text[64]{};
+    long const read_count = ::read(descriptor, text, sizeof text - 1);
+    static_cast<void>(::close(descriptor));
+    if (read_count <= 0) return false;
+    long number = 0;
+    std::size_t index = 0;
+    while (text[index] >= '0' && text[index] <= '9') {
+        number = number * 10 + (text[index] - '0');
+        ++index;
+    }
+    return index > 0 && text[index] == ' ' && number == SYS_clock_nanosleep;
+}
 
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -242,6 +317,62 @@ using BgWitness = fixy::BgDrainCtx;
         std::fprintf(stderr, "a signal cut a 50 ms sleep to %llu ns\n", static_cast<unsigned long long>(elapsed));
         return 1;
     }
+    return 0;
+}
+
+// A signal reaches a thread that sleeps, and its handler runs during the
+// sleep.  ThreadSanitizer runs a handler at once only inside a call that it
+// intercepts or that it knows to block, and it holds the handler of a signal
+// that comes in another call.  The sanitizer does not intercept the
+// clock_nanosleep of the C library.  So the tsan preset shows here that the
+// raw sleep tells the sanitizer of the call (THE SANITIZERS of
+// foundation/os/Syscall.h).  A handler that the sanitizer held to the end of
+// the sleep finds no sleep in progress.
+// The signaling thread sends the signal only when the kernel reports the
+// sleeper asleep in clock_nanosleep, and the sleep of one second gives it
+// that time.  The count of the reads has a bound, so a fault fails the test
+// and does not hang it.
+[[nodiscard]] int handler_runs_during_a_sleep() {
+    constexpr std::uint64_t sleep_nanos = 1000000000;
+    using ThreadCtx =
+        eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+    ThreadCtx const ctx{eff::testing::bg()};
+    CRUCIBLE_FATAL_INVARIANT(install_the_recording_handler());
+
+    foundation::core::Atomic<std::uint64_t> sleeper_thread{0};
+    foundation::core::Atomic<std::uint64_t> sleeper_id{0};
+    foundation::core::Atomic<bool> is_sleep_done{false};
+    foundation::core::Atomic<bool> has_slept{false};
+    foundation::core::Atomic<bool> was_sent{false};
+    auto sleeper = [&]() noexcept {
+        auto const bounded = fixy::time::mint_bounded_sleep<sleep_nanos>(ctx);
+        sleeper_id.store_release(calling_thread_id());
+        sleeper_thread.store_release(calling_thread());
+        mark_the_sleep(true);
+        auto const slept = bounded.sleep_for(sleep_nanos);
+        mark_the_sleep(false);
+        has_slept.store_release(slept.is_ok());
+        is_sleep_done.store_release(true);
+    };
+    auto signaller = [&]() noexcept {
+        std::uint64_t thread = sleeper_thread.load_acquire();
+        while (thread == 0) {
+            CRUCIBLE_SPIN_PAUSE;
+            thread = sleeper_thread.load_acquire();
+        }
+        std::uint64_t const thread_id = sleeper_id.load_acquire();
+        constexpr std::uint32_t kLargestReadCount = 10000000;
+        for (std::uint32_t reads = 0;
+             reads < kLargestReadCount && !was_sent.load_acquire() && !is_sleep_done.load_acquire(); ++reads) {
+            if (sleeps_in_clock_nanosleep(thread_id)) {
+                was_sent.store_release(send_the_recorded_signal(thread));
+            }
+        }
+    };
+    CRUCIBLE_FATAL_INVARIANT(fixy::thread::run_joined(ctx, fixy::thread::ThreadOptions{}, sleeper, signaller).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(has_slept.load_acquire());
+    CRUCIBLE_FATAL_INVARIANT(was_sent.load_acquire());
+    CRUCIBLE_FATAL_INVARIANT(has_handler_run_asleep());
     return 0;
 }
 
@@ -509,6 +640,7 @@ int main() {
     if (const int rc = clock_source_values_round_trip(); rc != 0) return rc;
     if (const int rc = readers_and_sleeper_run(); rc != 0) return rc;
     if (const int rc = sleep_lasts_through_a_signal(); rc != 0) return rc;
+    if (const int rc = handler_runs_during_a_sleep(); rc != 0) return rc;
     if (const int rc = tsc_read_through_an_earned_pin(); rc != 0) return rc;
     if (const int rc = pin_of_another_thread_is_refused(); rc != 0) return rc;
     if (const int rc = reader_off_its_pin_reads_nothing(); rc != 0) return rc;

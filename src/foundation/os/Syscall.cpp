@@ -11,7 +11,8 @@
 // In a build with ThreadSanitizer, the primitive gives a read or a write that
 // can block, a map and an unmap to src/foundation/os/Intercepted.cpp, which is
 // the one door of the floor that calls the C library.  It issues a futex
-// call, a close, an openat and an openat2 raw, between the hooks of that file.
+// call, a clock_nanosleep, a close, an openat and an openat2 raw, between the
+// hooks of that file.
 
 #include <foundation/os/FutexWords.h>
 #include <foundation/os/KernelFloor.h>
@@ -259,6 +260,10 @@ constexpr long kNoCall = -1;
             return __NR_openat2;
         case Syscall::socket:
             return __NR_socket;
+        case Syscall::clock_gettime:
+            return __NR_clock_gettime;
+        case Syscall::clock_nanosleep:
+            return __NR_clock_nanosleep;
         default:
             return kNoCall;
     }
@@ -281,13 +286,19 @@ static_assert(each_call_has_a_number(),
               "<asm/unistd.h>");
 
 // Each call that can block has a route of a build with ThreadSanitizer: read
-// and write go through the C library, and futex goes between the hooks.  The
-// walk reads each enumerator, so a new blocking call with no route stops the
-// build of each preset, and not only of the TSan preset.
+// and write go through the C library, and futex and clock_nanosleep go
+// between the hooks.  The walk reads each enumerator, so a new blocking call
+// with no route stops the build of each preset, and not only of the TSan
+// preset.
+[[nodiscard]] consteval bool has_a_route(Syscall call) noexcept {
+    return call == Syscall::read || call == Syscall::write || call == Syscall::futex
+        || call == Syscall::clock_nanosleep;
+}
+
 [[nodiscard]] consteval bool each_blocking_call_has_a_route() noexcept {
     for (std::meta::info const enumerator : std::meta::enumerators_of(^^Syscall)) {
         Syscall const call = std::meta::extract<Syscall>(enumerator);
-        if (can_block(call) && call != Syscall::read && call != Syscall::write && call != Syscall::futex) {
+        if (can_block(call) && !has_a_route(call)) {
             return false;
         }
     }
@@ -367,6 +378,15 @@ long issue_watched_futex(detail::FutexCall const& call) noexcept {
     return result;
 }
 
+// The one raw clock_nanosleep, between the two halves of the route of
+// src/foundation/os/Intercepted.cpp.
+long issue_watched_sleep(detail::SleepWords const& words) noexcept {
+    detail::enter_sleep(words);
+    long const result = issue(__NR_clock_nanosleep, words.clock, words.flags, words.request, words.remain, 0, 0);
+    detail::leave_sleep(words, result);
+    return result;
+}
+
 // The one raw close, between the two hooks of the sanitizer.
 long issue_watched_close(std::uint64_t descriptor) noexcept {
     detail::enter_close(descriptor);
@@ -435,7 +455,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
 // perf_event_open came in 2.6.31, sched_setattr and sched_getattr in 3.14,
 // renameat2 in 3.15, mlock2 in 4.4, copy_file_range in 4.5, io_uring_setup in
-// 5.1 and openat2 in 5.6.  gettid came before 2.6.0.  The file door opens
+// 5.1 and openat2 in 5.6.  gettid, clock_gettime and clock_nanosleep came
+// before 2.6.0.  The file door opens
 // each path under a directory with openat2 and RESOLVE_BENEATH, and an open
 // with openat would follow a path out of the directory with no error.  So
 // openat2 is no feature call, and it sets the floor at 5.6.
@@ -508,6 +529,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::munlock:
         case Syscall::prctl:
         case Syscall::gettid:
+        case Syscall::clock_gettime:
+        case Syscall::clock_nanosleep:
         default:
             break;
     }
@@ -685,6 +708,9 @@ long raw_syscall(Syscall call, Word first, Word second, Word third, Word fourth,
     if (call == Syscall::futex) {
         return issue_watched_futex(detail::FutexCall{futex_role(second.bits()), first.bits(), second.bits(),
                                                      third.bits(), fourth.bits(), fifth.bits(), sixth.bits()});
+    }
+    if (call == Syscall::clock_nanosleep) {
+        return issue_watched_sleep(detail::SleepWords{first.bits(), second.bits(), third.bits(), fourth.bits()});
     }
     if (call == Syscall::read) {
         return detail::read_intercepted(first.bits(), second.bits(), third.bits());

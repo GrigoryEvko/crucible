@@ -17,6 +17,7 @@
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/Fd.h>
+#include <fixy/os/MonotonicClock.h>
 #include <foundation/Lifetime.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
@@ -29,7 +30,6 @@
 #include <foundation/reflect/Instance.h>
 
 #include <array>
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <ctime>
@@ -168,18 +168,15 @@ nanos_from_timespec(::foundation::os::KernelTimespec const& reading) noexcept {
 
 namespace detail {
 
-// Reads one clock, and converts the reading with nanos_from_timespec.  A
-// failed call gives its errno, and a value that the count cannot hold
-// gives the error of the conversion.  ClockReader::read and
-// PtpClockReader::read are its callers, and a mint gate keeps each reader
-// off the replay-bound foreground path.
+// Reads one clock through the door of fixy/os/MonotonicClock.h, and converts
+// the reading with nanos_from_timespec.  A failed read gives the error of the
+// kernel, and a value that the count cannot hold gives the error of the
+// conversion.  ClockReader::read and PtpClockReader::read are its callers,
+// and a mint gate keeps each reader off the replay-bound foreground path.
 [[nodiscard]] inline ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
 read_clock_nanos(::clockid_t clock) noexcept {
-    std::timespec now{};
-    if (::clock_gettime(clock, &now) != 0) [[unlikely]] {
-        return ::foundation::core::err(static_cast<::foundation::os::Errno>(errno));
-    }
-    return nanos_from_timespec(::foundation::os::KernelTimespec{.seconds = now.tv_sec, .nanoseconds = now.tv_nsec});
+    CRUCIBLE_TRY(reading, read_clock_(clock));
+    return nanos_from_timespec(reading);
 }
 
 // Reads the PTP hardware clock behind the /dev/ptpN descriptor DESCRIPTOR,
@@ -609,11 +606,10 @@ concept CtxFitsBoundedSleepMint = eff::CtxOwnsCapability<Ctx, eff::Effect::Block
 // the frame whose context the gate read, and a thread that owns no Block
 // does not get it by a copy or a move.
 //
-// A signal handler that runs during the sleep ends clock_nanosleep early
-// with EINTR.  The sleep then continues to the same deadline on the
-// monotonic clock, so a signal does not shorten it and a restart does
-// not add the time already slept.  Another failure gives its error, and
-// the caller must look at it.
+// The door of fixy/os/MonotonicClock.h sleeps to a deadline on the
+// monotonic clock.  So a signal does not shorten the sleep, and a restart
+// does not add the time already slept.  A failure gives its error, and the
+// caller must look at it.
 template <std::uint64_t MaxNanos>
     requires IsSleepBound<MaxNanos>
 struct BoundedSleeper final {
@@ -628,22 +624,7 @@ struct BoundedSleeper final {
     [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
     sleep_for(std::uint64_t nanos) const noexcept {
         CRUCIBLE_PRE(nanos <= MaxNanos);
-        constexpr std::uint64_t nanos_per_second = 1000000000ULL;
-        std::timespec deadline{};
-        if (::clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) [[unlikely]] {
-            return ::foundation::core::err(static_cast<::foundation::os::Errno>(errno));
-        }
-        const std::uint64_t total_nanos = static_cast<std::uint64_t>(deadline.tv_nsec) + nanos;
-        deadline.tv_sec += static_cast<std::time_t>(total_nanos / nanos_per_second);
-        deadline.tv_nsec = static_cast<long>(total_nanos % nanos_per_second);
-        int failure = 0;
-        do {
-            failure = ::clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, nullptr);
-        } while (failure == EINTR);
-        if (failure != 0) [[unlikely]] {
-            return ::foundation::core::err(static_cast<::foundation::os::Errno>(failure));
-        }
-        return ::foundation::core::Unit{};
+        return detail::sleep_monotonic_(nanos);
     }
 
 private:

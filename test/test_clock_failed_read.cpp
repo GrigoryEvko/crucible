@@ -1,15 +1,22 @@
 // A clock read that fails, or that gives a value that the stamp cannot
 // hold, gives an error and no reading.  A transaction keeps no reading
-// after a failed read.
+// after a refused read.
 //
 // A working clock does not fail, so this executable has its own
 // clock_gettime.  The linker connects each call of clock_gettime in this
 // executable to that function, and not to the function in the C library.
-// The readers, the sleeper and the transaction log are inline in their
-// headers, so their reads are calls in this executable.  The function asks
-// the kernel through the raw system call, unless a case gives it a plan:
-// fail with an errno, or give a specified timespec.  Each case sets each
-// value, so the test knows each result.
+// The readers, the sleeper and the transaction log read the clock through
+// the door of fixy/os/MonotonicClock.h.  The door is a member of the static
+// library libfixy.a, so its call of clock_gettime is a call in this
+// executable too.  The function asks the kernel through the raw system call,
+// unless a case gives it a plan: fail with an errno, or give a specified
+// timespec.  Each case sets each value, so the test knows each result.
+//
+// The door does not read errno.  After a failed call of the C library, it
+// asks the kernel again through the raw system call primitive, and it gives
+// the word of the kernel.  So a failed plan gives the reading of the kernel
+// for a working clock, and a clock that the kernel does not have gives the
+// error of the kernel.
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Transaction.h>
@@ -79,6 +86,9 @@ void give_each_read(std::time_t seconds, long nanos) noexcept {
 
 constexpr std::time_t max_seconds = std::numeric_limits<std::time_t>::max();
 
+// A reading that each reader refuses: a second field of -1.
+void refuse_each_read() noexcept { give_each_read(-1, 0); }
+
 // The number of failed checks.  Each case does all of its checks, so one
 // run shows each failure.
 struct Tally {
@@ -132,11 +142,19 @@ template <typename Result>
         });
 }
 
-// An unclamped reader.  A failed call gives its errno.  The reader refuses a
-// negative field, a nanosecond field of a full second, and a count of more
-// than 64 bits.  The first read gets a specified value, and the reader must
-// give that value with no change.  This shows that the reader reads the
-// clock of this executable.
+// Says whether a read gave a reading above `floor_nanos`.
+template <typename Result>
+[[nodiscard]] bool is_reading_above(Result const& result, std::uint64_t floor_nanos) noexcept {
+    return result.match([floor_nanos](auto const& reading) noexcept { return reading.peek() > floor_nanos; },
+                        [](Errno const&) noexcept { return false; });
+}
+
+// An unclamped reader.  The reader refuses a negative field, a nanosecond
+// field of a full second, and a count of more than 64 bits.  The first read
+// gets a specified value, and the reader must give that value with no change.
+// This shows that the reader reads the clock of this executable.  A failed
+// call of the C library makes the door ask the kernel, and the reader gives
+// the reading of the kernel, which is far above the specified value.
 void realtime_reader_refuses_what_it_cannot_stamp(Tally& tally) {
     const fixy::TestRunnerCtx ctx{eff::testing::test()};
     const auto realtime = fixy::time::mint_clock_reader<fixy::ClockSource_v::Realtime>(ctx);
@@ -144,7 +162,7 @@ void realtime_reader_refuses_what_it_cannot_stamp(Tally& tally) {
     give_each_read(2, 5);
     const auto fixed = realtime.read();
     fail_each_read(EINVAL);
-    const auto failed = realtime.read();
+    const auto asked_the_kernel = realtime.read();
     give_each_read(-5, 0);
     const auto before_epoch = realtime.read();
     give_each_read(0, -1);
@@ -156,15 +174,15 @@ void realtime_reader_refuses_what_it_cannot_stamp(Tally& tally) {
     use_the_kernel_clock();
 
     tally.expect(is_reading_of(fixed, 2000000005, "Realtime, a reading of 2 s and 5 ns"));
-    tally.expect(is_refused_with(failed, Errno::einval, "Realtime, a failed call"));
+    tally.expect(is_reading_above(asked_the_kernel, 2000000005));
     tally.expect(is_refused_with(before_epoch, Errno::erange, "Realtime, a second field of -5"));
     tally.expect(is_refused_with(negative_nanos, Errno::erange, "Realtime, a nanosecond field of -1"));
     tally.expect(is_refused_with(full_second, Errno::erange, "Realtime, a nanosecond field of one second"));
     tally.expect(is_refused_with(past_64_bits, Errno::eoverflow, "Realtime, a count past 64 bits"));
 }
 
-// A clamped reader.  A failed call after a good read gives an error, and not
-// the floor that the good read set.  A refused value does not move the
+// A clamped reader.  A refused value after a good read gives an error, and
+// not the floor that the good read set.  A refused value does not move the
 // floor, so a subsequent good read gives its own value.
 void monotonic_reader_gives_no_floor_for_a_failed_read(Tally& tally) {
     const fixy::TestRunnerCtx ctx{eff::testing::test()};
@@ -172,8 +190,6 @@ void monotonic_reader_gives_no_floor_for_a_failed_read(Tally& tally) {
 
     give_each_read(100, 0);
     const auto first = monotonic.read();
-    fail_each_read(EPERM);
-    const auto failed = monotonic.read();
     give_each_read(50, 0);
     const auto regressed = monotonic.read();
     give_each_read(-5, 0);
@@ -185,30 +201,55 @@ void monotonic_reader_gives_no_floor_for_a_failed_read(Tally& tally) {
     use_the_kernel_clock();
 
     tally.expect(is_reading_of(first, 100000000000, "Monotonic, a reading of 100 s"));
-    tally.expect(is_refused_with(failed, Errno::eperm, "Monotonic, a failed call after a reading of 100 s"));
     tally.expect(is_reading_of(regressed, 100000000000, "Monotonic, a reading of 50 s below a floor of 100 s"));
-    tally.expect(is_refused_with(negative, Errno::erange, "Monotonic, a second field of -5"));
+    tally.expect(is_refused_with(negative, Errno::erange, "Monotonic, a second field of -5 after a reading of 100 s"));
     tally.expect(is_refused_with(past_64_bits, Errno::eoverflow, "Monotonic, a count past 64 bits"));
     tally.expect(is_reading_of(later, 150000000000, "Monotonic, a reading of 150 s after two refused values"));
 }
 
-// The sleeper reads the monotonic clock for its deadline.  A failed read
-// gives its errno.  A deadline with a negative second field makes the kernel
-// refuse clock_nanosleep with EINVAL, and the sleeper gives that error.
+// The sleeper reads the monotonic clock for its deadline.  A deadline with a
+// negative second field makes the kernel refuse clock_nanosleep with EINVAL,
+// and the sleeper gives that error.  A reading with a nanosecond field of a
+// full second gives EINVAL, the answer of the kernel for such a deadline.  A
+// reading that gives no deadline in 64 bits gives EOVERFLOW.  A failed call
+// of the C library makes the door ask the kernel, and the sleep then has a
+// deadline of the kernel clock.
 void sleeper_gives_the_error_of_a_failed_call(Tally& tally) {
     const fixy::TestRunnerCtx ctx{eff::testing::test()};
     const auto sleeper = fixy::time::mint_bounded_sleep<1000>(ctx);
 
-    fail_each_read(EFAULT);
-    const auto failed_read = sleeper.sleep_for(0);
     give_each_read(-5, 0);
-    const auto failed_sleep = sleeper.sleep_for(0);
+    const auto refused_deadline = sleeper.sleep_for(0);
+    give_each_read(0, 1000000000);
+    const auto full_second = sleeper.sleep_for(0);
+    give_each_read(max_seconds, 999999999);
+    const auto past_64_bits = sleeper.sleep_for(1000);
+    fail_each_read(EFAULT);
+    const auto asked_the_kernel = sleeper.sleep_for(0);
     use_the_kernel_clock();
     const auto slept = sleeper.sleep_for(0);
 
-    tally.expect(failed_read.err().value_or(Errno::eio) == Errno::efault);
-    tally.expect(failed_sleep.err().value_or(Errno::eio) == Errno::einval);
+    tally.expect(refused_deadline.err().value_or(Errno::eio) == Errno::einval);
+    tally.expect(full_second.err().value_or(Errno::eio) == Errno::einval);
+    tally.expect(past_64_bits.err().value_or(Errno::eio) == Errno::eoverflow);
+    tally.expect(asked_the_kernel.is_ok());
     tally.expect(slept.is_ok());
+}
+
+// A clock that the kernel does not have.  The call of the C library fails,
+// the door asks the kernel, and the read gives the error of the kernel.  The
+// door does not read errno, so a failed call with a different errno gives the
+// error of the kernel too.
+void read_of_a_clock_the_kernel_refuses_gives_its_error(Tally& tally) {
+    constexpr std::int32_t no_clock = 99;
+    use_the_kernel_clock();
+    const auto refused = fixy::time::detail::read_clock_nanos(no_clock);
+    fail_each_read(EPERM);
+    const auto refused_again = fixy::time::detail::read_clock_nanos(no_clock);
+    use_the_kernel_clock();
+
+    tally.expect(refused.err().value_or(Errno::eio) == Errno::einval);
+    tally.expect(refused_again.err().value_or(Errno::eio) == Errno::einval);
 }
 
 // The owner proof of a log that this one thread operates.
@@ -278,9 +319,10 @@ private:
 
 // The log stamps the transaction at each change of state.  After a stamp
 // under a failed read, the transaction has no reading, and the reading of a
-// previous change does not stay.  The case does a test of each stamp site of
-// the log: begin_tx, commit, activate (the displaced transaction and the new
-// one) and rollback (the two again).
+// previous change does not stay.  A failed read here is a reading that the
+// reader refuses.  The case does a test of each stamp site of the log:
+// begin_tx, commit, activate (the displaced transaction and the new one) and
+// rollback (the two again).
 void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     const auto test = eff::testing::test();
     const fixy::TestRunnerCtx ctx{eff::testing::test()};
@@ -312,7 +354,7 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     auto* first = &log.begin_tx(owner, 1);
     tally.expect(holds_reading(first, 7000000000, "begin_tx of the first transaction at 7 s"));
 
-    fail_each_read(EIO);
+    refuse_each_read();
     tally.expect(commit(first, regions[0]));
     tally.expect(holds_no_reading(first, "commit of the first transaction under a failed read"));
 
@@ -320,7 +362,7 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     tally.expect(log.activate(owner, *first).try_get() == nullptr);
     tally.expect(holds_reading(first, 8000000000, "activate of the first transaction at 8 s"));
 
-    fail_each_read(EIO);
+    refuse_each_read();
     auto* second = &log.begin_tx(owner, 2);
     tally.expect(holds_no_reading(second, "begin_tx of the second transaction under a failed read"));
 
@@ -328,7 +370,7 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     tally.expect(commit(second, regions[1]));
     tally.expect(holds_reading(second, 9000000000, "commit of the second transaction at 9 s"));
 
-    fail_each_read(EIO);
+    refuse_each_read();
     tally.expect(log.activate(owner, *second).try_get() == first);
     tally.expect(holds_no_reading(first, "the first transaction, displaced under a failed read"));
     tally.expect(holds_no_reading(second, "activate of the second transaction under a failed read"));
@@ -342,7 +384,7 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     tally.expect(holds_reading(second, 12000000000, "the second transaction, displaced at 12 s"));
     tally.expect(holds_reading(third, 12000000000, "activate of the third transaction at 12 s"));
 
-    fail_each_read(EIO);
+    refuse_each_read();
     tally.expect(log.rollback(owner));
     tally.expect(holds_no_reading(third, "the third transaction, rolled back under a failed read"));
     tally.expect(holds_no_reading(second, "the second transaction, restored under a failed read"));
@@ -356,6 +398,7 @@ int main() {
     realtime_reader_refuses_what_it_cannot_stamp(tally);
     monotonic_reader_gives_no_floor_for_a_failed_read(tally);
     sleeper_gives_the_error_of_a_failed_call(tally);
+    read_of_a_clock_the_kernel_refuses_gives_its_error(tally);
     transaction_keeps_no_reading_after_a_failed_read(tally);
     if (tally.failures != 0) {
         std::fprintf(stderr, "test_clock_failed_read: %d check(s) failed\n", tally.failures);

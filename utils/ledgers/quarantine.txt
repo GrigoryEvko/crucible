@@ -185,13 +185,11 @@ include/fixy/handle/ | replace-pending:<array> | 1 | - | -
 include/fixy/handle/ | replace-pending:<atomic> | 4 | - | -
 include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
-include/fixy/os/ | base-c-library-call | 5 | - | -
-include/fixy/os/ | base-c-library-object | 3 | - | -
+include/fixy/os/ | base-c-library-object | 1 | - | -
 include/fixy/os/ | base-std-entity | 120 | - | -
 include/fixy/os/ | base-std-object | 55 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
 include/fixy/os/ | replace-pending:<array> | 1 | - | -
-include/fixy/os/ | replace-pending:<cerrno> | 1 | - | -
 include/fixy/os/ | replace-pending:<climits> | 1 | - | -
 include/fixy/os/ | replace-pending:<ctime> | 1 | - | -
 include/fixy/os/ | replace-pending:<expected> | 6 | - | -
@@ -342,7 +340,7 @@ test/fixy/ | door-header | 24 | - | -
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 3 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | opted-out | 16 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
-test/fixy/ | opted-out | 7 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -
+test/fixy/ | opted-out | 20 | PROBE: a signal interrupts a thread that sleeps in the bounded sleeper | -
 test/fixy/ | opted-out | 20 | PROBE: a signal reaches a thread that waits in the futex door | -
 test/fixy/ | opted-out | 1 | PROBE: cheat 19 forges is_graded_wrapper_v, and GradedWrapper must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: cheat 20 forges is_graded_v, and IsGraded and IsBand must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error

@@ -43,6 +43,14 @@
 //       mark the thread as in a blocking call, so a handler runs at once.
 //       The route also tells the sanitizer that a wake publishes the writes
 //       of the thread, and that a wait that ended with no error sees them.
+//     - clock_nanosleep stays raw (the owner decision of 2026-11-14).  The
+//       sanitizer does not intercept the function of the C library.  The
+//       hooks of clock_nanosleep check the read of the deadline and the
+//       write of the time that remains, and they mark no blocking call.  The
+//       hook pair of futex is the one public pair that marks a blocking
+//       call, and its two hooks read no word.  So the sleep goes between the
+//       blocking marks of the futex hooks, inside the hooks of
+//       clock_nanosleep.
 //   The sanitizer keeps a shadow of each address that a thread reads or
 //   writes, and a raw unmap that it does not see leaves the shadow of the
 //   range for the next map of the same range.  Only its interceptors of mmap
@@ -122,18 +130,22 @@ enum class Syscall : std::uint8_t {
     perf_event_open,
     openat2,
     socket,
+    clock_gettime,
+    clock_nanosleep,
 };
 
-// True when the call can wait with no bound for another thread or process,
-// for example a read of an empty pipe, a write to a full one, or a futex
-// wait.  In a build with ThreadSanitizer, the primitive tells the sanitizer
-// of such a call (THE SANITIZERS).  An ioctl waits only for a request that
-// waits, and the doors of fixy/os/Fd.h and fixy/os/Socket.h send only a
-// request that the kernel answers at once.  The socket door of
+// True when the call can wait for a long time: for another thread or process
+// with no bound, for example a read of an empty pipe, a write to a full one,
+// or a futex wait, or to a deadline, as clock_nanosleep does.  In a build
+// with ThreadSanitizer, the primitive tells the sanitizer of such a call (THE
+// SANITIZERS).  A clock_gettime does not wait.  An ioctl waits only for a
+// request that waits, and the doors of fixy/os/Fd.h and fixy/os/Socket.h send
+// only a request that the kernel answers at once.  The socket door of
 // fixy/os/Socket.h passes MSG_DONTWAIT to each sendto, recvfrom and recvmsg,
 // so none of them waits.
 [[nodiscard]] constexpr bool can_block(Syscall call) noexcept {
-    return call == Syscall::read || call == Syscall::write || call == Syscall::futex;
+    return call == Syscall::read || call == Syscall::write || call == Syscall::futex
+        || call == Syscall::clock_nanosleep;
 }
 
 // One argument word of a system call: an integer, or the address of memory

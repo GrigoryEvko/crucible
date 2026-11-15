@@ -1,8 +1,9 @@
 #pragma once
 
 // The routes of the raw system call primitive in a build with
-// ThreadSanitizer, for a call that can block and for a call that opens or
-// closes a descriptor (THE SANITIZERS of foundation/os/Syscall.h).  Only
+// ThreadSanitizer, for a call that can block, for a map and an unmap, and for
+// a call that opens or closes a descriptor (THE SANITIZERS of
+// foundation/os/Syscall.h).  Only
 // src/foundation/os/Syscall.cpp includes this header, and only a build with
 // ThreadSanitizer calls the functions.
 
@@ -14,8 +15,10 @@ namespace foundation::os::detail {
 // ThreadSanitizer intercepts, with the descriptor, the address and the count
 // of the raw call.  The result is the word of the kernel: a value, or -E for
 // the error number E.  These are the only calls of Syscall that can block and
-// that the C library gives, and src/foundation/os/Syscall.cpp refuses a
-// blocking call with no route at compile time.
+// that go through the C library.  The sanitizer does not intercept the
+// clock_nanosleep of the C library, so that call stays raw (enter_sleep).
+// src/foundation/os/Syscall.cpp refuses a blocking call with no route at
+// compile time.
 //
 // The two functions have the attribute nothrow and no noexcept specifier.
 // src/foundation/os/Intercepted.cpp tells why.
@@ -63,6 +66,25 @@ void enter_futex(FutexCall const& call) noexcept;
 // RESULT of the kernel.  The thread is out of the blocking call, and a wait
 // that ended with no error sees the writes that a wake on the word published.
 void leave_futex(FutexCall const& call, long result) noexcept;
+
+// One raw clock_nanosleep: the clock, the flags, the address of the requested
+// time and the address of the time that remains.
+struct SleepWords {
+    std::uint64_t clock = 0;
+    std::uint64_t flags = 0;
+    std::uint64_t request = 0;
+    std::uint64_t remain = 0;
+};
+
+// Tells ThreadSanitizer of a raw clock_nanosleep before the call.  The
+// sanitizer checks the read of the requested time.  Then the thread is in a
+// blocking call until leave_sleep, and a handler of a signal runs at once.
+void enter_sleep(SleepWords const& words) noexcept;
+
+// Tells ThreadSanitizer of a raw clock_nanosleep after the call, with the word
+// RESULT of the kernel.  The thread is out of the blocking call, and then the
+// sanitizer sees the write of the time that remains.
+void leave_sleep(SleepWords const& words, long result) noexcept;
 
 // Tells ThreadSanitizer of a raw close of DESCRIPTOR before the call.  The
 // sanitizer checks the close against each use of the descriptor in a
