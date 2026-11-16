@@ -457,6 +457,11 @@
       "constructor": "\\bViewMut\\("
     },
     {
+      "name": "neg_witness_core_viewmutchunks_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bViewMutChunks\\("
+    },
+    {
       "name": "neg_witness_core_writelease_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bWriteLease\\("
@@ -1415,6 +1420,10 @@
     },
     {
       "type": "foundation::core::ViewMut<int, forge::brand>",
+      "header": "foundation/core/Region.h"
+    },
+    {
+      "type": "foundation::core::ViewMutChunks<int, forge::brand>",
       "header": "foundation/core/Region.h"
     },
     {
