@@ -762,8 +762,9 @@ public:
     // stages start.
     struct BgPipelineStart {};
 
-    // Lifetime: the producing stage owns it until it is pushed, after which
-    // the consuming stage owns it and deletes it once it is handled.  A
+    // Lifetime: a Box owns each message.  The producing stage owns the Box
+    // until its push, the channel holds the object after it, and the Box of
+    // the pop of the consuming stage ends the object once it is handled.  A
     // region message owns the parts of its region, so the region memory
     // moves with it.
     //
@@ -803,16 +804,18 @@ public:
     };
 
     // Makes a commit marker: a work item that carries only the count of
-    // entries that one batch consumed and the release floor after them.
-    [[nodiscard]] BgBuildWork* make_commit_work(uint32_t count);
+    // entries that one batch consumed and the release floor after them.  The
+    // Box takes the allocation capability of the detect stage.
+    [[nodiscard]] ::fixy::Box<BgBuildWork> make_commit_work(::foundation::effects::Alloc alloc, uint32_t count);
 
     // The detect stage calls this at each iteration boundary that the
     // detector reports.  It drops the held ops before the iteration, copies
     // the completed iteration into a work item, and keeps the last K ops,
-    // which begin the next iteration.  The buffers of the work item take the
-    // allocation capability of the detect stage.  It returns null when the
-    // iteration is empty or no metadata log is set.
-    [[nodiscard]] BgBuildWork* prepare_iteration_build_work(::foundation::effects::Alloc alloc);
+    // which begin the next iteration.  The work item and its buffers take the
+    // allocation capability of the detect stage.  It gives no work item when
+    // the iteration is empty or no metadata log is set.
+    [[nodiscard]] ::fixy::Option<::fixy::Box<BgBuildWork>>
+    prepare_iteration_build_work(::foundation::effects::Alloc alloc);
 
     // The detect stage calls this after each op.  It drops the held ops
     // before IterationDetector::oldest_claimable(), because no future work

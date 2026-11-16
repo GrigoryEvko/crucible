@@ -13,6 +13,8 @@
 #include <crucible/SchemaTable.h>
 #include <fixy/Core.h>
 #include <fixy/Refined.h>
+#include <fixy/concurrent/ChannelEnd.h>
+#include <fixy/concurrent/PermissionedSpscBoxChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
@@ -21,6 +23,7 @@
 #include <fixy/os/Time.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Lifetime.h>
+#include <foundation/Linear.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/permissions/Permission.h>
@@ -28,7 +31,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
-#include <memory>
 #include <utility>
 
 namespace crucible {
@@ -102,7 +104,10 @@ inline constexpr uint64_t MAILBOX_MAX_SLEEP_NANOS = 1000000;
 // one order.  A push whose exchange comes after the exchange of the consumer
 // reads PARKED and wakes the consumer.  The item of a push whose exchange
 // comes before is visible to the test of the consumer after its exchange.
-// So no wake is lost.  Each word has its own cache line.
+// So no wake is lost.  The producer stage closes its channel before its last
+// wake (close_and_wake), and the test of the consumer reads the closed state
+// too, so the end of the stream ends a park in the same way.  Each word has
+// its own cache line.
 class alignas(64) ChannelPark {
 public:
     // The producer calls it after each push.  It makes a system call only
@@ -120,7 +125,7 @@ public:
     void park(::fixy::BgLoadCtx const& ctx, Input const& input,
               ::fixy::Option<::fixy::futex::Deadline> deadline) noexcept {
         (void)word_.exchange_acq_rel(PARKED);
-        if (!input.has_item()) {
+        if (!input.has_item_or_end()) {
             (void)::fixy::futex::wait(ctx, word_, PARKED, std::move(deadline))
                 .expect("the kernel parks a stage of the pipeline on its own word");
         }
@@ -213,12 +218,15 @@ struct BackgroundThread::Pipeline {
 
     using StartChannel =
         ::fixy::concurrent::spsc_channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
+    // A Box owns each message of the three channels after the start, and the
+    // channel moves the Box from one stage to the next (THE OWNERS of
+    // fixy/concurrent/PermissionedSpscBoxChannel.h).
     using TraceBatchChannel =
-        ::fixy::concurrent::spsc_channel_t<BgTraceBatch*, 64, decltype(detail::bg_pipeline::trace_batch_root())>;
+        ::fixy::concurrent::spsc_box_channel_t<BgTraceBatch, 64, decltype(detail::bg_pipeline::trace_batch_root())>;
     using BuildWorkChannel =
-        ::fixy::concurrent::spsc_channel_t<BgBuildWork*, 64, decltype(detail::bg_pipeline::build_work_root())>;
+        ::fixy::concurrent::spsc_box_channel_t<BgBuildWork, 64, decltype(detail::bg_pipeline::build_work_root())>;
     using GraphPublishChannel =
-        ::fixy::concurrent::spsc_channel_t<BgGraphPublish*, 64, decltype(detail::bg_pipeline::graph_publish_root())>;
+        ::fixy::concurrent::spsc_box_channel_t<BgGraphPublish, 64, decltype(detail::bg_pipeline::graph_publish_root())>;
 
     // The consumer end of a stage, together with the thread the stage
     // serves, the context of the run and the wait words of the channels.
@@ -257,9 +265,16 @@ struct BackgroundThread::Pipeline {
 
         [[nodiscard]] decltype(std::declval<Consumer&>().try_pop()) try_pop() noexcept { return inner_.try_pop(); }
 
-        // True when the channel holds an item.  A test after the mark of a
-        // park sees each item of a push whose wake the mark could miss.
-        [[nodiscard]] bool has_item() const noexcept { return !inner_.empty_approx(); }
+        // The oldest item, NoItem::Empty, or NoItem::Closed after the last
+        // item of a stream that the stage before this one ended.
+        [[nodiscard]] decltype(std::declval<Consumer&>().try_receive()) try_receive() noexcept {
+            return inner_.try_receive();
+        }
+
+        // True when the channel holds an item, or when its stream ended.  A
+        // test after the mark of a park sees each item of a push and the end
+        // of each close whose wake the mark could miss.
+        [[nodiscard]] bool has_item_or_end() const noexcept { return !inner_.empty_approx() || inner_.is_closed(); }
 
         [[nodiscard]] BackgroundThread& owner() const noexcept { return *owner_; }
         [[nodiscard]] ::fixy::BgLoadCtx const& ctx() const noexcept { return ctx_; }
@@ -274,27 +289,48 @@ struct BackgroundThread::Pipeline {
     // Also carries the owner to the publish stage from its first
     // iteration, so the stage can serve the owner mailbox before any
     // region arrives.
+    // The sink takes the end mark of the pipeline by value, and it takes
+    // each mark at its first push.
     struct BgSinkProducerHandle {
         ::fixy::WeakRef<BackgroundThread> owner{};
 
-        [[nodiscard]] bool try_push(BgPipelineDone* const& done) noexcept {
-            delete done;
-            return true;
-        }
+        [[nodiscard]] bool try_push(BgPipelineDone const& /*done*/) noexcept { return true; }
     };
 
-    // Pushes value into the channel of producer, and wakes the consumer when
+    // Pushes the Box into the channel of producer, and wakes the consumer when
     // it parks on park.  A full channel means that its consumer works, and
-    // its consumer gives no wake for a free cell.  So the producer spins,
-    // and then it sleeps with a growing bound, until the push goes in.
+    // its consumer gives no wake for a free cell.  A full channel gives the
+    // Box back, so the producer spins, and then it sleeps with a growing
+    // bound, until the push goes in.
     template <class Producer, class T>
     static void push_pipeline(::fixy::BgLoadCtx const& ctx, detail::bg_pipeline::ChannelPark& park, Producer& producer,
-                              T const& value) {
+                              ::fixy::Box<T>&& value) {
         detail::bg_pipeline::StageIdle full{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
-        while (!producer.try_push(value)) {
+        ::fixy::Box<T> pending = std::move(value);
+        for (;;) {
+            ::fixy::Option<::fixy::Box<T>> kept = producer.try_push(std::move(pending));
+            if (kept.is_none()) break;
+            pending = std::move(kept).expect("a full channel gives the Box back");
             full.pause_or_sleep(ctx);
         }
         park.signal(ctx);
+    }
+
+    // Ends the producer handle of a stage, which closes its channel (THE END
+    // OF THE STREAM of fixy/concurrent/ChannelEnd.h), and then wakes the
+    // consumer.  The wake comes after the close, so a consumer that parks
+    // after its last receive reads the end.
+    template <class Producer>
+    static void close_and_wake(::fixy::BgLoadCtx const& ctx, detail::bg_pipeline::ChannelPark& park,
+                               Producer&& out) noexcept {
+        ::foundation::linear::drop(std::move(out));
+        park.signal(ctx);
+    }
+
+    // True when a receive found the end of the stream.
+    template <class T>
+    [[nodiscard]] static bool is_end_of_stream(::fixy::Result<T, ::fixy::concurrent::NoItem> const& received) noexcept {
+        return received.err().value_or(::fixy::concurrent::NoItem::Empty) == ::fixy::concurrent::NoItem::Closed;
     }
 
     // One idle step of a stage whose input channel is empty: a poll of the
@@ -309,7 +345,9 @@ struct BackgroundThread::Pipeline {
     // The four stages of the pipeline, in the order of its channels.
     //
     // The drain stage pops batches from the trace ring until a signal on
-    // stop_requested, then pushes the last batch and the stop sentinel.
+    // stop_requested, then pushes the last batch and closes its channel.
+    // Each later stage ends at the end of its input stream, and it closes
+    // its own channel then.
     static void DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out);
 
     // The detect stage feeds each entry to the iteration detector, cuts a
@@ -320,8 +358,7 @@ struct BackgroundThread::Pipeline {
 
     // The build stage builds a trace graph from each work item and
     // forwards commit markers unchanged.  A work item that met the overflow
-    // of the metadata log sends nothing.  It forwards the stop sentinel, a
-    // null BgBuildWork*, as a null BgGraphPublish*.
+    // of the metadata log sends nothing.
     //
     // The pipeline runs this body as the entry of its own thread, so the
     // body takes the background context of that thread from the door.
@@ -355,8 +392,9 @@ BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation)
 BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready)
     : region_ready_{::fixy::to(on_region_ready)}, pipeline_{::fixy::mint_box<Pipeline>(allocation)} {}
 
-BackgroundThread::BgBuildWork* BackgroundThread::make_commit_work(uint32_t count) {
-    auto* work = new BgBuildWork{};
+::fixy::Box<BackgroundThread::BgBuildWork> BackgroundThread::make_commit_work(::foundation::effects::Alloc alloc,
+                                                                              uint32_t count) {
+    ::fixy::Box<BgBuildWork> work = ::fixy::mint_box<BgBuildWork>(alloc);
     work->commit_only = true;
     work->commit_count = count;
     work->meta_floor = meta_floor_();
@@ -422,7 +460,8 @@ void BackgroundThread::drop_unclaimable_ops_() noexcept {
     if (oldest_claimable > first_held) pending_ops_.drop_oldest(oldest_claimable - first_held);
 }
 
-BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc alloc) {
+::fixy::Option<::fixy::Box<BackgroundThread::BgBuildWork>>
+BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc alloc) {
     uint32_t total = static_cast<uint32_t>(pending_ops_.size());
     const uint32_t iter_len = detector.last_completed_len;
 
@@ -433,9 +472,9 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work(::
     const uint32_t completed_len = ::fixy::saturating_sub(total, IterationDetector::K);
     (void)iterations_completed.bump();
 
-    BgBuildWork* work = nullptr;
+    ::fixy::Option<::fixy::Box<BgBuildWork>> built{::fixy::none};
     if (meta_log && completed_len > 0) {
-        work = new BgBuildWork{};
+        ::fixy::Box<BgBuildWork> work = ::fixy::mint_box<BgBuildWork>(alloc);
         work->reset_point = applied_reset_.peek_relaxed();
         // Each buffer takes the oldest completed_len held ops, in order.
         PendingOps const& held = pending_ops_;
@@ -447,11 +486,12 @@ BackgroundThread::BgBuildWork* BackgroundThread::prepare_iteration_build_work(::
             alloc, completed_len, [&held](size_t index) noexcept { return held.scope_hash(index); });
         work->callsite_hashes = ::fixy::mint_heap_array_with<CallsiteHash>(
             alloc, completed_len, [&held](size_t index) noexcept { return held.callsite_hash(index); });
+        built = ::fixy::some(std::move(work));
     }
 
     // The last K ops begin the next iteration, and the ring keeps them.
     pending_ops_.drop_oldest(completed_len);
-    return work;
+    return built;
 }
 
 // The detect stage reads the request before the op at its point, because the
@@ -603,7 +643,8 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
         CRUCIBLE_SPIN_PAUSE;
     }
 
-    auto batch = std::make_unique<BgTraceBatch>();
+    ::foundation::effects::Alloc const alloc = in.ctx().cap().alloc;
+    ::fixy::Box<BgTraceBatch> batch = ::fixy::mint_box<BgTraceBatch>(alloc);
     detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
 
     // A stop request does not wake a sleep of this stage, so the stage reads
@@ -620,20 +661,17 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
         }
         idle.reset();
 
-        push_pipeline(in.ctx(), next, out, batch.get());
-        batch.release();
-        batch = std::make_unique<BgTraceBatch>();
+        push_pipeline(in.ctx(), next, out, std::move(batch));
+        batch = ::fixy::mint_box<BgTraceBatch>(alloc);
     }
 
     batch->count = owner.ring.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(),
                                                    batch->scope_hashes.view(), batch->callsite_hashes.view());
     if (batch->count > 0) {
-        push_pipeline(in.ctx(), next, out, batch.get());
-        batch.release();
+        push_pipeline(in.ctx(), next, out, std::move(batch));
     }
 
-    BgTraceBatch* stop = nullptr;
-    push_pipeline(in.ctx(), next, out, stop);
+    close_and_wake(in.ctx(), next, std::move(out));
 }
 
 void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
@@ -642,23 +680,19 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
     detail::bg_pipeline::ChannelParks& parks = in.parks();
     // The park of this stage has no deadline, so the stage reads no bound.
     detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
+    ::foundation::effects::Alloc const alloc = in.ctx().cap().alloc;
     while (true) {
-        auto maybe_batch = in.try_pop();
-        if (maybe_batch.is_none()) {
+        ::fixy::Result<::fixy::Box<BgTraceBatch>, ::fixy::concurrent::NoItem> received = in.try_receive();
+        if (received.is_err()) {
+            if (is_end_of_stream(received)) break;
             wait_for_item(in, parks.trace_batches, idle, false);
             continue;
         }
         idle.reset();
 
-        std::unique_ptr<BgTraceBatch> batch{std::move(maybe_batch).expect("the test above found an item")};
-        if (!batch) {
-            BgBuildWork* stop = nullptr;
-            push_pipeline(in.ctx(), parks.build_work, out, stop);
-            return;
-        }
-
-        // The channel gives the batch as an owning pointer.  The stage reads
-        // the ops through this reference.
+        // The channel gives the batch in a Box, which ends it after the
+        // loop.  The stage reads the ops through this reference.
+        ::fixy::Box<BgTraceBatch> const batch = std::move(received).expect("the test above found an item");
         BgTraceBatch const& ops = *batch;
 
         // The drain stage fills at most BATCH_SIZE ops.  The one test of the
@@ -673,15 +707,14 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
             owner.apply_due_reset_();
             ++owner.stream_ops_;
 
-            owner.pending_ops_.push(in.ctx().cap().alloc, entry, ops.meta_starts.at(slot),
+            owner.pending_ops_.push(alloc, entry, ops.meta_starts.at(slot),
                                     owner.take_record_start_(entry, ops.meta_starts.at(slot)),
                                     ops.scope_hashes.at(slot), ops.callsite_hashes.at(slot));
 
-            if (owner.detector.check(in.ctx().cap().alloc, entry.schema_hash, entry.shape_hash)) {
-                if (auto work =
-                        std::unique_ptr<BgBuildWork>(owner.prepare_iteration_build_work(in.ctx().cap().alloc))) {
-                    push_pipeline(in.ctx(), parks.build_work, out, work.get());
-                    work.release();
+            if (owner.detector.check(alloc, entry.schema_hash, entry.shape_hash)) {
+                ::fixy::Option<::fixy::Box<BgBuildWork>> work = owner.prepare_iteration_build_work(alloc);
+                if (work.is_some()) {
+                    push_pipeline(in.ctx(), parks.build_work, out, std::move(work).expect("the test above found work"));
                 }
             }
             owner.drop_unclaimable_ops_();
@@ -690,10 +723,9 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
         // no ops of the trace that diverged while it waits for the next op.
         owner.apply_due_reset_();
 
-        auto commit = std::unique_ptr<BgBuildWork>(owner.make_commit_work(ops.count));
-        push_pipeline(in.ctx(), parks.build_work, out, commit.get());
-        commit.release();
+        push_pipeline(in.ctx(), parks.build_work, out, owner.make_commit_work(alloc, ops.count));
     }
+    close_and_wake(in.ctx(), parks.build_work, std::move(out));
 }
 
 void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename GraphPublishChannel::ProducerHandle&& out) {
@@ -704,19 +736,15 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
     detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
 
     while (true) {
-        auto maybe_work = in.try_pop();
-        if (maybe_work.is_none()) {
+        ::fixy::Result<::fixy::Box<BgBuildWork>, ::fixy::concurrent::NoItem> received = in.try_receive();
+        if (received.is_err()) {
+            if (is_end_of_stream(received)) break;
             wait_for_item(in, parks.build_work, idle, false);
             continue;
         }
         idle.reset();
 
-        std::unique_ptr<BgBuildWork> work{std::move(maybe_work).expect("the test above found an item")};
-        if (!work) {
-            BgGraphPublish* stop = nullptr;
-            push_pipeline(ctx, parks.graph_publish, out, stop);
-            return;
-        }
+        ::fixy::Box<BgBuildWork> const work = std::move(received).expect("the test above found an item");
 
         if (work->commit_only) {
             // Forward the marker downstream so total_processed advances
@@ -725,13 +753,12 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
             // foreground can see the counter catch up, dispatch, and find
             // no pending region, or an active region whose plan is still
             // being computed.
-            auto publish = std::make_unique<BgGraphPublish>();
+            ::fixy::Box<BgGraphPublish> publish = ::fixy::mint_box<BgGraphPublish>(ctx.cap().alloc);
             publish->kind = BgGraphPublish::Kind::Commit;
             publish->commit_count = work->commit_count;
             publish->meta_floor = work->meta_floor;
             publish->reset_point = work->reset_point;
-            push_pipeline(ctx, parks.graph_publish, out, publish.get());
-            publish.release();
+            push_pipeline(ctx, parks.graph_publish, out, std::move(publish));
             continue;
         }
 
@@ -765,11 +792,13 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
 
         BuiltRegion region = std::move(built).expect("the build made a region");
 
-        auto publish = std::make_unique<BgGraphPublish>(BgGraphPublish{
-            .kind = BgGraphPublish::Kind::Region, .region = std::move(region), .reset_point = work->reset_point});
-        push_pipeline(ctx, parks.graph_publish, out, publish.get());
-        publish.release();
+        push_pipeline(
+            ctx, parks.graph_publish, out,
+            ::fixy::mint_box<BgGraphPublish>(ctx.cap().alloc, BgGraphPublish{.kind = BgGraphPublish::Kind::Region,
+                                                                             .region = std::move(region),
+                                                                             .reset_point = work->reset_point}));
     }
+    close_and_wake(ctx, parks.graph_publish, std::move(out));
 }
 
 // Keeping the publish stage separate means the publish-side delegate
@@ -784,8 +813,14 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
 
     while (true) {
         owner.serve_owner_mailbox_(PublishStage{});
-        auto maybe_publish = in.try_pop();
-        if (maybe_publish.is_none()) {
+        ::fixy::Result<::fixy::Box<BgGraphPublish>, ::fixy::concurrent::NoItem> received = in.try_receive();
+        if (received.is_err()) {
+            if (is_end_of_stream(received)) {
+                // The sink takes each value at its first push.
+                const bool is_taken = out.try_push(BgPipelineDone{});
+                CRUCIBLE_FATAL_INVARIANT(is_taken);
+                return;
+            }
             // A job in the owner mailbox gives no wake, so the park is
             // timed, and the stage serves the mailbox after each park.
             wait_for_item(in, in.parks().graph_publish, idle, true);
@@ -793,15 +828,7 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
         }
         idle.reset();
 
-        std::unique_ptr<BgGraphPublish> publish{std::move(maybe_publish).expect("the test above found an item")};
-        if (!publish) {
-            // The sink takes each value at its first push.
-            auto done = std::make_unique<BgPipelineDone>();
-            const bool is_taken = out.try_push(done.get());
-            CRUCIBLE_FATAL_INVARIANT(is_taken);
-            done.release();
-            return;
-        }
+        ::fixy::Box<BgGraphPublish> publish = std::move(received).expect("the test above found an item");
 
         if (publish->kind == BgGraphPublish::Kind::Commit) {
             // The marker sits strictly after every publish message from
