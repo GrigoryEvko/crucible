@@ -76,7 +76,8 @@ int main() {
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::PmuSample>>);
     if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_pmu_sample()");
 
-    for (crucible::perf::PmuSample& hub : loaded) {
+    {
+        crucible::perf::PmuSample hub = std::move(loaded).expect("the test above found the hub");
         const auto attached_refined = hub.attached_programs();
         const auto failures_refined = hub.attach_failures();
         static_assert(

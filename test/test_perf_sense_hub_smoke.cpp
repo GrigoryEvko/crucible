@@ -121,7 +121,8 @@ int main() {
     // skips.  A populated hub also carries counters that must agree with
     // each other.
     if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_sense_hub()");
-    for (crucible::perf::SenseHub& hub : loaded) {
+    {
+        crucible::perf::SenseHub hub = std::move(loaded).expect("the test above found the hub");
         // Both counters come back refined against an upper bound that
         // the implementation enforces at construction.  Pinning the
         // wrapper type first catches a later relaxation of that bound.

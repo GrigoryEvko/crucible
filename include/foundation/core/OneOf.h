@@ -12,7 +12,9 @@
 // The roads to a value are the total match(), with one arm for each
 // alternative in the order of Ts, and expect<T>(), the fatal unwrap of one
 // alternative.  get<T>() lends the active alternative as an Option of a Ref
-// of the Ref family, with no value for a different alternative.  is<T>()
+// of a const T, with no value for a different alternative.  The one road
+// that writes the active alternative in place is the frame door
+// one_of.with_mut(arms...) of foundation/core/Frame.h.  is<T>()
 // tells the active alternative, and which() gives its index as an Index<N>
 // of the Region family, after one compare of the tag with the count.  The
 // type has no operator*, no operator-> and no operator bool, and it is
@@ -31,8 +33,8 @@
 // keeps the moved-from alternative in the source, which its destructor
 // ends, so a borrow of the source stays a borrow of a live object.  A
 // linear alternative takes the owning form, and only expect<T>() and the
-// rvalue match() give it out.  get<T>() lends a linear alternative only as a
-// const borrow.
+// rvalue match() give it out.  get<T>() lends each alternative only as a
+// const borrow, and the frame door refuses a linear alternative.
 //
 // The includers of Choice.h do not read OneOf, so it has a header of its own.
 
@@ -41,6 +43,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Frame.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
@@ -151,6 +154,21 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
         }
     }
 
+    // The arm at Index of the frame door takes the RefMut of the alternative
+    // at Index, with the brand of the frame (THE WALKS OF THE TAG).
+    template <std::size_t Index, class Result, class Brand, class... Arms>
+    constexpr Result written_from_(Arms&&... arms) {
+        if (index_() == Index) {
+            return static_cast<Arms...[Index]&&>(arms...[Index])(
+                RefMut<Ts... [Index], Brand> { detail::FrameDoor::key(), alternative_<Index>() });
+        }
+        if constexpr (Index + 1 == sizeof...(Ts)) {
+            detail::report_forged_one_of_tag_();
+        } else {
+            return this->template written_from_<Index + 1, Result, Brand>(static_cast<Arms&&>(arms)...);
+        }
+    }
+
 public:
     // The alternative of the type of the value.  The conversion is implicit,
     // and the type of the value must be one of Ts, so no conversion of the
@@ -197,27 +215,19 @@ public:
         return static_cast<T&&>(alternative_<index>());
     }
 
-    // The active alternative when it is T, as an Option of a Ref with the
-    // fresh brand of the call, or no value for each other alternative: one
-    // compare.  The OneOf keeps the alternative.  A linear alternative has
-    // only the form of a const borrow, because a move through a Ref would
-    // give out the alternative that the OneOf still holds.  The pack refuses
-    // each explicit argument after T, so no caller names the brand, and the
-    // result type holds the brand in undeducible_brand_t.  The
-    // address of an alternative is not null, because a reference names an
-    // object.  The build keeps each test of an address for null
-    // (-fno-delete-null-pointer-checks), so the assumption states that fact,
-    // and a match of the Option tests only the tag.  The condition reads a
-    // local reference and no member, so a hardened build folds it too.
-    template <class T, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires detail::AlternativeOf<T, Ts...> && (sizeof...(Refused) == 0) && DroppablePayload<T>
-    [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>> get() & noexcept {
-        constexpr std::size_t index = detail::index_in_v<T, Ts...>;
-        if (index_() != index) return Option<Ref<T, Fresh>>{none};
-        T& alternative = alternative_<index>();
-        [[assume(__builtin_addressof(alternative) != nullptr)]];
-        return Option<Ref<T, Fresh>>::some(detail::RefDoor::lend<Fresh>(alternative));
-    }
+    // The active alternative when it is T, as an Option of a Ref of a const
+    // T with the fresh brand of the call, or no value for each other
+    // alternative: one compare.  The OneOf keeps the alternative.  The Ref
+    // reads the alternative, also of a OneOf that is not const.  The frame
+    // door with_mut writes the active alternative in place
+    // (foundation/core/Frame.h).  The pack refuses each explicit argument
+    // after T, so no caller names the brand, and the result type holds the
+    // brand in undeducible_brand_t.  The address of an alternative is not
+    // null, because a reference names an object.  The build keeps each test
+    // of an address for null (-fno-delete-null-pointer-checks), so the
+    // assumption states that fact, and a match of the Option tests only the
+    // tag.  The condition reads a local reference and no member, so a
+    // hardened build folds it too.
     template <class T, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires detail::AlternativeOf<T, Ts...> && (sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
@@ -304,6 +314,48 @@ public:
                      && ...)
     void match(Arms&&... arms) const&& = delete("a borrow match of a temporary OneOf gives a reference into an object "
                                                 "that the full expression ends: match the rvalue, or name the OneOf");
+
+    // The frame door of the active alternative (foundation/core/Frame.h): the
+    // arm of the active alternative gets its RefMut in place, and the door
+    // gives the result of the arm.  The arm at each position takes the
+    // alternative at that position, and each arm gives the same type.  The
+    // OneOf keeps the alternative, and the door writes no byte of the OneOf.
+    // The rule borrow-match refuses an arm that assigns, moves or changes
+    // this OneOf, and an owning OneOf counts the lend (THE LEND COUNT of
+    // Choice.h).  A linear alternative has no frame door, because an arm
+    // could move it out through the RefMut and leave the OneOf with it.  Each
+    // explicit argument goes to the pack of the arms, so no caller names the
+    // brand.  Complexity: at most one compare of the tag for each
+    // alternative.
+    template <class... Arms, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Arms) == sizeof...(Ts)) && (DroppablePayload<Ts> && ...)
+             && (std::is_nothrow_invocable_v<Arms &&, RefMut<Ts, Fresh>> && ...)
+             && (std::same_as<std::invoke_result_t<Arms &&, RefMut<Ts, Fresh>>,
+                              std::invoke_result_t<Arms...[0] &&, RefMut<Ts...[0], Fresh>>>
+                 && ...)
+             && FrameResult<std::invoke_result_t<Arms...[0]&&, RefMut<Ts...[0], Fresh>>, Fresh>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Arms...[0]&&, RefMut<Ts...[0], Fresh>>
+        with_mut(Arms&&... arms) & noexcept {
+        using Result = std::invoke_result_t<Arms...[0]&&, RefMut<Ts...[0], Fresh>>;
+        [[maybe_unused]] auto const lend = slot_.lend_(detail::SumDoor::key());
+        return this->template written_from_<0, Result, Fresh>(static_cast<Arms&&>(arms)...);
+    }
+
+    // Arms whose result holds a borrow or names the brand of the frame bind
+    // to this overload, so the refusal gives its reason.
+    template <class... Arms, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Arms) == sizeof...(Ts)) && (DroppablePayload<Ts> && ...)
+                 && (std::is_nothrow_invocable_v<Arms &&, RefMut<Ts, Fresh>> && ...)
+                 && (std::same_as<std::invoke_result_t<Arms &&, RefMut<Ts, Fresh>>,
+                                  std::invoke_result_t<Arms...[0] &&, RefMut<Ts...[0], Fresh>>>
+                     && ...)
+                 && (!FrameResult<std::invoke_result_t<Arms...[0] &&, RefMut<Ts...[0], Fresh>>, Fresh>)
+    void with_mut(Arms&&... arms) & = delete("the result of a frame door leaves the frame, so it holds no reference "
+                                             "and no address, and it names no brand of the frame: give a plain value");
+
+    template <class... Arms>
+    void with_mut(Arms&&... arms) && = delete("a frame door of a temporary OneOf writes an alternative that the full "
+                                              "expression ends: name the OneOf");
 
     // Two OneOfs of one type are equal when the same alternative is active
     // in each, with equal values.  The cost is one compare of the tags and

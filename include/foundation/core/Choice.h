@@ -22,6 +22,12 @@
 // operator->, so a read of an empty Option is not possible.  The whole
 // type is [[nodiscard]].
 //
+// The loop and the borrow match read the payload.  The one road that writes
+// the payload in place is the frame door option.with_mut(on_some, on_none)
+// of foundation/core/Frame.h: on_some gets the RefMut of the payload, and
+// the Option keeps it.  A Result gives its value and its error in place
+// through the same door, and a OneOf gives its active alternative.
+//
 // The storage has three forms, and the payload type selects the form:
 //
 //   niche    The payload declares an empty value through niche<T>.  The
@@ -61,11 +67,14 @@
 // work in each build and with each contract semantic, and it ends the
 // process through fatal() of the Report family.
 
+#include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/OpenExtension.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Fatal.h>
+#include <foundation/core/Frame.h>
+#include <foundation/core/Record.h>
 #include <foundation/reflect/Instance.h>
 #include <foundation/reflect/TypeComponents.h>
 
@@ -548,6 +557,40 @@ template <class Arm, class Payload>
     return false;
 }
 
+// The template arguments of a type, by index.  The walk indexes the list, so
+// it makes no static list.
+[[nodiscard]] consteval std::size_t template_argument_count(std::meta::info type) {
+    return std::meta::template_arguments_of(type).size();
+}
+
+[[nodiscard]] consteval std::meta::info template_argument_at(std::meta::info type, std::size_t index) {
+    return std::meta::template_arguments_of(type)[index];
+}
+
+// True when the type is the brand, or names the brand at a depth of its
+// template arguments.  The walk reads each template argument that is a
+// type.  The function is not a template, so no unit can specialize it and
+// change what a gate admits.  Complexity: O(A^2) for A template arguments
+// at one depth, because each index reads the list again, at compile time
+// only.
+[[nodiscard]] consteval bool names_brand(std::meta::info type, std::meta::info brand) {
+    std::meta::info const bare = std::meta::dealias(std::meta::remove_cvref(type));
+    if (bare == brand) {
+        return true;
+    }
+    if (!std::meta::has_template_arguments(bare)) {
+        return false;
+    }
+    std::size_t const count = template_argument_count(bare);
+    for (std::size_t index = 0; index < count; ++index) {
+        std::meta::info const argument = template_argument_at(bare, index);
+        if (std::meta::is_type(argument) && names_brand(argument, brand)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace detail
 
 // An arm of an rvalue match that takes its payload by value.  The match ends
@@ -565,6 +608,36 @@ concept TakesPayloadByValue = detail::takes_payload_by_value_<Arm, Payload>();
 template <class Given>
 concept HoldsNoBorrow =
     std::is_arithmetic_v<Given> || std::is_enum_v<Given> || std::is_void_v<Given> || !detail::holds_borrow_(^^Given);
+
+// A result of the body of a frame door (foundation/core/Frame.h): void, or a
+// value that holds no borrow, names no brand of the frame and fits a Record.
+// The door gives the value and the owner back in one Record, so the value
+// leaves the frame.  A unique borrow or a Ref of the frame in it would
+// outlive the frame, and so would a brand that proves something about the
+// frame.  A const value goes into the Record with no const.
+template <class Given, class Brand>
+concept FrameResult =
+    std::is_void_v<Given>
+    || (HoldsNoBorrow<Given> && !detail::names_brand(^^Given, ^^Brand) && RecordElement<std::remove_cv_t<Given>>);
+
+namespace detail {
+
+// The type that a frame door gives back: the owner alone for a body that
+// gives void, and a Record of the result and the owner for each other body.
+template <class Given, class Owner>
+struct FrameReturn {
+    using type = Record<std::remove_cv_t<Given>, Owner>;
+};
+
+template <class Owner>
+struct FrameReturn<void, Owner> {
+    using type = Owner;
+};
+
+template <class Given, class Owner>
+using frame_return_t = typename FrameReturn<Given, Owner>::type;
+
+}  // namespace detail
 
 // The mark of an error, so that an error and a value of the same type
 // never meet in one conversion.  Only a Result reads the error of the mark.
@@ -805,6 +878,27 @@ public:
     }
 };
 
+// The arms of the frame door of an Option: on_some takes the RefMut of the
+// payload, on_none takes nothing, each with no throw, and the two give one
+// type.  A linear payload has no frame door, because an arm could move the
+// payload out through the RefMut and leave the Option full.  The door reads
+// the niche of the payload in its body (Option::with_mut).
+template <class T, class OnSome, class OnNone, class Brand>
+concept OptionFrameArms =
+    DroppablePayload<T> && std::is_nothrow_invocable_v<OnSome&&, RefMut<T, Brand>>
+    && std::is_nothrow_invocable_v<OnNone&&>
+    && std::same_as<std::invoke_result_t<OnSome&&, RefMut<T, Brand>>, std::invoke_result_t<OnNone&&>>;
+
+// The arms of the frame door of a Result: on_ok takes the RefMut of the
+// value and on_err the RefMut of the error, each with no throw, and the two
+// give one type.  A linear value or error has no frame door, for the reason
+// of OptionFrameArms.
+template <class T, class E, class OnOk, class OnErr, class Brand>
+concept ResultFrameArms =
+    DroppablePayload<T> && DroppablePayload<E> && std::is_nothrow_invocable_v<OnOk&&, RefMut<T, Brand>>
+    && std::is_nothrow_invocable_v<OnErr&&, RefMut<E, Brand>>
+    && std::same_as<std::invoke_result_t<OnOk&&, RefMut<T, Brand>>, std::invoke_result_t<OnErr&&, RefMut<E, Brand>>>;
+
 template <ChoicePayload T>
 class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T>>]] Option {
     detail::OptionSlot<T> slot_;
@@ -930,37 +1024,53 @@ public:
         "a borrow match of a temporary Option gives a reference into an object that the full expression ends: match "
         "the rvalue, or name the Option");
 
-    // The loop `for (auto& value : option)` makes one turn when the Option
-    // holds a value, and no turn when it is empty.  A cursor of a
-    // temporary Option would point into an object that the full
+    // The frame door of the payload (foundation/core/Frame.h): on_some gets
+    // the RefMut of the payload in place, or on_none runs for an empty
+    // Option, and the door gives the result of the arm.  The Option keeps
+    // the payload, and the door writes no byte of the Option.  The rule
+    // borrow-match refuses an arm that assigns, moves or changes this
+    // Option, and an owning Option counts the lend (THE LEND COUNT), so no
+    // arm ends the payload while it holds the RefMut.  A write through the
+    // RefMut bypasses the test of Option::some, so a niche payload takes the
+    // door only when its niche states that no door of T builds the empty
+    // value.  The body reads the niche, as the choice of a cursor did, so no
+    // constraint reads the open template niche.  The brand comes after the
+    // deduced arms and a pack, so no caller names it.  One branch.
+    template <class OnSome, class OnNone, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0)
+             && OptionFrameArms<T, OnSome, OnNone, Fresh> && FrameResult<std::invoke_result_t<OnNone&&>, Fresh>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone&&>
+        with_mut(OnSome&& on_some, OnNone&& on_none) & noexcept {
+        static_assert(detail::UndeclaredNicheOf<T> || detail::NicheRead<T>::is_empty_never_built(),
+                      "Option::with_mut: a write through the RefMut can write the empty value of the niche of the "
+                      "payload, and a full Option would then read as empty.  State is_empty_never_built in the niche "
+                      "of the payload, or match the Option and build a new one");
+        if (!slot_.holds_()) return static_cast<OnNone&&>(on_none)();
+        [[maybe_unused]] auto const lend = slot_.lend_();
+        return static_cast<OnSome&&>(on_some)(RefMut<T, Fresh>{detail::FrameDoor::key(), slot_.payload_()});
+    }
+
+    // Arms whose result holds a borrow or names the brand of the frame bind
+    // to this overload, so the refusal gives its reason.
+    template <class OnSome, class OnNone, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0)
+                 && OptionFrameArms<T, OnSome, OnNone, Fresh> && (!FrameResult<std::invoke_result_t<OnNone &&>, Fresh>)
+    void with_mut(OnSome&& on_some, OnNone&& on_none) & = delete(
+        "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand "
+        "of the frame: give a plain value");
+
+    template <class OnSome, class OnNone>
+    void with_mut(OnSome&& on_some, OnNone&& on_none) && =
+        delete("a frame door of a temporary Option writes a payload that the full expression ends: name the Option");
+
+    // The loop `for (T const& value : option)` makes one turn when the
+    // Option holds a value, and no turn when it is empty.  The loop reads
+    // the payload, also of an Option that is not const.  The frame door
+    // with_mut writes the payload in place (foundation/core/Frame.h).  A
+    // cursor of a temporary Option would point into an object that the full
     // expression ends, so the overloads for an rvalue are deleted.  A loop
     // over a temporary binds it to a reference first, and calls these
-    // overloads on that lvalue.  A linear payload has only the const
-    // cursor, so no loop moves the payload out and leaves the Option full.
-    // A write through the mutable cursor bypasses the test of
-    // Option::some.  So a niche payload gets the mutable cursor only when its
-    // niche states that no door of T builds the empty value.  Each other
-    // niche payload gets the const cursor, and no write makes a full Option
-    // read as empty.  The body makes the choice, so no constraint reads the
-    // open template niche.
-    [[nodiscard]] constexpr auto begin() & noexcept
-        requires DroppablePayload<T>
-    {
-        if constexpr (detail::UndeclaredNicheOf<T> || detail::NicheRead<T>::is_empty_never_built()) {
-            return OptionCursor<T>{slot_.holds_() ? &slot_.payload_() : nullptr};
-        } else {
-            return OptionCursor<T const>{slot_.holds_() ? &slot_.payload_() : nullptr};
-        }
-    }
-    [[nodiscard]] constexpr auto end() & noexcept
-        requires DroppablePayload<T>
-    {
-        if constexpr (detail::UndeclaredNicheOf<T> || detail::NicheRead<T>::is_empty_never_built()) {
-            return OptionCursor<T>{nullptr};
-        } else {
-            return OptionCursor<T const>{nullptr};
-        }
-    }
+    // overloads on that lvalue.
     [[nodiscard]] constexpr OptionCursor<T const> begin() const& noexcept {
         return OptionCursor<T const>{slot_.holds_() ? &slot_.payload_() : nullptr};
     }
@@ -1734,6 +1844,37 @@ public:
     void match(OnOk&& on_ok, OnErr&& on_err) const&& = delete(
         "a borrow match of a temporary Result gives a reference into an object that the full expression ends: match "
         "the rvalue, or name the Result");
+
+    // The frame door of the value and the error (foundation/core/Frame.h):
+    // on_ok gets the RefMut of the value in place, or on_err the RefMut of
+    // the error, and the door gives the result of the arm.  The Result keeps
+    // its part, and the door writes no byte of the Result.  The rule
+    // borrow-match refuses an arm that assigns, moves or changes this
+    // Result, and an owning Result counts the lend (THE LEND COUNT).  One
+    // branch.
+    template <class OnOk, class OnErr, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && ResultFrameArms<T, E, OnOk, OnErr, Fresh>
+             && FrameResult<std::invoke_result_t<OnErr&&, RefMut<E, Fresh>>, Fresh>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnErr&&, RefMut<E, Fresh>>
+        with_mut(OnOk&& on_ok, OnErr&& on_err) & noexcept {
+        [[maybe_unused]] auto const lend = slot_.lend_();
+        if (!slot_.holds_())
+            return static_cast<OnErr&&>(on_err)(RefMut<E, Fresh>{detail::FrameDoor::key(), slot_.error_()});
+        return static_cast<OnOk&&>(on_ok)(RefMut<T, Fresh>{detail::FrameDoor::key(), slot_.value_()});
+    }
+
+    // Arms whose result holds a borrow or names the brand of the frame bind
+    // to this overload, so the refusal gives its reason.
+    template <class OnOk, class OnErr, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && ResultFrameArms<T, E, OnOk, OnErr, Fresh>
+                 && (!FrameResult<std::invoke_result_t<OnErr &&, RefMut<E, Fresh>>, Fresh>)
+    void with_mut(OnOk&& on_ok, OnErr&& on_err) & = delete(
+        "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand "
+        "of the frame: give a plain value");
+
+    template <class OnOk, class OnErr>
+    void with_mut(OnOk&& on_ok, OnErr&& on_err) && =
+        delete("a frame door of a temporary Result writes a part that the full expression ends: name the Result");
 
     // Two Results of one type are equal when both hold equal values, or
     // when both hold equal errors.  The cost is one test of each state and

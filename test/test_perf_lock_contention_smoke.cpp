@@ -67,7 +67,8 @@ int main() {
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::LockContention>>);
     if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_lock_contention()");
 
-    for (crucible::perf::LockContention& hub : loaded) {
+    {
+        crucible::perf::LockContention hub = std::move(loaded).expect("the test above found the hub");
         // The kernel-side program carries two tracepoints, one on futex
         // entry and one on exit, and the load yields nothing unless both
         // attach. The type-level bound of 8 is the structural cap on the

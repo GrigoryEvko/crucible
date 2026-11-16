@@ -30,6 +30,10 @@
 //                       the iteration verbs of the View of the elements.  No
 //                       type holds the count of a list, so it has no indices()
 //                       and no enumerate()
+//   with_mut(std::move(list), body)
+//                       the frame door: body gets the ViewMut of the elements,
+//                       and the door gives the list back
+//                       (foundation/core/Frame.h)
 //
 // Each Ref of one call of push() or get() has the fresh brand of that call.
 //
@@ -45,9 +49,11 @@
 #include <foundation/Linear.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Frame.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
+#include <foundation/reflect/Instance.h>
 
 #include <cstddef>
 #include <new>
@@ -402,5 +408,46 @@ public:
         return equal(left.view(), right.view());
     }
 };
+
+// ── The frame door ─────────────────────────────────────────────────────────
+
+// The frame door of a FixedList (foundation/core/Frame.h).  The list moves
+// into the frame, body gets the ViewMut of its elements, and the door gives
+// the list back: alone for a body that gives void, and after the result in a
+// Record for each other body.  The pack refuses each explicit argument, so no
+// caller names the brand of the frame.  The list holds its elements inline,
+// so the door moves size() elements in and out.  Complexity: O(size()), and
+// the cost of the body.
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+         && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
+         && FrameBody<Body, typename Owner::element_type, Fresh>
+[[nodiscard]] constexpr detail::frame_return_t<
+    std::invoke_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
+with_mut(Owner&& owner, Body&& body) noexcept {
+    Owner held{static_cast<Owner&&>(owner)};
+    View<typename Owner::element_type> const run = held.view();
+    return detail::give_run_back_<Fresh>(held, run, static_cast<Body&&>(body));
+}
+
+// A body whose result holds a borrow or names the brand of the frame binds
+// to this overload, so the refusal gives its reason.
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
+             && RefusedFrameBody<Body, typename Owner::element_type, Fresh>
+void with_mut(Owner&& owner, Body&& body) = delete(
+    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
+    "the frame: give a plain value");
+
+// A named list stays with the caller while the body runs, so the body could
+// read or write it beside the ViewMut through a capture.  This twin refuses
+// a named list and a const one, which cannot move into the frame.
+template <class Owner, class Body>
+    requires(std::is_lvalue_reference_v<Owner> || std::is_const_v<std::remove_reference_t<Owner>>)
+             && ::foundation::reflect::IsInstanceOf<std::remove_cvref_t<Owner>, ^^FixedList>
+void with_mut(Owner&& owner, Body&& body) = delete(
+    "with_mut takes the owner into its frame and gives it back: pass std::move(owner), and keep the owner that the "
+    "call returns");
 
 }  // namespace foundation::core

@@ -64,6 +64,8 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 
+#include <utility>
+
 namespace {
 
 using ::foundation::AlignedBytes;
@@ -101,9 +103,22 @@ using ::fixy::check::expect_dies;
 
 // ── The chain of Boxes ──────────────────────────────────────────────────
 
-// A node of a chain: it holds the Box of the next node, or none.
+struct BoxNode;
+
+// The brand of the link of a node.  to() of a branded object takes the brand
+// of the object, so the probe names the Ref type of a link.
+struct NextLinkBrand final {};
+
+// The link of a node to the next node.  It lives in the Option of the node,
+// and the probe reaches its Box through a Ref of the link.
+struct NextLink {
+    using brand_type = NextLinkBrand;
+    Box<BoxNode> box;
+};
+
+// A node of a chain: it holds the link to the next node, or none.
 struct BoxNode {
-    Option<Box<BoxNode>> next{};
+    Option<NextLink> next{};
     int label = 0;
 
     explicit BoxNode(int value) noexcept;
@@ -121,17 +136,21 @@ BoxNode::~BoxNode() { --live_nodes; }
 Box<BoxNode> make_chain(int first, int last) {
     Box<BoxNode> head = ::foundation::core::mint_box<BoxNode>(kAlloc, first);
     if (first < last) {
-        head->next = ::foundation::core::some(make_chain(first + 1, last));
+        head->next = ::foundation::core::some(NextLink{make_chain(first + 1, last)});
     }
     return head;
 }
 
-// The Box of the next node, which the node of head holds.
+// The Box of the next node, which the node of head holds.  The frame door of
+// the Option lends the link, and a Ref of the link leaves the frame through a
+// capture.  The link lives in the node of head on the heap, so the Ref names
+// it until the node ends.
 Box<BoxNode>& next_of(Box<BoxNode>& head) {
-    for (Box<BoxNode>& next : head->next) {
-        return next;
-    }
-    ::foundation::core::fatal("the node of the probe holds no next node");
+    Option<Ref<NextLink, NextLinkBrand>> found{::foundation::core::none};
+    head->next.with_mut(
+        [&found](auto link) noexcept { found = ::foundation::core::some(::foundation::core::to(*link)); },
+        [] noexcept {});
+    return std::move(found).expect("the node of the probe holds a next node")->box;
 }
 
 struct BoxProbe {
@@ -208,6 +227,11 @@ struct GrowListTag {};
 template <class Tag>
 struct Inner;
 
+// The brand of the Inner of a tag.  to() of a branded object takes the brand
+// of the object, so the probe names the Ref type of an Inner.
+template <class Tag>
+struct InnerBrand final {};
+
 // One live node: it counts itself in live_nodes from its start to its end.
 // A move of a node is a copy of its count, so the count stays exact.
 struct LiveNode {
@@ -234,31 +258,32 @@ struct Elem {
 
 template <>
 struct Inner<HeapArrayTag> {
+    using brand_type = InnerBrand<HeapArrayTag>;
     HeapArray<Elem<HeapArrayTag>> child{};
 };
 
 template <>
 struct Inner<MaskedArrayTag> {
+    using brand_type = InnerBrand<MaskedArrayTag>;
     MaskedArray<Elem<MaskedArrayTag>> child{};
 };
 
-// The brand of the Inner of a GrowList element.  to() of a branded object
-// takes the brand of the object, so the GrowList probe names its Ref type.
-struct GrowListInnerBrand final {};
-
 template <>
 struct Inner<GrowListTag> {
-    using brand_type = GrowListInnerBrand;
+    using brand_type = InnerBrand<GrowListTag>;
     GrowList<Elem<GrowListTag>> child = ::foundation::core::mint_grow_list<Elem<GrowListTag>>(8);
 };
 
-// The Inner that an element holds.
+// The Inner that an element holds.  The frame door of the Option lends the
+// Box, and a Ref of the Inner leaves the frame through a capture.  The Inner
+// lives in its Box on the heap, so the Ref names it until the Box ends.
 template <class Tag>
 Inner<Tag>& inner_of(Elem<Tag>& element) {
-    for (Box<Inner<Tag>>& inner : element.inner) {
-        return *inner;
-    }
-    ::foundation::core::fatal("the element of the probe holds no child owner");
+    Option<Ref<Inner<Tag>, InnerBrand<Tag>>> found{::foundation::core::none};
+    element.inner.with_mut(
+        [&found](auto inner) noexcept { found = ::foundation::core::some(::foundation::core::to(**inner)); },
+        [] noexcept {});
+    return *std::move(found).expect("the element of the probe holds a child owner");
 }
 
 // Gives element a new Inner in a Box, and gives that Inner.  The Inner lives
@@ -433,7 +458,7 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
     // The frame door with_element lends the first element, and a Ref of the
     // new Inner leaves the frame through a capture.  The Inner lives in its
     // Box and not in the storage of the list, so no growth ends the Ref.
-    using InnerRef = Ref<Inner<Tag>, GrowListInnerBrand>;
+    using InnerRef = Ref<Inner<Tag>, InnerBrand<Tag>>;
 
     static Inner<Tag>& give_first_an_inner(Owner& owner) {
         Option<InnerRef> given{::foundation::core::none};

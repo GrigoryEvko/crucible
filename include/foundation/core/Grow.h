@@ -47,6 +47,10 @@
 //                       of a GrowList: calls on_some with the element at
 //                       position, or on_none at or past size(), and gives the
 //                       result of the arm that it calls: one compare
+//   with_mut(std::move(list), body)
+//                       of a GrowList: the list moves into the frame of the
+//                       door, body gets the ViewMut of the elements, and the
+//                       door gives the list back (foundation/core/Frame.h)
 // A frame door lends the storage of its owner to the body for the time of
 // the call (THE LEND COUNT).  The frame doors are the only reads of the
 // elements and of the characters, so no borrow of a growable owner outlives
@@ -115,6 +119,7 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Frame.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Owner.h>
@@ -122,6 +127,7 @@
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Text.h>
+#include <foundation/reflect/Instance.h>
 
 #include <cstddef>
 #include <new>
@@ -498,6 +504,60 @@ template <class T>
     std::size_t const largest = max_view_count(sizeof(T));
     return GrowList<T>{maximum < largest ? maximum : largest};
 }
+
+// The frame door of a GrowList (foundation/core/Frame.h).  The list moves
+// into the frame, body gets the ViewMut of its elements, and the door gives
+// the list back: alone for a body that gives void, and after the result in a
+// Record for each other body.  The list lends its storage through with_view
+// for the time of the body (THE LEND COUNT), and no code outside the frame
+// can reach the list in that time, so no growth moves the storage.  The pack
+// refuses each explicit argument, so no caller names the brand of the frame.
+// Complexity: two moves of the state, two plain steps of the lend count, and
+// the cost of the body.
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+         && ::foundation::reflect::IsInstanceOf<Owner, ^^GrowList>
+         && FrameBody<Body, typename Owner::element_type, Fresh>
+[[nodiscard]] constexpr detail::frame_return_t<
+    std::invoke_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
+with_mut(Owner&& owner, Body&& body) noexcept {
+    using T = typename Owner::element_type;
+    using Given = std::invoke_result_t<Body&&, ViewMut<T, Fresh>>;
+    Owner held{static_cast<Owner&&>(owner)};
+    if constexpr (std::is_void_v<Given>) {
+        held.with_view([&body](View<T> run) noexcept {
+            static_cast<Body&&>(body)(ViewMut<T, Fresh>{detail::FrameDoor::key(), run});
+        });
+        return held;
+    } else {
+        std::remove_cv_t<Given> result = held.with_view([&body](View<T> run) noexcept -> std::remove_cv_t<Given> {
+            return static_cast<Body&&>(body)(ViewMut<T, Fresh>{detail::FrameDoor::key(), run});
+        });
+        return detail::frame_return_t<Given, Owner>{static_cast<std::remove_cv_t<Given>&&>(result),
+                                                    static_cast<Owner&&>(held)};
+    }
+}
+
+// A body whose result holds a borrow or names the brand of the frame binds
+// to this overload, so the refusal gives its reason.
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ::foundation::reflect::IsInstanceOf<Owner, ^^GrowList>
+             && RefusedFrameBody<Body, typename Owner::element_type, Fresh>
+void with_mut(Owner&& owner, Body&& body) = delete(
+    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
+    "the frame: give a plain value");
+
+// A named list stays with the caller while the body runs, so the body could
+// append to it through a capture and move the storage of the ViewMut.  This
+// twin refuses a named list and a const one, which cannot move into the
+// frame.
+template <class Owner, class Body>
+    requires(std::is_lvalue_reference_v<Owner> || std::is_const_v<std::remove_reference_t<Owner>>)
+             && ::foundation::reflect::IsInstanceOf<std::remove_cvref_t<Owner>, ^^GrowList>
+void with_mut(Owner&& owner, Body&& body) = delete(
+    "with_mut takes the owner into its frame and gives it back: pass std::move(owner), and keep the owner that the "
+    "call returns");
 
 // The characters that a GrowText held at its freeze.  No operation changes
 // them, so a borrow of them ends only at the end or at a move assignment of

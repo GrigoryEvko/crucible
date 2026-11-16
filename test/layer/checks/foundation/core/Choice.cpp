@@ -312,13 +312,27 @@ static_assert(!builds_slot<0xFFFFFFFFu>);
 
 [[nodiscard]] consteval int loop_turns(Option<int> option) noexcept {
     int turns = 0;
-    for (int& value : option) {
+    for (int const& value : option) {
         turns += value;
     }
     return turns;
 }
 static_assert(loop_turns(Option<int>::some(5)) == 5);
 static_assert(loop_turns(none) == 0);
+
+// The frame door writes the payload in place in a constant evaluation too,
+// and the arm of an empty Option runs.
+[[nodiscard]] consteval int written_in_place(Option<int> option) noexcept {
+    int const seen = option.with_mut(
+        [](auto value) noexcept {
+            *value *= 2;
+            return *value;
+        },
+        [] noexcept { return -1; });
+    return seen;
+}
+static_assert(written_in_place(Option<int>::some(5)) == 10);
+static_assert(written_in_place(none) == -1);
 
 [[nodiscard]] consteval bool moved_owner_leaves_source_empty() noexcept {
     Option<Owner> source = Option<Owner>::some(Owner{4});
@@ -806,24 +820,43 @@ static_assert(option_form_of<Token> == OptionForm::owning && option_form_of<Hold
 static_assert(!std::is_copy_constructible_v<Option<HoldsToken>> && !std::is_trivially_copyable_v<Option<HoldsToken>>);
 static_assert(!std::is_copy_constructible_v<Result<HoldsToken, Code>>);
 
-// A linear payload has no value_or() and no mutable cursor.  A loop over a
-// mutable Option of a linear payload takes the const cursor, so a move
-// through it is a copy, which the payload refuses.
+// A linear payload has no value_or().  The loop of each Option takes the
+// const cursor, also of an Option that is not const, so a move through it is
+// a copy, which a linear payload refuses.
 template <class O, class T>
 concept GivesValueOr =
     requires(O option, T fallback) { static_cast<O&&>(option).value_or(static_cast<T&&>(fallback)); };
 static_assert(!GivesValueOr<Option<Token>, Token> && GivesValueOr<Option<Owner>, Owner>);
 static_assert(std::is_same_v<decltype(std::declval<Option<Token>&>().begin()), OptionCursor<Token const>>);
-static_assert(std::is_same_v<decltype(std::declval<Option<Owner>&>().begin()), OptionCursor<Owner>>);
+static_assert(std::is_same_v<decltype(std::declval<Option<Owner>&>().begin()), OptionCursor<Owner const>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<Option<std::uint64_t>&>().begin()), OptionCursor<std::uint64_t const>>);
 
-// A write through the mutable cursor bypasses the test of Option::some.  So
-// a niche payload that an aggregate or a door can build as its empty value
-// has only the const cursor, and a niche that states that no door builds the
-// empty value keeps the mutable cursor.
-static_assert(std::is_same_v<decltype(std::declval<Option<SlotNumber>&>().begin()), OptionCursor<SlotNumber const>>);
-static_assert(std::is_same_v<decltype(std::declval<Option<SlotNumber>&>().end()), OptionCursor<SlotNumber const>>);
-static_assert(std::is_same_v<decltype(std::declval<Option<TrustedSlot>&>().begin()), OptionCursor<TrustedSlot>>);
-static_assert(std::is_same_v<decltype(std::declval<Option<std::uint64_t>&>().begin()), OptionCursor<std::uint64_t>>);
+// The frame door writes the payload in place (foundation/core/Frame.h).  An
+// arm could move a linear payload out through the RefMut and leave the
+// Option full, so a linear payload has no frame door.  A const Option and a
+// temporary have none.  A write through the RefMut bypasses the test of
+// Option::some.  So a niche payload that an aggregate or a door can build as
+// its empty value stops the build at the static assertion of the door, and a
+// niche that states that no door builds the empty value takes the door.  The
+// body reads the niche, so this check states only the constraint.
+template <class O>
+concept OptionWritesInPlace = requires(O& option) { option.with_mut([](auto) noexcept {}, [] noexcept {}); };
+template <class O>
+concept OptionWritesTemporary =
+    requires(O option) { static_cast<O&&>(option).with_mut([](auto) noexcept {}, [] noexcept {}); };
+static_assert(OptionWritesInPlace<Option<Owner>> && OptionWritesInPlace<Option<std::uint64_t>>);
+static_assert(OptionWritesInPlace<Option<TrustedSlot>>);
+static_assert(!OptionWritesInPlace<Option<Token>> && !OptionWritesInPlace<Option<Owner> const>);
+static_assert(!OptionWritesTemporary<Option<Owner>>);
+
+// The frame door of a Result takes the RefMut of the value and of the error,
+// on a Result that is not const and of no linear part.
+template <class R>
+concept ResultWritesInPlace = requires(R& result) { result.with_mut([](auto) noexcept {}, [](auto) noexcept {}); };
+static_assert(ResultWritesInPlace<Result<int, Code>> && ResultWritesInPlace<Result<Owner, Code>>);
+static_assert(!ResultWritesInPlace<Result<int, Code> const> && !ResultWritesInPlace<Result<Token, Code>>);
+static_assert(!ResultWritesInPlace<Result<int, Token>>);
 
 // A linear error.  The const err() would copy it, so only the rvalue err()
 // gives it, and value_or() would drop it.
@@ -1063,12 +1096,13 @@ static_assert(owned_handles() == 56);
 
 // ── The closed surface ────────────────────────────────────────────────
 
-// The family list of plan section 11.2, and the three members of the niche
-// protocol that the section designs.  CRUCIBLE_TRY is a macro, and no type
-// has a member of its name.
+// The family list of plan section 11.2, the three members of the niche
+// protocol that the section designs, and with_mut, the frame door of
+// foundation/core/Frame.h.  CRUCIBLE_TRY is a macro, and no type has a member
+// of its name.
 inline constexpr TextView choice_names{
     "none NoValue Unit Err err some is_some is_none value_or ok_or is_ok is_err ok is which niche empty is_empty "
-    "is_empty_never_built"};
+    "is_empty_never_built with_mut"};
 
 // Each form of an Option, and each Result, gives only the shared verbs, the
 // language protocols and the names of the list.

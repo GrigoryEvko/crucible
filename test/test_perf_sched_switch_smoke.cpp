@@ -70,7 +70,8 @@ int main() {
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SchedSwitch>>);
     if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_sched_switch()");
 
-    for (crucible::perf::SchedSwitch& hub : loaded) {
+    {
+        crucible::perf::SchedSwitch hub = std::move(loaded).expect("the test above found the hub");
         // The kernel-side program carries exactly one tracepoint, so attached
         // plus failed is in [0, 1] in practice. The type-level bound of 8 is
         // the structural cap on the backing container.

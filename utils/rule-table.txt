@@ -717,6 +717,12 @@ witness <foundation/core/Identity.h> private | foundation::core::Identity | foun
 # array takes the key that only ViewDoor builds.
 witness <foundation/core/Region.h> private | foundation::core::View<int> | foundation::core::View<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/Region.h> private | foundation::core::detail::ViewKey | foundation::core::detail::ViewKey{}
+# A ViewMut and a RefMut come only from a frame door, so no pointer, no count
+# and no object that a caller holds become a unique borrow.  Each constructor
+# takes the key that only FrameDoor builds.
+witness <foundation/core/Region.h> no-match | foundation::core::ViewMut<int, forge::brand> | foundation::core::ViewMut<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+witness <foundation/core/Frame.h> no-match | foundation::core::RefMut<int, forge::brand> | foundation::core::RefMut<int, forge::brand>{forge::lvalue<int>()}
+witness <foundation/core/Frame.h> private | foundation::core::detail::FrameKey | foundation::core::detail::FrameKey{}
 # A cursor of a View or of a TextView takes the key that only
 # ViewCursorDoor builds, so each cursor comes from the run that it walks.
 witness <foundation/core/Cursor.h> no-match | foundation::core::ViewCursor<int> | foundation::core::ViewCursor<int>{forge::rvalue<int*>(), forge::rvalue<int*>()}

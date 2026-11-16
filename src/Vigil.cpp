@@ -169,26 +169,29 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
 
     // The observation is presented with a background-drain context
     // because this runs on the region-publishing thread, not the
-    // foreground.
-    for (::fixy::Box<::crucible::warden::DeadlineWatchdog>& watchdog : wd_) {
-        const auto v = watchdog->observe(::fixy::BgDrainCtx{bg});
-        wd_last_verdict_.store_release(v);
-        switch (v) {
-            case ::crucible::warden::WatchdogVerdict::Healthy:
-                (void)wd_healthy_count_.fetch_add_acq_rel(1);
-                break;
-            case ::crucible::warden::WatchdogVerdict::Downgrade:
-                (void)wd_downgrade_count_.fetch_add_acq_rel(1);
-                break;
-            case ::crucible::warden::WatchdogVerdict::InsufficientData:
-                (void)wd_insufficient_count_.fetch_add_acq_rel(1);
-                break;
-            default:
-                // The verdict enum has exactly the three values above.  A
-                // different value ends the process in each build.
-                ::fixy::unreachable();
-        }
-    }
+    // foreground.  The frame door writes the watchdog in place and writes
+    // no byte of wd_, which the foreground can read.
+    wd_.with_mut(
+        [this, &bg](auto watchdog) noexcept {
+            const auto v = (*watchdog)->observe(::fixy::BgDrainCtx{bg});
+            wd_last_verdict_.store_release(v);
+            switch (v) {
+                case ::crucible::warden::WatchdogVerdict::Healthy:
+                    (void)wd_healthy_count_.fetch_add_acq_rel(1);
+                    break;
+                case ::crucible::warden::WatchdogVerdict::Downgrade:
+                    (void)wd_downgrade_count_.fetch_add_acq_rel(1);
+                    break;
+                case ::crucible::warden::WatchdogVerdict::InsufficientData:
+                    (void)wd_insufficient_count_.fetch_add_acq_rel(1);
+                    break;
+                default:
+                    // The verdict enum has exactly the three values above.  A
+                    // different value ends the process in each build.
+                    ::fixy::unreachable();
+            }
+        },
+        [] noexcept {});
 }
 
 }  // namespace crucible

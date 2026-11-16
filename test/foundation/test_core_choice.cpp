@@ -99,7 +99,7 @@ void test_empty_states() {
     CRUCIBLE_FATAL_INVARIANT(defaulted.is_none() && !defaulted.is_some());
     CRUCIBLE_FATAL_INVARIANT(from_marker.is_none() && !from_marker.is_some());
     int turns = 0;
-    for ([[maybe_unused]] int& value : defaulted) {
+    for ([[maybe_unused]] int const& value : defaulted) {
         ++turns;
     }
     CRUCIBLE_FATAL_INVARIANT(turns == 0);
@@ -127,11 +127,17 @@ void test_expect() {
         ::foundation::core::TextView{"the test option is empty on purpose"});
 }
 
+// The loop reads the payload, also of an Option that is not const, and the
+// frame door writes it in place.
 void test_loop() {
     Option<int> holder = Option<int>::some(1);
-    for (int& value : holder) {
-        value += 1;
+    static_assert(std::is_same_v<decltype(*holder.begin()), int const&>);
+    int turns = 0;
+    for (int const& value : holder) {
+        turns += value;
     }
+    CRUCIBLE_FATAL_INVARIANT(turns == 1);
+    holder.with_mut([](auto value) noexcept { *value += 1; }, [] noexcept {});
     Option<int> const fixed_holder = Option<int>::some(5);
     int fixed_sum = 0;
     for (int const& value : fixed_holder) {
@@ -354,10 +360,10 @@ void test_member_niche_payload() {
 }
 
 // A class of the member protocol that states that no door builds the empty
-// value, while its aggregate can still build it.  The statement gives a loop
-// over a mutable Option a cursor that writes the payload.  The niche slot
-// tests each payload in each build, so the false statement ends the process
-// at the first Option of the empty value.
+// value, while its aggregate can still build it.  The statement gives the
+// Option the frame door that writes the payload.  The niche slot tests each
+// payload in each build, so the false statement ends the process at the
+// first Option of the empty value.
 struct StatedSlot {
     std::uint32_t raw = 0;
     static constexpr bool is_niche_empty_never_built = true;
@@ -372,9 +378,7 @@ struct StatedSlot {
 void test_member_niche_statement() {
     static_assert(sizeof(Option<StatedSlot>) == sizeof(StatedSlot));
     Option<StatedSlot> held = Option<StatedSlot>::some(StatedSlot{8});
-    for (StatedSlot& slot : held) {
-        slot.raw += 1;
-    }
+    held.with_mut([](auto slot) noexcept { slot->raw += 1; }, [] noexcept {});
     CRUCIBLE_FATAL_INVARIANT(static_cast<Option<StatedSlot>&&>(held).expect("the slot was built").raw == 9);
     expect_dies(
         test_context(), [] noexcept { static_cast<void>(Option<StatedSlot>::some(StatedSlot{0xFFFFFFFFu})); },

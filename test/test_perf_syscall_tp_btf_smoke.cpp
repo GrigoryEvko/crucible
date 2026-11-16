@@ -39,7 +39,8 @@ int main() {
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SyscallTpBtf>>);
     if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_syscall_tp_btf()");
 
-    for (crucible::perf::SyscallTpBtf& hub : loaded) {
+    {
+        crucible::perf::SyscallTpBtf hub = std::move(loaded).expect("the test above found the hub");
         const auto attached = hub.attached_programs();
         const auto failures = hub.attach_failures();
         // The facade needs both sys_enter and sys_exit attached.  The load

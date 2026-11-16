@@ -185,13 +185,14 @@ void test_match() {
     CRUCIBLE_FATAL_INVARIANT(seen == 6 && held.is<std::uint16_t>());
 }
 
-// get<T> lends the active alternative, gives no value for each other one,
-// and a write through the Ref changes the alternative that the OneOf keeps.
-// A const OneOf and a linear alternative lend a const borrow.
+// get<T> lends the active alternative as a const borrow, and gives no value
+// for each other one.  The frame door writes the alternative that the OneOf
+// keeps.
 void test_get() {
     Reading reading = read_word(7u);
     CRUCIBLE_FATAL_INVARIANT(reading.get<std::uint32_t>().is_none() && reading.get<Refusal>().is_none());
-    *reading.get<std::uint16_t>().expect("the reading is narrow") = std::uint16_t{9};
+    CRUCIBLE_FATAL_INVARIANT(*reading.get<std::uint16_t>().expect("the reading is narrow") == 7u);
+    reading.with_mut([](auto) noexcept {}, [](auto) noexcept {}, [](auto half) noexcept { *half = std::uint16_t{9}; });
     CRUCIBLE_FATAL_INVARIANT(Reading{reading}.expect<std::uint16_t>("the reading stays narrow") == 9u);
 
     Reading const wide = read_word(0x12345u);

@@ -87,40 +87,6 @@ struct BrandedScopeDoor {
     }
 };
 
-// The template arguments of a type, by index.  The walk indexes the list, so
-// it makes no static list.
-[[nodiscard]] consteval std::size_t template_argument_count(std::meta::info type) {
-    return std::meta::template_arguments_of(type).size();
-}
-
-[[nodiscard]] consteval std::meta::info template_argument_at(std::meta::info type, std::size_t index) {
-    return std::meta::template_arguments_of(type)[index];
-}
-
-// True when the type is the brand, or names the brand at a depth of its
-// template arguments.  The walk reads each template argument that is a
-// type.  The function is not a template, so no unit can specialize it and
-// change what the gate admits.  Complexity: O(A^2) for A template arguments
-// at one depth, because each index reads the list again, at compile time
-// only.
-[[nodiscard]] consteval bool names_brand(std::meta::info type, std::meta::info brand) {
-    std::meta::info const bare = std::meta::dealias(std::meta::remove_cvref(type));
-    if (bare == brand) {
-        return true;
-    }
-    if (!std::meta::has_template_arguments(bare)) {
-        return false;
-    }
-    std::size_t const count = template_argument_count(bare);
-    for (std::size_t index = 0; index < count; ++index) {
-        std::meta::info const argument = template_argument_at(bare, index);
-        if (std::meta::is_type(argument) && names_brand(argument, brand)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 }  // namespace detail
 
 // An index below the count of the BrandedView of Brand.  The value

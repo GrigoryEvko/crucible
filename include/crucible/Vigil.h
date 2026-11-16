@@ -492,13 +492,14 @@ public:
     template <class Ctx>
         requires ::crucible::cipher::CtxFitsCipherCommit<Ctx>
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
-        for (::fixy::Box<Cipher>& cipher : cipher_) {
-            for (const ::fixy::Ref<const RegionNode> region : active_region()) {
-                return persist_into_(ctx, *cipher, region);
-            }
-            return false;
-        }
-        return false;
+        return cipher_.with_mut(
+            [this, &ctx](auto cipher) noexcept {
+                for (const ::fixy::Ref<const RegionNode> region : active_region()) {
+                    return persist_into_(ctx, **cipher, region);
+                }
+                return false;
+            },
+            [] noexcept { return false; });
     }
 
     // Loads the most recent stored region and makes it active, activating
@@ -511,18 +512,19 @@ public:
     template <class Ctx>
         requires ::foundation::effects::CtxAdmits<Ctx, ::crucible::CipherSessionEventPersistenceRow>
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, ::foundation::effects::Alloc a) {
-        for (::fixy::Box<Cipher>& cipher : cipher_) {
-            const VigilFgCtx fg = assert_producer_thread_();
-            const ::fixy::Option<::fixy::Ref<RegionNode>> loaded = load_head_(ctx, a, *cipher);
-            for (const ::fixy::Ref<RegionNode> region : loaded) {
-                // Each region cut before the load holds ops that ran before it.
-                bg_.request_mark(ring_total_produced());
-                adopt_region_(fg, *region);
-                return true;
-            }
-            return false;
-        }
-        return false;
+        return cipher_.with_mut(
+            [this, &ctx, a](auto cipher) noexcept {
+                const VigilFgCtx fg = assert_producer_thread_();
+                const ::fixy::Option<::fixy::Ref<RegionNode>> loaded = load_head_(ctx, a, **cipher);
+                for (const ::fixy::Ref<RegionNode> region : loaded) {
+                    // Each region cut before the load holds ops that ran before it.
+                    bg_.request_mark(ring_total_produced());
+                    adopt_region_(fg, *region);
+                    return true;
+                }
+                return false;
+            },
+            [] noexcept { return false; });
     }
 
     // The pre-allocated data address of output j of the current op.  Valid

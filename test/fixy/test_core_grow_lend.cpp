@@ -3,8 +3,10 @@
 // reads the body, so each change below comes from a function that the body
 // calls, which the rule does not read.  Each such change ends the process in
 // each build: an append, also when the storage has room, a clear, a move, a
-// freeze and the end of the owner.  More than 255 lends of one owner end the
-// process too, and append_self refuses a window outside its text.
+// freeze and the end of the owner.  The move of the owner into the frame of
+// with_mut (foundation/core/Frame.h) is such a move.  More than 255 lends of
+// one owner end the process too, and append_self refuses a window outside
+// its text.
 //
 // Each death runs in a child process through expect_dies of the Check
 // family, which requires SIGABRT and the text of the refusal.  The controls
@@ -75,6 +77,13 @@ constexpr ::fixy::TextView kLentChange{
     held = ::fixy::Option<core::GrowList<int>>{::fixy::none};
 }
 
+// The frame door of an owner moves the list into its frame and gives it back.
+[[gnu::noipa]] std::size_t frame_of(core::GrowList<int>& list) noexcept {
+    auto [count, back] = core::with_mut(std::move(list), [](auto out) noexcept { return out.size(); });
+    list = std::move(back);
+    return count;
+}
+
 // Nests depth lends of one const list, one in the body of the next.
 [[gnu::noipa]] std::size_t lend_nested(core::GrowList<int> const& list, int depth) noexcept {
     return list.with_view([&list, depth](core::View<int const> view) noexcept {
@@ -122,12 +131,19 @@ void freeze_from_callee() noexcept {
 
 void end_from_callee() noexcept {
     ::fixy::Option<core::GrowList<int>> held = ::fixy::Option<core::GrowList<int>>::some(small_list());
-    for (core::GrowList<int>& list : held) {
-        static_cast<void>(list.with_view([&held](core::View<int> view) noexcept {
+    for (core::GrowList<int> const& list : held) {
+        static_cast<void>(list.with_view([&held](core::View<int const> view) noexcept {
             drop(held);
             return view.size();
         }));
     }
+}
+
+// A callee of a frame door takes the lent list into the frame of with_mut.
+// The move would give the lent storage to a second frame.
+void unique_frame_from_callee() noexcept {
+    core::GrowList<int> list = small_list();
+    static_cast<void>(list.with_view([&list](core::View<int> view) noexcept { return frame_of(list) + view.size(); }));
 }
 
 void overflow_the_count() noexcept {
@@ -150,6 +166,7 @@ int main() {
     expect_dies(test, text_append_from_callee, kLentChange);
     expect_dies(test, freeze_from_callee, kLentChange);
     expect_dies(test, end_from_callee, kLentChange);
+    expect_dies(test, unique_frame_from_callee, kLentChange);
     expect_dies(test, overflow_the_count,
                 ::fixy::TextView{"more than 255 frame doors lend the storage of one growable owner at one time"});
     expect_dies(test, append_self_outside,
@@ -159,6 +176,7 @@ int main() {
     core::GrowList<int> list = small_list();
     std::size_t const before = list.with_view([](core::View<int> view) noexcept { return view.size(); });
     append_to(list);
+    CRUCIBLE_TEST_ASSERT(test, frame_of(list) == 4 && list.size() == 4);
     clear(list);
     CRUCIBLE_TEST_ASSERT(test, before == 3 && list.size() == 0);
     core::GrowList<int> const nested = small_list();

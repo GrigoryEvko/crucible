@@ -82,12 +82,20 @@
 //
 // A MaskedArray owns its storage as a HeapArray does.  It has no operator[]
 // and no pointer to its elements.
+//
+// THE FRAME DOOR
+//   with_mut(std::move(array), body)   of each of the three arrays: body gets
+//                       the ViewMut of the elements, with the brand of the
+//                       frame, and the door gives the array back
+//                       (foundation/core/Frame.h)
 
+#include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Frame.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Owner.h>
@@ -95,6 +103,7 @@
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
+#include <foundation/reflect/Instance.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -934,5 +943,51 @@ template <class T, std::size_t Align = alignof(T), class Marker>
     contract_assert(detail::is_masked_array_count_(count));
     return MaskedArray<T, Align>{detail::HeapArrayDoor::key(), count};
 }
+
+// ── The frame doors ────────────────────────────────────────────────────────
+
+// The arrays that a frame door takes (foundation/core/Frame.h).  Each owns
+// its elements alone, and a move gives them to the target: a HeapArray and a
+// MaskedArray give their storage, and a FixedArray copies its elements.
+template <class Owner>
+concept ArrayFrameOwner = ::foundation::reflect::IsInstanceOfAny<Owner, ^^FixedArray, ^^HeapArray, ^^MaskedArray>;
+
+// The frame door of an array.  The array moves into the frame, body gets the
+// ViewMut of its elements, and the door gives the array back: alone for a
+// body that gives void, and after the result in a Record for each other body.
+// The pack refuses each explicit argument, so no caller names the brand of
+// the frame.  A HeapArray and a MaskedArray move a pointer and a count in and
+// out.  A FixedArray copies its N elements in and out, and the optimizer
+// removes the two copies only for a small array.  Complexity: O(1) for a heap
+// array, O(N) for a FixedArray, and the cost of the body.
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+         && ArrayFrameOwner<Owner> && FrameBody<Body, typename Owner::element_type, Fresh>
+[[nodiscard]] constexpr detail::frame_return_t<
+    std::invoke_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
+with_mut(Owner&& owner, Body&& body) noexcept {
+    Owner held{static_cast<Owner&&>(owner)};
+    View<typename Owner::element_type> const run = held.view();
+    return detail::give_run_back_<Fresh>(held, run, static_cast<Body&&>(body));
+}
+
+// A body whose result holds a borrow or names the brand of the frame binds
+// to this overload, so the refusal gives its reason.
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ArrayFrameOwner<Owner> && RefusedFrameBody<Body, typename Owner::element_type, Fresh>
+void with_mut(Owner&& owner, Body&& body) = delete(
+    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
+    "the frame: give a plain value");
+
+// A named array stays with the caller while the body runs, so the body could
+// read or write it beside the ViewMut through a capture.  This twin refuses
+// a named array and a const one, which cannot move into the frame.
+template <class Owner, class Body>
+    requires(std::is_lvalue_reference_v<Owner> || std::is_const_v<std::remove_reference_t<Owner>>)
+             && ArrayFrameOwner<std::remove_cvref_t<Owner>>
+void with_mut(Owner&& owner, Body&& body) = delete(
+    "with_mut takes the owner into its frame and gives it back: pass std::move(owner), and keep the owner that the "
+    "call returns");
 
 }  // namespace foundation::core

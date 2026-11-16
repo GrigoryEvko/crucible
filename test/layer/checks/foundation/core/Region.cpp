@@ -362,6 +362,30 @@ static_assert(std::is_same_v<decltype(offset_of(std::declval<View<int>>(), std::
 static_assert(
     std::is_same_v<decltype(offset_of(std::declval<View<int const>>(), std::declval<int&>())), Option<std::size_t>>);
 
+// ── The unique view ───────────────────────────────────────────────────
+
+// A ViewMut holds a pointer and a count.  It does not copy, its move and its
+// end are trivial, so the ABI passes it in two registers, and its assignment
+// is not, so std::bit_cast builds none.  Only a frame door builds one: no
+// constructor takes a pointer, a count or a View with no key.  A const
+// ViewMut reads its run, and a ViewMut that is not const writes it.
+struct UniqueBrand final {};
+static_assert(sizeof(ViewMut<int, UniqueBrand>) == 2 * sizeof(void*));
+static_assert(!std::is_copy_constructible_v<ViewMut<int, UniqueBrand>>);
+static_assert(std::is_trivially_move_constructible_v<ViewMut<int, UniqueBrand>>);
+static_assert(std::is_trivially_destructible_v<ViewMut<int, UniqueBrand>>);
+static_assert(!std::is_trivially_copyable_v<ViewMut<int, UniqueBrand>>);
+static_assert(!std::is_constructible_v<ViewMut<int, UniqueBrand>, int*, std::size_t>);
+static_assert(!std::is_constructible_v<ViewMut<int, UniqueBrand>, View<int>>);
+static_assert(std::is_same_v<decltype(*std::declval<ViewMut<int, UniqueBrand>&>().begin()), int&>);
+static_assert(std::is_same_v<decltype(*std::declval<ViewMut<int, UniqueBrand> const&>().begin()), int const&>);
+static_assert(
+    std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand>&>().get(0)), Option<Ref<int, UniqueBrand>>>);
+static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> const&>().get(0)),
+                             Option<Ref<int const, UniqueBrand>>>);
+static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand>&>().view()), View<int>>);
+static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> const&>().view()), View<int const>>);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.4, with the names of the headers of
@@ -371,10 +395,10 @@ static_assert(
 // niche of a View, of a TextView and of an Index is the protocol of the
 // Choice family, and its check reads it.
 inline constexpr TextView region_names{
-    "View Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText HeapText FixedArray FixedList "
-    "HeapArray GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent element_type "
-    "extent capacity window split_at indices index parallel check raw rest take take_first take_last clear "
-    "with_view with_element append_self freeze is_at_end remaining"};
+    "View ViewMut Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText HeapText FixedArray "
+    "FixedList HeapArray GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent "
+    "element_type brand_type extent capacity window split_at indices index parallel check raw rest take take_first "
+    "take_last clear with_view with_element with_mut append_self freeze is_at_end remaining"};
 
 // The brand that the check of a branded type names.  A program gets each
 // brand from mint_branded_scope.
@@ -404,6 +428,7 @@ CRUCIBLE_CLOSED_SURFACE(region_names, GrowText);
 CRUCIBLE_CLOSED_SURFACE(region_names, HeapText);
 CRUCIBLE_CLOSED_SURFACE(region_names, BrandedIndex<SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, BrandedView<int, SurfaceBrand>);
+CRUCIBLE_CLOSED_SURFACE(region_names, ViewMut<int, SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, LengthMismatch);
 CRUCIBLE_CLOSED_SURFACE(region_names, detail::ReverseRange<int>);
 CRUCIBLE_CLOSED_SURFACE(region_names, detail::WindowRange<int const, 2>);

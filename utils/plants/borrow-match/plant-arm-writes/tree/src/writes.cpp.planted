@@ -26,10 +26,10 @@ int moved_local() {
     return held.match([&held](int const& value) { return std::move(held).value_or(0) + value; }, [] { return 0; });
 }
 
-int cursor_of_the_sum(Option<int>& held) {
+int frame_of_the_sum(Option<int>& held) {
     return held.match([&](int const& value) {
         int total = value;
-        for (int& item : held) total += item;
+        total += held.with_mut([](auto item) noexcept { return *item; }, [] noexcept { return 0; });
         return total;
     }, [] { return 0; });
 }
@@ -104,7 +104,7 @@ int instances(Option<int>& source) {
     ::foundation::core::Result<int, Fault> result{6};
     Holder holder;
     return result_instance(result) + holder.member() + holder.whole() + assigned_local() + moved_local()
-         + cursor_of_the_sum(source) + generic_arm(source) + local_reference(source) + one_of() + opted(source)
+         + frame_of_the_sum(source) + generic_arm(source) + local_reference(source) + one_of() + opted(source)
          + named_closure(source) + named_object(source) + by_value_arm(source);
 }
 

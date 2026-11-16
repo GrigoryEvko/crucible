@@ -28,6 +28,7 @@
 #include <foundation/core/DataAddress.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Format.h>
+#include <foundation/core/Frame.h>
 #include <foundation/core/Grow.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
@@ -116,6 +117,7 @@ using ::foundation::core::prefetch;
 using ::foundation::core::prefetch_byte;
 using ::foundation::core::PrefetchAccess;
 using ::foundation::core::Ref;
+using ::foundation::core::RefMut;
 using ::foundation::core::same_object;
 using ::foundation::core::to;
 
@@ -181,6 +183,8 @@ using ::foundation::core::RunSet;
 using ::foundation::core::starts_with;
 using ::foundation::core::StaticIndex;
 using ::foundation::core::View;
+using ::foundation::core::ViewMut;
+using ::foundation::core::with_mut;
 using ::foundation::core::WriteLease;
 using ::foundation::core::zip;
 

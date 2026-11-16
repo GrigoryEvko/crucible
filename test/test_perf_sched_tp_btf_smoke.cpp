@@ -39,7 +39,8 @@ int main() {
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SchedTpBtf>>);
     if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_sched_tp_btf()");
 
-    for (crucible::perf::SchedTpBtf& hub : loaded) {
+    {
+        crucible::perf::SchedTpBtf hub = std::move(loaded).expect("the test above found the hub");
         const auto attached = hub.attached_programs();
         const auto failures = hub.attach_failures();
         if (attached.value() == 0 && failures.value() == 0) {

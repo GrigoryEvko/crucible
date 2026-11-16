@@ -40,6 +40,12 @@
 // View<T>.  No conversion adds a const or removes it the other way, and no
 // conversion gives a fixed extent: window<N> is the checked road.
 //
+// THE UNIQUE VIEW
+//   ViewMut<T, Brand>   the unique borrow of the run of an owner that a frame
+//                       door holds (foundation/core/Frame.h).  The frame doors
+//                       of the owners give it, and no other code makes one.  It
+//                       does not copy, and its brand is the brand of its frame
+//
 // The window is the fit test of a caller.  A producer that appends a run
 // to a segment asks the segment for the window of the run, and the empty
 // result is its slow path.  The check of the window is then the only check
@@ -469,6 +475,131 @@ template <std::size_t Extent, class T>
 }
 
 }  // namespace detail
+
+// ── The unique view ────────────────────────────────────────────────────
+
+// The unique borrow of the run of an owner that a frame door holds
+// (foundation/core/Frame.h).  The brand is the brand of the frame.  A
+// ViewMut does not copy, so a body cannot hold two ViewMuts of one frame.  A
+// move leaves the source with its run, and the rule use-after-move refuses a
+// later use of the source.  The move constructor and the destructor are
+// trivial, so the ABI passes a ViewMut in two registers.  The seal makes the
+// move assignment user-provided, so std::bit_cast builds no ViewMut.
+//
+//   size(), for (x : view)   as a View gives them
+//   get(position)            the element as an Option<Ref<T, Brand>>, with the
+//                            brand of the frame, or no value at or past the
+//                            count: one compare
+//   view()                   the plain View of the run, with no brand
+//
+// A const reference to a ViewMut is a shared borrow that keeps the brand of
+// the frame.  It reads the run, and it does not write it.  A door of a kernel
+// reads its inputs through such a reference, so the brands tell it that two
+// runs do not overlap (THE ALIAS PROOF of Frame.h).
+template <class T, ::foundation::brand::IsBrand Brand>
+    requires ViewElement<T> && (!std::is_const_v<T>)
+class [[nodiscard]] ViewMut final {
+    T* first_ = nullptr;
+    std::size_t count_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+public:
+    using element_type = T;
+    using brand_type = Brand;
+
+    // The run of an owner that a frame door holds, with the key that only
+    // FrameDoor builds.  The owner gave the View, so the View bounds the
+    // count and holds a pointer that is not null for each count above zero.
+    constexpr ViewMut(detail::FrameKey const& /*key*/, View<T> run) noexcept
+        : first_{first_of_(detail::ViewDoor::key(), run)}, count_{run.size()} {}
+
+    ViewMut(ViewMut const&) = delete("a ViewMut is the one writer of its run: a copy would be a second writer");
+    ViewMut& operator=(ViewMut const&) = delete("a ViewMut is the one writer of its run: a copy would be a second "
+                                                "writer");
+    constexpr ViewMut(ViewMut&&) noexcept = default;
+    constexpr ViewMut& operator=(ViewMut&&) noexcept = default;
+    ~ViewMut() = default;
+
+    // The pointer of the first element, for the free operations of the base
+    // layer, such as copy() and write_each().  The key keeps each caller
+    // outside the base out, as for first_of_ of a View.
+    [[nodiscard]] friend constexpr T* first_of_(detail::ViewKey const& /*key*/, ViewMut const& view) noexcept {
+        return view.first_;
+    }
+
+    // The View of the run bounds the count, so the optimizer reads that
+    // bound in each build, as size() of a View does.
+    [[nodiscard]] constexpr std::size_t size() const noexcept {
+        std::size_t const count = count_;
+        [[assume(count <= max_view_count(sizeof(T)))]];
+        return count;
+    }
+
+    [[nodiscard]] constexpr ViewCursor<T> begin() & noexcept {
+        return ViewCursor<T>{detail::ViewCursorDoor::key(), first_, first_ + size()};
+    }
+    [[nodiscard]] constexpr ViewCursor<T> end() & noexcept {
+        return ViewCursor<T>{detail::ViewCursorDoor::key(), first_ + size(), first_ + size()};
+    }
+    [[nodiscard]] constexpr ViewCursor<T const> begin() const& noexcept {
+        return ViewCursor<T const>{detail::ViewCursorDoor::key(), first_, first_ + size()};
+    }
+    [[nodiscard]] constexpr ViewCursor<T const> end() const& noexcept {
+        return ViewCursor<T const>{detail::ViewCursorDoor::key(), first_ + size(), first_ + size()};
+    }
+
+    // The element at position, with the brand of the frame.  The brand keeps
+    // the Ref out of the result of the frame (FrameResult of Choice.h).
+    [[nodiscard]] constexpr Option<Ref<T, Brand>> get(std::size_t position) & noexcept {
+        return detail::element_at_<Brand>(first_, size(), position);
+    }
+    [[nodiscard]] constexpr Option<Ref<T const, Brand>> get(std::size_t position) const& noexcept {
+        return detail::element_at_<Brand>(static_cast<T const*>(first_), size(), position);
+    }
+
+    // The plain View of the run, for an operation that takes a View, such as
+    // fill().  The View has no brand, so it proves no difference of two runs.
+    [[nodiscard]] constexpr View<T> view() & noexcept { return View<T>{detail::ViewDoor::key(), first_, size()}; }
+    [[nodiscard]] constexpr View<T const> view() const& noexcept {
+        return View<T const>{detail::ViewDoor::key(), first_, size()};
+    }
+};
+
+namespace detail {
+
+// The body of each frame door of an owner of the Region family.  body gets
+// the ViewMut of run with the brand of the frame, and the door gives held
+// back: alone for a body that gives void, and after the result in a Record
+// for each other body.  held lives in the frame of the door, and run is the
+// run of held.  The body runs before the Record moves held, because a braced
+// list runs its parts in order.
+template <class Brand, class Owner, class T, class Body>
+[[nodiscard]] constexpr frame_return_t<std::invoke_result_t<Body&&, ViewMut<T, Brand>>, Owner>
+give_run_back_(Owner& held, View<T> run, Body&& body) noexcept {
+    using Given = std::invoke_result_t<Body&&, ViewMut<T, Brand>>;
+    if constexpr (std::is_void_v<Given>) {
+        static_cast<Body&&>(body)(ViewMut<T, Brand>{FrameDoor::key(), run});
+        return static_cast<Owner&&>(held);
+    } else {
+        return frame_return_t<Given, Owner>{static_cast<Body&&>(body)(ViewMut<T, Brand>{FrameDoor::key(), run}),
+                                            static_cast<Owner&&>(held)};
+    }
+}
+
+}  // namespace detail
+
+// The body of a frame door of an owner whose elements are T: it takes the
+// ViewMut of the brand of the frame with no throw, and its result leaves the
+// frame (FrameResult of Choice.h).
+template <class Body, class T, class Brand>
+concept FrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand>>
+                 && FrameResult<std::invoke_result_t<Body&&, ViewMut<T, Brand>>, Brand>;
+
+// A body whose result does not leave the frame: the refused twin of each
+// door binds to it.
+template <class Body, class T, class Brand>
+concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand>>
+                        && (!FrameResult<std::invoke_result_t<Body&&, ViewMut<T, Brand>>, Brand>);
 
 // ── The position of a run inside a run ─────────────────────────────────
 

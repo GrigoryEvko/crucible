@@ -69,7 +69,8 @@ int main() {
     static_assert(std::is_same_v<decltype(loaded), ::fixy::Option<crucible::perf::SyscallLatency>>);
     if (loaded.is_none()) return crucible::test::verdict_of_no_load("perf::load_syscall_latency()");
 
-    for (crucible::perf::SyscallLatency& hub : loaded) {
+    {
+        crucible::perf::SyscallLatency hub = std::move(loaded).expect("the test above found the hub");
         const auto attached_refined = hub.attached_programs();
         const auto failures_refined = hub.attach_failures();
         static_assert(

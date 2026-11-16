@@ -3205,6 +3205,52 @@ foundation_neg_compile_test(neg_core_grow_list_frame_gives_view
   "use of deleted function .void foundation::core::GrowList<T>::with_view\\(Body&&\\) &"
   "the result of a frame door holds no borrow: the next append can end the storage of the list")
 
+# The frame doors of foundation/core/Frame.h write each owner of the Region
+# family and each sum of the Choice family.  The door of an owner gives the
+# owner back, and the name that the caller moved from holds no storage while
+# the body runs.  The frames of two call sites have two brands.
+foundation_test(test_core_frame)
+
+# A body holds one unique borrow of its frame: a ViewMut and a RefMut have no
+# copy, a frame door takes an owner only by move, and a second frame of one
+# sum in an arm is a write of the sum, which the rule borrow-match refuses.
+foundation_neg_compile_test(neg_core_view_mut_copied
+  "use of deleted function .foundation::core::ViewMut<T, Brand>::ViewMut\\(const foundation::core::ViewMut<T, Brand>&\\)"
+  "a ViewMut is the one writer of its run: a copy would be a second writer")
+foundation_neg_compile_test(neg_core_with_mut_named_owner
+  "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Owner = FixedArray<int, 4>&"
+  "with_mut takes the owner into its frame and gives it back: pass std::move\\(owner\\)")
+foundation_neg_compile_test(neg_core_ref_mut_copied
+  "use of deleted function .foundation::core::RefMut<T, Brand>::RefMut\\(const foundation::core::RefMut<T, Brand>&\\)"
+  "a RefMut is the one writer of its object: a copy would be a second writer")
+foundation_neg_compile_test(neg_core_with_mut_sum_second_frame
+  "this arm of a borrow match writes the sum that the match reads .mutating-call result."
+  "the payload that the arm borrows can end while the arm holds its reference")
+# No unique borrow leaves its frame: the result of a frame door holds no
+# borrow and names no brand of the frame, and no object of static storage
+# duration holds a value of the brand.
+foundation_neg_compile_test(neg_core_with_mut_gives_view_mut
+  "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Refused = \\{\\}. Owner = HeapArray<int>"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_core_with_mut_gives_brand
+  "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Refused = \\{\\}. Owner = FixedList<int, 4>"
+  "and it names no brand of the frame: give a plain value")
+foundation_neg_compile_test(neg_core_with_mut_sum_gives_reference
+  "use of deleted function .void foundation::core::Option<T>::with_mut\\(OnSome&&, OnNone&&\\) &"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_core_with_mut_static_borrow
+  "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call of its mint"
+  "KeepsFirst::operator\\(\\): kept")
+# A write through the RefMut of a niche payload can write the empty value of
+# the niche, so the frame door of an Option refuses a niche that does not
+# state that no door builds its empty value.
+foundation_neg_compile_test(neg_core_with_mut_niche_view
+  "static assertion failed: Option::with_mut: a write through the RefMut can write the empty value of the niche"
+  "T = foundation::core::View<int>")
+foundation_neg_compile_test(neg_core_with_mut_niche_member
+  "static assertion failed: Option::with_mut: a write through the RefMut can write the empty value of the niche"
+  "T = .anonymous.::Slot")
+
 # A foreign run holds each bit pattern, so its View refuses a bool and an
 # enumeration with enumerators.  The text door takes a run of char, and its
 # result is the one TextView of the run.

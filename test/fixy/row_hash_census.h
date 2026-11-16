@@ -898,6 +898,9 @@ inline constexpr StatedZero kZeros[] = {
      "the blocks of an arena: it holds storage and makes no claim about the objects in it"},
     {^^::foundation::core::Ref,
      "a borrow of one object: it owns nothing and makes no claim about what the object holds"},
+    {^^::foundation::core::RefMut,
+     "the unique borrow of one object in a frame door: it owns nothing and makes no claim about what the object "
+     "holds"},
     {^^::foundation::core::CallRef,
      "a borrow of one callable: it owns nothing, it lives in a frame, and it is never a value in a kernel signature"},
     {^^::foundation::core::Address,
@@ -1000,6 +1003,9 @@ inline constexpr StatedZero kZeros[] = {
      "the strided view of one strided scope: it owns nothing, and it lives inside the body of the scope"},
     {^^::foundation::core::ShapeMismatch,
      "the error of a walk over strided views of different sizes: it holds nothing"},
+    {^^::foundation::core::ViewMut,
+     "the unique borrow of the run of an owner in a frame door: it owns nothing, it lives inside the body of the "
+     "frame, and it makes no claim about what the elements hold"},
     {^^::foundation::core::Full,
      "the error of a push into a full owner: it holds nothing, or the linear value of the push, and makes no claim"},
     // The Scalar family.
