@@ -116,8 +116,11 @@ static_assert(RECORD_BODIES < RING_CAPACITY,
               "A recording case must finish before the ring fills, or it measures the reject path "
               "instead of an append. Lower RECORD_SAMPLES or drain between samples.");
 
-// Confines the whole process to the isolated CPUs and returns the one to
-// measure on, or -1 when the host isolates nothing.
+// Confines the whole process to the isolated CPUs of its affinity and returns
+// the one to measure on, or -1 when its affinity holds no isolated CPU.  The
+// affinity only narrows.  loop bench gives each bench cores of its own, and a
+// wider mask would run the rows and the drain thread on the cores of another
+// bench.
 //
 // Two separate reasons, and skipping either one costs a factor of two.
 //
@@ -135,34 +138,19 @@ static_assert(RECORD_BODIES < RING_CAPACITY,
 // Vigil's drain thread is free to land anywhere in the set. Sharing a core
 // with it turns the producer into something that waits on the consumer, which
 // arrives as millisecond outliers. The measuring thread takes the last
-// isolated CPU and the drain thread gets the rest.
-[[nodiscard]] int pin_process_to_isolated_set() noexcept {
-    std::FILE* f = std::fopen("/sys/devices/system/cpu/isolated", "rb");
-    if (f == nullptr) return -1;
-    char line[512] = {};
-    const bool read_ok = std::fgets(line, sizeof(line), f) != nullptr;
-    std::fclose(f);
-    if (!read_ok) return -1;
-
+// isolated CPU of the affinity and the drain thread gets the rest.  With one
+// core from loop bench, the drain thread shares that core.  Complexity: linear
+// in the CPUs of the affinity.
+[[nodiscard]] int confine_process_to_isolated_cpus() noexcept {
+    const ::fixy::InitLoadCtx query{::foundation::effects::testing::init()};
+    crucible::warden::CpuSet const allowed = crucible::warden::allowed_cpus(query);
+    crucible::warden::CpuSet const isolated = crucible::warden::isolated_cpus(query);
     ::fixy::AffinityMask set{};
     int last = -1;
-    // The file is a comma-separated list of ranges: "88-95" or "4,6,88-95".
-    for (const char* p = line; *p != '\0';) {
-        if (*p < '0' || *p > '9') {
-            ++p;
-            continue;
-        }
-        char* end = nullptr;
-        const long lo = std::strtol(p, &end, 10);
-        long hi = lo;
-        if (end != nullptr && *end == '-') {
-            hi = std::strtol(end + 1, &end, 10);
-        }
-        for (long c = lo; c <= hi && c <= ::fixy::AffinityMask::kMaxCore; ++c) {
-            set = ::fixy::AffinityLattice::join(set, ::fixy::AffinityMask::single(static_cast<std::uint16_t>(c)));
-            last = static_cast<int>(c);
-        }
-        p = (end != nullptr && end != p) ? end : p + 1;
+    for (int const cpu : allowed) {
+        if (!isolated.contains(cpu) || cpu > ::fixy::AffinityMask::kMaxCore) continue;
+        set = ::fixy::AffinityLattice::join(set, ::fixy::AffinityMask::single(static_cast<std::uint16_t>(cpu)));
+        last = cpu;
     }
     if (last < 0) return -1;
     // The pin goes through the door that records the pin event.  The
@@ -361,13 +349,13 @@ int main() {
     // thread. -1 means the host isolates nothing, and every case then falls
     // back to the harness's own pin; the numbers will be noisier and the
     // gate will say so.
-    const int record_core = pin_process_to_isolated_set();
+    const int record_core = confine_process_to_isolated_cpus();
 
     bench::print_system_info();
     if (record_core < 0) {
         std::printf("  NOTE: no isolated CPUs on this host; measuring unpinned and expecting noise.\n");
     } else {
-        std::printf("  measuring on cpu%d, process confined to the isolated set\n", record_core);
+        std::printf("  measuring on cpu%d, process confined to the isolated cpus of its affinity\n", record_core);
     }
     bench::elevate_priority();
 

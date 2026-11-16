@@ -311,6 +311,22 @@ def parse_cpu_list(text: str) -> tuple[int, ...]:
     return tuple(sorted(cpus))
 
 
+def format_cpu_list(cpus: tuple[int, ...]) -> str:
+    """Write sorted CPUs as a CPU list of the kernel: each run of consecutive CPUs as "low-high", joined by commas.
+
+    The inverse of parse_cpu_list().  Complexity: linear in the number of CPUs.
+    """
+    runs: list[str] = []
+    index = 0
+    while index < len(cpus):
+        end = index
+        while end + 1 < len(cpus) and cpus[end + 1] == cpus[end] + 1:
+            end += 1
+        runs.append(str(cpus[index]) if end == index else f"{cpus[index]}-{cpus[end]}")
+        index = end + 1
+    return ",".join(runs)
+
+
 def read_text(path: Path) -> str:
     """Return the text of a sysfs or cgroupfs file, or an empty text when the file cannot be read."""
     try:
@@ -670,18 +686,16 @@ def run_claimed(build_dir: Path, build_cmake: str, request: Request, where: Plac
         BenchError: If a step cannot go on
     """
     reserved = where.reserved
+    listed = format_cpu_list(reserved.cpus)
     if reserved.source == "partition":
         log(
-            f"reserved partition {reserved.slice_name} on cpus {reserved.cpus[0]}-{reserved.cpus[-1]}: each bench runs "
-            f"in the slice on cpu{where.core}, and its SMT sibling stays idle"
+            f"reserved partition {reserved.slice_name} on cpus {listed}: each bench runs in the slice on "
+            f"cpu{where.core}, and its SMT sibling stays idle"
         )
     elif reserved.source == "isolated" and where.core:
-        log(f"isolated cpus {reserved.cpus[0]}-{reserved.cpus[-1]}: each bench runs on cpu{where.core}")
+        log(f"isolated cpus {listed}: each bench runs on cpu{where.core}")
     elif reserved.cpus:
-        warn(
-            f"the reserved cpus {reserved.cpus[0]}-{reserved.cpus[-1]} hold no full SMT group: the SMT sibling of "
-            "the core can run other work"
-        )
+        warn(f"the reserved cpus {listed} hold no full SMT group: the SMT sibling of the core can run other work")
     if not where.core:
         warn(
             "the host reserves no cpu, and CRUCIBLE_BENCH_CORE is not set: each bench runs with no pin, and its "
@@ -784,6 +798,12 @@ def self_test() -> int:
     expect(
         "a CPU list gives its sorted CPUs, and an empty list gives none",
         parse_cpu_list("8,0-3\n") == (0, 1, 2, 3, 8) and parse_cpu_list("\n") == (),
+    )
+    expect(
+        "the printed list gives the exact cpus: a run of consecutive cpus as a range, and the even cpus one by one",
+        format_cpu_list((0, 1, 2, 3, 8)) == "0-3,8"
+        and format_cpu_list(tuple(range(224, 256, 2))) == ",".join(str(cpu) for cpu in range(224, 256, 2))
+        and format_cpu_list(()) == "",
     )
     for bad in ("3-1", "a", "1-b"):
         try:

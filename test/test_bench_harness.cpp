@@ -601,6 +601,28 @@ void test_fan_out_keeps_the_worker_affinity() {
     CHECK(affinity_cpu_count() == unpinned_count);
 }
 
+// The core of a run stays in the affinity of the process.  Two benches that
+// loop bench gives the cores 224 and 226 measure on those two cores, also when
+// CRUCIBLE_BENCH_CORE names a third core, and a core that the affinity holds
+// is taken as asked.  The masks are planted, so the test reads no affinity of
+// the host.
+void test_core_of_run_stays_in_the_affinity() {
+    crucible::warden::CpuSet first{};
+    first.insert(224);
+    crucible::warden::CpuSet second{};
+    second.insert(226);
+    CHECK(bench::detail::core_of_run(first, -1) == 224);
+    CHECK(bench::detail::core_of_run(second, -1) == 226);
+    CHECK(bench::detail::core_of_run(first, 246) == 224);
+    CHECK(bench::detail::core_of_run(second, 246) == 226);
+    CHECK(bench::detail::core_of_run(first, 246) != bench::detail::core_of_run(second, 246));
+    crucible::warden::CpuSet both{};
+    both.insert(224);
+    both.insert(226);
+    CHECK(bench::detail::core_of_run(both, 226) == 226);
+    CHECK(bench::detail::core_of_run(crucible::warden::CpuSet{}, 224) == -1);
+}
+
 }  // namespace
 
 int main() {
@@ -618,8 +640,9 @@ int main() {
     test_clobber_array_source_container_diversity();
     test_run_pins_through_the_door_and_restores();
     test_fan_out_keeps_the_worker_affinity();
+    test_core_of_run_stays_in_the_affinity();
 
-    constexpr int kNumGroups = 12;
+    constexpr int kNumGroups = 13;
     if (g_failures == 0) {
         crucible::test::pass("test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;

@@ -20,9 +20,11 @@
 //   Report → text + JSON; bootstrap CI on any percentile on demand.
 //   bench::compare(a, b) → Mann-Whitney U; distinguishable at p<0.01 or not.
 //
-// Pin-by-default: uses /sys/devices/system/cpu/isolated first (so an
-// isolcpu reserved via the kernel cmdline wins), falling back to
-// sched_getcpu() only if no CPU is isolated. A body that starts threads
+// Pin-by-default: picks a core of the affinity of the process, an isolated
+// CPU first (so an isolcpu reserved via the kernel cmdline wins), falling back
+// to sched_getcpu() only if the affinity is empty.  The pin never leaves the
+// affinity, so the one core that loop bench gives a bench is the core of each
+// of its runs. A body that starts threads
 // asks for Run::fan_out instead, because its threads take the one-CPU
 // pin of the measuring thread. Each pin goes through the gated door of
 // fixy/os/Sched.h, which records a pin event, and a Run gives the thread
@@ -367,27 +369,16 @@ private:
 
 namespace detail {
 
-// Return the first CPU listed in /sys/.../cpu/isolated, or -1 if none.
-// Format: "2-3,5" etc. We just want the first number.
-[[nodiscard]] inline int first_isolated_cpu() noexcept {
-#ifdef __linux__
-    FILE* f = std::fopen("/sys/devices/system/cpu/isolated", "r");
-    if (!f) return -1;
-    char buf[256]{};
-    int cpu = -1;
-    if (std::fgets(buf, sizeof(buf), f)) {
-        for (const char* p = buf; *p; ++p) {
-            if (*p >= '0' && *p <= '9') {
-                cpu = static_cast<int>(std::strtol(p, nullptr, 10));
-                break;
-            }
-        }
-    }
-    std::fclose(f);
-    return cpu;
-#else
-    return -1;
-#endif
+// The core of a run in the affinity allowed of the process: the explicit core
+// when allowed holds it, else the core that warden::select_hot_cpu_of picks in
+// allowed, the isolated CPUs first.  A run never leaves its affinity.  loop
+// bench gives each bench one core of its own, so a pin to a core outside it
+// would measure on the core of another bench.  -1 for an empty affinity.
+// Complexity: linear in the CPUs of allowed, times one sysfs read each.
+[[nodiscard]] inline int core_of_run(crucible::warden::CpuSet const& allowed, int explicit_core) noexcept {
+    if (explicit_core >= 0 && allowed.contains(explicit_core)) return explicit_core;
+    return crucible::warden::detail::select_hot_cpu_of(allowed, crucible::warden::CoreSelector{},
+                                                       crucible::warden::CpuSet{});
 }
 
 // Read /sys/.../cpu<N>/cpufreq/scaling_cur_freq (kHz) → Hz, 0 on failure.
@@ -1666,16 +1657,18 @@ private:
     // Apply affinity and return the CPU we actually ended up on.
     //
     //  • Pin::None → no affinity change, just report sched_getcpu().
-    //  • Pin::Explicit with core_ >= 0 → target = core_.
+    //  • Pin::Explicit with core_ >= 0 → target = core_, when the
+    //    affinity of the process holds it.  A core outside the affinity
+    //    prints a warning and takes the Auto choice (core_of_run).
     //  • Pin::Explicit with core_ < 0 (e.g. `.core(-1)` because the
     //    caller's env var defaulted to -1) → fall through to the Auto
     //    discovery path instead of silently skipping pinning.
-    //  • Pin::Auto → hand off to `warden::select_hot_cpu`, which honors
-    //    isolcpus, prefers P-cores, and (crucially) steers away from
-    //    cpu0 and its SMT sibling because cpu0 absorbs timer IRQs /
-    //    RCU callbacks on most Linux configs. Falls back to
-    //    sched_getcpu() only if the selector returns -1 (empty
-    //    allowed set).
+    //  • Pin::Auto → hand off to `warden::select_hot_cpu_of` over the
+    //    affinity of the process, which honors isolcpus, prefers P-cores,
+    //    and (crucially) steers away from cpu0 and its SMT sibling because
+    //    cpu0 absorbs timer IRQs / RCU callbacks on most Linux configs.
+    //    Falls back to sched_getcpu() only if the selector returns -1
+    //    (empty allowed set).  The pin never leaves the affinity.
     //
     // Each pin goes through fixy::sched::apply_affinity_to_cpu, the gated
     // door that records a pin event, so a CpuPinned proof of an earlier pin
@@ -1695,20 +1688,20 @@ private:
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
         if (pin_mode_ == Pin::FanOut) return fan_out_(startup);
 
-        int target = -1;
+        // The core of the run stays in the affinity of the process: the
+        // explicit core when the affinity holds it, else the selector of
+        // warden inside the affinity, with the heuristic of the Keeper's
+        // mint_hardening(): isolcpu first, P-core preference, and no cpu0 or
+        // its SMT sibling (timer-tick IRQ landing pad).
         const bool explicit_valid = (pin_mode_ == Pin::Explicit) && core_.is_valid();
-        if (explicit_valid) {
-            target = core_.raw();
-        } else {
-            // Auto path, OR Explicit-but-negative.
-            //
-            // Use the rt topology-aware selector. Same heuristic the
-            // Keeper's mint_hardening() uses: isolcpu first, P-core
-            // preference, avoid cpu0 and its SMT sibling (timer-tick
-            // IRQ landing pad).
-            target = crucible::warden::select_hot_cpu(startup, crucible::warden::CoreSelector{});
-            if (target < 0) target = sched_getcpu();
+        const int asked = explicit_valid ? core_.raw() : -1;
+        int target = detail::core_of_run(crucible::warden::allowed_cpus(startup), asked);
+        if (asked >= 0 && target != asked) {
+            std::fprintf(stderr,
+                         "WARN bench: cpu%d is outside the affinity of the process, so the run measures on cpu%d\n",
+                         asked, target);
         }
+        if (target < 0) target = sched_getcpu();
         if (target < 0) return PinResult{};
 
         ::fixy::Result<::fixy::sched::PriorAffinity, ::foundation::os::Errno> prior =
@@ -1821,6 +1814,8 @@ private:
 
 // ── System info ────────────────────────────────────────────────────
 
+[[nodiscard]] inline int env_core() noexcept;
+
 inline void print_system_info(FILE* out = stdout) {
     std::fprintf(out, "=== system ===\n");
 
@@ -1870,8 +1865,12 @@ inline void print_system_info(FILE* out = stdout) {
     const long nproc = sysconf(_SC_NPROCESSORS_ONLN);
     std::fprintf(out, "  cpus:      %ld online\n", nproc);
 
-    const int iso = detail::first_isolated_cpu();
-    if (iso >= 0) std::fprintf(out, "  isolated:  cpu%d (from isolcpus)\n", iso);
+    // The core of each run with the default pin, from the affinity of the
+    // process and CRUCIBLE_BENCH_CORE, as pin_() picks it.
+    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    const crucible::warden::CpuSet allowed = crucible::warden::allowed_cpus(startup);
+    std::fprintf(out, "  core:      cpu%d, of the %zu cpus of the affinity of the process\n",
+                 detail::core_of_run(allowed, env_core()), allowed.size());
 #endif
 
     const double nspc = Timer::ns_per_cycle();
