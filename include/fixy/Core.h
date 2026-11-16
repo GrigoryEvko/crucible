@@ -44,6 +44,7 @@
 #include <foundation/core/RunSet.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/StorageFloat.h>
+#include <foundation/core/Strided.h>
 #include <foundation/core/Text.h>
 #include <foundation/core/Values.h>
 
@@ -182,6 +183,18 @@ using ::foundation::core::StaticIndex;
 using ::foundation::core::View;
 using ::foundation::core::WriteLease;
 using ::foundation::core::zip;
+
+using ::foundation::core::BrandedStridedView;
+using ::foundation::core::dynamic_rank;
+using ::foundation::core::max_strided_count;
+using ::foundation::core::max_strided_rank;
+using ::foundation::core::mint_strided_scope;
+using ::foundation::core::mint_strided_view;
+using ::foundation::core::ReshapeError;
+using ::foundation::core::ShapeMismatch;
+using ::foundation::core::StridedIndex;
+using ::foundation::core::StridedView;
+using ::foundation::core::walk;
 
 using ::foundation::core::bit_cast;
 using ::foundation::core::BitValid;

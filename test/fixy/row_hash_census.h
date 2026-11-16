@@ -990,6 +990,16 @@ inline constexpr StatedZero kZeros[] = {
      "in a kernel signature"},
     {^^::foundation::core::BrandedView,
      "the View of one branded scope: it owns nothing, and it lives inside the body of the scope"},
+    {^^::foundation::core::StridedView,
+     "a borrow of the elements of a tensor at their strides in one run: it owns nothing and makes no claim about "
+     "what the elements hold"},
+    {^^::foundation::core::StridedIndex,
+     "the coordinates of an index below the sizes of one strided scope: it lives inside the scope, and it is never a "
+     "value in a kernel signature"},
+    {^^::foundation::core::BrandedStridedView,
+     "the strided view of one strided scope: it owns nothing, and it lives inside the body of the scope"},
+    {^^::foundation::core::ShapeMismatch,
+     "the error of a walk over strided views of different sizes: it holds nothing"},
     {^^::foundation::core::Full,
      "the error of a push into a full owner: it holds nothing, or the linear value of the push, and makes no claim"},
     // The Scalar family.

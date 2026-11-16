@@ -1,0 +1,75 @@
+// The compile-time checks of foundation/core/Strided.h.
+
+#include <foundation/core/Strided.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+
+namespace foundation::core {
+
+namespace detail::strided_checks {
+
+// A brand that the checks name.  A program gets each brand from the mint.
+struct CheckBrand final {};
+struct OtherBrand final {};
+
+// A view of a static rank holds its pointer and two lanes for each axis.  A
+// view of a dynamic rank holds the lanes of max_strided_rank axes and the
+// rank.
+static_assert(sizeof(StridedView<int, 2>) == 5 * sizeof(std::size_t));
+static_assert(sizeof(StridedView<int>) == (2 + 2 * max_strided_rank) * sizeof(std::size_t));
+// The seal refuses std::bit_cast, and the copy stays trivial, so the ABI
+// passes a small view in registers.
+static_assert(!std::is_trivially_copyable_v<StridedView<float, 3>>);
+static_assert(std::is_trivially_copy_constructible_v<StridedView<float, 3>>);
+static_assert(std::is_trivially_destructible_v<StridedView<float>>);
+
+// No pointer becomes a view, and a view converts only to a view of a const
+// element or of a dynamic rank.
+static_assert(!std::is_constructible_v<StridedView<int, 1>, int*>);
+static_assert(!std::is_default_constructible_v<StridedView<int, 1>>);
+static_assert(std::is_convertible_v<StridedView<int, 2>, StridedView<int const, 2>>);
+static_assert(std::is_convertible_v<StridedView<int, 2>, StridedView<int const>>);
+static_assert(!std::is_convertible_v<StridedView<int const, 2>, StridedView<int, 2>>);
+static_assert(!std::is_convertible_v<StridedView<int>, StridedView<int, 2>>);
+static_assert(!std::is_convertible_v<StridedView<int, 2>, StridedView<int, 3>>);
+
+// An index of one brand is no index of another brand, and no number becomes
+// an index.
+static_assert(!std::is_convertible_v<StridedIndex<2, CheckBrand>, StridedIndex<2, OtherBrand>>);
+static_assert(!std::is_constructible_v<StridedIndex<2, CheckBrand>, std::size_t, std::size_t>);
+static_assert(!std::is_constructible_v<BrandedStridedView<int, 2, CheckBrand>, StridedView<int, 2>>);
+
+// The body of a scope gives a value that does not hold the brand.
+struct GivesCount final {
+    template <class Brand>
+    constexpr std::size_t operator()(BrandedStridedView<int, 2, Brand> view) const noexcept {
+        return view.rank();
+    }
+};
+struct GivesIndex final {
+    template <class Brand>
+    constexpr Option<StridedIndex<2, Brand>> operator()(BrandedStridedView<int, 2, Brand> view) const noexcept {
+        return view.index(std::size_t{0}, std::size_t{0});
+    }
+};
+static_assert(CanMintStridedScope<int, 2, GivesCount, CheckBrand>);
+static_assert(!CanMintStridedScope<int, 2, GivesIndex, CheckBrand>);
+
+// The view of a 3 x 4 matrix in row-major order over 12 elements.
+[[nodiscard]] consteval int matrix_sum() noexcept {
+    FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    FixedArray<std::size_t, 2> const sizes{3, 4};
+    FixedArray<std::size_t, 2> const strides{4, 1};
+    StridedView<int, 2> const matrix =
+        mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
+    int total = 0;
+    if (walk([&total](int& element) noexcept { total += element; }, matrix).is_err()) return -1;
+    return total;
+}
+static_assert(matrix_sum() == 66);
+
+}  // namespace detail::strided_checks
+
+}  // namespace foundation::core

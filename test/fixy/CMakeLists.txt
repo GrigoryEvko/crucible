@@ -4571,6 +4571,11 @@ fixy_neg_compile_test(neg_check_pass_without_test_context
   "no matching function for call to .pass"
   "TestContext")
 
+# The strided views of foundation/core/Strided.h: the door, the operations on
+# the shape, the walk and the scope, each against a naive model of the offsets
+# in row-major order, and the death of a cursor of the scope past its end.
+fixy_test(test_strided_view)
+
 # The property tests of fixy/check/Property.h: a property that holds, the
 # determinism and the ranges of the draws, the shrink of a failure to its
 # least input, and an oracle that agrees and one that finds a difference.

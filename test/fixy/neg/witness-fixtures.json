@@ -197,6 +197,11 @@
       "constructor": "\\bBrandedIndex\\("
     },
     {
+      "name": "neg_witness_core_brandedstridedview_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBrandedStridedView\\("
+    },
+    {
       "name": "neg_witness_core_brandedview_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bBrandedView\\("
@@ -280,6 +285,21 @@
       "name": "neg_witness_core_detail_runaddresskey_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bRunAddressKey\\("
+    },
+    {
+      "name": "neg_witness_core_detail_stridedindexcursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bStridedIndexCursor\\("
+    },
+    {
+      "name": "neg_witness_core_detail_stridedindexrange_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bStridedIndexRange\\("
+    },
+    {
+      "name": "neg_witness_core_detail_stridedkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bStridedKey\\("
     },
     {
       "name": "neg_witness_core_detail_sumkey_direct_construction",
@@ -380,6 +400,16 @@
       "name": "neg_witness_core_solewriter_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bSoleWriter\\("
+    },
+    {
+      "name": "neg_witness_core_stridedindex_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bStridedIndex\\("
+    },
+    {
+      "name": "neg_witness_core_stridedview_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bStridedView\\("
     },
     {
       "name": "neg_witness_core_textview_direct_construction",
@@ -1393,6 +1423,30 @@
     {
       "type": "foundation::core::detail::BrandedEnumerateCursor<int, forge::brand>",
       "header": "foundation/core/Branded.h"
+    },
+    {
+      "type": "foundation::core::StridedView<int, 2>",
+      "header": "foundation/core/Strided.h"
+    },
+    {
+      "type": "foundation::core::detail::StridedKey",
+      "header": "foundation/core/Strided.h"
+    },
+    {
+      "type": "foundation::core::StridedIndex<2, forge::brand>",
+      "header": "foundation/core/Strided.h"
+    },
+    {
+      "type": "foundation::core::BrandedStridedView<int, 2, forge::brand>",
+      "header": "foundation/core/Strided.h"
+    },
+    {
+      "type": "foundation::core::detail::StridedIndexRange<2, forge::brand>",
+      "header": "foundation/core/Strided.h"
+    },
+    {
+      "type": "foundation::core::detail::StridedIndexCursor<2, forge::brand>",
+      "header": "foundation/core/Strided.h"
     },
     {
       "type": "foundation::algebra::grade_key<forge::brand>",

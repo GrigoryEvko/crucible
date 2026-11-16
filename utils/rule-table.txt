@@ -784,6 +784,17 @@ witness <foundation/core/Branded.h> private | foundation::core::detail::BrandedI
 witness <foundation/core/Branded.h> private | foundation::core::detail::BrandedIndexCursor<forge::brand> | foundation::core::detail::BrandedIndexCursor<forge::brand>{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/Branded.h> private | foundation::core::detail::BrandedEnumerateRange<int, forge::brand> | foundation::core::detail::BrandedEnumerateRange<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/Branded.h> private | foundation::core::detail::BrandedEnumerateCursor<int, forge::brand> | foundation::core::detail::BrandedEnumerateCursor<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
+# A strided view comes only from mint_strided_view, which proves each element
+# inside its run, and from the operations of a view, so no pointer and no
+# lanes become a view.  A branded strided view, its indexes, its range and its
+# cursor come only from mint_strided_scope, so no coordinates become an index
+# of a scope.
+witness <foundation/core/Strided.h> private | foundation::core::StridedView<int, 2> | foundation::core::StridedView<int, 2>{forge::rvalue<int*>(), forge::rvalue<foundation::core::detail::StridedLanes<2>>()}
+witness <foundation/core/Strided.h> private | foundation::core::detail::StridedKey | foundation::core::detail::StridedKey{}
+witness <foundation/core/Strided.h> private | foundation::core::StridedIndex<2, forge::brand> | foundation::core::StridedIndex<2, forge::brand>{forge::rvalue<foundation::core::detail::StridedCoordinates<2>>()}
+witness <foundation/core/Strided.h> private | foundation::core::BrandedStridedView<int, 2, forge::brand> | foundation::core::BrandedStridedView<int, 2, forge::brand>{forge::rvalue<foundation::core::StridedView<int, 2>>()}
+witness <foundation/core/Strided.h> private | foundation::core::detail::StridedIndexRange<2, forge::brand> | foundation::core::detail::StridedIndexRange<2, forge::brand>{forge::rvalue<foundation::core::detail::StridedCoordinates<2>>(), forge::rvalue<unsigned long>()}
+witness <foundation/core/Strided.h> private | foundation::core::detail::StridedIndexCursor<2, forge::brand> | foundation::core::detail::StridedIndexCursor<2, forge::brand>{forge::rvalue<foundation::core::detail::StridedCoordinates<2>>(), forge::rvalue<unsigned long>()}
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

@@ -3257,6 +3257,63 @@ foundation_neg_compile_test(neg_branded_scope_returns_closure
   "a scope mint gives a result that holds its own scope brand"
   "foundation::core::mint_branded_scope: the result .anonymous.::ReturnsClosure::operator\\(\\)")
 
+# The door of a strided view takes sizes and strides of std::size_t, of one
+# rank.  An int can be negative, and two fixed extents that differ name no
+# rank.
+foundation_neg_compile_test(neg_core_strided_view_sizes_of_int
+  "no matching function for call to .mint_strided_view\\(foundation::core::View<int, 4>, foundation::core::View<const int, 1>"
+  "satisfaction of .CanMintStridedView<S, SizesExtent, D, StridesExtent>.")
+foundation_neg_compile_test(neg_core_strided_view_rank_mismatch
+  "no matching function for call to .mint_strided_view\\(foundation::core::View<int, 6>, foundation::core::View<const long unsigned int, 2>, foundation::core::View<const long unsigned int, 3>"
+  "satisfaction of .CanMintStridedView<S, SizesExtent, D, StridesExtent>.")
+
+# The scope mint refuses an explicit template argument and a body whose
+# result holds the brand, and an index of one scope is no index of another.
+# The rule brand-escape refuses a static local that keeps an index for the
+# next call, and a closure that holds an index in a capture.
+foundation_neg_compile_test(neg_core_strided_scope_names_brand
+  "no matching function for call to .mint_strided_scope<int>\\(const foundation::core::StridedView<int, 1>&"
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_strided_scope_gives_index
+  "no matching function for call to .mint_strided_scope\\(const foundation::core::StridedView<int, 1>&, main\\(\\)::<lambda\\(auto:7\\)>\\)."
+  "template argument deduction/substitution failed")
+foundation_neg_compile_test(neg_core_strided_index_of_other_scope
+  "cannot convert .const foundation::core::StridedIndex<1, foundation::core::<lambda\\(\\)> >. to .const foundation::core::StridedIndex<1, foundation::core::<lambda\\(\\)> >&."
+  "initializing argument 1 of .constexpr T& foundation::core::BrandedStridedView<T, Rank, Brand>::at\\(const foundation::core::StridedIndex<Rank, Brand>&\\) const")
+foundation_neg_compile_test(neg_strided_scope_static_local
+  "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call of its mint"
+  "KeepsLastIndex::operator\\(\\): kept")
+foundation_neg_compile_test(neg_strided_scope_returns_closure
+  "a scope mint gives a result that holds its own scope brand"
+  "foundation::core::mint_strided_scope: the result .anonymous.::ReturnsClosure::operator\\(\\)")
+
+# The types of a strided view refuse each misuse that they can see: an axis
+# past a static rank, a write through a broadcast, a broadcast to fewer axes,
+# a count of coordinates other than the rank, a walk over two rank
+# parameters, the sizes of a temporary view, and a dynamic rank as a static
+# rank.
+foundation_neg_compile_test(neg_core_strided_axis_past_rank
+  "no matching function for call to .foundation::core::StridedView<int, 2>::transpose\\(foundation::core::StaticIndex<0>, foundation::core::StaticIndex<2>\\) const."
+  "no known conversion for argument 2 from .foundation::core::StaticIndex<2>. to .foundation::core::StridedView<int, 2>::Axis.")
+foundation_neg_compile_test(neg_core_strided_broadcast_writes
+  "no matching function for call to .walk\\(main\\(\\)::<lambda\\(int&\\)>, const foundation::core::StridedView<const int, 2>&\\)."
+  "binding reference of type .int&. to .const int. discards qualifiers")
+foundation_neg_compile_test(neg_core_strided_broadcast_below_rank
+  "no matching function for call to .foundation::core::StridedView<int, 2>::broadcast_to\\(foundation::core::View<const long unsigned int, 1>\\) const."
+  "no operand of the disjunction is satisfied")
+foundation_neg_compile_test(neg_core_strided_index_count
+  "no matching function for call to .foundation::core::BrandedStridedView<int, 2, foundation::core::<lambda\\(\\)> >::index\\(std::size_t, std::size_t, std::size_t\\)."
+  "the expression .sizeof \\.\\.\\. \\(Coordinates \\.\\.\\.\\) == Rank \\[with Coordinates = \\{long unsigned int, long unsigned int, long unsigned int\\}; Rank = 2\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_strided_walk_mixed_ranks
+  "no matching function for call to .walk\\(main\\(\\)::<lambda\\(int&, int&\\)>, const foundation::core::StridedView<int, 2>&, const foundation::core::StridedView<int, 18446744073709551615>&\\)."
+  "deduced conflicting values for non-type parameter .Rank. \\(.2. and .18446744073709551615.\\)")
+foundation_neg_compile_test(neg_core_strided_sizes_of_temporary
+  "use of deleted function .void foundation::core::StridedView<T, Rank>::sizes\\(\\) const && \\[with T = int; long unsigned int Rank = 2\\]."
+  "the sizes of a temporary view dangle at the end of the full expression")
+foundation_neg_compile_test(neg_core_strided_dynamic_to_static
+  "conversion from .StridedView<\\[\\.\\.\\.\\],18446744073709551615>."
+  "to non-scalar type .StridedView<\\[\\.\\.\\.\\],2>. requested")
+
 # A push into or a view of a temporary list is refused, and a list of a
 # linear element has no clear().
 foundation_neg_compile_test(neg_core_fixed_list_push_of_temporary
