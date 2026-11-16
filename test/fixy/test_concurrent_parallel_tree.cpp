@@ -3,8 +3,8 @@
 // bits of sum_by_tree of one thread.
 
 #include <fixy/Core.h>
+#include <fixy/Reductions.h>
 #include <fixy/concurrent/ParallelTree.h>
-#include <foundation/core/Reduce.h>
 
 #include "../foundation/nan_outputs.h"
 #include "../test_assert.h"
@@ -28,7 +28,7 @@ void check_sums(View<float const> all, ::fixy::FixedArray<std::size_t, Counts> c
         View<float const> const part = all.window(0, count).expect("the part fits the run");
         float const parallel =
             ::fixy::concurrent::sum_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), part);
-        assert(tree::same_bits(parallel, ::foundation::core::sum_by_tree(part)));
+        assert(tree::same_bits(parallel, ::fixy::sum_by_tree(part)));
     }
 }
 
@@ -53,7 +53,7 @@ void check_nan_sums(View<float const> all) noexcept {
         View<float const> const part = all.window(0, count).expect("the part fits the run");
         float const parallel =
             ::fixy::concurrent::sum_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), part);
-        float const single = ::foundation::core::sum_by_tree(part);
+        float const single = ::fixy::sum_by_tree(part);
         assert(::crucible::test::float_bits(parallel) == ::crucible::test::output_bits(single));
         assert(::crucible::test::float_bits(single) == ::crucible::test::output_bits(single));
     }

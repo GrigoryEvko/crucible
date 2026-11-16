@@ -62,6 +62,7 @@
 //   read no target, and they stay outside it.
 
 #include <fixy/OwnedRegion.h>
+#include <fixy/Reductions.h>
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/concurrent/Spawn.h>
 #include <foundation/Linear.h>
