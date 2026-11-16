@@ -49,13 +49,13 @@
 //   takes each explicit argument, so no caller names it.  Each unique borrow
 //   that the frame gives carries that brand.  Only a frame door makes the key
 //   of the constructors of ViewMut and RefMut, so each unique borrow comes
-//   from a frame.  The door of an owner is a function at namespace scope, so
-//   each call site of it gives its frame a brand of its own.  The door of a
-//   sum is a member of a class template, and a lambda in a default template
-//   argument of such a member gives one type for each class.  So each frame
-//   of one sum type has one brand, and that brand proves no difference.  It
-//   keeps the RefMut out of the result of the arm, and the rule brand-escape
-//   keeps it out of each object of static or thread storage duration.
+//   from a frame.  Each call site of a door gives its frame a brand of its
+//   own.  The door of an owner is a function at namespace scope.  The door of
+//   a sum is a member template, and GCC 16 gives its default lambda a type for
+//   each call site too, as two nested frames of one Option type show.  No
+//   proof reads the brand of a frame of a sum.  The brand keeps the RefMut out
+//   of the result of the arm, and the rule brand-escape keeps it out of each
+//   object of static or thread storage duration.
 //
 // THE ALIAS PROOF
 //   A frame of an owner holds its owner by value, so no two live frames hold
