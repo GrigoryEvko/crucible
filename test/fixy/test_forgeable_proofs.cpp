@@ -178,6 +178,7 @@ inline constexpr std::meta::info template_witnesses[] = {
     ^^fe::ctx_cap::BrandedFg<Region>,
     ^^fe::ExecCtx<fe::ctx_cap::KernelSource<Region, ::foundation::core::kFpModeIeee>, fe::Row<>>,
     ^^fe::ctx_cap::KernelSource<Region, ::foundation::core::kFpModeIeee>,
+    ^^fe::KernelCall<Region, ::foundation::core::kFpModeIeee>,
     ^^fe::host::ProducerClaim<Region>,
     ^^BgBase,
     ^^sess::Transferable<int, Region>,

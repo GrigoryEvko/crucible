@@ -675,18 +675,64 @@ void require_kernel_scope(KernelCtx<Brand, Mode> const& ctx) noexcept {
 
 }  // namespace host
 
-// Runs one kernel under its context, after the check of the context
-// (host::require_kernel_scope).  The kernel takes the context first, and its
-// buffers after it.  It writes its results into its output buffers and
-// returns nothing.  The check is one read of the thread pointer, one read of
-// a thread-local slot, one read of the FP control register and three
-// compares for each kernel, not for each element.
+template <class Brand, ::foundation::core::FpMode Mode>
+class KernelCall;
+
+// A kernel of the context KernelCtx<Brand, Mode>: a callable that takes the
+// token of one call first and its buffers after it, and returns nothing.
+template <class Kernel, class Brand, ::foundation::core::FpMode Mode, class... Args>
+concept IsKernelOf = std::is_nothrow_invocable_r_v<void, Kernel&, KernelCall<Brand, Mode> const&, Args&&...>
+                  && std::is_void_v<std::invoke_result_t<Kernel&, KernelCall<Brand, Mode> const&, Args&&...>>;
+
+// The one door of a token, declared here so that the token can name it as a
+// friend.  The definition is below the token.
 template <class Brand, ::foundation::core::FpMode Mode, class Kernel, class... Args>
-    requires std::is_nothrow_invocable_r_v<void, Kernel&, KernelCtx<Brand, Mode> const&, Args&&...>
-          && std::is_void_v<std::invoke_result_t<Kernel&, KernelCtx<Brand, Mode> const&, Args&&...>>
+    requires IsKernelOf<Kernel, Brand, Mode, Args...>
+void run_kernel(KernelCtx<Brand, Mode> const& ctx, Kernel&& kernel, Args&&... args) noexcept;
+
+// The token of one call of a kernel.  run_kernel makes one after the check of
+// the context (host::require_kernel_scope), and gives it to the kernel by
+// reference.  Only run_kernel builds a token.  So a direct call of a kernel
+// has no token and does not compile, and no call skips the check.  The token
+// has no copy and no move, so it does not live past its call.  The kernel
+// reaches its context through the token.
+template <class Brand, ::foundation::core::FpMode Mode>
+class[[= ::foundation::lifetime::no_start_over_bytes{}]] KernelCall {
+public:
+    using brand_type = Brand;
+    static constexpr ::foundation::core::FpMode fp_mode = Mode;
+
+    KernelCall(const KernelCall&) = delete("a token names one call of run_kernel, and a copy can live past the call");
+    KernelCall(KernelCall&&) = delete("a token names one call of run_kernel, and a move can live past the call");
+    KernelCall& operator=(const KernelCall&) = delete("a token names one call of run_kernel");
+    KernelCall& operator=(KernelCall&&) = delete("a token names one call of run_kernel");
+    constexpr ~KernelCall() noexcept {}
+
+    // The context of the call, which run_kernel checked.
+    [[nodiscard]] constexpr KernelCtx<Brand, Mode> const& ctx() const noexcept { return *ctx_; }
+
+private:
+    explicit constexpr KernelCall(KernelCtx<Brand, Mode> const& ctx) noexcept : ctx_{&ctx} {}
+
+    template <class FriendBrand, ::foundation::core::FpMode FriendMode, class Kernel, class... Args>
+        requires IsKernelOf<Kernel, FriendBrand, FriendMode, Args...>
+    friend void run_kernel(KernelCtx<FriendBrand, FriendMode> const& ctx, Kernel&& kernel, Args&&... args) noexcept;
+
+    KernelCtx<Brand, Mode> const* ctx_ = nullptr;
+};
+
+// Runs one kernel under its context, after the check of the context
+// (host::require_kernel_scope).  The kernel takes the token of the call
+// first, and its buffers after it.  It writes its results into its output
+// buffers and returns nothing.  The check is one read of the thread pointer,
+// one read of a thread-local slot, one read of the FP control register and
+// three compares for each kernel, not for each element.
+template <class Brand, ::foundation::core::FpMode Mode, class Kernel, class... Args>
+    requires IsKernelOf<Kernel, Brand, Mode, Args...>
 void run_kernel(KernelCtx<Brand, Mode> const& ctx, Kernel&& kernel, Args&&... args) noexcept {
     host::require_kernel_scope(ctx);
-    kernel(ctx, static_cast<Args&&>(args)...);
+    KernelCall<Brand, Mode> const call{ctx};
+    kernel(call, static_cast<Args&&>(args)...);
 }
 
 // The test door of the foreground context.  The rule owners of

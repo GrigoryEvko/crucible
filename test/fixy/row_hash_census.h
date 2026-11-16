@@ -1066,6 +1066,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^fe::is_cap_type, kMetafunction},
     {^^fe::cap_permitted_row, kMetafunction},
     {^^fe::cap_mint_key, kPasskey},
+    {^^fe::KernelCall,
+     "the token of one call of a kernel: run_kernel makes it and the kernel takes it by reference, so it is never a "
+     "value, and the context that it names holds the row"},
     {^^fe::ResourceTagDescriptor, kPayload},
     {^^fe::concurrent_row_value, kMetafunction},
     {^^fe::concurrent_row_descriptors, kMetafunction},

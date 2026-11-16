@@ -59,6 +59,11 @@ using TestRunnerCtx = ::foundation::effects::detail::ctx_witnesses::TestRunnerCt
 template <class Brand, ::foundation::core::FpMode Mode>
 using Kernel = ::foundation::effects::KernelCtx<Brand, Mode>;
 
+// The token of one call of a kernel.  run_kernel makes it, and a kernel
+// takes it first.  A kernel reaches its context through call.ctx().
+using ::foundation::effects::IsKernelOf;
+using ::foundation::effects::KernelCall;
+
 using ::foundation::effects::mint_kernel_context;
 using ::foundation::effects::run_kernel;
 

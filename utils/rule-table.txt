@@ -571,6 +571,9 @@ witness <foundation/effects/Ctx.h> private | foundation::effects::host::Producer
 # The source of a kernel context is built only by the context, and only the
 # mint of a kernel context builds the context, from a live FP scope.
 witness <foundation/effects/Ctx.h> private | foundation::effects::ctx_cap::KernelSource<forge::brand, foundation::core::kFpModeIeee> | foundation::effects::ctx_cap::KernelSource<forge::brand, foundation::core::kFpModeIeee>{std::uint64_t{1}, std::uintptr_t{1}}
+# The token of a kernel call comes only from run_kernel, after the check of
+# the context.
+witness <foundation/effects/Ctx.h> private | foundation::effects::KernelCall<forge::brand, foundation::core::kFpModeIeee> | foundation::effects::KernelCall<forge::brand, foundation::core::kFpModeIeee>{forge::lvalue<foundation::effects::KernelCtx<forge::brand, foundation::core::kFpModeIeee> const>()}
 # An FP scope comes only from mint_fp_scope, and a word of the FP control
 # register only from a read of the register or from a word and a mode.
 witness <foundation/os/FpControl.h> private | foundation::os::FpScope<foundation::core::kFpModeIeee> | foundation::os::FpScope<foundation::core::kFpModeIeee>{}

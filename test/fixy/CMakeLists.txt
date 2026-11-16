@@ -5584,6 +5584,16 @@ fixy_neg_compile_test(neg_kernel_ctx_direct_construction
 fixy_neg_compile_test(neg_kernel_ctx_from_a_word
   "no matching function for call to .mint_kernel_context<\\{anonymous\\}::KernelBrand>\\(const foundation::os::FpControlWord&\\)."
   "is not derived from .const foundation::os::FpScope<")
+# A kernel takes the token of one call, and only run_kernel makes a token,
+# after the check of the context.  A direct call of a kernel with its
+# context does not compile, and a token has no copy that could live past its
+# call.
+fixy_neg_compile_test(neg_kernel_direct_call_skips_run_kernel
+  "invalid initialization of reference of type .const \\{anonymous\\}::KernelCall&."
+  "from expression of type")
+fixy_neg_compile_test(neg_kernel_call_copy
+  "use of deleted function .foundation::effects::KernelCall<Brand, Mode>::KernelCall\\(const foundation::effects::KernelCall<Brand, Mode>&\\)"
+  "a token names one call of run_kernel, and a copy can live past the call")
 
 # test_os_spin_hint reads the arms of a core from its feature words, and it
 # waits on a word with each arm of the core of the run.  A store of a second
