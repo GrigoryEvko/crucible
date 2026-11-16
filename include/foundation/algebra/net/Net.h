@@ -62,7 +62,7 @@
 //   par group.  check_proof_net reads the par groups, so it admits the cycle
 //   of a fork and its join, and it asks for one connected net.  Each check
 //   refuses a cycle that is safe: two sessions in a fixed order, a ring of
-//   queues, a loop between two stages (probe E4).  The priority check of
+//   queues, a loop between two stages (probe E4).  The liveness check of
 //   foundation/algebra/net/Priority.h decides those.
 //
 //   A value with two uses needs an explicit copy agent.  So a scan net, where
@@ -70,7 +70,7 @@
 //   network, whose comparators take two values and give two, have cycles
 //   through their copies and their comparators.  Such a net passes
 //   check_wiring, check_dataflow and check_vicious.  check_dataflow is the
-//   priority check with one priority for each agent: each agent waits on its
+//   liveness check of a net that runs one time: each agent waits on its
 //   inputs, so an order exists exactly when the directed wires form no cycle.
 //
 //   No structural check sees the order of the operands of an agent: a net and
@@ -1369,8 +1369,8 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 
 // Each wire goes from a give port to a take port, and the directed graph of
 // the agents has no cycle.  Each agent waits on its inputs before it gives
-// its outputs, so this is the priority check with one priority for each
-// agent: the order exists exactly when the graph has no cycle.  Then each
+// its outputs, so this is the liveness check of a net that runs one time:
+// the order exists exactly when the graph has no cycle.  Then each
 // agent fires one time in each schedule.  A meet port has no direction, and
 // the check refuses it.  Complexity: O(K + A + W), the sort of Kahn.
 namespace detail {

@@ -7,8 +7,8 @@
 //   chain       a pipeline of a starter, stages and a sink
 //   sum tree    the tree of foundation/core/Reduce.h over num agents, with
 //               one boundary result: a dataflow net
-//   ring        the Ring global type over one queue for each pair, with N
-//               roles and two iterations: 4N actions
+//   ring        the Ring global type over one rendezvous for each pair, with
+//               N roles and two iterations: 4N actions
 
 #include <foundation/algebra/net/Net.h>
 #include <foundation/algebra/net/Priority.h>
@@ -21,10 +21,12 @@ namespace {
 using foundation::algebra::net::Action;
 using foundation::algebra::net::AgentId;
 using foundation::algebra::net::ChannelId;
-using foundation::algebra::net::ChannelSide;
 using foundation::algebra::net::give;
 using foundation::algebra::net::KindId;
+using foundation::algebra::net::Move;
 using foundation::algebra::net::Net;
+using foundation::algebra::net::NetChannel;
+using foundation::algebra::net::NetName;
 using foundation::algebra::net::NetSignature;
 using foundation::algebra::net::NetVerdict;
 using foundation::algebra::net::PortRef;
@@ -224,14 +226,14 @@ template <std::size_t Roles>
     constexpr auto roles = static_cast<std::uint32_t>(Roles);
     ProcessSystem<Roles, Roles, 4 * Roles> protocol{};
     for (std::uint32_t role = 0; role < Roles; ++role) {
-        protocol.process_names[role] = foundation::algebra::net::NetName{"role"};
-        protocol.channel_names[role] = foundation::algebra::net::NetName{"queue"};
+        protocol.process_names[role] = NetName{"role"};
+        protocol.channels[role] = NetChannel{.name = NetName{"queue"}};
     }
     std::uint32_t next = 0;
     for (std::uint32_t role = 0; role < Roles; ++role) {
         std::uint32_t const left = (role + roles - 1) % roles;
-        Action const send{ProcessId{role}, ChannelId{role}, ChannelSide::First, true, true, 0};
-        Action const receive{ProcessId{role}, ChannelId{left}, ChannelSide::Second, false, true, 0};
+        Action const send{.process = ProcessId{role}, .channel = ChannelId{role}, .move = Move::Send};
+        Action const receive{.process = ProcessId{role}, .channel = ChannelId{left}, .move = Move::Receive};
         for (std::uint32_t iteration = 0; iteration < 2; ++iteration) {
             protocol.actions[next] = role == 0 ? send : receive;
             protocol.actions[next + 1] = role == 0 ? receive : send;
@@ -242,7 +244,7 @@ template <std::size_t Roles>
 }
 
 inline constexpr auto ring_of_1000 = build_ring<1000>();
-static_assert(check_priorities(ring_of_1000).is_admitted());
+static_assert(check_liveness(ring_of_1000).is_admitted());
 
 // A ring whose first role also waits first: each role waits on its left
 // neighbour, so the ring deadlocks.
@@ -251,16 +253,18 @@ template <std::size_t Roles>
     constexpr auto roles = static_cast<std::uint32_t>(Roles);
     ProcessSystem<Roles, Roles, 2 * Roles> protocol{};
     for (std::uint32_t role = 0; role < Roles; ++role) {
-        protocol.process_names[role] = foundation::algebra::net::NetName{"role"};
-        protocol.channel_names[role] = foundation::algebra::net::NetName{"queue"};
+        protocol.process_names[role] = NetName{"role"};
+        protocol.channels[role] = NetChannel{.name = NetName{"queue"}};
         std::uint32_t const left = (role + roles - 1) % roles;
-        protocol.actions[2 * role] = Action{ProcessId{role}, ChannelId{left}, ChannelSide::Second, false, true, 0};
-        protocol.actions[2 * role + 1] = Action{ProcessId{role}, ChannelId{role}, ChannelSide::First, true, true, 0};
+        protocol.actions[2 * role] =
+            Action{.process = ProcessId{role}, .channel = ChannelId{left}, .move = Move::Receive};
+        protocol.actions[2 * role + 1] =
+            Action{.process = ProcessId{role}, .channel = ChannelId{role}, .move = Move::Send};
     }
     return protocol;
 }
 
-inline constexpr NetVerdict waiting_ring = check_priorities(build_waiting_ring<1000>());
+inline constexpr NetVerdict waiting_ring = check_liveness(build_waiting_ring<1000>());
 static_assert(!waiting_ring.is_admitted());
 
 }  // namespace
@@ -269,7 +273,8 @@ static_assert(!waiting_ring.is_admitted());
 // A null text at run time puts nothing.
 int main() {
     bool const is_named = waiting_ring.starts_with(
-        "priorities: a cycle of waits: role waits on 'queue' step 0 before 'queue' step 0, role waits on");
+        "liveness: a cycle of waits holds no token: 'queue' step 0 from role to role <- 'queue' step 0 from role to "
+        "role <- ");
     NetVerdict const empty = NetVerdict::refuse(nullptr);
     bool const is_empty_refusal = empty.size() == 0 && !empty.is_admitted();
     return is_named && is_empty_refusal ? 0 : 1;

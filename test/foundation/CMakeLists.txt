@@ -3688,9 +3688,15 @@ foundation_neg_compile_test(neg_net_vicious_circle
 foundation_neg_compile_test(neg_net_dataflow_cycle
   "static assertion failed: net: a cycle of waits closes at port 'right' of agent 'add' \\(node 2\\)"
   "agent 'add' \\(node 2\\) <- agent 'add' \\(node 3\\)")
-foundation_neg_compile_test(neg_net_priority_cycle
-  "static assertion failed: priorities: a cycle of waits: P waits on 'rp' step 0 before 'pq' step 0"
-  "No priority order exists\\.")
+foundation_neg_compile_test(neg_net_liveness_crossed_ring
+  "static assertion failed: liveness: a cycle of waits holds no token: 'pq' step 0 from P to Q"
+  "<- 'rp' step 0 from R to P <- 'qr' step 0 from Q to R\\.  No action of the cycle can start\\.")
+foundation_neg_compile_test(neg_net_liveness_pipeline_loop
+  "static assertion failed: liveness: a cycle of waits holds no token: vigil receives 'processed' step 0"
+  "<- publish sends 'processed' step 0 <- publish receives 'graphs' step 0")
+foundation_neg_compile_test(neg_net_liveness_full_buffer
+  "static assertion failed: liveness: a cycle of waits holds no token: P sends 'c' step 1"
+  "<- Q receives 'c' step 0 <- Q receives 'd' step 0 <- P sends 'd' step 0\\.")
 foundation_neg_compile_test(neg_net_rules_second_rule
   "static assertion failed: rules: rule 'num_meets_add_again' is a second rule for the pair 'num', 'add'"
   "after rule 'add_meets_num'\\.  A pair has at most one rule")

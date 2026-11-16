@@ -1,47 +1,63 @@
 #pragma once
 
-// The priority check of a system of processes and channels: the deadlock
-// check that admits a safe cycle.
+// The deadlock check of a system of processes and channels: the marked graph
+// of the system, with the capacity of each channel.  It admits a safe cycle
+// of channels.
 //
-//   Action                     one step of a process on one side of a channel
-//   ProcessSystem<P, C, A>     the names of P processes and C channels, and
-//                              A actions
-//   check_priorities(system)   a priority for each step exists, so the system
-//                              does not deadlock
+//   Action                    one send or one receive of a process on a
+//                             channel
+//   NetChannel                the name and the capacity of a channel
+//   ProcessSystem<P, C, A>    the names of P processes, C channels, and A
+//                             actions
+//   check_liveness(system)    each cycle of waits holds a token, so no
+//                             action of the system waits for ever
 //
 // THE MODEL
 //   Each process is a sequence of actions, in the order of the actions of
-//   that process in the array.  An action names a channel, the side of the
-//   channel that the process holds, whether it sends, and whether it waits.
-//   A receive waits, and a send waits when the channel has no room, as a
-//   synchronous send does.  The k-th action of the first side of a channel
-//   and the k-th action of its second side are one event: one of them sends
-//   and the other one receives, and the two get one priority.
+//   that process in the array.  The sequence is the whole body of the
+//   process, or one period of its loop.  An action sends into a channel or
+//   receives from it.  A channel has one sender process, one receiver
+//   process, and a capacity: the count of the messages that it holds.  A
+//   receive waits for its message.  A send waits for a free slot.  A channel
+//   of capacity 0 is a rendezvous: each send waits for its receive.
 //
-//   The constraint: an action that waits has a priority below each later
-//   action of its process.  A priority order exists exactly when the graph of
-//   these constraints has no cycle, so the check is a topological sort.  This
-//   is the simplification of Padovani 2014 that the PCP of Dardha and Gay 2018
-//   uses: one priority for each action, and not the two levels of Kobayashi
-//   2006.  The soundness is rule A of Kobayashi 2006: in a cycle of waits, each
-//   priority must be below the one before it, which no order gives.
+//   Each action is a node of a marked graph (Commoner, Holt, Even and Pnueli
+//   1971).  An edge goes from an action to an action that waits on it:
+//     - from an action to the next action of its process
+//     - from send s of a channel to receive s of that channel
+//     - from receive s - k to send s, for a channel of capacity k of 1 or more
+//       and s of k or more: the send waits for the slot of that receive
+//   Send s and receive s of a rendezvous are one node.  These edges hold no
+//   token.  The edges that hold a token cross into a later period: the edge
+//   from the last action of a loop to its first action, and the edge from a
+//   receive of the period before to send s of a channel of capacity k, for s
+//   below k.  A marked graph is live exactly when each directed cycle holds a
+//   token.  So the system is live exactly when the edges with no token form
+//   no cycle, and the check is one topological sort.  A system that runs one
+//   time obeys the same rule: then a topological order is a run in which
+//   each action starts.
 //
 //   The tree checks of foundation/algebra/net/Net.h refuse each cycle of
 //   channels.  This check admits a safe cycle: two sessions in a fixed order,
 //   a ring of queues, the loop between the Vigil and the pipeline, and a
-//   process that waits on a, then b, then a again (probe E4).  The run-time
-//   check of fixy/session/Watch.h keeps one priority for each session, so it
-//   refuses that last case.
+//   process that waits on a, then b, then a again.  The run-time check of
+//   fixy/session/Watch.h keeps one priority for each session, so it refuses
+//   that last case.
 //
 // THE LIMITS
-//   A branch, a choice and a loop need more rules.  A loop body is checked as
-//   one unrolling.  The wait flag of a send comes from the caller, and a real
-//   check takes it from the capacity of the channel.  A lock needs an acquire
-//   and a release bracket.
+//   A branch and a choice have no form here: a caller checks one system for
+//   each arm, or for each set of arms that the processes choose together.  A
+//   lock needs an acquire and a release bracket, which the check does not
+//   read.  A channel with two senders or two receivers is no marked graph,
+//   because the order of its messages depends on the schedule, so the check
+//   refuses it.  A session that sends in two directions is two channels, one
+//   for each direction.  The check reads a park on a futex word as a wait on
+//   the channel, which holds only while each push wakes its parked consumer.
 //
 // THE COSTS
-//   O(P + C + A).  Probe E4 measured 0.88 G compile instructions for a ring of
-//   1,000 processes and 4,000 actions.
+//   O(P + C + A), with arrays of at most 2A edges.  The ring of 1,000
+//   processes and 4,000 actions of test_algebra_net_scale.cpp checks in its
+//   unit.
 
 #include <foundation/algebra/net/Net.h>
 
@@ -55,75 +71,117 @@ enum class ProcessId : std::uint32_t {
 enum class ChannelId : std::uint32_t {
 };
 
-// The two sides of a binary channel.
-enum class ChannelSide : std::uint8_t {
-    First = 0,
-    Second = 1,
+// The two moves of an action on its channel.
+enum class Move : std::uint8_t {
+    Send = 0,
+    Receive = 1,
 };
 
-// One step of a process on one side of a channel.
+// One step of a process: a send into a channel, or a receive from it.
 struct Action {
     ProcessId process{};
     ChannelId channel{};
-    ChannelSide side = ChannelSide::First;
-    bool does_send = false;
-    bool does_wait = true;
-    std::uint8_t reserved = 0;
+    Move move = Move::Receive;
+    std::uint8_t reserved[3]{};
 };
 
-// A system: the names of the processes and the channels, and the actions.
+// A channel of a system: its name, and the count of the messages that it
+// holds.  A capacity of 0 is a rendezvous.
+struct NetChannel {
+    NetName name{};
+    std::uint32_t capacity = 0;
+    std::uint32_t reserved = 0;
+};
+
+// A system: the names of the processes, the channels, and the actions.
 template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
     requires(Processes >= 1 && Channels >= 1 && Actions >= 1 && Processes < 0x10000000u && Channels < 0x10000000u
              && Actions < 0x10000000u)
 struct ProcessSystem {
     NetName process_names[Processes]{};
-    NetName channel_names[Channels]{};
+    NetChannel channels[Channels]{};
     Action actions[Actions]{};
 };
 
-// A priority for each event exists, with each waiting action below each
-// later action of its process.  The refusal of a cycle names each process,
-// each channel and each step on it.  Complexity: O(P + C + A).
+namespace detail {
+
+// The most nodes of a cycle that a refusal of check_liveness names.
+inline constexpr std::uint32_t max_named_waits = 4;
+
+// The index of an action among the sends, or among the receives, of its
+// channel.
+enum class ChannelStep : std::uint32_t {
+};
+
+// "P sends 'c' step s", "Q receives 'c' step s", or for a rendezvous "'c'
+// step s from P to Q".
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+constexpr void put_wait_(NetVerdict& text, ProcessSystem<Processes, Channels, Actions> const& protocol,
+                         Action const& act, ChannelStep step, ProcessId receiver) noexcept {
+    NetChannel const& channel = protocol.channels[static_cast<std::uint32_t>(act.channel)];
+    NetName const actor = protocol.process_names[static_cast<std::uint32_t>(act.process)];
+    if (channel.capacity == 0u) {
+        text.put("'")
+            .put_name(channel.name)
+            .put("' step ")
+            .put_number(static_cast<std::uint32_t>(step))
+            .put(" from ")
+            .put_name(actor)
+            .put(" to ")
+            .put_name(protocol.process_names[static_cast<std::uint32_t>(receiver)]);
+        return;
+    }
+    text.put_name(actor)
+        .put(act.move == Move::Send ? " sends '" : " receives '")
+        .put_name(channel.name)
+        .put("' step ")
+        .put_number(static_cast<std::uint32_t>(step));
+}
+
+}  // namespace detail
+
+// Each cycle of waits of the marked graph of the system holds a token
+// (THE MODEL).  The refusal of a cycle names its first nodes, each after the
+// node that waits on it.  Complexity: O(P + C + A).
 template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
 [[nodiscard]] consteval NetVerdict
-check_priorities(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
+check_liveness(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
     constexpr std::uint32_t none = detail::no_index;
-    std::uint32_t last_wait[Processes]{};
     for (std::uint32_t process = 0; process < Processes; ++process) {
         if (protocol.process_names[process].is_empty()) {
-            return NetVerdict::refuse("priorities: process ").put_number(process).put(" has no name.");
+            return NetVerdict::refuse("liveness: process ").put_number(process).put(" has no name.");
         }
-        last_wait[process] = none;
     }
-    // The count of the steps of each side of each channel, and the process
-    // that holds each side.  Side s of channel c is the slot 2c + s.
+    for (std::uint32_t channel = 0; channel < Channels; ++channel) {
+        if (protocol.channels[channel].name.is_empty()) {
+            return NetVerdict::refuse("liveness: channel ").put_number(channel).put(" has no name.");
+        }
+    }
+
+    // The step of each action on its side of its channel, the count of the
+    // sends and of the receives of each channel, and the process that holds
+    // each side.  Side 0 of channel c is the slot 2c, and side 1 is 2c + 1.
+    std::uint32_t step_of[Actions]{};
     std::uint32_t step_count[2 * Channels]{};
     std::uint32_t holder[2 * Channels]{};
-    for (std::uint32_t channel = 0; channel < Channels; ++channel) {
-        if (protocol.channel_names[channel].is_empty()) {
-            return NetVerdict::refuse("priorities: channel ").put_number(channel).put(" has no name.");
-        }
-        holder[2 * channel] = none;
-        holder[2 * channel + 1] = none;
-    }
-    std::uint32_t step_of[Actions]{};
+    for (std::uint32_t& slot : holder)
+        slot = none;
     for (std::uint32_t index = 0; index < Actions; ++index) {
         Action const& act = protocol.actions[index];
         auto const process = static_cast<std::uint32_t>(act.process);
         auto const channel = static_cast<std::uint32_t>(act.channel);
-        auto const side = static_cast<std::uint32_t>(act.side);
-        if (process >= Processes || channel >= Channels || side > 1u) {
-            return NetVerdict::refuse("priorities: action ")
+        if (process >= Processes || channel >= Channels || (act.move != Move::Send && act.move != Move::Receive)) {
+            return NetVerdict::refuse("liveness: action ")
                 .put_number(index)
-                .put(" names a process, a channel or a side that the system does not have.");
+                .put(" names a process, a channel or a move that the system does not have.");
         }
-        std::uint32_t const slot = 2 * channel + side;
+        std::uint32_t const slot = 2 * channel + (act.move == Move::Send ? 0u : 1u);
         if (holder[slot] == none) holder[slot] = process;
         if (holder[slot] != process) {
-            return NetVerdict::refuse("priorities: the ")
-                .put(side == 0u ? "first" : "second")
+            return NetVerdict::refuse("liveness: the ")
+                .put(act.move == Move::Send ? "send" : "receive")
                 .put(" side of channel '")
-                .put_name(protocol.channel_names[channel])
+                .put_name(protocol.channels[channel].name)
                 .put("' is held by '")
                 .put_name(protocol.process_names[holder[slot]])
                 .put("' and by '")
@@ -133,85 +191,110 @@ check_priorities(ProcessSystem<Processes, Channels, Actions> const& protocol) no
         step_of[index] = step_count[slot];
         ++step_count[slot];
     }
-    std::uint32_t event_first[Channels]{};
-    std::uint32_t events = 0;
+
+    // The action of each step: the steps of channel c are at step_first[c].
+    std::uint32_t step_first[Channels]{};
+    std::uint32_t steps = 0;
     for (std::uint32_t channel = 0; channel < Channels; ++channel) {
         if (step_count[2 * channel] != step_count[2 * channel + 1]) {
-            return NetVerdict::refuse("priorities: channel '")
-                .put_name(protocol.channel_names[channel])
+            return NetVerdict::refuse("liveness: channel '")
+                .put_name(protocol.channels[channel].name)
                 .put("' has ")
                 .put_number(step_count[2 * channel])
-                .put(" actions on its first side and ")
+                .put(" sends and ")
                 .put_number(step_count[2 * channel + 1])
-                .put(" on its second side.  The two sides are not dual.");
+                .put(" receives.  Each send has its receive.");
         }
-        event_first[channel] = events;
-        events += step_count[2 * channel];
+        step_first[channel] = steps;
+        steps += step_count[2 * channel];
     }
-    // In one pass in the order of the array: the event of each action, the
-    // check that the two actions of an event go in opposite directions, and
-    // an edge from the last waiting action of the process to the action.  The
-    // edges go from that last wait to each later action, so the graph stays
-    // linear and the order transitive.
-    std::uint32_t event_of[Actions]{};
-    std::uint8_t first_side_direction[Actions]{};
-    std::uint32_t edge_from[Actions]{};
-    std::uint32_t edge_to[Actions]{};
-    std::uint32_t edge_process[Actions]{};
+    std::uint32_t send_at[Actions]{};
+    std::uint32_t receive_at[Actions]{};
+    for (std::uint32_t index = 0; index < Actions; ++index) {
+        Action const& act = protocol.actions[index];
+        std::uint32_t const step = step_first[static_cast<std::uint32_t>(act.channel)] + step_of[index];
+        if (act.move == Move::Send) {
+            send_at[step] = index;
+        } else {
+            receive_at[step] = index;
+        }
+    }
+
+    // The node of each action.  The receive of a rendezvous joins the node of
+    // its send.
+    std::uint32_t node_of[Actions]{};
+    for (std::uint32_t index = 0; index < Actions; ++index) {
+        Action const& act = protocol.actions[index];
+        bool const is_joined =
+            act.move == Move::Receive && protocol.channels[static_cast<std::uint32_t>(act.channel)].capacity == 0u;
+        node_of[index] =
+            is_joined ? send_at[step_first[static_cast<std::uint32_t>(act.channel)] + step_of[index]] : index;
+    }
+
+    // The edges with no token: at most one from the order of the process and
+    // one from the channel for each action.  An edge of the order of a
+    // process can join a node to itself, which is a cycle.
+    std::uint32_t edge_from[2 * Actions]{};
+    std::uint32_t edge_to[2 * Actions]{};
     std::uint32_t edge_count = 0;
+    std::uint32_t last_of_process[Processes]{};
+    for (std::uint32_t& slot : last_of_process)
+        slot = none;
     for (std::uint32_t index = 0; index < Actions; ++index) {
         Action const& act = protocol.actions[index];
         auto const process = static_cast<std::uint32_t>(act.process);
         auto const channel = static_cast<std::uint32_t>(act.channel);
-        std::uint32_t const event = event_first[channel] + step_of[index];
-        event_of[index] = event;
-        bool const sends_from_first = act.side == ChannelSide::First ? act.does_send : !act.does_send;
-        std::uint8_t const direction = sends_from_first ? 2 : 1;
-        if (first_side_direction[event] != 0u && first_side_direction[event] != direction) {
-            return NetVerdict::refuse("priorities: step ")
-                .put_number(step_of[index])
-                .put(" of channel '")
-                .put_name(protocol.channel_names[channel])
-                .put("' sends on both sides or receives on both sides.");
-        }
-        first_side_direction[event] = direction;
-        std::uint32_t const waited = last_wait[process];
-        if (waited != none && event_of[waited] != event) {
-            edge_from[edge_count] = event_of[waited];
-            edge_to[edge_count] = event;
-            edge_process[edge_count] = process;
+        std::uint32_t const capacity = protocol.channels[channel].capacity;
+        std::uint32_t const step = step_of[index];
+        if (last_of_process[process] != none) {
+            edge_from[edge_count] = node_of[last_of_process[process]];
+            edge_to[edge_count] = node_of[index];
             ++edge_count;
         }
-        if (act.does_wait) last_wait[process] = index;
+        last_of_process[process] = index;
+        if (act.move == Move::Receive && capacity != 0u) {
+            edge_from[edge_count] = send_at[step_first[channel] + step];
+            edge_to[edge_count] = index;
+            ++edge_count;
+        }
+        if (act.move == Move::Send && capacity != 0u && step >= capacity) {
+            edge_from[edge_count] = receive_at[step_first[channel] + step - capacity];
+            edge_to[edge_count] = index;
+            ++edge_count;
+        }
     }
-    // The sort of Kahn over the events, with a compressed list of the edges.
+
+    // The sort of Kahn over the nodes, with a compressed list of the edges.
     std::uint32_t indegree[Actions]{};
     std::uint32_t out_first[Actions + 1]{};
     for (std::uint32_t edge = 0; edge < edge_count; ++edge) {
         ++indegree[edge_to[edge]];
         ++out_first[edge_from[edge] + 1];
     }
-    for (std::uint32_t event = 0; event < events; ++event)
-        out_first[event + 1] += out_first[event];
-    std::uint32_t fill[Actions + 1]{};
-    for (std::uint32_t event = 0; event <= events; ++event)
-        fill[event] = out_first[event];
-    std::uint32_t out_edge[Actions]{};
+    for (std::uint32_t node = 0; node < Actions; ++node)
+        out_first[node + 1] += out_first[node];
+    std::uint32_t fill[Actions]{};
+    for (std::uint32_t node = 0; node < Actions; ++node)
+        fill[node] = out_first[node];
+    std::uint32_t out_edge[2 * Actions]{};
     for (std::uint32_t edge = 0; edge < edge_count; ++edge) {
         out_edge[fill[edge_from[edge]]] = edge;
         ++fill[edge_from[edge]];
     }
     std::uint32_t order[Actions]{};
     std::uint32_t order_count = 0;
-    for (std::uint32_t event = 0; event < events; ++event) {
-        if (indegree[event] == 0u) {
-            order[order_count] = event;
+    std::uint32_t node_count = 0;
+    for (std::uint32_t index = 0; index < Actions; ++index) {
+        if (node_of[index] != index) continue;
+        ++node_count;
+        if (indegree[index] == 0u) {
+            order[order_count] = index;
             ++order_count;
         }
     }
     for (std::uint32_t read = 0; read < order_count; ++read) {
-        std::uint32_t const event = order[read];
-        for (std::uint32_t slot = out_first[event]; slot < out_first[event + 1]; ++slot) {
+        std::uint32_t const node = order[read];
+        for (std::uint32_t slot = out_first[node]; slot < out_first[node + 1]; ++slot) {
             std::uint32_t const target = edge_to[out_edge[slot]];
             --indegree[target];
             if (indegree[target] == 0u) {
@@ -220,26 +303,20 @@ check_priorities(ProcessSystem<Processes, Channels, Actions> const& protocol) no
             }
         }
     }
-    if (order_count == events) return NetVerdict{};
+    if (order_count == node_count) return NetVerdict{};
 
-    // A cycle remains.  Walk back along the edges between events that the
-    // sort left, until an event repeats, and name each wait on the cycle.
-    std::uint32_t channel_of_event[Actions]{};
-    std::uint32_t step_of_event[Actions]{};
-    for (std::uint32_t index = 0; index < Actions; ++index) {
-        channel_of_event[event_of[index]] = static_cast<std::uint32_t>(protocol.actions[index].channel);
-        step_of_event[event_of[index]] = step_of[index];
-    }
+    // A cycle remains.  Each node that the sort left waits on another such
+    // node, so a walk back along these waits repeats a node.
     std::uint32_t into[Actions]{};
     for (std::uint32_t& slot : into)
         slot = none;
     for (std::uint32_t edge = 0; edge < edge_count; ++edge) {
-        if (indegree[edge_to[edge]] != 0u && indegree[edge_from[edge]] != 0u) into[edge_to[edge]] = edge;
+        if (indegree[edge_from[edge]] != 0u && indegree[edge_to[edge]] != 0u) into[edge_to[edge]] = edge;
     }
     std::uint32_t walk = none;
-    for (std::uint32_t event = 0; event < events; ++event) {
-        if (indegree[event] != 0u) {
-            walk = event;
+    for (std::uint32_t index = 0; index < Actions; ++index) {
+        if (node_of[index] == index && indegree[index] != 0u) {
+            walk = index;
             break;
         }
     }
@@ -248,26 +325,19 @@ check_priorities(ProcessSystem<Processes, Channels, Actions> const& protocol) no
         is_seen[walk] = true;
         walk = edge_from[into[walk]];
     }
-    NetVerdict refusal = NetVerdict::refuse("priorities: a cycle of waits: ");
+    NetVerdict refusal = NetVerdict::refuse("liveness: a cycle of waits holds no token: ");
     std::uint32_t member = walk;
     std::uint32_t shown = 0;
     do {
-        std::uint32_t const edge = into[member];
-        if (shown != 0u) refusal.put(", ");
-        refusal.put_name(protocol.process_names[edge_process[edge]])
-            .put(" waits on '")
-            .put_name(protocol.channel_names[channel_of_event[edge_from[edge]]])
-            .put("' step ")
-            .put_number(step_of_event[edge_from[edge]])
-            .put(" before '")
-            .put_name(protocol.channel_names[channel_of_event[member]])
-            .put("' step ")
-            .put_number(step_of_event[member]);
-        member = edge_from[edge];
+        if (shown != 0u) refusal.put(" <- ");
+        Action const& act = protocol.actions[member];
+        detail::put_wait_(refusal, protocol, act, detail::ChannelStep{step_of[member]},
+                          ProcessId{holder[2 * static_cast<std::uint32_t>(act.channel) + 1]});
+        member = edge_from[into[member]];
         ++shown;
-    } while (member != walk && shown < 4u);
-    if (member != walk) refusal.put(", ...");
-    refusal.put(".  No priority order exists.");
+    } while (member != walk && shown < detail::max_named_waits);
+    if (member != walk) refusal.put(" <- ...");
+    refusal.put(".  No action of the cycle can start.");
     return refusal;
 }
 

@@ -2,145 +2,269 @@
 
 #include <foundation/algebra/net/Priority.h>
 
-#include <cstdint>
-
 namespace foundation::algebra::net {
 
 namespace detail::priority_self_test {
 
-inline constexpr ChannelSide first_side = ChannelSide::First;
-inline constexpr ChannelSide second_side = ChannelSide::Second;
-
-// A send that waits, as a synchronous send does.
-[[nodiscard]] consteval Action send_on(std::uint32_t process, std::uint32_t channel, ChannelSide side) noexcept {
-    return Action{ProcessId{process}, ChannelId{channel}, side, true, true, 0};
+// A send of the process into the channel.
+[[nodiscard]] consteval Action send_on(ProcessId process, ChannelId channel) noexcept {
+    return Action{.process = process, .channel = channel, .move = Move::Send};
 }
 
-// A send into a buffer with room, which does not wait.
-[[nodiscard]] consteval Action send_buffered_on(std::uint32_t process, std::uint32_t channel,
-                                                ChannelSide side) noexcept {
-    return Action{ProcessId{process}, ChannelId{channel}, side, true, false, 0};
+// A receive of the process from the channel.
+[[nodiscard]] consteval Action receive_on(ProcessId process, ChannelId channel) noexcept {
+    return Action{.process = process, .channel = channel, .move = Move::Receive};
 }
 
-[[nodiscard]] consteval Action receive_on(std::uint32_t process, std::uint32_t channel, ChannelSide side) noexcept {
-    return Action{ProcessId{process}, ChannelId{channel}, side, false, true, 0};
-}
+inline constexpr ProcessId first_process{0};
+inline constexpr ProcessId second_process{1};
+inline constexpr ProcessId third_process{2};
+inline constexpr ProcessId fourth_process{3};
+inline constexpr ProcessId fifth_process{4};
+inline constexpr ChannelId first_channel{0};
+inline constexpr ChannelId second_channel{1};
+inline constexpr ChannelId third_channel{2};
+inline constexpr ChannelId fourth_channel{3};
+inline constexpr ChannelId fifth_channel{4};
 
-// The pipeline with the loop of the Vigil: the Vigil pushes into the ring,
-// and flush() waits on the count that publish advances.  Each action waits.
+// ── The pipeline with the loop of the Vigil ─────────────────────────────
+//
+// The Vigil pushes into the ring, and flush() waits on the count that
+// publish advances.  Each process loops, and the array holds one period.
+
+inline constexpr ProcessId vigil = first_process;
+inline constexpr ProcessId drain = second_process;
+inline constexpr ProcessId detect = third_process;
+inline constexpr ProcessId build = fourth_process;
+inline constexpr ProcessId publish = fifth_process;
+inline constexpr ChannelId ring = first_channel;
+inline constexpr ChannelId trace = second_channel;
+inline constexpr ChannelId work = third_channel;
+inline constexpr ChannelId graphs = fourth_channel;
+inline constexpr ChannelId processed = fifth_channel;
+
 inline constexpr ProcessSystem<5, 5, 10> pipeline_loop{
     .process_names = {"vigil", "drain", "detect", "build", "publish"},
-    .channel_names = {"ring", "trace", "work", "graphs", "processed"},
-    .actions = {send_on(0, 0, first_side), receive_on(0, 4, second_side), receive_on(1, 0, second_side),
-                send_on(1, 1, first_side), receive_on(2, 1, second_side), send_on(2, 2, first_side),
-                receive_on(3, 2, second_side), send_on(3, 3, first_side), receive_on(4, 3, second_side),
-                send_on(4, 4, first_side)}};
-static_assert(check_priorities(pipeline_loop).is_admitted());
+    .channels = {{.name = "ring", .capacity = 64},
+                 {.name = "trace", .capacity = 64},
+                 {.name = "work", .capacity = 64},
+                 {.name = "graphs", .capacity = 64},
+                 {.name = "processed", .capacity = 1}},
+    .actions = {send_on(vigil, ring), receive_on(vigil, processed), receive_on(drain, ring), send_on(drain, trace),
+                receive_on(detect, trace), send_on(detect, work), receive_on(build, work), send_on(build, graphs),
+                receive_on(publish, graphs), send_on(publish, processed)}};
+static_assert(check_liveness(pipeline_loop).is_admitted());
 
-// CrossedSessions: P waits on s2 first, and Q waits on s1 first.
+// The same pipeline with a rendezvous on each channel.
+inline constexpr auto pipeline_rendezvous = [] consteval {
+    auto protocol = pipeline_loop;
+    for (NetChannel& channel : protocol.channels)
+        channel.capacity = 0;
+    return protocol;
+}();
+static_assert(check_liveness(pipeline_rendezvous).is_admitted());
+
+// The Vigil waits on the count before it pushes: the cycle through the five
+// processes holds no token, whatever the capacities.
+inline constexpr auto pipeline_waits_first = [] consteval {
+    auto protocol = pipeline_loop;
+    protocol.actions[0] = receive_on(vigil, processed);
+    protocol.actions[1] = send_on(vigil, ring);
+    return protocol;
+}();
+static_assert(
+    check_liveness(pipeline_waits_first)
+        .says("liveness: a cycle of waits holds no token: vigil receives 'processed' step 0 <- publish sends "
+              "'processed' step 0 <- publish receives 'graphs' step 0 <- build sends 'graphs' step 0 <- ....  "
+              "No action of the cycle can start."));
+
+// ── Sessions ────────────────────────────────────────────────────────────
+
+inline constexpr ProcessId process_p = first_process;
+inline constexpr ProcessId process_q = second_process;
+inline constexpr ProcessId process_r = third_process;
+inline constexpr ChannelId s1 = first_channel;
+inline constexpr ChannelId s2 = second_channel;
+
+// CrossedSessions: P waits on s2 first, and Q waits on s1 first.  No
+// capacity helps, because each process receives first.
 inline constexpr ProcessSystem<2, 2, 4> crossed_sessions{
     .process_names = {"P", "Q"},
-    .channel_names = {"s1", "s2"},
-    .actions = {receive_on(0, 1, second_side), send_on(0, 0, first_side), receive_on(1, 0, second_side),
-                send_on(1, 1, first_side)}};
-static_assert(check_priorities(crossed_sessions)
-                  .says("priorities: a cycle of waits: P waits on 's2' step 0 before 's1' step 0, Q waits on 's1' "
-                        "step 0 before 's2' step 0.  No priority order exists."));
+    .channels = {{.name = "s1"}, {.name = "s2"}},
+    .actions = {receive_on(process_p, s2), send_on(process_p, s1), receive_on(process_q, s1), send_on(process_q, s2)}};
+static_assert(check_liveness(crossed_sessions)
+                  .says("liveness: a cycle of waits holds no token: 's1' step 0 from P to Q <- 's2' step 0 from Q to "
+                        "P.  No action of the cycle can start."));
+inline constexpr auto crossed_buffered_sessions = [] consteval {
+    auto protocol = crossed_sessions;
+    for (NetChannel& channel : protocol.channels)
+        channel.capacity = 1;
+    return protocol;
+}();
+static_assert(!check_liveness(crossed_buffered_sessions).is_admitted());
 
 // OrderedSessions: P sends on s1 first.
 inline constexpr ProcessSystem<2, 2, 4> ordered_sessions{
     .process_names = {"P", "Q"},
-    .channel_names = {"s1", "s2"},
-    .actions = {send_on(0, 0, first_side), receive_on(0, 1, second_side), receive_on(1, 0, second_side),
-                send_on(1, 1, first_side)}};
-static_assert(check_priorities(ordered_sessions).is_admitted());
+    .channels = {{.name = "s1"}, {.name = "s2"}},
+    .actions = {send_on(process_p, s1), receive_on(process_p, s2), receive_on(process_q, s1), send_on(process_q, s2)}};
+static_assert(check_liveness(ordered_sessions).is_admitted());
 
 // CrossedRing: each process waits on its left neighbour first.
-inline constexpr ProcessSystem<3, 3, 6> crossed_ring{
-    .process_names = {"P", "Q", "R"},
-    .channel_names = {"pq", "qr", "rp"},
-    .actions = {receive_on(0, 2, second_side), send_on(0, 0, first_side), receive_on(1, 0, second_side),
-                send_on(1, 1, first_side), receive_on(2, 1, second_side), send_on(2, 2, first_side)}};
-static_assert(check_priorities(crossed_ring)
-                  .says("priorities: a cycle of waits: P waits on 'rp' step 0 before 'pq' step 0, R waits on 'qr' "
-                        "step 0 before 'rp' step 0, Q waits on 'pq' step 0 before 'qr' step 0.  No priority order "
-                        "exists."));
+inline constexpr ChannelId pq = first_channel;
+inline constexpr ChannelId qr = second_channel;
+inline constexpr ChannelId rp = third_channel;
+inline constexpr ProcessSystem<3, 3, 6> crossed_ring{.process_names = {"P", "Q", "R"},
+                                                     .channels = {{.name = "pq"}, {.name = "qr"}, {.name = "rp"}},
+                                                     .actions = {receive_on(process_p, rp), send_on(process_p, pq),
+                                                                 receive_on(process_q, pq), send_on(process_q, qr),
+                                                                 receive_on(process_r, qr), send_on(process_r, rp)}};
+static_assert(check_liveness(crossed_ring)
+                  .says("liveness: a cycle of waits holds no token: 'pq' step 0 from P to Q <- 'rp' step 0 from R to "
+                        "P <- 'qr' step 0 from Q to R.  No action of the cycle can start."));
 
-// The Ring global type over one queue for each pair, for two iterations.
-// The tree checks refuse the triangle, and the priorities admit it.
+// The Ring global type over one rendezvous for each pair, for two
+// iterations.  The tree checks refuse the triangle, and this check admits it.
 inline constexpr ProcessSystem<3, 3, 12> ring_of_queues{
     .process_names = {"P", "Q", "R"},
-    .channel_names = {"pq", "qr", "rp"},
-    .actions = {send_on(0, 0, first_side), receive_on(0, 2, second_side), send_on(0, 0, first_side),
-                receive_on(0, 2, second_side), receive_on(1, 0, second_side), send_on(1, 1, first_side),
-                receive_on(1, 0, second_side), send_on(1, 1, first_side), receive_on(2, 1, second_side),
-                send_on(2, 2, first_side), receive_on(2, 1, second_side), send_on(2, 2, first_side)}};
-static_assert(check_priorities(ring_of_queues).is_admitted());
+    .channels = {{.name = "pq"}, {.name = "qr"}, {.name = "rp"}},
+    .actions = {send_on(process_p, pq), receive_on(process_p, rp), send_on(process_p, pq), receive_on(process_p, rp),
+                receive_on(process_q, pq), send_on(process_q, qr), receive_on(process_q, pq), send_on(process_q, qr),
+                receive_on(process_r, qr), send_on(process_r, rp), receive_on(process_r, qr), send_on(process_r, rp)}};
+static_assert(check_liveness(ring_of_queues).is_admitted());
 
-// Two processes that send first: synchronous sends deadlock, and buffered
-// sends do not.
-inline constexpr ProcessSystem<2, 2, 4> send_first_synchronous{
+// Two processes that send first: a rendezvous deadlocks, and a buffer of one
+// message does not.
+inline constexpr ProcessSystem<2, 2, 4> send_first_rendezvous{
     .process_names = {"P", "Q"},
-    .channel_names = {"s1", "s2"},
-    .actions = {send_on(0, 0, first_side), receive_on(0, 1, second_side), send_on(1, 1, first_side),
-                receive_on(1, 0, second_side)}};
-inline constexpr ProcessSystem<2, 2, 4> send_first_buffered{
+    .channels = {{.name = "s1"}, {.name = "s2"}},
+    .actions = {send_on(process_p, s1), receive_on(process_p, s2), send_on(process_q, s2), receive_on(process_q, s1)}};
+inline constexpr auto send_first_buffered = [] consteval {
+    auto protocol = send_first_rendezvous;
+    for (NetChannel& channel : protocol.channels)
+        channel.capacity = 1;
+    return protocol;
+}();
+static_assert(!check_liveness(send_first_rendezvous).is_admitted());
+static_assert(check_liveness(send_first_buffered).is_admitted());
+
+// A ring of four ranks: each sends to its right, then receives from its
+// left.  A buffer of one message admits it, and a rendezvous does not.
+inline constexpr ProcessSystem<4, 4, 8> rank_ring_buffered{
+    .process_names = {"rank0", "rank1", "rank2", "rank3"},
+    .channels = {{.name = "r01", .capacity = 1},
+                 {.name = "r12", .capacity = 1},
+                 {.name = "r23", .capacity = 1},
+                 {.name = "r30", .capacity = 1}},
+    .actions = {send_on(first_process, first_channel), receive_on(first_process, fourth_channel),
+                send_on(second_process, second_channel), receive_on(second_process, first_channel),
+                send_on(third_process, third_channel), receive_on(third_process, second_channel),
+                send_on(fourth_process, fourth_channel), receive_on(fourth_process, third_channel)}};
+inline constexpr auto rank_ring_rendezvous = [] consteval {
+    auto protocol = rank_ring_buffered;
+    for (NetChannel& channel : protocol.channels)
+        channel.capacity = 0;
+    return protocol;
+}();
+static_assert(check_liveness(rank_ring_buffered).is_admitted());
+static_assert(!check_liveness(rank_ring_rendezvous).is_admitted());
+
+// P sends two messages on c and then one on d, and Q waits on d first.  A
+// buffer of two messages on c admits it.  A buffer of one makes the second
+// send wait for a receive that waits on d.
+inline constexpr ChannelId channel_c = first_channel;
+inline constexpr ChannelId channel_d = second_channel;
+inline constexpr ProcessSystem<2, 2, 6> wide_buffer{
     .process_names = {"P", "Q"},
-    .channel_names = {"s1", "s2"},
-    .actions = {send_buffered_on(0, 0, first_side), receive_on(0, 1, second_side), send_buffered_on(1, 1, first_side),
-                receive_on(1, 0, second_side)}};
-static_assert(!check_priorities(send_first_synchronous).is_admitted());
-static_assert(check_priorities(send_first_buffered).is_admitted());
+    .channels = {{.name = "c", .capacity = 2}, {.name = "d", .capacity = 1}},
+    .actions = {send_on(process_p, channel_c), send_on(process_p, channel_c), send_on(process_p, channel_d),
+                receive_on(process_q, channel_d), receive_on(process_q, channel_c), receive_on(process_q, channel_c)}};
+inline constexpr auto full_buffer = [] consteval {
+    auto protocol = wide_buffer;
+    protocol.channels[0].capacity = 1;
+    return protocol;
+}();
+static_assert(check_liveness(wide_buffer).is_admitted());
+static_assert(check_liveness(full_buffer)
+                  .says("liveness: a cycle of waits holds no token: P sends 'c' step 1 <- Q receives 'c' step 0 <- Q "
+                        "receives 'd' step 0 <- P sends 'd' step 0.  No action of the cycle can start."));
+
+// A process that sends on a rendezvous and then receives from it waits on
+// itself.  A buffer of one message admits it.
+inline constexpr ProcessSystem<1, 1, 2> self_rendezvous{
+    .process_names = {"P"},
+    .channels = {{.name = "c"}},
+    .actions = {send_on(process_p, channel_c), receive_on(process_p, channel_c)}};
+inline constexpr auto self_buffer = [] consteval {
+    auto protocol = self_rendezvous;
+    protocol.channels[0].capacity = 1;
+    return protocol;
+}();
+static_assert(check_liveness(self_rendezvous)
+                  .says("liveness: a cycle of waits holds no token: 'c' step 0 from P to P.  No action of the cycle "
+                        "can start."));
+static_assert(check_liveness(self_buffer).is_admitted());
 
 // two_forked_sessions_in_a_cycle with the escaped endpoints: each left body
 // waits on its own receive, and then sends on the endpoint of the other
 // session.
+inline constexpr ChannelId channel_a = first_channel;
+inline constexpr ChannelId channel_b = second_channel;
 inline constexpr ProcessSystem<2, 2, 4> escaped_endpoints{
     .process_names = {"left body of A", "left body of B"},
-    .channel_names = {"a", "b"},
-    .actions = {receive_on(0, 0, second_side), send_on(0, 1, first_side), receive_on(1, 1, second_side),
-                send_on(1, 0, first_side)}};
-static_assert(!check_priorities(escaped_endpoints).is_admitted());
+    .channels = {{.name = "a"}, {.name = "b"}},
+    .actions = {receive_on(first_process, channel_a), send_on(first_process, channel_b),
+                receive_on(second_process, channel_b), send_on(second_process, channel_a)}};
+static_assert(!check_liveness(escaped_endpoints).is_admitted());
 
 // P waits on a, then on b, then on a again, and Q sends in that order.  One
-// priority for each session cannot order it, and one for each step can.
+// priority for each session cannot order it, and one node for each step can.
 inline constexpr ProcessSystem<2, 2, 6> interleaved_waits{
     .process_names = {"P", "Q"},
-    .channel_names = {"a", "b"},
-    .actions = {receive_on(0, 0, second_side), receive_on(0, 1, second_side), receive_on(0, 0, second_side),
-                send_on(1, 0, first_side), send_on(1, 1, first_side), send_on(1, 0, first_side)}};
-static_assert(check_priorities(interleaved_waits).is_admitted());
+    .channels = {{.name = "a"}, {.name = "b"}},
+    .actions = {receive_on(process_p, channel_a), receive_on(process_p, channel_b), receive_on(process_p, channel_a),
+                send_on(process_q, channel_a), send_on(process_q, channel_b), send_on(process_q, channel_a)}};
+static_assert(check_liveness(interleaved_waits).is_admitted());
 
 // The actions of the processes can interleave in the array.
 inline constexpr ProcessSystem<2, 2, 4> interleaved_array{
     .process_names = {"P", "Q"},
-    .channel_names = {"s1", "s2"},
-    .actions = {send_on(0, 0, first_side), receive_on(1, 0, second_side), receive_on(0, 1, second_side),
-                send_on(1, 1, first_side)}};
-static_assert(check_priorities(interleaved_array).is_admitted());
+    .channels = {{.name = "s1"}, {.name = "s2"}},
+    .actions = {send_on(process_p, s1), receive_on(process_q, s1), receive_on(process_p, s2), send_on(process_q, s2)}};
+static_assert(check_liveness(interleaved_array).is_admitted());
 
 // ── The refusals of a malformed system ──────────────────────────────────
 
 inline constexpr ProcessSystem<2, 1, 2> shared_side{.process_names = {"P", "Q"},
-                                                    .channel_names = {"s1"},
-                                                    .actions = {send_on(0, 0, first_side), send_on(1, 0, first_side)}};
-static_assert(check_priorities(shared_side)
-                  .says("priorities: the first side of channel 's1' is held by 'P' and by 'Q'.  One process holds "
-                        "each side of a channel."));
+                                                    .channels = {{.name = "s1"}},
+                                                    .actions = {send_on(process_p, s1), send_on(process_q, s1)}};
+static_assert(check_liveness(shared_side)
+                  .says("liveness: the send side of channel 's1' is held by 'P' and by 'Q'.  One process holds each "
+                        "side of a channel."));
 
 inline constexpr ProcessSystem<2, 1, 3> uneven_sides{
     .process_names = {"P", "Q"},
-    .channel_names = {"s1"},
-    .actions = {send_on(0, 0, first_side), send_on(0, 0, first_side), receive_on(1, 0, second_side)}};
-static_assert(check_priorities(uneven_sides)
-                  .says("priorities: channel 's1' has 2 actions on its first side and 1 on its second side.  The two "
-                        "sides are not dual."));
+    .channels = {{.name = "s1"}},
+    .actions = {send_on(process_p, s1), send_on(process_p, s1), receive_on(process_q, s1)}};
+static_assert(check_liveness(uneven_sides)
+                  .says("liveness: channel 's1' has 2 sends and 1 receives.  Each send has its receive."));
 
-inline constexpr ProcessSystem<2, 1, 2> two_senders{.process_names = {"P", "Q"},
-                                                    .channel_names = {"s1"},
-                                                    .actions = {send_on(0, 0, first_side), send_on(1, 0, second_side)}};
-static_assert(check_priorities(two_senders)
-                  .says("priorities: step 0 of channel 's1' sends on both sides or receives on both sides."));
+inline constexpr ProcessSystem<2, 1, 2> unnamed_process{.process_names = {"P"},
+                                                        .channels = {{.name = "s1"}},
+                                                        .actions = {send_on(process_p, s1), receive_on(process_q, s1)}};
+static_assert(check_liveness(unnamed_process).says("liveness: process 1 has no name."));
+
+inline constexpr ProcessSystem<2, 2, 2> unnamed_channel{.process_names = {"P", "Q"},
+                                                        .channels = {{.name = "s1"}},
+                                                        .actions = {send_on(process_p, s1), receive_on(process_q, s1)}};
+static_assert(check_liveness(unnamed_channel).says("liveness: channel 1 has no name."));
+
+inline constexpr ProcessSystem<2, 1, 2> foreign_process{
+    .process_names = {"P", "Q"},
+    .channels = {{.name = "s1"}},
+    .actions = {send_on(process_p, s1), receive_on(ProcessId{7}, s1)}};
+static_assert(check_liveness(foreign_process)
+                  .says("liveness: action 1 names a process, a channel or a move that the system does not have."));
 
 }  // namespace detail::priority_self_test
 

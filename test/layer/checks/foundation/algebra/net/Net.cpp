@@ -507,7 +507,7 @@ inline constexpr Net<8, 16, 4, 3> ring_global{
     .wires = {join_ports(0, 0, 3, 0), join_ports(1, 0, 3, 1), join_ports(2, 0, 3, 2)}};
 
 // The tree checks refuse each cycle of sessions, also the safe order, and
-// the priority check of Priority.h decides them.  The Ring global type as
+// the liveness check of Priority.h decides them.  The Ring global type as
 // one coherence node is a tree.
 static_assert(!check_forest(crossed_sessions).is_admitted() && !check_proof_net(crossed_sessions).is_admitted());
 static_assert(!check_forest(ordered_sessions).is_admitted() && !check_proof_net(ordered_sessions).is_admitted());
