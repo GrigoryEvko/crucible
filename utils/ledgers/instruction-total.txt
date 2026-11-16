@@ -20,5 +20,5 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-- | x86_64-debug-asan | 9969961244139 | fixtures | owner decision of 2026-11-15: fixy/Core.h includes StorageFloat.h in each object and fixture, and the storage formats add two tests and three fixtures.  run-002417 measured 22922.6 G against 21782.6 G, 5.23% above the baseline
-- | x86_64-debug-asan | 12952496812105 | objects | owner decision of 2026-11-15: fixy/Core.h includes StorageFloat.h in each object and fixture, and the storage formats add two tests and three fixtures.  run-002417 measured 22922.6 G against 21782.6 G, 5.23% above the baseline
+- | x86_64-debug-asan | 10208885720815 | fixtures | the owner decision of 2026-11-15 raises a budget for a correct change: the depth, the scalar tags, the storage keys of the slot build and the numerics policy add code to the record path, the build, the store and their tests
+- | x86_64-debug-asan | 13532345499169 | objects | the owner decision of 2026-11-15 raises a budget for a correct change: the depth, the scalar tags, the storage keys of the slot build and the numerics policy add code to the record path, the build, the store and their tests
