@@ -3972,6 +3972,9 @@ fixy_neg_compile_test(neg_ring_value_owns_a_resource
 fixy_test(test_concurrent_channels)
 fixy_test(test_channel_moved_from)
 fixy_test(test_channel_identity)
+# The end of the stream: the close and the open of the SPSC and the MPSC
+# channel, many threaded rounds, and pipelines with no sentinel.
+fixy_test(test_channel_close)
 
 # A handle owns a linear token or a pool share; copying it would
 # duplicate the one and double-count the other.

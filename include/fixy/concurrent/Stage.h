@@ -242,9 +242,18 @@ public:
 
     // The body owns the drain loop, the retry policy on a full or empty
     // channel, and the decision to stop once its consumer sees the upstream
-    // end close.  What is here is only the binding.
+    // end close, through try_receive of fixy/concurrent/ChannelEnd.h.  What
+    // is here is only the binding.
+    //
+    // The run moves the two handles into its own frame, so they end when
+    // the body returns.  The end of the producer handle closes the channel
+    // ahead, also when the stages run one after another on one thread.
 
-    void run() && noexcept { FnPtr(std::move(in_), std::move(out_)); }
+    void run() && noexcept {
+        consumer_handle_type in = std::move(in_);
+        producer_handle_type out = std::move(out_);
+        FnPtr(std::move(in), std::move(out));
+    }
 
     [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
 
@@ -355,7 +364,14 @@ private:
 
     template <std::size_t... Is>
     void run_impl_(std::index_sequence<Is...>) && noexcept {
-        FnPtr(std::move(std::get<Is>(handles_))...);
+        run_body_(std::move(std::get<Is>(handles_))...);
+    }
+
+    // The handles move into the parameters of this call, so they end when
+    // the body returns, as for Stage::run.
+    template <class... Handles>
+    static void run_body_(Handles... handles) noexcept {
+        FnPtr(std::move(handles)...);
     }
 
     [[no_unique_address]] Ctx ctx_;
@@ -404,7 +420,13 @@ public:
     SwmrStage(SwmrStage&&) noexcept = default;
     SwmrStage& operator=(SwmrStage&&) noexcept = default;
 
-    void run() && noexcept { FnPtr(std::move(in_), std::move(writer_)); }
+    // The handles move into the frame of the run, so they end when the body
+    // returns, as for Stage::run.
+    void run() && noexcept {
+        consumer_handle_type in = std::move(in_);
+        writer_handle_type writer = std::move(writer_);
+        FnPtr(std::move(in), std::move(writer));
+    }
 
     [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
 

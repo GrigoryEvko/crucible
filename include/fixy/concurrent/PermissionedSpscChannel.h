@@ -23,6 +23,11 @@
 // which gives the role back to the channel and the token back to the
 // caller.  The handle is then unbound.
 //
+// The end of the producer handle with its token closes the channel, and
+// try_receive of the consumer then gives NoItem::Closed after the last item
+// (THE END OF THE STREAM of fixy/concurrent/ChannelEnd.h).  A release does
+// not close the channel, and the next producer handle opens it again.
+//
 // The endpoint accessors are members named producer and consumer rather
 // than mint_ free functions.  Their admission is the parameter type and
 // the claim.  A caller that cannot produce a Permission<producer_tag,
@@ -30,6 +35,7 @@
 // negative fixture to fire, and a mint_ name would claim a gate that they
 // do not have.
 
+#include <fixy/concurrent/ChannelEnd.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/concurrent/WorkingSet.h>
 
@@ -38,6 +44,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
 #include <foundation/permissions/Permission.h>
 
 #include <cstddef>
@@ -133,16 +140,22 @@ public:
             "ProducerHandle binds to ONE channel for life — rebinding would orphan the original Permission "
             "and silently allow a second producer to coexist");
 
-        // A moved-from handle holds no claim, so only the bound one gives
-        // the role back.
+        // A moved-from handle holds no claim, so only the bound one closes
+        // the channel and gives the role back.  The token ends with the
+        // handle, so no item of this producer comes after the end.
         ~ProducerHandle() {
-            if (ch_.is_bound()) ch_->producer_claim_.release();
+            if (ch_.is_bound()) {
+                ch_->producers_.end_producer();
+                ch_->producer_claim_.release();
+            }
         }
 
         // The release door.  The handle gives the producer role back to the
         // channel and the token back to the caller, and it is unbound after
-        // the call.  The token can open a producer handle again.
+        // the call.  The token can open a producer handle again, so the
+        // channel stays open.
         [[nodiscard]] ::foundation::permissions::Permission<producer_tag, Brand> release() && noexcept {
+            ch_->producers_.release_producer();
             ch_->producer_claim_.release();
             ch_.unbind();
             return std::move(perm_);
@@ -174,7 +187,9 @@ public:
         friend class PermissionedSpscChannel;
 
     public:
-        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
+        // The head, the tail and the roster of the producers, which
+        // try_receive reads when the ring is empty, and one cell.
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
         using row_discipline = ::fixy::row_discipline::spsc_consumer;
         using row_payload = T;
         using brand_type = Brand;
@@ -200,7 +215,20 @@ public:
             return std::move(perm_);
         }
 
+        // The oldest item, or no value when the ring is empty.  It does not
+        // tell an empty ring from a closed channel: try_receive does.
         [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept { return ch_->ring_.try_pop(); }
+
+        // The oldest item, NoItem::Empty, or NoItem::Closed after the last
+        // item of a closed channel (THE END OF THE STREAM of
+        // fixy/concurrent/ChannelEnd.h).
+        [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive() noexcept {
+            ::foundation::core::Option<T> item = ch_->ring_.try_pop();
+            if (item.is_some()) [[likely]] {
+                return std::move(item).ok_or(NoItem::Empty);
+            }
+            return ch_->receive_after_empty_();
+        }
 
         [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
         [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
@@ -213,10 +241,12 @@ public:
     };
 
     // Each accessor takes the claim of its role first, so a second live
-    // handle of the role ends the process here.
+    // handle of the role ends the process here.  A producer handle opens the
+    // channel.
     [[nodiscard]] ProducerHandle producer(::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept {
         producer_claim_.take("two live producer handles of one SPSC channel. One call site minted the root of the "
                              "channel two times.");
+        producers_.add_producer();
         return ProducerHandle{*this, std::move(perm)};
     }
 
@@ -257,10 +287,31 @@ public:
     // ownership.
     [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
+    // True when the producer handle ended and no handle opened the channel
+    // after it.  A snapshot for a test: a consumer reads the end through
+    // try_receive.
+    [[nodiscard]] bool is_closed() const noexcept { return producers_.is_closed(); }
+
 private:
+    // The receive after a pop that found the ring empty.  The read of the
+    // closed state is an acquire, so the pop after it finds each item that
+    // the stream still holds, and Closed comes only after the last item.
+    [[nodiscard]] ::foundation::core::Result<T, NoItem> receive_after_empty_() noexcept {
+        if (!producers_.is_closed()) [[likely]] {
+            return ::foundation::core::err(NoItem::Empty);
+        }
+        return receive_after_close_();
+    }
+
+    // A stream ends one time, so the pop after its end is cold.
+    [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_close_() noexcept {
+        return ring_.try_pop().ok_or(NoItem::Closed);
+    }
+
     SpscRing<T, Capacity> ring_;
     ::foundation::EndpointClaim producer_claim_;
     ::foundation::EndpointClaim consumer_claim_;
+    ProducerRoster producers_;
 };
 
 namespace detail {

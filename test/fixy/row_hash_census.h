@@ -1271,6 +1271,9 @@ inline constexpr StatedZero kZeros[] = {
      "the record of the check of a stage graph: a constant evaluation computes it, it is the argument of the concept "
      "that a refusal prints, and it is never a value in a signature"},
     {^^::fixy::concurrent::is_stage_inline_safe, kMetafunction},
+    {^^::fixy::concurrent::ProducerRoster,
+     "the count of the live producer handles of one channel and the end of its stream: a member of the channel that "
+     "folds, and never a value in a signature"},
 
     {^^::fixy::channels::handle_for, kMetafunction},
     {^^::fixy::channels::default_proto_for, kMetafunction},

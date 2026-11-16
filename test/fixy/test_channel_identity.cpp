@@ -10,6 +10,7 @@
 // cases show that a claim comes back when its handle ends, and that a
 // pipeline over one channel instance for each link passes the check.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>
@@ -18,6 +19,7 @@
 #include <fixy/concurrent/Stage.h>
 
 #include <foundation/Brand.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -27,7 +29,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <iterator>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -182,7 +183,8 @@ constexpr Attack kAttacks[] = {
 }
 
 // A claim comes back when its handle ends, so a handle made later from a
-// second root of the same site takes the role.
+// second root of the same site takes the role.  The end of the producer
+// closes the channel, and the later producer opens it again.
 [[nodiscard]] int claims_come_back() {
     Link channel{};
     {
@@ -193,9 +195,16 @@ constexpr Attack kAttacks[] = {
         if (!moved.try_push(3)) return 1;
         if (held_consumer.try_pop().value_or(-1) != 3) return 1;
     }
+    if (!channel.is_closed()) return 1;
     auto [producer, consumer] = link_halves();
     auto again = channel.producer(std::move(producer));
+    if (channel.is_closed()) return 1;
     if (!again.try_push(4)) return 1;
+    auto later_consumer = channel.consumer(std::move(consumer));
+    bool const has_item = later_consumer.try_receive().value_or(-1) == 4;
+    bool const is_open = later_consumer.try_receive().err().value_or(c::NoItem::Closed) == c::NoItem::Empty;
+    ::foundation::linear::drop(std::move(later_consumer));
+    if (!has_item || !is_open) return 1;
 
     Swmr session{reader_root(), 0};
     { [[maybe_unused]] auto first_writer = ses::mint_swmr_writer<Swmr>(session, writer_root()); }
@@ -245,7 +254,9 @@ constexpr Attack kAttacks[] = {
 int main() {
     std::fprintf(stderr, "[expected] each attack below prints the violation report of a child process\n");
     int failures = 0;
+    int attacks = 0;
     for (const Attack& attack : kAttacks) {
+        ++attacks;
         if (!ends_the_process(attack.run)) {
             std::fprintf(stderr, "FAIL: %s was not refused\n", attack.name);
             ++failures;
@@ -260,6 +271,6 @@ int main() {
         ++failures;
     }
     if (failures != 0) return EXIT_FAILURE;
-    std::printf("test_channel_identity: %zu attacks refused\n", std::size(kAttacks));
+    ::fixy::report(::fixy::Sink::Out, "test_channel_identity: {} attacks refused\n", attacks);
     return EXIT_SUCCESS;
 }

@@ -28,7 +28,14 @@
 // its tokens open no endpoint of this channel.  One call site that runs
 // two times mints two roots of one brand.  A claim on the consumer role
 // (foundation/ChannelBinding.h) refuses a second live consumer there.
+//
+// The end of the last live producer handle closes the channel, and
+// try_receive of the consumer then gives NoItem::Closed after the last item
+// (THE END OF THE STREAM of fixy/concurrent/ChannelEnd.h).  A lend after
+// that end opens the channel again, so a producer that joins the stream
+// lends while a different producer of the stream still lives.
 
+#include <fixy/concurrent/ChannelEnd.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/WorkingSet.h>
 
@@ -37,6 +44,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
 
@@ -136,6 +144,13 @@ public:
         // Move assignment stays deleted, because the share's lifetime
         // is fixed at construction.
 
+        // A moved-from handle holds no share, so only the bound one ends a
+        // producer of the stream.  The last one closes the channel.  The
+        // guard gives the share back to the pool after this body.
+        ~ProducerHandle() {
+            if (ch_.is_bound()) ch_->producers_.end_producer();
+        }
+
         // The value comes by reference to const, which is the shape of a
         // producer pole in fixy/concurrent/HandleTraits.h.  A value
         // parameter hides the pole, and no stage can then feed the channel.
@@ -167,7 +182,10 @@ public:
         friend class PermissionedMpscChannel;
 
     public:
-        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
+        // The head, the tail, the bitmap word and the roster of the
+        // producers, which try_receive reads when the ring is empty, and one
+        // cell.
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<4, T>;
         using row_discipline = ::fixy::row_discipline::mpsc_consumer;
         using row_payload = T;
         using brand_type = Brand;
@@ -197,7 +215,20 @@ public:
             return std::move(perm_);
         }
 
+        // The oldest item, or no value when the ring is empty.  It does not
+        // tell an empty ring from a closed channel: try_receive does.
         [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept { return ch_->ring_.try_pop(); }
+
+        // The oldest item, NoItem::Empty, or NoItem::Closed after the last
+        // item of a closed channel (THE END OF THE STREAM of
+        // fixy/concurrent/ChannelEnd.h).
+        [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive() noexcept {
+            ::foundation::core::Option<T> item = ch_->ring_.try_pop();
+            if (item.is_some()) [[likely]] {
+                return std::move(item).ok_or(NoItem::Empty);
+            }
+            return ch_->receive_after_empty_();
+        }
 
         [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
         [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
@@ -211,10 +242,11 @@ public:
 
     // Lends a pool share, and refuses while an exclusive transition is
     // in flight.  Several producer handles coexisting is the point of
-    // the fractional side.
+    // the fractional side.  A lent handle opens the channel.
     [[nodiscard]] std::optional<ProducerHandle> producer() noexcept {
         auto guard = producer_pool_.lend();
         if (!guard) return std::nullopt;
+        producers_.add_producer();
         return ProducerHandle{*this, std::move(*guard)};
     }
 
@@ -250,10 +282,32 @@ public:
     [[nodiscard]] std::size_t size_approx() const noexcept { return ring_.size_approx(); }
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
+    // True when the last producer handle ended and no handle was lent after
+    // it.  A snapshot for a test: a consumer reads the end through
+    // try_receive.
+    [[nodiscard]] bool is_closed() const noexcept { return producers_.is_closed(); }
+
 private:
+    // The receive after a pop that found the ring empty, as in
+    // fixy/concurrent/PermissionedSpscChannel.h.  Each producer sets the
+    // ready bit of each item before its handle ends, so the pop after the
+    // acquire read of the closed state finds each item of the stream.
+    [[nodiscard]] ::foundation::core::Result<T, NoItem> receive_after_empty_() noexcept {
+        if (!producers_.is_closed()) [[likely]] {
+            return ::foundation::core::err(NoItem::Empty);
+        }
+        return receive_after_close_();
+    }
+
+    // A stream ends one time, so the pop after its end is cold.
+    [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_close_() noexcept {
+        return ring_.try_pop().ok_or(NoItem::Closed);
+    }
+
     MpscRing<T, Capacity> ring_;
     ::foundation::permissions::SharedPermissionPool<producer_tag, Brand> producer_pool_;
     ::foundation::EndpointClaim consumer_claim_;
+    ProducerRoster producers_;
 };
 
 namespace detail {
