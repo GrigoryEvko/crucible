@@ -218,6 +218,30 @@ def results_cases(expect: testing.Expect) -> None:
         )
 
 
+def outputs_cases(expect: testing.Expect) -> None:
+    """Check the read of the output of each test of a JUnit report, and its refusal of a report that is not XML."""
+    with tempfile.TemporaryDirectory(prefix="assay-ctest-") as scratch:
+        report = Path(scratch) / "junit.xml"
+        report.write_text(
+            '<testsuite><testcase name="red" status="fail"><failure message="Failed"/>'
+            "<system-out>a.cpp:3: error: [rule] text &amp; more\n</system-out></testcase>"
+            '<testcase name="quiet" status="fail"><failure message="Failed">the failure text</failure></testcase>'
+            '<testcase name="green" status="run"/><testcase status="run"/></testsuite>',
+            encoding="utf-8",
+        )
+        found = ctest.outputs(report)
+        expect(
+            f"outputs gives the system-out and the failure text of each named test case, and an empty text for a test "
+            f"with no output: {found}",
+            found == {"red": "a.cpp:3: error: [rule] text & more\n", "quiet": "the failure text", "green": ""},
+        )
+        report.write_text("<testsuite>", encoding="utf-8")
+        expect(
+            "outputs refuses a report that is not XML, and names the command that writes it",
+            "--output-junit" in refused(lambda: ctest.outputs(report)),
+        )
+
+
 def suite(timestamp: str, cases: str, counts: str) -> str:
     """Return a planted JUnit report of ctest with the given test cases and counts of the root."""
     return (
@@ -446,5 +470,14 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (listing_cases, tool_cases, results_cases, merge_cases, record_cases, mirror_cases, project_cases),
+        (
+            listing_cases,
+            tool_cases,
+            results_cases,
+            outputs_cases,
+            merge_cases,
+            record_cases,
+            mirror_cases,
+            project_cases,
+        ),
     )

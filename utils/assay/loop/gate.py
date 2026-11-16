@@ -458,7 +458,10 @@ THE RATCHET ROWS
 
 THE RUN OF THE BASE
     A candidate with a focus is the commit of a run of the base (THE RUN OF
-    THE BASE of assay.loop.land).  The focus gives each configuration with
+    THE BASE of assay.loop.land), or of the run alone of one request (THE
+    CONFIRMATION of assay.loop.land).  The rules of this section apply to
+    the two.  The title of the candidate tells the kind of the run in the
+    first line of the check (Candidate.title).  The focus gives each configuration with
     a problem in the run of the batch, and the tests that were red alone
     too in it (Focus).  The gate runs only that focus, each configuration
     in a thread of its own (focused_runs()).  It runs the red tests with
@@ -476,6 +479,29 @@ THE VERDICT
     test that is red alone on HEAD then rejects each landing, until a commit
     corrects it.  Main must stay green.  The verdict gives the focus of each
     configuration with a problem, for THE RUN OF THE BASE.
+
+THE FAILING ITEMS
+    The verdict also gives the failing items of its problems (Verdict.items),
+    and the landing compares the items of two runs, not their problems (THE
+    RUN OF THE BASE of assay.loop.land).  Two runs can fail one test of a
+    rule on different files.  Their problems then have the same words, but
+    the problem of the batch is not the problem of the base.
+      * A test that is red alone too gives one item for each finding line of
+        its output in the report of the run alone: the configuration, the
+        test, the path, the line and the rule (failing_items()).  A finding
+        line has the format of assay.core.report, PATH:LINE: error: [CHECK]
+        MESSAGE.  The item does not hold the message, because the message
+        can hold a measure that changes from run to run.  The path loses the
+        root of the warm tree.  The path is the PATH of the line.  A rule of
+        a ledger can give a directory there, such as test/fixy/, and two
+        findings on one line number of that directory then give one item.
+      * A test with no finding line gives one item: the configuration and
+        the test.
+      * A test with no output in the report, or with an output that ctest
+        cut, gives an item with the commit of the run.  The items of two
+        runs of different commits then do not compare equal.  The run alone
+        lets ctest keep ALONE_OUTPUT_BYTES of the output of each red test.
+      * Each other problem is its own item.
 
 THE LOGS
     Each step writes its log into the directory of the logs of its gate.
@@ -535,6 +561,7 @@ import functools
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import threading
@@ -658,6 +685,13 @@ DISABLED = ctest_reader.TestStatus.DISABLED
 TEST_RUN_S = 2 * proc.BUILD_S
 CONFIGURE_S = proc.TOOL_S
 ALONE_S = 1500.0
+# The bytes of the output of one red test that the report of the run alone keeps.  The default of ctest is 300 KB
+# (THE FAILING ITEMS).
+ALONE_OUTPUT_BYTES = 64 * 1024 * 1024
+# A finding line of a check (THE FORMAT of assay.core.report), and the words with which ctest replaces the part of an
+# output past its limit.  The pattern has no nested repeat, so a match is linear in the length of the line.
+FINDING_LINE = re.compile(r"^(?P<path>[^\s:][^:\n]*):(?P<line>\d+): error: \[(?P<rule>[^\]\s]+)\] ", re.MULTILINE)
+CUT_MARK = "test output was removed since it exceeds the threshold"
 # The interval of the look of a command at the stop event, in seconds (THE STOP).  The other configurations wait for
 # the build of ALWAYS with the same interval (THE THREADS).  The wait between SIGINT and SIGKILL to the group of a
 # command at a stop or at its limit, in seconds.
@@ -772,7 +806,9 @@ class Candidate:
     `focus` is empty for the commit of a batch, and it gives the configurations of a run of the base (THE RUN OF THE
     BASE).  `is_every` selects each configuration, as --all-configurations does (THE SELECTION).  `built` names each
     file of BUILT_FILES that THE MERGE of assay.loop.land leaves to the gate.  The gate adds each file that the change
-    can change, and it writes each one before the tests of each configuration (THE BUILT FILES).
+    can change, and it writes each one before the tests of each configuration (THE BUILT FILES).  `title` names the
+    run in the first line of the check, such as "the run of the base at COMMIT".  The landing gives it, because only
+    the landing knows the kind of the run.  With no title, the line names the commit.
     """
 
     head: str
@@ -781,6 +817,7 @@ class Candidate:
     focus: tuple[Focus, ...] = ()
     is_every: bool = False
     built: tuple[str, ...] = ()
+    title: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -794,7 +831,8 @@ class Verdict:
     `logs` is the directory of the logs of the run (THE LOGS).  `focus` gives each configuration with a problem (THE
     VERDICT).  `flaky` gives each test that was red in the suite and green alone, as CONFIGURATION: TEST.  `built`
     holds each file that the gate wrote from the build of ALWAYS and folded into `final` (THE BUILT FILES).  `rows`
-    holds the lines of THE RATCHET ROWS of a refused commit.
+    holds the lines of THE RATCHET ROWS of a refused commit.  `items` holds the failing items of the problems (THE
+    FAILING ITEMS).  A verdict with problems and no items gets each problem as its own item.
     """
 
     configurations: tuple[str, ...]
@@ -810,6 +848,12 @@ class Verdict:
     wait_seconds: tuple[float, ...] = ()
     slot_seconds: tuple[float, ...] = ()
     rows: tuple[str, ...] = ()
+    items: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Give each problem as its own item when the verdict has no items, so a problem always has an item."""
+        if not self.items:
+            object.__setattr__(self, "items", self.problems)
 
     @property
     def is_accepted(self) -> bool:
@@ -824,7 +868,8 @@ class Outcome:
     `red` holds the tests that were red alone too, and `flaky` the tests that were red in the suite and green alone.
     `is_stopped` tells that the stop ended the run, which then has no problem of its own.  `seconds` starts after the
     wait for the first slot of the lease, and `wait_s` is that wait.  `slot_seconds` is the sum of the slots of the
-    lease over its time (THE JOBSERVER).
+    lease over its time (THE JOBSERVER).  `items` holds the failing items of the problems (THE FAILING ITEMS).  An
+    outcome with no items gives each problem as its own item.
     """
 
     name: str
@@ -835,6 +880,7 @@ class Outcome:
     flaky: tuple[str, ...] = ()
     wait_s: float = 0.0
     slot_seconds: float = 0.0
+    items: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1333,6 +1379,30 @@ def log_name(configuration: Configuration, step: str, is_again: bool = False) ->
     return f"{configuration.name}{AGAIN_MARK if is_again else ''}.{step}"
 
 
+def failing_items(
+    configuration: str, names: Sequence[str], outputs: Mapping[str, str], tree: Path, commit: str
+) -> tuple[str, ...]:
+    """Return the failing items of the tests of one configuration that are red alone too (THE FAILING ITEMS).
+
+    `outputs` gives the output of each test in the report of the run alone, and `commit` is the commit of the run.
+    Each item is in the sequence of the tests and of their lines, with no duplicate.  Complexity: linear in the length
+    of the outputs of the tests.
+    """
+    root = f"{tree}/"
+    items: dict[str, None] = {}
+    for name in names:
+        text = outputs.get(name)
+        if text is None or CUT_MARK in text:
+            items[f"{configuration}: {name}: the items are not known in the run of the commit {commit}"] = None
+            continue
+        found = [
+            f"{configuration}: {name}: {match['path'].removeprefix(root)}:{match['line']} [{match['rule']}]"
+            for match in FINDING_LINE.finditer(text)
+        ]
+        items.update(dict.fromkeys(found or [f"{configuration}: {name}"]))
+    return tuple(items)
+
+
 def configure_words(tree: Path, configuration: Configuration) -> list[str]:
     """Return the words of the configure of the build directory of a configuration in a tree."""
     return ["cmake", "--preset", configuration.name, "-B", str(build_directory(tree, configuration))]
@@ -1529,12 +1599,11 @@ class Gate:
         others: tuple[Configuration, ...] = ()
         counted: tuple[str, ...] = ()
         is_each = True
+        title = candidate.title or f"the commit {candidate.commit[:9]}"
         if candidate.focus:
             plan = focused_runs(candidate.focus, self.vessel)
             shown = " ".join(run.configuration.name + "".join(f" {name}" for name in run.names) for run in plan)
-            check_report.write_line(
-                f"loop land: the run of the base at {candidate.commit[:9]} runs {shown}, logs in {self.logs}"
-            )
+            check_report.write_line(f"loop land: {title} runs only {shown}, logs in {self.logs}")
         else:
             each_parse = [item.name for item in CONFIGURATIONS if item.is_parse]
             presets = careful(
@@ -1572,10 +1641,7 @@ class Gate:
                 plan = (*plan, Run(self.vessel, Mode.VESSEL))
             shown = " ".join(run.configuration.name for run in plan)
             rest = f", and the tests of the change in {' '.join(item.name for item in others)}" if others else ""
-            check_report.write_line(
-                f"loop land: the commit {candidate.commit[:9]} runs in {shown}{rest} at the same time, logs in "
-                f"{self.logs}"
-            )
+            check_report.write_line(f"loop land: {title} runs in {shown}{rest} at the same time, logs in {self.logs}")
         if candidate.built:
             check_report.write_line(
                 f"loop land: the change can change {' '.join(candidate.built)}, so the gate writes it from the build "
@@ -1648,6 +1714,7 @@ class Gate:
             tuple(item.wait_s for item in ended),
             tuple(round(item.slot_seconds, 1) for item in ended),
             rows,
+            tuple(dict.fromkeys(found for item in outcomes for found in item.items or item.problems)),
         )
 
     def ratchet(
@@ -2162,6 +2229,7 @@ class Step:
         report.unlink(missing_ok=True)
         command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection), "-j", str(share.jobs)]
         command += ["--timeout", str(int(ALONE_S)), "--output-on-failure", "--output-junit", str(report)]
+        command += ["--test-output-size-failed", str(ALONE_OUTPUT_BYTES)]
         self.run_logged(command, log_name(configuration, "alone.log", is_again), share, ALONE_S * len(names))
         try:
             statuses = ctest_reader.results(report)
@@ -2404,7 +2472,21 @@ class Step:
         self.say(f"loop land: {name}: {seconds:.0f} s after a wait of {wait_s:.0f} s for its first slot")
         if problems and not self.candidate.focus:
             self.stop.set()
-        return Outcome(name, tuple(problems), red, seconds, False, flaky, wait_s, slot_seconds)
+        items = self.red_items(run, red, is_again) if red else ()
+        return Outcome(name, tuple(problems), red, seconds, False, flaky, wait_s, slot_seconds, items)
+
+    def red_items(self, run: Run, red: Sequence[str], is_again: bool) -> tuple[str, ...]:
+        """Return the failing items of the tests that are red alone too, from the report of the run alone.
+
+        A report that does not read gives no output, so each test gets the item of an unknown output (THE FAILING
+        ITEMS).
+        """
+        report = self.gate.logs / log_name(run.configuration, "alone.junit.xml", is_again)
+        try:
+            outputs = ctest_reader.outputs(report)
+        except ctest_reader.CtestError:
+            outputs = {}
+        return failing_items(run.configuration.name, red, outputs, self.gate.tree, self.candidate.commit)
 
     def require_problem(self, outcomes: Sequence[Outcome]) -> None:
         """Refuse a check that the stop ended with no problem of a configuration (THE STOP).

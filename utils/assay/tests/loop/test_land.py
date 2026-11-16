@@ -516,6 +516,68 @@ def interaction_cases(expect: testing.Expect, work: Path) -> None:
     )
 
 
+def finding_gate(root: Path, seen: list[tuple[gate.Candidate, bool]]) -> land.Check:
+    """Return a planted gate that fails the test guard_plugin with one finding for each word of base.txt.
+
+    Each red run gives the same problem, and its items name the file of each finding (THE FAILING ITEMS of
+    assay.loop.gate).  The gate keeps each call.
+    """
+
+    def check(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+        seen.append((candidate, is_retry))
+        shown = git.show(root, candidate.commit, "base.txt")
+        files = shown.decode("utf-8").split() if shown is not None else []
+        items = tuple(f"debug: guard_plugin: {name}:3 [must-consume]" for name in files)
+        problems = ("debug: red alone too: guard_plugin",) if items else ()
+        return gate.Verdict(("debug",), problems, 1.0, items=items)
+
+    return check
+
+
+def item_cases(expect: testing.Expect, work: Path) -> None:
+    """Hold the comparison of the failing items of a batch and of its base: one rule on a different file, and more files.
+
+    The two cases call only the constructors and the method land() of the batch.
+    """
+    root = work / "repo-items-moved"
+    planted_repository(root)
+    (root / "base.txt").write_text("include/base.h\n", encoding="utf-8")
+    red_base = git.commit_all(root, "Make the branch red")
+    edit = land.Edit("base.txt", land.REPLACE, "include/base.h\n", "include/r1.h\n")
+    seen: list[tuple[gate.Candidate, bool]] = []
+    decisions, _ = bare_landing(root, [request_of(("Move the finding",), (edit,))], finding_gate(root, seen))
+    lines = [line.content for line in decisions[1].lines] if 1 in decisions else []
+    expect(
+        f"a batch that fails the rule of the base on a different file is not red with no request: the search runs, "
+        f"and the refusal gives the problem of the request with no line of a red branch, after 3 runs of the gate.  "
+        f"The gate ran {len(seen)} times, and the refusal gives {lines}",
+        len(seen) == 3
+        and 1 in decisions
+        and decisions[1].status == ExitCode.FINDINGS
+        and "loop land: REJECTED, debug: red alone too: guard_plugin" in lines
+        and not any("red with no request" in line for line in lines)
+        and git.head(root) == red_base,
+    )
+    root = work / "repo-items-kept"
+    planted_repository(root)
+    (root / "base.txt").write_text("include/base.h\n", encoding="utf-8")
+    red_base = git.commit_all(root, "Make the branch red")
+    edit = land.Edit("base.txt", land.REPLACE, "include/base.h\n", "include/base.h\ninclude/r1.h\n")
+    seen = []
+    decisions, _ = bare_landing(root, [request_of(("Add a finding",), (edit,))], finding_gate(root, seen))
+    lines = [line.content for line in decisions[1].lines] if 1 in decisions else []
+    expect(
+        f"a batch that keeps each failing item of the base is red with no request, and the refusal gives the other "
+        f"item of the batch, after 2 runs of the gate.  The gate ran {len(seen)} times, and the refusal gives {lines}",
+        len(seen) == 2
+        and 1 in decisions
+        and decisions[1].status == ExitCode.FINDINGS
+        and any("red with no request" in line for line in lines)
+        and "loop land: the batch also gives: debug: guard_plugin: include/r1.h:3 [must-consume]" in lines
+        and git.head(root) == red_base,
+    )
+
+
 def red_base_cases(expect: testing.Expect) -> None:
     """Hold the run of the base: a red branch, a request that repairs it, a lone request, and the problems of two runs.
 
@@ -569,6 +631,22 @@ def red_base_cases(expect: testing.Expect) -> None:
             and len(seen) == 7
             and not any("red with no request" in line.content for line in decisions[2].lines),
         )
+        titles = [candidate.title for candidate, _ in seen]
+        shown = [
+            f"{candidate.title.split(' at ')[0]} at {candidate.commit[: land.SHORT_HASH]}" for candidate, _ in seen
+        ]
+        expect(
+            f"the title of each run names its kind and its commit: the run of the batch, the run of the base, and the "
+            f"run alone of the red request: {titles}",
+            titles == shown
+            and titles[1] == f"the run of the base at {red_base[: land.SHORT_HASH]}"
+            and [title.split(" at ")[0] for title in titles].count("the run alone of 00000002") == 1
+            and all(
+                title.startswith(("the run of the batch at ", "the run alone of 00000002 at "))
+                for index, title in enumerate(titles)
+                if index != 1
+            ),
+        )
         root = work / "repo-red-lone"
         planted_repository(root)
         (root / "base.txt").write_text(RED, encoding="utf-8")
@@ -600,6 +678,7 @@ def red_base_cases(expect: testing.Expect) -> None:
             and any("test_r1.txt" in line.content for line in decisions[1].lines)
             and not any("red with no request" in line.content for line in decisions[1].lines),
         )
+        item_cases(expect, work)
     first, second = (
         gate.Verdict(
             ("debug",),
@@ -610,10 +689,11 @@ def red_base_cases(expect: testing.Expect) -> None:
         for run in (3, 7)
     )
     expect(
-        "the problems of two runs compare equal with the mark as the replacement of the directory of the logs of each "
-        "run",
-        land.shown_problems(first) == land.shown_problems(second)
-        and land.shown_problems(first) != frozenset(first.problems),
+        "a verdict with no items gets each problem as its item, and the items of two runs compare equal with the mark "
+        "as the replacement of the directory of the logs of each run",
+        first.items == first.problems
+        and land.shown_items(first) == land.shown_items(second)
+        and land.shown_items(first) != frozenset(first.problems),
     )
 
 

@@ -263,13 +263,17 @@ THE RUN OF THE BASE
     that changed.  When that run is red too, the branch is red with no
     request.
 
-    The problems of a run name the directory of its logs.  The batch
-    compares the problems of two runs with LOGS_MARK as the replacement of
-    that directory.  When the first run of the batch has each problem of the run
-    of the base, no request repairs the branch.  Each request then gets the
+    The batch compares the failing items of two runs, not their problems
+    (THE FAILING ITEMS of assay.loop.gate).  An item of a red test gives the
+    test, and the rule, the path and the line of each finding.  Two runs
+    can fail one test of a rule on different files, with problems of the
+    same words.  An item can name the directory of the logs of its run.
+    The batch compares the items with LOGS_MARK as the replacement of that
+    directory.  When the first run of the batch has each item of the run of
+    the base, no request repairs the branch.  Each request then gets the
     refusal with the problems of the two runs, and the search does not run.
     Else a request can repair the branch, and the search runs.  A refusal
-    with only problems of the run of the base tells that the branch is red.
+    with only items of the run of the base tells that the branch is red.
 
     A search on a red branch runs the gate approximately two times for each
     request.  An example is a batch of three requests with one red request.
@@ -1464,14 +1468,17 @@ def repository_of(queued: Queued) -> Path:
     return Path(queued.common) if queued.common else queued.root
 
 
-def shown_problems(verdict: gate.Verdict) -> frozenset[str]:
-    """Return the problems of a verdict with LOGS_MARK as the replacement of the directory of its logs.
+def shown_item(verdict: gate.Verdict, item: str) -> str:
+    """Return one failing item of a verdict with LOGS_MARK as the replacement of the directory of its logs."""
+    return item.replace(verdict.logs, LOGS_MARK) if verdict.logs else item
 
-    The problems of two runs then compare equal when only their directories of logs are different (THE RUN OF THE BASE).
+
+def shown_items(verdict: gate.Verdict) -> frozenset[str]:
+    """Return the failing items of a verdict with LOGS_MARK as the replacement of the directory of its logs.
+
+    The items of two runs then compare equal when only their directories of logs are different (THE RUN OF THE BASE).
     """
-    if not verdict.logs:
-        return frozenset(verdict.problems)
-    return frozenset(item.replace(verdict.logs, LOGS_MARK) for item in verdict.problems)
+    return frozenset(shown_item(verdict, item) for item in verdict.items)
 
 
 def cut_point(links: Sequence[Link]) -> int:
@@ -1758,22 +1765,27 @@ class BatchLanding:
             raise LandError(f"the branch {self.branch} holds no commit")
         return commit
 
-    def gate_run(self, chain: Sequence[Link], focus: Sequence[gate.Focus] = ()) -> gate.Verdict:
+    def gate_run(self, chain: Sequence[Link], focus: Sequence[gate.Focus] = (), is_alone: bool = False) -> gate.Verdict:
         """Run the gate on the last commit of a chain, keep the run, and return the verdict.
 
         The first run of the batch runs each test, and each subsequent run runs the tests with an input that changed.
-        A focus runs only the configurations and the tests of the focus (assay.loop.gate, THE RUN OF THE BASE).  A
-        chain with a count that THE MERGE summed runs each configuration.  The candidate names each file that THE MERGE
-        leaves to the gate.  An error of the check is a problem of the commit (THE ERROR OF A RUN).
+        A focus runs only the configurations and the tests of the focus (assay.loop.gate, THE RUN OF THE BASE).
+        `is_alone` tells that the chain is the run alone of its one request (THE CONFIRMATION).  The title of the
+        candidate names the kind of the run: the run alone of the request, or the run of the batch.  A chain with a
+        count that THE MERGE summed runs each configuration.  The candidate names each file that THE MERGE leaves to the
+        gate.  An error of the check is a problem of the commit (THE ERROR OF A RUN).
         """
         is_every = any(link.is_summed for link in chain)
+        commit = chain[-1].commit
+        kind = f"the run alone of {chain[-1].queued.name}" if is_alone else "the run of the batch"
         candidate = gate.Candidate(
             self.base,
-            chain[-1].commit,
+            commit,
             chain_changed(chain),
             focus=tuple(focus),
             is_every=is_every,
             built=chain_built(chain),
+            title=f"{kind} at {commit[:SHORT_HASH]}",
         )
         started = time.monotonic()
         try:
@@ -1793,15 +1805,16 @@ class BatchLanding:
         of the first run.  With no focus, it runs the tests of the configurations of the batch with an input that
         changed.
         """
-        candidate = gate.Candidate(self.base, self.base, tuple(changed), focus=tuple(focus))
+        title = f"the run of the base at {self.base[:SHORT_HASH]}"
+        candidate = gate.Candidate(self.base, self.base, tuple(changed), focus=tuple(focus), title=title)
         verdict = self.check(candidate, True)
         self.runs.append(Run(candidate, (), (), verdict))
         self.base_run = len(self.runs) - 1
         return verdict
 
-    def base_problems(self) -> frozenset[str]:
-        """Return the problems of the run of the base with LOGS_MARK, or none when the batch has no such run."""
-        return shown_problems(self.runs[self.base_run].verdict) if self.base_run >= 0 else frozenset()
+    def base_items(self) -> frozenset[str]:
+        """Return the failing items of the run of the base with LOGS_MARK, or none when the batch has no such run."""
+        return shown_items(self.runs[self.base_run].verdict) if self.base_run >= 0 else frozenset()
 
     def red_base_line(self) -> str:
         """Return the line that tells that the commit of the batch is red with no request (THE RUN OF THE BASE)."""
@@ -1841,14 +1854,14 @@ class BatchLanding:
     def reject(self, queued: Queued, run: int, lead: str = "") -> None:
         """Give a request that is red on the accepted part the refusal, with the problems of its run.
 
-        When each problem of the run is a problem of the run of the base, the first line tells that the branch is red
+        When each failing item of the run is an item of the run of the base, the first line tells that the branch is red
         (THE RUN OF THE BASE).  A `lead` is the first line, such as the line of an interaction (THE CONFIRMATION).
         """
         self.refused_by[queued.number] = run
         verdict = self.runs[run].verdict
         lines = [f"loop land: REJECTED, {item}" for item in verdict.problems]
-        problems = shown_problems(verdict)
-        if problems and problems <= self.base_problems():
+        items = shown_items(verdict)
+        if items and items <= self.base_items():
             lines.insert(0, self.red_base_line())
         if lead:
             lines.insert(0, lead)
@@ -1910,7 +1923,7 @@ class BatchLanding:
                 f"loop land: REJECTED, the request is red two times after the accepted requests {numbers}, and it "
                 f"does not compose alone on {base}"
             )
-        if self.gate_run([alone], focus).is_accepted:
+        if self.gate_run([alone], focus, is_alone=True).is_accepted:
             return (
                 f"loop land: REJECTED, the request is red two times after the accepted requests {numbers}, and green "
                 f"alone on {base}: an interaction"
@@ -1920,17 +1933,19 @@ class BatchLanding:
     def reject_on_red_base(self, items: Sequence[Queued], batch_run: int) -> None:
         """Give each request the refusal of a branch that is red with no request that repairs it (THE RUN OF THE BASE).
 
-        The lines give each problem of the run of the base, and each other problem of the first run of the batch.
+        The lines give each problem of the run of the base, and each other failing item of the first run of the batch,
+        with the directory of its logs.
         """
         base_verdict = self.runs[self.base_run].verdict
         batch_verdict = self.runs[batch_run].verdict
         lines = [f"{self.red_base_line()}, and no request of the batch repairs it"]
         lines += [f"loop land: REJECTED, {item}" for item in base_verdict.problems]
-        base = self.base_problems()
+        base = self.base_items()
+        logs = batch_verdict.logs
         lines += [
-            f"loop land: the batch also gives: {item}"
-            for item in batch_verdict.problems
-            if not shown_problems(replace(batch_verdict, problems=(item,))) <= base
+            f"loop land: the batch also gives: {item}{f', in {logs}' if logs and logs not in item else ''}"
+            for item in batch_verdict.items
+            if shown_item(batch_verdict, item) not in base
         ]
         lines += batch_verdict.rows
         for queued in items:
@@ -1997,7 +2012,7 @@ class BatchLanding:
             batch_run = len(self.runs) - 1
             if not accepted and red_size is None and self.base_run < 0:
                 base_verdict = self.base_gate_run(chain_changed(links), verdict.focus)
-                is_unrepaired = shown_problems(base_verdict) <= shown_problems(verdict)
+                is_unrepaired = shown_items(base_verdict) <= shown_items(verdict)
                 if not base_verdict.is_accepted and is_unrepaired:
                     self.reject_on_red_base(pending, batch_run)
                     return [], -1

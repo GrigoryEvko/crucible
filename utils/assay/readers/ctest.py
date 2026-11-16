@@ -280,6 +280,23 @@ def is_skip(message: str) -> bool:
     return message.startswith(SKIP_CODE_MESSAGE) or message == SKIP_OUTPUT_MESSAGE
 
 
+def outputs(report: Path) -> dict[str, str]:
+    """Return the output of each test of a JUnit report that `ctest --output-junit` wrote: the text of its system-out
+    and of its failure, or an empty text.
+
+    Raises:
+        CtestError: If the report cannot be read or is not XML
+    """
+    found: dict[str, str] = {}
+    for case in report_root(report).iter("testcase"):
+        name = case.get("name")
+        if name is None:
+            continue
+        parts = [part.text or "" for tag in ("system-out", "failure") for part in case.iter(tag)]
+        found[name] = "\n".join(text for text in parts if text)
+    return found
+
+
 def results(report: Path) -> dict[str, TestStatus]:
     """Return the status of each test of a JUnit report that `ctest --output-junit` wrote (THE STATUS OF A TEST).
 

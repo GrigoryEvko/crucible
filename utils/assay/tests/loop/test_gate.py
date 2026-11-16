@@ -339,10 +339,12 @@ if "crucible_dispatch" in words and calls.is_file():
 # because a ledger fails only on a growth (THE POLICIES of assay.core.ledger).  Each run of red tests adds one line to
 # alone-runs.txt of the build: the value of -j and the names of the tests.  A run of --label-regex runs each test of
 # the listing with that label, and writes the label to ran.txt of the build.  Each name in red.txt of the build is red
-# too.
+# too.  The report gives the text of NAME.out of the build as the output of the test NAME.  The value of
+# --test-output-size-failed goes to output-size.txt of the build.
 CTEST = """import json
 import pathlib
 import sys
+from xml.sax.saxutils import escape
 
 words = sys.argv[1:]
 tests = pathlib.Path(words[words.index("--test-dir") + 1])
@@ -368,8 +370,17 @@ red |= {"test_ledger"} if reads.is_file() and "include/old.h" in reads.read_text
 inventory = pathlib.Path(words[words.index("--test-dir") + 1], "inventory.txt")
 held = pathlib.Path("misc/mint-inventory.md")
 red |= {"test_built"} if inventory.is_file() and held.read_text() != inventory.read_text() else set()
-cases ="".join(f'<testcase name="{name}" status="{"fail" if name in red else "run"}"/>' for name in names)
-report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{cases}</testsuite>')
+if "--test-output-size-failed" in words:
+    (tests / "output-size.txt").write_text(words[words.index("--test-output-size-failed") + 1])
+
+
+def case(name):
+    output = tests / f"{name}.out"
+    text = f"<system-out>{escape(output.read_text())}</system-out>" if output.is_file() else ""
+    return f'<testcase name="{name}" status="{"fail" if name in red else "run"}">{text}</testcase>'
+
+
+report.write_text(f'<?xml version="1.0"?><testsuite name="planted">{"".join(case(name) for name in names)}</testsuite>')
 """
 PLANTED = {
     ".gitignore": "build/\nbuild-*/\n.venv-torch\n",
@@ -1891,6 +1902,86 @@ def base_run_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
+def item_cases(expect: testing.Expect) -> None:
+    """Hold THE FAILING ITEMS: a red test gives the items of its output, and a run of the base can give other items."""
+    with tempfile.TemporaryDirectory(prefix="gate-items-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        commit = commit_change(root, "src/a.cpp", "int a;\n", "Change a source")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        build = tree / "build"
+        planted = planted_gate(work, root, tree, "plugin", OTHER_BUILDS)
+        (build / "red.txt").write_text(f"{gate.PLUGIN_TEST}\n", encoding="utf-8")
+        output = build / f"{gate.PLUGIN_TEST}.out"
+        output.write_text(
+            "door-unit: 0 error(s), 0 warning(s)\n"
+            "include/a.h:3: error: [must-consume] the first finding, and the path has 201 findings\n"
+            f"{tree}/src/b.cpp:7: error: [owners] a finding with the path of the warm tree\n"
+            "include/a.h:3: error: [must-consume] a second finding on the same line\n"
+            "src/c.cpp:9: warning: [owners] a warning, which fails nothing\n",
+            encoding="utf-8",
+        )
+        batch, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("src/a.cpp",)), False))
+        output.write_text("include/c.h:5: error: [must-consume] a finding of the base\n", encoding="utf-8")
+        title = f"the run of the base at {head[:9]}"
+        base, base_printed = testing.captured(
+            lambda: planted.check(gate.Candidate(head, head, ("src/a.cpp",), batch.focus, title=title), True)
+        )
+        heads = (
+            f"loop land: the commit {commit[:9]} runs in ",
+            f"loop land: {title} runs only default {gate.PLUGIN_TEST}, logs in ",
+        )
+        holds = heads[0] in printed and heads[1] in base_printed
+        label = (
+            f"the first line of a check names the run with the title of the candidate, else with its commit: {heads}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}\n{base_printed}", holds)
+        size = build / "output-size.txt"
+        test = f"default: {gate.PLUGIN_TEST}"
+        holds = (
+            batch.items == (f"{test}: include/a.h:3 [must-consume]", f"{test}: src/b.cpp:7 [owners]")
+            and base.items == (f"{test}: include/c.h:5 [must-consume]",)
+            and base.problems == batch.problems
+            and batch.problems[0].startswith(f"default: red alone too: {gate.PLUGIN_TEST}, see ")
+            and size.is_file()
+            and size.read_text(encoding="utf-8") == str(gate.ALONE_OUTPUT_BYTES)
+        )
+        label = (
+            f"a test that is red alone too gives one item for each error line of its output, with the path of the tree "
+            f"cut and no message, and the run alone keeps {gate.ALONE_OUTPUT_BYTES} bytes of the output.  A run of the "
+            f"base with a finding on a different file gives the same problems and different items: the batch gives "
+            f"{batch.items}, and the base gives {base.items}"
+        )
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}\n{base_printed}", holds)
+        output.unlink()
+        broken = planted_gate(work, root, tree, "broken", OTHER_BUILDS)
+        verdict, printed = testing.captured(lambda: broken.check(gate.Candidate(head, commit, ("src/a.cpp",)), False))
+        holds = verdict.items == ("default: test_broken",) and verdict.problems[0].startswith(
+            "default: red alone too: test_broken, see "
+        )
+        label = f"a red test with no error line in its output gives the item of its name: {verdict.items}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        (build / "red.txt").unlink()
+        failed = planted_gate(work, root, tree, "build", OTHER_BUILDS)
+        verdict, printed = testing.captured(lambda: failed.check(gate.Candidate(head, commit, ("src/a.cpp",)), False))
+        holds = bool(verdict.problems) and verdict.items == verdict.problems
+        label = f"a problem that is not a red test is its own item: {verdict.items}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+    outputs = {"test_cut": f"src/a.cpp:1: error: [owners] text\n[This part of the {gate.CUT_MARK} of 307200 bytes.]"}
+    items = gate.failing_items("debug", ("test_cut", "test_lost"), outputs, Path("/tree"), "c" * 40)
+    expect(
+        f"a test with an output that ctest cut, and a test with no output in the report, give an item with the commit "
+        f"of the run, so the items of two commits do not compare equal: {items}",
+        items
+        == (
+            f"debug: test_cut: the items are not known in the run of the commit {'c' * 40}",
+            f"debug: test_lost: the items are not known in the run of the commit {'c' * 40}",
+        ),
+    )
+
+
 def vessel_select_cases(expect: testing.Expect) -> None:
     """Hold the selection of the vessel, its configuration in this tree, and the focus of its run of the base."""
     expect(
@@ -2268,6 +2359,7 @@ def main(argv: list[str]) -> int:
             stop_cases,
             masked_error_cases,
             base_run_cases,
+            item_cases,
             vessel_select_cases,
             vessel_run_cases,
             careful_cases,
