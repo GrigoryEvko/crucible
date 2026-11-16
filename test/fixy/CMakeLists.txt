@@ -4610,6 +4610,11 @@ fixy_neg_compile_test(neg_check_pass_without_test_context
 # in row-major order, and the death of a cursor of the scope past its end.
 fixy_test(test_strided_view)
 
+# The pointwise walk of foundation/core/Pointwise.h against walk() with the op
+# on scalars, bit for bit, for each loop of a view, the masked blocks, the
+# in-place form and an input that overlaps the output.
+fixy_test(test_pointwise)
+
 # The property tests of fixy/check/Property.h: a property that holds, the
 # determinism and the ranges of the draws, the shrink of a failure to its
 # least input, and an oracle that agrees and one that finds a difference.
