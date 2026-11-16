@@ -131,7 +131,9 @@ private:
 // A permission brand tells apart two channels when their roots come from
 // two call sites.  Nothing in a type tells apart two roots of one call site: a
 // site that runs two times mints two tokens of one brand, and each token
-// opens the role.  The claim is the run-time floor there.  The channel takes
+// opens the role.  This is fact 2 of foundation/Brand.h: the brand of a mint
+// that gives a value out names its call site, and a run-time id tells apart
+// two runs of the site.  The claim is that run-time id here.  The channel takes
 // the claim before it builds a handle, and the handle releases the claim
 // when it ends.  So a second live handle of one role ends the process, and
 // a handle made after the first one ended takes the role again.

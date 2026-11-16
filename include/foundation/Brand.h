@@ -17,16 +17,34 @@
 //     about the same region writes both with one B, or asks for
 //     `SameBrand<A, B>`.  There is no runtime brand to compare.
 //
-// 2.  One call site yields one brand.  A mint inside a loop body mints
-//     one brand for every object the loop makes, and that is sound: the
-//     objects never overlap in time, so a borrow of one cannot outlive
-//     it into the next.  Inside a template the rule is measured, not
-//     assumed: a mint whose tag comes from a template parameter yields
-//     one brand per instantiation of the enclosing template, and a mint
-//     whose arguments are all concrete yields one brand shared by every
-//     instantiation, because the compiler resolves that call once.  Two
-//     runtime objects that must be told apart are minted at two call
-//     sites, or through a template that names the tag.
+// 2.  A brand names one instance only while a scope bounds it (principle
+//     P3 of misc/12_10_2026_linear.md).  One call site yields one brand, and
+//     each run of the site yields that brand again.  Inside a template the
+//     rule is measured, not assumed: a mint whose tag comes from a template
+//     parameter yields one brand per instantiation of the enclosing
+//     template, and a mint whose arguments are all concrete yields one brand
+//     shared by every instantiation, because the compiler resolves that call
+//     once.  The two kinds of mint follow from this fact.
+//
+//     A scope mint gives its brand to a body and to no result.  Its brand
+//     is CRUCIBLE_SCOPE_BRAND, and the rule brand-escape refuses each result
+//     of the mint and each object of static or thread storage duration that
+//     holds the brand.  So no value of the brand outlives the call, two runs
+//     of one site never hold two values of the brand at one time, and the
+//     brand is fresh for each scope instance.  A fact that the brand proves
+//     for one run, such as an index below the count of a view, then holds
+//     in that run.  mint_branded_scope of foundation/core/Branded.h and the
+//     frame doors with_mut of foundation/core/Frame.h are scope mints.
+//
+//     A mint that gives a branded value out, such as to(), the root
+//     permission mint and mint_split, takes CRUCIBLE_FRESH_BRAND.  Two runs
+//     of its site can give two live values of one brand, as two turns of a
+//     loop that keep their tokens do.  Such a brand tells apart the values
+//     of two sites, and it proves no fact that changes from run to run.  A
+//     value that must be told apart from a value of a second run of its
+//     site carries a run-time id: the Identity of foundation/core/Identity.h,
+//     or the EndpointClaim of foundation/ChannelBinding.h for the one live
+//     handle of a role.
 //
 // 3.  A brand refuses by identity and a deleted rvalue twin refuses by
 //     value category.  They are two mechanisms for two failures.  The
