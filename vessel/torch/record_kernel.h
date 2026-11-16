@@ -59,6 +59,7 @@
 #include <torch/library.h>
 
 #include "aten_op_table.h"
+#include "eager_numerics.h"
 #include "entry_slots.h"
 #include "vessel_api_typed.h"
 
@@ -1248,8 +1249,14 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow>
     // take the claim. A kernel reached from an init, background or test
     // context has no such context, so its call does not compile.
     const auto op = crucible::mint_validated_op(std::move(binding).value(), records);
-    for (const crucible::ValidatedOp& certified : op)
-        (void)vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth);
+    for (const crucible::ValidatedOp& certified : op) {
+        const crucible::DispatchResult result =
+            vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth);
+        // A region entry comes once for each iteration of a region, so the
+        // read of the eager word is a cold call.
+        if (result.enters_region) [[unlikely]]
+            observe_eager_numerics(vigil, fg);
+    }
 }
 
 // =====================================================================

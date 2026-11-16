@@ -44,8 +44,9 @@ the two attached arms are not measured the same way:
 
 A fourth arm belongs to a later layer of the runtime. Measured from the source:
 `call_recording` in record_kernel.h calls `Op::redispatch` on every path and
-then discards the result of `dispatch_op_pure`, so a replayed operation still
-executes eagerly and the replay only replaces the ring append. This tier
+then reads only the region entry of the result of `dispatch_op_pure`, so a
+replayed operation still executes eagerly and the replay only replaces the ring
+append. This tier
 therefore cannot beat PyTorch, and a shadow tensor type is what would let a
 replayed op return a handle without reaching the kernel. The vessel has no such
 type. Nothing here approximates the arm that needs one.

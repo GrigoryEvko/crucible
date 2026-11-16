@@ -140,7 +140,12 @@ enum {
 typedef struct {
     uint8_t action;  // CRUCIBLE_ACTION_*
     uint8_t status;  // CRUCIBLE_STATUS_*, zero for an action other than COMPILED
-    uint8_t pad[2];
+    // 1 when the next op starts an iteration of a region: this op completed a
+    // region, or its dispatch activated one.  The caller then reads its eager
+    // word again and gives it to crucible_observe_eager_numerics.  Zero for
+    // each other op.
+    uint8_t enters_region;
+    uint8_t pad;  // zero
     uint32_t op_index;  // the position of the op in the region for COMPILED, zero for another action
 } CrucibleDispatchResult;
 
@@ -155,7 +160,7 @@ typedef struct {
 // Python ctypes consumers cross-check via crucible_abi_version() at
 // load.  The constant is also exposed as a #define so C consumers can
 // bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 6ULL
+#define CRUCIBLE_VESSEL_ABI_VERSION 7ULL
 
 // Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
 // Never aborts — pure constant return.  Used by crucible_native.py
@@ -165,7 +170,13 @@ CRUCIBLE_VESSEL_API uint64_t crucible_abi_version(void) CRUCIBLE_VESSEL_NOEXCEPT
 // ── Lifecycle ────────────────────────────────────────────────────────
 
 // Create a Vigil instance. Starts the background thread.
-CRUCIBLE_VESSEL_API CrucibleHandle crucible_create(void) CRUCIBLE_VESSEL_NOEXCEPT;
+// eager_numerics: the eager word of the front end at the attach (EagerNumerics
+// of crucible/NumericalRecipe.h): bits 0 and 1 the precision of a float32
+// matmul (0 highest, 1 high, 2 medium), bit 2 TF32 for a cuBLAS matmul, bit 3
+// TF32 for a cuDNN convolution, bit 4 the flush of denormal floats.  The Vigil
+// records each region under this word.  A word with another bit, or with the
+// precision 3, gives no Vigil, and the call gives a null handle.
+CRUCIBLE_VESSEL_API CrucibleHandle crucible_create(uint32_t eager_numerics) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Destroy a Vigil instance. Joins the background thread.
 CRUCIBLE_VESSEL_API void crucible_destroy(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
@@ -221,6 +232,19 @@ CRUCIBLE_VESSEL_API uint32_t crucible_compiled_iterations(CrucibleHandle h) CRUC
 
 // Number of divergences detected.
 CRUCIBLE_VESSEL_API uint32_t crucible_diverged_count(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+
+// Give the eager word of the front end, in the layout of crucible_create.  The
+// caller reads the word when a dispatch result has enters_region, and gives it
+// here.  A changed word stops the replay of a region of the old word, which
+// counts one divergence, and the Vigil records the next regions under the new
+// word.  Returns 1, or 0 for a word that crucible_create refuses, which
+// changes nothing.  The call must run on the thread that holds the producer
+// claim of the Vigil, as a dispatch must.
+CRUCIBLE_VESSEL_API int crucible_observe_eager_numerics(CrucibleHandle h,
+                                                        uint32_t eager_numerics) CRUCIBLE_VESSEL_NOEXCEPT;
+
+// The content hash of the active region, or 0 when the Vigil has no region.
+CRUCIBLE_VESSEL_API uint64_t crucible_active_content_hash(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Schema name registration ─────────────────────────────────────────
 

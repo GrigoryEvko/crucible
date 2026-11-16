@@ -16,6 +16,10 @@ check runs through the two entries:
     again           an op with one input and one output after the refused ops
                     gives RECORD
 
+The eager word of crucible_create and crucible_observe_eager_numerics has a
+layout (EagerNumerics of crucible/NumericalRecipe.h).  A word with a bit that
+no field names, or with the precision 3, gives a null handle and the result 0.
+
 Usage:
     python test_dispatch_status.py
 
@@ -127,11 +131,32 @@ def run_entry(entry: str, call, handle: int) -> list[str]:
     return problems
 
 
+# Eager words with a bit that no field of EagerNumerics names, or with the
+# precision 3, which PyTorch does not name.
+UNNAMED_EAGER_WORDS = (1 << 5, 1 << 31, 0x3)
+
+
+def check_eager_words(vessel, handle: int) -> list[str]:
+    """Return one line for each unnamed eager word that crucible_create or crucible_observe_eager_numerics takes."""
+    problems = []
+    for word in UNNAMED_EAGER_WORDS:
+        refused = vessel.crucible_create(word)
+        if refused:
+            vessel.crucible_destroy(refused)
+            problems.append(f"crucible_create takes the unnamed eager word {word:#x}")
+        if vessel.crucible_observe_eager_numerics(handle, word) != 0:
+            problems.append(f"crucible_observe_eager_numerics takes the unnamed eager word {word:#x}")
+    if vessel.crucible_observe_eager_numerics(handle, 0) != 1:
+        problems.append("crucible_observe_eager_numerics refuses the eager word 0")
+    return problems
+
+
 def main() -> int:
     """Run each check through the two entries and report."""
     vessel = crucible_mode._VesselLib()
     dispatch_op, dispatch_op_ex = bind(vessel._lib)
-    handle = vessel.crucible_create()
+    # The word 0: the highest precision, no TF32 and no flush of denormal floats.
+    handle = vessel.crucible_create(0)
     try:
         problems = run_entry(
             "crucible_dispatch_op",
@@ -142,6 +167,7 @@ def main() -> int:
             lambda h, inputs, outputs, metas, count: dispatch_op_ex(h, SCHEMA_HASH, inputs, outputs, metas, count,
                                                                     None, 0, 0, 0, 0),
             handle)
+        problems += check_eager_words(vessel, handle)
     finally:
         vessel.crucible_destroy(handle)
     for line in problems:

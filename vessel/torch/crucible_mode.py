@@ -31,7 +31,7 @@ import struct
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
-from crucible_native import DispatchAction, DispatchStatus, SchemaNameResult, load_vessel_library
+from crucible_native import DispatchAction, DispatchStatus, SchemaNameResult, _DispatchLib, load_vessel_library
 
 
 # ─── ctypes bindings ────────────────────────────────────────────────
@@ -63,7 +63,8 @@ class _VesselLib:
         _fields_ = [
             ("action", ctypes.c_uint8),
             ("status", ctypes.c_uint8),
-            ("pad", ctypes.c_uint8 * 2),
+            ("enters_region", ctypes.c_uint8),
+            ("pad", ctypes.c_uint8),
             ("op_index", ctypes.c_uint32),
         ]
 
@@ -81,7 +82,10 @@ class _VesselLib:
         lib = self._lib
 
         lib.crucible_create.restype = ctypes.c_void_p
-        lib.crucible_create.argtypes = []
+        lib.crucible_create.argtypes = [ctypes.c_uint32]
+
+        lib.crucible_observe_eager_numerics.restype = ctypes.c_int
+        lib.crucible_observe_eager_numerics.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
 
         lib.crucible_destroy.restype = None
         lib.crucible_destroy.argtypes = [ctypes.c_void_p]
@@ -256,7 +260,13 @@ class CrucibleMode(TorchDispatchMode):
     def __init__(self, lib_path=None, verbose=False):
         super().__init__()
         self._vessel = _VesselLib(lib_path)
-        self._handle = self._vessel.crucible_create()
+        # The dispatch library reads the eager word of this thread, which
+        # PyTorch keeps partly in the FP control register.  This mode includes
+        # no Crucible dispatch key, so the kernels of the library never fire.
+        self._dispatch = _DispatchLib()
+        self._handle = self._vessel.crucible_create(self._dispatch.eager_numerics())
+        if not self._handle:
+            raise ValueError("crucible_create refuses the eager word of the dispatch library")
         self._verbose = verbose
         self._op_count = 0
         self._schema_cache = {}
@@ -354,6 +364,10 @@ class CrucibleMode(TorchDispatchMode):
             scalars_ptr, num_scalars, scalar_types,
             grad_on, infer_on,
         )
+        # The next op starts an iteration of a region, so the Vigil takes the
+        # eager word again, once for each iteration.
+        if dr.enters_region:
+            self._vessel.crucible_observe_eager_numerics(self._handle, self._dispatch.eager_numerics())
 
         self._op_count += 1
 

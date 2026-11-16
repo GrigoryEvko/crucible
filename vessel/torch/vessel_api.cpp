@@ -64,6 +64,7 @@ static_assert(CRUCIBLE_STATUS_COMPLETE == static_cast<int>(crucible::ReplayStatu
     } else {
         encoded.action = CRUCIBLE_ACTION_RECORD;
     }
+    encoded.enters_region = result.enters_region ? uint8_t{1} : uint8_t{0};
     return encoded;
 }
 
@@ -170,7 +171,13 @@ uint64_t crucible_abi_version(void) noexcept {
     return CRUCIBLE_VESSEL_ABI_VERSION;
 }
 
-CrucibleHandle crucible_create(void) noexcept { return new crucible::Vigil(); }
+CrucibleHandle crucible_create(uint32_t eager_numerics) noexcept {
+    const crucible::EagerNumerics eager{.bits = eager_numerics};
+    if (!crucible::is_named_eager_word(eager)) return nullptr;
+    crucible::Vigil::Config config{};
+    config.eager = eager;
+    return new crucible::Vigil(std::move(config));
+}
 
 void crucible_destroy(CrucibleHandle h) noexcept {
     auto handle = crucible::vessel::as_vigil_typed(h);
@@ -353,6 +360,24 @@ uint32_t crucible_compiled_iterations(CrucibleHandle h) noexcept {
 
 uint32_t crucible_diverged_count(CrucibleHandle h) noexcept {
     return crucible::vessel::as_vigil_typed(h).value()->diverged_count();
+}
+
+// The context of the producer claim gates the change of the word, as it gates
+// a dispatch.  A word that crucible_create refuses changes nothing.
+int crucible_observe_eager_numerics(CrucibleHandle h, uint32_t eager_numerics) noexcept {
+    const crucible::EagerNumerics eager{.bits = eager_numerics};
+    if (!crucible::is_named_eager_word(eager)) return 0;
+    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
+    vigil->observe_eager_numerics(vigil->mint_producer_context(), eager);
+    return 1;
+}
+
+uint64_t crucible_active_content_hash(CrucibleHandle h) noexcept {
+    for (const ::fixy::Ref<const crucible::RegionNode> region :
+         crucible::vessel::as_vigil_typed(h).value()->active_region()) {
+        return region->content_hash.raw();
+    }
+    return 0;
 }
 
 uint32_t crucible_bg_iterations(CrucibleHandle h) noexcept {

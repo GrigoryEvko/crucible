@@ -14,6 +14,7 @@
 // Loaded via torch.ops.load_library() -- the TORCH_LIBRARY_IMPL registration
 // fires on dlopen, no explicit init needed.
 
+#include "eager_numerics.h"
 #include "record_kernel.h"
 
 #include <fixy/Core.h>
@@ -642,7 +643,12 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     const auto validated =
         crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), first_records(metas, counts.total()));
     for (const crucible::ValidatedOp& certified : validated) {
-        static_cast<void>(vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth));
+        const crucible::DispatchResult result =
+            vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth);
+        // The read of the eager word at a region entry, as in
+        // append_trace_entry of record_kernel.h.
+        if (result.enters_region) [[unlikely]]
+            crucible::vessel::observe_eager_numerics(vigil, fg);
     }
 }
 
@@ -908,7 +914,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // loader of crucible_native.py refuses a library with a different stamp or
 // with no stamp.  Increment the two values together when a function of the
 // block or an ordinal of c10::CrucibleMode changes.
-constexpr uint64_t kDispatchAbiVersion = 1;
+constexpr uint64_t kDispatchAbiVersion = 2;
 
 extern "C" {
 
@@ -934,10 +940,17 @@ CRUCIBLE_API void crucible_dispatch_backward_exit();
 CRUCIBLE_API uint32_t crucible_dispatch_backward_depth();
 CRUCIBLE_API uint32_t crucible_dispatch_schema_count();
 CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name);
+CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics();
 
 // A constant return.  Python reads it after the load and before it declares
 // any other symbol.
 CRUCIBLE_API uint64_t crucible_dispatch_abi_version() { return kDispatchAbiVersion; }
+
+// The eager word of the calling thread (EagerNumerics of
+// crucible/NumericalRecipe.h): the bits that read_eager_numerics of
+// eager_numerics.h gives.  The attach reads it, and gives it to
+// crucible_create of the vessel library.
+CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics() { return crucible::vessel::read_eager_numerics().bits; }
 
 CRUCIBLE_API void crucible_dispatch_set_tls_mode(uint8_t mode) {
     c10::CrucibleState::get_tls_state().set_mode(static_cast<c10::CrucibleMode>(mode));

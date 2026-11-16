@@ -78,7 +78,7 @@ _MASK64     = (1 << 64) - 1
 # ".py was redeployed but libcrucible_vessel.so is stale" failure
 # before any dispatch runs.
 
-EXPECTED_ABI_VERSION = 6
+EXPECTED_ABI_VERSION = 7
 
 
 class SchemaNameResult(enum.IntEnum):
@@ -98,7 +98,7 @@ class SchemaNameResult(enum.IntEnum):
 # libcrucible_dispatch.so reports through crucible_dispatch_abi_version().
 # The value names the C ABI of the dispatch library: its TLS accessors, its
 # schema accessors and the ordinals of c10::CrucibleMode.
-EXPECTED_DISPATCH_ABI_VERSION = 1
+EXPECTED_DISPATCH_ABI_VERSION = 2
 
 
 class AbiStamp(NamedTuple):
@@ -375,9 +375,9 @@ class _VesselLib:
         """Declare the restype and argtypes of every symbol this class calls."""
         L = self._lib
 
-        # Lifecycle
+        # Lifecycle.  crucible_create takes the eager word of the attach.
         L.crucible_create.restype = ctypes.c_void_p
-        L.crucible_create.argtypes = []
+        L.crucible_create.argtypes = [ctypes.c_uint32]
         L.crucible_destroy.restype = None
         L.crucible_destroy.argtypes = [ctypes.c_void_p]
         L.crucible_flush.restype = None
@@ -402,10 +402,38 @@ class _VesselLib:
         L.crucible_export_crtrace.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
         L.crucible_active_num_ops.restype = ctypes.c_uint32
         L.crucible_active_num_ops.argtypes = [ctypes.c_void_p]
+        L.crucible_active_content_hash.restype = ctypes.c_uint64
+        L.crucible_active_content_hash.argtypes = [ctypes.c_void_p]
 
-    def create(self) -> int:
-        """Create a Vigil and return its opaque handle."""
-        return self._lib.crucible_create()
+        # The eager word of a region entry
+        L.crucible_observe_eager_numerics.restype = ctypes.c_int
+        L.crucible_observe_eager_numerics.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+
+    def create(self, eager_numerics: int) -> int:
+        """Create a Vigil under the eager word of the attach, and return its opaque handle.
+
+        Args:
+            eager_numerics: The eager word, as crucible_dispatch_eager_numerics gives it
+
+        Returns:
+            The handle of the Vigil
+
+        Raises:
+            ValueError: If the library refuses the word, which names a bit that EagerNumerics does not name
+        """
+        handle = self._lib.crucible_create(eager_numerics)
+        if not handle:
+            raise ValueError(f"crucible_create refuses the eager word {eager_numerics:#x}: it names a bit that "
+                             f"EagerNumerics of crucible/NumericalRecipe.h does not name")
+        return handle
+
+    def observe_eager_numerics(self, h: int, eager_numerics: int) -> bool:
+        """Give the Vigil the eager word of a region entry, and give False when the library refuses the word."""
+        return bool(self._lib.crucible_observe_eager_numerics(h, eager_numerics))
+
+    def active_content_hash(self, h: int) -> int:
+        """The content hash of the active region, or 0 when the Vigil has no region."""
+        return self._lib.crucible_active_content_hash(h)
 
     def destroy(self, h: int) -> None:
         """Destroy the Vigil behind one handle."""
@@ -501,6 +529,15 @@ class _DispatchLib:
             ctypes.POINTER(ctypes.c_uint64),
             ctypes.POINTER(ctypes.c_char_p),
         ]
+
+        # The eager word of this thread: the float32 matmul precision, the two
+        # TF32 bits and the flush of denormal floats.
+        L.crucible_dispatch_eager_numerics.restype = ctypes.c_uint32
+        L.crucible_dispatch_eager_numerics.argtypes = []
+
+    def eager_numerics(self) -> int:
+        """The eager word of this thread, which the Vigil folds into the hash of each region."""
+        return self._lib.crucible_dispatch_eager_numerics()
 
     def backward_enter(self) -> None:
         """Open a backward window on this thread."""
@@ -688,19 +725,20 @@ class CrucibleNative:
                 "PyTorch fork with DispatchKey::Crucible required.\n"
                 "Build from ~/Downloads/pytorch with the crucible patch applied.")
 
+        # Load the dispatch lib (C++ fallback + TLS accessors) first, because
+        # it reads the eager word that the Vigil records its regions under.
+        # The load is the step that fails in practice: the build makes the
+        # library only when it was given a PyTorch tree, so a session against
+        # a partial build stops here, before any Vigil exists.
+        self._dispatch = _DispatchLib(self._dispatch_lib_path)
+
         # Load vessel lib (Vigil lifecycle)
         self._vessel = _VesselLib(self._vessel_lib_path)
-        self._handle = self._vessel.create()
+        self._handle = self._vessel.create(self._dispatch.eager_numerics())
 
         # From here the Vigil exists and owns a background thread, so every
-        # later step that can fail has to give it back.  Loading the dispatch
-        # library is the step that does fail in practice: it is the one built
-        # only when the build was given a PyTorch tree, so a session against a
-        # partial build reaches exactly this line.
+        # later step that can fail has to give it back.
         try:
-            # Load dispatch lib (C++ fallback + TLS accessors)
-            self._dispatch = _DispatchLib(self._dispatch_lib_path)
-
             # Set CrucibleState TLS: mode=RECORD, context=vigil handle
             self._dispatch.set_mode(self.RECORD)
             self._dispatch.set_context(self._handle)
@@ -1092,6 +1130,10 @@ class CrucibleNative:
     def active_num_ops(self) -> int:
         """The number of operations in the active region."""
         return self._vessel.active_num_ops(self._handle) if self._vessel else 0
+
+    def active_content_hash(self) -> int:
+        """The content hash of the active region, or 0 when the Vigil has no region."""
+        return self._vessel.active_content_hash(self._handle) if self._vessel else 0
 
     # ── Autograd engine serialisation ────────────────────────────────
     #

@@ -198,11 +198,21 @@ struct EagerNumerics {
     static constexpr uint32_t CUDNN_TF32 = 1u << 3;
     // The host flushes denormal floats to zero.
     static constexpr uint32_t FLUSH_DENORMAL = 1u << 4;
+    // Each bit that a field above names.
+    static constexpr uint32_t NAMED_BITS = MATMUL_PRECISION_MASK | MATMUL_TF32 | CUDNN_TF32 | FLUSH_DENORMAL;
 
     uint32_t bits = 0;
 
     [[nodiscard]] friend constexpr bool operator==(EagerNumerics, EagerNumerics) noexcept = default;
 };
+
+// True when each bit of the word is a bit of a field of EagerNumerics, and the
+// precision is one of the three that PyTorch names.  A word from outside the
+// process, such as the word of a C caller, passes this test first.
+[[nodiscard]] constexpr bool is_named_eager_word(EagerNumerics word) noexcept {
+    return (word.bits & ~EagerNumerics::NAMED_BITS) == 0
+        && (word.bits & EagerNumerics::MATMUL_PRECISION_MASK) != EagerNumerics::MATMUL_PRECISION_MASK;
+}
 
 namespace detail_recipe {
 // The salt of the hash of a numerics policy, so the word of a policy and the
