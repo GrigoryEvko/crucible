@@ -6,7 +6,10 @@
 // floats reads the L3, and the row of 2^24 floats reads memory.  The left
 // fold is the order that the tree replaces: one chain of adds, which the
 // latency of an add bounds.  A sort row copies its input into the work
-// buffer first, so the time of each sort row holds one copy.  Each call that
+// buffer first, so the time of each sort row holds one copy.  A stable sort
+// by Ascending of at least stable_sort_radix_count elements takes the radix
+// sort, and a row by an order of the caller takes the merge sort.  The row of
+// a sorted input shows the merge of two runs in order.  Each call that
 // writes takes its output through a frame door: a HeapArray moves in and out,
 // and the FixedArray of a network row copies its N elements in and out.
 //
@@ -191,12 +194,14 @@ template <std::size_t N>
 }
 
 // The stable sort of work with the scratch of scratch, through a frame of
-// each.  True when the sort gave no error.
-[[nodiscard]] bool sort_through_frames(HeapArray<float>& work, HeapArray<float>& scratch) noexcept {
+// each, by the order of the caller or by Ascending.  True when the sort gave
+// no error.
+template <class T, class... Less>
+[[nodiscard]] bool sort_through_frames(HeapArray<T>& work, HeapArray<T>& scratch, Less... less) noexcept {
     bool is_sorted = false;
     work = with_mut(std::move(work), [&](auto elements) noexcept {
         scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
-            is_sorted = ::foundation::core::sort_stably(std::move(elements), std::move(room)).is_ok();
+            is_sorted = ::foundation::core::sort_stably(std::move(elements), std::move(room), less...).is_ok();
         });
     });
     return is_sorted;
@@ -204,28 +209,59 @@ template <std::size_t N>
 
 // The report of one stable sort of a copy of part, in a work buffer of its
 // count.
-[[nodiscard]] bench::Report measure_sort_stably(bench::Run&& run, View<float const> part) {
-    HeapArray<float> work = ::foundation::core::mint_heap_array(kAlloc, part.size(), 0.0f);
-    HeapArray<float> scratch = ::foundation::core::mint_heap_array(kAlloc, part.size(), 0.0f);
+template <class T, class... Less>
+[[nodiscard]] bench::Report measure_sort_stably(bench::Run&& run, View<T const> part, Less... less) {
+    HeapArray<T> work = ::foundation::core::mint_heap_array(kAlloc, part.size(), T{});
+    HeapArray<T> scratch = ::foundation::core::mint_heap_array(kAlloc, part.size(), T{});
     return measure_row(static_cast<bench::Run&&>(run), [&] {
         static_cast<void>(::fixy::copy(work.view(), part));
-        bench::do_not_optimize(sort_through_frames(work, scratch));
+        bench::do_not_optimize(sort_through_frames(work, scratch, less...));
     });
+}
+
+// The order of Ascending on a float, as a function of the caller, so that a
+// sort takes the path of a comparator of the caller.
+struct FloatTotalOrder {
+    [[nodiscard]] bool operator()(float const& left, float const& right) const noexcept {
+        return ::foundation::core::encode_total_order_key(left) < ::foundation::core::encode_total_order_key(right);
+    }
+};
+
+// The words of the float bits of all, as keys of an integer sort.
+[[nodiscard]] HeapArray<std::uint32_t> words_of(View<float const> all) noexcept {
+    HeapArray<std::uint32_t> words = ::foundation::core::mint_heap_array(kAlloc, all.size(), std::uint32_t{0});
+    std::size_t position = 0;
+    for (std::uint32_t& word : words) {
+        word = ::fixy::bit_cast<std::uint32_t>(*all.get(position).expect("the element fits the run"));
+        ++position;
+    }
+    return words;
 }
 
 void bench_sorts(View<float const> all) {
     print_row("sort_by_network<16> float", 16, measure_network<16>(bench::Run{"sort_by_network 16"}, all));
     print_row("sort_by_network<64> float", 64, measure_network<64>(bench::Run{"sort_by_network 64"}, all));
     print_row("sort_by_network<256> float", 256, measure_network<256>(bench::Run{"sort_by_network 256"}, all));
+    print_row("sort_stably float, 1024", 1024, measure_sort_stably(bench::Run{"sort_stably 1024"}, first(all, 1024)));
     print_row("sort_stably float, 65536", 65536,
               measure_sort_stably(bench::Run{"sort_stably 65536"}, first(all, 65536)));
     print_row("sort_stably float, 1048576", std::size_t{1} << 20,
               measure_sort_stably(bench::Run{"sort_stably 2^20"}, first(all, std::size_t{1} << 20)));
+    HeapArray<std::uint32_t> const words = words_of(first(all, std::size_t{1} << 20));
+    print_row("sort_stably uint32, 1048576", std::size_t{1} << 20,
+              measure_sort_stably(bench::Run{"sort_stably uint32 2^20"}, View<std::uint32_t const>{words.view()}));
+    print_row("sort_stably float by an order of the caller, 65536", 65536,
+              measure_sort_stably(bench::Run{"sort_stably order 65536"}, first(all, 65536), FloatTotalOrder{}));
+    print_row(
+        "sort_stably float by an order of the caller, 1048576", std::size_t{1} << 20,
+        measure_sort_stably(bench::Run{"sort_stably order 2^20"}, first(all, std::size_t{1} << 20), FloatTotalOrder{}));
     View<float const> const part = first(all, std::size_t{1} << 20);
     HeapArray<float> sorted = ::foundation::core::mint_heap_array_copy<float>(kAlloc, part);
     HeapArray<float> scratch = ::foundation::core::mint_heap_array(kAlloc, part.size(), 0.0f);
     static_cast<void>(sort_through_frames(sorted, scratch));
     View<float const> const sorted_view{sorted.view()};
+    print_row("sort_stably float by an order of the caller, 1048576 sorted", std::size_t{1} << 20,
+              measure_sort_stably(bench::Run{"sort_stably order sorted 2^20"}, sorted_view, FloatTotalOrder{}));
     std::size_t probe = 0;
     print_row("find_lower_bound float, 1048576 sorted", 1, measure_row(bench::Run{"find_lower_bound 2^20"}, [&] {
                   probe = (probe + 7919) & ((std::size_t{1} << 20) - 1);

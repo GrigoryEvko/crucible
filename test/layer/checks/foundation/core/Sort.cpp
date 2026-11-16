@@ -108,6 +108,49 @@ static_assert(sort_stably_keeps_equal_keys_in_order());
 }
 static_assert(short_scratch_is_refused());
 
+// The key of the radix sort orders as Ascending: the sign of an integer and
+// of an enumeration of a signed base, and the total order of a float.
+enum class SignedTag : std::int16_t {
+};
+enum class FlagTag : bool {
+};
+static_assert(radix_key_(-1) < radix_key_(0) && radix_key_(0) < radix_key_(1));
+static_assert(radix_key_(std::int64_t{-1}) < radix_key_(std::int64_t{0}) && radix_key_(1u) < radix_key_(4000000000u));
+static_assert(radix_key_(std::int8_t{-128}) < radix_key_(std::int8_t{127}));
+static_assert(radix_key_(std::uint8_t{0}) < radix_key_(std::uint8_t{255}));
+static_assert(radix_key_(SignedTag{-3}) < radix_key_(SignedTag{2})
+              && radix_key_(FlagTag{false}) < radix_key_(FlagTag{true}));
+static_assert(radix_key_(negative_nan) < radix_key_(-infinity) && radix_key_(-infinity) < radix_key_(-1.0f));
+static_assert(radix_key_(-1.0f) < radix_key_(-0.0f) && radix_key_(-0.0f) < radix_key_(0.0f));
+static_assert(radix_key_(1.0f) < radix_key_(infinity) && radix_key_(infinity) < radix_key_(positive_nan));
+static_assert(radix_key_(-0.0) < radix_key_(0.0) && radix_key_(-1.0e300) < radix_key_(-1.0e-300));
+
+// The radix sort of 300 values, which the count of stable_sort_radix_count
+// selects, gives the order of Ascending in constant evaluation too.
+[[nodiscard]] consteval bool radix_sort_orders_values() noexcept {
+    static_assert(stable_sort_radix_count <= 300);
+    FixedArray<int, 300> values{};
+    int next = 7;
+    for (int& value : values) {
+        next = (next * 37 + 11) % 1009;
+        value = next - 500;
+    }
+    FixedArray<int, 300> scratch{};
+    bool is_sorted = false;
+    values = with_mut(std::move(values), [&](auto elements) noexcept {
+        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
+            is_sorted = sort_stably(std::move(elements), std::move(room)).is_ok();
+        });
+    });
+    int last = -501;
+    for (int const value : values) {
+        if (value < last) return false;
+        last = value;
+    }
+    return is_sorted;
+}
+static_assert(radix_sort_orders_values());
+
 // The searches of a sorted View.
 constexpr FixedArray<int, 7> sorted{1, 3, 3, 3, 7, 9, 12};
 static_assert(find_lower_bound(sorted.view(), 3) == 1 && find_lower_bound(sorted.view(), 4) == 4);

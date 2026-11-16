@@ -11,9 +11,11 @@
 //                                 in a ViewMut of the fixed extent N
 //   plan_sort_network<N>()        the comparators of that network, in order
 //   sort_stably(view, scratch, less)
-//                                 a stable merge sort of a ViewMut of any
-//                                 count, with a ViewMut of scratch of the same
-//                                 count from the caller
+//                                 a stable sort of a ViewMut of any count,
+//                                 with a ViewMut of scratch of the same count
+//                                 from the caller: a radix sort of the keys
+//                                 for Ascending, and a merge sort for each
+//                                 other order
 //   find_lower_bound(view, value, less)
 //                                 the first position whose element is not
 //                                 below value, in a sorted View
@@ -31,7 +33,8 @@
 //   order, the stable sort of a run is one permutation: the elements in the
 //   order of less, and two equivalent elements in their order in the input.
 //   So the result of sort_stably has no freedom, and each thread count, each
-//   split and each host give the same bits.
+//   split and each host give the same bits.  The radix sort and the merge
+//   sort give the same bits too.
 //
 //   The network is the bitonic sort of the next power of two P >= N, in the
 //   form in which each comparator puts the minimum at its lower position: the
@@ -49,9 +52,13 @@
 //
 // THE COSTS
 //   sort_by_network of N makes the comparators of its plan: about
-//   P * log2(P)^2 / 4 for P the next power of two.  sort_stably makes
+//   P * log2(P)^2 / 4 for P the next power of two.  sort_stably by Ascending
+//   of at least stable_sort_radix_count elements reads the elements one time
+//   for the counts of each byte of the keys.  Then it moves them one time for
+//   each byte in which two keys differ.  Each other sort_stably makes
 //   O(n log n) compares and copies: an insertion sort of each run of 32
-//   elements, and merges of the runs between the View and the scratch.
+//   elements, and merges of the runs between the View and the scratch.  A
+//   merge of two runs that are in order is a copy.
 //   find_lower_bound and find_equivalent make O(log n) compares.  No operation
 //   allocates.
 
@@ -238,6 +245,15 @@ constexpr void merge_runs_(T const* source, std::size_t middle, std::size_t coun
     std::size_t left = 0;
     std::size_t right = middle;
     std::size_t out = 0;
+    // Two runs are in order when the first element of the second run is not
+    // below the last element of the first run.  Then the merge is a copy,
+    // with one compare for the two runs.
+    if (middle == 0 || middle == count || !less(source[middle], source[middle - 1])) {
+        for (; out < count; ++out) {
+            target[out] = source[out];
+        }
+        return;
+    }
     // One compare selects the element and moves the two positions, with no
     // branch on the elements, so random input costs no mispredicted branch.
     while (left < middle && right < count) {
@@ -256,11 +272,116 @@ constexpr void merge_runs_(T const* source, std::size_t middle, std::size_t coun
 
 }  // namespace detail
 
+// ── The radix sort ──────────────────────────────────────────────────────
+
+// The count from which sort_stably sorts by the bytes of a key when the order
+// is Ascending.  Below it, the merge sort makes fewer steps than the counts
+// of the buckets.
+inline constexpr std::size_t stable_sort_radix_count = 256;
+
+namespace detail {
+
+// The word of the key of T: 32 bits for an element of up to four bytes, so
+// that no operation on a key promotes it, and 64 bits for eight bytes.
+template <class T>
+using radix_key_t = std::conditional_t<sizeof(T) <= 4, std::uint32_t, std::uint64_t>;
+
+// The unsigned word of the size of T, for the bit cast of an element.
+template <class T>
+using radix_bits_t =
+    std::conditional_t<sizeof(T) == 1, std::uint8_t,
+                       std::conditional_t<sizeof(T) == 2, std::uint16_t,
+                                          std::conditional_t<sizeof(T) == 4, std::uint32_t, std::uint64_t>>>;
+
+// True when the order of Ascending on T reads a sign bit: a signed integer,
+// or an enumeration of a signed base.
+template <class T>
+[[nodiscard]] consteval bool has_signed_order_() noexcept {
+    if constexpr (std::is_enum_v<T>) {
+        return std::is_signed_v<std::underlying_type_t<T>>;
+    } else {
+        return std::is_signed_v<T>;
+    }
+}
+
+// The key of value, whose order as an unsigned integer is the order of
+// Ascending.  A float takes its total order key (encode_total_order_key)
+// with the sign bit flipped.  An integer or an enumeration takes its bits,
+// with the sign bit flipped when its order reads a sign.  Each key is a
+// bijection of the bits, so two elements with one key have the same bits.
+template <AscendingElement T>
+[[nodiscard]] CRUCIBLE_INLINE constexpr radix_key_t<T> radix_key_(T value) noexcept {
+    using Key = radix_key_t<T>;
+    constexpr Key sign = Key{1} << (8 * sizeof(T) - 1);
+    if constexpr (std::same_as<T, float> || std::same_as<T, double>) {
+        return __builtin_bit_cast(Key, encode_total_order_key(value)) ^ sign;
+    } else if constexpr (has_signed_order_<T>()) {
+        return Key{__builtin_bit_cast(radix_bits_t<T>, value)} ^ sign;
+    } else {
+        return Key{__builtin_bit_cast(radix_bits_t<T>, value)};
+    }
+}
+
+// The count of the values of one byte of a key.
+inline constexpr std::size_t radix_buckets = 256;
+
+// Sorts the count elements from elements by the bytes of their keys, from the
+// lowest byte, with one pass for each byte in which two elements differ.  A
+// pass moves each element to its bucket in the order of its source, so the
+// sort is stable, and the order of the keys is the order of Ascending.  The
+// result is in elements, and the values of scratch have no meaning.  The
+// count is at least 1.  Complexity: one read of the elements for the counts
+// of each byte, and one read and one write of the elements for each pass.
+template <AscendingElement T>
+constexpr void radix_sort_(T* elements, T* scratch, std::size_t count) noexcept {
+    constexpr std::size_t bytes = sizeof(T);
+    FixedArray<std::size_t, radix_buckets * bytes> counts{};
+    std::size_t* const tally = first_of_(ViewDoor::key(), counts.view());
+    for (std::size_t index = 0; index < count; ++index) {
+        radix_key_t<T> const key = radix_key_(elements[index]);
+        for (std::size_t byte = 0; byte < bytes; ++byte) {
+            ++tally[byte * radix_buckets + ((key >> (8 * byte)) & 0xFFu)];
+        }
+    }
+    radix_key_t<T> const first_key = radix_key_(elements[0]);
+    T* source = elements;
+    T* target = scratch;
+    for (std::size_t byte = 0; byte < bytes; ++byte) {
+        std::size_t* const bucket = tally + byte * radix_buckets;
+        // A byte that each element shares moves no element.
+        if (bucket[(first_key >> (8 * byte)) & 0xFFu] == count) continue;
+        std::size_t start = 0;
+        for (std::size_t value = 0; value < radix_buckets; ++value) {
+            std::size_t const size = bucket[value];
+            bucket[value] = start;
+            start += size;
+        }
+        for (std::size_t index = 0; index < count; ++index) {
+            T const element = source[index];
+            target[bucket[(radix_key_(element) >> (8 * byte)) & 0xFFu]++] = element;
+        }
+        T* const sorted = target;
+        target = source;
+        source = sorted;
+    }
+    if (source != elements) {
+        for (std::size_t index = 0; index < count; ++index) {
+            elements[index] = source[index];
+        }
+    }
+}
+
+}  // namespace detail
+
 // Sorts the elements by less, and keeps two equivalent elements in their
 // order in the input.  The scratch holds as many elements as the elements,
 // and its values after the call have no meaning.  Two counts that differ give
 // LengthMismatch with no write.  The two are unique borrows, so they share no
-// element.  Complexity: O(n log n) compares and copies.
+// element.  With the order Ascending and at least stable_sort_radix_count
+// elements, the sort is the radix sort of the keys of the elements.  Each
+// other sort is the merge sort.  The two give the same bits (THE ORDER).
+// Complexity: O(n) for the radix sort, with one pass for each byte of the
+// element, and O(n log n) compares and copies for the merge sort.
 template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::size_t ScratchExtent,
           class Less = Ascending>
     requires SortElement<T> && StrictOrder<Less, T>
@@ -271,6 +392,12 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
     if (scratch.size() != count) return err(LengthMismatch{});
     T* source = first_of_(detail::ViewDoor::key(), elements);
     T* target = first_of_(detail::ViewDoor::key(), scratch);
+    if constexpr (std::same_as<Less, Ascending>) {
+        if (count >= stable_sort_radix_count) {
+            detail::radix_sort_(source, target, count);
+            return Unit{};
+        }
+    }
     for (std::size_t start = 0; start < count; start += stable_sort_run) {
         std::size_t const size = count - start < stable_sort_run ? count - start : stable_sort_run;
         detail::insertion_sort_(source + start, size, less);

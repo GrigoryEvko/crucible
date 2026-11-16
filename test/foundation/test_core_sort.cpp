@@ -1,7 +1,7 @@
 // Tests of foundation/core/Sort.h: each network of up to 20 elements on each
 // input of zeros and ones, the networks and the stable sort against a naive
-// sort of the total order of IEEE 754, the stability of the stable sort, and
-// the ordered searches against a scan.
+// sort of the total order of IEEE 754, the stability of the stable sort, the
+// radix sort against the merge sort, and the ordered searches against a scan.
 
 #include <foundation/core/Sort.h>
 #include <foundation/effects/Effect.h>
@@ -223,6 +223,147 @@ void test_sort_stably_agrees_with_the_naive_sort() {
     }
 }
 
+// Records in key order stay in place, and records in the reverse key order
+// come out in key order with the input order of each key.  The merges of runs
+// in order take the copy, and the other merges compare.
+void test_sort_stably_of_ordered_runs() {
+    auto const by_key = [](Keyed const& left, Keyed const& right) noexcept { return is_below(left, right); };
+    ::fixy::FixedArray<std::size_t, 9> const counts{1, 31, 32, 33, 64, 65, 300, 1000, 4097};
+    for (std::size_t const count : counts) {
+        HeapArray<Keyed> records = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
+        HeapArray<Keyed> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
+        std::uint32_t position = 0;
+        for (Keyed& record : records) {
+            record = Keyed{position / 3, position};
+            ++position;
+        }
+        assert(sort_through_frames(records, scratch, by_key));
+        position = 0;
+        for (Keyed const record : records) {
+            assert(record.key == position / 3 && record.position == position);
+            ++position;
+        }
+        auto const last = static_cast<std::uint32_t>(count - 1);
+        position = 0;
+        for (Keyed& record : records) {
+            record = Keyed{(last - position) / 3, position};
+            ++position;
+        }
+        assert(sort_through_frames(records, scratch, by_key));
+        View<Keyed const> const sorted{records.view()};
+        for (std::size_t index = 1; index < count; ++index) {
+            Keyed const before = ::crucible::test::element_at(sorted, index - 1);
+            Keyed const record = ::crucible::test::element_at(sorted, index);
+            assert(before.key < record.key || (before.key == record.key && before.position < record.position));
+        }
+    }
+}
+
+// An enumeration of a signed base, and one of an unsigned base, for the keys
+// of the radix sort.
+enum class SignedTag : std::int16_t {
+};
+enum class ByteTag : std::uint8_t {
+};
+
+// The element of a word: the low bytes of the word, as T.
+template <class T>
+[[nodiscard]] T element_of_word(std::uint64_t word) noexcept {
+    if constexpr (sizeof(T) == 1) {
+        return ::fixy::bit_cast<T>(static_cast<std::uint8_t>(word));
+    } else if constexpr (sizeof(T) == 2) {
+        return ::fixy::bit_cast<T>(static_cast<std::uint16_t>(word));
+    } else if constexpr (sizeof(T) == 4) {
+        return ::fixy::bit_cast<T>(static_cast<std::uint32_t>(word));
+    } else {
+        return ::fixy::bit_cast<T>(word);
+    }
+}
+
+// The bits of an element, in a word.
+template <class T>
+[[nodiscard]] std::uint64_t word_of_element(T value) noexcept {
+    if constexpr (sizeof(T) == 1) {
+        return ::fixy::bit_cast<std::uint8_t>(value);
+    } else if constexpr (sizeof(T) == 2) {
+        return ::fixy::bit_cast<std::uint16_t>(value);
+    } else if constexpr (sizeof(T) == 4) {
+        return ::fixy::bit_cast<std::uint32_t>(value);
+    } else {
+        return ::fixy::bit_cast<std::uint64_t>(value);
+    }
+}
+
+// An element of T with many ties: a small value, a value with each high bit
+// set, or a random word.  A float is a float of each class, and a double is
+// a float of each class or a random word.
+template <class T>
+[[nodiscard]] T draw_element(::crucible::test::PhiloxStream& stream) noexcept {
+    if constexpr (std::same_as<T, float>) {
+        return draw_special_float(stream);
+    } else {
+        std::uint64_t const word = stream.next_wide();
+        if constexpr (std::same_as<T, double>) {
+            if (word % 2 == 0) return static_cast<double>(draw_special_float(stream));
+            return ::fixy::bit_cast<double>(stream.next_wide());
+        } else {
+            switch (word % 3) {
+                case 0:
+                    return element_of_word<T>(word >> 60);
+                case 1:
+                    return element_of_word<T>(~(word >> 60));
+                default:
+                    return element_of_word<T>(stream.next_wide());
+            }
+        }
+    }
+}
+
+// The radix sort of Ascending and the merge sort of the same order as a
+// function of the caller give the same bits, for counts below and above
+// stable_sort_radix_count.
+template <class T>
+void check_radix_against_merge(::crucible::test::PhiloxStream& stream) noexcept {
+    auto const by_order = [](T const& left, T const& right) noexcept {
+        return ::foundation::core::Ascending{}(left, right);
+    };
+    ::fixy::FixedArray<std::size_t, 8> const counts{1, 255, 256, 257, 300, 1000, 4097, 20000};
+    for (std::size_t const count : counts) {
+        HeapArray<T> radix = ::foundation::core::mint_heap_array(test_alloc(), count, T{});
+        for (T& value : radix) {
+            value = draw_element<T>(stream);
+        }
+        HeapArray<T> merged = ::foundation::core::mint_heap_array_copy<T>(test_alloc(), View<T const>{radix.view()});
+        HeapArray<T> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, T{});
+        assert(sort_through_frames(radix, scratch));
+        assert(sort_through_frames(merged, scratch, by_order));
+        View<T const> const radix_view{radix.view()};
+        View<T const> const merged_view{merged.view()};
+        for (std::size_t index = 0; index < count; ++index) {
+            T const value = ::crucible::test::element_at(radix_view, index);
+            assert(word_of_element(value) == word_of_element(::crucible::test::element_at(merged_view, index)));
+            if (index > 0) assert(!by_order(value, ::crucible::test::element_at(radix_view, index - 1)));
+        }
+    }
+}
+
+void test_radix_sort_agrees_with_the_merge_sort() {
+    ::crucible::test::PhiloxStream stream{0x50470005u};
+    check_radix_against_merge<std::uint8_t>(stream);
+    check_radix_against_merge<std::int8_t>(stream);
+    check_radix_against_merge<char>(stream);
+    check_radix_against_merge<std::uint16_t>(stream);
+    check_radix_against_merge<std::int16_t>(stream);
+    check_radix_against_merge<std::uint32_t>(stream);
+    check_radix_against_merge<std::int32_t>(stream);
+    check_radix_against_merge<std::uint64_t>(stream);
+    check_radix_against_merge<std::int64_t>(stream);
+    check_radix_against_merge<SignedTag>(stream);
+    check_radix_against_merge<ByteTag>(stream);
+    check_radix_against_merge<float>(stream);
+    check_radix_against_merge<double>(stream);
+}
+
 // find_lower_bound and find_equivalent give the first position that a scan finds.
 void test_searches_agree_with_a_scan() {
     ::crucible::test::PhiloxStream stream{0x50470004u};
@@ -262,6 +403,8 @@ int main() {
     test_networks_agree_with_the_naive_sort();
     test_sort_stably_is_stable();
     test_sort_stably_agrees_with_the_naive_sort();
+    test_sort_stably_of_ordered_runs();
+    test_radix_sort_agrees_with_the_merge_sort();
     test_searches_agree_with_a_scan();
     crucible::test::pass("test_core_sort: all tests passed\n");
     return 0;
