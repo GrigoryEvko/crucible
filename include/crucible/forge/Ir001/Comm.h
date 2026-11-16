@@ -235,8 +235,8 @@ template <typename E>
     h = combine_ids(h, enum_hash_word(meta.dtype));
     // The device comes through device_of: one index for the host.
     const TensorDevice device = device_of(meta);
-    h = combine_ids(h, enum_hash_word(device.type));
-    h = combine_ids(h, static_cast<std::uint64_t>(static_cast<std::int64_t>(device.index)));
+    h = combine_ids(h, enum_hash_word(device.type()));
+    h = combine_ids(h, static_cast<std::uint64_t>(static_cast<std::int64_t>(device.index())));
     h = combine_ids(h, enum_hash_word(meta.layout));
     h = combine_ids(h, meta.requires_grad ? 1U : 0U);
     h = combine_ids(h, meta.flags);

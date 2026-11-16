@@ -193,18 +193,12 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the front end gave the data pointer of the t
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-// The index of a device of the type, as Crucible keeps it.  The host has one
-// device, and PyTorch names it with the index -1 or 0.  Each host index thus
-// becomes -1.  A device of a different type keeps its index.
-[[nodiscard]] inline constexpr int8_t normalize_device_index(DeviceType type, int8_t index) noexcept {
-    return type == DeviceType::CPU ? int8_t{-1} : index;
-}
-
-// The device that holds the bytes of the tensor, with the index of
-// normalize_device_index.  Each equality and each hash of a device reads it
-// through this door, so the two agree on what one device is.
+// The device that holds the bytes of the tensor.  The constructor of
+// TensorDevice gives the index of normalize_device_index (crucible/Types.h).
+// Each equality and each hash of a device reads it through this door, so
+// the two agree on what one device is.
 [[nodiscard]] inline constexpr TensorDevice device_of(const TensorMeta& meta) noexcept {
-    return TensorDevice{.type = meta.device_type, .index = normalize_device_index(meta.device_type, meta.device_idx)};
+    return TensorDevice{meta.device_type, meta.device_idx};
 }
 
 // The address of the bytes of the tensor on its device, or no address for a

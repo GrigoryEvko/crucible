@@ -32,7 +32,7 @@ template <class T = void>
 [[nodiscard]] T* host_ptr(::fixy::Option<TensorData> data) noexcept {
     return data.match(
         [](TensorData found) noexcept -> T* {
-            CRUCIBLE_FATAL_INVARIANT(found.device().type == DeviceType::CPU);
+            CRUCIBLE_FATAL_INVARIANT(found.device().type() == DeviceType::CPU);
             return static_cast<T*>(::foundation::core::foreign_pointer(found.address()));
         },
         [] noexcept -> T* { return nullptr; });

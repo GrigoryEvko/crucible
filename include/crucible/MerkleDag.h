@@ -699,8 +699,8 @@ private:
             // the equality of a device: one index for the host.
             const TensorDevice device = device_of(input_meta);
             uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(input_meta.dtype))
-                                 | (static_cast<uint64_t>(std::to_underlying(device.type)) << 8)
-                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index)) << 16);
+                                 | (static_cast<uint64_t>(std::to_underlying(device.type())) << 8)
+                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16);
             content_hash_state = detail::combine_ids(content_hash_state, per_dim_hash_xor ^ meta_packed);
         }
 

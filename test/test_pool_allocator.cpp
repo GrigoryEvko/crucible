@@ -447,7 +447,7 @@ static void test_integration_with_sweep_line() {
 // device, also when the plan records a different device for the slot.  A
 // registered slot keeps the device that its owner states.
 static void test_device_of_slots() {
-    const crucible::TensorDevice accelerator{.type = DeviceType::CUDA, .index = 0};
+    const crucible::TensorDevice accelerator{DeviceType::CUDA, 0};
     ::foundation::core::FixedArray<TensorSlot, 2> slots{};
     slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
                                                 .nbytes = 256,

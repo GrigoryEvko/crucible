@@ -2,6 +2,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/Refined.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
@@ -130,13 +131,36 @@ enum class DeviceType : int8_t {
     PrivateUse1 = 20,
 };
 
+// The index of a device of the type, as Crucible keeps it.  The host has one
+// device, and PyTorch names it with the index -1 or 0.  Each host index thus
+// becomes -1.  A device of a different type keeps its index.
+[[nodiscard]] constexpr int8_t normalize_device_index(DeviceType type, int8_t index) noexcept {
+    return type == DeviceType::CPU ? int8_t{-1} : index;
+}
+
 // The device that holds the bytes of a tensor: the type of the device and
 // its index.  The index is -1 for the host, and zero or more for a device of
-// the type.  TensorMeta, TensorSlot and MemoryPlan hold the same two values
-// in two fields.
-struct TensorDevice {
-    DeviceType type = DeviceType::CPU;
-    int8_t index = -1;
+// the type.  The constructor gives the index of normalize_device_index, and
+// the two members are private, so no TensorDevice holds a second index of
+// the host.  The equality and each hash of a device then agree on what one
+// device is.  The annotation refuses decode, a bit copy of the base and a
+// lifetime start over bytes, the roads that skip the constructor.
+// TensorMeta, TensorSlot and MemoryPlan hold the same two values in two
+// fields.
+class[[= ::foundation::lifetime::no_start_over_bytes{}]] TensorDevice {
+    DeviceType type_ = DeviceType::CPU;
+    int8_t index_ = -1;
+
+public:
+    // The host.
+    constexpr TensorDevice() noexcept = default;
+
+    // The device of the type with the index, with each host index as -1.
+    constexpr TensorDevice(DeviceType type, int8_t index) noexcept
+        : type_{type}, index_{normalize_device_index(type, index)} {}
+
+    [[nodiscard]] constexpr DeviceType type() const noexcept { return type_; }
+    [[nodiscard]] constexpr int8_t index() const noexcept { return index_; }
 
     [[nodiscard]] friend constexpr bool operator==(TensorDevice const&, TensorDevice const&) noexcept = default;
 };

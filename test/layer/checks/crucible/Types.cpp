@@ -1,15 +1,37 @@
 // The compile-time checks of crucible/Types.h.
 
 #include <crucible/Types.h>
+#include <foundation/Lifetime.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <meta>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace crucible {
 
 static_assert(sizeof(ElementBytes) == sizeof(uint8_t), "ElementBytes must be layout-identical to uint8_t");
+
+// A device that its constructor builds has one index for the host, and a
+// device of a different type keeps its index.
+static_assert(TensorDevice{DeviceType::CPU, 0} == kHostDevice && TensorDevice{DeviceType::CPU, 0}.index() == -1);
+static_assert(TensorDevice{DeviceType::CPU, 3} == kHostDevice && kHostDevice.type() == DeviceType::CPU);
+static_assert(TensorDevice{DeviceType::CUDA, 0}.index() == 0 && TensorDevice{DeviceType::CUDA, -1}.index() == -1);
+static_assert(!(TensorDevice{DeviceType::CUDA, 0} == TensorDevice{DeviceType::CUDA, 1}));
+
+// No road skips the constructor.  The type is no aggregate, and the
+// fixtures neg_tensor_device_designated_host_zero and
+// neg_tensor_device_index_write show the refusals of an initializer list
+// and of a write of a member.  The annotation refuses decode, the bit copy
+// of the base and a lifetime start over bytes.  The type stays a device of a
+// DataAddress.
+static_assert(!std::is_aggregate_v<TensorDevice>);
+static_assert(!::foundation::core::BitValid<TensorDevice>);
+static_assert(!::foundation::core::DecodableFrom<TensorDevice, std::uint16_t>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<TensorDevice>);
+static_assert(::foundation::core::DeviceIdentity<TensorDevice> && sizeof(TensorDevice) == 2);
 
 namespace strong_word_walk {
 

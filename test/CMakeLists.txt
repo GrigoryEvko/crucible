@@ -2140,6 +2140,19 @@ crucible_neg_compile_test(neg_tensor_meta_device_type_above_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<crucible::IsValidDeviceType\\(\\), signed char>\\(99\\)")
 
+# The one index of the host in crucible::TensorDevice.  The constructor gives
+# each index of the host as -1, and the two members are private, so no other
+# road builds a second index of the host.  The two fixtures are the two roads
+# that skip the constructor in the source: an initializer list of the members
+# and a write of a member.  The check file of crucible/Types.h shows the
+# refusal of decode, of the bit copy of the base and of a lifetime start.
+crucible_neg_compile_test(neg_tensor_device_designated_host_zero
+  "designated initializers cannot be used with a non-aggregate type"
+  "crucible::TensorDevice")
+crucible_neg_compile_test(neg_tensor_device_index_write
+  "is private within this context"
+  "crucible::TensorDevice::index_")
+
 # read_meta layout gate (last enum reconstruction in read_meta) — Layout is
 # a DENSE signed int8_t enum (Strided=0 .. SparseBsc=5); it feeds the node
 # content hash (Merkle identity), so a corrupt/version-skewed Cipher byte

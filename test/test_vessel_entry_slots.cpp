@@ -155,7 +155,7 @@ void test_host_index_is_one_device() {
     CRUCIBLE_FATAL_INVARIANT(crucible::device_of(host) == crucible::device_of(host_zero));
     CRUCIBLE_FATAL_INVARIANT(crucible::device_of(host_zero) == crucible::kHostDevice);
     CRUCIBLE_FATAL_INVARIANT(!(crucible::device_of(cuda_zero) == crucible::device_of(cuda_one)));
-    CRUCIBLE_FATAL_INVARIANT(crucible::device_of(cuda_zero).index == 0);
+    CRUCIBLE_FATAL_INVARIANT(crucible::device_of(cuda_zero).index() == 0);
 
     // Two data addresses of one run on the two names of the host are equal.
     ::fixy::FixedArray<uint8_t, 8> bytes{};
@@ -187,6 +187,21 @@ void test_host_index_is_one_device() {
     CRUCIBLE_FATAL_INVARIANT(decoded_cuda.device_idx == 1);
 }
 
+// A device that a caller builds from its two parts has one index for the
+// host, the index that device_of gives.  A device of a different type keeps
+// its index.  A copy into a device of a different type keeps the one index.
+void test_built_device_has_one_host_index() {
+    crucible::TensorDevice const host_zero{crucible::DeviceType::CPU, 0};
+    crucible::TensorDevice const cuda_zero{crucible::DeviceType::CUDA, 0};
+    CRUCIBLE_FATAL_INVARIANT(host_zero == crucible::kHostDevice);
+    CRUCIBLE_FATAL_INVARIANT(host_zero == crucible::device_of(meta_on(crucible::DeviceType::CPU, 0)));
+    CRUCIBLE_FATAL_INVARIANT(cuda_zero == crucible::device_of(meta_on(crucible::DeviceType::CUDA, 0)));
+    CRUCIBLE_FATAL_INVARIANT(!(cuda_zero == crucible::kHostDevice));
+    crucible::TensorDevice held = cuda_zero;
+    held = host_zero;
+    CRUCIBLE_FATAL_INVARIANT(held == crucible::kHostDevice);
+}
+
 }  // namespace
 
 int main() {
@@ -195,6 +210,7 @@ int main() {
     test_scalar_count_reaches_the_digest();
     test_input_past_the_limit_reaches_the_digest();
     test_host_index_is_one_device();
+    test_built_device_has_one_host_index();
     crucible::test::pass("test_vessel_entry_slots: PASS\n");
     return 0;
 }
