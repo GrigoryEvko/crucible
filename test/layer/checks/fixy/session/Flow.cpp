@@ -87,4 +87,34 @@ static_assert(
     std::is_same_v<decltype(std::declval<FlowReader>().read([](FlowView const&) noexcept { return FlowCount{}; })),
                    ::foundation::core::Record<FlowCount, FlowReader>>);
 
+// A pack, a lend and a release give the message and the hold of the next set
+// in a Record.  The move of each marker is noexcept, so a payload whose move
+// can throw gives a Record too.
+struct MovesWithThrow {
+    int count = 0;
+
+    MovesWithThrow() noexcept = default;
+    MovesWithThrow(MovesWithThrow&& other) noexcept(false) : count{other.count} {}
+};
+static_assert(!std::is_nothrow_move_constructible_v<MovesWithThrow>);
+using Lending = PermHold<::foundation::permissions::PermSet<FlowRegion>>;
+template <class T>
+using Packed =
+    ::foundation::core::Record<Transferable<T, FlowRegion>, PermHold<::foundation::permissions::PermSet<SecondRegion>>>;
+template <class T>
+using Lent = ::foundation::core::Record<Borrowed<T, FlowRegion>,
+                                        PermHold<perm_set_after_send_t<Lending::perm_set, Borrowed<T, FlowRegion>>>>;
+template <class T>
+using Given = ::foundation::core::Record<Released<T, FlowRegion>,
+                                         PermHold<perm_set_after_send_t<Borrowing::perm_set, Released<T, FlowRegion>>>>;
+static_assert(std::is_same_v<decltype(std::declval<PermHold<TwoRegions>>().pack<FlowRegion>(0)), Packed<int>>);
+static_assert(std::is_same_v<decltype(std::declval<Lending>().lend<FlowRegion>(0)), Lent<int>>);
+static_assert(std::is_same_v<decltype(std::declval<Borrowing>().release<FlowRegion>(0)), Given<int>>);
+static_assert(std::is_same_v<decltype(std::declval<PermHold<TwoRegions>>().pack<FlowRegion>(MovesWithThrow{})),
+                             Packed<MovesWithThrow>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<Lending>().lend<FlowRegion>(MovesWithThrow{})), Lent<MovesWithThrow>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<Borrowing>().release<FlowRegion>(MovesWithThrow{})), Given<MovesWithThrow>>);
+
 }  // namespace fixy::session::detail::flow_checks

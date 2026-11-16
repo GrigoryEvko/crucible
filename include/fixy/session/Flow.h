@@ -863,7 +863,7 @@ public:
         requires detail::HoldCanLend<Set, Tag, T>
     [[nodiscard]] static constexpr auto lend(PermHold<Set>&& hold,
                                              T value) noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> std::pair<Borrowed<T, Tag>, PermHold<perm_set_after_send_t<Set, Borrowed<T, Tag>>>> {
+        -> ::foundation::core::Record<Borrowed<T, Tag>, PermHold<perm_set_after_send_t<Set, Borrowed<T, Tag>>>> {
         hold.require_live_();
         auto [loan, parked] = ::foundation::permissions::mint_read_loan(std::move(slot_<Tag>(hold)));
         Borrowed<T, Tag> message{std::move(value), std::move(loan)};
@@ -899,7 +899,7 @@ public:
         requires SendablePayload<Released<T, Tag>, Set>
     [[nodiscard]] static constexpr auto release(PermHold<Set>&& hold,
                                                 T value) noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> std::pair<Released<T, Tag>, PermHold<perm_set_after_send_t<Set, Released<T, Tag>>>> {
+        -> ::foundation::core::Record<Released<T, Tag>, PermHold<perm_set_after_send_t<Set, Released<T, Tag>>>> {
         hold.require_live_();
         Released<T, Tag> message{std::move(value), std::move(slot_<BorrowedIn<Tag>>(hold))};
         auto next = transition_<perm_set_after_send_t<Set, Released<T, Tag>>>(hold);
@@ -959,7 +959,8 @@ public:
     template <class Tag, class T>
         requires(::foundation::permissions::perm_set_contains(^^Set, ^^Tag) && detail::PlainTag<Tag>)
     [[nodiscard]] constexpr auto pack(T value) && noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> std::pair<Transferable<T, Tag>, PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
+        -> ::foundation::core::Record<Transferable<T, Tag>,
+                                      PermHold<::foundation::permissions::perm_set_remove_t<Set, Tag>>> {
         auto [token, rest] = std::move(*this).template take<Tag>();
         return {Transferable<T, Tag>{std::move(value), std::move(token)}, std::move(rest)};
     }

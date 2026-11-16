@@ -40,8 +40,10 @@ namespace neg_sess_hold_loan_by_specialization_types {
 namespace fs = ::fixy::session;
 namespace fp = ::foundation::permissions;
 
-// The message that a hold of Region lends.
-using Lent = decltype(std::declval<fs::PermHold<fp::PermSet<Region>>>().template lend<Region>(0).first);
+// The lend of a hold of Region gives a Record, and its first part is the
+// message that the hold lends.
+using Lend = decltype(std::declval<fs::PermHold<fp::PermSet<Region>>>().template lend<Region>(0));
+using Lent = ::foundation::core::pack_at_t<0, Lend::types>;
 
 // The deduced return type instantiates the body of steal.
 using Stolen = decltype(fs::PermHold<fp::PermSet<ForgeTag>>::steal(std::declval<Lent&>()));
