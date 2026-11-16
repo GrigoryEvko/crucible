@@ -13,12 +13,18 @@ namespace {
 struct NeedsIo {
     using permission_row = ::foundation::effects::Row<::foundation::effects::Effect::IO>;
 };
+
+// The row of the compile context of the background thread.
+using CompileCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Bg,
+    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc,
+                               ::foundation::effects::Effect::IO>>;
 }  // namespace
 
 int main() {
     namespace eff = ::foundation::effects;
     namespace perm = ::foundation::permissions;
-    eff::detail::ctx_witnesses::BgCompileCtx const compile{eff::testing::bg()};
+    CompileCtx const compile{eff::testing::bg()};
     perm::SharedPermissionPool pool{perm::mint_permission_root<NeedsIo>(compile)};
     [[maybe_unused]] auto exclusive = pool.try_upgrade(compile);
     return 0;

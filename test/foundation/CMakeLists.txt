@@ -459,7 +459,7 @@ foundation_neg_compile_test(neg_mint_from_ctx_source_is_not_a_context
   "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = foundation::effects::Bg\\]")
 # The tag door reads the source of the context, and the row is its bound.
 foundation_neg_compile_test(neg_extract_bare_from_ctx_atom_outside_the_row
-  "no matching function for call to .extract_bare_from_ctx<foundation::effects::Effect::IO>\\(const foundation::effects::detail::ctx_witnesses::BgObserveCtx&\\)."
+  "no matching function for call to .extract_bare_from_ctx<foundation::effects::Effect::IO>\\(const ObserveCtx&\\)."
   "required for the satisfaction of .CtxOwnsCapability<Ctx, E>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Nondet> >; E = foundation::effects::Effect::IO\\]")
 
 # A context lends its source only when its row covers the source, and it
@@ -1739,10 +1739,10 @@ foundation_neg_compile_test(neg_share_pool_upgrade_ctx_refuses_row
 # The outcome of a lend and of an upgrade reads the schedule, so a context
 # that admits the row of the tag and holds no Nondet fits no pool operation.
 foundation_neg_compile_test(neg_share_pool_lend_ctx_without_nondet
-  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::lend\\(const foundation::effects::detail::ctx_witnesses::BgCompileCtx&\\)."
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::lend\\(const .anonymous.::CompileCtx&\\)."
   "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo; Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
 foundation_neg_compile_test(neg_share_pool_upgrade_ctx_without_nondet
-  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(const foundation::effects::detail::ctx_witnesses::BgCompileCtx&\\)."
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(const .anonymous.::CompileCtx&\\)."
   "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo; Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
 foundation_neg_compile_test(neg_share_pool_lend_without_ctx_refuses_row
   "static assertion failed: SharedPermissionPool<Tag>::lend\\(\\) without ExecCtx is only valid"
