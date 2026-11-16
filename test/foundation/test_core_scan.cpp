@@ -146,6 +146,75 @@ void test_sum_scan_lanes_agree_with_the_recursion() {
     }
 }
 
+// The kinds of a run of zeros: each element +0, each element -0, the two in
+// turn, and pairs of a value and its negation, which cancel to +0.
+enum class ZeroRun : std::uint8_t {
+    Positive = 0,
+    Negative = 1,
+    Alternating = 2,
+    Cancelling = 3,
+};
+
+[[nodiscard]] HeapArray<float> zero_run(ZeroRun kind, std::size_t count, std::uint64_t seed) noexcept {
+    HeapArray<float> run = zeros(count);
+    ::crucible::test::PhiloxStream stream{seed};
+    float last = 0.0f;
+    std::size_t position = 0;
+    for (float& value : run) {
+        switch (kind) {
+            case ZeroRun::Positive:
+                value = 0.0f;
+                break;
+            case ZeroRun::Negative:
+                value = -0.0f;
+                break;
+            case ZeroRun::Alternating:
+                value = position % 2 == 0 ? 0.0f : -0.0f;
+                break;
+            default:
+                last = position % 2 == 0 ? draw_float(stream) : -last;
+                value = last;
+                break;
+        }
+        ++position;
+    }
+    return run;
+}
+
+// The -0 that a sum scan in lanes adds for an absent term keeps the bits of
+// each zero: each count of lanes gives the bits of the recursion on runs of
+// zeros of each sign and on pairs that cancel.
+void test_sum_scan_lanes_keep_the_sign_of_zero() {
+    auto const add = [](float const& left, float const& right) noexcept { return left + right; };
+    ::fixy::FixedArray<ZeroRun, 4> const kinds{ZeroRun::Positive, ZeroRun::Negative, ZeroRun::Alternating,
+                                               ZeroRun::Cancelling};
+    ::fixy::FixedArray<std::size_t, 8> const counts{0, 1, 2, 17, 100, 1023, 1024, 1025};
+    for (ZeroRun const kind : kinds) {
+        for (std::size_t const count : counts) {
+            HeapArray<float> const run = zero_run(kind, count, 0x5CA40008u + count);
+            View<float const> const in{run.view()};
+            HeapArray<float> want = zeros(count);
+            HeapArray<float> got = zeros(count);
+            View<float const> const want_view{want.view()};
+            View<float const> const got_view{got.view()};
+            assert(::foundation::core::inclusive_scan(in, want.view(), add).is_ok());
+            assert(::foundation::core::inclusive_sum_scan_lanes<4>(in, got.view()).is_ok());
+            assert(same_runs(want_view, got_view));
+            assert(::foundation::core::inclusive_sum_scan_lanes<16>(in, got.view()).is_ok());
+            assert(same_runs(want_view, got_view));
+            assert(::foundation::core::exclusive_scan(in, want.view(), 0.0f, add).is_ok());
+            assert(::foundation::core::exclusive_sum_scan_lanes<8>(in, got.view()).is_ok());
+            assert(same_runs(want_view, got_view));
+            assert(::foundation::core::exclusive_sum_scan(in, got.view()).is_ok());
+            assert(same_runs(want_view, got_view));
+            if (count == 0) continue;
+            float const tree = ::foundation::core::tree_reduce(in, add).expect("the run has elements");
+            assert(same_bits(::foundation::core::tree_sum(in), tree));
+            assert(same_bits(::foundation::core::tree_sum_lanes<16>(in), tree));
+        }
+    }
+}
+
 // A scan in place gives the bits of a scan into a second View, and a scan of
 // a longer run gives the same bits at each position of the shorter one.
 void test_scan_in_place_and_under_append() {
@@ -346,6 +415,7 @@ void test_large_plans_agree_with_the_scans() {
 int main() {
     test_sum_scans_agree_with_the_naive_fold();
     test_sum_scan_lanes_agree_with_the_recursion();
+    test_sum_scan_lanes_keep_the_sign_of_zero();
     test_scan_in_place_and_under_append();
     test_grains_give_the_bits_of_the_scan();
     test_scan_error_stays_inside_the_bound();
