@@ -24,8 +24,9 @@
 //
 // mint_address_key(pointer) gives the AddressKey of an address, such as the
 // address of a buffer that a foreign allocator gives.  A key answers == and
-// hash() for a lookup, and it has no order.  No pointer and no integer
-// comes back from a key.
+// hash() for a lookup, and it has no order.  lower_by(bytes) gives the key of
+// the address some bytes lower.  No pointer and no integer comes back from a
+// key.
 //
 // prefetch<Access, Locality>(object) asks the cache for the line of one
 // object, and prefetch_byte<Access, Locality, Offset>(object) asks for the
@@ -311,9 +312,10 @@ concept AddressKeyTarget = std::is_object_v<T> || std::is_void_v<T>;
 // and it has no order.  An address changes from run to run, and its hash
 // changes with it.  So a table that the hash places gives no order to read,
 // and a key that outlives the process is a content hash, not an AddressKey.
-// No pointer and no integer comes back from a key, and mint_address_key is
-// the one door.  The seal makes the assignment user-provided, so
-// std::bit_cast cannot build a key from an integer or read its integer.
+// No pointer and no integer comes back from a key.  mint_address_key is the
+// one door from a pointer, and lower_by gives a key from a key.  The seal
+// makes the assignment user-provided, so std::bit_cast cannot build a key
+// from an integer or read its integer.
 class AddressKey {
     std::uintptr_t value_ = 0;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
@@ -333,6 +335,15 @@ public:
     [[nodiscard]] constexpr std::uint64_t hash() const noexcept {
         std::uint64_t const product = static_cast<std::uint64_t>(value_) * 0x9E3779B97F4A7C15ULL;
         return product ^ (product >> 32);
+    }
+
+    // The key of the address bytes below this address, such as the first
+    // byte of the storage of a tensor from the address of its first element.
+    // A key reads no object, so the address below can name no object of the
+    // program.  The subtraction wraps, so each count gives a key.  No pointer
+    // and no integer comes back.
+    [[nodiscard]] constexpr AddressKey lower_by(std::uint64_t bytes) const noexcept {
+        return AddressKey{value_ - static_cast<std::uintptr_t>(bytes)};
     }
 
     [[nodiscard]] friend constexpr bool operator==(AddressKey const& left, AddressKey const& right) noexcept {

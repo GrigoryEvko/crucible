@@ -211,6 +211,16 @@ void test_address_key() {
     // gives a key too, and it differs from the key of each member.
     AddressKey const past_end = mint_address_key(&pair + 1);
     CRUCIBLE_FATAL_INVARIANT(!(past_end == of_first) && !(past_end == of_second));
+
+    // The key of the second member, lowered by the offset of the member, is
+    // the key of the class.  A count of zero gives the same key, and the
+    // subtraction wraps below the address zero.
+    CRUCIBLE_FATAL_INVARIANT(of_second.lower_by(offsetof(Pair, second)) == of_pair);
+    CRUCIBLE_FATAL_INVARIANT(of_pair.lower_by(0) == of_pair);
+    CRUCIBLE_FATAL_INVARIANT(past_end.lower_by(sizeof(Pair)) == of_pair);
+    CRUCIBLE_FATAL_INVARIANT(!(of_pair.lower_by(1) == of_pair));
+    AddressKey const below_null = of_null.lower_by(1);
+    CRUCIBLE_FATAL_INVARIANT(below_null.lower_by(UINT64_MAX) == of_null);
 }
 
 // True when a prefetch of a named object of type T compiles.

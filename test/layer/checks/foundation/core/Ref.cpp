@@ -376,7 +376,7 @@ static_assert(std::is_same_v<decltype(mint_hole(std::declval<Box<std::uint64_t>>
 // this list.  Ref and Box have no empty state, so they take the dereference.
 inline constexpr TextView ref_names{"Ref to same_object downcast KindFamily KindTagged Box mint_box BumpArena make "
                                     "array copy_text Slot emplace clear FnRef CallRef Address address_of is_aligned "
-                                    "AddressKey mint_address_key hash Hole mint_hole BoxWord box_word_key "
+                                    "AddressKey mint_address_key hash lower_by Hole mint_hole BoxWord box_word_key "
                                     "release_to_word claim_box is_empty"};
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const, CheckBrand>, DereferenceProtocol);
