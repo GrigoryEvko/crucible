@@ -3580,6 +3580,51 @@ foundation_neg_compile_test(neg_simd_iota_of_a_scalar
   "In instantiation of .constexpr V foundation::simd::target_[a-z0-9]+::iota_v\\(\\) \\[with V = int\\]."
   ".int. is not a class, struct, or union type")
 
+# ── The interaction nets of foundation/algebra/net ────────────────────
+#
+# The positive checks of each header are in its check file under
+# test/layer/checks.  The scale test runs each check on the nets of about
+# 1,000 agents of probe E4.  Each fixture holds a net, a system or a rule
+# table that one check refuses.  The first regex names the refusal, and the
+# second names the agent, the node or the rule and the port.
+foundation_test(test_algebra_net_scale)
+foundation_neg_compile_test(neg_net_port_without_wire
+  "static assertion failed: net: port 'out' of agent 'drain' \\(node 1\\)"
+  "has no wire\\.  Each port has exactly one wire\\.")
+foundation_neg_compile_test(neg_net_forest_cycle
+  "static assertion failed: net: wire 1 from port 's2' of agent 'P' \\(node 0\\)"
+  "to port 's2' of agent 'Q' \\(node 1\\) closes a cycle\\.")
+foundation_neg_compile_test(neg_net_proof_net_cycle
+  "static assertion failed: net: a cycle closes at port 'right' of agent 'tensor' \\(node 0\\)"
+  "Each switching of the net keeps this cycle")
+foundation_neg_compile_test(neg_net_vicious_circle
+  "static assertion failed: net: vicious circle: agent 'P' \\(node 0\\) -> agent 'Q' \\(node 1\\)"
+  "Each principal port meets an auxiliary port, so no rule can fire\\.")
+foundation_neg_compile_test(neg_net_dataflow_cycle
+  "static assertion failed: net: a cycle of waits closes at port 'right' of agent 'add' \\(node 2\\)"
+  "agent 'add' \\(node 2\\) <- agent 'add' \\(node 3\\)")
+foundation_neg_compile_test(neg_net_priority_cycle
+  "static assertion failed: priorities: a cycle of waits: P waits on 'rp' step 0 before 'pq' step 0"
+  "No priority order exists\\.")
+foundation_neg_compile_test(neg_net_rules_second_rule
+  "static assertion failed: rules: rule 'num_meets_add_again' is a second rule for the pair 'num', 'add'"
+  "after rule 'add_meets_num'\\.  A pair has at most one rule")
+foundation_neg_compile_test(neg_net_rules_stuck_pair
+  "static assertion failed: rules: the agents 'num' and 'negate' have dual principal ports and no rule"
+  "A net with this pair stops\\.")
+foundation_neg_compile_test(neg_net_rules_dropped_port
+  "static assertion failed: rules: rule 'probe_drops_out': the right side gives no wire"
+  "to port 'out' of the left agent 'probe', which the pair leaves free\\.")
+foundation_neg_compile_test(neg_net_rules_changed_type
+  "static assertion failed: rules: rule 'probe_takes_a_value': wire 0 of the right side"
+  "port 'in' of the new agent 'dup' \\(agent 0 of the right side\\) of type Value. with port 'out'")
+foundation_neg_compile_test(neg_net_rules_growth_without_door
+  "static assertion failed: rules: rule 'relay_grows' replaces 2 agents with 3"
+  "only the door allow_growth admits a rule that adds agents\\.")
+foundation_neg_compile_test(neg_net_rules_asymmetric
+  "static assertion failed: rules: rule 'pivots_twist' for the pair 'pivot', 'pivot'"
+  "changes when the two agents change places\\.")
+
 # ── The death tests of the base ───────────────────────────────────────
 #
 # Each of these tests runs a guard that ends the process in a child, through
