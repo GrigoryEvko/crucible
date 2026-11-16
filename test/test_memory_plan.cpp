@@ -26,9 +26,49 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     second_slot.slot_id = crucible::SlotId{1};
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
+                                            .expect("the slots of the test fit in 64 bits");
     ::fixy::report(::fixy::Sink::Out, "  the planner returned a plan of {} bytes\n",
                    static_cast<unsigned long long>(plan.pool_bytes));
+}
+
+// The refusal of the planner for two internal slots of the given spans, which
+// live at the same time, or no refusal.
+[[nodiscard]] ::fixy::Option<crucible::BackgroundThread::PlanRefusal> refusal_of_spans(std::uint64_t first_nbytes,
+                                                                                       std::uint64_t second_nbytes) {
+    auto test = ::foundation::effects::testing::test();
+    crucible::BackgroundThread bt{test.alloc};
+    ::foundation::core::FixedArray<crucible::TensorSlot, 2> slots{};
+    crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
+    first_slot.nbytes = first_nbytes;
+    first_slot.birth_op = crucible::OpIndex{0};
+    first_slot.death_op = crucible::OpIndex{2};
+    first_slot.slot_id = crucible::SlotId{0};
+    crucible::TensorSlot& second_slot = slots.at(::foundation::core::index<1>());
+    second_slot.nbytes = second_nbytes;
+    second_slot.birth_op = crucible::OpIndex{1};
+    second_slot.death_op = crucible::OpIndex{2};
+    second_slot.slot_id = crucible::SlotId{1};
+    crucible::MemoryPlan plan_storage{};
+    ::fixy::BumpArena sweep_arena{size_t{1} << 16};
+    return bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view()).err();
+}
+
+// A span that saturated to 2^64 - 1 rounds past 64 bits, and two spans of
+// 2^63 that live at the same time end the pool at 2^64.  The planner refuses
+// each, so the region has no plan and stays on eager.
+void test_refuses_spans_past_64_bits(::fixy::TestRunnerCtx const& test) {
+    using Refusal = crucible::BackgroundThread::PlanRefusal;
+    const auto is_refusal = [](::fixy::Option<Refusal> refusal, Refusal expected) noexcept {
+        return refusal.match([expected](Refusal got) noexcept { return got == expected; },
+                             []() noexcept { return false; });
+    };
+    CRUCIBLE_TEST_ASSERT(test, is_refusal(refusal_of_spans(~std::uint64_t{0}, 1024), Refusal::SpanTooLarge));
+    CRUCIBLE_TEST_ASSERT(test, is_refusal(refusal_of_spans(1024, ~std::uint64_t{0} - 100), Refusal::SpanTooLarge));
+    CRUCIBLE_TEST_ASSERT(
+        test, is_refusal(refusal_of_spans(std::uint64_t{1} << 63, std::uint64_t{1} << 63), Refusal::PoolEndOverflow));
+    CRUCIBLE_TEST_ASSERT(test, refusal_of_spans(1024, 2048).is_none());
+    ::fixy::check::pass(test, "  test_refuses_spans_past_64_bits: PASSED\n");
 }
 
 // The sizes of the sweep come from the largest death_op + 2.  A death_op of
@@ -59,6 +99,7 @@ void test_refuses_slot_lifetimes_outside_the_sweep(::fixy::TestRunnerCtx const& 
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_refuses_slot_lifetimes_outside_the_sweep(test);
+    test_refuses_spans_past_64_bits(test);
     auto source = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
@@ -124,7 +165,8 @@ int main() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(source.alloc, plan_storage, sweep_arena, slots.view());
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(source.alloc, plan_storage, sweep_arena, slots.view())
+                                            .expect("the slots of the test fit in 64 bits");
     // The planner writes the plan into the storage of the caller, and the
     // result reaches that storage.
     CRUCIBLE_TEST_ASSERT(test, ::fixy::same_object(::fixy::to(plan), ::fixy::to(plan_storage)));

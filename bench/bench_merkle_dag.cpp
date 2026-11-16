@@ -258,7 +258,8 @@ int main(int argc, char* argv[]) {
                 MemoryPlan plan_storage{};
                 sweep_scratch.with_epoch([&]() noexcept {
                     const ::fixy::Ref<MemoryPlan> plan =
-                        bg.compute_memory_plan(test.alloc, plan_storage, sweep_scratch, copy);
+                        bg.compute_memory_plan(test.alloc, plan_storage, sweep_scratch, copy)
+                            .expect("the slots of the bench fit in 64 bits");
                     bench::do_not_optimize(plan);
                 });
             });

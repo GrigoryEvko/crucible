@@ -208,7 +208,8 @@ struct Built {
     build_slots(slots.view());
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    head->plan = crucible::PlanLink::some(bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots.view()));
+    head->plan = crucible::PlanLink::some(bt.compute_memory_plan(ctx.alloc, plan_storage, sweep_arena, slots.view())
+                                              .expect("the slots of the test fit in 64 bits"));
     crucible::recompute_merkle(*head);
 
     Built out;

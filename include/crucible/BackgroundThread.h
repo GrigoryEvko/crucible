@@ -1228,6 +1228,18 @@ private:
                          DepthColumn depth_data, NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
 public:
+    // Why a memory plan refuses the slots of a region.  The region then has
+    // no plan, and a context replays no region with no plan, so the region
+    // stays on eager.
+    enum class PlanRefusal : uint8_t {
+        // The span of an internal slot, rounded up to the alignment of the
+        // pool, does not fit in 64 bits.  A span that saturated is such a
+        // span.
+        SpanTooLarge,
+        // The end of the pool does not fit in 64 bits.
+        PoolEndOverflow,
+    };
+
     // Orders birth and death events with an O(n + k) counting sort, then
     // assigns offsets with a sweep line.  The alignment is what the GPU
     // needs for coalesced access.  The birth_op of each internal slot is at
@@ -1235,9 +1247,9 @@ public:
     // function stops the process when a slot breaks this rule, because the
     // sweep would index past its arrays.  The plan goes into plan_storage,
     // the arrays of the sweep go into scratch, and the result is a Ref of
-    // plan_storage.  Each call gives a plan, so the result is never empty.
-    // The plan borrows the slots.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] ::fixy::Ref<MemoryPlan>
+    // plan_storage, or the refusal of a span or of the end of the pool that
+    // does not fit in 64 bits.  The plan borrows the slots.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] ::fixy::Result<::fixy::Ref<MemoryPlan>, PlanRefusal>
     compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage, ::fixy::BumpArena& scratch,
                         ::fixy::View<TensorSlot> slots) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 };

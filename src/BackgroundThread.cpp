@@ -576,10 +576,10 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         MemoryPlan& plan_storage = *memory.plan.get(0).expect("the region memory holds one plan");
         // The plan lives in the memory of the region, outside the epoch, so
         // the body writes its link and the result of the epoch holds none.
-        // The sweep gives a Ref of the storage of the plan.
+        // The sweep gives a Ref of the storage of the plan.  A refused plan
+        // leaves the region with no plan, so the region stays on eager.
         publish_scratch_.with_epoch([&]() noexcept {
-            region.plan = PlanLink::some(
-                compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots.view()));
+            region.plan = compute_memory_plan(bg.alloc, plan_storage, publish_scratch_, memory.parts.slots.view()).ok();
         });
     }
 
@@ -1511,9 +1511,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
                                             .numerics = numerics}};
 }
 
-::fixy::Ref<MemoryPlan> BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
-                                                              ::fixy::BumpArena& scratch,
-                                                              ::fixy::View<TensorSlot> slots) noexcept {
+::fixy::Result<::fixy::Ref<MemoryPlan>, BackgroundThread::PlanRefusal>
+BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
+                                      ::fixy::BumpArena& scratch, ::fixy::View<TensorSlot> slots) noexcept {
     static constexpr uint32_t ALIGNMENT = 256;
 
     MemoryPlan& plan = plan_storage;
@@ -1529,7 +1529,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     plan.device_idx = -1;
     ::fixy::fill(plan.pad0.view(), uint8_t{0});
 
-    if (num_slots == 0) return ::fixy::to(plan);
+    if (num_slots == 0) return ::fixy::Ref<MemoryPlan>{::fixy::to(plan)};
 
     // The slot at an index of the sweep.  Each index of the sweep is a
     // position in the slots, so it is below their count.
@@ -1544,6 +1544,11 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     // arrays.  A death above MAX_DEATH_OP, also the none() value of
     // OpIndex, makes the sizes wrap.  An external slot keeps its own
     // allocation, and the sweep does not read its lifetime.
+    //
+    // The span of an internal slot is rounded up to the alignment.  A span
+    // whose rounding does not fit in 64 bits has no slot of the pool, so the
+    // plan refuses the region, and no rounding gives a slot that overlaps
+    // another.  A span that saturated is such a span.
     static constexpr uint32_t MAX_DEATH_OP = UINT32_MAX - 3;
     uint32_t max_op = 0;
     for (const TensorSlot& slot : slots) {
@@ -1552,6 +1557,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         } else {
             CRUCIBLE_FATAL_INVARIANT(slot.birth_op.raw() <= slot.death_op.raw());
             CRUCIBLE_FATAL_INVARIANT(slot.death_op.raw() <= MAX_DEATH_OP);
+            if (::fixy::align_up(slot.nbytes, uint64_t{ALIGNMENT}).is_none()) [[unlikely]] {
+                return ::fixy::err(PlanRefusal::SpanTooLarge);
+            }
             if (plan.device_type == DeviceType::CPU && slot.device_type != DeviceType::CPU) {
                 plan.device_type = slot.device_type;
                 plan.device_idx = slot.device_idx;
@@ -1561,7 +1569,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     }
 
     uint32_t num_internal = num_slots - plan.num_external;
-    if (num_internal == 0) return ::fixy::to(plan);
+    if (num_internal == 0) return ::fixy::Ref<MemoryPlan>{::fixy::to(plan)};
 
     // Bucket the slots by birth_op and by death_op + 1.  The sweep range
     // is [0, max_op].  The checks above keep max_op in [1, UINT32_MAX - 2],
@@ -1620,6 +1628,9 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     ::fixy::FixedArray<uint64_t, MAX_FREE> free_list_offsets{};
     uint32_t free_list_count = 0;
     uint64_t pool_end = 0;
+    // Set when a block at the end of the pool would pass 2^64 - 1.  The
+    // sweep then stops, and the plan refuses the region.
+    bool is_pool_end_past_range = false;
 
     auto free_block = [&](uint64_t offset, uint64_t size) {
         for (const FreeSlot next : FreeSlot::check(free_list_count)) {
@@ -1649,8 +1660,13 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             }
             return;
         }
+        ::fixy::Option<uint64_t> end = ::fixy::checked_add(pool_end, aligned_size);
+        if (end.is_none()) [[unlikely]] {
+            is_pool_end_past_range = true;
+            return;
+        }
         slot_at(s).offset_bytes = pool_end;
-        pool_end += aligned_size;
+        pool_end = std::move(end).expect("the test above found the end");
     };
 
     struct DyingInfo {
@@ -1664,11 +1680,11 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     auto prove_per_op = [](uint32_t position) noexcept {
         return PerOpSlot::check(position).expect("a capped count is at most MAX_PER_OP");
     };
-    // The bytes of a slot rounded up to the alignment of the pool.  The span
-    // of a slot saturates, so its rounding saturates too, at the largest
-    // multiple of the alignment, and no span wraps to a small slot.
+    // The bytes of a slot rounded up to the alignment of the pool.  The first
+    // pass refused each internal slot whose rounding does not fit.
     auto aligned_bytes_of = [](uint64_t nbytes) noexcept {
-        return ::fixy::align_up(nbytes, uint64_t{ALIGNMENT}).value_or(~uint64_t{ALIGNMENT - 1});
+        return ::fixy::align_up(nbytes, uint64_t{ALIGNMENT})
+            .expect("the first pass refused each span that does not fit");
     };
 
     for (uint32_t op = 0; op < num_ops; op++) {
@@ -1732,10 +1748,13 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             uint32_t born_slot_id = detail::csr_element_(born_slots, born_begin + i);
             alloc_slot(born_slot_id, aligned_bytes_of(slot_at(born_slot_id).nbytes));
         }
+        if (is_pool_end_past_range) [[unlikely]] {
+            return ::fixy::err(PlanRefusal::PoolEndOverflow);
+        }
     }
 
     plan.pool_bytes = pool_end;
-    return ::fixy::to(plan);
+    return ::fixy::Ref<MemoryPlan>{::fixy::to(plan)};
 }
 
 }  // namespace crucible

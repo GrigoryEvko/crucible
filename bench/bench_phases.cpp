@@ -217,7 +217,8 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 MemoryPlan plan_storage{};
                 return scratch.with_epoch([&]() noexcept {
                     const uint64_t t0 = bench::rdtsc_start();
-                    const ::fixy::Ref<MemoryPlan> plan = bg.compute_memory_plan(A, plan_storage, scratch, slots);
+                    const ::fixy::Ref<MemoryPlan> plan = bg.compute_memory_plan(A, plan_storage, scratch, slots)
+                                                             .expect("the slots of the bench fit in 64 bits");
                     const uint64_t t1 = bench::rdtsc_end();
 
                     bench::do_not_optimize(plan);

@@ -163,7 +163,8 @@ int main(int argc, char** argv) {
             crucible::MemoryPlan plan_storage1{};
             ::fixy::BumpArena sweep_arena1{size_t{1} << 16};
             const crucible::MemoryPlan& plan1 =
-                *bt1.compute_memory_plan(test.alloc, plan_storage1, sweep_arena1, set_slots1);
+                *bt1.compute_memory_plan(test.alloc, plan_storage1, sweep_arena1, set_slots1)
+                     .expect("the slots of a set are below 2^20 bytes");
 
             // (A) Structural fidelity.
             if (plan1.num_slots() != num_slots) return false;
@@ -205,7 +206,8 @@ int main(int argc, char** argv) {
             crucible::MemoryPlan plan_storage2{};
             ::fixy::BumpArena sweep_arena2{size_t{1} << 16};
             const crucible::MemoryPlan& plan2 =
-                *bt2.compute_memory_plan(test.alloc, plan_storage2, sweep_arena2, set_slots2);
+                *bt2.compute_memory_plan(test.alloc, plan_storage2, sweep_arena2, set_slots2)
+                     .expect("the slots of a set are below 2^20 bytes");
             if (plan2.pool_bytes != plan1.pool_bytes) return false;
             for (uint32_t i = 0; i < num_slots; ++i) {
                 const uint64_t first_offset = set_slots1.get(i).expect("the set holds this slot")->offset_bytes;

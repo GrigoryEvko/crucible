@@ -400,7 +400,8 @@ static void test_integration_with_sweep_line() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view())
+                                            .expect("the slots of the test fit in 64 bits");
     assert(plan.pool_bytes > 0);
 
     PoolAllocator pool;
