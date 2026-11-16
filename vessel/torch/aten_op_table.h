@@ -23,6 +23,7 @@
 //   classified              343 (2767 OPAQUE)
 
 #include <crucible/CKernel.h>
+#include <foundation/Quarantine.h>
 
 #include <cstdint>
 #include <array>
@@ -3180,7 +3181,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
 // expand. A type cannot be spelled as data, so this is the one place the
 // generator emits tokens rather than values. Each part macro holds at most
 // 128 entries. The parser of the guard tools reads one long macro
-// body slowly, and it reads each part quickly.
+// body slowly, and it reads each part quickly. Each entry names a struct of
+// PyTorch, so the parts are in an opt-out region of the class ABI.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: each entry names an operator struct of at::_ops of PyTorch")
 #define CRUCIBLE_ATEN_OP_LIST_0(X) \
     X(0, _adaptive_avg_pool2d_backward) \
     X(1, _adaptive_avg_pool2d_backward_out) \
@@ -6340,6 +6343,7 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     X(3107, zeros_like_out) \
     X(3108, zeros) \
     X(3109, zeros_out)
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 #define CRUCIBLE_ATEN_OP_LIST(X) \
     CRUCIBLE_ATEN_OP_LIST_0(X) \

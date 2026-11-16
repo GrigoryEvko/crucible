@@ -33,6 +33,7 @@
 
 #include <ATen/Operators.h>
 #include <fixy/Core.h>
+#include <foundation/Quarantine.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -188,6 +189,11 @@ void register_kernel_of_shard(torch::Library& library) {
 // initializer, so it is in place before any operator that a shard registers can
 // run and therefore before the background thread can classify one.  dlopen of
 // the library runs the block of each shard before it returns.
+//
+// The block is the registration macro of PyTorch, and the expansion of the
+// list names each operator struct of at::_ops.  So the block is in an opt-out
+// region of the class ABI.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the block of PyTorch registers the kernel of each operator struct of at::_ops")
 TORCH_LIBRARY_IMPL(aten, Crucible, m) {
     if constexpr (crucible::vessel::kShard == 0)
         crucible::publish_static_ckernel_table(crucible::vessel::kStaticCKernelTable);
@@ -197,3 +203,4 @@ TORCH_LIBRARY_IMPL(aten, Crucible, m) {
     CRUCIBLE_ATEN_OP_LIST(CRUCIBLE_REGISTER_ATEN_OP)
 #undef CRUCIBLE_REGISTER_ATEN_OP
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
