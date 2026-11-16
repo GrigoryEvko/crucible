@@ -8,6 +8,8 @@
 
 #include <fixy/Core.h>
 #include <fixy/concurrent/Spawn.h>
+#include <fixy/check/Check.h>
+#include <fixy/os/Futex.h>
 #include <foundation/Linear.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/permissions/Permission.h>
@@ -134,6 +136,9 @@ namespace {
 
 // True on the thread that runs main, and false on each worker thread.
 constinit thread_local bool is_main_thread = false;
+
+// The count of the shards of one barrier loop that started on this thread.
+constinit thread_local int barrier_shards_on_this_thread = 0;
 
 // Two bodies that exchange messages: the left body sends a ping and waits for
 // the pong, and the right body waits for the ping and sends the pong.  The
@@ -282,8 +287,8 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
 
     // The body takes its shard by mutable reference, so the shard stays in
     // the tuple and recombine can consume it.
-    auto whole =
-        spawn::mint_parallel_for<kShards>(ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
+    auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, kShards>(
+        ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
             for (int& element : shard) {
                 element += 1;
             }
@@ -326,11 +331,12 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
     storage.fill(7);
 
     auto region = fixy::mint_owned_region(storage.data(), kCount, perm::mint_permission_root<RegionWhole>());
-    auto whole = spawn::mint_parallel_for<1>(ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
-        for (int& element : shard) {
-            element = 9;
-        }
-    });
+    auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, 1>(
+        ctx, dram_bound_budget(), std::move(region), [](auto& shard) noexcept {
+            for (int& element : shard) {
+                element = 9;
+            }
+        });
 
     for (std::size_t index = 0; index < kCount; ++index) {
         if (storage[index] != 9) {
@@ -360,12 +366,13 @@ struct ShardThreads {
         }
         BgCtx ctx{eff::testing::bg()};
         auto region = fixy::mint_owned_region(storage.data(), Shards, perm::mint_permission_root<RegionWhole>());
-        auto whole = spawn::mint_parallel_for<Shards>(ctx, budget, std::move(region), [this](auto& shard) noexcept {
-            for (const std::uint32_t index : shard) {
-                thread_of_shard[index] = std::this_thread::get_id();
-                ++runs_of_shard[index];
-            }
-        });
+        auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, Shards>(
+            ctx, budget, std::move(region), [this](auto& shard) noexcept {
+                for (const std::uint32_t index : shard) {
+                    thread_of_shard[index] = std::this_thread::get_id();
+                    ++runs_of_shard[index];
+                }
+            });
         (void)whole;
     }
 
@@ -382,6 +389,109 @@ struct ShardThreads {
         return std::find(thread_of_shard.begin(), thread_of_shard.end(), thread) != thread_of_shard.end();
     }
 };
+
+// Runs Shards shards that wait on each other as a barrier under one budget:
+// each shard waits until each shard of the loop started.  The wait ends only
+// when the shards run at the same time.  A shard that runs on the calling
+// thread, or on a thread that ran a different shard of the loop, counts
+// itself and does not wait, because its wait would never end.  The count of
+// such shards is the result.  The region is empty, because the shards read
+// no element.
+template <std::size_t Shards>
+[[nodiscard]] int run_barrier_shards(fixy::concurrent::WorkBudget budget) noexcept {
+    barrier_shards_on_this_thread = 0;
+    ::fixy::Atomic<std::uint32_t> arrivals{0};
+    ::fixy::futex::FutexWord gate{0};
+    ::fixy::Atomic<int> stuck_shards{0};
+    BgCtx ctx{eff::testing::bg()};
+    auto region =
+        fixy::mint_owned_region<std::uint32_t>(nullptr, std::size_t{0}, perm::mint_permission_root<RegionWhole>());
+    // The last shard opens the gate and wakes the others, which sleep on the
+    // futex word of the gate.  Threads that spin on one word can starve the
+    // threads that still have to arrive.
+    auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::WaitOnEachOther, Shards>(
+        ctx, budget, std::move(region), [&arrivals, &gate, &stuck_shards](auto& shard) noexcept {
+            static_cast<void>(shard);
+            ++barrier_shards_on_this_thread;
+            if (is_main_thread || barrier_shards_on_this_thread > 1) {
+                static_cast<void>(stuck_shards.fetch_add_acq_rel(1));
+                return;
+            }
+            const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Block>> waiter{eff::testing::bg()};
+            if (arrivals.fetch_add_acq_rel(1) + 1 == Shards) {
+                gate.store_release(1);
+                static_cast<void>(::fixy::futex::wake_all(waiter, gate).expect("the kernel wakes the shards"));
+            }
+            while (gate.load_acquire() == 0) {
+                static_cast<void>(::fixy::futex::wait(waiter, gate, 0).expect("a shard waits on the gate"));
+            }
+        });
+    ::foundation::linear::drop(std::move(whole));
+    return stuck_shards.load_acquire();
+}
+
+// Runs Shards shards that wait on each other with worker options that the
+// thread door refuses: the one CPU of the mask is past each CPU of the host,
+// so no worker starts.  The region is empty, because the shards read no
+// element.
+template <std::size_t Shards>
+void run_waiting_shards_with_refused_workers() noexcept {
+    BgCtx ctx{eff::testing::bg()};
+    const eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>> test_ctx{eff::testing::test()};
+    const fixy::thread::ThreadOptions refused_options{
+        .affinity = ::foundation::algebra::lattices::AffinityMask::single(
+            ::foundation::algebra::lattices::AffinityMask::kMaxCore),
+    };
+    auto region =
+        fixy::mint_owned_region<std::uint32_t>(nullptr, std::size_t{0}, perm::mint_permission_root<RegionWhole>());
+    auto whole = spawn::mint_parallel_for_with_thread_options<spawn::BodyCoupling::WaitOnEachOther, Shards>(
+        ctx, test_ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region),
+        [](auto& shard) noexcept { static_cast<void>(shard); }, refused_options);
+    ::foundation::linear::drop(std::move(whole));
+}
+
+// Shards that wait on each other cannot run one after another on the calling
+// thread, so a thread door that starts no worker of theirs ends the process.
+[[nodiscard]] int parallel_for_of_waiting_shards_dies_when_no_worker_starts() noexcept {
+    const eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>> test_ctx{eff::testing::test()};
+    ::fixy::check::expect_dies(
+        test_ctx, []() noexcept { run_waiting_shards_with_refused_workers<4>(); }, "no worker of the shards started");
+    return 0;
+}
+
+// Shards that wait on each other end under each budget, because each shard
+// gets a thread of its own.  The pure thread count gives one thread for each
+// shard on each fake host, and the count of independent shards still follows
+// the caches of the host.
+[[nodiscard]] int parallel_for_barrier_ends_under_each_budget() noexcept {
+    int failures = 0;
+    ::fixy::FixedArray<fixy::concurrent::WorkBudget, 4> const budgets{
+        fixy::concurrent::WorkBudget{.read_bytes = 64}, fixy::concurrent::WorkBudget{.read_bytes = 1 * MiB},
+        l3_resident_budget(), dram_bound_budget()};
+    ::fixy::FixedArray<fixy::concurrent::HostFacts, 3> const hosts{kTinyCaches, kHugeCaches,
+                                                                   fixy::concurrent::ParallelismRule::host_facts()};
+    for (fixy::concurrent::WorkBudget const budget : budgets) {
+        if (int const stuck = run_barrier_shards<4>(budget); stuck != 0) {
+            ::fixy::report(::fixy::Sink::Err,
+                           "mint_parallel_for of four shards that wait on each other: {} shards ran on the calling "
+                           "thread or after a different shard on one thread, so a wait would never end\n",
+                           stuck);
+            ++failures;
+        }
+        for (fixy::concurrent::HostFacts const& host : hosts) {
+            if (spawn::choose_parallel_for_threads(spawn::BodyCoupling::WaitOnEachOther, host, budget, 4) != 4) {
+                ::fixy::report(::fixy::Sink::Err, "four shards that wait on each other do not get a thread each\n");
+                ++failures;
+            }
+        }
+    }
+    constexpr fixy::concurrent::WorkBudget one_mib{.read_bytes = 1 * MiB};
+    if (spawn::choose_parallel_for_threads(spawn::BodyCoupling::Independent, kHugeCaches, one_mib, 4) != 1) {
+        ::fixy::report(::fixy::Sink::Err, "independent shards in a private cache do not run on one thread\n");
+        ++failures;
+    }
+    return failures;
+}
 
 // A working set in the private cache of one core is already hot there, so
 // the parallelism rule keeps it on the calling thread.  A mint that
@@ -452,7 +562,7 @@ struct ShardThreads {
     std::array<std::uint32_t, kShards> storage{};
     ::fixy::Atomic<bool> has_run_off_main{false};
 
-    auto whole = spawn::mint_parallel_for_with_thread_options<kShards>(
+    auto whole = spawn::mint_parallel_for_with_thread_options<spawn::BodyCoupling::Independent, kShards>(
         ctx, test_ctx, budget,
         fixy::mint_owned_region(storage.data(), kShards, perm::mint_permission_root<RegionWhole>()),
         [&has_run_off_main](auto& shard) noexcept {
@@ -525,6 +635,8 @@ int main() {
     if (const int rc = spawn_runs_every_child_and_returns_the_parent(); rc != 0) return rc;
     if (const int rc = spawn_arm_follows_the_budget(); rc != 0) return rc;
     if (const int rc = spawn_exchange_ends_under_each_budget(); rc != 0) return rc;
+    if (const int rc = parallel_for_barrier_ends_under_each_budget(); rc != 0) return rc;
+    if (const int rc = parallel_for_of_waiting_shards_dies_when_no_worker_starts(); rc != 0) return rc;
     if (const int rc = parallel_for_visits_every_element_once(); rc != 0) return rc;
     if (const int rc = parallel_for_with_one_shard_runs_inline(); rc != 0) return rc;
     if (const int rc = parallel_for_core_resident_runs_inline(); rc != 0) return rc;

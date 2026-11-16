@@ -22,7 +22,7 @@ std::array<int, 16> storage{};
 int main() {
     FgCtx ctx{eff::testing::test()};
     auto region = fixy::mint_owned_region(storage.data(), storage.size(), perm::mint_permission_root<RegionWhole>());
-    [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for<2>(
+    [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 2>(
         ctx, fixy::concurrent::WorkBudget{}, std::move(region), [](auto& shard) noexcept { (void)shard; });
     return 0;
 }

@@ -49,25 +49,28 @@
 //     reads the facts of a host that the test gives, so a test runs the
 //     mint under each cache size with no global state.
 //
-//     mint_parallel_for takes a budget too, and asks the rule for the
-//     whole decision.  A sequential decision runs every shard on the
-//     calling thread.  A parallel one starts no more threads than its
-//     factor, and a thread runs every shard whose index is its own
-//     modulo the thread count.  One thread per shard, whatever the size
-//     of the work, makes a region in the private cache of one core pay
-//     for N threads, and it runs slower than a loop.  Two shards can run
-//     one after the other on one thread, so bodies that wait on each
-//     other must not share a parallel-for either.
+//     mint_parallel_for takes the coupling of its shards and a budget too.
+//     choose_parallel_for_threads gives its count of threads.  Shards that
+//     wait on each other get one thread each, for each budget and each
+//     host, because two of them on one thread never end.  For independent
+//     shards the parallelism rule gives the whole decision.  A sequential
+//     decision runs every shard on the calling thread.  A parallel one
+//     starts no more threads than its factor, and a thread runs every shard
+//     whose index is its own modulo the thread count.  One thread per
+//     shard, whatever the size of the work, makes a region in the private
+//     cache of one core pay for N threads, and it runs slower than a loop.
 //
-//  5. The parallel factor of mint_parallel_for is a choice of speed and
-//     not of result.  When the door of fixy/os/ThreadTasks.h starts no
-//     worker, the mint runs each shard on the calling thread, as a
-//     sequential decision does.  The door gives an error only when no
-//     thread of the call started, which in practice is eagain, so no
-//     shard ran and the inline run gives the same result.  A start that
-//     fails after other workers started ends the process in the door.
-//     The door does not give the count of the workers that started, so
-//     the mint cannot give their shards to the calling thread.
+//  5. The parallel factor of a mint_parallel_for of independent shards is a
+//     choice of speed and not of result.  When the door of
+//     fixy/os/ThreadTasks.h starts no worker, the mint runs each shard on
+//     the calling thread, as a sequential decision does.  The door gives an
+//     error only when no thread of the call started, which in practice is
+//     eagain, so no shard ran and the inline run gives the same result.  A
+//     start that fails after other workers started ends the process in the
+//     door.  The door does not give the count of the workers that started,
+//     so the mint cannot give their shards to the calling thread.  Shards
+//     that wait on each other cannot run on the calling thread, so a door
+//     that starts no worker of theirs ends the process.
 //     mint_parallel_for_with_thread_options is the door of a test: it
 //     gives the workers options that the thread door refuses, and so a
 //     test reaches the inline run with no global state.
@@ -269,6 +272,23 @@ enum class SpawnArm : std::uint8_t {
     return is_core_resident ? SpawnArm::Inline : SpawnArm::ThreadPerChild;
 }
 
+// The count of the threads that run the shards of one parallel loop of
+// shards of this coupling, with this budget, on this host (design note 4).
+// Shards that wait on each other get one thread each.  For independent
+// shards, a sequential decision of the parallelism rule gives one, which is
+// the calling thread, and a parallel decision gives its factor, never more
+// threads than shards.
+[[nodiscard]] constexpr std::size_t choose_parallel_for_threads(BodyCoupling coupling,
+                                                                ::fixy::concurrent::HostFacts const& host,
+                                                                ::fixy::concurrent::WorkBudget budget,
+                                                                std::size_t shards) noexcept {
+    if (coupling == BodyCoupling::WaitOnEachOther) return shards;
+    const ::fixy::concurrent::ParallelismDecision decision =
+        ::fixy::concurrent::ParallelismRule::recommend_for(host, budget);
+    if (!decision.is_parallel()) return 1;
+    return decision.factor < shards ? decision.factor : shards;
+}
+
 namespace detail {
 
 // The body of the two spawn mints, on the facts of a host.  The arm of bodies
@@ -363,32 +383,19 @@ concept CtxFitsParallelForWithThreadOptions =
 
 // Declared before the runner so that its friend declarations name these
 // two mints and nothing else.
-template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
+template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
 mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
                   Body body) noexcept;
 
-template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole, typename Brand, typename Body>
+template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole,
+          typename Brand, typename Body>
     requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
 mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::WorkBudget budget,
                                       ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body,
                                       ::fixy::thread::ThreadOptions const& options) noexcept;
-
-namespace detail {
-
-// The number of threads that run N shards.  A sequential decision of the
-// parallelism rule gives one, which is the calling thread.  A parallel
-// decision gives its factor, and never more threads than shards.
-template <std::size_t N>
-[[nodiscard]] std::size_t parallel_for_thread_count(::fixy::concurrent::WorkBudget budget) noexcept {
-    const ::fixy::concurrent::ParallelismDecision decision = ::fixy::concurrent::ParallelismRule::recommend(budget);
-    if (!decision.is_parallel()) return 1;
-    return decision.factor < N ? decision.factor : N;
-}
-
-}  // namespace detail
 
 // The work of mint_parallel_for.  run_shards_ is the fan-out: one thread
 // for each of `threads` workers, and each worker mutates the tuple
@@ -405,13 +412,15 @@ template <std::size_t N>
 // fan-out, because any translation unit can call it with no context at
 // all.
 class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
-    template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
+    template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand,
+              typename Body>
         requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
     friend ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
                                                                   ::fixy::OwnedRegion<T, Whole, Brand>&& region,
                                                                   Body body) noexcept;
 
-    template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole, typename Brand, typename Body>
+    template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole,
+              typename Brand, typename Body>
         requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body>
     friend ::fixy::OwnedRegion<T, Whole, Brand>
     mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::WorkBudget budget,
@@ -465,7 +474,8 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     }
 
     // The body of the two mints.  The workers get the options.
-    template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
+    template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand,
+              typename Body>
         requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
     [[nodiscard]] static ::fixy::OwnedRegion<T, Whole, Brand>
     run_(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
@@ -473,16 +483,26 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
         auto parts = ::fixy::mint_split<N>(std::move(region));
 
         if constexpr (N == 1) {
-            // One shard runs on the calling thread, whatever the budget.
+            // One shard runs on the calling thread, whatever the budget.  It
+            // has no other shard to wait on.
             static_cast<void>(ctx);
             static_cast<void>(budget);
             static_cast<void>(options);
             static_cast<void>(body(std::get<0>(parts.shards)));
+        } else if constexpr (Coupling == BodyCoupling::WaitOnEachOther) {
+            // One thread for each shard, for each budget and each host, and
+            // no run on the calling thread (design note 5).
+            const std::size_t threads =
+                choose_parallel_for_threads(Coupling, ::fixy::concurrent::ParallelismRule::host_facts(), budget, N);
+            run_shards_(ctx, parts.shards, body, threads, options, std::make_index_sequence<N>{})
+                .expect("mint_parallel_for: no worker of the shards started.  The shards wait on each other, so they "
+                        "cannot run one after another on the calling thread");
         } else {
             // A sequential decision, or a parallel one whose workers did
             // not start, runs every shard on the calling thread (design
             // note 5).
-            const std::size_t threads = detail::parallel_for_thread_count<N>(budget);
+            const std::size_t threads =
+                choose_parallel_for_threads(Coupling, ::fixy::concurrent::ParallelismRule::host_facts(), budget, N);
             const bool have_workers_run =
                 threads > 1
                 && run_shards_(ctx, parts.shards, body, threads, options, std::make_index_sequence<N>{}).is_ok();
@@ -500,11 +520,12 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
 };
 
 // The call returns once every shard has run its body, and the region it
-// hands back is recombined from the shards.  The budget states the bytes
-// the bodies touch together, and the parallelism rule chooses the thread
-// count from it, per design note 4.  The workers get the default options
-// of the thread door.
-template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
+// hands back is recombined from the shards.  The coupling states whether a
+// shard can wait on another shard, and the budget states the bytes the
+// bodies touch together.  choose_parallel_for_threads gives the thread count
+// from the two, per design note 4.  The workers get the default options of
+// the thread door.
+template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
     requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
 mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
@@ -512,19 +533,20 @@ mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy:
     // The constraint on the declaration reads the context.  The runner
     // reads it too, and asks for the background effect again before it
     // starts a thread.
-    return ParallelForRunner::run_<N>(ctx, budget, std::move(region), body, ::fixy::thread::ThreadOptions{});
+    return ParallelForRunner::run_<Coupling, N>(ctx, budget, std::move(region), body, ::fixy::thread::ThreadOptions{});
 }
 
 // mint_parallel_for with the options of its worker threads, for a test
 // (design note 5).  The test context is the authority of the options.
-template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole, typename Brand, typename Body>
+template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole,
+          typename Brand, typename Body>
     requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
 mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::WorkBudget budget,
                                       ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body,
                                       ::fixy::thread::ThreadOptions const& options) noexcept {
     static_cast<void>(test);
-    return ParallelForRunner::run_<N>(ctx, budget, std::move(region), body, options);
+    return ParallelForRunner::run_<Coupling, N>(ctx, budget, std::move(region), body, options);
 }
 
 }  // namespace fixy::spawn

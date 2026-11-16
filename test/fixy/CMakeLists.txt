@@ -5551,6 +5551,13 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_lacks_bg
   "constraints not satisfied"
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
 
+# The count of threads of a parallel loop changes with the budget and with
+# the caches of the host, so a loop states whether its shards wait on each
+# other, with no default.
+fixy_neg_compile_test(neg_spawn_mint_parallel_for_no_coupling
+  "no matching function for call to .mint_parallel_for<2>\\("
+  "BodyCoupling")
+
 # Deviation 4: recombine needs every shard back, so a body that consumes
 # its shard is refused.
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_consumes_shard
@@ -5572,28 +5579,28 @@ fixy_neg_compile_test(neg_spawn_parallel_for_runner_derived_look_alike
 # the door.  With one shard the runner is never reached, and the door is
 # the only check.
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_one_shard_ctx_lacks_bg
-  "no matching function for call to .mint_parallel_for<1>"
+  "no matching function for call to .mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 1>"
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
 # Without each check below, the call passes the door and fails later,
 # inside the split or the fan-out.  Each fixture names the door and the
 # conjunct that fails, so it tells the two apart.
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_zero_shards
-  "no matching function for call to .mint_parallel_for<0>"
+  "no matching function for call to .mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 0>"
   "the expression .N > 0 \\[with N = 0\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_refuses_row
-  "no matching function for call to .mint_parallel_for<2>"
+  "no matching function for call to .mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 2>"
   "required for the satisfaction of .CtxAdmitsPermission<Whole, Ctx>. \\[with Whole = <unnamed>::IoRegion")
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_not_copyable
-  "no matching function for call to .mint_parallel_for<2>\\(.*MoveOnlyBody\\)"
+  "no matching function for call to .mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 2>\\(.*MoveOnlyBody\\)"
   "required for the satisfaction of .CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>. \\[with N = 2")
 
 # The door of a test gives the worker threads options, so its second
 # context must own Test and its first context must own Bg.
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_with_thread_options_needs_test_ctx
-  "no matching function for call to .mint_parallel_for_with_thread_options<2>\\("
+  "no matching function for call to .mint_parallel_for_with_thread_options<fixy::spawn::BodyCoupling::Independent, 2>\\("
   "required for the satisfaction of .CtxOwnsCapability<TestCtx, foundation::effects::Effect::Test>. \\[with TestCtx = foundation::effects::ExecCtx<foundation::effects::Bg,")
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_with_thread_options_ctx_lacks_bg
-  "no matching function for call to .mint_parallel_for_with_thread_options<2>\\("
+  "no matching function for call to .mint_parallel_for_with_thread_options<fixy::spawn::BodyCoupling::Independent, 2>\\("
   "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test,")
 
 # ── The two Qtt discipline recognisers, armed ─────────────────────────

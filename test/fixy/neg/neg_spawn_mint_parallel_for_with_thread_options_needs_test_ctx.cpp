@@ -22,8 +22,9 @@ using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
 int main() {
     const BgCtx ctx{eff::testing::bg()};
     auto region = fixy::mint_owned_region<int>(nullptr, 0, perm::mint_permission_root<RegionWhole>());
-    [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for_with_thread_options<2>(
-        ctx, ctx, fixy::concurrent::WorkBudget{}, std::move(region), [](auto& shard) noexcept { (void)shard; },
-        fixy::thread::ThreadOptions{});
+    [[maybe_unused]] auto whole =
+        fixy::spawn::mint_parallel_for_with_thread_options<fixy::spawn::BodyCoupling::Independent, 2>(
+            ctx, ctx, fixy::concurrent::WorkBudget{}, std::move(region), [](auto& shard) noexcept { (void)shard; },
+            fixy::thread::ThreadOptions{});
     return 0;
 }
