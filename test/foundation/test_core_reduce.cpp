@@ -1,0 +1,347 @@
+// Tests of foundation/core/Reduce.h: the tree sum against a naive tree of
+// the same rule, for each count of lanes and for the counts around each
+// power of two; the split into grains in random orders and for 1, 2, 4, 8
+// and 64 shards; the error bound; the sum of runs and the segments.
+
+#include <foundation/core/Reduce.h>
+#include <foundation/effects/Effect.h>
+
+#include "../test_assert.h"
+#include "philox_stream.h"
+
+#include <cstddef>
+#include <cstdint>
+
+namespace {
+
+using ::foundation::core::HeapArray;
+using ::foundation::core::View;
+
+[[nodiscard]] ::foundation::effects::Alloc test_alloc() noexcept {
+    return ::foundation::effects::testing::test().alloc;
+}
+
+// A float with a random sign, a random mantissa and an exponent from -12 to
+// 11, as probe E4 drew them: the association of a sum changes its bits.
+[[nodiscard]] float draw_float(::crucible::test::PhiloxStream& stream) noexcept {
+    std::uint64_t const bits = stream.next_wide();
+    auto const mantissa = static_cast<std::uint32_t>(bits & 0x7FFFFFu);
+    auto const exponent = static_cast<std::uint32_t>(127 + (bits >> 23) % 24 - 12);
+    auto const sign = static_cast<std::uint32_t>((bits >> 40) & 1u);
+    return ::fixy::bit_cast<float>((sign << 31) | (exponent << 23) | mantissa);
+}
+
+[[nodiscard]] double draw_double(::crucible::test::PhiloxStream& stream) noexcept {
+    std::uint64_t const bits = stream.next_wide();
+    std::uint64_t const mantissa = stream.next_wide() & ((std::uint64_t{1} << 52) - 1);
+    std::uint64_t const exponent = 1023 + bits % 40 - 20;
+    std::uint64_t const sign = (bits >> 40) & 1u;
+    return ::fixy::bit_cast<double>((sign << 63) | (exponent << 52) | mantissa);
+}
+
+[[nodiscard]] HeapArray<float> draw_floats(std::size_t count, std::uint64_t seed) noexcept {
+    HeapArray<float> run = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
+    ::crucible::test::PhiloxStream stream{seed};
+    for (float& value : run) {
+        value = draw_float(stream);
+    }
+    return run;
+}
+
+[[nodiscard]] HeapArray<double> draw_doubles(std::size_t count, std::uint64_t seed) noexcept {
+    HeapArray<double> run = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0);
+    ::crucible::test::PhiloxStream stream{seed};
+    for (double& value : run) {
+        value = draw_double(stream);
+    }
+    return run;
+}
+
+[[nodiscard]] bool same_bits(float left, float right) noexcept {
+    return ::fixy::bit_cast<std::uint32_t>(left) == ::fixy::bit_cast<std::uint32_t>(right);
+}
+
+[[nodiscard]] bool same_bits(double left, double right) noexcept {
+    return ::fixy::bit_cast<std::uint64_t>(left) == ::fixy::bit_cast<std::uint64_t>(right);
+}
+
+// The naive tree of the rule: split at the largest power of two below the
+// count, the left part first.  It finds the split with a loop and not with
+// the bit operations of the header.
+template <class T>
+[[nodiscard]] T naive_tree(View<T const> run) noexcept {
+    if (run.size() == 1) return ::crucible::test::element_at(run, 0);
+    std::size_t split = 1;
+    while (split * 2 < run.size()) {
+        split *= 2;
+    }
+    T const left = naive_tree(run.window(0, split).expect("the left part fits"));
+    T const right = naive_tree(run.window(split, run.size() - split).expect("the right part fits"));
+    return left + right;
+}
+
+// The left fold, the order that the tree replaces.
+[[nodiscard]] float left_fold(View<float const> run) noexcept {
+    float sum = 0.0f;
+    for (float const value : run) {
+        sum += value;
+    }
+    return sum;
+}
+
+// The counts of a property test: each count to 600, and the counts around
+// each power of two from 2^10 to the limit.
+template <class Body>
+void for_each_count(std::size_t limit, Body body) noexcept {
+    for (std::size_t count = 0; count <= 600 && count <= limit; ++count) {
+        body(count);
+    }
+    for (std::size_t power = std::size_t{1} << 10; power <= limit; power *= 2) {
+        for (std::size_t count = power - 17; count <= power + 17 && count <= limit; ++count) {
+            body(count);
+        }
+    }
+}
+
+// tree_sum, tree_reduce with an add, each count of lanes and the naive tree
+// give the same bits for each count.
+void test_tree_sum_agrees_with_the_naive_tree() {
+    HeapArray<float> const run = draw_floats(std::size_t{1} << 16, 0x7E570001u);
+    View<float const> const all{run.view()};
+    auto const add = [](float const& left, float const& right) noexcept { return left + right; };
+    for_each_count(all.size(), [&](std::size_t count) noexcept {
+        View<float const> const part = all.window(0, count).expect("the part fits the run");
+        float const sum = ::foundation::core::tree_sum(part);
+        if (count == 0) {
+            assert(same_bits(sum, 0.0f));
+            assert(::foundation::core::tree_reduce(part, add).is_none());
+            return;
+        }
+        assert(same_bits(sum, naive_tree(part)));
+        assert(same_bits(sum, ::foundation::core::tree_reduce(part, add).expect("the part has elements")));
+        assert(same_bits(sum, ::foundation::core::tree_sum_lanes<2>(part)));
+        assert(same_bits(sum, ::foundation::core::tree_sum_lanes<4>(part)));
+        assert(same_bits(sum, ::foundation::core::tree_sum_lanes<8>(part)));
+        assert(same_bits(sum, ::foundation::core::tree_sum_lanes<16>(part)));
+        assert(same_bits(sum, ::foundation::core::tree_sum_lanes<32>(part)));
+    });
+}
+
+void test_tree_sum_of_doubles_agrees_with_the_naive_tree() {
+    HeapArray<double> const run = draw_doubles(std::size_t{1} << 13, 0x7E570002u);
+    View<double const> const all{run.view()};
+    for_each_count(all.size(), [&](std::size_t count) noexcept {
+        View<double const> const part = all.window(0, count).expect("the part fits the run");
+        double const sum = ::foundation::core::tree_sum(part);
+        if (count == 0) {
+            assert(same_bits(sum, 0.0));
+            return;
+        }
+        assert(same_bits(sum, naive_tree(part)));
+        assert(same_bits(sum, ::foundation::core::tree_sum_lanes<2>(part)));
+        assert(same_bits(sum, ::foundation::core::tree_sum_lanes<4>(part)));
+        assert(same_bits(sum, ::foundation::core::tree_sum_lanes<8>(part)));
+        assert(same_bits(sum, ::foundation::core::tree_sum_lanes<16>(part)));
+    });
+}
+
+// The positive control of the bit tests: on the data of probe E4, a left
+// fold of 2^20 floats gives bits that differ from the tree.  So the data can
+// show a change of the order.
+void test_left_fold_differs_from_the_tree() {
+    HeapArray<float> const run = draw_floats(std::size_t{1} << 20, 0x7E570003u);
+    View<float const> const all{run.view()};
+    assert(!same_bits(left_fold(all), ::foundation::core::tree_sum(all)));
+}
+
+// The positions 0 to count - 1 in an order that the stream draws.
+[[nodiscard]] HeapArray<std::size_t> draw_order(std::size_t count, ::crucible::test::PhiloxStream& stream) noexcept {
+    HeapArray<std::size_t> order = ::foundation::core::mint_heap_array(test_alloc(), count, std::size_t{0});
+    View<std::size_t> const slots = order.view();
+    for (std::size_t index = 0; index < count; ++index) {
+        ::crucible::test::element_at(slots, index) = index;
+    }
+    for (std::size_t index = count; index > 1; --index) {
+        std::size_t const other = stream.below(index);
+        std::size_t const kept = ::crucible::test::element_at(slots, index - 1);
+        ::crucible::test::element_at(slots, index - 1) = ::crucible::test::element_at(slots, other);
+        ::crucible::test::element_at(slots, other) = kept;
+    }
+    return order;
+}
+
+// The start of a shard of a proportional split, as mint_split cuts a region.
+[[nodiscard]] std::size_t shard_start(std::size_t total, std::size_t shards, std::size_t shard) noexcept {
+    std::size_t const smaller = total / shards;
+    std::size_t const larger = total % shards;
+    return shard * smaller + (shard < larger ? shard : larger);
+}
+
+// The partials of a split into grains of Grain, computed by shards shards in
+// an order that the stream draws.  Each shard takes a proportional cut of the
+// grains, as a parallel loop does, and computes its grains in a drawn order.
+template <std::size_t Grain>
+[[nodiscard]] float sum_by_shards(View<float const> run, std::size_t shards,
+                                  ::crucible::test::PhiloxStream& stream) noexcept {
+    std::size_t const grains = ::foundation::core::tree_grain_count<Grain>(run.size());
+    HeapArray<float> partials = ::foundation::core::mint_heap_array(test_alloc(), grains, 0.0f);
+    View<float> const slots = partials.view();
+    HeapArray<std::size_t> const shard_order = draw_order(shards, stream);
+    for (std::size_t const shard : shard_order) {
+        std::size_t const first = shard_start(grains, shards, shard);
+        std::size_t const count = shard_start(grains, shards, shard + 1) - first;
+        HeapArray<std::size_t> const grain_order = draw_order(count, stream);
+        for (std::size_t const offset : grain_order) {
+            ::foundation::core::tree_sum_grains<Grain>(run, first + offset,
+                                                       slots.window(first + offset, 1).expect("the grain fits"));
+        }
+    }
+    return ::foundation::core::tree_sum(View<float const>{slots});
+}
+
+// Each grain, each shard count and each drawn order give the bits of the
+// tree sum of the run.
+void test_grains_split_the_tree_at_its_nodes() {
+    HeapArray<float> const run = draw_floats(std::size_t{1} << 17, 0x7E570004u);
+    View<float const> const all{run.view()};
+    ::crucible::test::PhiloxStream stream{0x7E570005u};
+    ::fixy::FixedArray<std::size_t, 17> const counts{1,    2,    3,    15,    16,    17,    255,    256,   257,
+                                                     4095, 4096, 4097, 65535, 65536, 65537, 131071, 131072};
+    ::fixy::FixedArray<std::size_t, 5> const shard_counts{1, 2, 4, 8, 64};
+    for (std::size_t const count : counts) {
+        View<float const> const part = all.window(0, count).expect("the part fits the run");
+        float const sum = ::foundation::core::tree_sum(part);
+        for (std::size_t const shards : shard_counts) {
+            assert(same_bits(sum, sum_by_shards<1>(part, shards, stream)));
+            assert(same_bits(sum, sum_by_shards<16>(part, shards, stream)));
+            assert(same_bits(sum, sum_by_shards<256>(part, shards, stream)));
+            assert(same_bits(sum, sum_by_shards<4096>(part, shards, stream)));
+        }
+    }
+}
+
+// The generic grains with an order-sensitive combine: the tree of the
+// partials is the tree of the run.
+void test_generic_grains_keep_the_order_of_operands() {
+    ::crucible::test::PhiloxStream stream{0x7E570006u};
+    HeapArray<std::uint64_t> run =
+        ::foundation::core::mint_heap_array(test_alloc(), std::size_t{5000}, std::uint64_t{0});
+    for (std::uint64_t& value : run) {
+        value = stream.next_wide();
+    }
+    auto const mix = [](std::uint64_t const& left, std::uint64_t const& right) noexcept {
+        return ::fixy::rotl(left, 7) * 0x9E3779B97F4A7C15u + (right ^ 0xD1B54A32D192ED03u);
+    };
+    View<std::uint64_t const> const all{run.view()};
+    ::fixy::FixedArray<std::size_t, 5> const counts{1, 63, 64, 65, 5000};
+    for (std::size_t const count : counts) {
+        View<std::uint64_t const> const part = all.window(0, count).expect("the part fits the run");
+        std::uint64_t const whole = ::foundation::core::tree_reduce(part, mix).expect("the part has elements");
+        std::size_t const grains = ::foundation::core::tree_grain_count<64>(count);
+        HeapArray<std::uint64_t> partials = ::foundation::core::mint_heap_array(test_alloc(), grains, std::uint64_t{0});
+        ::foundation::core::tree_reduce_grains<64>(part, 0, partials.view(), mix);
+        std::uint64_t const split =
+            ::foundation::core::tree_reduce(View<std::uint64_t const>{partials.view()}, mix).expect("one grain");
+        assert(whole == split);
+    }
+}
+
+// The error of the float tree sum stays inside gamma(d) * sum |x_i|.  The
+// double tree sum of the same floats is the model of the exact sum: its own
+// error is below 2^-29 of the bound of the float sum.
+void test_error_stays_inside_the_bound() {
+    for_each_count(std::size_t{1} << 16, [](std::size_t count) noexcept {
+        if (count == 0) return;
+        HeapArray<float> const run = draw_floats(count, 0x7E570007u + count);
+        HeapArray<double> wide = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0);
+        View<double> const wide_view = wide.view();
+        double absolute_sum = 0.0;
+        std::size_t position = 0;
+        for (float const value : run) {
+            ::crucible::test::element_at(wide_view, position) = static_cast<double>(value);
+            absolute_sum += value < 0.0f ? -static_cast<double>(value) : static_cast<double>(value);
+            ++position;
+        }
+        double const exact = ::foundation::core::tree_sum(View<double const>{wide_view});
+        double const computed = static_cast<double>(::foundation::core::tree_sum(View<float const>{run.view()}));
+        double const depth = ::foundation::core::tree_depth(count);
+        double const unit = 1.0 / 16777216.0;
+        double const gamma = depth * unit / (1.0 - depth * unit);
+        double const error = computed > exact ? computed - exact : exact - computed;
+        assert(error <= gamma * absolute_sum * (1.0 + 1.0e-6));
+    });
+}
+
+// The sum of runs is the tree of the runs at each element, in run order.
+void test_sum_of_runs_takes_the_tree_of_the_runs() {
+    constexpr std::size_t kRuns = 7;
+    constexpr std::size_t kCount = 517;
+    HeapArray<float> const first = draw_floats(kCount, 0x7E570010u);
+    HeapArray<float> const second = draw_floats(kCount, 0x7E570011u);
+    HeapArray<float> const third = draw_floats(kCount, 0x7E570012u);
+    HeapArray<float> const fourth = draw_floats(kCount, 0x7E570013u);
+    HeapArray<float> const fifth = draw_floats(kCount, 0x7E570014u);
+    HeapArray<float> const sixth = draw_floats(kCount, 0x7E570015u);
+    HeapArray<float> const seventh = draw_floats(kCount, 0x7E570016u);
+    ::fixy::FixedArray<View<float const>, kRuns> const runs{
+        View<float const>{first.view()},  View<float const>{second.view()}, View<float const>{third.view()},
+        View<float const>{fourth.view()}, View<float const>{fifth.view()},  View<float const>{sixth.view()},
+        View<float const>{seventh.view()}};
+    HeapArray<float> sums = ::foundation::core::mint_heap_array(test_alloc(), kCount, 0.0f);
+    ::fixy::FixedArray<std::size_t, 4> const run_counts{1, 2, 3, 7};
+    for (std::size_t const used : run_counts) {
+        View<View<float const> const> const some_runs =
+            View<View<float const> const>{runs.view()}.window(0, used).expect("the runs fit");
+        assert(::foundation::core::tree_sum_of_runs(some_runs, sums.view()).is_ok());
+        HeapArray<float> column = ::foundation::core::mint_heap_array(test_alloc(), used, 0.0f);
+        View<float> const column_view = column.view();
+        for (std::size_t offset = 0; offset < kCount; ++offset) {
+            for (std::size_t run = 0; run < used; ++run) {
+                ::crucible::test::element_at(column_view, run) =
+                    ::crucible::test::element_at(::crucible::test::element_at(some_runs, run), offset);
+            }
+            assert(same_bits(::crucible::test::element_at(sums.view(), offset),
+                             naive_tree(View<float const>{column_view})));
+        }
+    }
+    HeapArray<float> const short_run = draw_floats(kCount - 1, 0x7E570017u);
+    ::fixy::FixedArray<View<float const>, 2> const uneven{View<float const>{first.view()},
+                                                          View<float const>{short_run.view()}};
+    assert(::foundation::core::tree_sum_of_runs(View<View<float const> const>{uneven.view()}, sums.view()).is_err());
+}
+
+// Each segment takes the tree sum of its window, and an empty one gives +0.
+void test_segments_take_the_tree_of_their_window() {
+    HeapArray<float> const run = draw_floats(5000, 0x7E570020u);
+    View<float const> const all{run.view()};
+    ::fixy::FixedArray<std::size_t, 7> const offsets{3, 3, 20, 1044, 1045, 4096, 5000};
+    HeapArray<float> sums = ::foundation::core::mint_heap_array(test_alloc(), std::size_t{6}, 1.0f);
+    assert(::foundation::core::segmented_tree_sum(all, View<std::size_t const>{offsets.view()}, sums.view()).is_ok());
+    for (std::size_t segment = 0; segment < 6; ++segment) {
+        std::size_t const start = ::crucible::test::element_at(offsets, segment);
+        std::size_t const end = ::crucible::test::element_at(offsets, segment + 1);
+        float const expected =
+            ::foundation::core::tree_sum(all.window(start, end - start).expect("the segment fits the run"));
+        assert(same_bits(::crucible::test::element_at(sums.view(), segment), expected));
+    }
+    assert(same_bits(::crucible::test::element_at(sums.view(), 0), 0.0f));
+    ::fixy::FixedArray<std::size_t, 3> const past_end{0, 10, 5001};
+    assert(::foundation::core::segmented_tree_sum(all, View<std::size_t const>{past_end.view()},
+                                                  sums.view().window(0, 2).expect("two sums fit"))
+               .is_err());
+}
+
+}  // namespace
+
+int main() {
+    test_tree_sum_agrees_with_the_naive_tree();
+    test_tree_sum_of_doubles_agrees_with_the_naive_tree();
+    test_left_fold_differs_from_the_tree();
+    test_grains_split_the_tree_at_its_nodes();
+    test_generic_grains_keep_the_order_of_operands();
+    test_error_stays_inside_the_bound();
+    test_sum_of_runs_takes_the_tree_of_the_runs();
+    test_segments_take_the_tree_of_their_window();
+    crucible::test::pass("test_core_reduce: all tests passed\n");
+    return 0;
+}

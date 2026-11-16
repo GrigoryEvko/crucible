@@ -1,0 +1,142 @@
+// The compile-time checks of foundation/core/Reduce.h.
+
+#include <foundation/core/Reduce.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
+namespace foundation::core {
+
+namespace detail::reduce_checks {
+
+// A combine that is neither associative nor commutative: a change of the
+// shape of the tree or of the order of two operands changes its result.
+struct Mix {
+    [[nodiscard]] constexpr std::uint64_t operator()(std::uint64_t const& left,
+                                                     std::uint64_t const& right) const noexcept {
+        return rotl(left, 7) * 0x9E3779B97F4A7C15u + (right ^ 0xD1B54A32D192ED03u);
+    }
+};
+
+// A combine that can throw, and a combine that gives another type.
+struct ThrowingCombine {
+    [[nodiscard]] int operator()(int const& left, int const& right) const { return left + right; }
+};
+struct WideningCombine {
+    [[nodiscard]] long operator()(int const& left, int const& right) const noexcept { return long{left} + right; }
+};
+
+static_assert(TreeCombine<Mix, std::uint64_t>);
+static_assert(TreeCombine<TreeAdd, float>);
+static_assert(!TreeCombine<ThrowingCombine, int>);
+static_assert(!TreeCombine<WideningCombine, int>);
+static_assert(TreeSumElement<float> && TreeSumElement<double> && !TreeSumElement<int>);
+static_assert(TreeGrain<1> && TreeGrain<4096> && !TreeGrain<0> && !TreeGrain<48>);
+
+// The depth of the tree is ceil(log2 n).
+static_assert(tree_depth(0) == 0 && tree_depth(1) == 0 && tree_depth(2) == 1 && tree_depth(3) == 2);
+static_assert(tree_depth(4) == 2 && tree_depth(5) == 3 && tree_depth(1024) == 10 && tree_depth(1025) == 11);
+
+// The count of the grains rounds up.
+static_assert(tree_grain_count<4>(0) == 0 && tree_grain_count<4>(1) == 1 && tree_grain_count<4>(8) == 2);
+static_assert(tree_grain_count<4>(9) == 3);
+
+// The plan of three leaves is (x0, x1), then (that, x2).
+constexpr auto plan_of_three = tree_plan<3>();
+static_assert(plan_of_three.at(index<0>()) == TreeStep{PlanNode{0}, PlanNode{1}});
+static_assert(plan_of_three.at(index<1>()) == TreeStep{PlanNode{3}, PlanNode{2}});
+
+// The plan of six leaves is ((x0, x1), (x2, x3)), then (that, (x4, x5)).
+constexpr auto plan_of_six = tree_plan<6>();
+static_assert(plan_of_six.at(index<0>()) == TreeStep{PlanNode{0}, PlanNode{1}});
+static_assert(plan_of_six.at(index<1>()) == TreeStep{PlanNode{2}, PlanNode{3}});
+static_assert(plan_of_six.at(index<2>()) == TreeStep{PlanNode{6}, PlanNode{7}});
+static_assert(plan_of_six.at(index<3>()) == TreeStep{PlanNode{4}, PlanNode{5}});
+static_assert(plan_of_six.at(index<4>()) == TreeStep{PlanNode{8}, PlanNode{9}});
+
+// The leaves 1, 2, 3, ... of a run of N.
+template <std::size_t N>
+[[nodiscard]] consteval FixedArray<std::uint64_t, N> leaves_of() noexcept {
+    FixedArray<std::uint64_t, N> leaves{};
+    std::uint64_t next = 1;
+    for (std::uint64_t& leaf : leaves) {
+        leaf = next++;
+    }
+    return leaves;
+}
+
+// The plan of N leaves gives the value of tree_reduce for the combine Mix.
+template <std::size_t N>
+[[nodiscard]] consteval bool plan_agrees_with_reduce() noexcept {
+    auto const leaves = leaves_of<N>();
+    auto const steps = tree_plan<N>();
+    FixedArray<std::uint64_t, N - 1> scratch{};
+    std::uint64_t const from_plan =
+        evaluate_tree_plan(View<TreeStep const>{steps.view()}, View<std::uint64_t const>{leaves.view()},
+                           View<std::uint64_t>{scratch.view()}, Mix{})
+            .expect("the plan of tree_plan is ready in step order");
+    std::uint64_t const from_reduce = tree_reduce(leaves.view(), Mix{}).expect("the run has leaves");
+    return from_plan == from_reduce;
+}
+
+template <std::size_t... N>
+[[nodiscard]] consteval bool plans_agree(std::index_sequence<N...> /*counts*/) noexcept {
+    return (plan_agrees_with_reduce<N + 2>() && ...);
+}
+
+static_assert(plans_agree(std::make_index_sequence<40>{}));
+static_assert(plan_agrees_with_reduce<63>() && plan_agrees_with_reduce<64>() && plan_agrees_with_reduce<65>());
+static_assert(plan_agrees_with_reduce<127>() && plan_agrees_with_reduce<128>() && plan_agrees_with_reduce<129>());
+
+// An empty View has no tree, and one element is its own tree.
+static_assert(tree_reduce(View<std::uint64_t const>{}, Mix{}).is_none());
+constexpr FixedArray<std::uint64_t, 1> one_leaf{7};
+static_assert(tree_reduce(one_leaf.view(), Mix{}).expect("one leaf") == 7);
+
+// A step that reads a later node is refused.
+constexpr FixedArray<TreeStep, 1> bad_plan{TreeStep{PlanNode{0}, PlanNode{2}}};
+[[nodiscard]] consteval bool bad_plan_is_refused() noexcept {
+    FixedArray<std::uint64_t, 2> const two{leaves_of<2>()};
+    FixedArray<std::uint64_t, 1> scratch{};
+    return evaluate_tree_plan(View<TreeStep const>{bad_plan.view()}, View<std::uint64_t const>{two.view()},
+                              View<std::uint64_t>{scratch.view()}, Mix{})
+        .is_err();
+}
+static_assert(bad_plan_is_refused());
+
+// The segments of the leaves 1 to 6: [0, 2), [2, 2) and [2, 6).
+[[nodiscard]] consteval bool segments_take_their_trees() noexcept {
+    auto const leaves = leaves_of<6>();
+    FixedArray<std::size_t, 4> const offsets{0, 2, 2, 6};
+    FixedArray<std::uint64_t, 3> results{};
+    bool const is_written =
+        segmented_tree_reduce(View<std::uint64_t const>{leaves.view()}, View<std::size_t const>{offsets.view()},
+                              View<std::uint64_t>{results.view()}, std::uint64_t{99}, Mix{})
+            .is_ok();
+    Mix mix{};
+    std::uint64_t const tail = mix(mix(3, 4), mix(5, 6));
+    return is_written && results.at(index<0>()) == mix(1, 2) && results.at(index<1>()) == 99
+        && results.at(index<2>()) == tail;
+}
+static_assert(segments_take_their_trees());
+
+// Offsets that decrease, or that end past the elements, are refused.
+[[nodiscard]] consteval bool bad_segments_are_refused() noexcept {
+    auto const leaves = leaves_of<6>();
+    FixedArray<std::size_t, 3> const decreasing{0, 4, 2};
+    FixedArray<std::size_t, 3> const past_end{0, 4, 7};
+    FixedArray<std::uint64_t, 2> results{};
+    auto const first =
+        segmented_tree_reduce(View<std::uint64_t const>{leaves.view()}, View<std::size_t const>{decreasing.view()},
+                              View<std::uint64_t>{results.view()}, std::uint64_t{0}, Mix{});
+    auto const second =
+        segmented_tree_reduce(View<std::uint64_t const>{leaves.view()}, View<std::size_t const>{past_end.view()},
+                              View<std::uint64_t>{results.view()}, std::uint64_t{0}, Mix{});
+    return first.is_err() && second.is_err();
+}
+static_assert(bad_segments_are_refused());
+
+}  // namespace detail::reduce_checks
+
+}  // namespace foundation::core

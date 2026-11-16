@@ -3070,6 +3070,12 @@ foundation_test(test_core_array)
 foundation_test(test_core_algorithms)
 foundation_test(test_core_iteration)
 
+# The tree reduce, the scans and the sorts have one stated order each.  The
+# tests compare each fast form with a naive form of the same order, for each
+# count of SIMD lanes, each split into grains and each drawn order of the
+# grains.
+foundation_test(test_core_reduce)
+
 foundation_neg_compile_test(neg_core_view_windows_zero_width
   "no matching function for call to .foundation::core::View<int>::windows<0>\\(\\)."
   "required for the satisfaction of .ViewExtent<T, Width>. \\[with T = int; Width = 0\\]")
