@@ -215,13 +215,12 @@ parallel_sum_scan(Ctx const& ctx, ::foundation::core::ScanKind kind, ::foundatio
     return spawn::mint_parallel_for<Coupling, Shards>(
         ctx, budget, std::move(summed), [in, out, base, kind](auto& shard) noexcept {
             if (shard.size() == 0) return;
-            auto const add = [](T const& left, T const& right) noexcept { return left + right; };
             ::foundation::core::View<T const> const shard_carries{detail::region_view_(shard)};
             std::size_t const first = detail::first_slot_(shard, base);
             if (kind == ::foundation::core::ScanKind::Inclusive) {
-                ::foundation::core::inclusive_scan_grains<parallel_tree_grain>(in, first, shard_carries, out, add);
+                ::foundation::core::inclusive_sum_scan_grains<parallel_tree_grain>(in, first, shard_carries, out);
             } else {
-                ::foundation::core::exclusive_scan_grains<parallel_tree_grain>(in, first, shard_carries, out, T{}, add);
+                ::foundation::core::exclusive_sum_scan_grains<parallel_tree_grain>(in, first, shard_carries, out);
             }
         });
 }
@@ -236,14 +235,14 @@ struct ParallelTreeSlots {
     using permission_row = eff::Row<>;
 };
 
-// The region over the elements of a View, with a fresh root permission.  The
-// View borrows its storage for the call, and the region lives inside the
-// call, so the region gives the split of mint_parallel_for and no other
-// access.
+// The first element of the slots, for the region of a form.  Each form makes
+// its region in its own body with a fresh root permission, so the brand of
+// the region stays in the call that made it.  The View borrows its storage
+// for the call, and the region gives the split of mint_parallel_for and no
+// other access.
 template <typename T>
-[[nodiscard]] auto wrap_slots_(::foundation::core::View<T> slots) noexcept {
-    return ::fixy::mint_owned_region(first_of_(::foundation::core::detail::ViewDoor::key(), slots), slots.size(),
-                                     ::foundation::permissions::mint_permission_root<ParallelTreeSlots>());
+[[nodiscard]] T* first_slot_of_(::foundation::core::View<T> slots) noexcept {
+    return first_of_(::foundation::core::detail::ViewDoor::key(), slots);
 }
 
 }  // namespace detail
@@ -258,7 +257,10 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
                                   ::foundation::core::View<T const> elements) noexcept {
     ::foundation::core::HeapArray<T> storage =
         ::foundation::core::mint_heap_array(alloc, parallel_tree_partials(elements.size()), T{});
-    auto parts = parallel_tree_sum<Coupling, Shards>(ctx, elements, detail::wrap_slots_(storage.view()));
+    auto parts = parallel_tree_sum<Coupling, Shards>(
+        ctx, elements,
+        ::fixy::mint_owned_region(detail::first_slot_of_(storage.view()), storage.size(),
+                                  ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()));
     T const sum = parts.sum;
     ::foundation::linear::drop(std::move(parts.partials));
     return sum;
@@ -279,7 +281,11 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
     T const& fill = *elements.get(0).expect("the run has a first element");
     ::foundation::core::HeapArray<T> storage =
         ::foundation::core::mint_heap_array(alloc, parallel_tree_partials(elements.size()), fill);
-    auto parts = parallel_tree_reduce<Coupling, Shards>(ctx, elements, detail::wrap_slots_(storage.view()), combine);
+    auto parts = parallel_tree_reduce<Coupling, Shards>(
+        ctx, elements,
+        ::fixy::mint_owned_region(detail::first_slot_of_(storage.view()), storage.size(),
+                                  ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()),
+        combine);
     ::foundation::core::Option<T> value = std::move(parts.value);
     ::foundation::linear::drop(std::move(parts.partials));
     return value;
@@ -294,8 +300,10 @@ void parallel_sum_scan(Ctx const& ctx, ::foundation::core::Alloc alloc, ::founda
                        ::foundation::core::View<T const> in, ::foundation::core::View<T> out) noexcept {
     ::foundation::core::HeapArray<T> storage =
         ::foundation::core::mint_heap_array(alloc, parallel_tree_partials(in.size()), T{});
-    ::foundation::linear::drop(
-        parallel_sum_scan<Coupling, Shards>(ctx, kind, in, out, detail::wrap_slots_(storage.view())));
+    ::foundation::linear::drop(parallel_sum_scan<Coupling, Shards>(
+        ctx, kind, in, out,
+        ::fixy::mint_owned_region(detail::first_slot_of_(storage.view()), storage.size(),
+                                  ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>())));
 }
 
 // The tree sum of each segment, by shards of the segments: sums[s] is the
@@ -316,7 +324,9 @@ void parallel_segmented_tree_sum(Ctx const& ctx, ::foundation::core::View<T cons
     }
     T const* const base = first_of_(::foundation::core::detail::ViewDoor::key(), sums);
     ::foundation::linear::drop(spawn::mint_parallel_for<Coupling, Shards>(
-        ctx, detail::budget_of_<T>(elements.size(), sums.size()), detail::wrap_slots_(sums),
+        ctx, detail::budget_of_<T>(elements.size(), sums.size()),
+        ::fixy::mint_owned_region(detail::first_slot_of_(sums), sums.size(),
+                                  ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()),
         [elements, offsets, base](auto& shard) noexcept {
             if (shard.size() == 0) return;
             std::size_t const first = detail::first_slot_(shard, base);
