@@ -216,19 +216,53 @@ static void test_probe_stats_layout_invariants() {
     crucible::test::pass("  test_probe_stats_layout_invariants: PASSED\n");
 }
 
+// Two different triples of a peer, a kind and a lane never share an id of
+// one base, also when the base makes the id wrap past 2^32.  The second peer
+// of each sample is the first peer with one bit changed, or a second random
+// peer below the bound.  The samples come from Philox with a fixed key, so
+// each run reads the same samples.
+static void test_metric_ids_are_injective() {
+    constexpr std::uint64_t kSampleCount = std::uint64_t{1} << 16;
+    constexpr std::size_t kKindCount = observe::all_transport_probe_kinds.size();
+    constexpr std::uint32_t kPeerBits = 27;
+    static_assert((std::size_t{1} << kPeerBits) <= observe::detail::kMaxProbeMetricPeers);
+    for (std::uint64_t offset = 0; offset < kSampleCount; ++offset) {
+        ::fixy::Philox4x32::Counter const block = ::fixy::Philox4x32::generate(offset, 0x50524F4245ull);
+        std::uint32_t const word0 = *block.get(0).expect("a block holds four words");
+        std::uint32_t const word1 = *block.get(1).expect("a block holds four words");
+        std::uint32_t const word2 = *block.get(2).expect("a block holds four words");
+        std::uint32_t const word3 = *block.get(3).expect("a block holds four words");
+        std::size_t const peer_index = word0 >> (32u - kPeerBits);
+        std::size_t const flipped = peer_index ^ (std::size_t{1} << (word1 % kPeerBits));
+        std::size_t const other = word1 >> (32u - kPeerBits);
+        auto const kind = *observe::all_transport_probe_kinds.get(word2 % kKindCount).expect("the kind is a position");
+        auto const other_kind =
+            *observe::all_transport_probe_kinds.get((word2 >> 8u) % kKindCount).expect("the kind is a position");
+        auto const lane = static_cast<observe::detail::ProbeMetricLane>(word2 >> 31u);
+        auto const other_lane = static_cast<observe::detail::ProbeMetricLane>((word2 >> 30u) & 1u);
+        std::uint32_t const base = word3;
+        std::uint32_t const id = observe::detail::metric_id_for(base, peer_index, kind, lane);
+        assert(id != observe::detail::metric_id_for(base, flipped, kind, lane));
+        bool const is_same_triple = peer_index == other && kind == other_kind && lane == other_lane;
+        assert(is_same_triple == (id == observe::detail::metric_id_for(base, other, other_kind, other_lane)));
+    }
+    crucible::test::pass("  test_metric_ids_are_injective: PASSED\n");
+}
+
 int main() {
     static_assert(observe::CtxFitsSyntheticProbeMint<eff::ColdInitCtx>);
     static_assert(!observe::CtxFitsSyntheticProbeMint<eff::BgDrainCtx>);
     static_assert(observe::CtxFitsSyntheticProbeRecord<eff::BgDrainCtx>);
     static_assert(!observe::CtxFitsSyntheticProbeRecord<eff::HotFgCtx>);
 
-    ::fixy::report(::fixy::Sink::Out, "test_synthetic_probe: 6 groups\n");
+    ::fixy::report(::fixy::Sink::Out, "test_synthetic_probe: 7 groups\n");
     test_name_accessors();
     test_register_and_record_success();
     test_failure_accounting();
     test_rejects_unregistered_or_disabled();
     test_schedule_record_separation();
     test_probe_stats_layout_invariants();
+    test_metric_ids_are_injective();
     crucible::test::pass("test_synthetic_probe: all passed\n");
     return 0;
 }

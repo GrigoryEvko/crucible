@@ -16,7 +16,9 @@
 
 namespace crucible::topology {
 
-enum class CongestionMetricSlot : std::uint32_t {
+// The slot of a congestion metric.  The base type has the width of the slot
+// field of a packed metric id.
+enum class CongestionMetricSlot : std::uint8_t {
     SampleCount = 0,
     P50RttUs = 1,
     P95RttUs = 2,
@@ -29,7 +31,6 @@ enum class CongestionMetricSlot : std::uint32_t {
     WorstMode = 9,
 };
 
-inline constexpr std::uint32_t kCongestionMetricBase = 0x43430000u;
 // One observation for each slot.
 inline constexpr std::size_t kCongestionObservationCount = ::foundation::reflect::enum_count<CongestionMetricSlot>;
 
@@ -53,9 +54,13 @@ concept CtxFitsCongestionTelemetryHarvest =
 template <class Ctx>
 concept CtxFitsCongestionTelemetryPoll = CtxFitsCongestionTelemetryHarvest<Ctx> && cntp::CtxFitsSocketOption<Ctx>;
 
+// The packed metric id of one slot of one link: the family Congestion in 8
+// bits, the link slot in 16 bits, and the metric slot in 8 bits.  Each link
+// slot of the 16 bits has its own ids.
 [[nodiscard]] constexpr std::uint32_t congestion_metric_id(std::uint16_t link_slot,
                                                            CongestionMetricSlot slot) noexcept {
-    return kCongestionMetricBase | (static_cast<std::uint32_t>(link_slot) << 8u) | static_cast<std::uint32_t>(slot);
+    return ::crucible::observe::pack_metric_id(::crucible::observe::MetricFamily::Congestion, link_slot,
+                                               static_cast<std::uint8_t>(slot));
 }
 
 [[nodiscard]] constexpr CongestionObservationBatch congestion_observations(

@@ -21,6 +21,17 @@ static_assert(
         return true;
     }(),
     "congestion_observations does not give observation i the metric id of slot i.");
+
+// The id of a congestion metric takes the link slot in the 16 bits of the
+// index field and the metric slot in the 8 bits of the slot field.
+static_assert(
+    std::is_same_v<decltype(&congestion_metric_id), std::uint32_t (*)(std::uint16_t, CongestionMetricSlot) noexcept>
+        && sizeof(std::uint16_t) * 8 == ::crucible::observe::kMetricIndexBits
+        && sizeof(std::underlying_type_t<CongestionMetricSlot>) * 8 == ::crucible::observe::kMetricSlotBits,
+    "congestion_metric_id takes each field in a type of the width of the field");
+static_assert(congestion_metric_id(256, CongestionMetricSlot::SampleCount)
+                  == ::crucible::observe::pack_metric_id(::crucible::observe::MetricFamily::Congestion, 256, 0),
+              "the id of a congestion metric is the packed id of the family Congestion");
 static_assert(!std::is_default_constructible_v<CongestionTelemetryWorker<1, 1>>,
               "the worker is reached only through mint_congestion_telemetry_worker");
 static_assert(CtxFitsCongestionTelemetryStart<::fixy::ColdInitCtx>);

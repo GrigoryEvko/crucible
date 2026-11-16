@@ -161,10 +161,31 @@ namespace detail {
     return index;
 }
 
+// The lane of a probe metric: the latency of an outcome, or the bits that
+// the outcome moved.
+enum class ProbeMetricLane : std::uint8_t {
+    LatencyNs = 0,
+    BitsTransferred = 1,
+};
+
+inline constexpr std::size_t kProbeMetricLaneCount = 2;
+
+// The count of peers whose ids fit the 32 bits of a metric id: each peer
+// takes one id for each lane of each kind.
+inline constexpr std::size_t kMaxProbeMetricPeers =
+    (std::size_t{1} << 32u) / (all_transport_probe_kinds.size() * kProbeMetricLaneCount);
+
+// The metric id of one lane of one kind of the peer at peer_index: base plus
+// the offset (peer_index * kinds + kind) * lanes + lane, modulo 2^32.  The
+// kind and the lane are digits below their counts.  A peer index below
+// kMaxProbeMetricPeers keeps the offset below 2^32, so two ids of one base
+// are equal only when the peer, the kind and the lane are equal.
 [[nodiscard]] constexpr std::uint32_t metric_id_for(std::uint32_t base, std::size_t peer_index, TransportProbeKind kind,
-                                                    std::uint32_t lane) noexcept {
-    return base + static_cast<std::uint32_t>(peer_index * all_transport_probe_kinds.size() * 2u)
-         + static_cast<std::uint32_t>(transport_probe_index(kind) * 2u) + lane;
+                                                    ProbeMetricLane lane) noexcept {
+    std::size_t const offset =
+        (peer_index * all_transport_probe_kinds.size() + transport_probe_index(kind)) * kProbeMetricLaneCount
+        + static_cast<std::size_t>(lane);
+    return base + static_cast<std::uint32_t>(offset);
 }
 
 // alignas(64) is load-bearing. The struct is embedded in a per-peer,
@@ -189,6 +210,9 @@ struct alignas(64) AtomicProbeStats {
 template <std::size_t MaxPeers>
 class SyntheticProbeRunner : public ::foundation::Pinned<SyntheticProbeRunner<MaxPeers>> {
     static_assert(MaxPeers > 0, "SyntheticProbeRunner<MaxPeers> requires MaxPeers > 0.");
+    static_assert(MaxPeers <= detail::kMaxProbeMetricPeers,
+                  "SyntheticProbeRunner<MaxPeers> gives each peer its own metric ids only when MaxPeers is at most "
+                  "detail::kMaxProbeMetricPeers.");
 
 public:
     static constexpr std::size_t max_peers = MaxPeers;
@@ -329,11 +353,13 @@ public:
                 [&](PeerIndex index) noexcept {
                     observe::record_observation(
                         observations,
-                        observe::latency_ns(detail::metric_id_for(config_.metric_id_base, index.raw(), outcome.kind, 0),
+                        observe::latency_ns(detail::metric_id_for(config_.metric_id_base, index.raw(), outcome.kind,
+                                                                  detail::ProbeMetricLane::LatencyNs),
                                             outcome.latency_ns, outcome.sequence));
                     observe::record_observation(
                         observations, observe::bits_transferred(
-                                          detail::metric_id_for(config_.metric_id_base, index.raw(), outcome.kind, 1),
+                                          detail::metric_id_for(config_.metric_id_base, index.raw(), outcome.kind,
+                                                                detail::ProbeMetricLane::BitsTransferred),
                                           outcome.bytes_transferred * 8ull, outcome.sequence));
                     return true;
                 },

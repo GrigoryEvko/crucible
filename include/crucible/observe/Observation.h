@@ -43,6 +43,29 @@ struct Observation {
 
 using ObservationSnapshot = ::fixy::concurrent::AtomicSnapshot<Observation>;
 
+// The family of a packed metric id: the kind of the source that owns a range
+// of ids.  The value of each family is an ASCII letter.
+enum class MetricFamily : std::uint8_t {
+    Congestion = 0x43,
+    TopologyHealth = 0x48,
+};
+
+// The layout of a packed metric id, from the high bit: the family in 8 bits,
+// the index of the source in 16 bits, and the slot of the metric in 8 bits.
+// The three widths fill the 32 bits of the id.
+inline constexpr unsigned kMetricFamilyBits = 8;
+inline constexpr unsigned kMetricIndexBits = 16;
+inline constexpr unsigned kMetricSlotBits = 8;
+
+// The packed metric id of one slot of the source at index.  Each parameter
+// has the width of its field, so no input loses a bit, and two ids are equal
+// only when their three fields are equal.
+[[nodiscard]] constexpr std::uint32_t pack_metric_id(MetricFamily family, std::uint16_t index,
+                                                     std::uint8_t slot) noexcept {
+    return (static_cast<std::uint32_t>(family) << (kMetricIndexBits + kMetricSlotBits))
+         | (static_cast<std::uint32_t>(index) << kMetricSlotBits) | static_cast<std::uint32_t>(slot);
+}
+
 [[nodiscard]] constexpr Observation make_observation(ObservationKind kind, ObservationSource source,
                                                      std::uint32_t metric_id, std::uint64_t value,
                                                      std::uint64_t sequence = 0) noexcept {

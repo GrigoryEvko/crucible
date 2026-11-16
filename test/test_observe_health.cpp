@@ -52,7 +52,61 @@ void test_metric_ids_are_partitioned_by_peer_slot() {
 
     CRUCIBLE_REQUIRE(peer_3_score != peer_4_score);
     CRUCIBLE_REQUIRE(peer_3_score != peer_3_phi);
-    CRUCIBLE_REQUIRE((peer_3_score & 0xFFFF0000u) == observe::kTopologyHealthMetricBase);
+    CRUCIBLE_REQUIRE(peer_3_score
+                     == observe::pack_metric_id(observe::MetricFamily::TopologyHealth, 3,
+                                                static_cast<std::uint8_t>(observe::HealthMetricSlot::Score)));
+}
+
+// Each id gives back its three fields, so no two pairs of a peer and a slot
+// share an id.  The walk reads each of the 65536 peer slots with each metric
+// slot.  Complexity: O(65536 * slots).
+void test_metric_id_gives_back_its_fields() {
+    constexpr unsigned kSlotShift = 0;
+    constexpr unsigned kIndexShift = kSlotShift + observe::kMetricSlotBits;
+    constexpr unsigned kFamilyShift = kIndexShift + observe::kMetricIndexBits;
+    for (std::uint32_t peer = 0; peer <= ::fixy::max_of<std::uint16_t>; ++peer) {
+        for (std::uint32_t slot_index = 0; slot_index < observe::kTopologyHealthObservationCount; ++slot_index) {
+            std::uint32_t const id = observe::topology_health_metric_id(
+                static_cast<std::uint16_t>(peer), static_cast<observe::HealthMetricSlot>(slot_index));
+            CRUCIBLE_REQUIRE((id >> kFamilyShift) == static_cast<std::uint32_t>(observe::MetricFamily::TopologyHealth));
+            CRUCIBLE_REQUIRE(((id >> kIndexShift) & 0xFFFFu) == peer);
+            CRUCIBLE_REQUIRE(((id >> kSlotShift) & 0xFFu) == slot_index);
+        }
+    }
+}
+
+// Peer 256 differs from peer 0 only in the ninth bit of its index, and the id
+// keeps that bit.
+void test_metric_id_keeps_each_bit_of_the_peer() {
+    for (std::size_t slot_index = 0; slot_index < observe::kTopologyHealthObservationCount; ++slot_index) {
+        auto const slot = static_cast<observe::HealthMetricSlot>(slot_index);
+        CRUCIBLE_REQUIRE(observe::topology_health_metric_id(0, slot) != observe::topology_health_metric_id(256, slot));
+    }
+}
+
+// Two different pairs of a peer and a slot never share an id.  The second
+// peer of each sample is the first peer with one bit changed, or a second
+// random peer.  The samples come from Philox with a fixed key, so each run
+// reads the same samples.
+void test_random_peers_never_share_an_id() {
+    constexpr std::uint64_t kSampleCount = std::uint64_t{1} << 16;
+    constexpr std::uint32_t kSlotCount = observe::kTopologyHealthObservationCount;
+    for (std::uint64_t offset = 0; offset < kSampleCount; ++offset) {
+        ::fixy::Philox4x32::Counter const block = ::fixy::Philox4x32::generate(offset, 0x4845414C5448ull);
+        std::uint32_t const word0 = *block.get(0).expect("a block holds four words");
+        std::uint32_t const word1 = *block.get(1).expect("a block holds four words");
+        std::uint32_t const word2 = *block.get(2).expect("a block holds four words");
+        std::uint32_t const word3 = *block.get(3).expect("a block holds four words");
+        auto const peer = static_cast<std::uint16_t>(word0);
+        auto const flipped = static_cast<std::uint16_t>(peer ^ (1u << (word1 % 16u)));
+        auto const other = static_cast<std::uint16_t>(word1 >> 16u);
+        auto const slot = static_cast<observe::HealthMetricSlot>(word2 % kSlotCount);
+        auto const other_slot = static_cast<observe::HealthMetricSlot>(word3 % kSlotCount);
+        std::uint32_t const id = observe::topology_health_metric_id(peer, slot);
+        CRUCIBLE_REQUIRE(id != observe::topology_health_metric_id(flipped, slot));
+        bool const is_same_pair = peer == other && slot == other_slot;
+        CRUCIBLE_REQUIRE(is_same_pair == (id == observe::topology_health_metric_id(other, other_slot)));
+    }
 }
 
 void test_snapshot_maps_to_fixed_observation_batch() {
@@ -94,6 +148,9 @@ void test_publish_updates_dedicated_latest_value_sinks() {
 int main() {
     std::fprintf(stderr, "[test_observe_health]\n");
     run_test("metric_ids_are_partitioned_by_peer_slot", test_metric_ids_are_partitioned_by_peer_slot);
+    run_test("metric_id_gives_back_its_fields", test_metric_id_gives_back_its_fields);
+    run_test("metric_id_keeps_each_bit_of_the_peer", test_metric_id_keeps_each_bit_of_the_peer);
+    run_test("random_peers_never_share_an_id", test_random_peers_never_share_an_id);
     run_test("snapshot_maps_to_fixed_observation_batch", test_snapshot_maps_to_fixed_observation_batch);
     run_test("publish_updates_dedicated_latest_value_sinks", test_publish_updates_dedicated_latest_value_sinks);
 

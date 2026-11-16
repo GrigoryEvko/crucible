@@ -9,23 +9,27 @@
 
 namespace crucible::observe {
 
-enum class HealthMetricSlot : std::uint32_t {
+// The slot of a health metric.  The base type has the width of the slot
+// field of a packed metric id.
+enum class HealthMetricSlot : std::uint8_t {
     Score = 0,
     PhiMilli = 1,
     DropRatePpm = 2,
     WearUsedPpm = 3,
 };
 
-inline constexpr std::uint32_t kTopologyHealthMetricBase = 0x48450000u;
 // One observation for each slot.
 inline constexpr std::size_t kTopologyHealthObservationCount = 4;
 
 using TopologyHealthObservationSet = ::fixy::FixedArray<ObservationSnapshot, kTopologyHealthObservationCount>;
 using TopologyHealthObservationBatch = ::fixy::FixedArray<Observation, kTopologyHealthObservationCount>;
 
+// The packed metric id of one slot of one peer: the family TopologyHealth in
+// 8 bits, the peer slot in 16 bits, and the metric slot in 8 bits.  Each peer
+// slot of the 16 bits has its own ids.
 [[nodiscard]] constexpr std::uint32_t topology_health_metric_id(std::uint16_t peer_slot,
                                                                 HealthMetricSlot slot) noexcept {
-    return kTopologyHealthMetricBase | (static_cast<std::uint32_t>(peer_slot) << 8u) | static_cast<std::uint32_t>(slot);
+    return pack_metric_id(MetricFamily::TopologyHealth, peer_slot, static_cast<std::uint8_t>(slot));
 }
 
 [[nodiscard]] constexpr TopologyHealthObservationBatch

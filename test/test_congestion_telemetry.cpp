@@ -364,6 +364,37 @@ void test_aggregate_finalize_guard() {
     crucible::test::pass("  test_aggregate_finalize_guard: PASSED\n");
 }
 
+// Link 256 differs from link 0 only in the ninth bit of its index, and the id
+// keeps that bit.  Two different pairs of a link and a slot never share an id.
+// The second link of each sample is the first link with one bit changed, or
+// a second random link.  The samples come from Philox with a fixed key, so
+// each run reads the same samples.
+void test_metric_ids_are_injective() {
+    constexpr std::uint32_t kSlotCount = topology::kCongestionObservationCount;
+    for (std::uint32_t slot_index = 0; slot_index < kSlotCount; ++slot_index) {
+        auto const slot = static_cast<topology::CongestionMetricSlot>(slot_index);
+        assert(topology::congestion_metric_id(0, slot) != topology::congestion_metric_id(256, slot));
+    }
+    constexpr std::uint64_t kSampleCount = std::uint64_t{1} << 16;
+    for (std::uint64_t offset = 0; offset < kSampleCount; ++offset) {
+        ::fixy::Philox4x32::Counter const block = ::fixy::Philox4x32::generate(offset, 0x434F4E474553ull);
+        std::uint32_t const word0 = *block.get(0).expect("a block holds four words");
+        std::uint32_t const word1 = *block.get(1).expect("a block holds four words");
+        std::uint32_t const word2 = *block.get(2).expect("a block holds four words");
+        std::uint32_t const word3 = *block.get(3).expect("a block holds four words");
+        auto const link = static_cast<std::uint16_t>(word0);
+        auto const flipped = static_cast<std::uint16_t>(link ^ (1u << (word1 % 16u)));
+        auto const other = static_cast<std::uint16_t>(word1 >> 16u);
+        auto const slot = static_cast<topology::CongestionMetricSlot>(word2 % kSlotCount);
+        auto const other_slot = static_cast<topology::CongestionMetricSlot>(word3 % kSlotCount);
+        std::uint32_t const id = topology::congestion_metric_id(link, slot);
+        assert(id != topology::congestion_metric_id(flipped, slot));
+        bool const is_same_pair = link == other && slot == other_slot;
+        assert(is_same_pair == (id == topology::congestion_metric_id(other, other_slot)));
+    }
+    crucible::test::pass("  test_metric_ids_are_injective: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -387,6 +418,7 @@ int main() {
     test_aggregate_and_drift();
     test_aggregate_finalize_guard();
     test_worker_recording();
+    test_metric_ids_are_injective();
     test_decode_tcp_sample();
     test_live_tcp_info();
     crucible::test::pass("test_congestion_telemetry: all PASSED\n");
