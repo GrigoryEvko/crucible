@@ -219,7 +219,7 @@ int check_transform_and_declassify() {
     // Copy is deleted, so the card can only be moved out of.
 
     auto hashed = std::move(card).transform(
-        [](CardNumber c) -> std::uint64_t { return c.digits ^ std::uint64_t{0xDEADBEEFCAFEBABEULL}; });
+        [](CardNumber const& c) -> std::uint64_t { return c.digits ^ std::uint64_t{0xDEADBEEFCAFEBABEULL}; });
     static_assert(std::is_same_v<decltype(hashed), Secret<std::uint64_t>>);
 
     std::uint64_t raw = std::move(hashed).declassify<secret_policy::HashForCompare>();
@@ -270,6 +270,13 @@ int check_each_policy_edge() {
     Secret<int> s = mint_secret<int>(seed * 2);
     Secret<int> t = std::move(s).transform([](int&& v) { return v + 1; });
     if (std::move(t).declassify<secret_policy::AuditedLogging>() != 35) return 50;
+
+    // The callable takes the payload by reference: an rvalue reference, a
+    // const reference, or the generic form of each.
+    Secret<int> by_const = mint_secret<int>(seed).transform([](int const& v) { return v + 2; });
+    Secret<int> by_generic = std::move(by_const).transform([](auto const& v) { return v * 2; });
+    Secret<int> by_forwarding = std::move(by_generic).transform([](auto&& v) { return v + 0; });
+    if (std::move(by_forwarding).declassify<secret_policy::AuditedLogging>() != 38) return 53;
 
     Secret<int> wire = mint_secret<int>(seed);
     if (std::move(wire).declassify<secret_policy::WireSerialize>() != 17) return 51;

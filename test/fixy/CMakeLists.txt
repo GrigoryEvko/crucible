@@ -964,6 +964,15 @@ fixy_neg_compile_test(neg_secret_transform_returns_void
   "no matching function for call to .fixy::Secret<int>::transform\\("
   "required for the satisfaction of .TransformReturnsNonVoid<F, T>."
   "the expression .!\\(is_void_v<typename std::invoke_result<[A-Za-z_][A-Za-z0-9_]*, [A-Za-z_][A-Za-z0-9_]*&&>::type>\\) \\[with F = .*T = int\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_secret_transform_takes_payload_by_value
+  "use of deleted function .void fixy::Secret<T>::transform\\(F&&\\) && \\[with F = .*T = int\\]."
+  "Secret_TransformCopiesPayload")
+fixy_neg_compile_test(neg_secret_transform_takes_payload_by_value_generic
+  "use of deleted function .void fixy::Secret<T>::transform\\(F&&\\) && \\[with F = .*T = long unsigned int\\]."
+  "Secret_TransformCopiesPayload")
+fixy_neg_compile_test(neg_secret_transform_with_two_call_operators
+  "use of deleted function .void fixy::Secret<T>::transform\\(F&&\\) && \\[with F = .anonymous.::TwoCalls. T = int\\]."
+  "Secret_TransformCopiesPayload")
 
 # The combinatorial half, as one walk over the atom catalog.
 # Registered as a POSITIVE test: the claims are static_asserts, so the

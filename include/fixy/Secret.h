@@ -22,6 +22,7 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/ConfLattice.h>
+#include <foundation/core/Choice.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/reflect/Instance.h>
 
@@ -92,7 +93,7 @@ concept LengthDeclassification =
 template <typename Policy>
 concept PayloadDeclassification = AdmittedDeclassification<Policy> && !LengthDeclassification<Policy>;
 
-// The three rules transform() places on its callable.  Each is its
+// The four rules transform() places on its callable.  Each is its
 // own concept, so a refusal names the rule that was broken instead of
 // the bare fact that constraints were not satisfied.
 //
@@ -108,8 +109,29 @@ concept TransformReturnsByValue = !std::is_reference_v<std::invoke_result_t<F, T
 template <typename F, typename T>
 concept TransformReturnsNonVoid = !std::is_void_v<std::invoke_result_t<F, T&&>>;
 
+namespace detail {
+
+// True when the call of F takes its one parameter by reference.
+// Reflection reads the parameter, as the rvalue match of
+// foundation/core/Choice.h reads the parameter of an arm.  A callable whose
+// parameter reflection cannot read gives false, so the rule fails closed.
 template <typename F, typename T>
-concept SecretTransformer = std::invocable<F, T&&> && TransformReturnsByValue<F, T> && TransformReturnsNonVoid<F, T>;
+[[nodiscard]] consteval bool transform_takes_payload_by_reference_() {
+    std::meta::info const parameter = ::foundation::core::detail::arm_parameter_of_<F, T>();
+    return parameter != std::meta::info{} && std::meta::is_reference_type(parameter);
+}
+
+}  // namespace detail
+
+// A parameter by value is a copy of the payload, and nothing zeroizes that
+// copy at the end of the call.  So the callable takes the payload by
+// reference, as T const& or T&&.
+template <typename F, typename T>
+concept TransformTakesPayloadByReference = detail::transform_takes_payload_by_reference_<F, T>();
+
+template <typename F, typename T>
+concept SecretTransformer = std::invocable<F, T&&> && TransformReturnsByValue<F, T> && TransformReturnsNonVoid<F, T>
+                         && TransformTakesPayloadByReference<F, T>;
 
 template <typename T>
 class Secret;
@@ -275,6 +297,11 @@ public:
     // the duration of the call, so the intended use is a stateless
     // transformation such as a decode or a hash fold.
     //
+    // The callable gets the payload in its place in this Secret, as an
+    // rvalue reference, and it takes the payload by reference.  So the call
+    // makes no copy of the bytes.  After the call, the Secret zeroizes its
+    // payload, as the source of a move does.
+    //
     // The rules on the callable are constraints, not assertions in the
     // body.  A callable that breaks one never reaches the trailing
     // return type, so Secret<T&> is never named, and a caller's
@@ -298,8 +325,22 @@ public:
                                           " likely intent is a side-effecting observation on the"
                                           " classified payload — that belongs in declassify<Policy>(),"
                                           " not transform().");
-        return Secret<R>{std::forward<F>(f)(std::move(impl_).consume())};
+        Secret<R> derived{std::forward<F>(f)(std::move(impl_.peek_mut(key_{})))};
+        if constexpr (zeroizes_payload_) {
+            zeroize();
+        }
+        return derived;
     }
+
+    // A callable that takes the payload by value, or whose parameter
+    // reflection cannot read, binds to this overload, so the refusal gives
+    // its reason.
+    template <typename F>
+        requires std::invocable<F, T&&> && TransformReturnsByValue<F, T> && TransformReturnsNonVoid<F, T>
+                  && (!TransformTakesPayloadByReference<F, T>)
+    void transform(F&& f) && = delete("[Secret_TransformCopiesPayload] the callable of transform() takes the payload "
+                                      "by value, and nothing zeroizes that copy at the end of the call.  Take the "
+                                      "payload by reference, as T const& or T&&, with one call operator.");
 
     // The length of a classified value is classified.  The deleted
     // accessor gives the reason at a call, and a requires-expression over

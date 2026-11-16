@@ -143,7 +143,7 @@ constexpr void absorb(SipState& state, std::uint64_t block) noexcept {
 [[nodiscard]] constexpr std::pair<Secret<Key>, Tag> sign(Secret<Key>&& key,
                                                          std::span<const std::byte> message) noexcept {
     Secret<Tag> tag = mint_secret<Tag>();
-    Secret<Key> kept = std::move(key).transform([&](Key raw) noexcept {
+    Secret<Key> kept = std::move(key).transform([&](Key const& raw) noexcept {
         tag = mint_secret<Tag>(detail::siphash::compute(raw, message));
         return raw;
     });
@@ -155,7 +155,7 @@ constexpr void absorb(SipState& state, std::uint64_t block) noexcept {
 [[nodiscard]] constexpr std::pair<Secret<Key>, bool> verify(Secret<Key>&& key, std::span<const std::byte> message,
                                                             Tag const& tag) noexcept {
     Secret<bool> matches = mint_secret<bool>(false);
-    Secret<Key> kept = std::move(key).transform([&](Key raw) noexcept {
+    Secret<Key> kept = std::move(key).transform([&](Key const& raw) noexcept {
         Tag const computed = detail::siphash::compute(raw, message);
         matches = mint_secret<bool>(
             ct::eq(std::span<const std::byte, tag_bytes>{computed}, std::span<const std::byte, tag_bytes>{tag}));

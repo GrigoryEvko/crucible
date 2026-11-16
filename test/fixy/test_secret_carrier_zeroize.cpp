@@ -10,6 +10,12 @@
 //   assignment  the source of a move assignment holds zero bytes
 //   end         the storage of a carrier holds zero bytes after its end
 //
+// A Secret has one more door, transform, and one more hazard:
+//
+//   transform   the callable reads the payload in the storage of the Secret,
+//               so the call makes no copy of the payload, and the storage
+//               holds zero bytes after the call
+//
 // The probe reaches a moved-from carrier through a reference, which the rule
 // use-after-move does not read, as the owner probes of the base do.  The
 // probe of the end builds a carrier in a buffer of bytes that outlives it,
@@ -21,7 +27,9 @@
 #include <fixy/session/Classified.h>
 #include <foundation/Quarantine.h>
 
+#include <bit>
 #include <cstddef>
+#include <cstdint>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -167,6 +175,52 @@ template <class Kind>
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// The facts of one transform of a Secret in a buffer of bytes.
+struct TransformFacts {
+    bool is_payload = false;
+    bool is_in_storage = false;
+    bool is_zero_after = false;
+    int derived = 0;
+};
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the callable of a transform reads the payload in the buffer of the Secret")
+// Transforms a Secret in a buffer of bytes with a callable that takes the
+// payload as Param.  The callable records where its parameter lives, and the
+// probe reads the buffer after the call, before the end of the Secret.
+template <class Param>
+[[nodiscard]] TransformFacts storage_after_transform() noexcept {
+    using Carrier = SecretKind::Carrier;
+    alignas(Carrier) unsigned char storage[sizeof(Carrier)] = {};
+    Carrier* const carrier = ::new(static_cast<void*>(storage)) Carrier(SecretKind::make());
+    std::uintptr_t const first = std::bit_cast<std::uintptr_t>(static_cast<unsigned char*>(storage));
+    std::uintptr_t const last = first + sizeof(Carrier);
+    TransformFacts facts{};
+    ::fixy::Secret<int> derived = std::move(*carrier).transform([&facts, first, last](Param payload) noexcept {
+        std::uintptr_t const address = std::bit_cast<std::uintptr_t>(&payload);
+        facts.is_in_storage = address >= first && address + sizeof(KeyBytes) <= last;
+        facts.is_payload = is_pattern(payload);
+        return 7;
+    });
+    volatile unsigned char const* const bytes = storage;
+    facts.is_zero_after = true;
+    for (std::size_t index = 0; index < sizeof(Carrier); ++index) {
+        facts.is_zero_after = facts.is_zero_after && bytes[index] == 0;
+    }
+    carrier->~Carrier();
+    facts.derived = std::move(derived).declassify<secret_policy::HashForCompare>();
+    return facts;
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+template <class Param>
+void check_transform() noexcept {
+    TransformFacts const facts = storage_after_transform<Param>();
+    expect(facts.is_payload, "the callable of a transform reads the secret");
+    expect(facts.is_in_storage, "the callable of a transform reads the payload in the storage of the Secret");
+    expect(facts.is_zero_after, "the storage of a Secret holds zero bytes after its transform");
+    expect(facts.derived == 7, "the transform gives the value of the callable");
+}
+
 template <class Kind>
 void check_carrier() noexcept {
     ::fixy::report(::fixy::Sink::Err, "[{}]\n", Kind::name);
@@ -183,6 +237,9 @@ int main() {
     check_carrier<SecretKind>();
     check_carrier<DeclassifyOnSendKind>();
     check_carrier<CTPayloadKind>();
+    ::fixy::report(::fixy::Sink::Err, "[Secret transform]\n");
+    check_transform<KeyBytes&&>();
+    check_transform<KeyBytes const&>();
     if (failures != 0) {
         ::fixy::report(::fixy::Sink::Err, "test_secret_carrier_zeroize: {} failed\n", failures);
         return 1;

@@ -80,7 +80,7 @@ void check_secret_derivation(Tally& tally) noexcept {
         std::uint64_t bit = opaque(bit_value);
         make_secret(bit);
         auto classified = ::fixy::mint_secret<std::uint64_t>(bit);
-        auto chosen = std::move(classified).transform([](std::uint64_t b) noexcept {
+        auto chosen = std::move(classified).transform([](std::uint64_t const& b) noexcept {
             return ::fixy::ct::select(b, std::uint64_t{0xAA}, std::uint64_t{0x55});
         });
         std::uint64_t const out = std::move(chosen).declassify<::fixy::tags::secret_policy::HashForCompare>();
