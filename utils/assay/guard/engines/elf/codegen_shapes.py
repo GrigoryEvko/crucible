@@ -790,11 +790,14 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "one_of_match",
-        "the match of a OneOf of three alternatives compares the tag with the first two indices, and the last "
-        "alternative takes the last branch with no compare, as the raw form of a tagged storage word does.  The family "
-        "side has no more instructions than the raw side.  The family form falls through to the arm of the first "
-        f"alternative and the raw form jumps to it, so the first branch tests the other way.  {HARDENED_BUILDS}.  On "
-        "the hot path, these flags add a second test of each edge, with a branch to a trap",
+        "the match of a OneOf of three alternatives compares the tag with each of the three indices, and a tag after "
+        "the last index branches to a call of the fatal exit.  The raw form of a tagged storage word takes the last "
+        "alternative with no compare.  A copy of bytes over a plain OneOf can write a tag that names no alternative, "
+        "and the arm of the last alternative would then read the storage as that alternative.  The family form falls "
+        "through to the arm of the first alternative and the raw form jumps to it, so the first branch tests the other "
+        f"way.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch to a "
+        "trap",
+        checks=("fatal",),
         branches=True,
     ),
     Probe(

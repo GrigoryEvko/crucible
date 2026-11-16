@@ -609,8 +609,8 @@ result_try_convert(fixy::Result<std::uint32_t, Code8> result) noexcept {
                                    [](Code32 code) noexcept { return static_cast<std::uint32_t>(code); });
 }
 
-// The match of a OneOf of three alternatives compares the tag with the first
-// two indices, and the last alternative takes the last branch.
+// The match of a OneOf of three alternatives compares the tag with each of
+// the three indices, and a tag after the last index ends the process.
 [[gnu::used]] std::uint32_t one_of_match(fixy::OneOf<std::uint32_t, Code32, std::uint16_t> reading) noexcept {
     return std::move(reading).match([](std::uint32_t word) noexcept { return word * 3u; },
                                     [](Code32 code) noexcept { return static_cast<std::uint32_t>(code); },

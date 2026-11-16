@@ -193,8 +193,8 @@ include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 457 | - | -
-include/fixy/session/ | base-std-object | 191 | - | -
+include/fixy/session/ | base-std-entity | 450 | - | -
+include/fixy/session/ | base-std-object | 187 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 1 | - | -
@@ -212,7 +212,7 @@ include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
 include/fixy/session/ | replace-pending:<tuple> | 7 | - | -
 include/fixy/session/ | replace-pending:<vector> | 9 | - | -
 include/foundation/ | base-c-library-call | 4 | - | -
-include/foundation/ | base-std-entity | 23 | - | -
+include/foundation/ | base-std-entity | 21 | - | -
 include/foundation/ | base-std-object | 9 | - | -
 include/foundation/ | replace-pending:<atomic> | 1 | - | -
 include/foundation/ | replace-pending:<bit> | 3 | - | -
@@ -272,7 +272,7 @@ include/foundation/reflect/ | replace-pending:<vector> | 4 | - | -
 src/ | raw-new-delete | 3 | - | -
 src/ | raw-pointer-object | 7 | - | -
 src/ | std-entity | 53 | - | -
-src/ | std-object | 10 | - | -
+src/ | std-object | 9 | - | -
 src/fixy/os/ | base-std-entity | 153 | - | -
 src/fixy/os/ | base-std-object | 63 | - | -
 src/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
@@ -306,8 +306,8 @@ test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the 
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 77 | - | -
-test/ | std-entity | 1470 | - | -
-test/ | std-object | 528 | - | -
+test/ | std-entity | 1467 | - | -
+test/ | std-object | 527 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 3 | - | -
@@ -376,8 +376,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2796 | - | -
-test/fixy/ | std-object | 1012 | - | -
+test/fixy/ | std-entity | 2764 | - | -
+test/fixy/ | std-object | 1000 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 254 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -429,8 +429,8 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 107 | - | -
-test/fixy/neg/ | std-object | 49 | - | -
+test/fixy/neg/ | std-entity | 104 | - | -
+test/fixy/neg/ | std-object | 48 | - | -
 test/foundation/ | c-array-object | 33 | - | -
 test/foundation/ | c-library-call | 399 | - | -
 test/foundation/ | c-library-object | 7 | - | -
@@ -539,8 +539,8 @@ test/fuzz/boundary/harnesses/ | opted-out | 6 | ABI: the fuzzer gives the host t
 test/fuzz/boundary/harnesses/ | raw-pointer-object | 8 | - | -
 test/fuzz/boundary/harnesses/ | region | 5 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
-test/fuzz/boundary/harnesses/ | std-entity | 154 | - | -
-test/fuzz/boundary/harnesses/ | std-object | 83 | - | -
+test/fuzz/boundary/harnesses/ | std-entity | 146 | - | -
+test/fuzz/boundary/harnesses/ | std-object | 80 | - | -
 test/fuzz/property/ | c-array-object | 17 | - | -
 test/fuzz/property/ | c-library-call | 48 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -

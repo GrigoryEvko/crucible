@@ -2303,6 +2303,17 @@ foundation_neg_compile_test(neg_core_option_union_forged_tag
 foundation_neg_compile_test(neg_core_one_of_union_member_forged_tag
   "this member of a union is a .foundation::core::OneOf<[^>]*>., whose bytes hold the tag of a sum"
   "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+# The same byte routes reach the tag of a plain OneOf: a memcpy onto it, a
+# memset onto a class that holds it, and a lifetime start over bytes.
+foundation_neg_compile_test(neg_core_one_of_memcpy_forged_tag
+  "this copy of bytes writes a .Reading. from bytes of a different type"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_one_of_memset_forged_tag
+  "this copy of bytes writes a .Frame. from bytes of a different type"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_one_of_lifetime_start
+  "no matching function for call to .start_as_array<Reading>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::OneOf<")
 foundation_neg_compile_test(neg_core_option_plain_lifetime_start
   "no matching function for call to .start_as_array<foundation::core::Option<long unsigned int> >"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Option<long unsigned int>\\]")

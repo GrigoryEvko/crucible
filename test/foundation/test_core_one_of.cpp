@@ -94,18 +94,51 @@ struct ForgedBytes {
 static_assert(sizeof(ForgedBytes) == sizeof(Reading));
 
 // A copy of bytes over a plain OneOf can write a tag that names no
-// alternative, and no rule refuses each such copy at compile time.  which()
-// then ends the process, so no Index leaves its range.
+// alternative.  The rule forged-tag of the quarantine plugin refuses such a
+// copy out of a PROBE region, and this PROBE region makes one on purpose.
+[[nodiscard]] Reading forge_reading() noexcept {
+    Reading forged = read_word(9u);
+    ForgedBytes const bytes{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of a OneOf")
+    __builtin_memcpy(static_cast<void*>(&forged), &bytes, sizeof(Reading));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return forged;
+}
+
+// which() of a forged OneOf ends the process, so no Index leaves its range.
 void test_which_refuses_a_forged_tag() {
-    bool const forged_which_aborts = ::crucible::test::aborts([] {
-        Reading forged = read_word(9u);
-        ForgedBytes const bytes{};
-        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of a OneOf")
-        __builtin_memcpy(static_cast<void*>(&forged), &bytes, sizeof(Reading));
-        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-        static_cast<void>(forged.which());
+    Reading const forged = forge_reading();
+    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged] { static_cast<void>(forged.which()); }));
+}
+
+// Each walk of the tag of a forged OneOf ends the process: the borrow match,
+// the rvalue match and the compare of two OneOfs with the same forged tag.
+// So no arm reads the storage as the last alternative.  A read that compares
+// the tag with one index reads no alternative: is<T>() gives false, get<T>()
+// gives no value, and a compare with a OneOf of a real tag gives false.
+void test_match_refuses_a_forged_tag() {
+    Reading const forged = forge_reading();
+    Reading const same_forged = forged;
+    bool const borrow_match_aborts = ::crucible::test::aborts([&forged] {
+        static_cast<void>(forged.match([](std::uint32_t const&) noexcept { return 1; },
+                                       [](Refusal const&) noexcept { return 2; },
+                                       [](std::uint16_t const&) noexcept { return 3; }));
     });
-    CRUCIBLE_FATAL_INVARIANT(forged_which_aborts);
+    bool const rvalue_match_aborts = ::crucible::test::aborts([&forged] {
+        static_cast<void>(Reading{forged}.match([](std::uint32_t) noexcept { return 1; },
+                                                [](Refusal) noexcept { return 2; },
+                                                [](std::uint16_t) noexcept { return 3; }));
+    });
+    bool const compare_aborts =
+        ::crucible::test::aborts([&forged, &same_forged] { static_cast<void>(forged == same_forged); });
+    CRUCIBLE_FATAL_INVARIANT(borrow_match_aborts);
+    CRUCIBLE_FATAL_INVARIANT(rvalue_match_aborts);
+    CRUCIBLE_FATAL_INVARIANT(compare_aborts);
+
+    Reading const real = read_word(9u);
+    CRUCIBLE_FATAL_INVARIANT(!forged.is<std::uint32_t>() && !forged.is<Refusal>() && !forged.is<std::uint16_t>());
+    CRUCIBLE_FATAL_INVARIANT(forged.get<std::uint16_t>().is_none());
+    CRUCIBLE_FATAL_INVARIANT(!(forged == real) && !(real == forged));
 }
 
 void test_expect() {
@@ -291,6 +324,7 @@ void test_agrees_with_model() {
 int main() {
     test_each_alternative();
     test_which_refuses_a_forged_tag();
+    test_match_refuses_a_forged_tag();
     test_expect();
     test_match();
     test_get();

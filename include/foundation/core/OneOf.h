@@ -18,6 +18,11 @@
 // type has no operator*, no operator-> and no operator bool, and it is
 // [[nodiscard]].
 //
+// Only a copy of bytes writes a tag that names no alternative.  A read that
+// must name the active alternative then ends the process: which(), each
+// match, and the compare of two OneOfs with the same tag.  is<T>() and get<T>()
+// compare the tag with one index, so such a tag gives false and no value.
+//
 // The storage is the sum of the family (Choice.h).  The sum of plain
 // alternatives holds the storage and a tag, and its copy, move and end are
 // those of its bytes.  It is trivially copyable when each alternative is,
@@ -34,6 +39,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Ref.h>
@@ -65,6 +71,15 @@ template <class T, class... Ts>
 template <class T, class... Ts>
 inline constexpr std::size_t index_in_v = detail::index_in_<T, Ts...>();
 
+// The fatal exit of a tag that names no alternative of a OneOf.  The call
+// takes no argument, so each inlined read of a tag adds only a compare and a
+// branch to one call.  The name starts with report_, as each cold fatal exit
+// of the family does, so the rule codegen-shapes reads a call of it as a
+// fatal path.
+[[noreturn]] CRUCIBLE_COLD inline void report_forged_one_of_tag_() noexcept {
+    fatal("OneOf: the tag names no alternative, so a copy of bytes made this OneOf");
+}
+
 }  // namespace detail
 
 template <class... Ts>
@@ -85,47 +100,53 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
         return slot_.template alternative_<Index>(detail::SumDoor::key());
     }
 
-    // The arm at Index takes the alternative at Index.  The last alternative
-    // takes the last branch, so a match has no fatal path and no test of a
-    // tag outside the alternatives.  Complexity: at most one compare for each
-    // alternative.
+    // THE WALKS OF THE TAG.  The match and the compare walk the tag from the
+    // first index.  Each step compares the tag with its index, the last step
+    // too.  A tag after the last index names no alternative, because only a
+    // copy of bytes writes it.  The walk then ends the process and runs no
+    // arm, so no arm reads the storage as the last alternative.  The compare
+    // at the last step is one compare and one branch to a cold call, and the
+    // optimizer folds it when it knows the tag.  Complexity: at most one
+    // compare for each alternative.
+
+    // The arm at Index takes the alternative at Index (THE WALKS OF THE TAG).
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result moved_from_(Arms&&... arms) && {
-        if constexpr (Index + 1 == sizeof...(Ts)) {
+        if (index_() == Index) {
             return static_cast<Arms...[Index]&&>(arms...[Index])(static_cast<Ts...[Index]&&>(alternative_<Index>()));
+        }
+        if constexpr (Index + 1 == sizeof...(Ts)) {
+            detail::report_forged_one_of_tag_();
         } else {
-            if (index_() == Index) {
-                return static_cast<Arms...[Index]&&>(arms...[Index])(
-                    static_cast<Ts...[Index]&&>(alternative_<Index>()));
-            }
             return static_cast<OneOf&&>(*this).template moved_from_<Index + 1, Result>(static_cast<Arms&&>(arms)...);
         }
     }
 
     // The compare of the alternative at Index and after, when the two tags
-    // are equal.  The last alternative takes the last branch.  Complexity:
-    // at most one compare of a tag for each alternative, and one compare of
-    // the active alternatives.
+    // are equal (THE WALKS OF THE TAG).  Complexity: at most one compare of a
+    // tag for each alternative, and one compare of the active alternatives.
     template <std::size_t Index>
     [[nodiscard]] constexpr bool equal_from_(OneOf const& other) const noexcept {
-        if constexpr (Index + 1 == sizeof...(Ts)) {
+        if (index_() == Index) {
             return alternative_<Index>() == other.template alternative_<Index>();
+        }
+        if constexpr (Index + 1 == sizeof...(Ts)) {
+            detail::report_forged_one_of_tag_();
         } else {
-            if (index_() == Index) {
-                return alternative_<Index>() == other.template alternative_<Index>();
-            }
             return this->template equal_from_<Index + 1>(other);
         }
     }
 
+    // The arm at Index takes a borrow of the alternative at Index (THE WALKS
+    // OF THE TAG).
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result borrowed_from_(Arms&&... arms) const {
-        if constexpr (Index + 1 == sizeof...(Ts)) {
+        if (index_() == Index) {
             return static_cast<Arms...[Index]&&>(arms...[Index])(alternative_<Index>());
+        }
+        if constexpr (Index + 1 == sizeof...(Ts)) {
+            detail::report_forged_one_of_tag_();
         } else {
-            if (index_() == Index) {
-                return static_cast<Arms...[Index]&&>(arms...[Index])(alternative_<Index>());
-            }
             return this->template borrowed_from_<Index + 1, Result>(static_cast<Arms&&>(arms)...);
         }
     }
@@ -150,7 +171,7 @@ public:
     [[nodiscard]] constexpr Index<sizeof...(Ts)> which() const noexcept {
         std::size_t const tag = index_();
         if (tag >= sizeof...(Ts)) [[unlikely]] {
-            fatal("OneOf::which: the tag names no alternative, so a copy of bytes made this OneOf");
+            detail::report_forged_one_of_tag_();
         }
         return Index<sizeof...(Ts)>{detail::IndexDoor::key(), tag};
     }
