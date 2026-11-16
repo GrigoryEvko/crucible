@@ -78,7 +78,7 @@ _MASK64     = (1 << 64) - 1
 # ".py was redeployed but libcrucible_vessel.so is stale" failure
 # before any dispatch runs.
 
-EXPECTED_ABI_VERSION = 7
+EXPECTED_ABI_VERSION = 8
 
 
 class SchemaNameResult(enum.IntEnum):
@@ -115,6 +115,43 @@ class AbiStamp(NamedTuple):
     symbol: str  # the C function that gives the stamp
     expected: int
     rebuild: str  # the build command that the message names
+
+
+class CrucibleSlot(ctypes.Structure):
+    """One slot of the memory plan of the active region, in the layout of CrucibleSlot of vessel_api.h."""
+
+    _fields_ = [
+        ("offset_bytes", ctypes.c_uint64),
+        ("nbytes", ctypes.c_uint64),
+        ("birth_op", ctypes.c_uint32),
+        ("death_op", ctypes.c_uint32),
+        ("slot_id", ctypes.c_uint32),
+        ("dtype", ctypes.c_int8),
+        ("device_type", ctypes.c_int8),
+        ("device_idx", ctypes.c_int8),
+        ("layout", ctypes.c_int8),
+        ("is_external", ctypes.c_uint8),
+        ("pad0", ctypes.c_uint8),
+        ("pad1", ctypes.c_uint16),
+        ("pad2", ctypes.c_uint32),
+    ]
+
+
+class RegionSlot(NamedTuple):
+    """One slot of the memory plan of the active region (crucible::TensorSlot).
+
+    An op index is the position of the op in the region, in the order of
+    export_trace.  An external slot keeps the storage that it had before the
+    region, so it takes no bytes of the pool.
+    """
+
+    slot_id: int
+    offset_bytes: int
+    nbytes: int
+    birth_op: int
+    death_op: int
+    dtype: int
+    is_external: bool
 
 
 VESSEL_STAMP = AbiStamp("libcrucible_vessel.so", "crucible_abi_version", EXPECTED_ABI_VERSION,
@@ -411,6 +448,10 @@ class _VesselLib:
         L.crucible_active_num_ops.argtypes = [ctypes.c_void_p]
         L.crucible_active_content_hash.restype = ctypes.c_uint64
         L.crucible_active_content_hash.argtypes = [ctypes.c_void_p]
+        L.crucible_active_region_slots.restype = ctypes.c_uint32
+        L.crucible_active_region_slots.argtypes = [ctypes.c_void_p, ctypes.POINTER(CrucibleSlot), ctypes.c_uint32]
+        L.crucible_active_pool_bytes.restype = ctypes.c_uint64
+        L.crucible_active_pool_bytes.argtypes = [ctypes.c_void_p]
 
         # The eager word of a region entry
         L.crucible_observe_eager_numerics.restype = ctypes.c_int
@@ -481,6 +522,25 @@ class _VesselLib:
     def active_num_ops(self, h: int) -> int:
         """The number of operations in the active region."""
         return self._lib.crucible_active_num_ops(h)
+
+    def active_region_slots(self, h: int) -> list[RegionSlot]:
+        """The slots of the memory plan of the active region, in the order of the plan.  O(n) in the slots.
+
+        Raises:
+            RuntimeError: If the count of the slots changes between the read of the count and the read of the slots
+        """
+        count = self._lib.crucible_active_region_slots(h, None, 0)
+        slots = (CrucibleSlot * count)()
+        written = self._lib.crucible_active_region_slots(h, slots, count)
+        if written != count:
+            raise RuntimeError(f"the plan of the active region went from {count} to {written} slots between two reads.  "
+                               f"Read the slots on the thread of the session, between two ops")
+        return [RegionSlot(slot.slot_id, slot.offset_bytes, slot.nbytes, slot.birth_op, slot.death_op, slot.dtype,
+                           bool(slot.is_external)) for slot in slots]
+
+    def active_pool_bytes(self, h: int) -> int:
+        """The bytes of the pool of the plan of the active region, or 0 when the Vigil has no region or no plan."""
+        return self._lib.crucible_active_pool_bytes(h)
 
 
 # =====================================================================
@@ -1208,6 +1268,14 @@ class CrucibleNative:
     def active_content_hash(self) -> int:
         """The content hash of the active region, or 0 when the Vigil has no region."""
         return self._vessel.active_content_hash(self._handle) if self._vessel else 0
+
+    def active_region_slots(self) -> list[RegionSlot]:
+        """The slots of the memory plan of the active region, or no slot when the Vigil has no region."""
+        return self._vessel.active_region_slots(self._handle) if self._vessel else []
+
+    def active_pool_bytes(self) -> int:
+        """The bytes of the pool of the plan of the active region, or 0 when the Vigil has no region."""
+        return self._vessel.active_pool_bytes(self._handle) if self._vessel else 0
 
     # ── Autograd engine serialisation ────────────────────────────────
     #

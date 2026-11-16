@@ -53,6 +53,26 @@ static_assert(CRUCIBLE_STATUS_MATCH == static_cast<int>(crucible::ReplayStatus::
 static_assert(CRUCIBLE_STATUS_DIVERGED == static_cast<int>(crucible::ReplayStatus::DIVERGED));
 static_assert(CRUCIBLE_STATUS_COMPLETE == static_cast<int>(crucible::ReplayStatus::COMPLETE));
 
+// CrucibleSlot has the 40 bytes that vessel_api.h states, so a C caller and
+// ctypes lay it out the same.
+static_assert(sizeof(CrucibleSlot) == 40);
+
+// The C form of one slot of a memory plan.
+[[nodiscard]] static CrucibleSlot encode_slot(const crucible::TensorSlot& slot) noexcept {
+    CrucibleSlot encoded{};
+    encoded.offset_bytes = slot.offset_bytes;
+    encoded.nbytes = slot.nbytes;
+    encoded.birth_op = slot.birth_op.raw();
+    encoded.death_op = slot.death_op.raw();
+    encoded.slot_id = slot.slot_id.raw();
+    encoded.dtype = std::to_underlying(slot.dtype);
+    encoded.device_type = std::to_underlying(slot.device_type);
+    encoded.device_idx = slot.device_idx;
+    encoded.layout = std::to_underlying(slot.layout);
+    encoded.is_external = slot.is_external ? 1 : 0;
+    return encoded;
+}
+
 // The C form of the answer of a dispatch.  The Vigil saw the op, so the
 // action is RECORD or COMPILED, never REFUSED.
 [[nodiscard]] static CrucibleDispatchResult encode_dispatch_result(const crucible::DispatchResult& result) noexcept {
@@ -609,6 +629,38 @@ uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
     for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
         return region->num_ops();
+    }
+    return 0;
+}
+
+// The plan is in the memory of the active region, which lives while the
+// Vigil keeps it active.  O(n) in the slots that the call writes.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
+uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out, uint32_t capacity) noexcept {
+    CRUCIBLE_PRE(out != nullptr || capacity == 0);
+    CRUCIBLE_PRE((std::bit_cast<std::uintptr_t>(out) & (alignof(CrucibleSlot) - 1U)) == 0U);
+    auto vigil_typed = crucible::vessel::as_vigil_typed(h);
+    for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
+        for (const ::fixy::Ref<crucible::MemoryPlan> plan : region->plan) {
+            uint32_t written = 0;
+            for (const crucible::TensorSlot& slot : plan->slots) {
+                if (written == capacity) break;
+                out[written] = encode_slot(slot);
+                ++written;
+            }
+            return plan->num_slots();
+        }
+    }
+    return 0;
+}
+
+uint64_t crucible_active_pool_bytes(CrucibleHandle h) noexcept {
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    auto vigil_typed = crucible::vessel::as_vigil_typed(h);
+    for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
+        for (const ::fixy::Ref<crucible::MemoryPlan> plan : region->plan) {
+            return plan->pool_bytes;
+        }
     }
     return 0;
 }

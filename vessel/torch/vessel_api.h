@@ -160,7 +160,7 @@ typedef struct {
 // Python ctypes consumers cross-check via crucible_abi_version() at
 // load.  The constant is also exposed as a #define so C consumers can
 // bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 7ULL
+#define CRUCIBLE_VESSEL_ABI_VERSION 8ULL
 
 // Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
 // Never aborts — pure constant return.  Used by crucible_native.py
@@ -307,6 +307,40 @@ CRUCIBLE_VESSEL_API int crucible_export_crtrace(CrucibleHandle h, const char* pa
 
 // Number of ops in the active compiled region.  0 if no region.
 CRUCIBLE_VESSEL_API uint32_t crucible_active_num_ops(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+
+// ── The memory plan of the active region ─────────────────────────────
+
+// One slot of the memory plan of the active region (crucible::TensorSlot of
+// crucible/MerkleDag.h), 40 bytes.  An external slot keeps the storage that it
+// had before the region, so it takes no bytes of the pool.  An op index is the
+// position of the op in the region, in the order of crucible_export_crtrace.
+typedef struct {
+    uint64_t offset_bytes;  // the offset of the slot in the pool, zero for an external slot
+    uint64_t nbytes;  // the bytes of the storage of the slot
+    uint32_t birth_op;  // the first op of the region that uses the slot
+    uint32_t death_op;  // the last op of the region that uses the slot
+    uint32_t slot_id;  // the id of the slot in the region
+    int8_t dtype;  // crucible::ScalarType ordinal
+    int8_t device_type;  // crucible::DeviceType ordinal
+    int8_t device_idx;
+    int8_t layout;  // crucible::Layout ordinal
+    uint8_t is_external;  // 1 for a slot whose storage lives before the region
+    uint8_t pad0;  // zero
+    uint16_t pad1;  // zero
+    uint32_t pad2;  // zero
+} CrucibleSlot;
+
+// The slots of the memory plan of the active region, in the order of the
+// plan.  The call writes the first slots into out, at most capacity of them,
+// and returns the count of the slots of the plan.  It returns 0 when the Vigil
+// has no active region or the region has no plan.  out is null only with a
+// capacity of 0, for a read of the count.
+CRUCIBLE_VESSEL_API uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out,
+                                                          uint32_t capacity) CRUCIBLE_VESSEL_NOEXCEPT;
+
+// The bytes of the pool of the memory plan of the active region, or 0 when
+// the Vigil has no active region or the region has no plan.
+CRUCIBLE_VESSEL_API uint64_t crucible_active_pool_bytes(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 #ifdef __cplusplus
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
