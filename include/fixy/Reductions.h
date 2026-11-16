@@ -78,6 +78,7 @@ using ::foundation::core::sort_by_network;
 using ::foundation::core::sort_network_size;
 using ::foundation::core::sort_stably;
 using ::foundation::core::SortElement;
+using ::foundation::core::stable_sort_radix_count;
 using ::foundation::core::stable_sort_run;
 using ::foundation::core::StrictOrder;
 

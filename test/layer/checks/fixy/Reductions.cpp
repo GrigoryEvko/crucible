@@ -27,6 +27,7 @@ static_assert(is_one_entity<&::fixy::count_inclusive_scan_depth, &::foundation::
 static_assert(is_one_entity<&::fixy::count_exclusive_scan_depth, &::foundation::core::count_exclusive_scan_depth>);
 static_assert(is_one_entity<&::fixy::count_tree_grains<4>, &::foundation::core::count_tree_grains<4>>);
 static_assert(is_one_entity<&::fixy::sort_network_size<4>, &::foundation::core::sort_network_size<4>>);
+static_assert(is_one_entity<&::fixy::stable_sort_radix_count, &::foundation::core::stable_sort_radix_count>);
 static_assert(is_one_entity<&::fixy::max_plan_leaves, &::foundation::core::max_plan_leaves>);
 static_assert(is_one_entity<&::fixy::empty_plan_node, &::foundation::core::empty_plan_node>);
 static_assert(!is_one_entity<&::fixy::count_inclusive_scan_depth, &::fixy::count_exclusive_scan_depth>);
