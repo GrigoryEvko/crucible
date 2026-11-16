@@ -78,7 +78,19 @@ _MASK64     = (1 << 64) - 1
 # ".py was redeployed but libcrucible_vessel.so is stale" failure
 # before any dispatch runs.
 
-EXPECTED_ABI_VERSION = 3
+EXPECTED_ABI_VERSION = 4
+
+
+class SchemaNameResult(enum.IntEnum):
+    """The result of crucible_register_schema_name (CRUCIBLE_SCHEMA_NAME_* of vessel_api.h)."""
+
+    # The table holds the name for the hash.
+    REGISTERED = 0
+    # The call gave no name to register.
+    REFUSED = 1
+    # The table holds a different name for the hash, and it keeps that name.
+    COLLISION = 2
+
 
 # Mirrors kDispatchAbiVersion in vessel/torch/crucible_fallback.cpp, which
 # libcrucible_dispatch.so reports through crucible_dispatch_abi_version().

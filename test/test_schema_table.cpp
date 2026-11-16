@@ -28,8 +28,13 @@ static bool eq(::fixy::Option<SchemaTable::LookupName> const& name, ::fixy::Text
 // A registration into an open table always lands.
 template <SchemaNameSource Tag>
 static void reg(SchemaTable& t, SchemaTable::MutableView const& view, SchemaHash hash, SchemaTable::Name<Tag> name) {
-    const bool was_registered = t.register_name(::foundation::effects::testing::test().alloc, view, hash, name);
+    const bool was_registered = t.register_name(::foundation::effects::testing::test().alloc, view, hash, name).is_ok();
     assert(was_registered);
+}
+
+// True when a registration gave the refusal sealed.
+static bool is_sealed_refusal(SchemaRegistration const& registration) {
+    return registration.is_err() && registration.err().value_or(SchemaRefusal::collision) == SchemaRefusal::sealed;
 }
 
 // The table admits exactly two provenances, and a looked-up name claims
@@ -117,9 +122,27 @@ static void register_two_names_of_one_hash() noexcept {
     reg(t, mv, H(0x42), S("second"));
 }
 
-// A different name of a held hash is a collision of two schemas, and the
-// registration ends the process with the two names, in a child process of
-// expect_dies.
+// A name from outside the process can be wrong, so a different name of a
+// held hash is refused with collision, and the table keeps its first name.
+// The same name from outside registers as an internal name does.
+static void test_outside_name_collision_is_refused() {
+    SchemaTable t;
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0x42), S("first"));
+    const SchemaTable::SanitizedName other =
+        ::fixy::mint_tagged<source::External>(::fixy::TextView{"second"}).retag<source::Sanitized>();
+    assert(is_collision(t.register_name(::foundation::effects::testing::test().alloc, mv, H(0x42), other)));
+    assert(t.count() == 1 && eq(t.lookup(H(0x42)), "first"));
+    const SchemaTable::SanitizedName same =
+        ::fixy::mint_tagged<source::External>(::fixy::TextView{"first"}).retag<source::Sanitized>();
+    assert(t.register_name(::foundation::effects::testing::test().alloc, mv, H(0x42), same).is_ok());
+    assert(t.count() == 1 && eq(t.lookup(H(0x42)), "first"));
+    crucible::test::pass("  test_outside_name_collision:    PASSED\n");
+}
+
+// A different internal name of a held hash is a collision of two schemas, a
+// defect of the program, and the registration ends the process with the two
+// names, in a child process of expect_dies.
 static void test_other_name_of_one_hash_is_a_collision() {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     ::fixy::check::expect_dies(test, register_two_names_of_one_hash,
@@ -158,7 +181,7 @@ static void test_global_table_convenience() {
     global_schema_table().clear(test_ctx());  // this table outlives the test
     const auto gv = global_schema_table().mint_mutable_view(kVigilForeground).expect("a cleared table is open");
     const bool was_registered =
-        register_schema_name(::foundation::effects::testing::test().alloc, gv, H(0xAA), S("aten::relu"));
+        register_schema_name(::foundation::effects::testing::test().alloc, gv, H(0xAA), S("aten::relu")).is_ok();
     assert(was_registered);
     assert(eq(schema_name(H(0xAA)), "aten::relu"));
     assert(eq(schema_short_name(H(0xAA)), "relu"));
@@ -236,15 +259,13 @@ static void test_write_after_seal_through_an_older_view_is_refused() {
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     reg(t, mv, H(0x10), S("aten::before"));
     t.seal();
-    const bool was_registered =
-        t.register_name(::foundation::effects::testing::test().alloc, mv, H(0x20), S("aten::after"));
-    assert(!was_registered);
+    assert(is_sealed_refusal(
+        t.register_name(::foundation::effects::testing::test().alloc, mv, H(0x20), S("aten::after"))));
     assert(t.count() == 1);
     assert(missing(t.lookup(H(0x20))));
     // A write to an existing hash is refused too, and keeps the old name.
-    const bool was_renamed =
-        t.register_name(::foundation::effects::testing::test().alloc, mv, H(0x10), S("aten::renamed"));
-    assert(!was_renamed);
+    assert(is_sealed_refusal(
+        t.register_name(::foundation::effects::testing::test().alloc, mv, H(0x10), S("aten::renamed"))));
     assert(eq(t.lookup(H(0x10)), "aten::before"));
     crucible::test::pass("  test_write_after_seal_refused:  PASSED\n");
 }
@@ -299,6 +320,7 @@ int main() {
     test_short_name_strips_aten_prefix();
     test_same_name_registers_once();
     test_other_name_of_one_hash_is_a_collision();
+    test_outside_name_collision_is_refused();
     test_binary_search_across_many();
     test_global_table_convenience();
     test_empty_name_is_noop();
@@ -311,6 +333,6 @@ int main() {
     test_sanitized_boundary_name_registers();
     test_lookup_works_post_seal();
     test_entry_has_no_padding_byte();
-    crucible::test::pass("test_schema_table: 17 groups, all passed\n");
+    crucible::test::pass("test_schema_table: 18 groups, all passed\n");
     return 0;
 }

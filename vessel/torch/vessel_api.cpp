@@ -380,36 +380,29 @@ void* crucible_input_ptr(CrucibleHandle h, uint16_t j) noexcept {
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
-void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const char* name) noexcept {
-    // C ABI boundary: validate before routing to SanitizedName.
-    // Rules:
-    //   - schema_hash != 0 (0 is the invalid sentinel)
-    //   - name != null
-    //   - strnlen(name, MAX_NAME+1) ≤ MAX_NAME
-    //     (strnlen caps the walk so a missing NUL-terminator from a
-    //     malformed FFI caller can't walk off into foreign memory)
-    // ATen op names in PyTorch all fit in <= 128 bytes; the 256 cap
-    // leaves headroom while still bounding the worst-case walk.
-    constexpr size_t MAX_NAME = 256;
-    if (schema_hash == 0) return;
-    if (name == nullptr) return;
-    const size_t len = ::strnlen(name, MAX_NAME + 1);
-    if (len == 0 || len > MAX_NAME) return;
+int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const char* name) noexcept {
+    // The C caller gives a C text.  A null name is refused here.  strnlen
+    // reads at most kMaxSchemaNameBytes + 1 bytes, so a text with no zero
+    // from a malformed caller cannot lead the walk into foreign memory.  The
+    // typed door refuses the zero hash and a length of zero or past the
+    // bound.
+    if (name == nullptr) return CRUCIBLE_SCHEMA_NAME_REFUSED;
+    const size_t len = ::strnlen(name, crucible::vessel::kMaxSchemaNameBytes + 1);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-    // The checks above are the boundary's sanitizer, and the retag records
-    // that they ran.  The name is never dropped: a sealed global table sends
-    // it to the late table.
+    // register_schema_name_typed checks the hash and the length, and its
+    // checks are the sanitizer of the boundary.  A sealed global table sends
+    // the name to the late table, so no seal drops it.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C caller gives the name as a pointer, and strnlen gave its length")
     const ::fixy::TextView name_text = ::fixy::mint_foreign_text(name, len);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    const auto name_tag =
-        ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name_text).retag<::fixy::tags::source::Sanitized>();
 
     // The tables take names only from the thread that holds the producer
     // claim of this Vigil.  The Vigil mints that context for the write, and
-    // the mint ends the process on any other thread.
-    crucible::vessel::as_vigil_typed(h).value()->register_schema_name(crucible::SchemaHash{schema_hash}, name_tag);
+    // the mint ends the process on any other thread.  A different name of a
+    // held hash comes back as a collision, and the table keeps its first name.
+    return crucible::vessel::register_schema_name_typed(*crucible::vessel::as_vigil_typed(h).value(), schema_hash,
+                                                        name_text);
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")

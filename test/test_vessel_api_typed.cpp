@@ -484,13 +484,17 @@ void test_schema_name_typed() {
 
     constexpr crucible::VigilFgCtx fg = ::foundation::effects::testing::foreground<crucible::Vigil>();
     for (const crucible::SchemaTable::MutableView& view : crucible::global_schema_table().mint_mutable_view(fg)) {
-        const bool was_a_registered = crucible::register_schema_name(
-            ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_a},
-            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_a"}));
+        const bool was_a_registered =
+            crucible::register_schema_name(
+                ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_a},
+                ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_a"}))
+                .is_ok();
         EXPECT(was_a_registered, "an open schema table must take the first registration");
-        const bool was_b_registered = crucible::register_schema_name(
-            ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_b},
-            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_b"}));
+        const bool was_b_registered =
+            crucible::register_schema_name(
+                ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{hash_b},
+                ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::test_op_b"}))
+                .is_ok();
         EXPECT(was_b_registered, "an open schema table must take the second registration");
     }
 
@@ -512,6 +516,36 @@ void test_schema_name_typed() {
     // An unknown hash gives no name, and the C boundary gives NULL for it.
     const auto missing = crucible::vessel::schema_name_typed(crucible::SchemaHash{0xDEADC0DEDEADC0DEULL});
     EXPECT(missing.is_none(), "an unknown schema hash must give no name");
+}
+
+// The codes of crucible_register_schema_name, through the typed door that
+// the C entry calls.  A first name and the same name again register.  A
+// different name of the held hash gives the collision code, and the table
+// keeps the first name.  A zero hash and an empty name give the refusal code.
+// The process lives through each case.
+void test_schema_name_registration_codes() {
+    constexpr uint64_t held_hash = 0xC1C2C3C4C5C6C7C8ULL;
+    crucible::Vigil vigil;
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash, ::fixy::TextView{"aten::first"})
+               == CRUCIBLE_SCHEMA_NAME_REGISTERED,
+           "a first name registers");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash, ::fixy::TextView{"aten::first"})
+               == CRUCIBLE_SCHEMA_NAME_REGISTERED,
+           "the same name again registers");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash, ::fixy::TextView{"aten::second"})
+               == CRUCIBLE_SCHEMA_NAME_COLLISION,
+           "a different name of a held hash gives the collision code");
+    const auto held_name = crucible::vessel::schema_name_typed(crucible::SchemaHash{held_hash});
+    const bool keeps_first =
+        held_name.match([](TypedSchemaName const& found) noexcept { return found.value().view() == "aten::first"; },
+                        [] noexcept { return false; });
+    EXPECT(keeps_first, "the table keeps the first name of a held hash");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, 0, ::fixy::TextView{"aten::first"})
+               == CRUCIBLE_SCHEMA_NAME_REFUSED,
+           "a zero hash gives the refusal code");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash + 1, ::fixy::TextView{})
+               == CRUCIBLE_SCHEMA_NAME_REFUSED,
+           "an empty name gives the refusal code");
 }
 
 void test_abi_version_constant() {
@@ -663,6 +697,7 @@ int main() {
     test_ffi_records_read_the_c_records();
     test_ffi_decode_refuses_each_broken_claim();
     test_schema_name_typed();
+    test_schema_name_registration_codes();
     test_abi_version_constant();
     test_handle_distinct_pointers();
     test_ladder_refuses_unnamed_enumerations();

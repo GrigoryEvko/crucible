@@ -34,8 +34,10 @@ int main() {
         const ::fixy::TextView name_view =
             ::fixy::format(name, "aten::op{}", i).expect("aten::op and a number below 250 fit in 16 characters");
         const bool was_registered =
-            table.register_name(::foundation::effects::testing::test().alloc, mutable_view, hashes[i],
-                                ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name_view));
+            table
+                .register_name(::foundation::effects::testing::test().alloc, mutable_view, hashes[i],
+                               ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name_view))
+                .is_ok();
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 

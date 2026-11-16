@@ -122,9 +122,10 @@ struct SchemaRace {
     using Table = crucible::SchemaTable;
 
     [[nodiscard]] static bool register_one(Table& table, Table::MutableView const& view, crucible::SchemaHash hash) {
-        return table.register_name(
-            ::foundation::effects::testing::test().alloc, view, hash,
-            ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::race"}));
+        return table
+            .register_name(::foundation::effects::testing::test().alloc, view, hash,
+                           ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::race"}))
+            .is_ok();
     }
 
     [[nodiscard]] static uint32_t read_sealed(Table const& table, uint32_t /*round*/) {

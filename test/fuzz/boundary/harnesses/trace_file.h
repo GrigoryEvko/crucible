@@ -13,10 +13,12 @@
 namespace crucible::fuzz::boundary {
 
 // One operation with one input and one output, two metadata records, and a
-// name table with one name.
+// name table that gives one hash the name aten::x and then aten::y.  The
+// first name registers, and the second name reaches the refusal of a
+// collision in the schema table.
 [[nodiscard]] inline Seeds seeds_trace_file() {
     std::vector<std::uint8_t> seed = text_bytes("CRTR");
-    append_raw(seed, std::uint32_t{1});
+    append_raw(seed, TRACE_FORMAT_VERSION);
     append_raw(seed, std::uint32_t{1});
     append_raw(seed, std::uint32_t{2});
     TraceOpRecord record{};
@@ -31,10 +33,13 @@ namespace crucible::fuzz::boundary {
     meta.dtype = ScalarType::Float;
     append_raw(seed, meta);
     append_raw(seed, meta);
-    append_raw(seed, std::uint32_t{1});
+    append_raw(seed, std::uint32_t{2});
     append_raw(seed, std::uint64_t{0xABCD});
     append_raw(seed, std::uint16_t{7});
     append_bytes(seed, text_bytes("aten::x"));
+    append_raw(seed, std::uint64_t{0xABCD});
+    append_raw(seed, std::uint16_t{7});
+    append_bytes(seed, text_bytes("aten::y"));
     return {seed};
 }
 
@@ -63,10 +68,18 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
                 [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
         if (!file.is_open() || ::fixy::fs::write_full(ctx, file, as_bytes_view(bytes)).is_err()) return;
     }
-    auto loaded = load_trace(ctx, path);
+    // The load registers the names of the trace into the global table, so a
+    // second name of one hash reaches the refusal of a collision.  The table
+    // starts empty at each run, so no name of an earlier input collides,
+    // and the names of one trace fit, because the loader bounds their count
+    // at the capacity of the table.
+    constexpr VigilFgCtx kForeground = ::foundation::effects::testing::foreground<Vigil>();
+    global_schema_table().clear(::foundation::effects::testing::test());
+    auto loaded = load_trace(ctx, kForeground, path);
     if (loaded.is_err()) return;
     const LoadedTrace trace = std::move(loaded).expect("the load holds a trace after the check of its error");
 
+    CRUCIBLE_FUZZ_CLAIM("trace_file", global_schema_table().count() <= SCHEMA_TABLE_CAP);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.metas.size() == trace.num_metas);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.entries.size() == trace.num_ops);
     for (const TensorMeta& meta : trace.metas)

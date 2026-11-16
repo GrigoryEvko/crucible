@@ -285,13 +285,42 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // (`source::ABIBoundary`) that crucible_register_schema_name receives.
 //
 // An unknown hash gives no value.  The text borrows the storage of the table,
-// which keeps it until a registration of the same hash replaces the name.
+// which keeps the first name of each hash for the life of the table.
 
 using TypedSchemaName = crucible::SchemaTable::LookupName;
 
 [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<TypedSchemaName>
 schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
     return crucible::schema_name(schema_hash);
+}
+
+// ── Schema-name registration ───────────────────────────────────────
+//
+// crucible_register_schema_name reads the C text of its name, and gives the
+// code of register_schema_name_typed.  A hash of zero, or a name that is
+// empty or longer than kMaxSchemaNameBytes, gives
+// CRUCIBLE_SCHEMA_NAME_REFUSED, and the tables stay as they were.  These
+// checks are the sanitizer of the boundary, so each other name is Sanitized.
+// Its registration gives CRUCIBLE_SCHEMA_NAME_REGISTERED, or
+// CRUCIBLE_SCHEMA_NAME_COLLISION when the table holds a different name of
+// the hash.  The table then keeps its first name.
+
+// The longest name that the C interface takes, in bytes.  The ATen op names
+// of PyTorch fit in 128 bytes.
+inline constexpr std::size_t kMaxSchemaNameBytes = 256;
+
+// The function is a template on the Vigil, because this header names the
+// Vigil only through a declaration.  Its caller includes crucible/Vigil.h.
+template <class VigilType>
+    requires std::same_as<VigilType, crucible::Vigil>
+[[nodiscard, gnu::cold]] int register_schema_name_typed(VigilType& vigil, std::uint64_t schema_hash,
+                                                        ::fixy::TextView name) noexcept {
+    if (schema_hash == 0 || name.size() == 0 || name.size() > kMaxSchemaNameBytes) return CRUCIBLE_SCHEMA_NAME_REFUSED;
+    const auto name_tag =
+        ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name).retag<::fixy::tags::source::Sanitized>();
+    const crucible::SchemaRegistration registration =
+        vigil.register_schema_name(crucible::SchemaHash{schema_hash}, name_tag);
+    return crucible::is_collision(registration) ? CRUCIBLE_SCHEMA_NAME_COLLISION : CRUCIBLE_SCHEMA_NAME_REGISTERED;
 }
 
 // ── Recording trust ladder ─────────────────────────────────────────

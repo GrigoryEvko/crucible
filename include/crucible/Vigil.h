@@ -358,9 +358,18 @@ public:
     // The copy of the name allocates through the allocation capability of the
     // startup context, which this Vigil keeps.  So the foreground context
     // holds no atom, and only this cold path allocates through the kept one.
-    template <SchemaNameSource Tag>
-    [[gnu::cold]] void register_schema_name(SchemaHash hash, SchemaTable::Name<Tag> const& name) {
-        ::crucible::register_schema_name(assert_producer_thread_(), allocation_, hash, name);
+    // A collision of an internal name ends the process, so the registration
+    // of an internal name gives nothing.
+    [[gnu::cold]] void register_schema_name(SchemaHash hash, SchemaTable::InternalName const& name) {
+        ::crucible::register_schema_name(assert_producer_thread_(), allocation_, hash, name)
+            .expect("an internal name lands in the global or the late schema table");
+    }
+
+    // The same for a name from outside the process, which gives the refusal
+    // of a collision (SchemaTable::register_name).
+    [[nodiscard, gnu::cold]] SchemaRegistration register_schema_name(SchemaHash hash,
+                                                                     SchemaTable::SanitizedName const& name) {
+        return ::crucible::register_schema_name(assert_producer_thread_(), allocation_, hash, name);
     }
 
     // Only the foreground writes the mode, at each activation and

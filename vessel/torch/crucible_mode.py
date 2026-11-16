@@ -33,7 +33,7 @@ import struct
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
-from crucible_native import DispatchAction, DispatchStatus, load_vessel_library
+from crucible_native import DispatchAction, DispatchStatus, SchemaNameResult, load_vessel_library
 
 
 # ─── ctypes bindings ────────────────────────────────────────────────
@@ -91,7 +91,7 @@ class _VesselLib:
         lib.crucible_hash_string.restype = ctypes.c_uint64
         lib.crucible_hash_string.argtypes = [ctypes.c_char_p]
 
-        lib.crucible_register_schema_name.restype = None
+        lib.crucible_register_schema_name.restype = ctypes.c_int
         lib.crucible_register_schema_name.argtypes = [
             ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p,
         ]
@@ -505,8 +505,13 @@ class CrucibleMode(TorchDispatchMode):
             h = self._vessel.crucible_hash_string(op_name.encode("ascii"))
             self._schema_cache[op_name] = h
             # Register name in the global SchemaTable for visualization/diagnostics.
-            self._vessel.crucible_register_schema_name(
+            # A collision means that two op names give one schema hash.  The
+            # table keeps the first name, and two ops share one schema hash.
+            result = self._vessel.crucible_register_schema_name(
                 self._handle, h, op_name.encode("ascii"))
+            if result == SchemaNameResult.COLLISION:
+                raise RuntimeError(
+                    f"crucible: the schema hash {h} of the op {op_name} names a different op in the schema table")
         return h
 
     def _compute_shape_hash(self, tensors):

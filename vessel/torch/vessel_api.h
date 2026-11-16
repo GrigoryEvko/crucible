@@ -155,7 +155,7 @@ typedef struct {
 // Python ctypes consumers cross-check via crucible_abi_version() at
 // load.  The constant is also exposed as a #define so C consumers can
 // bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 3ULL
+#define CRUCIBLE_VESSEL_ABI_VERSION 4ULL
 
 // Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
 // Never aborts — pure constant return.  Used by crucible_native.py
@@ -225,12 +225,26 @@ CRUCIBLE_VESSEL_API uint32_t crucible_diverged_count(CrucibleHandle h) CRUCIBLE_
 
 // ── Schema name registration ─────────────────────────────────────────
 
+// The result of crucible_register_schema_name.
+enum {
+    // The table holds the name for the hash: a first registration, or the
+    // same name again.
+    CRUCIBLE_SCHEMA_NAME_REGISTERED = 0,
+    // The call gives no name to register: a hash of zero, a null name, or a
+    // name that is empty or longer than 256 bytes.  The table is as it was.
+    CRUCIBLE_SCHEMA_NAME_REFUSED = 1,
+    // The table holds a different name for the hash.  It keeps that name, and
+    // it refuses this one.
+    CRUCIBLE_SCHEMA_NAME_COLLISION = 2
+};
+
 // Register an op name for a schema hash, for the labels of trace
-// visualization and diagnostics.  The call must run on the thread that holds
-// the producer claim of the Vigil h.  A call from any other thread ends the
-// process, as a dispatch from one does.
-CRUCIBLE_VESSEL_API void crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash,
-                                                       const char* name) CRUCIBLE_VESSEL_NOEXCEPT;
+// visualization and diagnostics.  It returns a CRUCIBLE_SCHEMA_NAME_* code.
+// The call must run on the thread that holds the producer claim of the Vigil
+// h.  A call from any other thread ends the process, as a dispatch from one
+// does.
+CRUCIBLE_VESSEL_API int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash,
+                                                      const char* name) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Lookup the registered name for a schema hash. Returns NULL if unknown.
 CRUCIBLE_VESSEL_API const char* crucible_schema_name(uint64_t schema_hash) CRUCIBLE_VESSEL_NOEXCEPT;

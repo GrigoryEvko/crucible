@@ -289,6 +289,16 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
     return ::fixy::Unit{};
 }
 
+// The report of a name of a trace that the schema table refuses, because the
+// table holds a different name of its hash.  The load keeps the names before
+// it, and the table of names of the trace stops there.
+[[gnu::cold, gnu::noinline]] inline void report_name_collision_(uint64_t schema_hash, ::fixy::TextView name) noexcept {
+    ::fixy::report(::fixy::Sink::Err,
+                   "load_trace: the trace gives the schema hash {} the name {}, and the schema table holds a "
+                   "different name of that hash, so the names of the trace stop there\n",
+                   schema_hash, name);
+}
+
 }  // namespace detail
 
 // Builds one metadata record from its bytes through decode_tensor_meta, the
@@ -577,12 +587,18 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
             // the table here too: the table refuses every later write.
             auto name = ::fixy::mint_tagged<::fixy::tags::source::External>(name_text.view())
                             .retag<::fixy::tags::source::Sanitized>();
-            const bool was_registered = schema_table_view.match(
+            // A name that the table refuses ends the table here, as a
+            // malformed tail does.  A collision is a name that the file gives
+            // a held hash in place of its first name, and the report names it.
+            const SchemaRegistration registration = schema_table_view.match(
                 [&](SchemaTable::MutableView const& view) {
                     return register_schema_name(io.cap().alloc, view, SchemaHash{schema_hash_raw}, name);
                 },
-                [] noexcept { return false; });
-            if (!was_registered) break;
+                [] noexcept { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
+            if (registration.is_err()) {
+                if (is_collision(registration)) detail::report_name_collision_(schema_hash_raw, name_text.view());
+                break;
+            }
         }
     }
 
