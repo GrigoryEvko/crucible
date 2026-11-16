@@ -1,11 +1,11 @@
 #pragma once
 
-// The family of the deterministic reductions, scans and sorts in namespace
-// fixy.
+// The family of the deterministic reductions, products, scans and sorts in
+// namespace fixy.
 //
-// The library lives in foundation/core/Reduce.h, Scan.h and Sort.h, in
-// namespace foundation::core.  This header puts each public name of the three
-// headers into namespace fixy, so code outside the base spells
+// The library lives in foundation/core/Reduce.h, Product.h, Scan.h and
+// Sort.h, in namespace foundation::core.  This header puts each public name of
+// the four headers into namespace fixy, so code outside the base spells
 // fixy::sum_by_tree.  Each line is a using-declaration of the one entity, as
 // in fixy/Core.h.  The parallel forms live in fixy/concurrent/ParallelTree.h,
 // in namespace fixy::concurrent, and that header includes this one.  The
@@ -14,6 +14,7 @@
 // fixy/Core.h does not include this header, so a unit that uses no
 // reduction, scan or sort does not parse the library.
 
+#include <foundation/core/Product.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/core/Scan.h>
 #include <foundation/core/Sort.h>
@@ -45,6 +46,17 @@ using ::foundation::core::TreeStep;
 using ::foundation::core::TreeSumElement;
 using ::foundation::core::TreeValue;
 using ::foundation::core::write_tree_plan;
+
+// The tree products and the sum of strided runs (foundation/core/Product.h).
+using ::foundation::core::LeftFactorOf;
+using ::foundation::core::multiply_by_tree;
+using ::foundation::core::multiply_by_tree_in_lanes;
+using ::foundation::core::ProductError;
+using ::foundation::core::RightFactorOf;
+using ::foundation::core::sum_products_by_tree;
+using ::foundation::core::sum_products_by_tree_in_lanes;
+using ::foundation::core::sum_strided_runs_by_tree;
+using ::foundation::core::sum_strided_runs_by_tree_in_lanes;
 
 // The scans (foundation/core/Scan.h).
 using ::foundation::core::count_exclusive_scan_depth;

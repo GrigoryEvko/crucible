@@ -3122,6 +3122,19 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   set_source_files_properties(target_unit_wide.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v4)
 endif()
 
+# The tree products of foundation/core/Product.h against the scalar model of
+# the tree and the exact oracle of test/exact_sum.h.  On x86_64 two more units
+# of the levels x86-64-v3 and x86-64-v4 compute the digests of the fixed
+# draws with their own bodies.  The unit of the test comes first on the link
+# line, so the link keeps its copy of each shared body.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  foundation_test(test_core_product test_core_product.cpp product_unit_v3.cpp product_unit_v4.cpp)
+  set_source_files_properties(product_unit_v3.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v3)
+  set_source_files_properties(product_unit_v4.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v4)
+else()
+  foundation_test(test_core_product)
+endif()
+
 # fp::fma against the exact oracle of test/exact_sum.h.  The unit of the test
 # takes the target of its preset: with no -march it runs the exact form in
 # integers.  The second unit runs the instruction: of x86-64-v3 on x86_64,
@@ -3451,6 +3464,9 @@ foundation_neg_compile_test(neg_core_strided_view_mut_copies
   "a StridedViewMut is the one writer of its elements: a copy would be a second writer")
 
 # The member nan_rule of a pointwise op has the type NanRule.
+foundation_neg_compile_test(neg_core_side_swap
+  "invalid initialization of reference of type .std::type_identity_t<foundation::core::Side<foundation::core::side::LeftFactor, foundation::core::StridedView<const float, 2> > >&."
+  "from expression of type .foundation::core::Side<foundation::core::side::RightFactor, foundation::core::StridedView<const float, 2> >.")
 foundation_neg_compile_test(neg_core_side_aggregate_init
   "converting to .foundation::core::Side<Count, int>. from initializer list would use explicit constructor"
   "foundation::core::Side<Tag, T>::Side\\(T\\) \\[with Tag = Count; T = int\\]")

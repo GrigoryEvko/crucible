@@ -59,6 +59,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/Cyclic.h>
 #include <fixy/CyclicBuffer.h>
+#include <fixy/Reductions.h>
 #include <fixy/EpochVersioned.h>
 #include <fixy/Fn.h>
 #include <fixy/fp/Canonicalize.h>
@@ -444,6 +445,8 @@ inline constexpr std::string_view kMachinery =
 
 inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::core::unit, "the units and the dimensions of a Quantity: tags that a type names at compile "
+                                 "time, and none of them is a value"},
+    {^^::foundation::core::side, "the roles of the arguments of a call: empty tags that a Side names at compile "
                                  "time, and none of them is a value"},
     {^^::foundation::os, "the raw system call primitive, its argument words, the kernel floor and the owner of a "
                          "guarded map: words and memory of the kernel interface that carry no grade"},
