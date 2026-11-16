@@ -230,12 +230,13 @@ constexpr void merge_runs_(T const* source, std::size_t middle, std::size_t coun
     std::size_t left = 0;
     std::size_t right = middle;
     std::size_t out = 0;
+    // One compare selects the element and moves the two positions, with no
+    // branch on the elements, so random input costs no mispredicted branch.
     while (left < middle && right < count) {
-        if (less(source[right], source[left])) {
-            target[out++] = source[right++];
-        } else {
-            target[out++] = source[left++];
-        }
+        bool const is_right_first = less(source[right], source[left]);
+        target[out++] = is_right_first ? source[right] : source[left];
+        right += is_right_first ? 1 : 0;
+        left += is_right_first ? 0 : 1;
     }
     while (left < middle) {
         target[out++] = source[left++];
