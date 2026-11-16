@@ -664,6 +664,50 @@ static_assert(check_vicious(link_ring).says(
     "-> agent 'link' (node 3) -> agent 'link' (node 4) -> agent 'link' (node 5) -> ....  Each "
     "principal port meets an auxiliary port, so no rule can fire."));
 
+// ── The faults ──────────────────────────────────────────────────────────
+//
+// Each check finds a fault with no text, and explain_fault makes the text
+// that the door gives.
+
+static_assert(sizeof(NetFault) == 48);
+static_assert(!find_proof_net_fault(identity).is_fault() && !find_dataflow_fault(tree_of_three).is_fault());
+
+inline constexpr NetFault unnamed_type_fault = find_signature_fault(unnamed_type);
+static_assert(unnamed_type_fault.code == NetFaultCode::TypeWithoutName && index_of(unnamed_type_fault.type) == 1);
+
+inline constexpr NetFault open_join = find_wiring_fault(fork_tree_open);
+static_assert(open_join.code == NetFaultCode::PortWithoutWire && index_of(open_join.agent) == 7 && open_join.port == 4);
+static_assert(explain_fault(fork_tree_open, open_join)
+                  .says("net: port 'kids' of agent 'join' (node 7) has no wire.  Each port has exactly one wire."));
+
+inline constexpr NetFault foreground_cycle = find_forest_fault(pipeline_with_foreground);
+static_assert(foreground_cycle.code == NetFaultCode::ForestCycle && foreground_cycle.wire == 6);
+
+// A cycle names its agents in path, in the order of the text.
+inline constexpr NetFault crossed_waits = find_dataflow_fault(crossed_adds);
+static_assert(crossed_waits.code == NetFaultCode::DataflowCycle && index_of(crossed_waits.agent) == 2
+              && crossed_waits.port == 1);
+static_assert(crossed_waits.path_count == 2 && !crossed_waits.is_path_cut && index_of(crossed_waits.path[0]) == 2
+              && index_of(crossed_waits.path[1]) == 3);
+inline constexpr NetFault long_circle = find_vicious_fault(link_ring);
+static_assert(long_circle.code == NetFaultCode::ViciousCircle && long_circle.path_count == max_fault_path
+              && long_circle.is_path_cut && index_of(long_circle.path[5]) == 5);
+inline constexpr NetFault long_waits = find_dataflow_fault(relay_ring);
+static_assert(long_waits.path_count == 5 && long_waits.is_path_cut && index_of(long_waits.path[1]) == 6);
+
+// A fault that names an agent and a port past the net reads no array past
+// its end: the names are empty.
+static_assert(explain_fault(identity, NetFault{.code = NetFaultCode::PortWithoutWire, .agent = AgentId{40}, .port = 12})
+                  .says("net: port '' of agent '' (node 40) has no wire.  Each port has exactly one wire."));
+static_assert(explain_fault(identity, NetFault{.code = NetFaultCode::WireNotDual, .wire = 900})
+                  .says("net: wire 900 joins port 'left' of agent 'par' (node 0) of type A? with port 'left' of agent "
+                        "'par' (node 0) of type A?, which is not its dual."));
+static_assert(explain_fault(identity, NetFault{.code = static_cast<NetFaultCode>(99)})
+                  .says("net: the fault has a code that no check gives."));
+static_assert(explain_signature_fault_(proofs, NetFault{.code = NetFaultCode::WireNotDual})
+                  .says("net: the fault names a net, and the signature alone cannot name its places."));
+static_assert(explain_fault(identity, NetFault{}).is_admitted());
+
 }  // namespace detail::net_self_test
 
 }  // namespace foundation::algebra::net

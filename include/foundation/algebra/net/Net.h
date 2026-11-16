@@ -14,6 +14,9 @@
 //                           wires.  Each wire joins two ports
 //   NetVerdict              the answer of a check: admitted, or a refusal with
 //                           one line of text
+//   NetFault                the fault that a check finds: a code, and the
+//                           type, the kind, the agent, the port, the wire or
+//                           the cycle that the code names
 //
 //   check_signature(signature)   the kinds are well formed
 //   check_wiring(net)            each port has exactly one wire, and each wire
@@ -25,6 +28,12 @@
 //   check_dataflow(net)          each agent can take its inputs before it
 //                                gives its outputs: the wires, from a give
 //                                port to a take port, form no cycle
+//
+//   find_signature_fault, find_wiring_fault, find_forest_fault,
+//   find_proof_net_fault, find_vicious_fault, find_dataflow_fault
+//                                the body of each check: the first fault, or
+//                                the fault NoFault
+//   explain_fault(net, fault)    the text of the refusal of a fault
 //
 // THE MODEL
 //   An agent has ports, and one of them is its principal port.  A rule fires
@@ -80,6 +89,16 @@
 //   that includes it, and 23 constexpr verdicts in one function cost 22.8 s of
 //   debug information (probe E4).
 //
+// THE FAULT
+//   The body of each check finds a NetFault and makes no text.  The code
+//   names the rule that the net breaks, and the other fields name the place:
+//   the type or the kind of a fault of the signature, the agent and the port,
+//   the wire, and for a cycle its first agents in the order of the text.  A
+//   check that admits the net gives the fault NoFault.  explain_fault makes
+//   the text from the fault and the net, and each consteval door check_*
+//   gives that text.  So a caller that needs no text reads the fault, which
+//   holds 48 bytes and no text.
+//
 // THE COSTS
 //   P is the count of the ports, A of the agents and W of the wires.
 //     check_signature   O(K) for K kinds
@@ -99,9 +118,10 @@
 //                      body
 //     each other net   the arrays of the net, so the body is an instance of
 //                      its sizes
-//   Each structural check calls check_wiring on the net itself, and not on
-//   the copy, so the compiler keeps one result for each net that some checks
-//   read.  The texts of the refusals come from helpers that are no templates.
+//   Each structural check calls find_wiring_fault on the net itself, and not
+//   on the copy, so the compiler keeps one result for each net that some
+//   checks read.  explain_fault is a template on the capacity class too, and
+//   it puts each name through helpers that are no templates.
 //   This header includes no other header of the base and no <meta>, so a
 //   light header can include it.
 //
@@ -363,6 +383,89 @@ public:
     }
 };
 
+// ── The fault ───────────────────────────────────────────────────────────
+
+// The rule that a net or a signature breaks.  Each code has one text, which
+// explain_fault makes.
+enum class NetFaultCode : std::uint8_t {
+    NoFault = 0,
+    // check_signature.  The fault names the type, or the kind and the port.
+    TypeWithoutName = 1,
+    KindWithoutName = 2,
+    KindWithoutPort = 3,
+    PortAfterEmptyName = 4,
+    PortTypePastSignature = 5,
+    PrincipalPastPorts = 6,
+    ParGroupPastPorts = 7,
+    ParGroupHoldsPrincipal = 8,
+    ParGroupOfOnePort = 9,
+    BoundaryOfManyPorts = 10,
+    // check_wiring.  The fault names the agent, the port and the wire.
+    KindPastSignature = 11,
+    WireNodePastNet = 12,
+    WirePortPastAgent = 13,
+    PortWithSecondWire = 14,
+    WireNotDual = 15,
+    PortWithoutWire = 16,
+    // check_forest
+    ForestHasParGroup = 17,
+    ForestCycle = 18,
+    // check_proof_net
+    ProofNetCycle = 19,
+    ParReachesItself = 20,
+    ParPortsNeverMeet = 21,
+    NetNotConnected = 22,
+    // check_vicious.  The fault names the cycle in path.
+    ViciousCircle = 23,
+    // check_dataflow.  A cycle of waits names its cycle in path.
+    DataflowMeetPort = 24,
+    DataflowCycle = 25,
+};
+
+// The most agents of a cycle that a fault names.  A longer cycle sets
+// is_path_cut.
+inline constexpr std::size_t max_fault_path = 6;
+
+// The fault that a check finds, with no text.  The code tells which fields
+// it sets:
+//   type            TypeWithoutName
+//   kind            each other code of the signature, with port where the
+//                   rule names a port
+//   agent, port     the agent and the port of a fault of the net.  For
+//                   WireNodePastNet, agent is the node past the net
+//   wire            the wire of a fault of a wire
+//   path            the agents of a cycle in the order of the text, path_count
+//                   of them
+struct NetFault {
+    NetFaultCode code = NetFaultCode::NoFault;
+    std::uint8_t path_count = 0;
+    bool is_path_cut = false;
+    std::uint8_t reserved = 0;
+    TypeId type{};
+    std::uint16_t reserved_type = 0;
+    KindId kind{};
+    AgentId agent{};
+    std::uint32_t port = 0;
+    std::uint32_t wire = 0;
+    AgentId path[max_fault_path]{};
+
+    [[nodiscard]] constexpr bool is_fault() const noexcept { return code != NetFaultCode::NoFault; }
+};
+
+namespace detail {
+
+// The count of the agents of a net, and the count of its wires.  A body of a
+// check reads the first agents and wires of its arrays up to these counts.
+enum class AgentCount : std::uint32_t {
+};
+enum class WireCount : std::uint32_t {
+};
+
+[[nodiscard]] constexpr std::uint32_t count_of(AgentCount count) noexcept { return static_cast<std::uint32_t>(count); }
+[[nodiscard]] constexpr std::uint32_t count_of(WireCount count) noexcept { return static_cast<std::uint32_t>(count); }
+
+}  // namespace detail
+
 namespace detail {
 
 // An index that no array of a check holds.
@@ -438,9 +541,10 @@ constexpr void put_agent(NetVerdict& text, AgentKind const& kind, std::uint32_t 
     text.put("agent '").put_name(kind.name).put("' (node ").put_number(node).put(")");
 }
 
-// "port 'PORT' of agent 'NAME' (node N)"
+// "port 'PORT' of agent 'NAME' (node N)".  A port past the ports of a kind
+// has the empty name.
 constexpr void put_port(NetVerdict& text, AgentKind const& kind, std::uint32_t node, std::uint32_t port) noexcept {
-    text.put("port '").put_name(kind.port_names[port]).put("' of ");
+    text.put("port '").put_name(port < max_agent_ports ? kind.port_names[port] : NetName{}).put("' of ");
     put_agent(text, kind, node);
 }
 
@@ -484,55 +588,90 @@ public:
 
 // ── The signature ───────────────────────────────────────────────────────
 
-// Each type has a name.  Each kind has a name and at least one port, its
-// ports are the names before the first empty name, each port names a type
-// of the signature, the principal port is one of its ports, the par group
-// holds no port or two or more auxiliary ports, and a boundary kind has one
-// port and no par group.  Complexity: O(T + K).
+// The first fault of the signature, or NoFault.  Each type has a name.  Each
+// kind has a name and at least one port, its ports are the names before the
+// first empty name, each port names a type of the signature, the principal
+// port is one of its ports, the par group holds no port or two or more
+// auxiliary ports, and a boundary kind has one port and no par group.
+// Complexity: O(T + K).
 template <std::size_t Types, std::size_t Kinds>
-[[nodiscard]] consteval NetVerdict check_signature(NetSignature<Types, Kinds> const& signature) noexcept {
+[[nodiscard]] consteval NetFault find_signature_fault(NetSignature<Types, Kinds> const& signature) noexcept {
     for (std::uint32_t type = 0; type < Types; ++type) {
         if (signature.type_names[type].is_empty()) {
-            return NetVerdict::refuse("net: type ")
-                .put_number(type)
-                .put(" of the signature has no name.  Each type has a name.");
+            return NetFault{.code = NetFaultCode::TypeWithoutName, .type = TypeId{static_cast<std::uint16_t>(type)}};
         }
     }
     for (std::uint32_t index = 0; index < Kinds; ++index) {
         AgentKind const& kind = signature.kinds[index];
-        if (kind.name.is_empty()) {
-            return NetVerdict::refuse("net: kind ").put_number(index).put(" of the signature has no name.");
-        }
+        KindId const id{index};
+        if (kind.name.is_empty()) return NetFault{.code = NetFaultCode::KindWithoutName, .kind = id};
         std::uint32_t const count = detail::port_count_of(kind);
-        if (count == 0) {
-            return NetVerdict::refuse("net: agent kind '")
-                .put_name(kind.name)
-                .put("' has no port.  An agent has one principal port.");
-        }
+        if (count == 0) return NetFault{.code = NetFaultCode::KindWithoutPort, .kind = id};
         for (std::uint32_t port = count; port < max_agent_ports; ++port) {
             if (!kind.port_names[port].is_empty()) {
-                return NetVerdict::refuse("net: port '")
-                    .put_name(kind.port_names[port])
-                    .put("' of agent kind '")
-                    .put_name(kind.name)
-                    .put("' comes after a port with no name.  The ports of a kind are the names before the first "
-                         "empty name.");
+                return NetFault{.code = NetFaultCode::PortAfterEmptyName, .kind = id, .port = port};
             }
         }
         for (std::uint32_t port = 0; port < count; ++port) {
             if (index_of(kind.port_types[port].type) >= Types) {
-                return NetVerdict::refuse("net: port '")
-                    .put_name(kind.port_names[port])
-                    .put("' of agent kind '")
-                    .put_name(kind.name)
-                    .put("' has the type ")
-                    .put_number(index_of(kind.port_types[port].type))
-                    .put(", and the signature has ")
-                    .put_number(Types)
-                    .put(" types.");
+                return NetFault{.code = NetFaultCode::PortTypePastSignature, .kind = id, .port = port};
             }
         }
-        if (kind.principal >= count) {
+        if (kind.principal >= count) return NetFault{.code = NetFaultCode::PrincipalPastPorts, .kind = id};
+        auto const group = static_cast<std::uint32_t>(kind.par_ports);
+        if ((group >> count) != 0u) return NetFault{.code = NetFaultCode::ParGroupPastPorts, .kind = id};
+        if (detail::is_par_port(kind, kind.principal)) {
+            return NetFault{.code = NetFaultCode::ParGroupHoldsPrincipal, .kind = id};
+        }
+        if (detail::count_bits(group) == 1u) return NetFault{.code = NetFaultCode::ParGroupOfOnePort, .kind = id};
+        if (kind.is_boundary && (count != 1u || group != 0u)) {
+            return NetFault{.code = NetFaultCode::BoundaryOfManyPorts, .kind = id};
+        }
+    }
+    return NetFault{};
+}
+
+namespace detail {
+
+// The text of a fault of the signature.  Complexity: O(1) and the names.
+template <std::size_t Types, std::size_t Kinds>
+[[nodiscard, gnu::cold]] constexpr NetVerdict explain_signature_fault_(NetSignature<Types, Kinds> const& signature,
+                                                                       NetFault const& fault) noexcept {
+    std::uint32_t const index = index_of(fault.kind) < Kinds ? index_of(fault.kind) : 0u;
+    AgentKind const& kind = signature.kinds[index];
+    std::uint32_t const count = port_count_of(kind);
+    NetName const port_name = fault.port < max_agent_ports ? kind.port_names[fault.port] : NetName{};
+    switch (fault.code) {
+        case NetFaultCode::NoFault:
+            return NetVerdict{};
+        case NetFaultCode::TypeWithoutName:
+            return NetVerdict::refuse("net: type ")
+                .put_number(index_of(fault.type))
+                .put(" of the signature has no name.  Each type has a name.");
+        case NetFaultCode::KindWithoutName:
+            return NetVerdict::refuse("net: kind ").put_number(index).put(" of the signature has no name.");
+        case NetFaultCode::KindWithoutPort:
+            return NetVerdict::refuse("net: agent kind '")
+                .put_name(kind.name)
+                .put("' has no port.  An agent has one principal port.");
+        case NetFaultCode::PortAfterEmptyName:
+            return NetVerdict::refuse("net: port '")
+                .put_name(port_name)
+                .put("' of agent kind '")
+                .put_name(kind.name)
+                .put("' comes after a port with no name.  The ports of a kind are the names before the first "
+                     "empty name.");
+        case NetFaultCode::PortTypePastSignature:
+            return NetVerdict::refuse("net: port '")
+                .put_name(port_name)
+                .put("' of agent kind '")
+                .put_name(kind.name)
+                .put("' has the type ")
+                .put_number(fault.port < max_agent_ports ? index_of(kind.port_types[fault.port].type) : 0u)
+                .put(", and the signature has ")
+                .put_number(Types)
+                .put(" types.");
+        case NetFaultCode::PrincipalPastPorts:
             return NetVerdict::refuse("net: the principal port ")
                 .put_number(kind.principal)
                 .put(" of agent kind '")
@@ -540,61 +679,293 @@ template <std::size_t Types, std::size_t Kinds>
                 .put("' is past its ")
                 .put_number(count)
                 .put(" ports.");
-        }
-        auto const group = static_cast<std::uint32_t>(kind.par_ports);
-        if ((group >> count) != 0u) {
+        case NetFaultCode::ParGroupPastPorts:
             return NetVerdict::refuse("net: the par group of agent kind '")
                 .put_name(kind.name)
                 .put("' names a port past its ")
                 .put_number(count)
                 .put(" ports.");
-        }
-        if (detail::is_par_port(kind, kind.principal)) {
+        case NetFaultCode::ParGroupHoldsPrincipal:
             return NetVerdict::refuse("net: the par group of agent kind '")
                 .put_name(kind.name)
                 .put("' holds its principal port '")
-                .put_name(kind.port_names[kind.principal])
+                .put_name(kind.principal < max_agent_ports ? kind.port_names[kind.principal] : NetName{})
                 .put("'.  A par group holds auxiliary ports.");
-        }
-        if (detail::count_bits(group) == 1u) {
+        case NetFaultCode::ParGroupOfOnePort:
             return NetVerdict::refuse("net: the par group of agent kind '")
                 .put_name(kind.name)
                 .put("' holds one port.  A par group holds two or more ports.");
-        }
-        if (kind.is_boundary && (count != 1u || group != 0u)) {
+        case NetFaultCode::BoundaryOfManyPorts:
             return NetVerdict::refuse("net: the boundary kind '")
                 .put_name(kind.name)
                 .put("' has ")
                 .put_number(count)
                 .put(" ports.  A boundary agent stands for one free port of the net, so it has one port.");
-        }
+        case NetFaultCode::KindPastSignature:
+        case NetFaultCode::WireNodePastNet:
+        case NetFaultCode::WirePortPastAgent:
+        case NetFaultCode::PortWithSecondWire:
+        case NetFaultCode::WireNotDual:
+        case NetFaultCode::PortWithoutWire:
+        case NetFaultCode::ForestHasParGroup:
+        case NetFaultCode::ForestCycle:
+        case NetFaultCode::ProofNetCycle:
+        case NetFaultCode::ParReachesItself:
+        case NetFaultCode::ParPortsNeverMeet:
+        case NetFaultCode::NetNotConnected:
+        case NetFaultCode::ViciousCircle:
+        case NetFaultCode::DataflowMeetPort:
+        case NetFaultCode::DataflowCycle:
+        default:
+            break;
     }
-    return NetVerdict{};
+    return NetVerdict::refuse("net: the fault names a net, and the signature alone cannot name its places.");
+}
+
+}  // namespace detail
+
+// The check of the signature, as a verdict with the text of its fault.
+template <std::size_t Types, std::size_t Kinds>
+[[nodiscard]] consteval NetVerdict check_signature(NetSignature<Types, Kinds> const& signature) noexcept {
+    NetFault const fault = find_signature_fault(signature);
+    if (!fault.is_fault()) return NetVerdict{};
+    return detail::explain_signature_fault_(signature, fault);
+}
+
+// ── The text of a fault ─────────────────────────────────────────────────
+
+namespace detail {
+
+// The kind that no agent has.  The text of a fault names it for an agent
+// that the net does not have, so a fault of another net reads no array past
+// its end.
+inline constexpr AgentKind no_kind{};
+
+// The kind of the agent, or no_kind for an agent past the net or a kind past
+// the signature.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] constexpr AgentKind const& kind_at_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                  AgentId agent, AgentCount agents) noexcept {
+    std::uint32_t const node = index_of(agent);
+    if (node >= count_of(agents) || node >= AgentCapacity) return no_kind;
+    std::uint32_t const kind = index_of(graph.agents[node]);
+    return kind < Kinds ? graph.signature.kinds[kind] : no_kind;
+}
+
+// The type of a port of a kind, or the default type past its ports.
+[[nodiscard]] constexpr PortType port_type_at(AgentKind const& kind, std::uint32_t port) noexcept {
+    return port < max_agent_ports ? kind.port_types[port] : PortType{};
+}
+
+// The name of a type of the signature, or the empty name past its types.
+template <std::size_t Types, std::size_t Kinds>
+[[nodiscard]] constexpr NetName type_name_at_(NetSignature<Types, Kinds> const& signature, PortType type) noexcept {
+    return index_of(type.type) < Types ? signature.type_names[index_of(type.type)] : NetName{};
+}
+
+// The arrow between two agents of the path of a fault: a vicious circle goes
+// forward, and a cycle of waits goes back along the inputs.
+enum class PathArrow : std::uint8_t {
+    Forward = 0,
+    Back = 1,
+};
+
+// "agent 'A' (node N) -> agent 'B' (node M) -> ..." for the path of a fault.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+constexpr void put_path_(NetVerdict& text, Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                         NetFault const& fault, AgentCount agents, PathArrow arrow) noexcept {
+    char const* const between = arrow == PathArrow::Forward ? " -> " : " <- ";
+    for (std::uint32_t shown = 0; shown < fault.path_count && shown < max_fault_path; ++shown) {
+        if (shown != 0u) text.put(between);
+        put_agent(text, kind_at_(graph, fault.path[shown], agents), index_of(fault.path[shown]));
+    }
+    if (fault.is_path_cut) text.put(between).put("...");
+}
+
+// The text of a fault of the net, on the arrays of a capacity class.
+// Complexity: O(1) and the names.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard, gnu::cold]] constexpr NetVerdict explain_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                          NetFault const& fault, AgentCount agents) noexcept {
+    std::uint32_t const node = index_of(fault.agent);
+    AgentKind const& kind = kind_at_(graph, fault.agent, agents);
+    Wire const wire = fault.wire < WireCapacity ? graph.wires[fault.wire] : Wire{};
+    AgentKind const& left_kind = kind_at_(graph, wire.left.agent, agents);
+    AgentKind const& right_kind = kind_at_(graph, wire.right.agent, agents);
+    PortType const left = port_type_at(left_kind, wire.left.port);
+    PortType const right = port_type_at(right_kind, wire.right.port);
+    switch (fault.code) {
+        case NetFaultCode::NoFault:
+            return NetVerdict{};
+        case NetFaultCode::TypeWithoutName:
+        case NetFaultCode::KindWithoutName:
+        case NetFaultCode::KindWithoutPort:
+        case NetFaultCode::PortAfterEmptyName:
+        case NetFaultCode::PortTypePastSignature:
+        case NetFaultCode::PrincipalPastPorts:
+        case NetFaultCode::ParGroupPastPorts:
+        case NetFaultCode::ParGroupHoldsPrincipal:
+        case NetFaultCode::ParGroupOfOnePort:
+        case NetFaultCode::BoundaryOfManyPorts:
+            return explain_signature_fault_(graph.signature, fault);
+        case NetFaultCode::KindPastSignature:
+            return NetVerdict::refuse("net: node ")
+                .put_number(node)
+                .put(" has the kind ")
+                .put_number(node < AgentCapacity ? index_of(graph.agents[node]) : 0u)
+                .put(", and the signature has ")
+                .put_number(Kinds)
+                .put(" kinds.");
+        case NetFaultCode::WireNodePastNet:
+            return NetVerdict::refuse("net: wire ")
+                .put_number(fault.wire)
+                .put(" names node ")
+                .put_number(node)
+                .put(", and the net has ")
+                .put_number(count_of(agents))
+                .put(" agents.");
+        case NetFaultCode::WirePortPastAgent: {
+            NetVerdict refusal = NetVerdict::refuse("net: wire ");
+            refusal.put_number(fault.wire).put(" names port ").put_number(fault.port).put(" of ");
+            put_agent(refusal, kind, node);
+            refusal.put(", which has ").put_number(port_count_of(kind)).put(" ports.");
+            return refusal;
+        }
+        case NetFaultCode::PortWithSecondWire: {
+            NetVerdict refusal = NetVerdict::refuse("net: ");
+            put_port(refusal, kind, node, fault.port);
+            refusal.put(" has a second wire, wire ").put_number(fault.wire).put(".  Each port has exactly one wire.");
+            return refusal;
+        }
+        case NetFaultCode::WireNotDual: {
+            NetVerdict refusal = NetVerdict::refuse("net: wire ");
+            refusal.put_number(fault.wire).put(" joins ");
+            put_port(refusal, left_kind, index_of(wire.left.agent), wire.left.port);
+            refusal.put(" of type ");
+            put_type(refusal, type_name_at_(graph.signature, left), left.polarity);
+            refusal.put(" with ");
+            put_port(refusal, right_kind, index_of(wire.right.agent), wire.right.port);
+            refusal.put(" of type ");
+            put_type(refusal, type_name_at_(graph.signature, right), right.polarity);
+            refusal.put(", which is not its dual.");
+            return refusal;
+        }
+        case NetFaultCode::PortWithoutWire: {
+            NetVerdict refusal = NetVerdict::refuse("net: ");
+            put_port(refusal, kind, node, fault.port);
+            refusal.put(" has no wire.  Each port has exactly one wire.");
+            return refusal;
+        }
+        case NetFaultCode::ForestHasParGroup: {
+            NetVerdict refusal = NetVerdict::refuse("net: ");
+            put_agent(refusal, kind, node);
+            refusal.put(" has a par group, and check_forest reads no par group.  Use check_proof_net.");
+            return refusal;
+        }
+        case NetFaultCode::ForestCycle: {
+            NetVerdict refusal = NetVerdict::refuse("net: wire ");
+            refusal.put_number(fault.wire).put(" from ");
+            put_port(refusal, left_kind, index_of(wire.left.agent), wire.left.port);
+            refusal.put(" to ");
+            put_port(refusal, right_kind, index_of(wire.right.agent), wire.right.port);
+            refusal.put(" closes a cycle.  The agents and the wires do not form a forest.");
+            return refusal;
+        }
+        case NetFaultCode::ProofNetCycle: {
+            NetVerdict refusal = NetVerdict::refuse("net: a cycle closes at ");
+            put_port(refusal, kind, node, fault.port);
+            refusal.put(".  Each switching of the net keeps this cycle, so the net is no proof net.");
+            return refusal;
+        }
+        case NetFaultCode::ParReachesItself: {
+            NetVerdict refusal = NetVerdict::refuse("net: ");
+            put_agent(refusal, kind, node);
+            refusal.put(" is a par whose ports reach the agent again.  A switching of it closes a cycle.");
+            return refusal;
+        }
+        case NetFaultCode::ParPortsNeverMeet: {
+            NetVerdict refusal = NetVerdict::refuse("net: ");
+            put_agent(refusal, kind, node);
+            refusal.put(" is a par whose ports never meet.  A switching of it leaves the net in two parts.");
+            return refusal;
+        }
+        case NetFaultCode::NetNotConnected: {
+            NetVerdict refusal = NetVerdict::refuse("net: the net is not connected.  ");
+            put_agent(refusal, kind, node);
+            refusal.put(" has no path to ");
+            put_agent(refusal, kind_at_(graph, AgentId{0}, agents), 0);
+            refusal.put(".");
+            return refusal;
+        }
+        case NetFaultCode::ViciousCircle: {
+            NetVerdict refusal = NetVerdict::refuse("net: vicious circle: ");
+            put_path_(refusal, graph, fault, agents, PathArrow::Forward);
+            refusal.put(".  Each principal port meets an auxiliary port, so no rule can fire.");
+            return refusal;
+        }
+        case NetFaultCode::DataflowMeetPort: {
+            NetVerdict refusal = NetVerdict::refuse("net: wire ");
+            refusal.put_number(fault.wire).put(" joins ");
+            put_port(refusal, left_kind, index_of(wire.left.agent), wire.left.port);
+            refusal.put(" of the type ");
+            put_type(refusal, type_name_at_(graph.signature, left), left.polarity);
+            refusal.put(", which has no direction.  A dataflow takes give and take ports.");
+            return refusal;
+        }
+        case NetFaultCode::DataflowCycle: {
+            NetVerdict refusal = NetVerdict::refuse("net: a cycle of waits closes at ");
+            put_port(refusal, kind, node, fault.port);
+            refusal.put(": ");
+            put_path_(refusal, graph, fault, agents, PathArrow::Back);
+            refusal.put(".  Each agent waits on its inputs, so no agent of the cycle starts.");
+            return refusal;
+        }
+        default:
+            break;
+    }
+    return NetVerdict::refuse("net: the fault has a code that no check gives.");
+}
+
+}  // namespace detail
+
+// The text of the refusal of a fault that a find function gave for this net,
+// or the admitted verdict for NoFault.  A fault of another net gives a text
+// with empty names, and reads no array past its end.  The function is
+// constexpr, so a program can call it at run time.  But the code of one
+// run-time call costs about 0.8 s of compile time in a Debug unit, so a
+// program calls it from one source file.  Complexity: O(1) and the names.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard, gnu::cold]] constexpr NetVerdict explain_fault(Net<Types, Kinds, Agents, Wires> const& graph,
+                                                            NetFault const& fault) noexcept {
+    if (!fault.is_fault()) return NetVerdict{};
+    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    if constexpr (detail::is_small_net<Agents, Wires>) {
+        auto const small = detail::copy_small_net_(graph);
+        return detail::explain_in_(small, fault, agents);
+    } else {
+        return detail::explain_in_(graph, fault, agents);
+    }
 }
 
 // ── Linearity and types ─────────────────────────────────────────────────
 
 namespace detail {
 
-// The body of check_wiring, on the first agent_count agents and the first
-// wire_count wires of the arrays of a capacity class.
+// The body of find_wiring_fault, on the first agents and the first wires of
+// the arrays of a capacity class.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetVerdict check_wiring_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
-                                                    std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
-    NetVerdict const kinds = check_signature(graph.signature);
-    if (!kinds.is_admitted()) return kinds;
+[[nodiscard]] consteval NetFault find_wiring_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                       AgentCount agents, WireCount wires) noexcept {
+    NetFault const kinds = find_signature_fault(graph.signature);
+    if (kinds.is_fault()) return kinds;
+    std::uint32_t const agent_count = count_of(agents);
+    std::uint32_t const wire_count = count_of(wires);
     std::uint32_t port_count[Kinds]{};
     for (std::uint32_t kind = 0; kind < Kinds; ++kind)
         port_count[kind] = port_count_of(graph.signature.kinds[kind]);
     for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
         if (index_of(graph.agents[agent]) >= Kinds) {
-            return NetVerdict::refuse("net: node ")
-                .put_number(agent)
-                .put(" has the kind ")
-                .put_number(index_of(graph.agents[agent]))
-                .put(", and the signature has ")
-                .put_number(Kinds)
-                .put(" kinds.");
+            return NetFault{.code = NetFaultCode::KindPastSignature, .agent = AgentId{agent}};
         }
     }
     std::uint8_t uses[AgentCapacity * max_agent_ports]{};
@@ -604,135 +975,109 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
             PortRef const end = side == 0u ? wire.left : wire.right;
             std::uint32_t const node = index_of(end.agent);
             if (node >= agent_count) {
-                return NetVerdict::refuse("net: wire ")
-                    .put_number(index)
-                    .put(" names node ")
-                    .put_number(node)
-                    .put(", and the net has ")
-                    .put_number(agent_count)
-                    .put(" agents.");
+                return NetFault{.code = NetFaultCode::WireNodePastNet, .agent = end.agent, .wire = index};
             }
-            std::uint32_t const ports = port_count[index_of(graph.agents[node])];
-            if (end.port >= ports) {
-                NetVerdict refusal = NetVerdict::refuse("net: wire ");
-                refusal.put_number(index).put(" names port ").put_number(end.port).put(" of ");
-                put_agent(refusal, kind_of_(graph, end.agent), node);
-                refusal.put(", which has ").put_number(ports).put(" ports.");
-                return refusal;
+            if (end.port >= port_count[index_of(graph.agents[node])]) {
+                return NetFault{
+                    .code = NetFaultCode::WirePortPastAgent, .agent = end.agent, .port = end.port, .wire = index};
             }
             std::uint8_t& count = uses[node * max_agent_ports + end.port];
             if (count != 0u) {
-                NetVerdict refusal = NetVerdict::refuse("net: ");
-                put_port(refusal, kind_of_(graph, end.agent), node, end.port);
-                refusal.put(" has a second wire, wire ").put_number(index).put(".  Each port has exactly one wire.");
-                return refusal;
+                return NetFault{
+                    .code = NetFaultCode::PortWithSecondWire, .agent = end.agent, .port = end.port, .wire = index};
             }
             count = 1;
         }
-        AgentKind const& left_kind = kind_of_(graph, wire.left.agent);
-        AgentKind const& right_kind = kind_of_(graph, wire.right.agent);
-        PortType const left = left_kind.port_types[wire.left.port];
-        PortType const right = right_kind.port_types[wire.right.port];
-        if (!(right == dual_of(left))) {
-            NetVerdict refusal = NetVerdict::refuse("net: wire ");
-            refusal.put_number(index).put(" joins ");
-            put_port(refusal, left_kind, index_of(wire.left.agent), wire.left.port);
-            refusal.put(" of type ");
-            put_type(refusal, graph.signature.type_names[index_of(left.type)], left.polarity);
-            refusal.put(" with ");
-            put_port(refusal, right_kind, index_of(wire.right.agent), wire.right.port);
-            refusal.put(" of type ");
-            put_type(refusal, graph.signature.type_names[index_of(right.type)], right.polarity);
-            refusal.put(", which is not its dual.");
-            return refusal;
-        }
+        PortType const left = kind_of_(graph, wire.left.agent).port_types[wire.left.port];
+        PortType const right = kind_of_(graph, wire.right.agent).port_types[wire.right.port];
+        if (!(right == dual_of(left))) return NetFault{.code = NetFaultCode::WireNotDual, .wire = index};
     }
     for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
         std::uint32_t const count = port_count[index_of(graph.agents[agent])];
         for (std::uint32_t port = 0; port < count; ++port) {
             if (uses[agent * max_agent_ports + port] == 0u) {
-                NetVerdict refusal = NetVerdict::refuse("net: ");
-                put_port(refusal, kind_of_(graph, AgentId{agent}), agent, port);
-                refusal.put(" has no wire.  Each port has exactly one wire.");
-                return refusal;
+                return NetFault{.code = NetFaultCode::PortWithoutWire, .agent = AgentId{agent}, .port = port};
             }
         }
     }
-    return NetVerdict{};
+    return NetFault{};
 }
 
 }  // namespace detail
 
-// Each agent has a kind of the signature, each wire names a port that its
-// agent has, each port has exactly one wire, and the two ports of a wire have
-// dual types.  Complexity: O(K + A + W).
+// The first fault of the wiring, or NoFault.  Each agent has a kind of the
+// signature, each wire names a port that its agent has, each port has
+// exactly one wire, and the two ports of a wire have dual types.
+// Complexity: O(K + A + W).
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetVerdict check_wiring(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
-    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+[[nodiscard]] consteval NetFault find_wiring_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
     if constexpr (detail::is_small_net<Agents, Wires>) {
         auto const small = detail::copy_small_net_(graph);
-        return detail::check_wiring_in_(small, agent_count, wire_count);
+        return detail::find_wiring_fault_in_(small, agents, wires);
     } else {
-        return detail::check_wiring_in_(graph, agent_count, wire_count);
+        return detail::find_wiring_fault_in_(graph, agents, wires);
     }
+}
+
+// The check of the wiring, as a verdict with the text of its fault.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_wiring(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    return explain_fault(graph, find_wiring_fault(graph));
 }
 
 // ── The forest ──────────────────────────────────────────────────────────
 
 namespace detail {
 
-// The body of check_forest, on the arrays of a capacity class of a net that
-// check_wiring admitted.
+// The body of find_forest_fault, on the arrays of a capacity class of a net
+// with no fault of its wiring.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetVerdict check_forest_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
-                                                    std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
-    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
-        AgentKind const& kind = kind_of_(graph, AgentId{agent});
-        if (kind.par_ports == 0u) continue;
-        NetVerdict refusal = NetVerdict::refuse("net: ");
-        put_agent(refusal, kind, agent);
-        refusal.put(" has a par group, and check_forest reads no par group.  Use check_proof_net.");
-        return refusal;
+[[nodiscard]] consteval NetFault find_forest_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                       AgentCount agents, WireCount wires) noexcept {
+    for (std::uint32_t agent = 0; agent < count_of(agents); ++agent) {
+        if (kind_of_(graph, AgentId{agent}).par_ports != 0u) {
+            return NetFault{.code = NetFaultCode::ForestHasParGroup, .agent = AgentId{agent}};
+        }
     }
     UnionFind<AgentCapacity> classes{};
-    for (std::uint32_t index = 0; index < wire_count; ++index) {
+    for (std::uint32_t index = 0; index < count_of(wires); ++index) {
         Wire const& wire = graph.wires[index];
         std::uint32_t const left = classes.find(index_of(wire.left.agent));
         std::uint32_t const right = classes.find(index_of(wire.right.agent));
-        if (left == right) {
-            NetVerdict refusal = NetVerdict::refuse("net: wire ");
-            refusal.put_number(index).put(" from ");
-            put_port(refusal, kind_of_(graph, wire.left.agent), index_of(wire.left.agent), wire.left.port);
-            refusal.put(" to ");
-            put_port(refusal, kind_of_(graph, wire.right.agent), index_of(wire.right.agent), wire.right.port);
-            refusal.put(" closes a cycle.  The agents and the wires do not form a forest.");
-            return refusal;
-        }
+        if (left == right) return NetFault{.code = NetFaultCode::ForestCycle, .wire = index};
         static_cast<void>(classes.join_roots(left, right));
     }
-    return NetVerdict{};
+    return NetFault{};
 }
 
 }  // namespace detail
 
-// The agents and the wires form a forest: each wire joins two trees, and no
-// wire closes a cycle.  A net can have several trees, because two separate
-// compositions do not wait on each other.  This is the condition of
-// LinearActris for threads and channels.  A par group is refused: a net with
-// a par group takes check_proof_net.  Complexity: O(K + A + W a(A)).
+// The first fault of the forest, or NoFault.  The agents and the wires form
+// a forest: each wire joins two trees, and no wire closes a cycle.  A net can
+// have several trees, because two separate compositions do not wait on each
+// other.  This is the condition of LinearActris for threads and channels.  A
+// par group is refused: a net with a par group takes check_proof_net.
+// Complexity: O(K + A + W a(A)).
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetVerdict check_forest(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    NetVerdict const wiring = check_wiring(graph);
-    if (!wiring.is_admitted()) return wiring;
-    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
-    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+[[nodiscard]] consteval NetFault find_forest_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    NetFault const wiring = find_wiring_fault(graph);
+    if (wiring.is_fault()) return wiring;
+    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
     if constexpr (detail::is_small_net<Agents, Wires>) {
         auto const small = detail::copy_small_net_(graph);
-        return detail::check_forest_in_(small, agent_count, wire_count);
+        return detail::find_forest_fault_in_(small, agents, wires);
     } else {
-        return detail::check_forest_in_(graph, agent_count, wire_count);
+        return detail::find_forest_fault_in_(graph, agents, wires);
     }
+}
+
+// The check of the forest, as a verdict with the text of its fault.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_forest(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    return explain_fault(graph, find_forest_fault(graph));
 }
 
 // ── The criterion of Danos and Regnier, by contraction ──────────────────
@@ -752,14 +1097,16 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 // Complexity: O(P log P).
 namespace detail {
 
-// The body of check_proof_net, on the arrays of a capacity class of a net
-// that check_wiring admitted.  Vertex v
-// is agent v below agent_count, and wire v - agent_count above.
+// The body of find_proof_net_fault, on the arrays of a capacity class of a
+// net with no fault of its wiring.  Vertex v is agent v below the count of
+// the agents, and wire v - agent_count above.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetVerdict check_proof_net_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
-                                                       std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
+[[nodiscard]] consteval NetFault find_proof_net_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                          AgentCount agents, WireCount wires) noexcept {
     constexpr std::size_t vertex_capacity = AgentCapacity + WireCapacity;
     constexpr std::uint32_t none = no_index;
+    std::uint32_t const agent_count = count_of(agents);
+    std::uint32_t const wire_count = count_of(wires);
     std::uint32_t const vertices = agent_count + wire_count;
     std::uint32_t wire_at[AgentCapacity * max_agent_ports]{};
     for (std::uint32_t index = 0; index < wire_count; ++index) {
@@ -779,12 +1126,8 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
             std::uint32_t const wire_vertex = agent_count + wire_at[agent * max_agent_ports + port];
             std::uint32_t const left = classes.find(agent);
             std::uint32_t const right = classes.find(wire_vertex);
-            if (left == right) {
-                NetVerdict refusal = NetVerdict::refuse("net: a cycle closes at ");
-                put_port(refusal, kind, agent, port);
-                refusal.put(".  Each switching of the net keeps this cycle, so the net is no proof net.");
-                return refusal;
-            }
+            if (left == right)
+                return NetFault{.code = NetFaultCode::ProofNetCycle, .agent = AgentId{agent}, .port = port};
             static_cast<void>(classes.join_roots(left, right));
             --class_count;
         }
@@ -860,12 +1203,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
         std::uint32_t const agent = par_agent[par];
         std::uint32_t const own = classes.find(agent);
         std::uint32_t const premises = classes.find(par_premise[par][0]);
-        if (own == premises) {
-            NetVerdict refusal = NetVerdict::refuse("net: ");
-            put_agent(refusal, kind_of_(graph, AgentId{agent}), agent);
-            refusal.put(" is a par whose ports reach the agent again.  A switching of it closes a cycle.");
-            return refusal;
-        }
+        if (own == premises) return NetFault{.code = NetFaultCode::ParReachesItself, .agent = AgentId{agent}};
         is_par_done[par] = true;
         std::uint32_t long_list = own;
         std::uint32_t short_list = premises;
@@ -908,11 +1246,8 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
     }
 
     for (std::uint32_t par = 0; par < par_count; ++par) {
-        if (is_par_done[par]) continue;
-        NetVerdict refusal = NetVerdict::refuse("net: ");
-        put_agent(refusal, kind_of_(graph, AgentId{par_agent[par]}), par_agent[par]);
-        refusal.put(" is a par whose ports never meet.  A switching of it leaves the net in two parts.");
-        return refusal;
+        if (!is_par_done[par])
+            return NetFault{.code = NetFaultCode::ParPortsNeverMeet, .agent = AgentId{par_agent[par]}};
     }
     if (class_count != 1u) {
         std::uint32_t const root = classes.find(0);
@@ -923,31 +1258,33 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
                 break;
             }
         }
-        NetVerdict refusal = NetVerdict::refuse("net: the net is not connected.  ");
-        put_agent(refusal, kind_of_(graph, AgentId{apart}), apart);
-        refusal.put(" has no path to ");
-        put_agent(refusal, kind_of_(graph, AgentId{0}), 0);
-        refusal.put(".");
-        return refusal;
+        return NetFault{.code = NetFaultCode::NetNotConnected, .agent = AgentId{apart}};
     }
-    return NetVerdict{};
+    return NetFault{};
 }
 
 }  // namespace detail
 
-// The criterion of Danos and Regnier above, on the net.
+// The first fault of the criterion of Danos and Regnier above, or NoFault.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetVerdict check_proof_net(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    NetVerdict const wiring = check_wiring(graph);
-    if (!wiring.is_admitted()) return wiring;
-    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
-    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+[[nodiscard]] consteval NetFault find_proof_net_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    NetFault const wiring = find_wiring_fault(graph);
+    if (wiring.is_fault()) return wiring;
+    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
     if constexpr (detail::is_small_net<Agents, Wires>) {
         auto const small = detail::copy_small_net_(graph);
-        return detail::check_proof_net_in_(small, agent_count, wire_count);
+        return detail::find_proof_net_fault_in_(small, agents, wires);
     } else {
-        return detail::check_proof_net_in_(graph, agent_count, wire_count);
+        return detail::find_proof_net_fault_in_(graph, agents, wires);
     }
+}
+
+// The criterion of Danos and Regnier, as a verdict with the text of its
+// fault.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_proof_net(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    return explain_fault(graph, find_proof_net_fault(graph));
 }
 
 // ── Vicious circles (Lafont 1990) ───────────────────────────────────────
@@ -961,16 +1298,17 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 // a proof net (Lafont 1990).  Complexity: O(K + A + W).
 namespace detail {
 
-// The body of check_vicious, on the arrays of a capacity class of a net that
-// check_wiring admitted.
+// The body of find_vicious_fault, on the arrays of a capacity class of a net
+// with no fault of its wiring.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetVerdict check_vicious_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
-                                                     std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
+[[nodiscard]] consteval NetFault find_vicious_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                        AgentCount agents, WireCount wires) noexcept {
     constexpr std::uint32_t none = no_index;
+    std::uint32_t const agent_count = count_of(agents);
     std::uint32_t next[AgentCapacity]{};
     for (std::uint32_t& slot : next)
         slot = none;
-    for (std::uint32_t index = 0; index < wire_count; ++index) {
+    for (std::uint32_t index = 0; index < count_of(wires); ++index) {
         PortRef const left = graph.wires[index].left;
         PortRef const right = graph.wires[index].right;
         bool const is_left_principal = left.port == kind_of_(graph, left.agent).principal;
@@ -987,40 +1325,44 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
             walk = next[walk];
         }
         if (walk != none && color[walk] == 1u) {
-            NetVerdict refusal = NetVerdict::refuse("net: vicious circle: ");
+            NetFault fault{.code = NetFaultCode::ViciousCircle, .agent = AgentId{walk}};
             std::uint32_t member = walk;
-            std::uint32_t shown = 0;
             do {
-                if (shown != 0u) refusal.put(" -> ");
-                put_agent(refusal, kind_of_(graph, AgentId{member}), member);
+                fault.path[fault.path_count] = AgentId{member};
+                ++fault.path_count;
                 member = next[member];
-                ++shown;
-            } while (member != walk && shown < 6u);
-            if (member != walk) refusal.put(" -> ...");
-            refusal.put(".  Each principal port meets an auxiliary port, so no rule can fire.");
-            return refusal;
+            } while (member != walk && fault.path_count < max_fault_path);
+            fault.is_path_cut = member != walk;
+            return fault;
         }
         for (std::uint32_t mark = start; mark != none && color[mark] == 1u; mark = next[mark])
             color[mark] = 2;
     }
-    return NetVerdict{};
+    return NetFault{};
 }
 
 }  // namespace detail
 
-// The check of vicious circles above, on the net.
+// The first vicious circle above, or NoFault.  The fault names the first
+// agents of the circle in path.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetVerdict check_vicious(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    NetVerdict const wiring = check_wiring(graph);
-    if (!wiring.is_admitted()) return wiring;
-    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
-    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+[[nodiscard]] consteval NetFault find_vicious_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    NetFault const wiring = find_wiring_fault(graph);
+    if (wiring.is_fault()) return wiring;
+    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
     if constexpr (detail::is_small_net<Agents, Wires>) {
         auto const small = detail::copy_small_net_(graph);
-        return detail::check_vicious_in_(small, agent_count, wire_count);
+        return detail::find_vicious_fault_in_(small, agents, wires);
     } else {
-        return detail::check_vicious_in_(graph, agent_count, wire_count);
+        return detail::find_vicious_fault_in_(graph, agents, wires);
     }
+}
+
+// The check of vicious circles, as a verdict with the text of its fault.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_vicious(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    return explain_fault(graph, find_vicious_fault(graph));
 }
 
 // ── The dataflow ────────────────────────────────────────────────────────
@@ -1033,12 +1375,17 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 // the check refuses it.  Complexity: O(K + A + W), the sort of Kahn.
 namespace detail {
 
-// The body of check_dataflow, on the arrays of a capacity class of a net that
-// check_wiring admitted.
+// The most agents of a cycle of waits that a fault names.
+inline constexpr std::uint8_t max_wait_path = 5;
+
+// The body of find_dataflow_fault, on the arrays of a capacity class of a
+// net with no fault of its wiring.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetVerdict check_dataflow_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
-                                                      std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
+[[nodiscard]] consteval NetFault find_dataflow_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                         AgentCount agents, WireCount wires) noexcept {
     constexpr std::uint32_t none = no_index;
+    std::uint32_t const agent_count = count_of(agents);
+    std::uint32_t const wire_count = count_of(wires);
     // The producer and the consumer of each wire.
     std::uint32_t source[WireCapacity]{};
     std::uint32_t target[WireCapacity]{};
@@ -1046,17 +1393,8 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
     std::uint32_t out_first[AgentCapacity + 1]{};
     for (std::uint32_t index = 0; index < wire_count; ++index) {
         Wire const& wire = graph.wires[index];
-        AgentKind const& left_kind = kind_of_(graph, wire.left.agent);
-        PortType const left = left_kind.port_types[wire.left.port];
-        if (left.polarity == Polarity::Meet) {
-            NetVerdict refusal = NetVerdict::refuse("net: wire ");
-            refusal.put_number(index).put(" joins ");
-            put_port(refusal, left_kind, index_of(wire.left.agent), wire.left.port);
-            refusal.put(" of the type ");
-            put_type(refusal, graph.signature.type_names[index_of(left.type)], left.polarity);
-            refusal.put(", which has no direction.  A dataflow takes give and take ports.");
-            return refusal;
-        }
+        PortType const left = kind_of_(graph, wire.left.agent).port_types[wire.left.port];
+        if (left.polarity == Polarity::Meet) return NetFault{.code = NetFaultCode::DataflowMeetPort, .wire = index};
         bool const is_left_source = left.polarity == Polarity::Give;
         source[index] = index_of(is_left_source ? wire.left.agent : wire.right.agent);
         target[index] = index_of(is_left_source ? wire.right.agent : wire.left.agent);
@@ -1092,7 +1430,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
             }
         }
     }
-    if (order_count == agent_count) return NetVerdict{};
+    if (order_count == agent_count) return NetFault{};
 
     // A cycle remains.  Each agent that the sort left has an input from
     // another such agent, so a walk back along these inputs repeats an agent.
@@ -1116,37 +1454,39 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
     }
     Wire const& closing = graph.wires[into[walk]];
     PortRef const input = target[into[walk]] == index_of(closing.left.agent) ? closing.left : closing.right;
-    NetVerdict refusal = NetVerdict::refuse("net: a cycle of waits closes at ");
-    put_port(refusal, kind_of_(graph, input.agent), index_of(input.agent), input.port);
-    refusal.put(": ");
+    NetFault fault{.code = NetFaultCode::DataflowCycle, .agent = input.agent, .port = input.port};
     std::uint32_t member = walk;
-    std::uint32_t shown = 0;
     do {
-        if (shown != 0u) refusal.put(" <- ");
-        put_agent(refusal, kind_of_(graph, AgentId{member}), member);
+        fault.path[fault.path_count] = AgentId{member};
+        ++fault.path_count;
         member = source[into[member]];
-        ++shown;
-    } while (member != walk && shown < 5u);
-    if (member != walk) refusal.put(" <- ...");
-    refusal.put(".  Each agent waits on its inputs, so no agent of the cycle starts.");
-    return refusal;
+    } while (member != walk && fault.path_count < max_wait_path);
+    fault.is_path_cut = member != walk;
+    return fault;
 }
 
 }  // namespace detail
 
-// The dataflow check above, on the net.
+// The first fault of the dataflow above, or NoFault.  A cycle of waits names
+// the input where it closes in agent and port, and its first agents in path.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetVerdict check_dataflow(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    NetVerdict const wiring = check_wiring(graph);
-    if (!wiring.is_admitted()) return wiring;
-    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
-    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+[[nodiscard]] consteval NetFault find_dataflow_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    NetFault const wiring = find_wiring_fault(graph);
+    if (wiring.is_fault()) return wiring;
+    constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
+    constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
     if constexpr (detail::is_small_net<Agents, Wires>) {
         auto const small = detail::copy_small_net_(graph);
-        return detail::check_dataflow_in_(small, agent_count, wire_count);
+        return detail::find_dataflow_fault_in_(small, agents, wires);
     } else {
-        return detail::check_dataflow_in_(graph, agent_count, wire_count);
+        return detail::find_dataflow_fault_in_(graph, agents, wires);
     }
+}
+
+// The dataflow check, as a verdict with the text of its fault.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_dataflow(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    return explain_fault(graph, find_dataflow_fault(graph));
 }
 
 }  // namespace foundation::algebra::net
