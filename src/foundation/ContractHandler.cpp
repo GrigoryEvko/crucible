@@ -60,9 +60,15 @@ CRUCIBLE_PROCESS_WIDE [[gnu::tls_model(
 namespace {
 
 // The most characters that a report takes from one C string of a violation:
-// the comment, the file or the function.  A longer string loses its
+// the comment, the file or the function.  A longer file or function loses its
 // end, and a string with no terminating zero in that span stops at the bound.
+// A longer comment keeps its start and its end (append_head_and_tail).
 constexpr std::size_t kTextBound = 4096;
+
+// The most characters that the report reads to find the end of a comment.
+// The compiler gives each comment as a string literal with its zero, and the
+// bound keeps a scan of a string with no zero short.
+constexpr std::size_t kScanBound = std::size_t{1} << 20;
 
 // Collects the text of a report and writes it to file descriptor 2.  A full
 // buffer is written before more text goes in, so the report is never cut.
@@ -89,6 +95,31 @@ public:
         while (length < kTextBound && text[length] != '\0')
             ++length;
         append_bytes(text, length);
+    }
+
+    // Appends the C string TEXT, as append_or does.  A text of more than
+    // kTextBound characters gives its first and its last kTextBound / 2
+    // characters, with a mark of the cut between them.  So the end of a long
+    // predicate text, where a message form puts its message, is never lost.
+    // Complexity: linear in the length of TEXT, at most kScanBound.
+    void append_head_and_tail(char const* text, ::foundation::core::TextView fallback) noexcept {
+        if (text == nullptr) {
+            append(fallback);
+            return;
+        }
+        std::size_t length = 0;
+        while (length < kScanBound && text[length] != '\0')
+            ++length;
+        if (length <= kTextBound) {
+            append_bytes(text, length);
+            return;
+        }
+        constexpr std::size_t half = kTextBound / 2;
+        append_bytes(text, half);
+        append(" [... ");
+        append_decimal(static_cast<unsigned>(length - 2 * half));
+        append(" characters cut ...] ");
+        append_bytes(text + (length - half), half);
     }
 
     void append_decimal(unsigned value) noexcept {
@@ -177,12 +208,13 @@ void report_fatal_text(char const* text, char const* file, std::uint32_t line, c
 }
 
 // The comment is the predicate text.  The message forms of
-// foundation/contracts/Pre.h put their message at its end.
+// foundation/contracts/Pre.h put their message at its end, so a long comment
+// keeps its end.
 [[gnu::cold]]
 void report_violation(char const* comment, char const* file, unsigned line, char const* function) noexcept {
     stderr_report report;
     report.append("foundation: contract violation: ");
-    report.append_or(comment, "(no comment)");
+    report.append_head_and_tail(comment, "(no comment)");
     report.append("\n  at ");
     report.append_or(file, "(unknown file)");
     report.append(":");

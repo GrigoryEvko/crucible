@@ -38,6 +38,12 @@
 
 #include <utility>
 
+// The first token of the condition of violate_after_a_far_macro.  The
+// predicate text of a condition that starts with a macro of this file runs
+// from this definition to the message near the end of the file.  So the text
+// is longer than the 4096 characters that a report keeps of one string.
+#define FIRST_TOKEN_OF_A_FAR_MACRO g_condition_holds
+
 namespace {
 
 // A volatile condition, so the compiler cannot fold the clause to false.
@@ -230,10 +236,31 @@ template <void (*First)() noexcept, void (*Second)(int)>
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+namespace {
+
+[[gnu::noinline]] void violate_after_a_far_macro() noexcept {
+    CRUCIBLE_PRE_MSG(FIRST_TOKEN_OF_A_FAR_MACRO, "the message after a far macro");
+}
+
+// The report of a predicate text of more than 4096 characters keeps the
+// start and the end of the text, with a mark of the cut, so it holds the
+// message.  The mark shows that the text is longer than the bound, so the
+// case still tests a cut when the file changes.
+void long_report_keeps_its_message(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test, [] noexcept { violate_after_a_far_macro(); }, ::fixy::TextView{"the message after a far macro"});
+    ::fixy::check::expect_dies(
+        test, [] noexcept { violate_after_a_far_macro(); }, ::fixy::TextView{" characters cut ...] "});
+    ::fixy::check::pass(test, "  a long predicate text is reported with its message\n");
+}
+
+}  // namespace
+
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     clause_report_names_the_condition(test);
     message_report_carries_its_message(test);
+    long_report_keeps_its_message(test);
     CRUCIBLE_TEST_ASSERT(test, second_clause_violation_aborts());
     CRUCIBLE_TEST_ASSERT(test, clause_violation_during_a_message_report_aborts());
     CRUCIBLE_TEST_ASSERT(test, message_violation_during_a_clause_report_aborts());

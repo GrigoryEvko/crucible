@@ -136,9 +136,9 @@
 // When the first token comes from a macro, the text is wrong as for
 // CRUCIBLE_PRE.  A macro of a different file gives the expression in the
 // form of the compiler, with the message.  A macro of the same file gives
-// the source text from the definition of the macro to the message.  The
-// report keeps at most 4096 characters of that text, so a long span loses
-// the message.
+// the source text from the definition of the macro to the message.  A text
+// of more than 4096 characters keeps its first and its last 2048 characters
+// in the report, with a mark of the cut, so the report keeps the message.
 #define CRUCIBLE_PRE_MSG(cond, msg)               \
     do {                                          \
         (void)("" msg);                           \
