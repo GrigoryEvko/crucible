@@ -540,7 +540,8 @@ THE LANES
     Up to LANES landings run at the same time, each in a warm tree of its
     own: TREE, TREE-2, TREE-3 and so on, each with its own build
     directories.  LANES is the size of the slot pool of the host divided by
-    SLICE, with one as the minimum (7 for 224 slots).  The pool caps the
+    SLICE, with one as the minimum and MOST_LANES as the maximum (5 for 224
+    slots, where the division gives 7).  The pool caps the
     slots of all the lanes together, so a lane past the slots of the busy
     lanes only fills idle slots.
     free_lane() holds the lock of the first free lane.  A holder of the
@@ -590,9 +591,11 @@ LOGS = "logs"
 RUNS_LOCK = "logs.lock"
 # The lock that a holder of the first lane holds, and the count of the lanes (THE LANES).  The pool caps the slots of
 # all the lanes together, so each lane past the slots of the busy lanes fills only idle slots.  The count comes from the
-# CPUs and not from the slots of the pool, because each lane has a warm tree of its own.
+# CPUs and not from the slots of the pool, because each lane has a warm tree of its own.  MOST_LANES caps the count: the
+# owner set 5 lanes on 2026-11-16, for 5 working agents.  A host with fewer CPUs still gets fewer lanes.
 PRIMARY = "primary.lock"
-LANES = max(1, proc.DEFAULT_JOBS // heavy.SLICE)
+MOST_LANES = 5
+LANES = min(MOST_LANES, max(1, proc.DEFAULT_JOBS // heavy.SLICE))
 # The name of the directory of the logs of one run, before its number, the count of the ended runs that stay, and the
 # file of the directory that a live run holds a lock on (THE LOGS).
 RUN_MARK = "run-"
