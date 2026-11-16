@@ -16,18 +16,16 @@
 // its contraction setting is the one it claims, so a flag that drops out
 // of the build fails the test instead of making it vacuous.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/fp/Polynomial.h>
+#include <foundation/effects/Effect.h>
 
 #include <bit>
 #include <cmath>
-#include <csignal>
-#include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <string>
-
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace fp = fixy::fp;
 
@@ -256,51 +254,10 @@ inline constexpr double kLogTolerance = 8.4e-5;
 // ── The preconditions at run time ───────────────────────────────────
 //
 // test/fixy/neg/neg_fp_* reach each precondition in a constant
-// evaluation.  These cases reach them at run time, in a child process,
-// and pass only when the child stops by SIGABRT and its standard error
-// names a contract violation.
-
-enum class ChildEnd : unsigned char {
-    Aborted,
-    ExitedZero,
-    Other
-};
-
-struct ChildResult {
-    ChildEnd end = ChildEnd::Other;
-    std::string error_text;
-};
-
-// Runs the body in a child process, and returns how the child stopped and
-// what it wrote to standard error.
-[[nodiscard]] ChildResult run_in_child(void (*body)()) {
-    ChildResult result;
-    int channel[2];
-    if (::pipe(channel) != 0) return result;
-    const ::pid_t child = ::fork();
-    if (child < 0) return result;
-    if (child == 0) {
-        ::dup2(channel[1], 2);
-        ::close(channel[0]);
-        body();
-        ::_exit(0);
-    }
-    ::close(channel[1]);
-    char buffer[512];
-    for (::ssize_t got = ::read(channel[0], buffer, sizeof buffer); got > 0;
-         got = ::read(channel[0], buffer, sizeof buffer)) {
-        result.error_text.append(buffer, static_cast<std::size_t>(got));
-    }
-    ::close(channel[0]);
-    int status = 0;
-    ::waitpid(child, &status, 0);
-    if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) {
-        result.end = ChildEnd::Aborted;
-    } else if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-        result.end = ChildEnd::ExitedZero;
-    }
-    return result;
-}
+// evaluation.  These cases reach them at run time, in a child process
+// through expect_dies of the Check family.  Each passes only when the child
+// stops by SIGABRT and its standard error names the violated precondition.
+// The control runs in the test process, and it must not abort.
 
 float volatile sink = 0.0f;
 
@@ -314,35 +271,20 @@ void log_poly_of_zero() { sink = fp::log_poly(opaque(0.0f)); }
 
 void sin_poly_at_one_turn() { sink = fp::sin_poly(opaque(fp::kOneTurn)); }
 
-// Reports one case, and returns 0 when the child stopped as expected.
-[[nodiscard]] int expect_child(const char* name, void (*body)(), bool must_abort) {
-    const ChildResult result = run_in_child(body);
-    const bool names_violation = result.error_text.find("contract violation") != std::string::npos;
-    const bool is_expected =
-        must_abort ? (result.end == ChildEnd::Aborted && names_violation) : result.end == ChildEnd::ExitedZero;
-    if (!is_expected) {
-        std::fprintf(stderr, "%s: the child %s.\nchild stderr:\n%s\n", name,
-                     result.end == ChildEnd::Aborted      ? "aborted"
-                     : result.end == ChildEnd::ExitedZero ? "continued and exited with status 0"
-                                                          : "stopped in a different way",
-                     result.error_text.c_str());
-        return 1;
-    }
-    return 0;
-}
-
-[[nodiscard]] int preconditions_refuse_at_run_time() {
-    int failures = 0;
-    failures += expect_child("sin_poly(1e10)", sin_poly_past_int32, true);
-    failures += expect_child("cos_poly of the first float past one turn", cos_poly_just_past_one_turn, true);
-    failures += expect_child("log_poly(0)", log_poly_of_zero, true);
-    failures += expect_child("sin_poly(one turn)", sin_poly_at_one_turn, false);
-    return failures == 0 ? 0 : 1;
+void preconditions_refuse_at_run_time(::fixy::TestRunnerCtx const& test) {
+    constexpr ::fixy::TextView kOutsideOneTurn{"foundation: contract violation: is_within_one_turn(angle)"};
+    ::fixy::check::expect_dies(test, sin_poly_past_int32, kOutsideOneTurn);
+    ::fixy::check::expect_dies(test, cos_poly_just_past_one_turn, kOutsideOneTurn);
+    ::fixy::check::expect_dies(test, log_poly_of_zero,
+                               ::fixy::TextView{"foundation: contract violation: is_positive_normal(value)"});
+    sin_poly_at_one_turn();
+    ::fixy::check::pass(test, "  each precondition refuses at run time, and one turn passes\n");
 }
 
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     if (const int rc = contraction_is_what_the_build_claims(); rc != 0) return rc;
     if (const int rc = identities_hold_at_runtime(); rc != 0) return rc;
     if (const int rc = box_muller_pair_matches_the_pin(); rc != 0) return rc;
@@ -350,6 +292,6 @@ int main() {
     if (const int rc = every_angle_in_one_turn_is_accurate(); rc != 0) return rc;
     if (const int rc = every_sampled_positive_normal_is_accurate(); rc != 0) return rc;
     if (const int rc = box_muller_survives_the_extreme_words(); rc != 0) return rc;
-    if (const int rc = preconditions_refuse_at_run_time(); rc != 0) return rc;
+    preconditions_refuse_at_run_time(test);
     return 0;
 }

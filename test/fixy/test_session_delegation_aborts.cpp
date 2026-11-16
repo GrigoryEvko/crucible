@@ -7,23 +7,20 @@
 //   3. An assignment over a DelegatedSession that holds a live endpoint.
 //      The assignment drops that endpoint, and its policy acts.
 //
-// Each attack runs in a child process.  The test passes only when the
-// child ends by SIGABRT and its standard error names the rule.
+// Each attack runs in a child process through expect_dies of the Check
+// family.  The test passes only when the child ends by SIGABRT and its
+// standard error names the rule.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
-#include <csignal>
-#include <cstddef>
-#include <cstdio>
-#include <string>
 #include <utility>
-
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace {
 
@@ -40,37 +37,6 @@ struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
 using SendsRegion = s::Send<s::Transferable<int, Region>, s::End>;
-
-// Runs the attack in a child process.  The test passes only when the
-// child ends by SIGABRT and its standard error names the rule, so a
-// different crash, or no crash, fails it.
-[[nodiscard]] bool attack_aborts_with(void (*attack)(), const char* expected) {
-    int channel[2];
-    if (::pipe(channel) != 0) return false;
-    // The child runs the attack, so that its abort is the result the test reads.
-    const ::pid_t child = ::fork();
-    if (child < 0) return false;
-    if (child == 0) {
-        ::dup2(channel[1], 2);
-        ::close(channel[0]);
-        attack();
-        ::_exit(0);
-    }
-    ::close(channel[1]);
-    std::string text;
-    char buffer[512];
-    for (::ssize_t got = ::read(channel[0], buffer, sizeof buffer); got > 0;
-         got = ::read(channel[0], buffer, sizeof buffer)) {
-        text.append(buffer, static_cast<std::size_t>(got));
-    }
-    ::close(channel[0]);
-    int status = 0;
-    ::waitpid(child, &status, 0);
-    const bool aborted = WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
-    const bool named = text.find(expected) != std::string::npos;
-    if (!aborted || !named) std::fprintf(stderr, "child output:\n%s\n", text.c_str());
-    return aborted && named;
-}
 
 void accept_after_a_move() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
@@ -101,14 +67,13 @@ void assign_over_a_live_endpoint() {
 }  // namespace
 
 int main() {
-    const bool refuses_second_accept = attack_aborts_with(accept_after_a_move, "ACCEPT OF AN EMPTY DELEGATION");
-    const bool refuses_consumed_hold =
-        attack_aborts_with(delegate_with_a_consumed_hold, "[Hold_Consumed]: a PermHold was used after a move");
-    const bool drops_assigned_over =
-        attack_aborts_with(assign_over_a_live_endpoint, "ABANDONMENT DETECTED (non-terminal handle)");
-    std::printf("test_session_delegation_aborts: accept after a move %s, consumed hold %s, assignment over a live "
-                "endpoint %s\n",
-                refuses_second_accept ? "refused" : "NOT REFUSED", refuses_consumed_hold ? "refused" : "NOT REFUSED",
-                drops_assigned_over ? "refused" : "NOT REFUSED");
-    return refuses_second_accept && refuses_consumed_hold && drops_assigned_over ? 0 : 1;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::check::expect_dies(test, accept_after_a_move, ::fixy::TextView{"ACCEPT OF AN EMPTY DELEGATION"});
+    ::fixy::check::expect_dies(test, delegate_with_a_consumed_hold,
+                               ::fixy::TextView{"[Hold_Consumed]: a PermHold was used after a move"});
+    ::fixy::check::expect_dies(test, assign_over_a_live_endpoint,
+                               ::fixy::TextView{"ABANDONMENT DETECTED (non-terminal handle)"});
+    ::fixy::check::pass(test, "test_session_delegation_aborts: accept after a move, consumed hold and assignment over "
+                              "a live endpoint refused\n");
+    return 0;
 }

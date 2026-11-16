@@ -5,7 +5,8 @@
 // foundation/ChannelBinding.h, which the move clears.  The move gives the
 // linear Permission or the pool share to the new handle, so a use of the
 // source would act through a token it no longer holds.  Each attack below
-// runs in a child process, which must end.
+// runs in a child process, which must end by SIGABRT.  The attacks run
+// first, while the test process has one thread.
 //
 // Two runs check the positive half.  The moved-into handle keeps working,
 // and a handle moved into a thread carries the channel there with no data
@@ -16,19 +17,16 @@
 // caller, so the token opens a new handle.  A released handle names no
 // channel, as a moved-from handle does.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 
 #include <foundation/ChannelBinding.h>
 #include <foundation/Linear.h>
+#include <foundation/effects/Effect.h>
 
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-#include <cstdio>
-#include <cstdlib>
-#include <iterator>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -150,36 +148,18 @@ void binding_after_move() {
     (void)*opaque_ref(first);
 }
 
-struct Attack {
-    const char* name;
-    void (*run)();
-};
-
-constexpr Attack kAttacks[] = {
-    {"spsc producer", &spsc_producer}, {"spsc consumer", &spsc_consumer},
-    {"mpsc producer", &mpsc_producer}, {"mpsc producer in the drained window", &mpsc_producer_in_drained_window},
-    {"mpsc consumer", &mpsc_consumer}, {"bare binding", &binding_after_move},
-};
-
-[[nodiscard]] bool ends_the_process(void (*attack)()) {
-    std::fflush(stderr);
-    // A use the binding catches ends the process, so it
-    // runs in a child that the parent observes.
-    const pid_t pid = ::fork();
-    if (pid < 0) {
-        std::fprintf(stderr, "fork failed\n");
-        std::_Exit(2);
-    }
-    if (pid == 0) {
-        attack();
-        std::_Exit(0);
-    }
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {
-        std::fprintf(stderr, "waitpid failed\n");
-        std::_Exit(2);
-    }
-    return WIFSIGNALED(status) != 0;
+// A use that the binding catches ends the process, so each attack runs in a
+// child through expect_dies of the Check family.  The child must end by
+// SIGABRT with the failed invariant of the binding.
+void moved_from_handles_end_the_process(::fixy::TestRunnerCtx const& test) {
+    constexpr ::fixy::TextView kNoChannel{"foundation: fatal invariant failed: channel_ != nullptr"};
+    ::fixy::check::expect_dies(test, spsc_producer, kNoChannel);
+    ::fixy::check::expect_dies(test, spsc_consumer, kNoChannel);
+    ::fixy::check::expect_dies(test, mpsc_producer, kNoChannel);
+    ::fixy::check::expect_dies(test, mpsc_producer_in_drained_window, kNoChannel);
+    ::fixy::check::expect_dies(test, mpsc_consumer, kNoChannel);
+    ::fixy::check::expect_dies(test, binding_after_move, kNoChannel);
+    ::fixy::check::pass(test, "  each use of a moved-from handle or binding ends the process\n");
 }
 
 [[nodiscard]] int moved_into_handles_work() {
@@ -235,27 +215,11 @@ constexpr Attack kAttacks[] = {
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "[expected] each case below prints the contract report of a child process\n");
-    int failures = 0;
-    for (const Attack& attack : kAttacks) {
-        if (!ends_the_process(attack.run)) {
-            std::fprintf(stderr, "FAIL: a moved-from %s still acted on its channel\n", attack.name);
-            ++failures;
-        }
-    }
-    if (binding_moves_its_pointer() != 0) {
-        std::fprintf(stderr, "FAIL: the binding did not move its pointer\n");
-        ++failures;
-    }
-    if (moved_into_handles_work() != 0) {
-        std::fprintf(stderr, "FAIL: a moved-into handle lost its channel\n");
-        ++failures;
-    }
-    if (handle_moved_into_a_thread() != 0) {
-        std::fprintf(stderr, "FAIL: a handle moved into a thread lost items\n");
-        ++failures;
-    }
-    if (failures != 0) return 1;
-    std::printf("test_channel_moved_from: %zu attacks refused\n", std::size(kAttacks));
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    moved_from_handles_end_the_process(test);
+    CRUCIBLE_TEST_ASSERT(test, binding_moves_its_pointer() == 0 && "the binding did not move its pointer");
+    CRUCIBLE_TEST_ASSERT(test, moved_into_handles_work() == 0 && "a moved-into handle lost its channel");
+    CRUCIBLE_TEST_ASSERT(test, handle_moved_into_a_thread() == 0 && "a handle moved into a thread lost items");
+    ::fixy::check::pass(test, "test_channel_moved_from: 6 attacks refused\n");
     return 0;
 }

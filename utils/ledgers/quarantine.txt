@@ -324,10 +324,10 @@ test/ct/ | raw-pointer-object | 5 | - | -
 test/ct/ | std-entity | 20 | - | -
 test/ct/ | std-object | 13 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
-test/fixy/ | c-array-object | 100 | - | -
-test/fixy/ | c-library-call | 1450 | - | -
+test/fixy/ | c-array-object | 89 | - | -
+test/fixy/ | c-library-call | 1337 | - | -
 test/fixy/ | c-library-object | 6 | - | -
-test/fixy/ | door-header | 37 | - | -
+test/fixy/ | door-header | 21 | - | -
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 3 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | opted-out | 16 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
@@ -349,9 +349,9 @@ test/fixy/ | opted-out | 1 | PROBE: the test forges stdio::write for a private s
 test/fixy/ | opted-out | 2 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
-test/fixy/ | raw-function-pointer | 41 | - | -
+test/fixy/ | raw-function-pointer | 32 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 157 | - | -
+test/fixy/ | raw-pointer-object | 151 | - | -
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | region | 1 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
@@ -376,8 +376,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2758 | - | -
-test/fixy/ | std-object | 1000 | - | -
+test/fixy/ | std-entity | 2737 | - | -
+test/fixy/ | std-object | 995 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 254 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -431,10 +431,10 @@ test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
 test/fixy/neg/ | std-entity | 104 | - | -
 test/fixy/neg/ | std-object | 48 | - | -
-test/foundation/ | c-array-object | 33 | - | -
-test/foundation/ | c-library-call | 399 | - | -
-test/foundation/ | c-library-object | 7 | - | -
-test/foundation/ | door-header | 11 | - | -
+test/foundation/ | c-array-object | 25 | - | -
+test/foundation/ | c-library-call | 329 | - | -
+test/foundation/ | c-library-object | 5 | - | -
+test/foundation/ | door-header | 3 | - | -
 test/foundation/ | foreign-symbol | 5 | - | -
 test/foundation/ | opted-out | 16 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | opted-out | 2 | ORACLE: memcpy is the model of the bytes of an object | -
@@ -455,9 +455,9 @@ test/foundation/ | opted-out | 1 | PROBE: a union member reads the bytes of a di
 test/foundation/ | opted-out | 45 | PROBE: a violation report blocks on a full pipe, and the wait has a bound | -
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/foundation/ | raw-function-pointer | 17 | - | -
+test/foundation/ | raw-function-pointer | 14 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
-test/foundation/ | raw-pointer-object | 45 | - | -
+test/foundation/ | raw-pointer-object | 40 | - | -
 test/foundation/ | region | 1 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | region | 1 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | region | 1 | ORACLE: std::array is the model of the writes of a FixedArray | -
@@ -480,8 +480,8 @@ test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a 
 test/foundation/ | replace-pending:<limits> | 52 | - | -
 test/foundation/ | replace-pending:std::bit_cast | 8 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
-test/foundation/ | std-entity | 500 | - | -
-test/foundation/ | std-object | 180 | - | -
+test/foundation/ | std-entity | 474 | - | -
+test/foundation/ | std-object | 174 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
 test/foundation/neg/ | detail-use | 115 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges

@@ -4,14 +4,15 @@
 // with the wrong memory ordering passes every single-threaded case, so
 // only a case with real interleavings can catch it.
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
+#include <fixy/os/Process.h>
 
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/Runtime.h>
-
-#include <sys/wait.h>
-#include <unistd.h>
+#include <foundation/effects/Effect.h>
 
 #include <atomic>
 #include <chrono>
@@ -21,8 +22,8 @@
 #include <string_view>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
-#include "../test_assert.h"
 
 namespace {
 
@@ -315,28 +316,28 @@ void exit_on_linearity_violation(::foundation::diag::Category category, std::str
                                                                             : kOtherViolationSeen);
 }
 
+// The child exists to die.  The two-writer check ends the process that runs
+// it, so only a parent can observe the route.  The child starts through the
+// child door of fixy/os/Process.h.  The earlier tests join each of their
+// threads, so the test process has one thread at the fork, and the child
+// may start its two writers.
 void test_two_writers_end_through_the_catalog() {
-    // The child exists to die.  The two-writer check ends
-    // the process that runs it, so only a parent can observe the route.
-    const pid_t pid = ::fork();
-    CRUCIBLE_REQUIRE(pid >= 0);
-    if (pid == 0) {
-        (void)::foundation::diag::set_violation_sink(&exit_on_linearity_violation);
-        AtomicSnapshot<TestPayload> snap{TestPayload::from(0)};
-        auto hammer = [&snap] {
-            for (std::uint64_t i = 1; i < 50000000; ++i)
-                snap.publish(TestPayload::from(i));
-        };
-        std::jthread first(hammer);
-        std::jthread second(hammer);
-        first.join();
-        second.join();
-        std::_Exit(0);
-    }
-    int status = 0;
-    CRUCIBLE_REQUIRE(::waitpid(pid, &status, 0) == pid);
-    CRUCIBLE_REQUIRE(WIFEXITED(status));
-    CRUCIBLE_REQUIRE(WEXITSTATUS(status) == kLinearityViolationSeen);
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::process::Child child = ::fixy::process::spawn_child(test, [] noexcept {
+                                       (void)::foundation::diag::set_violation_sink(&exit_on_linearity_violation);
+                                       AtomicSnapshot<TestPayload> snap{TestPayload::from(0)};
+                                       auto hammer = [&snap] {
+                                           for (std::uint64_t i = 1; i < 50000000; ++i)
+                                               snap.publish(TestPayload::from(i));
+                                       };
+                                       std::jthread first(hammer);
+                                       std::jthread second(hammer);
+                                       first.join();
+                                       second.join();
+                                   }).expect("the test starts a child");
+    ::fixy::process::ChildReport const report =
+        ::fixy::process::wait(std::move(child)).expect("the test waits for its child");
+    CRUCIBLE_TEST_ASSERT(test, report.is_exit_with(kLinearityViolationSeen));
 }
 
 }  // namespace
@@ -351,6 +352,7 @@ int main() {
     run_test("try_load_rejects_in_progress", test_try_load_rejects_in_progress);
     run_test("two_writers_end_through_the_catalog", test_two_writers_end_through_the_catalog);
 
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::check::pass(test, "\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

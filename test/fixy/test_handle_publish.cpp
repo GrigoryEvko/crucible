@@ -11,19 +11,19 @@
 // ignore, where a clause elides and a second publish quietly no-ops
 // while the first pointer stays visible.  A helper that aborts
 // regardless of the semantic can only be observed by running it, so
-// that case runs in a child process and reads WIFSIGNALED.  Once's
+// that case runs in a child process through expect_dies.  Once's
 // run-exactly-once needs threads for the same reason: a single-threaded
 // call cannot distinguish the gate from an if.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/handle/Once.h>
 #include <fixy/handle/PublishOnce.h>
-
-#include <sys/wait.h>
-#include <unistd.h>
+#include <foundation/effects/Effect.h>
 
 #include <atomic>
 #include <cstdio>
-#include <cstdlib>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -258,103 +258,72 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
 }
 
 // ── Runtime: the double-publish abort ────────────────────────────────
+//
+// The double-publish abort is a runtime behaviour of publish, and the abort
+// ends the process that runs it.  So the case runs in a child process
+// through expect_dies of the Check family, which requires SIGABRT and the
+// name of the catalog entry on the standard error of the child.
 
-template <typename Body>
-[[nodiscard]] bool child_aborted(Body body) {
-    // The child exists to die.  The double-publish abort is a
-    // runtime behaviour of a destructor, and std::abort ends the process
-    // that runs it, so the only way to observe it is from a parent.
-    const pid_t pid = ::fork();
-    if (pid < 0) {
-        std::fprintf(stderr, "fork failed\n");
-        std::_Exit(2);
-    }
-    if (pid == 0) {
-        body();
-        std::_Exit(0);
-    }
-    int status = 0;
-    // The wait belongs to the fork above; reading
-    // WIFSIGNALED from the status is what makes the abort observable,
-    // and is stricter than ctest's WILL_FAIL, which accepts any exit.
-    if (::waitpid(pid, &status, 0) != pid) {
-        std::fprintf(stderr, "waitpid failed\n");
-        std::_Exit(2);
-    }
-    return WIFSIGNALED(status) != 0;
-}
-
-[[nodiscard]] int double_publish_aborts() {
-    std::fprintf(stderr, "[expected] the PublishOnceDoublePublish banner below comes from the child process "
-                         "that proves the second publish aborts\n");
-
-    const bool aborted = child_aborted([] {
-        Payload first{1, 1.0};
-        Payload second{2, 2.0};
-        h::PublishOnce<Payload> slot{};
-        slot.publish(&first);
-        slot.publish(&second);
-    });
-    if (!aborted) {
-        std::fprintf(stderr, "a second publish did not abort — the slot silently kept one of the two pointers, and "
-                             "observers cannot tell which\n");
-        return 1;
-    }
+void double_publish_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            Payload first{1, 1.0};
+            Payload second{2, 2.0};
+            h::PublishOnce<Payload> slot{};
+            slot.publish(&first);
+            slot.publish(&second);
+        },
+        ::fixy::TextView{"crucible: fatal: PublishOnceDoublePublish"});
 
     // One publish must NOT abort, or the case above would pass for a
-    // handle that aborts on every call.
-    const bool single_aborted = child_aborted([] {
-        Payload only{1, 1.0};
-        h::PublishOnce<Payload> slot{};
-        slot.publish(&only);
-    });
-    if (single_aborted) {
-        std::fprintf(stderr, "a single publish aborted\n");
-        return 1;
-    }
-    return 0;
+    // handle that aborts on every call.  It runs in the test process.
+    Payload only{1, 1.0};
+    h::PublishOnce<Payload> slot{};
+    slot.publish(&only);
+    CRUCIBLE_TEST_ASSERT(test, slot.observe() == &only);
+    ::fixy::check::pass(test, "  a second publish aborts, and one publish does not\n");
 }
 
 // ── Runtime: the preconditions no constant evaluation reaches ────────
 //
 // publish and Lazy::get read atomics, so neither is constexpr, and a
 // negative-compile fixture cannot reach their preconditions.  Each
-// refusal is observed in a child process instead.  The runs above are
-// the positive controls: a non-null publish and a get after the value is
-// built do not abort.
-[[nodiscard]] int preconditions_abort() {
-    std::fprintf(stderr, "[expected] the four contract violations below come from child processes that prove "
-                         "each precondition aborts\n");
-
-    if (!child_aborted([] {
+// refusal is observed in a child process through expect_dies instead.  The
+// runs above are the positive controls: a non-null publish and a get after
+// the value is built do not abort.
+void preconditions_abort(::fixy::TestRunnerCtx const& test) {
+    constexpr ::fixy::TextView kNullPublish{"foundation: contract violation: ptr != nullptr"};
+    constexpr ::fixy::TextView kNeverBuilt{"foundation: fatal invariant failed: initialized()"};
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
             h::PublishOnce<Payload> slot{};
             slot.publish(nullptr);
-        })) {
-        std::fprintf(stderr, "PublishOnce::publish took a null pointer, which reads as never published\n");
-        return 1;
-    }
-    if (!child_aborted([] {
+        },
+        kNullPublish);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
             h::PublishSlot<Payload> slot{};
             slot.publish(nullptr);
-        })) {
-        std::fprintf(stderr, "PublishSlot::publish took a null pointer, which reads as nothing pending\n");
-        return 1;
-    }
-    if (!child_aborted([] {
+        },
+        kNullPublish);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
             h::Lazy<int> lazy{};
             (void)lazy.get();
-        })) {
-        std::fprintf(stderr, "Lazy::get read a value that was never built\n");
-        return 1;
-    }
-    if (!child_aborted([] {
+        },
+        kNeverBuilt);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
             const h::Lazy<int> lazy{};
             (void)lazy.get();
-        })) {
-        std::fprintf(stderr, "the const Lazy::get read a value that was never built\n");
-        return 1;
-    }
-    return 0;
+        },
+        kNeverBuilt);
+    ::fixy::check::pass(test, "  each precondition that no constant evaluation reaches aborts\n");
 }
 
 }  // namespace
@@ -365,7 +334,8 @@ int main() {
     if (const int rc = once_runs_exactly_once(); rc != 0) return rc;
     if (const int rc = lazy_initializes_once_single_threaded(); rc != 0) return rc;
     if (const int rc = lazy_initializes_once(); rc != 0) return rc;
-    if (const int rc = double_publish_aborts(); rc != 0) return rc;
-    if (const int rc = preconditions_abort(); rc != 0) return rc;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    double_publish_aborts(test);
+    preconditions_abort(test);
     return 0;
 }

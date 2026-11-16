@@ -3782,8 +3782,8 @@ fixy_test(test_session_ownership_attacks)
 fixy_test(test_session_payload_seal)
 
 # A hold used after a move, and a hold dropped with a loan open, each
-# abort with a named diagnostic.  Each attack runs in a child process,
-# and each test passes only on its diagnostic.
+# abort with a named diagnostic.  Each attack runs in a child process
+# through expect_dies, and each test passes only on its diagnostic.
 fixy_test(test_session_hold_consumed_aborts)
 fixy_test(test_session_hold_open_loan_aborts)
 

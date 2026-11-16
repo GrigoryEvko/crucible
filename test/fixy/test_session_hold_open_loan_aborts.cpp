@@ -2,54 +2,21 @@
 // diagnostic.  Without the check, the lender waits for a release that
 // never comes, which is the silent drop that LinearActris (Jacobs,
 // Hinrichsen, Krebbers, POPL 2024) forbids.  The attack runs in a child
-// process, and the test passes only on that diagnostic.
+// process through expect_dies of the Check family, and the test passes
+// only when the child ends by SIGABRT with that diagnostic.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Flow.h>
+#include <foundation/effects/Effect.h>
 
-#include <csignal>
-#include <cstddef>
-#include <cstdio>
-#include <string>
 #include <utility>
-
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace {
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
-
-// Runs the attack in a child process.  The test passes only when the
-// child ends by SIGABRT and its standard error names the rule, so a
-// different crash, or no crash, fails it.
-[[nodiscard]] bool attack_aborts_with(void (*attack)(), const char* expected) {
-    int channel[2];
-    if (::pipe(channel) != 0) return false;
-    // The child runs the attack, so that its abort is the result the test reads.
-    const ::pid_t child = ::fork();
-    if (child < 0) return false;
-    if (child == 0) {
-        ::dup2(channel[1], 2);
-        ::close(channel[0]);
-        attack();
-        ::_exit(0);
-    }
-    ::close(channel[1]);
-    std::string text;
-    char buffer[512];
-    for (::ssize_t got = ::read(channel[0], buffer, sizeof buffer); got > 0;
-         got = ::read(channel[0], buffer, sizeof buffer)) {
-        text.append(buffer, static_cast<std::size_t>(got));
-    }
-    ::close(channel[0]);
-    int status = 0;
-    ::waitpid(child, &status, 0);
-    const bool aborted = WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
-    const bool named = text.find(expected) != std::string::npos;
-    if (!aborted || !named) std::fprintf(stderr, "child output:\n%s\n", text.c_str());
-    return aborted && named;
-}
 
 void drop_open_loan() {
     namespace fp = ::foundation::permissions;
@@ -64,8 +31,9 @@ void drop_open_loan() {
 }  // namespace
 
 int main() {
-    const bool refused =
-        attack_aborts_with(drop_open_loan, "[Hold_Open_Loan]: a PermHold was destroyed with a loan open");
-    std::printf("test_session_hold_open_loan_aborts: %s\n", refused ? "refused" : "NOT REFUSED");
-    return refused ? 0 : 1;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::check::expect_dies(test, drop_open_loan,
+                               ::fixy::TextView{"[Hold_Open_Loan]: a PermHold was destroyed with a loan open"});
+    ::fixy::check::pass(test, "test_session_hold_open_loan_aborts: refused\n");
+    return 0;
 }
