@@ -717,6 +717,11 @@ struct channel_mark {
     return first.self != 0 && second.self != 0 && first.peer == second.self && second.peer == first.self;
 }
 
+/// True when the mark names no peer, so its end is the end of no channel that
+/// the watch shows.  Such an end can rewind alone.  An end that the watch did
+/// not track names no record and no peer.
+[[nodiscard]] constexpr bool is_end_of_no_channel(channel_mark mark) noexcept { return mark.peer == 0; }
+
 /// Ends the session of `endpoint`: it reached End, detached or cancelled.
 inline void release(endpoint_id endpoint) noexcept {
     if (endpoint == endpoint_id::none) return;

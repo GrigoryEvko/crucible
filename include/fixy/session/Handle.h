@@ -725,10 +725,10 @@ struct [[nodiscard]] StoppedSend {
 //     they move the message through the transport and build the handle
 //     at the next position.  The handle classes forward their consumer
 //     methods here, so a direct call is the same operation as the method.
-//   - rewind takes a handle at End and opens a new session on its
-//     Resource at a position that the gate of rewind admits.
-//     rewind_channel does the same for the two ends of a channel, and
-//     links the two new records in the watch.
+//   - rewind takes a handle at End of a session that is no channel, and
+//     opens a new session on its Resource at a position that the gate of
+//     rewind admits.  rewind_channel does the same for the two ends of a
+//     channel, and links the two new records in the watch.
 //
 // No object of the class exists, and foundation/NoObject.h tells why no
 // constructor and no byte route makes one.
@@ -820,6 +820,13 @@ public:
     // it.  The gate is RewindableTo of fixy/session/Admission.h, so the
     // new session is one that a mint admits from its start, and the handle
     // at End belongs to no session that a callback entry owns.
+    //
+    // The handle at End must be the end of no channel.  The new record would
+    // have no peer, and the watch would no longer see the channel, so an end
+    // of a channel rewinds with its peer, through rewind_channel.  The gate
+    // refuses each end of a forked channel when the program compiles, because
+    // the body of each side brands it.  The precondition refuses an end whose
+    // mark names a peer, as an end of a test channel or of a rewound channel.
     template <typename R, typename LoopCtx, typename Resource, typename EndLoopCtx, AbandonmentPolicy Policy>
         requires RewindableTo<R, LoopCtx, EndLoopCtx>
     [[nodiscard]] static constexpr auto
@@ -830,9 +837,9 @@ public:
     // End of each end and opens a new session on each Resource: one at
     // position R in the loop context LoopCtx, and one at the dual of R.  The
     // step into End released the record of each end, so a rewind of one end
-    // alone claims a record with no peer, and the watch no longer sees the
-    // channel.  This rewind links the two new records, as a channel mint
-    // does.  The gate is RewindableChannelTo of fixy/session/Admission.h.
+    // alone would claim a record with no peer, and rewind refuses such an
+    // end.  This rewind links the two new records, as a channel mint does.
+    // The gate is RewindableChannelTo of fixy/session/Admission.h.
     // The result holds the two handles, in the order of the arguments, and a
     // structured binding gives them out.
     //
@@ -1837,11 +1844,20 @@ constexpr auto HandleFactory::open_(SessionOpenKey const&, Resource r, std::sour
     return start_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), loc, session);
 }
 
+// The precondition reads the mark of the handle at End.  An end of a channel
+// names its peer, and an end of a session that is no channel names none.  A
+// policy that keeps no record has no mark to read, and a constant evaluation
+// claims no record.
 template <typename R, typename LoopCtx, typename Resource, typename EndLoopCtx, AbandonmentPolicy Policy>
     requires RewindableTo<R, LoopCtx, EndLoopCtx>
 constexpr auto HandleFactory::rewind(
     SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
     std::source_location loc) noexcept {
+    if constexpr (Policy::checks_abandonment) {
+        if !consteval {
+            CRUCIBLE_PRE(watch::is_end_of_no_channel(at_end.mark_.value()));
+        }
+    }
     Resource resource = std::move(at_end).close();
     return step_<R, Resource, LoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
         std::forward<Resource>(resource), claim_<R, Resource, Policy>(loc), loc);
