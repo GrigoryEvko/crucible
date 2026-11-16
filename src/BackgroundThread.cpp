@@ -1245,13 +1245,6 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
             te.set_outputs(output_metas, output_slot_ids);
         }
 
-        // The entry holds each of its arrays now, so one fold covers
-        // the tensor and no-tensor cases alike.  This is the same object
-        // the canonical whole-region hash drives, so the streaming
-        // result is bit-identical to that pass by construction and needs
-        // no second walk.
-        content_fold.fold(te);
-
         // Prefetch the map slots the next op will probe.  Processing the
         // current op gives the lines time to arrive.  The last op has no
         // next op.
@@ -1376,6 +1369,13 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
                 output_slot = SlotId{};
             }
         }
+
+        // The entry holds each of its arrays now, with the producer and the
+        // slot of each input and the slot of each output, so one fold covers
+        // the tensor and no-tensor cases alike.  This is the same object the
+        // canonical whole-region hash drives, so the streaming result is
+        // bit-identical to that pass by construction and needs no second walk.
+        content_fold.fold(te);
     }
 
     // Each slot of the build becomes a TensorSlot of the region, in the

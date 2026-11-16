@@ -535,15 +535,17 @@ template <class Fake>
         // empty-region vector is unchanged: an empty region never enters
         // fold_entry_, so it is the seed through the finalizer and nothing else.
         // Moved 2026-11-16 when each op folds the tags of its scalars, in one
-        // more step of the chain.
+        // more step of the chain.  Moved again the same day when each op
+        // folds its depth, its tensor counts, the producer and the slot of
+        // each input, and the metadata and the slot of each output.
         golden("empty region", crucible::compute_content_hash(empty_sp), 0x9CA066F1A4AB2EEAULL);
-        golden("no-tensor op", one_op(e_empty), 0x1DDB464C64004DC2ULL);
-        golden("one scalar", one_op(e_one), 0xA7708C9BF4E4E435ULL);
-        golden("five scalars", one_op(e_five), 0xC160AB392C7B2657ULL);
-        golden("one tensor", one_op(e_real_tensor), 0x4F04169F2ED5C7DBULL);
+        golden("no-tensor op", one_op(e_empty), 0x611B71992AFE4595ULL);
+        golden("one scalar", one_op(e_one), 0xBAD217C444EEC11EULL);
+        golden("five scalars", one_op(e_five), 0xA3A7C6CC6E781A33ULL);
+        golden("one tensor", one_op(e_real_tensor), 0xFB9E40BFAAF29C6BULL);
         // The region holds three present scalars as its second op.  An entry
         // holds each of its arrays, so the fold has no count-only op.
-        golden("mixed five-op region", crucible::compute_content_hash(real_mix_sp), 0x53CBA3D1A98038B0ULL);
+        golden("mixed five-op region", crucible::compute_content_hash(real_mix_sp), 0xC4BB87601737E71FULL);
 
         // The recipe fold is part of the same format, so it is frozen too.
         constexpr crucible::NumericalRecipe golden_recipe = crucible::hashed(crucible::NumericalRecipe{
@@ -558,7 +560,7 @@ template <class Fake>
             .hash = {},
         });
         golden("mixed five-op region under a recipe", crucible::compute_content_hash(real_mix_sp, golden_recipe),
-               0xD11F6B4CEABB1252ULL);
+               0xDC9DC29DD7ACA295ULL);
 
         assert(moved_vectors == 0
                && "the region content-hash format changed: every persisted content hash and "

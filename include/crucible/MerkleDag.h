@@ -700,20 +700,46 @@ private:
     // separate steps for that reason; they are disjoint in meaning, and a
     // permutation cannot lose either one.
     //
-    // Each array of the entry holds its count, so each loop reads the View
-    // alone.
+    // The op folds its depth and its two tensor counts in one step after the
+    // schema.  A post-order list does not show its nesting: "B inside A" and
+    // "B, then A" are one list, and the depth of B tells them apart.  The
+    // counts keep the inputs and the outputs of an op apart.
+    //
+    // Each input folds its metadata, and then its producer op and its slot in
+    // one step.  So two regions that read the same tensors in a different
+    // order hash apart, and so do two regions that read a different output of
+    // one producer.  Each output folds its metadata and its slot, so the
+    // shape of an output that no later op reads is part of the hash too.
+    //
+    // The arrays of the inputs hold one count (TraceEntry::set_inputs), so
+    // one index reads the three.
     [[gnu::always_inline]] static void fold_entry_(uint64_t& content_hash_state, const TraceEntry& op_record) noexcept {
         content_hash_state = detail::combine_ids(content_hash_state, op_record.schema_hash.raw());
+        content_hash_state = detail::combine_ids(content_hash_state, (uint64_t{op_record.depth.raw()} << 32)
+                                                                         | (uint64_t{op_record.num_outputs()} << 16)
+                                                                         | uint64_t{op_record.num_inputs()});
 
-        for (const TensorMeta& input_meta : op_record.input_metas()) {
-            const uint64_t per_dim_hash_xor = raw_dim_hash(detail::dim_hash_simd_det(input_meta));
-            // The device comes through device_of, so the hash agrees with
-            // the equality of a device: one index for the host.
-            const TensorDevice device = device_of(input_meta);
-            uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(input_meta.dtype))
-                                 | (static_cast<uint64_t>(std::to_underlying(device.type())) << 8)
-                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16);
-            content_hash_state = detail::combine_ids(content_hash_state, per_dim_hash_xor ^ meta_packed);
+        const ::fixy::View<const TensorMeta> input_metas = op_record.input_metas();
+        const ::fixy::View<const OpIndex> producers = op_record.input_trace_indices();
+        const ::fixy::View<const SlotId> input_slots = op_record.input_slot_ids();
+        for (std::size_t input = 0; input < input_metas.size(); ++input) {
+            content_hash_state = detail::combine_ids(
+                content_hash_state,
+                packed_meta_(*input_metas.get(input).expect("the input arrays of an entry hold one count")));
+            const uint64_t producer = producers.get(input).expect("the input arrays of an entry hold one count")->raw();
+            const uint64_t slot = input_slots.get(input).expect("the input arrays of an entry hold one count")->raw();
+            content_hash_state = detail::combine_ids(content_hash_state, (producer << 32) | slot);
+        }
+
+        const ::fixy::View<const SlotId> output_slots = op_record.output_slot_ids();
+        const ::fixy::View<const TensorMeta> output_metas = op_record.output_metas();
+        for (std::size_t output = 0; output < output_metas.size(); ++output) {
+            content_hash_state = detail::combine_ids(
+                content_hash_state,
+                packed_meta_(*output_metas.get(output).expect("the output arrays of an entry hold one count")));
+            content_hash_state = detail::combine_ids(
+                content_hash_state,
+                uint64_t{output_slots.get(output).expect("the output arrays of an entry hold one count")->raw()});
         }
 
         content_hash_state =
@@ -727,6 +753,19 @@ private:
         const uint32_t tagged = ::fixy::min(uint32_t{op_record.num_scalar_args()}, uint32_t{5});
         const uint32_t tag_mask = (uint32_t{1} << (2 * tagged)) - 1;
         content_hash_state = detail::combine_ids(content_hash_state, uint64_t{op_record.scalar_types & tag_mask});
+    }
+
+    // One value of the metadata of a tensor: the XOR fold of its dimensions,
+    // and its element type and device.  The device comes through device_of,
+    // so the hash agrees with the equality of a device: one index for the
+    // host.
+    [[nodiscard, gnu::always_inline]] static uint64_t packed_meta_(const TensorMeta& meta) noexcept {
+        const uint64_t per_dim_hash_xor = raw_dim_hash(detail::dim_hash_simd_det(meta));
+        const TensorDevice device = device_of(meta);
+        const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(meta.dtype))
+                                   | (static_cast<uint64_t>(std::to_underlying(device.type())) << 8)
+                                   | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16);
+        return per_dim_hash_xor ^ meta_packed;
     }
 
     // The golden-ratio constant, matching the seed every other fold in this

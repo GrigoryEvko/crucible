@@ -212,9 +212,10 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         // not 4.  CDAG_VERSION 12 writes the nesting depth of each op in 2
         // bytes, and CDAG_VERSION 13 the tags of its scalars in 2 more.  The
         // image holds 3 ops, so it is 12 bytes longer than in 11.  The
-        // content hash of the header folds the tags.
+        // content hash of the header folds the tags, the depths, the wiring
+        // and the outputs of the ops.
         constexpr size_t EXPECTED_WIRE_BYTES = 1820;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0x2dc81cb14581a64aULL;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0x6149cdb576a66a2aULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,
