@@ -5,4 +5,4 @@
 # --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.
 format 1
 rule object-size
-@build/CMakeFiles/crucible_vigil.dir/src/BackgroundThread.cpp.o | object | 787.95 | - | the pipeline of the background thread moves its payloads as Box values through the SPSC channel of Box values, and the Debug build with ASan instruments each door of the channel.  The owner decision of 2026-11-15 raises a size limit for a correct change.
+@build/CMakeFiles/crucible_vigil.dir/src/BackgroundThread.cpp.o | object | 788.243 | - | the owner decision of 2026-11-15: a correct change that fails only on a size limit raises the limit.  The frame doors and the doors of a kernel in the core headers add 0.25 KB to the object of the background thread
