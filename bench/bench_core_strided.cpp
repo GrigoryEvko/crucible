@@ -1,27 +1,48 @@
-// Microbench of the walk and the scope of the strided views of the Region
-// family (foundation/core/Strided.h) on one thread.
+// Roofline bench of the walks of the strided views of the Region family
+// (foundation/core/Strided.h) on one thread.
 //
-// Each row is one pass of an elementwise add, out = left + right, over a
-// 64 x 64 matrix of floats.  The runs fit the cache of the core after the
-// first pass.  The rows:
-//   - the loop of a FixedArray with a proven Index, the code of a raw loop
-//   - the walk over three dense views, which merges the two axes and takes
-//     the dense loop
-//   - the raw loop with a transposed left matrix and with a left matrix of
-//     every second column of a wider run, the baselines of the strided rows
-//   - the walk with a transposed left view, which takes the strided loop
-//   - the walk with a broadcast row as the right view, which takes the dense
-//     loop for each row
-//   - the walk over a slice of every second column of a wider run
-//   - the loop of the indexes of a scope with at() on three parallel views
+// Each row is one pass of an elementwise kernel over a matrix of floats of R
+// rows and C columns.  The bench runs each row at four sizes: the three views
+// of an add fit L1, L2 or L3 of one core, or they come from memory.
+//   L1      32 x 64       2048 elements,  24 KB for three views
+//   L2      256 x 256     65536 elements, 768 KB
+//   L3      1024 x 512    524288 elements, 6 MB
+//   memory  4096 x 4096   16777216 elements, 192 MB
+//
+// The rows of each size:
+//   raw add, restrict   the raw loop of out = left + right with restrict
+//                       pointers: the roof of the size
+//   raw add             the same loop with plain pointers, the code of an
+//                       index loop: the compiler guards it with an alias check
+//   raw transposed, raw step 2
+//                       the raw loop with a left matrix of two run-time
+//                       strides: the baselines of the strided rows
+//   walk dense          the walk over three dense views
+//   walk broadcast      the right view is one row with a stride of zero
+//   walk step 2         the left view is every second column of a wider run
+//   walk transposed     the left view is the transpose of a matrix
+//   walk three inputs   out = a * b + c over four dense views
+//   scope dense         the loop of the indexes of a scope with at() on three
+//                       dense parallel views
+//   scope transposed    the same loop with a transposed left view
+// The L1 size also has the loop of a FixedArray with a proven Index, the
+// code of the index loop of the type system.
+//
+// Each line gives the percentiles of one pass in nanoseconds, the coefficient
+// of variation in thousandths, the bandwidth, and the bandwidth as a part of
+// the roof of the size.  The bandwidth counts four bytes for each element of
+// each view, so a broadcast row and a step of two count the elements that the
+// kernel reads, not the bytes of the lines.  A row with a coefficient of
+// variation above 50 thousandths is not valid.
 //
 // Each kernel is a function that the compiler does not inline into the
 // bench, so its machine code is one symbol that a reader of the binary can
-// find.  Each line gives the percentiles of one pass in nanoseconds, and the
-// coefficient of variation in thousandths.
+// find.  Only main calls the kernels.  GCC 16 put such calls in the cold part
+// of main and compiled a kernel for size, so each kernel here is hot.
 
 #include <fixy/Core.h>
 #include <foundation/Quarantine.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -30,65 +51,112 @@
 
 namespace {
 
-constexpr std::size_t kSide = 64;
-constexpr std::size_t kElements = kSide * kSide;
+using Plane = ::fixy::StridedView<float, 2>;
+using PlaneRead = ::fixy::StridedView<float const, 2>;
+using Storage = ::fixy::HeapArray<float, 64>;
 
-using Matrix = ::fixy::FixedArray<float, kElements>;
-using Wide = ::fixy::FixedArray<float, 2 * kElements>;
-using Square = ::fixy::StridedView<float, 2>;
-using SquareRead = ::fixy::StridedView<float const, 2>;
+// The side of the FixedArray rows of the L1 size.
+constexpr std::size_t kSmallRows = 32;
+constexpr std::size_t kSmallColumns = 64;
+constexpr std::size_t kSmallCount = kSmallRows * kSmallColumns;
+using SmallMatrix = ::fixy::FixedArray<float, kSmallCount>;
+
+// One size of the bench: its name, its shape and the wall time of each row.
+struct Level {
+    ::fixy::TextView name;
+    std::size_t rows = 0;
+    std::size_t columns = 0;
+    std::size_t wall_ms = 0;
+};
 
 // A time in nanoseconds, as the nearest integer.
 [[nodiscard]] std::uint64_t nanoseconds(double value) noexcept { return static_cast<std::uint64_t>(value + 0.5); }
 
-// Writes one line: the name of the pass and the percentiles of its samples.
-void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
-    fixy::report(fixy::Sink::Out, "{}  p50={} ns  p99={} ns  p99.9={} ns  max={} ns  cv={} permille\n", name,
-                 nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99), nanoseconds(measured.pct.p99_9),
-                 nanoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5));
+// Writes one line: the size, the name of the row, its percentiles, its
+// bandwidth for bytes in one pass, and that bandwidth as a part of roof, in
+// GB/s.  A roof of zero prints no part.
+void print_row(Level const& level, ::fixy::TextView name, bench::Report const& measured, std::size_t bytes,
+               double roof) noexcept {
+    double const bandwidth = static_cast<double>(bytes) / measured.pct.p50;
+    std::uint64_t const tenths = static_cast<std::uint64_t>(bandwidth * 10.0 + 0.5);
+    std::uint64_t const percent = roof > 0.0 ? static_cast<std::uint64_t>(bandwidth / roof * 100.0 + 0.5) : 0;
+    ::fixy::report(::fixy::Sink::Out,
+                   "{} {}x{}  {}  p50={} ns  p99={} ns  max={} ns  cv={} permille  {}.{} GB/s  {} percent of roof\n",
+                   level.name, level.rows, level.columns, name, nanoseconds(measured.pct.p50),
+                   nanoseconds(measured.pct.p99), nanoseconds(measured.pct.max),
+                   static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5), tenths / 10, tenths % 10, percent);
 }
 
-// The view of kSide x kSide floats of a run with the two strides.
-template <class Element, std::size_t Count>
-[[nodiscard]] ::fixy::StridedView<Element, 2> square_of(::fixy::View<Element, Count> run, std::size_t row_stride,
-                                                        std::size_t column_stride) noexcept {
-    ::fixy::FixedArray<std::size_t, 2> const sizes{kSide, kSide};
+// The bandwidth of a row in GB/s: bytes in one pass over its median.
+[[nodiscard]] double bandwidth_of(bench::Report const& measured, std::size_t bytes) noexcept {
+    return static_cast<double>(bytes) / measured.pct.p50;
+}
+
+// Measures body on the core of CRUCIBLE_BENCH_CORE for at most wall_ms.
+template <class Body>
+[[nodiscard]] bench::Report measure(bench::Run run, std::size_t wall_ms, Body&& body) {
+    return run.core(bench::env_core()).max_wall_ms(wall_ms).measure(body);
+}
+
+// The view of rows x columns elements of a run with the two strides.
+template <class Element>
+[[nodiscard]] ::fixy::StridedView<Element, 2> plane_of(::fixy::View<Element> run, std::size_t rows, std::size_t columns,
+                                                       std::size_t row_stride, std::size_t column_stride) noexcept {
+    ::fixy::FixedArray<std::size_t, 2> const sizes{rows, columns};
     ::fixy::FixedArray<std::size_t, 2> const strides{row_stride, column_stride};
-    return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("the square fits its run");
+    return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("the plane fits its run");
 }
 
-// The kernels.  Each one is out = left + right, and each one is a symbol of
-// its own.  Only main calls them, and GCC 16 put the calls of the walk in the
-// cold part of main and compiled add_walk for size, with a scalar loop.  A
-// kernel of a backend runs on a hot path, so each kernel here is hot.
-[[gnu::noinline, gnu::hot]] void add_indexed(Matrix& out, Matrix const& left, Matrix const& right) noexcept {
-    for (::fixy::Index<kElements> const index : out.indices()) {
-        out.at(index) = left.at(index) + right.at(index);
+// The raw loops: the roof and the baselines.  noipa stops a clone of a
+// function for the constant sizes and strides of a call, because the walks
+// read them at run time too.  The caller gives Views that hold each element
+// that the strides reach.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loops are the roof and the baselines of the strided walks")
+[[gnu::always_inline]] inline void add_restrict(float* __restrict target, float const* __restrict left,
+                                                float const* __restrict right, std::size_t count) noexcept {
+    for (std::size_t position = 0; position < count; ++position) {
+        target[position] = left[position] + right[position];
     }
 }
 
-// The raw loop of the same add with a left matrix of two strides, in the
-// row-major order of the walk: the baseline of the strided rows.  The walk
-// reads its strides at run time, so the baseline does too: noipa stops a
-// clone of the function for the constant strides of a call.  The caller
-// gives a View of the left run that holds each element that the strides
-// reach.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loop over two strides is the baseline of the strided walk")
-[[gnu::noipa, gnu::hot]] void add_raw_strided(Matrix& out, ::fixy::View<float const> left_run, Matrix const& right,
+[[gnu::noipa, gnu::hot]] void add_raw_restrict(::fixy::View<float> out, ::fixy::View<float const> left,
+                                               ::fixy::View<float const> right) noexcept {
+    add_restrict(&*out.begin(), &*left.begin(), &*right.begin(), out.size());
+}
+
+[[gnu::noipa, gnu::hot]] void add_raw(::fixy::View<float> out, ::fixy::View<float const> left,
+                                      ::fixy::View<float const> right) noexcept {
+    float* const target = &*out.begin();
+    float const* const first = &*left.begin();
+    float const* const second = &*right.begin();
+    for (std::size_t position = 0; position < out.size(); ++position) {
+        target[position] = first[position] + second[position];
+    }
+}
+
+[[gnu::noipa, gnu::hot]] void add_raw_strided(::fixy::View<float> out, ::fixy::View<float const> left_run,
+                                              ::fixy::View<float const> right, std::size_t rows, std::size_t columns,
                                               std::size_t row_stride, std::size_t column_stride) noexcept {
-    float* const target = &out.at(::fixy::index<0>());
+    float* const target = &*out.begin();
     float const* const left = &*left_run.begin();
-    float const* const second = &right.at(::fixy::index<0>());
-    for (std::size_t row = 0; row < kSide; ++row) {
-        for (std::size_t column = 0; column < kSide; ++column) {
-            target[row * kSide + column] =
-                left[row * row_stride + column * column_stride] + second[row * kSide + column];
+    float const* const second = &*right.begin();
+    for (std::size_t row = 0; row < rows; ++row) {
+        for (std::size_t column = 0; column < columns; ++column) {
+            target[row * columns + column] =
+                left[row * row_stride + column * column_stride] + second[row * columns + column];
         }
     }
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-[[gnu::noinline, gnu::hot]] void add_walk(Square out, SquareRead left, SquareRead right) noexcept {
+[[gnu::noinline, gnu::hot]] void add_indexed(SmallMatrix& out, SmallMatrix const& left,
+                                             SmallMatrix const& right) noexcept {
+    for (::fixy::Index<kSmallCount> const index : out.indices()) {
+        out.at(index) = left.at(index) + right.at(index);
+    }
+}
+
+[[gnu::noinline, gnu::hot]] void walk_add(Plane out, PlaneRead left, PlaneRead right) noexcept {
     bool const is_walked =
         ::fixy::walk([](float& target, float const& first, float const& second) noexcept { target = first + second; },
                      out, left, right)
@@ -96,8 +164,16 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     if (!is_walked) ::fixy::fatal("the three views of the bench have one shape");
 }
 
+[[gnu::noinline, gnu::hot]] void walk_three(Plane out, PlaneRead first, PlaneRead second, PlaneRead third) noexcept {
+    bool const is_walked =
+        ::fixy::walk([](float& target, float const& a, float const& b, float const& c) noexcept { target = a * b + c; },
+                     out, first, second, third)
+            .is_ok();
+    if (!is_walked) ::fixy::fatal("the four views of the bench have one shape");
+}
+
 // The count of the adds, so the bench reads a result of the scope.
-[[gnu::noinline, gnu::hot]] std::size_t add_scope(Square out, SquareRead left, SquareRead right) noexcept {
+[[gnu::noinline, gnu::hot]] std::size_t scope_add(Plane out, PlaneRead left, PlaneRead right) noexcept {
     return ::fixy::mint_strided_scope(left, [out, right](auto first) noexcept {
         auto const second = first.parallel(right).expect("the views of the bench have one shape");
         auto const target = first.parallel(out).expect("the views of the bench have one shape");
@@ -110,74 +186,159 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     });
 }
 
+// The value of the element at position of an input.
+[[nodiscard]] float value_at(std::size_t position) noexcept {
+    return static_cast<float>(position % 1021) * 0.25f + 0.5f;
+}
+
+// The rows of one size.
+void run_level(Level const& level) noexcept {
+    auto const test = ::foundation::effects::testing::test();
+    std::size_t const rows = level.rows;
+    std::size_t const columns = level.columns;
+    std::size_t const count = rows * columns;
+    auto const fill = [](std::size_t position) noexcept { return value_at(position); };
+    Storage out = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
+    Storage const left = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
+    Storage const right = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
+    Storage const third = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
+    Storage const row = ::fixy::mint_heap_array_with<float, 64>(test.alloc, columns, fill);
+    Storage const wide = ::fixy::mint_heap_array_with<float, 64>(test.alloc, 2 * count, fill);
+
+    ::fixy::View<float const> const left_run = left.view();
+    ::fixy::View<float const> const right_run = right.view();
+    ::fixy::View<float const> const wide_run = wide.view();
+    Plane const out_view = plane_of(out.view(), rows, columns, columns, 1);
+    PlaneRead const left_view = plane_of(left_run, rows, columns, columns, 1);
+    PlaneRead const right_view = plane_of(right_run, rows, columns, columns, 1);
+    PlaneRead const third_view = plane_of(::fixy::View<float const>{third.view()}, rows, columns, columns, 1);
+    // The left run read as a matrix of columns x rows, transposed.
+    PlaneRead const transposed = plane_of(left_run, rows, columns, 1, rows);
+    PlaneRead const every_second = plane_of(wide_run, rows, columns, 2 * columns, 2);
+    ::fixy::FixedArray<std::size_t, 1> const row_size{columns};
+    ::fixy::FixedArray<std::size_t, 1> const row_stride{1};
+    ::fixy::FixedArray<std::size_t, 2> const plane_sizes{rows, columns};
+    PlaneRead const broadcast =
+        ::fixy::mint_strided_view(::fixy::View<float const>{row.view()}, row_size.view(), row_stride.view(), 0)
+            .expect("one row fits")
+            .broadcast_to(plane_sizes.view())
+            .expect("a row broadcasts to the plane");
+
+    std::size_t const three_views = 3 * 4 * count;
+    std::size_t const four_views = 4 * 4 * count;
+    std::size_t const wall = level.wall_ms;
+
+    bench::Report const roof_report = measure(bench::Run{"raw add, restrict"}, wall, [&] {
+        add_raw_restrict(out.view(), left_run, right_run);
+        bench::do_not_optimize(out);
+    });
+    double const roof = bandwidth_of(roof_report, three_views);
+    print_row(level, "raw add, restrict", roof_report, three_views, roof);
+    print_row(level, "raw add",
+              measure(bench::Run{"raw add"}, wall,
+                      [&] {
+                          add_raw(out.view(), left_run, right_run);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "raw transposed",
+              measure(bench::Run{"raw transposed"}, wall,
+                      [&] {
+                          add_raw_strided(out.view(), left_run, right_run, rows, columns, 1, rows);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "raw step 2",
+              measure(bench::Run{"raw step 2"}, wall,
+                      [&] {
+                          add_raw_strided(out.view(), wide_run, right_run, rows, columns, 2 * columns, 2);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "walk dense",
+              measure(bench::Run{"walk dense"}, wall,
+                      [&] {
+                          walk_add(out_view, left_view, right_view);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "walk broadcast",
+              measure(bench::Run{"walk broadcast"}, wall,
+                      [&] {
+                          walk_add(out_view, left_view, broadcast);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "walk step 2",
+              measure(bench::Run{"walk step 2"}, wall,
+                      [&] {
+                          walk_add(out_view, every_second, right_view);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "walk transposed",
+              measure(bench::Run{"walk transposed"}, wall,
+                      [&] {
+                          walk_add(out_view, transposed, right_view);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "walk three inputs",
+              measure(bench::Run{"walk three inputs"}, wall,
+                      [&] {
+                          walk_three(out_view, left_view, right_view, third_view);
+                          bench::do_not_optimize(out);
+                      }),
+              four_views, roof);
+    print_row(level, "scope dense",
+              measure(bench::Run{"scope dense"}, wall,
+                      [&] {
+                          std::size_t const adds = scope_add(out_view, left_view, right_view);
+                          bench::do_not_optimize(adds);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+    print_row(level, "scope transposed",
+              measure(bench::Run{"scope transposed"}, wall,
+                      [&] {
+                          std::size_t const adds = scope_add(out_view, transposed, right_view);
+                          bench::do_not_optimize(adds);
+                          bench::do_not_optimize(out);
+                      }),
+              three_views, roof);
+}
+
+// The FixedArray row of the L1 size.
+void run_small_index_loop(Level const& level) noexcept {
+    SmallMatrix left{};
+    SmallMatrix right{};
+    SmallMatrix out{};
+    for (::fixy::Index<kSmallCount> const index : left.indices()) {
+        left.at(index) = value_at(index.raw());
+        right.at(index) = value_at(index.raw() + 7);
+    }
+    print_row(level, "FixedArray Index loop",
+              measure(bench::Run{"FixedArray Index loop"}, level.wall_ms,
+                      [&] {
+                          add_indexed(out, left, right);
+                          bench::do_not_optimize(out);
+                      }),
+              3 * 4 * kSmallCount, 0.0);
+}
+
 }  // namespace
 
 int main() {
     bench::elevate_priority();
-
-    Matrix left{};
-    Matrix right{};
-    Matrix out{};
-    Matrix row{};
-    Wide wide{};
-    float value = 0.5f;
-    for (::fixy::Index<kElements> const index : left.indices()) {
-        value = value * 1.25f + 0.125f;
-        if (value > 1000.0f) value = 0.5f;
-        left.at(index) = value;
-        right.at(index) = value * 0.5f;
-        row.at(index) = value * 0.25f;
+    ::fixy::FixedArray<Level, 4> const levels{
+        Level{.name = "L1", .rows = kSmallRows, .columns = kSmallColumns, .wall_ms = 400},
+        Level{.name = "L2", .rows = 256, .columns = 256, .wall_ms = 400},
+        Level{.name = "L3", .rows = 1024, .columns = 512, .wall_ms = 800},
+        Level{.name = "memory", .rows = 4096, .columns = 4096, .wall_ms = 2500},
+    };
+    run_small_index_loop(*levels.get(0).expect("four levels"));
+    for (Level const& level : levels) {
+        run_level(level);
     }
-    for (float& element : wide) {
-        element = 1.5f;
-    }
-
-    Square const out_view = square_of(out.view(), kSide, 1);
-    SquareRead const left_view = square_of(::fixy::View<float const, kElements>{left.view()}, kSide, 1);
-    SquareRead const right_view = square_of(::fixy::View<float const, kElements>{right.view()}, kSide, 1);
-    SquareRead const transposed = left_view.transpose(::fixy::index<0>(), ::fixy::index<1>());
-    ::fixy::FixedArray<std::size_t, 1> const row_size{kSide};
-    ::fixy::FixedArray<std::size_t, 1> const row_stride{1};
-    ::fixy::FixedArray<std::size_t, 2> const square_sizes{kSide, kSide};
-    SquareRead const broadcast = ::fixy::mint_strided_view(::fixy::View<float const, kElements>{row.view()},
-                                                           row_size.view(), row_stride.view(), 0)
-                                     .expect("one row fits")
-                                     .broadcast_to(square_sizes.view())
-                                     .expect("a row broadcasts to a square");
-    SquareRead const every_second = square_of(::fixy::View<float const, 2 * kElements>{wide.view()}, 2 * kSide, 2);
-
-    print_row("FixedArray Index loop, 4096 adds", bench::run("FixedArray Index loop", [&] {
-                  add_indexed(out, left, right);
-                  bench::do_not_optimize(out);
-              }));
-    print_row("walk dense, 4096 adds", bench::run("walk dense", [&] {
-                  add_walk(out_view, left_view, right_view);
-                  bench::do_not_optimize(out);
-              }));
-    print_row("raw loop transposed left, 4096 adds", bench::run("raw loop transposed left", [&] {
-                  add_raw_strided(out, ::fixy::View<float const>{left.view()}, right, 1, kSide);
-                  bench::do_not_optimize(out);
-              }));
-    print_row("raw loop every second column, 4096 adds", bench::run("raw loop every second column", [&] {
-                  add_raw_strided(out, ::fixy::View<float const>{wide.view()}, right, 2 * kSide, 2);
-                  bench::do_not_optimize(out);
-              }));
-    print_row("walk transposed left, 4096 adds", bench::run("walk transposed left", [&] {
-                  add_walk(out_view, transposed, right_view);
-                  bench::do_not_optimize(out);
-              }));
-    print_row("walk broadcast right row, 4096 adds", bench::run("walk broadcast right row", [&] {
-                  add_walk(out_view, left_view, broadcast);
-                  bench::do_not_optimize(out);
-              }));
-    print_row("walk every second column, 4096 adds", bench::run("walk every second column", [&] {
-                  add_walk(out_view, every_second, right_view);
-                  bench::do_not_optimize(out);
-              }));
-    print_row("scope indices and at, 4096 adds", bench::run("scope indices and at", [&] {
-                  std::size_t const adds = add_scope(out_view, left_view, right_view);
-                  bench::do_not_optimize(adds);
-                  bench::do_not_optimize(out);
-              }));
     return 0;
 }
