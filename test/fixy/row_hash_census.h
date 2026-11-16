@@ -59,6 +59,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/Cyclic.h>
 #include <fixy/CyclicBuffer.h>
+#include <fixy/Elementwise.h>
 #include <fixy/Reductions.h>
 #include <fixy/EpochVersioned.h>
 #include <fixy/Fn.h>
@@ -448,6 +449,11 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                                  "time, and none of them is a value"},
     {^^::foundation::core::side, "the roles of the arguments of a call: empty tags that a Side names at compile "
                                  "time, and none of them is a value"},
+    // The element ops are in the target namespace of their header, whose name
+    // follows the target (THE TARGET NAMESPACE of foundation/Platform.h).
+    {std::meta::parent_of(^^::foundation::core::elementwise::Sum),
+     "the ops of one element of the pointwise walk: empty classes that a walk calls, and none of them is a value "
+     "in a kernel signature"},
     {^^::foundation::os, "the raw system call primitive, its argument words, the kernel floor and the owner of a "
                          "guarded map: words and memory of the kernel interface that carry no grade"},
     {^^::fixy::tags::source, kGradeVocabulary},

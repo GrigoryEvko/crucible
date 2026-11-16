@@ -3135,6 +3135,10 @@ else()
   foundation_test(test_core_product)
 endif()
 
+# The element ops of foundation/core/Elementwise.h against an oracle of a
+# higher precision, on a dense layout and on a spread layout.
+foundation_test(test_core_elementwise)
+
 # fp::fma against the exact oracle of test/exact_sum.h.  The unit of the test
 # takes the target of its preset: with no -march it runs the exact form in
 # integers.  The second unit runs the instruction: of x86-64-v3 on x86_64,
