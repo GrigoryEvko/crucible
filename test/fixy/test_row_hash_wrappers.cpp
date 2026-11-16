@@ -56,12 +56,13 @@
 #include <foundation/permissions/ReadView.h>
 #include <foundation/permissions/SharedPermission.h>
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <type_traits>
-#include "../test_assert.h"
 
 namespace {
 
@@ -372,131 +373,128 @@ static_assert(row_hash_contribution_v<MpscWitness::ProducerHandle>
 
 namespace {
 
-struct TestFailure {};
-int total_passed = 0;
-int total_failed = 0;
+using ::fixy::check::pass;
 
-template <typename F>
-void run_test(const char* name, F&& body) {
-    std::fprintf(stderr, "  %s: ", name);
-    try {
-        body();
-        ++total_passed;
-        std::fprintf(stderr, "PASSED\n");
-    } catch (TestFailure&) {
-        ++total_failed;
-        std::fprintf(stderr, "FAILED\n");
-    }
-}
-
-void check(bool condition, const char* what) {
-    if (!condition) {
-        std::fprintf(stderr, "\n    %s\n", what);
-        throw TestFailure{};
-    }
-}
-
-void test_every_wrapper_reaches_runtime() {
+void test_every_wrapper_reaches_runtime(::fixy::TestRunnerCtx const& test) {
     std::uint64_t const secret = row_hash_contribution_v<SecretInt>;
     std::uint64_t const linear = row_hash_contribution_v<LinearInt>;
     std::uint64_t const tagged = row_hash_contribution_v<TaggedVerified>;
-    check(secret != 0, "Secret contributes nothing at run time");
-    check(linear != 0, "Linear contributes nothing at run time");
-    check(tagged != 0, "Tagged contributes nothing at run time");
-    check(secret != linear && secret != tagged && linear != tagged,
-          "two wrappers of different axes share one slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, secret != 0 && "Secret contributes nothing at run time");
+    CRUCIBLE_TEST_ASSERT(test, linear != 0 && "Linear contributes nothing at run time");
+    CRUCIBLE_TEST_ASSERT(test, tagged != 0 && "Tagged contributes nothing at run time");
+    CRUCIBLE_TEST_ASSERT(test, secret != linear && secret != tagged && linear != tagged
+                                   && "two wrappers of different axes share one slot at run time");
 }
 
-void test_every_binding_reaches_runtime() {
+void test_every_binding_reaches_runtime(::fixy::TestRunnerCtx const& test) {
     std::uint64_t const pure_copy = row_hash_contribution_v<PureCopyInt>;
     std::uint64_t const io_function = row_hash_contribution_v<IoFunctionInt>;
     std::uint64_t const bg_worker = row_hash_contribution_v<BgWorkerInt>;
-    check(pure_copy != 0, "a pure-copy binding contributes nothing at run time");
-    check(io_function != 0, "an IO binding contributes nothing at run time");
-    check(bg_worker != 0, "a background-worker binding contributes nothing at run time");
-    check(pure_copy != io_function, "a pure-copy binding and an IO binding share one slot at run time");
-    check(bg_worker != io_function, "two bindings declaring different effect rows share one slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, pure_copy != 0 && "a pure-copy binding contributes nothing at run time");
+    CRUCIBLE_TEST_ASSERT(test, io_function != 0 && "an IO binding contributes nothing at run time");
+    CRUCIBLE_TEST_ASSERT(test, bg_worker != 0 && "a background-worker binding contributes nothing at run time");
+    CRUCIBLE_TEST_ASSERT(test, pure_copy != io_function
+                                   && "a pure-copy binding and an IO binding share one slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, bg_worker != io_function
+                                   && "two bindings declaring different effect rows share one slot at run time");
 }
 
 // The canonicalisation at run time, in both directions.  A grade folded
 // through a consteval path alone can hide a mistake that the constant
 // evaluator folds away, so the two answers are read back here as values.
-void test_one_claim_reaches_one_slot() {
+void test_one_claim_reaches_one_slot(::fixy::TestRunnerCtx const& test) {
     std::uint64_t const strict_pole = row_hash_contribution_v<StrictPoleInt>;
     std::uint64_t const classified = row_hash_contribution_v<ClassifiedInt>;
     std::uint64_t const internal_tier = row_hash_contribution_v<InternalInt>;
     std::uint64_t const public_tier = row_hash_contribution_v<PublicInt>;
-    check(strict_pole != 0, "the strict-pole binding contributes nothing at run time");
-    check(classified == strict_pole, "as_classified names the strict Security pole, and the two spellings take "
-                                     "two slots at run time");
-    check(internal_tier != strict_pole, "the internal tier shares the classified carrier's slot at run time");
-    check(public_tier != strict_pole, "the public tier shares the classified carrier's slot at run time");
-    check(internal_tier != public_tier, "two Security points below the carrier share one slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, strict_pole != 0 && "the strict-pole binding contributes nothing at run time");
+    CRUCIBLE_TEST_ASSERT(test, classified == strict_pole
+                                   && "as_classified names the strict Security pole, and the two spellings take "
+                                      "two slots at run time");
+    CRUCIBLE_TEST_ASSERT(test, internal_tier != strict_pole
+                                   && "the internal tier shares the classified carrier's slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, public_tier != strict_pole
+                                   && "the public tier shares the classified carrier's slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, internal_tier != public_tier
+                                   && "two Security points below the carrier share one slot at run time");
     std::uint64_t const unverified = row_hash_contribution_v<UnverifiedInt>;
-    check(unverified == strict_pole, "trust_unverified names the strict Trust pole, and the two spellings take two "
-                                     "slots at run time");
+    CRUCIBLE_TEST_ASSERT(test, unverified == strict_pole
+                                   && "trust_unverified names the strict Trust pole, and the two spellings take two "
+                                      "slots at run time");
 }
 
 // The other direction, and the reason it is a separate test: a merge
 // applied where no consumer treats the two spellings alike is a wrong
 // hit, and a wrong hit is the one way this key must never fail.
-void test_two_claims_keep_two_slots() {
+void test_two_claims_keep_two_slots(::fixy::TestRunnerCtx const& test) {
     std::uint64_t const strict_pole = row_hash_contribution_v<StrictPoleInt>;
     std::uint64_t const verified = row_hash_contribution_v<VerifiedInt>;
-    check(verified != 0, "the verified binding contributes nothing at run time");
-    check(verified != strict_pole, "T001 separates trust_verified from the strict Trust pole, and the two share one "
-                                   "slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, verified != 0 && "the verified binding contributes nothing at run time");
+    CRUCIBLE_TEST_ASSERT(test, verified != strict_pole
+                                   && "T001 separates trust_verified from the strict Trust pole, and the two share one "
+                                      "slot at run time");
 }
 
 // The roster is read out of the role namespace, so a role added there is
 // covered here without an edit. A role at zero shares a slot with every
 // bare payload in the tree.
 void test_every_role_is_off_the_zero_slot() {
-    check(::fixy::detail::roles_declared() > 0, "the reflected role roster is empty, so this check proves nothing");
-    check(::fixy::detail::roles_off_the_zero_slot() == ::fixy::detail::roles_declared(),
-          "a role reaches the zero slot, or has an arity this check cannot instantiate");
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::detail::roles_declared() > 0
+                                   && "the reflected role roster is empty, so this check proves nothing");
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::detail::roles_off_the_zero_slot() == ::fixy::detail::roles_declared()
+                                   && "a role reaches the zero slot, or has an arity this check cannot instantiate");
 }
 
 // The census verdicts are constants, so the build already proved them.
 // Reading them back as values is what shows the constants reach a
 // running program, and it prints the roster size so a shrinking census
 // is visible in the log rather than silent.
-void test_every_carrier_is_off_the_zero_slot() {
+void test_every_carrier_is_off_the_zero_slot(::fixy::TestRunnerCtx const& test) {
     std::size_t const roster = census::kVerdict.roster;
     std::size_t const proven = census::kVerdict.proven;
     std::fprintf(stderr,
                  "(%zu carriers and stated zeros across %zu class-declaring namespaces, from %d public headers) ",
                  roster, census::kNamespaceVerdict.declaring, CRUCIBLE_CENSUS_PUBLIC_HEADER_COUNT);
-    check(CRUCIBLE_CENSUS_PUBLIC_HEADER_COUNT > 0, "the census includes no public header, so it proves nothing");
-    check(roster > 0, "the reflected carrier roster is empty, so the census proves nothing");
-    check(proven == roster, "a carrier in a censused namespace is unproven at run time");
-    check(census::kStandinVerdict.proven == 3 && census::kStandinVerdict.roster == 5,
-          "the stand-in census no longer separates proven members from unproven ones");
+    CRUCIBLE_TEST_ASSERT(test, CRUCIBLE_CENSUS_PUBLIC_HEADER_COUNT > 0
+                                   && "the census includes no public header, so it proves nothing");
+    CRUCIBLE_TEST_ASSERT(test, roster > 0 && "the reflected carrier roster is empty, so the census proves nothing");
+    CRUCIBLE_TEST_ASSERT(test, proven == roster && "a carrier in a censused namespace is unproven at run time");
+    CRUCIBLE_TEST_ASSERT(test, census::kStandinVerdict.proven == 3 && census::kStandinVerdict.roster == 5
+                                   && "the stand-in census no longer separates proven members from unproven ones");
     std::uint64_t const open_refined = row_hash_contribution_v<::fixy::Refined<::fixy::positive, int>>;
     std::uint64_t const sealed_refined = row_hash_contribution_v<::fixy::SealedRefined<::fixy::positive, int>>;
-    check(open_refined != sealed_refined, "a sealed refinement and an open one share a slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, open_refined != sealed_refined
+                                   && "a sealed refinement and an open one share a slot at run time");
     std::uint64_t const handle = row_hash_contribution_v<::fixy::session::SessionHandle<::fixy::session::End, int>>;
     std::uint64_t const token = row_hash_contribution_v<::foundation::permissions::Permission<census::PureRegionTag>>;
-    check(handle != 0 && token != 0, "a session handle or a permission token reaches the zero slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, handle != 0 && token != 0
+                                   && "a session handle or a permission token reaches the zero slot at run time");
     std::uint64_t const pure_share =
         row_hash_contribution_v<::foundation::permissions::SharedPermission<census::PureRegionTag>>;
     std::uint64_t const io_share =
         row_hash_contribution_v<::foundation::permissions::SharedPermission<census::IoRegionTag>>;
-    check(pure_share != io_share, "a share over an IO region and a share over a pure region share a slot at run time");
+    CRUCIBLE_TEST_ASSERT(test,
+                         pure_share != io_share
+                             && "a share over an IO region and a share over a pure region share a slot at run time");
 }
 
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_row_hash_wrappers:\n");
-    run_test("test_every_wrapper_reaches_runtime", test_every_wrapper_reaches_runtime);
-    run_test("test_every_binding_reaches_runtime", test_every_binding_reaches_runtime);
-    run_test("test_one_claim_reaches_one_slot", test_one_claim_reaches_one_slot);
-    run_test("test_two_claims_keep_two_slots", test_two_claims_keep_two_slots);
-    run_test("test_every_role_is_off_the_zero_slot", test_every_role_is_off_the_zero_slot);
-    run_test("test_every_carrier_is_off_the_zero_slot", test_every_carrier_is_off_the_zero_slot);
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
-    if (total_failed > 0) return EXIT_FAILURE;
-    crucible::test::pass("ALL PASSED\n");
-    return EXIT_SUCCESS;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_every_wrapper_reaches_runtime(test);
+    pass(test, "  test_every_wrapper_reaches_runtime: PASSED\n");
+    test_every_binding_reaches_runtime(test);
+    pass(test, "  test_every_binding_reaches_runtime: PASSED\n");
+    test_one_claim_reaches_one_slot(test);
+    pass(test, "  test_one_claim_reaches_one_slot: PASSED\n");
+    test_two_claims_keep_two_slots(test);
+    pass(test, "  test_two_claims_keep_two_slots: PASSED\n");
+    test_every_role_is_off_the_zero_slot();
+    pass(test, "  test_every_role_is_off_the_zero_slot: PASSED\n");
+    test_every_carrier_is_off_the_zero_slot(test);
+    pass(test, "  test_every_carrier_is_off_the_zero_slot: PASSED\n");
+    pass(test, "test_row_hash_wrappers: ALL PASSED\n");
+    return 0;
 }

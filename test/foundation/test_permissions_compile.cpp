@@ -4,43 +4,26 @@
 // Reaching main is itself the claim: the whole include set compiled
 // clean.
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/ReadView.h>
 #include <foundation/permissions/SharedPermission.h>
 
-#include <cstdio>
-#include <cstdlib>
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
 
 namespace {
 
-struct TestFailure {};
 struct PlainTag {
     using permission_row = ::foundation::effects::Row<>;
 };
 // Declared and given no row, so the relation must refuse it.
 struct UndeclaredTag {};
-
-int total_passed = 0;
-int total_failed = 0;
-
-template <typename F>
-void run_test(const char* name, F&& body) {
-    std::fprintf(stderr, "  %s: ", name);
-    try {
-        body();
-        ++total_passed;
-        std::fprintf(stderr, "PASSED\n");
-    } catch (TestFailure&) {
-        ++total_failed;
-        std::fprintf(stderr, "FAILED\n");
-    }
-}
 
 }  // namespace
 
@@ -262,14 +245,12 @@ void test_read_view_compile() {}
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_permissions_compile:\n");
-    run_test("test_permission_compile", test_permission_compile);
-    run_test("test_permission_fork_compile", test_permission_fork_compile);
-    run_test("test_permission_row_compile", test_permission_row_compile);
-    run_test("test_perm_set_compile", test_perm_set_compile);
-    run_test("test_read_view_compile", test_read_view_compile);
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
-    if (total_failed > 0) return EXIT_FAILURE;
-    crucible::test::pass("ALL PASSED\n");
-    return EXIT_SUCCESS;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_permission_compile();
+    test_permission_fork_compile();
+    test_permission_row_compile();
+    test_perm_set_compile();
+    test_read_view_compile();
+    ::fixy::check::pass(test, "test_permissions_compile: the five groups compiled, ALL PASSED\n");
+    return 0;
 }

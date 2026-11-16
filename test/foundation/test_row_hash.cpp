@@ -27,12 +27,12 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+
 #include <array>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <type_traits>
-#include "../test_assert.h"
 
 // The identities the probes below fold.  They stand outside the unnamed
 // namespace, because a stable id refuses a type with internal linkage.
@@ -525,53 +525,31 @@ static_assert(
 // them through the same functions at run time is what a header of
 // constants cannot check on its own.
 
-struct TestFailure {};
-int total_passed = 0;
-int total_failed = 0;
-
-template <typename F>
-void run_test(const char* name, F&& body) {
-    std::fprintf(stderr, "  %s: ", name);
-    try {
-        body();
-        ++total_passed;
-        std::fprintf(stderr, "PASSED\n");
-    } catch (TestFailure&) {
-        ++total_failed;
-        std::fprintf(stderr, "FAILED\n");
-    }
-}
-
-void check(bool condition, const char* what) {
-    if (!condition) {
-        std::fprintf(stderr, "\n    %s\n", what);
-        throw TestFailure{};
-    }
-}
-
-void test_constants_reach_runtime() {
+void test_constants_reach_runtime(::fixy::TestRunnerCtx const& test) {
     std::uint64_t const empty = row_hash_contribution_v<EmptyRow>;
-    check(empty == 0xEFD01F60BA992926ULL, "the empty row hash read at run time is not the published literal");
+    CRUCIBLE_TEST_ASSERT(test, empty == 0xEFD01F60BA992926ULL
+                                   && "the empty row hash read at run time is not the published literal");
 
     std::uint64_t const alloc = row_hash_contribution_v<Row<Effect::Alloc>>;
-    check(alloc != empty, "Row<Alloc> and the empty row share a slot at run time");
+    CRUCIBLE_TEST_ASSERT(test, alloc != empty && "Row<Alloc> and the empty row share a slot at run time");
 }
 
-void test_fold_reaches_runtime() {
+void test_fold_reaches_runtime(::fixy::TestRunnerCtx const& test) {
     std::uint64_t const pure = row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetPure, int>>;
     std::uint64_t const impure = row_hash_contribution_v<G<fa::ModalityKind::Absolute, DetEntropyRead, int>>;
-    check(pure != 0, "a graded carrier contributes nothing at run time, so the fold is not reached");
-    check(pure != impure, "two tiers of one axis share a slot at run time");
+    CRUCIBLE_TEST_ASSERT(test,
+                         pure != 0 && "a graded carrier contributes nothing at run time, so the fold is not reached");
+    CRUCIBLE_TEST_ASSERT(test, pure != impure && "two tiers of one axis share a slot at run time");
 }
 
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_row_hash:\n");
-    run_test("test_constants_reach_runtime", test_constants_reach_runtime);
-    run_test("test_fold_reaches_runtime", test_fold_reaches_runtime);
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
-    if (total_failed > 0) return EXIT_FAILURE;
-    crucible::test::pass("ALL PASSED\n");
-    return EXIT_SUCCESS;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_constants_reach_runtime(test);
+    ::fixy::check::pass(test, "  test_constants_reach_runtime: PASSED\n");
+    test_fold_reaches_runtime(test);
+    ::fixy::check::pass(test, "  test_fold_reaches_runtime: PASSED\n");
+    ::fixy::check::pass(test, "test_row_hash: ALL PASSED\n");
+    return 0;
 }
