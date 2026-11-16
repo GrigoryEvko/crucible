@@ -7,18 +7,17 @@
 // session continues at the receiver.  The test accepts the delegated
 // endpoint, walks the handle to End, and checks that End releases the
 // record.  A consumed handle aborts at the door, as at every operation,
-// and a child process proves it.  Each key of a private surface has the
-// sealed shape of a passkey, so only its one door makes it.
+// and a child process of expect_dies proves it.  Each key of a private
+// surface has the sealed shape of a passkey, so only its one door makes it.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Entry.h>
-
-#include <sys/wait.h>
-#include <unistd.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
-#include <cstdlib>
 #include <type_traits>
 #include <utility>
 
@@ -91,33 +90,23 @@ int transfer_keeps_the_record_live() {
 }
 
 // A handle that already left cannot leave again.
-[[noreturn]] void take_from_a_consumed_handle() {
+void take_from_a_consumed_handle() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto handle = s::mint_session<Proto>(ctx, Wire{});
     auto first = s::mint_delegated_session(std::move(handle));
     static_cast<void>(s::mint_delegated_session(std::move(handle)));
     static_cast<void>(first);
-    std::_Exit(0);
-}
-
-int second_take_aborts() {
-    std::fflush(stderr);
-    // The abort of a consumed handle ends the process,
-    // so the attempt runs in a child that the parent observes.
-    const pid_t pid = ::fork();
-    if (pid < 0) return fail("fork failed");
-    if (pid == 0) take_from_a_consumed_handle();
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) return fail("waitpid failed");
-    if (WIFSIGNALED(status) == 0) return fail("a second transfer from one handle did not abort");
-    return 0;
 }
 
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "[expected] one child process prints a use-of-a-consumed-handle diagnostic\n");
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     if (const int rc = transfer_keeps_the_record_live(); rc != 0) return rc;
-    if (const int rc = second_take_aborts(); rc != 0) return rc;
+    // The abort of a consumed handle ends the process, so the attempt runs
+    // in a child through expect_dies of the Check family.
+    ::fixy::check::expect_dies(test, take_from_a_consumed_handle,
+                               ::fixy::TextView{"fixy::session: USE OF A CONSUMED HANDLE"});
+    ::fixy::check::pass(test, "test_session_endpoint_transfer: PASSED\n");
     return 0;
 }

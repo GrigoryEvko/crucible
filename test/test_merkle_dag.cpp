@@ -2,10 +2,10 @@
 #include <crucible/MerkleDag.h>
 #include <fixy/concurrent/HandleTraits.h>
 #include <foundation/Linear.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include "test_assert.h"
-#include <sys/wait.h>
-#include <unistd.h>
 
 #include <cstdio>
 #include <cstring>
@@ -728,29 +728,12 @@ template <class Fake>
     // ── make_loop's preconditions actually fire ───────────────────────
     //
     // These are runtime checks and handle_contract_violation is [[noreturn]],
-    // so a violation cannot be observed in-process: the only way to ask
-    // whether a clause fires is to run the call in a child and look at how
-    // the child died.  The child's stderr goes to /dev/null because the
-    // handler prints a diagnostic and a stack trace on the way out.
+    // so a violation cannot be observed in-process.  Each refused call runs
+    // in a child through expect_dies of the Check family, which requires
+    // SIGABRT and the violated condition on the standard error of the child.
+    // A well-formed loop runs in the test process.
     {
-        // CLAUDE.md §IX bans a raw process start, because a child gets no
-        // Permission<Tag> proof and no Met(X) effect row.  This test needs a
-        // child.  The child evaluates one contract clause and ends.  It owns
-        // no permission, and it ends before the parent continues.  Without a
-        // child, no test shows that the three preconditions fire.
-        auto dies = [&](auto&& body) {
-            std::fflush(nullptr);
-            const pid_t child = ::fork();
-            assert(child >= 0 && "fork failed");
-            if (child == 0) {
-                if (::freopen("/dev/null", "w", stderr) == nullptr) ::_exit(2);
-                body();
-                ::_exit(0);  // the clause did not fire
-            }
-            int status = 0;
-            assert(::waitpid(child, &status, 0) == child);
-            return WIFSIGNALED(status) != 0;
-        };
+        ::fixy::TestRunnerCtx const runner{::foundation::effects::testing::test()};
 
         ::foundation::core::FixedArray<crucible::TraceEntry, 1> guard_body_ops{};
         guard_body_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0x6AA6};
@@ -771,28 +754,31 @@ template <class Fake>
             };
         };
 
-        // The control. If this one dies the harness is wrong, not the guard.
-        assert(!dies(make(crucible::LoopTermKind::UNTIL, 3, 0.125f))
-               && "a well-formed UNTIL loop was rejected: the guard is over-tight");
-        assert(!dies(make(crucible::LoopTermKind::REPEAT, 0, 0.0f))
-               && "REPEAT with a zero count is legal: run the body no times, continue");
+        // The control.  A well-formed UNTIL loop, and REPEAT with a zero
+        // count, which runs the body no times and continues, run in the test
+        // process.  If one aborts, the guard is over-tight.
+        make(crucible::LoopTermKind::UNTIL, 3, 0.125f)();
+        make(crucible::LoopTermKind::REPEAT, 0, 0.0f)();
 
         // NaN compares false against everything, so it passed the guard this
         // replaced -- `!(epsilon < 0.0f)` -- and reached the bit_cast in the
-        // termination hash, where it is 2^24-2 distinct values.
-        assert(dies(make(crucible::LoopTermKind::UNTIL, 3, std::numeric_limits<float>::quiet_NaN()))
-               && "a NaN epsilon was accepted: the guard is spelled as the negation of "
-                  "its complement again, and NaN makes that negation true");
-        assert(dies(make(crucible::LoopTermKind::UNTIL, 3, -std::numeric_limits<float>::quiet_NaN())));
-        assert(dies(make(crucible::LoopTermKind::UNTIL, 3, std::numeric_limits<float>::infinity()))
-               && "an infinite convergence threshold is not a threshold");
-        assert(dies(make(crucible::LoopTermKind::UNTIL, 3, -1.0f)));
+        // termination hash, where it is 2^24-2 distinct values.  An infinite
+        // convergence threshold is not a threshold.
+        constexpr ::fixy::TextView kNotFinite{"foundation: contract violation: ::fixy::fp::is_finite(epsilon)"};
+        ::fixy::check::expect_dies(
+            runner, make(crucible::LoopTermKind::UNTIL, 3, std::numeric_limits<float>::quiet_NaN()), kNotFinite);
+        ::fixy::check::expect_dies(
+            runner, make(crucible::LoopTermKind::UNTIL, 3, -std::numeric_limits<float>::quiet_NaN()), kNotFinite);
+        ::fixy::check::expect_dies(
+            runner, make(crucible::LoopTermKind::UNTIL, 3, std::numeric_limits<float>::infinity()), kNotFinite);
+        ::fixy::check::expect_dies(runner, make(crucible::LoopTermKind::UNTIL, 3, -1.0f),
+                                   ::fixy::TextView{"foundation: contract violation: epsilon >= 0.0f"});
 
         // An UNTIL count of zero says the loop never ran. replay would walk
         // it zero times and report success.
-        assert(dies(make(crucible::LoopTermKind::UNTIL, 0, 0.125f))
-               && "an unobserved UNTIL loop was accepted: replay would skip its body "
-                  "and report a successful replay of a body that never ran");
+        ::fixy::check::expect_dies(
+            runner, make(crucible::LoopTermKind::UNTIL, 0, 0.125f),
+            ::fixy::TextView{"foundation: contract violation: term_kind != LoopTermKind::UNTIL || repeat_count > 0u"});
 
         ::fixy::report(::fixy::Sink::Out,
                        "  make_loop rejects NaN, infinite and negative epsilon, and an UNTIL count of zero\n");
@@ -810,7 +796,8 @@ template <class Fake>
             // The child prints the hash only when the hash returns.
             ::fixy::report(::fixy::Sink::Out, "  the hash of the unresolved branch: {}\n", branch.merkle_hash.raw());
         };
-        assert(dies(hash_unresolved_branch) && "the hash of a branch read the target of an arm that has none");
+        ::fixy::check::expect_dies(runner, hash_unresolved_branch,
+                                   ::fixy::TextView{"an arm of the branch has no target"});
 
         ::fixy::report(::fixy::Sink::Out, "  the hash of a branch with an unresolved arm ends the process\n");
 
@@ -848,15 +835,18 @@ template <class Fake>
                 ::fixy::report(::fixy::Sink::Out, "  the door gave a node with the field {}\n", field);
             };
         };
-        assert(!dies(open_door(crucible::TraceNodeKind::REGION, Door::REGION))
-               && "the door of a region refused a region");
-        assert(!dies(open_door(crucible::TraceNodeKind::LOOP, Door::LOOP)) && "the door of a loop refused a loop");
-        assert(dies(open_door(crucible::TraceNodeKind::REGION, Door::BRANCH))
-               && "the door of a branch gave a region as a branch");
-        assert(dies(open_door(crucible::TraceNodeKind::REGION, Door::LOOP))
-               && "the door of a loop gave a region as a loop");
-        assert(dies(open_door(crucible::TraceNodeKind::LOOP, Door::REGION))
-               && "the door of a region gave a loop as a region");
+        // The door of a region opens a region, and the door of a loop opens a
+        // loop, in the test process.
+        open_door(crucible::TraceNodeKind::REGION, Door::REGION)();
+        open_door(crucible::TraceNodeKind::LOOP, Door::LOOP)();
+        ::fixy::check::expect_dies(
+            runner, open_door(crucible::TraceNodeKind::REGION, Door::BRANCH),
+            ::fixy::TextView{"foundation: fatal invariant failed: kind == TraceNodeKind::BRANCH"});
+        ::fixy::check::expect_dies(runner, open_door(crucible::TraceNodeKind::REGION, Door::LOOP),
+                                   ::fixy::TextView{"foundation: fatal invariant failed: kind == TraceNodeKind::LOOP"});
+        ::fixy::check::expect_dies(
+            runner, open_door(crucible::TraceNodeKind::LOOP, Door::REGION),
+            ::fixy::TextView{"foundation: fatal invariant failed: kind == TraceNodeKind::REGION"});
 
         ::fixy::report(::fixy::Sink::Out, "  the door of a known kind refuses a node of a different kind\n");
 
@@ -881,10 +871,13 @@ template <class Fake>
                 entry.set_outputs(two_metas.view(), slot_ids);
             };
         };
-        assert(!dies(set_inputs(two_slots.view())) && "inputs of one count were refused");
-        assert(!dies(set_outputs(two_slots.view())) && "outputs of one count were refused");
-        assert(dies(set_inputs(one_slot.view())) && "the inputs took slot ids of a different count");
-        assert(dies(set_outputs(one_slot.view())) && "the outputs took slot ids of a different count");
+        // Arrays of one count pass in the test process.
+        set_inputs(two_slots.view())();
+        set_outputs(two_slots.view())();
+        constexpr ::fixy::TextView kOtherCount{
+            "foundation: fatal: RunSet::set got a run of 1 elements for a slot of the count 2"};
+        ::fixy::check::expect_dies(runner, set_inputs(one_slot.view()), kOtherCount);
+        ::fixy::check::expect_dies(runner, set_outputs(one_slot.view()), kOtherCount);
 
         ::fixy::report(::fixy::Sink::Out, "  an entry refuses arrays of two counts for one kind\n");
     }

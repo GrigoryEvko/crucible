@@ -6,13 +6,15 @@
 // two times mints two roots of one brand, and no type tells those apart.
 // The run-time floor there is a claim on each linear role of a channel and
 // a check at the pipeline mint that each link joins one channel instance.
-// Each attack below runs in a child process, which must end.  The positive
+// Each attack below runs in a child process, which must end by SIGABRT with
+// the text of its refusal.  The positive
 // cases show that a claim comes back when its handle ends, and that a
 // pipeline over one channel instance for each link passes the check.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
+#include <fixy/check/Check.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/concurrent/Pipeline.h>
@@ -21,14 +23,9 @@
 #include <foundation/Brand.h>
 #include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-#include <cstdio>
-#include <cstdlib>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -146,40 +143,26 @@ void pipeline_joins_two_links_of_one_type() {
     [[maybe_unused]] auto crossed = c::mint_pipeline(coordinator, std::move(writes_first), std::move(drains_second));
 }
 
-struct Attack {
-    const char* name;
-    void (*run)();
-};
-
-constexpr Attack kAttacks[] = {
-    {"a second live producer of one SPSC channel", &second_spsc_producer},
-    {"a second live consumer of one SPSC channel", &second_spsc_consumer},
-    {"recombined access while a handle of the channel lives", &recombined_access_while_a_handle_lives},
-    {"a second live consumer of one MPSC channel", &second_mpsc_consumer},
-    {"a second live writer of one SWMR session", &second_swmr_writer},
-    {"a second writer of a session after its writer moved into another handle", &writer_move_keeps_the_source_claim},
-    {"a pipeline that joins two channels of one type", &pipeline_joins_two_links_of_one_type},
-};
-
-[[nodiscard]] bool ends_the_process(void (*attack)()) {
-    std::fflush(stderr);
-    // A refused claim ends the process, so it runs in a
-    // child that the parent observes.
-    const pid_t pid = ::fork();
-    if (pid < 0) {
-        std::fprintf(stderr, "fork failed\n");
-        std::_Exit(2);
-    }
-    if (pid == 0) {
-        attack();
-        std::_Exit(0);
-    }
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {
-        std::fprintf(stderr, "waitpid failed\n");
-        std::_Exit(2);
-    }
-    return WIFSIGNALED(status) != 0;
+// A refused claim ends the process, so each attack runs in a child through
+// expect_dies of the Check family.  The child must end by SIGABRT with the
+// text of the refused claim.  The attacks run first, while the test process
+// has one thread.
+void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
+    constexpr ::fixy::TextView kSecondSwmrWriter{"two live writer handles of one SWMR session"};
+    ::fixy::check::expect_dies(test, second_spsc_producer,
+                               ::fixy::TextView{"two live producer handles of one SPSC channel"});
+    ::fixy::check::expect_dies(test, second_spsc_consumer,
+                               ::fixy::TextView{"two live consumer handles of one SPSC channel"});
+    ::fixy::check::expect_dies(
+        test, recombined_access_while_a_handle_lives,
+        ::fixy::TextView{"recombined access to an SPSC channel while its producer handle lives"});
+    ::fixy::check::expect_dies(test, second_mpsc_consumer,
+                               ::fixy::TextView{"two live consumer handles of one MPSC channel"});
+    ::fixy::check::expect_dies(test, second_swmr_writer, kSecondSwmrWriter);
+    ::fixy::check::expect_dies(test, writer_move_keeps_the_source_claim, kSecondSwmrWriter);
+    ::fixy::check::expect_dies(test, pipeline_joins_two_links_of_one_type,
+                               ::fixy::TextView{"a pipeline joins two channels of one type"});
+    ::fixy::check::pass(test, "  7 attacks refused\n");
 }
 
 // A claim comes back when its handle ends, so a handle made later from a
@@ -252,25 +235,11 @@ constexpr Attack kAttacks[] = {
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "[expected] each attack below prints the violation report of a child process\n");
-    int failures = 0;
-    int attacks = 0;
-    for (const Attack& attack : kAttacks) {
-        ++attacks;
-        if (!ends_the_process(attack.run)) {
-            std::fprintf(stderr, "FAIL: %s was not refused\n", attack.name);
-            ++failures;
-        }
-    }
-    if (claims_come_back() != 0) {
-        std::fprintf(stderr, "FAIL: a claim did not come back when its handle ended\n");
-        ++failures;
-    }
-    if (pipeline_over_one_link_runs() != 0) {
-        std::fprintf(stderr, "FAIL: a pipeline over one channel for each link did not run\n");
-        ++failures;
-    }
-    if (failures != 0) return EXIT_FAILURE;
-    ::fixy::report(::fixy::Sink::Out, "test_channel_identity: {} attacks refused\n", attacks);
-    return EXIT_SUCCESS;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    attacks_end_the_process(test);
+    CRUCIBLE_TEST_ASSERT(test, claims_come_back() == 0 && "a claim did not come back when its handle ended");
+    CRUCIBLE_TEST_ASSERT(test,
+                         pipeline_over_one_link_runs() == 0 && "a pipeline over one channel for each link did not run");
+    ::fixy::check::pass(test, "test_channel_identity: PASSED\n");
+    return 0;
 }

@@ -16,12 +16,15 @@
 // "checking" and whose destructor does nothing, and no static_assert
 // can see that.  The only way to
 // observe a std::abort is to run it somewhere the failure is
-// recoverable, which is a child process.  Reading WIFSIGNALED from the
-// wait status is also stricter than ctest's WILL_FAIL, which would
-// accept any non-zero exit.
+// recoverable, which is a child process.  expect_dies of the Check family
+// requires SIGABRT and the text of the diagnostic, which is also stricter
+// than ctest's WILL_FAIL, which would accept any non-zero exit.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/ScopedView.h>
+#include <fixy/check/Check.h>
+#include <fixy/os/Process.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Mint.h>
@@ -29,11 +32,9 @@
 
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/PermSet.h>
 #include <foundation/permissions/Permission.h>
-
-#include <sys/wait.h>
-#include <unistd.h>
 
 #include <array>
 #include <atomic>
@@ -962,89 +963,54 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
 //
 // Builds a handle at a non-terminal position and drops it.  Under
 // Enforced the destructor prints and aborts; under Off it does nothing.
-// The caller runs this in a child process and reads the exit status.
+// Each case runs in a child process of the child door of
+// fixy/os/Process.h: expect_dies of the Check family for an abort, and
+// run_in_child with the exit code of the report for a child that must not
+// abort.
 
 template <typename Policy>
-[[noreturn]] void abandon_a_handle() {
+void abandon_a_handle() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     {
         auto handle = s::mint_session<Once, Policy>(ctx, ValueWire{});
         (void)handle;
     }
-    // Reached only when the policy does not check.
-    std::_Exit(0);
 }
 
-// Runs `body` in a child and reports whether the child died on a
-// signal, which is how std::abort() exits.
+constexpr ::fixy::TextView kAbandoned{"fixy::session: ABANDONMENT DETECTED (non-terminal handle)"};
+
+// Runs `body` in a child, and gives the report of its end.
 template <typename Body>
-[[nodiscard]] bool child_aborted(Body body) {
-    // The child exists to die.  The abandonment abort is a
-    // runtime behaviour of a destructor, and std::abort ends the process
-    // that runs it, so the only way to observe it is from a parent.
-    const pid_t pid = ::fork();
-    if (pid < 0) {
-        std::fprintf(stderr, "fork failed\n");
-        std::_Exit(2);
-    }
-    if (pid == 0) {
-        body();
-        std::_Exit(0);
-    }
-    int status = 0;
-    // The wait belongs to the fork above; reading
-    // WIFSIGNALED from the status is what makes the abort observable,
-    // and is stricter than ctest's WILL_FAIL, which accepts any exit.
-    if (::waitpid(pid, &status, 0) != pid) {
-        std::fprintf(stderr, "waitpid failed\n");
-        std::_Exit(2);
-    }
-    return WIFSIGNALED(status) != 0;
+[[nodiscard]] ::fixy::process::ChildReport run_in_child(::fixy::TestRunnerCtx const& test, Body body) {
+    ::fixy::process::Child child = ::fixy::process::spawn_child(test, body).expect("the test starts a child");
+    return ::fixy::process::wait(std::move(child)).expect("the test waits for its child");
 }
 
-[[nodiscard]] int policy_runs() {
-    // The abandonment diagnostic is the child's stderr, and a passing
-    // run prints it once.  Saying so here keeps a reader from taking
-    // the banner for a failure.
-    std::fprintf(stderr, "[expected] the abandonment banner below comes from the child process "
-                         "that proves check::Enforced aborts\n");
-
-    if (!child_aborted(abandon_a_handle<s::check::Enforced>)) {
-        std::fprintf(stderr, "check::Enforced did not abort on an abandoned handle — the policy is named but "
-                             "does nothing\n");
-        return 1;
-    }
-    if (child_aborted(abandon_a_handle<s::check::Off>)) {
-        std::fprintf(stderr, "check::Off aborted — the unchecked policy is not unchecked\n");
-        return 1;
-    }
+void policy_runs(::fixy::TestRunnerCtx const& test) {
+    // check::Enforced aborts on an abandoned handle, so the policy is not
+    // only a name.
+    ::fixy::check::expect_dies(test, abandon_a_handle<s::check::Enforced>, kAbandoned);
+    // check::Off does not check.
+    CRUCIBLE_TEST_ASSERT(test, run_in_child(test, abandon_a_handle<s::check::Off>).is_exit_with(0));
 
     // Detaching with a reason tag retires the handle without advancing
     // it, and the check must then stay quiet under the checking policy.
-    const bool detach_aborted = child_aborted([] {
-        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-        auto handle = s::mint_session<Once, s::check::Enforced>(ctx, ValueWire{});
-        std::move(handle).detach(s::detach_reason::TestInstrumentation{});
-    });
-    if (detach_aborted) {
-        std::fprintf(stderr, "a detached handle still aborted — detach does not mark the handle consumed\n");
-        return 1;
-    }
+    CRUCIBLE_TEST_ASSERT(test, run_in_child(test, [] {
+                                   const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+                                   auto handle = s::mint_session<Once, s::check::Enforced>(ctx, ValueWire{});
+                                   std::move(handle).detach(s::detach_reason::TestInstrumentation{});
+                               }).is_exit_with(0));
 
     // Moving marks the SOURCE consumed.  Without that, every step
     // through a protocol would leave a moved-from handle behind whose
     // destructor reports an abandonment that did not happen.
-    const bool move_aborted = child_aborted([] {
-        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-        auto handle = s::mint_session<Once, s::check::Enforced>(ctx, ValueWire{});
-        auto moved = std::move(handle);
-        std::move(moved).detach(s::detach_reason::TestInstrumentation{});
-    });
-    if (move_aborted) {
-        std::fprintf(stderr, "a moved-from handle aborted — the move did not mark the source consumed\n");
-        return 1;
-    }
-    return 0;
+    CRUCIBLE_TEST_ASSERT(test, run_in_child(test, [] {
+                                   const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+                                   auto handle = s::mint_session<Once, s::check::Enforced>(ctx, ValueWire{});
+                                   auto moved = std::move(handle);
+                                   std::move(moved).detach(s::detach_reason::TestInstrumentation{});
+                               }).is_exit_with(0));
+    ::fixy::check::pass(test, "  policy_runs: PASSED\n");
 }
 
 // ── Runtime: the liveness check and check::Cancel ────────────────────
@@ -1062,113 +1028,79 @@ void cancel_session(CancelWire&) noexcept { g_cancellations.fetch_add(1, std::me
 static_assert(s::CancellableResource<CancelWire>);
 static_assert(!s::CancellableResource<ValueWire>);
 
-// Runs `body` in a child and returns the child's exit code, or -1 when a
-// signal ended the child.
-template <typename Body>
-[[nodiscard]] int child_exit_code(Body body) {
-    // The child exists to run a destructor whose effect
-    // the parent must observe.
-    const pid_t pid = ::fork();
-    if (pid < 0) {
-        std::fprintf(stderr, "fork failed\n");
-        std::_Exit(2);
-    }
-    if (pid == 0) {
-        body();
-        std::_Exit(0);
-    }
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {
-        std::fprintf(stderr, "waitpid failed\n");
-        std::_Exit(2);
-    }
-    return WIFEXITED(status) != 0 ? WEXITSTATUS(status) : -1;
+// The exit code of a child that counted COUNT cancellations: 0 when the
+// count is the expected one, and 3 when it is not.
+[[nodiscard]] std::uint8_t exit_code_of_cancellations(int expected) noexcept {
+    return g_cancellations.load(std::memory_order_relaxed) == expected ? std::uint8_t{0} : std::uint8_t{3};
 }
 
-[[nodiscard]] int liveness_and_cancel_run() {
-    std::fprintf(stderr, "[expected] the diagnostics below come from child processes that prove the liveness "
-                         "check and the move-assignment guard abort\n");
-
+void liveness_and_cancel_run(::fixy::TestRunnerCtx const& test) {
     // A consumed handle is dead.  The next operation on it aborts under
     // the default policy, so a moved-from handle cannot step the protocol
     // a second time.
-    const bool use_after_move_aborted = child_aborted([] {
-        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-        auto handle = s::mint_session<Once>(ctx, ValueWire{});
-        auto moved = std::move(handle);
-        std::move(moved).detach(s::detach_reason::TestInstrumentation{});
-        auto stepped = std::move(handle).send(Ping{1}, [](ValueWire&, Ping&) noexcept { return true; });
-        std::move(stepped).detach(s::detach_reason::TestInstrumentation{});
-    });
-    if (!use_after_move_aborted) {
-        std::fprintf(stderr, "a moved-from handle sent a message — the liveness check does not run\n");
-        return 1;
-    }
+    ::fixy::check::expect_dies(
+        test,
+        [] {
+            const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+            auto handle = s::mint_session<Once>(ctx, ValueWire{});
+            auto moved = std::move(handle);
+            std::move(moved).detach(s::detach_reason::TestInstrumentation{});
+            auto stepped = std::move(handle).send(Ping{1}, [](ValueWire&, Ping&) noexcept { return true; });
+            std::move(stepped).detach(s::detach_reason::TestInstrumentation{});
+        },
+        ::fixy::TextView{"fixy::session: USE OF A CONSUMED HANDLE"});
 
     // An assignment over a live handle drops the protocol that the target
     // held, and the target's policy acts on the drop.
-    const bool assign_over_live_aborted = child_aborted([] {
-        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-        auto target = s::mint_session<Once>(ctx, ValueWire{});
-        auto source = s::mint_session<Once>(ctx, ValueWire{});
-        target = std::move(source);
-        std::move(target).detach(s::detach_reason::TestInstrumentation{});
-    });
-    if (!assign_over_live_aborted) {
-        std::fprintf(stderr, "an assignment over a live handle dropped its protocol silently\n");
-        return 1;
-    }
+    ::fixy::check::expect_dies(
+        test,
+        [] {
+            const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+            auto target = s::mint_session<Once>(ctx, ValueWire{});
+            auto source = s::mint_session<Once>(ctx, ValueWire{});
+            target = std::move(source);
+            std::move(target).detach(s::detach_reason::TestInstrumentation{});
+        },
+        kAbandoned);
 
     // Under check::Cancel a dropped handle sends the cancellation and the
-    // program continues.
-    const int cancel_on_drop = child_exit_code([] {
-        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-        {
-            auto handle = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
-            (void)handle;
-        }
-        std::_Exit(g_cancellations.load(std::memory_order_relaxed) == 1 ? 0 : 3);
-    });
-    if (cancel_on_drop != 0) {
-        std::fprintf(stderr, "check::Cancel did not send exactly one cancellation on a drop (exit %d)\n",
-                     cancel_on_drop);
-        return 1;
-    }
+    // program continues.  The child counts from the count of the test
+    // process, which sent no cancellation.
+    CRUCIBLE_TEST_ASSERT(test, run_in_child(test, [&test] {
+                                   const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+                                   {
+                                       auto handle = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
+                                       (void)handle;
+                                   }
+                                   ::fixy::process::exit_now(test, exit_code_of_cancellations(1));
+                               }).is_exit_with(0));
 
     // An explicit cancel() sends it once, and the destructor then finds a
     // consumed handle and sends nothing more.
-    const int explicit_cancel = child_exit_code([] {
-        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-        {
-            auto handle = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
-            std::move(handle).cancel();
-        }
-        std::_Exit(g_cancellations.load(std::memory_order_relaxed) == 1 ? 0 : 3);
-    });
-    if (explicit_cancel != 0) {
-        std::fprintf(stderr, "cancel() did not send exactly one cancellation (exit %d)\n", explicit_cancel);
-        return 1;
-    }
+    CRUCIBLE_TEST_ASSERT(test, run_in_child(test, [&test] {
+                                   const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+                                   {
+                                       auto handle = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
+                                       std::move(handle).cancel();
+                                   }
+                                   ::fixy::process::exit_now(test, exit_code_of_cancellations(1));
+                               }).is_exit_with(0));
 
     // A handle that finishes its protocol sends no cancellation.
-    const int finished = child_exit_code([] {
-        const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-        auto handle = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
-        auto after = std::move(handle).send(Ping{2}, [](CancelWire& w, Ping& p) noexcept {
-            w.last_sent = p.value;
-            return true;
-        });
-        auto [pong, at_end] =
-            std::move(after).recv([](CancelWire& w) noexcept { return ::fixy::some(Pong{w.last_sent}); });
-        (void)pong;
-        (void)std::move(at_end).close();
-        std::_Exit(g_cancellations.load(std::memory_order_relaxed) == 0 ? 0 : 3);
-    });
-    if (finished != 0) {
-        std::fprintf(stderr, "a finished session sent a cancellation (exit %d)\n", finished);
-        return 1;
-    }
-    return 0;
+    CRUCIBLE_TEST_ASSERT(test, run_in_child(test, [&test] {
+                                   const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+                                   auto handle = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
+                                   auto after = std::move(handle).send(Ping{2}, [](CancelWire& w, Ping& p) noexcept {
+                                       w.last_sent = p.value;
+                                       return true;
+                                   });
+                                   auto [pong, at_end] = std::move(after).recv(
+                                       [](CancelWire& w) noexcept { return ::fixy::some(Pong{w.last_sent}); });
+                                   (void)pong;
+                                   (void)std::move(at_end).close();
+                                   ::fixy::process::exit_now(test, exit_code_of_cancellations(0));
+                               }).is_exit_with(0));
+    ::fixy::check::pass(test, "  liveness_and_cancel_run: PASSED\n");
 }
 
 // ── Runtime: the watch over live sessions ────────────────────────────
@@ -1417,8 +1349,9 @@ int main() {
     if (const int rc = walk_vendor_pinned_session(); rc != 0) return rc;
     if (const int rc = walk_test_channel(); rc != 0) return rc;
     if (const int rc = walk_forked_channel(); rc != 0) return rc;
-    if (const int rc = policy_runs(); rc != 0) return rc;
-    if (const int rc = liveness_and_cancel_run(); rc != 0) return rc;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    policy_runs(test);
+    liveness_and_cancel_run(test);
     if (const int rc = watch_counts_sessions(); rc != 0) return rc;
     if (const int rc = polling_channel_waits_without_a_false_deadlock(); rc != 0) return rc;
     if (const int rc = channel_claim_names_no_holder(); rc != 0) return rc;

@@ -30,14 +30,19 @@
 //                              cell, and a crash against a write
 
 #include "session_crash_attack.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/Process.h>
 #include <fixy/session/Entry.h>
 #include <foundation/core/Array.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/os/ChildProcess.h>
 
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include <any>
 #include <array>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -488,32 +493,26 @@ static_assert(ledger_matches_the_campaign(),
 
 void on_watchdog(int) { std::_Exit(kDeadlockExit); }
 
-[[nodiscard]] Outcome run_in_child(void (*attack)()) {
-    std::fflush(stderr);
-    // An attack that the transport catches ends the
-    // process, and a hang must end too, so each attack runs in a child.
-    const pid_t pid = ::fork();
-    if (pid < 0) {
-        std::fprintf(stderr, "fork failed\n");
-        std::_Exit(2);
-    }
-    if (pid == 0) {
-        ::signal(SIGALRM, on_watchdog);
-        ::alarm(kWatchdogSeconds);
-        attack();
-    }
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {
-        std::fprintf(stderr, "waitpid failed\n");
-        std::_Exit(2);
-    }
-    if (WIFSIGNALED(status) != 0) return Outcome::Caught;
-    const int code = WEXITSTATUS(status);
-    if (code == kDeadlockExit) return Outcome::Deadlock;
-    if (code == kCorrectExit) return Outcome::Correct;
-    if (code == kSilentExit) return Outcome::Silent;
-    std::fprintf(stderr, "an attack exited with code %d, which names no outcome\n", code);
-    std::_Exit(2);
+// An attack that the transport catches ends the process, and a hang must
+// end too, so each attack runs in a child of the child door of
+// fixy/os/Process.h.  The watchdog of the child turns a hang into the exit
+// code of a deadlock.  An end by a signal is a caught attack.
+[[nodiscard]] Outcome run_in_child(::fixy::TestRunnerCtx const& test, void (*attack)()) {
+    ::fixy::process::Child child = ::fixy::process::spawn_child(test, [attack] {
+                                       ::signal(SIGALRM, on_watchdog);
+                                       ::alarm(kWatchdogSeconds);
+                                       attack();
+                                   }).expect("the test starts the child of an attack");
+    ::fixy::process::ChildReport const report =
+        ::fixy::process::wait(std::move(child)).expect("the test waits for the child of an attack");
+    ::foundation::os::ChildEnd const end = report.end();
+    if (end.kind == ::foundation::os::ChildEndKind::signaled) return Outcome::Caught;
+    if (end.number == kDeadlockExit) return Outcome::Deadlock;
+    if (end.number == kCorrectExit) return Outcome::Correct;
+    if (end.number == kSilentExit) return Outcome::Silent;
+    ::fixy::report(::fixy::Sink::Err, "an attack exited with the code {}, which names no outcome\n{}\n", end.number,
+                   report.output());
+    ::fixy::fatal("an attack of test_session_crash_attack ended with an exit code that names no outcome");
 }
 
 [[nodiscard]] const char* outcome_name(Outcome outcome) noexcept {
@@ -554,10 +553,10 @@ void on_watchdog(int) { std::_Exit(kDeadlockExit); }
 // the expected one.  Returns the exit code of the test.
 [[nodiscard]] int run_campaign() {
     if (const int rc = one_holder_resource_moves(); rc != 0) return rc;
-    std::fprintf(stderr, "[expected] the attack campaign below prints diagnostics from child processes\n");
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     int failures = 0;
     for (const attack_case& attack : kAttacks) {
-        const Outcome seen = run_in_child(attack.run);
+        const Outcome seen = run_in_child(test, attack.run);
         std::fprintf(stderr, "[attack] %-44.*s expected %-8s seen %s\n", static_cast<int>(attack.name.size()),
                      attack.name.data(), outcome_name(attack.expected), outcome_name(seen));
         if (seen != attack.expected) {
