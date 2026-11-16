@@ -32,10 +32,19 @@ enum class ChildEndKind : std::uint8_t {
 };
 
 // The end of a child process: the exit code or the number of the signal.
+// has_core_dump is true when a signal ended the child and the kernel wrote
+// its core dump.
 struct ChildEnd {
     ChildEndKind kind = ChildEndKind::exited;
     std::uint8_t number = 0;
+    bool has_core_dump = false;
 };
+
+// The end that a status word of waitpid tells.  A wait of the child door
+// gives the end of its word through the same decode.  The decode has no
+// effect, so a test can read the decode of a word that no child of the test
+// gives, such as a word with the bit of a core dump.
+[[nodiscard]] ChildEnd decode_child_end(std::int32_t status_word) noexcept;
 
 // The exit code of a child whose redirection of its standard error failed.
 // The child ends before its body runs.

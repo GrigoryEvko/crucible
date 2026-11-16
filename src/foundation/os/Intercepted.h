@@ -27,20 +27,29 @@ enum class ProcessEnd : std::uint8_t {
 };
 
 // The end of a child process: the exit code or the number of the signal.
+// has_core_dump is true when a signal ended the child and the kernel wrote
+// its core dump.
 struct ProcessStatus {
     ProcessEnd end = ProcessEnd::exited;
     std::uint8_t number = 0;
+    bool has_core_dump = false;
 };
+
+// The end that a status word of waitpid tells, through the macros of
+// <sys/wait.h>.  wait_process passes no option that reports a stopped or a
+// continued child, so each word of a wait tells an exit or a signal.
+[[nodiscard]] ProcessStatus decode_process_status(std::int32_t word) noexcept;
 
 // fork of the C library.  In the parent, the id of the child, above zero.  In
 // the child, zero.  On an error, -E for the error number E.
 [[nodiscard]] long fork_process() noexcept;
 
 // waitpid of the C library for the child CHILD, with no option, so the call
-// waits until the child ends.  The word is zero, and STATUS holds the end, or
-// -E for the error number E.  An eintr comes back to the caller.  The
-// function has the attribute nothrow and no noexcept specifier, for the
-// reason that src/foundation/os/Intercepted.cpp gives at read_intercepted.
+// waits until the child ends.  The word is zero, and STATUS holds the end
+// that decode_process_status gives, or -E for the error number E.  An eintr
+// comes back to the caller.  The function has the attribute nothrow and no
+// noexcept specifier, for the reason that src/foundation/os/Intercepted.cpp
+// gives at read_intercepted.
 [[nodiscard, gnu::nothrow]] long wait_process(std::int32_t child, ProcessStatus& status);
 
 // _exit of the C library: the process ends with CODE, and no exit hook and

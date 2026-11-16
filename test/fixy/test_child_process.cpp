@@ -1,7 +1,7 @@
 // The child door of fixy/os/Process.h: a child that exits with a code, a
 // child whose body returns, a child that aborts, a child whose output is
-// larger than the report and than a pipe, a Child that no wait takes, and the
-// empty Child.
+// larger than the report and than a pipe, a Child that no wait takes, the
+// decode of a wait, and the empty Child.
 // The report holds the end of the child and the last bytes of its standard
 // error.
 
@@ -10,6 +10,7 @@
 #include <fixy/os/Process.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Abort.h>
+#include <foundation/os/ChildProcess.h>
 
 #include "../test_assert.h"
 
@@ -86,6 +87,35 @@ void child_with_no_wait(::fixy::TestRunnerCtx const& test) {
     assert(static_cast<std::uint32_t>(child.id()) > 0);
 }
 
+// The decode of a status word of waitpid gives the end of a wait.  On Linux,
+// the bits 8 to 15 of the word hold the exit code, the low seven bits hold
+// the signal, and the bit 0x80 tells that the kernel wrote a core dump.  The
+// launcher of the tests sets a soft core limit of 1 byte, so no child of a
+// test writes a core dump, and only the decode of a word shows the bit.
+void decode_tells_the_core_dump() {
+    namespace os = ::foundation::os;
+    os::ChildEnd const exited = os::decode_child_end(0x0300);
+    assert(exited.kind == os::ChildEndKind::exited);
+    assert(exited.number == 3);
+    assert(!exited.has_core_dump);
+
+    os::ChildEnd const aborted = os::decode_child_end(0x0006);
+    assert(aborted.kind == os::ChildEndKind::signaled);
+    assert(aborted.number == os::kAbortSignal);
+    assert(!aborted.has_core_dump);
+
+    os::ChildEnd const dumped = os::decode_child_end(0x0086);
+    assert(dumped.kind == os::ChildEndKind::signaled);
+    assert(dumped.number == os::kAbortSignal);
+    assert(dumped.has_core_dump);
+
+    // The signal 11 is SIGSEGV.
+    os::ChildEnd const faulted = os::decode_child_end(0x008b);
+    assert(faulted.kind == os::ChildEndKind::signaled);
+    assert(faulted.number == 11);
+    assert(faulted.has_core_dump);
+}
+
 // The empty Child names no process, so a wait for it gives echild and waits
 // for no child of the test.
 void empty_child_names_no_process() {
@@ -103,6 +133,7 @@ int main() {
     child_aborts(test);
     child_writes_more_than_the_report(test);
     child_with_no_wait(test);
+    decode_tells_the_core_dump();
     empty_child_names_no_process();
     pass("test_child_process: PASSED\n");
     return 0;

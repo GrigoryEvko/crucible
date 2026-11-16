@@ -32,6 +32,11 @@ struct PipeEnds {
 
 void close_descriptor(std::int32_t descriptor) noexcept { static_cast<void>(raw_syscall(Syscall::close, descriptor)); }
 
+[[nodiscard]] ChildEnd child_end_of(ProcessStatus const& status) noexcept {
+    ChildEndKind const kind = status.end == ProcessEnd::signaled ? ChildEndKind::signaled : ChildEndKind::exited;
+    return ChildEnd{kind, status.number, status.has_core_dump};
+}
+
 }  // namespace
 
 core::Result<ChildStart, Errno> start_child_() noexcept {
@@ -84,10 +89,17 @@ core::Result<ChildEnd, Errno> wait_child_(std::int32_t child) noexcept {
     if (waited < 0) {
         return core::err(static_cast<Errno>(-waited));
     }
-    ChildEndKind const kind = status.end == ProcessEnd::signaled ? ChildEndKind::signaled : ChildEndKind::exited;
-    return ChildEnd{kind, status.number};
+    return child_end_of(status);
 }
 
 void exit_child_(std::uint8_t code) noexcept { exit_process(code); }
 
 }  // namespace foundation::os::detail
+
+namespace foundation::os {
+
+ChildEnd decode_child_end(std::int32_t status_word) noexcept {
+    return detail::child_end_of(detail::decode_process_status(status_word));
+}
+
+}  // namespace foundation::os

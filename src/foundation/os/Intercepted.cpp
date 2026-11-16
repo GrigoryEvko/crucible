@@ -58,6 +58,13 @@ long fork_process() noexcept {
     return child < 0 ? -static_cast<long>(errno) : static_cast<long>(child);
 }
 
+ProcessStatus decode_process_status(std::int32_t word) noexcept {
+    if (WIFSIGNALED(word)) {
+        return ProcessStatus{ProcessEnd::signaled, static_cast<std::uint8_t>(WTERMSIG(word)), WCOREDUMP(word) != 0};
+    }
+    return ProcessStatus{ProcessEnd::exited, static_cast<std::uint8_t>(WEXITSTATUS(word)), false};
+}
+
 // waitpid is a cancellation point of the C library, and _exit has no
 // __THROW, so <unistd.h> and <sys/wait.h> declare them without __THROW.  The
 // attributes nothrow and no_sanitize_thread have the reason that
@@ -67,11 +74,7 @@ long fork_process() noexcept {
     if (::waitpid(child, &word, 0) < 0) {
         return -static_cast<long>(errno);
     }
-    if (WIFSIGNALED(word)) {
-        status = ProcessStatus{ProcessEnd::signaled, static_cast<std::uint8_t>(WTERMSIG(word))};
-    } else {
-        status = ProcessStatus{ProcessEnd::exited, static_cast<std::uint8_t>(WEXITSTATUS(word))};
-    }
+    status = decode_process_status(word);
     return 0;
 }
 

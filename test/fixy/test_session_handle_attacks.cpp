@@ -6,8 +6,9 @@
 // attack is to drop a protocol, to use a handle twice, or to make a
 // deadlock, and to do it with code that compiles.
 //
-// An attack runs in a child process, because the result of a caught
-// attack is std::abort.  The parent reads the wait status and sorts it:
+// An attack runs in a child process of the child door of fixy/os/Process.h,
+// because the result of a caught attack is std::abort.  The parent reads the
+// end of the child and sorts it:
 //
 //   Caught    the child died on a signal: the policy aborted.
 //   Silent    the child reached its end, and no policy acted.
@@ -65,19 +66,18 @@
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
 #include <fixy/ScopedView.h>
+#include <fixy/os/Process.h>
 #include <fixy/os/ThreadTasks.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 #include <fixy/session/Mint.h>
 
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/ChildProcess.h>
 #include <foundation/permissions/Permission.h>
 
 #include <sys/resource.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <coroutine>
@@ -89,7 +89,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <string>
 #include <string_view>
 #include <thread>
 #include <type_traits>
@@ -100,6 +99,8 @@
 namespace s = ::fixy::session;
 namespace perm = ::foundation::permissions;
 namespace eff = ::foundation::effects;
+namespace fp = ::fixy::process;
+namespace os = ::foundation::os;
 
 // The permission trees of the forked attacks.  The split manifests must
 // be written in foundation::permissions, so the tags come first.
@@ -158,9 +159,9 @@ enum class Outcome : std::uint8_t {
     Correct
 };
 
-constexpr int kSilentExit = 0;
-constexpr int kDeadlockExit = 42;
-constexpr int kCorrectExit = 43;
+constexpr std::uint8_t kSilentExit = 0;
+constexpr std::uint8_t kDeadlockExit = 42;
+constexpr std::uint8_t kCorrectExit = 43;
 
 struct attack_row {
     std::string_view name{};
@@ -918,8 +919,8 @@ static_assert(ledger_matches_the_campaign(),
 // the slow path must not come back in silence.  A run with
 // CRUCIBLE_TEST_CORES=keep asks for the cores, and a hard limit of 0 cannot
 // become 1 byte, so the parent accepts a core dump in those two runs.
-void refuse_core_dump(int status) noexcept {
-    if (WIFSIGNALED(status) == 0 || WCOREDUMP(status) == 0) return;
+void refuse_core_dump(os::ChildEnd const& end) noexcept {
+    if (end.kind != os::ChildEndKind::signaled || !end.has_core_dump) return;
     ::rlimit core_limit{};
     const bool can_stop = ::getrlimit(RLIMIT_CORE, &core_limit) == 0 && core_limit.rlim_max >= 1;
     const char* const cores = std::getenv("CRUCIBLE_TEST_CORES");
@@ -932,39 +933,39 @@ void refuse_core_dump(int status) noexcept {
     }
 }
 
-[[nodiscard]] Outcome run_in_child(void (*attack)()) {
-    std::fflush(stderr);
-    // An attack that the policy catches ends the
-    // process, so it runs in a child that the parent observes.
-    const pid_t pid = ::fork();
-    if (pid < 0) {
-        std::fprintf(stderr, "fork failed\n");
-        std::_Exit(2);
-    }
-    if (pid == 0) {
-        attack();
-    }
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {
-        std::fprintf(stderr, "waitpid failed\n");
-        std::_Exit(2);
-    }
-    refuse_core_dump(status);
-    if (WIFSIGNALED(status) != 0) return Outcome::Caught;
-    const int code = WEXITSTATUS(status);
-    if (code == kDeadlockExit) return Outcome::Deadlock;
-    if (code == kCorrectExit) return Outcome::Correct;
-    if (code == kSilentExit) return Outcome::Silent;
-    std::fprintf(stderr, "an attack exited with code %d, which names no outcome\n", code);
-    std::_Exit(2);
+// Runs an attack in a child of the child door, and gives the report of its
+// end.  An error of the door ends the test.
+[[nodiscard]] fp::ChildReport run_attack(::fixy::TestRunnerCtx const& test, void (*attack)()) {
+    fp::Child child = fp::spawn_child(test, attack).expect("the test starts the child of an attack");
+    return fp::wait(std::move(child)).expect("the test waits for the child of an attack");
+}
+
+// The signal that ended the child, or zero when no signal ended it.
+[[nodiscard]] int end_signal_of(fp::ChildReport const& report) noexcept {
+    const os::ChildEnd end = report.end();
+    return end.kind == os::ChildEndKind::signaled ? int{end.number} : 0;
+}
+
+// An attack that the policy catches ends the process, so it runs in a child
+// that the parent observes.  The parent writes the standard error of the
+// child to its own, so the log keeps the diagnostics of each attack.
+[[nodiscard]] Outcome run_in_child(::fixy::TestRunnerCtx const& test, void (*attack)()) {
+    const fp::ChildReport report = run_attack(test, attack);
+    ::fixy::report(::fixy::Sink::Err, "{}", report.output());
+    refuse_core_dump(report.end());
+    if (end_signal_of(report) != 0) return Outcome::Caught;
+    if (report.is_exit_with(kDeadlockExit)) return Outcome::Deadlock;
+    if (report.is_exit_with(kCorrectExit)) return Outcome::Correct;
+    if (report.is_exit_with(kSilentExit)) return Outcome::Silent;
+    ::fixy::fatal("an attack exited with code {}, which names no outcome", unsigned{report.end().number});
 }
 
 // ── The report at a fatal signal ─────────────────────────────────────
 //
 // Each case below ends the process on a signal that runs no exit hook.
-// The child writes its standard error into a pipe, and the parent checks
-// that the child did not exit cleanly and that the watch reported the
-// live session.  Under AddressSanitizer a fault ends with the exit code of
+// The report of the child door holds the standard error of the child, and
+// the parent checks that the child did not exit cleanly and that the watch
+// reported the live session.  Under AddressSanitizer a fault ends with the exit code of
 // the sanitizer instead of the signal, so the check asks for a non-clean
 // end and not for one signal.
 
@@ -1038,51 +1039,13 @@ volatile std::uint64_t overflow_limit = ~std::uint64_t{0};
     std::abort();
 }
 
-struct captured_end {
-    bool is_clean_exit = false;
-    // The signal that ended the child, or zero when no signal ended it.
-    int end_signal = 0;
-    std::string output;
-};
+// True when the standard error of the child holds text.
+[[nodiscard]] bool output_holds(fp::ChildReport const& report, ::fixy::TextView text) noexcept {
+    return ::fixy::find(report.output(), text).is_some();
+}
 
-[[nodiscard]] captured_end run_capturing(void (*attack)()) {
-    std::fflush(stderr);
-    int channel[2] = {-1, -1};
-    if (::pipe(channel) != 0) {
-        std::fprintf(stderr, "pipe failed\n");
-        std::_Exit(2);
-    }
-    // The signal ends the process, so it runs in a
-    // child whose standard error the parent reads.
-    const pid_t pid = ::fork();
-    if (pid < 0) {
-        std::fprintf(stderr, "fork failed\n");
-        std::_Exit(2);
-    }
-    if (pid == 0) {
-        ::close(channel[0]);
-        ::dup2(channel[1], STDERR_FILENO);
-        ::close(channel[1]);
-        attack();
-    }
-    ::close(channel[1]);
-    captured_end end{};
-    std::array<char, 4096> buffer{};
-    for (;;) {
-        const ::ssize_t got = ::read(channel[0], buffer.data(), buffer.size());
-        if (got <= 0) break;
-        end.output.append(buffer.data(), static_cast<std::size_t>(got));
-    }
-    ::close(channel[0]);
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {
-        std::fprintf(stderr, "waitpid failed\n");
-        std::_Exit(2);
-    }
-    refuse_core_dump(status);
-    end.is_clean_exit = WIFEXITED(status) != 0 && WEXITSTATUS(status) == 0;
-    end.end_signal = WIFSIGNALED(status) != 0 ? WTERMSIG(status) : 0;
-    return end;
+[[nodiscard]] ::fixy::TextView yes_or_no(bool is_true) noexcept {
+    return is_true ? ::fixy::TextView{"yes"} : ::fixy::TextView{"no"};
 }
 
 // A case of the report at a fatal signal.  expected_signal is the signal that
@@ -1091,7 +1054,7 @@ struct captured_end {
 // signal handlers of the sanitizers out, so the previous action of SIGSEGV is
 // the default action in each build.
 struct signal_case {
-    std::string_view name;
+    ::fixy::TextView name;
     bool expects_report;
     int expected_signal;
     void (*run)();
@@ -1107,22 +1070,22 @@ constexpr signal_case kSignalCases[] = {
     {"abort_with_no_live_session", false, 0, abort_with_no_live_session},
 };
 
-constexpr std::string_view kSignalReport = "LIVE PROTOCOL AT A FATAL SIGNAL";
+constexpr ::fixy::TextView kSignalReport{"LIVE PROTOCOL AT A FATAL SIGNAL"};
 
-[[nodiscard]] int run_signal_cases() {
+[[nodiscard]] int run_signal_cases(::fixy::TestRunnerCtx const& test) {
     int failures = 0;
     for (const signal_case& entry : kSignalCases) {
-        const captured_end end = run_capturing(entry.run);
-        const bool has_report = end.output.find(kSignalReport) != std::string::npos
-                             && end.output.find("live endpoint") != std::string::npos;
-        const bool has_expected_end = entry.expected_signal == 0 || end.end_signal == entry.expected_signal;
-        const bool is_expected = !end.is_clean_exit && has_report == entry.expects_report && has_expected_end;
-        std::fprintf(stderr, "[signal] %-40.*s report %-3s signal %-2d %s\n", static_cast<int>(entry.name.size()),
-                     entry.name.data(), has_report ? "yes" : "no", end.end_signal,
-                     is_expected ? "as expected" : "UNEXPECTED");
+        const fp::ChildReport report = run_attack(test, entry.run);
+        refuse_core_dump(report.end());
+        const int end_signal = end_signal_of(report);
+        const bool has_report = output_holds(report, kSignalReport) && output_holds(report, "live endpoint");
+        const bool has_expected_end = entry.expected_signal == 0 || end_signal == entry.expected_signal;
+        const bool is_expected = !report.is_exit_with(0) && has_report == entry.expects_report && has_expected_end;
+        ::fixy::report(::fixy::Sink::Err, "[signal] {} report {} signal {} {}\n", entry.name, yes_or_no(has_report),
+                       end_signal, is_expected ? ::fixy::TextView{"as expected"} : ::fixy::TextView{"UNEXPECTED"});
         if (!is_expected) {
             ++failures;
-            std::fprintf(stderr, "  child output:\n%s\n", end.output.c_str());
+            ::fixy::report(::fixy::Sink::Err, "  child output:\n{}\n", report.output());
         }
     }
     return failures;
@@ -1166,8 +1129,8 @@ constexpr std::size_t kForeignWord = 7;
 // names the check that refused the wait or the word.
 
 struct wait_refusal_case {
-    std::string_view name;
-    std::string_view diagnostic;
+    ::fixy::TextView name;
+    ::fixy::TextView diagnostic;
     void (*run)();
 };
 
@@ -1184,18 +1147,20 @@ constexpr wait_refusal_case kWaitRefusals[] = {
      offer_reads_a_word_that_names_no_branch},
 };
 
-[[nodiscard]] int run_wait_refusals() {
+[[nodiscard]] int run_wait_refusals(::fixy::TestRunnerCtx const& test) {
     int failures = 0;
     for (const wait_refusal_case& entry : kWaitRefusals) {
-        const captured_end end = run_capturing(entry.run);
-        const bool names_the_check = end.output.find(entry.diagnostic) != std::string::npos;
+        const fp::ChildReport report = run_attack(test, entry.run);
+        refuse_core_dump(report.end());
+        const bool names_the_check = output_holds(report, entry.diagnostic);
         const bool is_expected =
-            !end.is_clean_exit && names_the_check && end.output.find("DEADLOCK ACROSS SESSIONS") == std::string::npos;
-        std::fprintf(stderr, "[wait] %-40.*s %s\n", static_cast<int>(entry.name.size()), entry.name.data(),
-                     is_expected ? "refused, and the text names the check" : "UNEXPECTED");
+            !report.is_exit_with(0) && names_the_check && !output_holds(report, "DEADLOCK ACROSS SESSIONS");
+        ::fixy::report(::fixy::Sink::Err, "[wait] {} {}\n", entry.name,
+                       is_expected ? ::fixy::TextView{"refused, and the text names the check"}
+                                   : ::fixy::TextView{"UNEXPECTED"});
         if (!is_expected) {
             ++failures;
-            std::fprintf(stderr, "  child output:\n%s\n", end.output.c_str());
+            ::fixy::report(::fixy::Sink::Err, "  child output:\n{}\n", report.output());
         }
     }
     return failures;
@@ -1223,12 +1188,13 @@ int main() {
     // of a case inherits them.
     [[maybe_unused]] const s::watch::WatchHooks hooks =
         s::watch::mint_watch_hooks(fixy::ColdInitCtx{eff::testing::init()});
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     std::fprintf(stderr, "[expected] the attack campaign below prints diagnostics from child processes\n");
     int failures = 0;
     std::size_t caught = 0;
     std::size_t drop_routes = 0;
     for (const attack_case& attack : kAttacks) {
-        const Outcome seen = run_in_child(attack.run);
+        const Outcome seen = run_in_child(test, attack.run);
         std::fprintf(stderr, "[attack] %-40.*s expected %-8s seen %s\n", static_cast<int>(attack.name.size()),
                      attack.name.data(), outcome_name(attack.expected), outcome_name(seen));
         // The measure counts the routes that run under the default policy.
@@ -1248,7 +1214,7 @@ int main() {
         }
     }
     std::fprintf(stderr, "[attack] the default policy caught %zu of %zu drop and reuse routes\n", caught, drop_routes);
-    failures += run_signal_cases();
-    failures += run_wait_refusals();
+    failures += run_signal_cases(test);
+    failures += run_wait_refusals(test);
     return failures == 0 ? 0 : 1;
 }
