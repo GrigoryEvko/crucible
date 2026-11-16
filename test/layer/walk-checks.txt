@@ -100,6 +100,7 @@ fixy/session/Network.cpp | 0.0 | ::fixy::session::combinators
 fixy/session/Protocol.cpp | 0.4 | ::fixy::session::combinators
 fixy/session/VigilMode.cpp | 0.4 | ::fixy::session::combinators
 fixy/session/Witnessed.cpp | 0.1 | ::foundation::permissions::permission_rows
+foundation/algebra/net/Reflect.cpp | unmeasured | unknown
 foundation/core/Owner.cpp | unmeasured | ::foundation::core::detail::owner, unknown
 foundation/diag/Catalog.cpp | 3.2 | ::foundation::diag
 foundation/diag/Insights.cpp | 0.6 | ::foundation::diag
