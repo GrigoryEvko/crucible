@@ -162,10 +162,12 @@ private:
     static constexpr std::size_t kOutputMetas = 4;
     static constexpr std::size_t kScalarArgs = 5;
 
-    ::fixy::RunSet<uint16_t, ::fixy::RunOf<SlotId, kOutputCount>, ::fixy::RunOf<SlotId, kInputCount>,
-                   ::fixy::RunOf<OpIndex, kInputCount>, ::fixy::RunOf<TensorMeta, kInputCount>,
-                   ::fixy::RunOf<TensorMeta, kOutputCount>, ::fixy::RunOf<int64_t, kScalarCount>>
-        arrays_{};
+    // The members after this one take the two bytes of pad at its end, so a
+    // TraceEntry stays 96 bytes with the tags of its scalars.
+    [[no_unique_address]] ::fixy::RunSet<
+        uint16_t, ::fixy::RunOf<SlotId, kOutputCount>, ::fixy::RunOf<SlotId, kInputCount>,
+        ::fixy::RunOf<OpIndex, kInputCount>, ::fixy::RunOf<TensorMeta, kInputCount>,
+        ::fixy::RunOf<TensorMeta, kOutputCount>, ::fixy::RunOf<int64_t, kScalarCount>> arrays_{};
 
 public:
     bool grad_enabled = false;
@@ -182,6 +184,12 @@ public:
     // The nesting depth of the op.  A lowering takes only the ops of depth
     // zero, because each op of a larger depth runs inside one of them.
     OpDepth depth{};
+
+    // The tag of each scalar argument (ScalarType2 of TraceRing.h), two bits
+    // for each, the first scalar in the low bits.  The bits of a slot past
+    // the count are zero.  The tag tells the integer 1 from the double
+    // 4.9e-324, whose bits are the same.
+    uint16_t scalar_types = 0;
 
     // The counts.
     [[nodiscard]] uint16_t num_inputs() const noexcept { return arrays_.count<kInputCount>(); }
@@ -713,6 +721,12 @@ private:
         for (const int64_t scalar : op_record.scalar_args()) {
             content_hash_state = detail::combine_ids(content_hash_state, static_cast<uint64_t>(scalar));
         }
+        // The tags of the scalars, one step for the op.  Only the bits of the
+        // slots below the count fold, so bits that no scalar owns cannot move
+        // the hash.  At most five slots have a tag.
+        const uint32_t tagged = ::fixy::min(uint32_t{op_record.num_scalar_args()}, uint32_t{5});
+        const uint32_t tag_mask = (uint32_t{1} << (2 * tagged)) - 1;
+        content_hash_state = detail::combine_ids(content_hash_state, uint64_t{op_record.scalar_types & tag_mask});
     }
 
     // The golden-ratio constant, matching the seed every other fold in this

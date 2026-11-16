@@ -378,6 +378,15 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the read takes one boxed value of PyTorch")
     if (iv.isDouble()) return ::fixy::bit_cast<int64_t>(iv.toDouble());
     return 0;
 }
+
+// The tag of a boxed number (ScalarType2 of TraceRing.h): the tag of the
+// IValue.  An enumerator boxes into an integer, so it takes INT here, as in
+// the unboxed kernels.
+[[nodiscard]] static crucible::ScalarType2 scalar_tag(const c10::IValue& iv) {
+    if (iv.isBool()) return crucible::ScalarType2::BOOL;
+    if (iv.isDouble()) return crucible::ScalarType2::FLOAT;
+    return crucible::ScalarType2::INT;
+}
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
@@ -463,20 +472,29 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction reads the boxed stack of an o
             // c10::List iterator dereferences to a proxy object (like
             // vector<bool>). Binding `const auto&` to it triggers
             // -Wrange-loop-bind-reference. Use value to avoid the warning.
+            // A None element takes one slot with the tag NONE, as on the
+            // unboxed path.
             for (const auto ref : iv.toOptionalTensorList()) {
                 const auto opt = static_cast<std::optional<at::Tensor>>(ref);
-                if (opt.has_value() && opt->defined()) r.add_input(*opt, metas);
+                if (!opt.has_value()) {
+                    r.scalars.push_absent();
+                } else if (opt->defined()) {
+                    r.add_input(*opt, metas);
+                }
             }
+        } else if (iv.isNone()) {
+            // An absent optional, whatever its payload.
+            r.scalars.push_absent();
         } else if (iv.isInt() || iv.isDouble() || iv.isBool()) {
-            r.scalars.push(scalar_to_int64(iv));
+            r.scalars.push(scalar_to_int64(iv), scalar_tag(iv));
         } else if (iv.isIntList()) {
             // IntList args (e.g., size=[3,4] in reshape, padding=[1,2] in conv).
             for (int64_t elem : iv.toIntList()) {
-                r.scalars.push(elem);
+                r.scalars.push(elem, crucible::ScalarType2::INT);
             }
         } else if (iv.isDoubleList()) {
             for (double elem : iv.toDoubleList()) {
-                r.scalars.push(::fixy::bit_cast<int64_t>(elem));
+                r.scalars.push(::fixy::bit_cast<int64_t>(elem), crucible::ScalarType2::FLOAT);
             }
         } else if (iv.isList() && iv.toList().elementType()->kind() == c10::NumberType::Kind) {
             // A Scalar[] argument boxes into a list of numbers.  Each element
@@ -484,7 +502,8 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction reads the boxed stack of an o
             // nothing.
             for (const auto ref : iv.toList()) {
                 const c10::IValue element = ref;
-                if (element.isInt() || element.isDouble() || element.isBool()) r.scalars.push(scalar_to_int64(element));
+                if (element.isInt() || element.isDouble() || element.isBool())
+                    r.scalars.push(scalar_to_int64(element), scalar_tag(element));
             }
         }
     }
@@ -587,9 +606,10 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     entry.shape_hash = shape_hash;
     entry.num_inputs = counts.inputs;
     entry.num_outputs = counts.outputs;
-    crucible::vessel::write_scalar_slots(entry, extracted.scalars, extracted.overflow);
 
-    // Pack op_flags: 5 bits of per-op context.
+    // Pack op_flags: 5 bits of per-op context.  The flags go in before the
+    // scalar slots, because the slots write the tag of slot 4 into the two
+    // high bits of op_flags.
     uint8_t flags = 0;
     if (c10::InferenceMode::is_enabled()) flags |= crucible::op_flag::INFERENCE_MODE;
     if (c10::GradMode::is_enabled()) flags |= crucible::op_flag::GRAD_ENABLED;
@@ -597,6 +617,7 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     flags |= phase_flag_bits(is_foreach);
     if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     entry.op_flags = flags;
+    crucible::vessel::write_scalar_slots(entry, extracted.scalars, extracted.overflow);
 
     // -- Scope hash from TLS (set by Python module hooks) -------------
     const auto scope_hash = crucible::ScopeHash{state.scope_hash()};

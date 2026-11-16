@@ -435,6 +435,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.scope_hash = scope_data.at(index);
                 te.callsite_hash = callsite_data.at(index);
                 te.depth = depth_data.at(index);
+                te.scalar_types = re.packed_scalar_types();
                 te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
 
                 const uint8_t flags = re.op_flags;

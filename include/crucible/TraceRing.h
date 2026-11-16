@@ -72,14 +72,25 @@ inline constexpr uint8_t SCALAR4_TYPE_SHIFT = 6;
 // How to read back an inline scalar slot. Every scalar is stored as an int64
 // bit pattern, and a double bit-cast to int64 is indistinguishable from the
 // integer holding the same bits, so the tag is the only thing that recovers
-// the original type. Content hashing covers the bit pattern alone and ignores
-// the tag.
+// the original type.  The content hash of a region folds the tag of each
+// slot beside its bits.
+//
+// The tag is the tag of the value as PyTorch boxes it, because the boxed
+// fallback reads a boxed value and the unboxed kernels must write the same
+// entry.  An enumerator, such as a ScalarType or a MemoryFormat, boxes into an
+// integer, so it takes INT.  An argument that boxes into None, such as an
+// absent optional, takes one slot with the value zero and the tag NONE.  So
+// clamp with only min and clamp with only max give two entries.
 enum class ScalarType2 : uint8_t {
-    INT = 0,  // int64_t, sign-extended from any narrower integer
+    INT = 0,  // int64_t, sign-extended from any narrower integer, or an enumerator
     FLOAT = 1,  // double, recovered with std::bit_cast
     BOOL = 2,  // canonicalised to 0 or 1 when recorded
-    ENUM = 3,  // the underlying integer of an enum class
+    NONE = 3,  // an argument that boxes into None; the value is zero
 };
+
+// The tag of slot i of a packed set of tags: two bits for each slot, slot 0
+// in the low bits.
+inline constexpr uint32_t kScalarTypeBits = 2;
 
 namespace tracering_hw {
 
@@ -131,6 +142,24 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                                                 | (bits << op_flag::SCALAR4_TYPE_SHIFT));
             }
             CRUCIBLE_POST(0, get_scalar_type(i) == static_cast<ScalarType2>(bits));
+        }
+
+        // The tags of the five slots, two bits for each slot, slot 0 in the
+        // low bits.  Slots 0 to 3 are in scalar_types, and slot 4 is in the
+        // two high bits of op_flags.
+        [[nodiscard, gnu::pure]] constexpr uint16_t packed_scalar_types() const noexcept {
+            const auto slot4 =
+                static_cast<uint16_t>((op_flags & op_flag::SCALAR4_TYPE_MASK) >> op_flag::SCALAR4_TYPE_SHIFT);
+            return static_cast<uint16_t>(scalar_types | (slot4 << 8));
+        }
+
+        // Writes the tags of the five slots from their packed form, and keeps
+        // the other bits of op_flags.
+        constexpr void set_packed_scalar_types(uint16_t packed) noexcept {
+            scalar_types = static_cast<uint8_t>(packed & 0xFF);
+            const auto slot4 = static_cast<uint8_t>((packed >> 8) & 0x3);
+            op_flags =
+                static_cast<uint8_t>((op_flags & ~op_flag::SCALAR4_TYPE_MASK) | (slot4 << op_flag::SCALAR4_TYPE_SHIFT));
         }
     };
 

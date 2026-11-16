@@ -229,6 +229,10 @@ static void test_encoders_round_trip_through_the_loader() {
     record.num_scalars = 1;
     record.grad_enabled = 1;
     record.depth = OpDepth{5};
+    // The one scalar is a double, and slot 4 has the tag NONE: the tag of
+    // slot 4 goes into the high bits of op_flags.
+    record.scalar_types = static_cast<uint16_t>(static_cast<uint16_t>(ScalarType2::FLOAT)
+                                                | (static_cast<uint16_t>(ScalarType2::NONE) << 8));
 
     const ::fixy::FixedArray<std::byte, TRACE_META_BYTES> meta_bytes = encode_trace_meta(meta);
     for (const std::byte byte : meta_bytes.view()
@@ -282,6 +286,9 @@ static void test_encoders_round_trip_through_the_loader() {
     assert(*trace.scope_hashes.get(0).expect("the trace holds one op") == record.scope_hash);
     assert(*trace.callsite_hashes.get(0).expect("the trace holds one op") == record.callsite_hash);
     assert(*trace.depths.get(0).expect("the trace holds one op") == record.depth);
+    assert(entry.packed_scalar_types() == record.scalar_types);
+    assert(entry.get_scalar_type(0) == ScalarType2::FLOAT && entry.get_scalar_type(4) == ScalarType2::NONE);
+    assert((entry.op_flags & op_flag::GRAD_ENABLED) != 0 && "the tag of slot 4 keeps the other op flags");
 
     const TensorMeta& loaded = *trace.metas.get(0).expect("the trace holds one meta");
     assert(loaded.ndim == 2);

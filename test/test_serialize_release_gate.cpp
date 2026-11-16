@@ -64,7 +64,8 @@ constexpr size_t kRegionPrefix = 32 + 4 + 8 + 4 + 4 + 1;  // = 53
 // TraceEntry header:
 //   schema(8) shape(8) scope(8) callsite(8) num_inputs(2) num_outputs(2)
 //   num_scalar_args(2) grad_enabled(1) op_flags(1) kernel_id(1) depth(2)
-constexpr size_t kEntryHeader = 8 + 8 + 8 + 8 + 2 + 2 + 2 + 1 + 1 + 1 + 2;  // = 43
+//   scalar_types(2)
+constexpr size_t kEntryHeader = 8 + 8 + 8 + 8 + 2 + 2 + 2 + 1 + 1 + 1 + 2 + 2;  // = 45
 // write_meta layout: sizes[8]*8 + strides[8]*8 + data_ptr(8) + ndim(1)
 //   + dtype(1) + ...
 constexpr size_t kMetaBase = kRegionPrefix + kEntryHeader;  // first meta start

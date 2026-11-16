@@ -15,7 +15,9 @@
 //     int64  scalar values, five of them,
 //     uint16 input count, uint16 output count, uint16 scalar count,
 //     uint8  gradient flag, uint8 packed operation flags,
-//     uint16 nesting depth (OpDepth), six zero bytes
+//     uint16 nesting depth (OpDepth),
+//     uint16 tags of the scalar values (ScalarType2), two bits for each,
+//     four zero bytes
 //
 //   Metadata records, 176 bytes each, at the offsets of the tensor metadata
 //   struct.  Each record goes through decode_tensor_meta, the checked door of
@@ -82,8 +84,10 @@ struct TraceOpRecord {
     // packed set of operation flags, not one of them.
     uint8_t inference_mode = 0;
     OpDepth depth{};
+    // The tag of each scalar value, two bits for each, slot 0 in the low bits.
+    uint16_t scalar_types = 0;
     // The writer writes zero here, and the loader reads nothing.
-    ::fixy::FixedArray<uint8_t, 6> pad{};
+    ::fixy::FixedArray<uint8_t, 4> pad{};
 };
 
 struct LoadedTrace {
@@ -136,8 +140,9 @@ inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 
 // The version of the format.  Version 2 has metadata records of 176 bytes,
 // with a storage size of 64 bits.  Version 3 has op records of 88 bytes, with
-// the nesting depth of each op.  The loader refuses each other version.
-inline constexpr uint32_t TRACE_FORMAT_VERSION = 3;
+// the nesting depth of each op.  Version 4 has the tag of each scalar value.
+// The loader refuses each other version.
+inline constexpr uint32_t TRACE_FORMAT_VERSION = 4;
 
 // The length of each metadata record.  A count whose records would not fit
 // in the bytes that remain is refused before any array is sized from it.
@@ -251,6 +256,9 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
     } else {
         entry.op_flags = static_cast<uint8_t>(entry.op_flags & static_cast<uint8_t>(~op_flag::GRAD_ENABLED));
     }
+    // After the flags, because the tag of slot 4 is in the two high bits of
+    // op_flags.
+    entry.set_packed_scalar_types(read_record_field_<uint16_t, offsetof(TraceOpRecord, scalar_types)>(op_record));
     uint16_t lane = 0;
     const auto scalar_block = record_block_<offsetof(TraceOpRecord, scalar_values), kTraceScalarBlockBytes>(op_record);
     using ScalarLane = ::fixy::Index<decltype(entry.scalar_values)::size()>;
@@ -405,6 +413,7 @@ encode_trace_op(TraceOpRecord const& record) noexcept {
     write_record_field_<offsetof(TraceOpRecord, grad_enabled)>(bytes, record.grad_enabled);
     write_record_field_<offsetof(TraceOpRecord, inference_mode)>(bytes, record.inference_mode);
     write_record_field_<offsetof(TraceOpRecord, depth)>(bytes, record.depth.raw());
+    write_record_field_<offsetof(TraceOpRecord, scalar_types)>(bytes, record.scalar_types);
     return image;
 }
 

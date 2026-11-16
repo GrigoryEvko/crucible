@@ -12,10 +12,15 @@
 //
 // An operation that overflows a limit keeps the scalars before its digest
 // slot as they are, and the digest slot holds the overflow digest.  The
-// digest folds each scalar, the count of the scalars, the metadata of each
-// input tensor past the metadata limit, and the count of those tensors.  An
-// operation that overflows no limit keeps its scalars as they are and has no
-// digest, so its entry is the entry that a path with no digest writes.
+// digest folds each scalar with its tag, the count of the scalars, the
+// metadata of each input tensor past the metadata limit, and the count of
+// those tensors.  The digest slot has the tag INT.  An operation that
+// overflows no limit keeps its scalars as they are and has no digest, so its
+// entry is the entry that a path with no digest writes.
+//
+// Each slot has the tag of its boxed value (ScalarType2 of TraceRing.h).  An
+// argument that boxes into None takes one slot with push_absent, also an
+// absent optional tensor and a None element of a list of optional tensors.
 //
 // The boxed fallback and the unboxed kernels use these types, so the two
 // paths write the same entry for one operation.  The header holds no PyTorch
@@ -49,15 +54,19 @@ template <bool MayOverflow>
 struct ScalarArgs;
 
 // The first kInlineScalars scalars of an operation, as the entry slots take
-// them.  `stored` counts the values, and the slots past it hold zero.  The
-// copy into an entry is then one copy of the kInlineScalars slots.
+// them.  `stored` counts the values, and the slots past it hold zero with the
+// tag INT.  `tags` holds the tag of each stored slot, two bits for each slot,
+// slot 0 in the low bits.  The copy into an entry is then one copy of the
+// kInlineScalars slots and one write of the tags.
 struct StoredScalars {
     ::fixy::FixedArray<int64_t, kInlineScalars> values{};
     uint16_t stored = 0;
+    uint16_t tags = 0;
 
-    void push(int64_t value) noexcept {
+    void push(int64_t value, crucible::ScalarType2 tag) noexcept {
         if (stored < kInlineScalars) {
             values.at(ScalarSlot::check(stored).expect("the test above keeps the count below the slots")) = value;
+            tags = static_cast<uint16_t>(tags | (static_cast<uint32_t>(tag) << (crucible::kScalarTypeBits * stored)));
             ++stored;
         }
     }
@@ -75,12 +84,15 @@ struct ScalarArgs<false> {
 
     StoredScalars inline_scalars{};
 
-    void push(int64_t value) noexcept { inline_scalars.push(value); }
+    void push(int64_t value, crucible::ScalarType2 tag) noexcept { inline_scalars.push(value, tag); }
+
+    // An argument that boxes into None.
+    void push_absent() noexcept { push(0, crucible::ScalarType2::NONE); }
 };
 
 // The scalars of an operation that can carry more than the inline slots.
 // The first kCapacity stay inline, `count` counts each scalar, and `digest`
-// folds each scalar.  O(1) for each push.
+// folds each scalar and its tag.  O(1) for each push.
 template <>
 struct ScalarArgs<true> {
     static constexpr uint16_t kCapacity = kInlineScalars;
@@ -89,11 +101,15 @@ struct ScalarArgs<true> {
     uint32_t count = 0;
     uint64_t digest = kOverflowSeed;
 
-    void push(int64_t value) noexcept {
-        inline_scalars.push(value);
+    void push(int64_t value, crucible::ScalarType2 tag) noexcept {
+        inline_scalars.push(value, tag);
         digest = ::foundation::reflect::combine_ids(digest, static_cast<uint64_t>(value));
+        digest = ::foundation::reflect::combine_ids(digest, static_cast<uint64_t>(tag));
         count = ::fixy::saturating_add(count, uint32_t{1});
     }
+
+    // An argument that boxes into None.
+    void push_absent() noexcept { push(0, crucible::ScalarType2::NONE); }
 };
 
 // The input tensors of an operation past the metadata limit.  Each one folds
@@ -147,13 +163,15 @@ struct input_overflow_of<false> {
     return meta;
 }
 
-// Copies the stored scalars into the slots of an entry.  The slots past the
-// count hold zero in scalars, so the entry holds zero there too.  The two
-// Views have one fixed extent, so the copy of the kInlineScalars slots has no
-// check and no count.  O(kInlineScalars).
+// Copies the stored scalars and their tags into the slots of an entry.  The
+// slots past the count hold zero with the tag INT in scalars, so the entry
+// holds them there too.  The two Views have one fixed extent, so the copy of
+// the kInlineScalars slots has no check and no count.  The tag of slot 4 is in
+// op_flags, and the other bits of op_flags stay.  O(kInlineScalars).
 inline void copy_stored_scalars(crucible::TraceRing::Entry& entry, StoredScalars const& scalars) noexcept {
     entry.num_scalar_args = scalars.stored;
     ::fixy::copy(entry.scalar_values.view(), scalars.values.view());
+    entry.set_packed_scalar_types(scalars.tags);
 }
 
 // Writes the scalar slots of an entry for an operation that cannot
@@ -179,6 +197,11 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
         entry.scalar_values.at(ScalarSlot::check(digest_slot).expect("the digest slot is the last slot or before it")) =
             static_cast<int64_t>(digest);
         entry.num_scalar_args = static_cast<uint16_t>(digest_slot + 1);
+        // The digest slot holds an integer, so its tag is INT, and the bits
+        // of a slot past it are zero.
+        const uint32_t kept_bits = crucible::kScalarTypeBits * digest_slot;
+        entry.set_packed_scalar_types(
+            static_cast<uint16_t>(scalars.inline_scalars.tags & ((uint32_t{1} << kept_bits) - 1)));
     }
 }
 

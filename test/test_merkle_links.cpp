@@ -120,7 +120,7 @@ namespace {
     assert(branch.merkle_hash.raw() == expected);
     // The store keeps the merkle hash of a branch, so the value of this
     // branch is frozen.  It folds the hash of the default guard.
-    assert(branch.merkle_hash.raw() == 0x40BAF0F6D26F2843ULL);
+    assert(branch.merkle_hash.raw() == 0xBE6A163D4C195E8FULL);
 
     // An image of the branch holds the merkle hash of each target.  A
     // resolver that knows only the first target gives the second arm no

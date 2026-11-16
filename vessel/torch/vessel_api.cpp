@@ -279,7 +279,8 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers o
 CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t schema_hash, uint64_t shape_hash,
                                                uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
                                                uint32_t n_metas, const int64_t* scalar_values, uint16_t num_scalars,
-                                               uint8_t grad_enabled, uint8_t inference_mode) noexcept {
+                                               uint16_t scalar_types, uint8_t grad_enabled,
+                                               uint8_t inference_mode) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
@@ -306,6 +307,11 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
         for (uint16_t i = 0; i < stored_scalars; i++)
             entry.scalar_values.at(::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room")) =
                 scalar_values[i];
+        // The tags of the stored values, after the flags, because the tag of
+        // slot 4 is in the two high bits of op_flags.  The bits of a slot past
+        // the stored values are zero, as on the recording paths.
+        entry.set_packed_scalar_types(
+            static_cast<uint16_t>(scalar_types & ((uint32_t{1} << (crucible::kScalarTypeBits * stored_scalars)) - 1)));
     }
 
     // A count with no array behind it is a corrupt caller, as in
@@ -514,6 +520,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         rec.scope_hash = te.scope_hash;
         rec.callsite_hash = te.callsite_hash;
         rec.depth = te.depth;
+        rec.scalar_types = te.scalar_types;
         rec.num_inputs = te.num_inputs();
         rec.num_outputs = te.num_outputs();
         rec.num_scalars = te.num_scalar_args();

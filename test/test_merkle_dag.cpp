@@ -534,14 +534,16 @@ template <class Fake>
         // Moved 2026-09-15 when the fold became a single fmix64 chain.  The
         // empty-region vector is unchanged: an empty region never enters
         // fold_entry_, so it is the seed through the finalizer and nothing else.
+        // Moved 2026-11-16 when each op folds the tags of its scalars, in one
+        // more step of the chain.
         golden("empty region", crucible::compute_content_hash(empty_sp), 0x9CA066F1A4AB2EEAULL);
-        golden("no-tensor op", one_op(e_empty), 0x5C214273922EBA6BULL);
-        golden("one scalar", one_op(e_one), 0x138EA0820281091CULL);
-        golden("five scalars", one_op(e_five), 0xE52B0F5FD799E587ULL);
-        golden("one tensor", one_op(e_real_tensor), 0xF2F8630067F88C92ULL);
+        golden("no-tensor op", one_op(e_empty), 0x1DDB464C64004DC2ULL);
+        golden("one scalar", one_op(e_one), 0xA7708C9BF4E4E435ULL);
+        golden("five scalars", one_op(e_five), 0xC160AB392C7B2657ULL);
+        golden("one tensor", one_op(e_real_tensor), 0x4F04169F2ED5C7DBULL);
         // The region holds three present scalars as its second op.  An entry
         // holds each of its arrays, so the fold has no count-only op.
-        golden("mixed five-op region", crucible::compute_content_hash(real_mix_sp), 0x765C1805603F1528ULL);
+        golden("mixed five-op region", crucible::compute_content_hash(real_mix_sp), 0x53CBA3D1A98038B0ULL);
 
         // The recipe fold is part of the same format, so it is frozen too.
         constexpr crucible::NumericalRecipe golden_recipe = crucible::hashed(crucible::NumericalRecipe{
@@ -556,7 +558,7 @@ template <class Fake>
             .hash = {},
         });
         golden("mixed five-op region under a recipe", crucible::compute_content_hash(real_mix_sp, golden_recipe),
-               0x49BFFF74C7DD564CULL);
+               0xD11F6B4CEABB1252ULL);
 
         assert(moved_vectors == 0
                && "the region content-hash format changed: every persisted content hash and "

@@ -198,12 +198,14 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle h
 // Extended dispatch with scalar arguments and grad/inference flags.
 // scalar_values: up to 5 int64_t values (floats bitcast via memcpy).
 // num_scalars: number of valid entries in scalar_values (0-5).
-CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle h, uint64_t schema_hash,
-                                                                   uint64_t shape_hash, uint16_t num_inputs,
-                                                                   uint16_t num_outputs, const CrucibleMeta* metas,
-                                                                   uint32_t n_metas, const int64_t* scalar_values,
-                                                                   uint16_t num_scalars, uint8_t grad_enabled,
-                                                                   uint8_t inference_mode) CRUCIBLE_VESSEL_NOEXCEPT;
+// scalar_types: the tag of each value (ScalarType2 of crucible/TraceRing.h),
+// two bits for each, the first value in the low bits: 0 an integer, 1 a
+// double, 2 a bool, 3 an argument that boxes into None.  The bits of a slot
+// past num_scalars are ignored.
+CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(
+    CrucibleHandle h, uint64_t schema_hash, uint64_t shape_hash, uint16_t num_inputs, uint16_t num_outputs,
+    const CrucibleMeta* metas, uint32_t n_metas, const int64_t* scalar_values, uint16_t num_scalars,
+    uint16_t scalar_types, uint8_t grad_enabled, uint8_t inference_mode) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Control ──────────────────────────────────────────────────────────
 

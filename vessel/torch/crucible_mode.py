@@ -117,6 +117,7 @@ class _VesselLib:
             ctypes.c_uint32,                  # n_metas
             ctypes.POINTER(ctypes.c_int64),   # scalar_values
             ctypes.c_uint16,                  # num_scalars
+            ctypes.c_uint16,                  # scalar_types, two bits for each value
             ctypes.c_uint8,                   # grad_enabled
             ctypes.c_uint8,                   # inference_mode
         ]
@@ -226,6 +227,15 @@ def _fnv1a(s: bytes) -> int:
     return h
 
 
+def _scalar_tag(val):
+    """Return the tag of a Python scalar, as ScalarType2 of crucible/TraceRing.h numbers it: 0 int, 1 float, 2 bool."""
+    if isinstance(val, bool):
+        return 2
+    if isinstance(val, float):
+        return 1
+    return 0
+
+
 def _scalar_to_int64(val):
     """Bitcast a Python scalar to int64 for TraceRing::Entry::scalar_values."""
     if isinstance(val, bool):
@@ -315,7 +325,7 @@ class CrucibleMode(TorchDispatchMode):
         File format (all little-endian):
           Header (16B):
             char[4]  magic    = "CRTR"
-            uint32   version  = 3
+            uint32   version  = 4
             uint32   num_ops
             uint32   num_metas (total across all ops)
 
@@ -338,7 +348,9 @@ class CrucibleMode(TorchDispatchMode):
             uint8    inference_mode
             uint16   depth          zero: a TorchDispatchMode sees no op
                                     that another op runs
-            uint8[6] pad, zero
+            uint16   scalar_types   the tag of each scalar value, two bits
+                                    for each: 0 int, 1 float, 2 bool
+            uint8[4] pad, zero
 
           Meta records (num_metas × 176B each):
             Raw TensorMeta structs, same layout as CrucibleMeta.
@@ -352,12 +364,12 @@ class CrucibleMode(TorchDispatchMode):
         with open(path, "wb") as f:
             # Header
             f.write(b"CRTR")
-            f.write(struct.pack("<III", 3, num_ops, num_metas))
+            f.write(struct.pack("<III", 4, num_ops, num_metas))
 
             # Op records (88B each)
             for entry in self._trace_ops:
                 (sh, hsh, sv, n_in, n_out, n_sc, grad, infer,
-                 mutable, scope_h, tags) = entry
+                 mutable, scope_h, tags, scalar_types) = entry
                 f.write(struct.pack("<QQ", sh, hsh))
                 f.write(struct.pack("<QQ", scope_h, tags))  # scope_hash, op_tags (in callsite slot)
                 f.write(struct.pack("<5q", *sv))
@@ -365,8 +377,8 @@ class CrucibleMode(TorchDispatchMode):
                 # Pack is_mutable into bit 1 of inference_mode byte
                 infer_packed = (infer & 1) | ((mutable & 1) << 1)
                 f.write(struct.pack("<BB", grad, infer_packed))
-                # The depth and the pad.
-                f.write(struct.pack("<H6x", 0))
+                # The depth, the tags of the scalar values, and the pad.
+                f.write(struct.pack("<HH4x", 0, scalar_types))
 
             # Meta records (raw bytes, already in CrucibleMeta layout)
             f.write(self._trace_metas)
@@ -422,13 +434,15 @@ class CrucibleMode(TorchDispatchMode):
         else:
             metas_ptr = None
 
-        # Extract scalar arguments from args and kwargs
+        # Extract scalar arguments from args and kwargs, each with its tag.
         scalars = self._extract_scalars(args, kwargs)
         num_scalars = min(len(scalars), 5)
         ScalarArray = ctypes.c_int64 * 5
         scalar_buf = ScalarArray()
+        scalar_types = 0
         for i in range(num_scalars):
-            scalar_buf[i] = scalars[i]
+            scalar_buf[i], tag = scalars[i]
+            scalar_types |= tag << (2 * i)
         scalars_ptr = ctypes.cast(scalar_buf, ctypes.POINTER(ctypes.c_int64))
 
         # Grad/inference mode flags
@@ -467,7 +481,7 @@ class CrucibleMode(TorchDispatchMode):
                 schema_hash, shape_hash, sv,
                 num_inputs, num_outputs, num_scalars,
                 grad_on, infer_on, is_mutable,
-                scope_hash, op_tags,
+                scope_hash, op_tags, scalar_types,
             ))
             if n_metas > 0:
                 self._trace_metas.extend(bytes(metas))
@@ -478,7 +492,7 @@ class CrucibleMode(TorchDispatchMode):
             schema_hash, shape_hash,
             num_inputs, num_outputs,
             metas_ptr, n_metas,
-            scalars_ptr, num_scalars,
+            scalars_ptr, num_scalars, scalar_types,
             grad_on, infer_on,
         )
 
@@ -653,12 +667,12 @@ class CrucibleMode(TorchDispatchMode):
 
     @staticmethod
     def _extract_scalars(args, kwargs):
-        """Extract scalar arguments as int64 bitcast values."""
+        """Extract scalar arguments as pairs of an int64 bitcast value and its tag."""
         scalars = []
         for a in args:
             if isinstance(a, (int, float, bool)) and not isinstance(a, torch.Tensor):
-                scalars.append(_scalar_to_int64(a))
+                scalars.append((_scalar_to_int64(a), _scalar_tag(a)))
         for v in kwargs.values():
             if isinstance(v, (int, float, bool)) and not isinstance(v, torch.Tensor):
-                scalars.append(_scalar_to_int64(v))
+                scalars.append((_scalar_to_int64(v), _scalar_tag(v)))
         return scalars

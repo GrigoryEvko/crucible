@@ -58,10 +58,10 @@ MAX_ITERATIONS = 60
 UPDATE_WIDTH = 40
 
 HEADER = struct.Struct("<4sIII")
-# The op record of version 3 of the format: the four hashes, the five scalar
+# The op record of version 4 of the format: the four hashes, the five scalar
 # values, the three counts, the gradient flag, the packed op flags, the nesting
-# depth, and six bytes of pad.
-OP_RECORD = struct.Struct("<QQQQ5qHHHBBH6x")
+# depth, the tags of the scalar values, and four bytes of pad.
+OP_RECORD = struct.Struct("<QQQQ5qHHHBBHH4x")
 NAME_HEAD = struct.Struct("<QH")
 META_SIZE = ctypes.sizeof(crucible_mode._VesselLib.Meta)
 META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset
@@ -92,6 +92,15 @@ class TraceOp:
     flags: int
     # The nesting depth of the op: zero for an op that no recorded op runs.
     depth: int
+    # The bytes of the op record, as the file holds them.
+    record: bytes
+    # The tag of each scalar value, two bits for each, slot 0 in the low bits:
+    # 0 INT, 1 FLOAT, 2 BOOL, 3 NONE.
+    scalar_types: int
+
+    def scalar_tag(self, slot: int) -> int:
+        """Return the tag of the scalar value of one slot."""
+        return (self.scalar_types >> (2 * slot)) & 0x3
 
     def dtypes(self) -> list[int]:
         """Return the element type byte of each meta."""
@@ -107,19 +116,19 @@ def read_trace(path: Path) -> list[TraceOp]:
     records = []
     offset = HEADER.size
     for _ in range(num_ops):
-        records.append(OP_RECORD.unpack_from(data, offset))
+        records.append((OP_RECORD.unpack_from(data, offset), data[offset:offset + OP_RECORD.size]))
         offset += OP_RECORD.size
     ops = []
-    for record in records:
+    for record, raw in records:
         schema_hash, _shape, _scope, _callsite, *values = record[:9]
         num_inputs, num_outputs, num_scalars = record[9:12]
-        flags, depth = record[13], record[14]
+        flags, depth, scalar_types = record[13], record[14], record[15]
         metas = []
         for _ in range(num_inputs + num_outputs):
             metas.append(data[offset:offset + META_SIZE])
             offset += META_SIZE
         ops.append(TraceOp(schema_hash, tuple(values[:num_scalars]), num_inputs, num_outputs, tuple(metas), flags,
-                           depth))
+                           depth, raw, scalar_types))
     return ops
 
 

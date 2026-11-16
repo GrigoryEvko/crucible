@@ -51,8 +51,10 @@ using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::s
 // a storage of 4 GiB or more keeps its size.
 // 12 (2026-11-16): each op has its nesting depth on the wire, after its kernel
 // id, so a region of the store keeps the ops that a lowering takes.
+// 13 (2026-11-16): each op has the tags of its scalars on the wire, after its
+// depth, and the content hash folds them.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{12});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{13});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
@@ -504,6 +506,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         }
         w.w(std::to_underlying(te.kernel_id));
         w.w(te.depth.raw());
+        w.w(te.scalar_types);
 
         // Each array of the entry holds its count.
         for (const TensorMeta& meta : te.input_metas()) {
@@ -643,6 +646,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         }
         // Each value of the word is a depth (OpDepth).
         te.depth = OpDepth{r.r<uint16_t>()};
+        // Each value of two bits is a tag, and the content hash folds only the
+        // bits of the slots below the count.
+        te.scalar_types = r.r<uint16_t>();
 
         const ::fixy::View<TensorMeta> input_metas = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
         for (TensorMeta& meta : input_metas) {

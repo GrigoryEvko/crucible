@@ -1211,6 +1211,10 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
         ::fixy::copy(scalars, re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
             .expect("the two runs hold the scalars of the op");
         te.set_scalar_args(scalars);
+        // The tags of the copied slots.  The check above keeps the count at
+        // most five, so the shift stays below the 16 bits of the tags.
+        te.scalar_types =
+            static_cast<uint16_t>(re.packed_scalar_types() & ((uint32_t{1} << (kScalarTypeBits * n_scalars)) - 1));
 
         // The windows of this op.  An op with no metadata has no tensors,
         // because the scan refused an op with tensors and no metadata index.

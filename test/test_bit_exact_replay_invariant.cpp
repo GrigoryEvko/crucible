@@ -228,10 +228,11 @@ struct Built {
 
 // The committed reference.  Printed by this test when it disagrees, so a
 // deliberate format change can be read off a failing run rather than
-// recomputed by hand.
-constexpr uint64_t kReferenceHeadContentHash = 0x3a0a495d6cb7456cULL;
-constexpr uint64_t kReferenceTailContentHash = 0x2b13c26aae81678fULL;
-constexpr uint64_t kReferenceMerkleHash = 0xbd2ec96379ec78fbULL;
+// recomputed by hand.  The three hashes moved on 2026-11-16, when each op
+// folds the tags of its scalars.
+constexpr uint64_t kReferenceHeadContentHash = 0x514111357be369d0ULL;
+constexpr uint64_t kReferenceTailContentHash = 0x5807a16c53fd5b7eULL;
+constexpr uint64_t kReferenceMerkleHash = 0x16d890fdc44b382aULL;
 constexpr uint64_t kReferencePoolBytes = 12544;
 
 }  // namespace

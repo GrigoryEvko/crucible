@@ -536,7 +536,7 @@ private:
 //
 // The boxing rules the table encodes, from ATen/core/ivalue.h:
 //   * ScalarType, Layout and MemoryFormat box into the Int tag (:991-1005),
-//     so each contributes its ordinal.
+//     so each contributes its ordinal with the tag INT.
 //   * Device, Generator, Storage, Stream and a string carry tags of their
 //     own, so each contributes nothing.
 //   * A Scalar boxes by its payload: Int, Double or Bool contributes, and
@@ -544,7 +544,10 @@ private:
 //     numbers, and each element contributes as a Scalar does.
 //   * A concrete SymInt boxes into Int and contributes. A symbolic one boxes
 //     into the SymInt tag and does not.
-//   * An absent optional boxes into None and contributes nothing.
+//   * An absent optional boxes into None, whatever its payload, and
+//     contributes one slot with the value zero and the tag NONE.  So does a
+//     None element of a list of optional tensors.
+// Each slot has the tag of its boxed value (ScalarType2 of TraceRing.h).
 // =====================================================================
 
 enum class ArgumentKind : uint8_t {
@@ -684,12 +687,15 @@ inline constexpr bool is_scalar_kind_v =
     || argument_kind_of<T>() == ArgumentKind::Scalar || argument_kind_of<T>() == ArgumentKind::SymInt;
 
 // The scalar slots one argument can fill, with kMoreThanInlineScalars for a
-// list, whose length has no compile-time bound.
+// list, whose length has no compile-time bound.  An absent optional fills
+// one slot, so an optional fills at least one.
 template <class T>
 [[nodiscard]] consteval uint32_t scalar_bound_of() noexcept {
     constexpr ArgumentKind kind = argument_kind_of<T>();
     if constexpr (kind == ArgumentKind::Optional)
-        return scalar_bound_of<optional_payload_t<T>>();
+        return ::fixy::max(uint32_t{1}, scalar_bound_of<optional_payload_t<T>>());
+    else if constexpr (kind == ArgumentKind::OptionalTensorList)
+        return kMoreThanInlineScalars;
     else if constexpr (is_scalar_kind_v<T>)
         return 1;
     else if constexpr (kind == ArgumentKind::IntegerList || kind == ArgumentKind::DoubleList
@@ -959,34 +965,43 @@ void record_argument(Recording<Capacity, MayOverflow>& recording, const T& value
         // returns by value, so a reference would bind to a temporary.
         for (const auto element : value) {
             const std::optional<at::Tensor> tensor = element;
-            if (tensor.has_value()) recording.add_input(*tensor);
+            if (tensor.has_value()) {
+                recording.add_input(*tensor);
+            } else {
+                recording.scalars.push_absent();
+            }
         }
     } else if constexpr (kind == ArgumentKind::Optional) {
-        if (value.has_value()) record_argument(recording, *value);
+        if (value.has_value()) {
+            record_argument(recording, *value);
+        } else {
+            recording.scalars.push_absent();
+        }
     } else if constexpr (kind == ArgumentKind::Bool) {
-        recording.scalars.push(value ? 1 : 0);
+        recording.scalars.push(value ? 1 : 0, crucible::ScalarType2::BOOL);
     } else if constexpr (kind == ArgumentKind::Integer) {
-        recording.scalars.push(static_cast<int64_t>(value));
+        recording.scalars.push(static_cast<int64_t>(value), crucible::ScalarType2::INT);
     } else if constexpr (kind == ArgumentKind::Enumerator) {
-        recording.scalars.push(static_cast<int64_t>(std::to_underlying(value)));
+        recording.scalars.push(static_cast<int64_t>(std::to_underlying(value)), crucible::ScalarType2::INT);
     } else if constexpr (kind == ArgumentKind::Double) {
-        recording.scalars.push(::fixy::bit_cast<int64_t>(value));
+        recording.scalars.push(::fixy::bit_cast<int64_t>(value), crucible::ScalarType2::FLOAT);
     } else if constexpr (kind == ArgumentKind::Scalar) {
         if (value.isFloatingPoint()) {
-            recording.scalars.push(::fixy::bit_cast<int64_t>(value.toDouble()));
+            recording.scalars.push(::fixy::bit_cast<int64_t>(value.toDouble()), crucible::ScalarType2::FLOAT);
         } else if (value.isBoolean()) {
-            recording.scalars.push(value.toBool() ? 1 : 0);
+            recording.scalars.push(value.toBool() ? 1 : 0, crucible::ScalarType2::BOOL);
         } else if (value.isIntegral(/*includeBool=*/false)) {
-            recording.scalars.push(value.toLong());
+            recording.scalars.push(value.toLong(), crucible::ScalarType2::INT);
         }
     } else if constexpr (kind == ArgumentKind::SymInt) {
-        if (const auto concrete = value.maybe_as_int(); concrete.has_value()) recording.scalars.push(*concrete);
+        if (const auto concrete = value.maybe_as_int(); concrete.has_value())
+            recording.scalars.push(*concrete, crucible::ScalarType2::INT);
     } else if constexpr (kind == ArgumentKind::IntegerList) {
         for (const int64_t element : value)
-            recording.scalars.push(element);
+            recording.scalars.push(element, crucible::ScalarType2::INT);
     } else if constexpr (kind == ArgumentKind::DoubleList) {
         for (const double element : value)
-            recording.scalars.push(::fixy::bit_cast<int64_t>(element));
+            recording.scalars.push(::fixy::bit_cast<int64_t>(element), crucible::ScalarType2::FLOAT);
     } else if constexpr (kind == ArgumentKind::SymIntList) {
         for (const c10::SymInt& element : value)
             record_argument(recording, element);

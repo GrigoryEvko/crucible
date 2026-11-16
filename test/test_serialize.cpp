@@ -82,6 +82,8 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         op.torch_function = (i == 2);
         // Ops 0 and 1 run inside op 2, and op 0 inside op 1.
         op.depth = crucible::OpDepth{static_cast<uint16_t>(NUM_OPS - 1 - i)};
+        // The one scalar of op i has the tag i: an integer, a double, a bool.
+        op.scalar_types = static_cast<uint16_t>(i);
 
         crucible::TensorMeta large_input = make_meta(4, 8);
         large_input.storage_nbytes = kLargeStorageBytes;
@@ -134,6 +136,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         assert(loaded_op.training_phase == source_op.training_phase);
         assert(loaded_op.torch_function == source_op.torch_function);
         assert(loaded_op.depth == source_op.depth && "the store keeps the nesting depth of each op");
+        assert(loaded_op.scalar_types == source_op.scalar_types && "the store keeps the tag of each scalar");
 
         for (uint16_t j = 0; j < source_op.num_inputs(); j++) {
             const crucible::TensorMeta& loaded_meta = crucible::test::element_at(loaded_op.input_metas(), j);
@@ -198,7 +201,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 12;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 13;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -207,9 +210,11 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
 
         // CDAG_VERSION 11 writes the storage size of each meta in 8 bytes,
         // not 4.  CDAG_VERSION 12 writes the nesting depth of each op in 2
-        // bytes.  The image holds 3 ops, so it is 6 bytes longer than in 11.
-        constexpr size_t EXPECTED_WIRE_BYTES = 1814;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0x61e3b395612f25e8ULL;
+        // bytes, and CDAG_VERSION 13 the tags of its scalars in 2 more.  The
+        // image holds 3 ops, so it is 12 bytes longer than in 11.  The
+        // content hash of the header folds the tags.
+        constexpr size_t EXPECTED_WIRE_BYTES = 1820;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0x2dc81cb14581a64aULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,
