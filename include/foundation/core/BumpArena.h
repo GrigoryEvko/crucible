@@ -109,14 +109,18 @@ inline void bump_unpoison_(void const* /*first*/, std::size_t /*count*/) noexcep
 [[noreturn, gnu::cold, gnu::noinline]] void refuse_arena_address_(std::size_t alignment) noexcept;
 
 // The address at the alignment, or the end of the process when the rounding
-// does not fit in the address space.  A user address of Linux on x86_64 and
-// on aarch64 is in the lower half of the address space, and an alignment of
-// a type is at most the size of that half.  So the optimizer reads that the
-// rounding does not wrap, and the test of the Option folds away.  The refusal
-// is out of line.
+// does not fit in the address space.  An alignment of a type is at most the
+// size of half the address space.  On x86_64, bit 63 of a user address is
+// zero, also with linear address masking, so the optimizer reads that the
+// rounding does not wrap, and the test of the Option folds away.  On aarch64
+// the top byte of an address can hold a tag (TBI, MTE, HWASan), so an
+// address can be above __PTRDIFF_MAX__, and that arm makes no assumption
+// about the address.  The refusal is out of line.
 [[nodiscard, gnu::always_inline]] inline std::uintptr_t arena_aligned_(std::uintptr_t address,
                                                                        std::size_t alignment) noexcept {
+#if defined(__x86_64__)
     [[assume(address <= static_cast<std::uintptr_t>(__PTRDIFF_MAX__))]];
+#endif
     [[assume(alignment <= static_cast<std::size_t>(__PTRDIFF_MAX__))]];
     Option<std::uintptr_t> rounded = align_up(address, std::uintptr_t{alignment});
     if (rounded.is_none()) [[unlikely]] {
