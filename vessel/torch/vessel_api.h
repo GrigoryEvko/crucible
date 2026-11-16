@@ -155,7 +155,7 @@ typedef struct {
 // Python ctypes consumers cross-check via crucible_abi_version() at
 // load.  The constant is also exposed as a #define so C consumers can
 // bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 5ULL
+#define CRUCIBLE_VESSEL_ABI_VERSION 6ULL
 
 // Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
 // Never aborts — pure constant return.  Used by crucible_native.py
@@ -176,23 +176,18 @@ CRUCIBLE_VESSEL_API void crucible_destroy(CrucibleHandle h) CRUCIBLE_VESSEL_NOEX
 // Use for: op name → schema_hash.
 CRUCIBLE_VESSEL_API uint64_t crucible_hash_string(const char* s) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// FNV-1a hash of tensor shapes. Concatenates (ndim, sizes[0..ndim-1])
-// for each tensor. Use for: input shapes → shape_hash.
-// all_sizes: flat array of sizes for all tensors concatenated.
-// ndims: array of ndim values, one per tensor.
-// n_tensors: number of tensors.
-CRUCIBLE_VESSEL_API uint64_t crucible_hash_shapes(const int64_t* all_sizes, const uint8_t* ndims,
-                                                  uint32_t n_tensors) CRUCIBLE_VESSEL_NOEXCEPT;
-
 // ── Dispatch ─────────────────────────────────────────────────────────
 
 // Unified dispatch: records in RECORDING mode, checks guards in COMPILED.
 // metas: array of CrucibleMeta, [inputs..., outputs...].
 // n_metas: num_inputs + num_outputs.
+// The thunk computes the guard word of the op from the records of its inputs
+// and from its scalars, as the native recording paths do.  The caller gives no
+// guard word.
 // An op that the checks of the thunk refuse gives the action REFUSED.
 CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle h, uint64_t schema_hash,
-                                                                uint64_t shape_hash, uint16_t num_inputs,
-                                                                uint16_t num_outputs, const CrucibleMeta* metas,
+                                                                uint16_t num_inputs, uint16_t num_outputs,
+                                                                const CrucibleMeta* metas,
                                                                 uint32_t n_metas) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Extended dispatch with scalar arguments and grad/inference flags.
@@ -202,10 +197,12 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle h
 // two bits for each, the first value in the low bits: 0 an integer, 1 a
 // double, 2 a bool, 3 an argument that boxes into None.  The bits of a slot
 // past num_scalars are ignored.
-CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(
-    CrucibleHandle h, uint64_t schema_hash, uint64_t shape_hash, uint16_t num_inputs, uint16_t num_outputs,
-    const CrucibleMeta* metas, uint32_t n_metas, const int64_t* scalar_values, uint16_t num_scalars,
-    uint16_t scalar_types, uint8_t grad_enabled, uint8_t inference_mode) CRUCIBLE_VESSEL_NOEXCEPT;
+CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle h, uint64_t schema_hash,
+                                                                   uint16_t num_inputs, uint16_t num_outputs,
+                                                                   const CrucibleMeta* metas, uint32_t n_metas,
+                                                                   const int64_t* scalar_values, uint16_t num_scalars,
+                                                                   uint16_t scalar_types, uint8_t grad_enabled,
+                                                                   uint8_t inference_mode) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Control ──────────────────────────────────────────────────────────
 

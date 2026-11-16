@@ -141,8 +141,12 @@ inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 // The version of the format.  Version 2 has metadata records of 176 bytes,
 // with a storage size of 64 bits.  Version 3 has op records of 88 bytes, with
 // the nesting depth of each op.  Version 4 has the tag of each scalar value.
-// The loader refuses each other version.
-inline constexpr uint32_t TRACE_FORMAT_VERSION = 4;
+// Version 5 has the guard word of each op in the field of the shape hash: the
+// depth, the counts, the tags, the strides, the element types and the scalars
+// fold into it (compute_shape_hash of vessel/torch/entry_slots.h).  A word of
+// an earlier version compares with no live op.  The loader refuses each other
+// version.
+inline constexpr uint32_t TRACE_FORMAT_VERSION = 5;
 
 // The length of each metadata record.  A count whose records would not fit
 // in the bytes that remain is refused before any array is sized from it.

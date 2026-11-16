@@ -79,8 +79,9 @@ namespace crucible::vessel {
 //
 // One definition for both recording paths and for the Python ctypes path in
 // vessel_api.cpp. The background thread joins a trace entry to the schema
-// table on this hash and a replay compares shape hashes across runs, so two
-// spellings of the fold would produce traces that cannot be compared.
+// table on this hash, so two spellings of the fold would give two schema
+// hashes for one operator.  The guard word of an entry is a different fold
+// (compute_shape_hash of entry_slots.h).
 // =====================================================================
 
 inline constexpr uint64_t kFnvOffset = 0xcbf29ce484222325ULL;
@@ -338,39 +339,6 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
     return is_each_enumeration_named;
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-
-// =====================================================================
-// Shape hash
-//
-// FNV-1a over (ndim, sizes[0..ndim-1]) per input tensor, one accumulator
-// chained across them. Identical to vessel_api.cpp's crucible_hash_shapes(),
-// because a replay compares this value across runs and across paths.
-// =====================================================================
-
-// GCC chooses for each recording kernel if it inlines the loop or calls the
-// one copy of it in the shard.  A loop in each kernel makes the code of the
-// shard larger.
-[[nodiscard]] inline crucible::ShapeHash compute_shape_hash(::fixy::View<const crucible::TensorMeta> inputs) {
-    uint64_t accumulator = kFnvOffset;
-    for (const crucible::TensorMeta& input : inputs) {
-        accumulator = fnv1a_step(accumulator, input.ndim);
-        // `sizes` is a TensorDimArray, whose lanes stay plain int64_t.  The
-        // fold reads the bytes of each lane below the rank, the low byte
-        // first, which is the order of the bytes of a little-endian lane.
-        // fill_meta clamps the rank to the lane count, so the min changes no
-        // rank, and it proves that the window fits.
-        const size_t rank = ::fixy::min(static_cast<size_t>(input.ndim), size_t{::crucible::kMaxTensorNDim});
-        const ::fixy::View<int64_t const> lanes =
-            ::fixy::View<int64_t const>{input.sizes.lanes()}.window(0, rank).expect(
-                "a rank of at most the lane count fits the lanes");
-        for (const int64_t lane : lanes) {
-            const auto bits = static_cast<uint64_t>(lane);
-            for (uint32_t shift = 0; shift < 64; shift += 8)
-                accumulator = fnv1a_step(accumulator, static_cast<uint8_t>(bits >> shift));
-        }
-    }
-    return crucible::ShapeHash{accumulator};
-}
 
 // =====================================================================
 // The backward window
@@ -1226,10 +1194,10 @@ void write_recorded_scalars(crucible::TraceRing::Entry& entry, const Recording<C
 // place of the one copy of each family.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the dispatch keys of PyTorch give the flags of the entry")
 template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow>
-[[gnu::noinline]] void
-append_trace_entry(const Recording<Capacity, MayOverflow>& recording, crucible::SchemaHash schema_hash,
-                   crucible::ShapeHash shape_hash, c10::DispatchKeySet dispatch_keys, crucible::Vigil& vigil,
-                   crucible::VigilFgCtx const& fg, crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
+[[gnu::noinline]] void append_trace_entry(const Recording<Capacity, MayOverflow>& recording,
+                                          crucible::SchemaHash schema_hash, c10::DispatchKeySet dispatch_keys,
+                                          crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                          crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     // A tensor whose element type, device or layout names no crucible
     // enumerator has no meta, so the operation stays out of the ring, as an
@@ -1240,7 +1208,6 @@ append_trace_entry(const Recording<Capacity, MayOverflow>& recording, crucible::
 
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = schema_hash;
-    entry.shape_hash = shape_hash;
     entry.op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
     write_recorded_scalars(entry, recording);
 
@@ -1251,6 +1218,11 @@ append_trace_entry(const Recording<Capacity, MayOverflow>& recording, crucible::
     const ::fixy::View<const crucible::TensorMeta> records = recording.records();
     entry.num_inputs = recording.counts.inputs;
     entry.num_outputs = recording.counts.outputs;
+
+    // The guard word reads the scalar slots and the counts above, and the
+    // records of the inputs.  The records hold the inputs as they were before
+    // the operation ran, and no operation of the redispatch wrote them.
+    entry.shape_hash = compute_shape_hash(recording.input_records(), entry, depth);
 
     // The trust ladder, discharged at compile time. Every bound it checks has
     // a compile-time ceiling on this path, and RecordKernel asserts that
@@ -1454,13 +1426,12 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         // written by it.
         OpRecording recording{metas};
         (record_argument(recording, args), ...);
-        const auto shape_hash = compute_shape_hash(recording.input_records());
         const auto scope_hash = crucible::ScopeHash{c10::CrucibleState::get_tls_state().scope_hash()};
 
         if constexpr (std::is_void_v<Ret>) {
             Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
-            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil, fg,
-                                                       scope_hash, depth);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, dispatch_keys, vigil, fg, scope_hash,
+                                                       depth);
         } else if constexpr (std::is_reference_v<Ret>) {
             // An in-place or out= operator returns a reference to an argument
             // the caller owns, which outlives this frame. The result is held
@@ -1470,14 +1441,14 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
             // DispatchKeySet by value.
             auto* result = &Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
             record_result(recording, *result);
-            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil, fg,
-                                                       scope_hash, depth);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, dispatch_keys, vigil, fg, scope_hash,
+                                                       depth);
             return *result;
         } else {
             Ret result = Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
             record_result(recording, result);
-            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil, fg,
-                                                       scope_hash, depth);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, dispatch_keys, vigil, fg, scope_hash,
+                                                       depth);
             return result;
         }
     }

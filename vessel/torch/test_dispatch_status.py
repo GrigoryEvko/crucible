@@ -52,8 +52,8 @@ MAX_OP_RECORDS = 128
 FLOAT = 6
 
 # The schema hash of each op of the test.  The Vigil reads it as an opaque key.
+# The thunk computes the guard word from the records.
 SCHEMA_HASH = 0x5EED_0001
-SHAPE_HASH = 0x5EED_0002
 
 
 def records(count: int) -> ctypes.Array:
@@ -73,15 +73,13 @@ def bind(lib: ctypes.CDLL) -> tuple:
     dispatch_op = lib.crucible_dispatch_op
     dispatch_op.restype = DispatchResult
     dispatch_op.argtypes = [
-        ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16,
-        ctypes.POINTER(Meta), ctypes.c_uint32,
+        ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
     ]
     dispatch_op_ex = lib.crucible_dispatch_op_ex
     dispatch_op_ex.restype = DispatchResult
     dispatch_op_ex.argtypes = [
-        ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16,
-        ctypes.POINTER(Meta), ctypes.c_uint32, ctypes.POINTER(ctypes.c_int64), ctypes.c_uint16, ctypes.c_uint16,
-        ctypes.c_uint8, ctypes.c_uint8,
+        ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_int64), ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint8,
     ]
     return dispatch_op, dispatch_op_ex
 
@@ -137,13 +135,12 @@ def main() -> int:
     try:
         problems = run_entry(
             "crucible_dispatch_op",
-            lambda h, inputs, outputs, metas, count: dispatch_op(h, SCHEMA_HASH, SHAPE_HASH, inputs, outputs, metas,
-                                                                 count),
+            lambda h, inputs, outputs, metas, count: dispatch_op(h, SCHEMA_HASH, inputs, outputs, metas, count),
             handle)
         problems += run_entry(
             "crucible_dispatch_op_ex",
-            lambda h, inputs, outputs, metas, count: dispatch_op_ex(h, SCHEMA_HASH, SHAPE_HASH, inputs, outputs, metas,
-                                                                    count, None, 0, 0, 0, 0),
+            lambda h, inputs, outputs, metas, count: dispatch_op_ex(h, SCHEMA_HASH, inputs, outputs, metas, count,
+                                                                    None, 0, 0, 0, 0),
             handle)
     finally:
         vessel.crucible_destroy(handle)

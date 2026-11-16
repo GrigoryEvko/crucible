@@ -99,9 +99,10 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // pulled in here so the call sites below read as they did when the definitions
 // were local.
 //
-// The hashes must also match vessel_api.cpp's crucible_hash_string and
-// crucible_hash_shapes, so that hash("aten::mm.default") is the same value in
-// the Python ctypes path.
+// The schema hash must also match vessel_api.cpp's crucible_hash_string, so
+// that hash("aten::mm.default") is the same value in the Python ctypes path.
+// The guard word (compute_shape_hash of entry_slots.h) is one function for
+// the three paths.
 // =====================================================================
 
 using crucible::vessel::fnv1a_step;
@@ -586,7 +587,6 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
 
     // -- Compute hashes + mutability -----------------------------------
     const auto [schema_hash, is_mutable, is_foreach] = get_schema_info(vigil, op, schema);
-    const auto shape_hash = compute_shape_hash(first_records(metas, counts.inputs));
 
     // -- Execute eagerly (Tier 1: always redispatch) ------------------
     op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, &stack);
@@ -603,7 +603,6 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     // -- Build TraceRing::Entry ---------------------------------------
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = schema_hash;
-    entry.shape_hash = shape_hash;
     entry.num_inputs = counts.inputs;
     entry.num_outputs = counts.outputs;
 
@@ -618,6 +617,9 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     entry.op_flags = flags;
     crucible::vessel::write_scalar_slots(entry, extracted.scalars, extracted.overflow);
+    // The records of the inputs hold the inputs as they were before the
+    // redispatch, and no operation of the redispatch wrote them.
+    entry.shape_hash = compute_shape_hash(first_records(metas, counts.inputs), entry, depth);
 
     // -- Scope hash from TLS (set by Python module hooks) -------------
     const auto scope_hash = crucible::ScopeHash{state.scope_hash()};

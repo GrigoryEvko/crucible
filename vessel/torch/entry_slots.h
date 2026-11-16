@@ -22,12 +22,17 @@
 // argument that boxes into None takes one slot with push_absent, also an
 // absent optional tensor and a None element of a list of optional tensors.
 //
-// The boxed fallback and the unboxed kernels use these types, so the two
-// paths write the same entry for one operation.  The header holds no PyTorch
-// type, so a test of each build can drive it.
+// The guard word of an entry (compute_shape_hash) folds the input metadata
+// and the scalar slots after they are written.
+//
+// The boxed fallback, the unboxed kernels and the C entries use these types,
+// so the three paths write the same entry for one operation.  The header
+// holds no PyTorch type, so a test of each build can drive it.
 
+#include <crucible/MerkleDag.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
+#include <crucible/Types.h>
 #include <fixy/Core.h>
 #include <foundation/reflect/Hash.h>
 
@@ -203,6 +208,76 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
         entry.set_packed_scalar_types(
             static_cast<uint16_t>(scalars.inline_scalars.tags & ((uint32_t{1} << kept_bits) - 1)));
     }
+}
+
+// =====================================================================
+// The guard word of an operation
+//
+// The replay compares two words of each live op with the op of the region:
+// the schema hash and this word (ReplayEngine::advance).  The alignment, the
+// search for an alternate region and the iteration detector compare the same
+// pair.  So the word holds each field that the content hash of a region folds
+// for the op and that the op shows before it runs, apart from the wiring:
+//
+//   - The depth of the op, the count of its inputs, the count of its scalars
+//     and the tag of each stored scalar
+//   - For each input, the word of the content hash (pack_tensor_word: the
+//     extents, the strides, the element type and the device), the rank, the
+//     layout and the negative and conjugate bits
+//   - Each stored scalar slot, with the overflow digest of an op that has
+//     more scalars or more inputs than the slots.
+//
+// A changed alpha, stride or element type thus gives a different word, and
+// the replay diverges.  The word reads no data address, no version counter
+// and no autograd field, because these change at each iteration or in each
+// process.  The storage offset of an input stays out too: the binding of an
+// external input reads the live tensor.
+//
+// A scalar that changes at each iteration, such as the step size of AdamW
+// with no fused kernel or a schedule of the learning rate, changes the word
+// of its op at each iteration.  Then the detector finds no period, and the
+// Vigil records and builds no region.  A later design binds such a scalar
+// as an input of the region, as an external tensor is bound.  That design
+// splits the word into a part of the structure, which keys the detector, and
+// a part of the values, which the replay binds at each iteration.
+//
+// The three recording paths call this function after they write the scalar
+// slots of the entry, so their words agree.  O(inputs + kInlineScalars).
+// =====================================================================
+
+// The seed of the guard word: "guardwrd" in ASCII.
+inline constexpr uint64_t kGuardSeed = 0x6775617264777264ULL;
+
+// The bits of the meta of an input that the content hash does not fold: the
+// rank, the layout and the negative and conjugate bits.  They take bits 24 to
+// 41, above the element type and the device of pack_tensor_word.
+[[nodiscard]] inline uint64_t pack_guard_bits(crucible::TensorMeta const& meta) noexcept {
+    constexpr auto kValueBits = static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ);
+    const uint64_t layout = ::fixy::bit_cast<uint8_t>(meta.layout);
+    const uint64_t value_flags = static_cast<uint8_t>(meta.flags & kValueBits);
+    return (uint64_t{meta.ndim} | (layout << 8) | (value_flags << 16)) << 24;
+}
+
+[[nodiscard]] inline crucible::ShapeHash compute_shape_hash(::fixy::View<const crucible::TensorMeta> inputs,
+                                                            crucible::TraceRing::Entry const& entry,
+                                                            crucible::OpDepth depth) noexcept {
+    // The slots past the count hold zero, and their tags are zero.  The mask
+    // keeps each bit of a slot past the count out of the word all the same.
+    const uint32_t stored = ::fixy::min(uint32_t{entry.num_scalar_args}, uint32_t{kInlineScalars});
+    const uint32_t tag_mask = (uint32_t{1} << (crucible::kScalarTypeBits * stored)) - 1;
+    const uint64_t header = uint64_t{entry.num_inputs} | (uint64_t{entry.num_scalar_args} << 16)
+                          | (uint64_t{entry.packed_scalar_types() & tag_mask} << 32) | (uint64_t{depth.raw()} << 48);
+
+    uint64_t word = ::foundation::reflect::combine_ids(kGuardSeed, header);
+    for (crucible::TensorMeta const& input : inputs)
+        word = ::foundation::reflect::combine_ids(
+            word,
+            crucible::pack_tensor_word(input, crucible::detail::dim_hash_scalar_det(input)) ^ pack_guard_bits(input));
+    const ::fixy::View<int64_t const> scalars =
+        entry.scalar_values.view().window(0, stored).expect("the count of the stored scalars fits the slots");
+    for (const int64_t scalar : scalars)
+        word = ::foundation::reflect::combine_ids(word, static_cast<uint64_t>(scalar));
+    return crucible::ShapeHash{word};
 }
 
 }  // namespace crucible::vessel

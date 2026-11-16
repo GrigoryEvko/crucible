@@ -36,7 +36,7 @@ namespace crucible {
 
 enum class ReplayStatus : uint8_t {
     MATCH,  // the operation matches the compiled trace and its outputs are ready
-    DIVERGED,  // a guard failed: either the operation or its shapes differ
+    DIVERGED,  // a guard failed: the operation, its inputs or its scalars differ
     COMPLETE,  // the region is exhausted, which ends the iteration
 };
 

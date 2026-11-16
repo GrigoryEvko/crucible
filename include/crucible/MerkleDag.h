@@ -611,16 +611,22 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 }
 
 // The word of one tensor in the content hash of a region: the XOR fold of its
-// extents and strides (DimHash.h), its element type and its device.  The
+// extents and strides (dims, DimHash.h), its element type and its device.  The
 // device comes through device_of, so the word agrees with the equality of a
 // device: one index for the host.  The guard word of an op folds this word for
 // each input too (compute_shape_hash of vessel/torch/entry_slots.h), so the
 // guard and the content hash tell two inputs apart in the same way.
 //
+// The vector routine and the scalar routine of DimHash.h give the same dims
+// (test_simd).  The content hash takes the vector routine, and the guard of
+// the hot path takes the scalar loop, which reads only the lanes below the
+// rank of the input.
+//
 // The word is part of the content-hash format.  A change of it changes each
 // stored content hash and each guard word.
-[[nodiscard, gnu::always_inline]] inline uint64_t pack_tensor_word(const TensorMeta& meta) noexcept {
-    const uint64_t per_dim_hash_xor = raw_dim_hash(detail::dim_hash_simd_det(meta));
+[[nodiscard, gnu::always_inline]] inline uint64_t pack_tensor_word(const TensorMeta& meta,
+                                                                   const DimHashDet& dims) noexcept {
+    const uint64_t per_dim_hash_xor = raw_dim_hash(dims);
     const TensorDevice device = device_of(meta);
     const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(meta.dtype))
                                | (static_cast<uint64_t>(std::to_underlying(device.type())) << 8)
@@ -761,16 +767,18 @@ private:
         const ::fixy::View<const TensorMeta> input_metas = op_record.input_metas();
         const ::fixy::View<const OpIndex> producers = op_record.input_trace_indices();
         for (std::size_t input = 0; input < input_metas.size(); ++input) {
+            const TensorMeta& input_meta =
+                *input_metas.get(input).expect("the input arrays of an entry hold one count");
             content_hash_state = detail::combine_ids(
-                content_hash_state,
-                pack_tensor_word(*input_metas.get(input).expect("the input arrays of an entry hold one count")));
+                content_hash_state, pack_tensor_word(input_meta, detail::dim_hash_simd_det(input_meta)));
             content_hash_state = detail::combine_ids(
                 content_hash_state,
                 uint64_t{producers.get(input).expect("the input arrays of an entry hold one count")->raw()});
         }
 
         for (const TensorMeta& output_meta : op_record.output_metas()) {
-            content_hash_state = detail::combine_ids(content_hash_state, pack_tensor_word(output_meta));
+            content_hash_state = detail::combine_ids(
+                content_hash_state, pack_tensor_word(output_meta, detail::dim_hash_simd_det(output_meta)));
         }
 
         content_hash_state =

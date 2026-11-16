@@ -300,7 +300,9 @@ private:
     }
 
 CRUCIBLE_STRONG_HASH(SchemaHash);  // identity of an operation
-CRUCIBLE_STRONG_HASH(ShapeHash);  // geometry of an operation's inputs
+// The guard word of an operation: its depth, the layout of each input and each
+// scalar (compute_shape_hash of vessel/torch/entry_slots.h).
+CRUCIBLE_STRONG_HASH(ShapeHash);
 CRUCIBLE_STRONG_HASH(ScopeHash);  // path through the module hierarchy
 CRUCIBLE_STRONG_HASH(CallsiteHash);  // identity of a source location
 CRUCIBLE_STRONG_HASH(ContentHash);  // structural identity of one region

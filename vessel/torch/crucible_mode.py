@@ -97,18 +97,12 @@ class _VesselLib:
         lib.crucible_schema_name.restype = ctypes.c_char_p
         lib.crucible_schema_name.argtypes = [ctypes.c_uint64]
 
-        lib.crucible_hash_shapes.restype = ctypes.c_uint64
-        lib.crucible_hash_shapes.argtypes = [
-            ctypes.POINTER(ctypes.c_int64),
-            ctypes.POINTER(ctypes.c_uint8),
-            ctypes.c_uint32,
-        ]
-
+        # The thunk computes the guard word of the op from the records and the
+        # scalars, so the call gives no guard word.
         lib.crucible_dispatch_op_ex.restype = self.DispatchResult
         lib.crucible_dispatch_op_ex.argtypes = [
             ctypes.c_void_p,                  # handle
             ctypes.c_uint64,                  # schema_hash
-            ctypes.c_uint64,                  # shape_hash
             ctypes.c_uint16,                  # num_inputs
             ctypes.c_uint16,                  # num_outputs
             ctypes.POINTER(self.Meta),        # metas
@@ -324,9 +318,6 @@ class CrucibleMode(TorchDispatchMode):
         num_inputs = len(input_tensors)
         num_outputs = len(output_tensors)
 
-        # Shape hash from input shapes
-        shape_hash = self._compute_shape_hash(input_tensors)
-
         # Build TensorMeta array: [inputs..., outputs...]
         all_tensors = input_tensors + output_tensors
         n_metas = len(all_tensors)
@@ -357,7 +348,7 @@ class CrucibleMode(TorchDispatchMode):
         # Dispatch to Vigil
         dr = self._vessel.crucible_dispatch_op_ex(
             self._handle,
-            schema_hash, shape_hash,
+            schema_hash,
             num_inputs, num_outputs,
             metas_ptr, n_metas,
             scalars_ptr, num_scalars, scalar_types,
@@ -405,31 +396,6 @@ class CrucibleMode(TorchDispatchMode):
                     f"crucible: the schema table is full, so it has no place for the op {op_name}.  Raise "
                     f"SCHEMA_TABLE_CAP in crucible/SchemaTable.h")
         return h
-
-    def _compute_shape_hash(self, tensors):
-        if not tensors:
-            return 0
-        total_dims = sum(t.dim() for t in tensors)
-        if total_dims == 0:
-            return 0
-
-        SizesArray = ctypes.c_int64 * total_dims
-        NdimsArray = ctypes.c_uint8 * len(tensors)
-        sizes = SizesArray()
-        ndims = NdimsArray()
-
-        offset = 0
-        for i, t in enumerate(tensors):
-            ndims[i] = t.dim()
-            for d in range(t.dim()):
-                sizes[offset] = t.size(d)
-                offset += 1
-
-        return self._vessel.crucible_hash_shapes(
-            ctypes.cast(sizes, ctypes.POINTER(ctypes.c_int64)),
-            ctypes.cast(ndims, ctypes.POINTER(ctypes.c_uint8)),
-            len(tensors),
-        )
 
     @staticmethod
     def _fill_meta(meta, tensor):

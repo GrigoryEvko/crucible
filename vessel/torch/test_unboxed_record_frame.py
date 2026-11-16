@@ -161,8 +161,7 @@ def bind_dispatch_op(ctx: CrucibleNative):
     function = ctx._vessel._lib.crucible_dispatch_op
     function.restype = crucible_mode._VesselLib.DispatchResult
     function.argtypes = [
-        ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16,
-        ctypes.POINTER(Meta), ctypes.c_uint32,
+        ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
     ]
     return function
 
@@ -193,7 +192,7 @@ def probe_actions() -> dict:
         dispatch_op = bind_dispatch_op(ctx)
 
         def probe() -> int:
-            result = dispatch_op(ctx._handle, full_hash, full_hash, MAX_OP_INPUTS, MAX_OP_OUTPUTS, metas, len(metas))
+            result = dispatch_op(ctx._handle, full_hash, MAX_OP_INPUTS, MAX_OP_OUTPUTS, metas, len(metas))
             return result.action
 
         with ProbeMode(probe) as mode:
@@ -213,10 +212,10 @@ def record(directory: Path) -> list[TraceOp]:
     single_hash = schema_hash("crucible_frame::single_record")
     with CrucibleNative() as ctx:
         dispatch_op = bind_dispatch_op(ctx)
-        DEEP_PROBE.probe = lambda: dispatch_op(ctx._handle, single_hash, single_hash, 1, 0, single, 1).action
+        DEEP_PROBE.probe = lambda: dispatch_op(ctx._handle, single_hash, 1, 0, single, 1).action
         try:
             for _ in range(MAX_ITERATIONS):
-                dispatch_op(ctx._handle, wide_hash, wide_hash, WIDE_RECORDS // 2, WIDE_RECORDS // 2, wide, len(wide))
+                dispatch_op(ctx._handle, wide_hash, WIDE_RECORDS // 2, WIDE_RECORDS // 2, wide, len(wide))
                 torch.cat(parts)
                 torch.ops.crucible_frame.level_0(level_source)
                 if ctx.active_num_ops() > 0:

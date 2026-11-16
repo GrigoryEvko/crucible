@@ -201,7 +201,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 14;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 15;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -215,9 +215,10 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         // CDAG_VERSION 14 writes the numerics hash of the region in 8 bytes,
         // zero for this region of make_region.  The content hash of the
         // header folds the tags, the depths, the producers and the outputs of
-        // the ops.
+        // the ops.  CDAG_VERSION 15 gives the shape hash of each op the
+        // meaning of its guard word, so only the version moves the bytes.
         constexpr size_t EXPECTED_WIRE_BYTES = 1828;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0x866b5e2b6fcc8043ULL;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0x7ea4fd51b66572a6ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,

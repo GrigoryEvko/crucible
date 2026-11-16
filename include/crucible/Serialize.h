@@ -55,8 +55,12 @@ using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::s
 // depth, and the content hash folds them.
 // 14 (2026-11-16): each region has the hash of its numerics policy on the wire,
 // after its first schema, and the content hash folds it.
+// 15 (2026-11-16): the shape hash of each op is its guard word, which folds
+// the depth, the counts, the tags, the strides, the element types and the
+// scalars.  A region of version 14 holds words that no live op gives, so it
+// would diverge at its first op.  The bump refuses it at the load.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{14});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{15});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();

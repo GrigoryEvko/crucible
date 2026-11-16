@@ -19,6 +19,7 @@
 // grep for `as_vigil_typed` / `as_meta_typed` to find every ABI-
 // crossing site in O(1).
 
+#include "entry_slots.h"
 #include "vessel_api.h"
 #include "vessel_api_typed.h"
 
@@ -129,20 +130,11 @@ private:
 
 // The C caller owns the Vigil of a handle from crucible_create to
 // crucible_destroy, and it gives the texts and the arrays that the hashes read
-// as raw pointers.  The functions up to crucible_hash_shapes take these
+// as raw pointers.  The functions up to crucible_hash_string take these
 // pointers in an opt-out region of the class ABI.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 
 // ── FNV-1a 64-bit ────────────────────────────────────────────────────
-
-static uint64_t fnv1a_bytes(const void* data, size_t len, uint64_t h) {
-    auto* p = static_cast<const uint8_t*>(data);
-    for (size_t i = 0; i < len; i++) {
-        h ^= p[i];
-        h *= 0x100000001b3ULL;
-    }
-    return h;
-}
 
 static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 
@@ -195,33 +187,34 @@ uint64_t crucible_hash_string(const char* s) noexcept {
     return h;
 }
 
-uint64_t crucible_hash_shapes(const int64_t* all_sizes, const uint8_t* ndims, uint32_t n_tensors) noexcept {
-    if (n_tensors == 0 || !all_sizes || !ndims) return FNV_OFFSET;
-    uint64_t h = FNV_OFFSET;
-    uint32_t offset = 0;
-    for (uint32_t t = 0; t < n_tensors; t++) {
-        // Hash ndim as a separator between tensors
-        h = fnv1a_bytes(&ndims[t], 1, h);
-        // Hash sizes[0..ndim-1]
-        h = fnv1a_bytes(&all_sizes[offset], ndims[t] * sizeof(int64_t), h);
-        offset += ndims[t];
-    }
-    return h;
-}
-
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// The guard word of the entry of a C caller, from the records of its inputs
+// that the decode gave and from the scalar slots of the entry.  The thunk
+// computes the word, so the guard of an op of the C path never trusts a word
+// of the caller that its records do not show.  An op whose count of inputs is
+// more than its records gives the word of the records that it has, and the
+// trust ladder then refuses the op.
+[[nodiscard]] static crucible::ShapeHash guard_word_of(crucible::TraceRing::Entry const& entry,
+                                                       ::fixy::View<const crucible::TensorMeta> records,
+                                                       crucible::OpDepth depth) noexcept {
+    const size_t input_count = ::fixy::min(size_t{entry.num_inputs}, records.size());
+    return crucible::vessel::compute_shape_hash(
+        records.window(0, input_count).expect("the count of the inputs is at most the count of the records"), entry,
+        depth);
+}
+
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
-CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t schema_hash, uint64_t shape_hash,
-                                            uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
+CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t schema_hash, uint16_t num_inputs,
+                                            uint16_t num_outputs, const CrucibleMeta* metas,
                                             uint32_t n_metas) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
-    // C→C++ boundary: wrap raw uint64_t into strong hash types.
+    // C→C++ boundary: wrap raw uint64_t into strong hash types.  The guard
+    // word comes from the decoded records below.
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{schema_hash};
-    entry.shape_hash = crucible::ShapeHash{shape_hash};
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
 
@@ -265,6 +258,7 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
         for (const ::fixy::View<const crucible::TensorMeta> records :
              crucible::vessel::decode_ffi_records(metas_typed, slots)) {
+            entry.shape_hash = guard_word_of(entry, records, depth);
             for (const crucible::ValidatedOp& op :
                  crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
                 return encode_dispatch_result(
@@ -276,18 +270,18 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
-CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t schema_hash, uint64_t shape_hash,
-                                               uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
-                                               uint32_t n_metas, const int64_t* scalar_values, uint16_t num_scalars,
+CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t schema_hash, uint16_t num_inputs,
+                                               uint16_t num_outputs, const CrucibleMeta* metas, uint32_t n_metas,
+                                               const int64_t* scalar_values, uint16_t num_scalars,
                                                uint16_t scalar_types, uint8_t grad_enabled,
                                                uint8_t inference_mode) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
-    // C→C++ boundary: wrap raw uint64_t into strong hash types.
+    // C→C++ boundary: wrap raw uint64_t into strong hash types.  The guard
+    // word comes from the decoded records and the scalar slots below.
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{schema_hash};
-    entry.shape_hash = crucible::ShapeHash{shape_hash};
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
     entry.num_scalar_args = num_scalars;
@@ -334,6 +328,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
         for (const ::fixy::View<const crucible::TensorMeta> records :
              crucible::vessel::decode_ffi_records(metas_typed, slots)) {
+            entry.shape_hash = guard_word_of(entry, records, depth);
             for (const crucible::ValidatedOp& op :
                  crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
                 return encode_dispatch_result(

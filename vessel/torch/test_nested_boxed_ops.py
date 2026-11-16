@@ -161,7 +161,6 @@ def bind_dispatch_op(ctx: CrucibleNative):
     function.argtypes = [
         ctypes.c_void_p,
         ctypes.c_uint64,
-        ctypes.c_uint64,
         ctypes.c_uint16,
         ctypes.c_uint16,
         ctypes.POINTER(crucible_mode._VesselLib.Meta),
@@ -196,7 +195,7 @@ def record(directory: Path) -> tuple[list[TraceOp], list[int]]:
                     torch.ops.crucible_nest.fail(source)
                 except RuntimeError:
                     pass
-            result = dispatch_op(ctx._handle, full_hash, full_hash, MAX_OP_INPUTS, MAX_OP_OUTPUTS, metas, len(metas))
+            result = dispatch_op(ctx._handle, full_hash, MAX_OP_INPUTS, MAX_OP_OUTPUTS, metas, len(metas))
             actions.append(result.action)
             torch.ops.crucible_nest.scale(source)
             torch.ops.crucible_nest.outer(first, second)

@@ -78,7 +78,7 @@ _MASK64     = (1 << 64) - 1
 # ".py was redeployed but libcrucible_vessel.so is stale" failure
 # before any dispatch runs.
 
-EXPECTED_ABI_VERSION = 5
+EXPECTED_ABI_VERSION = 6
 
 
 class SchemaNameResult(enum.IntEnum):

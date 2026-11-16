@@ -9,6 +9,12 @@
 // pattern, and their tags tell them apart.  The content hash and the digest
 // read the device of a tensor through device_of, so the two names of the host
 // give one digest.
+//
+// The guard word of an entry (compute_shape_hash) must change with each field
+// that changes the computation of the op: a stride, an element type, a device,
+// a rank, a layout, the negative and conjugate bits, a scalar, a tag, a count
+// and the depth.  It must not change with a data address, a version counter or
+// an autograd field, which change at each iteration.
 
 #include "../vessel/torch/entry_slots.h"
 
@@ -25,6 +31,7 @@ namespace {
 
 using crucible::ScalarType2;
 using crucible::TraceRing;
+using crucible::vessel::compute_shape_hash;
 using crucible::vessel::InputOverflow;
 using crucible::vessel::kInlineScalars;
 using crucible::vessel::ScalarArgs;
@@ -281,6 +288,160 @@ void test_built_device_has_one_host_index() {
     CRUCIBLE_FATAL_INVARIANT(held == crucible::kHostDevice);
 }
 
+// A matrix of 3 by 4 with the strides of its rows.
+[[nodiscard]] crucible::TensorMeta matrix_meta() {
+    crucible::TensorMeta meta{};
+    meta.ndim = 2;
+    meta.sizes[0] = crucible::tensor_dim(3);
+    meta.sizes[1] = crucible::tensor_dim(4);
+    meta.strides[0] = crucible::tensor_dim(4);
+    meta.strides[1] = crucible::tensor_dim(1);
+    meta.dtype = crucible::ScalarType::Float;
+    return meta;
+}
+
+// The scalars of an op whose one scalar has the bits and the tag.
+[[nodiscard]] ScalarArgs<false> one_scalar(int64_t bits, ScalarType2 tag) {
+    ScalarArgs<false> scalars{};
+    scalars.push(bits, tag);
+    return scalars;
+}
+
+// The guard word of an op with the inputs, the scalars and the depth.
+[[nodiscard]] crucible::ShapeHash guard_word_of(::fixy::View<const crucible::TensorMeta> inputs,
+                                                ScalarArgs<false> const& scalars, uint16_t depth = 0) {
+    TraceRing::Entry entry{};
+    entry.num_inputs = ::fixy::narrow<uint16_t>(inputs.size()).expect("a test op has few inputs");
+    write_scalar_slots(entry, scalars);
+    return compute_shape_hash(inputs, entry, crucible::OpDepth{depth});
+}
+
+// The guard word of an op with the two inputs, the scalars and the depth.
+[[nodiscard]] crucible::ShapeHash guard_word_of(crucible::TensorMeta const& first, crucible::TensorMeta const& second,
+                                                ScalarArgs<false> const& scalars, uint16_t depth = 0) {
+    const ::fixy::FixedArray<crucible::TensorMeta, 2> inputs{first, second};
+    return guard_word_of(inputs.view(), scalars, depth);
+}
+
+// The guard word of an op with no input and the scalar slots of entry.
+[[nodiscard]] crucible::ShapeHash guard_word_of(TraceRing::Entry const& entry) {
+    return compute_shape_hash(::fixy::View<const crucible::TensorMeta>{}, entry, crucible::OpDepth{});
+}
+
+// Each field that changes the computation of the op changes its guard word.
+// The old word folded only the rank and the extents, so each check below of a
+// stride, an element type, a device, a layout, a bit, a scalar, a tag or the
+// depth gave one word for two different computations.
+void test_guard_word_reads_each_field_of_the_computation() {
+    const crucible::TensorMeta vector = vector_meta(4);
+    const crucible::TensorMeta matrix = matrix_meta();
+    const ScalarArgs<false> alpha_one = one_scalar(1, ScalarType2::INT);
+    const crucible::ShapeHash base = guard_word_of(vector, matrix, alpha_one);
+    CRUCIBLE_FATAL_INVARIANT(base == guard_word_of(vector, matrix, alpha_one));
+
+    // The transposed matrix of 4 by 3 has the extents of no other input here,
+    // so the strides are the only difference of this matrix of 3 by 4.
+    crucible::TensorMeta columns = matrix;
+    columns.strides[0] = crucible::tensor_dim(1);
+    columns.strides[1] = crucible::tensor_dim(3);
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, columns, alpha_one) == base) && "a stride moves the word");
+
+    crucible::TensorMeta doubles = matrix;
+    doubles.dtype = crucible::ScalarType::Double;
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, doubles, alpha_one) == base) && "an element type moves the word");
+
+    crucible::TensorMeta on_cuda = matrix;
+    on_cuda.device_type = crucible::DeviceType::CUDA;
+    on_cuda.device_idx = 0;
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, on_cuda, alpha_one) == base) && "a device moves the word");
+
+    crucible::TensorMeta sparse = matrix;
+    sparse.layout = crucible::Layout::Sparse;
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, sparse, alpha_one) == base) && "a layout moves the word");
+
+    crucible::TensorMeta conjugate = matrix;
+    conjugate.flags = crucible::meta_flags::IS_CONJ;
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, conjugate, alpha_one) == base) && "the conjugate bit moves it");
+
+    crucible::TensorMeta negative = matrix;
+    negative.flags = crucible::meta_flags::IS_NEG;
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, negative, alpha_one) == base) && "the negative bit moves it");
+
+    // A lane of extent zero and stride zero adds nothing to the XOR fold of
+    // the content hash, so only the rank tells [4, 0] from [4].
+    crucible::TensorMeta empty_rows = vector;
+    empty_rows.ndim = 2;
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(empty_rows, matrix, alpha_one) == base) && "the rank moves the word");
+
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(matrix, vector, alpha_one) == base) && "the order of the inputs moves it");
+    const ::fixy::FixedArray<crucible::TensorMeta, 1> only_vector{vector};
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(only_vector.view(), alpha_one) == base) && "the input count moves it");
+
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, matrix, one_scalar(2, ScalarType2::INT)) == base)
+                             && "a scalar moves the word");
+    // alpha=1 and alpha=4.9e-324 have one bit pattern, and the tag tells them
+    // apart.
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, matrix, one_scalar(1, ScalarType2::FLOAT)) == base)
+                             && "the tag moves the word");
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, matrix, alpha_one, 1) == base) && "the depth moves the word");
+
+    // An absent optional is the value zero with the tag NONE, and the integer
+    // zero has the tag INT.  An op with no scalar has one slot less.
+    const crucible::ShapeHash absent = guard_word_of(vector, matrix, one_scalar(0, ScalarType2::NONE));
+    const crucible::ShapeHash zero = guard_word_of(vector, matrix, one_scalar(0, ScalarType2::INT));
+    const crucible::ShapeHash none = guard_word_of(vector, matrix, ScalarArgs<false>{});
+    CRUCIBLE_FATAL_INVARIANT(!(absent == zero) && !(absent == none) && !(zero == none));
+}
+
+// A scalar or an input past the slots reaches the guard word through the
+// overflow digest of the last slot.
+void test_guard_word_reads_the_overflow_digest() {
+    constexpr uint32_t kStepSizes = 136;
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(entry_of(kStepSizes, 7, InputOverflow{}))
+                               == guard_word_of(entry_of(kStepSizes, 8, InputOverflow{}))));
+    InputOverflow narrow{};
+    narrow.fold(vector_meta(3));
+    InputOverflow wide{};
+    wide.fold(vector_meta(5));
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(entry_of(2, 2, narrow)) == guard_word_of(entry_of(2, 2, wide))));
+}
+
+// The fields that change at each iteration or in each process leave the
+// guard word as it is, or no region could replay twice.  The two names of the
+// host give one word, and a tag bit past the count moves no word.
+void test_guard_word_ignores_what_changes_at_each_iteration() {
+    const crucible::TensorMeta vector = vector_meta(4);
+    const crucible::TensorMeta matrix = matrix_meta();
+    const ScalarArgs<false> alpha_one = one_scalar(1, ScalarType2::INT);
+    const crucible::ShapeHash base = guard_word_of(vector, matrix, alpha_one);
+
+    crucible::TensorMeta live = matrix;
+    live.data_ptr = crucible::external_data_ptr(&live);
+    live.version = 7;
+    live.requires_grad = true;
+    live.flags = static_cast<uint8_t>(crucible::meta_flags::IS_LEAF | crucible::meta_flags::HAS_GRAD_FN
+                                      | crucible::meta_flags::IS_VIEW | crucible::meta_flags::IS_CONTIGUOUS);
+    live.grad_fn_hash = crucible::grad_fn_hash(0x51DE);
+    live.output_nr = 1;
+    live.storage_offset = 4;
+    live.storage_nbytes = 4096;
+    CRUCIBLE_FATAL_INVARIANT(guard_word_of(vector, live, alpha_one) == base);
+
+    crucible::TensorMeta host_zero = matrix;
+    host_zero.device_idx = 0;
+    crucible::TensorMeta host_none = matrix;
+    host_none.device_idx = -1;
+    CRUCIBLE_FATAL_INVARIANT(guard_word_of(vector, host_zero, alpha_one)
+                             == guard_word_of(vector, host_none, alpha_one));
+
+    TraceRing::Entry tagged{};
+    write_scalar_slots(tagged, alpha_one);
+    TraceRing::Entry stray = tagged;
+    stray.set_packed_scalar_types(
+        static_cast<uint16_t>(tagged.packed_scalar_types() | (static_cast<uint16_t>(ScalarType2::NONE) << 2)));
+    CRUCIBLE_FATAL_INVARIANT(guard_word_of(tagged) == guard_word_of(stray));
+}
+
 }  // namespace
 
 int main() {
@@ -293,6 +454,9 @@ int main() {
     test_host_index_is_one_device();
     test_content_hash_folds_the_tags();
     test_built_device_has_one_host_index();
+    test_guard_word_reads_each_field_of_the_computation();
+    test_guard_word_reads_the_overflow_digest();
+    test_guard_word_ignores_what_changes_at_each_iteration();
     crucible::test::pass("test_vessel_entry_slots: PASS\n");
     return 0;
 }
