@@ -23,6 +23,27 @@ function(fixy_test name)
   endif()
 endfunction()
 
+# A fixy test whose work divides into parts.  The program takes the
+# arguments PART PARTS, and each part is the test ${name}_PART, so CTest runs
+# the parts together.
+function(fixy_parted_test name parts)
+  add_executable(${name} ${name}.cpp)
+  target_link_libraries(${name} PRIVATE fixy)
+  target_compile_options(${name} PRIVATE -UNDEBUG)
+  if(CRUCIBLE_SAN_COMPILE_FLAGS)
+    target_compile_options(${name} PRIVATE ${CRUCIBLE_SAN_COMPILE_FLAGS})
+    target_link_options(${name} PRIVATE ${CRUCIBLE_SAN_LINK_FLAGS})
+  endif()
+  math(EXPR _last_part "${parts} - 1")
+  foreach(_part RANGE ${_last_part})
+    add_test(NAME ${name}_${_part} COMMAND ${name} ${_part} ${parts})
+    set_tests_properties(${name}_${_part} PROPERTIES LABELS "fixy")
+    if(CRUCIBLE_TSAN)
+      set_tests_properties(${name}_${_part} PROPERTIES ENVIRONMENT "TSAN_OPTIONS=halt_on_error=1")
+    endif()
+  endforeach()
+endfunction()
+
 # Negative-compile fixtures for the fixy layer.  Same contract as
 # foundation_neg_compile_test in test/foundation/CMakeLists.txt: at least
 # two regexes (reason + project token), every regex required, strict
@@ -1956,6 +1977,25 @@ fixy_test(test_bits)
 # the edges of each width and Philox draws.  A zero divisor and the minimum
 # by -1 of div_ceil end the process.
 fixy_test(test_core_integer_rounding)
+# The storage formats f16, bf16, fp8_e4m3 and fp8_e5m2.  Each widen gives the
+# bits of the PyTorch table of storage_float/, and each round holds the
+# boundary table with each difference from PyTorch named.  F16C gives the
+# bits of the portable code under each MXCSR state.
+fixy_test(test_core_storage_float)
+# Each round on each of the 2^32 binary32 inputs, against the rule of the
+# header, the product arm, F16C, the half casts of GCC and AVX-512 BF16.
+fixy_parted_test(test_core_storage_float_exhaustive 256)
+# A storage value has no compare, takes no float without a named round, and
+# a round takes no double.
+fixy_neg_compile_test(neg_core_storage_float_compare
+  "use of deleted function .bool foundation::core::StorageFloatOf<Format>::operator==\\(const foundation::core::StorageFloatOf<Format>&\\) const \\[with Format = foundation::core::detail::Binary16Format\\]."
+  "compare two storage values as numbers after widen, or as bits through raw\\(\\)")
+fixy_neg_compile_test(neg_core_storage_float_from_float
+  "conversion from .float. to non-scalar type .const foundation::core::fp8_e4m3."
+  "neg_core_storage_float_from_float.cpp:7:")
+fixy_neg_compile_test(neg_core_storage_float_round_double
+  "no matching function for call to .round_nonsaturating<foundation::core::bf16>\\(const double&\\)."
+  "required for the satisfaction of .same_as<From, float>. \\[with From = double\\]")
 
 # The leak witness is one reflection query over the atom catalog, so no
 # translation unit can mint an authorization out of a type of its own.

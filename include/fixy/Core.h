@@ -43,6 +43,7 @@
 #include <foundation/core/Report.h>
 #include <foundation/core/RunSet.h>
 #include <foundation/core/Scalar.h>
+#include <foundation/core/StorageFloat.h>
 #include <foundation/core/Text.h>
 #include <foundation/core/Values.h>
 
@@ -247,6 +248,17 @@ using ::foundation::core::narrow;
 using ::foundation::core::saturating_narrow;
 using ::foundation::core::widen;
 using ::foundation::core::wrapping_narrow;
+
+// The storage formats of a floating value, and their rounds from float.
+// widen above gives their value as a float or a double.
+using ::foundation::core::bf16;
+using ::foundation::core::f16;
+using ::foundation::core::fp8_e4m3;
+using ::foundation::core::fp8_e5m2;
+using ::foundation::core::round_nonsaturating;
+using ::foundation::core::round_saturating;
+using ::foundation::core::StorageFloat;
+using ::foundation::core::StorageFloatOf;
 
 using ::foundation::core::align_up;
 using ::foundation::core::bit_ceil;

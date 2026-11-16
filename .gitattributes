@@ -10,3 +10,7 @@
 #   linguist-vendored   → also exclude from "your code" surfaces
 #   -diff               → never emit a textual diff for it
 include/crucible/perf/bpf/vmlinux.h linguist-generated=true linguist-vendored=true -diff
+
+# The PyTorch tables of the storage float test, which
+# test/fixy/storage_float/make_torch_tables.py writes.  Each one is binary.
+test/fixy/storage_float/*.bin binary linguist-generated=true
