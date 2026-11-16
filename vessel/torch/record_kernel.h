@@ -20,18 +20,18 @@
 //
 // WHERE THE SIGNATURE COMES FROM
 //
-// std::meta::parameters_of on ^^Op::call gives the declared parameter types
-// and return_type_of gives the result. Folding both into a function type gives
-// something a partial specialization takes apart into a parameter pack, which
-// is the pack the kernel declares and the pack the dispatcher calls it with.
+// decltype(Op::call) is the function type of the declared call: the result
+// and the parameter types. A partial specialization takes it apart into a
+// parameter pack, which is the pack the kernel declares and the pack the
+// dispatcher calls it with.
 //
 // THREE AGREEMENTS
 //
-//   1. The reflected signature equals Op::schema, the typedef PyTorch's own
+//   1. The declared signature equals Op::schema, the typedef PyTorch's own
 //      generator writes. Catches a fork whose call and schema drift apart.
-//   2. The reflected arity equals the table's arity. Catches a table built
+//   2. The parameter count equals the table's arity. Catches a table built
 //      against a different revision of the fork than this build compiles.
-//   3. The tensor and tensor-list masks computed from the reflected C++ types
+//   3. The tensor and tensor-list masks computed from the C++ parameter types
 //      equal the masks the generator computed from the schema string. Two
 //      readings of one argument list must name the same positions. Measured
 //      over all 3110 operators of the fork: zero disagreements.
@@ -62,16 +62,11 @@
 #include "entry_slots.h"
 #include "vessel_api_typed.h"
 
-#include <algorithm>
 #include <array>
-#include <atomic>
-#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <meta>
 #include <optional>
-#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -91,18 +86,28 @@ namespace crucible::vessel {
 inline constexpr uint64_t kFnvOffset = 0xcbf29ce484222325ULL;
 inline constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
 
+// One step of the fold: one byte goes into the accumulator.
+[[nodiscard]] constexpr uint64_t fnv1a_step(uint64_t accumulator, uint8_t byte) noexcept {
+    return (accumulator ^ byte) * kFnvPrime;
+}
+
 // The default seed starts a fresh fold. Passing a previous result continues
 // one, which is how the shape hash chains across several tensors.
-[[nodiscard]] inline uint64_t fnv1a_bytes(const void* data, size_t length, uint64_t accumulator = kFnvOffset) noexcept {
-    const auto* bytes = static_cast<const uint8_t*>(data);
-    for (size_t i = 0; i < length; i++) {
-        accumulator ^= bytes[i];
-        accumulator *= kFnvPrime;
-    }
+// Complexity: O(n) in the bytes.
+[[nodiscard]] inline uint64_t fnv1a_bytes(::fixy::View<std::byte const> bytes,
+                                          uint64_t accumulator = kFnvOffset) noexcept {
+    for (const std::byte byte : bytes)
+        accumulator = fnv1a_step(accumulator, static_cast<uint8_t>(byte));
     return accumulator;
 }
 
-[[nodiscard]] inline uint64_t fnv1a_str(const char* text, size_t length) noexcept { return fnv1a_bytes(text, length); }
+// The fold over the characters of a text.  Complexity: O(n) in the
+// characters.
+[[nodiscard]] constexpr uint64_t fnv1a_text(::fixy::TextView text, uint64_t accumulator = kFnvOffset) noexcept {
+    for (const char character : text)
+        accumulator = fnv1a_step(accumulator, static_cast<uint8_t>(character));
+    return accumulator;
+}
 
 // =====================================================================
 // What one operation contributes to a trace entry
@@ -128,8 +133,12 @@ struct MetaCount {
 // The result is false when the element type, the device or the layout of the
 // tensor names no crucible enumerator.  Each such field then holds its
 // default, and the caller records nothing for the operation.
+//
+// The function reads the tensor through the API of PyTorch, so it is in an
+// ABI region.
 // =====================================================================
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of PyTorch")
 [[nodiscard]] inline bool fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
     meta = {};  // zero-init (InitSafe -- NSDMI defaults)
     if (!tensor.defined()) return true;
@@ -293,7 +302,8 @@ struct MetaCount {
             // Derived from an autograd node name, which is local to one
             // process, so it carries hash_family::FamilyB and must never key
             // anything that outlives the run.
-            meta.grad_fn_hash = ::crucible::grad_fn_hash(fnv1a_str(grad_fn_name.data(), grad_fn_name.size()));
+            meta.grad_fn_hash = ::crucible::grad_fn_hash(
+                fnv1a_text(::fixy::mint_foreign_text(grad_fn_name.data(), grad_fn_name.size())));
         }
         meta.output_nr = static_cast<uint8_t>(torch::autograd::impl::get_autograd_meta(tensor)->output_nr_ & 0xFF);
     }
@@ -327,6 +337,7 @@ struct MetaCount {
     meta.version = impl->version_counter().current_version();
     return is_each_enumeration_named;
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // Shape hash
@@ -342,12 +353,21 @@ struct MetaCount {
 [[nodiscard]] inline crucible::ShapeHash compute_shape_hash(::fixy::View<const crucible::TensorMeta> inputs) {
     uint64_t accumulator = kFnvOffset;
     for (const crucible::TensorMeta& input : inputs) {
-        accumulator = fnv1a_bytes(&input.ndim, 1, accumulator);
-        // `sizes` is a TensorDimArray, whose lanes stay plain int64_t so a
-        // bulk reader can take the block without a copy. lanes() is that
-        // reader; only the write path goes through the refined TensorDim.
-        const uint32_t nbytes = static_cast<uint32_t>(input.ndim) * static_cast<uint32_t>(sizeof(int64_t));
-        accumulator = fnv1a_bytes(&input.sizes.lanes().at(::fixy::index<0>()), nbytes, accumulator);
+        accumulator = fnv1a_step(accumulator, input.ndim);
+        // `sizes` is a TensorDimArray, whose lanes stay plain int64_t.  The
+        // fold reads the bytes of each lane below the rank, the low byte
+        // first, which is the order of the bytes of a little-endian lane.
+        // fill_meta clamps the rank to the lane count, so the min changes no
+        // rank, and it proves that the window fits.
+        const size_t rank = ::fixy::min(static_cast<size_t>(input.ndim), size_t{::crucible::kMaxTensorNDim});
+        const ::fixy::View<int64_t const> lanes =
+            ::fixy::View<int64_t const>{input.sizes.lanes()}.window(0, rank).expect(
+                "a rank of at most the lane count fits the lanes");
+        for (const int64_t lane : lanes) {
+            const auto bits = static_cast<uint64_t>(lane);
+            for (uint32_t shift = 0; shift < 64; shift += 8)
+                accumulator = fnv1a_step(accumulator, static_cast<uint8_t>(bits >> shift));
+        }
     }
     return crucible::ShapeHash{accumulator};
 }
@@ -370,6 +390,9 @@ struct MetaCount {
 // operations on a worker thread, where this counter reads zero — and the
 // producer question in recording_vigil() turns that thread away before any
 // phase is derived, so the phase it would have derived reaches no trace.
+// That phase would be FORWARD, a false label for a backward operation.  The
+// defect is latent: only the producer thread records.  A recording path that
+// admits a second thread must give the window to that thread first.
 //
 // One definition for both recording paths: two copies would let them write
 // different phase bits into one trace. Zero-initialized, so there is no
@@ -433,12 +456,16 @@ inline thread_local uint32_t backward_depth = 0;
 // belongs to the gradient scaler rather than to a fused update, and it runs
 // inside an optimizer step with gradients off, so the phase it derives is the
 // one it should have.
-[[nodiscard]] constexpr bool is_foreach_op_name(std::string_view name) noexcept { return name.contains("_foreach_"); }
+[[nodiscard]] constexpr bool is_foreach_op_name(::fixy::TextView name) noexcept {
+    return ::fixy::find(name, ::fixy::TextView{"_foreach_"}).is_some();
+}
 
 // Everything below DispatchKey::Crucible, which is the backend that computes
 // the operation. The constructor is constexpr, so this costs no initializer.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the dispatch keys of PyTorch name the backends below the recorder")
 inline constexpr c10::DispatchKeySet kAfterCrucibleKeyset =
     c10::DispatchKeySet(c10::DispatchKeySet::FULL_AFTER, c10::DispatchKey::Crucible);
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // The name an operator goes into the SchemaTable under
@@ -452,12 +479,11 @@ inline constexpr c10::DispatchKeySet kAfterCrucibleKeyset =
 
 [[nodiscard]] consteval size_t longest_qualified_op_name() {
     size_t longest = 0;
-    for (const OpEntry& row : aten_op_table) {
-        const std::string_view overload{row.overload};
-        size_t length = std::string_view{row.name}.size();
-        if (!overload.empty()) length += 1 + overload.size();
+    for_each_aten_op_row([&longest](const OpEntry& row) {
+        size_t length = row.name.size();
+        if (row.overload.size() != 0) length += 1 + row.overload.size();
         longest = ::fixy::max(longest, length);
-    }
+    });
     return longest;
 }
 
@@ -467,12 +493,15 @@ inline constexpr size_t kQualifiedOpNameCapacity = longest_qualified_op_name() +
 
 class QualifiedOpName {
 public:
-    explicit QualifiedOpName(const OpEntry& row) noexcept {
-        const std::string_view name{row.name};
-        const std::string_view overload{row.overload};
+    // The qualified name of a row of the table.
+    explicit QualifiedOpName(const OpEntry& row) noexcept : QualifiedOpName{row.name, row.overload} {}
+
+    // The name, then a dot and the overload when the overload is named.  The
+    // name of a row, or a part of it, fits the capacity.
+    QualifiedOpName(::fixy::TextView name, ::fixy::TextView overload) noexcept {
         for (const char character : name)
             text_.push(character).expect("the capacity holds the longest name");
-        if (!overload.empty()) {
+        if (overload.size() != 0) {
             text_.push('.').expect("the capacity holds the longest name");
             for (const char character : overload)
                 text_.push(character).expect("the capacity holds the longest name");
@@ -485,11 +514,10 @@ public:
         return ::fixy::mint_c_text(text_.view()).expect("the constructor puts one zero after the name");
     }
 
-    [[nodiscard]] const char* c_str() const noexcept {
-        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: Library::impl of PyTorch takes the operator name as a C text")
-        return ::foundation::core::foreign_c_str(c_text());
-        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    }
+    // The name as the C text that Library::impl of PyTorch takes.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: Library::impl of PyTorch takes the operator name as a C text")
+    [[nodiscard]] const char* c_str() const noexcept { return ::foundation::core::foreign_c_str(c_text()); }
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 private:
     ::fixy::FixedText<kQualifiedOpNameCapacity> text_{};
@@ -542,6 +570,9 @@ enum class ArgumentKind : uint8_t {
     Optional,
 };
 
+// The optional types and the parameter types below are the types that the
+// operators of PyTorch declare, so the classification is in an ABI region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the classification names the parameter types of the operators of PyTorch")
 template <class T>
 inline constexpr bool is_std_optional_v = false;
 template <class T>
@@ -605,6 +636,7 @@ template <class T>
     else
         return ArgumentKind::Ignored;
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The masks these two produce are asserted against the masks the generator
 // read out of the schema strings, so a tensor shape this table does not name
@@ -621,22 +653,21 @@ inline constexpr bool is_tensor_list_argument_v =
 
 // Bit i is set when argument i is of the named shape. Argument positions are
 // parameter positions, which is the correspondence the table's masks were
-// computed against.
+// computed against.  The fold reads the arguments in order, so an operator
+// with no argument gives the empty mask.
 template <class... Args>
 [[nodiscard]] consteval uint32_t tensor_argument_mask() noexcept {
-    const std::array<bool, sizeof...(Args)> is_tensor{is_tensor_argument_v<Args>...};
     uint32_t mask = 0;
-    for (uint32_t position = 0; position < sizeof...(Args); position++)
-        if (is_tensor[position]) mask |= uint32_t{1} << position;
+    [[maybe_unused]] uint32_t position = 0;
+    ((mask |= (is_tensor_argument_v<Args> ? uint32_t{1} << position : 0u), ++position), ...);
     return mask;
 }
 
 template <class... Args>
 [[nodiscard]] consteval uint32_t tensor_list_argument_mask() noexcept {
-    const std::array<bool, sizeof...(Args)> is_list{is_tensor_list_argument_v<Args>...};
     uint32_t mask = 0;
-    for (uint32_t position = 0; position < sizeof...(Args); position++)
-        if (is_list[position]) mask |= uint32_t{1} << position;
+    [[maybe_unused]] uint32_t position = 0;
+    ((mask |= (is_tensor_list_argument_v<Args> ? uint32_t{1} << position : 0u), ++position), ...);
     return mask;
 }
 
@@ -678,8 +709,11 @@ inline constexpr uint32_t scalar_bound_v = (uint32_t{0} + ... + scalar_bound_of<
 // The table classifies every parameter type the fork's 3110 operators use.
 // The list is the measured inventory of `using schema` parameter types, in
 // descending order of use, so a fork that introduces a shape the table sends
-// to Ignored is caught by the mask agreement rather than by this block.
+// to Ignored is caught by the mask agreement rather than by this block.  Each
+// type is a type of PyTorch, std::array<bool, 3> too, so the block is in an
+// ABI region.
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the witnesses name the parameter types of the operators of PyTorch")
 namespace detail::argument_kind_witnesses {
 
 static_assert(argument_kind_of<const at::Tensor&>() == ArgumentKind::Tensor);
@@ -737,38 +771,23 @@ static_assert(is_tensor_list_argument_v<at::TensorList>);
 static_assert(is_tensor_list_argument_v<const c10::List<std::optional<at::Tensor>>&>);
 
 }  // namespace detail::argument_kind_witnesses
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
-// The reflected signature, and the cross-check against PyTorch's codegen
+// The signature, and the cross-check against PyTorch's codegen
 // =====================================================================
 
-// Carries a return type and a parameter pack as one type, so that
-// std::meta::substitute can build it from a reflected parameter list and a
-// partial specialization can take it apart again.
-template <class Ret, class... Args>
-struct FunctionTypeOf {
-    using type = Ret(Args...);
-};
-
+// The declared type of Op::call: a function type, which the partial
+// specialization of RecordKernel takes apart into a parameter pack.  Each
+// operator struct declares one call, so the name is no overload set.
 template <class Op>
-[[nodiscard]] consteval std::meta::info reflected_call_type() {
-    std::vector<std::meta::info> arguments;
-    arguments.push_back(std::meta::return_type_of(^^Op::call));
-    for (const auto parameter : std::meta::parameters_of(^^Op::call))
-        arguments.push_back(std::meta::type_of(parameter));
-    return std::meta::substitute(^^FunctionTypeOf, arguments);
-}
+using call_signature = decltype(Op::call);
 
+// The first agreement: the declared call and the typedef PyTorch's generator
+// writes describe one function. A const and a non-const out= slot, an
+// ITensorListRef and a tuple return each keep their type in both.
 template <class Op>
-using reflected_call_signature = typename[:reflected_call_type<Op>():] ::type;
-
-// The first agreement: the reflected fold and the typedef PyTorch's generator
-// writes describe one function. Const and a non-const out= slot survive the
-// round trip, an ITensorListRef is not flattened into an ArrayRef, and a tuple
-// return stays a tuple.
-template <class Op>
-inline constexpr bool reflection_agrees_with_codegen_v =
-    std::is_same_v<reflected_call_signature<Op>, typename Op::schema>;
+inline constexpr bool call_agrees_with_codegen_v = std::is_same_v<call_signature<Op>, typename Op::schema>;
 
 // =====================================================================
 // How many metadata slots an operation can fill
@@ -793,7 +812,10 @@ inline constexpr bool reflection_agrees_with_codegen_v =
 
 // MAX_INLINE_METAS stands for "no smaller bound", which makes the clamp below
 // a plain minimum.  A scalar result fills one slot with a meta of rank zero,
-// and each other result that is not a tensor fills none.
+// and each other result that is not a tensor fills none.  The result types
+// are the types that the operators of PyTorch declare, a std::vector and a
+// std::tuple too, so the bounds are in an ABI region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the bounds name the result types of the operators of PyTorch")
 template <class T>
 inline constexpr uint32_t result_meta_bound_v = is_scalar_kind_v<T> ? 1 : 0;
 template <>
@@ -805,6 +827,7 @@ inline constexpr uint32_t result_meta_bound_v<c10::ArrayRef<T>> = MAX_INLINE_MET
 template <class... Ts>
 inline constexpr uint32_t result_meta_bound_v<std::tuple<Ts...>> =
     ::fixy::min(MAX_INLINE_METAS, (uint32_t{0} + ... + result_meta_bound_v<std::remove_cvref_t<Ts>>));
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // Recording one operation
@@ -871,6 +894,8 @@ struct Recording {
         return ::fixy::View<const crucible::TensorMeta>{metas}.window(0, count).expect("the records fit the slots");
     }
 
+    // The three adds below take the tensors of PyTorch.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a Recording takes the tensors of an operator of PyTorch")
     void add_input(const at::Tensor& tensor) {
         if (tensor.defined() && counts.inputs < Capacity) {
             if (!fill_meta(slot_at(counts.inputs), tensor)) is_each_enumeration_named = false;
@@ -899,6 +924,7 @@ struct Recording {
             counts.outputs++;
         }
     }
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     // A result that is one scalar, as the meta of scalar_result_meta.
     void add_scalar_output(crucible::ScalarType dtype) {
@@ -909,9 +935,13 @@ struct Recording {
     }
 };
 
+// The three functions below read the arguments and the results of an operator
+// through the API of PyTorch, so they are in an ABI region.
+//
 // One argument, classified by the table above and recorded accordingly. An
 // Optional recurses once into its payload, which the payload witnesses prove
 // terminates.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the record reads the arguments and the results of an operator of PyTorch")
 template <uint32_t Capacity, bool MayOverflow, class T>
 void record_argument(Recording<Capacity, MayOverflow>& recording, const T& value) {
     constexpr ArgumentKind kind = argument_kind_of<T>();
@@ -1019,6 +1049,7 @@ void record_result(Recording<Capacity, MayOverflow>& recording, const T& result)
             recording.add_output(tensor);
     }
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // The binding
@@ -1081,22 +1112,26 @@ static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedE
 // that do not arm that guard.
 // =====================================================================
 
-[[nodiscard]] CRUCIBLE_HOT crucible::Vigil* recording_vigil() noexcept {
+[[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::Ref<crucible::Vigil>> recording_vigil() noexcept {
+    using Recorder = ::fixy::Option<::fixy::Ref<crucible::Vigil>>;
+    // The TLS state of PyTorch holds the mode and the Vigil handle of the
+    // thread.  The TLS-stored pointer crosses the same ABI boundary as a
+    // CrucibleHandle, so it enters through the typed door that tags it
+    // source::ABIBoundary.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the gate reads the recording state that PyTorch keeps for each thread")
     auto& state = c10::CrucibleState::get_tls_state();
     if (state.mode() == c10::CrucibleMode::INACTIVE) [[likely]]
-        return nullptr;
+        return ::fixy::none;
 
     void* tls_context = state.context();
     if (!tls_context) [[unlikely]]
-        return nullptr;
+        return ::fixy::none;
 
-    // The TLS-stored pointer crosses the same ABI boundary as a
-    // CrucibleHandle, so it enters through the typed door that tags it
-    // source::ABIBoundary.
-    crucible::Vigil* vigil = as_vigil_typed(static_cast<CrucibleHandle>(tls_context)).value();
-    if (!vigil->is_producer_thread()) [[unlikely]]
-        return nullptr;
-    return vigil;
+    crucible::Vigil& vigil = *as_vigil_typed(static_cast<CrucibleHandle>(tls_context)).value();
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    if (!vigil.is_producer_thread()) [[unlikely]]
+        return ::fixy::none;
+    return Recorder::some(::fixy::to(vigil));
 }
 
 // Bits 2 and 3 of op_flags. `is_foreach` is a property of the operator, which
@@ -1107,8 +1142,12 @@ static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedE
     return static_cast<uint8_t>((phase & 0x3) << crucible::op_flag::PHASE_SHIFT);
 }
 
+// The two functions below read the modes and the dispatch keys of PyTorch for
+// one operation, so they are in an ABI region.
+//
 // For the boxed fallback, which reads the gradient mode for no flag of its own
 // and so has no value to share.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the flags read the modes and the dispatch keys of PyTorch for an operation")
 [[nodiscard]] inline uint8_t phase_flag_bits(bool is_foreach) noexcept {
     return phase_flag_bits(is_foreach, c10::GradMode::is_enabled());
 }
@@ -1133,6 +1172,7 @@ template <bool IsMutable, bool IsForeach>
     if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     return flags;
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The entry the unboxed path builds for one operator, with each bounded field
 // at the largest value it can take. The input and output counts are each at
@@ -1163,11 +1203,14 @@ void write_recorded_scalars(crucible::TraceRing::Entry& entry, const Recording<C
 // Builds the entry and hands it to the Vigil. The schema hash arrives as an
 // argument rather than as a template parameter so that one instantiation
 // serves every operator of the same capacity, mutability and kernel family,
-// which is around a hundred rather than 3110.
+// which is around a hundred rather than 3110.  The dispatch keys of PyTorch
+// give the flags of the entry, so the signature is in an ABI region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the dispatch keys of PyTorch give the flags of the entry")
 template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow>
 void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, crucible::SchemaHash schema_hash,
-                        crucible::ShapeHash shape_hash, c10::DispatchKeySet dispatch_keys, crucible::Vigil* vigil,
+                        crucible::ShapeHash shape_hash, c10::DispatchKeySet dispatch_keys, crucible::Vigil& vigil,
                         crucible::ScopeHash scope_hash) {
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     // A tensor whose element type, device or layout names no crucible
     // enumerator has no meta, so the operation stays out of the ring, as an
     // operation that the trust ladder refuses.  This is the enumerator part of
@@ -1214,7 +1257,7 @@ void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, cruci
     // context has no such context, so its call does not compile.
     const auto op = crucible::mint_validated_op(std::move(binding).value(), records);
     for (const crucible::ValidatedOp& certified : op)
-        (void)vigil->dispatch_op_pure(vigil->mint_producer_context(), certified, scope_hash);
+        (void)vigil.dispatch_op_pure(vigil.mint_producer_context(), certified, scope_hash);
 }
 
 // =====================================================================
@@ -1228,32 +1271,33 @@ struct RecordKernel;
 
 template <class Op, uint32_t TableIndex, class Ret, class... Args>
 struct RecordKernel<Op, TableIndex, Ret(Args...)> {
-    static_assert(reflection_agrees_with_codegen_v<Op>,
-                  "the signature reflected from Op::call is not the signature Op::schema declares; the fork's "
+    // The row of the operator in the table.
+    static constexpr const OpEntry& kRow = aten_op_row<TableIndex>();
+
+    static_assert(call_agrees_with_codegen_v<Op>,
+                  "the declared signature of Op::call is not the signature Op::schema declares; the fork's "
                   "operator-header shape changed");
-    static_assert(sizeof...(Args) == aten_op_table[TableIndex].arity,
-                  "the reflected parameter count is not the arity in aten_op_table.h; the table was generated "
+    static_assert(sizeof...(Args) == kRow.arity,
+                  "the parameter count of Op::call is not the arity in aten_op_table.h; the table was generated "
                   "against a different revision of the fork than this build compiles");
-    static_assert(tensor_argument_mask<Args...>() == aten_op_table[TableIndex].tensor_arg_mask,
+    static_assert(tensor_argument_mask<Args...>() == kRow.tensor_arg_mask,
                   "the tensor positions read from the C++ parameter types are not the positions the generator read "
                   "from the schema string");
-    static_assert(tensor_list_argument_mask<Args...>() == aten_op_table[TableIndex].tensor_list_mask,
+    static_assert(tensor_list_argument_mask<Args...>() == kRow.tensor_list_mask,
                   "the tensor-list positions read from the C++ parameter types are not the positions the generator "
                   "read from the schema string");
 
-    static constexpr crucible::SchemaHash kSchemaHash{aten_op_table[TableIndex].schema_hash};
-    static constexpr bool kIsMutable = aten_op_table[TableIndex].is_mutable;
+    static constexpr crucible::SchemaHash kSchemaHash{kRow.schema_hash};
+    static constexpr bool kIsMutable = kRow.is_mutable;
 
     // One of the fused multi-tensor kernels, which is half of what the phase
     // derivation reads to name an operation an optimizer operation. Constant
     // here, so the derivation folds to a grad-mode question on this path.
-    static constexpr bool kIsForeach = is_foreach_op_name(aten_op_table[TableIndex].name);
+    static constexpr bool kIsForeach = is_foreach_op_name(kRow.name);
 
     // Exact when no argument is a tensor list: one slot per tensor argument.
     static constexpr uint32_t kInputBound =
-        aten_op_table[TableIndex].tensor_list_mask == 0u
-            ? static_cast<uint32_t>(::fixy::popcount(aten_op_table[TableIndex].tensor_arg_mask))
-            : MAX_INLINE_METAS;
+        kRow.tensor_list_mask == 0u ? static_cast<uint32_t>(::fixy::popcount(kRow.tensor_arg_mask)) : MAX_INLINE_METAS;
 
     static constexpr uint32_t kCapacity =
         ::fixy::min(MAX_INLINE_METAS, kInputBound + result_meta_bound_v<std::remove_cvref_t<Ret>>);
@@ -1262,8 +1306,8 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // or more input tensors than kCapacity: a list argument has no length
     // bound at compile time.  Only such an operator folds the overflow
     // digest of entry_slots.h.
-    static constexpr bool kMayOverflow = scalar_bound_v<Args...> > kInlineScalars
-                                      || aten_op_table[TableIndex].tensor_list_mask != 0u || kInputBound > kCapacity;
+    static constexpr bool kMayOverflow =
+        scalar_bound_v<Args...> > kInlineScalars || kRow.tensor_list_mask != 0u || kInputBound > kCapacity;
 
     // append_trace_entry certifies this operator's entries without a runtime
     // check. That is sound only while the ladder accepts the largest entry
@@ -1284,10 +1328,12 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // them as they are recorded also keeps the table's contents equal to the
     // set of operators the run actually used, which is what it meant before.
     //
-    // Only the producer thread reaches here, so the flag has one writer and
-    // relaxed ordering is enough.  A registration costs one branch per
-    // operator after the first, not one per operation.
-    static inline std::atomic<bool> schema_name_registered{false};
+    // A producer thread of a Vigil writes the flag, and the store comes after
+    // the registration.  A second store of true writes the same value, so two
+    // Vigils on two threads need no other order.  On x86_64 the acquire load
+    // and the release store are plain moves.  A registration costs one branch
+    // per operator after the first, not one per operation.
+    static inline ::fixy::Atomic<bool> schema_name_registered{false};
 
     [[gnu::cold, gnu::noinline]] static void register_schema_name_once(crucible::Vigil& vigil) {
         // The tables take names only from a thread that holds a Vigil's
@@ -1296,10 +1342,10 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         // library reads.  PyTorch's operator names are compiled into the
         // generated headers this table was built from, so crucible produced
         // the name.
-        const QualifiedOpName name{aten_op_table[TableIndex]};
+        const QualifiedOpName name{kRow};
         vigil.register_schema_name(kSchemaHash,
                                    ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(name.c_text().view()));
-        schema_name_registered.store(true, std::memory_order_relaxed);
+        schema_name_registered.store_release(true);
     }
 
     using OpRecording = Recording<kCapacity, kMayOverflow>;
@@ -1320,13 +1366,17 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // An unwind of a PyTorch error closes the frame too.  When the stack has
     // fewer free slots than kCapacity, the kernel records through
     // call_recording_on_stack.
-    [[gnu::noinline]] static Ret call_recording(crucible::Vigil* vigil, c10::DispatchKeySet dispatch_keys,
+    //
+    // The functions from here to call take the arguments of an operator of
+    // PyTorch and its dispatch keys, so they are in an ABI region.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the kernel takes the arguments of an operator of PyTorch and runs it again")
+    [[gnu::noinline]] static Ret call_recording(crucible::Vigil& vigil, c10::DispatchKeySet dispatch_keys,
                                                 Args... args) {
-        if (!schema_name_registered.load(std::memory_order_relaxed)) [[unlikely]]
-            register_schema_name_once(*vigil);
+        if (!schema_name_registered.load_acquire()) [[unlikely]]
+            register_schema_name_once(vigil);
 
         if constexpr (kRecordsInFrame) {
-            const crucible::OpRecordFrame frame{vigil->op_record_stack(vigil->mint_producer_context()), kCapacity};
+            const crucible::OpRecordFrame frame{vigil.op_record_stack(vigil.mint_producer_context()), kCapacity};
             for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
                 for (const typename OpRecording::Slots metas : slots.template window<OpRecording::kSlots>(0)) {
                     return record_in_slots(vigil, dispatch_keys, metas, args...);
@@ -1342,7 +1392,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // The record of an operator with no exact bound, into the slots of a frame
     // or of the list of the cold path.  One body serves the two paths, so the
     // kernel holds one copy of it.
-    [[gnu::noinline]] static Ret record_in_slots(crucible::Vigil* vigil, c10::DispatchKeySet dispatch_keys,
+    [[gnu::noinline]] static Ret record_in_slots(crucible::Vigil& vigil, c10::DispatchKeySet dispatch_keys,
                                                  typename OpRecording::Slots metas, Args... args)
         requires kRecordsInFrame
     {
@@ -1354,7 +1404,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // fewer free slots than kCapacity, which a deep nest of operations needs.
     // The list costs a fill of each of its slots.  The list is in this
     // function, so the frame of call_recording holds no list.
-    CRUCIBLE_COLD static Ret call_recording_on_stack(crucible::Vigil* vigil, c10::DispatchKeySet dispatch_keys,
+    CRUCIBLE_COLD static Ret call_recording_on_stack(crucible::Vigil& vigil, c10::DispatchKeySet dispatch_keys,
                                                      Args... args)
         requires kRecordsInFrame
     {
@@ -1366,7 +1416,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // results, and gives the operation to the Vigil.  The slots hold the
     // records from the first record_argument to the dispatch, and no other
     // operation writes them in between.
-    CRUCIBLE_INLINE static Ret record_operation(crucible::Vigil* vigil, c10::DispatchKeySet dispatch_keys,
+    CRUCIBLE_INLINE static Ret record_operation(crucible::Vigil& vigil, c10::DispatchKeySet dispatch_keys,
                                                 typename OpRecording::Slots metas, Args... args) {
         // Inputs before the operation runs, because an out= argument is
         // written by it.
@@ -1418,15 +1468,18 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     }
 
     static Ret call(c10::DispatchKeySet dispatch_keys, Args... args) {
-        crucible::Vigil* vigil = recording_vigil();
-        if (vigil == nullptr) [[likely]]
-            return Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
-        return call_recording(vigil, dispatch_keys, args...);
+        const ::fixy::Option<::fixy::Ref<crucible::Vigil>> vigil = recording_vigil();
+        return vigil.match(
+            [&](const ::fixy::Ref<crucible::Vigil>& recorder) -> Ret {
+                return call_recording(*recorder, dispatch_keys, args...);
+            },
+            [&]() -> Ret { return Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...); });
     }
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 };
 
 // The kernel of one table row, with its signature derived rather than named.
 template <uint32_t TableIndex, class Op>
-using RecordKernelFor = RecordKernel<Op, TableIndex, reflected_call_signature<Op>>;
+using RecordKernelFor = RecordKernel<Op, TableIndex, call_signature<Op>>;
 
 }  // namespace crucible::vessel

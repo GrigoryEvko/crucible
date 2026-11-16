@@ -38,9 +38,7 @@
 
 #include "vessel_api_typed.h"
 
-#include <bit>
 #include <cstdint>
-#include <cstring>
 #include <meta>
 #include <string_view>
 #include <type_traits>
@@ -58,8 +56,12 @@ namespace {
 // DeferredInit and gives its slot to Crucible, so the functionality-key budget
 // stays the same.  The compiler reads the patched enum here, so a re-indented
 // header or an explicit enumerator value cannot hide a change.
+//
+// The checks read the enum of PyTorch through reflection, so they are in an
+// ABI region.  The reflection gives the identifiers as std::string_view.
 // =====================================================================
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the checks read the dispatch keys that the PyTorch fork declares")
 static_assert(std::to_underlying(c10::DispatchKey::Crucible) + 1
                   == std::to_underlying(c10::DispatchKey::EndOfFunctionalityKeys),
               "DispatchKey::Crucible is not the last functionality key: upstream added a key after it, so the "
@@ -85,6 +87,7 @@ static_assert(!dispatch_key_has_enumerator("DeferredInit"),
               "DispatchKey::DeferredInit survived the patch: the removal hunk did not apply, so Crucible widened "
               "the key budget instead of reusing the dead slot.  Repair "
               "patches/pytorch-crucible-integration.patch.");
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // The bridge this path shares with the unboxed kernels
@@ -101,11 +104,10 @@ static_assert(!dispatch_key_has_enumerator("DeferredInit"),
 // the Python ctypes path.
 // =====================================================================
 
-using crucible::vessel::fnv1a_bytes;
-using crucible::vessel::fnv1a_str;
-using crucible::vessel::kFnvOffset;
-using crucible::vessel::kFnvPrime;
+using crucible::vessel::fnv1a_step;
+using crucible::vessel::fnv1a_text;
 using crucible::vessel::InputOverflow;
+using crucible::vessel::kAfterCrucibleKeyset;
 using crucible::vessel::MAX_INLINE_METAS;
 using crucible::vessel::MetaCount;
 using crucible::vessel::ScalarArgs;
@@ -160,14 +162,21 @@ using crucible::vessel::phase_flag_bits;
 // The key is wrapped in `Tagged<const void*, source::External>` to thread
 // the FFI provenance into the type system.  It is identity-only here
 // (compared, never dereferenced).  The wrapper is regime-1 EBO collapse,
-// so the slot stays at 32B and the cache stays L1-resident.  The alias and
-// mint_external_op_key keep the spelling in one place, so the declaration
-// and the assignment below cannot drift apart.
+// so the slot stays at 32B and the cache stays L1-resident.  The alias, the
+// empty key and mint_external_op_key keep the spelling in one place, so the
+// declaration and the assignment below cannot drift apart.
 using ExternalOpKey = ::fixy::Tagged<const void*, ::fixy::tags::source::External>;
 
-[[nodiscard]] constexpr ExternalOpKey mint_external_op_key(const void* op) noexcept {
-    return ::fixy::mint_tagged<::fixy::tags::source::External>(op);
+// The key of an empty slot.  No operator name has the address zero.
+inline constexpr ExternalOpKey kEmptyOpKey =
+    ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<const void*>(nullptr));
+
+// The key of an operator: the address of its operator name.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the address of the operator name of PyTorch keys the cache")
+[[nodiscard]] constexpr ExternalOpKey mint_external_op_key(const c10::OperatorName& name) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<const void*>(&name));
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The states of a slot, and the bits of its flags.  A retired slot held the
 // facts of a schema that the dispatcher removed.  A lookup passes it as it
@@ -181,7 +190,7 @@ static constexpr uint64_t FLAG_FOREACH = 2;
 
 struct SchemaHashSlot {
     ::fixy::Atomic<uint64_t> state{SLOT_EMPTY};
-    ExternalOpKey key = mint_external_op_key(nullptr);
+    ExternalOpKey key = kEmptyOpKey;
     crucible::SchemaHash hash;
     uint64_t flags = 0;
 };
@@ -203,11 +212,12 @@ static constinit ::fixy::FixedArray<SchemaHashSlot, SCHEMA_CACHE_CAP> schema_cac
                                .expect("a masked probe is below SCHEMA_CACHE_CAP"));
 }
 
-// The first slot of the probe window of a key.  bit_cast gives the address
-// as an integer for the index arithmetic.  Each reader compares the key
-// itself, so the integer never turns back into a pointer.
+// The first slot of the probe window of a key.  The hash of the AddressKey of
+// the address mixes each bit of the address into the low bits, and the mask
+// takes them.  Each reader compares the key itself, and no integer of the
+// address leaves the AddressKey.
 [[nodiscard]] static uint64_t home_probe(ExternalOpKey key) noexcept {
-    return (std::bit_cast<std::uintptr_t>(key.value()) >> 4) & SCHEMA_CACHE_MASK;
+    return ::fixy::mint_address_key(key.value()).hash() & SCHEMA_CACHE_MASK;
 }
 
 struct SchemaInfo {
@@ -216,72 +226,42 @@ struct SchemaInfo {
     bool is_foreach = false;
 };
 
-// The lookup stays a call.  Its slow path registers the schema name, and
-// GCC can inline the whole body into crucibleFallback, which adds about 1000
-// instructions there.  A cold helper for the slow path with the probe inline
-// gave the fallback 156 instructions more than this call.
-[[nodiscard, gnu::noinline]] static SchemaInfo get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op,
-                                                               const c10::FunctionSchema& schema) {
-    // The address of the operator name is the cache key.
-    const ExternalOpKey key = mint_external_op_key(&op.operator_name());
-    const uint64_t idx = home_probe(key);
-    for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
-        SchemaHashSlot& slot = get_schema_slot(idx + probe);
-        const uint64_t state = slot.state.load_acquire();
-        // The compare reads the whole key of the slot, not only its index.
-        // Two operators whose keys give one index take two slots of the
-        // window, and neither one reads the facts of the other.  A retired
-        // slot of this key is not ready, so the lookup passes it.
-        if (state == SLOT_READY && slot.key.value() == key.value()) [[likely]]
-            return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0};
-        if (state == SLOT_EMPTY) break;
-    }
-
-    // Cache miss: compute FNV-1a over "namespace::name.overload".
-    const auto& name = op.operator_name();
-    uint64_t h = kFnvOffset;
-    for (char c : name.name) {
-        h ^= static_cast<uint8_t>(c);
-        h *= kFnvPrime;
-    }
-    if (!name.overload_name.empty()) {
-        h ^= static_cast<uint8_t>('.');
-        h *= kFnvPrime;
-        for (char c : name.overload_name) {
-            h ^= static_cast<uint8_t>(c);
-            h *= kFnvPrime;
-        }
-    }
-
-    const auto schema_hash = crucible::SchemaHash{h};
+// The facts of an operator that the cache does not hold, from the two parts
+// of its name and the mutability of its schema.  The helper registers the
+// name for the trace reader, and the first empty slot of the window of the
+// key gets the facts.  A run misses each operator one time, so the helper is
+// cold, and the text of the name is on its stack only.  Complexity: the
+// length of the name.
+CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fixy::TextView base_name,
+                                                   ::fixy::TextView overload, bool mutable_op, ExternalOpKey key,
+                                                   uint64_t idx) {
+    // FNV-1a over "namespace::name.overload".
+    uint64_t hash = fnv1a_text(base_name);
+    if (overload.size() != 0) hash = fnv1a_text(overload, fnv1a_step(hash, static_cast<uint8_t>('.')));
+    const auto schema_hash = crucible::SchemaHash{hash};
 
     // Register name for visualization / diagnostics.
     // "aten::mm.default" -> SchemaTable for op name lookup.
-    std::string full_name = name.name;
-    if (!name.overload_name.empty()) {
-        full_name += '.';
-        full_name += name.overload_name;
-    }
     // PyTorch's operator schema is compiled into the libtorch binary this
     // process links, so the name is internal: it crossed no trust boundary.
     // The tables take names only from a thread that holds a Vigil's producer
     // claim, which the caller checked.  The global table is sealed by now,
     // so the name goes to the late table, which the vessel library reads.
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: PyTorch gives the operator name in a std::string")
-    const ::fixy::TextView full_name_text = ::fixy::mint_foreign_text(full_name.data(), full_name.size());
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    vigil.register_schema_name(schema_hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name_text));
-
-    // Authoritative mutability from schema alias annotations.
-    // Catches both in-place ops (add_.Tensor: self(a!)) and out= variants
-    // (add.out: out(a!)). FunctionSchema::is_mutable() checks if any
-    // argument has AliasInfo with isWrite() == true.
-    const bool mutable_op = schema.is_mutable();
+    // The tables refuse a name longer than SCHEMA_NAME_MAX characters, and so
+    // does the text below.
+    ::fixy::FixedText<crucible::SCHEMA_NAME_MAX> full_name{};
+    const bool is_named = full_name.append(base_name).is_ok()
+                       && (overload.size() == 0 || (full_name.push('.').is_ok() && full_name.append(overload).is_ok()));
+    if (!is_named) [[unlikely]] {
+        ::fixy::fatal("crucible: a schema name is longer than SCHEMA_NAME_MAX characters.  Raise SCHEMA_NAME_MAX in "
+                      "crucible/SchemaTable.h");
+    }
+    vigil.register_schema_name(schema_hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name.view()));
 
     // Half of what the phase derivation reads to name an operation an
     // optimizer operation. The overload never carries the infix, so the base
     // name is the whole question.
-    const bool foreach_op = is_foreach_op_name(name.name);
+    const bool foreach_op = is_foreach_op_name(base_name);
 
     // The first empty slot of the window gets the facts.  The thread whose
     // claim succeeds is the one writer of the slot.  Two threads that miss the
@@ -302,6 +282,45 @@ struct SchemaInfo {
         }
     }
     return {schema_hash, mutable_op, foreach_op};
+}
+
+// The lookup stays a call, and GCC can inline the whole body into
+// crucibleFallback, which adds about 1000 instructions there.  A cold helper
+// for the slow path with the probe inline gave the fallback 156 instructions
+// more than this call.  The slow path is the cold record_schema_miss.  The
+// handle and the schema are of PyTorch, so the reads of them are in ABI
+// regions.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the schema of PyTorch")
+[[nodiscard, gnu::noinline]] static SchemaInfo get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op,
+                                                               const c10::FunctionSchema& schema) {
+    // The address of the operator name is the cache key.
+    const c10::OperatorName& name = op.operator_name();
+    const ExternalOpKey key = mint_external_op_key(name);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    const uint64_t idx = home_probe(key);
+    for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
+        SchemaHashSlot& slot = get_schema_slot(idx + probe);
+        const uint64_t state = slot.state.load_acquire();
+        // The compare reads the whole key of the slot, not only its index.
+        // Two operators whose keys give one index take two slots of the
+        // window, and neither one reads the facts of the other.  A retired
+        // slot of this key is not ready, so the lookup passes it.
+        if (state == SLOT_READY && slot.key.value() == key.value()) [[likely]]
+            return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0};
+        if (state == SLOT_EMPTY) break;
+    }
+
+    // Cache miss.  PyTorch gives the two parts of the name in std::string
+    // objects.  Authoritative mutability from schema alias annotations.
+    // Catches both in-place ops (add_.Tensor: self(a!)) and out= variants
+    // (add.out: out(a!)). FunctionSchema::is_mutable() checks if any
+    // argument has AliasInfo with isWrite() == true.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: PyTorch gives the operator name in two std::string parts")
+    const ::fixy::TextView base_name = ::fixy::mint_foreign_text(name.name.data(), name.name.size());
+    const ::fixy::TextView overload = ::fixy::mint_foreign_text(name.overload_name.data(), name.overload_name.size());
+    const bool mutable_op = schema.is_mutable();
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return record_schema_miss(vigil, base_name, overload, mutable_op, key, idx);
 }
 
 // Retires each ready slot of the key, so no lookup reads its facts again.
@@ -334,7 +353,7 @@ class SchemaCacheListener final : public c10::OpRegistrationListener {
 public:
     void onOperatorRegistered(const c10::OperatorHandle&) override {}
     void onOperatorDeregistered(const c10::OperatorHandle& op) override {
-        retire_schema_slots(mint_external_op_key(&op.operator_name()));
+        retire_schema_slots(mint_external_op_key(op.operator_name()));
     }
 };
 
@@ -348,15 +367,18 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // =====================================================================
 // Scalar extraction
 //
-// Bitcast non-tensor scalars to int64_t for TraceRing::Entry.
+// Bitcast non-tensor scalars to int64_t for TraceRing::Entry.  An IValue is
+// the boxed value of PyTorch, so the read is in an ABI region.
 // =====================================================================
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the read takes one boxed value of PyTorch")
 [[nodiscard]] static int64_t scalar_to_int64(const c10::IValue& iv) {
     if (iv.isInt()) return iv.toInt();
     if (iv.isBool()) return iv.toBool() ? 1 : 0;
     if (iv.isDouble()) return ::fixy::bit_cast<int64_t>(iv.toDouble());
     return 0;
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // Stack extraction: pull TensorMeta + ScalarArgs from IValue stack
@@ -401,6 +423,7 @@ struct ExtractionResult {
 
     // One defined input tensor: a meta of the slots while they have room, and
     // a fold of the overflow digest after that.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction takes one tensor of PyTorch")
     void add_input(const at::Tensor& tensor, MetaSlots metas) {
         if (counts.inputs < MAX_INLINE_METAS) {
             if (!fill_meta(inline_slot(metas, counts.inputs), tensor)) is_each_enumeration_named = false;
@@ -411,8 +434,12 @@ struct ExtractionResult {
         if (!fill_meta(meta, tensor)) is_each_enumeration_named = false;
         overflow.fold(meta);
     }
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 };
 
+// The two extractions below read the boxed stack of PyTorch, so they are in
+// an ABI region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction reads the boxed stack of an operator of PyTorch")
 [[nodiscard]] static ExtractionResult extract_inputs(const torch::jit::Stack& stack, size_t args_begin, size_t num_args,
                                                      MetaSlots metas) {
     ExtractionResult r{};
@@ -503,13 +530,16 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
         }
     }
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // The fallback
+//
+// The redispatch goes to the keys after the recorder, kAfterCrucibleKeyset
+// of record_kernel.h, as for the unboxed kernels.  The three functions below
+// take the operator handle, the boxed stack and the TLS state of PyTorch, so
+// they are in an ABI region.
 // =====================================================================
-
-static const auto AFTER_CRUCIBLE_KEYSET =
-    c10::DispatchKeySet(c10::DispatchKeySet::FULL_AFTER, c10::DispatchKey::Crucible);
 
 // Records one operation in the slots, runs it, and gives it to the Vigil.
 // The slots hold the inputs from the extraction until the dispatch to the
@@ -517,6 +547,7 @@ static const auto AFTER_CRUCIBLE_KEYSET =
 // operations in between.  So each caller gives slots that no such operation
 // writes: a frame of the record stack of the Vigil, or a list on the stack of
 // the cold path.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the boxed fallback takes the operator handle and the stack of PyTorch")
 static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet dispatch_keys, torch::jit::Stack& stack,
                             c10::CrucibleState& state, crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                             MetaSlots metas) {
@@ -527,7 +558,7 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     // Guard: schema.arguments().size() > stack.size() should never happen
     // with a well-formed dispatcher, but protect against underflow (UB).
     if (num_args > stack.size()) [[unlikely]] {
-        op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, &stack);
+        op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, &stack);
         return;
     }
     const auto args_begin = stack.size() - num_args;
@@ -539,7 +570,7 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     const auto shape_hash = compute_shape_hash(first_records(metas, counts.inputs));
 
     // -- Execute eagerly (Tier 1: always redispatch) ------------------
-    op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, &stack);
+    op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, &stack);
 
     // -- Extract output tensor metadata -------------------------------
     extract_outputs(stack, schema.returns().size(), metas, extracted);
@@ -610,7 +641,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
 
     // -- Fast path: INACTIVE -- pure passthrough, zero work -----------
     if (state.mode() == c10::CrucibleMode::INACTIVE) [[likely]] {
-        op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
+        op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, stack);
         return;
     }
 
@@ -625,11 +656,11 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // skipped when state.context() is null (caller branches below).
     void* tls_ctx = state.context();
     if (!tls_ctx) [[unlikely]] {
-        op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
+        op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, stack);
         return;
     }
     auto vigil_typed = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(tls_ctx));
-    auto* vigil = vigil_typed.value();
+    crucible::Vigil& vigil = *vigil_typed.value();
 
     // -- Foreign thread: execute, do not record -----------------------
     //
@@ -674,8 +705,8 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // Vigil refuses a second producer on its own and ends the process when
     // it sees one.  That guard stays as the last resort for a caller that
     // does not ask first.  This is the asking.
-    if (!vigil->is_producer_thread()) [[unlikely]] {
-        op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
+    if (!vigil.is_producer_thread()) [[unlikely]] {
+        op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, stack);
         return;
     }
 
@@ -687,23 +718,26 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // inputs to the dispatch.  An operation that the redispatch runs opens
     // its frame past these slots, and its frame closes before the redispatch
     // returns.  An unwind of a PyTorch error closes the frame too.
-    const crucible::VigilFgCtx fg = vigil->mint_producer_context();
-    const crucible::OpRecordFrame frame{vigil->op_record_stack(fg), MAX_INLINE_METAS};
+    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    const crucible::OpRecordFrame frame{vigil.op_record_stack(fg), MAX_INLINE_METAS};
     for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
         for (const MetaSlots metas : slots.window<MAX_INLINE_METAS>(0)) {
-            record_boxed_op(op, dispatch_keys, *stack, state, *vigil, fg, metas);
+            record_boxed_op(op, dispatch_keys, *stack, state, vigil, fg, metas);
             return;
         }
     }
-    record_boxed_op_on_stack(op, dispatch_keys, *stack, state, *vigil, fg);
+    record_boxed_op_on_stack(op, dispatch_keys, *stack, state, vigil, fg);
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // Registration
 //
-// One line: catches every op in every namespace.  Fires on dlopen.
+// One line: catches every op in every namespace.  Fires on dlopen.  The
+// blocks are the registration macro of PyTorch, so they are in an ABI region.
 // =====================================================================
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the blocks of PyTorch register the fallback and the passthrough kernels")
 TORCH_LIBRARY_IMPL(_, Crucible, m) { m.fallback(torch::CppFunction::makeFromBoxedFunction<&crucibleFallback>()); }
 
 // Profiler ops: passthrough (do not record).
@@ -713,6 +747,7 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
     m.impl("_record_function_enter_new", torch::CppFunction::makeFallthrough());
     m.impl("_record_function_exit", torch::CppFunction::makeFallthrough());
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
 // Tracing completeness notes
@@ -809,12 +844,14 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
 //       computation. Currently recorded (contributes to op count accuracy)
 //       but could be filtered for cleaner traces. Keep for now: they carry
 //       data_ptr for correct dataflow edge construction.
-//   [ ] Communication ops (all_reduce, broadcast, etc.) — ProcessGroup ops
-//       do NOT go through the ATen dispatcher. They use a separate C++
-//       class hierarchy (ProcessGroupNCCL, etc.). To capture them, we need
-//       either: (a) custom hooks in ProcessGroup, or (b) intercept the
-//       collective ops that ARE dispatched (c10d::allreduce_, etc.).
-//       See CLAUDE.md L13 Distribution for the planned approach.
+//   [x] Communication ops (all_reduce, broadcast, etc.) — a collective of a
+//       ProcessGroup calls an operator of the c10d namespace through the
+//       dispatcher.  ProcessGroup::allreduce of the fork at 8be2400 calls
+//       c10d::allreduce_ (torch/csrc/distributed/c10d/ProcessGroup.hpp), and
+//       the wildcard fallback above catches it as each other operator.  The
+//       record holds the call of the collective and its tensors.  The
+//       transfer that the backend (ProcessGroupNCCL, etc.) runs below the
+//       dispatcher is not an operator, and no record holds it.
 //   [ ] Custom autograd Functions (torch.autograd.Function) — the forward()
 //       contains ATen ops that ARE dispatched. The backward() also contains
 //       ATen ops that ARE dispatched. But the Function call itself is not
@@ -844,6 +881,10 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
 constexpr uint64_t kDispatchAbiVersion = 1;
 
 extern "C" {
+
+// The C entries take and give the raw pointers of ctypes, and they read and
+// write the TLS state of PyTorch, so the block is in an ABI region.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C entries give ctypes the TLS state of PyTorch and the names of the schemas")
 
 // Prototypes first. These are the whole C ABI of libcrucible_dispatch.so,
 // and crucible_native.py binds every one of them by name through ctypes.
@@ -936,9 +977,8 @@ CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, 
     const auto late_entries = crucible::late_schema_table().entries();
     const auto write_entry = [out_hash, out_name](const crucible::SchemaEntry& entry) noexcept {
         if (out_hash) *out_hash = entry.hash.raw();
-        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C caller reads the name as a C text up to its zero")
+        // The C caller reads the name as a C text up to its zero.
         if (out_name) *out_name = ::foundation::core::foreign_c_str(crucible::SchemaTable::name_of(entry).value());
-        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         return 1;
     };
     if (i < global_entries.size()) {
@@ -949,5 +989,7 @@ CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, 
         return write_entry(*entry);
     return 0;
 }
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // extern "C"

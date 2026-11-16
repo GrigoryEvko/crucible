@@ -498,10 +498,12 @@ def read_yaml_facts(yaml_path: Path, ops: list[Op]) -> tuple[str, int, int]:
 # ---------------------------------------------------------------------
 # Emitting.
 
-# The entries of one part macro of CRUCIBLE_ATEN_OP_LIST, at most.  The
-# tree-sitter parse of one macro body of 3110 entries takes about 4 s for
-# each wrapper that utils/assay/readers/tsast.py tries, and the parse of 25 parts
-# takes 0.15 s in all.
+# The entries of one part macro of CRUCIBLE_ATEN_OP_LIST, and the rows of one
+# part of the table, at most.  The tree-sitter parse of one macro body of 3110
+# entries takes about 4 s for each wrapper that utils/assay/readers/tsast.py
+# tries, and the parse of 25 parts takes 0.15 s in all.  The list constructor
+# of a FixedArray of the base takes at most 256 values
+# (max_listed_array_count of foundation/core/Array.h).
 OPS_PER_PART = 128
 
 # The reason of the opt-out region around the part macros.  Each entry names
@@ -534,25 +536,25 @@ HEADER_TEMPLATE = '''#pragma once
 //   classified              {classified} ({opaque} OPAQUE)
 
 #include <crucible/CKernel.h>
+#include <fixy/Core.h>
 #include <foundation/Quarantine.h>
 
 #include <cstdint>
-#include <array>
 
 namespace crucible::vessel {{
 
 // The yaml this table was generated against. CI compares it with the
 // checked-out fork: a table built against a different revision than the
 // wheel it runs on is the failure this pins down.
-inline constexpr const char* kNativeFunctionsSha256 = "{yaml_sha256}";
-inline constexpr const char* kTorchVersion = "{torch_version}";
+inline constexpr ::fixy::TextView kNativeFunctionsSha256{{"{yaml_sha256}"}};
+inline constexpr ::fixy::TextView kTorchVersion{{"{torch_version}"}};
 
 struct OpEntry {{
     // `aten::`-prefixed, exactly as the operator struct spells it, because
     // the schema hash is taken over that spelling.
-    const char* name = nullptr;
+    ::fixy::TextView name{{}};
     // Empty when the operator has no named overload.
-    const char* overload = nullptr;
+    ::fixy::TextView overload{{}};
     // FNV-1a over "aten::name" plus ".overload" when the overload is named.
     // The same hash crucible_fallback.cpp:146 computes.
     uint64_t schema_hash = 0;
@@ -575,9 +577,39 @@ struct OpEntry {{
     bool is_mutable = false;
 }};
 
-inline constexpr std::array<OpEntry, {op_count}> aten_op_table{{{{
-{rows}
-}}}};
+// The count of the rows, and the rows of one part at most.
+inline constexpr uint32_t kAtenOpCount = {op_count};
+inline constexpr uint32_t kAtenOpRowsPerPart = {ops_per_part};
+
+// The rows of the table, in parts of at most kAtenOpRowsPerPart rows. The
+// list constructor of a FixedArray of the base takes at most 256 values, so
+// the generator writes the rows in parts. A copy of each row into one array
+// of {op_count} rows cost about 13 G instructions of constant evaluation in each
+// unit that includes this header, so no unit makes one.
+{row_parts}
+
+// The View of each part, in table order.
+inline constexpr ::fixy::FixedArray<::fixy::View<OpEntry const>, {part_count}> aten_op_parts{{
+{part_views}
+}};
+
+// The row at TableIndex: the row of its part at the index in the part.
+// Complexity: O(1), at compile time.
+template <uint32_t TableIndex>
+    requires(TableIndex < kAtenOpCount)
+[[nodiscard]] consteval const OpEntry& aten_op_row() noexcept {{
+    constexpr uint32_t kPart = TableIndex / kAtenOpRowsPerPart;
+    constexpr uint32_t kInPart = TableIndex % kAtenOpRowsPerPart;
+{row_branches}
+}}
+
+// Calls visit with each row, in table order.  Complexity: O(n) calls.
+template <class Visit>
+constexpr void for_each_aten_op_row(Visit&& visit) {{
+    for (const ::fixy::View<OpEntry const> part : aten_op_parts) {{
+        for (const OpEntry& row : part) visit(row);
+    }}
+}}
 
 // The operator structs, paired with their table index, for register.cpp to
 // expand. A type cannot be spelled as data, so this is the one place the
@@ -606,12 +638,33 @@ def emit(ops: list[Op], yaml_sha256: str, yaml_entries: int, torch_version: str)
             f"CKernelId::{op.ckernel}, {'true' if op.is_mutable else 'false'}}},"
         )
     parts = []
+    row_parts = []
     for start in range(0, len(ops), OPS_PER_PART):
+        part = start // OPS_PER_PART
         body = " \\\n".join(
             f"    X({i}, {op.struct})" for i, op in enumerate(ops[start:start + OPS_PER_PART], start)
         )
-        parts.append(f"#define CRUCIBLE_ATEN_OP_LIST_{start // OPS_PER_PART}(X) \\\n{body}")
+        parts.append(f"#define CRUCIBLE_ATEN_OP_LIST_{part}(X) \\\n{body}")
+        part_rows = rows[start:start + OPS_PER_PART]
+        row_parts.append(
+            f"inline constexpr ::fixy::FixedArray<OpEntry, {len(part_rows)}> aten_op_rows_{part}{{\n"
+            + "\n".join(part_rows)
+            + "\n};"
+        )
     part_list = " \\\n".join(f"    CRUCIBLE_ATEN_OP_LIST_{part}(X)" for part in range(len(parts)))
+    part_views = ",\n".join(
+        f"    ::fixy::View<OpEntry const>{{aten_op_rows_{part}.view()}}" for part in range(len(row_parts))
+    )
+    # The branch of each part but the last, then the last part.  A table of
+    # one part has only the last part, and its kPart is zero.
+    branches = [
+        f"    {'if' if part == 0 else 'else if'} constexpr (kPart == {part})\n"
+        f"        return aten_op_rows_{part}.at(::fixy::index<kInPart>());"
+        for part in range(len(row_parts) - 1)
+    ]
+    last = f"return aten_op_rows_{len(row_parts) - 1}.at(::fixy::index<kInPart>());"
+    branches.append(f"    else\n        {last}" if branches else f"    static_assert(kPart == 0);\n    {last}")
+    row_branches = "\n".join(branches)
     classified = sum(1 for op in ops if op.ckernel != OPAQUE)
     return HEADER_TEMPLATE.format(
         torch_version=torch_version,
@@ -620,7 +673,10 @@ def emit(ops: list[Op], yaml_sha256: str, yaml_entries: int, torch_version: str)
         op_count=len(ops),
         classified=classified,
         opaque=len(ops) - classified,
-        rows="\n".join(rows),
+        row_parts="\n\n".join(row_parts),
+        part_count=len(row_parts),
+        part_views=part_views,
+        row_branches=row_branches,
         ops_per_part=OPS_PER_PART,
         op_region_reason=OP_REGION_REASON,
         op_parts="\n\n".join(parts),

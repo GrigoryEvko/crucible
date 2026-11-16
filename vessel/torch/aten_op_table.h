@@ -23,25 +23,25 @@
 //   classified              343 (2767 OPAQUE)
 
 #include <crucible/CKernel.h>
+#include <fixy/Core.h>
 #include <foundation/Quarantine.h>
 
 #include <cstdint>
-#include <array>
 
 namespace crucible::vessel {
 
 // The yaml this table was generated against. CI compares it with the
 // checked-out fork: a table built against a different revision than the
 // wheel it runs on is the failure this pins down.
-inline constexpr const char* kNativeFunctionsSha256 = "d5652932897b83934c8f387e66157884a251372482d077074d556b28df31fc83";
-inline constexpr const char* kTorchVersion = "2.15.0a0+git8be2400";
+inline constexpr ::fixy::TextView kNativeFunctionsSha256{"d5652932897b83934c8f387e66157884a251372482d077074d556b28df31fc83"};
+inline constexpr ::fixy::TextView kTorchVersion{"2.15.0a0+git8be2400"};
 
 struct OpEntry {
     // `aten::`-prefixed, exactly as the operator struct spells it, because
     // the schema hash is taken over that spelling.
-    const char* name = nullptr;
+    ::fixy::TextView name{};
     // Empty when the operator has no named overload.
-    const char* overload = nullptr;
+    ::fixy::TextView overload{};
     // FNV-1a over "aten::name" plus ".overload" when the overload is named.
     // The same hash crucible_fallback.cpp:146 computes.
     uint64_t schema_hash = 0;
@@ -64,7 +64,16 @@ struct OpEntry {
     bool is_mutable = false;
 };
 
-inline constexpr std::array<OpEntry, 3110> aten_op_table{{
+// The count of the rows, and the rows of one part at most.
+inline constexpr uint32_t kAtenOpCount = 3110;
+inline constexpr uint32_t kAtenOpRowsPerPart = 128;
+
+// The rows of the table, in parts of at most kAtenOpRowsPerPart rows. The
+// list constructor of a FixedArray of the base takes at most 256 values, so
+// the generator writes the rows in parts. A copy of each row into one array
+// of 3110 rows cost about 13 G instructions of constant evaluation in each
+// unit that includes this header, so no unit makes one.
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_0{
     OpEntry{"aten::_adaptive_avg_pool2d_backward", "", 0xf8fcda166acd7816ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_adaptive_avg_pool2d_backward", "out", 0x04de1cceaed57eccULL, 3, 0x00000007, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::_adaptive_avg_pool2d", "", 0x4364eacbe8cf688eULL, 2, 0x00000001, 0x00000000, CKernelId::POOL_ADAPTIVE_AVG, false},
@@ -193,6 +202,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::_efficient_attention_backward", "", 0xa04861e6ef298f36ULL, 20, 0x000034ff, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_efficient_attention_forward", "", 0x7efc17b21b44d6e8ULL, 14, 0x0000103f, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_efficientzerotensor", "", 0x71d2ac66c28806a8ULL, 5, 0x00000000, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_1{
     OpEntry{"aten::_efficientzerotensor", "out", 0xecf0a89b45c0e726ULL, 2, 0x00000002, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::_embedding_bag_backward", "", 0x5a67bbef11aa2888ULL, 12, 0x0000043f, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_embedding_bag_dense_backward", "", 0x117e5f1b4f400288ULL, 10, 0x0000011f, 0x00000000, CKernelId::OPAQUE, false},
@@ -321,6 +333,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::_foreach_erf_", "", 0x0368ab1f16c2c413ULL, 1, 0x00000000, 0x00000001, CKernelId::OPAQUE, true},
     OpEntry{"aten::_foreach_erf", "out", 0x44d41caef2bbca34ULL, 2, 0x00000000, 0x00000003, CKernelId::OPAQUE, true},
     OpEntry{"aten::_foreach_erfc", "", 0x0368a71f16c2bd47ULL, 1, 0x00000000, 0x00000001, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_2{
     OpEntry{"aten::_foreach_erfc_", "", 0x8d9111d3ace74fc8ULL, 1, 0x00000000, 0x00000001, CKernelId::OPAQUE, true},
     OpEntry{"aten::_foreach_erfc", "out", 0x1487db8b6a94c6ddULL, 2, 0x00000000, 0x00000003, CKernelId::OPAQUE, true},
     OpEntry{"aten::_foreach_exp", "", 0x060cf3d5b31242aeULL, 1, 0x00000000, 0x00000001, CKernelId::OPAQUE, false},
@@ -449,6 +464,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::_foreach_tanh_", "", 0x70c8b6e4105d12c3ULL, 1, 0x00000000, 0x00000001, CKernelId::OPAQUE, true},
     OpEntry{"aten::_foreach_tanh", "out", 0x120dbb56f9e26664ULL, 2, 0x00000000, 0x00000003, CKernelId::OPAQUE, true},
     OpEntry{"aten::_foreach_trunc", "", 0x1be7a178b376dc3fULL, 1, 0x00000000, 0x00000001, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_3{
     OpEntry{"aten::_foreach_trunc_", "", 0xe173c018f2f87720ULL, 1, 0x00000000, 0x00000001, CKernelId::OPAQUE, true},
     OpEntry{"aten::_foreach_trunc", "out", 0xdf87503889ac6e15ULL, 2, 0x00000000, 0x00000003, CKernelId::OPAQUE, true},
     OpEntry{"aten::_foreach_zero_", "", 0x3a78da6dc2a81bd2ULL, 1, 0x00000000, 0x00000001, CKernelId::OPAQUE, true},
@@ -577,6 +595,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::_neg_view_copy", "", 0x0b95bed85fc7cb8eULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_neg_view_copy", "out", 0x711199a8531afe84ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::_neg_view", "", 0x43bc1b3a3bac811aULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_4{
     OpEntry{"aten::_nested_compute_contiguous_strides_offsets", "", 0x456aa5fc438f6f94ULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_nested_from_padded_and_nested_example", "", 0x18dbd47f0831e034ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_nested_from_padded_and_nested_example", "out", 0x96445964c23256f2ULL, 3, 0x00000007, 0x00000000, CKernelId::OPAQUE, true},
@@ -705,6 +726,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::_sparse_broadcast_to_copy", "", 0x6ce9e0b2e3573810ULL, 2, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_sparse_broadcast_to_copy", "out", 0xf2e033299637648eULL, 3, 0x00000005, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::_sparse_broadcast_to", "", 0xbf8b219403abc4acULL, 2, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_5{
     OpEntry{"aten::_sparse_bsc_tensor_unsafe", "", 0x49b44c021d1fb26cULL, 8, 0x00000007, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_sparse_bsr_tensor_unsafe", "", 0x338d1058e48f7a6fULL, 8, 0x00000007, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_sparse_compressed_tensor_unsafe", "", 0xf085a43166548003ULL, 8, 0x00000007, 0x00000000, CKernelId::OPAQUE, false},
@@ -833,6 +857,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::_unsafe_view", "", 0x56fc8422a416ae2aULL, 2, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_unsafe_view", "out", 0x194c8a662d146fb0ULL, 3, 0x00000005, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::_upsample_bicubic2d_aa_backward", "grad_input", 0xfd527cb14a8edf3bULL, 7, 0x00000041, 0x00000000, CKernelId::OPAQUE, true},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_6{
     OpEntry{"aten::_upsample_bicubic2d_aa_backward", "", 0x720bfd07cb30459eULL, 6, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_upsample_bicubic2d_aa", "vec", 0x2d339b32177e40baULL, 4, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::_upsample_bicubic2d_aa", "out", 0x791de53241ea1b1cULL, 6, 0x00000021, 0x00000000, CKernelId::OPAQUE, true},
@@ -961,6 +988,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::alpha_dropout", "", 0x3536044c2afc9d6dULL, 3, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::alpha_dropout_", "", 0x67667f6d0b3f1bf6ULL, 3, 0x00000001, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::amax", "", 0x762f424b5a2c21c0ULL, 3, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_7{
     OpEntry{"aten::amax", "out", 0xaf85bfdd8555ef7eULL, 4, 0x00000009, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::amin", "", 0x7614384b5a15490aULL, 3, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::amin", "out", 0x603f89f0548eae90ULL, 4, 0x00000009, 0x00000000, CKernelId::OPAQUE, true},
@@ -1089,6 +1119,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::binary_cross_entropy", "out", 0x3dc4a1bc8c8657d9ULL, 5, 0x00000017, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::binary_cross_entropy_with_logits", "", 0x5f11e8a60ab9e8b9ULL, 5, 0x0000000f, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::binary_cross_entropy_with_logits", "out", 0x872104466aaf2a8fULL, 6, 0x0000002f, 0x00000000, CKernelId::OPAQUE, true},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_8{
     OpEntry{"aten::bincount", "", 0x1d5af08d6c6a4897ULL, 3, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::bincount", "out", 0x1e36f8eee9fd57edULL, 4, 0x0000000b, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::binomial", "", 0x8e875b78c7a72b4eULL, 3, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
@@ -1217,6 +1250,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::combinations", "", 0x96bbc3d472ef5fdbULL, 3, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::complex", "", 0xe22e7658139f9249ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::complex", "out", 0x82e031be269e125fULL, 3, 0x00000007, 0x00000000, CKernelId::OPAQUE, true},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_9{
     OpEntry{"aten::concat", "", 0xd4f8f2fa449b13e3ULL, 2, 0x00000000, 0x00000001, CKernelId::OPAQUE, false},
     OpEntry{"aten::concat", "out", 0xc7d4b64c1e53ab69ULL, 3, 0x00000004, 0x00000001, CKernelId::OPAQUE, true},
     OpEntry{"aten::concatenate", "", 0x247b40edc0599f6cULL, 2, 0x00000000, 0x00000001, CKernelId::OPAQUE, false},
@@ -1345,6 +1381,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::diagonal", "", 0x38340346194edabcULL, 4, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::diagonal_scatter", "", 0x7c70c931d0c1c865ULL, 5, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::diagonal_scatter", "out", 0xc9938b439df33dcbULL, 6, 0x00000023, 0x00000000, CKernelId::OPAQUE, true},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_10{
     OpEntry{"aten::diff", "", 0xa68a4075124c6598ULL, 5, 0x00000019, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::diff", "out", 0x15075c6b424aff96ULL, 6, 0x00000039, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::digamma_", "", 0x7bd27d176aa83b06ULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, true},
@@ -1473,6 +1512,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::fft_fft2", "out", 0xc22f656b4fb0af76ULL, 5, 0x00000011, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::fft_fft", "", 0x55ff51918a5aea1aULL, 4, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::fft_fft", "out", 0x05a2f1294dabf6e0ULL, 5, 0x00000011, 0x00000000, CKernelId::OPAQUE, true},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_11{
     OpEntry{"aten::fft_fftfreq", "", 0x01509b82aca78eecULL, 6, 0x00000000, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::fft_fftfreq", "out", 0x1a37d9853eecbf6aULL, 3, 0x00000004, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::fft_fftn", "", 0x7bc20e4e187c631cULL, 4, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
@@ -1601,6 +1643,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::ger", "", 0x48d0546abb3eaab3ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::ger", "out", 0x97f599278afea739ULL, 3, 0x00000007, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::get_device", "", 0x86657b9ef2b86130ULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_12{
     OpEntry{"aten::glu_backward_jvp", "", 0x5cd0803c7e759056ULL, 6, 0x0000001f, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::glu_backward_jvp", "out", 0xd3db7abf52aa2a8cULL, 7, 0x0000005f, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::glu_backward", "grad_input", 0xb99828e75a9b434eULL, 4, 0x0000000b, 0x00000000, CKernelId::OPAQUE, true},
@@ -1729,6 +1774,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::index_fill_", "int_Tensor", 0xc0a67164b71f8f75ULL, 4, 0x0000000d, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::index_fill", "int_Tensor", 0xae932309a387bc10ULL, 4, 0x0000000d, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::index_fill", "int_Scalar_out", 0x6ff1c58eeae150eeULL, 5, 0x00000015, 0x00000000, CKernelId::OPAQUE, true},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_13{
     OpEntry{"aten::index_fill", "int_Tensor_out", 0x6722b0623afa9817ULL, 5, 0x0000001d, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::index", "Tensor", 0xb60d09a6c0ab1bfcULL, 2, 0x00000001, 0x00000002, CKernelId::INDEX, false},
     OpEntry{"aten::index", "Tensor_out", 0x904785bc5d65d353ULL, 3, 0x00000005, 0x00000002, CKernelId::INDEX, true},
@@ -1857,6 +1905,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::linalg_det", "", 0x479af01bcc1f1836ULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::linalg_det", "out", 0xf9e319ecde225decULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::linalg_diagonal", "", 0x948d392ed1dee706ULL, 4, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_14{
     OpEntry{"aten::linalg_eig", "", 0x3d6db61bc5ed6440ULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::linalg_eig", "out", 0x0d03b7663f2299feULL, 3, 0x00000007, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::linalg_eigh", "", 0x4ed0993152612ff8ULL, 2, 0x00000001, 0x00000000, CKernelId::LINALG_EIGH, false},
@@ -1985,6 +2036,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::logaddexp2", "", 0x914c0516ce174b69ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::logaddexp", "out", 0x0fb3f6c9be7667f7ULL, 3, 0x00000007, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::logaddexp", "", 0x884a1f86d1fb5841ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_15{
     OpEntry{"aten::logcumsumexp", "", 0x5686b58f1d978454ULL, 2, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::logcumsumexp", "out", 0xf465597995853892ULL, 3, 0x00000005, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::logdet", "", 0xfc6b81378396af04ULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
@@ -2113,6 +2167,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::miopen_convolution", "", 0x3fcad62eb66cb758ULL, 9, 0x00000007, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::miopen_convolution", "out", 0xf102e342d6d410d6ULL, 10, 0x00000207, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::miopen_convolution_relu", "", 0xf41aac21efda3db3ULL, 7, 0x00000007, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_16{
     OpEntry{"aten::miopen_convolution_transpose", "", 0x5a631ec513019540ULL, 10, 0x00000007, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::miopen_convolution_transpose", "out", 0x0b5f9989e08e5afeULL, 11, 0x00000407, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::miopen_ctc_loss", "", 0x565acde76b9445fcULL, 7, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
@@ -2241,6 +2298,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::native_layer_norm_backward", "", 0x6913522ac40e6e37ULL, 8, 0x0000007b, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::native_layer_norm_backward", "out", 0x751f43f2db90218dULL, 11, 0x0000077b, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::native_layer_norm", "", 0x026ba286ce363d41ULL, 5, 0x0000000d, 0x00000000, CKernelId::LAYER_NORM, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_17{
     OpEntry{"aten::native_layer_norm", "out", 0x0c51502244fe1cf7ULL, 8, 0x000000ed, 0x00000000, CKernelId::LAYER_NORM, true},
     OpEntry{"aten::native_norm", "", 0x9978f93dfe5d061fULL, 2, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::native_norm", "ScalarOpt_dim_dtype", 0x341fd96afa6d1ceeULL, 5, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
@@ -2369,6 +2429,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::pow_", "Scalar", 0xf7a9b07f1b686af2ULL, 2, 0x00000001, 0x00000000, CKernelId::EWISE_POW, true},
     OpEntry{"aten::pow_", "Tensor", 0x7c360fb71cf0caebULL, 2, 0x00000003, 0x00000000, CKernelId::EWISE_POW, true},
     OpEntry{"aten::prelu", "", 0x1950a1ce64038757ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_18{
     OpEntry{"aten::prod", "", 0x1100add9a1ff7d42ULL, 2, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::prod", "dim_int", 0xc0835fd4d8f7bb38ULL, 4, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::prod", "int_out", 0x5202f5215ad3344aULL, 5, 0x00000011, 0x00000000, CKernelId::OPAQUE, true},
@@ -2497,6 +2560,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::remainder", "Tensor", 0xc43313c0764f4921ULL, 2, 0x00000003, 0x00000000, CKernelId::EWISE_MOD, false},
     OpEntry{"aten::remainder_", "Tensor", 0x93d267d7bb733496ULL, 2, 0x00000003, 0x00000000, CKernelId::EWISE_MOD, true},
     OpEntry{"aten::remainder", "Scalar_Tensor", 0xe7727abd2f10cde0ULL, 2, 0x00000002, 0x00000000, CKernelId::EWISE_MOD, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_19{
     OpEntry{"aten::remainder", "Scalar_Tensor_out", 0x52f5924a64699347ULL, 3, 0x00000006, 0x00000000, CKernelId::EWISE_MOD, true},
     OpEntry{"aten::renorm", "out", 0x228fd479abac33c2ULL, 5, 0x00000011, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::renorm", "", 0x57e59c6eb0670d84ULL, 4, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
@@ -2625,6 +2691,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::set_", "source_Tensor", 0x12122023f2807a63ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::set_", "", 0xe9c0adc198abc632ULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::set", "source_Storage_out", 0xd69270167b9a46bdULL, 3, 0x00000005, 0x00000000, CKernelId::OPAQUE, true},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_20{
     OpEntry{"aten::set", "source_Storage", 0xdf967d0fadbd09d6ULL, 2, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::set", "source_Storage_storage_offset_out", 0x17de0cbd02300ea1ULL, 6, 0x00000021, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::set", "source_Storage_storage_offset", 0xc810132ce404a42aULL, 5, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
@@ -2753,6 +2822,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::special_chebyshev_polynomial_u", "x_scalar_out", 0x23eeaf2152677fafULL, 3, 0x00000006, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::special_chebyshev_polynomial_u", "n_scalar_out", 0xa193967b92893dcdULL, 3, 0x00000005, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::special_chebyshev_polynomial_v", "", 0x4b6dc330376c8994ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_21{
     OpEntry{"aten::special_chebyshev_polynomial_v", "x_scalar", 0x59af0f347114594bULL, 2, 0x00000002, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::special_chebyshev_polynomial_v", "n_scalar", 0x2f196c05116fb435ULL, 2, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::special_chebyshev_polynomial_v", "out", 0x6c087391afd6cc52ULL, 3, 0x00000007, 0x00000000, CKernelId::OPAQUE, true},
@@ -2881,6 +2953,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::special_sinc", "out", 0xf61a4f0c9ffefc1eULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::special_softmax", "", 0x0e50b2a1203f6193ULL, 3, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::special_spherical_bessel_j0", "", 0x9855b2b4577c183cULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_22{
     OpEntry{"aten::special_spherical_bessel_j0", "out", 0xf2c5a4bd9d577b7aULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::special_xlog1py", "", 0x6c9da8261de63453ULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::special_xlog1py", "self_scalar", 0x087e96d641998ce2ULL, 2, 0x00000002, 0x00000000, CKernelId::OPAQUE, false},
@@ -3009,6 +3084,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::to", "device", 0xbf83d88f53976fb2ULL, 6, 0x00000001, 0x00000000, CKernelId::EWISE_CAST, false},
     OpEntry{"aten::to", "dtype", 0x5bc91158683bbddcULL, 5, 0x00000001, 0x00000000, CKernelId::EWISE_CAST, false},
     OpEntry{"aten::to", "other", 0x5e26578267c61a9aULL, 5, 0x00000003, 0x00000000, CKernelId::EWISE_CAST, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 128> aten_op_rows_23{
     OpEntry{"aten::to_padded_tensor", "", 0x4bf7cf7e03ecf23bULL, 3, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::to_padded_tensor", "out", 0xa6d15c4bba9e6801ULL, 4, 0x00000009, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::to_sparse_bsc", "", 0x137a9f7529a766ecULL, 3, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
@@ -3137,6 +3215,9 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::view_as_complex_copy", "out", 0x3f3746ac7c8c6b7eULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::view_as_complex", "", 0xb60dd8238edead5cULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::view_as", "", 0x653122d884a72bbfULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, false},
+};
+
+inline constexpr ::fixy::FixedArray<OpEntry, 38> aten_op_rows_24{
     OpEntry{"aten::view_as_real_copy", "", 0x91f1e6b0959293c0ULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::view_as_real_copy", "out", 0x68347b550014817eULL, 2, 0x00000003, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::view_as_real", "", 0x55cc820b9a10ff5cULL, 1, 0x00000001, 0x00000000, CKernelId::OPAQUE, false},
@@ -3175,7 +3256,103 @@ inline constexpr std::array<OpEntry, 3110> aten_op_table{{
     OpEntry{"aten::zeros_like", "out", 0x72e1e1932e709a4aULL, 3, 0x00000005, 0x00000000, CKernelId::OPAQUE, true},
     OpEntry{"aten::zeros", "", 0x05edf4a45cdc976aULL, 5, 0x00000000, 0x00000000, CKernelId::OPAQUE, false},
     OpEntry{"aten::zeros", "out", 0xfb718ee86c2a5070ULL, 2, 0x00000002, 0x00000000, CKernelId::OPAQUE, true},
-}};
+};
+
+// The View of each part, in table order.
+inline constexpr ::fixy::FixedArray<::fixy::View<OpEntry const>, 25> aten_op_parts{
+    ::fixy::View<OpEntry const>{aten_op_rows_0.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_1.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_2.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_3.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_4.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_5.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_6.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_7.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_8.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_9.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_10.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_11.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_12.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_13.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_14.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_15.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_16.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_17.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_18.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_19.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_20.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_21.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_22.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_23.view()},
+    ::fixy::View<OpEntry const>{aten_op_rows_24.view()}
+};
+
+// The row at TableIndex: the row of its part at the index in the part.
+// Complexity: O(1), at compile time.
+template <uint32_t TableIndex>
+    requires(TableIndex < kAtenOpCount)
+[[nodiscard]] consteval const OpEntry& aten_op_row() noexcept {
+    constexpr uint32_t kPart = TableIndex / kAtenOpRowsPerPart;
+    constexpr uint32_t kInPart = TableIndex % kAtenOpRowsPerPart;
+    if constexpr (kPart == 0)
+        return aten_op_rows_0.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 1)
+        return aten_op_rows_1.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 2)
+        return aten_op_rows_2.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 3)
+        return aten_op_rows_3.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 4)
+        return aten_op_rows_4.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 5)
+        return aten_op_rows_5.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 6)
+        return aten_op_rows_6.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 7)
+        return aten_op_rows_7.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 8)
+        return aten_op_rows_8.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 9)
+        return aten_op_rows_9.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 10)
+        return aten_op_rows_10.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 11)
+        return aten_op_rows_11.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 12)
+        return aten_op_rows_12.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 13)
+        return aten_op_rows_13.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 14)
+        return aten_op_rows_14.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 15)
+        return aten_op_rows_15.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 16)
+        return aten_op_rows_16.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 17)
+        return aten_op_rows_17.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 18)
+        return aten_op_rows_18.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 19)
+        return aten_op_rows_19.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 20)
+        return aten_op_rows_20.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 21)
+        return aten_op_rows_21.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 22)
+        return aten_op_rows_22.at(::fixy::index<kInPart>());
+    else if constexpr (kPart == 23)
+        return aten_op_rows_23.at(::fixy::index<kInPart>());
+    else
+        return aten_op_rows_24.at(::fixy::index<kInPart>());
+}
+
+// Calls visit with each row, in table order.  Complexity: O(n) calls.
+template <class Visit>
+constexpr void for_each_aten_op_row(Visit&& visit) {
+    for (const ::fixy::View<OpEntry const> part : aten_op_parts) {
+        for (const OpEntry& row : part) visit(row);
+    }
+}
 
 // The operator structs, paired with their table index, for register.cpp to
 // expand. A type cannot be spelled as data, so this is the one place the

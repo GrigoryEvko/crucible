@@ -37,7 +37,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 
 namespace crucible::vessel {
 namespace {
@@ -73,8 +72,9 @@ static_assert(kShard < kShardCount, "the index of the shard of register.cpp is n
 
 [[nodiscard]] consteval uint32_t classified_row_count() {
     uint32_t count = 0;
-    for (const OpEntry& row : aten_op_table)
+    for_each_aten_op_row([&count](const OpEntry& row) {
         if (row.kernel_id != crucible::CKernelId::OPAQUE) count++;
+    });
     return count;
 }
 
@@ -92,13 +92,13 @@ template <uint32_t Count>
     ::fixy::FixedArray<uint64_t, Count> hashes{};
     ::fixy::FixedArray<crucible::CKernelId, Count> kernels{};
     uint32_t next = 0;
-    for (const OpEntry& row : aten_op_table) {
-        if (row.kernel_id == crucible::CKernelId::OPAQUE) continue;
+    for_each_aten_op_row([&](const OpEntry& row) {
+        if (row.kernel_id == crucible::CKernelId::OPAQUE) return;
         const Slot slot = Slot::check(next).expect("the count pass counted each classified row");
         hashes.at(slot) = row.schema_hash;
         kernels.at(slot) = row.kernel_id;
         ++next;
-    }
+    });
     ::fixy::FixedArray<crucible::CKernelEntry, Count> sorted{};
     uint32_t place = 0;
     for (const uint64_t hash : hashes) {
@@ -156,23 +156,35 @@ static_assert(::fixy::find_if(kClassifiedRows.view(),
 // That is also why every row must be an aten row.
 // =====================================================================
 
-inline constexpr std::string_view kAtenNamespacePrefix = "aten::";
+inline constexpr ::fixy::TextView kAtenNamespacePrefix{"aten::"};
 
 [[nodiscard]] consteval bool every_row_is_aten() {
-    for (const OpEntry& row : aten_op_table)
-        if (!std::string_view{row.name}.starts_with(kAtenNamespacePrefix)) return false;
-    return true;
+    bool is_each_aten = true;
+    for_each_aten_op_row([&is_each_aten](const OpEntry& row) {
+        if (!::fixy::starts_with(row.name, kAtenNamespacePrefix)) is_each_aten = false;
+    });
+    return is_each_aten;
 }
 
 static_assert(every_row_is_aten(),
               "a row outside the aten namespace cannot be registered by the TORCH_LIBRARY_IMPL(aten, ...) block "
               "below; give it a block of its own");
 
+// The name of the operator of a row after the namespace prefix.  Each row is
+// an aten row (every_row_is_aten), so the name starts with the prefix.
+[[nodiscard]] constexpr ::fixy::TextView name_in_aten_namespace(const OpEntry& row) noexcept {
+    return row.name.window(kAtenNamespacePrefix.size(), row.name.size() - kAtenNamespacePrefix.size())
+        .expect("each row of the table is an aten row");
+}
+
+// The two functions take the library of PyTorch and give it a kernel.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: Library::impl of PyTorch registers the kernel of one operator")
 template <uint32_t TableIndex, class Op>
 void register_kernel(torch::Library& library) {
     using Kernel = RecordKernelFor<TableIndex, Op>;
-    const QualifiedOpName name{aten_op_table[TableIndex]};
-    library.impl(name.c_str() + kAtenNamespacePrefix.size(), Kernel::as_cpp_function());
+    const OpEntry& row = aten_op_row<TableIndex>();
+    const QualifiedOpName name{name_in_aten_namespace(row), row.overload};
+    library.impl(name.c_str(), Kernel::as_cpp_function());
 }
 
 // The condition depends on TableIndex, so the kernel of an operator of a
@@ -181,6 +193,7 @@ template <uint32_t TableIndex, class Op>
 void register_kernel_of_shard(torch::Library& library) {
     if constexpr (shard_of(TableIndex) == kShard) register_kernel<TableIndex, Op>(library);
 }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // namespace
 }  // namespace crucible::vessel
