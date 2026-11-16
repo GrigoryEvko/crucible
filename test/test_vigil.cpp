@@ -147,6 +147,55 @@ static void test_region_hashes_under_the_numerics_of_the_config() {
     crucible::test::pass("  region_hashes_under_the_numerics_of_the_config: PASSED\n");
 }
 
+// The Config of a Vigil whose store is the directory numerics under directory,
+// under the numerics policy.
+[[nodiscard]] static crucible::Vigil::Config config_with_store(::fixy::TextView directory,
+                                                               crucible::NumericsPolicy policy) {
+    crucible::Vigil::Config cfg;
+    for (const char character : directory) {
+        cfg.cipher_path.append(::foundation::effects::testing::test().alloc, character)
+            .expect("the store path fits the bound of the path");
+    }
+    for (const char character : ::fixy::TextView{"/numerics"}) {
+        cfg.cipher_path.append(::foundation::effects::testing::test().alloc, character)
+            .expect("the store path fits the bound of the path");
+    }
+    cfg.numerics = policy;
+    return cfg;
+}
+
+// A region replays only under the numerics that its content hash folds.  A
+// Vigil under the default policy replays a region with a memory plan and
+// stores it.  A Vigil under another policy loads that region and records, and
+// a Vigil under the default policy loads it and replays it.  The old doors of
+// the replay read no numerics, so the second Vigil replayed the region.
+static void test_region_of_other_numerics_does_not_replay(::fixy::TextView directory) {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    {
+        crucible::Vigil recorder{config_with_store(directory, crucible::NumericsPolicy{})};
+        divrig::feed_one_region(recorder, 0);
+        crucible::test::flush_and_wait_region_published(recorder);
+        for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
+            auto aligned = divrig::op_at(3, i);
+            (void)crucible::test::dispatch_synthetic(recorder, aligned.entry, aligned.metas, aligned.n_metas);
+        }
+        assert(recorder.context().is_compiled() && "the recorder replays its region");
+        assert(recorder.persist(ctx) && "the recorder stores its region");
+    }
+
+    crucible::NumericsPolicy strict{};
+    strict.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
+    crucible::Vigil other{config_with_store(directory, strict)};
+    assert(other.load(ctx, ctx.cap().alloc) && "the store gives the region of its head");
+    assert(!other.context().is_compiled() && "a region of other numerics must not replay");
+    assert(!other.is_compiled());
+
+    crucible::Vigil same{config_with_store(directory, crucible::NumericsPolicy{})};
+    assert(same.load(ctx, ctx.cap().alloc) && "the store gives the region of its head");
+    assert(same.context().is_compiled() && "the region replays under its own numerics");
+    crucible::test::pass("  region_of_other_numerics_does_not_replay: PASSED\n");
+}
+
 int main() {
     test_region_hashes_under_the_numerics_of_the_config();
     test_vigil::test_divergence_drops_the_unobserved_region();
@@ -179,7 +228,10 @@ int main() {
         cfg.cipher_path.append(::foundation::effects::testing::test().alloc, dir[index])
             .expect("the directory fits the bound of the path");
     }
-    cfg.cipher_path.with_view([](::fixy::TextView path) { test_refused_load_reports_its_reason(path); });
+    cfg.cipher_path.with_view([](::fixy::TextView path) {
+        test_refused_load_reports_its_reason(path);
+        test_region_of_other_numerics_does_not_replay(path);
+    });
     crucible::Vigil vigil(std::move(cfg));
 
     assert(!vigil.is_compiled());

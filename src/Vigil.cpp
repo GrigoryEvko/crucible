@@ -27,7 +27,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
       meta_log_owner_{::fixy::mint_box<MetaLog>(startup.cap().alloc, startup.cap().alloc)},
       meta_log_{meta_log_owner_.view()},
       tx_log_{startup},
-      replay_{startup.cap().alloc},
+      replay_{startup.cap().alloc, compute_numerics_hash(cfg_.numerics, cfg_.eager)},
       allocation_{startup.cap().alloc},
       region_ready_{BackgroundThread::RegionReadyCall::bind<&Vigil::on_region_ready>(*this)},
       bg_{startup.cap().alloc, region_ready_} {

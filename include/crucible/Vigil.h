@@ -1058,7 +1058,8 @@ private:
 
         if (uint32_t{alignment_pos_.value()} >= threshold) {
             if (!replay_.activate(region)) {
-                // No memory plan means the region cannot be compiled.
+                // A region with no memory plan, or with other numerics than
+                // the run, cannot replay.
                 pending_activation_.reset();
                 return;
             }
@@ -1301,19 +1302,28 @@ private:
     //
     // The mode cell has its own cache line: an observer on another thread
     // reads it while the foreground writes the counters of the context.
+    //
+    // A region replays only under the numerics that its content hash folds
+    // (RegionNode::numerics).  The kernels of a region come from its
+    // numerics, so a region of other numerics computes other bits.  The two
+    // doors of a replay, the activation and the switch, refuse such a region.
+    // The check runs once for each activation or switch, never for each op.
     class ReplayState {
     public:
         // The context allocates the pool of each region that it activates,
-        // through the allocation capability of the startup context.
-        explicit ReplayState(::foundation::effects::Alloc allocation) noexcept : ctx_{allocation} {}
+        // through the allocation capability of the startup context.  The
+        // numerics are the numerics of the run (compute_numerics_hash).
+        ReplayState(::foundation::effects::Alloc allocation, NumericsHash numerics) noexcept
+            : ctx_{allocation}, numerics_{numerics} {}
 
         [[nodiscard]] const CrucibleContext& context() const noexcept { return ctx_; }
         [[nodiscard]] Mode mode() const noexcept { return mode_.load(); }
 
-        // Replays region from its first op, or records when the region has
-        // no memory plan.  Returns true when the context replays.
+        // Replays region from its first op.  The context records when the
+        // region has no memory plan, or when its numerics are not the
+        // numerics of the run.  Returns true when the context replays.
         [[nodiscard]] bool activate(const RegionNode& region) {
-            if (!ctx_.activate(region)) {
+            if (!(region.numerics == numerics_) || !ctx_.activate(region)) {
                 deactivate();
                 return false;
             }
@@ -1329,8 +1339,10 @@ private:
         }
 
         // Moves the replay to alt at div_pos.  The context stays compiled,
-        // so the mode does not change.
+        // so the mode does not change.  A region of other numerics gives
+        // false, and the context stays on its region.
         [[nodiscard]] bool switch_region(const RegionNode& alt, uint32_t div_pos) {
+            if (!(alt.numerics == numerics_)) return false;
             return ctx_.switch_region(alt, div_pos);
         }
 
@@ -1349,6 +1361,7 @@ private:
 
     private:
         CrucibleContext ctx_;
+        NumericsHash numerics_{};
         // The one writer of the mode cell.  The producer thread holds it, so
         // only the producer thread publishes a mode.  It stands before the
         // cell, which keeps its id.
