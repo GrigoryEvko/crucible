@@ -12,7 +12,9 @@
 //                                rule that the lanes change no bit
 //   tree_sum_of_runs(runs, sums) the tree sum of K runs of one count, element
 //                                by element: sums[i] is the tree of run 0 at
-//                                i, run 1 at i, and so on, in run order
+//                                i, run 1 at i, and so on, in run order.  The
+//                                sums can be the View of a run, and no other
+//                                overlap of a run and the sums is permitted
 //   segmented_tree_sum(view, offsets, sums)
 //   segmented_tree_reduce(view, offsets, results, empty, combine)
 //                                the tree of each segment [offsets[s],
@@ -357,26 +359,58 @@ template <class T>
     return left + right;
 }
 
+// True when a run and the sums of count elements each share an element and
+// do not start at one address.  The test compares the two address ranges as
+// integers, as offset_of of Region.h does, so two runs of different objects
+// make no undefined compare of pointers.  Complexity: O(1).
+template <class T>
+[[nodiscard]] bool is_partial_overlap_(T const* run, T const* sums, std::size_t count) noexcept {
+    std::uintptr_t const run_start = __builtin_bit_cast(std::uintptr_t, run);
+    std::uintptr_t const sums_start = __builtin_bit_cast(std::uintptr_t, sums);
+    // The door of a View bounds its bytes by __PTRDIFF_MAX__, and an object
+    // ends below the top of the address space, so no sum overflows.
+    std::uintptr_t const bytes = count * sizeof(T);
+    if (run_start == sums_start) return false;
+    return run_start < sums_start + bytes && sums_start < run_start + bytes;
+}
+
 }  // namespace detail
+
+// The error of a sum of runs.
+enum class RunsError : std::uint8_t {
+    // A run does not hold the count of the sums.
+    LengthMismatch = 0,
+    // A run and the sums share some elements, and they do not start at one
+    // element.
+    PartialOverlap = 1,
+};
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the runs element by element: sums[i] is the tree of the
 // elements at i of the runs, in run order, by the rule of THE ORDER.  So a
 // sum of K producers into one result has a fixed topology, and the order in
-// which the producers finish changes no bit.  Each run must hold the count of
-// sums, and a run of a different count gives LengthMismatch with no write.
-// No run gives +0 in each sum.  Complexity: O(K * n) loads and adds, with a
-// recursion of depth ceil(log2 K) for each vector of sums.
+// which the producers finish changes no bit.  No run gives +0 in each sum.
+//
+// Each run must hold the count of sums, else the call gives LengthMismatch.
+// The sums can be the same View as one run or more: each vector of sums is
+// written after the reads of each run at its positions.  A run that shares
+// some elements with the sums, and does not start at the first element of the
+// sums, gives PartialOverlap.  Each error comes before the first write.
+// Complexity: O(K) checks, then O(K * n) loads and adds, with a recursion of
+// depth ceil(log2 K) for each vector of sums.
 template <class T>
     requires TreeSumElement<T>
-[[nodiscard]] Result<Unit, LengthMismatch> tree_sum_of_runs(View<View<T const> const> runs, View<T> sums) noexcept {
+[[nodiscard]] Result<Unit, RunsError> tree_sum_of_runs(View<View<T const> const> runs, View<T> sums) noexcept {
     constexpr int lanes = simd::native_lanes<T>;
     std::size_t const count = sums.size();
-    for (View<T const> const run : runs) {
-        if (run.size() != count) return err(LengthMismatch{});
-    }
     T* const out = first_of_(detail::ViewDoor::key(), sums);
+    for (View<T const> const run : runs) {
+        if (run.size() != count) return err(RunsError::LengthMismatch);
+        if (detail::is_partial_overlap_(first_of_(detail::ViewDoor::key(), run), out, count)) {
+            return err(RunsError::PartialOverlap);
+        }
+    }
     if (runs.size() == 0) {
         fill(sums, T{});
         return Unit{};

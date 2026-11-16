@@ -332,6 +332,44 @@ void test_segments_take_the_tree_of_their_window() {
                .is_err());
 }
 
+// True when a sum of runs gave the error kind.
+[[nodiscard]] bool
+is_refused_with(::foundation::core::Result<::foundation::core::Unit, ::foundation::core::RunsError> const& result,
+                ::foundation::core::RunsError kind) noexcept {
+    return result.match([](::foundation::core::Unit const&) noexcept { return false; },
+                        [kind](::foundation::core::RunsError const& error) noexcept { return error == kind; });
+}
+
+// The sums can be the View of one run: each vector of sums is written after
+// the reads of each run at its positions.  A View of sums that shares some
+// elements with a run, and does not start where the run starts, is refused
+// with no write, in each direction of the shift.
+void test_sum_of_runs_refuses_a_partial_overlap() {
+    constexpr std::size_t kCount = 300;
+    HeapArray<float> buffer = draw_floats(kCount + 2, 0x7E570040u);
+    HeapArray<float> const other = draw_floats(kCount, 0x7E570041u);
+    HeapArray<float> before = ::foundation::core::mint_heap_array(test_alloc(), kCount + 2, 0.0f);
+    assert(::foundation::core::copy(before.view(), View<float const>{buffer.view()}).is_ok());
+    View<float> const run_view = buffer.view().window(1, kCount).expect("the run fits the buffer");
+    ::fixy::FixedArray<View<float const>, 2> const runs{View<float const>{run_view}, View<float const>{other.view()}};
+    View<View<float const> const> const both{runs.view()};
+    View<float> const shifted_up = buffer.view().window(2, kCount).expect("the shift fits the buffer");
+    View<float> const shifted_down = buffer.view().window(0, kCount).expect("the shift fits the buffer");
+    using ::foundation::core::RunsError;
+    assert(is_refused_with(::foundation::core::tree_sum_of_runs(both, shifted_up), RunsError::PartialOverlap));
+    assert(is_refused_with(::foundation::core::tree_sum_of_runs(both, shifted_down), RunsError::PartialOverlap));
+    for (std::size_t position = 0; position < kCount + 2; ++position) {
+        assert(same_bits(::crucible::test::element_at(buffer.view(), position),
+                         ::crucible::test::element_at(before.view(), position)));
+    }
+    assert(::foundation::core::tree_sum_of_runs(both, run_view).is_ok());
+    for (std::size_t offset = 0; offset < kCount; ++offset) {
+        float const expected = ::crucible::test::element_at(before.view(), 1 + offset)
+                             + ::crucible::test::element_at(other.view(), offset);
+        assert(same_bits(::crucible::test::element_at(run_view, offset), expected));
+    }
+}
+
 // ── The canonical NaN ───────────────────────────────────────────────────
 
 using ::crucible::test::float_bits;
@@ -430,6 +468,7 @@ int main() {
     test_sum_of_runs_takes_the_tree_of_the_runs();
     test_segments_take_the_tree_of_their_window();
     test_nan_outputs_are_canonical();
+    test_sum_of_runs_refuses_a_partial_overlap();
     crucible::test::pass("test_core_reduce: all tests passed\n");
     return 0;
 }
