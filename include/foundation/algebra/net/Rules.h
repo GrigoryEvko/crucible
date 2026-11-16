@@ -139,7 +139,7 @@ public:
     [[nodiscard]] constexpr NetName name() const noexcept { return name_; }
     [[nodiscard]] constexpr KindId left() const noexcept { return left_; }
     [[nodiscard]] constexpr KindId right() const noexcept { return right_; }
-    [[nodiscard]] constexpr RightSide const& side() const noexcept { return side_; }
+    [[nodiscard]] constexpr RightSide side() const noexcept { return side_; }
     [[nodiscard]] constexpr NetName growth_reason() const noexcept { return growth_reason_; }
     [[nodiscard]] constexpr bool has_growth_door() const noexcept { return !growth_reason_.is_empty(); }
 };
@@ -378,7 +378,7 @@ template <std::size_t Types, std::size_t Kinds>
             .put("', which are not duals.  The rule never fires.");
         return refusal;
     }
-    RightSide const& side = rule.side();
+    RightSide const side = rule.side();
     if (side.agent_count > max_rule_agents || side.wire_count > max_rule_wires) {
         NetVerdict refusal = NetVerdict::refuse("rules: ");
         put_rule(refusal, rule);
@@ -597,7 +597,8 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Rules>
         }
         rule_of_pair[left * Kinds + right] = index;
         rule_of_pair[right * Kinds + left] = index;
-        if (rule.side().agent_count > most_agents) most_agents = rule.side().agent_count;
+        std::uint32_t const agents = rule.side().agent_count;
+        if (agents > most_agents) most_agents = agents;
         if (rule.has_growth_door()) ++growing_rules;
     }
     for (std::uint32_t first = 0; first < Kinds; ++first) {
