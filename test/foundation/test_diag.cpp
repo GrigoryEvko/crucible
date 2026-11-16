@@ -8,7 +8,10 @@
 #include <foundation/diag/JsonEmitter.h>
 #include <foundation/diag/Runtime.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/core/Report.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <atomic>
@@ -537,32 +540,34 @@ void test_macro_captures_location() {
     diag::set_violation_sink(previous);
 }
 
-// The aborting emitters reach the sink first, then abort.
-void test_abort_emitters_reach_sink_then_abort() {
-    using crucible::test::aborts;
-    auto previous = diag::set_violation_sink(&capture_sink);
+// The aborting emitters reach the sink first, then abort.  Each emitter runs
+// in a child through expect_dies of the Check family.  The child keeps the
+// default sink, which writes the category, the name and the detail of the
+// violation to standard error, and the parent reads that line.
+void test_abort_emitters_reach_sink_then_abort(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            diag::report_violation_and_abort(diag::Category::CrashClassMismatch, "abort_fn", "abort detail");
+        },
+        ::foundation::core::TextView{
+            "crucible-violation: category=CrashClassMismatch fn=abort_fn detail=abort detail\n"});
 
-    reset_capture();
-    EXPECT(aborts(
-        [] { diag::report_violation_and_abort(diag::Category::CrashClassMismatch, "abort_fn", "abort detail"); }));
-    EXPECT(g_captured.count.load() == 1);
-    EXPECT(g_captured.last_cat == diag::Category::CrashClassMismatch);
-    EXPECT(std::string_view{g_captured.last_fn} == "abort_fn");
+    ::fixy::check::expect_dies(
+        test, [] noexcept { diag::report_violation_at_and_abort(diag::Category::LinearityViolation, "at and abort"); },
+        ::foundation::core::TextView{
+            "crucible-violation: category=LinearityViolation fn=test/foundation/test_diag.cpp:"});
 
-    reset_capture();
-    EXPECT(aborts([] { diag::report_violation_at_and_abort(diag::Category::LinearityViolation, "at and abort"); }));
-    EXPECT(g_captured.count.load() == 1);
-    EXPECT(g_captured.last_cat == diag::Category::LinearityViolation);
-    EXPECT(std::string_view{g_captured.last_fn}.find('@') != std::string_view::npos);
-
-    reset_capture();
-    EXPECT(aborts(
-        [] { CRUCIBLE_DIAG_RUNTIME_VIOLATION_AND_ABORT(diag::Category::WaitStrategyViolation, "macro abort"); }));
-    EXPECT(g_captured.count.load() == 1);
-    EXPECT(g_captured.last_cat == diag::Category::WaitStrategyViolation);
-    EXPECT(std::string_view{g_captured.last_detail} == "macro abort");
-
-    diag::set_violation_sink(previous);
+    // The position of the macro sits between the category and the detail, so
+    // one child shows the category and a second child shows the detail.
+    auto const macro_abort = [] noexcept {
+        CRUCIBLE_DIAG_RUNTIME_VIOLATION_AND_ABORT(diag::Category::WaitStrategyViolation, "macro abort");
+    };
+    ::fixy::check::expect_dies(
+        test, macro_abort,
+        ::foundation::core::TextView{
+            "crucible-violation: category=WaitStrategyViolation fn=test/foundation/test_diag.cpp:"});
+    ::fixy::check::expect_dies(test, macro_abort, ::foundation::core::TextView{" detail=macro abort\n"});
 }
 
 // ── Runtime: the output shapes ───────────────────────────────────────────
@@ -634,7 +639,7 @@ int main() {
     test_sink_install_round_trips();
     test_report_violation_at_captures_location();
     test_macro_captures_location();
-    test_abort_emitters_reach_sink_then_abort();
+    test_abort_emitters_reach_sink_then_abort(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
 
     test_default_sink_emits_text();
     test_json_violation_record_shape();

@@ -8,7 +8,8 @@
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -122,32 +123,39 @@ void test_copy_holds_the_same_runs() {
     CRUCIBLE_FATAL_INVARIANT(assigned.has_run<4>() && assigned.view<4>().size() == 2);
 }
 
-// A View of a different count ends the process, and the run keeps its
-// state.
-void test_wrong_count_ends_the_process() {
+// A View of a different count ends the process.  Each set runs in a child
+// through expect_dies of the Check family.
+void test_wrong_count_ends_the_process(::fixy::TestRunnerCtx const& test) {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena arena{4096};
     OpRuns runs{};
     runs.set_count<0>(3);
     View<std::uint32_t> const short_run = arena.array<std::uint32_t>(alloc, 2, 0);
-    bool const short_run_aborts = ::crucible::test::aborts([&] { runs.set<1>(short_run); });
-    CRUCIBLE_FATAL_INVARIANT(short_run_aborts);
+    ::fixy::check::expect_dies(
+        test, [&runs, &short_run] noexcept { runs.set<1>(short_run); },
+        ::foundation::core::TextView{
+            "foundation: fatal: RunSet::set got a run of 2 elements for a slot of the count 3"});
     View<std::uint32_t> const long_run = arena.array<std::uint32_t>(alloc, 4, 0);
-    bool const long_run_aborts = ::crucible::test::aborts([&] { runs.set<1>(long_run); });
-    CRUCIBLE_FATAL_INVARIANT(long_run_aborts);
-    bool const empty_run_aborts = ::crucible::test::aborts([&] { runs.set<1>(View<std::uint32_t>{}); });
-    CRUCIBLE_FATAL_INVARIANT(empty_run_aborts);
+    ::fixy::check::expect_dies(
+        test, [&runs, &long_run] noexcept { runs.set<1>(long_run); },
+        ::foundation::core::TextView{
+            "foundation: fatal: RunSet::set got a run of 4 elements for a slot of the count 3"});
+    ::fixy::check::expect_dies(
+        test, [&runs] noexcept { runs.set<1>(View<std::uint32_t>{}); },
+        ::foundation::core::TextView{
+            "foundation: fatal: RunSet::set got a run of 0 elements for a slot of the count 3"});
     CRUCIBLE_FATAL_INVARIANT(!runs.has_run<1>() && runs.count<0>() == 3);
 }
 
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_absent_run_keeps_its_count();
     test_empty_run_has_its_elements();
     test_full_run_gives_its_elements();
     test_new_count_drops_the_runs_of_its_slot();
     test_copy_holds_the_same_runs();
-    test_wrong_count_ends_the_process();
+    test_wrong_count_ends_the_process(test);
     return 0;
 }

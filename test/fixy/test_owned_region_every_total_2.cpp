@@ -7,9 +7,9 @@
 
 namespace test_owned_region {
 
-void split_and_recombine_every_total_of_counts_14_to_16() {
-    []<std::size_t... Counts>(std::index_sequence<Counts...>) {
-        (split_and_recombine_every_total<Counts + 14>(), ...);
+void split_and_recombine_every_total_of_counts_14_to_16(TestRunnerCtx const& test) {
+    [&test]<std::size_t... Counts>(std::index_sequence<Counts...>) {
+        (split_and_recombine_every_total<Counts + 14>(test), ...);
     }(std::make_index_sequence<3>{});
 }
 

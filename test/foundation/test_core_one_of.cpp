@@ -9,13 +9,18 @@
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include "philox_stream.h"
 
 #include <cstdint>
 
 namespace {
 
+using ::fixy::TestRunnerCtx;
+using ::fixy::check::expect_dies;
 using ::foundation::core::OneOf;
 
 enum class Refusal : std::uint8_t {
@@ -106,9 +111,14 @@ static_assert(sizeof(ForgedBytes) == sizeof(Reading));
 }
 
 // which() of a forged OneOf ends the process, so no Index leaves its range.
-void test_which_refuses_a_forged_tag() {
+// Each walk of a forged tag below runs in a child through expect_dies of the
+// Check family.
+void test_which_refuses_a_forged_tag(TestRunnerCtx const& test) {
     Reading const forged = forge_reading();
-    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged] { static_cast<void>(forged.which()); }));
+    expect_dies(
+        test, [&forged] noexcept { static_cast<void>(forged.which()); },
+        ::foundation::core::TextView{
+            "foundation: fatal: OneOf: the tag names no alternative, so a copy of bytes made this OneOf"});
 }
 
 // Each walk of the tag of a forged OneOf ends the process: the borrow match,
@@ -116,24 +126,31 @@ void test_which_refuses_a_forged_tag() {
 // So no arm reads the storage as the last alternative.  A read that compares
 // the tag with one index reads no alternative: is<T>() gives false, get<T>()
 // gives no value, and a compare with a OneOf of a real tag gives false.
-void test_match_refuses_a_forged_tag() {
+void test_match_refuses_a_forged_tag(TestRunnerCtx const& test) {
     Reading const forged = forge_reading();
     Reading const same_forged = forged;
-    bool const borrow_match_aborts = ::crucible::test::aborts([&forged] {
-        static_cast<void>(forged.match([](std::uint32_t const&) noexcept { return 1; },
-                                       [](Refusal const&) noexcept { return 2; },
-                                       [](std::uint16_t const&) noexcept { return 3; }));
-    });
-    bool const rvalue_match_aborts = ::crucible::test::aborts([&forged] {
-        static_cast<void>(Reading{forged}.match([](std::uint32_t) noexcept { return 1; },
-                                                [](Refusal) noexcept { return 2; },
-                                                [](std::uint16_t) noexcept { return 3; }));
-    });
-    bool const compare_aborts =
-        ::crucible::test::aborts([&forged, &same_forged] { static_cast<void>(forged == same_forged); });
-    CRUCIBLE_FATAL_INVARIANT(borrow_match_aborts);
-    CRUCIBLE_FATAL_INVARIANT(rvalue_match_aborts);
-    CRUCIBLE_FATAL_INVARIANT(compare_aborts);
+    expect_dies(
+        test,
+        [&forged] noexcept {
+            static_cast<void>(forged.match([](std::uint32_t const&) noexcept { return 1; },
+                                           [](Refusal const&) noexcept { return 2; },
+                                           [](std::uint16_t const&) noexcept { return 3; }));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: OneOf: the tag names no alternative, so a copy of bytes made this OneOf"});
+    expect_dies(
+        test,
+        [&forged] noexcept {
+            static_cast<void>(Reading{forged}.match([](std::uint32_t) noexcept { return 1; },
+                                                    [](Refusal) noexcept { return 2; },
+                                                    [](std::uint16_t) noexcept { return 3; }));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: OneOf: the tag names no alternative, so a copy of bytes made this OneOf"});
+    expect_dies(
+        test, [&forged, &same_forged] noexcept { static_cast<void>(forged == same_forged); },
+        ::foundation::core::TextView{
+            "foundation: fatal: OneOf: the tag names no alternative, so a copy of bytes made this OneOf"});
 
     Reading const real = read_word(9u);
     CRUCIBLE_FATAL_INVARIANT(!forged.is<std::uint32_t>() && !forged.is<Refusal>() && !forged.is<std::uint16_t>());
@@ -141,13 +158,14 @@ void test_match_refuses_a_forged_tag() {
     CRUCIBLE_FATAL_INVARIANT(!(forged == real) && !(real == forged));
 }
 
-void test_expect() {
+void test_expect(TestRunnerCtx const& test) {
     CRUCIBLE_FATAL_INVARIANT(read_word(0x12345u).expect<std::uint32_t>("a wide word") == 0x12345u);
     CRUCIBLE_FATAL_INVARIANT(read_word(9u).expect<std::uint16_t>("a narrow word") == 9u);
     CRUCIBLE_FATAL_INVARIANT(read_word(0u).expect<Refusal>("a refused word") == Refusal::closed);
-    bool const other_expect_aborts = ::crucible::test::aborts(
-        [] { static_cast<void>(read_word(9u).expect<std::uint32_t>("the test word is narrow on purpose")); });
-    CRUCIBLE_FATAL_INVARIANT(other_expect_aborts);
+    expect_dies(
+        test,
+        [] noexcept { static_cast<void>(read_word(9u).expect<std::uint32_t>("the test word is narrow on purpose")); },
+        ::foundation::core::TextView{"the test word is narrow on purpose"});
 }
 
 void test_match() {
@@ -232,18 +250,23 @@ void replace_reading(OneOf<Handle, Refusal>& target) noexcept { target = OneOf<H
 
 // The borrow match of an owning OneOf counts its lend, so a move assignment
 // in a callee of the arm, which the rule borrow-match does not see, ends the
-// process.  After the match, the same assignment keeps its value.
-void test_lent_alternative_write_aborts() {
-    bool const callee_aborts = ::crucible::test::aborts([] {
-        OneOf<Handle, Refusal> held{Handle{81}};
-        static_cast<void>(held.match(
-            [&held](Handle const& handle) noexcept {
-                replace_reading(held);
-                return handle.value;
-            },
-            [](Refusal const&) noexcept { return 0; }));
-    });
-    CRUCIBLE_FATAL_INVARIANT(callee_aborts);
+// process.  After the match, the same assignment keeps its value.  The write
+// in the match runs in a child through expect_dies of the Check family.
+void test_lent_alternative_write_aborts(TestRunnerCtx const& test) {
+    expect_dies(
+        test,
+        [] noexcept {
+            OneOf<Handle, Refusal> held{Handle{81}};
+            static_cast<void>(held.match(
+                [&held](Handle const& handle) noexcept {
+                    replace_reading(held);
+                    return handle.value;
+                },
+                [](Refusal const&) noexcept { return 0; }));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a write ends the payload of a sum while a borrow match lends that payload to "
+            "an arm"});
 
     OneOf<Handle, Refusal> held{Handle{82}};
     int const seen = held.match([](Handle const& handle) noexcept { return handle.value; },
@@ -322,14 +345,15 @@ void test_agrees_with_model() {
 }  // namespace
 
 int main() {
+    TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_each_alternative();
-    test_which_refuses_a_forged_tag();
-    test_match_refuses_a_forged_tag();
-    test_expect();
+    test_which_refuses_a_forged_tag(test);
+    test_match_refuses_a_forged_tag(test);
+    test_expect(test);
     test_match();
     test_get();
     test_owning_alternative();
-    test_lent_alternative_write_aborts();
+    test_lent_alternative_write_aborts(test);
     test_linear_alternative();
     test_agrees_with_model();
     return 0;

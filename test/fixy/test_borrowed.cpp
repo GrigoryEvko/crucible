@@ -7,7 +7,10 @@
 
 #include <fixy/Borrowed.h>
 
-#include "../foundation/abort_probe.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <meta>
@@ -23,7 +26,7 @@ namespace {
 using ::fixy::Borrowed;
 using ::fixy::BorrowedRef;
 using ::fixy::WeakRef;
-using ::crucible::test::aborts;
+using ::fixy::check::expect_dies;
 
 struct OwnerA {
     int dummy = 0;
@@ -121,22 +124,35 @@ int check_views_over_a_vector() {
 
     // Each accessor checks its index or its window in each build, the release
     // build too, so a read past the borrow ends the process.  The bounds check
-    // of the standard library is on only in Debug.  The probe runs each read
-    // in a child process.
+    // of the standard library is on only in Debug.  Each read runs in a child
+    // through expect_dies of the Check family.
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     auto const nothing = whole.subview(5, 0);
-    if (!aborts([&] { (void)whole[whole.size()]; })) return 16;
-    if (!aborts([&] { (void)nothing.front(); })) return 17;
-    if (!aborts([&] { (void)nothing.back(); })) return 18;
-    if (!aborts([&] { (void)whole.subview(4, 2); })) return 19;
+    expect_dies(
+        test, [&whole] noexcept { (void)whole[whole.size()]; },
+        ::fixy::TextView{"foundation: contract violation: i < size()"});
+    expect_dies(
+        test, [&nothing] noexcept { (void)nothing.front(); },
+        ::fixy::TextView{"foundation: contract violation: !empty()"});
+    expect_dies(
+        test, [&nothing] noexcept { (void)nothing.back(); },
+        ::fixy::TextView{"foundation: contract violation: !empty()"});
+    expect_dies(
+        test, [&whole] noexcept { (void)whole.subview(4, 2); },
+        ::fixy::TextView{"foundation: contract violation: offset <= size() && count <= size() - offset"});
     return 0;
 }
 
+// Each read of the empty WeakRef runs in a child through expect_dies of the
+// Check family.
 int check_weak_ref_null_aborts() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     WeakRef<int> empty{};
     if (empty.try_get() != nullptr) return 20;
-    if (!aborts([&] { (void)empty.get(); })) return 21;
-    if (!aborts([&] { (void)*empty; })) return 22;
-    if (!aborts([&] { (void)empty.operator->(); })) return 23;
+    constexpr ::fixy::TextView kNullRead{"foundation: contract violation: ptr_ != nullptr"};
+    expect_dies(test, [&empty] noexcept { (void)empty.get(); }, kNullRead);
+    expect_dies(test, [&empty] noexcept { (void)*empty; }, kNullRead);
+    expect_dies(test, [&empty] noexcept { (void)empty.operator->(); }, kNullRead);
     return 0;
 }
 

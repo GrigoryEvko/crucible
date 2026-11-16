@@ -9,7 +9,10 @@
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/diag/FailClosed.h>
 
-#include "../foundation/abort_probe.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstddef>
@@ -25,7 +28,7 @@ namespace {
 namespace fa = ::foundation::algebra;
 using ::fixy::Refined;
 using ::fixy::SealedRefined;
-using ::crucible::test::aborts;
+using ::fixy::check::expect_dies;
 
 struct TwoWords {
     std::uint64_t lo = 0;
@@ -335,23 +338,32 @@ int check_value_paths() {
 }
 
 // The checked mint aborts at runtime on a value the predicate refuses;
-// the trusted mint does not.
+// the trusted mint does not.  Each refused mint runs in a child through
+// expect_dies of the Check family, and each admitted mint runs in the test
+// process.
 int check_contracts_abort() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     int volatile vol = -1;
     int const refused = vol;
 
-    if (!aborts([&] { (void)fixy::mint_refined<fixy::positive>(refused); })) return 30;
-    if (!aborts([&] { (void)fixy::mint_sealed_refined<fixy::positive>(refused); })) return 31;
-    if (aborts([&] { (void)fixy::mint_refined_trusted<fixy::positive>(refused); })) return 32;
-    if (aborts([&] { (void)fixy::mint_sealed_refined_trusted<fixy::positive>(refused); })) return 33;
+    expect_dies(
+        test, [refused] noexcept { (void)fixy::mint_refined<fixy::positive>(refused); },
+        ::fixy::TextView{"foundation: contract violation: Pred(v)"});
+    expect_dies(
+        test, [refused] noexcept { (void)fixy::mint_sealed_refined<fixy::positive>(refused); },
+        ::fixy::TextView{"foundation: contract violation: Pred(v)"});
+    (void)fixy::mint_refined_trusted<fixy::positive>(refused);
+    (void)fixy::mint_sealed_refined_trusted<fixy::positive>(refused);
 
     int const admitted = -vol;
-    if (aborts([&] { (void)fixy::mint_refined<fixy::positive>(admitted); })) return 34;
+    if (fixy::mint_refined<fixy::positive>(admitted).value() != admitted) return 34;
 
     fixy::Bounded<0, 100, int> bounded = fixy::mint_refined<fixy::in_range<0, 100>>(admitted);
     if (bounded.value() != 1) return 35;
     int const beyond = 101;
-    if (!aborts([&] { (void)fixy::mint_refined<fixy::in_range<0, 100>>(beyond); })) return 36;
+    expect_dies(
+        test, [beyond] noexcept { (void)fixy::mint_refined<fixy::in_range<0, 100>>(beyond); },
+        ::fixy::TextView{"foundation: contract violation: Pred(v)"});
     return 0;
 }
 

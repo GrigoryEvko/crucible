@@ -12,7 +12,7 @@
 
 namespace test_owned_region {
 
-void test_split_into_chunk_math() {
+void test_split_into_chunk_math(TestRunnerCtx const& test) {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
     using Brand = decltype(perm)::brand_type;
@@ -27,24 +27,24 @@ void test_split_into_chunk_math() {
     auto& [s0, s1, s2, s3, s4, s5, s6, s7] = parts.shards;
 
     // 1000 over 8 divides exactly, so every shard is the same size.
-    CRUCIBLE_TEST_REQUIRE(s0.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s1.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s7.size() == 125);
+    CRUCIBLE_TEST_ASSERT(test, s0.size() == 125);
+    CRUCIBLE_TEST_ASSERT(test, s1.size() == 125);
+    CRUCIBLE_TEST_ASSERT(test, s7.size() == 125);
 
     // The shards are views into one buffer, not copies, which is what
     // reading the seeded indices back at the right offsets shows.
-    CRUCIBLE_TEST_REQUIRE(s0.cspan()[0] == 0);
-    CRUCIBLE_TEST_REQUIRE(s0.cspan()[124] == 124);
-    CRUCIBLE_TEST_REQUIRE(s1.cspan()[0] == 125);
-    CRUCIBLE_TEST_REQUIRE(s7.cspan()[0] == 875);
-    CRUCIBLE_TEST_REQUIRE(s7.cspan()[124] == 999);
+    CRUCIBLE_TEST_ASSERT(test, s0.cspan()[0] == 0);
+    CRUCIBLE_TEST_ASSERT(test, s0.cspan()[124] == 124);
+    CRUCIBLE_TEST_ASSERT(test, s1.cspan()[0] == 125);
+    CRUCIBLE_TEST_ASSERT(test, s7.cspan()[0] == 875);
+    CRUCIBLE_TEST_ASSERT(test, s7.cspan()[124] == 999);
 
     // Each shard carries its own slice index in its tag.
     static_assert(std::remove_cvref_t<decltype(s3)>::tag_type::index == 3);
     static_assert(std::is_same_v<std::remove_cvref_t<decltype(s3)>::tag_type::parent_type, DataA>);
 }
 
-void test_split_uneven() {
+void test_split_uneven(TestRunnerCtx const& test) {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
     using Brand = decltype(perm)::brand_type;
@@ -55,15 +55,15 @@ void test_split_uneven() {
 
     // 1001 over 8 leaves a remainder of one, so the first shard takes one
     // element more than the 125 that each other shard takes.
-    CRUCIBLE_TEST_REQUIRE(s0.size() == 126);
-    CRUCIBLE_TEST_REQUIRE(s1.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s6.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s7.size() == 125);
-    CRUCIBLE_TEST_REQUIRE(s1.data() == s0.data() + 126);
-    CRUCIBLE_TEST_REQUIRE(s7.data() + 125 == s0.data() + 1001);
+    CRUCIBLE_TEST_ASSERT(test, s0.size() == 126);
+    CRUCIBLE_TEST_ASSERT(test, s1.size() == 125);
+    CRUCIBLE_TEST_ASSERT(test, s6.size() == 125);
+    CRUCIBLE_TEST_ASSERT(test, s7.size() == 125);
+    CRUCIBLE_TEST_ASSERT(test, s1.data() == s0.data() + 126);
+    CRUCIBLE_TEST_ASSERT(test, s7.data() + 125 == s0.data() + 1001);
 }
 
-void test_split_smaller_than_n() {
+void test_split_smaller_than_n(TestRunnerCtx const& test) {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
     using Brand = decltype(perm)::brand_type;
@@ -75,21 +75,21 @@ void test_split_smaller_than_n() {
     // With fewer elements than shards, each of the first five shards takes
     // one element.  The last three are empty, and each starts at the end
     // of the region, not past it.
-    CRUCIBLE_TEST_REQUIRE(s0.size() == 1);
-    CRUCIBLE_TEST_REQUIRE(s4.size() == 1);
-    CRUCIBLE_TEST_REQUIRE(s5.size() == 0);
-    CRUCIBLE_TEST_REQUIRE(s6.size() == 0);
-    CRUCIBLE_TEST_REQUIRE(s7.size() == 0);
-    CRUCIBLE_TEST_REQUIRE(s5.empty());
-    CRUCIBLE_TEST_REQUIRE(s5.data() == s0.data() + 5);
-    CRUCIBLE_TEST_REQUIRE(s7.data() == s0.data() + 5);
+    CRUCIBLE_TEST_ASSERT(test, s0.size() == 1);
+    CRUCIBLE_TEST_ASSERT(test, s4.size() == 1);
+    CRUCIBLE_TEST_ASSERT(test, s5.size() == 0);
+    CRUCIBLE_TEST_ASSERT(test, s6.size() == 0);
+    CRUCIBLE_TEST_ASSERT(test, s7.size() == 0);
+    CRUCIBLE_TEST_ASSERT(test, s5.empty());
+    CRUCIBLE_TEST_ASSERT(test, s5.data() == s0.data() + 5);
+    CRUCIBLE_TEST_ASSERT(test, s7.data() == s0.data() + 5);
 }
 
 // The join, spelled out once: every shard writes its own slice index over its range, and the shards are
 // then surrendered to recombine, which folds their Slice permissions
 // back into the parent's.  The post-join scan shows both that no shard
 // wrote outside its range and that no element went unwritten.
-void test_split_then_rebuild_through_recombine() {
+void test_split_then_rebuild_through_recombine(TestRunnerCtx const& test) {
     Arena arena;
     constexpr std::size_t N = 800;  // 8 × 100, exact division
     auto perm = mint_permission_root<DataA>();
@@ -124,12 +124,12 @@ void test_split_then_rebuild_through_recombine() {
 
     // recombine derives both from the shards rather than being told, so
     // check it recovered the extent the split started from.
-    CRUCIBLE_TEST_REQUIRE(recombined.data() == base);
-    CRUCIBLE_TEST_REQUIRE(recombined.size() == count);
-    CRUCIBLE_TEST_REQUIRE(recombined.size() == N);
+    CRUCIBLE_TEST_ASSERT(test, recombined.data() == base);
+    CRUCIBLE_TEST_ASSERT(test, recombined.size() == count);
+    CRUCIBLE_TEST_ASSERT(test, recombined.size() == N);
     for (std::size_t shard = 0; shard < 8; ++shard) {
         for (std::size_t i = 0; i < 100; ++i) {
-            CRUCIBLE_TEST_REQUIRE(recombined.cspan()[shard * 100 + i] == shard);
+            CRUCIBLE_TEST_ASSERT(test, recombined.cspan()[shard * 100 + i] == shard);
         }
     }
 }

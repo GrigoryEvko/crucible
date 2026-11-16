@@ -15,7 +15,8 @@
 #include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -201,44 +202,56 @@ void build_in_spent_hole(CountedHole& hole) {
     static_cast<void>(mint_box<Counted>(std::move(hole), std::uint64_t{3}));
 }
 
-// The probe jumps out of the body with no destructor call, and the first
-// spend gave the storage back, so the body owns no allocation.  The consume
-// after each helper is the one spend of the Hole of the body.
-void test_spend_of_moved_from_aborts() {
-    bool const consume_aborts = ::crucible::test::aborts([] {
-        CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
-        consume_two_times(hole);
-        std::move(hole).consume();
-    });
-    bool const build_aborts = ::crucible::test::aborts([] {
-        CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
-        build_in_spent_hole(hole);
-        std::move(hole).consume();
-    });
-    CRUCIBLE_FATAL_INVARIANT(consume_aborts && build_aborts);
+// Each body runs in a child through expect_dies of the Check family.  The
+// first spend gave the storage back.  The consume after each helper is the
+// one spend of the Hole of the body.
+void test_spend_of_moved_from_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            CountedHole hole =
+                mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
+            consume_two_times(hole);
+            std::move(hole).consume();
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a spend of a Hole that holds no storage: the Hole was moved from or spent"});
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            CountedHole hole =
+                mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
+            build_in_spent_hole(hole);
+            std::move(hole).consume();
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a spend of a Hole that holds no storage: the Hole was moved from or spent"});
 }
 
-// The probe gives up a moved-from Box on purpose: it holds no object, and
-// the mint of a Hole ends the process.
-void test_hole_of_moved_from_box_aborts() {
+// The death test gives up a moved-from Box on purpose: it holds no object,
+// and the mint of a Hole ends the process.
+void test_hole_of_moved_from_box_aborts(::fixy::TestRunnerCtx const& test) {
     CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
     Box<Counted> source = mint_box<Counted>(std::move(hole), std::uint64_t{4});
     Box<Counted> target{std::move(source)};
-    bool const hole_aborts = ::crucible::test::aborts([&source] { mint_hole(std::move(source)).consume(); });
-    CRUCIBLE_FATAL_INVARIANT(hole_aborts);
+    ::fixy::check::expect_dies(
+        test, [&source] noexcept { mint_hole(std::move(source)).consume(); },
+        ::foundation::core::TextView{
+            "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
     CRUCIBLE_FATAL_INVARIANT(target->label() == 4);
 }
 
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_mint_and_consume();
     test_steps_take_one_allocation();
     test_box_keeps_the_storage_of_the_hole();
     test_end_of_box_in_hole_gives_the_storage_back();
     test_move_and_drop();
     test_each_alignment();
-    test_spend_of_moved_from_aborts();
-    test_hole_of_moved_from_box_aborts();
+    test_spend_of_moved_from_aborts(test);
+    test_hole_of_moved_from_box_aborts(test);
     return 0;
 }

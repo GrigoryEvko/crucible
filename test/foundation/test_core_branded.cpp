@@ -5,8 +5,11 @@
 
 #include <foundation/core/Branded.h>
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include "../test_assert.h"
-#include "abort_probe.h"
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -114,33 +117,48 @@ void test_scope_agrees_with_the_index_model() {
 }
 
 // A cursor of a scope never leaves its loop: a read at the end and a step
-// past the end end the process in each build.
-void test_cursors_at_the_end_abort() {
+// past the end end the process in each build.  Each one runs in a child
+// through expect_dies of the Check family.
+void test_cursors_at_the_end_abort(::fixy::TestRunnerCtx const& test) {
     FixedArray<int, 3> values{1, 2, 3};
-    bool const aborts_each = mint_branded_scope(values.view(), [](auto view) noexcept {
-        bool const index_read = ::crucible::test::aborts([&view] { static_cast<void>(*view.indices().end()); });
-        bool const index_step = ::crucible::test::aborts([&view] {
-            auto cursor = view.indices().end();
-            ++cursor;
-        });
-        bool const pair_read = ::crucible::test::aborts([&view] { static_cast<void>(*view.enumerate().end()); });
-        bool const pair_step = ::crucible::test::aborts([&view] {
-            auto cursor = view.enumerate().end();
-            ++cursor;
-        });
-        return index_read && index_step && pair_read && pair_step;
+    std::size_t const count = mint_branded_scope(values.view(), [&test](auto view) noexcept {
+        ::fixy::check::expect_dies(
+            test, [&view] noexcept { static_cast<void>(*view.indices().end()); },
+            ::fixy::TextView{
+                "foundation: fatal: a read through the end cursor of a loop over the indexes of a branded view"});
+        ::fixy::check::expect_dies(
+            test,
+            [&view] noexcept {
+                auto cursor = view.indices().end();
+                ++cursor;
+            },
+            ::fixy::TextView{
+                "foundation: fatal: a step past the end cursor of a loop over the indexes of a branded view"});
+        ::fixy::check::expect_dies(
+            test, [&view] noexcept { static_cast<void>(*view.enumerate().end()); },
+            ::fixy::TextView{
+                "foundation: fatal: a read through the end cursor of an enumerate loop over a branded view"});
+        ::fixy::check::expect_dies(
+            test,
+            [&view] noexcept {
+                auto cursor = view.enumerate().end();
+                ++cursor;
+            },
+            ::fixy::TextView{"foundation: fatal: a step past the end cursor of an enumerate loop over a branded view"});
+        return view.size();
     });
-    assert(aborts_each);
+    assert(count == 3);
 }
 
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_scope_reads_each_element();
     test_scope_of_an_empty_view();
     test_parallel_view_shares_the_index();
     test_scope_agrees_with_the_index_model();
-    test_cursors_at_the_end_abort();
+    test_cursors_at_the_end_abort(test);
     crucible::test::pass("test_core_branded: all tests passed\n");
     return 0;
 }

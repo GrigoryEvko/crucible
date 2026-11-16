@@ -6,7 +6,7 @@
 //                                      standard output, through report
 //   CRUCIBLE_TEST_ASSERT(test, cond)   ends the test with the text of cond
 //                                      and the site, through fatal, when
-//                                      cond is false
+//                                      cond is false.  cond can hold commas
 //   expect_dies(test, body, text)      runs body in a child process, and
 //                                      ends the test when the child does
 //                                      not end by SIGABRT with text on its
@@ -131,20 +131,25 @@ void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expe
 
 }  // namespace fixy::check
 
-// Ends the test when cond is false (THE TEST CONTEXT).  The report names the
-// condition and the site of the assert: its file, its line and its function.
-// The process ends through fatal, so a death test of an assert sees SIGABRT.
-// A passing assert costs one branch, and the failure is a cold call.
+// Ends the test when the condition is false (THE TEST CONTEXT).  The report
+// names the condition and the site of the assert: its file, its line and its
+// function.  The process ends through fatal, so a death test of an assert
+// sees SIGABRT.  A passing assert costs one branch, and the failure is a cold
+// call.
+//
+// The condition is the variadic part of the macro, so it can hold the commas
+// of a template argument list, such as lookup<&f, int, double>().is_none().
+// The report writes the full condition.
 //
 // The text of the report and the condition are static constexpr locals, so
 // they are constants in read-only data, and the failure builds no object on
 // the stack of the test.
-#define CRUCIBLE_TEST_ASSERT(test, cond)                                                                      \
+#define CRUCIBLE_TEST_ASSERT(test, ...)                                                                       \
     do {                                                                                                      \
-        if (!(cond)) [[unlikely]] {                                                                           \
+        if (!(__VA_ARGS__)) [[unlikely]] {                                                                    \
             static constexpr ::foundation::core::Fmt<::foundation::core::TextView> crucible_test_assert_text{ \
                 "assert: {}"};                                                                                \
-            static constexpr ::foundation::core::TextView crucible_test_assert_condition{#cond};              \
+            static constexpr ::foundation::core::TextView crucible_test_assert_condition{#__VA_ARGS__};       \
             ::fixy::check::fail_assertion(test, crucible_test_assert_text, crucible_test_assert_condition);   \
         }                                                                                                     \
     } while (0)

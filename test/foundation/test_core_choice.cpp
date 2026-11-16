@@ -9,15 +9,25 @@
 #include <foundation/Quarantine.h>
 #include <foundation/core/Ref.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include "philox_stream.h"
 
 #include <cstdint>
 
 namespace {
 
+using ::fixy::check::expect_dies;
 using ::foundation::core::none;
 using ::foundation::core::Option;
+
+// The test context of the death tests below.  Each death test runs its body
+// in a child through expect_dies of the Check family.
+[[nodiscard]] ::fixy::TestRunnerCtx test_context() noexcept {
+    return ::fixy::TestRunnerCtx{::foundation::effects::testing::test()};
+}
 
 // The count of live CountedOwner objects.  The owning form must destroy
 // each payload one time and leak none.
@@ -112,9 +122,9 @@ void test_expect_empties_the_source() {
 
 void test_expect() {
     CRUCIBLE_FATAL_INVARIANT(Option<int>::some(7).expect("the test gives a seven") == 7);
-    bool const empty_expect_aborts = ::crucible::test::aborts(
-        [] { static_cast<void>(Option<int>{}.expect("the test option is empty on purpose")); });
-    CRUCIBLE_FATAL_INVARIANT(empty_expect_aborts);
+    expect_dies(
+        test_context(), [] noexcept { static_cast<void>(Option<int>{}.expect("the test option is empty on purpose")); },
+        ::foundation::core::TextView{"the test option is empty on purpose"});
 }
 
 void test_loop() {
@@ -140,11 +150,13 @@ void test_loop() {
 // empty Option.
 void test_end_cursor_read_aborts() {
     Option<int> holder = Option<int>::some(9);
-    bool const end_read_aborts = ::crucible::test::aborts([&holder] { static_cast<void>(*holder.end()); });
-    CRUCIBLE_FATAL_INVARIANT(end_read_aborts);
+    expect_dies(
+        test_context(), [&holder] noexcept { static_cast<void>(*holder.end()); },
+        ::foundation::core::TextView{"foundation: fatal: a read through the end cursor of an Option"});
     Option<int> empty{};
-    bool const empty_read_aborts = ::crucible::test::aborts([&empty] { static_cast<void>(*empty.begin()); });
-    CRUCIBLE_FATAL_INVARIANT(empty_read_aborts);
+    expect_dies(
+        test_context(), [&empty] noexcept { static_cast<void>(*empty.begin()); },
+        ::foundation::core::TextView{"foundation: fatal: a read through the end cursor of an Option"});
 }
 
 // The probe reads each owning Option after its move and after expect() on
@@ -310,9 +322,10 @@ void test_niche_payload() {
 // A payload equal to the empty value of its niche would read as no value,
 // so Option::some refuses it in each build.
 void test_niche_empty_value_aborts() {
-    bool const empty_value_aborts =
-        ::crucible::test::aborts([] { static_cast<void>(Option<SlotNumber>::some(SlotNumber{0xFFFFFFFFu})); });
-    CRUCIBLE_FATAL_INVARIANT(empty_value_aborts);
+    expect_dies(
+        test_context(), [] noexcept { static_cast<void>(Option<SlotNumber>::some(SlotNumber{0xFFFFFFFFu})); },
+        ::foundation::core::TextView{
+            "foundation: fatal: Option::some got the empty value of the niche of its payload"});
 }
 
 // A payload that gives the member niche protocol.  A class that cannot
@@ -334,9 +347,10 @@ void test_member_niche_payload() {
     Option<MemberSlot> held_slot = Option<MemberSlot>::some(MemberSlot{6});
     CRUCIBLE_FATAL_INVARIANT(empty_slot.is_none() && held_slot.is_some());
     CRUCIBLE_FATAL_INVARIANT(static_cast<Option<MemberSlot>&&>(held_slot).expect("the slot was built").raw == 6);
-    bool const empty_value_aborts =
-        ::crucible::test::aborts([] { static_cast<void>(Option<MemberSlot>::some(MemberSlot{0xFFFFFFFFu})); });
-    CRUCIBLE_FATAL_INVARIANT(empty_value_aborts);
+    expect_dies(
+        test_context(), [] noexcept { static_cast<void>(Option<MemberSlot>::some(MemberSlot{0xFFFFFFFFu})); },
+        ::foundation::core::TextView{
+            "foundation: fatal: Option::some got the empty value of the niche of its payload"});
 }
 
 // A class of the member protocol that states that no door builds the empty
@@ -362,9 +376,10 @@ void test_member_niche_statement() {
         slot.raw += 1;
     }
     CRUCIBLE_FATAL_INVARIANT(static_cast<Option<StatedSlot>&&>(held).expect("the slot was built").raw == 9);
-    bool const false_statement_aborts =
-        ::crucible::test::aborts([] { static_cast<void>(Option<StatedSlot>::some(StatedSlot{0xFFFFFFFFu})); });
-    CRUCIBLE_FATAL_INVARIANT(false_statement_aborts);
+    expect_dies(
+        test_context(), [] noexcept { static_cast<void>(Option<StatedSlot>::some(StatedSlot{0xFFFFFFFFu})); },
+        ::foundation::core::TextView{
+            "foundation: fatal: Option::some got the empty value of the niche of its payload"});
 }
 
 // The validity test of a value that a bit copy made.  A decode copies wire
@@ -405,10 +420,16 @@ struct ForgedWords {
 // of a forged sum ends the process: is_some or is_ok, and == in each order of
 // the operands.  So a forged tag never reads as a value.
 template <class Sum>
-void expect_forged_compares_abort(Sum const& forged, Sum const& real) {
-    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged, &real] { static_cast<void>(forged == real); }));
-    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged, &real] { static_cast<void>(real == forged); }));
+void expect_forged_compares_abort(Sum const& forged, Sum const& real, ::foundation::core::TextView refusal) {
+    expect_dies(test_context(), [&forged, &real] noexcept { static_cast<void>(forged == real); }, refusal);
+    expect_dies(test_context(), [&forged, &real] noexcept { static_cast<void>(real == forged); }, refusal);
 }
+
+// The reports of a read of a forged tag.
+constexpr ::foundation::core::TextView kForgedOption{
+    "foundation: fatal: Option: the tag names no alternative, so a copy of bytes made this Option"};
+constexpr ::foundation::core::TextView kForgedResult{
+    "foundation: fatal: Result: the tag names no alternative, so a copy of bytes made this Result"};
 
 void test_forged_tag_by_memcpy() {
     static_assert(sizeof(Option<std::uint64_t>) == sizeof(ForgedWords));
@@ -418,8 +439,8 @@ void test_forged_tag_by_memcpy() {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of an Option")
     __builtin_memcpy(static_cast<void*>(&forged), &words, sizeof(words));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged] { static_cast<void>(forged.is_some()); }));
-    expect_forged_compares_abort(forged, real);
+    expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_some()); }, kForgedOption);
+    expect_forged_compares_abort(forged, real, kForgedOption);
 }
 
 void test_forged_tag_by_union_member() {
@@ -432,8 +453,8 @@ void test_forged_tag_by_union_member() {
     Punned const punned{ForgedWords{}};
     Option<std::uint64_t> const& forged = punned.option;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged] { static_cast<void>(forged.is_some()); }));
-    expect_forged_compares_abort(forged, real);
+    expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_some()); }, kForgedOption);
+    expect_forged_compares_abort(forged, real, kForgedOption);
 }
 
 // The error of the Result tests.
@@ -451,8 +472,8 @@ void test_forged_result_tag_by_memcpy() {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of a Result")
     __builtin_memcpy(static_cast<void*>(&forged), &words, sizeof(words));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&forged] { static_cast<void>(forged.is_ok()); }));
-    expect_forged_compares_abort(forged, real);
+    expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_ok()); }, kForgedResult);
+    expect_forged_compares_abort(forged, real, kForgedResult);
 }
 
 // A sum whose payload is a sum: an Option of a Result and a Result of an
@@ -477,8 +498,8 @@ void test_nested_sums() {
 }
 
 // A payload with a destructor, so an Option of it takes the owning form.  A
-// test that ends the process in the abort probe skips the end of its locals,
-// so this payload counts no object.
+// death test ends its child with no end of its locals, so this payload
+// counts no object.
 struct Handle {
     int value = 0;
 
@@ -511,36 +532,48 @@ void replace_result(::foundation::core::Result<Handle, Refusal>& target) noexcep
 // The rule borrow-match reads one body, so a write of the sum in a callee of
 // the arm, or through a second reference, escapes it.  The owning storage
 // counts the lend of the borrow match, and a write that ends the payload in
-// that time ends the process.  Each Option lives in its probe, so the jump of
-// the probe ends its frame with no end of the Option.
+// that time ends the process.  Each Option lives in the body of its death
+// test, which runs in a child.
 void test_lent_write_aborts() {
-    bool const callee_aborts = ::crucible::test::aborts([] {
-        Option<Handle> held = Option<Handle>::some(Handle{71});
-        static_cast<void>(held.match(
-            [&held](Handle const& handle) noexcept {
-                clear_handle(held);
-                return handle.value;
-            },
-            [] noexcept { return 0; }));
-    });
-    CRUCIBLE_FATAL_INVARIANT(callee_aborts);
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<Handle> held = Option<Handle>::some(Handle{71});
+            static_cast<void>(held.match(
+                [&held](Handle const& handle) noexcept {
+                    clear_handle(held);
+                    return handle.value;
+                },
+                [] noexcept { return 0; }));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a write ends the payload of a sum while a borrow match lends that payload to "
+            "an arm"});
 
-    bool const alias_aborts = ::crucible::test::aborts([] {
-        Option<Handle> held = Option<Handle>::some(Handle{72});
-        static_cast<void>(match_and_take(held, held));
-    });
-    CRUCIBLE_FATAL_INVARIANT(alias_aborts);
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<Handle> held = Option<Handle>::some(Handle{72});
+            static_cast<void>(match_and_take(held, held));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a write ends the payload of a sum while a borrow match lends that payload to "
+            "an arm"});
 
-    bool const result_aborts = ::crucible::test::aborts([] {
-        ::foundation::core::Result<Handle, Refusal> held{Handle{75}};
-        static_cast<void>(held.match(
-            [&held](Handle const& handle) noexcept {
-                replace_result(held);
-                return handle.value;
-            },
-            [](Refusal const&) noexcept { return 0; }));
-    });
-    CRUCIBLE_FATAL_INVARIANT(result_aborts);
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            ::foundation::core::Result<Handle, Refusal> held{Handle{75}};
+            static_cast<void>(held.match(
+                [&held](Handle const& handle) noexcept {
+                    replace_result(held);
+                    return handle.value;
+                },
+                [](Refusal const&) noexcept { return 0; }));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a write ends the payload of a sum while a borrow match lends that payload to "
+            "an arm"});
 }
 
 // The lend ends with the borrow match, also with a nested match, so a write
@@ -622,9 +655,9 @@ void test_result_roads() {
     CRUCIBLE_FATAL_INVARIANT(odd.match(doubled, coded) == -2);
     CRUCIBLE_FATAL_INVARIANT(half_of(6).match([](int value) noexcept { return value; }, coded) == 3);
 
-    bool const error_expect_aborts =
-        ::crucible::test::aborts([] { static_cast<void>(half_of(7).expect("the test value is odd on purpose")); });
-    CRUCIBLE_FATAL_INVARIANT(error_expect_aborts);
+    expect_dies(
+        test_context(), [] noexcept { static_cast<void>(half_of(7).expect("the test value is odd on purpose")); },
+        ::foundation::core::TextView{"the test value is odd on purpose"});
 }
 
 // A Result of Unit gives no value, so its expect() gives void.
@@ -635,9 +668,9 @@ void test_result_of_unit() {
     };
     close_when(true).expect("an open door closes");
     CRUCIBLE_FATAL_INVARIANT(close_when(false).is_err());
-    bool const unit_expect_aborts =
-        ::crucible::test::aborts([&close_when] { close_when(false).expect("the test door is closed on purpose"); });
-    CRUCIBLE_FATAL_INVARIANT(unit_expect_aborts);
+    expect_dies(
+        test_context(), [&close_when] noexcept { close_when(false).expect("the test door is closed on purpose"); },
+        ::foundation::core::TextView{"the test door is closed on purpose"});
 }
 
 // A Result of a value that owns something moves the value once, and

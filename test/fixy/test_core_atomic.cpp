@@ -16,7 +16,11 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
 
-#include "../foundation/abort_probe.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include "../foundation/philox_stream.h"
 
 #include <cstdint>
@@ -428,13 +432,16 @@ void test_word_option_agrees_with_plain_model() {
 }
 
 // A protocol whose to_word gives the empty word for a value would make a full
-// Option read back as empty.  The store of that Option ends the process, and
-// the cell keeps its value.
+// Option read back as empty.  The store of that Option ends the process.  It
+// runs in a child through expect_dies of the Check family.
 void test_word_option_store_of_empty_word_aborts() {
     using LossyOption = ::foundation::core::Option<LossySeat>;
     Atomic<LossyOption> cell{};
-    CRUCIBLE_FATAL_INVARIANT(
-        ::crucible::test::aborts([&cell] { cell.store_release(LossyOption::some(LossySeat::of(1))); }));
+    ::fixy::check::expect_dies(
+        ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+        [&cell] noexcept { cell.store_release(LossyOption::some(LossySeat::of(1))); },
+        ::fixy::TextView{"foundation: fatal: atomic_word: to_word gave empty_word for the payload of a full Option, "
+                         "and the cell would read the Option back as empty"});
     CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_none());
     cell.store_release(LossyOption::some(LossySeat::of(2)));
     CRUCIBLE_FATAL_INVARIANT(cell.load_acquire().is_some());
@@ -845,7 +852,8 @@ void test_sole_writer_single_thread() {
 // out of the turn, and the rule brand-escape refuses each of them.  A
 // template argument carries the cell of the first run into a later run.
 // The writer of a later run has the type of the writer of the cell and a
-// different run-time id, so its read and its write end the process.
+// different run-time id, so its read and its write end the process.  Each
+// later run runs in a child through expect_dies of the Check family.
 enum class LaterRun : std::uint8_t {
     first,
     writes,
@@ -857,8 +865,15 @@ void run_of_mint_site(FirstCell& first_cell) noexcept {
     auto writer = mint_sole_writer<HeadRole>();
     if constexpr (Run == LaterRun::first) {
         Atomic<std::uint64_t, decltype(writer)> cell{writer, std::uint64_t{1}};
-        CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&cell] { run_of_mint_site<LaterRun::writes>(cell); }));
-        CRUCIBLE_FATAL_INVARIANT(::crucible::test::aborts([&cell] { run_of_mint_site<LaterRun::reads>(cell); }));
+        ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+        ::fixy::check::expect_dies(
+            test, [&cell] noexcept { run_of_mint_site<LaterRun::writes>(cell); },
+            ::fixy::TextView{"foundation: fatal: Atomic<T, SoleWriter<Role, Brand>>: a writer of a different run of "
+                             "the mint site used the cell"});
+        ::fixy::check::expect_dies(
+            test, [&cell] noexcept { run_of_mint_site<LaterRun::reads>(cell); },
+            ::fixy::TextView{"foundation: fatal: Atomic<T, SoleWriter<Role, Brand>>: a writer of a different run of "
+                             "the mint site used the cell"});
         CRUCIBLE_FATAL_INVARIANT(cell.load_owned(writer) == 1 && cell.load_acquire() == 1);
         static_cast<void>(first_cell);
     } else {

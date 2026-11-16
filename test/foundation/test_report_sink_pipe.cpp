@@ -8,17 +8,20 @@
 // before it.  A thread that blocked SIGPIPE before the report keeps its mask,
 // and the signal of the write stays pending for it.
 //
-// Each case puts a handler on SIGPIPE that marks the arrival of the signal, so
-// a write that raises the signal fails the case and does not end the process.
-// The runner of the tests can give the process SIG_IGN for SIGPIPE and a mask
-// that blocks it, and each of the two hides the signal.  So each case sets the
-// action and the mask that it reads.  A child process with the default action
-// gives the same proof, but the quarantine plugin refuses a fork in a test.
+// Each case of a report puts a handler on SIGPIPE that marks the arrival of the
+// signal, so a write that raises the signal fails the case and does not end
+// the process.  The runner of the tests can give the process SIG_IGN for
+// SIGPIPE and a mask that blocks it, and each of the two hides the signal.  So
+// each case sets the action and the mask that it reads.  The case of a fatal
+// exit runs in a child with the default action, so a SIGPIPE ends the child.
 
 #include <foundation/Quarantine.h>
 #include <foundation/core/Report.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <fixy/os/Process.h>
+#include <foundation/effects/Effect.h>
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a report to a stream with no reader raises no SIGPIPE in its thread")
 #include <fcntl.h>
@@ -56,6 +59,16 @@ void mark_pipe_signal(int) noexcept { pipe_signal_arrived = 1; }
     ::sigset_t const pipe = pipe_signal_set();
     return ::sigaction(SIGPIPE, &marker, &replaced_pipe_action) == 0
         && ::pthread_sigmask(should_block ? SIG_BLOCK : SIG_UNBLOCK, &pipe, &replaced_mask) == 0;
+}
+
+// Gives SIGPIPE its default action, and a mask of the thread that does not
+// block SIGPIPE.  A SIGPIPE then ends the process.
+[[nodiscard]] bool use_default_pipe_action() noexcept {
+    struct ::sigaction default_action{};
+    default_action.sa_handler = SIG_DFL;
+    static_cast<void>(::sigemptyset(&default_action.sa_mask));
+    ::sigset_t const pipe = pipe_signal_set();
+    return ::sigaction(SIGPIPE, &default_action, nullptr) == 0 && ::pthread_sigmask(SIG_UNBLOCK, &pipe, nullptr) == 0;
 }
 
 // Takes a pending SIGPIPE of the thread with a wait of zero, and then puts
@@ -203,21 +216,22 @@ template <class Body>
 }
 
 // A fatal exit writes its text to standard error with no reader, and it ends
-// the process by SIGABRT and not by SIGPIPE.
-[[nodiscard]] int check_fatal_raises_no_signal() noexcept {
-    bool has_aborted = false;
-    PipeOutcome const outcome = run_with_broken_pipe(core::Sink::Err, false, [&has_aborted] {
-        has_aborted =
-            ::crucible::test::aborts([] { core::fatal("test_report_sink_pipe: a fatal exit that no reader reads"); });
-    });
-    if (!outcome.is_prepared) return 11;
-    if (!has_aborted) return 12;
-    if (outcome.has_signal_arrived) return 13;
-    if (outcome.is_blocked_after) return 14;
-    if (!outcome.is_mask_kept) return 15;
-    if (outcome.is_pending_after) return 16;
-    if (!outcome.is_restored) return 17;
-    return 0;
+// the process by SIGABRT and not by SIGPIPE.  The fatal exit runs in a child
+// through expect_dies of the Check family.  The child gives SIGPIPE its
+// default action and unblocks it, so a SIGPIPE of the write ends the child by
+// that signal, and expect_dies refuses that end.  The child writes its line
+// before it breaks its standard error, and the parent requires the line.  A
+// child that cannot prepare exits with the code 11 or 12.
+void check_fatal_raises_no_signal(::fixy::TestRunnerCtx const& test) noexcept {
+    ::fixy::check::expect_dies(
+        test,
+        [&test] noexcept {
+            if (!use_default_pipe_action()) ::fixy::process::exit_now(test, 11);
+            core::report(core::Sink::Err, "test_report_sink_pipe: the child breaks its standard error\n");
+            if (!break_stream(stream_of(core::Sink::Err))) ::fixy::process::exit_now(test, 12);
+            core::fatal("test_report_sink_pipe: a fatal exit that no reader reads");
+        },
+        ::foundation::core::TextView{"test_report_sink_pipe: the child breaks its standard error"});
 }
 
 // A thread that blocked SIGPIPE before the report keeps its mask, and the
@@ -239,9 +253,11 @@ template <class Body>
 }  // namespace
 
 int main() {
+    // The child of the fatal exit starts first, while the test process has
+    // the action and the mask of its start.
+    check_fatal_raises_no_signal(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     int failed = check_report_raises_no_signal();
     if (failed == 0) failed = check_output_report_raises_no_signal();
-    if (failed == 0) failed = check_fatal_raises_no_signal();
     if (failed == 0) failed = check_blocked_thread_keeps_its_signal();
     if (failed != 0) {
         core::report(core::Sink::Err, "test_report_sink_pipe: check {} failed\n", failed);

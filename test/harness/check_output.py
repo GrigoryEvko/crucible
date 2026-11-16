@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the probes of the test harness and check their output.
 
-usage: check_output.py PROBE_REPORT PROBE_FATAL_TWICE PROBE_DIAG [EMULATOR [ARG]...]
+usage: check_output.py PROBE_REPORT PROBE_DIAG [EMULATOR [ARG]...]
 
 EMULATOR and its arguments run each probe in a cross build, such as
 qemu-aarch64-static -L SYSROOT.  test/CMakeLists.txt gives them from the
@@ -14,12 +14,6 @@ with its condition, its file and line and its function, and it must end by
 SIGABRT.  The file is the path of the probe from the source root, because
 the macro maps of cmake/Ccache.cmake give that path to each build directory
 and each checkout, with and without ccache.
-
-PROBE_FATAL_TWICE (test/harness/probe_fatal_twice.cpp) catches two fatal
-exits on one thread with abort probes.  Then it opens a second arm of the
-probe while one arm is open, and the open arm catches the refusal.  Its
-standard error must hold the text of each fatal exit and of the refusal, and
-it must end with status 0.
 
 PROBE_DIAG (test/harness/probe_diag.cpp) writes the records and the lines of
 the diagnostic emitter of foundation/diag/JsonEmitter.h.  Each line of its
@@ -71,7 +65,6 @@ EXACT_RECORD = ('{"format_version":1,"source_position":{"file":"","line":0,"colu
                 '"error_code":"E","goal":"G","have":"H","gap":"' + "g" * 32596
                 + '","suggestion":"S","related_snippets":[]}\n')
 RESULTS_LINE = "results: true true true true true false\n"
-SECOND_ARM_TEXT = "foundation: fatal: a second arm of the abort probe starts while the first arm is open\n"
 REFUSED_LINE = "format refused\n"
 DEFAULT_SINK_LINE = "crucible-violation: category=DetSafeLeak fn=default_fn detail=default detail\n"
 
@@ -133,19 +126,6 @@ def check_report_probe(probe: str, emulator: list[str]) -> bool:
     return passed
 
 
-def check_fatal_twice_probe(probe: str, emulator: list[str]) -> bool:
-    """Check that each of two caught fatal exits on one thread, and the refusal of a second open arm, write a text."""
-    result = run(probe, emulator)
-    passed = check(result.returncode == 0, "the abort probes catch the two fatal exits and the refusal", result)
-    for which in ("first", "second"):
-        text = f"foundation: fatal: the {which} fatal exit of the probe\n"
-        passed = check(text in result.stderr, f"standard error holds the text of the {which} fatal exit",
-                       result) and passed
-    passed = check(SECOND_ARM_TEXT in result.stderr, "standard error holds the refusal of a second open arm",
-                   result) and passed
-    return passed
-
-
 def holds_prose(line: str, head: str, middle: str) -> bool:
     """Tell if a record line is head, a text of the catalog, middle, a text of the catalog and the tail of a record.
 
@@ -194,14 +174,13 @@ def check_diag_probe(probe: str, emulator: list[str]) -> bool:
 
 
 def main(arguments: list[str]) -> int:
-    """Run the three probes and give the exit status of the check."""
-    if len(arguments) < 4:
+    """Run the two probes and give the exit status of the check."""
+    if len(arguments) < 3:
         print(__doc__, file=sys.stderr)
         return 2
-    emulator = arguments[4:]
+    emulator = arguments[3:]
     passed = check_report_probe(arguments[1], emulator)
-    passed = check_fatal_twice_probe(arguments[2], emulator) and passed
-    passed = check_diag_probe(arguments[3], emulator) and passed
+    passed = check_diag_probe(arguments[2], emulator) and passed
     print("check_output: " + ("all checks passed" if passed else "FAILED"))
     return 0 if passed else 1
 

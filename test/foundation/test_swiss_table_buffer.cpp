@@ -7,7 +7,9 @@
 
 #include <foundation/SwissTableBuffer.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <bit>
@@ -83,7 +85,7 @@ using HugeBuffer = ::foundation::SwissTableBuffer<HugeSlot>;
 }  // namespace
 
 int main() {
-    using crucible::test::aborts;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
 
     if (const int failed = layout_is_one_block(); failed != 0) return 10 + failed;
     if (const int failed = slots_hold_values(); failed != 0) return 20 + failed;
@@ -91,15 +93,27 @@ int main() {
     if (const int failed = zero_capacity_is_empty(); failed != 0) return 40 + failed;
 
     // A capacity below the group width, not a power of two or past the
-    // bound aborts before anything is allocated, under every semantic.
-    if (!aborts([] { (void)PtrBuffer::allocate(8); })) return 50;
-    if (!aborts([] { (void)PtrBuffer::allocate(48); })) return 51;
-    if (aborts([] { (void)PtrBuffer::allocate(1024); })) return 52;
-    if (!aborts([] { (void)PtrBuffer::allocate(::foundation::swiss_table_max_capacity * 2); })) return 53;
+    // bound aborts before anything is allocated, under every semantic.  Each
+    // refused allocation runs in a child through expect_dies of the Check
+    // family, and the capacity of 1024 is the control in the test process.
+    ::fixy::check::expect_dies(
+        test, [] noexcept { (void)PtrBuffer::allocate(8); },
+        ::foundation::core::TextView{"foundation: fatal invariant failed: is_swiss_table_capacity(capacity)"});
+    ::fixy::check::expect_dies(
+        test, [] noexcept { (void)PtrBuffer::allocate(48); },
+        ::foundation::core::TextView{"foundation: fatal invariant failed: is_swiss_table_capacity(capacity)"});
+    if (PtrBuffer::allocate(1024).capacity() != 1024) return 52;
+    ::fixy::check::expect_dies(
+        test, [] noexcept { (void)PtrBuffer::allocate(::foundation::swiss_table_max_capacity * 2); },
+        ::foundation::core::TextView{"foundation: fatal invariant failed: is_swiss_table_capacity(capacity)"});
 
     // The slot bytes fit, and the control bytes added to them wrap the size
     // to zero.  The size check aborts before the heap sees the request.
-    if (!aborts([] { (void)HugeBuffer::allocate(::foundation::swiss_table_max_capacity); })) return 54;
+    ::fixy::check::expect_dies(
+        test, [] noexcept { (void)HugeBuffer::allocate(::foundation::swiss_table_max_capacity); },
+        ::foundation::core::TextView{
+            "foundation: fatal: 1073741824 prefix bytes and 1073741824 elements of 17179869183 bytes, rounded "
+            "to 64, do not fit in size_t"});
 
     return 0;
 }

@@ -11,7 +11,8 @@
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -106,14 +107,21 @@ int main() {
     test_move();
 
     // An alignment that is not a power of two is a defect of the caller, and
-    // the precondition ends the process.
-    if (!crucible::test::aborts([] { (void)mint_aligned_bytes(::foundation::effects::testing::test().alloc, 64, 24); }))
-        return 1;
-    if (!crucible::test::aborts([] { (void)mint_aligned_bytes(::foundation::effects::testing::test().alloc, 64, 0); }))
-        return 2;
+    // the precondition ends the process.  Each refused call runs in a child
+    // through expect_dies of the Check family.
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::check::expect_dies(
+        test, [] noexcept { (void)mint_aligned_bytes(::foundation::effects::testing::test().alloc, 64, 24); },
+        ::foundation::core::TextView{"foundation: contract violation: core::has_single_bit(alignment)"});
+    ::fixy::check::expect_dies(
+        test, [] noexcept { (void)mint_aligned_bytes(::foundation::effects::testing::test().alloc, 64, 0); },
+        ::foundation::core::TextView{"foundation: contract violation: core::has_single_bit(alignment)"});
     // A size whose round up to the alignment wraps ends the process.
-    if (!crucible::test::aborts(
-            [] { (void)mint_aligned_bytes(::foundation::effects::testing::test().alloc, ~std::size_t{0}, 64); }))
-        return 3;
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept { (void)mint_aligned_bytes(::foundation::effects::testing::test().alloc, ~std::size_t{0}, 64); },
+        ::foundation::core::TextView{
+            "foundation: fatal: 0 prefix bytes and 18446744073709551615 elements of 1 bytes, rounded to "
+            "64, do not fit in size_t"});
     return 0;
 }

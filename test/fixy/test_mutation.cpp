@@ -6,7 +6,10 @@
 
 #include <foundation/algebra/GradedTrait.h>
 
-#include "../foundation/abort_probe.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <atomic>
 #include <cstdint>
@@ -31,7 +34,17 @@ using ::fixy::Monotonic;
 using ::fixy::OrderedAppendOnly;
 using ::fixy::WriteOnce;
 using ::fixy::WriteOnceNonNull;
-using ::crucible::test::aborts;
+using ::fixy::check::expect_dies;
+
+// The reports of the refusals of the counters that two or more cases share.
+constexpr ::fixy::TextView kBumpAtTheEnd{
+    "foundation: contract violation: impl_.peek() != ((AscendingOrder<T, Cmp>) ? ::foundation::core::max_of<T> : "
+    "::foundation::core::min_of<T>)"};
+constexpr ::fixy::TextView kAdvanceBack{"foundation: contract violation: lattice_type::leq(impl_.peek(), new_value)"};
+constexpr ::fixy::TextView kAtomicAdvanceBack{"foundation: contract violation: replaced < new_value"};
+constexpr ::fixy::TextView kSoleWriterStepBack{"foundation: contract violation: Cmp{}(current, new_value)"};
+constexpr ::fixy::TextView kBumpOverflow{
+    "foundation: contract violation: ::foundation::decide::no_overflow_sum(observed, delta)"};
 
 // ── Storage regimes ──────────────────────────────────────────────────
 //
@@ -315,7 +328,9 @@ int check_bounded_monotonic() {
     // Under std::greater, bump steps down, and the bound holds for each step.
     // A step past the floor of the carrier aborts.
     if (value_after_bump(falling_counter_at(10U)) != 9U) return 210;
-    if (!aborts([] { (void)value_after_bump(falling_counter_at(0U)); })) return 211;
+    expect_dies(
+        ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+        [] noexcept { (void)value_after_bump(falling_counter_at(0U)); }, kBumpAtTheEnd);
 
     // try_advance rejects rather than firing a contract. The two
     // rejections below have different causes.
@@ -670,86 +685,118 @@ int check_atomic_monotonic() {
 
 // ── Contracts fire at runtime ────────────────────────────────────────
 //
-// The wrapper under test lives outside the probed body, so the jump out
-// of the failing call skips no destructor of its own.
+// Each refused call runs in a child through expect_dies of the Check family,
+// so the wrapper in the test process keeps its value.
 
 int check_contracts_abort() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     Monotonic<std::uint32_t> mono = ::fixy::mint_monotonic<std::uint32_t>(10u);
-    if (!aborts([&] { mono.advance(5u); })) return 160;
+    expect_dies(test, [&mono] noexcept { mono.advance(5u); }, kAdvanceBack);
     if (mono.get() != 10u) return 161;
 
     Monotonic<std::uint8_t> at_max = ::fixy::mint_monotonic<std::uint8_t>(255);
-    if (!aborts([&] { at_max.bump(); })) return 162;
+    expect_dies(test, [&at_max] noexcept { at_max.bump(); }, kBumpAtTheEnd);
 
     BoundedMonotonic<std::uint32_t, 8U> bounded = ::fixy::mint_bounded_monotonic<std::uint32_t, 8U>(8U);
-    if (!aborts([&] { bounded.advance(9U); })) return 163;
-    if (!aborts([&] { bounded.bump(); })) return 164;
-    if (!aborts([&] { bounded.advance(7U); })) return 165;
+    expect_dies(
+        test, [&bounded] noexcept { bounded.advance(9U); },
+        ::fixy::TextView{"foundation: contract violation: std::cmp_less_equal(new_value, Max)"});
+    expect_dies(
+        test, [&bounded] noexcept { bounded.bump(); },
+        ::fixy::TextView{
+            "foundation: contract violation: (DescendingOrder<T, Cmp>) || std::cmp_less(inner_.get(), Max)"});
+    expect_dies(test, [&bounded] noexcept { bounded.advance(7U); }, kAdvanceBack);
     if (bounded.get() != 8U) return 166;
 
     std::uint32_t over = 9U;
-    if (!aborts([&] { (void)::fixy::mint_bounded_monotonic<std::uint32_t, 8U>(over); })) return 167;
-    // A reset over the bound aborts and leaves the counter where it was.
-    if (!aborts([&] { bounded.reset_under_quiescence(over); })) return 200;
+    expect_dies(
+        test, [&over] noexcept { (void)::fixy::mint_bounded_monotonic<std::uint32_t, 8U>(over); },
+        ::fixy::TextView{"foundation: contract violation: std::cmp_less_equal(initial, Max)"});
+    // A reset over the bound aborts.
+    expect_dies(
+        test, [&bounded, &over] noexcept { bounded.reset_under_quiescence(over); },
+        ::fixy::TextView{"foundation: contract violation: std::cmp_less_equal(value, Max)"});
     if (bounded.get() != 8U) return 201;
 
     WriteOnce<int> once = ::fixy::mint_write_once<int>();
-    if (!aborts([&] { (void)once.get(); })) return 168;
+    expect_dies(
+        test, [&once] noexcept { (void)once.get(); },
+        ::fixy::TextView{"foundation: contract violation: value_.has_value()"});
     once.set(1);
-    if (!aborts([&] { once.set(2); })) return 169;
+    expect_dies(
+        test, [&once] noexcept { once.set(2); },
+        ::fixy::TextView{"foundation: contract violation: !value_.has_value()"});
     if (once.get() != 1) return 170;
 
     int target = 0;
     WriteOnceNonNull<int*> slot = ::fixy::mint_write_once_non_null<int*>();
-    if (!aborts([&] { slot.set(nullptr); })) return 171;
-    if (!aborts([&] { (void)slot.get(); })) return 172;
+    expect_dies(
+        test, [&slot] noexcept { slot.set(nullptr); },
+        ::fixy::TextView{"foundation: contract violation: p != nullptr"});
+    expect_dies(
+        test, [&slot] noexcept { (void)slot.get(); },
+        ::fixy::TextView{"foundation: contract violation: ptr_ != nullptr"});
     slot.set(&target);
-    if (!aborts([&] { slot.set(&target); })) return 173;
+    expect_dies(
+        test, [&slot, &target] noexcept { slot.set(&target); },
+        ::fixy::TextView{"foundation: contract violation: ptr_ == nullptr"});
 
     OrderedAppendOnly<int> ordered = ::fixy::mint_ordered_append_only<int>();
     ordered.append(5);
-    if (!aborts([&] { ordered.append(3); })) return 174;
+    expect_dies(
+        test, [&ordered] noexcept { ordered.append(3); },
+        ::fixy::TextView{"foundation: contract violation: inner_.empty() || !cmp_(key_(item), key_(inner_.back()))"});
     if (ordered.size() != 1) return 175;
 
     AtomicMonotonic<std::uint64_t> atomic = ::fixy::mint_atomic_monotonic<std::uint64_t>(10);
-    if (!aborts([&] { atomic.advance(9); })) return 176;
-    if (!aborts([&] { atomic.advance(10); })) return 185;
+    expect_dies(test, [&atomic] noexcept { atomic.advance(9); }, kAtomicAdvanceBack);
+    expect_dies(test, [&atomic] noexcept { atomic.advance(10); }, kAtomicAdvanceBack);
     if (atomic.get() != 10) return 178;
 
     // The step from a held value refuses a step back, a step that stands
     // still, and a step that wraps past the end of the carrier.  A held
     // value that is not the stored one is refused where the Debug check is
     // armed, and every test binary arms it.
-    if (!aborts([&] { atomic.advance_sole_writer_from(10, 9); })) return 194;
-    if (!aborts([&] { atomic.advance_sole_writer_from(10, 10); })) return 195;
+    expect_dies(test, [&atomic] noexcept { atomic.advance_sole_writer_from(10, 9); }, kSoleWriterStepBack);
+    expect_dies(test, [&atomic] noexcept { atomic.advance_sole_writer_from(10, 10); }, kSoleWriterStepBack);
     AtomicMonotonic<std::uint8_t> at_top = ::fixy::mint_atomic_monotonic<std::uint8_t>(std::uint8_t{255});
-    if (!aborts([&] { at_top.advance_sole_writer_from(std::uint8_t{255}, std::uint8_t{0}); })) return 196;
-    if (!aborts([&] { atomic.advance_sole_writer_from(7, 11); })) return 197;
+    expect_dies(
+        test, [&at_top] noexcept { at_top.advance_sole_writer_from(std::uint8_t{255}, std::uint8_t{0}); },
+        kSoleWriterStepBack);
+    expect_dies(
+        test, [&atomic] noexcept { atomic.advance_sole_writer_from(7, 11); },
+        ::fixy::TextView{"foundation: fatal invariant failed: !Cmp{}(current, stored) && !Cmp{}(stored, current)"});
     if (atomic.get() != 10 || at_top.get() != 255) return 198;
 
     AtomicMonotonic<std::int64_t> signed_counter = ::fixy::mint_atomic_monotonic<std::int64_t>(0);
-    if (!aborts([&] { (void)signed_counter.bump_by(-1); })) return 179;
+    expect_dies(
+        test, [&signed_counter] noexcept { (void)signed_counter.bump_by(-1); },
+        ::fixy::TextView{"foundation: contract violation: ::foundation::decide::non_negative(delta)"});
 
     // A bump past the end of the carrier would wrap to the other end, so
-    // it aborts and leaves the counter where it was.  The same holds for a
-    // decreasing counter at its floor.
+    // it aborts.  The same holds for a decreasing counter at its floor.
     AtomicMonotonic<std::uint8_t> near_top = ::fixy::mint_atomic_monotonic<std::uint8_t>(std::uint8_t{250});
-    if (!aborts([&] { (void)near_top.bump_by(std::uint8_t{6}); })) return 186;
+    expect_dies(test, [&near_top] noexcept { (void)near_top.bump_by(std::uint8_t{6}); }, kBumpOverflow);
     if (near_top.get() != 250) return 187;
     if (near_top.bump_by(std::uint8_t{5}) != 250 || near_top.get() != 255) return 188;
-    if (!aborts([&] { (void)near_top.bump(); })) return 189;
+    expect_dies(test, [&near_top] noexcept { (void)near_top.bump(); }, kBumpOverflow);
     AtomicMonotonic<std::uint8_t, ::fixy::CounterWriters::many, std::greater<std::uint8_t>> near_floor =
         ::fixy::mint_atomic_monotonic<std::uint8_t, ::fixy::CounterWriters::many, std::greater<std::uint8_t>>(
             std::uint8_t{3});
-    if (!aborts([&] { (void)near_floor.bump_by(std::uint8_t{4}); })) return 190;
+    expect_dies(
+        test, [&near_floor] noexcept { (void)near_floor.bump_by(std::uint8_t{4}); },
+        ::fixy::TextView{
+            "foundation: contract violation: observed >= static_cast<T>(std::numeric_limits<T>::min() + delta)"});
     if (near_floor.get() != 3) return 191;
     if (near_floor.bump_by(std::uint8_t{3}) != 3 || near_floor.get() != 0) return 192;
 
     std::uint64_t expected = 10;
-    if (!aborts([&] { (void)atomic.compare_exchange_advance(expected, 9); })) return 180;
+    expect_dies(
+        test, [&atomic, &expected] noexcept { (void)atomic.compare_exchange_advance(expected, 9); },
+        ::fixy::TextView{"foundation: contract violation: Cmp{}(expected, desired)"});
 
     // A satisfied contract is silent.
-    if (aborts([&] { mono.advance(11u); })) return 181;
+    mono.advance(11u);
     if (mono.get() != 11u) return 182;
     return 0;
 }

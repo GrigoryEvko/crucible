@@ -152,7 +152,7 @@ endfunction()
 # probe_diag writes the records and the lines of the diagnostic emitter.  In a
 # cross build, the script runs each probe through the emulator of the probe
 # target, as ctest runs a test of an executable target (cmake/TestLauncher.cmake).
-foreach(_harness_probe probe_report probe_fatal_twice probe_diag)
+foreach(_harness_probe probe_report probe_diag)
   add_executable(harness_${_harness_probe} harness/${_harness_probe}.cpp)
   target_link_libraries(harness_${_harness_probe} PRIVATE foundation)
   target_compile_options(harness_${_harness_probe} PRIVATE -UNDEBUG)
@@ -167,8 +167,7 @@ if(CMAKE_CROSSCOMPILING)
 endif()
 crucible_script_test(NAME harness_output
   COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/harness/check_output.py
-          $<TARGET_FILE:harness_probe_report> $<TARGET_FILE:harness_probe_fatal_twice>
-          $<TARGET_FILE:harness_probe_diag> ${_harness_emulator}
+          $<TARGET_FILE:harness_probe_report> $<TARGET_FILE:harness_probe_diag> ${_harness_emulator}
   COMMAND_EXPAND_LISTS)
 
 # A regression test for the constant-evaluator defect that the patch

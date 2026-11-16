@@ -7,7 +7,9 @@
 #include <foundation/core/Region.h>
 
 #include "../test_assert.h"
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdint>
 #include <utility>
@@ -113,17 +115,22 @@ void test_enum_name_text_at_run_time() {
 }
 
 // A cursor of a text never leaves the text: a read at the end and a step
-// past the end end the process in each build.
-void test_text_cursor_at_the_end_aborts() {
+// past the end end the process in each build.  Each one runs in a child
+// through expect_dies of the Check family.
+void test_text_cursor_at_the_end_aborts(::fixy::TestRunnerCtx const& test) {
     TextView const pair{"ab"};
-    bool const end_read_aborts = ::crucible::test::aborts([&pair] { static_cast<void>(*pair.end()); });
-    bool const past_end_step_aborts = ::crucible::test::aborts([&pair] {
-        auto cursor = pair.begin();
-        ++cursor;
-        ++cursor;
-        ++cursor;
-    });
-    assert(end_read_aborts && past_end_step_aborts);
+    ::fixy::check::expect_dies(
+        test, [&pair] noexcept { static_cast<void>(*pair.end()); },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a View"});
+    ::fixy::check::expect_dies(
+        test,
+        [&pair] noexcept {
+            auto cursor = pair.begin();
+            ++cursor;
+            ++cursor;
+            ++cursor;
+        },
+        ::fixy::TextView{"foundation: fatal: a step past the end cursor of a View"});
 }
 
 void test_format_writes_integers_in_decimal() {
@@ -196,7 +203,7 @@ int main() {
     test_fixed_text_loop_and_clear();
     test_fixed_text_builds_from_characters();
     test_enum_name_text_at_run_time();
-    test_text_cursor_at_the_end_aborts();
+    test_text_cursor_at_the_end_aborts(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     test_format_writes_integers_in_decimal();
     test_format_writes_bools_and_texts();
     test_format_writes_escapes_and_braces_of_arguments();

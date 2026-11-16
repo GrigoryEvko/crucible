@@ -21,7 +21,10 @@
 #include <thread>
 #include <utility>
 
-#include "../foundation/abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include "../test_assert.h"
 
 namespace test_session_event_log_writers {
@@ -63,13 +66,16 @@ void record_one_session(s::SessionEventWriter writer, s::RoleTagId self) {
     std::move(handle).detach(s::detach_reason::InfiniteLoopProtocol{});
 }
 
-// A log has one writer.  The second mint for it ends the process, and the
-// abort probe catches the end.
+// A log has one writer.  The second mint for it ends the process.  The mint
+// runs in a child through expect_dies of the Check family.
 void a_second_writer_of_one_log_ends_the_process() {
     s::SessionEventLog log;
     s::SessionEventWriter first = s::mint_session_event_writer(log);
-    const bool is_refused = crucible::test::aborts([&log] { static_cast<void>(s::mint_session_event_writer(log)); });
-    assert(is_refused);
+    ::fixy::check::expect_dies(
+        ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+        [&log] noexcept { static_cast<void>(s::mint_session_event_writer(log)); },
+        ::fixy::TextView{"[Event_Log_Writer_Twice]: a second writer was minted for a session event log that "
+                         "already has one"});
     first.record_now(s::SessionEvent::close(kLeft, kSink));
     assert(log.size() == 1);
 }

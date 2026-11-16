@@ -8,7 +8,8 @@
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -158,30 +159,43 @@ void test_long_run_keeps_its_blocks() {
 
 // Each wrong use ends the process: an epoch in an epoch of one arena, an
 // epoch of an arena that holds bytes, an array past the largest View, and a
-// block size of zero.
-void test_wrong_uses_end_the_process() {
+// block size of zero.  Each wrong use runs in a child through expect_dies of
+// the Check family.
+void test_wrong_uses_end_the_process(::fixy::TestRunnerCtx const& test) {
     BumpArena nested{4096};
-    bool const nested_epoch_aborts =
-        ::crucible::test::aborts([&] { nested.with_epoch([&]() noexcept { nested.with_epoch([]() noexcept {}); }); });
-    CRUCIBLE_FATAL_INVARIANT(nested_epoch_aborts);
+    ::fixy::check::expect_dies(
+        test, [&nested] noexcept { nested.with_epoch([&nested]() noexcept { nested.with_epoch([]() noexcept {}); }); },
+        ::foundation::core::TextView{
+            "foundation: fatal: an epoch of a BumpArena in an epoch of the same arena: end the first epoch "
+            "before the next one opens"});
 
     BumpArena holds_bytes{4096};
     static_cast<void>(take(holds_bytes, 64));
-    bool const epoch_of_used_arena_aborts = ::crucible::test::aborts([&] { holds_bytes.with_epoch([]() noexcept {}); });
-    CRUCIBLE_FATAL_INVARIANT(epoch_of_used_arena_aborts);
+    ::fixy::check::expect_dies(
+        test, [&holds_bytes] noexcept { holds_bytes.with_epoch([]() noexcept {}); },
+        ::foundation::core::TextView{
+            "foundation: fatal: an epoch of a BumpArena that holds bytes: open the epoch before the first "
+            "allocation"});
 
     BumpArena too_long{4096};
-    bool const too_long_aborts = ::crucible::test::aborts([&] {
-        static_cast<void>(
-            too_long.array<std::uint64_t>(::foundation::effects::testing::test().alloc, ~std::size_t{0} / 4, 0));
-    });
-    CRUCIBLE_FATAL_INVARIANT(too_long_aborts);
+    ::fixy::check::expect_dies(
+        test,
+        [&too_long] noexcept {
+            static_cast<void>(
+                too_long.array<std::uint64_t>(::foundation::effects::testing::test().alloc, ~std::size_t{0} / 4, 0));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: an array of 4611686018427387903 elements of 8 bytes in a BumpArena is longer "
+            "than the largest View"});
 
-    bool const zero_block_aborts = ::crucible::test::aborts([] {
-        BumpArena const zero{0};
-        static_cast<void>(zero.retained_bytes());
-    });
-    CRUCIBLE_FATAL_INVARIANT(zero_block_aborts);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            BumpArena const zero{0};
+            static_cast<void>(zero.retained_bytes());
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a BumpArena of blocks of zero bytes: give a block size above zero"});
 }
 
 // The property: arrays of random counts and alignments in random epochs sit
@@ -218,6 +232,7 @@ void test_agrees_with_plain_model() {
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_make_builds_the_object();
     test_array_fills_each_element();
     test_empty_array_takes_no_bytes();
@@ -225,7 +240,7 @@ int main() {
     test_end_keeps_the_blocks();
     test_end_above_the_limit_keeps_one_block();
     test_long_run_keeps_its_blocks();
-    test_wrong_uses_end_the_process();
+    test_wrong_uses_end_the_process(test);
     test_agrees_with_plain_model();
     return 0;
 }

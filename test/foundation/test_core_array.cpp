@@ -5,8 +5,11 @@
 #include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include "../test_assert.h"
-#include "abort_probe.h"
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -55,14 +58,19 @@ void test_index_range_visits_each_index_in_order() {
 
 // A cursor of an IndexRange never makes an index past its range: a read at
 // the end and a step past the end end the process in each build.
-void test_index_cursor_at_the_end_aborts() {
-    bool const end_read_aborts = ::crucible::test::aborts([] { static_cast<void>((*IndexRange<3>::end()).raw()); });
-    bool const past_end_step_aborts = ::crucible::test::aborts([] {
-        auto cursor = IndexRange<1>::begin();
-        ++cursor;
-        ++cursor;
-    });
-    assert(end_read_aborts && past_end_step_aborts);
+// Each one runs in a child through expect_dies of the Check family.
+void test_index_cursor_at_the_end_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test, [] noexcept { static_cast<void>((*IndexRange<3>::end()).raw()); },
+        ::fixy::TextView{"a read through the end cursor of an IndexRange"});
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            auto cursor = IndexRange<1>::begin();
+            ++cursor;
+            ++cursor;
+        },
+        ::fixy::TextView{"a step past the end cursor of an IndexRange"});
 }
 
 void test_fixed_array_starts_with_zeros() {
@@ -231,9 +239,10 @@ void test_fixed_array_agrees_with_std_array() {
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_index_check_agrees_with_the_model();
     test_index_range_visits_each_index_in_order();
-    test_index_cursor_at_the_end_aborts();
+    test_index_cursor_at_the_end_aborts(test);
     test_fixed_array_starts_with_zeros();
     test_large_fixed_array_value_initializes();
     test_fixed_array_reads_at_proven_indexes();

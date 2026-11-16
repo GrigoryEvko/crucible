@@ -15,19 +15,21 @@
 // A wait that trusts the digest alone reports one at its second trace.
 //
 // The positive control: the same cycle at two traces of one wait is a
-// deadlock, and the wait aborts.  A wait inside that wait traces the cycle
-// first, and the outer wait does not take that trace for its own.
+// deadlock, and the wait aborts in a child process.  A wait inside that wait
+// traces the cycle first, and the outer wait does not take that trace for
+// its own.
 
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Watch.h>
 
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdint>
 #include <utility>
 
-#include "../foundation/abort_probe.h"
 #include "../padding_bytes.h"
 #include "../test_assert.h"
 
@@ -223,8 +225,11 @@ void poll_until_traced_by(w::wait_scope& wait, wd::suspect_cycle const& suspect,
 // A wait inside a wait on one thread traces the cycle first.  The outer
 // wait is then due, and its first trace sees the same cycle.  It does not
 // take the trace of the inner wait for its own, so it reports nothing.  Its
-// second trace repeats its first, link for link: a deadlock.
+// second trace repeats its first, link for link: a deadlock.  The polls of the
+// second trace run in a child through expect_dies of the Check family, so the
+// report of the deadlock ends the child.
 void one_cycle_at_two_traces_of_one_wait_is_a_deadlock(const Cycle& cycle) {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     const std::uint64_t self = wd::owner_token();
     install(cycle, Member{.generation = kFirstGeneration, .wait_epoch = 0x5678});
     wd::suspect_cycle const& suspect = wd::suspect_at_(wd::index_of(self));
@@ -241,14 +246,13 @@ void one_cycle_at_two_traces_of_one_wait_is_a_deadlock(const Cycle& cycle) {
             poll_until_traced_by(inner, suspect, inner_epoch);
         }
         poll_until_traced_by(outer, suspect, outer_epoch);
-        const bool is_reported = crucible::test::aborts([&outer] {
-            for (std::uint32_t point = 0; point < kMaxTracePoints; ++point)
-                poll_to_trace_point(outer);
-        });
-        assert(is_reported);
-        // report_deadlock keeps one report for the process.  The test
-        // caught the abort, so it opens the report again.
-        wd::g_registry.is_reporting.store_release(0);
+        ::fixy::check::expect_dies(
+            test,
+            [&outer] noexcept {
+                for (std::uint32_t point = 0; point < kMaxTracePoints; ++point)
+                    poll_to_trace_point(outer);
+            },
+            ::fixy::TextView{"fixy::session: DEADLOCK ACROSS SESSIONS"});
     }
 }
 
@@ -264,7 +268,6 @@ void chain_and_suspect_have_no_padding_byte() {
 int main() {
     chain_and_suspect_have_no_padding_byte();
     with_cycle(cycles_of_one_digest_are_no_deadlock);
-    ::fixy::report(::fixy::Sink::Err, "[expected] one deadlock report of a cycle that the test writes follows\n");
     with_cycle(one_cycle_at_two_traces_of_one_wait_is_a_deadlock);
     crucible::test::pass("test_session_watch_cycle: OK\n");
     return 0;

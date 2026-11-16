@@ -3411,3 +3411,18 @@ foundation_neg_compile_test(neg_signature_traits_of_a_non_function
 foundation_neg_compile_test(neg_simd_iota_of_a_scalar
   "In instantiation of .constexpr V foundation::simd::iota_v\\(\\) \\[with V = int\\]."
   ".int. is not a class, struct, or union type")
+
+# ── The death tests of the base ───────────────────────────────────────
+#
+# Each of these tests runs a guard that ends the process in a child, through
+# expect_dies of the Check family (fixy/check/Check.h) or the child door of
+# fixy/os/Process.h.  The two hold their cold parts in fixy, so each test
+# links fixy.
+foreach(_death_test
+    test_aligned_bytes test_core_array test_core_box test_core_branded test_core_bump_arena test_core_choice
+    test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_masked_array
+    test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
+    test_lattice_closure test_moved_from_token test_platform test_report_sink_pipe test_swiss_table_buffer
+    test_swiss_table_buffer_ignore)
+  target_link_libraries(${_death_test} PRIVATE fixy)
+endforeach()

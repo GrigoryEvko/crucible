@@ -5,8 +5,11 @@
 
 #include <foundation/core/Array.h>
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include "../test_assert.h"
-#include "abort_probe.h"
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -187,56 +190,76 @@ void test_verbs_agree_with_the_index_model() {
 }
 
 // A cursor of a verb never leaves its loop: a read at the end and a step
-// past the end end the process in each build.
-void test_cursors_at_the_end_abort() {
+// past the end end the process in each build.  Each one runs in a child
+// through expect_dies of the Check family.
+void test_cursors_at_the_end_abort(::fixy::TestRunnerCtx const& test) {
+    using ::fixy::check::expect_dies;
     FixedArray<int, 4> const values{1, 2, 3, 4};
-    bool const reverse_read_aborts =
-        ::crucible::test::aborts([&values] { static_cast<void>(*values.reverse().end()); });
-    bool const reverse_step_aborts = ::crucible::test::aborts([&values] {
-        auto cursor = values.reverse().end();
-        ++cursor;
-    });
-    bool const window_read_aborts =
-        ::crucible::test::aborts([&values] { static_cast<void>(*values.windows<2>().end()); });
-    bool const window_step_aborts = ::crucible::test::aborts([&values] {
-        auto cursor = values.windows<4>().begin();
-        ++cursor;
-        ++cursor;
-    });
-    bool const chunk_read_aborts =
-        ::crucible::test::aborts([&values] { static_cast<void>(*values.chunks<3>().end()); });
-    bool const chunk_step_aborts = ::crucible::test::aborts([&values] {
-        auto cursor = values.chunks<4>().begin();
-        ++cursor;
-        ++cursor;
-    });
-    bool const enumerate_read_aborts =
-        ::crucible::test::aborts([&values] { static_cast<void>(*values.enumerate().end()); });
-    bool const enumerate_step_aborts = ::crucible::test::aborts([&values] {
-        auto cursor = values.enumerate().end();
-        ++cursor;
-    });
-    bool const zip_read_aborts =
-        ::crucible::test::aborts([&values] { static_cast<void>(*zip(values.view(), values.view()).end()); });
-    bool const zip_step_aborts = ::crucible::test::aborts([&values] {
-        auto cursor = zip(values.view(), values.view()).end();
-        ++cursor;
-    });
-    assert(reverse_read_aborts && reverse_step_aborts && window_read_aborts && window_step_aborts);
-    assert(chunk_read_aborts && chunk_step_aborts && enumerate_read_aborts && enumerate_step_aborts);
-    assert(zip_read_aborts && zip_step_aborts);
+    expect_dies(
+        test, [&values] noexcept { static_cast<void>(*values.reverse().end()); },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a reverse loop over a View"});
+    expect_dies(
+        test,
+        [&values] noexcept {
+            auto cursor = values.reverse().end();
+            ++cursor;
+        },
+        ::fixy::TextView{"foundation: fatal: a step past the end cursor of a reverse loop over a View"});
+    expect_dies(
+        test, [&values] noexcept { static_cast<void>(*values.windows<2>().end()); },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a loop over the windows of a View"});
+    expect_dies(
+        test,
+        [&values] noexcept {
+            auto cursor = values.windows<4>().begin();
+            ++cursor;
+            ++cursor;
+        },
+        ::fixy::TextView{"foundation: fatal: a step past the end cursor of a loop over the windows of a View"});
+    expect_dies(
+        test, [&values] noexcept { static_cast<void>(*values.chunks<3>().end()); },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a loop over the chunks of a View"});
+    expect_dies(
+        test,
+        [&values] noexcept {
+            auto cursor = values.chunks<4>().begin();
+            ++cursor;
+            ++cursor;
+        },
+        ::fixy::TextView{"foundation: fatal: a step past the end cursor of a loop over the chunks of a View"});
+    expect_dies(
+        test, [&values] noexcept { static_cast<void>(*values.enumerate().end()); },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of an enumerate loop over a View"});
+    expect_dies(
+        test,
+        [&values] noexcept {
+            auto cursor = values.enumerate().end();
+            ++cursor;
+        },
+        ::fixy::TextView{"foundation: fatal: a step past the end cursor of an enumerate loop over a View"});
+    expect_dies(
+        test, [&values] noexcept { static_cast<void>(*zip(values.view(), values.view()).end()); },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a zip loop over two Views"});
+    expect_dies(
+        test,
+        [&values] noexcept {
+            auto cursor = zip(values.view(), values.view()).end();
+            ++cursor;
+        },
+        ::fixy::TextView{"foundation: fatal: a step past the end cursor of a zip loop over two Views"});
 }
 
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_reverse_reads_from_the_last_element();
     test_windows_and_chunks_of_an_array();
     test_enumerate_gives_each_index_with_its_element();
     test_zip_of_one_fixed_extent();
     test_zip_of_a_dynamic_extent_compares_the_counts();
     test_verbs_agree_with_the_index_model();
-    test_cursors_at_the_end_abort();
+    test_cursors_at_the_end_abort(test);
     crucible::test::pass("test_core_iteration: all tests passed\n");
     return 0;
 }

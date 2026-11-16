@@ -2,10 +2,12 @@
 // reflection: every shape in it must be seen through, and every shape in
 // the clean roster must audit clean.
 
+#include <fixy/Ctx.h>
 #include <fixy/ScopedView.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
-#include <cstdio>
 #include <deque>
 #include <expected>
 #include <inplace_vector>
@@ -21,7 +23,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-#include "../test_assert.h"
 
 using fixy::contains_scoped_view;
 using fixy::IsScopedView;
@@ -30,36 +31,7 @@ using fixy::mint_linear_view;
 using fixy::mint_view;
 using fixy::no_scoped_view_field_check;
 using fixy::ScopedView;
-
-struct TestFailure {};
-
-#define CRUCIBLE_TEST_REQUIRE(...)                                                        \
-    do {                                                                                  \
-        if (!(__VA_ARGS__)) [[unlikely]] {                                                \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
-            throw TestFailure{};                                                          \
-        }                                                                                 \
-    } while (0)
-
-namespace {
-
-int total_passed = 0;
-int total_failed = 0;
-
-template <typename F>
-void run_test(const char* name, F&& body) {
-    std::fprintf(stderr, "  %s: ", name);
-    try {
-        body();
-        ++total_passed;
-        std::fprintf(stderr, "PASSED\n");
-    } catch (TestFailure&) {
-        ++total_failed;
-        std::fprintf(stderr, "FAILED\n");
-    }
-}
-
-}  // namespace
+using fixy::check::pass;
 
 struct DummyCarrier {
     int value = 42;
@@ -176,54 +148,56 @@ static_assert(every_shape_answers<clean, false>(), "a shape in the clean roster 
 
 }  // namespace roster
 
-static void test_construct_via_mint() {
+static void test_construct_via_mint(::fixy::TestRunnerCtx const& test) {
     DummyCarrier c{};
     c.active = true;
     auto view = mint_view<dummy_state::Active>(c);
-    CRUCIBLE_TEST_REQUIRE(view->value == 42);
-    CRUCIBLE_TEST_REQUIRE(&view.carrier() == &c);
+    CRUCIBLE_TEST_ASSERT(test, view->value == 42);
+    CRUCIBLE_TEST_ASSERT(test, &view.carrier() == &c);
 }
 
-static void test_copy_construct_multi_borrow() {
+static void test_copy_construct_multi_borrow(::fixy::TestRunnerCtx const& test) {
     DummyCarrier c{};
     c.active = true;
     auto v1 = mint_view<dummy_state::Active>(c);
     auto v2 = v1;
     auto v3 = v1;
-    CRUCIBLE_TEST_REQUIRE(v1->value == 42);
-    CRUCIBLE_TEST_REQUIRE(v2->value == 42);
-    CRUCIBLE_TEST_REQUIRE(v3->value == 42);
+    CRUCIBLE_TEST_ASSERT(test, v1->value == 42);
+    CRUCIBLE_TEST_ASSERT(test, v2->value == 42);
+    CRUCIBLE_TEST_ASSERT(test, v3->value == 42);
 }
 
-static void use_active(ActiveView const& v) { CRUCIBLE_TEST_REQUIRE(v->value == 42); }
+static void use_active(::fixy::TestRunnerCtx const& test, ActiveView const& v) {
+    CRUCIBLE_TEST_ASSERT(test, v->value == 42);
+}
 
-static void test_pass_to_callee() {
+static void test_pass_to_callee(::fixy::TestRunnerCtx const& test) {
     DummyCarrier c{};
     c.active = true;
-    use_active(mint_view<dummy_state::Active>(c));
+    use_active(test, mint_view<dummy_state::Active>(c));
 }
 
-static void test_optional_storage_via_emplace() {
+static void test_optional_storage_via_emplace(::fixy::TestRunnerCtx const& test) {
     DummyCarrier c{};
     c.active = true;
     std::optional<ActiveView> opt;
-    CRUCIBLE_TEST_REQUIRE(!opt.has_value());
+    CRUCIBLE_TEST_ASSERT(test, !opt.has_value());
 
     // Assigning into the optional does not compile: the deleted assignment
     // operator propagates through it.  Emplacement constructs instead.
     opt.emplace(mint_view<dummy_state::Active>(c));
-    CRUCIBLE_TEST_REQUIRE(opt.has_value());
-    CRUCIBLE_TEST_REQUIRE((*opt)->value == 42);
+    CRUCIBLE_TEST_ASSERT(test, opt.has_value());
+    CRUCIBLE_TEST_ASSERT(test, (*opt)->value == 42);
 
     opt.reset();
-    CRUCIBLE_TEST_REQUIRE(!opt.has_value());
+    CRUCIBLE_TEST_ASSERT(test, !opt.has_value());
 }
 
-static void test_state_transition_remints() {
+static void test_state_transition_remints(::fixy::TestRunnerCtx const& test) {
     DummyCarrier c{};
     {
         auto v = mint_view<dummy_state::Inactive>(c);
-        CRUCIBLE_TEST_REQUIRE(&v.carrier() == &c);
+        CRUCIBLE_TEST_ASSERT(test, &v.carrier() == &c);
     }
 
     c.active = true;
@@ -231,7 +205,7 @@ static void test_state_transition_remints() {
 
     {
         auto v = mint_view<dummy_state::Active>(c);
-        CRUCIBLE_TEST_REQUIRE(v->value == 42);
+        CRUCIBLE_TEST_ASSERT(test, v->value == 42);
     }
 }
 
@@ -258,19 +232,19 @@ static_assert(!std::is_move_assignable_v<LinearScopedView<DummyCarrier, dummy_st
 static_assert(std::is_move_constructible_v<LinearScopedView<DummyCarrier, dummy_state::Active>>,
               "LinearScopedView must remain move-constructible (factories rely on this)");
 
-static void test_linear_view_mint_and_consume() {
+static void test_linear_view_mint_and_consume(::fixy::TestRunnerCtx const& test) {
     DummyCarrier c{};
     c.active = true;
 
     // The factory checks the same view_ok predicate as the plain mint.
     auto token = mint_linear_view<dummy_state::Active>(c);
 
-    CRUCIBLE_TEST_REQUIRE(token.peek()->value == 42);
-    CRUCIBLE_TEST_REQUIRE(&token.peek().carrier() == &c);
+    CRUCIBLE_TEST_ASSERT(test, token.peek()->value == 42);
+    CRUCIBLE_TEST_ASSERT(test, &token.peek().carrier() == &c);
 
     auto inner = std::move(token).consume();
-    CRUCIBLE_TEST_REQUIRE(inner->value == 42);
-    CRUCIBLE_TEST_REQUIRE(&inner.carrier() == &c);
+    CRUCIBLE_TEST_ASSERT(test, inner->value == 42);
+    CRUCIBLE_TEST_ASSERT(test, &inner.carrier() == &c);
 }
 
 // The callee names the token's brand rather than the erased spelling:
@@ -293,17 +267,22 @@ static void test_linear_view_transition_pattern() {
 }
 
 int main() {
-    std::fprintf(stderr, "test_scoped_view:\n");
-    run_test("construct_via_mint", test_construct_via_mint);
-    run_test("copy_construct_multi_borrow", test_copy_construct_multi_borrow);
-    run_test("pass_to_callee", test_pass_to_callee);
-    run_test("optional_storage_via_emplace", test_optional_storage_via_emplace);
-    run_test("state_transition_remints", test_state_transition_remints);
-    run_test("linear_view_mint_consume", test_linear_view_mint_and_consume);
-    run_test("linear_view_transition", test_linear_view_transition_pattern);
-
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
-    if (total_failed > 0) return EXIT_FAILURE;
-    crucible::test::pass("ALL PASSED\n");
-    return EXIT_SUCCESS;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    pass(test, "test_scoped_view:\n");
+    test_construct_via_mint(test);
+    pass(test, "  construct_via_mint: PASSED\n");
+    test_copy_construct_multi_borrow(test);
+    pass(test, "  copy_construct_multi_borrow: PASSED\n");
+    test_pass_to_callee(test);
+    pass(test, "  pass_to_callee: PASSED\n");
+    test_optional_storage_via_emplace(test);
+    pass(test, "  optional_storage_via_emplace: PASSED\n");
+    test_state_transition_remints(test);
+    pass(test, "  state_transition_remints: PASSED\n");
+    test_linear_view_mint_and_consume(test);
+    pass(test, "  linear_view_mint_consume: PASSED\n");
+    test_linear_view_transition_pattern();
+    pass(test, "  linear_view_transition: PASSED\n");
+    pass(test, "test_scoped_view: ALL PASSED\n");
+    return 0;
 }

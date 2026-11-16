@@ -7,7 +7,9 @@
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -66,22 +68,27 @@ template <class Array>
 
 // An element of an empty array ends the process through fatal(), for the
 // default array and for a moved-from one.  No read goes through the null
-// address, which would end the process with a fault and no abort.  The
-// arrays live outside the probe, because the jump of the abort skips the
-// destructors of the body.
-void test_element_of_an_empty_array_aborts() {
+// address, which would end the process with a fault and no abort.  Each
+// read runs in a child through expect_dies of the Check family.
+void test_element_of_an_empty_array_aborts(::fixy::TestRunnerCtx const& test) {
     MaskedArray<std::uint64_t> empty{};
     MaskedArray<std::uint64_t> const fixed_empty{};
     MaskedArray<std::uint64_t> source =
         mint_masked_array<std::uint64_t>(::foundation::effects::testing::test().alloc, 4);
     MaskedArray<std::uint64_t> const target{std::move(through(source))};
     CRUCIBLE_FATAL_INVARIANT(target.size() == 4);
-    bool const default_aborts = ::crucible::test::aborts([&] { static_cast<void>(empty.at_masked(0)); });
-    bool const const_default_aborts = ::crucible::test::aborts([&] { static_cast<void>(fixed_empty.at_masked(5)); });
-    bool const moved_from_aborts = ::crucible::test::aborts([&] { static_cast<void>(through(source).at_masked(1)); });
-    CRUCIBLE_FATAL_INVARIANT(default_aborts);
-    CRUCIBLE_FATAL_INVARIANT(const_default_aborts);
-    CRUCIBLE_FATAL_INVARIANT(moved_from_aborts);
+    ::fixy::check::expect_dies(
+        test, [&empty] noexcept { static_cast<void>(empty.at_masked(0)); },
+        ::foundation::core::TextView{
+            "foundation: fatal: an element of a MaskedArray that holds no storage: the array is default or moved from"});
+    ::fixy::check::expect_dies(
+        test, [&fixed_empty] noexcept { static_cast<void>(fixed_empty.at_masked(5)); },
+        ::foundation::core::TextView{
+            "foundation: fatal: an element of a MaskedArray that holds no storage: the array is default or moved from"});
+    ::fixy::check::expect_dies(
+        test, [&source] noexcept { static_cast<void>(through(source).at_masked(1)); },
+        ::foundation::core::TextView{
+            "foundation: fatal: an element of a MaskedArray that holds no storage: the array is default or moved from"});
 }
 
 // Each count gives that count of zeros, and a key at or past the count reads
@@ -176,17 +183,20 @@ void test_move_and_destruction_counts() {
 }
 
 // A count that is zero, is not a power of two, or is above 2^31 ends the
-// process before the allocation.
-void test_bad_counts_abort() {
+// process before the allocation.  Each mint runs in a child through
+// expect_dies of the Check family.
+void test_bad_counts_abort(::fixy::TestRunnerCtx const& test) {
     ::foundation::core::FixedArray<std::size_t, 5> const counts{std::size_t{0}, std::size_t{3}, std::size_t{6},
                                                                 std::size_t{1000}, std::size_t{1} << 32};
     for (std::size_t const count : counts) {
-        bool const bad_count_aborts = ::crucible::test::aborts([count] {
-            MaskedArray<std::uint64_t> const refused =
-                mint_masked_array<std::uint64_t>(::foundation::effects::testing::test().alloc, count);
-            static_cast<void>(refused);
-        });
-        CRUCIBLE_FATAL_INVARIANT(bad_count_aborts);
+        ::fixy::check::expect_dies(
+            test,
+            [count] noexcept {
+                MaskedArray<std::uint64_t> const refused =
+                    mint_masked_array<std::uint64_t>(::foundation::effects::testing::test().alloc, count);
+                static_cast<void>(refused);
+            },
+            ::foundation::core::TextView{"foundation: contract violation: detail::is_masked_array_count_(count)"});
     }
 }
 
@@ -218,13 +228,14 @@ void test_agrees_with_plain_model() {
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_empty_array();
-    test_element_of_an_empty_array_aborts();
+    test_element_of_an_empty_array_aborts(test);
     test_counts_and_wrapping_keys();
     test_each_alignment();
     test_pinned_slots();
     test_move_and_destruction_counts();
-    test_bad_counts_abort();
+    test_bad_counts_abort(test);
     test_agrees_with_plain_model();
     return 0;
 }

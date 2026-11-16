@@ -1,44 +1,20 @@
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
 
 #include <atomic>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <latch>
 #include <thread>
 #include <vector>
-#include "../test_assert.h"
 
 using namespace foundation::permissions;
 
-struct TestFailure {};
-
-#define CRUCIBLE_TEST_REQUIRE(...)                                                        \
-    do {                                                                                  \
-        if (!(__VA_ARGS__)) [[unlikely]] {                                                \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
-            throw TestFailure{};                                                          \
-        }                                                                                 \
-    } while (0)
-
 namespace {
 
-int total_passed = 0;
-int total_failed = 0;
-
-template <typename F>
-void run_test(const char* name, F&& body) {
-    std::fprintf(stderr, "  %s: ", name);
-    try {
-        body();
-        ++total_passed;
-        std::fprintf(stderr, "PASSED\n");
-    } catch (TestFailure&) {
-        ++total_failed;
-        std::fprintf(stderr, "FAILED\n");
-    }
-}
+using ::fixy::check::pass;
 
 struct ConfigRegion {
     using permission_row = ::foundation::effects::Row<>;
@@ -63,18 +39,18 @@ void test_compile_time_properties() {
     static_assert(!std::is_move_constructible_v<SharedPermissionPool<ConfigRegion>>);
 }
 
-void test_pool_lend_basic() {
+void test_pool_lend_basic(::fixy::TestRunnerCtx const& test) {
     auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool pool{std::move(exc)};
 
-    CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
-    CRUCIBLE_TEST_REQUIRE(!pool.is_exclusive_out());
+    CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
+    CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
 
     {
         auto guard1 = pool.lend();
-        CRUCIBLE_TEST_REQUIRE(guard1.has_value());
-        CRUCIBLE_TEST_REQUIRE(guard1->holds_share());
-        CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
+        CRUCIBLE_TEST_ASSERT(test, guard1.has_value());
+        CRUCIBLE_TEST_ASSERT(test, guard1->holds_share());
+        CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
         // The token is a copyable proof, so taking one does not change
         // the count.
@@ -82,69 +58,69 @@ void test_pool_lend_basic() {
         static_assert(::foundation::brand::SameBrand<decltype(token), decltype(pool)>,
                       "a share proof carries the brand of its pool");
         (void)token;
-        CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
+        CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
         auto guard2 = pool.lend();
         auto guard3 = pool.lend();
-        CRUCIBLE_TEST_REQUIRE(guard2.has_value());
-        CRUCIBLE_TEST_REQUIRE(guard3.has_value());
-        CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 3);
+        CRUCIBLE_TEST_ASSERT(test, guard2.has_value());
+        CRUCIBLE_TEST_ASSERT(test, guard3.has_value());
+        CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 3);
     }
-    CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
+    CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 }
 
-void test_guard_move_semantics() {
+void test_guard_move_semantics(::fixy::TestRunnerCtx const& test) {
     auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool pool{std::move(exc)};
 
     {
         auto g1 = pool.lend();
-        CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
+        CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
         auto g2{std::move(*g1)};
-        CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
-        CRUCIBLE_TEST_REQUIRE(g2.holds_share());
-        CRUCIBLE_TEST_REQUIRE(!g1->holds_share());
+        CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
+        CRUCIBLE_TEST_ASSERT(test, g2.holds_share());
+        CRUCIBLE_TEST_ASSERT(test, !g1->holds_share());
         // The moved-from guard destructs without decrementing.
     }
-    CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
+    CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 }
 
-void test_try_upgrade_succeeds_when_idle() {
+void test_try_upgrade_succeeds_when_idle(::fixy::TestRunnerCtx const& test) {
     auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool pool{std::move(exc)};
 
     auto recovered = pool.try_upgrade();
-    CRUCIBLE_TEST_REQUIRE(recovered.has_value());
-    CRUCIBLE_TEST_REQUIRE(pool.is_exclusive_out());
+    CRUCIBLE_TEST_ASSERT(test, recovered.has_value());
+    CRUCIBLE_TEST_ASSERT(test, pool.is_exclusive_out());
 
     auto fail_guard = pool.lend();
-    CRUCIBLE_TEST_REQUIRE(!fail_guard.has_value());
+    CRUCIBLE_TEST_ASSERT(test, !fail_guard.has_value());
 
     pool.deposit_exclusive(std::move(*recovered));
-    CRUCIBLE_TEST_REQUIRE(!pool.is_exclusive_out());
+    CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
     auto post_guard = pool.lend();
-    CRUCIBLE_TEST_REQUIRE(post_guard.has_value());
+    CRUCIBLE_TEST_ASSERT(test, post_guard.has_value());
 }
 
-void test_try_upgrade_fails_when_outstanding() {
+void test_try_upgrade_fails_when_outstanding(::fixy::TestRunnerCtx const& test) {
     auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool pool{std::move(exc)};
 
     auto guard = pool.lend();
-    CRUCIBLE_TEST_REQUIRE(guard.has_value());
+    CRUCIBLE_TEST_ASSERT(test, guard.has_value());
 
     auto upgrade = pool.try_upgrade();
-    CRUCIBLE_TEST_REQUIRE(!upgrade.has_value());
-    CRUCIBLE_TEST_REQUIRE(!pool.is_exclusive_out());
-    CRUCIBLE_TEST_REQUIRE(guard->holds_share());
+    CRUCIBLE_TEST_ASSERT(test, !upgrade.has_value());
+    CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
+    CRUCIBLE_TEST_ASSERT(test, guard->holds_share());
 }
 
 // Eight threads alternate lend and upgrade.  The parallel counters
 // below catch two simultaneous exclusive holders, an upgrade granted
 // while shares are out, or a lend granted while a writer holds.
 
-void test_lend_vs_upgrade_no_simultaneity() {
+void test_lend_vs_upgrade_no_simultaneity(::fixy::TestRunnerCtx const& test) {
     constexpr int NUM_THREADS = 8;
     constexpr int ITERATIONS = 5000;
 
@@ -210,9 +186,9 @@ void test_lend_vs_upgrade_no_simultaneity() {
     for (auto& w : workers)
         w.join();
 
-    CRUCIBLE_TEST_REQUIRE(!violation.load(std::memory_order_acquire));
-    CRUCIBLE_TEST_REQUIRE(in_exclusive_count == 0);
-    CRUCIBLE_TEST_REQUIRE(in_shared_count.load() == 0);
+    CRUCIBLE_TEST_ASSERT(test, !violation.load(std::memory_order_acquire));
+    CRUCIBLE_TEST_ASSERT(test, in_exclusive_count == 0);
+    CRUCIBLE_TEST_ASSERT(test, in_shared_count.load() == 0);
     // Not a correctness check: a quiet machine can serialise everything.
     (void)max_shared_seen.load();
     // The pool can end either deposited or still upgraded out, so there
@@ -228,7 +204,7 @@ struct GuardedCounter {
     std::uint64_t hi = 0;
 };
 
-void test_swmr_sees_consistent_state() {
+void test_swmr_sees_consistent_state(::fixy::TestRunnerCtx const& test) {
     constexpr int NUM_READERS = 6;
     constexpr int ITERATIONS = 1000;
     // Each reader does this many iterations regardless of writer_done.
@@ -315,32 +291,32 @@ void test_swmr_sees_consistent_state() {
     for (auto& r : readers)
         r.join();
 
-    CRUCIBLE_TEST_REQUIRE(!reader_violation.load(std::memory_order_acquire));
-    CRUCIBLE_TEST_REQUIRE(counter.lo == counter.hi);
-    CRUCIBLE_TEST_REQUIRE(counter.lo == ITERATIONS);
-    CRUCIBLE_TEST_REQUIRE(reader_iters_total.load() >= static_cast<std::uint64_t>(NUM_READERS) * MIN_READER_ITERS);
+    CRUCIBLE_TEST_ASSERT(test, !reader_violation.load(std::memory_order_acquire));
+    CRUCIBLE_TEST_ASSERT(test, counter.lo == counter.hi);
+    CRUCIBLE_TEST_ASSERT(test, counter.lo == ITERATIONS);
+    CRUCIBLE_TEST_ASSERT(test, reader_iters_total.load() >= static_cast<std::uint64_t>(NUM_READERS) * MIN_READER_ITERS);
 }
 
-void test_with_shared_read_helper() {
+void test_with_shared_read_helper(::fixy::TestRunnerCtx const& test) {
     auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool pool{std::move(exc)};
 
     auto result_opt = with_shared_read(pool, [](auto) noexcept { return 42; });
-    CRUCIBLE_TEST_REQUIRE(result_opt.has_value());
-    CRUCIBLE_TEST_REQUIRE(*result_opt == 42);
-    CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
+    CRUCIBLE_TEST_ASSERT(test, result_opt.has_value());
+    CRUCIBLE_TEST_ASSERT(test, *result_opt == 42);
+    CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
     // A void body makes the helper return bool.
     bool ran = false;
     bool ok = with_shared_read(pool, [&ran](auto) noexcept { ran = true; });
-    CRUCIBLE_TEST_REQUIRE(ok);
-    CRUCIBLE_TEST_REQUIRE(ran);
-    CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
+    CRUCIBLE_TEST_ASSERT(test, ok);
+    CRUCIBLE_TEST_ASSERT(test, ran);
+    CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
     auto upgrade = pool.try_upgrade();
-    CRUCIBLE_TEST_REQUIRE(upgrade.has_value());
+    CRUCIBLE_TEST_ASSERT(test, upgrade.has_value());
     auto failed_opt = with_shared_read(pool, [](auto) noexcept { return 99; });
-    CRUCIBLE_TEST_REQUIRE(!failed_opt.has_value());
+    CRUCIBLE_TEST_ASSERT(test, !failed_opt.has_value());
     pool.deposit_exclusive(std::move(*upgrade));
 }
 
@@ -362,21 +338,27 @@ void test_mint_permission_share() {
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_mint_permission_shared:\n");
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    pass(test, "test_mint_permission_shared:\n");
 
     test_compile_time_properties();  // pure compile-time
 
-    run_test("test_pool_lend_basic", test_pool_lend_basic);
-    run_test("test_guard_move_semantics", test_guard_move_semantics);
-    run_test("test_try_upgrade_succeeds_when_idle", test_try_upgrade_succeeds_when_idle);
-    run_test("test_try_upgrade_fails_when_outstanding", test_try_upgrade_fails_when_outstanding);
-    run_test("test_lend_vs_upgrade_no_simultaneity", test_lend_vs_upgrade_no_simultaneity);
-    run_test("test_swmr_sees_consistent_state", test_swmr_sees_consistent_state);
-    run_test("test_with_shared_read_helper", test_with_shared_read_helper);
-    run_test("test_mint_permission_share", test_mint_permission_share);
-
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
-    if (total_failed > 0) return EXIT_FAILURE;
-    crucible::test::pass("ALL PASSED\n");
-    return EXIT_SUCCESS;
+    test_pool_lend_basic(test);
+    pass(test, "  test_pool_lend_basic: PASSED\n");
+    test_guard_move_semantics(test);
+    pass(test, "  test_guard_move_semantics: PASSED\n");
+    test_try_upgrade_succeeds_when_idle(test);
+    pass(test, "  test_try_upgrade_succeeds_when_idle: PASSED\n");
+    test_try_upgrade_fails_when_outstanding(test);
+    pass(test, "  test_try_upgrade_fails_when_outstanding: PASSED\n");
+    test_lend_vs_upgrade_no_simultaneity(test);
+    pass(test, "  test_lend_vs_upgrade_no_simultaneity: PASSED\n");
+    test_swmr_sees_consistent_state(test);
+    pass(test, "  test_swmr_sees_consistent_state: PASSED\n");
+    test_with_shared_read_helper(test);
+    pass(test, "  test_with_shared_read_helper: PASSED\n");
+    test_mint_permission_share();
+    pass(test, "  test_mint_permission_share: PASSED\n");
+    pass(test, "test_mint_permission_shared: ALL PASSED\n");
+    return 0;
 }

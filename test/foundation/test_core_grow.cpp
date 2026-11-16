@@ -14,8 +14,10 @@
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+
 #include "../test_assert.h"
-#include "abort_probe.h"
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -418,10 +420,19 @@ void test_foreign_doors() {
     TextView const text = ::foundation::core::mint_foreign_text(&*letters.get(0).expect("2 elements"), 2);
     assert(text == TextView{"ok"});
     assert(::foundation::core::mint_foreign_view(static_cast<float const*>(nullptr), 0).size() == 0);
-    assert(::crucible::test::aborts(
-        [] { static_cast<void>(::foundation::core::mint_foreign_view(static_cast<float const*>(nullptr), 1)); }));
-    assert(::crucible::test::aborts(
-        [] { static_cast<void>(::foundation::core::mint_foreign_text(static_cast<char const*>(nullptr), 1)); }));
+    // A null pointer with a count ends the process.  Each call runs in a
+    // child through expect_dies of the Check family.
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            static_cast<void>(::foundation::core::mint_foreign_view(static_cast<float const*>(nullptr), 1));
+        },
+        ::fixy::TextView{"foundation: fatal: view_over_ got a null pointer with a count"});
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept { static_cast<void>(::foundation::core::mint_foreign_text(static_cast<char const*>(nullptr), 1)); },
+        ::fixy::TextView{"foundation: fatal: mint_foreign_text got a null pointer with a count"});
 }
 
 // mint_c_text gives the CText of a view whose last character is its only

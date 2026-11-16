@@ -14,8 +14,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
 
-#include "../foundation/abort_probe.h"
-
 #include <cstdint>
 #include <utility>
 

@@ -12,7 +12,9 @@
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/effects/Ctx.h>
 
-#include "../foundation/abort_probe.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdint>
 #include <type_traits>
@@ -22,7 +24,6 @@ namespace {
 
 namespace fa = ::foundation::algebra;
 using ::fixy::Stale;
-using ::crucible::test::aborts;
 using SS = fa::lattices::StalenessSemiring;
 namespace st = fa::lattices::staleness;
 
@@ -105,9 +106,15 @@ int check_weaken_aborts_downwards() {
     Stale<int> level = stale.weaken(st::at(seed));
     if (level.staleness().value != 8) return 11;
 
-    // Downwards is the contract this method exists to refuse.
-    if (!aborts([&] { (void)stale.weaken(st::at(seed - 1)); })) return 12;
-    if (!aborts([&] { (void)std::move(stale).weaken(st::at(0)); })) return 13;
+    // Downwards is the contract this method exists to refuse.  Each refused
+    // weaken runs in a child through expect_dies of the Check family.
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::check::expect_dies(
+        test, [&stale, &seed] noexcept { (void)stale.weaken(st::at(seed - 1)); },
+        ::fixy::TextView{"foundation: contract violation: semiring_type::leq(staleness(), tau)"});
+    ::fixy::check::expect_dies(
+        test, [&stale] noexcept { (void)std::move(stale).weaken(st::at(0)); },
+        ::fixy::TextView{"foundation: contract violation: semiring_type::leq(was, tau)"});
     return 0;
 }
 

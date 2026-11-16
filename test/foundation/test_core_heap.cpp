@@ -10,23 +10,38 @@
 
 #include <foundation/Platform.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 
 namespace {
 
+using ::fixy::TestRunnerCtx;
+using ::fixy::check::expect_dies;
 using ::foundation::core::detail::heap_allocate_;
 
 // A request of zero bytes, and an alignment that is not a power of two, end
-// the process.  The door gives no storage on these paths.
-void test_bad_requests_abort() {
-    bool const zero_bytes_aborts = ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(0, 8)); });
-    bool const zero_alignment_aborts = ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(8, 0)); });
-    bool const odd_alignment_aborts = ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(8, 24)); });
-    bool const large_odd_alignment_aborts = ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(64, 48)); });
-    CRUCIBLE_FATAL_INVARIANT(zero_bytes_aborts && zero_alignment_aborts);
-    CRUCIBLE_FATAL_INVARIANT(odd_alignment_aborts && large_odd_alignment_aborts);
+// the process.  The door gives no storage on these paths.  Each request runs
+// in a child through expect_dies of the Check family.
+void test_bad_requests_abort(TestRunnerCtx const& test) {
+    expect_dies(
+        test, [] noexcept { static_cast<void>(heap_allocate_(0, 8)); },
+        ::foundation::core::TextView{
+            "foundation: fatal: the allocation door got a request of 0 bytes at the alignment 8"});
+    expect_dies(
+        test, [] noexcept { static_cast<void>(heap_allocate_(8, 0)); },
+        ::foundation::core::TextView{
+            "foundation: fatal: the allocation door got a request of 8 bytes at the alignment 0"});
+    expect_dies(
+        test, [] noexcept { static_cast<void>(heap_allocate_(8, 24)); },
+        ::foundation::core::TextView{
+            "foundation: fatal: the allocation door got a request of 8 bytes at the alignment 24"});
+    expect_dies(
+        test, [] noexcept { static_cast<void>(heap_allocate_(64, 48)); },
+        ::foundation::core::TextView{
+            "foundation: fatal: the allocation door got a request of 64 bytes at the alignment 48"});
 }
 
 // The allocator refuses a request that no address space holds, and the door
@@ -40,20 +55,27 @@ void test_bad_requests_abort() {
 [[gnu::noipa]] std::size_t too_large_request() noexcept { return ~std::size_t{0} - 4096; }
 #endif
 
-void test_exhausted_memory_aborts() {
+void test_exhausted_memory_aborts([[maybe_unused]] TestRunnerCtx const& test) {
 #if !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
-    bool const plain_aborts =
-        ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(too_large_request(), 8)); });
-    bool const aligned_aborts =
-        ::crucible::test::aborts([] { static_cast<void>(heap_allocate_(too_large_request(), 64)); });
-    CRUCIBLE_FATAL_INVARIANT(plain_aborts && aligned_aborts);
+    // too_large_request() is 2^64 - 1 - 4096.
+    expect_dies(
+        test, [] noexcept { static_cast<void>(heap_allocate_(too_large_request(), 8)); },
+        ::foundation::core::TextView{
+            "foundation: fatal: the allocator gave no storage for 18446744073709547519 bytes at the "
+            "alignment 8"});
+    expect_dies(
+        test, [] noexcept { static_cast<void>(heap_allocate_(too_large_request(), 64)); },
+        ::foundation::core::TextView{
+            "foundation: fatal: the allocator gave no storage for 18446744073709547519 bytes at the "
+            "alignment 64"});
 #endif
 }
 
 }  // namespace
 
 int main() {
-    test_bad_requests_abort();
-    test_exhausted_memory_aborts();
+    TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_bad_requests_abort(test);
+    test_exhausted_memory_aborts(test);
     return 0;
 }

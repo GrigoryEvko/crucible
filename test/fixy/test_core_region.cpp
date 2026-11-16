@@ -10,7 +10,9 @@
 #include <fixy/os/Mmap.h>
 #include <foundation/Platform.h>
 
-#include "../foundation/abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+
 #include "../foundation/philox_stream.h"
 
 #include <bit>
@@ -431,23 +433,31 @@ void test_copy_of_unequal_counts_is_an_error() {
 }
 
 // A cursor never leaves its View: a read at the end and a step past the
-// end end the process in each build.
+// end end the process in each build.  Each one runs in a child through
+// expect_dies of the Check family.
 void test_cursor_at_the_end_aborts() {
     IoBlockCtx const ctx{eff::testing::test()};
+    ::fixy::TestRunnerCtx const test{eff::testing::test()};
     auto const owner = perm::mint_permission_root<ScratchRegion>();
     auto region = map_region(ctx, owner, page_bytes);
     fixy::View<std::uint64_t> words = region.view<std::uint64_t>().expect("a page holds whole words");
     fixy::View<std::uint64_t> pair = words.window(0, 2).expect("two words fit");
-    bool const end_read_aborts = ::crucible::test::aborts([&pair] { static_cast<void>(*pair.end()); });
-    bool const past_end_step_aborts = ::crucible::test::aborts([&pair] {
-        auto cursor = pair.begin();
-        ++cursor;
-        ++cursor;
-        ++cursor;
-    });
+    ::fixy::check::expect_dies(
+        test, [&pair] noexcept { static_cast<void>(*pair.end()); },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a View"});
+    ::fixy::check::expect_dies(
+        test,
+        [&pair] noexcept {
+            auto cursor = pair.begin();
+            ++cursor;
+            ++cursor;
+            ++cursor;
+        },
+        ::fixy::TextView{"foundation: fatal: a step past the end cursor of a View"});
     fixy::View<std::uint64_t> empty = words.window(0, 0).expect("an empty window fits");
-    bool const empty_read_aborts = ::crucible::test::aborts([&empty] { static_cast<void>(*empty.begin()); });
-    CRUCIBLE_FATAL_INVARIANT(end_read_aborts && past_end_step_aborts && empty_read_aborts);
+    ::fixy::check::expect_dies(
+        test, [&empty] noexcept { static_cast<void>(*empty.begin()); },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a View"});
 }
 
 // A cursor tells if it is at its end and how many elements follow it, with

@@ -28,17 +28,15 @@
 
 #include "owned_region.h"
 
-#include "../foundation/abort_probe.h"
+#include <fixy/Core.h>
 
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
 
 namespace test_owned_region {
 
@@ -48,21 +46,11 @@ static_assert(!::fixy::ArrayArena<Arena, ::foundation::permissions::Permission<D
 
 namespace {
 
-int total_passed = 0;
-int total_failed = 0;
+using ::fixy::check::expect_dies;
+using ::fixy::check::pass;
 
-template <typename F>
-void run_test(const char* name, F&& body) {
-    std::fprintf(stderr, "  %s: ", name);
-    try {
-        body();
-        ++total_passed;
-        std::fprintf(stderr, "PASSED\n");
-    } catch (TestFailure&) {
-        ++total_failed;
-        std::fprintf(stderr, "FAILED\n");
-    }
-}
+// The report of a recombine of shards that do not rebuild one region.
+constexpr ::fixy::TextView kRefusedRecombine{"foundation: fatal invariant failed: contiguous"};
 
 // A lookalike declares the two member types that the extractors read, so
 // a refusal of it is the constraint's and not a missing member's.
@@ -126,16 +114,16 @@ void test_compile_time_properties() {
     static_assert(!HasRegionValue<int> && !HasRegionTag<void>);
 }
 
-void test_adopt_and_view() {
+void test_adopt_and_view(TestRunnerCtx const& test) {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
     using Brand = decltype(perm)::brand_type;
     auto region = OwnedRegion<float, DataA, Brand>::adopt(test_alloc_token(), arena, 64, std::move(perm));
 
-    CRUCIBLE_TEST_REQUIRE(region.size() == 64);
-    CRUCIBLE_TEST_REQUIRE(!region.empty());
-    CRUCIBLE_TEST_REQUIRE(region.data() != nullptr);
-    CRUCIBLE_TEST_REQUIRE(region.span().size() == 64);
+    CRUCIBLE_TEST_ASSERT(test, region.size() == 64);
+    CRUCIBLE_TEST_ASSERT(test, !region.empty());
+    CRUCIBLE_TEST_ASSERT(test, region.data() != nullptr);
+    CRUCIBLE_TEST_ASSERT(test, region.span().size() == 64);
 
     for (std::size_t i = 0; i < 64; ++i)
         region.span()[i] = static_cast<float>(i);
@@ -145,11 +133,11 @@ void test_adopt_and_view() {
     for (std::size_t i = 0; i < 64; ++i) {
         const std::uint32_t got = std::bit_cast<std::uint32_t>(region.cspan()[i]);
         const std::uint32_t exp = std::bit_cast<std::uint32_t>(static_cast<float>(i));
-        CRUCIBLE_TEST_REQUIRE(got == exp);
+        CRUCIBLE_TEST_ASSERT(test, got == exp);
     }
 }
 
-void test_wrap_borrows_storage() {
+void test_wrap_borrows_storage(TestRunnerCtx const& test) {
     std::uint64_t storage[6] = {1, 2, 3, 4, 5, 6};
     auto perm = mint_permission_root<DataB>();
     using Brand = decltype(perm)::brand_type;
@@ -157,31 +145,31 @@ void test_wrap_borrows_storage() {
 
     // The region proves ownership of the bytes but does not own the
     // storage, so a write through it lands in the caller's array.
-    CRUCIBLE_TEST_REQUIRE(region.data() == storage);
+    CRUCIBLE_TEST_ASSERT(test, region.data() == storage);
     region.span()[5] = 60;
-    CRUCIBLE_TEST_REQUIRE(storage[5] == 60);
+    CRUCIBLE_TEST_ASSERT(test, storage[5] == 60);
 
     std::uint64_t sum = 0;
     for (auto v : region)
         sum += v;
-    CRUCIBLE_TEST_REQUIRE(sum == 1 + 2 + 3 + 4 + 5 + 60);
+    CRUCIBLE_TEST_ASSERT(test, sum == 1 + 2 + 3 + 4 + 5 + 60);
 }
 
 // Every total from 0 to 64 into every shard count from 1 to 16.  A split
 // that puts a shard past the end of its region, or leaves a gap between
 // two shards, fails the offset check, and recombine aborts on it.  Each
 // range of shard counts is in a source file of its own.
-void test_split_and_recombine_every_total_and_count() {
-    split_and_recombine_every_total_of_counts_1_to_9();
-    split_and_recombine_every_total_of_counts_10_to_13();
-    split_and_recombine_every_total_of_counts_14_to_16();
+void test_split_and_recombine_every_total_and_count(TestRunnerCtx const& test) {
+    split_and_recombine_every_total_of_counts_1_to_9(test);
+    split_and_recombine_every_total_of_counts_10_to_13(test);
+    split_and_recombine_every_total_of_counts_14_to_16(test);
 }
 
 // The brand travels with the region: a region minted from a branded
 // permission carries that brand, so do the shards of its split, so does
 // a borrow of it, and the recombined whole carries it back out.  No
 // conversion reaches the erased spelling from any of them.
-void test_brand_travels_through_split_and_recombine() {
+void test_brand_travels_through_split_and_recombine(TestRunnerCtx const& test) {
     static std::uint64_t storage[8] = {};
     auto perm = mint_permission_root<DataA>();
     using Brand = ::foundation::brand::brand_of_t<decltype(perm)>;
@@ -190,13 +178,13 @@ void test_brand_travels_through_split_and_recombine() {
 
     auto borrow = ::fixy::mint_borrowed(region);
     static_assert(::foundation::brand::SameBrand<decltype(borrow), decltype(region)>);
-    CRUCIBLE_TEST_REQUIRE(borrow.size() == 8);
+    CRUCIBLE_TEST_ASSERT(test, borrow.size() == 8);
 
     auto parts = ::fixy::mint_split<2>(std::move(region));
     auto& [s0, s1] = parts.shards;
     static_assert(::foundation::brand::SameBrand<decltype(s0), decltype(borrow)>);
     static_assert(::foundation::brand::SameBrand<decltype(s1), decltype(borrow)>);
-    CRUCIBLE_TEST_REQUIRE(s0.size() == 4 && s1.size() == 4);
+    CRUCIBLE_TEST_ASSERT(test, s0.size() == 4 && s1.size() == 4);
 
     // The receipt names the region that was split, so its brand is the
     // region's and its shard count is the split's.
@@ -205,8 +193,8 @@ void test_brand_travels_through_split_and_recombine() {
 
     auto whole = OwnedRegion<std::uint64_t, DataA, Brand>::recombine(std::move(parts.witness), std::move(parts.shards));
     static_assert(::foundation::brand::SameBrand<decltype(whole), decltype(borrow)>);
-    CRUCIBLE_TEST_REQUIRE(whole.size() == 8);
-    CRUCIBLE_TEST_REQUIRE(whole.data() == storage);
+    CRUCIBLE_TEST_ASSERT(test, whole.size() == 8);
+    CRUCIBLE_TEST_ASSERT(test, whole.data() == storage);
     static_assert(!std::is_constructible_v<OwnedRegion<std::uint64_t, DataA>, decltype(whole)&&>,
                   "a branded region does not erase");
 }
@@ -229,8 +217,10 @@ auto split_branded_in_two(std::uint64_t* storage) {
 // The mixed tuple takes shard 1 of the second region, so the second
 // region cannot recombine after it.  A third split at the same site shows
 // that its own shards still recombine.
+// The recombine of the mixed tuple runs in a child through expect_dies of the
+// Check family.
 template <typename Split>
-void require_mixed_rebuild_aborts(Split split) {
+void require_mixed_rebuild_aborts(TestRunnerCtx const& test, Split split) {
     static std::uint64_t first[4] = {};
     static std::uint64_t second[4] = {};
     static std::uint64_t third[4] = {};
@@ -239,16 +229,21 @@ void require_mixed_rebuild_aborts(Split split) {
     static_assert(std::is_same_v<decltype(parts_a), decltype(parts_b)>, "one split site is one type");
     using Whole = std::remove_cvref_t<decltype(std::get<0>(parts_a.shards))>::brand_type;
     using Region = OwnedRegion<std::uint64_t, DataA, Whole>;
-    CRUCIBLE_TEST_REQUIRE(::crucible::test::aborts([&] {
-        auto mixed = std::tuple{std::move(std::get<0>(parts_a.shards)), std::move(std::get<1>(parts_b.shards))};
-        (void)Region::recombine(std::move(parts_a.witness), std::move(mixed));
-    }));
+    expect_dies(
+        test,
+        [&] noexcept {
+            auto mixed = std::tuple{std::move(std::get<0>(parts_a.shards)), std::move(std::get<1>(parts_b.shards))};
+            (void)Region::recombine(std::move(parts_a.witness), std::move(mixed));
+        },
+        kRefusedRecombine);
     auto parts_c = split(third);
     auto whole = Region::recombine(std::move(parts_c.witness), std::move(parts_c.shards));
-    CRUCIBLE_TEST_REQUIRE(whole.data() == third && whole.size() == 4);
+    CRUCIBLE_TEST_ASSERT(test, whole.data() == third && whole.size() == 4);
 }
 
-void test_recombine_refuses_shards_of_two_erased_regions() { require_mixed_rebuild_aborts(split_erased_in_two); }
+void test_recombine_refuses_shards_of_two_erased_regions(TestRunnerCtx const& test) {
+    require_mixed_rebuild_aborts(test, split_erased_in_two);
+}
 
 // A shard moved out of the tuple before the recombine is empty at a null
 // base, so it breaks the chain of shards and recombine aborts.  A shard
@@ -256,21 +251,24 @@ void test_recombine_refuses_shards_of_two_erased_regions() { require_mixed_rebui
 // whole.  The use-after-move guard does not see this use, because it
 // moves a tuple element and then the tuple.
 template <std::size_t KeptIndex>
-void require_recombine_aborts_without_shard() {
+void require_recombine_aborts_without_shard(TestRunnerCtx const& test) {
     static std::uint64_t storage[4] = {};
     auto parts = split_branded_in_two(storage);
     using Region = OwnedRegion<std::uint64_t, DataA,
                                typename std::remove_cvref_t<decltype(std::get<0>(parts.shards))>::brand_type>;
-    CRUCIBLE_TEST_REQUIRE(::crucible::test::aborts([&] {
-        auto kept = std::move(std::get<KeptIndex>(parts.shards));
-        (void)Region::recombine(std::move(parts.witness), std::move(parts.shards));
-        kept.span()[0] = 7;
-    }));
+    expect_dies(
+        test,
+        [&] noexcept {
+            auto kept = std::move(std::get<KeptIndex>(parts.shards));
+            (void)Region::recombine(std::move(parts.witness), std::move(parts.shards));
+            kept.span()[0] = 7;
+        },
+        kRefusedRecombine);
 }
 
-void test_recombine_refuses_a_shard_moved_out_of_the_tuple() {
-    require_recombine_aborts_without_shard<0>();
-    require_recombine_aborts_without_shard<1>();
+void test_recombine_refuses_a_shard_moved_out_of_the_tuple(TestRunnerCtx const& test) {
+    require_recombine_aborts_without_shard<0>(test);
+    require_recombine_aborts_without_shard<1>(test);
 }
 
 // One mint site is one brand, so two regions from this helper are one
@@ -283,22 +281,22 @@ auto branded_at_one_site(std::uint64_t* storage, std::size_t count) {
 // the recombine and the release.  No consumed region keeps the bytes that
 // its successor owns.  A region has no move assignment, because the
 // assignment would drop the token of the target.
-void test_every_consuming_door_empties_the_region() {
+void test_every_consuming_door_empties_the_region(TestRunnerCtx const& test) {
     static std::uint64_t storage[4] = {1, 2, 3, 4};
     auto source = branded_at_one_site(storage, 4);
     using Branded = decltype(source);
 
     Branded moved_into = std::move(source);
-    CRUCIBLE_TEST_REQUIRE(source.empty() && source.data() == nullptr);
-    CRUCIBLE_TEST_REQUIRE(moved_into.data() == storage && moved_into.size() == 4);
+    CRUCIBLE_TEST_ASSERT(test, source.empty() && source.data() == nullptr);
+    CRUCIBLE_TEST_ASSERT(test, moved_into.data() == storage && moved_into.size() == 4);
 
     auto parts = ::fixy::mint_split<2>(std::move(moved_into));
-    CRUCIBLE_TEST_REQUIRE(moved_into.empty() && moved_into.data() == nullptr);
+    CRUCIBLE_TEST_ASSERT(test, moved_into.empty() && moved_into.data() == nullptr);
 
     auto whole = Branded::recombine(std::move(parts.witness), std::move(parts.shards));
-    CRUCIBLE_TEST_REQUIRE(std::get<0>(parts.shards).empty() && std::get<0>(parts.shards).data() == nullptr);
-    CRUCIBLE_TEST_REQUIRE(std::get<1>(parts.shards).empty() && std::get<1>(parts.shards).data() == nullptr);
-    CRUCIBLE_TEST_REQUIRE(whole.data() == storage && whole.size() == 4);
+    CRUCIBLE_TEST_ASSERT(test, std::get<0>(parts.shards).empty() && std::get<0>(parts.shards).data() == nullptr);
+    CRUCIBLE_TEST_ASSERT(test, std::get<1>(parts.shards).empty() && std::get<1>(parts.shards).data() == nullptr);
+    CRUCIBLE_TEST_ASSERT(test, whole.data() == storage && whole.size() == 4);
 
     // The release door gives the token back, and the token wraps the same
     // storage again.
@@ -308,22 +306,24 @@ void test_every_consuming_door_empties_the_region() {
     CRUCIBLE_FATAL_INVARIANT(rewrapped.data() == storage && rewrapped.size() == 4);
 }
 
-void test_recombine_refuses_shards_of_two_regions_of_one_site() { require_mixed_rebuild_aborts(split_branded_in_two); }
+void test_recombine_refuses_shards_of_two_regions_of_one_site(TestRunnerCtx const& test) {
+    require_mixed_rebuild_aborts(test, split_branded_in_two);
+}
 
 // A zero-length request is the one arm of adopt that asks the arena for
 // nothing.  The region it returns has to answer as empty on all three
 // queries, because a null pointer with a non-zero count would read as a
 // live region.
-void test_adopt_zero_length() {
+void test_adopt_zero_length(TestRunnerCtx const& test) {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
     using Brand = decltype(perm)::brand_type;
     auto region = OwnedRegion<int, DataA, Brand>::adopt(test_alloc_token(), arena, 0, std::move(perm));
 
-    CRUCIBLE_TEST_REQUIRE(region.empty());
-    CRUCIBLE_TEST_REQUIRE(region.size() == 0);
-    CRUCIBLE_TEST_REQUIRE(region.data() == nullptr);
-    CRUCIBLE_TEST_REQUIRE(region.span().empty());
+    CRUCIBLE_TEST_ASSERT(test, region.empty());
+    CRUCIBLE_TEST_ASSERT(test, region.size() == 0);
+    CRUCIBLE_TEST_ASSERT(test, region.data() == nullptr);
+    CRUCIBLE_TEST_ASSERT(test, region.span().empty());
 }
 
 }  // namespace
@@ -333,29 +333,37 @@ void test_adopt_zero_length() {
 using namespace test_owned_region;
 
 int main() {
-    std::fprintf(stderr, "test_owned_region:\n");
+    TestRunnerCtx const test{::foundation::effects::testing::test()};
+    pass(test, "test_owned_region:\n");
 
     test_compile_time_properties();  // pure compile-time
 
-    run_test("test_adopt_zero_length", test_adopt_zero_length);
-    run_test("test_adopt_and_view", test_adopt_and_view);
-    run_test("test_wrap_borrows_storage", test_wrap_borrows_storage);
-    run_test("test_split_into_chunk_math", test_split_into_chunk_math);
-    run_test("test_split_uneven", test_split_uneven);
-    run_test("test_split_smaller_than_n", test_split_smaller_than_n);
-    run_test("test_split_and_recombine_every_total_and_count", test_split_and_recombine_every_total_and_count);
-    run_test("test_split_then_rebuild_through_recombine", test_split_then_rebuild_through_recombine);
-    run_test("test_brand_travels_through_split_and_recombine", test_brand_travels_through_split_and_recombine);
-    run_test("test_recombine_refuses_shards_of_two_erased_regions",
-             test_recombine_refuses_shards_of_two_erased_regions);
-    run_test("test_recombine_refuses_shards_of_two_regions_of_one_site",
-             test_recombine_refuses_shards_of_two_regions_of_one_site);
-    run_test("test_recombine_refuses_a_shard_moved_out_of_the_tuple",
-             test_recombine_refuses_a_shard_moved_out_of_the_tuple);
-    run_test("test_every_consuming_door_empties_the_region", test_every_consuming_door_empties_the_region);
-
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
-    if (total_failed > 0) return EXIT_FAILURE;
-    crucible::test::pass("ALL PASSED\n");
-    return EXIT_SUCCESS;
+    test_adopt_zero_length(test);
+    pass(test, "  test_adopt_zero_length: PASSED\n");
+    test_adopt_and_view(test);
+    pass(test, "  test_adopt_and_view: PASSED\n");
+    test_wrap_borrows_storage(test);
+    pass(test, "  test_wrap_borrows_storage: PASSED\n");
+    test_split_into_chunk_math(test);
+    pass(test, "  test_split_into_chunk_math: PASSED\n");
+    test_split_uneven(test);
+    pass(test, "  test_split_uneven: PASSED\n");
+    test_split_smaller_than_n(test);
+    pass(test, "  test_split_smaller_than_n: PASSED\n");
+    test_split_and_recombine_every_total_and_count(test);
+    pass(test, "  test_split_and_recombine_every_total_and_count: PASSED\n");
+    test_split_then_rebuild_through_recombine(test);
+    pass(test, "  test_split_then_rebuild_through_recombine: PASSED\n");
+    test_brand_travels_through_split_and_recombine(test);
+    pass(test, "  test_brand_travels_through_split_and_recombine: PASSED\n");
+    test_recombine_refuses_shards_of_two_erased_regions(test);
+    pass(test, "  test_recombine_refuses_shards_of_two_erased_regions: PASSED\n");
+    test_recombine_refuses_shards_of_two_regions_of_one_site(test);
+    pass(test, "  test_recombine_refuses_shards_of_two_regions_of_one_site: PASSED\n");
+    test_recombine_refuses_a_shard_moved_out_of_the_tuple(test);
+    pass(test, "  test_recombine_refuses_a_shard_moved_out_of_the_tuple: PASSED\n");
+    test_every_consuming_door_empties_the_region(test);
+    pass(test, "  test_every_consuming_door_empties_the_region: PASSED\n");
+    pass(test, "test_owned_region: ALL PASSED\n");
+    return 0;
 }

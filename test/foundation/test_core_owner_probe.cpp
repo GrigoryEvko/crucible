@@ -58,7 +58,8 @@
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 namespace {
 
@@ -86,14 +87,14 @@ concept MoveAssignable = requires(Owner& target, Owner&& source) { target = stat
 
 // The owner that a call gives back by reference.  The rule use-after-move
 // does not read through it, so the hazard EMPTY reaches a moved-from owner.
-// The owners of the hazard live outside the body of the abort probe, because
-// the jump of an abort skips the destructors of the body.
+// Each door of the hazard that ends the process runs in a child through
+// expect_dies of the Check family.
 template <class Owner>
 [[nodiscard]] Owner& through(Owner& owner) noexcept {
     return owner;
 }
 
-using ::crucible::test::aborts;
+using ::fixy::check::expect_dies;
 
 // ── The chain of Boxes ──────────────────────────────────────────────────
 
@@ -177,11 +178,18 @@ struct BoxProbe {
     // EMPTY: a read and a borrow of a moved-from Box end through fatal().
     static void empty() {
         {
+            ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
             Box<BoxNode> source = make_chain(1, 1);
             Box<BoxNode> const target{static_cast<Box<BoxNode>&&>(through(source))};
             CRUCIBLE_FATAL_INVARIANT(target->label == 1);
-            CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(through(source)->label); }));
-            CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(through(source).view()); }));
+            expect_dies(
+                test, [&source] noexcept { static_cast<void>(through(source)->label); },
+                ::foundation::core::TextView{
+                    "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
+            expect_dies(
+                test, [&source] noexcept { static_cast<void>(through(source).view()); },
+                ::foundation::core::TextView{
+                    "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
@@ -372,13 +380,22 @@ struct MaskedArrayProbe : ElementArms<MaskedArrayProbe> {
     // through fatal(), and its View is empty.
     static void empty() {
         {
+            ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
             Owner source = make(2);
             Owner const target{static_cast<Owner&&>(through(source))};
             Owner const fresh{};
             CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
             CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
-            CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(through(source).at_masked(1)); }));
-            CRUCIBLE_FATAL_INVARIANT(aborts([&] { static_cast<void>(fresh.at_masked(0)); }));
+            expect_dies(
+                test, [&source] noexcept { static_cast<void>(through(source).at_masked(1)); },
+                ::foundation::core::TextView{
+                    "foundation: fatal: an element of a MaskedArray that holds no storage: the array is default or "
+                    "moved from"});
+            expect_dies(
+                test, [&fresh] noexcept { static_cast<void>(fresh.at_masked(0)); },
+                ::foundation::core::TextView{
+                    "foundation: fatal: an element of a MaskedArray that holds no storage: the array is default or "
+                    "moved from"});
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
@@ -459,14 +476,18 @@ struct HoleProbe {
 
     static void linear() {}
 
-    // EMPTY: a consume of a moved-from Hole ends through fatal().  The probe
-    // body takes a Ref of the spent Hole by value, so no closure captures
-    // the linear Hole.
+    // EMPTY: a consume of a moved-from Hole ends through fatal().  The body of
+    // the death test takes a Ref of the spent Hole by value, so no closure
+    // captures the linear Hole.
     static void empty() {
+        ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
         Owner source = ::foundation::core::mint_hole<16, 8>(kAlloc);
         auto const spent = ::foundation::core::to(source);
         Owner target{static_cast<Owner&&>(source)};
-        CRUCIBLE_FATAL_INVARIANT(aborts([spent] { static_cast<Owner&&>(*spent).consume(); }));
+        expect_dies(
+            test, [spent] noexcept { static_cast<Owner&&>(*spent).consume(); },
+            ::foundation::core::TextView{
+                "foundation: fatal: a spend of a Hole that holds no storage: the Hole was moved from or spent"});
         static_cast<Owner&&>(target).consume();
     }
 };

@@ -1,4 +1,7 @@
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
 #include <foundation/permissions/ReadView.h>
@@ -6,42 +9,15 @@
 
 #include <atomic>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <thread>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
 
 using namespace foundation::permissions;
 
-struct TestFailure {};
-
-#define CRUCIBLE_TEST_REQUIRE(...)                                                        \
-    do {                                                                                  \
-        if (!(__VA_ARGS__)) [[unlikely]] {                                                \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
-            throw TestFailure{};                                                          \
-        }                                                                                 \
-    } while (0)
-
 namespace {
 
-int total_passed = 0;
-int total_failed = 0;
-
-template <typename F>
-void run_test(const char* name, F&& body) {
-    std::fprintf(stderr, "  %s: ", name);
-    try {
-        body();
-        ++total_passed;
-        std::fprintf(stderr, "PASSED\n");
-    } catch (TestFailure&) {
-        ++total_failed;
-        std::fprintf(stderr, "FAILED\n");
-    }
-}
+using ::fixy::check::pass;
 
 // Every tag declares its row: the relation from tag to row is closed,
 // and a pure tag says so with Row<>.
@@ -83,20 +59,20 @@ void test_compile_time_properties() {
 }
 
 // A body that returns nothing gives the source back.
-void test_door_void_body_hands_the_source_back() {
+void test_door_void_body_hands_the_source_back(::fixy::TestRunnerCtx const& test) {
     auto perm = mint_permission_root<ConfigData>();
     using Brand = decltype(perm)::brand_type;
     bool ran = false;
 
     auto back = with_read_view(std::move(perm), [&ran](ReadView<ConfigData, Brand> const&) noexcept { ran = true; });
 
-    CRUCIBLE_TEST_REQUIRE(ran);
+    CRUCIBLE_TEST_ASSERT(test, ran);
     static_assert(std::is_same_v<decltype(back), decltype(perm)>, "the source comes back with its own brand");
     ::foundation::linear::drop(std::move(back));
 }
 
 // A body that returns a value gives the value and the source.
-void test_door_value_body() {
+void test_door_value_body(::fixy::TestRunnerCtx const& test) {
     auto perm = mint_permission_root<LoopBounds>();
     using Brand = decltype(perm)::brand_type;
     constexpr int sentinel = 12345;
@@ -104,11 +80,11 @@ void test_door_value_body() {
     auto [observed, back] =
         with_read_view(std::move(perm), [](ReadView<LoopBounds, Brand> const&) noexcept { return sentinel; });
 
-    CRUCIBLE_TEST_REQUIRE(observed == sentinel);
+    CRUCIBLE_TEST_ASSERT(test, observed == sentinel);
     ::foundation::linear::drop(std::move(back));
 }
 
-void test_door_struct_body() {
+void test_door_struct_body(::fixy::TestRunnerCtx const& test) {
     struct Result {
         std::uint64_t lo;
         std::uint64_t hi;
@@ -119,15 +95,15 @@ void test_door_struct_body() {
     auto [result, back] =
         with_read_view(std::move(perm), [](ReadView<LoopBounds, Brand> const&) noexcept { return Result{42, 99}; });
 
-    CRUCIBLE_TEST_REQUIRE(result.lo == 42);
-    CRUCIBLE_TEST_REQUIRE(result.hi == 99);
+    CRUCIBLE_TEST_ASSERT(test, result.lo == 42);
+    CRUCIBLE_TEST_ASSERT(test, result.hi == 99);
     ::foundation::linear::drop(std::move(back));
 }
 
 // A generic body sees the view of the brand of the source, and an erased
 // source lends an erased view.  A branded source lends no erased view,
 // which neg_brand_read_view_body_asks_the_erased_view shows.
-void test_door_lends_the_view_of_the_source_brand() {
+void test_door_lends_the_view_of_the_source_brand(::fixy::TestRunnerCtx const& test) {
     auto perm = mint_permission_root<ConfigData>();
     using Brand = decltype(perm)::brand_type;
     auto [branded, back] = with_read_view(std::move(perm), [](auto const& view) noexcept {
@@ -137,8 +113,8 @@ void test_door_lends_the_view_of_the_source_brand() {
     auto [erased, erased_back] = with_read_view(std::move(erased_token), [](auto const& view) noexcept {
         return ::foundation::brand::IsErased<std::remove_cvref_t<decltype(view)>>;
     });
-    CRUCIBLE_TEST_REQUIRE(branded);
-    CRUCIBLE_TEST_REQUIRE(erased);
+    CRUCIBLE_TEST_ASSERT(test, branded);
+    CRUCIBLE_TEST_ASSERT(test, erased);
     ::foundation::linear::drop(std::move(erased_back));
 }
 
@@ -194,7 +170,7 @@ using HotFgCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
 
 // A fork on the inline arm inside the door: the bodies run in child order
 // on this thread, and the foreground context needs no background effect.
-void test_fork_inline_inside_the_door() {
+void test_fork_inline_inside_the_door(::fixy::TestRunnerCtx const& test) {
     auto config_perm = mint_permission_root<ConfigData>();
 
     int order = 0;
@@ -217,8 +193,8 @@ void test_fork_inline_inside_the_door() {
             });
     });
 
-    CRUCIBLE_TEST_REQUIRE(left_seen_at == 1);
-    CRUCIBLE_TEST_REQUIRE(right_seen_at == 2);
+    CRUCIBLE_TEST_ASSERT(test, left_seen_at == 1);
+    CRUCIBLE_TEST_ASSERT(test, right_seen_at == 2);
 
     ::foundation::linear::drop(std::move(rebuilt));
     ::foundation::linear::drop(std::move(config_back));
@@ -227,29 +203,32 @@ void test_fork_inline_inside_the_door() {
 // A view from a live share.  The door holds the guard while the body
 // runs and hands it back, so the share stays counted throughout, and
 // the pool cannot upgrade until the guard ends.
-void test_door_over_a_share_guard() {
+void test_door_over_a_share_guard(::fixy::TestRunnerCtx const& test) {
     SharedPermissionPool pool{mint_permission_root<ConfigData>()};
     {
         auto guard = pool.lend();
-        CRUCIBLE_TEST_REQUIRE(guard.has_value());
+        CRUCIBLE_TEST_ASSERT(test, guard.has_value());
         auto [counted, held] = with_read_view(std::move(*guard), [&pool](auto const& view) noexcept {
             static_assert(std::is_same_v<typename std::remove_cvref_t<decltype(view)>::tag_type, ConfigData>);
             return pool.outstanding();
         });
-        CRUCIBLE_TEST_REQUIRE(counted == 1);
-        CRUCIBLE_TEST_REQUIRE(held.holds_share());
-        CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 1);
-        CRUCIBLE_TEST_REQUIRE(!pool.try_upgrade().has_value());
+        CRUCIBLE_TEST_ASSERT(test, counted == 1);
+        CRUCIBLE_TEST_ASSERT(test, held.holds_share());
+        CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
+        // The refused upgrade gives an empty std::optional.  The answer has a
+        // name, so the temporary ends in this file and not in the macro.
+        bool const is_refused = !pool.try_upgrade().has_value();
+        CRUCIBLE_TEST_ASSERT(test, is_refused);
     }
-    CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
+    CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
     auto exclusive = pool.try_upgrade();
-    CRUCIBLE_TEST_REQUIRE(exclusive.has_value());
+    CRUCIBLE_TEST_ASSERT(test, exclusive.has_value());
     ::foundation::linear::drop(std::move(*exclusive));
 }
 
 // A loan travels to a reader on another thread.  The lender holds a
 // LentPermission, which gives no access, until the loan comes back.
-void test_loan_across_threads() {
+void test_loan_across_threads(::fixy::TestRunnerCtx const& test) {
     auto token = mint_permission_root<ConfigData>();
     auto [loan, lent] = mint_read_loan(std::move(token));
 
@@ -267,7 +246,7 @@ void test_loan_across_threads() {
         return reader_loan;
     }();
 
-    CRUCIBLE_TEST_REQUIRE(reads.load() == 3);
+    CRUCIBLE_TEST_ASSERT(test, reads.load() == 3);
     auto back = mint_permission_after_loan(std::move(lent), std::move(returned));
     static_assert(std::is_same_v<decltype(back), decltype(token)>, "the token comes back with its own brand");
     ::foundation::linear::drop(std::move(back));
@@ -296,22 +275,28 @@ void test_handle_composition_zero_cost() {
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_read_view:\n");
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    pass(test, "test_read_view:\n");
 
     // Nothing to observe at runtime, so this one is called directly.
     test_compile_time_properties();
 
-    run_test("test_door_void_body_hands_the_source_back", test_door_void_body_hands_the_source_back);
-    run_test("test_door_value_body", test_door_value_body);
-    run_test("test_door_struct_body", test_door_struct_body);
-    run_test("test_door_lends_the_view_of_the_source_brand", test_door_lends_the_view_of_the_source_brand);
-    run_test("test_fork_inline_inside_the_door", test_fork_inline_inside_the_door);
-    run_test("test_door_over_a_share_guard", test_door_over_a_share_guard);
-    run_test("test_loan_across_threads", test_loan_across_threads);
-    run_test("test_handle_composition_zero_cost", test_handle_composition_zero_cost);
-
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
-    if (total_failed > 0) return EXIT_FAILURE;
-    crucible::test::pass("ALL PASSED\n");
-    return EXIT_SUCCESS;
+    test_door_void_body_hands_the_source_back(test);
+    pass(test, "  test_door_void_body_hands_the_source_back: PASSED\n");
+    test_door_value_body(test);
+    pass(test, "  test_door_value_body: PASSED\n");
+    test_door_struct_body(test);
+    pass(test, "  test_door_struct_body: PASSED\n");
+    test_door_lends_the_view_of_the_source_brand(test);
+    pass(test, "  test_door_lends_the_view_of_the_source_brand: PASSED\n");
+    test_fork_inline_inside_the_door(test);
+    pass(test, "  test_fork_inline_inside_the_door: PASSED\n");
+    test_door_over_a_share_guard(test);
+    pass(test, "  test_door_over_a_share_guard: PASSED\n");
+    test_loan_across_threads(test);
+    pass(test, "  test_loan_across_threads: PASSED\n");
+    test_handle_composition_zero_cost();
+    pass(test, "  test_handle_composition_zero_cost: PASSED\n");
+    pass(test, "test_read_view: ALL PASSED\n");
+    return 0;
 }

@@ -34,6 +34,22 @@ void assert_fails(::fixy::TestRunnerCtx const& test) {
     pass(test, "  assert_fails: PASSED\n");
 }
 
+// The sum of the two template arguments, so a call of it holds a comma.
+template <int First, int Second>
+[[nodiscard]] constexpr int sum_of() noexcept {
+    return First + Second;
+}
+
+// A condition can hold the commas of a template argument list, and the
+// report writes the full condition.
+void assert_with_commas(::fixy::TestRunnerCtx const& test) {
+    CRUCIBLE_TEST_ASSERT(test, sum_of<40, 2>() == 42);
+    expect_dies(
+        test, [&test] noexcept { CRUCIBLE_TEST_ASSERT(test, sum_of<40, 1>() == 42); },
+        ::fixy::TextView{"assert: sum_of<40, 1>() == 42"});
+    pass(test, "  assert_with_commas: PASSED\n");
+}
+
 void death_with_text(::fixy::TestRunnerCtx const& test) {
     expect_dies(test, [] noexcept { ::fixy::fatal("the body ends here"); }, ::fixy::TextView{"the body ends here"});
     pass(test, "  death_with_text: PASSED\n");
@@ -83,6 +99,7 @@ int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     assert_holds(test);
     assert_fails(test);
+    assert_with_commas(test);
     death_with_text(test);
     exit_is_refused(test);
     other_text_is_refused(test);

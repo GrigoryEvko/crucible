@@ -7,7 +7,9 @@
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -173,14 +175,19 @@ void test_equality() {
 }
 
 // A count whose View would be longer than the largest View ends the process
-// before the allocation.
-void test_too_long_aborts() {
-    bool const too_long_aborts = ::crucible::test::aborts([] {
-        HeapArray<std::uint64_t> const huge =
-            mint_heap_array(::foundation::effects::testing::test().alloc, ~std::size_t{0} / 4, std::uint64_t{0});
-        static_cast<void>(huge);
-    });
-    CRUCIBLE_FATAL_INVARIANT(too_long_aborts);
+// before the allocation.  The mint runs in a child through expect_dies of the
+// Check family.
+void test_too_long_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            HeapArray<std::uint64_t> const huge =
+                mint_heap_array(::foundation::effects::testing::test().alloc, ~std::size_t{0} / 4, std::uint64_t{0});
+            static_cast<void>(huge);
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a HeapArray of 4611686018427387903 elements of 8 bytes is longer than the "
+            "largest View"});
 }
 
 // The property: an array of a random count and a random fill holds the fill
@@ -363,66 +370,77 @@ void test_written() {
 
 // A writer that leaves an element with no write, and a write past the last
 // element, end the process before the array exists.  The mint gives the
-// storage back first.  The abort probe jumps past each destructor of the
-// body, so the run of the long write lives outside the body.
-void test_written_aborts() {
-    bool const unwritten_aborts = ::crucible::test::aborts([] {
-        HeapArray<std::uint32_t> const partial =
-            mint_heap_array_written<std::uint32_t>(::foundation::effects::testing::test().alloc, 4,
-                                                   [](WriteLease<std::uint32_t>& lease) noexcept { lease.put(1); });
-        static_cast<void>(partial);
-    });
-    CRUCIBLE_FATAL_INVARIANT(unwritten_aborts);
+// storage back first.  Each refused mint runs in a child through expect_dies
+// of the Check family, and the exact writer is the control in the test
+// process.
+void test_written_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            HeapArray<std::uint32_t> const partial =
+                mint_heap_array_written<std::uint32_t>(::foundation::effects::testing::test().alloc, 4,
+                                                       [](WriteLease<std::uint32_t>& lease) noexcept { lease.put(1); });
+            static_cast<void>(partial);
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: the writer of mint_heap_array_written left 3 of 4 elements with no write, "
+            "and gave 0 elements past the last one"});
 
-    bool const overflow_aborts = ::crucible::test::aborts([] {
-        HeapArray<std::uint32_t> const longer = mint_heap_array_written<std::uint32_t>(
-            ::foundation::effects::testing::test().alloc, 1, [](WriteLease<std::uint32_t>& lease) noexcept {
-                lease.put(1);
-                lease.put(2);
-                CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 0 && lease.refused() == 1);
-            });
-        static_cast<void>(longer);
-    });
-    CRUCIBLE_FATAL_INVARIANT(overflow_aborts);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            HeapArray<std::uint32_t> const longer = mint_heap_array_written<std::uint32_t>(
+                ::foundation::effects::testing::test().alloc, 1, [](WriteLease<std::uint32_t>& lease) noexcept {
+                    lease.put(1);
+                    lease.put(2);
+                    CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 0 && lease.refused() == 1);
+                });
+            static_cast<void>(longer);
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: the writer of mint_heap_array_written left 0 of 1 elements with no write, "
+            "and gave 1 elements past the last one"});
 
     HeapArray<std::uint32_t> const run =
         mint_heap_array(::foundation::effects::testing::test().alloc, 3, std::uint32_t{5});
-    bool const long_run_aborts = ::crucible::test::aborts([&] {
-        HeapArray<std::uint32_t> const shorter = mint_heap_array_written<std::uint32_t>(
-            ::foundation::effects::testing::test().alloc, 2, [&](WriteLease<std::uint32_t>& lease) noexcept {
-                lease.put_run(run.view());
-                CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 2 && lease.refused() == 3);
-            });
-        static_cast<void>(shorter);
-    });
-    CRUCIBLE_FATAL_INVARIANT(long_run_aborts);
+    ::fixy::check::expect_dies(
+        test,
+        [&run] noexcept {
+            HeapArray<std::uint32_t> const shorter = mint_heap_array_written<std::uint32_t>(
+                ::foundation::effects::testing::test().alloc, 2, [&run](WriteLease<std::uint32_t>& lease) noexcept {
+                    lease.put_run(run.view());
+                    CRUCIBLE_FATAL_INVARIANT(lease.remaining() == 2 && lease.refused() == 3);
+                });
+            static_cast<void>(shorter);
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: the writer of mint_heap_array_written left 2 of 2 elements with no write, "
+            "and gave 3 elements past the last one"});
 
-    bool const exact_passes = !::crucible::test::aborts([] {
-        HeapArray<std::uint32_t> const exact = mint_heap_array_written<std::uint32_t>(
-            ::foundation::effects::testing::test().alloc, 2, [](WriteLease<std::uint32_t>& lease) noexcept {
-                lease.put(1);
-                lease.put(2);
-            });
-        static_cast<void>(exact);
-    });
-    CRUCIBLE_FATAL_INVARIANT(exact_passes);
+    HeapArray<std::uint32_t> const exact = mint_heap_array_written<std::uint32_t>(
+        ::foundation::effects::testing::test().alloc, 2, [](WriteLease<std::uint32_t>& lease) noexcept {
+            lease.put(1);
+            lease.put(2);
+        });
+    CRUCIBLE_FATAL_INVARIANT(exact.size() == 2);
 }
 
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_empty_array();
     test_fill_and_reads();
     test_each_alignment();
     test_sealed_element();
     test_destruction_counts();
     test_equality();
-    test_too_long_aborts();
+    test_too_long_aborts(test);
     test_agrees_with_plain_model();
     test_with_builds_in_place();
     test_copy_of_view();
     test_zeroed();
     test_written();
-    test_written_aborts();
+    test_written_aborts(test);
     return 0;
 }

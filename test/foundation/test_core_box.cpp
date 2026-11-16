@@ -6,7 +6,9 @@
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+
 #include "philox_stream.h"
 
 #include <bit>
@@ -144,30 +146,41 @@ void test_consume() {
     CRUCIBLE_FATAL_INVARIANT(mint_box<int>(alloc, 17).consume() == 17);
 }
 
-// The probe consumes a moved-from Box on purpose: it holds no object, and
-// the precondition ends the process.  The probe jumps out of the body with
-// no destructor call, so the body owns no allocation.
-void test_consume_of_moved_from_aborts() {
+// The death test consumes a moved-from Box on purpose: it holds no object,
+// and the precondition ends the process.  The consume runs in a child through
+// expect_dies of the Check family.
+void test_consume_of_moved_from_aborts(::fixy::TestRunnerCtx const& test) {
     Box<int> source = mint_box<int>(::foundation::effects::testing::test().alloc, 1);
     Box<int> target{std::move(source)};
-    bool const moved_from_consume_aborts =
-        ::crucible::test::aborts([&source] { static_cast<void>(std::move(source).consume()); });
-    CRUCIBLE_FATAL_INVARIANT(moved_from_consume_aborts);
+    ::fixy::check::expect_dies(
+        test, [&source] noexcept { static_cast<void>(std::move(source).consume()); },
+        ::foundation::core::TextView{
+            "foundation: fatal: consume of a Box that holds no object: the Box was moved from or consumed"});
     CRUCIBLE_FATAL_INVARIANT(*target == 1);
 }
 
-// The probe borrows a moved-from Box on purpose: each build tests for the
-// object, so the borrow ends the process and reads no null pointer.
-void test_borrow_of_moved_from_aborts() {
+// The death test borrows a moved-from Box on purpose: each build tests for
+// the object, so the borrow ends the process and reads no null pointer.
+void test_borrow_of_moved_from_aborts(::fixy::TestRunnerCtx const& test) {
     Box<int> source = mint_box<int>(::foundation::effects::testing::test().alloc, 2);
     Box<int> target{std::move(source)};
-    bool const view_aborts = ::crucible::test::aborts([&source] { static_cast<void>(source.view()); });
-    bool const star_aborts = ::crucible::test::aborts([&source] { static_cast<void>(*source); });
+    ::fixy::check::expect_dies(
+        test, [&source] noexcept { static_cast<void>(source.view()); },
+        ::foundation::core::TextView{
+            "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
+    ::fixy::check::expect_dies(
+        test, [&source] noexcept { static_cast<void>(*source); },
+        ::foundation::core::TextView{
+            "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
     Box<int> const& fixed_source = source;
-    bool const fixed_view_aborts =
-        ::crucible::test::aborts([&fixed_source] { static_cast<void>(fixed_source.view()); });
-    bool const fixed_star_aborts = ::crucible::test::aborts([&fixed_source] { static_cast<void>(*fixed_source); });
-    CRUCIBLE_FATAL_INVARIANT(view_aborts && star_aborts && fixed_view_aborts && fixed_star_aborts);
+    ::fixy::check::expect_dies(
+        test, [&fixed_source] noexcept { static_cast<void>(fixed_source.view()); },
+        ::foundation::core::TextView{
+            "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
+    ::fixy::check::expect_dies(
+        test, [&fixed_source] noexcept { static_cast<void>(*fixed_source); },
+        ::foundation::core::TextView{
+            "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
     CRUCIBLE_FATAL_INVARIANT(*target == 2);
 }
 
@@ -338,8 +351,9 @@ int main() {
     test_destruction_counts();
     test_self_move_assignment_keeps_the_object();
     test_consume();
-    test_consume_of_moved_from_aborts();
-    test_borrow_of_moved_from_aborts();
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_consume_of_moved_from_aborts(test);
+    test_borrow_of_moved_from_aborts(test);
     test_each_alignment();
     test_agrees_with_plain_model();
     test_box_of_a_declared_type();

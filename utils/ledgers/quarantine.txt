@@ -287,19 +287,19 @@ src/perf/ | c-library-call | 1 | - | -
 src/perf/ | c-library-object | 2 | - | -
 src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | raw-pointer-object | 2 | - | -
-test/ | c-array-object | 150 | - | -
-test/ | c-library-call | 747 | - | -
-test/ | c-library-object | 14 | - | -
+test/ | c-array-object | 149 | - | -
+test/ | c-library-call | 729 | - | -
+test/ | c-library-object | 9 | - | -
 test/ | compiler-builtin | 1 | - | -
-test/ | door-header | 13 | - | -
-test/ | foreign-symbol | 13 | - | -
+test/ | door-header | 11 | - | -
+test/ | foreign-symbol | 12 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | opted-out | 47 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | opted-out | 22 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | raw-function-pointer | 13 | - | -
 test/ | raw-new-delete | 39 | - | -
-test/ | raw-pointer-object | 331 | - | -
+test/ | raw-pointer-object | 329 | - | -
 test/ | region | 1 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
@@ -324,7 +324,7 @@ test/ct/ | std-entity | 18 | - | -
 test/ct/ | std-object | 12 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 87 | - | -
-test/fixy/ | c-library-call | 1182 | - | -
+test/fixy/ | c-library-call | 1050 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 12 | - | -
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -350,7 +350,7 @@ test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family,
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 146 | - | -
+test/fixy/ | raw-pointer-object | 143 | - | -
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | region | 1 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
@@ -375,7 +375,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2706 | - | -
+test/fixy/ | std-entity | 2708 | - | -
 test/fixy/ | std-object | 983 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
@@ -430,11 +430,10 @@ test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
 test/fixy/neg/ | std-entity | 101 | - | -
 test/fixy/neg/ | std-object | 47 | - | -
-test/foundation/ | c-array-object | 25 | - | -
-test/foundation/ | c-library-call | 299 | - | -
-test/foundation/ | c-library-object | 5 | - | -
-test/foundation/ | door-header | 3 | - | -
-test/foundation/ | foreign-symbol | 5 | - | -
+test/foundation/ | c-array-object | 24 | - | -
+test/foundation/ | c-library-call | 257 | - | -
+test/foundation/ | door-header | 1 | - | -
+test/foundation/ | foreign-symbol | 4 | - | -
 test/foundation/ | opted-out | 16 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | opted-out | 2 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | opted-out | 4 | ORACLE: std::array is the model of the writes of a FixedArray | -
@@ -449,14 +448,14 @@ test/foundation/ | opted-out | 1 | PROBE: a bit copy of zero bytes into a Ref, a
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
-test/foundation/ | opted-out | 40 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
+test/foundation/ | opted-out | 45 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
 test/foundation/ | opted-out | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag reads an Option through a member of a local union in a PROBE region
 test/foundation/ | opted-out | 45 | PROBE: a violation report blocks on a full pipe, and the wait has a bound | -
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/foundation/ | raw-function-pointer | 14 | - | -
+test/foundation/ | raw-function-pointer | 13 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
-test/foundation/ | raw-pointer-object | 36 | - | -
+test/foundation/ | raw-pointer-object | 32 | - | -
 test/foundation/ | region | 1 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | region | 1 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | region | 1 | ORACLE: std::array is the model of the writes of a FixedArray | -
@@ -479,7 +478,7 @@ test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a 
 test/foundation/ | replace-pending:<limits> | 52 | - | -
 test/foundation/ | replace-pending:std::bit_cast | 8 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
-test/foundation/ | std-entity | 475 | - | -
+test/foundation/ | std-entity | 471 | - | -
 test/foundation/ | std-object | 174 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -

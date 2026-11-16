@@ -10,7 +10,10 @@
 
 #include <foundation/Platform.h>
 
-#include "abort_probe.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include "philox_stream.h"
 
 #include <cstdint>
@@ -339,12 +342,20 @@ static_assert(!SomeSetTakes<char> && !SomeSetTakes<char8_t> && !SomeSetTakes<wch
 
 // A zero divisor of saturating_div ends the process, signed and unsigned,
 // and a divisor other than 0 returns.
-void test_saturating_div_ends_on_zero() {
-    using ::crucible::test::aborts;
-    CRUCIBLE_FATAL_INVARIANT(aborts([] { (void)core::saturating_div(opaque(7), 0); }));
-    CRUCIBLE_FATAL_INVARIANT(aborts([] { (void)core::saturating_div(opaque(std::uint64_t{7}), std::uint64_t{0}); }));
-    CRUCIBLE_FATAL_INVARIANT(aborts([] { (void)core::saturating_div(opaque(core::min_of<int>), 0); }));
-    CRUCIBLE_FATAL_INVARIANT(!aborts([] { (void)core::saturating_div(opaque(core::min_of<int>), -1); }));
+// Each division by 0 runs in a child through expect_dies of the Check family,
+// and the division by -1 is the control in the test process.
+void test_saturating_div_ends_on_zero(::fixy::TestRunnerCtx const& test) {
+    using ::fixy::check::expect_dies;
+    expect_dies(
+        test, [] noexcept { (void)core::saturating_div(opaque(7), 0); },
+        ::foundation::core::TextView{"foundation: fatal: saturating_div got the divisor 0, which gives no quotient"});
+    expect_dies(
+        test, [] noexcept { (void)core::saturating_div(opaque(std::uint64_t{7}), std::uint64_t{0}); },
+        ::foundation::core::TextView{"foundation: fatal: saturating_div got the divisor 0, which gives no quotient"});
+    expect_dies(
+        test, [] noexcept { (void)core::saturating_div(opaque(core::min_of<int>), 0); },
+        ::foundation::core::TextView{"foundation: fatal: saturating_div got the divisor 0, which gives no quotient"});
+    CRUCIBLE_FATAL_INVARIANT(core::saturating_div(opaque(core::min_of<int>), -1) == core::max_of<int>);
 }
 
 }  // namespace
@@ -355,6 +366,6 @@ int main() {
     test_philox_pairs_of_each_width();
     test_widening_mul();
     test_gcd_against_euclid();
-    test_saturating_div_ends_on_zero();
+    test_saturating_div_ends_on_zero(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     return 0;
 }
