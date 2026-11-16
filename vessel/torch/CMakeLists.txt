@@ -35,7 +35,7 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     # backward-window thread_local, and the metadata bridge in record_kernel.h.
     # Splitting them would give each .so its own copy of the header-only
     # Crucible and its own backward-window counter.
-    add_library(crucible_dispatch SHARED crucible_fallback.cpp)
+    add_library(crucible_dispatch SHARED crucible_fallback.cpp storage_generation.cpp)
 
     # PyTorch headers from the built fork.
     #

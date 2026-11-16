@@ -16,12 +16,15 @@
 
 #include "eager_numerics.h"
 #include "record_kernel.h"
+#include "storage_generation.h"
 
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <foundation/Quarantine.h>
 
+#include <c10/core/CPUAllocator.h>
 #include <c10/core/CrucibleState.h>
+#include <c10/core/StorageImpl.h>
 
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <ATen/core/ivalue.h>
@@ -39,6 +42,7 @@
 
 #include "vessel_api_typed.h"
 
+#include <bit>
 #include <cstdint>
 #include <meta>
 #include <string_view>
@@ -924,7 +928,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // loader of crucible_native.py refuses a library with a different stamp or
 // with no stamp.  Increment the two values together when a function of the
 // block or an ordinal of c10::CrucibleMode changes.
-constexpr uint64_t kDispatchAbiVersion = 2;
+constexpr uint64_t kDispatchAbiVersion = 3;
 
 extern "C" {
 
@@ -951,6 +955,12 @@ CRUCIBLE_API uint32_t crucible_dispatch_backward_depth();
 CRUCIBLE_API uint32_t crucible_dispatch_schema_count();
 CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name);
 CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics();
+CRUCIBLE_API uint32_t crucible_dispatch_attach_allocator();
+CRUCIBLE_API void crucible_dispatch_detach_allocator();
+CRUCIBLE_API uint64_t crucible_dispatch_cpu_allocator();
+CRUCIBLE_API uint64_t crucible_dispatch_generation_allocator();
+CRUCIBLE_API uint64_t crucible_dispatch_inner_allocator();
+CRUCIBLE_API uint32_t crucible_dispatch_storage_generation(void* storage);
 
 // A constant return.  Python reads it after the load and before it declares
 // any other symbol.
@@ -961,6 +971,35 @@ CRUCIBLE_API uint64_t crucible_dispatch_abi_version() { return kDispatchAbiVersi
 // eager_numerics.h gives.  The attach reads it, and gives it to
 // crucible_create of the vessel library.
 CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics() { return crucible::vessel::read_eager_numerics().bits; }
+
+// ── The generation allocator (storage_generation.h) ─────────────────
+//
+// A session attaches the allocator after it creates its Vigil, and detaches
+// it at its end.  The attach gives 1 when the generation allocator is the CPU
+// allocator of PyTorch after the call.  The three addresses and the
+// generation of a storage are reads for the tests of the chain: an address is
+// 0 for no allocator.  The storage is the address of a c10::StorageImpl, which
+// Python gives as UntypedStorage._cdata, and the read gives 0 for a storage of
+// another allocator.
+
+CRUCIBLE_API uint32_t crucible_dispatch_attach_allocator() {
+    return crucible::vessel::attach_generation_allocator() ? 1U : 0U;
+}
+
+CRUCIBLE_API void crucible_dispatch_detach_allocator() { crucible::vessel::detach_generation_allocator(); }
+
+CRUCIBLE_API uint64_t crucible_dispatch_cpu_allocator() { return std::bit_cast<uint64_t>(c10::GetCPUAllocator()); }
+
+CRUCIBLE_API uint64_t crucible_dispatch_generation_allocator() {
+    return crucible::vessel::generation_allocator_address();
+}
+
+CRUCIBLE_API uint64_t crucible_dispatch_inner_allocator() { return crucible::vessel::generation_inner_address(); }
+
+CRUCIBLE_API uint32_t crucible_dispatch_storage_generation(void* storage) {
+    if (storage == nullptr) return 0;
+    return crucible::vessel::generation_of(static_cast<c10::StorageImpl*>(storage)->data_ptr()).raw();
+}
 
 CRUCIBLE_API void crucible_dispatch_set_tls_mode(uint8_t mode) {
     c10::CrucibleState::get_tls_state().set_mode(static_cast<c10::CrucibleMode>(mode));

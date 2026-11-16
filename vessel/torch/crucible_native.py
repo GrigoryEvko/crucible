@@ -97,8 +97,9 @@ class SchemaNameResult(enum.IntEnum):
 # Mirrors kDispatchAbiVersion in vessel/torch/crucible_fallback.cpp, which
 # libcrucible_dispatch.so reports through crucible_dispatch_abi_version().
 # The value names the C ABI of the dispatch library: its TLS accessors, its
-# schema accessors and the ordinals of c10::CrucibleMode.
-EXPECTED_DISPATCH_ABI_VERSION = 2
+# schema accessors, its doors of the generation allocator and the ordinals of
+# c10::CrucibleMode.
+EXPECTED_DISPATCH_ABI_VERSION = 3
 
 
 class AbiStamp(NamedTuple):
@@ -535,9 +536,46 @@ class _DispatchLib:
         L.crucible_dispatch_eager_numerics.restype = ctypes.c_uint32
         L.crucible_dispatch_eager_numerics.argtypes = []
 
+        # The generation allocator (storage_generation.h): the attach, the
+        # detach, and the reads of the chain and of a storage.
+        L.crucible_dispatch_attach_allocator.restype = ctypes.c_uint32
+        L.crucible_dispatch_attach_allocator.argtypes = []
+        L.crucible_dispatch_detach_allocator.restype = None
+        L.crucible_dispatch_detach_allocator.argtypes = []
+        for name in ("crucible_dispatch_cpu_allocator", "crucible_dispatch_generation_allocator",
+                     "crucible_dispatch_inner_allocator"):
+            getattr(L, name).restype = ctypes.c_uint64
+            getattr(L, name).argtypes = []
+        L.crucible_dispatch_storage_generation.restype = ctypes.c_uint32
+        L.crucible_dispatch_storage_generation.argtypes = [ctypes.c_void_p]
+
     def eager_numerics(self) -> int:
         """The eager word of this thread, which the Vigil folds into the hash of each region."""
         return self._lib.crucible_dispatch_eager_numerics()
+
+    def attach_allocator(self) -> bool:
+        """Set the generation allocator as the CPU allocator of PyTorch, for one more session."""
+        return self._lib.crucible_dispatch_attach_allocator() == 1
+
+    def detach_allocator(self) -> None:
+        """End one session of the generation allocator.  The last one puts the prior allocator back."""
+        self._lib.crucible_dispatch_detach_allocator()
+
+    def cpu_allocator(self) -> int:
+        """The address of the CPU allocator of PyTorch at this time."""
+        return self._lib.crucible_dispatch_cpu_allocator()
+
+    def generation_allocator(self) -> int:
+        """The address of the generation allocator."""
+        return self._lib.crucible_dispatch_generation_allocator()
+
+    def inner_allocator(self) -> int:
+        """The address of the allocator that the generation allocator allocates through, or 0."""
+        return self._lib.crucible_dispatch_inner_allocator()
+
+    def storage_generation(self, tensor: Any) -> int:
+        """The generation of the storage of tensor, or 0 when another allocator made it."""
+        return self._lib.crucible_dispatch_storage_generation(ctypes.c_void_p(tensor.untyped_storage()._cdata))
 
     def backward_enter(self) -> None:
         """Open a backward window on this thread."""
@@ -709,6 +747,10 @@ class CrucibleNative:
         # window it ran is already released.
         self._serialised_windows: int = 0
 
+        # True while this session counts in the sessions of the generation
+        # allocator of the dispatch library.
+        self._allocator_attached: bool = False
+
     def __enter__(self) -> "CrucibleNative":
         """Activate the controller, or return it unchanged if already active.
 
@@ -739,6 +781,13 @@ class CrucibleNative:
         # From here the Vigil exists and owns a background thread, so every
         # later step that can fail has to give it back.
         try:
+            # The generation allocator gives each CPU storage of the session a
+            # generation, so the build tells a new storage from a dead one at
+            # the same address.  The flag says that this session counts in it.
+            self._allocator_attached = self._dispatch.attach_allocator()
+            if not self._allocator_attached:
+                raise RuntimeError("the generation allocator did not become the CPU allocator of PyTorch")
+
             # Set CrucibleState TLS: mode=RECORD, context=vigil handle
             self._dispatch.set_mode(self.RECORD)
             self._dispatch.set_context(self._handle)
@@ -811,6 +860,13 @@ class CrucibleNative:
         if self._vessel and self._handle:
             self._vessel.destroy(self._handle)
             self._handle = 0
+
+        # The last session puts the prior CPU allocator back.  A storage that
+        # the session made keeps its generation and frees through the
+        # generation allocator after this.
+        if self._dispatch is not None and self._allocator_attached:
+            self._dispatch.detach_allocator()
+            self._allocator_attached = False
 
         if self._verbose:
             log.info("[crucible] native dispatch deactivated")

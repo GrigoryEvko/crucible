@@ -61,6 +61,7 @@
 #include "aten_op_table.h"
 #include "eager_numerics.h"
 #include "entry_slots.h"
+#include "storage_generation.h"
 #include "vessel_api_typed.h"
 
 #include <array>
@@ -317,11 +318,15 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
         flags |= crucible::meta_flags::IS_VIEW;
 
     if (strided && impl->has_storage()) {
-        auto* storage_base = impl->storage().data_ptr().get();
+        const c10::DataPtr& storage_data = impl->storage().data_ptr();
+        auto* storage_base = storage_data.get();
         if (storage_base != nullptr && tensor.data_ptr() != static_cast<char*>(storage_base)) {
             flags |= crucible::meta_flags::IS_VIEW;
         }
         meta.storage_nbytes = impl->storage().nbytes();
+        // A storage of another allocator has no generation, and the build
+        // keys it on its address alone.
+        meta.storage_generation = generation_of(storage_data);
     }
     if (strided && tensor.storage_offset() != 0) {
         flags |= crucible::meta_flags::IS_VIEW;
