@@ -457,6 +457,7 @@ test/foundation/ | opted-out | 45 | PROBE: a report to a stream with no reader r
 test/foundation/ | opted-out | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag reads an Option through a member of a local union in a PROBE region
 test/foundation/ | opted-out | 45 | PROBE: a violation report blocks on a full pipe, and the wait has a bound | -
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
+test/foundation/ | opted-out | 5 | PROBE: the address of a body or an object tells which unit of the link holds it | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | raw-function-pointer | 13 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
@@ -479,6 +480,7 @@ test/foundation/ | region | 1 | PROBE: a report to a stream with no reader raise
 test/foundation/ | region | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: a violation report blocks on a full pipe, and the wait has a bound | -
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
+test/foundation/ | region | 5 | PROBE: the address of a body or an object tells which unit of the link holds it | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | replace-pending:<limits> | 52 | - | -
 test/foundation/ | replace-pending:std::bit_cast | 8 | - | -
