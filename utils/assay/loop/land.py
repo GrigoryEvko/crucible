@@ -409,6 +409,10 @@ THE STACK
         such as the mint inventory, and the commit that it tests holds the
         file before its fold.  The gate then writes each built file from
         the build of the run.
+      * When the gate folds the built files into a new commit, before the
+        tests, the batch writes that commit into its entry
+        (Candidate.on_fold).  A batch that starts after that write stacks on
+        the commit that lands, if no later fold of the ledgers changes it.
     A batch swaps only when the branch is at its base, with the same
     compare-and-swap.  Before the swap, it waits while its base is the top
     of a path of entries from the branch.  When a batch below lands a
@@ -1966,6 +1970,7 @@ class BatchLanding:
         commit = chain[-1].commit
         kind = f"the run alone of {chain[-1].queued.name}" if is_alone else "the run of the batch"
         built = tuple(sorted({*chain_built(chain), *gate.BUILT_FILES})) if is_stacked else chain_built(chain)
+        is_published = (self.is_publishing or is_stacked) and self.stack is not None and not focus and not is_alone
         candidate = gate.Candidate(
             self.base,
             commit,
@@ -1974,8 +1979,8 @@ class BatchLanding:
             is_every=is_every,
             built=built,
             title=f"{kind} at {commit[:SHORT_HASH]}",
+            on_fold=self.publish_fold if is_published else None,
         )
-        is_published = (self.is_publishing or is_stacked) and self.stack is not None and not focus and not is_alone
         if is_published and self.stack is not None:
             self.is_publishing = False
             self.stack.publish(self.branch, self.base, commit, False)
@@ -1991,6 +1996,24 @@ class BatchLanding:
         numbers = tuple(link.queued.number for link in chain)
         self.runs.append(Run(candidate, numbers, tuple(link.queued.request.subject for link in chain), verdict))
         return verdict
+
+    def publish_fold(self, commit: str) -> None:
+        """Write the commit of the fold of the built files into the entry of the batch, during the run (THE STACK).
+
+        A batch that starts after this write stacks on the commit that the batch lands, if no later fold changes it.
+        An entry that cannot be written gives a line, and the entry keeps its last commit.
+        """
+        if self.stack is None:
+            return
+        try:
+            self.stack.publish(self.branch, self.base, commit, False)
+        except OSError as problem:
+            check_report.write_line(
+                f"loop land: the entry of the stack cannot hold the commit {commit[:SHORT_HASH]}: {problem}",
+                is_error=True,
+            )
+            return
+        check_report.write_line(f"loop land: the entry of the batch holds the commit {commit[:SHORT_HASH]} of the fold")
 
     def base_gate_run(self, changed: Sequence[str], focus: Sequence[gate.Focus]) -> gate.Verdict:
         """Run the gate on the commit of the batch with the changed paths of the batch, and keep the run (THE RUN OF THE BASE).

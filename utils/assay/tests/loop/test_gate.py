@@ -1101,13 +1101,18 @@ def built_cases(expect: testing.Expect) -> None:
         root = work / "repo"
         head = planted_repository(root, {INVENTORY: STALE_INVENTORY, DOOR_PATH: COUNTED_DOORS})
         commit = commit_change(root, "notes.txt", "a change with a merged inventory\n", "Add a fixture\n\nThe body.")
-        candidate = gate.Candidate(head, commit, (INVENTORY, "notes.txt"), built=(INVENTORY,))
+        folds: list[str] = []
+        candidate = gate.Candidate(head, commit, (INVENTORY, "notes.txt"), built=(INVENTORY,), on_fold=folds.append)
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
         planted = planted_gate(work, root, tree, "clean")
         build = tree / "build"
         (build / "inventory.txt").write_text(BUILT_INVENTORY, encoding="utf-8")
         verdict, printed = testing.captured(lambda: planted.check(candidate, False))
+        expect(
+            f"the gate gives the commit of the fold of the built files to the candidate before the tests: {folds}",
+            folds == [verdict.final],
+        )
         calls = calls_of(build)
         builds = built_targets(build)
         holds = (

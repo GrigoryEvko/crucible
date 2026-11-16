@@ -2116,6 +2116,30 @@ def stack_cases(expect: testing.Expect) -> None:
             and git.parent(root, "HEAD") == tip,
         )
         root, queue, tip, branch = fresh()
+        seen = []
+        fold_commits: list[str] = []
+        during: list[land.StackEntry] = []
+
+        def folds_built(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Fold the built files during the run, as the gate does before the tests, and accept the folded commit."""
+            seen.append((candidate, is_retry))
+            fold_commits.append(side_commit(root, tip, "built.txt", "built\n"))
+            if candidate.on_fold is not None:
+                candidate.on_fold(fold_commits[0])
+            during.extend(land.Stack(queue, 0).entries(branch))
+            return gate.Verdict(("debug",), (), 1.0, (), fold_commits[0])
+
+        decisions, printed = right_batch(root, queue, 3, folds_built, no_pause)
+        fold_commit = fold_commits[0] if fold_commits else ""
+        expect(
+            "when the gate folds the built files during the run, the batch writes the folded commit into its entry, "
+            "so a batch that starts then stacks on the commit that lands",
+            decisions[3].status == 0
+            and during == [land.StackEntry(3, tip, fold_commit, False)]
+            and git.head(root) == fold_commit
+            and f"the entry of the batch holds the commit {fold_commit[: land.SHORT_HASH]} of the fold" in printed,
+        )
+        root, queue, tip, branch = fresh()
         first = side_commit(root, tip, "a.txt", "a\n")
         stuck = OtherEntry(queue, branch, 1, tip, first)
         seen = []

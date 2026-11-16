@@ -567,7 +567,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
 from assay.core import git, jobserver, paths, proc
@@ -808,7 +808,9 @@ class Candidate:
     file of BUILT_FILES that THE MERGE of assay.loop.land leaves to the gate.  The gate adds each file that the change
     can change, and it writes each one before the tests of each configuration (THE BUILT FILES).  `title` names the
     run in the first line of the check, such as "the run of the base at COMMIT".  The landing gives it, because only
-    the landing knows the kind of the run.  With no title, the line names the commit.
+    the landing knows the kind of the run.  With no title, the line names the commit.  `on_fold` gets the new commit
+    when the gate folds the built files into the commit, before the tests of each configuration (THE BUILT FILES).
+    The landing then writes that commit into its entry of the stack (THE STACK of assay.loop.land).
     """
 
     head: str
@@ -818,6 +820,7 @@ class Candidate:
     is_every: bool = False
     built: tuple[str, ...] = ()
     title: str = ""
+    on_fold: Callable[[str], None] | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2058,6 +2061,8 @@ class Step:
             f"loop land: the gate wrote {' '.join(written)} from the build of {ALWAYS}, folded into the commit "
             f"{commit[:9]}: {times()}"
         )
+        if self.candidate.on_fold is not None:
+            self.candidate.on_fold(commit)
         return written
 
     def checked(
