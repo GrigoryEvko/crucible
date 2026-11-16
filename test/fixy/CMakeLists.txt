@@ -4058,6 +4058,11 @@ fixy_test(test_channel_identity)
 # The SPSC channel of Box values moves each object one time and ends each
 # object that its ring holds at its end.  The tsan preset runs its threads.
 fixy_test(test_spsc_box_channel)
+# The end of the channel ends each object that its ring holds, so the channel
+# holds no linear payload.
+fixy_neg_compile_test(neg_spsc_box_channel_of_linear_payload
+  "template constraint failure for .template<class T, long unsigned int Capacity, class Root>  requires  DroppableBoxPayload<T> using fixy::concurrent::spsc_box_channel_t"
+  "required for the satisfaction of .DroppableBoxPayload<T>. \\[with T = foundation::core::Hole<8, 8>\\]")
 # The end of the stream: the close and the open of the SPSC and the MPSC
 # channel, many threaded rounds, and pipelines with no sentinel.
 fixy_test(test_channel_close)

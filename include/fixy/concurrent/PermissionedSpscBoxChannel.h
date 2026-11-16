@@ -24,7 +24,9 @@
 //     time.  The end of the channel drains the ring and claims each word
 //     that it still holds, and the Box of each claim ends its object.  The
 //     drain takes the claim of each role, so a live handle ends the process
-//     there.
+//     there.  The end of a linear object drops it, so the channel takes only
+//     a payload that is not linear (DroppableBoxPayload of
+//     foundation/core/Ref.h).
 //
 // THE END OF THE STREAM
 //     The end of the producer handle ends the producer handle of the words,
@@ -58,7 +60,7 @@ struct spsc_box_consumer;
 
 namespace fixy::concurrent {
 
-template <::foundation::core::BoxPayload T, std::size_t Capacity, typename UserTag,
+template <::foundation::core::DroppableBoxPayload T, std::size_t Capacity, typename UserTag,
           ::foundation::brand::IsFreshBrand Brand>
 class PermissionedSpscBoxChannel
     : public ::foundation::Pinned<PermissionedSpscBoxChannel<T, Capacity, UserTag, Brand>> {
@@ -226,7 +228,7 @@ private:
 };
 
 // The Box channel of a whole root of type Root, as spsc_channel_t.
-template <::foundation::core::BoxPayload T, std::size_t Capacity, typename Root>
+template <::foundation::core::DroppableBoxPayload T, std::size_t Capacity, typename Root>
 using spsc_box_channel_t = PermissionedSpscBoxChannel<T, Capacity, typename detail::spsc_root_parts<Root>::user_tag,
                                                       typename detail::spsc_root_parts<Root>::brand>;
 

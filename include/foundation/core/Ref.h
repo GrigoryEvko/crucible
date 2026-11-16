@@ -492,8 +492,11 @@ template <class T>
     return std::meta::is_complete_type(^^T) && ::foundation::linear::is_linear_type(^^T);
 }
 
-// The object of a Box that the mint of a Hole can end: a complete payload
-// that is not linear, because the end of a linear object drops it.
+// The object of a Box that a path other than a consume can end: a complete
+// payload that is not linear, because the end of a linear object drops it.
+// The mint of a Hole ends the object.  A word of a Box is not linear, and the
+// authority of a word claims each word that it still holds at its own end,
+// so the Box of that claim ends the object (THE WORD OF A BOX).
 template <class T>
 concept DroppableBoxPayload = CompleteBoxPayload<T> && !is_linear_box_payload<T>();
 
@@ -608,6 +611,8 @@ class Box;
 // words that it made.  The authority gives each word to claim_box at most one
 // time.  At its own end it claims each word that it still holds, so the Box
 // of the claim ends the object.  A word that no claim takes leaks its object.
+// No path consumes the object of such a word, so only a Box of a payload that
+// is not linear gives a word (DroppableBoxPayload).
 //
 // The empty word holds no object.  A cell of a ring holds it before its
 // first write, and a claim of it ends the process through fatal().
@@ -723,8 +728,10 @@ public:
 
     // Gives the object to a word of the authority of the key, and the Box
     // then holds no object (THE WORD OF A BOX).  A Box that holds no object
-    // ends the process through fatal().
+    // ends the process through fatal().  A word is not linear, so a Box of a
+    // linear payload gives no word.
     template <class Authority>
+        requires DroppableBoxPayload<T>
     [[nodiscard]] BoxWord<T, Authority> release_to_word(box_word_key<Authority> const& /*key*/) && noexcept {
         T* const object = held_();
         this->state_.object = nullptr;

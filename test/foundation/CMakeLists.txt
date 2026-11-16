@@ -2667,6 +2667,10 @@ foundation_neg_compile_test(neg_core_box_word_key_outside_authority
 foundation_neg_compile_test(neg_core_box_word_claim_by_another_authority
   "no matching function for call to .claim_box\\(foundation::core::BoxWord<int, Channel>&, foundation::core::box_word_key<Thief>\\)."
   "deduced conflicting types for parameter .Authority. \\(.Channel. and .Thief.\\)")
+# A word is not linear, so a Box of a linear payload gives no word.
+foundation_neg_compile_test(neg_core_box_word_of_linear_payload
+  "no matching function for call to .foundation::core::Box<foundation::core::Hole<8, 8> >::release_to_word\\(foundation::core::box_word_key<Channel>\\)."
+  "required for the satisfaction of .DroppableBoxPayload<T>. \\[with T = foundation::core::Hole<8, 8>\\]")
 foundation_neg_compile_test(neg_core_box_borrow_of_temporary
   "use of deleted function .void foundation::core::Box<T>::view\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary Box dangles at the end of the full expression")
