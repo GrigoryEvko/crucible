@@ -1,58 +1,12 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/BackgroundThread.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
-#include "test_assert.h"
-#include <cerrno>
-#include <csignal>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <string_view>
-
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace {
-
-// The report of one child process: whether it ended on SIGABRT, and its
-// standard error.
-struct ChildResult {
-    bool was_aborted = false;
-    char report[4096]{};
-};
-
-// Runs attack in a child process, with the standard error of the child on a
-// pipe.  The child ends with exit status 0 when the attack returns.
-ChildResult run_in_child(void (*attack)()) {
-    ChildResult result{};
-    int pipe_ends[2] = {-1, -1};
-    if (::pipe(pipe_ends) != 0) std::abort();
-    std::fflush(stderr);
-    const pid_t pid = ::fork();
-    if (pid < 0) std::abort();
-    if (pid == 0) {
-        ::close(pipe_ends[0]);
-        if (::dup2(pipe_ends[1], STDERR_FILENO) < 0) std::_Exit(3);
-        attack();
-        std::_Exit(0);
-    }
-    ::close(pipe_ends[1]);
-    std::size_t used = 0;
-    while (used + 1 < sizeof(result.report)) {
-        const ssize_t count = ::read(pipe_ends[0], result.report + used, sizeof(result.report) - 1 - used);
-        if (count > 0) {
-            used += static_cast<std::size_t>(count);
-        } else if (count == 0 || errno != EINTR) {
-            break;
-        }
-    }
-    ::close(pipe_ends[0]);
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) std::abort();
-    result.was_aborted = WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
-    return result;
-}
 
 // One internal slot with the given lifetime, and one internal slot with a
 // lifetime that the planner accepts.
@@ -90,36 +44,22 @@ void plan_death_none() { plan_two_slots(5, UINT32_MAX); }
 void plan_birth_after_death() { plan_two_slots(9, 1); }
 
 // The planner rejects each slot lifetime that its sweep cannot index, and it
-// stops the process with a report that names the broken rule.
-void test_refuses_slot_lifetimes_outside_the_sweep() {
-    struct Attack {
-        const char* name;
-        void (*run)();
-        std::string_view refusal;
-    };
-    const Attack attacks[] = {
-        {"a death_op that wraps the sizes", &plan_wrapping_death, "MAX_DEATH_OP"},
-        {"the none() value as a death_op", &plan_death_none, "MAX_DEATH_OP"},
-        {"a birth_op after the death_op", &plan_birth_after_death, "birth_op.raw() <= slot.death_op.raw()"},
-    };
-    for (const Attack& attack : attacks) {
-        const ChildResult result = run_in_child(attack.run);
-        const bool names_the_rule = std::string_view{result.report}.find(attack.refusal) != std::string_view::npos;
-        if (!result.was_aborted || !names_the_rule) {
-            std::fprintf(stderr, "test_memory_plan: %s: aborted=%d, report:\n%s\n", attack.name,
-                         static_cast<int>(result.was_aborted), result.report);
-        }
-        assert(result.was_aborted);
-        assert(names_the_rule);
-    }
-    crucible::test::pass("  test_refuses_slot_lifetimes_outside_the_sweep: PASSED\n");
+// stops the process with a report that names the broken rule.  Each attack
+// runs in a child process through expect_dies of the Check family.
+void test_refuses_slot_lifetimes_outside_the_sweep(::fixy::TestRunnerCtx const& test) {
+    constexpr ::fixy::TextView kMaxDeath{"MAX_DEATH_OP"};
+    ::fixy::check::expect_dies(test, plan_wrapping_death, kMaxDeath);
+    ::fixy::check::expect_dies(test, plan_death_none, kMaxDeath);
+    ::fixy::check::expect_dies(test, plan_birth_after_death, ::fixy::TextView{"birth_op.raw() <= slot.death_op.raw()"});
+    ::fixy::check::pass(test, "  test_refuses_slot_lifetimes_outside_the_sweep: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    test_refuses_slot_lifetimes_outside_the_sweep();
-    auto test = ::foundation::effects::testing::test();
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_refuses_slot_lifetimes_outside_the_sweep(test);
+    auto source = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // The intervals are chosen so slot 2 can reuse slot 1's space: slot 1 dies at
@@ -184,19 +124,19 @@ int main() {
 
     crucible::MemoryPlan plan_storage{};
     ::fixy::BumpArena sweep_arena{size_t{1} << 16};
-    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(test.alloc, plan_storage, sweep_arena, slots.view());
+    const crucible::MemoryPlan& plan = *bt.compute_memory_plan(source.alloc, plan_storage, sweep_arena, slots.view());
     // The planner writes the plan into the storage of the caller, and the
     // result reaches that storage.
-    assert(::fixy::same_object(::fixy::to(plan), ::fixy::to(plan_storage)));
-    assert(plan.num_slots() == N);
-    assert(plan.num_external == 1);
-    assert(plan.pool_bytes > 0);
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::same_object(::fixy::to(plan), ::fixy::to(plan_storage)));
+    CRUCIBLE_TEST_ASSERT(test, plan.num_slots() == N);
+    CRUCIBLE_TEST_ASSERT(test, plan.num_external == 1);
+    CRUCIBLE_TEST_ASSERT(test, plan.pool_bytes > 0);
 
-    assert(slots.at(::foundation::core::index<2>()).offset_bytes
-           <= slots.at(::foundation::core::index<1>()).offset_bytes + 2048);
+    CRUCIBLE_TEST_ASSERT(test, slots.at(::foundation::core::index<2>()).offset_bytes
+                                   <= slots.at(::foundation::core::index<1>()).offset_bytes + 2048);
 
     uint64_t total_internal = 1024 + 2048 + 1024;
-    assert(plan.pool_bytes < total_internal);
+    CRUCIBLE_TEST_ASSERT(test, plan.pool_bytes < total_internal);
 
     // At every op boundary the simultaneously-live slots must hold pairwise
     // disjoint byte intervals.  The loop runs to 7 because that is the largest
@@ -205,10 +145,10 @@ int main() {
     using crucible::live_intervals_disjoint_at;
     for (uint32_t t = 0; t <= 7; ++t) {
         bool disjoint = live_intervals_disjoint_at<4>(slots.view(), OpIndex{t});
-        assert(disjoint);
+        CRUCIBLE_TEST_ASSERT(test, disjoint);
     }
 
-    crucible::test::pass("test_memory_plan: all tests passed\n");
+    ::fixy::check::pass(test, "test_memory_plan: all tests passed\n");
     ::fixy::report(::fixy::Sink::Out, "  pool_bytes: {}\n", static_cast<unsigned long>(plan.pool_bytes));
     ::fixy::report(::fixy::Sink::Out, "  slot offsets: [{}, {}, {}, {}]\n",
                    static_cast<unsigned long>(slots.at(::foundation::core::index<0>()).offset_bytes),

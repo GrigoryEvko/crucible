@@ -15,11 +15,11 @@
 // one runs, and nowhere when a job posts a job, which ends the process.
 
 #include <crucible/Vigil.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
-
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #include <bit>
 #include <chrono>
@@ -182,7 +182,9 @@ void job_runs_on_the_stage_while_it_runs() {
 
 // A job that posts a second job to the same background thread would wait
 // on itself, because the thread that runs it holds the stage.  The contract
-// ends the process instead of letting it hang.
+// ends the process instead of letting it hang.  The refused call runs in a
+// child through expect_dies of the Check family, before the test starts a
+// thread.
 void nested_job_ends_the_process() {
     crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
     background.run_on_publish_stage([&background](crucible::BackgroundThread::PublishStage const&) noexcept {
@@ -190,29 +192,16 @@ void nested_job_ends_the_process() {
     });
 }
 
-[[nodiscard]] bool ends_the_process(void (*attack)()) {
-    std::fflush(stderr);
-    // A refused call ends the process, so it runs in a
-    // child that the parent observes.
-    const pid_t pid = ::fork();
-    if (pid < 0) fail("fork failed");
-    if (pid == 0) {
-        attack();
-        std::_Exit(0);
-    }
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) fail("waitpid failed");
-    return WIFSIGNALED(status) != 0;
-}
-
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     job_runs_on_the_caller_without_a_stage();
-    if (!ends_the_process(&nested_job_ends_the_process)) fail("a nested job did not end the process");
+    ::fixy::check::expect_dies(test, nested_job_ends_the_process,
+                               ::fixy::TextView{"foundation: contract violation: stage_held_by_this_thread_"});
     rollback_on_a_fresh_vigil();
     rollback_while_regions_are_in_flight();
     job_runs_on_the_stage_while_it_runs();
-    crucible::test::pass("test_transaction_owner: passed\n");
+    ::fixy::check::pass(test, "test_transaction_owner: passed\n");
     return 0;
 }

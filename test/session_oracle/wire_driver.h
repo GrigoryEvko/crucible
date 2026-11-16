@@ -11,22 +11,27 @@
 // Offer reads one word.  An endpoint stops at End, after fuel actions, or
 // when its peer stopped and no word is left for it.
 //
-// One run is one child process, so an abort in a handle is an outcome and
-// not the end of the test:
+// One run is one child process of the child door of fixy/os/Process.h, so
+// an abort in a handle is an outcome and not the end of the test:
 //
 //   ok       both endpoints stopped
 //   abort    a handle aborted: a word named no branch or no label
 //   desync   a Recv of a value read a word that is no value
 //   stuck    an endpoint waited two seconds for a word that never came
 //
-// The handles use check::Off, so an endpoint may stop before End.
+// The handles use check::Off, so an endpoint may stop before End.  The test
+// process starts no thread, so the child of each run may start the two
+// threads of its endpoints.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Args.h>
+#include <fixy/os/Process.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/os/ChildProcess.h>
 
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include <chrono>
@@ -36,7 +41,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <deque>
 #include <initializer_list>
 #include <mutex>
@@ -258,29 +262,28 @@ void walk_from_start(Endpoint& self) {
 // row adds only the start of each endpoint.
 [[nodiscard]] inline std::string_view run_endpoints(EndpointStart left_start, EndpointStart right_start,
                                                     unsigned seed) {
-    std::fflush(nullptr);
-    const pid_t child = ::fork();
-    if (child < 0) ::fixy::fatal("session_oracle wire: the fork of the child process failed");
-    if (child == 0) {
-        // The watchdog ends a child that the two-second wait did not end.
-        // The child can get SIG_IGN for SIGALRM from its parent, so it sets
-        // the action that the watchdog needs.
-        static_cast<void>(std::signal(SIGALRM, SIG_DFL));
-        ::alarm(10);
-        Queue a_to_b;
-        Queue b_to_a;
-        Endpoint a{&a_to_b, &b_to_a, seed};
-        Endpoint b{&b_to_a, &a_to_b, seed};
-        std::thread left{[&] { left_start(a); }};
-        std::thread right{[&] { right_start(b); }};
-        left.join();
-        right.join();
-        std::_Exit(static_cast<int>(exit_code::ok));
-    }
-    int status = 0;
-    while (::waitpid(child, &status, 0) < 0) {}
-    if (WIFSIGNALED(status)) return WTERMSIG(status) == SIGALRM ? "stuck" : "abort";
-    switch (WEXITSTATUS(status)) {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    // A body that returns ends the child with the exit code of ok.
+    ::fixy::process::Child child = ::fixy::process::spawn_child(test, [left_start, right_start, seed] noexcept {
+                                       // The watchdog ends a child that the two-second wait did not end.
+                                       // The child can get SIG_IGN for SIGALRM from its parent, so it sets
+                                       // the action that the watchdog needs.
+                                       static_cast<void>(std::signal(SIGALRM, SIG_DFL));
+                                       ::alarm(10);
+                                       Queue a_to_b;
+                                       Queue b_to_a;
+                                       Endpoint a{&a_to_b, &b_to_a, seed};
+                                       Endpoint b{&b_to_a, &a_to_b, seed};
+                                       std::thread left{[&] { left_start(a); }};
+                                       std::thread right{[&] { right_start(b); }};
+                                       left.join();
+                                       right.join();
+                                   }).expect("session_oracle wire: the test starts the child process of a run");
+    ::fixy::process::ChildReport const report =
+        ::fixy::process::wait(std::move(child)).expect("session_oracle wire: the test waits for the child of a run");
+    ::foundation::os::ChildEnd const end = report.end();
+    if (end.kind == ::foundation::os::ChildEndKind::signaled) return end.number == SIGALRM ? "stuck" : "abort";
+    switch (end.number) {
         case static_cast<int>(exit_code::ok):
             return "ok";
         case static_cast<int>(exit_code::desync):
@@ -320,11 +323,14 @@ struct Row {
     return true;
 }
 
-// Run the rows of each shard of a wire test, in order.  With --measure,
-// print the outcome of each row.  Otherwise compare each outcome with its
-// pinned outcome, print each difference, and return 1 when one differs.
-inline int check_all(std::initializer_list<std::span<const Row>> shards, int argc, char** argv) {
-    const bool should_measure = argc > 1 && std::strcmp(argv[1], "--measure") == 0;
+// Run the rows of each shard of a wire test, in order.  With --measure as
+// the first argument, print the outcome of each row.  Otherwise compare each
+// outcome with its pinned outcome, print each difference, and return 1 when
+// one differs.
+inline int check_all(std::initializer_list<std::span<const Row>> shards, ::fixy::os::Args const arguments) {
+    const bool should_measure = arguments.get(1).match(
+        [](::fixy::CText const argument) noexcept { return argument.view() == ::fixy::TextView{"--measure"}; },
+        [] noexcept { return false; });
     int failed = 0;
     for (const std::span<const Row> rows : shards) {
         for (const Row& row : rows) {

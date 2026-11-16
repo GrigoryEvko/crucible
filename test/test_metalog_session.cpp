@@ -1,7 +1,3 @@
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
 #include <array>
 #include <atomic>
 #include <cstdio>
@@ -17,7 +13,9 @@
 #include <crucible/MetaLogSession.h>
 #include <crucible/PermissionedMetaLog.h>
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <foundation/Linear.h>
@@ -414,54 +412,29 @@ void copy_of_a_released_record() {
     (void)consumer.copy_at(::crucible::MetaIndex{0});
 }
 
-struct Attack {
-    const char* name;
-    void (*run)();
-};
-
-constexpr Attack kAttacks[] = {
-    {"moved-from producer", &log_producer},
-    {"moved-from consumer", &log_consumer},
-    {"second live producer", &second_live_producer},
-    {"second live consumer", &second_live_consumer},
-    {"copy of a released record", &copy_of_a_released_record},
-};
-
-[[nodiscard]] bool ends_the_process(void (*attack)()) {
-    std::fflush(stderr);
-    const pid_t pid = ::fork();
-    if (pid < 0) {
-        std::fprintf(stderr, "fork failed\n");
-        std::_Exit(2);
-    }
-    if (pid == 0) {
-        attack();
-        std::_Exit(0);
-    }
-    int status = 0;
-    if (::waitpid(pid, &status, 0) != pid) {
-        std::fprintf(stderr, "waitpid failed\n");
-        std::_Exit(2);
-    }
-    return WIFSIGNALED(status) != 0;
-}
-
-void test_moved_from_handles_end_the_process() {
-    std::fprintf(stderr, "\n  [expected] each attack prints the invariant report of a child process\n");
-    for (const Attack& attack : kAttacks) {
-        if (!ends_the_process(attack.run)) {
-            std::fprintf(stderr, "  a %s still acted on its log\n", attack.name);
-            ++total_failed;
-        }
-    }
+// Each attack runs in a child through expect_dies of the Check family, and
+// the child must end by SIGABRT with the report of the refused use.
+void test_moved_from_handles_end_the_process(::fixy::TestRunnerCtx const& test) {
+    constexpr ::fixy::TextView kNoChannel{"foundation: fatal invariant failed: channel_ != nullptr"};
+    ::fixy::check::expect_dies(test, log_producer, kNoChannel);
+    ::fixy::check::expect_dies(test, log_consumer, kNoChannel);
+    ::fixy::check::expect_dies(test, second_live_producer,
+                               ::fixy::TextView{"two live producer handles of one MetaLog"});
+    ::fixy::check::expect_dies(test, second_live_consumer,
+                               ::fixy::TextView{"two live consumer handles of one MetaLog"});
+    ::fixy::check::expect_dies(
+        test, copy_of_a_released_record,
+        ::fixy::TextView{"foundation: fatal invariant failed: index.raw() >= ch_->log_.tail.peek_relaxed()"});
+    ::fixy::check::pass(test, "  moved_from_handles_end_the_process ... OK\n");
 }
 
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     std::fprintf(stderr, "[test_metalog_session]\n");
     // The attacks fork, so they run before a test starts a thread.
-    run_test("moved_from_handles_end_the_process", test_moved_from_handles_end_the_process);
+    test_moved_from_handles_end_the_process(test);
     run_test("permissioned_bulk_drain", test_permissioned_bulk_drain);
     run_test("single_append_drain", test_single_append_drain);
     run_test("partial_drain", test_partial_drain);
@@ -469,6 +442,6 @@ int main() {
     run_test("empty_drain", test_empty_drain);
     run_test("typed_session_round_trip", test_typed_session_round_trip);
     run_test("session_gives_the_handle_back", test_session_gives_the_handle_back);
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
+    ::fixy::check::pass(test, "\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }

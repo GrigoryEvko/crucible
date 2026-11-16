@@ -291,5 +291,5 @@ int main(int argc, char** argv) {
             ::session_oracle::fixy_wire::shard_rows_35(),
             ::session_oracle::fixy_wire::shard_rows_36(),
         },
-        argc, argv);
+        ::fixy::os::args(argc, argv));
 }

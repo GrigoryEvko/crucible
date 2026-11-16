@@ -1010,7 +1010,7 @@ def wire_shards(blocks: list[list[WireEntry]], budget: int | None = None) -> lis
         if index == 0:
             calls = "".join(f"            ::session_oracle::fixy_wire::shard_rows_{k}(),\n" for k in range(len(ranges)))
             out.append("\nint main(int argc, char** argv) {\n    return ::session_oracle::wire::check_all(\n"
-                       f"        {{\n{calls}        }},\n        argc, argv);\n}}\n")
+                       f"        {{\n{calls}        }},\n        ::fixy::os::args(argc, argv));\n}}\n")
         shards.append("".join(out))
     return shards
 
