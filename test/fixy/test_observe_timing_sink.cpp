@@ -1,0 +1,96 @@
+// The observation sink (fixy/os/TimingSink.h): a store of counts of the
+// counter of the core.  A body writes it with mark and span, with no context,
+// and only a context whose row holds Nondet reads it.
+//
+// A kernel, whose row is empty and holds no Nondet, marks a slot and times a
+// span through the sink.  The test context then reads the two slots with its
+// tag.  A mark from a thread that is not the owner ends the process.
+
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
+#include <fixy/os/TimingSink.h>
+#include <foundation/core/FpMode.h>
+#include <foundation/effects/Capability.h>
+#include <foundation/os/FpControl.h>
+
+#include <cstdint>
+#include <type_traits>
+
+namespace {
+
+namespace core = ::foundation::core;
+namespace eff = ::foundation::effects;
+namespace os = ::foundation::os;
+namespace observe = ::fixy::observe;
+
+using ::fixy::TestRunnerCtx;
+using ::fixy::check::expect_dies;
+
+struct KernelBrand {};
+
+using Sink = observe::TimingSink<2>;
+using KernelCall = ::fixy::KernelCall<KernelBrand, core::kFpModeIeee>;
+
+constexpr Sink::Slot kMarkSlot = ::fixy::index<0>();
+constexpr Sink::Slot kSpanSlot = ::fixy::index<1>();
+
+// The write side takes no context and gives back no count.  The read takes
+// the bare tag of Nondet.
+static_assert(std::is_void_v<decltype(std::declval<Sink&>().mark(kMarkSlot))>);
+static_assert(!std::is_invocable_v<decltype(&Sink::read), Sink const&, Sink::Slot>);
+static_assert(std::is_invocable_v<decltype(&Sink::read), Sink const&, eff::cap::Nondet, Sink::Slot>);
+static_assert(!std::is_copy_constructible_v<Sink> && !std::is_move_constructible_v<Sink>);
+static_assert(!std::is_copy_constructible_v<Sink::Span> && !std::is_move_constructible_v<Sink::Span>);
+
+// A kernel times itself.  It marks one slot and holds a span over a short
+// loop of the other.  It reads no count back.
+void timed_kernel(KernelCall const&, Sink& sink, ::fixy::View<std::uint64_t, 4> out) noexcept {
+    sink.mark(kMarkSlot);
+    Sink::Span const span = sink.span(kSpanSlot);
+    std::uint64_t value = 1;
+    for (std::uint64_t& slot : out) {
+        value = value * 3 + 1;
+        slot = value;
+    }
+}
+
+void test_a_kernel_writes_and_a_test_reads(TestRunnerCtx const& test) {
+    Sink sink = observe::mint_timing_sink<2>();
+    eff::cap::Nondet const nondet = eff::extract_bare_from_ctx<eff::Effect::Nondet>(test);
+    CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kMarkSlot) == 0);
+    CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kSpanSlot) == 0);
+    os::FpScope<core::kFpModeIeee> const scope = os::mint_fp_scope<core::kFpModeIeee>();
+    ::fixy::Kernel<KernelBrand, core::kFpModeIeee> const ctx = ::fixy::mint_kernel_context<KernelBrand>(scope);
+    ::fixy::FixedArray<std::uint64_t, 4> out{};
+    ::fixy::run_kernel(ctx, timed_kernel, sink, out.view());
+    CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kMarkSlot) != 0);
+    CRUCIBLE_TEST_ASSERT(test, out.at(::fixy::index<3>()) == 121u);
+    std::uint64_t const first_span = sink.read(nondet, kSpanSlot);
+    ::fixy::run_kernel(ctx, timed_kernel, sink, out.view());
+    CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kSpanSlot) >= first_span);
+    ::fixy::check::pass(test, "a kernel marks and spans a sink, and a test context reads it with its tag\n");
+}
+
+// A mark from a thread that is not the owner of the sink ends the process.
+void a_mark_from_another_thread() {
+    Sink sink = observe::mint_timing_sink<2>();
+    ::fixy::BgLoadCtx const bg{eff::testing::bg()};
+    auto body = [&sink]() noexcept { sink.mark(kMarkSlot); };
+    static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body));
+}
+
+void test_only_the_owner_writes(TestRunnerCtx const& test) {
+    expect_dies(test, a_mark_from_another_thread, ::fixy::TextView{"fatal invariant failed: owner_ == "});
+    ::fixy::check::pass(test, "only the owner thread of a sink writes it\n");
+}
+
+}  // namespace
+
+int main() {
+    TestRunnerCtx const test{eff::testing::test()};
+    test_a_kernel_writes_and_a_test_reads(test);
+    test_only_the_owner_writes(test);
+    return 0;
+}

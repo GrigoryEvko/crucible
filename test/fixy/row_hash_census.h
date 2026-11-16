@@ -426,6 +426,7 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy::spin,
     ^^::fixy::time,
     ^^::fixy::topology,
+    ^^::fixy::observe,
 };
 
 // Namespaces that declare classes and hold no carrier.  Each holds the
@@ -1066,6 +1067,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^fe::is_cap_type, kMetafunction},
     {^^fe::cap_permitted_row, kMetafunction},
     {^^fe::cap_mint_key, kPasskey},
+    {^^::fixy::observe::TimingSink,
+     "a store of counts of the counter of the core: a body writes it with no context, so it carries no row, and a "
+     "read of it takes the tag of Nondet"},
     {^^fe::KernelCall,
      "the token of one call of a kernel: run_kernel makes it and the kernel takes it by reference, so it is never a "
      "value, and the context that it names holds the row"},

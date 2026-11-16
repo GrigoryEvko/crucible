@@ -5595,6 +5595,26 @@ fixy_neg_compile_test(neg_kernel_call_copy
   "use of deleted function .foundation::effects::KernelCall<Brand, Mode>::KernelCall\\(const foundation::effects::KernelCall<Brand, Mode>&\\)"
   "a token names one call of run_kernel, and a copy can live past the call")
 
+# The observation sink of fixy/os/TimingSink.h.  A body writes it with mark
+# and span, with no context, and only a context whose row holds Nondet reads
+# it.  test_observe_timing_sink runs a kernel that marks and spans a sink,
+# reads the slots under the test context, and dies when another thread
+# marks.  The fixtures refuse a read with no tag, a read in a kernel, a sink
+# of no slot and a copy of a span.
+fixy_test(test_observe_timing_sink)
+fixy_neg_compile_test(neg_timing_sink_read_without_nondet_tag
+  "no matching function for call to .fixy::observe::TimingSink<2>::read\\(foundation::core::StaticIndex<0>\\)."
+  "candidate expects 2 arguments, 1 provided")
+fixy_neg_compile_test(neg_timing_sink_read_in_a_kernel
+  "no matching function for call to .extract_bare_from_ctx<foundation::effects::Effect::Nondet>\\("
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, E>.")
+fixy_neg_compile_test(neg_timing_sink_zero_slots
+  "no matching function for call to .mint_timing_sink<0>\\(\\)."
+  "required for the satisfaction of .IsTimingSlotCount<Slots>. \\[with Slots = 0\\]")
+fixy_neg_compile_test(neg_timing_sink_span_copy
+  "use of deleted function .fixy::observe::TimingSink<Slots>::Span::Span\\(const fixy::observe::TimingSink<Slots>::Span&\\)"
+  "a span ends one time, in the scope of its start")
+
 # test_os_spin_hint reads the arms of a core from its feature words, and it
 # waits on a word with each arm of the core of the run.  A store of a second
 # thread ends each wait before its deadline, and a deadline ends a wait on a

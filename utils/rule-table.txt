@@ -574,6 +574,10 @@ witness <foundation/effects/Ctx.h> private | foundation::effects::ctx_cap::Kerne
 # The token of a kernel call comes only from run_kernel, after the check of
 # the context.
 witness <foundation/effects/Ctx.h> private | foundation::effects::KernelCall<forge::brand, foundation::core::kFpModeIeee> | foundation::effects::KernelCall<forge::brand, foundation::core::kFpModeIeee>{forge::lvalue<foundation::effects::KernelCtx<forge::brand, foundation::core::kFpModeIeee> const>()}
+# A sink of counts comes only from mint_timing_sink, on its owner thread, and
+# a span only from the span of a sink.
+witness <fixy/os/TimingSink.h> private | fixy::observe::TimingSink<2> | fixy::observe::TimingSink<2>{}
+witness <fixy/os/TimingSink.h> private | fixy::observe::TimingSink<2>::Span | fixy::observe::TimingSink<2>::Span{forge::lvalue<fixy::observe::TimingSink<2>>(), fixy::observe::TimingSink<2>::Slot{foundation::core::index<0>()}}
 # An FP scope comes only from mint_fp_scope, and a word of the FP control
 # register only from a read of the register or from a word and a mode.
 witness <foundation/os/FpControl.h> private | foundation::os::FpScope<foundation::core::kFpModeIeee> | foundation::os::FpScope<foundation::core::kFpModeIeee>{}
