@@ -151,13 +151,6 @@ concept TreeGrain = has_single_bit(Grain);
 
 namespace detail {
 
-// The output of a sum by THE VALUES OUTSIDE THE BOUND: the canonical NaN for
-// a NaN, and value for each other value.  One compare and one select.
-template <class T>
-[[nodiscard]] CRUCIBLE_INLINE constexpr T canonical_sum_(T value) noexcept {
-    return fp::is_nan(value) ? quiet_nan_of<T> : value;
-}
-
 // The add of a tree sum.  The left operand is the result of the lower
 // elements.
 struct TreeAdd {
@@ -196,22 +189,6 @@ template <class T, class Combine>
 }
 
 inline namespace CRUCIBLE_SIMD_TARGET {
-
-// The outputs of the lanes by THE VALUES OUTSIDE THE BOUND: the canonical NaN
-// in each lane that holds a NaN.  A lane holds a NaN when its bits with no
-// sign are above the bits of an infinity.  The test and the select work on
-// the bits as integers, so they need no compare of floats.  One compare and
-// one select for each vector.
-template <class T, int Lanes>
-[[nodiscard]] CRUCIBLE_INLINE simd::vec<T, Lanes> canonical_sums_(simd::vec<T, Lanes> sums) noexcept {
-    using Word = typename FloatBits<T>::Word;
-    using Words = simd::vec<Word, Lanes>;
-    Words const bits = simd::bit_cast<Words>(sums);
-    Words const magnitudes = bits & Words{static_cast<Word>(static_cast<Word>(~Word{0}) >> 1)};
-    Words const canonical =
-        simd::select<Word, Lanes>(magnitudes > Words{FloatBits<T>::infinity}, Words{FloatBits<T>::quiet_nan}, bits);
-    return simd::bit_cast<simd::vec<T, Lanes>>(canonical);
-}
 
 // The merge of two vectors of Lanes consecutive subtrees each: the sums of
 // the adjacent pairs of the 2 * Lanes subtrees, in order.
@@ -321,7 +298,7 @@ template <int Lanes, class T>
     requires TreeSumElement<T> && detail::TreeLanes<Lanes>
 [[nodiscard]] T sum_by_tree_in_lanes(View<T const> elements) noexcept {
     if (elements.size() == 0) return T{};
-    return detail::canonical_sum_(
+    return fp::canonicalize_nan(
         detail::sum_run_by_tree_<T, Lanes>(first_of_(detail::ViewDoor::key(), elements), elements.size()));
 }
 
@@ -429,12 +406,11 @@ template <class T, class Brand, std::size_t Extent>
     View<T const> const* const first_run = first_of_(detail::ViewDoor::key(), runs);
     std::size_t const whole = count - count % static_cast<std::size_t>(lanes);
     for (std::size_t offset = 0; offset < whole; offset += static_cast<std::size_t>(lanes)) {
-        simd::store(
-            detail::canonical_sums_<T, lanes>(detail::tree_runs_vector_<T, lanes>(first_run, runs.size(), offset)),
-            out + offset);
+        simd::store(simd::canonicalize_nans(detail::tree_runs_vector_<T, lanes>(first_run, runs.size(), offset)),
+                    out + offset);
     }
     for (std::size_t offset = whole; offset < count; ++offset) {
-        out[offset] = detail::canonical_sum_(detail::tree_runs_element_<T>(first_run, runs.size(), offset));
+        out[offset] = fp::canonicalize_nan(detail::tree_runs_element_<T>(first_run, runs.size(), offset));
     }
     return Unit{};
 }
@@ -487,7 +463,8 @@ template <class T>
     for (std::size_t segment = 0; segment < count; ++segment) {
         std::size_t const size = offset[segment + 1] - offset[segment];
         out[segment] =
-            size == 0 ? T{} : canonical_sum_(sum_run_by_tree_<T, simd::native_lanes<T>>(first + offset[segment], size));
+            size == 0 ? T{}
+                      : fp::canonicalize_nan(sum_run_by_tree_<T, simd::native_lanes<T>>(first + offset[segment], size));
     }
     return Unit{};
 }
@@ -584,7 +561,7 @@ void sum_grains_by_tree_(View<T const> elements, std::size_t first_grain, T* out
     for (std::size_t index = 0; index < partials; ++index) {
         std::size_t const start = (first_grain + index) * Grain;
         std::size_t const size = count - start < Grain ? count - start : Grain;
-        out[index] = canonical_sum_(sum_run_by_tree_<T, simd::native_lanes<T>>(first + start, size));
+        out[index] = fp::canonicalize_nan(sum_run_by_tree_<T, simd::native_lanes<T>>(first + start, size));
     }
 }
 

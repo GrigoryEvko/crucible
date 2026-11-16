@@ -315,9 +315,9 @@ void sum_scan_lanes_(T const* in, T* out, std::size_t count, T const* carry) noe
         T total{};
         V const prefix = scan_block_prefix_<T, Lanes, 0>(values, V{top == 0 ? base : folds[top - 1]}, total);
         if constexpr (Kind == ScanKind::Inclusive) {
-            simd::store(canonical_sums_<T, Lanes>(prefix + values), out + block * lanes);
+            simd::store(simd::canonicalize_nans(prefix + values), out + block * lanes);
         } else {
-            simd::store(canonical_sums_<T, Lanes>(prefix), out + block * lanes);
+            simd::store(simd::canonicalize_nans(prefix), out + block * lanes);
         }
         T sum = total;
         for (int merges = countr_one(block); merges > 0; --merges) {
@@ -338,7 +338,7 @@ void sum_scan_lanes_(T const* in, T* out, std::size_t count, T const* carry) noe
         // The tail holds fewer than Lanes outputs, and an inclusive output of
         // a run with no carry is a copy of its element.
         for (std::size_t position = done; position < count; ++position) {
-            out[position] = canonical_sum_(out[position]);
+            out[position] = fp::canonicalize_nan(out[position]);
         }
     }
     if constexpr (Kind == ScanKind::Exclusive) {
