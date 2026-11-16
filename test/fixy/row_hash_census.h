@@ -936,6 +936,11 @@ inline constexpr StatedZero kZeros[] = {
      "one value of a closed set of types: the result of a call, never a value in a kernel signature"},
     {^^::foundation::core::LengthMismatch,
      "the error of a copy between two Views of different counts: it holds nothing"},
+    {^^::foundation::core::TreeStep, "one combine of the plan of a tree or of a scan: the nodes of its two operands, "
+                                     "and it makes no claim about their values"},
+    {^^::foundation::core::Comparator, "one compare-exchange of a sorting network: two positions, and it makes no "
+                                       "claim about the elements"},
+    {^^::foundation::core::Ascending, "the order of a sort when the caller gives none: it holds nothing"},
     {^^::foundation::core::CacheLine, "a layout wrapper: it aligns its cell and makes no claim about the cell"},
     {^^::foundation::core::Tally, kDescriptor},
     {^^::foundation::core::View,
@@ -1296,6 +1301,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::ParallelismDecision, kPayload},
     {^^::fixy::concurrent::ParallelismRule,
      "the parallelism rule: it has static members only, no object of it exists, and it is never a value"},
+    {^^::fixy::concurrent::TreeSumParts, "a return bundle of a parallel tree sum and its region of slots, destructured "
+                                         "at the call site; each member folds on its own"},
+    {^^::fixy::concurrent::TreeReduceParts, "a return bundle of a parallel tree reduce and its region of slots, "
+                                            "destructured at the call site; each member folds on its own"},
     {^^::fixy::concurrent::ProcessStageCpuClaims,
      "the type of the one table of claimed CPUs of the process: an object of libfixy, and never a value in a "
      "signature"},
