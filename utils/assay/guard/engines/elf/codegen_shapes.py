@@ -892,8 +892,10 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "scalar_fp_fma",
-        "fp::fma is the fma of std::fma: one vfmadd with an FMA instruction, and a call of fma of libm for "
-        "-march=x86-64",
+        "fp::fma rounds one time, as std::fma does: one vfmadd with an FMA instruction.  For -march=x86-64 the family "
+        "calls its exact form in integers, and std::fma calls fma of libm, so the family side calls a different "
+        "function and imports no function of libm",
+        calls=("double foundation::core::detail::fma_by_integers_<double>",),
     ),
     Probe("scalar_fp_total_key", "fp::total_key is the shift, the or and the xor of the raw form"),
     Probe("scalar_exchange", "exchange of a word is the load and the store of std::exchange"),
