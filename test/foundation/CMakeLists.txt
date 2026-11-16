@@ -3618,10 +3618,13 @@ foundation_neg_compile_test(neg_simd_iota_of_a_scalar
 #
 # The positive checks of each header are in its check file under
 # test/layer/checks.  The scale test runs each check on the nets of about
-# 1,000 agents of probe E4.  Each fixture holds a net, a system or a rule
-# table that one check refuses.  The first regex names the refusal, and the
-# second names the agent, the node or the rule and the port.
+# 1,000 agents of probe E4.  The match test builds the net of each plan of
+# the reductions, the scans and the sort, and runs each implementation on the
+# agents of its net.  Each fixture holds a net, a system or a rule table that
+# one check refuses.  The first regex names the refusal, and the second names
+# the agent, the node or the rule and the port.
 foundation_test(test_algebra_net_scale)
+foundation_test(test_net_reductions_match)
 foundation_neg_compile_test(neg_net_port_without_wire
   "static assertion failed: net: port 'out' of agent 'drain' \\(node 1\\)"
   "has no wire\\.  Each port has exactly one wire\\.")
