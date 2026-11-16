@@ -41,10 +41,8 @@ static_assert(PointwiseOp<Add, std::uint16_t, Shorts, Shorts>);
 // Lanes of different widths do not fill one register each.
 static_assert(!LaneOpOf<Add, float, double, double>);
 // A lane op gives a register of the output element.
-static_assert(std::is_same_v<std::invoke_result_t<Add const&, ::foundation::simd::vec<float, pointwise_lanes<float>>,
-                                                  ::foundation::simd::vec<float, pointwise_lanes<float>>>,
-                             ::foundation::simd::vec<float, pointwise_lanes<float>>>);
-static_assert(pointwise_lanes<float> == 16 && pointwise_lanes<double> == 8);
+using NativeFloats = ::foundation::simd::vec<float, ::foundation::simd::native_lanes<float>>;
+static_assert(std::is_same_v<std::invoke_result_t<Add const&, NativeFloats, NativeFloats>, NativeFloats>);
 
 // The test of no overlap of an input with the output, the order of the axes
 // and the axis of the tile path.

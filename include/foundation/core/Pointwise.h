@@ -48,8 +48,11 @@
 //
 // THE LANES
 // An op that also takes a vec<E, W> of the Simd family for each input and
-// gives a vec<T, W> is a lane op (LaneOpOf).  The lane count W fills a
-// register of pointwise_register_bytes: 16 floats or 8 doubles.  Each element
+// gives a vec<T, W> is a lane op (LaneOpOf).  The lane count W fills the
+// widest register of the target, native_vector_bytes of foundation/Simd.h: 16
+// floats with AVX-512, 8 with AVX2, and 4 with SSE2 and NEON.  A wider vector
+// would be split into registers by GCC.  The op computes each element alone,
+// so W changes no bit of a result.  Each element
 // of a lane op has the width of the output, and it is a float, a double, or an
 // integer of at least the width of int.  A narrower integer computes in int
 // in a scalar step and in its own width in a lane, so it takes the scalar
@@ -91,9 +94,6 @@
 
 namespace foundation::core {
 
-// The register of the lane path, in bytes: one register of AVX-512.
-inline constexpr std::size_t pointwise_register_bytes = 64;
-
 // An input of the pointwise walk: a StridedView or a StridedViewMut of the
 // rank parameter Rank.
 template <class In, std::size_t Rank>
@@ -123,18 +123,17 @@ template <class E>
 concept LaneElement = std::same_as<E, float> || std::same_as<E, double>
                    || (std::integral<E> && !std::same_as<E, bool> && sizeof(E) >= sizeof(int) && sizeof(E) <= 8);
 
-// The lane count of the lane path for elements of the width of T.
-template <class T>
-inline constexpr int pointwise_lanes = static_cast<int>(pointwise_register_bytes / sizeof(T));
-
 // A lane op for the output element T and the input elements Es: each element
 // is a LaneElement of the width of T, and the op takes a vec<E, W> of each
-// input and gives a vec<T, W>, with no throw.
+// input and gives a vec<T, W>, with no throw.  W is native_lanes<T> of
+// foundation/Simd.h, the lanes of T in the widest register of the target.
 template <class Op, class T, class... Es>
-concept LaneOpOf = LaneElement<T> && (LaneElement<Es> && ...) && ((sizeof(Es) == sizeof(T)) && ...)
-                && std::is_nothrow_invocable_v<Op const&, ::foundation::simd::vec<Es, pointwise_lanes<T>>...>
-                && std::same_as<std::invoke_result_t<Op const&, ::foundation::simd::vec<Es, pointwise_lanes<T>>...>,
-                                ::foundation::simd::vec<T, pointwise_lanes<T>>>;
+concept LaneOpOf =
+    LaneElement<T> && (LaneElement<Es> && ...) && ((sizeof(Es) == sizeof(T)) && ...)
+    && std::is_nothrow_invocable_v<Op const&, ::foundation::simd::vec<Es, ::foundation::simd::native_lanes<T>>...>
+    && std::same_as<
+        std::invoke_result_t<Op const&, ::foundation::simd::vec<Es, ::foundation::simd::native_lanes<T>>...>,
+        ::foundation::simd::vec<T, ::foundation::simd::native_lanes<T>>>;
 
 namespace detail {
 
@@ -430,14 +429,11 @@ template <class Op, std::size_t Capacity, std::size_t... Is, class T, class... E
 // ── The lanes ───────────────────────────────────────────────────────────
 //
 // Each part from here to the end of this namespace calls the Simd family, or
-// calls a part that does, so its body depends on the target of the unit.
+// calls a part that does, so its body depends on the target of the unit.  The
+// parts are in the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET
+// NAMESPACE of foundation/Platform.h), so each target has its own symbols.
 
-// The even lanes of the two registers low and high, low first.
-template <class Raw, int... Lane>
-[[nodiscard]] CRUCIBLE_INLINE Raw even_lanes_(Raw low, Raw high,
-                                              ::foundation::simd::detail::LaneList<Lane...> /*lanes*/) noexcept {
-    return __builtin_shufflevector(low, high, (2 * Lane)...);
-}
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The signed integer of the width of the element E: the lane of a mask over
 // lanes of E.
@@ -489,9 +485,8 @@ struct LaneRow {
             return splat;
         } else if constexpr (Class == LaneClass::StepTwo) {
             E const* const at = row + 2 * position;
-            return V{even_lanes_(::foundation::simd::load<V>(at).raw(),
-                                 ::foundation::simd::load_prefix<V>(at + W, W - 1).raw(),
-                                 ::foundation::simd::detail::lane_list_t<W>{})};
+            return ::foundation::simd::even_lanes(::foundation::simd::load<V>(at),
+                                                  ::foundation::simd::load_prefix<V>(at + W, W - 1));
         } else {
             E const* const at = row + position * step;
             std::size_t const stride = step;
@@ -513,8 +508,7 @@ struct LaneRow {
             std::size_t const width = static_cast<std::size_t>(W);
             V const low = ::foundation::simd::load_prefix<V>(at, span < width ? span : width);
             V const high = span > width ? ::foundation::simd::load_prefix<V>(at + W, span - width) : V{};
-            return fill_dead_lanes_(V{even_lanes_(low.raw(), high.raw(), ::foundation::simd::detail::lane_list_t<W>{})},
-                                    live);
+            return fill_dead_lanes_(::foundation::simd::even_lanes(low, high), live);
         } else {
             E const* const at = row + position * step;
             std::size_t const stride = step;
@@ -723,9 +717,9 @@ run_tile_(Op const& op, std::index_sequence<Is...> /*inputs*/, T* out_row, std::
 // The tile path over the outer rows of outer, for tiles of the axes a and b
 // of the sizes size_a and size_b.  outer holds the axes other than a and b,
 // and a last axis of size one.  The tiles come in blocks of 8 x 8 tiles, so
-// the lines and the pages of the three views of a block of floats, about
-// 192 KB and 384 pages of 4 KB, stay in L2 and in its TLB while the block
-// runs.  The function is not inlined, so each instance is one hot function.
+// the lines and the pages of the views of a block stay in L2 and in its TLB
+// while the block runs.  With AVX-512, three views of floats hold about
+// 192 KB of a block, in 384 pages of 4 KB.  The function is not inlined, so each instance is one hot function.
 // O(count) calls of the op, and W * log2(W) shuffles for each tile of each
 // transposed input.
 template <int W, class Op, std::size_t Capacity, std::size_t... Is, class T, class... Es>
@@ -806,7 +800,7 @@ CRUCIBLE_INLINE void run_tiles_(Op const& op, std::index_sequence<Is...> sequenc
 // stride of one, else the loop of each view, and one instance for them.
 template <class Op, std::size_t Capacity, class T, class... Es>
 void run_lanes_(Op const& op, WalkPlan<1 + sizeof...(Es), Capacity> const& plan, T* out, Es const*... inputs) noexcept {
-    constexpr int lanes = pointwise_lanes<T>;
+    constexpr int lanes = ::foundation::simd::native_lanes<T>;
     constexpr std::size_t input_count = sizeof...(Es);
     using Sequence = std::index_sequence_for<Es...>;
     std::size_t const inner = plan.rank - 1;
@@ -844,7 +838,7 @@ struct LaneStep {
 
     template <class... Es>
     constexpr void operator()(T& target, Es const&... values) const noexcept {
-        constexpr int lanes = pointwise_lanes<T>;
+        constexpr int lanes = ::foundation::simd::native_lanes<T>;
         target = op(::foundation::simd::vec<Es, lanes>{values}...).raw()[0];
     }
 };
@@ -927,7 +921,11 @@ write_pointwise_(Op const& op, std::index_sequence<Is...> sequence, bool const (
     return Unit{};
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 }  // namespace detail
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // Writes op(input...) into the element of out at each index of the sizes, in
 // an order that the walk picks when no input shares an element with out:
@@ -943,5 +941,7 @@ template <class T, std::size_t Rank, class Brand, class Op, class... Inputs>
     return detail::write_pointwise_(op, std::index_sequence_for<Inputs...>{}, apart, detail::plain_view_of_(out),
                                     detail::plain_view_of_(inputs)...);
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace foundation::core
