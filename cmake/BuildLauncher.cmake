@@ -71,6 +71,10 @@ function(_crucible_write_build_kind)
   if(CRUCIBLE_PGO AND NOT CRUCIBLE_PGO STREQUAL "off")
     string(APPEND _kind "-pgo-${CRUCIBLE_PGO}")
   endif()
+  # The x86-64 level of the root CMakeLists.txt, such as -v3 for -march=x86-64-v3.
+  if(CRUCIBLE_X86_LEVEL)
+    string(APPEND _kind "-${CRUCIBLE_X86_LEVEL}")
+  endif()
   file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/build-kind.txt" CONTENT "@_kind@\n" @ONLY)
   # The name of the configuration: the build kind with the words of NAME_OPTIONS of
   # utils/assay/core/configuration.py, in that sequence.  The ledger rows of a measured rule read it.

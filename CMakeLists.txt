@@ -814,6 +814,38 @@ if(CRUCIBLE_UBSAN_STRICT AND CRUCIBLE_ANALYZER)
   message(FATAL_ERROR "CRUCIBLE_UBSAN_STRICT and CRUCIBLE_ANALYZER are separate presets")
 endif()
 
+# ── The x86-64 level of a build ────────────────────────────────────
+#
+# CRUCIBLE_X86_LEVEL names the x86-64 level that the flag
+# -march=x86-64-LEVEL of CMAKE_CXX_FLAGS gives, such as v3 for the preset
+# release-v3.  The build kind ends with that word (cmake/BuildLauncher.cmake).
+# Thus a build at a level gets a configuration of its own in the gate and in
+# the ledger rows.  An empty value names no level, and the flags give the
+# target: no -march (x86-64), or -march=native.  GCC uses the last -march
+# word, so that word must give the level, or the configure stops.
+set(CRUCIBLE_X86_LEVEL "" CACHE STRING
+  "The x86-64 level that -march=x86-64-LEVEL of CMAKE_CXX_FLAGS gives: empty, v2, v3 or v4")
+set_property(CACHE CRUCIBLE_X86_LEVEL PROPERTY STRINGS "" v2 v3 v4)
+if(NOT CRUCIBLE_X86_LEVEL STREQUAL "")
+  if(NOT CRUCIBLE_X86_LEVEL MATCHES "^v[234]$")
+    message(FATAL_ERROR "CRUCIBLE_X86_LEVEL is '${CRUCIBLE_X86_LEVEL}'. The values are empty, v2, v3 and v4.")
+  endif()
+  if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    message(FATAL_ERROR "CRUCIBLE_X86_LEVEL is '${CRUCIBLE_X86_LEVEL}', and the target processor is "
+                        "'${CMAKE_SYSTEM_PROCESSOR}'. Give a level only to an x86_64 build.")
+  endif()
+  string(REGEX MATCHALL "-march=[^ ]+" _crucible_march_words "${CMAKE_CXX_FLAGS}")
+  set(_crucible_last_march "")
+  if(_crucible_march_words)
+    list(GET _crucible_march_words -1 _crucible_last_march)
+  endif()
+  if(NOT _crucible_last_march STREQUAL "-march=x86-64-${CRUCIBLE_X86_LEVEL}")
+    message(FATAL_ERROR "CRUCIBLE_X86_LEVEL is '${CRUCIBLE_X86_LEVEL}', and the last -march word of CMAKE_CXX_FLAGS "
+                        "('${CMAKE_CXX_FLAGS}') is '${_crucible_last_march}'. Put -march=x86-64-${CRUCIBLE_X86_LEVEL} "
+                        "last in CMAKE_CXX_FLAGS, or give the level that the flags give.")
+  endif()
+endif()
+
 # ── Asm dump (gitignored, opt-in) ──────────────────────────────────
 #
 # When -DCRUCIBLE_DUMP_ASM=ON, post-build steps for every test +

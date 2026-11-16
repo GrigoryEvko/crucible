@@ -2,8 +2,9 @@
 
 THE BUILD KIND
     The one line of BUILD_DIR/build-kind.txt, which cmake/BuildLauncher.cmake
-    writes from the processor, the build type and the sanitizer and analysis
-    options of the build, for example x86_64-debug-asan or aarch64-release
+    writes from the processor, the build type, the sanitizer and analysis
+    options and the x86-64 level CRUCIBLE_X86_LEVEL of the build, for
+    example x86_64-debug-asan, x86_64-release-v3 or aarch64-release
     (read_kind of utils/assay/core/meter.py).
 
 THE NATIVE TIER
