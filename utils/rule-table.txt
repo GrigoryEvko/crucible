@@ -577,6 +577,7 @@ witness <foundation/effects/ImageRead.h> private | foundation::effects::host::Im
 witness <foundation/core/Heap.h> private | foundation::core::Alloc | foundation::core::Alloc{}
 witness <foundation/effects/Effect.h> private | foundation::effects::cap::IO | foundation::effects::cap::IO{}
 witness <foundation/effects/Effect.h> private | foundation::effects::cap::Block | foundation::effects::cap::Block{}
+witness <foundation/effects/Effect.h> private | foundation::effects::cap::Nondet | foundation::effects::cap::Nondet{}
 witness <foundation/effects/Effect.h> private | foundation::effects::host::AtomOwner | foundation::effects::host::AtomOwner{}
 
 # -- Permissions -----------------------------------------------------

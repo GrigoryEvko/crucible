@@ -264,13 +264,17 @@ concept IsOwnedExplicitSingletonPin = IsSingletonCpuPin<PinT> && !std::is_refere
     return observed > raw ? observed : raw;
 }
 
-// Reading a clock on the replay-bound foreground path makes replay
-// diverge across machines, so a reader is minted only by a context that
-// owns Bg, Init or Test.  The name says monotonic, but the gate holds
-// for every clock-backed source, because the replay argument does not
-// depend on which clock diverges.
+// A clock gives a value that changes from run to run, so a reader is
+// minted only by a context whose row holds Nondet.  A foreground, replay
+// or kernel context holds no Nondet, so no clock value reaches the result
+// of such a context.  The name says monotonic, but the gate holds for
+// every source, the counter and the PTP clock too, because the argument
+// does not depend on which clock diverges.  The gate is on the mint.  A
+// clock reader has no copy and no move, and a counter reader or a PTP
+// reader owns its pin or its descriptor, so each reader stays with the
+// evidence of the frame of its mint.
 template <typename Ctx>
-concept CtxFitsMonotonicClock = eff::CtxOwnsAnyOf<Ctx, eff::Effect::Bg, eff::Effect::Init, eff::Effect::Test>;
+concept CtxFitsMonotonicClock = eff::CtxOwnsCapability<Ctx, eff::Effect::Nondet>;
 
 template <typename Ctx, ClockSource_v Source>
 concept CtxFitsClockReaderMint = CtxFitsMonotonicClock<Ctx> && ClockBacked<Source>;

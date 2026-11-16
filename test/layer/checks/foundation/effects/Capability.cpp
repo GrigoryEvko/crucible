@@ -204,8 +204,8 @@ static_assert(std::is_same_v<bare_tag_t<Effect::Block>, cap::Block>);
 #pragma GCC diagnostic pop
     return count;
 }
-static_assert(cap_tag_count_() == 3, "Namespace cap holds one type for each of Alloc, IO and Block.  A "
-                                     "fourth means either a new value atom, whose name must match its "
+static_assert(cap_tag_count_() == 4, "Namespace cap holds one type for each of Alloc, IO, Block and Nondet.  "
+                                     "A fifth means either a new value atom, whose name must match its "
                                      "enumerator for extract_bare to reach it, or a type that no atom "
                                      "names and that the bridge therefore ignores.");
 
@@ -218,6 +218,7 @@ concept can_extract_bare_ = requires(Capability<E, S>&& c) { extract_bare(std::m
 static_assert(can_extract_bare_<Effect::Alloc, Bg>);
 static_assert(can_extract_bare_<Effect::IO, Init>);
 static_assert(can_extract_bare_<Effect::Block, Test>);
+static_assert(can_extract_bare_<Effect::Nondet, Bg>);
 static_assert(!can_extract_bare_<Effect::Bg, Bg>, "extract_bare must drop out of the overload set for a "
                                                   "thread atom, and must not reject from inside its body.");
 static_assert(!can_extract_bare_<Effect::Init, Init>);

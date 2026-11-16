@@ -932,7 +932,7 @@ fixy_neg_compile_test(neg_role_io_row_under_foreground_ctx
 # process state.
 fixy_neg_compile_test(neg_fn_futex_row_under_compile_ctx
   "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
-  "R1 = foundation::effects::Row<foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>")
+  "R1 = foundation::effects::Row<foundation::effects::Effect::Block, foundation::effects::Effect::Nondet>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>")
 fixy_neg_compile_test(neg_fn_io_syscall_row_under_drain_ctx
   "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
   "R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>")
@@ -4685,20 +4685,42 @@ fixy_neg_compile_test(neg_handle_lazy_init_explicit_conversion
 fixy_test(test_os_time)
 
 # The gate and the clamp of the monotonic clock in fixy/os/Time.h.  A
-# clock read on the replay-bound foreground path makes replay diverge
-# across machines.  So only a context that owns Bg, Init or Test mints
-# the reader, and its constructor is private with the mint as its only
-# friend.  The first fixture is a foreground context that the mint
-# refuses.  Its second regex names the gate, and its third names the
-# three effects that the gate demands, as the compiler spells them and
-# the source does not.  The second fixture constructs the reader
-# directly, and the compiler refuses it as private.  The regex matches
-# the constructor with its parentheses, which a fixture spelled with
-# braces never contains.
+# clock gives a value that changes from run to run.  So only a context
+# whose row holds Nondet mints the reader, and its constructor is private
+# with the mint as its only friend.  The first fixture is a foreground
+# context that the mint refuses.  Its second regex names the gate, and its
+# third names the atom that the gate demands, as the compiler spells it and
+# the source does not.  The second fixture constructs the reader directly,
+# and the compiler refuses it as private.  The regex matches the
+# constructor with its parentheses, which a fixture spelled with braces
+# never contains.  The third fixture is the drain context of the
+# background thread: the atom of the thread is no evidence, so a
+# background context with no Nondet reads no clock.
 fixy_neg_compile_test(neg_os_clock_reader_foreground_ctx
   "no matching function for call to .mint_clock_reader<foundation::algebra::lattices::ClockSource::Monotonic>\\(const \\{anonymous\\}::ForegroundCtx&\\)"
   "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]"
-  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init, foundation::effects::Effect::Test\\}\\]. evaluated to .false.")
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+fixy_neg_compile_test(neg_os_clock_reader_ctx_without_nondet
+  "no matching function for call to .mint_clock_reader<foundation::algebra::lattices::ClockSource::Monotonic>\\(const fixy::BgDrainCtx&\\)"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
+# The other doors of Nondet.  A pop of an MPSC channel is a merge, so it
+# takes the bare tag of Nondet: a pop with no tag has no overload, and a
+# context with no Nondet cannot mint the tag.  An endpoint of an MPSC
+# consumer gives its pop the tag of its context, so the mint of the
+# endpoint refuses a context with no Nondet.  A receive from a socket reads
+# a peer, so a context with IO and Block and no Nondet cannot receive.
+fixy_neg_compile_test(neg_mpsc_pop_without_nondet_tag
+  "no matching function for call to .fixy::concurrent::PermissionedMpscChannel<int, 8, \\{anonymous\\}::UserTag, \\{anonymous\\}::UserBrand>::ConsumerHandle::try_pop\\(\\)."
+  "candidate expects 1 argument, 0 provided")
+fixy_neg_compile_test(neg_mpsc_pop_tag_from_ctx_without_nondet
+  "no matching function for call to .mint_from_ctx<foundation::effects::Effect::Nondet>\\(const fixy::BgDrainCtx&\\)."
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, E>.")
+fixy_neg_compile_test(neg_endpoint_mpsc_consumer_ctx_without_nondet
+  "no matching function for call to .mint_endpoint<"
+  "required for the satisfaction of .CtxFitsEndpointMint<Substr, Dir, Ctx>.")
+fixy_neg_compile_test(neg_os_socket_receive_ctx_without_nondet
+  "no matching function for call to .receive_bytes\\(const \\{anonymous\\}::IoBlockCtx&"
+  "required for the satisfaction of .CtxFitsSocketCall<Ctx>.")
 fixy_neg_compile_test(neg_os_clock_reader_direct_ctor
   "is private within this context"
   "ClockReader\\(\\) \\[with foundation::algebra::lattices::ClockSource Source = foundation::algebra::lattices::ClockSource::Monotonic\\]")
@@ -4731,11 +4753,11 @@ fixy_neg_compile_test(neg_os_ptp_clock_reader_foreground_ctx
   "no matching function for call to .mint_ptp_clock_reader\\(const \\{anonymous\\}::ForegroundCtx&, fixy::time::PtpDeviceIndex&\\)"
   "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]"
   "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]"
-  "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init, foundation::effects::Effect::Test\\}\\]. evaluated to .false.")
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 fixy_neg_compile_test(neg_os_ptp_clock_reader_ctx_lacks_block
   "no matching function for call to .mint_ptp_clock_reader\\(const \\{anonymous\\}::BackgroundIoCtx&, fixy::time::PtpDeviceIndex&\\)"
-  "required for the satisfaction of .CtxAdmitsFs<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]"
-  "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO> >\\]"
+  "required for the satisfaction of .CtxAdmitsFs<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Nondet> >\\]"
+  "required for the satisfaction of .CtxFitsPtpClockReaderMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::IO, foundation::effects::Effect::Nondet> >\\]"
   "Es = \\{foundation::effects::Effect::IO, foundation::effects::Effect::Block\\}\\]. evaluated to .false.")
 fixy_test(test_os_sched)
 fixy_test(test_os_pages)

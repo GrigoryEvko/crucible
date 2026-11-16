@@ -40,8 +40,8 @@ namespace {
 
 using foundation::os::Errno;
 
-using IoBlockCtx =
-    eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO,
+                                                    eff::Effect::Block, eff::Effect::Nondet>>;
 
 [[nodiscard]] fixy::Path<src::Sanitized> sanitized(fixy::TextView text) {
     return fixy::sanitize_path(fixy::mint_tagged<src::External>(text)).expect("each test path passes the sanitizer");

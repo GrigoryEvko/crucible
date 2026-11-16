@@ -204,7 +204,9 @@ void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out
         channels::mint_endpoint<FeedOut, channels::Direction::Producer>(ctx, std::move(*out_producer)));
     std::move(stage).run();
 
-    if (drain.try_pop().value_or(-1) != 101 || drain.try_pop().value_or(-1) != 102)
+    // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
+    const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
+    if (drain.try_pop(merge).value_or(-1) != 101 || drain.try_pop(merge).value_or(-1) != 102)
         return fail("the stage did not feed the MPSC channel");
     return 0;
 }

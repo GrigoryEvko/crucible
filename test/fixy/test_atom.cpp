@@ -113,13 +113,29 @@ static_assert(every_atom_axis_is_an_enumerator());
 static_assert(every_atom_axis_has_a_name());
 
 // An OS atom's lift is a Row, and the three families lift to IO and
-// Block.  A system-call atom lifts to the row of its family, and
-// fixy/atoms/Syscall.h runs the roster walks of that family.  The core
-// families do not lift at all.
+// Block.  A system-call atom lifts to the row of its family, with Nondet
+// only when the call itself reads a clock, the schedule or a peer.  A
+// family lifts Nondet when one of its calls does.  fixy/atoms/Syscall.h
+// runs the roster walks of that family.  The core families do not lift at
+// all.
 static_assert(fad::every_roster_member_lifts_<fad::os_atom_roster>());
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::futex>>,
+                             fe::Row<fe::Effect::Block, fe::Effect::Nondet>>);
 static_assert(
-    std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::futex>>, fe::Row<fe::Effect::Block>>);
-static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::family<fa::syscall::SyscallFamily::VdsoOnly>>, fe::Row<>>);
+    std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::sched_yield>>, fe::Row<fe::Effect::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::clock_gettime>>,
+                             fe::Row<fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::clock_getres>>, fe::Row<>>);
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::recvmsg>>,
+                             fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::per<fa::syscall::SyscallId::sendmsg>>,
+                             fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::family<fa::syscall::SyscallFamily::VdsoOnly>>,
+                             fe::Row<fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::family<fa::syscall::SyscallFamily::NetworkIo>>,
+                             fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::family<fa::syscall::SyscallFamily::FileMutation>>,
+                             fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::io::engine<::fixy::io::engine::IoUring>>,
                              fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::fs::mode<::fixy::fs::open_mode::ReadOnly>>,

@@ -44,20 +44,25 @@ namespace test_background_thread_run_in_row {
 namespace {
 
 void test_t01_required_row_pinned() {
-    static_assert(std::is_same_v<BackgroundThread::run_required_row,
-                                 eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>,
-                  "BackgroundThread::run_required_row is exactly Row<Bg, Alloc, IO, Block>.");
+    static_assert(
+        std::is_same_v<
+            BackgroundThread::run_required_row,
+            eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>,
+        "BackgroundThread::run_required_row is exactly Row<Bg, Alloc, IO, Block, Nondet>.");
 
     static_assert(eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Bg));
     static_assert(eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Alloc));
     static_assert(eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::IO));
     static_assert(eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Block));
+    // The pipeline waits to a deadline and commits with a time stamp, so it
+    // reads a clock.
+    static_assert(eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Nondet));
 
     // Init and Test tag other entry points.  The drain loop exhibits neither.
     static_assert(!eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Init));
     static_assert(!eff::row_contains(^^BackgroundThread::run_required_row, eff::Effect::Test));
 
-    static_assert(eff::row_size(^^BackgroundThread::run_required_row) == 4);
+    static_assert(eff::row_size(^^BackgroundThread::run_required_row) == 5);
 
     crucible::test::pass("  T01 required_row_pinned:                   PASSED\n");
 }
@@ -119,7 +124,7 @@ void test_cross_fence_consistency() {
     // and Alloc, so the two rows are not equal.
     static_assert(!eff::Subrow<BgRow, RecordRow>, "The background drain row strictly contains the record_event row: "
                                                   "Bg and Alloc are extra.");
-    static_assert(eff::row_size(^^BgRow) == 4u);
+    static_assert(eff::row_size(^^BgRow) == 5u);
     static_assert(eff::row_size(^^RecordRow) == 2u);
 
     crucible::test::pass("  cross_fence_consistency:                   PASSED\n");

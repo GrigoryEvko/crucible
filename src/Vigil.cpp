@@ -169,13 +169,14 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     mark_held_regions_(marks);
     bg_.set_region_marks(stage, marks);
 
-    // The observation is presented with a background-drain context
+    // The observation is presented with a background observe context
     // because this runs on the region-publishing thread, not the
-    // foreground.  The frame door writes the watchdog in place and writes
-    // no byte of wd_, which the foreground can read.
+    // foreground, and a watchdog reads a clock.  The frame door writes the
+    // watchdog in place and writes no byte of wd_, which the foreground can
+    // read.
     wd_.with_mut(
         [this, &bg](auto watchdog) noexcept {
-            const auto v = (*watchdog)->observe(::fixy::BgDrainCtx{bg});
+            const auto v = (*watchdog)->observe(::fixy::BgObserveCtx{bg});
             wd_last_verdict_.store_release(v);
             switch (v) {
                 case ::crucible::warden::WatchdogVerdict::Healthy:

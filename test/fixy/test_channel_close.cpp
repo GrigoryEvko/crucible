@@ -141,7 +141,9 @@ template <class Handle>
         perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));
     Mpsc channel{std::move(producer_root)};
     auto consumer = channel.consumer(std::move(consumer_perm));
-    int failures = expect_code("a fresh MPSC channel", code_of(consumer.try_receive()), kEmpty);
+    // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
+    const eff::cap::Nondet merge = eff::testing::test().nondet;
+    int failures = expect_code("a fresh MPSC channel", code_of(consumer.try_receive(merge)), kEmpty);
     {
         auto second = lend(channel);
         {
@@ -149,25 +151,25 @@ template <class Handle>
             push_or_spin(first, 1);
         }
         push_or_spin(second, 2);
-        failures += expect_code("the item of the first producer", code_of(consumer.try_receive()), 1);
-        failures += expect_code("the item of the second producer", code_of(consumer.try_receive()), 2);
-        failures += expect_code("a channel with one live producer", code_of(consumer.try_receive()), kEmpty);
+        failures += expect_code("the item of the first producer", code_of(consumer.try_receive(merge)), 1);
+        failures += expect_code("the item of the second producer", code_of(consumer.try_receive(merge)), 2);
+        failures += expect_code("a channel with one live producer", code_of(consumer.try_receive(merge)), kEmpty);
     }
-    failures += expect_code("a channel after its last producer", code_of(consumer.try_receive()), kClosed);
+    failures += expect_code("a channel after its last producer", code_of(consumer.try_receive(merge)), kClosed);
 
     bool has_run = false;
     if (!channel.with_drained_access([&has_run] { has_run = true; }) || !has_run) {
         ::fixy::report(::fixy::Sink::Err, "the drained access did not run with no producer out\n");
         ++failures;
     }
-    failures += expect_code("a closed channel after a drained access", code_of(consumer.try_receive()), kClosed);
+    failures += expect_code("a closed channel after a drained access", code_of(consumer.try_receive(merge)), kClosed);
     {
         auto later = lend(channel);
-        failures += expect_code("a channel that a later lend opened", code_of(consumer.try_receive()), kEmpty);
+        failures += expect_code("a channel that a later lend opened", code_of(consumer.try_receive(merge)), kEmpty);
         push_or_spin(later, 3);
     }
-    failures += expect_code("the item of the later producer", code_of(consumer.try_receive()), 3);
-    failures += expect_code("a channel after the later producer", code_of(consumer.try_receive()), kClosed);
+    failures += expect_code("the item of the later producer", code_of(consumer.try_receive(merge)), 3);
+    failures += expect_code("a channel after the later producer", code_of(consumer.try_receive(merge)), kClosed);
     ::foundation::linear::drop(std::move(consumer));
     return failures;
 }
@@ -202,9 +204,10 @@ void push_one_item(In&&, Out&& out) noexcept {
     auto stage = cc::mint_stage<&push_one_item<IdleConsumer, OutChannel::ProducerHandle>>(ctx, IdleConsumer{},
                                                                                           lend(out_channel));
     std::move(stage).run();
-    int failures = expect_code("the item of the stage", code_of(consumer.try_receive()), 5);
+    const eff::cap::Nondet merge = eff::testing::test().nondet;
+    int failures = expect_code("the item of the stage", code_of(consumer.try_receive(merge)), 5);
     failures +=
-        expect_code("the channel after the run of the stage returned", code_of(consumer.try_receive()), kClosed);
+        expect_code("the channel after the run of the stage returned", code_of(consumer.try_receive(merge)), kClosed);
     ::foundation::linear::drop(std::move(consumer));
     return failures;
 }
@@ -243,6 +246,17 @@ struct RoundFeeder {
     }
 };
 
+// The receive of one consumer.  The receive of a merge pole takes the tag of
+// Nondet, which a test context gives.
+template <class Consumer>
+[[nodiscard]] auto receive_from(Consumer& in) noexcept {
+    if constexpr (cc::is_merge_consumer_handle_v<Consumer>) {
+        return in.try_receive(eff::testing::test().nondet);
+    } else {
+        return in.try_receive();
+    }
+}
+
 // The consumer of one round, on a thread of its own: it receives each item
 // until Closed and checks the order of the items of each producer.  An Empty
 // after the end of each producer is a failure, and the drain then stops.
@@ -263,7 +277,7 @@ struct RoundDrain {
         bool is_draining = true;
         while (is_draining) {
             bool const had_ended = ended_producers->load_acquire() == producers;
-            int const code = code_of(handle.try_receive());
+            int const code = code_of(receive_from(handle));
             if (code == kClosed) {
                 is_draining = false;
             } else if (code == kEmpty) {
@@ -373,7 +387,7 @@ void drain_until_closed(Consumer& in, Atomic<bool> const& has_upstream_ended, ::
                         Forward forward) noexcept {
     for (;;) {
         bool const had_ended = has_upstream_ended.load_acquire();
-        int const code = code_of(in.try_receive());
+        int const code = code_of(receive_from(in));
         if (code == kClosed) return;
         if (code == kEmpty) {
             if (had_ended) {

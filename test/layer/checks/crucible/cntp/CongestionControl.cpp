@@ -13,11 +13,12 @@ static_assert(!std::is_aggregate_v<KernelCcName>,
 namespace detail::socket_option_invariants {
 
 // The row that the catalog gives to the network family, stated here as
-// a pin.  mint_socket reads the same row for ::socket.
-static_assert(std::is_same_v<socket_option_row_t, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<socket_option_row_t, fe::lift_row_t<::fixy::atom::syscall::per<SyscallId::socket>>>);
+// a pin.  mint_socket reads the row of ::socket, which the family covers.
+static_assert(std::is_same_v<socket_option_row_t, fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(fe::Subrow<fe::lift_row_t<::fixy::atom::syscall::per<SyscallId::socket>>, socket_option_row_t>);
 
-static_assert(CtxFitsSocketOption<IoBlockCtx>);
+static_assert(CtxFitsSocketOption<NetworkCtx>);
+static_assert(!CtxFitsSocketOption<IoBlockCtx>, "a context without Nondet must not read the live state of a socket.");
 static_assert(!CtxFitsSocketOption<IoOnlyCtx>, "a context without Block must not take the socket lock.");
 static_assert(!CtxFitsSocketOption<BgOnlyCtx>, "a context without IO must not enter the kernel.");
 static_assert(!CtxFitsSocketOption<int>);

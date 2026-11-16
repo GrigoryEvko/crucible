@@ -116,8 +116,10 @@ bench::Report wrapped_mpsc_pop() {
             (void)p.try_push(i);
     }
     auto c = ch->consumer(std::move(consumer_perm));
+    // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
+    const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
     return bench::run("wrapped Permissioned MPSC.ConsumerHandle::try_pop", [&] {
-        auto v = c.try_pop();
+        auto v = c.try_pop(merge);
         bench::do_not_optimize(v);
     });
 }

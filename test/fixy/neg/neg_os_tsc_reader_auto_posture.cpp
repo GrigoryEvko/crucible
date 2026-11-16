@@ -11,7 +11,7 @@ namespace ml = foundation::algebra::lattices;
 
 namespace {
 
-using InitCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init>>;
+using InitCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Nondet>>;
 using AutoPin = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPosture::PinnedAuto, int>;
 
 // The pin arrives as a parameter.  Only mint_affinity builds one.

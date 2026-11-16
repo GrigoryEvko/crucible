@@ -70,11 +70,13 @@ using Log = crucible::TransactionLog<16, SoloOwner>;
 // The smallest ring that the log admits.
 using SmallestLog = crucible::TransactionLog<4, SoloOwner>;
 
-// The log reads the monotonic clock, so only a context off the replay-bound
-// foreground path builds one.
+// The log reads the monotonic clock, so only a context whose row holds
+// Nondet builds one.  The drain row and the cold init row hold no Nondet.
 static_assert(crucible::CtxFitsTransactionLog<::fixy::TestRunnerCtx>);
-static_assert(crucible::CtxFitsTransactionLog<::fixy::ColdInitCtx>);
-static_assert(crucible::CtxFitsTransactionLog<::fixy::BgDrainCtx>);
+static_assert(crucible::CtxFitsTransactionLog<::fixy::InitLoadCtx>);
+static_assert(crucible::CtxFitsTransactionLog<::fixy::BgLoadCtx>);
+static_assert(!crucible::CtxFitsTransactionLog<::fixy::ColdInitCtx>);
+static_assert(!crucible::CtxFitsTransactionLog<::fixy::BgDrainCtx>);
 static_assert(!crucible::CtxFitsTransactionLog<::fixy::HotFgCtx>);
 static_assert(!std::is_constructible_v<Log, ::fixy::HotFgCtx const&>);
 static_assert(!std::is_default_constructible_v<Log>);

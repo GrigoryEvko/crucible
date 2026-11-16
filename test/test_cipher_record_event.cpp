@@ -232,8 +232,10 @@ static void test_t06_bg_superset_row(const char* base_dir) {
     auto view = cipher.mint_open_view(store_ctx());
 
     const ::fixy::BgLoadCtx bg_ctx{::foundation::effects::testing::bg()};
-    static_assert(std::is_same_v<typename ::fixy::BgLoadCtx::row_type,
-                                 eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>);
+    static_assert(
+        std::is_same_v<
+            typename ::fixy::BgLoadCtx::row_type,
+            eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>);
 
     constexpr ContentHash kHash{0x123456789ABCDEF0ULL};
     record(cipher, bg_ctx, view, kHash, 1u);
@@ -455,13 +457,16 @@ static void test_canonical_row_acceptance(const char* base_dir) {
     record(cipher, store_ctx(), view, ContentHash{0xAAAA}, 1u);
     assert(cipher.head() == ContentHash{0xAAAA});
 
-    const auto narrowed = store_ctx().in_row<eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>();
+    // A commit reads the clock, so the narrowed row keeps Nondet.
+    const auto narrowed =
+        store_ctx().in_row<eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>();
     record(cipher, narrowed, view, ContentHash{0xBBBB}, 2u);
     assert(cipher.head() == ContentHash{0xBBBB});
 
-    // The same three atoms in another order, which containment by
+    // The same four atoms in another order, which containment by
     // membership accepts.
-    const auto reordered = store_ctx().in_row<eff::Row<eff::Effect::Block, eff::Effect::IO, eff::Effect::Test>>();
+    const auto reordered =
+        store_ctx().in_row<eff::Row<eff::Effect::Nondet, eff::Effect::Block, eff::Effect::IO, eff::Effect::Test>>();
     record(cipher, reordered, view, ContentHash{0xCCCC}, 3u);
     assert(cipher.head() == ContentHash{0xCCCC});
 

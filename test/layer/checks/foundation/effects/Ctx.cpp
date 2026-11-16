@@ -14,14 +14,26 @@ static_assert(std::is_same_v<BgDrainCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::All
 
 static_assert(std::is_same_v<BgCompileCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>>);
 
-static_assert(std::is_same_v<BgLoadCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>>);
+static_assert(
+    std::is_same_v<BgLoadCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>>);
+
+static_assert(std::is_same_v<BgObserveCtx, ExecCtx<Bg, Row<Effect::Bg, Effect::Nondet>>>);
 
 static_assert(std::is_same_v<ColdInitCtx, ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>>);
 
-static_assert(std::is_same_v<InitLoadCtx, ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>>);
+static_assert(std::is_same_v<
+              InitLoadCtx, ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>>);
 
 static_assert(
-    std::is_same_v<TestRunnerCtx, ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>>);
+    std::is_same_v<TestRunnerCtx,
+                   ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>>);
+
+// The drain and compile rows hold no Nondet, so a stage under them reads
+// no clock, pops no merge and receives from no peer.
+static_assert(!row_contains(^^BgDrainCtx::row_type, Effect::Nondet));
+static_assert(!row_contains(^^BgCompileCtx::row_type, Effect::Nondet));
+static_assert(!row_contains(^^ColdInitCtx::row_type, Effect::Nondet));
+static_assert(!row_contains(^^HotFgCtx::row_type, Effect::Nondet));
 
 static_assert(sizeof(ExecCtx<>) == 1, "Both axes of ExecCtx are empty types, so the whole context must be 1 byte.");
 static_assert(sizeof(FgWitness) == 1);
@@ -131,9 +143,12 @@ static_assert(IsEffectRow<Row<Effect::Bg> const&>);
 static_assert(IsEffectRow<Row<Effect::Bg>&&>);
 
 static_assert(std::is_same_v<cap_permitted_row_t<ctx_cap::Fg>, Row<>>);
-static_assert(std::is_same_v<cap_permitted_row_t<Bg>, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>);
-static_assert(std::is_same_v<cap_permitted_row_t<Init>, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>);
-static_assert(std::is_same_v<cap_permitted_row_t<Test>, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>);
+static_assert(
+    std::is_same_v<cap_permitted_row_t<Bg>, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>);
+static_assert(std::is_same_v<cap_permitted_row_t<Init>,
+                             Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>);
+static_assert(std::is_same_v<cap_permitted_row_t<Test>,
+                             Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>);
 
 // The witnesses already satisfy this, or their own declarations would
 // have failed.  Restating it here catches a later rewrite.

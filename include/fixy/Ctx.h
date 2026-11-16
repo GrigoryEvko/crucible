@@ -37,16 +37,20 @@ using BgDrainCtx = ::foundation::effects::detail::ctx_witnesses::BgDrainCtx;
 // The background compile context: the drain row and IO.
 using BgCompileCtx = ::foundation::effects::detail::ctx_witnesses::BgCompileCtx;
 
-// The background load context: the compile row and Block.
+// The background load context: the compile row, Block and Nondet.
 using BgLoadCtx = ::foundation::effects::detail::ctx_witnesses::BgLoadCtx;
+
+// The background observe context: Bg and Nondet, for a watchdog that
+// reads a clock.
+using BgObserveCtx = ::foundation::effects::detail::ctx_witnesses::BgObserveCtx;
 
 // The context of process startup, before the threads are pinned.
 using ColdInitCtx = ::foundation::effects::detail::ctx_witnesses::ColdInitCtx;
 
-// The startup load context: the cold init row and Block.
+// The startup load context: the cold init row, Block and Nondet.
 using InitLoadCtx = ::foundation::effects::detail::ctx_witnesses::InitLoadCtx;
 
-// The context of a test fixture: Test, Alloc, IO and Block.
+// The context of a test fixture: Test, Alloc, IO, Block and Nondet.
 using TestRunnerCtx = ::foundation::effects::detail::ctx_witnesses::TestRunnerCtx;
 
 }  // namespace fixy

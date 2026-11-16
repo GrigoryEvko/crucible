@@ -78,7 +78,10 @@ namespace eff = foundation::effects;
 
 namespace {
 
-using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
+// A socket call can park the caller and reads the live state of a peer, so
+// its row holds IO, Block and Nondet.
+using IoBlockCtx =
+    eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>;
 
 [[nodiscard]] bool socket_option_is(int fd, int option, int expected) noexcept {
     int value = -1;

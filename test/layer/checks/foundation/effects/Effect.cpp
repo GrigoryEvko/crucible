@@ -129,6 +129,7 @@ static_assert(std::is_empty_v<cap::Alloc>,
               "and a caller copies it out.  Carry state on the capability token instead.");
 static_assert(std::is_empty_v<cap::IO>, "cap::IO must remain empty.  Bg, Init and Test hold it as a field.");
 static_assert(std::is_empty_v<cap::Block>, "cap::Block must remain empty.  Bg, Init and Test hold it as a field.");
+static_assert(std::is_empty_v<cap::Nondet>, "cap::Nondet must remain empty.  Bg, Init and Test hold it as a field.");
 
 namespace detail {
 
@@ -139,6 +140,19 @@ static_assert(every_context_invariant_holds_());
 static_assert(sizeof(cap::Alloc) == 1);
 static_assert(sizeof(cap::IO) == 1);
 static_assert(sizeof(cap::Block) == 1);
+static_assert(sizeof(cap::Nondet) == 1);
+
+// Nondet is an atom of input.  A ghost binding that only reads a clock
+// changes nothing outside the process, so elision can drop it.
+static_assert(!is_observable<Effect::Nondet>());
+static_assert(is_observable<Effect::IO>());
+
+// Each context holds the bare tag of Nondet, so a context of a full row
+// lends it, and a door that takes the tag takes it from such a context.
+static_assert(std::is_same_v<decltype(testing::bg().nondet), cap::Nondet>);
+static_assert(std::is_same_v<decltype(testing::init().nondet), cap::Nondet>);
+static_assert(std::is_same_v<decltype(testing::test().nondet), cap::Nondet>);
+static_assert(std::is_same_v<bare_tag_t<Effect::Nondet>, cap::Nondet>);
 
 namespace detail::capabilities_self_test {
 
@@ -151,6 +165,7 @@ static_assert(effect_name(Effect::Block) == "Block");
 static_assert(effect_name(Effect::Bg) == "Bg");
 static_assert(effect_name(Effect::Init) == "Init");
 static_assert(effect_name(Effect::Test) == "Test");
+static_assert(effect_name(Effect::Nondet) == "Nondet");
 static_assert(effect_name(static_cast<Effect>(200)) == "<unknown Effect>",
               "A value outside the catalog must reach the unknown-atom sentinel, so a corrupt byte "
               "prints as one rather than as an empty name.");
@@ -169,6 +184,8 @@ static_assert(static_cast<std::uint8_t>(Effect::Init) == 4,
               "The value of Effect::Init changed, which invalidates federation cache keys.");
 static_assert(static_cast<std::uint8_t>(Effect::Test) == 5,
               "The value of Effect::Test changed, which invalidates federation cache keys.");
+static_assert(static_cast<std::uint8_t>(Effect::Nondet) == 6,
+              "The value of Effect::Nondet changed, which invalidates federation cache keys.");
 
 // Widening the underlying type is invisible to the row hash, which
 // reads only the value, but it changes the layout of every struct that
@@ -182,6 +199,7 @@ static_assert(IsEffect<Effect::Block>);
 static_assert(IsEffect<Effect::Bg>);
 static_assert(IsEffect<Effect::Init>);
 static_assert(IsEffect<Effect::Test>);
+static_assert(IsEffect<Effect::Nondet>);
 
 [[nodiscard]] consteval std::size_t count_accepted_effects_() noexcept {
     static constexpr auto enums = std::define_static_array(std::meta::enumerators_of(^^Effect));
@@ -201,7 +219,7 @@ static_assert(count_accepted_effects_() == effect_count, "IsEffect rejects an at
 // underlying type admits 0 through 255.  The gate must still reject it.
 static_assert(!IsEffect<static_cast<Effect>(99)>);
 static_assert(!IsEffect<static_cast<Effect>(255)>);
-static_assert(!IsEffect<static_cast<Effect>(6)>);
+static_assert(!IsEffect<static_cast<Effect>(7)>);
 
 static_assert(!effect_name(Effect::Alloc).empty());
 static_assert(!effect_name(Effect::IO).empty());
@@ -233,6 +251,8 @@ static_assert(effect_name(Effect::Init) != effect_name(Effect::Test));
 static_assert(!std::is_default_constructible_v<cap::Alloc>);
 static_assert(!std::is_default_constructible_v<cap::IO>);
 static_assert(!std::is_default_constructible_v<cap::Block>);
+static_assert(!std::is_default_constructible_v<cap::Nondet>);
+static_assert(!std::is_trivially_copyable_v<cap::Nondet> && !std::is_implicit_lifetime_v<cap::Nondet>);
 static_assert(!std::is_trivially_copyable_v<cap::Alloc> && !std::is_implicit_lifetime_v<cap::Alloc>);
 static_assert(!std::is_trivially_copyable_v<cap::IO> && !std::is_implicit_lifetime_v<cap::IO>);
 static_assert(!std::is_trivially_copyable_v<cap::Block> && !std::is_implicit_lifetime_v<cap::Block>);

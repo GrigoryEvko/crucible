@@ -279,8 +279,10 @@ template <class Channel, class Producer, class Consumer>
         }
     }
 
-    auto first_item = consumer.try_pop();
-    auto second_item = consumer.try_pop();
+    // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
+    const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
+    auto first_item = consumer.try_pop(merge);
+    auto second_item = consumer.try_pop(merge);
     if (first_item.is_none() || second_item.is_none()) {
         std::fprintf(stderr, "the consumer lost what the two producers pushed\n");
         return 1;
@@ -336,8 +338,9 @@ template <class Channel, class Producer, class Consumer>
             });
         }
 
+        const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
         while (received < kProducers * kPerProducer) {
-            auto item = consumer.try_pop();
+            auto item = consumer.try_pop(merge);
             if (item.is_some()) {
                 sum += std::move(item).expect("the test above found an item");
                 ++received;

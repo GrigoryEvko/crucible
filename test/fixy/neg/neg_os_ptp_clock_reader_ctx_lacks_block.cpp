@@ -15,7 +15,7 @@ namespace eff = foundation::effects;
 
 namespace {
 
-using BackgroundIoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO>>;
+using BackgroundIoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Nondet>>;
 
 [[maybe_unused]] void attempt(BackgroundIoCtx const& background, fixy::time::PtpDeviceIndex index) {
     [[maybe_unused]] auto reader = fixy::time::mint_ptp_clock_reader(background, index);

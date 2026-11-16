@@ -41,7 +41,7 @@ static_assert(std::is_nothrow_move_constructible_v<TscReader<TscMode::Raw, Singl
 // The gate of the TSC mint: a context off the foreground path, a pin the
 // caller gives up, and the explicit posture.
 using AutoPin = sf::CpuPinned<ml::AffinityMask::single(0), sf::PinningPosture::PinnedAuto, int>;
-using InitCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init>>;
+using InitCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Nondet>>;
 static_assert(CtxFitsTscReaderMint<InitCtx, TscMode::Raw, SinglePin>);
 static_assert(!CtxFitsTscReaderMint<eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>, TscMode::Raw, SinglePin>,
               "the foreground hot path must not read the TSC: the value differs across machines and breaks replay");
@@ -72,9 +72,17 @@ static_assert(!IsSleepBound<0> && !IsSleepBound<max_bounded_sleep_nanos + 1>);
 // the clamp fed a regressing value, are in test/fixy/test_os_time.cpp;
 // the two refusals are test/fixy/neg/neg_os_clock_reader_*.cpp.
 using ForegroundCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
-using BackgroundCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
+using BackgroundCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Nondet>>;
 static_assert(!CtxFitsMonotonicClock<ForegroundCtx>);
 static_assert(CtxFitsMonotonicClock<BackgroundCtx>);
+
+// The gate reads Nondet, and not the atom of the thread.  A background,
+// init or test context with no Nondet reads no clock, so a background stage
+// can prove that its result does not depend on the time.
+static_assert(!CtxFitsMonotonicClock<eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>>);
+static_assert(!CtxFitsMonotonicClock<eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init>>>);
+static_assert(!CtxFitsMonotonicClock<eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO>>>);
+static_assert(CtxFitsMonotonicClock<eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Nondet>>>);
 static_assert(!CtxFitsClockReaderMint<ForegroundCtx, ClockSource_v::Monotonic>);
 static_assert(CtxFitsClockReaderMint<BackgroundCtx, ClockSource_v::Monotonic>);
 static_assert(!CtxFitsClockReaderMint<BackgroundCtx, ClockSource_v::TscRaw>);
@@ -99,7 +107,8 @@ static_assert(!std::is_copy_constructible_v<ClockReader<ClockSource_v::Realtime>
 // descriptor, and it does not copy.  Its mint needs the clock gate and
 // the filesystem gate, so a context that lacks Block is refused as well
 // as the foreground one.
-using BackgroundFsCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Block>>;
+using BackgroundFsCtx =
+    eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>;
 static_assert(std::is_same_v<PtpClockReader::result_type, sf::PtpHwClockBytes<std::uint64_t>>);
 static_assert(!PtpClockReader::is_clamped);
 static_assert(!std::is_default_constructible_v<PtpClockReader>);

@@ -24,7 +24,7 @@ struct CopiedShape {
 
 namespace {
 
-using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
+using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Nondet>>;
 using forged_pin::CopiedShape;
 
 [[maybe_unused]] void attempt(BgCtx const& ctx, CopiedShape&& copy) {

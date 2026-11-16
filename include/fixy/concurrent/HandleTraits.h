@@ -20,6 +20,7 @@
 
 #include <foundation/ChannelBinding.h>
 #include <foundation/core/Choice.h>
+#include <foundation/effects/Effect.h>
 
 #include <concepts>
 #include <cstddef>
@@ -30,28 +31,44 @@ namespace fixy::concurrent {
 namespace detail {
 
 // ── the consumer pole: Option<P> try_pop() ──────────────────────────
+//
+// A merge pole, such as the consumer of an MPSC channel, takes the bare
+// tag of Nondet: Option<P> try_pop(cap::Nondet).  The order of its items
+// depends on the schedule, so a driver of the pole gives the tag from a
+// context whose row holds Nondet.
 
 template <typename M>
 struct consumer_signature_decomp {
     static constexpr bool matches = false;
+    static constexpr bool is_merge = false;
     using payload = void;
 };
 
 template <typename C, typename P>
 struct consumer_signature_decomp<::foundation::core::Option<P> (C::*)()> {
     static constexpr bool matches = true;
+    static constexpr bool is_merge = false;
     using payload = P;
 };
 
 template <typename C, typename P>
 struct consumer_signature_decomp<::foundation::core::Option<P> (C::*)() noexcept> {
     static constexpr bool matches = true;
+    static constexpr bool is_merge = false;
+    using payload = P;
+};
+
+template <typename C, typename P>
+struct consumer_signature_decomp<::foundation::core::Option<P> (C::*)(::foundation::effects::cap::Nondet) noexcept> {
+    static constexpr bool matches = true;
+    static constexpr bool is_merge = true;
     using payload = P;
 };
 
 template <typename T, typename = void>
 struct try_pop_shape {
     static constexpr bool matches = false;
+    static constexpr bool is_merge = false;
     using payload = void;
 };
 
@@ -60,6 +77,7 @@ struct try_pop_shape<T, std::void_t<decltype(&T::try_pop)>> {
     using mptr_t = decltype(&T::try_pop);
     using decomp = consumer_signature_decomp<mptr_t>;
     static constexpr bool matches = decomp::matches;
+    static constexpr bool is_merge = decomp::is_merge;
     using payload = typename decomp::payload;
 };
 
@@ -217,6 +235,11 @@ concept IsConsumerHandle = is_consumer_handle_v<T>;
 template <typename T>
     requires is_consumer_handle_v<T>
 using consumer_handle_value_t = typename detail::try_pop_shape<std::remove_cvref_t<T>>::payload;
+
+// True for a consumer whose pop is a merge and takes the bare tag of Nondet.
+template <typename T>
+inline constexpr bool is_merge_consumer_handle_v =
+    is_consumer_handle_v<T> && detail::try_pop_shape<std::remove_cvref_t<T>>::is_merge;
 
 // Detection goes through the address of the member rather than through an
 // expression such as `t.try_push(v)`, because that form needs the payload type

@@ -91,12 +91,15 @@ static_assert(fe::Bg::own_effect == fe::Effect::Bg && fe::Init::own_effect == fe
 static_assert(std::is_same_v<fe::Bg::key_type, fe::detail::ctx_mint::bg_key>);
 static_assert(std::is_same_v<fe::Init::key_type, fe::detail::ctx_mint::init_key>);
 static_assert(std::is_same_v<fe::Test::key_type, fe::detail::ctx_mint::test_key>);
-static_assert(std::is_same_v<fe::Bg::permitted_as<RowProbe>,
-                             RowProbe<fe::Effect::Bg, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<fe::Init::permitted_as<RowProbe>,
-                             RowProbe<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<fe::Test::permitted_as<RowProbe>,
-                             RowProbe<fe::Effect::Test, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block>>);
+static_assert(
+    std::is_same_v<fe::Bg::permitted_as<RowProbe>,
+                   RowProbe<fe::Effect::Bg, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(
+    std::is_same_v<fe::Init::permitted_as<RowProbe>, RowProbe<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO,
+                                                              fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(
+    std::is_same_v<fe::Test::permitted_as<RowProbe>, RowProbe<fe::Effect::Test, fe::Effect::Alloc, fe::Effect::IO,
+                                                              fe::Effect::Block, fe::Effect::Nondet>>);
 
 // The fields are the holdings and nothing else.  Each of the three
 // contexts has a block to give to a function that waits, because process
@@ -115,6 +118,13 @@ static_assert(!HoldsBlock<Lookalike>);
 static_assert(std::is_same_v<decltype(fe::testing::init().alloc), fe::cap::Alloc>);
 static_assert(std::is_same_v<decltype(fe::testing::init().block), fe::cap::Block>);
 static_assert(std::is_same_v<decltype(fe::testing::bg().block), fe::cap::Block>);
+
+// Each of the three holds the bare tag of Nondet, so a background stage, a
+// startup step or a test gives it to a door that reads a clock or a merge.
+template <class C>
+concept HoldsNondet = requires(C const& c) { c.nondet; };
+static_assert(HoldsNondet<fe::Bg> && HoldsNondet<fe::Init> && HoldsNondet<fe::Test>);
+static_assert(!HoldsNondet<Lookalike>);
 
 // The row recognizer strips cv and reference before it matches, so a
 // forwarded row is still a row, and a forwarded non-row is still refused.

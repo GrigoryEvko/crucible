@@ -1451,7 +1451,7 @@ crucible_neg_compile_test(neg_topology_telemetry_read_fg_ctx
     "required for the satisfaction of .CtxFitsNicTelemetryRead<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_test(neg_topology_telemetry_read_test_ctx
     "no matching function for call to .crucible::topology::NicTelemetryHistory<2>::current_snapshot\\(fixy::TestRunnerCtx&\\)."
-    "required for the satisfaction of .CtxFitsNicTelemetryRead<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\]")
+    "required for the satisfaction of .CtxFitsNicTelemetryRead<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet> >\\]")
 crucible_neg_compile_test(neg_topology_telemetry_window_overflow
     "static assertion failed: NicTelemetryHistory stores bounded history indices in uint16_t"
     "In instantiation of .class crucible::topology::NicTelemetryHistory<65536>.")
@@ -2763,7 +2763,7 @@ crucible_neg_compile_test(neg_backpressure_start_without_block
   "required for the satisfaction of .CtxMayBlock<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >\\]")
 crucible_neg_compile_test(neg_backpressure_controller_bg_mint
   "no matching function for call to .mint_admission_controller<2, 2>\\(fixy::BgLoadCtx&\\)."
-  "required for the satisfaction of .CtxFitsBackpressureMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\]")
+  "required for the satisfaction of .CtxFitsBackpressureMint<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet> >\\]")
 crucible_neg_compile_test(neg_backpressure_controller_hot_accept
   "no matching function for call to .crucible::cntp::AdmissionController<2, 2>::try_accept_connection\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >"
   "required for the satisfaction of .CtxFitsBackpressureRuntime<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
@@ -2791,7 +2791,7 @@ crucible_neg_compile_test(neg_connection_direct
   ".constexpr crucible::cntp::Connection<T>::Connection.crucible::cntp::SocketFd, crucible::cog::Uuid, crucible::cntp::PositiveConnectionId. .with crucible::cntp::TransportClass T = crucible::cntp::TransportClass::Tcp.* is private within this context")
 crucible_neg_compile_test(neg_connection_pool_mint_bg_ctx
   "no matching function for call to .mint_connection_pool<crucible::cntp::TransportClass::Tcp, 1, 1>.fixy::BgLoadCtx&.."
-  "required for the satisfaction of .CtxFitsConnectionPoolMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >.")
+  "required for the satisfaction of .CtxFitsConnectionPoolMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet> >.")
 crucible_neg_compile_test(neg_connection_pool_direct
   ".constexpr crucible::cntp::ConnectionPool<T, MaxRemotes, MaxPerRemote, MaxEvents>::ConnectionPool.crucible::cntp::PoolConfig. .with crucible::cntp::TransportClass T = crucible::cntp::TransportClass::Tcp.* is private within this context"
   "ConnectionPoolRuntime.h:[0-9]+:[0-9]+: note: declared private here")
@@ -3722,7 +3722,7 @@ crucible_neg_compile_test(neg_tracering_drain_pure_full_row
 set(VIGIL_PURE_TO "to .const crucible::VigilFgCtx&.")
 set(VIGIL_PURE_PARAM
   "initializing argument 1 of .crucible::DispatchResult crucible::Vigil::dispatch_op_pure\\(const crucible::VigilFgCtx&, ")
-set(VIGIL_PURE_ROW_TAIL "foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >")
+set(VIGIL_PURE_ROW_TAIL "foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet> >")
 crucible_neg_compile_test(neg_vigil_dispatch_op_pure_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. ${VIGIL_PURE_TO}"
   "${VIGIL_PURE_PARAM}")
@@ -3757,7 +3757,7 @@ crucible_neg_compile_test(neg_validated_op_unchecked_entry
 # Alloc, IO, Block>>.  Each fixture hands in a context whose row lacks
 # one required atom or more.  The first regex pins the refused context,
 # the second pins the gate and the row it demands.
-set(BG_RUN_GATE "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >.")
+set(BG_RUN_GATE "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet> >.")
 set(BG_RUN_CALL "no matching function for call to .crucible::BackgroundThread::run_in_row\\(const foundation::effects::ExecCtx<")
 crucible_neg_compile_test(neg_background_thread_run_in_row_empty
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<> >&\\)" "${BG_RUN_GATE}")
@@ -3777,6 +3777,8 @@ crucible_neg_compile_test(neg_background_thread_run_in_row_missing_io
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
 crucible_neg_compile_test(neg_background_thread_run_in_row_missing_block
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >&\\)" "${BG_RUN_GATE}")
+crucible_neg_compile_test(neg_background_thread_run_in_row_missing_nondet
+  "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >&\\)" "${BG_RUN_GATE}")
 crucible_neg_compile_test(neg_background_thread_run_in_row_init_only
   "${BG_RUN_CALL}foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >&\\)" "${BG_RUN_GATE}")
 crucible_neg_compile_test(neg_background_thread_run_in_row_test_only

@@ -243,9 +243,10 @@ template <LinkClass Link>
 }
 
 // A socket option call enters the kernel in the network family of the
-// syscall catalog, and that family lifts to IO and Block.  setsockopt can
-// load a congestion control module, and each call takes the socket lock,
-// so each call can park the caller.
+// syscall catalog, and that family lifts to IO, Block and Nondet.
+// setsockopt can load a congestion control module, and each call takes the
+// socket lock, so each call can park the caller.  A read of an option gives
+// the live state of a connection, which changes from run to run.
 using socket_option_row_t =
     ::foundation::effects::lift_row_t<::fixy::atom::syscall::family<::fixy::atom::syscall::SyscallFamily::NetworkIo>>;
 
@@ -299,6 +300,8 @@ namespace detail::socket_option_invariants {
 using ::fixy::atom::syscall::SyscallId;
 namespace fe = ::foundation::effects;
 
+using NetworkCtx =
+    fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>;
 using IoBlockCtx = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO, fe::Effect::Block>>;
 using IoOnlyCtx = fe::ExecCtx<fe::Init, fe::Row<fe::Effect::Init, fe::Effect::IO>>;
 using BgOnlyCtx = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::Alloc>>;

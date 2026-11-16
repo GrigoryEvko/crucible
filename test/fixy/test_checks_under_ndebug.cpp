@@ -38,7 +38,8 @@ template <class T>
 // The clean mask and the advance from the stored value are the controls, in
 // the test process.
 void test_poisoned_effect_mask_ends_the_process(TestRunnerCtx const& test) {
-    fe::EffectMask::underlying_type const poison = opaque(fe::EffectMask::underlying_type{1} << 6);
+    // The first bit above the last atom names no atom.
+    fe::EffectMask::underlying_type const poison = opaque(fe::EffectMask::underlying_type{1} << fe::effect_count);
     expect_dies(
         test, [poison] noexcept { (void)fe::EffectMask::from_raw(poison); },
         ::fixy::TextView{"foundation: fatal invariant failed: sanitized == b"});

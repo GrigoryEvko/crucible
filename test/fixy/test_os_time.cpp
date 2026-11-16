@@ -182,9 +182,11 @@ static_assert(sources_stay_apart());
 
 // Each context is handed the capability it claims: a context is not
 // evidence of a capability, it carries one.
-using InitWitness = fixy::ColdInitCtx;
+// A clock reader needs Nondet in the row, so the witnesses are the load
+// contexts, which hold it.
+using InitWitness = fixy::InitLoadCtx;
 using BlockWitness = fixy::TestRunnerCtx;
-using BgWitness = fixy::BgDrainCtx;
+using BgWitness = fixy::BgObserveCtx;
 
 // Every reading here comes from a clock.  The constructor that stamps a
 // literal with a source is private, and the reader is the one door,
@@ -334,8 +336,7 @@ using BgWitness = fixy::BgDrainCtx;
 // and does not hang it.
 [[nodiscard]] int handler_runs_during_a_sleep() {
     constexpr std::uint64_t sleep_nanos = 1000000000;
-    using ThreadCtx =
-        eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+    using ThreadCtx = ::fixy::BgLoadCtx;
     ThreadCtx const ctx{eff::testing::bg()};
     CRUCIBLE_FATAL_INVARIANT(install_the_recording_handler());
 
@@ -574,7 +575,8 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
 // second step converts a timespec.  It refuses a negative field, an
 // out-of-range nanosecond field and a count that does not fit in 64 bits.
 [[nodiscard]] int ptp_reader_refuses_what_it_cannot_stamp() {
-    using BgFsWitness = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Block>>;
+    using BgFsWitness =
+        eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>;
     BgFsWitness bg{eff::testing::bg()};
 
     std::uint16_t absent_index = 254;

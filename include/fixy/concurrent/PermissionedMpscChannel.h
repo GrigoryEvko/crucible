@@ -45,6 +45,7 @@
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
 
@@ -215,14 +216,23 @@ public:
             return std::move(perm_);
         }
 
+        // A pop is a merge.  The order of the items of many producers
+        // depends on the schedule, so two runs with the same inputs can pop
+        // two sequences.  Thus each pop takes the bare tag of Nondet, and
+        // only a context whose row holds Nondet gives one.  The tag is an
+        // empty value, so the call costs what a pop with no argument costs.
+
         // The oldest item, or no value when the ring is empty.  It does not
         // tell an empty ring from a closed channel: try_receive does.
-        [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept { return ch_->ring_.try_pop(); }
+        [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop(::foundation::effects::cap::Nondet) noexcept {
+            return ch_->ring_.try_pop();
+        }
 
         // The oldest item, NoItem::Empty, or NoItem::Closed after the last
         // item of a closed channel (THE END OF THE STREAM of
         // fixy/concurrent/ChannelEnd.h).
-        [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive() noexcept {
+        [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem>
+        try_receive(::foundation::effects::cap::Nondet) noexcept {
             ::foundation::core::Option<T> item = ch_->ring_.try_pop();
             if (item.is_some()) [[likely]] {
                 return std::move(item).ok_or(NoItem::Empty);

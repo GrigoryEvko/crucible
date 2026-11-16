@@ -39,6 +39,11 @@
 // call lifts to IO and Block, not to IO alone, because a mapping can park
 // the caller on page cache pressure or on a remote page fault.
 // fixy/atoms/Os.h makes the same decision for its mmap atoms.
+//
+// syscall_nondet_calls names each call whose result can change from run
+// to run with the same inputs, and each such call lifts Nondet.  A family
+// lifts Nondet when one of its calls does, so a family atom covers each
+// call of its family.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -294,12 +299,57 @@ inline constexpr std::array<std::pair<sc::SyscallFamily, syscall_family_effects>
     return syscall_family_effects{};
 }
 
+// The calls whose result can change from run to run with the same inputs:
+// a read of a clock or of the core, a wait whose end depends on the
+// schedule, and a receive from a peer.  Each one lifts Nondet.  The other
+// calls of a family give the same result for the same inputs.
+inline constexpr sc::SyscallId syscall_nondet_calls[] = {
+    sc::SyscallId::clock_gettime, sc::SyscallId::gettimeofday,
+    sc::SyscallId::getcpu_vdso,   sc::SyscallId::futex,
+    sc::SyscallId::poll,          sc::SyscallId::epoll_wait,
+    sc::SyscallId::nanosleep,     sc::SyscallId::clock_nanosleep,
+    sc::SyscallId::recvmsg,
+};
+
+// True when the call lifts Nondet.  Complexity: linear in the list.
+[[nodiscard]] consteval bool is_nondet_call_(sc::SyscallId id) noexcept {
+    for (const sc::SyscallId listed : syscall_nondet_calls) {
+        if (listed == id) return true;
+    }
+    return false;
+}
+
+// True when a call of the family lifts Nondet.  A family atom covers each
+// call of its family, so such a family lifts Nondet too.  Complexity: the
+// product of the list and the table of the calls.
+[[nodiscard]] consteval bool has_nondet_call_(sc::SyscallFamily family) noexcept {
+    for (const sc::SyscallId listed : syscall_nondet_calls) {
+        if (syscall_family_of_(listed) == family) return true;
+    }
+    return false;
+}
+
+template <bool IsNondet>
+using nondet_row_t = std::conditional_t<IsNondet, ::foundation::effects::Row<::foundation::effects::Effect::Nondet>,
+                                        ::foundation::effects::Row<>>;
+
 template <sc::SyscallFamily F>
 using syscall_family_row_t = ::foundation::effects::row_union_t<
-    std::conditional_t<syscall_family_effects_of_(F).needs_io,
-                       ::foundation::effects::Row<::foundation::effects::Effect::IO>, ::foundation::effects::Row<>>,
-    std::conditional_t<syscall_family_effects_of_(F).needs_block,
-                       ::foundation::effects::Row<::foundation::effects::Effect::Block>, ::foundation::effects::Row<>>>;
+    ::foundation::effects::row_union_t<
+        std::conditional_t<syscall_family_effects_of_(F).needs_io,
+                           ::foundation::effects::Row<::foundation::effects::Effect::IO>, ::foundation::effects::Row<>>,
+        std::conditional_t<syscall_family_effects_of_(F).needs_block,
+                           ::foundation::effects::Row<::foundation::effects::Effect::Block>,
+                           ::foundation::effects::Row<>>>,
+    nondet_row_t<has_nondet_call_(F)>>;
+
+// The row of one call: the IO and Block of its family, and Nondet when the
+// call itself lifts it.
+template <sc::SyscallId Id>
+using syscall_call_row_t = ::foundation::effects::row_union_t<
+    ::foundation::effects::row_difference_t<syscall_family_row_t<syscall_family_of_(Id)>,
+                                            ::foundation::effects::Row<::foundation::effects::Effect::Nondet>>,
+    nondet_row_t<is_nondet_call_(Id)>>;
 
 // A value of SyscallId that names a call of the catalog.  A cast from an
 // integer can make any value of the underlying type, and such a value
@@ -320,14 +370,12 @@ using syscall_family_row_t = ::foundation::effects::row_union_t<
 
 namespace fixy::atom::syscall {
 
-// One call.  The family and the row come from the table, so a site names
+// One call.  The family and the row come from the tables, so a site names
 // only the call.  A value that names no call of the catalog is refused,
 // so the value after the loop in syscall_family_of_ is never reached.
 template <SyscallId Id>
     requires(::fixy::atom::detail::is_catalogued_call_(Id))
-struct per final
-    : lifting_atom_of<Axis::SyscallSurface,
-                      ::fixy::atom::detail::syscall_family_row_t<::fixy::atom::detail::syscall_family_of_(Id)>> {
+struct per final : lifting_atom_of<Axis::SyscallSurface, ::fixy::atom::detail::syscall_call_row_t<Id>> {
     static constexpr SyscallId id = Id;
     static constexpr SyscallFamily family = ::fixy::atom::detail::syscall_family_of_(Id);
 };

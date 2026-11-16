@@ -138,24 +138,52 @@ static_assert(syscall::per<SI::execve>::family == SF::ProcessControl);
 static_assert(syscall::per<SI::bpf>::family == SF::Privilege);
 static_assert(syscall::per<SI::perf_event_open>::family == SF::Privilege);
 
-// The row, read off the atom.
-static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::clock_gettime>>, fe::Row<>>);
+// The row, read off the atom.  A call that reads a clock, the core, the
+// schedule or a peer lifts Nondet, and the other calls of its family do
+// not.
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::clock_gettime>>, fe::Row<fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::clock_getres>>, fe::Row<>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::getpid>>, fe::Row<fe::Effect::IO>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::mmap>>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::futex>>, fe::Row<fe::Effect::Block>>);
-static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::epoll_wait>>, fe::Row<fe::Effect::Block>>);
-static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::clock_nanosleep>>, fe::Row<fe::Effect::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::futex>>, fe::Row<fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(
+    std::is_same_v<fe::lift_row_t<syscall::per<SI::epoll_wait>>, fe::Row<fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(
+    std::is_same_v<fe::lift_row_t<syscall::per<SI::clock_nanosleep>>, fe::Row<fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::sched_yield>>, fe::Row<fe::Effect::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::eventfd>>, fe::Row<fe::Effect::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::recvmsg>>,
+                             fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::sendmsg>>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::bpf>>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::family<SF::NoSyscall>>, fe::Row<>>);
 
 // The row of each family, in the canonical form that a hand-written row
-// has, so that a lifted row and a stated row are one type.
-static_assert(std::is_same_v<syscall_family_row_t<SF::VdsoOnly>, fe::Row<>>);
+// has, so that a lifted row and a stated row are one type.  A family
+// lifts Nondet when one of its calls does, so a family atom covers each
+// call of its family.
+static_assert(std::is_same_v<syscall_family_row_t<SF::VdsoOnly>, fe::Row<fe::Effect::Nondet>>);
 static_assert(std::is_same_v<syscall_family_row_t<SF::ReadOnlyState>, fe::Row<fe::Effect::IO>>);
 static_assert(std::is_same_v<syscall_family_row_t<SF::FileMutation>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<syscall_family_row_t<SF::MemoryMapping>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<syscall_family_row_t<SF::ThreadSync>, fe::Row<fe::Effect::Block>>);
-static_assert(std::is_same_v<syscall_family_row_t<SF::NetworkIo>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::ThreadSync>, fe::Row<fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::NetworkIo>,
+                             fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
+
+// A family covers each of its calls.
+[[nodiscard]] consteval bool every_call_row_in_its_family_row_() noexcept {
+    bool is_covered = true;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : std::define_static_array(std::meta::enumerators_of(^^SI))) {
+        constexpr SI id = [:en:];
+        is_covered =
+            is_covered && fe::is_subrow(^^syscall_call_row_t<id>, ^^syscall_family_row_t<syscall_family_of_(id)>);
+    }
+#pragma GCC diagnostic pop
+    return is_covered;
+}
+static_assert(every_call_row_in_its_family_row_());
 static_assert(std::is_same_v<syscall_family_row_t<SF::ProcessControl>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<syscall_family_row_t<SF::Privilege>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 

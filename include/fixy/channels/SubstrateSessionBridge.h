@@ -110,11 +110,15 @@ concept IsBridgeableDirection = detail::HasHandleFor<Substr, Dir> && detail::Has
 
 // The gate of mint_substrate_session: a bridgeable direction, and the gate
 // of fixy::session::mint_session for its protocol over its handle.  So the
-// context admits each effect that a payload of the protocol carries.
+// context admits each effect that a payload of the protocol carries.  The
+// pop of a merge pole takes the bare tag of Nondet, so the context of such
+// a pole holds Nondet.
 template <class Substr, Direction Dir, class Ctx>
 concept CtxFitsSubstrateSessionMint =
     ::foundation::effects::IsExecCtx<Ctx> && IsBridgeableDirection<Substr, Dir>
-    && ::fixy::session::CtxFitsSession<Ctx, default_proto_for_t<Substr, Dir>, handle_for_t<Substr, Dir>>;
+    && ::fixy::session::CtxFitsSession<Ctx, default_proto_for_t<Substr, Dir>, handle_for_t<Substr, Dir>>
+    && (!::fixy::concurrent::is_merge_consumer_handle_v<handle_for_t<Substr, Dir>>
+        || ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>);
 
 // The handle comes in by move.  The caller keeps only a moved-from handle,
 // which reaches no channel, so the session and the caller never act on the

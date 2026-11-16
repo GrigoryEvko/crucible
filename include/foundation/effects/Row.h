@@ -266,7 +266,8 @@ concept Subrow = is_subrow(^^R1, ^^R2);
 // is the canonical row order.  The list is written out, so that no
 // includer walks the enum.  The check file of this header derives the row
 // from the enum and pins this list to it, so a new atom cannot stay out.
-using every_effect_row = Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>;
+using every_effect_row =
+    Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test, Effect::Nondet>;
 
 struct EffectRowLattice {
     using element_type = std::uint64_t;

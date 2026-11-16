@@ -138,7 +138,7 @@ void mpsc_consumer() {
     Mpsc channel{std::move(producer_root)};
     auto consumer = channel.consumer(std::move(consumer_perm));
     [[maybe_unused]] auto moved = std::move(consumer);
-    (void)opaque_ref(consumer).try_pop();
+    (void)opaque_ref(consumer).try_pop(::foundation::effects::testing::test().nondet);
 }
 
 void binding_after_move() {

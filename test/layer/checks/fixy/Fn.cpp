@@ -195,12 +195,12 @@ static_assert(fd_::row_hash_contribution_v<fn<int, atom::declassify<tags::secret
               "a declassification's policy is part of its identity");
 
 // The row a binding requires joins its Effect grade with the lifts of its
-// atoms.  A futex call requires Block although the Effect grade stays at
-// the strict pole.
+// atoms.  A futex call requires Block and Nondet although the Effect grade
+// stays at the strict pole.
 using FutexBinding = fn<int, atom::syscall::per<atom::syscall::SyscallId::futex>>;
-using StatedBlockBinding = fn<int, atom::with<fe_::Effect::Block>>;
+using StatedBlockBinding = fn<int, atom::with<fe_::Effect::Block, fe_::Effect::Nondet>>;
 static_assert(std::is_same_v<FutexBinding::grade_on<Axis::Effect>, typename axis_traits<Axis::Effect>::strict>);
-static_assert(std::is_same_v<binding_row_t<FutexBinding>, fe_::Row<fe_::Effect::Block>>);
+static_assert(std::is_same_v<binding_row_t<FutexBinding>, fe_::Row<fe_::Effect::Block, fe_::Effect::Nondet>>);
 static_assert(std::is_same_v<binding_row_t<fn<int>>, fe_::Row<>>);
 
 // The key folds the grade on each axis, and not the row a binding

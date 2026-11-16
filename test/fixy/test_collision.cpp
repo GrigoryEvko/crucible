@@ -334,14 +334,15 @@ static_assert(hot_pack<at::with<Eff::IO>>::W001_ok, "IO without Block is H003's 
 // UMWAIT lift to the empty row.
 static_assert(std::is_same_v<hot_pack<at::sync::park, at::with<Eff::IO>>::lifted_row, fe::Row<Eff::IO, Eff::Block>>);
 static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>, at::with<Eff::Alloc>>::lifted_row,
-                             fe::Row<Eff::Alloc, Eff::Block>>);
+                             fe::Row<Eff::Alloc, Eff::Block, Eff::Nondet>>);
 static_assert(std::is_same_v<live_rules<>::lifted_row, fe::Row<>>);
 static_assert(!live_rules<at::sync::spin_pause>::blocks && !live_rules<at::sync::umwait_c01>::blocks);
 
 // The row of the binding joins the Effect grade with the lifted row.  It
 // is the row every rule reads, and it is the row fixy::binding_row_t
 // gives for context admission, so a rule and a context gate read one row.
-static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>>::binding_row, fe::Row<Eff::Block>>);
+static_assert(
+    std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>>::binding_row, fe::Row<Eff::Block, Eff::Nondet>>);
 static_assert(std::is_same_v<live_rules<at::syscall::per<SyscallId::futex>>::effect_row, fe::Row<>>,
               "the Effect grade stays at the strict pole");
 static_assert(std::is_same_v<live_rules<at::with<Eff::IO>, at::sync::park>::binding_row, fe::Row<Eff::IO, Eff::Block>>);

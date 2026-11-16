@@ -1108,12 +1108,13 @@ public:
     // a compile error.
     using run_required_row =
         ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc,
-                                   ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
+                                   ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block,
+                                   ::foundation::effects::Effect::Nondet>;
 
     // The row is exactly the background load context's row, so the entry of
     // the pipeline thread builds that context and no wider one exists.
     static_assert(std::is_same_v<run_required_row, typename ::fixy::BgLoadCtx::row_type>,
-                  "BackgroundThread::run_required_row must be exactly Row<Bg, Alloc, IO, Block>, the row of "
+                  "BackgroundThread::run_required_row must be exactly Row<Bg, Alloc, IO, Block, Nondet>, the row of "
                   "fixy::BgLoadCtx.  Adding or removing an atom changes the context every site that runs "
                   "this thread must hand in.");
 

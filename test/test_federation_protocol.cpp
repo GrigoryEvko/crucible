@@ -495,8 +495,12 @@ static void test_header_overload_agreement() {
         auto written = fed::serialize_federation_entry(buf.view(), key, kNoPayload);
         ASSERT_TRUE(written.is_ok());
 
-        auto h = fed::deserialize_federation_header(prefix(buf, value_of(written)), 6);
-        auto e = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)), 6);
+        // The sender stamps the atom count of this build, so the receiver of
+        // this build states the same count.
+        auto h =
+            fed::deserialize_federation_header(prefix(buf, value_of(written)), fed::FEDERATION_UNIVERSE_CARDINALITY);
+        auto e = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),
+                                                             fed::FEDERATION_UNIVERSE_CARDINALITY);
         ASSERT_TRUE(h.is_ok());
         ASSERT_TRUE(e.is_ok());
         assert(value_of(h).content_hash == value_of(e).header.content_hash);

@@ -16,11 +16,11 @@ namespace eff = ::fixy;
 namespace topology = crucible::topology;
 
 // A background context that may block on the file system, which is what
-// opening /dev/ptpN needs.
+// opening /dev/ptpN needs, and that reads a clock and a socket.
 using BgFsCtx = ::foundation::effects::ExecCtx<
     ::foundation::effects::Bg,
     ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::IO,
-                               ::foundation::effects::Effect::Block>>;
+                               ::foundation::effects::Effect::Block, ::foundation::effects::Effect::Nondet>>;
 
 static topology::PositivePtpPathDelayNs path_delay(std::uint64_t ns) {
     return ::fixy::mint_refined<::fixy::positive>(ns);

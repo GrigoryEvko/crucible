@@ -23,6 +23,7 @@
 #include <fixy/session/Handle.h>
 
 #include <foundation/NoObject.h>
+#include <foundation/effects/Capability.h>
 #include <foundation/effects/Ctx.h>
 
 #include <concepts>
@@ -85,11 +86,18 @@ public:
 
     // The Option<value_type> of the pop of the handle.  The type is deduced,
     // so the definition of the class names no Option, and a gate that reads
-    // the class does not read the open niche of the payload.
+    // the class does not read the open niche of the payload.  The pop of a
+    // merge pole takes the bare tag of Nondet from the context of the
+    // endpoint, and the gate of the mint made sure that the row holds it.
     template <Direction D = Dir>
         requires(D == Direction::Consumer)
     [[nodiscard, gnu::hot]] auto try_recv() noexcept {
-        return handle_.try_pop();
+        if constexpr (::fixy::concurrent::is_merge_consumer_handle_v<handle_type>) {
+            return handle_.try_pop(::foundation::effects::extract_bare(
+                ::foundation::effects::mint_from_ctx<::foundation::effects::Effect::Nondet>(ctx_)));
+        } else {
+            return handle_.try_pop();
+        }
     }
 
     [[nodiscard]] bool empty_approx() const noexcept

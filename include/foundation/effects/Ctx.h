@@ -693,12 +693,13 @@ namespace detail::ctx_witnesses {
 using FgWitness = ExecCtx<ctx_cap::Fg, Row<>>;
 using BgWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc>>;
 using BgIoWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>;
-using BgBlockWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>;
+using BgBlockWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>;
+using BgNondetWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Nondet>>;
 using InitWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>;
-using InitBlockWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>;
-using TestWitnessCtx = ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>;
+using InitBlockWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>;
+using TestWitnessCtx = ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>;
 
-// The seven named contexts.  Each has two axes, the capability source
+// The eight named contexts.  Each has two axes, the capability source
 // and the row.  Each is one witness above.  The check file of this
 // header states the row of each, so the layer that promotes them to
 // production contexts starts from a declaration.
@@ -712,23 +713,30 @@ using BgDrainCtx = BgWitness;
 // compiling writes kernel artifacts.
 using BgCompileCtx = BgIoWitness;
 
-// The load context claims Block on top of the compile row.  Work that
-// enters the kernel and waits there, such as a BPF program load waiting
-// on the verifier, needs the atom the other two background rows omit.
-// The background capability permits all four atoms, so this is the
-// widest row a background context can claim.
+// The load context claims Block and Nondet on top of the compile row.
+// Work that enters the kernel and waits there, such as a BPF program load
+// waiting on the verifier, needs Block, and a wait to a deadline reads a
+// clock.  The background capability permits these five atoms, so this is
+// the widest row a background context can claim.
 using BgLoadCtx = BgBlockWitness;
+
+// The observe context claims Nondet on top of the atom of the thread, and
+// nothing else.  A watchdog of a background thread reads a clock and
+// compares it with a deadline.  It allocates nothing and does no IO.
+using BgObserveCtx = BgNondetWitness;
 
 // The context of process startup, before the threads are pinned.
 using ColdInitCtx = InitWitness;
 
-// The startup load context claims Block on top of the cold init row.
-// Startup work that waits in the kernel, such as a BPF program load that
-// waits for the verifier, needs that atom.  The init capability permits
-// all four atoms, so this is the widest row an init context can claim.
+// The startup load context claims Block and Nondet on top of the cold
+// init row.  Startup work that waits in the kernel, such as a BPF program
+// load that waits for the verifier, needs Block, and a calibration reads a
+// clock.  The init capability permits these five atoms, so this is the
+// widest row an init context can claim.
 using InitLoadCtx = InitBlockWitness;
 
-// A fixture may claim any effect this row names, and no others.  In
+// A fixture may claim any effect this row names, and no others.  It holds
+// Nondet, so a test can read a clock.  In
 // particular it cannot claim the background or initialization effects,
 // so it cannot stand in for either of those contexts.
 using TestRunnerCtx = TestWitnessCtx;

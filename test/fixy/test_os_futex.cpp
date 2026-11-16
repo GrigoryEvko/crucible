@@ -124,8 +124,8 @@ using futex::Deadline;
 using futex::FutexWord;
 using futex::WaitEnd;
 
-using BlockCtx =
-    eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+using BlockCtx = eff::ExecCtx<
+    eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>;
 
 constexpr std::uint64_t kMillisecond = 1000000U;
 

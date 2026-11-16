@@ -42,11 +42,22 @@ static_assert(std::is_same_v<BgDrainCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Eff
 static_assert(std::is_same_v<BgCompileCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>>);
 static_assert(std::is_same_v<ColdInitCtx, fe::ExecCtx<fe::Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>>);
 static_assert(
-    std::is_same_v<TestRunnerCtx, fe::ExecCtx<fe::Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block>>>);
+    std::is_same_v<TestRunnerCtx,
+                   fe::ExecCtx<fe::Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>>);
 static_assert(
-    std::is_same_v<BgLoadCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block>>>);
+    std::is_same_v<BgLoadCtx,
+                   fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>>);
+static_assert(std::is_same_v<::fixy::BgObserveCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Nondet>>>);
 static_assert(
-    std::is_same_v<InitLoadCtx, fe::ExecCtx<fe::Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block>>>);
+    std::is_same_v<InitLoadCtx,
+                   fe::ExecCtx<fe::Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>>);
+
+// Only a row that names Nondet admits Nondet, and the hot path never does.
+static_assert(!fe::CtxAdmits<HotFgCtx, Row<Effect::Nondet>>, "The hot path never reads a clock or a merge.");
+static_assert(!fe::CtxAdmits<BgDrainCtx, Row<Effect::Nondet>> && !fe::CtxAdmits<BgCompileCtx, Row<Effect::Nondet>>
+              && !fe::CtxAdmits<ColdInitCtx, Row<Effect::Nondet>>);
+static_assert(fe::CtxAdmits<BgLoadCtx, Row<Effect::Nondet>> && fe::CtxAdmits<InitLoadCtx, Row<Effect::Nondet>>
+              && fe::CtxAdmits<TestRunnerCtx, Row<Effect::Nondet>>);
 
 // No context builds from nothing.
 static_assert(!std::is_default_constructible_v<HotFgCtx> && !std::is_default_constructible_v<BgDrainCtx>
