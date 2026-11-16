@@ -5444,6 +5444,7 @@ fixy_test(test_concurrent_spawn)
 # is a large instantiation, so each subject has its own unit.
 fixy_test(test_concurrent_parallel_tree)
 fixy_test(test_concurrent_parallel_tree_scan)
+fixy_test(test_concurrent_parallel_tree_segments)
 fixy_test(test_concurrent_parallel_tree_reduce)
 
 # test_os_thread_tasks starts threads through the door of
