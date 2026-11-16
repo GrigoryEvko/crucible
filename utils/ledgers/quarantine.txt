@@ -323,10 +323,10 @@ test/ct/ | raw-pointer-object | 4 | - | -
 test/ct/ | std-entity | 18 | - | -
 test/ct/ | std-object | 12 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
-test/fixy/ | c-array-object | 88 | - | -
-test/fixy/ | c-library-call | 1232 | - | -
+test/fixy/ | c-array-object | 87 | - | -
+test/fixy/ | c-library-call | 1191 | - | -
 test/fixy/ | c-library-object | 6 | - | -
-test/fixy/ | door-header | 14 | - | -
+test/fixy/ | door-header | 12 | - | -
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 3 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | opted-out | 16 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
@@ -375,8 +375,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2717 | - | -
-test/fixy/ | std-object | 989 | - | -
+test/fixy/ | std-entity | 2699 | - | -
+test/fixy/ | std-object | 983 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 254 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness

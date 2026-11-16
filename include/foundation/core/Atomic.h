@@ -92,6 +92,21 @@
 // Tally is a statistics counter.  add() is a fetch-add with acq_rel order,
 // which is the same locked instruction on x86-64, and read() is an acquire
 // load.  A value of a Tally orders no other data.
+//
+// THE FENCE
+//   fence_seq_cst() is a fence with the sequentially consistent order.  It
+//   orders each store of the calling thread before it against each load of
+//   the calling thread after it, the store-load order.  Two threads that each
+//   store one cell, run the fence and load the cell of the other thread
+//   cannot both read the old values: at least one reads the store of the
+//   other.  The wait of a park and wake protocol needs that order.  The
+//   waiter enters a count of the waiters and then tests its condition again,
+//   and the waker stores the condition and then loads the count.
+//
+//   No acquire, release or acq_rel operation gives that order.  Each of them
+//   lets the core run a load before a store of the same thread to a
+//   different cell.  The x86-64 code is a locked OR of zero to the top of
+//   the stack (lock orq $0, (%rsp)), and the aarch64 code is dmb ish.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
@@ -672,5 +687,8 @@ public:
 
     [[nodiscard]] std::uint64_t read() const noexcept { return __atomic_load_n(&count_, __ATOMIC_ACQUIRE); }
 };
+
+// The fence of the store-load order (THE FENCE).
+CRUCIBLE_INLINE void fence_seq_cst() noexcept { __atomic_thread_fence(__ATOMIC_SEQ_CST); }
 
 }  // namespace foundation::core

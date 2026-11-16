@@ -174,7 +174,7 @@ that the axis does not apply to the row.
 | `mint_borrowed_ref` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
-| `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 14 |
 | `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 3 |

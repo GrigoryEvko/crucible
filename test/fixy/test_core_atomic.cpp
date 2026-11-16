@@ -698,6 +698,48 @@ void test_release_publishes_to_acquire() {
     CRUCIBLE_FATAL_INVARIANT(complete_reads->read() == 3);
 }
 
+// The fence gives the store-load order.  In each round, two threads each
+// store the number of the round into their own cell, run the fence, and load
+// the cell of the other thread.  At least one of the two loads reads the store
+// of the round, so no round gives two old values.  With no fence, an x86-64
+// core can run each load before the store of its own thread, and some rounds
+// then give two old values.  The two threads meet at a barrier before and
+// after each round, so their stores come at almost the same time.  On the
+// dev host, 3 to 4 rounds of each 100 give two old values with no fence, so
+// 4000 rounds find a missing fence.
+void test_fence_orders_a_store_before_a_load() {
+    constexpr std::uint64_t kRounds = 4000;
+    CacheLine<Atomic<std::uint64_t>> first_cell{std::uint64_t{0}};
+    CacheLine<Atomic<std::uint64_t>> second_cell{std::uint64_t{0}};
+    CacheLine<Atomic<std::uint64_t>> second_read{std::uint64_t{0}};
+    CacheLine<Atomic<std::uint64_t>> arrivals{std::uint64_t{0}};
+    CacheLine<Atomic<std::uint64_t>> role{std::uint64_t{0}};
+    CacheLine<Tally> old_rounds{};
+    auto meet = [&arrivals](std::uint64_t barrier) noexcept {
+        static_cast<void>(arrivals->fetch_add_acq_rel(1));
+        while (arrivals->load_acquire() < 2 * (barrier + 1)) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+    };
+    run_on_four_threads([&] {
+        std::uint64_t const own_role = role->fetch_add_acq_rel(1);
+        if (own_role > 1) return;
+        bool const is_first = own_role == 0;
+        Atomic<std::uint64_t>& own_cell = is_first ? *first_cell : *second_cell;
+        Atomic<std::uint64_t> const& other_cell = is_first ? *second_cell : *first_cell;
+        for (std::uint64_t round = 0; round < kRounds; ++round) {
+            meet(2 * round);
+            own_cell.store_release(round + 1);
+            ::foundation::core::fence_seq_cst();
+            std::uint64_t const seen = other_cell.load_acquire();
+            if (!is_first) second_read->store_release(seen);
+            meet(2 * round + 1);
+            if (is_first && seen <= round && second_read->load_acquire() <= round) old_rounds->add(1);
+        }
+    });
+    CRUCIBLE_FATAL_INVARIANT(old_rounds->read() == 0);
+}
+
 // Each worker sets and clears its own bits of one shared word.  Only the
 // worker touches its bits, so each fetch_or finds its bit clear and each
 // fetch_and finds it set, whatever the other workers do to the word.
@@ -967,6 +1009,7 @@ int main() {
     test_read_modify_write_under_contention();
     test_tally_under_contention();
     test_release_publishes_to_acquire();
+    test_fence_orders_a_store_before_a_load();
     test_fetch_and_under_contention();
     test_niche_option_claim_under_contention();
     test_word_option_publishes_to_acquire();
