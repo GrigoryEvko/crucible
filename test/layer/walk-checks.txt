@@ -105,6 +105,7 @@ foundation/diag/Catalog.cpp | 3.2 | ::foundation::diag
 foundation/diag/Insights.cpp | 0.6 | ::foundation::diag
 foundation/effects/Capability.cpp | 0.2 | ::foundation::effects::cap
 foundation/effects/Concurrent.cpp | 2.3 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
+foundation/effects/Effect.cpp | unmeasured | ::foundation::effects::cap
 foundation/effects/Resources.cpp | 2.5 | ::foundation::effects, ::foundation::effects::resource, ::foundation::permissions::permission_rows
 foundation/permissions/Permission.cpp | 1.0 | ::foundation::permissions::permission_rows, ::foundation::permissions::tag
 foundation/permissions/ReadView.cpp | 0.2 | ::foundation::permissions::permission_rows

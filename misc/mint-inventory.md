@@ -203,7 +203,7 @@ that the axis does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `LazyEstablishedChannel::mint_established_session` | `include/fixy/channels/LazyEstablishedChannel.h` | Y | - | Y | Y | member | · | HS14: 2 |
-| `mint_endpoint` | `include/fixy/channels/Endpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
+| `mint_endpoint` | `include/fixy/channels/Endpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
 | `mint_mpmc_stage_from_endpoints` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_reader_runtime_session` | `include/fixy/channels/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_recording_endpoint` | `include/fixy/channels/EndpointMint.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -236,7 +236,7 @@ that the axis does not apply to the row.
 | `OwnedMmap::mint_region` | `include/fixy/os/OwnedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_affinity` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
@@ -334,8 +334,15 @@ that the axis does not apply to the row.
 | `mint_cap` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_foreground_context` | `include/foundation/effects/Ctx.h` | Y | Y | Y | · | token | · | HS14: 4 |
-| `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
+| `mint_from_ctx` | `include/foundation/effects/Capability.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_from_image` | `include/foundation/effects/ImageRead.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
+| `mint_kernel_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | Y | token | · | HS14: 2 |
+
+## include/foundation/os/
+
+| mint | site | nd | cx | ne | rq | cb | fit | HS14 |
+|---|---|---|---|---|---|---|---|---|
+| `mint_fp_scope` | `include/foundation/os/FpControl.h` | Y | - | Y | Y | token | · | HS14: 2 |
 
 ## include/foundation/permissions/
 
@@ -356,4 +363,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 75 | 43 | 23 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 142 | 57 | 81 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 144 | 57 | 83 | 4 | 0 | 3 |

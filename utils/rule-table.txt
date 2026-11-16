@@ -568,6 +568,13 @@ witness <foundation/effects/Capability.h> no-match | foundation::effects::Capabi
 # constructor takes the owner of the atoms, which only a context builds.
 witness <foundation/effects/Effect.h> no-match | foundation::effects::detail::ContextBase<forge::brand, foundation::effects::detail::ctx_mint::bg_key, foundation::effects::Effect::Bg> | foundation::effects::detail::ContextBase<forge::brand, foundation::effects::detail::ctx_mint::bg_key, foundation::effects::Effect::Bg>{}
 witness <foundation/effects/Ctx.h> private | foundation::effects::host::ProducerClaim<forge::brand> | foundation::effects::host::ProducerClaim<forge::brand>{}
+# The source of a kernel context is built only by the context, and only the
+# mint of a kernel context builds the context, from a live FP scope.
+witness <foundation/effects/Ctx.h> private | foundation::effects::ctx_cap::KernelSource<forge::brand, foundation::core::kFpModeIeee> | foundation::effects::ctx_cap::KernelSource<forge::brand, foundation::core::kFpModeIeee>{std::uint64_t{1}, std::uintptr_t{1}}
+# An FP scope comes only from mint_fp_scope, and a word of the FP control
+# register only from a read of the register or from a word and a mode.
+witness <foundation/os/FpControl.h> private | foundation::os::FpScope<foundation::core::kFpModeIeee> | foundation::os::FpScope<foundation::core::kFpModeIeee>{}
+witness <foundation/os/FpControl.h> private | foundation::os::FpControlWord | foundation::os::FpControlWord{std::uint64_t{0}}
 # The owner of the key of an image read befriends mint_from_image, and no
 # code builds an owner.
 witness <foundation/effects/ImageRead.h> private | foundation::effects::host::ImageReader | foundation::effects::host::ImageReader{}

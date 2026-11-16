@@ -482,6 +482,11 @@
       "constructor": "\\bcap_mint_key\\("
     },
     {
+      "name": "neg_witness_effects_cap_nondet_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bNondet\\("
+    },
+    {
       "name": "neg_witness_effects_capability_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bCapability\\("
@@ -495,6 +500,11 @@
       "name": "neg_witness_effects_ctx_cap_fg_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bFg\\("
+    },
+    {
+      "name": "neg_witness_effects_ctx_cap_kernelsource_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bKernelSource\\("
     },
     {
       "name": "neg_witness_effects_detail_contextbase_direct_construction",
@@ -605,6 +615,16 @@
       "name": "neg_witness_orderedappendonly_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bOrderedAppendOnly\\("
+    },
+    {
+      "name": "neg_witness_os_fpcontrolword_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bFpControlWord\\("
+    },
+    {
+      "name": "neg_witness_os_fpscope_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bFpScope\\("
     },
     {
       "name": "neg_witness_os_guardedregion_direct_construction",
@@ -1024,6 +1044,18 @@
       "header": "foundation/effects/Ctx.h"
     },
     {
+      "type": "foundation::effects::ctx_cap::KernelSource<forge::brand, foundation::core::kFpModeIeee>",
+      "header": "foundation/effects/Ctx.h"
+    },
+    {
+      "type": "foundation::os::FpScope<foundation::core::kFpModeIeee>",
+      "header": "foundation/os/FpControl.h"
+    },
+    {
+      "type": "foundation::os::FpControlWord",
+      "header": "foundation/os/FpControl.h"
+    },
+    {
       "type": "foundation::effects::host::ImageReader",
       "header": "foundation/effects/ImageRead.h"
     },
@@ -1037,6 +1069,10 @@
     },
     {
       "type": "foundation::effects::cap::Block",
+      "header": "foundation/effects/Effect.h"
+    },
+    {
+      "type": "foundation::effects::cap::Nondet",
       "header": "foundation/effects/Effect.h"
     },
     {
