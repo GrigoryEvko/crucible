@@ -4,14 +4,16 @@
 
 namespace fixy::fp::detail::canonicalize_self_test {
 
+using ::foundation::core::RoundingMode;
+
 // ── The pinned enumerator values (design note 2) ─────────────────────
 //
 // Crucible converts its RoundingMode and ReductionDeterminism
 // enums into the two enums of fixy/fp/Canonicalize.h.  These cells
 // are what make that conversion a cast rather than a switch.
 
-static_assert(std::meta::enumerators_of(^^RoundingMode).size() == 4,
-              "fixy::fp::RoundingMode drifted from four enumerators. The crucible enum it converts from "
+static_assert(std::meta::enumerators_of(^^::foundation::core::RoundingMode).size() == 4,
+              "foundation::core::RoundingMode drifted from four enumerators. The crucible enum it converts from "
               "has four; adding one here without adding it there makes the conversion lossy.");
 static_assert(std::to_underlying(RoundingMode::RN) == 0);
 static_assert(std::to_underlying(RoundingMode::RZ) == 1);

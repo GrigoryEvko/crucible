@@ -1013,6 +1013,10 @@ inline constexpr StatedZero kZeros[] = {
      "frame, and it makes no claim about what the elements hold"},
     {^^::foundation::core::Full,
      "the error of a push into a full owner: it holds nothing, or the linear value of the push, and makes no claim"},
+    // The FP mode.
+    {^^::foundation::core::FpMode,
+     "the three settings of the FP control register: a template argument of a kernel context, which states it in "
+     "its type, and no value of a kernel signature"},
     // The Scalar family.
     {^^::foundation::core::WideProduct, kPayload},
     {^^::foundation::core::Bounds,

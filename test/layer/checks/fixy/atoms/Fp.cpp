@@ -5,8 +5,8 @@
 namespace fixy::atom::detail::fp_atom_self_test {
 
 using ::fixy::atom::fp::FpContract;
-using ::fixy::atom::fp::FpDenormalInput;
-using ::fixy::atom::fp::FpFtz;
+using ::foundation::core::FpDenormalInput;
+using ::foundation::core::FpFtz;
 using ::fixy::atom::fp::FpReassociate;
 using ::fixy::atom::fp::mode;
 

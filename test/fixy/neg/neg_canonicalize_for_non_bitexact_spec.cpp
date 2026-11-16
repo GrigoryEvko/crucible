@@ -6,7 +6,8 @@
 
 namespace fp = fixy::fp;
 
-inline constexpr fp::CanonicalizeRecipeSpec kOrderedSpec{fp::RoundingMode::RN, fp::ReductionDeterminism::ORDERED};
+inline constexpr fp::CanonicalizeRecipeSpec kOrderedSpec{::foundation::core::RoundingMode::RN,
+                                                         fp::ReductionDeterminism::ORDERED};
 
 int main() {
     [[maybe_unused]] const auto folded = fp::canonicalize_for<kOrderedSpec>(1.5);

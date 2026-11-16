@@ -5503,6 +5503,21 @@ fixy_neg_compile_test(neg_thread_name_holds_a_zero_byte
 # deadline comes only from a reader of CLOCK_MONOTONIC.
 fixy_test(test_os_futex)
 
+# test_os_fp_control puts each mode into a word of the FP control register
+# and reads it back, and it runs one kernel with flush to zero and one
+# without it on the same thread, with the bits of each mode.  It also reads
+# the rounding field and the epochs of nested scopes.
+fixy_test(test_os_fp_control)
+
+# An FP scope comes only from its mint, and it has no copy and no move, so it
+# writes the register back one time, on its own thread.
+fixy_neg_compile_test(neg_fp_scope_direct_construction
+  "is private within this context"
+  "FpScope\\(\\) \\[with foundation::core::FpMode Mode = ")
+fixy_neg_compile_test(neg_fp_scope_copy
+  "use of deleted function"
+  "a scope restores the register of one thread, one time")
+
 # test_os_spin_hint reads the arms of a core from its feature words, and it
 # waits on a word with each arm of the core of the run.  A store of a second
 # thread ends each wait before its deadline, and a deadline ends a wait on a

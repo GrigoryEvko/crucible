@@ -12,7 +12,7 @@ int main() {
     [[maybe_unused]] ::fixy::fn<
         int, ::fixy::atom::constant_time,
         ::fixy::atom::fp::mode<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, ::fixy::atom::fp::FpContract::Fast,
-                               ::fixy::atom::fp::FpDenormalInput::DenormalsAreZero,
-                               ::fixy::atom::fp::FpFtz::FlushToZero>> refused{};
+                               ::foundation::core::FpDenormalInput::DenormalsAreZero,
+                               ::foundation::core::FpFtz::FlushToZero>> refused{};
     return 0;
 }

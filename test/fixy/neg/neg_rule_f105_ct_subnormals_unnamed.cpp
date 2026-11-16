@@ -9,6 +9,7 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::constant_time,
-                                ::fixy::atom::fp::mode<::fixy::atom::fp::FpDenormalInput::DenormalsAreZero>> refused{};
+                                ::fixy::atom::fp::mode<::foundation::core::FpDenormalInput::DenormalsAreZero>>
+        refused{};
     return 0;
 }

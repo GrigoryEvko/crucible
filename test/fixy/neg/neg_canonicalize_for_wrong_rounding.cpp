@@ -6,7 +6,7 @@
 
 namespace fp = fixy::fp;
 
-inline constexpr fp::CanonicalizeRecipeSpec kTowardZeroSpec{fp::RoundingMode::RZ,
+inline constexpr fp::CanonicalizeRecipeSpec kTowardZeroSpec{::foundation::core::RoundingMode::RZ,
                                                             fp::ReductionDeterminism::BITEXACT_STRICT};
 
 int main() {

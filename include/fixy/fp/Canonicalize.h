@@ -28,6 +28,8 @@
 //     recipe type is not visible here.  The spec's two-argument
 //     constructor is what the crucible side calls.
 
+#include <foundation/core/FpMode.h>
+
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -37,14 +39,10 @@
 
 namespace fixy::fp {
 
-// The rounding mode a kernel realizes.  Same enumerators and same values
-// as the crucible RoundingMode enum, per design note 2.
-enum class RoundingMode : std::uint8_t {
-    RN = 0,  // to nearest, ties to even
-    RZ = 1,  // toward zero
-    RM = 2,  // toward minus infinity
-    RP = 3,  // toward plus infinity
-};
+// The rounding mode a kernel realizes is ::foundation::core::RoundingMode,
+// the vocabulary of the base in foundation/core/FpMode.h.  It has the same
+// enumerators and the same values as the crucible RoundingMode enum, per
+// design note 2.
 
 // How much reordering a reduction may do.  Same enumerators and same
 // values as the crucible ReductionDeterminism enum, per design note 2.
@@ -110,11 +108,12 @@ constexpr std::uint32_t canonicalize(float x) noexcept {
 // plain fields rather than referring to a recipe: the recipe's flags
 // member keeps its underlying byte private and is not a structural type.
 struct CanonicalizeRecipeSpec {
-    RoundingMode rounding = RoundingMode::RN;
+    ::foundation::core::RoundingMode rounding = ::foundation::core::RoundingMode::RN;
     ReductionDeterminism determinism = ReductionDeterminism::ORDERED;
 
     constexpr CanonicalizeRecipeSpec() noexcept = default;
-    constexpr CanonicalizeRecipeSpec(RoundingMode r, ReductionDeterminism d) noexcept : rounding{r}, determinism{d} {}
+    constexpr CanonicalizeRecipeSpec(::foundation::core::RoundingMode r, ReductionDeterminism d) noexcept
+        : rounding{r}, determinism{d} {}
 
     // A structural template parameter needs the defaulted comparison.
     constexpr auto operator<=>(const CanonicalizeRecipeSpec&) const = default;
@@ -128,11 +127,12 @@ constexpr std::uint64_t canonicalize_for(double x) noexcept {
                                                  "merkle-hashing a double under UNORDERED/ORDERED tiers "
                                                  "would lock content_hash to a non-portable bit pattern "
                                                  "(cross-vendor drift exceeds 1 ULP).");
-    static_assert(Spec.rounding == RoundingMode::RN, "fixy::fp::canonicalize_for<Spec> requires "
-                                                     "RoundingMode::RN (round-to-nearest, ties to even) — "
-                                                     "merkle-folding under RZ/RM/RP would silently lock "
-                                                     "content_hash to a rounding mode no default kernel "
-                                                     "realizes.");
+    static_assert(Spec.rounding == ::foundation::core::RoundingMode::RN,
+                  "fixy::fp::canonicalize_for<Spec> requires "
+                  "RoundingMode::RN (round-to-nearest, ties to even) — "
+                  "merkle-folding under RZ/RM/RP would silently lock "
+                  "content_hash to a rounding mode no default kernel "
+                  "realizes.");
     return canonicalize(x);
 }
 
@@ -142,9 +142,10 @@ constexpr std::uint32_t canonicalize_for(float x) noexcept {
     static_assert(is_bitexact(Spec.determinism), "fixy::fp::canonicalize_for<Spec> requires "
                                                  "ReductionDeterminism::BITEXACT_TC or BITEXACT_STRICT "
                                                  "for the float overload (same rationale as double).");
-    static_assert(Spec.rounding == RoundingMode::RN, "fixy::fp::canonicalize_for<Spec> requires "
-                                                     "RoundingMode::RN for the float overload (same "
-                                                     "rationale as double).");
+    static_assert(Spec.rounding == ::foundation::core::RoundingMode::RN,
+                  "fixy::fp::canonicalize_for<Spec> requires "
+                  "RoundingMode::RN for the float overload (same "
+                  "rationale as double).");
     return canonicalize(x);
 }
 

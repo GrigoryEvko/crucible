@@ -172,23 +172,31 @@ namespace ct_cells {
 namespace at = ::fixy::atom;
 namespace fp = ::fixy::atom::fp;
 using CT = at::constant_time;
-using FlushBoth = fp::mode<fp::FpDenormalInput::DenormalsAreZero, fp::FpFtz::FlushToZero>;
+using FlushBoth =
+    fp::mode<::foundation::core::FpDenormalInput::DenormalsAreZero, ::foundation::core::FpFtz::FlushToZero>;
 
 static_assert(live_rules<CT>::valid);
 static_assert(live_rules<CT, FlushBoth>::valid, "a constant-time mode that names both flushes is legal");
 
-static_assert(!live_rules<CT, fp::mode<fp::FpReassociate::UnrestrictedRewrite, fp::FpDenormalInput::DenormalsAreZero,
-                                       fp::FpFtz::FlushToZero>>::F103_ok);
-static_assert(live_rules<CT, fp::mode<fp::FpReassociate::BoundedTreeDepth, fp::FpDenormalInput::DenormalsAreZero,
-                                      fp::FpFtz::FlushToZero>>::valid,
-              "a tree of bounded depth keeps its topology apart from the data, so F103 admits it");
+static_assert(
+    !live_rules<CT,
+                fp::mode<fp::FpReassociate::UnrestrictedRewrite, ::foundation::core::FpDenormalInput::DenormalsAreZero,
+                         ::foundation::core::FpFtz::FlushToZero>>::F103_ok);
+static_assert(
+    live_rules<CT, fp::mode<fp::FpReassociate::BoundedTreeDepth, ::foundation::core::FpDenormalInput::DenormalsAreZero,
+                            ::foundation::core::FpFtz::FlushToZero>>::valid,
+    "a tree of bounded depth keeps its topology apart from the data, so F103 admits it");
 static_assert(live_rules<fp::mode<fp::FpReassociate::UnrestrictedRewrite>>::F103_ok, "no timing claim, no F103");
 
-static_assert(!live_rules<CT, fp::mode<fp::FpFtz::FlushToZero>>::F104_ok, "an unnamed setting honours denormals");
-static_assert(!live_rules<CT, fp::mode<fp::FpDenormalInput::HonorDenormals, fp::FpFtz::FlushToZero>>::F104_ok);
-static_assert(live_rules<CT, fp::mode<fp::FpDenormalInput::DenormalsAreZero, fp::FpFtz::FlushToZero>>::F104_ok);
-static_assert(!live_rules<CT, fp::mode<fp::FpDenormalInput::DenormalsAreZero>>::F105_ok);
-static_assert(!live_rules<CT, fp::mode<fp::FpFtz::PreserveSubnormals, fp::FpDenormalInput::DenormalsAreZero>>::F105_ok);
+static_assert(!live_rules<CT, fp::mode<::foundation::core::FpFtz::FlushToZero>>::F104_ok,
+              "an unnamed setting honours denormals");
+static_assert(!live_rules<CT, fp::mode<::foundation::core::FpDenormalInput::HonorDenormals,
+                                       ::foundation::core::FpFtz::FlushToZero>>::F104_ok);
+static_assert(live_rules<CT, fp::mode<::foundation::core::FpDenormalInput::DenormalsAreZero,
+                                      ::foundation::core::FpFtz::FlushToZero>>::F104_ok);
+static_assert(!live_rules<CT, fp::mode<::foundation::core::FpDenormalInput::DenormalsAreZero>>::F105_ok);
+static_assert(!live_rules<CT, fp::mode<::foundation::core::FpFtz::PreserveSubnormals,
+                                       ::foundation::core::FpDenormalInput::DenormalsAreZero>>::F105_ok);
 static_assert(live_rules<CT>::F104_ok && live_rules<CT>::F105_ok, "no FP mode stated, no FP claim to refuse");
 static_assert(live_rules<fp::mode<>>::F104_ok && live_rules<fp::mode<>>::F105_ok, "no timing claim");
 

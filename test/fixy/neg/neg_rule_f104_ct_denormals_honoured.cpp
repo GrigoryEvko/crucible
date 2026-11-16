@@ -8,7 +8,7 @@
 
 int main() {
     [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::constant_time,
-                                ::fixy::atom::fp::mode<::fixy::atom::fp::FpDenormalInput::HonorDenormals,
-                                                       ::fixy::atom::fp::FpFtz::FlushToZero>> refused{};
+                                ::fixy::atom::fp::mode<::foundation::core::FpDenormalInput::HonorDenormals,
+                                                       ::foundation::core::FpFtz::FlushToZero>> refused{};
     return 0;
 }

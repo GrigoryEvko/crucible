@@ -718,8 +718,8 @@ static_assert(!rules_of<det<DetTier::Pure>, fp_mode<Contract::Fast, Reassoc::Unr
 
 // The settings no rule reads are admitted, which is the atom's own
 // claim: a mode may name them, and naming them refuses nothing.
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<at::fp::FpFtz::FlushToZero>>::valid);
-static_assert(rules_of<det<DetTier::Pure>, fp_mode<at::fp::FpDenormalInput::DenormalsAreZero>>::valid);
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<::foundation::core::FpFtz::FlushToZero>>::valid);
+static_assert(rules_of<det<DetTier::Pure>, fp_mode<::foundation::core::FpDenormalInput::DenormalsAreZero>>::valid);
 
 // The read alone still refuses nothing: a Pure payload under the strict
 // mode is accepted through the bound view.
@@ -1009,7 +1009,8 @@ static_assert(!col::detail::is_scope_at_or_above_<::foundation::algebra::lattice
 // UMWAIT is neither a kernel entry nor a busy wait.
 static_assert(!live_rules<at::sync::umwait_c01>::blocks && !col::detail::is_busy_wait_<at::sync::umwait_c01>::value);
 // A setting of a different enum with the same underlying value is not named.
-static_assert(!col::detail::fp_mode_has_setting_<at::fp::FpFtz{}, at::fp::mode<at::fp::FpContract{}>>::value);
+static_assert(
+    !col::detail::fp_mode_has_setting_<::foundation::core::FpFtz{}, at::fp::mode<at::fp::FpContract{}>>::value);
 // A const member function names its signature, and it is not noexcept.
 static_assert(!col::detail::is_signature_noexcept_<void (attack_owner::*)() const>::value);
 

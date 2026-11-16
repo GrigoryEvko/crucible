@@ -33,7 +33,9 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/FpMode.h>
 #include <foundation/core/StorageFloat.h>
+#include <foundation/os/FpControl.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -112,17 +114,34 @@ static_assert(torch_round_bytes[0] == 'r' && torch_round_bytes[6] == 'v' && torc
 
 [[nodiscard]] bool host_has_f16c() noexcept { return __builtin_cpu_supports("f16c") != 0; }
 
-// The MXCSR states: each rounding mode, with and without DAZ and FTZ, and
-// each exception masked.
-constexpr unsigned mxcsr_masked = 0x1F80u;
-constexpr unsigned mxcsr_daz = 0x0040u;
-constexpr unsigned mxcsr_ftz = 0x8000u;
-constexpr unsigned mxcsr_rounding_step = 0x2000u;
-
-[[nodiscard]] unsigned mxcsr_state(int index) noexcept {
+// The MXCSR states: each rounding mode, with and without DAZ and FTZ.  The
+// door of foundation/os/FpControl.h writes each state, and it keeps each
+// exception masked as the process started.
+[[nodiscard]] ::foundation::core::FpMode mxcsr_state(int index) noexcept {
+    using ::foundation::core::FpDenormalInput;
+    using ::foundation::core::FpFtz;
+    using ::foundation::core::RoundingMode;
     auto const step = static_cast<unsigned>(index);
-    return mxcsr_masked | ((step & 3u) * mxcsr_rounding_step) | ((step & 4u) != 0 ? mxcsr_daz : 0u)
-         | ((step & 8u) != 0 ? mxcsr_ftz : 0u);
+    // The order of the two bits of MXCSR.RC: nearest, down, up, toward zero.
+    RoundingMode rounding = RoundingMode::RZ;
+    switch (step & 3u) {
+        case 0u:
+            rounding = RoundingMode::RN;
+            break;
+        case 1u:
+            rounding = RoundingMode::RM;
+            break;
+        case 2u:
+            rounding = RoundingMode::RP;
+            break;
+        default:
+            break;
+    }
+    return ::foundation::core::FpMode{
+        .rounding = rounding,
+        .ftz = (step & 8u) != 0 ? FpFtz::FlushToZero : FpFtz::PreserveSubnormals,
+        .denormal_input = (step & 4u) != 0 ? FpDenormalInput::DenormalsAreZero : FpDenormalInput::HonorDenormals,
+    };
 }
 
 // The instructions through calls that the optimizer cannot read, so each
@@ -159,11 +178,11 @@ struct MxcsrCounts final {
 // The counts of one MXCSR state: each f16 word for the widen, and each row
 // of the round table and each binary32 subnormal for the two rounds.  MXCSR
 // goes back to its state before the return.
-[[gnu::noipa, nodiscard]] MxcsrCounts count_f16c_differences_under(unsigned mxcsr) noexcept {
+[[gnu::noipa, nodiscard]] MxcsrCounts count_f16c_differences_under(::foundation::core::FpMode mode) noexcept {
     std::uint64_t differences = 0;
     std::uint64_t control_differences = 0;
-    unsigned const saved = __builtin_ia32_stmxcsr();
-    __builtin_ia32_ldmxcsr(mxcsr);
+    ::foundation::os::FpControlWord const saved = ::foundation::os::FpControlWord::read();
+    ::foundation::os::write_fp_control(saved.with_mode(mode));
     for (std::uint32_t word = 0; word < 65536; ++word) {
         auto const half = static_cast<std::uint16_t>(word);
         bool const differs = widen_by_f16c(half) != detail::widen_portable<detail::Binary16Format>(half);
@@ -189,7 +208,7 @@ struct MxcsrCounts final {
         count_round(magnitude);
         count_round(magnitude | 0x80000000u);
     }
-    __builtin_ia32_ldmxcsr(saved);
+    ::foundation::os::write_fp_control(saved);
     return MxcsrCounts{.differences = differences, .control_differences = control_differences};
 }
 

@@ -29,7 +29,8 @@
 // no enum for them.  The rule that first reads one adds its enum to the
 // product.
 //
-// The enums are declared here because foundation has no FpMode lattice.
+// The two compiler settings are declared here.  The two flush settings are
+// the enums of foundation/core/FpMode.h.
 //
 // ---------------------------------------------------------------------
 // No lift
@@ -50,6 +51,7 @@
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 
+#include <foundation/core/FpMode.h>
 #include <foundation/effects/Lift.h>
 
 #include <cstddef>
@@ -76,21 +78,17 @@ enum class FpContract : std::uint8_t {
     Fast = 2,  // contract across statements
 };
 
-enum class FpFtz : std::uint8_t {
-    PreserveSubnormals = 0,
-    FlushToZero = 1,
-};
-
-enum class FpDenormalInput : std::uint8_t {
-    HonorDenormals = 0,
-    DenormalsAreZero = 1,
-};
+// The two flush settings are bits of the FP control register, so their
+// enums are the vocabulary of the base in foundation/core/FpMode.h.  The
+// door of foundation/os/FpControl.h writes them, and a kernel context
+// states them in its type.
 
 namespace detail {
 
 template <class E>
-concept IsFpSetting = std::is_same_v<E, FpReassociate> || std::is_same_v<E, FpContract> || std::is_same_v<E, FpFtz>
-                   || std::is_same_v<E, FpDenormalInput>;
+concept IsFpSetting =
+    std::is_same_v<E, FpReassociate> || std::is_same_v<E, FpContract> || std::is_same_v<E, ::foundation::core::FpFtz>
+    || std::is_same_v<E, ::foundation::core::FpDenormalInput>;
 
 // How many of the settings in a pack come from one enum.
 template <class E, auto... Settings>
@@ -120,8 +118,8 @@ template <auto... Settings>
     requires((detail::IsFpSetting<decltype(Settings)> && ...))
          && (detail::settings_from_<FpReassociate, Settings...>() <= 1)
          && (detail::settings_from_<FpContract, Settings...>() <= 1)
-         && (detail::settings_from_<FpFtz, Settings...>() <= 1)
-         && (detail::settings_from_<FpDenormalInput, Settings...>() <= 1)
+         && (detail::settings_from_<::foundation::core::FpFtz, Settings...>() <= 1)
+         && (detail::settings_from_<::foundation::core::FpDenormalInput, Settings...>() <= 1)
 struct mode final : atom_of<Axis::FpMode> {
     // Whether the mode names a particular setting value.  A rule asks
     // this and nothing else.
@@ -133,10 +131,10 @@ struct mode final : atom_of<Axis::FpMode> {
 
 namespace fixy::atom::detail {
 
-using fp_atom_roster =
-    std::tuple<fp::mode<>, fp::mode<fp::FpReassociate::UnrestrictedRewrite>,
-               fp::mode<fp::FpReassociate::BoundedTreeDepth>, fp::mode<fp::FpContract::Fast>,
-               fp::mode<fp::FpFtz::PreserveSubnormals>, fp::mode<fp::FpDenormalInput::HonorDenormals>,
-               fp::mode<fp::FpContract::Fast, fp::FpReassociate::UnrestrictedRewrite>>;
+using fp_atom_roster = std::tuple<fp::mode<>, fp::mode<fp::FpReassociate::UnrestrictedRewrite>,
+                                  fp::mode<fp::FpReassociate::BoundedTreeDepth>, fp::mode<fp::FpContract::Fast>,
+                                  fp::mode<::foundation::core::FpFtz::PreserveSubnormals>,
+                                  fp::mode<::foundation::core::FpDenormalInput::HonorDenormals>,
+                                  fp::mode<fp::FpContract::Fast, fp::FpReassociate::UnrestrictedRewrite>>;
 
 }  // namespace fixy::atom::detail

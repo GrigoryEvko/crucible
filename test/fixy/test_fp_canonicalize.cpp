@@ -53,9 +53,9 @@ namespace {
     return bits;
 }
 
-inline constexpr fp::CanonicalizeRecipeSpec kStrictSpec{fp::RoundingMode::RN,
+inline constexpr fp::CanonicalizeRecipeSpec kStrictSpec{::foundation::core::RoundingMode::RN,
                                                         fp::ReductionDeterminism::BITEXACT_STRICT};
-inline constexpr fp::CanonicalizeRecipeSpec kTensorCoreSpec{fp::RoundingMode::RN,
+inline constexpr fp::CanonicalizeRecipeSpec kTensorCoreSpec{::foundation::core::RoundingMode::RN,
                                                             fp::ReductionDeterminism::BITEXACT_TC};
 
 // The plain projection and the two admitted gated forms answer as the

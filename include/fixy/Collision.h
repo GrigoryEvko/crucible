@@ -1278,9 +1278,9 @@ struct rules_of {
     // nothing about floating point, and the two rules stand down for it.
     static constexpr bool fp_mode_stated = G::template mentions<Axis::FpMode>;
     static constexpr bool fp_flushes_denormal_inputs =
-        detail::fp_mode_has_setting_<::fixy::atom::fp::FpDenormalInput::DenormalsAreZero, fp_mode_grade>::value;
+        detail::fp_mode_has_setting_<::foundation::core::FpDenormalInput::DenormalsAreZero, fp_mode_grade>::value;
     static constexpr bool fp_flushes_subnormal_results =
-        detail::fp_mode_has_setting_<::fixy::atom::fp::FpFtz::FlushToZero, fp_mode_grade>::value;
+        detail::fp_mode_has_setting_<::foundation::core::FpFtz::FlushToZero, fp_mode_grade>::value;
     static constexpr bool fp_rewrites_without_bound =
         detail::fp_mode_has_setting_<::fixy::atom::fp::FpReassociate::UnrestrictedRewrite, fp_mode_grade>::value;
 
