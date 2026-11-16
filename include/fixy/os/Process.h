@@ -77,7 +77,8 @@ namespace detail {
 
 // The row comes from the syscall atom, so the gate and the catalog in
 // fixy/atoms/Syscall.h cannot disagree.  The catalog puts getpid and gettid
-// in the family of the reads of the process state, which lifts to IO.
+// in the family of the reads of the process state, which lifts IO and
+// Nondet: the id of a process or a thread changes from run to run.
 using identity_row_t =
     eff::lift_row_t<::fixy::atom::syscall::family<::fixy::atom::syscall::SyscallFamily::ReadOnlyState>>;
 

@@ -139,11 +139,14 @@ static_assert(syscall::per<SI::bpf>::family == SF::Privilege);
 static_assert(syscall::per<SI::perf_event_open>::family == SF::Privilege);
 
 // The row, read off the atom.  A call that reads a clock, the core, the
-// schedule or a peer lifts Nondet, and the other calls of its family do
-// not.
+// schedule, a peer, the id of the process or of the thread, or the state of
+// the host lifts Nondet, and the other calls of its family do not.
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::clock_gettime>>, fe::Row<fe::Effect::Nondet>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::clock_getres>>, fe::Row<>>);
-static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::getpid>>, fe::Row<fe::Effect::IO>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::getpid>>, fe::Row<fe::Effect::IO, fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::gettid>>, fe::Row<fe::Effect::IO, fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::sysinfo>>, fe::Row<fe::Effect::IO, fe::Effect::Nondet>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::uname>>, fe::Row<fe::Effect::IO>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::mmap>>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::futex>>, fe::Row<fe::Effect::Block, fe::Effect::Nondet>>);
 static_assert(
@@ -163,7 +166,7 @@ static_assert(std::is_same_v<fe::lift_row_t<syscall::family<SF::NoSyscall>>, fe:
 // lifts Nondet when one of its calls does, so a family atom covers each
 // call of its family.
 static_assert(std::is_same_v<syscall_family_row_t<SF::VdsoOnly>, fe::Row<fe::Effect::Nondet>>);
-static_assert(std::is_same_v<syscall_family_row_t<SF::ReadOnlyState>, fe::Row<fe::Effect::IO>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::ReadOnlyState>, fe::Row<fe::Effect::IO, fe::Effect::Nondet>>);
 static_assert(std::is_same_v<syscall_family_row_t<SF::FileMutation>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<syscall_family_row_t<SF::MemoryMapping>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<syscall_family_row_t<SF::ThreadSync>, fe::Row<fe::Effect::Block, fe::Effect::Nondet>>);

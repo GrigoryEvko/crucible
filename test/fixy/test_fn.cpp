@@ -275,7 +275,7 @@ using ProcessStateBinding = fn<int, ::fixy::atom::syscall::per<SyscallId::getpid
 using ParkBinding = fn<int, ::fixy::atom::sync::park>;
 
 static_assert(std::is_same_v<::fixy::binding_row_t<FutexBinding>, fe::Row<fe::Effect::Block, fe::Effect::Nondet>>);
-static_assert(std::is_same_v<::fixy::binding_row_t<ProcessStateBinding>, fe::Row<fe::Effect::IO>>);
+static_assert(std::is_same_v<::fixy::binding_row_t<ProcessStateBinding>, fe::Row<fe::Effect::IO, fe::Effect::Nondet>>);
 static_assert(std::is_same_v<::fixy::binding_row_t<ParkBinding>, fe::Row<fe::Effect::Block>>);
 static_assert(std::is_same_v<
               ::fixy::binding_row_t<fn<int, ::fixy::atom::with_io, ::fixy::atom::as_public, ::fixy::atom::sync::park>>,
@@ -285,7 +285,9 @@ static_assert(::fixy::CtxAdmitsBinding<::fixy::BgLoadCtx, FutexBinding>, "the lo
 static_assert(!::fixy::CtxAdmitsBinding<fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::Block>>, FutexBinding>,
               "the return of a futex wait depends on the schedule, so a context without Nondet refuses it");
 static_assert(::fixy::CtxAdmitsBinding<::fixy::TestRunnerCtx, ParkBinding>);
-static_assert(::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, ProcessStateBinding>, "the compile context holds IO");
+static_assert(::fixy::CtxAdmitsBinding<::fixy::BgLoadCtx, ProcessStateBinding>, "the load context holds IO and Nondet");
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, ProcessStateBinding>,
+              "the id of a process changes from run to run, so a context without Nondet refuses it");
 static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, FutexBinding>, "the compile context lacks Block");
 static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgDrainCtx, ProcessStateBinding>, "the drain context lacks IO");
 static_assert(!::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, ParkBinding>);

@@ -31,10 +31,13 @@ namespace process = fixy::process;
 
 namespace {
 
-using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
+// The id of the process and of the thread changes from run to run, so the
+// two contexts hold Nondet.
+using IoBlockCtx =
+    eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>;
 // A context that starts threads, for the check of the children.
-using ThreadCtx =
-    eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+using ThreadCtx = eff::ExecCtx<
+    eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>;
 using Errno = foundation::os::Errno;
 
 // The words of the door are the words of the kernel header.

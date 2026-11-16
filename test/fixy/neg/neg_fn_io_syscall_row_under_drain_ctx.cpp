@@ -1,14 +1,14 @@
 // A context without IO refuses a binding that states an IO system call.
 //
-// getpid reads the state of the process, and fixy/atoms/Syscall.h lifts
-// that family to Row<IO>.  The binding states no Effect atom, so the row
-// it requires is the lift alone.  The drain context holds Bg and Alloc
-// but not IO, so the gate refuses the call at the call site, for the one
-// effect the context lacks.  The binding names as_public, so the corpus
-// has no classified channel to refuse and the gate is the only refusal.
+// getpid reads the state of the process, and its id changes from run to
+// run, so fixy/atoms/Syscall.h lifts it to Row<IO, Nondet>.  The binding
+// states no Effect atom, so the row it requires is the lift alone.  The
+// drain context holds Bg and Alloc, so the gate refuses the call at the
+// call site.  The binding names as_public, so the corpus has no classified
+// channel to refuse and the gate is the only refusal.
 //
-// test/fixy/test_fn.cpp holds the positive control: the compile context,
-// which holds IO, admits the same binding.
+// test/fixy/test_fn.cpp holds the positive control: the load context, which
+// holds IO and Nondet, admits the same binding.
 
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
@@ -34,7 +34,7 @@ template <class Ctx, class Bound>
     return bound.value();
 }
 
-static_assert(std::is_same_v<::fixy::binding_row_t<ProcessStateBinding>, fe::Row<fe::Effect::IO>>);
+static_assert(std::is_same_v<::fixy::binding_row_t<ProcessStateBinding>, fe::Row<fe::Effect::IO, fe::Effect::Nondet>>);
 
 }  // namespace
 

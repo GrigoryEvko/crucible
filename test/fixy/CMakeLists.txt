@@ -935,7 +935,7 @@ fixy_neg_compile_test(neg_fn_futex_row_under_compile_ctx
   "R1 = foundation::effects::Row<foundation::effects::Effect::Block, foundation::effects::Effect::Nondet>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO>")
 fixy_neg_compile_test(neg_fn_io_syscall_row_under_drain_ctx
   "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
-  "R1 = foundation::effects::Row<foundation::effects::Effect::IO>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>")
+  "R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Nondet>. R2 = foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc>")
 # A stdio write lifts IO and Block.  The context holds Block and not IO,
 # so the fixture fails for IO alone.
 fixy_neg_compile_test(neg_fn_stdio_row_under_block_ctx
@@ -5292,7 +5292,7 @@ fixy_neg_compile_test(neg_os_socket_unmapped_kind
 fixy_test(test_os_perf_event)
 fixy_neg_compile_test(neg_os_perf_event_ctx_lacks_block
   "no matching function for call"
-  "mint_perf_event\\(\\{anonymous\\}::IoOnlyCtx&, const fixy::perf::Event&, int, fixy::process::ProcessId\\)")
+  "mint_perf_event\\(\\{anonymous\\}::IoNondetCtx&, const fixy::perf::Event&, int, fixy::process::ProcessId\\)")
 fixy_neg_compile_test(neg_os_perf_event_ctx_lacks_io
   "no matching function for call"
   "mint_perf_event\\(\\{anonymous\\}::BlockOnlyCtx&, const fixy::perf::Event&, int, fixy::process::ProcessId\\)")

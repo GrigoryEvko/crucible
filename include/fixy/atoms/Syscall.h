@@ -301,14 +301,17 @@ inline constexpr std::array<std::pair<sc::SyscallFamily, syscall_family_effects>
 
 // The calls whose result can change from run to run with the same inputs:
 // a read of a clock or of the core, a wait whose end depends on the
-// schedule, and a receive from a peer.  Each one lifts Nondet.  The other
-// calls of a family give the same result for the same inputs.
+// schedule, a receive from a peer, the id of the process or of the thread,
+// and the state of the host that sysinfo reads (the uptime, the load and the
+// free memory).  Each one lifts Nondet.  The other calls of a family give the
+// same result for the same inputs.
 inline constexpr sc::SyscallId syscall_nondet_calls[] = {
     sc::SyscallId::clock_gettime, sc::SyscallId::gettimeofday,
     sc::SyscallId::getcpu_vdso,   sc::SyscallId::futex,
     sc::SyscallId::poll,          sc::SyscallId::epoll_wait,
     sc::SyscallId::nanosleep,     sc::SyscallId::clock_nanosleep,
-    sc::SyscallId::recvmsg,
+    sc::SyscallId::recvmsg,       sc::SyscallId::getpid,
+    sc::SyscallId::gettid,        sc::SyscallId::sysinfo,
 };
 
 // True when the call lifts Nondet.  Complexity: linear in the list.
