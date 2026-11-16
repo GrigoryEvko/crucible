@@ -1,8 +1,9 @@
 // The match of the reductions library and its nets, part two: the bits of
-// the tree sums.  sum_by_tree and its forms of 4, 8 and 16 lanes give the
-// bits of the evaluation of the net of the tree plan on Philox draws.  The
-// sum forms run on SIMD lanes at run time, so main runs these tests.  The
-// nets come from reductions_net.h.
+// the tree sums.  sum_by_tree and its forms of 4, 8 and 16 lanes,
+// sum_grains_by_tree, sum_runs_by_tree and sum_segments_by_tree give the bits
+// of the evaluation of the net of the tree plan on Philox draws.  The sum
+// forms run on SIMD lanes at run time, so main runs these tests.  The nets
+// come from reductions_net.h.
 //
 // A control shows that the bit test can refuse a wrong net: the net of a left
 // fold gives bits that sum_by_tree does not give.
@@ -59,6 +60,102 @@ template <class T, std::size_t Leaves>
     return is_apart;
 }
 
+// The value of the tree net of Count leaves on the elements of a run from
+// the position First.
+template <std::size_t Count, std::size_t First, class T, std::size_t Leaves>
+    requires(First + Count <= Leaves)
+[[nodiscard]] T tree_of_part(core::FixedArray<T, Leaves> const& leaves) noexcept {
+    core::FixedArray<T, Count> part{};
+    for (std::size_t index = 0; index < Count; ++index)
+        slot_at(part, index) = slot_at(leaves, First + index);
+    return slot_at(evaluate_net<1>(tree_net_of<Count, false>, part, T{}, AddValues{}, core::Ascending{}), 0);
+}
+
+// sum_grains_by_tree of 37 leaves in grains of 8 gives the bits of the tree
+// net of 8 leaves for the first four grains and of 5 leaves for the last.
+// sum_by_tree of the five partials gives the bits of the tree net of the
+// run.  On 16 draws.
+template <class T>
+[[nodiscard]] bool does_grain_sum_follow(std::uint64_t seed) noexcept {
+    ::crucible::test::PhiloxStream seeds{seed};
+    bool is_each = true;
+    for (std::uint32_t round = 0; round < 16; ++round) {
+        auto const leaves = draw_values<T, 37>(seeds.next_wide());
+        core::FixedArray<T, 5> partials{};
+        partials = core::with_mut(std::move(partials), [&](auto out) noexcept {
+            core::sum_grains_by_tree<8>(core::View<T const>{leaves.view()}, 0, std::move(out));
+        });
+        is_each = is_each && has_same_bits(slot_at(partials, 0), tree_of_part<8, 0>(leaves))
+               && has_same_bits(slot_at(partials, 1), tree_of_part<8, 8>(leaves))
+               && has_same_bits(slot_at(partials, 2), tree_of_part<8, 16>(leaves))
+               && has_same_bits(slot_at(partials, 3), tree_of_part<8, 24>(leaves))
+               && has_same_bits(slot_at(partials, 4), tree_of_part<5, 32>(leaves));
+        is_each = is_each
+               && has_same_bits(core::sum_by_tree(core::View<T const>{partials.view()}), tree_of_part<37, 0>(leaves));
+    }
+    return is_each;
+}
+
+// sum_runs_by_tree of Runs runs of 37 elements gives at each position the bits
+// of the tree net of Runs leaves over the elements of the runs at that
+// position, in run order.  On 16 draws.
+template <class T, std::size_t Runs>
+[[nodiscard]] bool does_runs_sum_follow(std::uint64_t seed) noexcept {
+    ::crucible::test::PhiloxStream seeds{seed};
+    bool is_each = true;
+    for (std::uint32_t round = 0; round < 16; ++round) {
+        core::FixedArray<core::FixedArray<T, 37>, Runs> runs{};
+        for (core::FixedArray<T, 37>& run : runs)
+            run = draw_values<T, 37>(seeds.next_wide());
+        core::FixedArray<core::View<T const>, Runs> views{};
+        std::size_t index = 0;
+        for (core::FixedArray<T, 37> const& run : runs) {
+            slot_at(views, index) = core::View<T const>{run.view()};
+            ++index;
+        }
+        core::FixedArray<T, 37> sums{};
+        bool is_summed = false;
+        sums = core::with_mut(std::move(sums), [&](auto out) noexcept {
+            is_summed =
+                core::sum_runs_by_tree(core::View<core::View<T const> const>{views.view()}, std::move(out)).is_ok();
+        });
+        is_each = is_each && is_summed;
+        for (std::size_t position = 0; position < 37; ++position) {
+            core::FixedArray<T, Runs> column{};
+            for (std::size_t run = 0; run < Runs; ++run)
+                slot_at(column, run) = slot_at(slot_at(runs, run), position);
+            T const from_net =
+                slot_at(evaluate_net<1>(tree_net_of<Runs, false>, column, T{}, AddValues{}, core::Ascending{}), 0);
+            is_each = is_each && has_same_bits(slot_at(sums, position), from_net);
+        }
+    }
+    return is_each;
+}
+
+// sum_segments_by_tree of 50 elements at the offsets 0, 6, 6, 43 and 50
+// gives the bits of the tree nets of 6, 37 and 7 leaves, and +0 for the empty
+// segment.  On 16 draws.
+template <class T>
+[[nodiscard]] bool does_segment_sum_follow(std::uint64_t seed) noexcept {
+    ::crucible::test::PhiloxStream seeds{seed};
+    core::FixedArray<std::size_t, 5> const offsets{0, 6, 6, 43, 50};
+    bool is_each = true;
+    for (std::uint32_t round = 0; round < 16; ++round) {
+        auto const elements = draw_values<T, 50>(seeds.next_wide());
+        core::FixedArray<T, 4> sums{};
+        bool is_summed = false;
+        sums = core::with_mut(std::move(sums), [&](auto out) noexcept {
+            is_summed = core::sum_segments_by_tree(core::View<T const>{elements.view()},
+                                                   core::View<std::size_t const>{offsets.view()}, std::move(out))
+                            .is_ok();
+        });
+        is_each = is_each && is_summed && has_same_bits(slot_at(sums, 0), tree_of_part<6, 0>(elements))
+               && has_same_bits(slot_at(sums, 1), T{}) && has_same_bits(slot_at(sums, 2), tree_of_part<37, 6>(elements))
+               && has_same_bits(slot_at(sums, 3), tree_of_part<7, 43>(elements));
+    }
+    return is_each;
+}
+
 }  // namespace
 
 int main() {
@@ -69,8 +166,15 @@ int main() {
         does_tree_sum_follow<double, 13>(0x7E570105u) && does_tree_sum_follow<double, 37>(0x7E570106u);
     bool const is_fold_apart =
         does_fold_differ_on_some<float, 37>(0x7E570501u) && does_fold_differ_on_some<double, 37>(0x7E570502u);
+    bool const is_grain = does_grain_sum_follow<float>(0x7E570601u) && does_grain_sum_follow<double>(0x7E570602u);
+    bool const is_runs = does_runs_sum_follow<float, 6>(0x7E570701u) && does_runs_sum_follow<float, 13>(0x7E570702u)
+                      && does_runs_sum_follow<double, 6>(0x7E570703u);
+    bool const is_segment = does_segment_sum_follow<float>(0x7E570801u) && does_segment_sum_follow<double>(0x7E570802u);
     assert(is_tree_float);
     assert(is_tree_double);
     assert(is_fold_apart);
+    assert(is_grain);
+    assert(is_runs);
+    assert(is_segment);
     return 0;
 }

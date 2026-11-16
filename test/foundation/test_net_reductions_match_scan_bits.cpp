@@ -1,9 +1,9 @@
 // The match of the reductions library and its nets, part three: the bits of
 // the sum scans.  The inclusive and the exclusive sum scans, with the lanes
-// of the target and with 4 and 16 lanes, give the bits of the evaluation of
-// the net of the scan plan at each output, on Philox draws.  The sum scans
-// run on SIMD lanes at run time, so main runs these tests.  The nets come
-// from reductions_net.h.
+// of the target and with 4 and 16 lanes, and the sum scans of the grains,
+// give the bits of the evaluation of the net of the scan plan at each output,
+// on Philox draws.  The sum scans run on SIMD lanes at run time, so main runs
+// these tests.  The nets come from reductions_net.h.
 
 #include <foundation/core/Array.h>
 #include <foundation/core/Scan.h>
@@ -66,6 +66,48 @@ template <class T, std::size_t Count, core::ScanKind Kind>
     return is_each;
 }
 
+// The sum scans of the grains of 37 elements in grains of 8, with the carries
+// of the exclusive sum scan of the tree sums of the grains, give the bits of
+// the scan net of the run at each output.  The carries read no sum of the
+// last grain.  On 16 draws.
+template <class T, core::ScanKind Kind>
+[[nodiscard]] bool does_grain_sum_scan_follow(std::uint64_t seed) noexcept {
+    ::crucible::test::PhiloxStream seeds{seed};
+    bool is_each = true;
+    for (std::uint32_t round = 0; round < 16; ++round) {
+        auto const leaves = draw_values<T, 37>(seeds.next_wide());
+        core::View<T const> const run{leaves.view()};
+        auto const from_net = evaluate_net<37>(scan_net_of<37, Kind>, leaves, T{}, AddValues{}, core::Ascending{});
+        core::FixedArray<T, 4> heads{};
+        heads = core::with_mut(std::move(heads),
+                               [&](auto out) noexcept { core::sum_grains_by_tree<8>(run, 0, std::move(out)); });
+        core::FixedArray<T, 5> sums{};
+        for (std::size_t grain = 0; grain < 4; ++grain)
+            slot_at(sums, grain) = slot_at(heads, grain);
+        core::FixedArray<T, 5> carries{};
+        bool is_written = false;
+        carries = core::with_mut(std::move(carries), [&](auto out) noexcept {
+            is_written = core::scan_exclusive_sums(core::View<T const>{sums.view()}, std::move(out)).is_ok();
+        });
+        core::FixedArray<T, 37> scanned{};
+        scanned = core::with_mut(std::move(scanned), [&](auto out) noexcept {
+            core::View<T const> const carried{carries.view()};
+            if constexpr (Kind == core::ScanKind::Inclusive) {
+                core::scan_inclusive_sum_grains<8>(run, 0, carried, std::move(out));
+            } else {
+                core::scan_exclusive_sum_grains<8>(run, 0, carried, std::move(out));
+            }
+        });
+        std::size_t position = 0;
+        for (T const sum : scanned) {
+            is_written = is_written && has_same_bits(sum, slot_at(from_net, position));
+            ++position;
+        }
+        is_each = is_each && is_written;
+    }
+    return is_each;
+}
+
 }  // namespace
 
 int main() {
@@ -75,7 +117,12 @@ int main() {
     bool const is_exclusive = does_each_sum_scan_follow<float, 13, core::ScanKind::Exclusive>(0x7E570301u)
                            && does_each_sum_scan_follow<float, 37, core::ScanKind::Exclusive>(0x7E570302u)
                            && does_each_sum_scan_follow<double, 37, core::ScanKind::Exclusive>(0x7E570303u);
+    bool const is_grain = does_grain_sum_scan_follow<float, core::ScanKind::Inclusive>(0x7E570901u)
+                       && does_grain_sum_scan_follow<float, core::ScanKind::Exclusive>(0x7E570902u)
+                       && does_grain_sum_scan_follow<double, core::ScanKind::Inclusive>(0x7E570903u)
+                       && does_grain_sum_scan_follow<double, core::ScanKind::Exclusive>(0x7E570904u);
     assert(is_inclusive);
     assert(is_exclusive);
+    assert(is_grain);
     return 0;
 }

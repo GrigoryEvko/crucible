@@ -3,8 +3,9 @@
 // the order of the sorts.  The nets come from reductions_net.h.
 //
 //   The checks            wiring, dataflow and the vicious circle for each
-//                         net, the forest for each tree, and the value table
-//                         of rules, which allocates nothing
+//                         net that a unit of the match test reads, the forest
+//                         for each tree, and the value table of rules, which
+//                         allocates nothing
 //   The symbolic runs     reduce_by_tree and the two scans combine the adds of
 //                         their net, in port order, one time each
 //   The ties              sort_by_network sorts tickets by a key with ties,
@@ -33,7 +34,38 @@ namespace {
 
 using namespace ::crucible::test::reductions_net;
 
-static_assert(net::check_forest(fold_net_of<37>).is_admitted());
+// ── The checks of the nets ──────────────────────────────────────────────
+//
+// Each net that a unit of the match test reads passes the checks of its
+// shape: each net passes the wiring, the dataflow and the vicious circle, and
+// each tree is a forest.  The bits units read the trees of 5, 6, 7, 8, 13, 37
+// and 64 leaves, the fold of 37, and the scans of 13 and 37 of each kind.
+// This unit reads the trees of 6, 13 and 37, the scans of 8, 13 and 37, the
+// net of the segments, and the sorts of 4, 7, 16 and 37 positions.
+
+template <auto const& Graph>
+inline constexpr bool is_dataflow_net =
+    net::check_wiring(Graph).is_admitted() && net::check_dataflow(Graph).is_admitted()
+    && net::check_vicious(Graph).is_admitted();
+
+template <auto const& Graph>
+inline constexpr bool is_tree_net = is_dataflow_net<Graph> && net::check_forest(Graph).is_admitted();
+
+static_assert(is_tree_net<tree_net_of<5, false>> && is_tree_net<tree_net_of<7, false>>);
+static_assert(is_tree_net<tree_net_of<8, false>>);
+static_assert(is_tree_net<tree_net_of<6, false>> && is_tree_net<tree_net_of<13, false>>);
+static_assert(is_tree_net<tree_net_of<37, false>> && is_tree_net<tree_net_of<64, false>>);
+static_assert(is_tree_net<fold_net_of<37>>);
+static_assert(is_dataflow_net<scan_net_of<8, core::ScanKind::Inclusive>>);
+static_assert(is_dataflow_net<scan_net_of<8, core::ScanKind::Exclusive>>);
+static_assert(is_dataflow_net<scan_net_of<13, core::ScanKind::Inclusive>>);
+static_assert(is_dataflow_net<scan_net_of<13, core::ScanKind::Exclusive>>);
+static_assert(is_dataflow_net<scan_net_of<37, core::ScanKind::Inclusive>>);
+static_assert(is_dataflow_net<scan_net_of<37, core::ScanKind::Exclusive>>);
+
+// A value with two uses needs its copies, and the copies meet again, so the
+// scan net is no forest.
+static_assert(!net::check_forest(scan_net_of<8, core::ScanKind::Inclusive>).is_admitted());
 
 // ── The tree reduce ─────────────────────────────────────────────────────
 
@@ -51,9 +83,6 @@ template <std::size_t Leaves, bool IsSwapped>
     return matcher.is_each_add_fired() && root.node == result;
 }
 
-static_assert(net::check_forest(tree_net_of<6, false>).is_admitted());
-static_assert(net::check_dataflow(tree_net_of<6, false>).is_admitted());
-static_assert(net::check_vicious(tree_net_of<6, false>).is_admitted());
 static_assert(does_tree_reduce_follow<6, false>());
 static_assert(does_tree_reduce_follow<13, false>());
 
@@ -96,18 +125,230 @@ template <std::size_t Count, core::ScanKind Kind>
     return is_each_output && matcher.is_each_add_fired();
 }
 
-static_assert(net::check_wiring(scan_net_of<8, core::ScanKind::Inclusive>).is_admitted());
-static_assert(net::check_dataflow(scan_net_of<8, core::ScanKind::Inclusive>).is_admitted());
-static_assert(net::check_vicious(scan_net_of<8, core::ScanKind::Inclusive>).is_admitted());
-static_assert(net::check_dataflow(scan_net_of<13, core::ScanKind::Exclusive>).is_admitted());
 static_assert(does_scan_follow<8, core::ScanKind::Inclusive>());
 static_assert(does_scan_follow<13, core::ScanKind::Inclusive>());
 static_assert(does_scan_follow<8, core::ScanKind::Exclusive>());
 static_assert(does_scan_follow<13, core::ScanKind::Exclusive>());
 
-// A value with two uses needs its copies, and the copies meet again, so the
-// scan net is no forest.
-static_assert(!net::check_forest(scan_net_of<8, core::ScanKind::Inclusive>).is_admitted());
+// ── The plan evaluators ─────────────────────────────────────────────────
+
+// evaluate_tree_plan of the plan of the tree combines the adds of its net, in
+// port order, one time each, and gives the node that the result agent takes.
+template <std::size_t Leaves>
+[[nodiscard]] consteval bool does_tree_plan_follow() noexcept {
+    auto const& graph = tree_net_of<Leaves, false>;
+    auto matcher = matcher_of<Leaves, Leaves - 1>(graph);
+    auto const leaves = symbols_of_leaves<Leaves>();
+    core::FixedArray<Symbol, Leaves - 1> scratch{};
+    Symbol root{};
+    scratch = core::with_mut(std::move(scratch), [&](auto values) noexcept {
+        root =
+            core::evaluate_tree_plan(core::View<core::TreeStep const>{tree_plan_of<Leaves, false>.steps.view()},
+                                     core::View<Symbol const>{leaves.view()}, std::move(values),
+                                     [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); })
+                .expect("a plan of the count of its leaves");
+    });
+    std::uint32_t const result = source_of(graph, port_of(static_cast<std::uint32_t>(2 * Leaves), 0));
+    return matcher.is_each_add_fired() && root.node == result;
+}
+
+static_assert(does_tree_plan_follow<6>());
+static_assert(does_tree_plan_follow<13>());
+
+// evaluate_scan_plan of the plan of the scan combines the adds of its net, in
+// port order, one time each, and each output is the node that its result
+// agent takes.
+template <std::size_t Count, core::ScanKind Kind>
+[[nodiscard]] consteval bool does_scan_plan_follow() noexcept {
+    constexpr std::size_t steps = scan_steps_of<Count, Kind>;
+    auto const& graph = scan_net_of<Count, Kind>;
+    auto const& plan = scan_plan_of<Count, Kind>;
+    auto matcher = matcher_of<Count, steps>(graph);
+    auto const leaves = symbols_of_leaves<Count>();
+    constexpr auto empty_node = static_cast<std::uint32_t>(Count + steps);
+    core::FixedArray<Symbol, steps> scratch{};
+    core::FixedArray<Symbol, Count> out{};
+    bool is_evaluated = false;
+    scratch = core::with_mut(std::move(scratch), [&](auto values) noexcept {
+        out = core::with_mut(std::move(out), [&](auto written) noexcept {
+            is_evaluated =
+                core::evaluate_scan_plan(
+                    core::View<core::TreeStep const>{plan.steps.view()},
+                    core::View<core::PlanNode const>{plan.outputs.view()}, core::View<Symbol const>{leaves.view()},
+                    std::move(values), std::move(written), Symbol{empty_node},
+                    [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); })
+                    .is_ok();
+        });
+    });
+    bool is_each_output = is_evaluated;
+    std::uint32_t position = 0;
+    for (Symbol const& symbol : out) {
+        is_each_output = is_each_output && symbol.node == source_of(graph, port_of(empty_node + 1 + position, 0));
+        ++position;
+    }
+    return is_each_output && matcher.is_each_add_fired();
+}
+
+static_assert(does_scan_plan_follow<8, core::ScanKind::Inclusive>());
+static_assert(does_scan_plan_follow<13, core::ScanKind::Inclusive>());
+static_assert(does_scan_plan_follow<8, core::ScanKind::Exclusive>());
+static_assert(does_scan_plan_follow<13, core::ScanKind::Exclusive>());
+
+// ── The grains ──────────────────────────────────────────────────────────
+
+// reduce_grains_by_tree of the first grain, and of the other grains in a
+// second call, then reduce_by_tree of the partials, combines the adds of the
+// tree net of the run, in port order, one time each.
+template <std::size_t Leaves, std::size_t Grain>
+[[nodiscard]] consteval bool does_grain_reduce_follow() noexcept {
+    constexpr std::size_t grains = core::count_tree_grains<Grain>(Leaves);
+    auto const& graph = tree_net_of<Leaves, false>;
+    auto matcher = matcher_of<Leaves, Leaves - 1>(graph);
+    auto const leaves = symbols_of_leaves<Leaves>();
+    core::View<Symbol const> const run{leaves.view()};
+    auto const combine = [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); };
+    core::FixedArray<Symbol, 1> head{};
+    core::FixedArray<Symbol, grains - 1> tail{};
+    head = core::with_mut(std::move(head), [&](auto out) noexcept {
+        core::reduce_grains_by_tree<Grain>(run, 0, std::move(out), combine);
+    });
+    tail = core::with_mut(std::move(tail), [&](auto out) noexcept {
+        core::reduce_grains_by_tree<Grain>(run, 1, std::move(out), combine);
+    });
+    core::FixedArray<Symbol, grains> partials{};
+    slot_at(partials, 0) = slot_at(head, 0);
+    for (std::size_t grain = 1; grain < grains; ++grain)
+        slot_at(partials, grain) = slot_at(tail, grain - 1);
+    Symbol const root = core::reduce_by_tree(partials.view(), combine).expect("a run of grains");
+    std::uint32_t const result = source_of(graph, port_of(static_cast<std::uint32_t>(2 * Leaves), 0));
+    return matcher.is_each_add_fired() && root.node == result;
+}
+
+static_assert(does_grain_reduce_follow<13, 4>());
+
+// The scans of the grains, with the carries of the exclusive scan of the tree
+// sums of the grains, combine only adds of the scan net of the run, in port
+// order, and each add at least one time.  The scan of a grain makes the sums
+// of the left halves inside the grain again, which the tree sum of the grain
+// made before, so such an add takes two combines of the same operands.  The
+// carries read no sum of the last grain, so the run reduces each grain but
+// the last one.
+template <std::size_t Count, std::size_t Grain, core::ScanKind Kind>
+[[nodiscard]] consteval bool does_grain_scan_follow() noexcept {
+    constexpr std::size_t steps = scan_steps_of<Count, Kind>;
+    constexpr std::size_t grains = core::count_tree_grains<Grain>(Count);
+    auto const& graph = scan_net_of<Count, Kind>;
+    auto matcher = matcher_of<Count, steps>(graph);
+    auto const leaves = symbols_of_leaves<Count>();
+    core::View<Symbol const> const run{leaves.view()};
+    auto const combine = [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine_or_repeat(a, b); };
+    constexpr auto empty_node = static_cast<std::uint32_t>(Count + steps);
+    core::FixedArray<Symbol, grains - 1> heads{};
+    heads = core::with_mut(std::move(heads), [&](auto out) noexcept {
+        core::reduce_grains_by_tree<Grain>(run, 0, std::move(out), combine);
+    });
+    core::FixedArray<Symbol, grains> sums{};
+    for (std::size_t grain = 0; grain + 1 < grains; ++grain)
+        slot_at(sums, grain) = slot_at(heads, grain);
+    slot_at(sums, grains - 1) = Symbol{no_add};
+    core::FixedArray<Symbol, grains> carries{};
+    bool is_scanned = false;
+    carries = core::with_mut(std::move(carries), [&](auto out) noexcept {
+        is_scanned =
+            core::scan_exclusive(core::View<Symbol const>{sums.view()}, std::move(out), Symbol{empty_node}, combine)
+                .is_ok();
+    });
+    core::FixedArray<Symbol, Count> out{};
+    out = core::with_mut(std::move(out), [&](auto written) noexcept {
+        core::View<Symbol const> const carried{carries.view()};
+        if constexpr (Kind == core::ScanKind::Inclusive) {
+            core::scan_inclusive_grains<Grain>(run, 0, carried, std::move(written), combine);
+        } else {
+            core::scan_exclusive_grains<Grain>(run, 0, carried, std::move(written), Symbol{empty_node}, combine);
+        }
+    });
+    bool is_each_output = is_scanned;
+    std::uint32_t position = 0;
+    for (Symbol const& symbol : out) {
+        is_each_output = is_each_output && symbol.node == source_of(graph, port_of(empty_node + 1 + position, 0));
+        ++position;
+    }
+    return is_each_output && matcher.is_each_add_fired_at_least_once();
+}
+
+static_assert(does_grain_scan_follow<13, 4, core::ScanKind::Inclusive>());
+static_assert(does_grain_scan_follow<13, 4, core::ScanKind::Exclusive>());
+
+// ── The segments ────────────────────────────────────────────────────────
+//
+// The segments of 13 leaves at the offsets 0, 3, 3, 9 and 13: a tree of 3
+// leaves, an empty segment, a tree of 6 and a tree of 4.  The plan of each
+// segment is plan_tree of its count, with its leaves and its steps moved to
+// the place of the segment.  The empty segment takes the num of no leaf.
+
+inline constexpr std::size_t segment_leaves = 13;
+inline constexpr std::size_t segment_steps = 2 + 5 + 3;
+inline constexpr core::FixedArray<std::size_t, 5> segment_offsets{0, 3, 3, 9, 13};
+
+[[nodiscard]] consteval CombinePlan<segment_leaves, segment_steps, 4> segment_combine_plan() noexcept {
+    CombinePlan<segment_leaves, segment_steps, 4> plan{};
+    std::uint32_t base = 0;
+    // Gives the root of the segment of Count leaves from first_leaf.
+    auto const append = [&]<std::size_t Count>(core::PlanNode first_leaf) constexpr noexcept {
+        auto const first = static_cast<std::uint32_t>(first_leaf);
+        auto const moved = [&](core::PlanNode node) constexpr noexcept {
+            auto const index = static_cast<std::uint32_t>(node);
+            return index < Count ? core::PlanNode{first + index}
+                                 : core::PlanNode{static_cast<std::uint32_t>(segment_leaves) + base + index
+                                                  - static_cast<std::uint32_t>(Count)};
+        };
+        std::uint32_t step = 0;
+        for (core::TreeStep const& one : core::plan_tree<Count>()) {
+            slot_at(plan.steps, base + step) = core::TreeStep{moved(one.left), moved(one.right)};
+            ++step;
+        }
+        core::PlanNode const root{static_cast<std::uint32_t>(segment_leaves) + base + step - 1};
+        base += step;
+        return root;
+    };
+    plan.outputs = core::FixedArray<core::PlanNode, 4>{
+        append.template operator()<3>(core::PlanNode{0}), core::empty_plan_node,
+        append.template operator()<6>(core::PlanNode{3}), append.template operator()<4>(core::PlanNode{9})};
+    return plan;
+}
+
+inline constexpr auto segment_plan = segment_combine_plan();
+inline constexpr auto segment_net =
+    build_combine_net<count_agents(segment_plan), count_wires(segment_plan)>(segment_plan);
+
+static_assert(is_tree_net<segment_net>);
+
+// reduce_segments_by_tree combines the adds of the net of the segments, in
+// port order, one time each, and each result is the node that its result
+// agent takes.
+[[nodiscard]] consteval bool does_segment_reduce_follow() noexcept {
+    auto matcher = matcher_of<segment_leaves, segment_steps>(segment_net);
+    auto const leaves = symbols_of_leaves<segment_leaves>();
+    constexpr auto empty_node = static_cast<std::uint32_t>(segment_leaves + segment_steps);
+    core::FixedArray<Symbol, 4> results{};
+    bool is_reduced = false;
+    results = core::with_mut(std::move(results), [&](auto out) noexcept {
+        is_reduced = core::reduce_segments_by_tree(
+                         core::View<Symbol const>{leaves.view()}, core::View<std::size_t const>{segment_offsets.view()},
+                         std::move(out), Symbol{empty_node},
+                         [&](Symbol const& a, Symbol const& b) noexcept { return matcher.combine(a, b); })
+                         .is_ok();
+    });
+    bool is_each_result = is_reduced;
+    std::uint32_t segment = 0;
+    for (Symbol const& symbol : results) {
+        is_each_result = is_each_result && symbol.node == source_of(segment_net, port_of(empty_node + 1 + segment, 0));
+        ++segment;
+    }
+    return is_each_result && matcher.is_each_add_fired();
+}
+
+static_assert(does_segment_reduce_follow());
 
 // ── The sorting network ─────────────────────────────────────────────────
 //
@@ -156,9 +397,8 @@ build_sort_net() noexcept {
 template <std::size_t Count, bool IsCrossed = false>
 inline constexpr auto sort_net_of = build_sort_net<Count, IsCrossed>();
 
-static_assert(net::check_dataflow(sort_net_of<4>).is_admitted() && net::check_vicious(sort_net_of<4>).is_admitted());
-static_assert(net::check_dataflow(sort_net_of<7>).is_admitted() && net::check_vicious(sort_net_of<7>).is_admitted());
-static_assert(net::check_dataflow(sort_net_of<16>).is_admitted());
+static_assert(is_dataflow_net<sort_net_of<4>> && is_dataflow_net<sort_net_of<7>>);
+static_assert(is_dataflow_net<sort_net_of<16>> && is_dataflow_net<sort_net_of<37>>);
 static_assert(!net::check_forest(sort_net_of<4>).is_admitted());
 
 // ── The rules of the value agents ───────────────────────────────────────
@@ -320,11 +560,142 @@ template <std::size_t Count>
     return is_each;
 }
 
+// ── The stable sort ─────────────────────────────────────────────────────
+//
+// The stable sort of a run has one result: the elements in the order of the
+// less function, and two equivalent elements in their order in the input
+// (THE ORDER of Sort.h).  The reference is an insertion sort of the test,
+// which moves an element only past a larger one.  sort_stably has two arms:
+// the merge sort for a less function of the caller, and the radix sort for
+// Ascending from stable_sort_radix_count elements.
+
+template <class T, std::size_t Count, class Less>
+[[nodiscard]] constexpr core::FixedArray<T, Count> sort_by_insertion(core::FixedArray<T, Count> elements,
+                                                                     Less less) noexcept {
+    for (std::size_t next = 1; next < Count; ++next) {
+        T const moved = slot_at(elements, next);
+        std::size_t place = next;
+        while (place > 0 && less(moved, slot_at(elements, place - 1))) {
+            slot_at(elements, place) = slot_at(elements, place - 1);
+            --place;
+        }
+        slot_at(elements, place) = moved;
+    }
+    return elements;
+}
+
+template <class T, std::size_t Count, class Less>
+[[nodiscard]] constexpr core::FixedArray<T, Count> sort_by_merge_or_radix(core::FixedArray<T, Count> elements,
+                                                                          Less less) noexcept {
+    core::FixedArray<T, Count> scratch{};
+    bool is_sorted = false;
+    elements = core::with_mut(std::move(elements), [&](auto run) noexcept {
+        scratch = core::with_mut(std::move(scratch), [&](auto spare) noexcept {
+            is_sorted = core::sort_stably(std::move(run), std::move(spare), less).is_ok();
+        });
+    });
+    if (!is_sorted) core::fatal("the scratch of the sort has the count of the run");
+    return elements;
+}
+
+// The merge arm keeps the order of the tags of each key, as the insertion
+// sort does: a run of one insertion run of 32 and one merge.
+template <std::size_t Count>
+[[nodiscard]] constexpr bool does_stable_merge_follow(core::FixedArray<Ticket, Count> const& tickets) noexcept {
+    return sort_by_merge_or_radix(tickets, ByKey{}) == sort_by_insertion(tickets, ByKey{});
+}
+
+static_assert(does_stable_merge_follow<37>(draw_tickets<37>(0x5EED0101u)));
+static_assert(does_stable_merge_follow<64>(draw_tickets<64>(0x5EED0102u)));
+
+// The order of Ascending for a float, as a type of its own, so sort_stably
+// takes the merge arm for each count.
+struct TotalOrder {
+    template <class T>
+    [[nodiscard]] constexpr bool operator()(T const& left, T const& right) const noexcept {
+        return core::Ascending{}(left, right);
+    }
+};
+
+// The elements of the radix arm: Philox draws, and the values whose order the
+// total order of IEEE 754 states: -0 and +0, the two infinities, NaNs of
+// each sign with two payloads, and repeated values.
+template <class T, std::size_t Count>
+[[nodiscard]] core::FixedArray<T, Count> draw_ordered_values(std::uint64_t seed) noexcept {
+    using Bits = decltype([] {
+        if constexpr (sizeof(T) == 4) {
+            return std::uint32_t{};
+        } else {
+            return std::uint64_t{};
+        }
+    }());
+    constexpr std::size_t mantissa_bits = sizeof(T) == 4 ? 23 : 52;
+    constexpr std::size_t exponent_bits = sizeof(T) == 4 ? 8 : 11;
+    constexpr Bits sign = Bits{1} << (8 * sizeof(T) - 1);
+    constexpr Bits infinity = ((Bits{1} << exponent_bits) - 1) << mantissa_bits;
+    constexpr Bits quiet = Bits{1} << (mantissa_bits - 1);
+    auto values = draw_values<T, Count>(seed);
+    core::FixedArray<Bits, 10> const specials{Bits{0},
+                                              sign,
+                                              infinity,
+                                              sign | infinity,
+                                              infinity | quiet,
+                                              sign | infinity | quiet,
+                                              infinity | quiet | 1u,
+                                              sign | infinity | quiet | 1u,
+                                              infinity | quiet,
+                                              Bits{0}};
+    std::size_t position = 0;
+    for (Bits const bits : specials) {
+        slot_at(values, 3 * position + 1) = core::bit_cast<T>(bits);
+        ++position;
+    }
+    // Repeated values: each element of the last part copies an element of
+    // the first part.
+    for (std::size_t copy = Count - 20; copy < Count; ++copy)
+        slot_at(values, copy) = slot_at(values, copy - (Count - 20));
+    return values;
+}
+
+// The radix arm and the merge arm give the same bits, and the result is in
+// the total order.
+template <class T, std::size_t Count>
+[[nodiscard]] bool does_radix_follow_merge(std::uint64_t seed) noexcept {
+    static_assert(Count >= core::stable_sort_radix_count, "the radix arm sorts from stable_sort_radix_count");
+    auto const values = draw_ordered_values<T, Count>(seed);
+    auto const by_radix = sort_by_merge_or_radix(values, core::Ascending{});
+    auto const by_merge = sort_by_merge_or_radix(values, TotalOrder{});
+    bool is_same = true;
+    for (std::size_t position = 0; position < Count; ++position) {
+        is_same = is_same && has_same_bits(slot_at(by_radix, position), slot_at(by_merge, position));
+        if (position > 0) {
+            is_same = is_same && !core::Ascending{}(slot_at(by_radix, position), slot_at(by_radix, position - 1));
+        }
+    }
+    return is_same;
+}
+
+// The merge arm keeps the order of the tags of each key on runs of several
+// merges.
+template <std::size_t Count>
+[[nodiscard]] bool does_each_stable_merge_follow(std::uint64_t seed) noexcept {
+    ::crucible::test::PhiloxStream stream{seed};
+    bool is_each = true;
+    for (std::uint32_t round = 0; round < 8; ++round) {
+        is_each = is_each && does_stable_merge_follow<Count>(draw_tickets<Count>(stream.next_wide()));
+    }
+    return is_each;
+}
+
 }  // namespace
 
 int main() {
     bool const is_sort = does_each_sort_follow<7>(0x7E570401u) && does_each_sort_follow<16>(0x7E570402u)
                       && does_each_sort_follow<37>(0x7E570403u);
+    bool const is_stable = does_each_stable_merge_follow<300>(0x7E570A01u)
+                        && does_radix_follow_merge<float, 300>(0x7E570A02u)
+                        && does_radix_follow_merge<double, 300>(0x7E570A03u);
     assert(is_sort);
+    assert(is_stable);
     return 0;
 }

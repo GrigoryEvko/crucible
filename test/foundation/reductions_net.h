@@ -254,10 +254,39 @@ struct Matcher {
         return Symbol{no_add};
     }
 
+    // The combine of an add that took a combine before, with the same
+    // operands, gives the node of that add again: a split form computes a
+    // value of the net two times.  A combine that no add takes marks the run
+    // as stray.
+    [[nodiscard]] constexpr Symbol combine_or_repeat(Symbol a, Symbol b) noexcept {
+        bool const was_stray = is_stray;
+        Symbol const first = combine(a, b);
+        if (first.node != no_add) return first;
+        is_stray = was_stray;
+        std::uint32_t step = 0;
+        for (std::uint32_t& count : fired) {
+            if (slot_at(left, step) == a.node && slot_at(right, step) == b.node) {
+                ++count;
+                return Symbol{leaves + step};
+            }
+            ++step;
+        }
+        is_stray = true;
+        return Symbol{no_add};
+    }
+
     // Each add took one combine.
     [[nodiscard]] constexpr bool is_each_add_fired() const noexcept {
         for (std::uint32_t const count : fired) {
             if (count != 1) return false;
+        }
+        return !is_stray;
+    }
+
+    // Each add took one combine or more, and no combine was stray.
+    [[nodiscard]] constexpr bool is_each_add_fired_at_least_once() const noexcept {
+        for (std::uint32_t const count : fired) {
+            if (count == 0) return false;
         }
         return !is_stray;
     }
