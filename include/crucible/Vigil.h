@@ -305,6 +305,7 @@ public:
             auto status = replay_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
                 return handle_divergence_(fg, entry.schema_hash, entry.shape_hash);
+            bind_external_inputs_(op, status, compiled_view);
             return compiled_result_(status);
         }
 
@@ -789,6 +790,52 @@ private:
         }
     }
 
+    // One read of an external slot by an op of the active region.  An input
+    // reads an external when it has a slot and no producer op: the build
+    // gives each read of an external that pair.
+    struct ExternalRead {
+        OpIndex op{};
+        uint32_t input = 0;
+        SlotId slot{};
+    };
+
+    // Binds each external input of the op that the replay matched to the data
+    // of the live op.  An external is a tensor that no op of the region
+    // writes, such as a parameter or a batch of the data loader, and its
+    // address can change from one iteration to the next.  The activation
+    // lists each read of an external (external_reads_), in the order of the
+    // ops, and the cursor walks the list once in each iteration.  An op that
+    // reads no external costs two compares.  The cursor goes back to the
+    // start at op 0 and when the iteration completes.  O(1) for each op, and
+    // O(the reads) for the iteration.
+    CRUCIBLE_INLINE void bind_external_inputs_(const ValidatedOp& op, ReplayStatus status,
+                                               CrucibleContext::CompiledView const& compiled_view) {
+        const uint32_t matched = replay_.context().engine().matched_op_index().value().raw();
+        // A new iteration starts the cursor again.  The COMPLETE below does
+        // that too, but the switch of a region advances the engine with no
+        // call here, so a rewind can pass this function by.
+        if (matched == 0) next_external_read_ = 0;
+        const ::fixy::View<const ExternalRead> reads = external_reads_.view();
+        while (next_external_read_ < reads.size()) {
+            const ExternalRead& read = *reads.get(next_external_read_).expect("the test above bounds the cursor");
+            if (read.op.raw() > matched) break;
+            if (read.op.raw() == matched) bind_external_read_(op, read, compiled_view);
+            ++next_external_read_;
+        }
+        if (status == ReplayStatus::COMPLETE) next_external_read_ = 0;
+    }
+
+    // Binds one external slot to the data of one input of the live op.  The
+    // guard matched the shape hash of the inputs, so the input is in the live
+    // op, and the test keeps each read in bounds when a hash collides.
+    [[gnu::noinline]] void bind_external_read_(const ValidatedOp& op, const ExternalRead& read,
+                                               CrucibleContext::CompiledView const& compiled_view) {
+        if (read.input >= op.entry().num_inputs) return;
+        for (const TensorData data :
+             data_address(*op.metas().get(read.input).expect("the live op holds its inputs first")))
+            replay_.register_external(read.slot, data, compiled_view);
+    }
+
     // The result of an op that the replay matched: the status of its guard
     // and the position of the op in the region.  The reset at the end of an
     // iteration keeps the matched op, so a COMPLETE gives the last op of the
@@ -1000,7 +1047,7 @@ private:
                 return;
             }
 
-            register_externals_from_region_(fg, region);
+            register_externals_from_region_(fg, region, uint32_t{alignment_pos_.value()});
             region_cache_.insert(region);
 
             // The matched ops already executed eagerly, so the engine has
@@ -1062,8 +1109,16 @@ private:
     }
 
     // Walks the region's ops to recover each external slot's data address
-    // from the recorded tensor metadata.  Runs once per activation.
-    [[gnu::cold]] void register_externals_from_region_(VigilFgCtx const& fg, const RegionNode& region) {
+    // from the recorded tensor metadata, and lists each read of an external
+    // for bind_external_inputs_.  The replay resumes at op resume_op, so the
+    // cursor starts at the first read of that op or of a later op.  A read
+    // of an earlier op of this iteration keeps the recorded address until
+    // the next iteration reads the external again.  Runs once per activation
+    // and per switch of a region.  O(the inputs of the region) and one
+    // allocation of the list.
+    [[gnu::cold]] void register_externals_from_region_(VigilFgCtx const& fg, const RegionNode& region,
+                                                       uint32_t resume_op) {
+        list_external_reads_(region, resume_op);
         if (region.plan.is_none()) return;
         const ::fixy::Ref<MemoryPlan> plan = PlanLink{region.plan}.expect("the test above found the plan");
 
@@ -1096,6 +1151,37 @@ private:
         }
     }
 
+    // Writes external_reads_: each input of an op of the region that has a
+    // slot and no producer op, in the order of the ops and of the inputs.
+    // Two passes, one to count and one to fill, so the list takes one
+    // allocation.
+    [[gnu::cold]] void list_external_reads_(const RegionNode& region, uint32_t resume_op) {
+        const auto each_read = [&region](auto&& on_read) {
+            for (uint32_t i = 0; i < region.num_ops(); i++) {
+                const TraceEntry& te = region.op_at(i);
+                const ::fixy::View<const OpIndex> producers = te.input_trace_indices();
+                const ::fixy::View<const SlotId> slots = te.input_slot_ids();
+                for (uint32_t input = 0; input < te.num_inputs(); input++) {
+                    const SlotId slot = *slots.get(input).expect("the input arrays of an entry hold one count");
+                    const bool has_producer =
+                        producers.get(input).expect("the input arrays of an entry hold one count")->is_valid();
+                    if (slot.is_valid() && !has_producer) on_read(ExternalRead{OpIndex{i}, input, slot});
+                }
+            }
+        };
+        uint32_t count = 0;
+        each_read([&count](const ExternalRead&) noexcept { ++count; });
+        external_reads_ = ::fixy::mint_heap_array(allocation_, count, ExternalRead{});
+        const ::fixy::View<ExternalRead> reads = external_reads_.view();
+        uint32_t filled = 0;
+        next_external_read_ = count;
+        each_read([&](const ExternalRead& read) noexcept {
+            *reads.get(filled).expect("the first pass counted each read") = read;
+            if (next_external_read_ == count && read.op.raw() >= resume_op) next_external_read_ = filled;
+            ++filled;
+        });
+    }
+
     // Verifies the prefix match, then delegates the pool detach, the slot
     // migration and the engine advance.  Returns true when the switch
     // succeeded and the engine sits at div_pos.
@@ -1119,7 +1205,7 @@ private:
         }
 
         if (!replay_.switch_region(alt, div_pos)) return false;
-        register_externals_from_region_(fg, alt);
+        register_externals_from_region_(fg, alt, div_pos);
         // This holds only on the success path; every failure returns above.
         // Pinning it here catches a refactor that skips the publication or
         // publishes the wrong region, which would otherwise keep dispatching
@@ -1251,6 +1337,14 @@ private:
     // writes it, and each slot holds a TensorMeta from the construction of
     // the Vigil on.
     OpRecordStack op_record_stack_{};
+
+    // The reads of the external slots of the active region, in the order of
+    // the ops.  Each activation and each switch of a region writes them
+    // (register_externals_from_region_), and bind_external_inputs_ walks
+    // them.  Only the producer thread reads or writes the two members.
+    ::fixy::HeapArray<ExternalRead> external_reads_{};
+    // The next read of the iteration, at most the count of the reads.
+    uint32_t next_external_read_ = 0;
 
     // The regions that the foreground holds, for the sweep of the region
     // store on the publish stage.  The foreground writes the cells at the end

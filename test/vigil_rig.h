@@ -85,4 +85,8 @@ void test_region_keeps_the_depth_of_each_op();
 void test_region_keeps_the_depth_past_a_growth_of_the_held_ops();
 void test_op_nest_counts_the_open_records();
 
+// The data address of an external slot follows the live op of each
+// iteration (test_vigil_external.cpp).
+void test_external_follows_the_live_op();
+
 }  // namespace test_vigil

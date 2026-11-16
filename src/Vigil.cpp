@@ -120,7 +120,8 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode& region) {
     alignment_ops_ = 0;
     taken_region_.store_release(::fixy::WeakRef<RegionNode>{region});
     if (replay_.activate(region)) {
-        register_externals_from_region_(fg, region);
+        // A rollback or a load resumes the replay at the first op.
+        register_externals_from_region_(fg, region, 0);
         region_cache_.insert(region);
     }
     publish_held_regions_();
