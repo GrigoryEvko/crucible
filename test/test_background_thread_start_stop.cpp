@@ -96,7 +96,8 @@ void test_start_while_running_breaks_the_contract(::fixy::TestRunnerCtx const& t
             bt.start(startup(), ring, test_log());
             bt.start(startup(), ring, test_log());
         },
-        ::fixy::TextView{"foundation: contract violation: !pipeline_->thread.is_some()"});
+        ::fixy::TextView{"foundation: contract violation: !pipeline_->thread.is_some(), \"a start while the pipeline "
+                         "thread runs: stop the pipeline first\""});
 }
 
 void test_end_joins_a_running_pipeline() {

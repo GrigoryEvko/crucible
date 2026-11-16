@@ -880,7 +880,7 @@ void BackgroundThread::set_numerics(NumericsHash numerics) noexcept {
 
 void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
                              int32_t rank_, int32_t world_size_, uint64_t device_cap) {
-    CRUCIBLE_PRE(!pipeline_->thread.is_some());
+    CRUCIBLE_PRE_MSG(!pipeline_->thread.is_some(), "a start while the pipeline thread runs: stop the pipeline first");
     CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(ring, trace_ring),
                      "a start after stop names the trace ring of the first start");
     CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(meta_log, trace_meta_log),
