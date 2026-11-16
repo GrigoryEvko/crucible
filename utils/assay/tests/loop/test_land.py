@@ -57,9 +57,12 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from unittest import mock
 
 from assay.core import git, paths, proc, testing
 from assay.core.exit import ExitCode
@@ -79,6 +82,8 @@ WRITER_SHARED = "alpha\nbeta\nanother writer\n"
 WORKING_OWN = "own in the working tree\n"
 # The text of the own file of a request that the planted gate rejects.
 RED = "red\n"
+# The bound of each wait of the case with three batches in threads, in seconds.  The case ends long before it.
+THREAD_BOUND_S = 120.0
 # The text of the own file of a request whose commit the planted gate cannot read, and the error that it raises.
 UNREADABLE = "a row of a kind that the code of the gate does not know\n"
 TABLE_ERROR = "rule-table.txt:525: the row kind 'linear-door' is unknown"
@@ -1590,9 +1595,20 @@ def right_batch(
         decisions[queued.number] = decision
 
     right = land.RightOfWay(queue, number, pause)
-    batched = land.BatchLanding(batch, check, decide, pause, right=right)
+    batched = land.BatchLanding(batch, check, decide, pause, right=right, stack=land.Stack(queue, number))
     _, printed = testing.captured(lambda: batched.land(batch))
     return decisions, printed
+
+
+def turn_landing(root: Path, queue: Path, number: int, pause: heavy.Pause) -> land.BatchLanding:
+    """Return the batch of one request with the number, a right of way and a stack, with the branch as its base."""
+    batch = [land.Queued(number, root, own_requests(root, (f"turn {number}\n",))[0], options())]
+    right = land.RightOfWay(queue, number, pause)
+    landing = land.BatchLanding(
+        batch, passing([]), lambda _queued, _decision: None, pause, right=right, stack=land.Stack(queue, number)
+    )
+    landing.base = landing.tip()
+    return landing
 
 
 def right_cases(expect: testing.Expect) -> None:
@@ -1639,7 +1655,8 @@ def right_cases(expect: testing.Expect) -> None:
             and not land.queue_file(queue, 5, land.RIGHT_SUFFIX).exists(),
         )
         pauses: list[float] = []
-        is_moved, printed = testing.captured(lambda: land.RightOfWay(queue, 5, pauses.append).wait(land.SWAP_STEP))
+        turn = turn_landing(root, queue, 5, pauses.append)
+        is_moved, printed = testing.captured(lambda: turn.wait_turn(land.SWAP_STEP))
         expect(
             "a right of way that is never freed, with no move of the branch, holds the swap for RIGHT_WAIT_S seconds "
             "only, with a line",
@@ -1655,7 +1672,8 @@ def right_cases(expect: testing.Expect) -> None:
             if not added:
                 added.append(other_right(queue, 7))
 
-        _, printed = testing.captured(lambda: land.RightOfWay(queue, 5, new_holder).wait(land.SWAP_STEP))
+        turn = turn_landing(root, queue, 5, new_holder)
+        _, printed = testing.captured(lambda: turn.wait_turn(land.SWAP_STEP))
         os.close(added[0])
         expect(
             "a holder that takes a right of way during the wait gets its own line, and no line names a holder again",
@@ -1680,7 +1698,7 @@ def right_cases(expect: testing.Expect) -> None:
             f"the commit of that batch, and lands: {len(seen)} runs",
             decisions[5].status == 0
             and "waits before its run for the right of way of 00000001" in printed
-            and f"waited {land.POLL_S:.0f} s for a right of way before its run" in printed
+            and f"waited {land.POLL_S:.0f} s before its run" in printed
             and len(seen) == 1
             and seen[0][0].head == moved[0]
             and git.parent(root, "HEAD") == moved[0],
@@ -1748,6 +1766,442 @@ def right_cases(expect: testing.Expect) -> None:
             and git.parent(root, "HEAD") == holder_landed[0]
             and taken == [-1],
         )
+
+
+def side_commit(root: Path, parent: str, name: str, text: str) -> str:
+    """Write a commit that sets one file on a commit, as the batch of a different lane composes it, and return it."""
+    (root / name).write_text(text, encoding="utf-8")
+    composed = land.compose(root, request_of((f"Set {name}",), own=(name,)), parent)
+    return land.commit_tree(root, composed, f"Set {name}\n")
+
+
+class OtherEntry:
+    """The entry of a different batch in the stack, as the holder of a different lane writes it (THE STACK)."""
+
+    __slots__ = ("branch", "stack")
+
+    def __init__(
+        self, queue: Path, branch: str, number: int, base: str, commit: str, is_accepted: bool = False
+    ) -> None:
+        """Write the entry of a batch on the branch, and hold its lock."""
+        self.branch = branch
+        self.stack = land.Stack(queue, number)
+        self.stack.publish(branch, base, commit, is_accepted)
+
+    @property
+    def is_live(self) -> bool:
+        """Tell if the entry still holds its lock."""
+        return self.stack.descriptor >= 0
+
+    def move(self, base: str, commit: str, is_accepted: bool = False) -> None:
+        """Write a new entry, as a batch that composes again or that the gate accepted does."""
+        self.stack.publish(self.branch, base, commit, is_accepted)
+
+    def leave(self) -> None:
+        """Remove the entry and free its lock, as a batch that landed or that the gate refused does."""
+        self.stack.free()
+
+    def die(self) -> None:
+        """Free the lock and keep the file of the entry, as the kernel does for a holder that ends."""
+        os.close(self.stack.descriptor)
+        self.stack.descriptor = -1
+
+
+def stack_cases(expect: testing.Expect) -> None:
+    """Hold THE STACK: a stack of three, a refusal in the middle, an outside push, red runs, a fold, a dead holder, the
+    bound of the depth, and a right of way above the batch."""
+    with tempfile.TemporaryDirectory(prefix="land-stack-") as work_text:
+        work = Path(work_text)
+        made: list[Path] = []
+
+        def fresh() -> tuple[Path, Path, str, str]:
+            """Plant a new repository and queue, and return them with the commit and the name of the branch."""
+            made.append(work / f"case-{len(made)}")
+            root, queue = made[-1] / "repo", made[-1] / "queue"
+            queue.mkdir(parents=True)
+            planted_repository(root)
+            return root, queue, git.head(root), land.branch_of(root)
+
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        second = side_commit(root, first, "b.txt", "b\n")
+        below = [OtherEntry(queue, branch, 1, tip, first), OtherEntry(queue, branch, 2, first, second)]
+        seen: list[tuple[gate.Candidate, bool]] = []
+        published: list[land.StackEntry] = []
+        polls: list[str] = []
+
+        def own_entry() -> None:
+            """Keep the entry of the batch, as a different lane reads it."""
+            published.extend(item for item in land.Stack(queue, 0).entries(branch) if item.number == 3)
+
+        def lands_in_order(seconds: float) -> None:
+            """Land the first batch below on the first poll, and the second one on the second poll."""
+            if seconds != land.POLL_S:
+                return
+            polls.append(git.head(root))
+            own_entry()
+            if len(polls) == 1:
+                land.swap(root, branch, first, tip, "First")
+                below[0].leave()
+            elif len(polls) == 2:
+                land.swap(root, branch, second, first, "Second")
+                below[1].leave()
+
+        decisions, printed = right_batch(root, queue, 3, passing(seen, own_entry), lands_in_order)
+        expect(
+            "a stack of three lands in order: the batch composes on the top of the two entries below it, writes its "
+            "entry, runs one time, waits at its swap until the two batches below land, and lands on the second one",
+            decisions[3].status == 0
+            and len(seen) == 1
+            and seen[0][0].head == second
+            and git.parent(root, "HEAD") == second
+            and git.parent(root, second) == first
+            and len(polls) == 2
+            and f"composes on {second[: land.SHORT_HASH]} of the stack, above 00000001 00000002" in printed
+            and "waits before its swap for the batches below it in the stack: 00000001 00000002" in printed
+            and published[0] == land.StackEntry(3, second, seen[0][0].commit, False)
+            and published[-1] == land.StackEntry(3, second, seen[0][0].commit, True)
+            and not land.queue_file(queue, 3, land.STACK_SUFFIX).exists()
+            and not land.queue_file(queue, 3, land.STACK_LOCK_SUFFIX).exists(),
+        )
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        second = side_commit(root, first, "b.txt", "b\n")
+        below = [OtherEntry(queue, branch, 1, tip, first), OtherEntry(queue, branch, 2, first, second)]
+        seen = []
+        polls = []
+
+        def middle_refused(seconds: float) -> None:
+            """Refuse the batch in the middle on the first poll, and land the batch below it on the second poll."""
+            if seconds != land.POLL_S:
+                return
+            polls.append(git.head(root))
+            if len(polls) == 1:
+                below[1].leave()
+            elif len(polls) == 2:
+                land.swap(root, branch, first, tip, "First")
+                below[0].leave()
+
+        decisions, printed = right_batch(root, queue, 3, passing(seen), middle_refused)
+        expect(
+            "a refusal in the middle of the stack makes the batch on the top compose again on the batch below the "
+            "refused one, run one more time, and land on it",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [second, first]
+            and git.parent(root, "HEAD") == first
+            and "the base of the batch left the stack, and the batch composes its 1 accepted requests again" in printed,
+        )
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        holder = OtherEntry(queue, branch, 1, tip, first)
+        seen = []
+        moved: list[str] = []
+
+        def outside_push(seconds: float) -> None:
+            """Push the branch from outside on the first poll, and land the batch below, composed again, on the next."""
+            if seconds != land.POLL_S:
+                return
+            if not moved:
+                short_landing(root, "an outside push\n")
+                pushed = git.head(root)
+                again = side_commit(root, pushed, "a.txt", "a\n")
+                holder.move(pushed, again)
+                moved.extend((pushed, again))
+            elif holder.is_live:
+                land.swap(root, branch, moved[1], moved[0], "First again")
+                holder.leave()
+
+        decisions, printed = right_batch(root, queue, 3, passing(seen), outside_push)
+        expect(
+            "an outside push of the branch makes each batch of the stack compose again: the batch below writes its new "
+            "commit, and the batch on the top composes on it, runs one more time, and lands on it",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [first, moved[1]]
+            and git.parent(root, "HEAD") == moved[1]
+            and git.parent(root, moved[1]) == moved[0],
+        )
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        holder = OtherEntry(queue, branch, 1, tip, first)
+        seen = []
+
+        def red_on_stack(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Reject each commit on the commit of the batch below, as an interaction with it does."""
+            seen.append((candidate, is_retry))
+            problems = ("debug: red alone too: test_pair",) if candidate.head == first else ()
+            return gate.Verdict(("debug",), problems, 1.0)
+
+        def holder_refused(seconds: float) -> None:
+            """Refuse the batch below on the first poll."""
+            if seconds == land.POLL_S and holder.is_live:
+                holder.leave()
+
+        decisions, printed = right_batch(root, queue, 3, red_on_stack, holder_refused)
+        expect(
+            "a red run on the stack gives no verdict and runs no run of the base.  When the batch below leaves the "
+            "stack, the batch composes again on the branch, and lands",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [first, tip]
+            and "the run on the stack is red" in printed
+            and git.parent(root, "HEAD") == tip,
+        )
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        holder = OtherEntry(queue, branch, 1, tip, first)
+        seen = []
+
+        def red_with_first(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Reject each commit of the batch on the commit of the batch below, and accept that commit itself."""
+            seen.append((candidate, is_retry))
+            is_red = candidate.commit != first and git.show(root, candidate.commit, "a.txt") is not None
+            return gate.Verdict(("debug",), ("debug: red alone too: test_pair",) if is_red else (), 1.0)
+
+        def holder_lands(seconds: float) -> None:
+            """Land the batch below on the first poll."""
+            if seconds == land.POLL_S and holder.is_live:
+                land.swap(root, branch, first, tip, "First")
+                holder.leave()
+
+        decisions, _ = right_batch(root, queue, 3, red_with_first, holder_lands)
+        lines = [line.content for line in decisions[3].lines] if 3 in decisions else []
+        expect(
+            f"a red run on the stack waits until the batch below lands.  Then the search judges the batch on its exact "
+            f"base, and it refuses the request with no line of a red branch: {lines}",
+            decisions[3].status == ExitCode.FINDINGS
+            and seen[0][0].commit != first
+            and all(candidate.head == first for candidate, _ in seen)
+            and len(seen) == 4
+            and not any("red with no request" in line for line in lines)
+            and git.head(root) == first,
+        )
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        folded = side_commit(root, tip, "a.txt", "a with a fold\n")
+        holder = OtherEntry(queue, branch, 1, tip, first)
+        seen = []
+        polls = []
+
+        def holder_folds(seconds: float) -> None:
+            """Accept the batch below with a fold on the first poll, and land its final commit on the second poll."""
+            if seconds != land.POLL_S:
+                return
+            polls.append(git.head(root))
+            if len(polls) == 1:
+                holder.move(tip, folded, True)
+            elif len(polls) == 2:
+                land.swap(root, branch, folded, tip, "First with a fold")
+                holder.leave()
+
+        decisions, _ = right_batch(root, queue, 3, passing(seen), holder_folds)
+        expect(
+            "a fold below gives a final commit that the batch did not test: the batch composes again on that final "
+            "commit, runs again as a retry, and lands on it",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [first, folded]
+            and seen[1][1]
+            and git.parent(root, "HEAD") == folded,
+        )
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        holder = OtherEntry(queue, branch, 1, tip, first)
+        seen = []
+
+        def holder_dies(seconds: float) -> None:
+            """End the holder of the batch below on the first poll, with its file of the entry still there."""
+            if seconds == land.POLL_S and holder.is_live:
+                holder.die()
+
+        decisions, _ = right_batch(root, queue, 3, passing(seen), holder_dies)
+        expect(
+            "a holder below that ends leaves a file with no lock, which is no entry: the batch composes again on the "
+            "branch, and lands",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [first, tip]
+            and land.queue_file(queue, 1, land.STACK_SUFFIX).exists()
+            and git.parent(root, "HEAD") == tip,
+        )
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        second = side_commit(root, first, "b.txt", "b\n")
+        third = side_commit(root, second, "c.txt", "c\n")
+        chain = [
+            OtherEntry(queue, branch, 1, tip, first),
+            OtherEntry(queue, branch, 2, first, second),
+            OtherEntry(queue, branch, 4, second, third),
+        ]
+        seen = []
+        steps = [(tip, first), (first, second), (second, third)]
+
+        def chain_lands(seconds: float) -> None:
+            """Land one batch of the stack on each poll, from the bottom."""
+            if seconds == land.POLL_S and steps:
+                old, new = steps.pop(0)
+                land.swap(root, branch, new, old, "Below")
+                chain[2 - len(steps)].leave()
+
+        decisions, printed = right_batch(root, queue, 3, passing(seen), chain_lands)
+        expect(
+            "a stack of STACK_DEPTH entries holds the batch before its run, and when the bottom one lands, the batch "
+            "composes on the top, and lands after the two other entries",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [third]
+            and "waits before its run for the full stack: 00000001 00000002 00000004" in printed
+            and f"waited {land.POLL_S:.0f} s before its run" in printed
+            and git.parent(root, "HEAD") == third,
+        )
+        root, queue, tip, branch = fresh()
+        seen = []
+        upper: list[OtherEntry] = []
+        rights: list[int] = []
+        pauses: list[float] = []
+
+        def upper_stacks(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Let a batch with a right of way stack on the commit of the run, as a different lane does."""
+            seen.append((candidate, is_retry))
+            if not upper:
+                upper.append(
+                    OtherEntry(queue, branch, 2, candidate.commit, side_commit(root, candidate.commit, "u.txt", "u\n"))
+                )
+                rights.append(other_right(queue, 2))
+            return gate.Verdict(("debug",), (), 1.0)
+
+        decisions, printed = right_batch(root, queue, 1, upper_stacks, pauses.append)
+        expect(
+            "a batch with a right of way that is stacked on the batch does not hold the swap of the batch: the batch "
+            "swaps with no poll",
+            decisions[1].status == 0
+            and len(seen) == 1
+            and land.POLL_S not in pauses
+            and "waits before its swap" not in printed,
+        )
+        os.close(rights[0])
+        upper[0].leave()
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        holder = OtherEntry(queue, branch, 1, tip, first)
+        seen = []
+        held: dict[int, land.Decision] = {}
+
+        def decide_held(queued: land.Queued, decision: land.Decision) -> None:
+            held[queued.number] = decision
+
+        batch = [land.Queued(5, root, own_requests(root, ("held right\n",))[0], options())]
+        right = land.RightOfWay(queue, 5, no_pause)
+        right.take()
+        landing = land.BatchLanding(
+            batch, passing(seen), decide_held, no_pause, right=right, stack=land.Stack(queue, 5)
+        )
+        _, printed = testing.captured(lambda: landing.land(batch))
+        holder.leave()
+        expect(
+            "a batch that holds its right of way composes only on the branch, also with an entry on the branch, so it "
+            "never waits for a batch below it",
+            held[5].status == 0
+            and [candidate.head for candidate, _ in seen] == [tip]
+            and "of the stack" not in printed
+            and git.parent(root, "HEAD") == tip,
+        )
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        elsewhere = OtherEntry(queue, "refs/heads/elsewhere", 1, tip, first)
+        seen = []
+        decisions, printed = right_batch(root, queue, 3, passing(seen), no_pause)
+        elsewhere.leave()
+        expect(
+            "an entry of a different branch is no entry of the stack of the branch: the batch composes on the branch",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [tip]
+            and git.parent(root, "HEAD") == tip,
+        )
+        root, queue, tip, branch = fresh()
+        first = side_commit(root, tip, "a.txt", "a\n")
+        stuck = OtherEntry(queue, branch, 1, tip, first)
+        seen = []
+        with mock.patch.object(land, "STACK_WAIT_S", 5 * land.POLL_S):
+            decisions, printed = right_batch(root, queue, 3, passing(seen), no_pause)
+        stuck.leave()
+        expect(
+            "a batch below that stays live and never lands holds the swap for STACK_WAIT_S only.  Then the next round "
+            "composes on the branch, and the batch lands",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [first, tip]
+            and f"waited {5 * land.POLL_S:.0f} seconds, and it goes on to its swap" in printed
+            and git.parent(root, "HEAD") == tip,
+        )
+
+
+def stack_thread_cases(expect: testing.Expect) -> None:
+    """Hold THE STACK with three real batches in threads: the top one ends its run first, and they land in order."""
+    with tempfile.TemporaryDirectory(prefix="land-stack-threads-") as work_text:
+        work = Path(work_text)
+        root, queue = work / "repo", work / "queue"
+        queue.mkdir()
+        planted_repository(root)
+        tip = git.head(root)
+        requests = own_requests(root, ("one\n", "two\n", "three\n"))
+        numbers = (1, 2, 3)
+        started = {number: threading.Event() for number in numbers}
+        released = {number: threading.Event() for number in numbers}
+        seen: dict[int, list[gate.Candidate]] = {number: [] for number in numbers}
+        decisions: dict[int, land.Decision] = {}
+
+        def gate_of(number: int) -> land.Check:
+            """Return the planted gate of one batch: it waits for its release, and it accepts each commit."""
+
+            def check(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+                seen[number].append(candidate)
+                started[number].set()
+                released[number].wait(THREAD_BOUND_S)
+                return gate.Verdict(("debug",), (), 1.0)
+
+            return check
+
+        def short_pause(_seconds: float) -> None:
+            """Pause a short real time, so the other threads go on."""
+            time.sleep(0.01)
+
+        def run_batch(number: int) -> None:
+            """Land the batch of one request as the holder of a lane does, with a right of way and a stack."""
+            batch = [land.Queued(number, root, requests[number - 1], options())]
+
+            def decide(queued: land.Queued, decision: land.Decision) -> None:
+                decisions[queued.number] = decision
+
+            right = land.RightOfWay(queue, number, short_pause)
+            landing = land.BatchLanding(
+                batch, gate_of(number), decide, short_pause, right=right, stack=land.Stack(queue, number)
+            )
+            landing.land(batch)
+
+        def run_all() -> None:
+            """Start each batch after the run of the one before it starts, and release the runs from the top."""
+            threads = []
+            for number in numbers:
+                thread = threading.Thread(target=run_batch, args=(number,))
+                thread.start()
+                threads.append(thread)
+                started[number].wait(THREAD_BOUND_S)
+            for number in reversed(numbers):
+                released[number].set()
+            for thread in threads:
+                thread.join(THREAD_BOUND_S)
+
+        _, printed = testing.captured(run_all)
+        commits = [seen[number][0].commit if seen[number] else "" for number in numbers]
+        expect(
+            "three real batches in threads: each composes on the commit that the batch before it tests, the top one "
+            "ends its run first, and the three land in order with one run each",
+            all(decisions.get(number, land.refused(ExitCode.USAGE, "no verdict")).status == 0 for number in numbers)
+            and [len(seen[number]) for number in numbers] == [1, 1, 1]
+            and seen[1][0].head == tip
+            and seen[2][0].head == commits[0]
+            and seen[3][0].head == commits[1]
+            and git.head(root) == commits[2]
+            and git.parent(root, commits[2]) == commits[1]
+            and git.parent(root, commits[1]) == commits[0],
+        )
+        if not all(decisions.get(number) for number in numbers):
+            print(printed)
 
 
 @contextlib.contextmanager
@@ -2561,6 +3015,8 @@ def main(argv: list[str]) -> int:
             drop_cases,
             store_cases,
             right_cases,
+            stack_cases,
+            stack_thread_cases,
             queue_cases,
             error_cases,
             defect_cases,

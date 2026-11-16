@@ -362,8 +362,10 @@ THE RIGHT OF WAY
     A right of way goes first when a different batch holds it.  For a batch
     that holds a right of way, only a right of way with a smaller number goes
     first.  Thus the oldest batch goes first, and no two batches wait for
-    each other.  A batch waits while a right of way that goes first is held,
-    at two points:
+    each other.  A right of way does not go first when its holder is below
+    the batch in the stack, or when the entry of its holder is not on the
+    branch (THE STACK), because such a holder cannot swap first.  A batch
+    waits while a right of way that goes first is held, at two points:
       * Before each round, also the first one.  A holder that goes first
         moves the branch when it lands, and the swap of a run that started
         before it then cannot succeed.  Such a run only takes slots and
@@ -378,6 +380,60 @@ THE RIGHT OF WAY
     seconds.  Each line of the wait names the holders that no earlier line
     of that wait named.  At its end, a wait before a round writes the
     seconds that it waited.
+
+THE STACK
+    Two batches that run at the same time on one commit of the branch lose
+    one run: the first one lands, and the other one runs again.  Thus a
+    batch composes on the commit that a running batch tests, and not only on
+    the branch.  This is a dependent pipeline.  Each batch writes its entry
+    into the file NUMBER.stack of the queue: its branch, its base, the commit
+    that it tests, and if the gate accepted that commit.  One queue holds the
+    batches of each branch, and a batch reads only the entries of its own
+    branch.  The batch holds a lock of
+    flock(2) on the file NUMBER.stacked while it has an entry.  The kernel
+    frees the lock of a holder that ends, and a file with no lock is no
+    entry.
+      * At the start of each round, the batch removes its entry.  The stack
+        starts at the commit of the branch.  It follows each entry on the
+        top of the stack, for at most STACK_DEPTH entries.  Among the entries
+        on one commit, it takes the entry that lands first: a holder of a
+        right of way before a batch with none, then the smaller number.
+      * When the stack holds STACK_DEPTH entries, the batch waits before its
+        run.  A run on a different base would lose its swap.
+      * The round composes on the top of the stack.  The first run of a
+        round writes the entry with the commit of that run.  A red first run
+        removes the entry, because the search then lands a different commit.
+        An accepted run writes the final commit, with the mark accepted.
+    A batch swaps only when the branch is at its base, with the same
+    compare-and-swap.  Before the swap, it waits while its base is the top
+    of a path of entries from the branch.  When a batch below lands a
+    different commit, or when its entry leaves, the base can never be the
+    branch.  An outside push of the branch has the same effect.  The batch
+    then composes again on the new top of the stack.
+    A fold below gives a different final commit, because THE REDUCE and
+    THE BUILT FILES change only ledgers and built files.  The batch then
+    composes again on that final commit.  Its next run runs only the tests
+    with an input that changed, with the same selection as each run after
+    the first one (assay.loop.affected).  Each other result of the batch did
+    not read a changed input.  Thus each result that the batch keeps is a
+    result on its exact base.
+    A round on the stack gives no verdict, and it runs no run of the base
+    and no search, because a red can come from a batch below.  After a red
+    run, the batch waits until the branch is at its base, or until its base
+    leaves the stack.  When the branch is at its base, the next round
+    composes on the branch, and its search judges the batch on its exact
+    base.  A request that does not compose on the stack also gives a next
+    round on the branch.  A round that composes again for the stack counts
+    in STACK_ATTEMPTS, and not in the refused swaps of THE RIGHT OF WAY.
+    After STACK_ATTEMPTS such rounds, the batch composes only on the branch.
+    After a wait for the stack that gets to STACK_WAIT_S, the next round
+    composes on the branch too.
+    A batch that holds a right of way composes only on the branch.  Thus it
+    never waits for a batch below it, and the batches below it never wait
+    for its right of way while it waits for them.  It goes first on the
+    branch, as THE RIGHT OF WAY tells.
+    --check composes on the branch, and it writes no entry.  The stack adds
+    no lane and no job: the lanes and the slot pool stay as they are.
 
 THE JOURNAL
     Before the swap, the holder writes the file NUMBER.journal of each
@@ -515,6 +571,11 @@ RIGHT_WAIT_S = 1800.0
 # The two steps of a batch before which it waits for a right of way that goes first (THE RIGHT OF WAY).
 RUN_STEP = "run"
 SWAP_STEP = "swap"
+# The most entries below a batch in the stack, the wait for the batches below a batch, in seconds, and the times that a
+# batch composes again for the stack before it composes only on the branch (THE STACK).
+STACK_DEPTH = 3
+STACK_WAIT_S = 3600.0
+STACK_ATTEMPTS = 8
 # The two kinds of an edit of a shared file (THE REQUEST).
 INSERT = "insert"
 REPLACE = "replace"
@@ -555,6 +616,10 @@ VERDICT_SUFFIX = ".verdict"
 JOURNAL_SUFFIX = ".journal"
 CLAIM_SUFFIX = ".claim"
 RIGHT_SUFFIX = ".right"
+# The entry of a batch in the stack, and its lock file (THE STACK).  No suffix ends with LOCK_SUFFIX, because each such
+# file is the lock of a request.
+STACK_SUFFIX = ".stack"
+STACK_LOCK_SUFFIX = ".stacked"
 # The lines of the error of `git fsck` that the refusal of a damaged store names (THE STORE).
 STORE_LINES = 3
 PATCH_MARK = ".patch-"
@@ -1662,44 +1727,129 @@ class RightOfWay:
                 found.append(number)
         return sorted(found)
 
-    def wait(self, step: str, is_moved: Callable[[], bool] | None = None) -> bool:
-        """Wait before a step of the batch while a right of way goes first, for at most RIGHT_WAIT_S seconds.
 
-        `step` is RUN_STEP or SWAP_STEP, and the lines of the wait name it.  The wait ends early when is_moved() tells
-        that the branch moved from the base of the batch, because the swap of the batch then cannot succeed.  A wait
-        before a round gives no is_moved, and the lines of its end give the seconds that it waited (THE RIGHT OF
-        WAY).  Each line of the wait names the holders that no earlier line named.
+@dataclass(frozen=True, slots=True)
+class StackEntry:
+    """The entry of one batch in the stack: its number, its base, the commit that it tests, and if the gate accepted it."""
 
-        Returns:
-            True if the branch moved during the wait, and False if the batch can go on to its step
+    number: int
+    base: str
+    commit: str
+    is_accepted: bool
+
+
+class Stack:
+    """The entry of one batch in the stack of its queue, with the number of the first request of the batch (THE STACK).
+
+    The object holds the descriptor of the lock of the entry from the first entry of the batch to free(), and -1
+    before.  The holder of the batch is the one writer of its entry.
+    """
+
+    __slots__ = ("descriptor", "number", "queue")
+
+    def __init__(self, queue: Path, number: int) -> None:
+        """Keep the queue and the number of the batch."""
+        self.queue = queue
+        self.number = number
+        self.descriptor = -1
+
+    def publish(self, branch: str, base: str, commit: str, is_accepted: bool) -> None:
+        """Write the entry of the batch on a branch in place of its last entry, and hold the lock of the entry.
+
+        One queue holds the batches of each branch of the repository, so the entry names its branch.
+
+        Raises:
+            OSError: If the lock file cannot be opened or locked, or the entry cannot be written
         """
-        waited = 0.0
-        shown: set[int] = set()
-        while waited < RIGHT_WAIT_S:
-            first = self.first()
-            if not first:
-                if waited and step == RUN_STEP:
-                    check_report.write_line(
-                        f"loop land: the batch waited {waited:.0f} s for a right of way before its run"
-                    )
-                return False
-            new = [number for number in first if number not in shown]
-            if new:
-                names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in new)
-                check_report.write_line(f"loop land: the batch waits before its {step} for the right of way of {names}")
-                shown.update(new)
-            if is_moved is not None and is_moved():
-                check_report.write_line(
-                    "loop land: the branch moved while the batch waited for a right of way, so its swap cannot succeed"
-                )
-                return True
-            self.pause(POLL_S)
-            waited += POLL_S
-        check_report.write_line(
-            f"loop land: the batch waited {RIGHT_WAIT_S:.0f} seconds for a right of way, and it goes on to its {step}",
-            is_error=True,
-        )
-        return False
+        if self.descriptor < 0:
+            lock = queue_file(self.queue, self.number, STACK_LOCK_SUFFIX)
+            descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+            except OSError:
+                os.close(descriptor)
+                raise
+            self.descriptor = descriptor
+        record = {"branch": branch, "base": base, "commit": commit, "accepted": is_accepted}
+        cache.write_atomic(queue_file(self.queue, self.number, STACK_SUFFIX), (json.dumps(record) + "\n").encode())
+
+    def withdraw(self) -> None:
+        """Remove the entry of the batch.  The lock stays until free()."""
+        queue_file(self.queue, self.number, STACK_SUFFIX).unlink(missing_ok=True)
+
+    def free(self) -> None:
+        """Remove the entry, then the lock file, and then free the lock.  With no lock, only remove the entry."""
+        self.withdraw()
+        if self.descriptor < 0:
+            return
+        queue_file(self.queue, self.number, STACK_LOCK_SUFFIX).unlink(missing_ok=True)
+        os.close(self.descriptor)
+        self.descriptor = -1
+
+    def entries(self, branch: str) -> list[StackEntry]:
+        """Return the live entry on a branch of each different batch, in the sequence of the numbers.
+
+        An entry is live while a process holds the lock of its lock file.  An entry that does not read, and an entry of
+        a different branch, is no entry.  Complexity: linear in the files of the entries in the queue.
+        """
+        found: list[StackEntry] = []
+        for path in paths.listing(self.queue, f"*{STACK_SUFFIX}"):
+            number = number_of(path)
+            if number is None or number == self.number:
+                continue
+            if not heavy.is_held(queue_file(self.queue, number, STACK_LOCK_SUFFIX)):
+                continue
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+                if record["branch"] != branch:
+                    continue
+                found.append(StackEntry(number, str(record["base"]), str(record["commit"]), bool(record["accepted"])))
+            except OSError, ValueError, KeyError, TypeError:
+                continue
+        return sorted(found, key=lambda item: item.number)
+
+    def top(self, tip: str, entries: Sequence[StackEntry]) -> list[StackEntry]:
+        """Return the stack from the branch: each entry on the commit of the entry before it, at most STACK_DEPTH.
+
+        Among the entries on one commit, the stack takes the entry that lands first: a holder of a right of way
+        before a batch with none, then the smaller number (THE STACK).  Complexity: quadratic in the entries.
+        """
+        chain: list[StackEntry] = []
+        top = tip
+        while len(chain) < STACK_DEPTH:
+            on_top = [item for item in entries if item.base == top and item not in chain]
+            if not on_top:
+                break
+            chosen = min(on_top, key=lambda item: (not self.is_right_held(item.number), item.number))
+            chain.append(chosen)
+            top = chosen.commit
+        return chain
+
+    def is_right_held(self, number: int) -> bool:
+        """Tell if the batch with the number holds its right of way (THE RIGHT OF WAY)."""
+        return heavy.is_held(queue_file(self.queue, number, RIGHT_SUFFIX))
+
+
+def stack_path(tip: str, base: str, entries: Sequence[StackEntry]) -> list[StackEntry] | None:
+    """Return the entries of a path from the branch to a base, each on the commit of the one before, or None.
+
+    The path of a base at the branch is empty.  None tells that the base can never be the branch (THE STACK).
+    Complexity: quadratic in the entries.
+    """
+    if tip == base:
+        return []
+    frontier: list[tuple[str, list[StackEntry]]] = [(tip, [])]
+    seen = {tip}
+    while frontier:
+        top, path = frontier.pop()
+        for item in entries:
+            if item.base != top or item.commit in seen:
+                continue
+            if item.commit == base:
+                return [*path, item]
+            seen.add(item.commit)
+            frontier.append((item.commit, [*path, item]))
+    return None
 
 
 class BatchLanding:
@@ -1722,6 +1872,8 @@ class BatchLanding:
         "is_alive",
         "is_check",
         "is_cut",
+        "is_publishing",
+        "is_stack_stuck",
         "journal",
         "landed",
         "landed_run",
@@ -1731,6 +1883,7 @@ class BatchLanding:
         "repository",
         "right",
         "runs",
+        "stack",
     )
 
     def __init__(
@@ -1742,11 +1895,14 @@ class BatchLanding:
         is_alive: IsAlive | None = None,
         journal: Journal | None = None,
         right: RightOfWay | None = None,
+        stack: Stack | None = None,
     ) -> None:
-        """Keep the gate, the receiver of the verdicts, the pause, the check of the processes, the journal and the right.
+        """Keep the gate, the receiver of the verdicts, the pause, the check of the processes, the journal, the right
+        and the stack.
 
         The first request gives the shared git directory and the branch (THE HOLDER).  With no check of the processes,
-        each request stays in the batch.  With no right of way, the batch neither takes one nor waits for one.
+        each request stays in the batch.  With no right of way, the batch neither takes one nor waits for one.  With no
+        stack, the batch composes on the branch, and it writes no entry (THE STACK).
         """
         self.repository = repository_of(batch[0])
         self.branch = batch[0].branch or branch_of(batch[0].root)
@@ -1757,6 +1913,9 @@ class BatchLanding:
         self.journal = journal
         self.right = right
         self.is_check = batch[0].options.is_check
+        self.stack = None if self.is_check else stack
+        self.is_publishing = False
+        self.is_stack_stuck = False
         self.is_cut = False
         self.base = ""
         self.base_run = -1
@@ -1788,7 +1947,8 @@ class BatchLanding:
         `is_alone` tells that the chain is the run alone of its one request (THE CONFIRMATION).  The title of the
         candidate names the kind of the run: the run alone of the request, or the run of the batch.  A chain with a
         count that THE MERGE summed runs each configuration.  The candidate names each file that THE MERGE leaves to the
-        gate.  An error of the check is a problem of the commit (THE ERROR OF A RUN).
+        gate.  An error of the check is a problem of the commit (THE ERROR OF A RUN).  The first run of a round on the
+        branch writes the entry of the batch with its commit, and a red first run removes it (THE STACK).
         """
         is_every = any(link.is_summed for link in chain)
         commit = chain[-1].commit
@@ -1802,6 +1962,10 @@ class BatchLanding:
             built=chain_built(chain),
             title=f"{kind} at {commit[:SHORT_HASH]}",
         )
+        is_published = self.is_publishing and self.stack is not None and not focus and not is_alone
+        if is_published and self.stack is not None:
+            self.is_publishing = False
+            self.stack.publish(self.branch, self.base, commit, False)
         started = time.monotonic()
         try:
             verdict = self.check(candidate, bool(self.runs))
@@ -1809,6 +1973,8 @@ class BatchLanding:
             text = f"the gate cannot judge the commit {candidate.commit[:SHORT_HASH]}: {error_text(problem)}"
             check_report.write_line(f"loop land: {text}", is_error=True)
             verdict = gate.Verdict((), (text,), time.monotonic() - started)
+        if is_published and self.stack is not None and not verdict.is_accepted:
+            self.stack.withdraw()
         numbers = tuple(link.queued.number for link in chain)
         self.runs.append(Run(candidate, numbers, tuple(link.queued.request.subject for link in chain), verdict))
         return verdict
@@ -2114,15 +2280,21 @@ class BatchLanding:
         finally:
             if self.right is not None:
                 self.right.free()
+            if self.stack is not None:
+                self.stack.free()
 
     def landed_pending(self, pending: list[Queued]) -> None:
         """Run the rounds of land() until the swap, a refusal of each request, or ATTEMPTS refused swaps.
 
         After RIGHT_AFTER refused swaps, the batch takes its right of way before its next round.  Before each round and
-        before each swap, it waits for each right of way that goes first (THE RIGHT OF WAY).  A move of the branch during
-        the wait before the swap counts as a refused swap.  The caller frees the right of way.
+        before each swap, it waits for the batches that go first (THE RIGHT OF WAY, THE STACK).  A round composes on the
+        top of the stack, or on the branch.  A move of the branch from the base of a round on the branch counts as a
+        refused swap.  A round on the stack whose base leaves the stack counts in STACK_ATTEMPTS.  The caller frees the
+        right of way and the entry.
         """
         swaps_refused = 0
+        restacks = 0
+        is_on_branch = False
         while pending:
             right = self.right
             if right is not None and not self.is_check and swaps_refused >= RIGHT_AFTER and not right.is_taken:
@@ -2131,13 +2303,40 @@ class BatchLanding:
                     f"loop land: the branch moved {swaps_refused} times, and the batch takes the right of way: the "
                     "other lanes wait before their run and their swap until this batch ends"
                 )
-            if right is not None and not self.is_check:
-                right.wait(RUN_STEP)
-            self.base = self.tip()
+            stack = self.stack
+            if stack is not None:
+                stack.withdraw()
+            is_holder = right is not None and right.is_taken
+            is_stacking = (
+                stack is not None
+                and restacks < STACK_ATTEMPTS
+                and not is_on_branch
+                and not self.is_stack_stuck
+                and not is_holder
+            )
+            is_on_branch = False
+            self.is_stack_stuck = False
+            if not self.is_check:
+                self.wait_turn(RUN_STEP, is_stacking)
+            if self.is_stack_stuck:
+                is_stacking = False
+                self.is_stack_stuck = False
+            entries = stack.entries(self.branch) if is_stacking and stack is not None else []
+            tip = self.tip()
+            below = stack.top(tip, entries)[: STACK_DEPTH - 1] if is_stacking and stack is not None else []
+            self.base = below[-1].commit if below else tip
             self.base_run = -1
-            accepted, run = self.search(pending)
-            if not accepted:
-                return
+            if below:
+                pending, accepted, run, is_on_branch = self.stacked_round(pending, below)
+                if not accepted:
+                    restacks += 1
+                    continue
+            else:
+                self.is_publishing = stack is not None
+                accepted, run = self.search(pending)
+                self.is_publishing = False
+                if not accepted:
+                    return
             gone = [link.queued for link in accepted if not self.is_alive(link.queued)]
             if gone:
                 for queued in gone:
@@ -2155,11 +2354,20 @@ class BatchLanding:
                 return
             final = verdict.final or accepted[-1].commit
             decisions = self.landed_decisions(accepted, verdict, final)
-            is_moved = self.right is not None and self.right.wait(SWAP_STEP, lambda: self.tip() != self.base)
+            if stack is not None:
+                stack.publish(self.branch, self.base, final, True)
+            is_moved = self.wait_turn(SWAP_STEP)
             if not is_moved and self.landed_swap(accepted, decisions, final, run):
                 return
-            swaps_refused += 1
             pending = [link.queued for link in accepted]
+            if below:
+                restacks += 1
+                check_report.write_line(
+                    f"loop land: the base of the batch left the stack, and the batch composes its {len(pending)} "
+                    "accepted requests again"
+                )
+                continue
+            swaps_refused += 1
             if swaps_refused >= ATTEMPTS:
                 stop = f"loop land: the branch moved {ATTEMPTS} times, and the batch stops"
                 for queued in pending:
@@ -2170,6 +2378,138 @@ class BatchLanding:
                 is_error=True,
             )
             self.pause(random.uniform(*PAUSE_RANGE_S))
+
+    def stacked_round(
+        self, pending: list[Queued], below: Sequence[StackEntry]
+    ) -> tuple[list[Queued], list[Link], int, bool]:
+        """Run one round on the top of the stack: compose, write the entry, and run the gate one time (THE STACK).
+
+        The round gives no verdict, because its base is not on the branch.  A request that does not compose on the
+        stack makes the next round compose on the branch.  After a red run, the batch waits until the branch is at its
+        base or its base leaves the stack, because the red can come from a batch below.  When the branch is then at its
+        base, the next round composes on the branch, and its search judges the batch on its exact base.
+
+        Returns:
+            The requests that stay, the accepted links, the index of their run, and if the next round composes on the
+            branch.  The links are empty when the round accepts nothing.
+        """
+        stack = self.stack
+        if stack is None:
+            return pending, [], -1, True
+        names = " ".join(item.name for item in pending)
+        holders = " ".join(f"{item.number:0{NUMBER_WIDTH}d}" for item in below)
+        check_report.write_line(
+            f"loop land: the batch {names} composes on {self.base[:SHORT_HASH]} of the stack, above {holders}"
+        )
+        gone = [queued for queued in pending if not self.is_alive(queued)]
+        for queued in gone:
+            self.dropped[queued.number] = -1
+        pending = [queued for queued in pending if queued not in gone]
+        if not pending:
+            return pending, [], -1, False
+        links: list[Link] = []
+        parent = self.base
+        try:
+            for queued in pending:
+                links.append(compose_link(queued, parent, queued.head or self.base))
+                parent = links[-1].commit
+        except (LandError, git.GitError) as problem:
+            check_report.write_line(
+                f"loop land: a request does not compose on the stack, so the batch composes on the branch: {problem}"
+            )
+            return pending, [], -1, True
+        pending, links = self.cut(pending, links)
+        stack.publish(self.branch, self.base, links[-1].commit, False)
+        verdict = self.gate_run(links)
+        if verdict.is_accepted:
+            return pending, links, len(self.runs) - 1, False
+        stack.withdraw()
+        check_report.write_line(
+            "loop land: the run on the stack is red, so the batch gives no verdict, and it waits until the branch is at "
+            "its base or its base leaves the stack"
+        )
+        return pending, [], -1, self.wait_base()
+
+    def wait_base(self) -> bool:
+        """Wait until the branch is at the base of the batch, or the base leaves the stack, and tell if it is the branch.
+
+        The wait looks again each POLL_S seconds, for at most STACK_WAIT_S seconds.  After that bound, the next round
+        composes on the branch (THE STACK).
+        """
+        if self.stack is None:
+            return self.tip() == self.base
+        waited = 0.0
+        while waited < STACK_WAIT_S:
+            entries = self.stack.entries(self.branch)
+            path = stack_path(self.tip(), self.base, entries)
+            if path is None or not path:
+                return path is not None
+            self.pause(POLL_S)
+            waited += POLL_S
+        self.is_stack_stuck = True
+        return False
+
+    def wait_turn(self, step: str, is_stacking: bool = False) -> bool:
+        """Wait before a step of a round for the batches that go first, and tell if the base can never be the branch.
+
+        Before a run, the batch waits while a right of way goes first, or while the stack holds STACK_DEPTH entries.
+        `is_stacking` tells that the round can compose on the stack.  Before a swap, the batch waits while a right of way
+        goes first, or while batches of the stack are below its base.  A right of way does not go first when its holder
+        is below the batch in the stack, or when the entry of its holder is not on the branch, because such a holder
+        cannot swap first (THE RIGHT OF WAY, THE STACK).  The wait looks again each POLL_S seconds.  A right of way holds
+        it for at most RIGHT_WAIT_S seconds, and the stack for at most STACK_WAIT_S seconds.  Each line names the
+        batches that no earlier line of the wait named.
+
+        Returns:
+            True before a swap when the base of the batch can never be the branch, else False
+        """
+        waited = 0.0
+        rights_shown: set[int] = set()
+        stack_shown: set[int] = set()
+        while True:
+            entries = self.stack.entries(self.branch) if self.stack is not None else []
+            tip = self.tip()
+            if step == RUN_STEP:
+                below = self.stack.top(tip, entries) if is_stacking and self.stack is not None else []
+                is_held_by_stack = len(below) >= STACK_DEPTH
+            else:
+                path = stack_path(tip, self.base, entries)
+                if path is None:
+                    if rights_shown:
+                        check_report.write_line(
+                            "loop land: the branch moved while the batch waited for a right of way, so its swap cannot "
+                            "succeed"
+                        )
+                    return True
+                below, is_held_by_stack = path, bool(path)
+            numbers = {item.number for item in below}
+            off_branch = {item.number for item in entries if item.base != tip}
+            rights = self.right.first() if self.right is not None else []
+            first = [number for number in rights if number not in numbers and number not in off_branch]
+            if not first and not is_held_by_stack:
+                if waited and step == RUN_STEP:
+                    check_report.write_line(f"loop land: the batch waited {waited:.0f} s before its run")
+                return False
+            bound = STACK_WAIT_S if is_held_by_stack else RIGHT_WAIT_S
+            if waited >= bound:
+                check_report.write_line(
+                    f"loop land: the batch waited {bound:.0f} seconds, and it goes on to its {step}", is_error=True
+                )
+                self.is_stack_stuck = is_held_by_stack
+                return False
+            new_rights = [number for number in first if number not in rights_shown]
+            if new_rights:
+                names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in new_rights)
+                check_report.write_line(f"loop land: the batch waits before its {step} for the right of way of {names}")
+                rights_shown.update(new_rights)
+            new_below = sorted(numbers - stack_shown) if is_held_by_stack else []
+            if new_below:
+                names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in new_below)
+                where = "the full stack" if step == RUN_STEP else "the batches below it in the stack"
+                check_report.write_line(f"loop land: the batch waits before its {step} for {where}: {names}")
+                stack_shown.update(new_below)
+            self.pause(POLL_S)
+            waited += POLL_S
 
     def landed_swap(
         self, accepted: Sequence[Link], decisions: Sequence[tuple[Queued, Decision]], final: str, run: int
@@ -2747,8 +3087,9 @@ def held_batch(
         check_report.write_line(f"loop land: the holder of the tree of lane {lane + 1} lands the batch {shown}")
         with session:
             right = RightOfWay(queue, batch[0].number, pause)
+            stack = Stack(queue, batch[0].number)
             alive = functools.partial(is_alive, queue)
-            landing = BatchLanding(batch, gated, decide, pause, alive, Journal(queue), right)
+            landing = BatchLanding(batch, gated, decide, pause, alive, Journal(queue), right, stack)
             landing.land(batch)
     except Exception as problem:  # noqa: BLE001
         failure = stopped_batch(problem)
