@@ -58,6 +58,11 @@
 // to a cold call.  A loop that reads the object many times takes one Ref
 // with view() before the loop, and the Ref has no test.
 //
+// A Box moves to another thread through a ring of cells as a BoxWord (THE
+// WORD OF A BOX below).  release_to_word gives the object to a word of an
+// authority, and claim_box gives the object of the word to a new Box.  Only
+// a member of the authority builds the key of the two doors.
+//
 // A Hole<Size, Align> is the credit of the family: the heap storage of one
 // object with no object in it.  mint_hole<Size, Align>(alloc) takes the
 // storage from the allocation door, and mint_hole(std::move(box)) ends the
@@ -585,6 +590,63 @@ struct HoleState {
 
 }  // namespace detail
 
+template <BoxPayload T>
+class Box;
+
+// THE WORD OF A BOX
+//
+// A channel moves a Box from one thread to another through a ring of cells,
+// and a cell holds only a trivially copyable value, which a Box is not.  So
+// the producer gives the object of its Box to a BoxWord, and the Box then
+// holds no object.  The ring carries the word, and the consumer gives the
+// word to claim_box, which gives a new Box of the same object.
+//
+// A word copies as its address, and its type cannot stop a second copy.  So
+// the word names an authority in its type, and each door takes the key of
+// that authority.  box_word_key<Authority> has one friend, Authority, so only
+// a member of the authority builds a key, and only the authority claims the
+// words that it made.  The authority gives each word to claim_box at most one
+// time.  At its own end it claims each word that it still holds, so the Box
+// of the claim ends the object.  A word that no claim takes leaks its object.
+//
+// The empty word holds no object.  A cell of a ring holds it before its
+// first write, and a claim of it ends the process through fatal().
+template <class Authority>
+    requires std::is_class_v<Authority>
+class [[nodiscard]] box_word_key {
+    friend Authority;
+
+    // Both constructors are user-provided, so no byte copy and no lifetime
+    // start over a buffer builds a key.
+    constexpr box_word_key() noexcept {}
+    constexpr box_word_key(box_word_key const&) noexcept {}
+
+public:
+    box_word_key& operator=(box_word_key const&) = delete("a key of a box word lives for one call of a door");
+};
+
+// The object of a Box, given to the words of one authority (THE WORD OF A
+// BOX).  Only a Box builds a word that holds an object, and only a Box reads
+// the object of a word.  The type is trivially copyable, so a ring cell
+// holds it.
+template <BoxPayload T, class Authority>
+    requires std::is_class_v<Authority>
+class BoxWord {
+    template <BoxPayload U>
+    friend class Box;
+
+    T* object_ = nullptr;
+
+    constexpr explicit BoxWord(T* object) noexcept : object_{object} {}
+
+public:
+    // The empty word.
+    constexpr BoxWord() noexcept = default;
+
+    // True for the empty word.
+    [[nodiscard]] constexpr bool is_empty() const noexcept { return object_ == nullptr; }
+};
+
 // The core of foundation/core/Owner.h gives the moves and the end of a Box.
 // A Box of a linear payload is linear, and it has no move assignment,
 // because the assignment ends the payload that the target holds.
@@ -620,6 +682,14 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box_payload<T
         return static_cast<void*>(object);
     }
 
+    // The object of a word that a claim takes.  The empty word holds none.
+    [[nodiscard]] static T* claimed_(T* object) noexcept {
+        if (object == nullptr) [[unlikely]] {
+            fatal("a claim of the empty box word: no Box gave an object to the word");
+        }
+        return object;
+    }
+
 public:
     // Takes the storage of the size and the alignment of T from the
     // allocation door, and builds the object from the arguments in it.  Only
@@ -642,6 +712,24 @@ public:
               && std::constructible_from<T, Args&&...>
     explicit Box(detail::BoxKey const& /*key*/, Hole<Size, Align>&& hole, Args&&... args) noexcept
         : Core{State{::new(std::move(hole).detach_()) T(static_cast<Args&&>(args)...)}} {}
+
+    // A Box of the object of a word of the authority of the key (THE WORD OF
+    // A BOX).  claim_box calls it.  The empty word ends the process through
+    // fatal().  An explicit specialization of this constructor is a
+    // specialization of Box outside its home, as above.
+    template <class Authority>
+    explicit Box(BoxWord<T, Authority> word, box_word_key<Authority> const& /*key*/) noexcept
+        : Core{State{claimed_(word.object_)}} {}
+
+    // Gives the object to a word of the authority of the key, and the Box
+    // then holds no object (THE WORD OF A BOX).  A Box that holds no object
+    // ends the process through fatal().
+    template <class Authority>
+    [[nodiscard]] BoxWord<T, Authority> release_to_word(box_word_key<Authority> const& /*key*/) && noexcept {
+        T* const object = held_();
+        this->state_.object = nullptr;
+        return BoxWord<T, Authority>{object};
+    }
 
     // The assignment ends the object that this Box holds after it takes
     // other, so other can live inside that object.  A linear object must not
@@ -712,6 +800,13 @@ template <class T, class Marker, class... Args>
     requires CanMintBox<T, Marker, Args...>
 [[nodiscard]] Box<T> mint_box(Marker /*allocation*/, Args&&... args) noexcept {
     return Box<T>{detail::BoxDoor::key(), static_cast<Args&&>(args)...};
+}
+
+// The Box of the object of a word (THE WORD OF A BOX).  The authority claims
+// each word that it made at most one time.
+template <BoxPayload T, class Authority>
+[[nodiscard]] Box<T> claim_box(BoxWord<T, Authority> word, box_word_key<Authority> const& key) noexcept {
+    return Box<T>{word, key};
 }
 
 // Size bytes of heap storage at the alignment Align, with no object in it.

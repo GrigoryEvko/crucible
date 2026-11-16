@@ -68,6 +68,7 @@
 #include <fixy/Tags.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/RunSet.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Computation.h>
@@ -124,6 +125,7 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::foundation::core::FixedArray,  // the elements; the count holds no row
     ^^::foundation::core::HeapArray,  // the elements; the alignment holds no row
     ^^::foundation::core::RunSet,  // the element of each run; the counts hold no row
+    ^^::foundation::core::Box,  // the one object that the Box owns
     ^^std::vector,  // the elements; the allocator holds no row
 };
 
@@ -199,7 +201,8 @@ inline constexpr std::meta::info leaf_payload_families[] = {
 // The payload a transparent family hides.  Reading the member alias
 // instantiates the wrapper, which each rostered family permits.  A
 // FixedArray and a HeapArray of the Region family name their element
-// element_type, and each other family names it value_type.
+// element_type, a Box hides the type of its object, and each other family
+// names it value_type.
 template <class T>
 struct hidden_payload {
     using type = typename T::value_type;
@@ -213,6 +216,11 @@ struct hidden_payload<::foundation::core::FixedArray<T, N>> {
 template <class T, std::size_t Align>
 struct hidden_payload<::foundation::core::HeapArray<T, Align>> {
     using type = typename ::foundation::core::HeapArray<T, Align>::element_type;
+};
+
+template <::foundation::core::BoxPayload T>
+struct hidden_payload<::foundation::core::Box<T>> {
+    using type = T;
 };
 
 template <class T>

@@ -4010,6 +4010,9 @@ fixy_neg_compile_test(neg_ring_value_owns_a_resource
 fixy_test(test_concurrent_channels)
 fixy_test(test_channel_moved_from)
 fixy_test(test_channel_identity)
+# The SPSC channel of Box values moves each object one time and ends each
+# object that its ring holds at its end.  The tsan preset runs its threads.
+fixy_test(test_spsc_box_channel)
 # The end of the stream: the close and the open of the SPSC and the MPSC
 # channel, many threaded rounds, and pipelines with no sentinel.
 fixy_test(test_channel_close)

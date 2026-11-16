@@ -59,6 +59,25 @@ static_assert(!std::is_copy_constructible_v<detail::BoxKey>);
 static_assert(!std::is_copy_assignable_v<detail::BoxKey>);
 static_assert(!std::is_trivially_copyable_v<detail::BoxKey>);
 
+// The word of a Box is one pointer that a ring cell copies: trivially
+// copyable and trivially destructible.  Only a member of the authority
+// builds its key, and no byte copy builds one.  A word of one authority is
+// no word of another, and only a Box builds a word that holds an object.
+struct WordAuthority {};
+struct OtherAuthority {};
+static_assert(sizeof(BoxWord<int, WordAuthority>) == sizeof(void*));
+static_assert(std::is_trivially_copyable_v<BoxWord<int, WordAuthority>>);
+static_assert(std::is_trivially_destructible_v<BoxWord<int, WordAuthority>>);
+static_assert(std::is_nothrow_default_constructible_v<BoxWord<int, WordAuthority>>);
+static_assert(!std::is_constructible_v<BoxWord<int, WordAuthority>, int*>);
+static_assert(!std::is_same_v<BoxWord<int, WordAuthority>, BoxWord<int, OtherAuthority>>);
+static_assert(!std::is_default_constructible_v<box_word_key<WordAuthority>>);
+static_assert(!std::is_copy_constructible_v<box_word_key<WordAuthority>>);
+static_assert(!std::is_copy_assignable_v<box_word_key<WordAuthority>>);
+static_assert(!std::is_trivially_copyable_v<box_word_key<WordAuthority>>);
+static_assert(!std::is_constructible_v<Box<int>, BoxWord<int, WordAuthority>>);
+static_assert(!std::is_constructible_v<Box<int>, BoxWord<int, WordAuthority>, box_word_key<OtherAuthority> const&>);
+
 // The payload gate.
 static_assert(BoxPayload<int>);
 static_assert(BoxPayload<OverAligned>);
@@ -357,7 +376,8 @@ static_assert(std::is_same_v<decltype(mint_hole(std::declval<Box<std::uint64_t>>
 // this list.  Ref and Box have no empty state, so they take the dereference.
 inline constexpr TextView ref_names{"Ref to same_object downcast KindFamily KindTagged Box mint_box BumpArena make "
                                     "array copy_text Slot emplace clear FnRef CallRef Address address_of is_aligned "
-                                    "AddressKey mint_address_key hash Hole mint_hole"};
+                                    "AddressKey mint_address_key hash Hole mint_hole BoxWord box_word_key "
+                                    "release_to_word claim_box is_empty"};
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<Abstract, CheckBrand>, DereferenceProtocol);
@@ -366,6 +386,7 @@ CRUCIBLE_CLOSED_SURFACE(ref_names, Box<OverAligned>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Address);
 CRUCIBLE_CLOSED_SURFACE(ref_names, AddressKey);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Hole<8, 8>);
+CRUCIBLE_CLOSED_SURFACE(ref_names, BoxWord<int, WordAuthority>);
 
 }  // namespace detail::ref_checks
 

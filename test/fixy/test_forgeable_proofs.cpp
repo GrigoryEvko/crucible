@@ -367,12 +367,16 @@ inline constexpr ByteCopyAllowance byte_copy_ledger[] = {
      "the substrate keeps the trivial copyability of its payload by design, and foundation/algebra/Graded.h pins "
      "that parity.  A band of fixy/Bands.h is the substrate, so a byte image of a band claims a tier that mint_band "
      "did not set.  The entry stays until the parity rule changes"},
+    {^^::foundation::core::BoxWord,
+     "a ring cell holds a word, so the word stays trivially copyable.  Only claim_box with the key of the authority "
+     "gives the object of a word, only the members of the authority build that key, and the authority claims only "
+     "the words that its own ring holds.  So a byte image of a word gives a word that no door claims"},
 };
 
 // The ledger only shrinks.  Lower this count in the commit that removes an
 // entry.  A new entry also needs a higher count, so the change shows the
 // reason of that entry to its reviewer.
-inline constexpr std::size_t byte_copy_ledger_size = 7;
+inline constexpr std::size_t byte_copy_ledger_size = 8;
 static_assert(std::size(byte_copy_ledger) == byte_copy_ledger_size,
               "the byte-copy ledger changed size.  Lower byte_copy_ledger_size when an entry leaves.  A new entry "
               "needs a reason that a reviewer accepts, and then a higher count");

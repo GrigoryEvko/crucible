@@ -2659,6 +2659,14 @@ foundation_neg_compile_test(neg_core_box_array_payload
 foundation_neg_compile_test(neg_core_box_copied
   "use of deleted function .foundation::core::Box<T>::Box\\(const foundation::core::Box<T>&\\) \\[with T = int\\]."
   "a Box owns its object alone: a copy would free the object two times")
+# Only a member of the authority builds the key of its box words, and a key
+# of a second authority claims no word of the first.
+foundation_neg_compile_test(neg_core_box_word_key_outside_authority
+  "is private within this context"
+  "foundation::core::box_word_key<Authority>::box_word_key\\(\\) \\[with Authority = Channel\\]")
+foundation_neg_compile_test(neg_core_box_word_claim_by_another_authority
+  "no matching function for call to .claim_box\\(foundation::core::BoxWord<int, Channel>&, foundation::core::box_word_key<Thief>\\)."
+  "deduced conflicting types for parameter .Authority. \\(.Channel. and .Thief.\\)")
 foundation_neg_compile_test(neg_core_box_borrow_of_temporary
   "use of deleted function .void foundation::core::Box<T>::view\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary Box dangles at the end of the full expression")

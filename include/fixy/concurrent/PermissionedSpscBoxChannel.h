@@ -1,0 +1,233 @@
+#pragma once
+
+// An SPSC channel of Box values, behind one linear Permission per endpoint,
+// as PermissionedSpscChannel.  A cell of the ring of fixy/concurrent/
+// SpscRing.h holds only a trivially copyable value, and a Box is no such
+// value.  So the channel holds a PermissionedSpscChannel of the words of a
+// Box (THE WORD OF A BOX of foundation/core/Ref.h), and the channel class is
+// the authority of those words.  Each handle of this channel holds the
+// handle of the same role of the inner channel.
+//
+// THE OWNERS
+//     The producer handle belongs to the producer thread, and the consumer
+//     handle belongs to the consumer thread.  A push gives the object of its
+//     Box to a word.  The ring writes the word to its cell and then
+//     publishes its head with a release store.  A pop reads the head with an
+//     acquire load before it reads the cell.  So the consumer sees each write
+//     to the object that the producer made before the push, and the Box of
+//     the pop owns the object alone.
+//
+// THE WORDS
+//     A word leaves the channel only as a Box.  A push that finds the ring
+//     full gives its Box back in the Option of its result, so no object is
+//     lost.  The ring gives each cell to one pop, so each word is claimed one
+//     time.  The end of the channel drains the ring and claims each word
+//     that it still holds, and the Box of each claim ends its object.  The
+//     drain takes the claim of each role, so a live handle ends the process
+//     there.
+//
+// THE END OF THE STREAM
+//     The end of the producer handle ends the producer handle of the words,
+//     so it closes the channel as fixy/concurrent/ChannelEnd.h tells.
+//     try_receive of the consumer then gives each Box that the ring still
+//     holds, and NoItem::Closed after the last one.
+
+#include <fixy/concurrent/ChannelEnd.h>
+#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/WorkingSet.h>
+
+#include <foundation/Brand.h>
+#include <foundation/ChannelBinding.h>
+#include <foundation/Linear.h>
+#include <foundation/Pinned.h>
+#include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
+#include <foundation/permissions/Permission.h>
+
+#include <cstddef>
+#include <utility>
+
+// The claims of the carriers of this header that no lattice grades
+// (foundation/diag/RowHash.h).
+namespace fixy::row_discipline {
+struct spsc_box_channel;
+struct spsc_box_producer;
+struct spsc_box_consumer;
+}  // namespace fixy::row_discipline
+
+namespace fixy::concurrent {
+
+template <::foundation::core::BoxPayload T, std::size_t Capacity, typename UserTag,
+          ::foundation::brand::IsFreshBrand Brand>
+class PermissionedSpscBoxChannel
+    : public ::foundation::Pinned<PermissionedSpscBoxChannel<T, Capacity, UserTag, Brand>> {
+    using word_type = ::foundation::core::BoxWord<T, PermissionedSpscBoxChannel>;
+    using cell_channel = PermissionedSpscChannel<word_type, Capacity, UserTag, Brand>;
+
+public:
+    using value_type = ::foundation::core::Box<T>;
+    using user_tag = UserTag;
+    using brand_type = Brand;
+    using whole_tag = typename cell_channel::whole_tag;
+    using producer_tag = typename cell_channel::producer_tag;
+    using consumer_tag = typename cell_channel::consumer_tag;
+
+    static constexpr std::size_t channel_capacity = Capacity;
+    using row_discipline = ::fixy::row_discipline::spsc_box_channel;
+    using row_payload = value_type;
+
+    PermissionedSpscBoxChannel() noexcept = default;
+
+    // Each object that the ring still holds ends here (THE WORDS).
+    ~PermissionedSpscBoxChannel() {
+        cells_.drain([](word_type word) noexcept { static_cast<void>(open_(word)); });
+    }
+
+    class[[= ::foundation::linear::linear{}]] ProducerHandle {
+        typename cell_channel::ProducerHandle cells_;
+
+        explicit ProducerHandle(typename cell_channel::ProducerHandle&& cells) noexcept : cells_{std::move(cells)} {}
+        friend class PermissionedSpscBoxChannel;
+
+    public:
+        // A push touches the lines of the channel of the words and one cell
+        // of a word, and not the object of the Box.
+        static constexpr std::size_t per_call_working_set = cell_channel::ProducerHandle::per_call_working_set;
+        using row_discipline = ::fixy::row_discipline::spsc_box_producer;
+        using row_payload = value_type;
+        using brand_type = Brand;
+        // The channel of the cells.  The two handles of this channel report
+        // it, so a pipeline joins them as it joins the handles of the inner
+        // channel.
+        using channel_type = cell_channel;
+
+        ProducerHandle(ProducerHandle const&) =
+            delete("ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
+        ProducerHandle& operator=(ProducerHandle const&) =
+            delete("ProducerHandle owns the Producer Permission — assignment would overwrite the linear token");
+        ProducerHandle(ProducerHandle&&) noexcept = default;
+        ProducerHandle& operator=(ProducerHandle&&) =
+            delete("ProducerHandle binds to ONE channel for life — rebinding would orphan the original Permission");
+        ~ProducerHandle() = default;
+
+        // The release door of the inner handle.
+        [[nodiscard]] ::foundation::permissions::Permission<producer_tag, Brand> release() && noexcept {
+            return std::move(cells_).release();
+        }
+
+        // Gives the object of the Box to the ring.  The result is empty when
+        // the ring took the object, and holds the same Box when the ring was
+        // full.
+        [[nodiscard, gnu::hot]] ::foundation::core::Option<value_type> try_push(value_type&& box) noexcept {
+            word_type const word = seal_(std::move(box));
+            if (cells_.try_push(word)) [[likely]] {
+                return ::foundation::core::none;
+            }
+            return ::foundation::core::Option<value_type>::some(open_(word));
+        }
+
+        [[nodiscard]] bool empty_approx() const noexcept { return cells_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return cells_.size_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+
+        [[nodiscard]] constexpr ::foundation::ChannelIdentity<cell_channel> channel_identity() const noexcept {
+            return cells_.channel_identity();
+        }
+    };
+
+    class[[= ::foundation::linear::linear{}]] ConsumerHandle {
+        typename cell_channel::ConsumerHandle cells_;
+
+        explicit ConsumerHandle(typename cell_channel::ConsumerHandle&& cells) noexcept : cells_{std::move(cells)} {}
+        friend class PermissionedSpscBoxChannel;
+
+    public:
+        // A pop touches the same lines, and not the object of the Box.
+        static constexpr std::size_t per_call_working_set = cell_channel::ConsumerHandle::per_call_working_set;
+        using row_discipline = ::fixy::row_discipline::spsc_box_consumer;
+        using row_payload = value_type;
+        using brand_type = Brand;
+        using channel_type = cell_channel;
+
+        ConsumerHandle(ConsumerHandle const&) =
+            delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
+        ConsumerHandle& operator=(ConsumerHandle const&) =
+            delete("ConsumerHandle owns the Consumer Permission — assignment would overwrite the linear token");
+        ConsumerHandle(ConsumerHandle&&) noexcept = default;
+        ConsumerHandle& operator=(ConsumerHandle&&) =
+            delete("ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission");
+        ~ConsumerHandle() = default;
+
+        // The release door of the inner handle.
+        [[nodiscard]] ::foundation::permissions::Permission<consumer_tag, Brand> release() && noexcept {
+            return std::move(cells_).release();
+        }
+
+        // The Box of the oldest object, or no value when the ring is empty.
+        // It does not tell an empty ring from a closed channel: try_receive
+        // does.
+        [[nodiscard, gnu::hot]] ::foundation::core::Option<value_type> try_pop() noexcept {
+            ::foundation::core::Option<word_type> const popped = cells_.try_pop();
+            return popped.match(
+                [](word_type word) noexcept { return ::foundation::core::Option<value_type>::some(open_(word)); },
+                []() noexcept { return ::foundation::core::Option<value_type>{::foundation::core::none}; });
+        }
+
+        // The Box of the oldest object, NoItem::Empty, or NoItem::Closed
+        // after the last object of a closed channel (THE END OF THE STREAM of
+        // fixy/concurrent/ChannelEnd.h).
+        [[nodiscard, gnu::hot]] ::foundation::core::Result<value_type, NoItem> try_receive() noexcept {
+            ::foundation::core::Result<word_type, NoItem> const received = cells_.try_receive();
+            return received.match(
+                [](word_type word) noexcept { return ::foundation::core::Result<value_type, NoItem>{open_(word)}; },
+                [](NoItem why) noexcept {
+                    return ::foundation::core::Result<value_type, NoItem>{::foundation::core::err(why)};
+                });
+        }
+
+        [[nodiscard]] bool empty_approx() const noexcept { return cells_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return cells_.size_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+
+        // The closed state of the channel of the words, with acquire order.
+        [[nodiscard]] bool is_closed() const noexcept { return cells_.is_closed(); }
+
+        [[nodiscard]] constexpr ::foundation::ChannelIdentity<cell_channel> channel_identity() const noexcept {
+            return cells_.channel_identity();
+        }
+    };
+
+    // The accessors of the inner channel, which take the claim of each role.
+    [[nodiscard]] ProducerHandle producer(::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept {
+        return ProducerHandle{cells_.producer(std::move(perm))};
+    }
+
+    [[nodiscard]] ConsumerHandle consumer(::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept {
+        return ConsumerHandle{cells_.consumer(std::move(perm))};
+    }
+
+    [[nodiscard]] bool empty_approx() const noexcept { return cells_.empty_approx(); }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return cells_.size_approx(); }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+
+private:
+    // The two doors of the words of this authority.  Only the members of
+    // this class build its key.
+    [[nodiscard]] static word_type seal_(value_type&& box) noexcept {
+        return std::move(box).release_to_word(::foundation::core::box_word_key<PermissionedSpscBoxChannel>{});
+    }
+
+    [[nodiscard]] static value_type open_(word_type word) noexcept {
+        return ::foundation::core::claim_box(word, ::foundation::core::box_word_key<PermissionedSpscBoxChannel>{});
+    }
+
+    cell_channel cells_;
+};
+
+// The Box channel of a whole root of type Root, as spsc_channel_t.
+template <::foundation::core::BoxPayload T, std::size_t Capacity, typename Root>
+using spsc_box_channel_t = PermissionedSpscBoxChannel<T, Capacity, typename detail::spsc_root_parts<Root>::user_tag,
+                                                      typename detail::spsc_root_parts<Root>::brand>;
+
+}  // namespace fixy::concurrent

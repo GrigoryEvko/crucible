@@ -63,7 +63,7 @@ struct try_pop_shape<T, std::void_t<decltype(&T::try_pop)>> {
     using payload = typename decomp::payload;
 };
 
-// ── the producer pole: bool try_push(P const&) ──────────────────────
+// ── the producer pole: bool try_push(P const&) or Option<P> try_push(P&&) ─
 
 template <typename M>
 struct producer_signature_decomp {
@@ -79,6 +79,14 @@ struct producer_signature_decomp<bool (C::*)(P const&)> {
 
 template <typename C, typename P>
 struct producer_signature_decomp<bool (C::*)(P const&) noexcept> {
+    static constexpr bool matches = true;
+    using payload = P;
+};
+
+// The producer of an owner, such as a Box: Option<P> try_push(P&&).  The push
+// takes the owner, and a full channel gives it back in the Option.
+template <typename C, typename P>
+struct producer_signature_decomp<::foundation::core::Option<P> (C::*)(P&&) noexcept> {
     static constexpr bool matches = true;
     using payload = P;
 };

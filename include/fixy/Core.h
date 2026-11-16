@@ -97,8 +97,11 @@ using ::foundation::core::pack_unique_v;
 using ::foundation::core::Record;
 
 using ::foundation::core::Box;
+using ::foundation::core::box_word_key;
+using ::foundation::core::BoxWord;
 using ::foundation::core::BumpArena;
 using ::foundation::core::CallRef;
+using ::foundation::core::claim_box;
 using ::foundation::core::Hole;
 using ::foundation::core::mint_box;
 using ::foundation::core::mint_hole;

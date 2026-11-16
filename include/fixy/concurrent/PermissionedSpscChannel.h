@@ -234,6 +234,12 @@ public:
         [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
+        // True when the producer handle ended and no handle opened the
+        // channel after it, with acquire order.  A consumer that parks reads
+        // it with the ring after its mark, so a close that came before the
+        // mark and its wake ends the park.
+        [[nodiscard]] bool is_closed() const noexcept { return ch_->producers_.is_closed(); }
+
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<PermissionedSpscChannel>
         channel_identity() const noexcept {
             return ch_.identity();
@@ -275,6 +281,26 @@ public:
         consumer_claim_.release();
         producer_claim_.release();
         return std::move(whole);
+    }
+
+    // Gives each item that the ring still holds to drop, the oldest first.
+    // The call takes the claim of each role, so a live handle ends the
+    // process here, and no handle starts while the call runs.  An owner of
+    // items that end only through a door, such as the words of a Box
+    // channel, calls it at its own end.  Complexity: linear in the count of
+    // the items.
+    template <typename Drop>
+        requires std::is_nothrow_invocable_v<Drop&, T>
+    void drain(Drop&& drop) noexcept {
+        producer_claim_.take("a drain of an SPSC channel while its producer handle lives.");
+        consumer_claim_.take("a drain of an SPSC channel while its consumer handle lives.");
+        for (;;) {
+            ::foundation::core::Option<T> item = ring_.try_pop();
+            if (item.is_none()) break;
+            drop(std::move(item).expect("the test above found an item"));
+        }
+        consumer_claim_.release();
+        producer_claim_.release();
     }
 
     [[nodiscard]] bool empty_approx() const noexcept { return ring_.empty_approx(); }

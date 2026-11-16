@@ -2,7 +2,9 @@
 
 #include <foundation/core/Ref.h>
 
+#include <fixy/Ctx.h>
 #include <fixy/ScopedView.h>
+#include <fixy/check/Check.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
@@ -344,6 +346,59 @@ void test_option_of_a_box_of_a_declared_type() {
     CRUCIBLE_FATAL_INVARIANT(live_movables == 0);
 }
 
+// The authority of the words of the tests below.  Its members build its key.
+class WordCourier {
+public:
+    template <class T>
+    [[nodiscard]] static ::foundation::core::BoxWord<T, WordCourier> send(Box<T>&& box) noexcept {
+        return std::move(box).release_to_word(::foundation::core::box_word_key<WordCourier>{});
+    }
+
+    template <class T>
+    [[nodiscard]] static Box<T> receive(::foundation::core::BoxWord<T, WordCourier> word) noexcept {
+        return ::foundation::core::claim_box(word, ::foundation::core::box_word_key<WordCourier>{});
+    }
+};
+
+// A Box gives its object to a word and holds none after.  The claim of the
+// word gives a Box of the same object, and the object ends one time.
+void test_word_round_trip(::fixy::TestRunnerCtx const& test) {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+    {
+        Box<CountedObject> sent = mint_box<CountedObject>(alloc, 21);
+        ::foundation::core::Address const address = ::foundation::core::address_of(sent.view());
+        ::foundation::core::BoxWord<CountedObject, WordCourier> const word = WordCourier::send(std::move(sent));
+        CRUCIBLE_FATAL_INVARIANT(!word.is_empty());
+        CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
+        ::fixy::check::expect_dies(
+            test, [&sent] { static_cast<void>(*sent); }, "a borrow of a Box that holds no object");
+
+        Box<CountedObject> received = WordCourier::receive(word);
+        CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(received.view()) == address);
+        CRUCIBLE_FATAL_INVARIANT(received->label() == 21);
+        CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+}
+
+// The claim of the empty word ends the process.  The release of an empty Box
+// ends it too.
+void test_word_of_no_object_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test, [] { static_cast<void>(WordCourier::receive(::foundation::core::BoxWord<int, WordCourier>{})); },
+        "a claim of the empty box word");
+    ::foundation::core::BoxWord<int, WordCourier> const empty_word{};
+    CRUCIBLE_FATAL_INVARIANT(empty_word.is_empty());
+
+    Box<int> source = mint_box<int>(::foundation::effects::testing::test().alloc, 3);
+    Box<int> target{std::move(source)};
+    ::fixy::check::expect_dies(
+        test, [&source] { static_cast<void>(WordCourier::send(std::move(source))); },
+        "a borrow of a Box that holds no object");
+    CRUCIBLE_FATAL_INVARIANT(*target == 3);
+}
+
 }  // namespace
 
 int main() {
@@ -358,5 +413,7 @@ int main() {
     test_agrees_with_plain_model();
     test_box_of_a_declared_type();
     test_option_of_a_box_of_a_declared_type();
+    test_word_round_trip(test);
+    test_word_of_no_object_aborts(test);
     return 0;
 }

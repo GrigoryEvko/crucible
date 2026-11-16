@@ -66,6 +66,8 @@ static_assert(!::fixy::AtomicValue<float> && !::fixy::AtomicCount<bool> && !::fi
 static_assert(std::is_same_v<::fixy::atomic_word_key<int>, ::foundation::core::atomic_word_key<int>>);
 static_assert(!::fixy::AtomicWordProtocol<int> && !::foundation::core::AtomicWordProtocol<int>);
 struct CoreCheckRole {};
+static_assert(std::is_same_v<::fixy::BoxWord<int, CoreCheckRole>, ::foundation::core::BoxWord<int, CoreCheckRole>>);
+static_assert(std::is_same_v<::fixy::box_word_key<CoreCheckRole>, ::foundation::core::box_word_key<CoreCheckRole>>);
 // A fresh brand stays in the scope that made it, so the alias of the writer
 // is in the body of a function.
 [[nodiscard]] consteval bool sole_writer_names_are_one_entity() noexcept {

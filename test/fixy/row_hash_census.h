@@ -43,6 +43,7 @@
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/concurrent/PermissionFork.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>
+#include <fixy/concurrent/PermissionedSpscBoxChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/RingValue.h>
@@ -662,6 +663,8 @@ struct MpscWitnessTag {};
 struct ChannelWitnessBrand {};
 using SpscWitness = ::fixy::concurrent::PermissionedSpscChannel<int, 8, SpscWitnessTag, ChannelWitnessBrand>;
 using MpscWitness = ::fixy::concurrent::PermissionedMpscChannel<int, 8, MpscWitnessTag, ChannelWitnessBrand>;
+struct SpscBoxWitnessTag {};
+using SpscBoxWitness = ::fixy::concurrent::PermissionedSpscBoxChannel<int, 8, SpscBoxWitnessTag, ChannelWitnessBrand>;
 struct PureRegionBrand {};
 using SwmrWitness =
     ::fixy::channels::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
@@ -793,6 +796,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::SpscRing, ^^::fixy::concurrent::SpscRing<int, 8>},
     {^^::fixy::concurrent::PermissionedMpscChannel, ^^MpscWitness},
     {^^::fixy::concurrent::PermissionedSpscChannel, ^^SpscWitness},
+    {^^::fixy::concurrent::PermissionedSpscBoxChannel, ^^SpscBoxWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
     {^^::fixy::channels::swmr_session::SwmrSession, ^^SwmrWitness},
     {^^::fixy::concurrent::Stage, ^^StageWitness},
@@ -885,6 +889,11 @@ inline constexpr StatedZero kZeros[] = {
      "an owned allocation of one object: it holds storage and makes no claim about what the object holds"},
     {^^::foundation::core::Hole,
      "the owned storage of one object with no object in it: it holds storage and makes no claim about a value"},
+    {^^::foundation::core::BoxWord,
+     "the object of a Box in a ring cell: one address that its authority claims, and never a value in a kernel "
+     "signature"},
+    {^^::foundation::core::box_word_key,
+     "the proof that a member of the authority calls a door of a box word: it lives for one call, and holds nothing"},
     {^^::foundation::core::BumpArena,
      "the blocks of an arena: it holds storage and makes no claim about the objects in it"},
     {^^::foundation::core::Ref,
