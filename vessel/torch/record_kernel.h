@@ -1363,7 +1363,10 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // operation returns or unwinds.  Each operation that the redispatch runs
     // opens its nest inside this one, so it gets a depth one more.  The
     // dispatch to the Vigil stays after the redispatch, so a child gets to
-    // the Vigil before its parent, as the replay cursor expects.
+    // the Vigil before its parent, as the replay cursor expects.  When the
+    // operation raises, or append_trace_entry refuses it, after a child got
+    // to the Vigil, the close of the nest gives the closing entry of the nest
+    // (VigilOpNest).
     //
     // The frame holds the slots from the record of the inputs to the dispatch
     // to the Vigil.  An operation that the redispatch runs opens its frame
@@ -1382,7 +1385,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
 
         const crucible::VigilFgCtx fg = vigil.mint_producer_context();
         crucible::OpRecordStack& stack = vigil.op_record_stack(fg);
-        const crucible::OpNest nest{stack};
+        const crucible::VigilOpNest nest{vigil, fg};
         if constexpr (kRecordsInFrame) {
             const crucible::OpRecordFrame frame{stack, kCapacity};
             for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {

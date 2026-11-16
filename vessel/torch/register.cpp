@@ -148,6 +148,19 @@ static_assert(::fixy::find_if(kClassifiedRows.view(),
                   .is_some(),
               "aten::mm's schema hash is absent from the classified set");
 
+// True when a row of the table has the schema hash.  Complexity: O(n) in
+// the rows, at compile time.
+[[nodiscard]] consteval bool has_row_with_schema_hash(crucible::SchemaHash hash) {
+    bool is_found = false;
+    for_each_aten_op_row([&](const OpEntry& row) { is_found |= crucible::SchemaHash{row.schema_hash} == hash; });
+    return is_found;
+}
+
+// The build refuses each region that holds the closing entry of a nest, so no
+// op of the table may have its schema hash.
+static_assert(!has_row_with_schema_hash(crucible::kUnrecordedNestSchema),
+              "an op of the table has the schema hash of the closing entry of a nest");
+
 // =====================================================================
 // Registration
 //

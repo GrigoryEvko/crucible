@@ -27,11 +27,16 @@ as a .crtrace file, and reads the file back:
                     cold path.  Each level holds the records of its own tensors
     depth           crucible_deep::level_N has the nesting depth N, and
                     crucible_nest::inner has the depth 1 inside
-                    crucible_nest::outer.  Before them, aten::linear with a
-                    weight of the wrong shape raises inside the aten::addmm
-                    that it runs, and crucible_nest::fail raises in its kernel.
-                    The two unwinds close their nests, so crucible_nest::scale
-                    and crucible_nest::outer have the depth 0
+                    crucible_nest::outer.  Before the loop, aten::linear with
+                    a weight of the wrong shape raises inside the aten::addmm
+                    that it runs.  In each iteration, crucible_nest::fail
+                    raises in its kernel.  The unwinds close their nests, so
+                    crucible_nest::scale and crucible_nest::outer have the
+                    depth 0.  The aten::t of aten::linear reaches the Vigil
+                    before the raise, so the iteration of the raise holds the
+                    closing entry of the nest of aten::linear, and the build
+                    refuses its region (test_raised_nest.py).  So it raises
+                    one time, before the loop
 
 Usage:
     python test_nested_boxed_ops.py
@@ -185,11 +190,11 @@ def record(directory: Path) -> tuple[list[TraceOp], list[int]]:
     actions = []
     with CrucibleNative() as ctx:
         dispatch_op = bind_dispatch_op(ctx)
+        try:
+            torch.nn.functional.linear(torch.ones(LINEAR_INPUT), torch.ones(LINEAR_WEIGHT))
+        except RuntimeError:
+            pass
         for _ in range(MAX_ITERATIONS):
-            try:
-                torch.nn.functional.linear(torch.ones(LINEAR_INPUT), torch.ones(LINEAR_WEIGHT))
-            except RuntimeError:
-                pass
             for _ in range(FAILURES):
                 try:
                     torch.ops.crucible_nest.fail(source)

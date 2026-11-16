@@ -746,7 +746,10 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     //
     // The nest holds the depth of the operation until the operation returns
     // or unwinds, as in the unboxed kernels of record_kernel.h.  Each
-    // operation that the redispatch runs gets a depth one more.
+    // operation that the redispatch runs gets a depth one more.  When the
+    // operation raises, or record_boxed_op refuses it, after an operation
+    // inside it got to the Vigil, the close of the nest gives the closing
+    // entry of the nest (VigilOpNest).
     //
     // The frame holds MAX_INLINE_METAS slots from the extraction of the
     // inputs to the dispatch.  An operation that the redispatch runs opens
@@ -754,7 +757,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // returns.  An unwind of a PyTorch error closes the frame too.
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
     crucible::OpRecordStack& record_stack = vigil.op_record_stack(fg);
-    const crucible::OpNest nest{record_stack};
+    const crucible::VigilOpNest nest{vigil, fg};
     const crucible::OpRecordFrame frame{record_stack, MAX_INLINE_METAS};
     for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
         for (const MetaSlots metas : slots.window<MAX_INLINE_METAS>(0)) {
