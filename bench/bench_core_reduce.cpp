@@ -13,9 +13,11 @@
 // writes takes its output through a frame door: a HeapArray moves in and out,
 // and the FixedArray of a network row copies its N elements in and out.
 //
-// Each line gives the percentiles of one call in nanoseconds, the
-// coefficient of variation in thousandths, and the rate in elements for each
-// microsecond at the median.  The Report family writes integers only.
+// Each line gives the core of its row (the core that the harness reads after
+// its pin, or cpu-1 for a row with no pin), the percentiles of one call in
+// nanoseconds, the coefficient of variation in thousandths, and the rate in
+// elements for each microsecond at the median.  The Report family writes
+// integers only.
 
 #include <fixy/Core.h>
 #include <foundation/core/Reduce.h>
@@ -44,13 +46,14 @@ constexpr std::size_t kRowWallMs = 2000;
 // A time in nanoseconds, as the nearest integer.
 [[nodiscard]] std::uint64_t nanoseconds(double value) noexcept { return static_cast<std::uint64_t>(value + 0.5); }
 
-// Writes one line: the name of the row, the percentiles of one call, and the
-// rate of elements at the median.
+// Writes one line: the name of the row, the core of the row, the percentiles
+// of one call, and the rate of elements at the median.
 void print_row(fixy::TextView name, std::size_t elements, bench::Report const& measured) noexcept {
     double const median = measured.pct.p50 > 0.0 ? measured.pct.p50 : 1.0;
-    fixy::report(fixy::Sink::Out, "{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  rate={} elements/us\n", name,
-                 nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99), nanoseconds(measured.pct.max),
-                 static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5),
+    fixy::report(fixy::Sink::Out,
+                 "{}  core=cpu{}  p50={} ns  p99={} ns  max={} ns  cv={} permille  rate={} elements/us\n", name,
+                 measured.pinned_cpu.raw(), nanoseconds(measured.pct.p50), nanoseconds(measured.pct.p99),
+                 nanoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5),
                  static_cast<std::uint64_t>(static_cast<double>(elements) * 1000.0 / median + 0.5));
 }
 
