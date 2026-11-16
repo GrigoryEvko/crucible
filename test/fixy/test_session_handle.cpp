@@ -896,14 +896,13 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
     return 0;
 }
 
-// Two handles at End rewind together, as the two ends of a channel, to the
-// start of Once.  Each rewound end has a live record of its own, and the
-// self end sends its Ping.  The detach of each end releases its record.
+// The two ends of a test channel at End rewind together to the start of
+// Once.  Each rewound end has a live record of its own, and the self end
+// sends its Ping.  The detach of each end releases its record.
 [[nodiscard]] int rewind_test_channel() {
     Pipe pipe{};
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto self_end = s::mint_session<s::End>(ctx, SelfEnd{&pipe});
-    auto peer_end = s::mint_session<s::End>(ctx, PeerEnd{&pipe});
+    auto [self_end, peer_end] = s::mint_test_channel<s::End>(ctx, SelfEnd{&pipe}, PeerEnd{&pipe});
     auto [self_again, peer_again] =
         s::HandleFactory::rewind_channel<Once, void>(std::move(self_end), std::move(peer_end));
     const bool is_each_end_live =

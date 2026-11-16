@@ -60,7 +60,7 @@ static_assert(!std::is_constructible_v<
 // The builders of the factory are private.
 template <typename R>
 concept BuildsAHandle = requires(R&& resource) {
-    s::HandleFactory::make_<Proto, R, void, s::DefaultAbandonmentPolicy>(std::move(resource));
+    s::HandleFactory::make_<Proto, R, void, s::DefaultAbandonmentPolicy>(std::move(resource), {}, {});
 };
 static_assert(!BuildsAHandle<Wire>);
 static_assert(!std::is_default_constructible_v<s::HandleFactory> && !std::is_trivially_copyable_v<s::HandleFactory>);

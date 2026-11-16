@@ -1111,6 +1111,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::StoppedSend,
      "the result of a send with a stop test, taken apart at once by its caller: the handle in it folds on its own, "
      "and the payload that it can hold back is a bare payload"},
+    {^^::fixy::session::TestChannelEnds,
+     "the two ends of a test channel, taken apart at once by a structured binding of the test: each handle in it "
+     "folds on its own"},
     {^^::fixy::session::SessionMintDoor,
      "the door of the session mints to the handle factory: it has static members only, no object of it exists, "
      "and it is never a value"},

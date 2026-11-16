@@ -20,7 +20,7 @@ struct Body {};
 int main() {
     namespace s = ::fixy::session;
     using namespace neg_sess_handle_factory_called_outside_types;
-    auto forged =
-        s::HandleFactory::make_<s::End, Wire, s::detail::session_brand<Body>, s::DefaultAbandonmentPolicy>(Wire{});
+    auto forged = s::HandleFactory::make_<s::End, Wire, s::detail::session_brand<Body>, s::DefaultAbandonmentPolicy>(
+        Wire{}, {}, {});
     return std::move(forged).close().words;
 }

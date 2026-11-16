@@ -28,7 +28,7 @@ public:
     static auto forge(neg_sess_handle_factory_friend_specialized_types::Wire wire) {
         return HandleFactory::make_<
             Recv<int, End>, neg_sess_handle_factory_friend_specialized_types::Wire, void, check::Enforced,
-            ::foundation::permissions::PermSet<neg_sess_handle_factory_friend_specialized_types::Region>>(wire);
+            ::foundation::permissions::PermSet<neg_sess_handle_factory_friend_specialized_types::Region>>(wire, {}, {});
     }
 };
 }  // namespace fixy::session

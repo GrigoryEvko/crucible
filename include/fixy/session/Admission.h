@@ -421,15 +421,39 @@ concept SessionResource = OwnedSessionResource<Resource> || PinnedSessionResourc
 template <typename ResourceA, typename ResourceB>
 concept ChannelEndsShareAPriority = session_priority(^^ResourceA) == session_priority(^^ResourceB);
 
+namespace detail {
+
+// True when two loop contexts can hold the two ends of one channel at End.
+// The two ends run dual protocols, so the loop around the End of one end is
+// the dual of the loop around the End of the other, and none faces none.  A
+// permission frame names the set of its own end, and the two ends of a
+// channel can hold two sets, so the check reads the Loop of each frame.
+[[nodiscard]] consteval bool loops_face_each_other(std::meta::info end_loop_ctx, std::meta::info peer_end_loop_ctx) {
+    const std::meta::info loop = loop_of_inner(inner_loop_ctx_of(end_loop_ctx));
+    const std::meta::info peer_loop = loop_of_inner(inner_loop_ctx_of(peer_end_loop_ctx));
+    if (loop == ^^void || peer_loop == ^^void) return loop == peer_loop;
+    return std::meta::dealias(std::meta::substitute(^^dual_of_t, {loop})) == peer_loop;
+}
+
+}  // namespace detail
+
+// The two ends of a channel at End stand in loop contexts that face each
+// other.  Two handles at End whose loops do not face each other are the ends
+// of two channels, and their types show it.
+template <typename EndLoopCtx, typename PeerEndLoopCtx>
+concept ChannelEndsShareALoop = detail::loops_face_each_other(^^EndLoopCtx, ^^PeerEndLoopCtx);
+
 // The gate of HandleFactory::rewind_channel.  Each end can start at its
 // position: R in the loop context LoopCtx, and the peer at the dual of R in
 // the dual loop context.  The two Resources share one priority, as the two
-// ends of a channel mint do.
+// ends of a channel mint do, and the two loops at End face each other.  The
+// rewind refuses at run time two ends of two channels that the types do not
+// show.
 template <typename R, typename LoopCtx, typename EndLoopCtx, typename PeerEndLoopCtx, typename Resource,
           typename PeerResource>
 concept RewindableChannelTo =
     RewindableTo<R, LoopCtx, EndLoopCtx> && RewindableTo<dual_of_t<R>, detail::dual_loop_ctx_t<LoopCtx>, PeerEndLoopCtx>
-    && ChannelEndsShareAPriority<Resource, PeerResource>;
+    && ChannelEndsShareAPriority<Resource, PeerResource> && ChannelEndsShareALoop<EndLoopCtx, PeerEndLoopCtx>;
 
 // ── The effect row of a protocol ────────────────────────────────────
 //

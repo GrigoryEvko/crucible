@@ -632,18 +632,16 @@ template <Receive How>
 // before the transport runs.
 [[noreturn]] void one_thread_holds_both_ends_declared_wait() { run_one_thread_holds_both_ends<Receive::Declared>(); }
 
-// Two handles at End are rewound together, as the two ends of a channel.
-// The rewind links the two new records, so the watch sees the channel.
-// The thread holds the rewound left end and waits on the rewound right
-// end, for room that only a read of the left end can make.  The watch
-// refuses the wait as a wait on a held peer.  A rewind of each end alone
-// gives two records with no link, and the watch then names only the
-// priority order.
+// The two ends of a test channel at End are rewound together.  The rewind
+// links the two new records, so the watch sees the channel.  The thread
+// holds the rewound left end and waits on the rewound right end, for room
+// that only a read of the left end can make.  The watch refuses the wait
+// as a wait on a held peer.  A rewind of each end alone gives two records
+// with no link, and the watch then names only the priority order.
 [[noreturn]] void one_thread_holds_both_rewound_ends() {
     Pipe pipe{};
     const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
-    auto left_end = s::mint_session<s::End>(ctx, LeftEnd{&pipe});
-    auto right_end = s::mint_session<s::End>(ctx, RightEnd{&pipe});
+    auto [left_end, right_end] = s::mint_test_channel<s::End>(ctx, LeftEnd{&pipe}, RightEnd{&pipe});
     auto [left_again, right_again] =
         s::HandleFactory::rewind_channel<LeftProto, void>(std::move(left_end), std::move(right_end));
     auto right_done = std::move(right_again).send(Ping{1}, [](RightEnd&, Ping&) noexcept { return false; });

@@ -733,13 +733,13 @@ struct [[nodiscard]] StoppedSend {
 // No object of the class exists, and foundation/NoObject.h tells why no
 // constructor and no byte route makes one.
 class HandleFactory final : ::foundation::NoObject<HandleFactory> {
-    // Builds the handle at Proto as it stands.
+    // Builds the handle at Proto as it stands.  Each caller is a step, which
+    // gives the record and the site.
     template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS = ::foundation::permissions::EmptyPermSet>
     [[nodiscard]] static constexpr auto
-    make_(Resource r, watch::session_ref session = {},
-          std::source_location loc =
-              std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    make_(Resource r, watch::session_ref session,
+          std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
         -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS>;
 
     // Builds the handle at the head that R reaches after Continue, Loop
@@ -835,6 +835,10 @@ public:
     // does.  The gate is RewindableChannelTo of fixy/session/Admission.h.
     // The result holds the two handles, in the order of the arguments, and a
     // structured binding gives them out.
+    //
+    // The two handles must be the two ends of one channel.  The gate refuses
+    // two ends whose types show two channels, and the precondition refuses
+    // two ends whose marks do not name each other.
     template <typename Rewound, typename PeerRewound>
     struct RewoundChannel {
         Rewound rewound;
@@ -844,10 +848,10 @@ public:
     template <typename R, typename LoopCtx, typename Resource, typename PeerResource, typename EndLoopCtx,
               typename PeerEndLoopCtx, AbandonmentPolicy Policy>
         requires RewindableChannelTo<R, LoopCtx, EndLoopCtx, PeerEndLoopCtx, Resource, PeerResource>
-    [[nodiscard]] static constexpr auto
-    rewind_channel(SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
-                   SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&&
-                       peer_at_end) noexcept;
+    [[nodiscard]] static constexpr auto rewind_channel(
+        SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
+        SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& peer_at_end,
+        std::source_location loc = std::source_location::current()) noexcept;
 
     // Enters branch I of an Offer, a branch that is no label, with no word
     // read.  The crash transport of fixy/session/CrashTransport.h enters a
@@ -1210,15 +1214,40 @@ public:
 // one.  Each consumer method forwards to the step of the factory with
 // the same name, which moves the message and builds the next handle.
 
+namespace detail {
+
+// The mark of the record that a step into End released (watch::channel_mark
+// of fixy/session/Watch.h).  A policy that keeps no record keeps no mark, so
+// a handle at End under check::Off stays the size of its Resource.
+template <bool KeepsRecord>
+struct end_mark {
+    watch::channel_mark mark{};
+
+    [[nodiscard]] constexpr watch::channel_mark value() const noexcept { return mark; }
+};
+
+template <>
+struct end_mark<false> {
+    [[nodiscard]] constexpr watch::channel_mark value() const noexcept { return {}; }
+};
+
+}  // namespace detail
+
 template <typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
 class [[nodiscard]]
 SessionHandle<End, Resource, LoopCtx, Policy, PS> : public detail::handle_core<End, Resource, LoopCtx, Policy, PS> {
     using core_type = detail::handle_core<End, Resource, LoopCtx, Policy, PS>;
+    friend class HandleFactory;
 
     static_assert(detail::perm_set_admits_close_v<PS>,
                   "fixy::session::diagnostic [PermissionImbalance]: the protocol reaches End while the "
                   "permission set holds an open loan, a LentOut or a BorrowedIn.  close() would lose it.  Return "
                   "each loan before End.");
+
+    // The mark of the record that the step into End released.  The rewind
+    // of a channel reads it to know that two handles at End are the two ends
+    // of one channel.
+    [[no_unique_address]] detail::end_mark<Policy::checks_abandonment> mark_{};
 
 public:
     constexpr explicit SessionHandle(HandleKey const& key, Resource r, watch::session_ref session,
@@ -1581,7 +1610,17 @@ constexpr auto HandleFactory::step_(Resource r, watch::session_ref session, std:
         static_assert(is_head_v<R>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                     "unexpected protocol shape after resolution.  "
                                     "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
-        if constexpr (Policy::checks_abandonment && is_terminal_state_v<R>) {
+        if constexpr (Policy::checks_abandonment && std::is_same_v<R, End>) {
+            // The handle at End holds no record, and it keeps the mark of the
+            // record.  The release clears the peer of the record, so the mark
+            // is read first.
+            auto at_end = make_<R, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), watch::session_ref{}, loc);
+            if !consteval {
+                at_end.mark_ = detail::end_mark<true>{watch::mark_of(session.endpoint)};
+                watch::release(session.endpoint);
+            }
+            return at_end;
+        } else if constexpr (Policy::checks_abandonment && is_terminal_state_v<R>) {
             if !consteval {
                 watch::release(session.endpoint);
             }
@@ -1808,35 +1847,60 @@ constexpr auto HandleFactory::rewind(
         std::forward<Resource>(resource), claim_<R, Resource, Policy>(loc), loc);
 }
 
-// Each end rewinds to its position with a record of its own, which names
-// the calling thread as its holder.  The gate gives the two Resources one
-// priority, so the two records have the priority of one channel, and the
-// link makes them its two ends.  A position at End has no record, and the
-// link of no record does nothing.
+// The precondition reads the marks of the two handles at End.  The two ends
+// of one channel name each other (watch::are_ends_of_one_channel), and two
+// ends of two channels, or of no channel, do not.  An end that the watch
+// did not track names no record, so the rewind refuses it too.  A policy that
+// keeps no record links no record, and it has no mark to read.  A constant
+// evaluation claims no record, so it has no mark either.
+//
+// Each end rewinds to its position on a record of its own, which names the
+// calling thread as its holder.  The gate gives the two Resources one
+// priority, so the two records have the priority of one channel.  The link
+// makes them its two ends before either end steps, so a position at End
+// keeps the mark of the channel too.
 template <typename R, typename LoopCtx, typename Resource, typename PeerResource, typename EndLoopCtx,
           typename PeerEndLoopCtx, AbandonmentPolicy Policy>
     requires RewindableChannelTo<R, LoopCtx, EndLoopCtx, PeerEndLoopCtx, Resource, PeerResource>
 constexpr auto HandleFactory::rewind_channel(
     SessionHandle<End, Resource, EndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& at_end,
-    SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&&
-        peer_at_end) noexcept {
-    auto rewound = rewind<R, LoopCtx>(std::move(at_end));
-    auto peer_rewound = rewind<dual_of_t<R>, detail::dual_loop_ctx_t<LoopCtx>>(std::move(peer_at_end));
-    if !consteval {
-        watch::link(rewound.watch_endpoint(), peer_rewound.watch_endpoint());
+    SessionHandle<End, PeerResource, PeerEndLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>&& peer_at_end,
+    std::source_location loc) noexcept {
+    if constexpr (Policy::checks_abandonment) {
+        if !consteval {
+            CRUCIBLE_PRE(watch::are_ends_of_one_channel(at_end.mark_.value(), peer_at_end.mark_.value()));
+        }
     }
+    using PeerR = dual_of_t<R>;
+    using PeerLoopCtx = detail::dual_loop_ctx_t<LoopCtx>;
+    Resource resource = std::move(at_end).close();
+    PeerResource peer_resource = std::move(peer_at_end).close();
+    const watch::session_ref session = claim_<R, Resource, Policy>(loc);
+    const watch::session_ref peer_session = claim_<PeerR, PeerResource, Policy>(loc);
+    if !consteval {
+        watch::link(session.endpoint, peer_session.endpoint);
+    }
+    auto rewound = step_<R, Resource, LoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
+        std::forward<Resource>(resource), session, loc);
+    auto peer_rewound = step_<PeerR, PeerResource, PeerLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
+        std::forward<PeerResource>(peer_resource), peer_session, loc);
     return RewoundChannel<decltype(rewound), decltype(peer_rewound)>{std::move(rewound), std::move(peer_rewound)};
 }
 
 namespace detail {
+
+// The two linked records of a channel, one for each end, or none.
+struct channel_records {
+    watch::endpoint_id self = watch::endpoint_id::none;
+    watch::endpoint_id peer = watch::endpoint_id::none;
+};
 
 // Claims the two linked records of a channel, one for each end, with the
 // one priority of the channel.  The thread that claims them does not hold
 // the ends: each end's holder is the thread that opens it.  Under
 // check::Off it claims nothing.
 template <typename SelfProto, typename PeerProto, AbandonmentPolicy Policy, watch::priority Order>
-[[nodiscard]] inline std::pair<watch::endpoint_id, watch::endpoint_id>
-claim_channel_(std::source_location loc) noexcept {
+[[nodiscard]] inline channel_records claim_channel_(std::source_location loc) noexcept {
     if constexpr (Policy::checks_abandonment) {
         const watch::endpoint_id self =
             watch::claim(type_display_name_v<SelfProto>, loc, Order, watch::holder_on_claim::none_yet);
@@ -1925,6 +1989,15 @@ concept CtxFitsForkedSides =
     && ForkedSidesAgree<SelfProto, PeerProto, ResourceSelf, ResourcePeer>
     && detail::ForkedEndpointBody<SelfBody, SelfProto, ResourceSelf, Policy, SelfTag, Brand, Ctx>
     && detail::ForkedEndpointBody<PeerBody, PeerProto, ResourcePeer, Policy, PeerTag, Brand, Ctx>;
+
+// The two ends of a test channel of mint_test_channel: the end at the
+// protocol over the first Resource, and the end at its dual over the second
+// Resource.  A structured binding gives them out in that order.
+template <typename SelfHandle, typename PeerHandle>
+struct [[nodiscard]] TestChannelEnds {
+    SelfHandle self;
+    PeerHandle peer;
+};
 
 // ── The door of the mints ────────────────────────────────────────────
 //
@@ -2031,15 +2104,15 @@ public:
               && ChannelEndsShareAPriority<ResourceA, ResourceB>
     [[nodiscard]] static constexpr auto open_test_channel(Ctx const&, ResourceA resource_a, ResourceB resource_b,
                                                           std::source_location loc) noexcept {
-        std::pair<watch::endpoint_id, watch::endpoint_id> endpoints{watch::endpoint_id::none, watch::endpoint_id::none};
+        detail::channel_records records{};
         if !consteval {
-            endpoints = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy, session_priority(^^ResourceA)>(loc);
+            records = detail::claim_channel_<Proto, dual_of_t<Proto>, Policy, session_priority(^^ResourceA)>(loc);
         }
-        return std::pair{
-            HandleFactory::open_<Proto, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(
-                SessionOpenKey{}, std::forward<ResourceA>(resource_a), loc, endpoints.first),
-            HandleFactory::open_<dual_of_t<Proto>, ResourceB, Policy, ::foundation::permissions::EmptyPermSet>(
-                SessionOpenKey{}, std::forward<ResourceB>(resource_b), loc, endpoints.second)};
+        auto self = HandleFactory::open_<Proto, ResourceA, Policy, ::foundation::permissions::EmptyPermSet>(
+            SessionOpenKey{}, std::forward<ResourceA>(resource_a), loc, records.self);
+        auto peer = HandleFactory::open_<dual_of_t<Proto>, ResourceB, Policy, ::foundation::permissions::EmptyPermSet>(
+            SessionOpenKey{}, std::forward<ResourceB>(resource_b), loc, records.peer);
+        return TestChannelEnds<decltype(self), decltype(peer)>{std::move(self), std::move(peer)};
     }
 };
 

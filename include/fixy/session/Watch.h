@@ -689,6 +689,34 @@ inline void link(endpoint_id first, endpoint_id second) noexcept {
         .peer.store_release(detail::pack(first_index, detail::record_at_(first_index).generation.load_acquire()));
 }
 
+// What a handle at End keeps of the record that the step into End
+// released: the record of the end and the record of its peer, each packed
+// with its generation, or zero for none.  The two ends of one channel keep
+// two marks that name each other, also when one end releases its record
+// before the other.  A claim gives a record a new generation, so a mark does
+// not name the session of a later claim of the same record.
+struct channel_mark {
+    std::uint64_t self = 0;
+    std::uint64_t peer = 0;
+};
+
+/// The mark of the session of `endpoint`.  Read it before the release of the
+/// record, which clears the peer.
+[[nodiscard]] inline channel_mark mark_of(endpoint_id endpoint) noexcept {
+    if (endpoint == endpoint_id::none) return {};
+    const auto index = static_cast<std::uint32_t>(endpoint);
+    const detail::endpoint_record& record = detail::record_at_(index);
+    return {detail::pack(index, record.generation.load_acquire()), record.peer.load_acquire()};
+}
+
+/// True when the two marks are the marks of the two ends of one channel:
+/// each names a record, and each names the record of the other as its peer.
+/// An end that the watch did not track, because its table was full, names
+/// no record, and it is the end of no channel that the watch can show.
+[[nodiscard]] constexpr bool are_ends_of_one_channel(channel_mark first, channel_mark second) noexcept {
+    return first.self != 0 && second.self != 0 && first.peer == second.self && second.peer == first.self;
+}
+
 /// Ends the session of `endpoint`: it reached End, detached or cancelled.
 inline void release(endpoint_id endpoint) noexcept {
     if (endpoint == endpoint_id::none) return;
