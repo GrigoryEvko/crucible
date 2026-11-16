@@ -276,6 +276,35 @@ private:
     uint16_t depth_ = 0;
 };
 
+// The generation of the allocation of a storage: a count that an allocator
+// of the front end gives each allocation, such as the CPU allocator of the
+// vessel.  The allocator can give the address of a dead storage to a new
+// storage, and the new storage then has another generation.  So the address
+// and the generation together name one storage of the process
+// (storage_key of crucible/TensorMeta.h).
+//
+// Zero means no generation: the storage of an allocator that gives none, such
+// as a mapped file, a pinned buffer or the memory of another library.  Such a
+// storage keeps the key of its address alone.  The count is local to one
+// process, as an address is, so no file and no hash holds it.  Two storages of
+// one region at one address with equal generations are 2^32 allocations
+// apart, which no region holds.
+class StorageGeneration {
+public:
+    constexpr StorageGeneration() noexcept = default;
+    constexpr explicit StorageGeneration(uint32_t generation) noexcept : generation_{generation} {}
+
+    [[nodiscard]] constexpr uint32_t raw() const noexcept { return generation_; }
+
+    // True for a storage whose allocator gave it a generation.
+    [[nodiscard]] constexpr bool is_known() const noexcept { return generation_ != 0; }
+
+    constexpr auto operator<=>(const StorageGeneration&) const noexcept = default;
+
+private:
+    uint32_t generation_ = 0;
+};
+
 // Distinct hash types that cannot be passed for one another. Zero means unset.
 // Arithmetic is absent for the same reason as on the index types above.
 

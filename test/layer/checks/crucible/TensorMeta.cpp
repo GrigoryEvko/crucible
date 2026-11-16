@@ -25,7 +25,9 @@ static_assert(std::is_trivially_copyable_v<TensorDimArray>);
 static_assert(std::is_standard_layout_v<TensorDimArray>);
 
 static_assert(sizeof(TensorMeta) == 176, "TensorMeta layout check");
-static_assert(offsetof(TensorMeta, pad0) == 156);
+static_assert(offsetof(TensorMeta, storage_generation) == 156);
+static_assert(sizeof(StorageGeneration) == sizeof(uint32_t));
+static_assert(sizeof(StorageKey) == 16, "the key of a storage is the address word and the generation, and no more");
 static_assert(offsetof(TensorMeta, storage_nbytes) == 160);
 static_assert(offsetof(TensorMeta, grad_fn_hash) == 168);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
@@ -55,7 +57,7 @@ static_assert(is_unequal_after([](TensorMeta& meta) { meta.flags = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.output_nr = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_offset = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.version = 1; }));
-static_assert(is_unequal_after([](TensorMeta& meta) { meta.pad0 = 1; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_generation = StorageGeneration{1}; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_nbytes = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.grad_fn_hash = grad_fn_hash(1); }));
 

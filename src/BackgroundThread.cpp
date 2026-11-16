@@ -1380,10 +1380,14 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             const uint64_t output_span = span_bytes_of_(output_meta);
             const ::fixy::WeakRef<PtrSlot> entry = ptr_map_find(scratch_map_, local_gen, output_key);
 
-            // The key of a storage is the address of its first byte, and the
-            // allocator can give that address to a new storage after a free.
-            // So a key in the map names the same storage only when the op
-            // shows that the storage lives across it: the op reads the
+            // A key with a generation names one storage of the process, so a
+            // key of the map with a generation is the same storage.
+            //
+            // A key with no generation is the address of the first byte of
+            // the storage, and the allocator can give that address to a new
+            // storage after a free.  So such a key in the map names the same
+            // storage only when the op shows that the storage lives across
+            // it: the op reads the
             // storage, which keeps it alive during the op (an in-place op,
             // an out= op, a view or an alias of an input); the output is a
             // view, which never owns a new storage; or an op in the nest of
@@ -1393,14 +1397,14 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             // own.  The mutable flag of the op tells nothing more: an in-place
             // or out= op reads the tensor that it writes, and an op such as
             // batch norm writes its running statistics in place and returns
-            // new tensors.  An input at the address of a dead storage still
-            // reads the slot of the dead storage, because a read shows no
-            // allocation.
+            // new tensors.  An input with no generation at the address of a
+            // dead storage still reads the slot of the dead storage, because
+            // a read shows no allocation.
             const bool is_written_in_the_nest =
                 entry && entry->op_index.is_valid() && entry->op_index.raw() >= nest_start;
             const bool is_same_storage = entry && entry->slot_id.is_valid()
-                                      && (entry->reader == OpIndex{i} || (output_meta.flags & meta_flags::IS_VIEW) != 0
-                                          || is_written_in_the_nest);
+                                      && (output_key.generation.is_known() || entry->reader == OpIndex{i}
+                                          || (output_meta.flags & meta_flags::IS_VIEW) != 0 || is_written_in_the_nest);
             if (is_same_storage) {
                 output_slot = entry->slot_id;
                 // A slot id at or past slot_cap names no slot of this call.

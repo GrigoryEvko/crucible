@@ -1,6 +1,6 @@
 // The slots that the build of a region gives the tensors of one iteration.
 // A slot holds one storage, and the key of a storage is the address of its
-// first byte.
+// first byte and the generation of its allocation.
 //
 // Op 0 writes a tensor at the address X, op 1 reads it and writes Y, and op 2
 // reads Y.  In one run op 2 writes a new address Z.  In the other run X is
@@ -39,10 +39,11 @@ using crucible::TraceRing;
 ::fixy::FixedArray<std::byte, 4096> g_memory{};
 
 // A tensor of `elements` floats whose storage starts at the offset base of
-// g_memory, at element `first` of that storage.  A tensor past the first
-// element of its storage is a view.
-[[nodiscard]] TensorMeta vector_at(uint32_t base, uint32_t first = 0, int64_t elements = 64) {
+// g_memory, at element `first` of that storage, with the storage generation
+// `generation`.  A tensor past the first element of its storage is a view.
+[[nodiscard]] TensorMeta vector_at(uint32_t base, uint32_t first = 0, int64_t elements = 64, uint32_t generation = 0) {
     TensorMeta meta{};
+    meta.storage_generation = crucible::StorageGeneration{generation};
     meta.ndim = 1;
     meta.sizes[0] = crucible::tensor_dim(elements);
     meta.strides[0] = crucible::tensor_dim(1);
@@ -341,6 +342,59 @@ void test_reads_of_an_external_take_one_slot() {
     crucible::test::pass("  test_reads_of_an_external_take_one_slot: PASSED\n");
 }
 
+// Op 0 writes X with the generation 1, and op 1 reads it, so X dies after op
+// 1.  An op that the recorder does not see makes a new storage at X with the
+// generation 3, and op 2 reads it.  The new storage lives before the region,
+// so its read takes an external slot of its own, with no producer.  With no
+// generation, the key of the address alone cannot tell the two storages
+// apart, and the read of op 2 reads the slot that op 0 wrote.
+void test_new_storage_at_a_dead_address_is_a_new_input() {
+    Rig known;
+    known.work.push_source(*known.log, 0, vector_at(kX, 0, 64, 1));
+    known.work.push_unary(*known.log, 1, vector_at(kX, 0, 64, 1), vector_at(kY, 0, 64, 2));
+    known.work.push_unary(*known.log, 2, vector_at(kX, 0, 64, 3), vector_at(kZ, 0, 64, 4));
+    const BackgroundThread::BuiltRegion fresh = known.build();
+    const crucible::SlotId written = output_slot(fresh, 0, 0);
+    const crucible::SlotId read = input_slot(fresh, 2, 0);
+    assert(read != written && "a new storage at the address of a dead one is a new input");
+    assert(!producer(fresh, 2, 0).is_valid() && "no op of the region wrote the new storage");
+    assert(slot_of(fresh, read).is_external);
+    assert(slot_of(fresh, written).death_op == crucible::OpIndex{1} && "the dead storage dies at its last read");
+    assert(fresh.slots.size() == 4);
+
+    Rig unknown;
+    unknown.work.push_source(*unknown.log, 0, vector_at(kX));
+    unknown.work.push_unary(*unknown.log, 1, vector_at(kX), vector_at(kY));
+    unknown.work.push_unary(*unknown.log, 2, vector_at(kX), vector_at(kZ));
+    const BackgroundThread::BuiltRegion merged = unknown.build();
+    assert(input_slot(merged, 2, 0) == output_slot(merged, 0, 0) && producer(merged, 2, 0) == crucible::OpIndex{0}
+           && "with no generation, a read at the address reads the slot of the address");
+    crucible::test::pass("  test_new_storage_at_a_dead_address_is_a_new_input: PASSED\n");
+}
+
+// Op 0 writes X with the generation 1.  Op 1 reads Y and writes X again with
+// the same generation: the same storage, which lives across op 1, as a buffer
+// that an op fills in place.  The key with the generation names one storage,
+// so the two outputs have one slot.  With no generation, op 1 shows no read
+// of X, no view and no write in its nest, so its output at X takes a slot of
+// its own.
+void test_output_with_the_same_generation_keeps_the_slot() {
+    Rig known;
+    known.work.push_source(*known.log, 0, vector_at(kX, 0, 64, 1));
+    known.work.push_unary(*known.log, 1, vector_at(kY, 0, 64, 2), vector_at(kX, 0, 64, 1));
+    const BackgroundThread::BuiltRegion same = known.build();
+    assert(output_slot(same, 1, 0) == output_slot(same, 0, 0) && "one generation is one storage");
+    assert(slot_of(same, output_slot(same, 0, 0)).death_op == crucible::OpIndex{1});
+
+    Rig unknown;
+    unknown.work.push_source(*unknown.log, 0, vector_at(kX));
+    unknown.work.push_unary(*unknown.log, 1, vector_at(kY), vector_at(kX));
+    const BackgroundThread::BuiltRegion split = unknown.build();
+    assert(output_slot(split, 1, 0) != output_slot(split, 0, 0)
+           && "with no generation, an output that the op does not read is a new storage");
+    crucible::test::pass("  test_output_with_the_same_generation_keeps_the_slot: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -355,6 +409,8 @@ int main() {
     test_result_of_a_nest_is_internal();
     test_reads_of_an_external_take_one_slot();
     test_numerics_policy_moves_the_hash();
+    test_new_storage_at_a_dead_address_is_a_new_input();
+    test_output_with_the_same_generation_keeps_the_slot();
     crucible::test::pass("test_build_address_reuse: ALL PASSED\n");
     return 0;
 }

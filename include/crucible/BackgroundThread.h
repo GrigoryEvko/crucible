@@ -987,13 +987,14 @@ private:
     // time and only the wrap-around every 255 calls needs a real memset.
     //
     // The key is the storage_key of a tensor: the address of the first byte
-    // of its storage, which a foreign allocator gave.  The views of one
-    // storage at each offset give one key.  The map reads the key only for a
-    // hash and an equality, never as an offset into an internal pool.
-    using PtrMapKey = ::fixy::AddressKey;
+    // of its storage, which a foreign allocator gave, and the generation of
+    // its allocation.  The views of one storage at each offset give one key.
+    // The map reads the key only for a hash and an equality, never as an
+    // offset into an internal pool.
+    using PtrMapKey = StorageKey;
 
     struct PtrSlot {
-        PtrMapKey key = ::fixy::mint_address_key(static_cast<void const*>(nullptr));
+        PtrMapKey key{};
         OpIndex op_index;
         SlotId slot_id;
         // The last op that read the storage as an input.
@@ -1003,8 +1004,9 @@ private:
         ::fixy::FixedArray<uint8_t, 2> pad{};
     };
 
-    static_assert(sizeof(PtrSlot) == 24, "PtrSlot should be 24 bytes");
-    static_assert(sizeof(PtrMapKey) == sizeof(void*), "an AddressKey holds one word, so PtrSlot stays at 24 bytes");
+    // Two slots on each cache line of 64 bytes.
+    static_assert(sizeof(PtrSlot) == 32, "PtrSlot holds the key of 16 bytes and 16 bytes of the build");
+    static_assert(sizeof(PtrMapKey) == 16, "a StorageKey holds the address word and the generation");
 
     // The fields are the fields of TensorSlot from nbytes to is_external, in
     // the same order.  The slot build of build_trace_from copies each field
@@ -1058,10 +1060,11 @@ private:
                                       compute_storage_nbytes_det(external_tensor_meta(meta)).peek().value());
     }
 
-    // The bucket of a key is the low half of the hash of its address key.
-    // The address changes from run to run, so the map gives no order.
+    // The bucket of a key is the low half of the fold of the hash of its
+    // address key and its generation.  The address changes from run to run,
+    // so the map gives no order.
     [[nodiscard, gnu::const]] static uint32_t hash_ptr(PtrMapKey key) noexcept {
-        return static_cast<uint32_t>(key.hash());
+        return static_cast<uint32_t>(detail::combine_ids(key.address.hash(), key.generation.raw()));
     }
 
     // The entry of key in the map, or no entry when the map does not hold
@@ -1121,7 +1124,7 @@ private:
     };
 
     [[nodiscard]] static PtrLookup ptr_map_lookup(::fixy::MaskedArray<PtrSlot> const& map, uint8_t gen, PtrMapKey key) {
-        if (key == ::fixy::mint_address_key(static_cast<void const*>(nullptr)))
+        if (key.address == ::fixy::mint_address_key(static_cast<void const*>(nullptr)))
             return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
         const uint64_t bucket_idx = hash_ptr(key);
         for (uint64_t probe = 0; probe < map.size(); probe++) {

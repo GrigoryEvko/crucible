@@ -161,7 +161,11 @@ struct TensorMeta {
 
     int64_t storage_offset = 0;
     uint32_t version = 0;  // bumped on in-place mutation
-    uint32_t pad0 = 0;  // zero, so the storage size starts at a multiple of eight
+    // The generation of the allocation of the storage, or zero when its
+    // allocator gives none.  It is local to the process, as data_ptr is, so
+    // the image of Serialize.h and the record of a trace file do not hold it,
+    // and no hash folds it.
+    StorageGeneration storage_generation{};
     // The size of the storage in bytes, which a view does not span.  A
     // storage of 4 GiB or more is usual for a large model, so the field has
     // 64 bits.
@@ -169,18 +173,18 @@ struct TensorMeta {
     GradFnHash grad_fn_hash{};  // 0 means no grad_fn
 
     // Two descriptors are equal when each field holds the same value.  The
-    // padding is the named member pad0, so the result is the result of a
-    // compare of the bytes.  A Tagged field has no compare of its own, so
-    // the compare reads its value, and the compare cannot be defaulted.  A
-    // new field needs a term here.
+    // type has no padding, so the result is the result of a compare of the
+    // bytes.  A Tagged field has no compare of its own, so the compare reads
+    // its value, and the compare cannot be defaulted.  A new field needs a
+    // term here.
     [[nodiscard]] friend constexpr bool operator==(TensorMeta const& left, TensorMeta const& right) noexcept {
         return left.sizes == right.sizes && left.strides == right.strides
             && left.data_ptr.value() == right.data_ptr.value() && left.ndim == right.ndim && left.dtype == right.dtype
             && left.device_type == right.device_type && left.device_idx == right.device_idx
             && left.layout == right.layout && left.requires_grad == right.requires_grad && left.flags == right.flags
             && left.output_nr == right.output_nr && left.storage_offset == right.storage_offset
-            && left.version == right.version && left.pad0 == right.pad0 && left.storage_nbytes == right.storage_nbytes
-            && left.grad_fn_hash.value() == right.grad_fn_hash.value();
+            && left.version == right.version && left.storage_generation == right.storage_generation
+            && left.storage_nbytes == right.storage_nbytes && left.grad_fn_hash.value() == right.grad_fn_hash.value();
     }
 };
 
@@ -211,12 +215,28 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return ::fixy::saturating_mul(elements, uint64_t{element_size(meta.dtype).raw()});
 }
 
-// The key of the storage of the tensor: the key of the first byte of its
-// storage.  Two views of one storage give one key at each offset.  An address
-// of a storage can come back from the allocator for a new storage after a
-// free, so the key names a storage only while that storage lives.
-[[nodiscard]] inline ::fixy::AddressKey storage_key(const TensorMeta& meta) noexcept {
-    return ::fixy::mint_address_key(meta.data_ptr.value()).lower_by(storage_offset_bytes(meta));
+// The key of one storage: the key of the address of its first byte, and the
+// generation of its allocation.  The allocator can give the address of a dead
+// storage to a new storage after a free.  A storage with a generation then
+// has a new key, so its key names it for the life of the process.  A storage
+// with no generation keeps the key of its address alone, and that key names
+// the storage only while the storage lives.  The key has no order.
+struct StorageKey {
+    ::fixy::AddressKey address = ::fixy::mint_address_key(static_cast<void const*>(nullptr));
+    StorageGeneration generation{};
+    uint32_t pad = 0;  // zero
+
+    [[nodiscard]] friend constexpr bool operator==(StorageKey const& left, StorageKey const& right) noexcept {
+        return left.address == right.address && left.generation == right.generation;
+    }
+};
+
+// The key of the storage of the tensor.  Two views of one storage give one
+// key at each offset.
+[[nodiscard]] inline StorageKey storage_key(const TensorMeta& meta) noexcept {
+    return StorageKey{.address = ::fixy::mint_address_key(meta.data_ptr.value()).lower_by(storage_offset_bytes(meta)),
+                      .generation = meta.storage_generation,
+                      .pad = 0};
 }
 
 namespace detail {
@@ -375,7 +395,8 @@ struct UncheckedTensorMeta {
 //     undefined behaviour to read
 //   - no reserved bit of the flags is set.
 //
-// The padding of the TensorMeta stays zero.  Linear in kMaxTensorNDim.
+// The storage generation of the TensorMeta stays zero, because a writer
+// outside the process gives no generation.  Linear in kMaxTensorNDim.
 [[nodiscard]] inline ::fixy::Option<TensorMeta> decode_tensor_meta(UncheckedTensorMeta const& fields,
                                                                    ExternalDataPtr data_ptr) noexcept {
     const uint8_t ndim = fields.ndim;
