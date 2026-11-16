@@ -23,12 +23,11 @@ template <typename T>
 concept IsReflectFieldSupported = std::is_enum_v<T> || std::is_integral_v<T> || std::is_floating_point_v<T>
                                || std::is_array_v<T> || std::is_class_v<T>;
 
-// A FixedArray of the base.  It keeps its elements in a private base class,
-// and for_each_field gives no field of a base.  So the class arm would fold
-// no element, and each FixedArray of one type would give one constant.
-// hash_field and pack_field fold its elements with the reduction of a C
-// array, so a FixedArray and a C array of the same elements give the same
-// hash.
+// A FixedArray of the base.  It keeps its elements in a private base class.
+// The class arm would fold that base as a class, and the hash would then
+// differ from the hash of a C array of the same elements.  hash_field and
+// pack_field fold its elements with the reduction of a C array, so a
+// FixedArray and a C array of the same elements give the same hash.
 template <typename T>
 concept IsFixedArray = ::foundation::reflect::IsInstanceOf<T, ^^::foundation::core::FixedArray>;
 
@@ -75,15 +74,21 @@ template <typename T>
 
 }  // namespace detail_reflect
 
-// Folds each non-static data member of T, a private one too, because a
-// strong ID keeps its value in a private field.  The members fold in the
-// order of the declarations.
+// Folds each direct base subobject of T, and then each non-static data
+// member of T, each in the order of the declarations.  A private base and a
+// private member fold too, because a strong ID keeps its value in a private
+// field.  A base folds as a member of the base type does, so a class with a
+// base and a class with that base as its first member give one hash.  A
+// class with no base folds only its members.
 template <typename T>
     requires std::is_class_v<T>
 [[nodiscard, gnu::pure]] uint64_t reflect_hash(const T& obj) noexcept {
     uint64_t h = 0x9E3779B97F4A7C15ULL;
-    ::fixy::for_each_field(
-        obj, [&h](auto const& field) noexcept { h = h * 0x9E3779B97F4A7C15ULL ^ detail_reflect::hash_field(field); });
+    const auto fold = [&h](auto const& part) noexcept {
+        h = h * 0x9E3779B97F4A7C15ULL ^ detail_reflect::hash_field(part);
+    };
+    ::fixy::for_each_base(obj, fold);
+    ::fixy::for_each_field(obj, fold);
     return detail::fmix64(h);
 }
 
@@ -150,13 +155,15 @@ template <typename T>
 // A second mixing scheme alongside reflect_hash. The seed is a domain
 // separator, and the per-field fmix64 forces a full avalanche before the next
 // xor, so two objects differing only in a low-entropy field still differ
-// across the whole word.
+// across the whole word.  The bases fold first and then the members, in the
+// order of reflect_hash.
 template <uint64_t Seed, typename T>
     requires std::is_class_v<T>
 [[nodiscard, gnu::pure]] constexpr uint64_t reflect_fmix_fold(const T& obj) noexcept {
     uint64_t h = Seed;
-    ::fixy::for_each_field(
-        obj, [&h](auto const& field) noexcept { h = detail::fmix64(h ^ detail_reflect::pack_field(field)); });
+    const auto fold = [&h](auto const& part) noexcept { h = detail::fmix64(h ^ detail_reflect::pack_field(part)); };
+    ::fixy::for_each_base(obj, fold);
+    ::fixy::for_each_field(obj, fold);
     return h;
 }
 

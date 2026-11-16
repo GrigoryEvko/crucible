@@ -145,12 +145,21 @@ struct CoreFields {
     std::uint32_t first = 3;
     std::uint32_t second = 4;
 };
+struct CoreFieldsAndTail : CoreFields {
+    std::uint32_t tail = 5;
+};
 [[nodiscard]] consteval std::uint32_t core_field_sum() {
     std::uint32_t sum = 0;
     ::fixy::for_each_field(CoreFields{}, [&](std::uint32_t field) noexcept { sum += field; });
     return sum;
 }
-static_assert(core_field_sum() == 7);
+[[nodiscard]] consteval std::uint32_t core_base_sum() {
+    std::uint32_t sum = 0;
+    ::fixy::for_each_base(CoreFieldsAndTail{},
+                          [&](CoreFields const& base) noexcept { sum += base.first * 10 + base.second; });
+    return sum;
+}
+static_assert(core_field_sum() == 7 && core_base_sum() == 34);
 struct CoreTag;
 static_assert(sizeof(::fixy::Option<::fixy::Id<CoreTag, std::uint32_t>>) == 4);
 static_assert(::fixy::Digest<CoreTag>{5}.raw() == 5u);

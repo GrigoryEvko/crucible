@@ -4,6 +4,7 @@
 // 0 or 1, or an enumeration value that names no enumerator.  The loops go
 // over each value of the small types.  for_each_field reads each member of
 // a class, the private members too, in the order of the declarations.
+// for_each_base reads each direct base of a class in the same order.
 
 #include <foundation/Quarantine.h>
 #include <foundation/core/Convert.h>
@@ -22,6 +23,7 @@ namespace {
 using ::foundation::core::bit_cast;
 using ::foundation::core::decode;
 using ::foundation::core::enum_from;
+using ::foundation::core::for_each_base;
 using ::foundation::core::for_each_field;
 
 enum class Contiguous : std::uint8_t {
@@ -276,6 +278,12 @@ struct HalvesOfAWord {
     std::uint32_t low : 16 = 0;
     std::uint32_t high : 16 = 0;
 };
+// Two bases: the second one is private, and it is at an offset of 16 bytes.
+struct WordsThenPrivate : Words, private PrivateTriple {
+    WordsThenPrivate(Words words, PrivateTriple triple) noexcept : Words{words}, PrivateTriple{triple} {}
+
+    std::uint8_t tail = 0;
+};
 
 // A field as a word: a bool as 0 or 1, and an integer as its value.
 template <class F>
@@ -339,6 +347,28 @@ void test_for_each_field_reads_own_members_and_bit_fields() {
     assert(calls == 2);
 }
 
+// The walk of the bases reads each direct base one time, in the order of the
+// declarations: a private base at an offset that is not zero too.  A class
+// with no base gives no call.
+void test_for_each_base_reads_each_base_in_order() {
+    WordsThenPrivate const object{Words{opaque(std::uint64_t{1}), opaque(std::uint64_t{2})},
+                                  PrivateTriple{opaque(std::uint32_t{7}), opaque(std::uint16_t{9}), opaque(true)}};
+    std::uint64_t fold = 0;
+    std::size_t bases = 0;
+    for_each_base(object, [&](auto const& base) noexcept {
+        static_assert(std::is_const_v<std::remove_reference_t<decltype(base)>>);
+        std::size_t calls = 0;
+        fold = fold * 10000000 + fold_fields(base, calls);
+        ++bases;
+    });
+    assert(fold == std::uint64_t{1002} * 10000000 + 7009001);
+    assert(bases == 2);
+    bases = 0;
+    for_each_base(PrivateTriple{opaque(std::uint32_t{1}), opaque(std::uint16_t{2}), opaque(false)},
+                  [&](auto const&) noexcept { ++bases; });
+    assert(bases == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -354,6 +384,7 @@ int main() {
     test_for_each_field_reads_private_members_in_order();
     test_for_each_field_gives_no_call_for_an_empty_class();
     test_for_each_field_reads_own_members_and_bit_fields();
+    test_for_each_base_reads_each_base_in_order();
     crucible::test::pass("test_core_scalar: all tests passed\n");
     return 0;
 }

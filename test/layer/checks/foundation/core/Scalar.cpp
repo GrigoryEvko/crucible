@@ -285,6 +285,37 @@ static_assert(field_fold(PrivatePair{7, 9}) == 7009 && field_count(PrivatePair{7
 static_assert(field_fold(Triple{1, 2, 3}) == 1002003 && field_count(Token{}) == 0);
 static_assert(field_fold(WordsAndTail{{1, 2}, 3}) == 3 && field_count(WordsAndTail{{1, 2}, 3}) == 1);
 
+// Two bases, and the first one is private.
+struct PairThenWords : private PrivatePair, Words {
+    constexpr PairThenWords(PrivatePair pair, Words words) noexcept : PrivatePair{pair}, Words{words} {}
+
+    std::uint8_t tail = 0;
+};
+
+// The fields of each base in the order of the walk, as decimal digit groups
+// of six for each base.
+template <class T>
+[[nodiscard]] consteval std::uint64_t base_fold(T const& object) {
+    std::uint64_t fold = 0;
+    for_each_base(object, [&](auto const& base) noexcept { fold = fold * 1000000 + field_fold(base); });
+    return fold;
+}
+
+template <class T>
+[[nodiscard]] consteval std::size_t base_calls(T const& object) {
+    std::size_t count = 0;
+    for_each_base(object, [&](auto const&) noexcept { ++count; });
+    return count;
+}
+
+// The walk of the bases reads each direct base one time, a private base
+// too, in the order of the declarations.  A class with no base gives no
+// call.
+static_assert(base_fold(WordsAndTail{{1, 2}, 3}) == 1002 && base_calls(WordsAndTail{{1, 2}, 3}) == 1);
+static_assert(base_fold(PairThenWords{PrivatePair{7, 9}, Words{1, 2}}) == 7009001002);
+static_assert(base_calls(PairThenWords{PrivatePair{7, 9}, Words{1, 2}}) == 2);
+static_assert(base_calls(Triple{1, 2, 3}) == 0 && base_calls(Token{}) == 0);
+
 // A private View, the private state of a class that keeps an invariant in
 // its copy, and a private sealed member stay private.
 class PrivateAddress {
@@ -312,6 +343,11 @@ static_assert(FieldWalkable<WordsAndTail> && FieldWalkable<PublicAddress>);
 static_assert(!FieldWalkable<PrivateAddress> && !FieldWalkable<PrivateCountedWord>);
 static_assert(!FieldWalkable<PrivateSealedWord> && !FieldWalkable<int>);
 
+// The walk of the bases takes the FieldWalkable classes, as the walk of the
+// fields does.  A class whose base hides an address is refused.
+struct HidesAddressInBase : PrivateAddress {};
+static_assert(FieldWalkable<PairThenWords> && !FieldWalkable<HidesAddressInBase>);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.7: each name of the API table and of
@@ -327,7 +363,7 @@ inline constexpr TextView scalar_names{
     "checked_neg checked_shl checked_shr wrapping_add wrapping_sub wrapping_mul wrapping_neg wrapping_shl "
     "wrapping_shr saturating_add saturating_sub saturating_mul gcd widening_mul WideProduct low high popcount "
     "countl_zero countr_zero countl_one countr_one bit_width has_single_bit bit_floor bit_ceil rotl rotr low_mask "
-    "byteswap bit_cast decode for_each_field is_nan is_inf is_finite is_normal sign_bit abs copy_sign sqrt fma total_key exchange "
+    "byteswap bit_cast decode for_each_field for_each_base is_nan is_inf is_finite is_normal sign_bit abs copy_sign sqrt fma total_key exchange "
     "swap Philox4x32 generate Counter Key multiplier0 multiplier1 weyl_step0 weyl_step1 Id raw Digest Quantity "
     "QuantityUnit convert dimension ratio Byte Element Nanosecond Microsecond Millisecond Second Cycle Memory Count "
     "Time Clock"};

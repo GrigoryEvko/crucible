@@ -28,6 +28,39 @@ struct FixedDims {
     uint8_t count = 0;
 };
 
+// Classes with a base.  Each base holds a field that the class does not
+// repeat, so a fold that skips a base gives one hash for two values.
+struct LowWord {
+    uint32_t low;
+};
+struct HighWord {
+    uint32_t high;
+};
+struct WithBase : LowWord {
+    uint32_t own;
+};
+struct WithTwoBases : LowWord, HighWord {
+    uint32_t own;
+};
+// The fields of WithBase, with the base as a member.
+struct WithLeadingMember {
+    LowWord low;
+    uint32_t own;
+};
+// A private base keeps its value in a private field, as a strong id does.
+class PrivateWord {
+public:
+    constexpr explicit PrivateWord(uint32_t word) noexcept : word_{word} {}
+
+private:
+    uint32_t word_ = 0;
+};
+struct WithPrivateBase : private PrivateWord {
+    constexpr WithPrivateBase(uint32_t word, uint32_t tail) noexcept : PrivateWord{word}, own{tail} {}
+
+    uint32_t own = 0;
+};
+
 int main() {
     Point p1{10, 20, 3.14f};
     Point p2{10, 20, 3.14f};
@@ -53,6 +86,8 @@ int main() {
     // The hash of a Guard is a part of the merkle hash of each branch, and
     // the store keeps that hash.  So these values are frozen: a change of the
     // type of a field, such as the type of the pad, must keep each of them.
+    // A Guard and its OpIndex have no base, so the walk of the bases adds no
+    // step to these values.
     {
         crucible::Guard by_kind{};
         by_kind.kind = crucible::Guard::Kind::OP_SEQUENCE;
@@ -88,6 +123,36 @@ int main() {
         assert(crucible::reflect_hash(f3) == crucible::reflect_hash(d3));
         assert(crucible::reflect_fmix_fold<kSeed>(f1) == crucible::reflect_fmix_fold<kSeed>(d1));
         assert(crucible::reflect_fmix_fold<kSeed>(f3) == crucible::reflect_fmix_fold<kSeed>(d3));
+    }
+
+    // Two values that differ only in a field of a base give two hashes in
+    // each fold.  The bases fold first, in the order of their declarations,
+    // and then the own fields.  So a value that moves from one base to the
+    // other gives a different hash, and a base folds as a leading member of
+    // its type.
+    {
+        constexpr uint64_t kSeed = 0x42415345434C4153ULL;  // "BASECLAS"
+        const WithBase low_one{{1}, 7};
+        const WithBase low_two{{2}, 7};
+        assert(crucible::reflect_hash(low_one) != crucible::reflect_hash(low_two));
+        assert(crucible::reflect_fmix_fold<kSeed>(low_one) != crucible::reflect_fmix_fold<kSeed>(low_two));
+
+        const WithTwoBases high_two{{1}, {2}, 7};
+        const WithTwoBases high_three{{1}, {3}, 7};
+        const WithTwoBases swapped{{2}, {1}, 7};
+        assert(crucible::reflect_hash(high_two) != crucible::reflect_hash(high_three));
+        assert(crucible::reflect_fmix_fold<kSeed>(high_two) != crucible::reflect_fmix_fold<kSeed>(high_three));
+        assert(crucible::reflect_hash(high_two) != crucible::reflect_hash(swapped));
+        assert(crucible::reflect_fmix_fold<kSeed>(high_two) != crucible::reflect_fmix_fold<kSeed>(swapped));
+
+        const WithPrivateBase private_one{1, 7};
+        const WithPrivateBase private_two{2, 7};
+        assert(crucible::reflect_hash(private_one) != crucible::reflect_hash(private_two));
+        assert(crucible::reflect_fmix_fold<kSeed>(private_one) != crucible::reflect_fmix_fold<kSeed>(private_two));
+
+        const WithLeadingMember member_one{{1}, 7};
+        assert(crucible::reflect_hash(low_one) == crucible::reflect_hash(member_one));
+        assert(crucible::reflect_fmix_fold<kSeed>(low_one) == crucible::reflect_fmix_fold<kSeed>(member_one));
     }
 
     // The remaining cases use production types rather than fixtures,

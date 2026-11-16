@@ -182,6 +182,7 @@ using ::foundation::core::DecodableFrom;
 using ::foundation::core::decode;
 using ::foundation::core::enum_from;
 using ::foundation::core::Enumerated;
+using ::foundation::core::for_each_base;
 using ::foundation::core::for_each_field;
 
 using ::foundation::core::Arithmetic;

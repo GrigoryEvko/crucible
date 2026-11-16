@@ -15,6 +15,10 @@
 //                        visit(field) for each non-static data member of a
 //                        class, in the order of the declarations.  The class
 //                        hides no state, or it is plain (FieldWalkable)
+//   for_each_base(object, visit)
+//                        visit(base) for each direct base subobject of a
+//                        FieldWalkable class, in the order of the
+//                        declarations
 //
 // A part that declares a niche (Choice.h) has an empty value that no valid
 // value holds, such as the reserved value of an id.  decode gives no value
@@ -216,6 +220,22 @@ template <class T, class Visit, std::size_t... Indexes>
 constexpr void visit_fields_([[maybe_unused]] T const& object, [[maybe_unused]] Visit& visit,
                              std::index_sequence<Indexes...> /*indexes*/) noexcept {
     (visit_field_at_<Indexes>(object, visit), ...);
+}
+
+// Calls visit with the direct base subobject at Index of object, a private
+// base too.  The splice of a base names the subobject of the base, as a cast
+// to the base type does, with no check of the access.
+template <std::size_t Index, class T, class Visit>
+constexpr void visit_base_at_(T const& object, Visit& visit) noexcept {
+    visit(object.[:std::meta::bases_of(^^T, std::meta::access_context::unchecked())[Index]:]);
+}
+
+// The calls of for_each_base, one for each index, in order.  A class with no
+// base gives an empty pack, and no call reads the two parameters.
+template <class T, class Visit, std::size_t... Indexes>
+constexpr void visit_bases_([[maybe_unused]] T const& object, [[maybe_unused]] Visit& visit,
+                            std::index_sequence<Indexes...> /*indexes*/) noexcept {
+    (visit_base_at_<Indexes>(object, visit), ...);
 }
 
 // True when each base of the class is public, and each non-static data
@@ -469,13 +489,13 @@ template <class To, class From>
     return __builtin_bit_cast(To, source);
 }
 
-// A class whose fields for_each_field gives: each field of the class and of
-// its bases is public, or the class is trivially copyable and plain.  The
-// bytes of a plain class are its value, and bit_cast and decode read them
-// already, so the walk shows no state that the base hides.  A class with a
-// private address, a private seal or a private tag of a sum is refused.  So
-// the walk gives no raw address of a Ref, a View or a Box, and no private
-// value of a sealed wrapper.
+// A class whose fields for_each_field gives, and whose bases for_each_base
+// gives: each field of the class and of its bases is public, or the class is
+// trivially copyable and plain.  The bytes of a plain class are its value,
+// and bit_cast and decode read them already, so the walk shows no state that
+// the base hides.  A class with a private address, a private seal or a
+// private tag of a sum is refused.  So the walk gives no raw address of a
+// Ref, a View or a Box, and no private value of a sealed wrapper.
 template <class T>
 concept FieldWalkable =
     std::is_class_v<T>
@@ -490,6 +510,19 @@ template <class T, class Visit>
     requires FieldWalkable<T>
 constexpr void for_each_field(T const& object, Visit&& visit) noexcept {
     detail::visit_fields_(object, visit, std::make_index_sequence<detail::member_count(^^T)>{});
+}
+
+// Calls visit(base) for each direct base subobject of object, in the order
+// of the declarations.  A private base is a base too.  visit gets each base
+// as a const lvalue of the base type, so a walk of the base reads its own
+// bases and fields.  A class with no base gives no call.  A walk of the
+// whole state of a class visits its bases first and then its fields, as the
+// constructor of the class makes them.  Complexity: one call of visit for
+// each direct base.
+template <class T, class Visit>
+    requires FieldWalkable<T>
+constexpr void for_each_base(T const& object, Visit&& visit) noexcept {
+    detail::visit_bases_(object, visit, std::make_index_sequence<detail::base_count(^^T)>{});
 }
 
 }  // namespace foundation::core

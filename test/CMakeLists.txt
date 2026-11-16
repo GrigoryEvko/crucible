@@ -3144,11 +3144,19 @@ crucible_neg_compile_test(neg_reflect_pack_field_unsupported_category
 
 # reflect_hash refuses a pointer field, because an address changes from run
 # to run.  The pointer of a TensorMeta is the private state of a Tagged, so
-# the field walk refuses the Tagged.  It refuses each other Tagged of a
-# TensorMeta too, so the first regex matches each refusal.
+# the walk of the bases and the walk of the fields refuse the Tagged.  They
+# refuse each other Tagged of a TensorMeta too, so the first regex matches
+# each refusal.
 crucible_neg_compile_test(neg_reflect_hash_pointer_field
-  "no matching function for call to .for_each_field\\(const fixy::Tagged<"
+  "no matching function for call to .for_each_(base|field)\\(const fixy::Tagged<"
   "required for the satisfaction of .FieldWalkable<T>. \\[with T = fixy::Tagged<void\\*, fixy::tags::source::External>\\]")
+
+# reflect_hash folds each base of a class, so a View field of a public base,
+# which holds an address, reaches the refusal of the walks.  A fold that
+# skips the bases compiles the fixture.
+crucible_neg_compile_test(neg_reflect_hash_pointer_in_base
+  "no matching function for call to .for_each_(base|field)\\(const foundation::core::View<const int>&"
+  "required for the satisfaction of .FieldWalkable<T>. \\[with T = foundation::core::View<const int, [0-9]+>\\]")
 
 # ─── Philox op_key DetSafe gate neg-compiles (2 fixtures) ───────────
 #
