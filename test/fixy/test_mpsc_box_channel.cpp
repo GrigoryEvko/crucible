@@ -87,6 +87,8 @@ void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
         static_assert(std::is_same_v<c::producer_handle_value_t<Channel::ProducerHandle>, fixy::Box<Parcel>>);
         static_assert(std::is_same_v<c::consumer_handle_value_t<Channel::ConsumerHandle>, fixy::Box<Parcel>>);
         static_assert(c::HandlesShareChannel<Channel::ProducerHandle, Channel::ConsumerHandle>);
+        // Each handle states the capacity of the channel.
+        static_assert(Channel::ProducerHandle::channel_capacity == 2 && Channel::ConsumerHandle::channel_capacity == 2);
         static_assert(!std::is_copy_constructible_v<Channel::ProducerHandle>);
         static_assert(!std::is_move_assignable_v<Channel::ConsumerHandle>);
         static_assert(!std::is_move_constructible_v<Channel>);

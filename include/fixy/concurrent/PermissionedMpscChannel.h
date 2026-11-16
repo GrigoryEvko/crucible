@@ -136,6 +136,9 @@ public:
         // only when the producer of one and the consumer of the next name
         // the same channel, and at the mint, the same channel instance.
         using channel_type = PermissionedMpscChannel;
+        // The capacity of the channel.  A check of the waits reads it from
+        // the type of the handle, as from the type of the channel.
+        static constexpr std::size_t channel_capacity = Capacity;
 
         ProducerHandle(const ProducerHandle&) =
             delete("ProducerHandle owns a Pool refcount share — copy would double-count");
@@ -196,6 +199,7 @@ public:
         using row_payload = T;
         using brand_type = Brand;
         using channel_type = PermissionedMpscChannel;
+        static constexpr std::size_t channel_capacity = Capacity;
 
         ConsumerHandle(const ConsumerHandle&) =
             delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");

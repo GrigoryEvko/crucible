@@ -33,6 +33,13 @@ static_assert(sizeof(Witness::ConsumerHandle) == sizeof(void*));
 // An assignment would drop the token of the target handle.
 static_assert(!std::is_move_assignable_v<Witness::ConsumerHandle>);
 
+// Each handle states the capacity of its channel, so a check of the waits
+// reads it from the type of the handle.
+static_assert(Witness::ProducerHandle::channel_capacity == 8 && Witness::ConsumerHandle::channel_capacity == 8);
+using WideWitness = PermissionedMpscChannel<int, 64, WitnessTag, WitnessBrand>;
+static_assert(WideWitness::ProducerHandle::channel_capacity == WideWitness::channel_capacity
+              && WideWitness::ConsumerHandle::channel_capacity == 64);
+
 }  // namespace detail::mpsc_channel_self_test
 
 }  // namespace fixy::concurrent

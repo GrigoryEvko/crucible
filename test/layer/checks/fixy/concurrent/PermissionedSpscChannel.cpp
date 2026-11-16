@@ -39,6 +39,13 @@ static_assert(!std::is_move_assignable_v<Witness::ProducerHandle>
 static_assert(sizeof(Witness::ProducerHandle) == sizeof(void*));
 static_assert(sizeof(Witness::ConsumerHandle) == sizeof(void*));
 
+// Each handle states the capacity of its channel, so a check of the waits
+// reads it from the type of the handle.
+static_assert(Witness::ProducerHandle::channel_capacity == 8 && Witness::ConsumerHandle::channel_capacity == 8);
+using WideWitness = PermissionedSpscChannel<int, 64, WitnessTag, OtherBrand>;
+static_assert(WideWitness::ProducerHandle::channel_capacity == WideWitness::channel_capacity
+              && WideWitness::ConsumerHandle::channel_capacity == 64);
+
 }  // namespace detail::spsc_channel_self_test
 
 }  // namespace fixy::concurrent

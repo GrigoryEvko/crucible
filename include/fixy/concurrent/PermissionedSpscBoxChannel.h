@@ -103,6 +103,9 @@ public:
         // it, so a pipeline joins them as it joins the handles of the inner
         // channel.
         using channel_type = cell_channel;
+        // The capacity of the channel.  A check of the waits reads it from
+        // the type of the handle, as from the type of the channel.
+        static constexpr std::size_t channel_capacity = Capacity;
 
         ProducerHandle(ProducerHandle const&) =
             delete("ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
@@ -155,6 +158,7 @@ public:
         using row_payload = value_type;
         using brand_type = Brand;
         using channel_type = cell_channel;
+        static constexpr std::size_t channel_capacity = Capacity;
 
         ConsumerHandle(ConsumerHandle const&) =
             delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
