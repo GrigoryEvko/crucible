@@ -324,7 +324,7 @@ test/ct/ | std-entity | 18 | - | -
 test/ct/ | std-object | 12 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 87 | - | -
-test/fixy/ | c-library-call | 1191 | - | -
+test/fixy/ | c-library-call | 1182 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 12 | - | -
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -350,7 +350,7 @@ test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family,
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 147 | - | -
+test/fixy/ | raw-pointer-object | 146 | - | -
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | region | 1 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
@@ -375,7 +375,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2699 | - | -
+test/fixy/ | std-entity | 2706 | - | -
 test/fixy/ | std-object | 983 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
@@ -431,7 +431,7 @@ test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
 test/fixy/neg/ | std-entity | 101 | - | -
 test/fixy/neg/ | std-object | 47 | - | -
 test/foundation/ | c-array-object | 25 | - | -
-test/foundation/ | c-library-call | 311 | - | -
+test/foundation/ | c-library-call | 299 | - | -
 test/foundation/ | c-library-object | 5 | - | -
 test/foundation/ | door-header | 3 | - | -
 test/foundation/ | foreign-symbol | 5 | - | -
@@ -456,7 +456,7 @@ test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | raw-function-pointer | 14 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
-test/foundation/ | raw-pointer-object | 37 | - | -
+test/foundation/ | raw-pointer-object | 36 | - | -
 test/foundation/ | region | 1 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | region | 1 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | region | 1 | ORACLE: std::array is the model of the writes of a FixedArray | -
@@ -479,7 +479,7 @@ test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a 
 test/foundation/ | replace-pending:<limits> | 52 | - | -
 test/foundation/ | replace-pending:std::bit_cast | 8 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
-test/foundation/ | std-entity | 474 | - | -
+test/foundation/ | std-entity | 475 | - | -
 test/foundation/ | std-object | 174 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -

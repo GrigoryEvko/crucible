@@ -2,16 +2,17 @@
 // through the target's full warning matrix.  The body then exercises
 // the consteval message builder with non-constant arguments.
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/diag/RowMismatch.h>
 #include <foundation/diag/tags/Rows.h>
 #include <foundation/diag/tags/Tiers.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdio>
-#include <cstdlib>
 #include <string_view>
 #include <type_traits>
-#include "../test_assert.h"
 
 // The display-name tests need functions at namespace scope.
 inline void sample_dispatch(int) noexcept {}
@@ -20,38 +21,7 @@ inline void smoke_fn(int) noexcept {}
 
 namespace {
 
-struct TestFailure {};
-int total_passed = 0;
-int total_failed = 0;
-
-template <typename F>
-void run_test(const char* name, F&& body) {
-    std::fprintf(stderr, "  %s: ", name);
-    try {
-        body();
-        ++total_passed;
-        std::fprintf(stderr, "PASSED\n");
-    } catch (TestFailure&) {
-        ++total_failed;
-        std::fprintf(stderr, "FAILED\n");
-    }
-}
-
-#define EXPECT_TRUE(cond)                                                                            \
-    do {                                                                                             \
-        if (!(cond)) {                                                                               \
-            std::fprintf(stderr, "    EXPECT_TRUE failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
-            throw TestFailure{};                                                                     \
-        }                                                                                            \
-    } while (0)
-
-#define EXPECT_EQ(a, b)                                                                                   \
-    do {                                                                                                  \
-        if (!((a) == (b))) {                                                                              \
-            std::fprintf(stderr, "    EXPECT_EQ failed: %s == %s (%s:%d)\n", #a, #b, __FILE__, __LINE__); \
-            throw TestFailure{};                                                                          \
-        }                                                                                                 \
-    } while (0)
+using ::fixy::check::pass;
 
 namespace diag = ::foundation::diag;
 
@@ -80,24 +50,24 @@ void test_runtime_smoke() {
     (void)fn_sink;
 }
 
-void test_type_name_is_the_printed_name() {
+void test_type_name_is_the_printed_name(::fixy::TestRunnerCtx const& test) {
     static_assert(diag::type_name<int> == "int");
     static_assert(diag::type_name<float> == "float");
     static_assert(diag::type_name<void> == "void");
 
-    EXPECT_TRUE(diag::type_name<int>.ends_with("int"));
+    CRUCIBLE_TEST_ASSERT(test, diag::type_name<int>.ends_with("int"));
 }
 
-void test_function_display_name_non_empty() {
+void test_function_display_name_non_empty(::fixy::TestRunnerCtx const& test) {
     constexpr auto n1 = diag::function_display_name<&::sample_dispatch>;
     constexpr auto n2 = diag::function_display_name<&::sample_compute>;
     static_assert(!n1.empty());
     static_assert(!n2.empty());
 
-    EXPECT_TRUE(!n1.empty());
-    EXPECT_TRUE(!n2.empty());
+    CRUCIBLE_TEST_ASSERT(test, !n1.empty());
+    CRUCIBLE_TEST_ASSERT(test, !n2.empty());
 
-    EXPECT_TRUE(n1 != n2);
+    CRUCIBLE_TEST_ASSERT(test, n1 != n2);
 
     // The extracted name must carry the function's own identifier, not
     // just its pointer-type signature.  The search runs at runtime
@@ -107,8 +77,8 @@ void test_function_display_name_non_empty() {
                  "\n      [function_display_name<&sample_dispatch>] = %.*s\n"
                  "      [function_display_name<&sample_compute>]  = %.*s\n      ",
                  static_cast<int>(n1.size()), n1.data(), static_cast<int>(n2.size()), n2.data());
-    EXPECT_TRUE(n1.find("sample_dispatch") != std::string_view::npos);
-    EXPECT_TRUE(n2.find("sample_compute") != std::string_view::npos);
+    CRUCIBLE_TEST_ASSERT(test, n1.find("sample_dispatch") != std::string_view::npos);
+    CRUCIBLE_TEST_ASSERT(test, n2.find("sample_compute") != std::string_view::npos);
 }
 
 // Version 1 is a block of 7 lines. The header derives the line count
@@ -130,6 +100,7 @@ void test_message_builder_format_shape() {
     // through the ordinary string_view API below, because the defect is
     // constexpr-only.
 
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     static constexpr auto msg =
         diag::build_row_mismatch_message<diag::EffectRowMismatch, &::sample_dispatch, int, float, double>();
 
@@ -138,23 +109,23 @@ void test_message_builder_format_shape() {
     static_assert(diag::detail::buffer_count_char(msg, '\n') == diag::CRUCIBLE_DIAG_FORMAT_LINES);
 
     std::string_view const view = msg.view();
-    EXPECT_TRUE(view.starts_with("[EffectRowMismatch]"));
-    EXPECT_TRUE(view.ends_with("\n"));
-    EXPECT_TRUE(view.contains("\n  at "));
-    EXPECT_TRUE(view.contains("\n  caller row contains: "));
-    EXPECT_TRUE(view.contains("\n  callee requires:     Subrow<_, "));
-    EXPECT_TRUE(view.contains("\n  offending atoms:     "));
-    EXPECT_TRUE(view.contains("\n  remediation: "));
-    EXPECT_TRUE(view.contains("\n  docs: "));
+    CRUCIBLE_TEST_ASSERT(test, view.starts_with("[EffectRowMismatch]"));
+    CRUCIBLE_TEST_ASSERT(test, view.ends_with("\n"));
+    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  at "));
+    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  caller row contains: "));
+    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  callee requires:     Subrow<_, "));
+    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  offending atoms:     "));
+    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  remediation: "));
+    CRUCIBLE_TEST_ASSERT(test, view.contains("\n  docs: "));
 
     std::size_t newlines = 0;
     for (char c : view) {
         if (c == '\n') ++newlines;
     }
-    EXPECT_EQ(newlines, std::size_t{diag::CRUCIBLE_DIAG_FORMAT_LINES});
+    CRUCIBLE_TEST_ASSERT(test, newlines == std::size_t{diag::CRUCIBLE_DIAG_FORMAT_LINES});
 }
 
-void test_message_builder_per_category() {
+void test_message_builder_per_category(::fixy::TestRunnerCtx const& test) {
     static constexpr auto msg_a =
         diag::build_row_mismatch_message<diag::HotPathViolation, &::sample_dispatch, int, float, double>();
     static constexpr auto msg_b =
@@ -163,14 +134,14 @@ void test_message_builder_per_category() {
     std::string_view const view_a = msg_a.view();
     std::string_view const view_b = msg_b.view();
 
-    EXPECT_TRUE(view_a.starts_with("[HotPathViolation]"));
-    EXPECT_TRUE(view_b.starts_with("[DetSafeLeak]"));
+    CRUCIBLE_TEST_ASSERT(test, view_a.starts_with("[HotPathViolation]"));
+    CRUCIBLE_TEST_ASSERT(test, view_b.starts_with("[DetSafeLeak]"));
 
     // The category selects the remediation text as well as the tag.
-    EXPECT_TRUE(view_a != view_b);
+    CRUCIBLE_TEST_ASSERT(test, view_a != view_b);
 }
 
-void test_row_mismatch_message_v_caching() {
+void test_row_mismatch_message_v_caching(::fixy::TestRunnerCtx const& test) {
     constexpr auto& cached1 =
         diag::row_mismatch_message_v<diag::EffectRowMismatch, &::sample_dispatch, int, float, double>;
     constexpr auto& cached2 =
@@ -179,12 +150,12 @@ void test_row_mismatch_message_v_caching() {
     // One address for both means the linker collapsed the inline
     // constexpr to a single definition rather than rebuilding the
     // message per use.
-    EXPECT_EQ(&cached1, &cached2);
+    CRUCIBLE_TEST_ASSERT(test, &cached1 == &cached2);
 
     static_assert(cached1.data[std::size_t{0}] == '[');
-    EXPECT_EQ(cached1.data[std::size_t{0}], '[');
+    CRUCIBLE_TEST_ASSERT(test, cached1.data[std::size_t{0}] == '[');
 
-    EXPECT_TRUE(cached1.view().starts_with("[EffectRowMismatch]"));
+    CRUCIBLE_TEST_ASSERT(test, cached1.view().starts_with("[EffectRowMismatch]"));
 }
 
 void test_macro_happy_path() {
@@ -199,17 +170,23 @@ void test_macro_happy_path() {
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_row_mismatch:\n");
-    run_test("test_runtime_smoke", test_runtime_smoke);
-    run_test("test_type_name_is_the_printed_name", test_type_name_is_the_printed_name);
-    run_test("test_function_display_name_non_empty", test_function_display_name_non_empty);
-    run_test("test_format_version", test_format_version);
-    run_test("test_message_builder_format_shape", test_message_builder_format_shape);
-    run_test("test_message_builder_per_category", test_message_builder_per_category);
-    run_test("test_row_mismatch_message_v_caching", test_row_mismatch_message_v_caching);
-    run_test("test_macro_happy_path", test_macro_happy_path);
-    crucible::test::pass("\n{} passed, {} failed\n", total_passed, total_failed);
-    if (total_failed > 0) return EXIT_FAILURE;
-    crucible::test::pass("ALL PASSED\n");
-    return EXIT_SUCCESS;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_runtime_smoke();
+    pass(test, "  test_runtime_smoke: PASSED\n");
+    test_type_name_is_the_printed_name(test);
+    pass(test, "  test_type_name_is_the_printed_name: PASSED\n");
+    test_function_display_name_non_empty(test);
+    pass(test, "  test_function_display_name_non_empty: PASSED\n");
+    test_format_version();
+    pass(test, "  test_format_version: PASSED\n");
+    test_message_builder_format_shape();
+    pass(test, "  test_message_builder_format_shape: PASSED\n");
+    test_message_builder_per_category(test);
+    pass(test, "  test_message_builder_per_category: PASSED\n");
+    test_row_mismatch_message_v_caching(test);
+    pass(test, "  test_row_mismatch_message_v_caching: PASSED\n");
+    test_macro_happy_path();
+    pass(test, "  test_macro_happy_path: PASSED\n");
+    pass(test, "test_row_mismatch: ALL PASSED\n");
+    return 0;
 }
