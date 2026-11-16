@@ -25,6 +25,11 @@
 //   scope dense         the loop of the indexes of a scope with at() on three
 //                       dense parallel views
 //   scope transposed    the same loop with a transposed left view
+//   pointwise dense, broadcast, step 2, step 3, transposed, three inputs
+//                       write_pointwise of foundation/core/Pointwise.h over
+//                       the same views, in one frame of the output.  Step 3
+//                       takes the General loop, and the transposed left view
+//                       takes the tile path
 // The L1 size also has the loop of a FixedArray with a proven Index, the
 // code of the index loop of the type system.
 //
@@ -42,10 +47,12 @@
 
 #include <fixy/Core.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/Pointwise.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include "bench_harness.h"
 
@@ -186,6 +193,38 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     });
 }
 
+// The ops of the pointwise rows.  Each one is a generic call, so it is a lane
+// op of 16 floats.
+struct AddOp final {
+    template <class X>
+    constexpr X operator()(X left, X right) const noexcept {
+        return left + right;
+    }
+};
+struct MultiplyAddOp final {
+    template <class X>
+    constexpr X operator()(X first, X second, X third) const noexcept {
+        return first * second + third;
+    }
+};
+
+// The pointwise kernels.  Out is the unique view of a frame, so each kernel is
+// a template, and each instance is one hot symbol.
+template <class Out>
+[[gnu::noinline, gnu::hot]] void pointwise_add(Out& out, PlaneRead left, PlaneRead right) noexcept {
+    if (::foundation::core::write_pointwise(out, AddOp{}, left, right).is_err()) {
+        ::fixy::fatal("the three views of the bench have one shape");
+    }
+}
+
+template <class Out>
+[[gnu::noinline, gnu::hot]] void pointwise_three(Out& out, PlaneRead first, PlaneRead second,
+                                                 PlaneRead third) noexcept {
+    if (::foundation::core::write_pointwise(out, MultiplyAddOp{}, first, second, third).is_err()) {
+        ::fixy::fatal("the four views of the bench have one shape");
+    }
+}
+
 // The value of the element at position of an input.
 [[nodiscard]] float value_at(std::size_t position) noexcept {
     return static_cast<float>(position % 1021) * 0.25f + 0.5f;
@@ -204,6 +243,7 @@ void run_level(Level const& level) noexcept {
     Storage const third = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
     Storage const row = ::fixy::mint_heap_array_with<float, 64>(test.alloc, columns, fill);
     Storage const wide = ::fixy::mint_heap_array_with<float, 64>(test.alloc, 2 * count, fill);
+    Storage const wider = ::fixy::mint_heap_array_with<float, 64>(test.alloc, 3 * count, fill);
 
     ::fixy::View<float const> const left_run = left.view();
     ::fixy::View<float const> const right_run = right.view();
@@ -215,9 +255,11 @@ void run_level(Level const& level) noexcept {
     // The left run read as a matrix of columns x rows, transposed.
     PlaneRead const transposed = plane_of(left_run, rows, columns, 1, rows);
     PlaneRead const every_second = plane_of(wide_run, rows, columns, 2 * columns, 2);
+    PlaneRead const every_third = plane_of(::fixy::View<float const>{wider.view()}, rows, columns, 3 * columns, 3);
     ::fixy::FixedArray<std::size_t, 1> const row_size{columns};
     ::fixy::FixedArray<std::size_t, 1> const row_stride{1};
     ::fixy::FixedArray<std::size_t, 2> const plane_sizes{rows, columns};
+    ::fixy::FixedArray<std::size_t, 2> const plane_strides{columns, 1};
     PlaneRead const broadcast =
         ::fixy::mint_strided_view(::fixy::View<float const>{row.view()}, row_size.view(), row_stride.view(), 0)
             .expect("one row fits")
@@ -306,6 +348,36 @@ void run_level(Level const& level) noexcept {
                           bench::do_not_optimize(out);
                       }),
               three_views, roof);
+
+    // The pointwise rows, in one frame of the output.  The inputs are plain
+    // views of other owners, so each walk compares the address ranges.
+    out = ::fixy::with_mut(std::move(out), [&](auto run) noexcept {
+        auto unique = ::fixy::mint_strided_view_mut(std::move(run), plane_sizes.view(), plane_strides.view(), 0)
+                          .expect("a dense plane has no overlap");
+        print_row(level, "pointwise dense",
+                  measure(bench::Run{"pointwise dense"}, wall, [&] { pointwise_add(unique, left_view, right_view); }),
+                  three_views, roof);
+        print_row(
+            level, "pointwise broadcast",
+            measure(bench::Run{"pointwise broadcast"}, wall, [&] { pointwise_add(unique, left_view, broadcast); }),
+            three_views, roof);
+        print_row(
+            level, "pointwise step 2",
+            measure(bench::Run{"pointwise step 2"}, wall, [&] { pointwise_add(unique, every_second, right_view); }),
+            three_views, roof);
+        print_row(
+            level, "pointwise step 3",
+            measure(bench::Run{"pointwise step 3"}, wall, [&] { pointwise_add(unique, every_third, right_view); }),
+            three_views, roof);
+        print_row(
+            level, "pointwise transposed",
+            measure(bench::Run{"pointwise transposed"}, wall, [&] { pointwise_add(unique, transposed, right_view); }),
+            three_views, roof);
+        print_row(level, "pointwise three inputs",
+                  measure(bench::Run{"pointwise three inputs"}, wall,
+                          [&] { pointwise_three(unique, left_view, right_view, third_view); }),
+                  four_views, roof);
+    });
 }
 
 // The FixedArray row of the L1 size.
