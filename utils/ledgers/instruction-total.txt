@@ -20,5 +20,5 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-- | x86_64-debug-asan | 9829992367315 | fixtures | the tree grew on 2026-11-14 and 2026-11-15 by the Check family, the session caches, new tests and fixtures, and main sat just under 5% over the old baseline (run-001831 measured 21812.8 G against 20770.4 G)
-- | x86_64-debug-asan | 11952633701040 | objects | the tree grew on 2026-11-14 and 2026-11-15 by the Check family, the session caches, new tests and fixtures, and main sat just under 5% over the old baseline (run-001831 measured 21812.8 G against 20770.4 G)
+- | x86_64-debug-asan | 9969961244139 | fixtures | owner decision of 2026-11-15: fixy/Core.h includes StorageFloat.h in each object and fixture, and the storage formats add two tests and three fixtures.  run-002417 measured 22922.6 G against 21782.6 G, 5.23% above the baseline
+- | x86_64-debug-asan | 12952496812105 | objects | owner decision of 2026-11-15: fixy/Core.h includes StorageFloat.h in each object and fixture, and the storage formats add two tests and three fixtures.  run-002417 measured 22922.6 G against 21782.6 G, 5.23% above the baseline
