@@ -15,6 +15,10 @@ region, exports the region as a .crtrace file, and reads the file back:
                     differs.  The content hash of a region folds these slots
     large storage   a tensor of the meta device with a storage of 98 GiB
                     keeps its storage size, which 32 bits cannot hold
+    data pointers   each meta of the file holds zero in place of the address
+                    of its tensor, so two runs export the same bytes
+    path parts      the export refuses a path with a ".." part, and it takes
+                    a plain path in the same session
 
 Usage:
     python test_record_coverage.py
@@ -59,6 +63,7 @@ META_SIZE = ctypes.sizeof(crucible_mode._VesselLib.Meta)
 META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset
 META_DTYPE_OFFSET = crucible_mode._VesselLib.Meta.dtype.offset
 META_STORAGE_NBYTES_OFFSET = crucible_mode._VesselLib.Meta.storage_nbytes.offset
+META_DATA_PTR_OFFSET = crucible_mode._VesselLib.Meta.data_ptr.offset
 
 # A storage of 98 GiB.  A tensor of the meta device has a storage size and
 # no memory, so the test allocates nothing.
@@ -201,6 +206,33 @@ def check_large_storage(ops: list[TraceOp]) -> list[str]:
     return []
 
 
+def check_data_pointers(ops: list[TraceOp]) -> list[str]:
+    """Return one line when a meta of the file holds a data address that is not zero."""
+    addresses = {struct.unpack_from("<Q", meta, META_DATA_PTR_OFFSET)[0] for op in ops for meta in op.metas}
+    if addresses - {0}:
+        return [f"{len(addresses - {0})} metas of the file hold a data address, which differs in each run"]
+    return []
+
+
+def check_path_parts(directory: Path) -> list[str]:
+    """Return one line when the export takes a path with a ".." part, or refuses a plain path."""
+    (directory / "sub").mkdir(exist_ok=True)
+    with CrucibleNative() as ctx:
+        for _ in range(MAX_ITERATIONS):
+            narrow_step()
+            if ctx.active_num_ops() > 0:
+                break
+            ctx.flush()
+        if ctx.active_num_ops() == 0:
+            return [f"no region after {MAX_ITERATIONS} iterations"]
+        problems = []
+        if ctx.export_trace(str(directory / "sub" / ".." / "parts.crtrace")):
+            problems.append('the export took a path with a ".." part')
+        if not ctx.export_trace(str(directory / "plain.crtrace")):
+            problems.append("the export refused a plain path")
+    return problems
+
+
 def update_slots(ops: list[TraceOp]) -> tuple[int, ...]:
     """Return the scalar slots of the fused update of a region."""
     wanted = schema_hash("aten::_foreach_add_.ScalarList")
@@ -233,6 +265,7 @@ def main() -> int:
         narrow_ops = record(narrow_step, directory, "narrow")
         problems = check_narrow_dtypes(narrow_ops) + check_scalar_result(narrow_ops) + check_overflow(directory)
         problems += check_large_storage(record(large_storage_step(), directory, "large"))
+        problems += check_data_pointers(narrow_ops) + check_path_parts(directory)
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:

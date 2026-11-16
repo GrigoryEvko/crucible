@@ -198,6 +198,100 @@ static void test_round_trip_single_op() {
     crucible::test::pass("  test_round_trip_single_op:      PASSED\n");
 }
 
+// The three encoders of the writer give a file that the loader reads back
+// field by field.  The data pointer of a meta is an address of the process,
+// and the encoder writes zero in its place.
+static void test_encoders_round_trip_through_the_loader() {
+    TensorMeta meta{};
+    meta.ndim = 2;
+    meta.sizes[0] = tensor_dim(3);
+    meta.sizes[1] = tensor_dim(4);
+    meta.strides[0] = tensor_dim(4);
+    meta.strides[1] = tensor_dim(1);
+    meta.data_ptr = external_data_ptr(&meta);
+    meta.dtype = ScalarType::Float;
+    meta.requires_grad = true;
+    meta.output_nr = 1;
+    meta.storage_offset = 5;
+    meta.version = 7;
+    meta.storage_nbytes = 64;
+
+    TraceOpRecord record{};
+    record.schema_hash = SchemaHash{0xAABBCCDDEEFF0011ULL};
+    record.shape_hash = ShapeHash{0x1122334455667788ULL};
+    record.scope_hash = ScopeHash{0xDEADBEEFCAFEBABEULL};
+    record.callsite_hash = CallsiteHash{0xFEEDFACE000000ADULL};
+    record.scalar_values.at(::fixy::index<0>()) = -9;
+    record.num_inputs = 1;
+    record.num_scalars = 1;
+    record.grad_enabled = 1;
+
+    const ::fixy::FixedArray<std::byte, TRACE_META_BYTES> meta_bytes = encode_trace_meta(meta);
+    for (const std::byte byte : meta_bytes.view()
+                                    .window<sizeof(uint64_t)>(offsetof(TensorMeta, data_ptr))
+                                    .expect("the data pointer lies inside the record")) {
+        assert(byte == std::byte{0});
+    }
+
+    // The header, one op, one meta, and a name table of no name.
+    constexpr size_t kOpAt = TRACE_HEADER_BYTES;
+    constexpr size_t kMetaAt = kOpAt + sizeof(TraceOpRecord);
+    constexpr size_t kBytes = kMetaAt + TRACE_META_BYTES + sizeof(uint32_t);
+    const ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header_bytes = encode_trace_header(1, 1);
+    const ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)> op_bytes = encode_trace_op(record);
+    ::fixy::FixedArray<std::byte, kBytes> image{};
+    ::fixy::copy(image.view().window<TRACE_HEADER_BYTES>(0).expect("the header fits the image"), header_bytes.view());
+    ::fixy::copy(image.view().window<sizeof(TraceOpRecord)>(kOpAt).expect("the op fits the image"), op_bytes.view());
+    ::fixy::copy(image.view().window<TRACE_META_BYTES>(kMetaAt).expect("the meta fits the image"), meta_bytes.view());
+
+    // The file is in the working directory of the test, which is in its build
+    // directory, so two builds on one host write two files.
+    constexpr ::fixy::CText kFileName{"crtrace-encoders.bin"};
+    const auto checked = [](::fixy::TextView text) noexcept {
+        return ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(text))
+            .expect("a plain relative path passes the check");
+    };
+    const ::fixy::fs::Dirfd here =
+        ::fixy::fs::open_dirfd(kTestIo, checked(::fixy::TextView{"."})).expect("the working directory opens");
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(kTestIo, here, kFileName)
+                                .match(
+                                    [&image](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept {
+                                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                                        return ::fixy::fs::write_full(kTestIo, file, image.view()).is_ok();
+                                    },
+                                    [](::foundation::os::Errno) noexcept { return false; });
+    assert(is_written);
+    const LoadedTrace trace = load_trace(kTestIo, checked(kFileName.view())).expect("an encoded trace loads");
+    assert(::fixy::fs::unlink_at(kTestIo, here, kFileName).is_ok());
+
+    assert(trace.num_ops == 1);
+    assert(trace.num_metas == 1);
+    const TraceRing::Entry& entry = *trace.entries.get(0).expect("the trace holds one op");
+    assert(entry.schema_hash == record.schema_hash);
+    assert(entry.shape_hash == record.shape_hash);
+    assert(entry.num_inputs == 1);
+    assert(entry.num_outputs == 0);
+    assert(entry.num_scalar_args == 1);
+    assert(entry.scalar_values.at(::fixy::index<0>()) == -9);
+    assert((entry.op_flags & op_flag::GRAD_ENABLED) != 0);
+    assert(*trace.scope_hashes.get(0).expect("the trace holds one op") == record.scope_hash);
+    assert(*trace.callsite_hashes.get(0).expect("the trace holds one op") == record.callsite_hash);
+
+    const TensorMeta& loaded = *trace.metas.get(0).expect("the trace holds one meta");
+    assert(loaded.ndim == 2);
+    assert(loaded.sizes[0].value() == 3 && loaded.sizes[1].value() == 4);
+    assert(loaded.strides[0].value() == 4 && loaded.strides[1].value() == 1);
+    assert(loaded.dtype == ScalarType::Float);
+    assert(loaded.requires_grad);
+    assert(loaded.output_nr == 1);
+    assert(loaded.storage_offset == 5);
+    assert(loaded.version == 7);
+    assert(loaded.storage_nbytes == 64);
+    assert(loaded.data_ptr.value() == nullptr);
+    crucible::test::pass("  test_encoders_round_trip:       PASSED\n");
+}
+
 // The trailing schema-name section of the file carries a length field
 // gated by a refinement over one to 256 bytes.
 //
@@ -523,6 +617,7 @@ int main() {
     test_happy_path_zero_ops();
     test_adversarial_num_ops_rejected();
     test_round_trip_single_op();
+    test_encoders_round_trip_through_the_loader();
     test_schema_name_table_round_trip();
     test_schema_name_table_corrupt_zero_len();
     test_schema_name_table_corrupt_oversize_len();
@@ -531,6 +626,6 @@ int main() {
     test_meta_count_uint16_overflow_rejected();
     test_meta_bytes_break_no_claim_of_the_type();
     test_names_on_a_sealed_table_are_skipped();
-    crucible::test::pass("test_trace_loader: 18 groups, all passed\n");
+    crucible::test::pass("test_trace_loader: 19 groups, all passed\n");
     return 0;
 }

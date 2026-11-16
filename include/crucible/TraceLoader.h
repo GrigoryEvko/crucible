@@ -319,6 +319,93 @@ decode_trace_meta(::fixy::View<std::byte const, sizeof(TensorMeta)> raw) noexcep
     return decode_tensor_meta(fields, ExternalDataPtr{});
 }
 
+// THE WRITER
+//   The encoders below put each field of a record at the offset that the
+//   loader reads it from, as the integer of its width.  So the writer of a
+//   trace and the loader agree field by field.
+
+namespace detail {
+
+// Puts the bytes of value at the offset Offset of a record.  The inverse of
+// read_record_field_: the bytes and the platform are little-endian.
+template <std::size_t Offset, class Field, std::size_t RecordBytes>
+    requires(Offset <= RecordBytes && sizeof(Field) <= RecordBytes - Offset)
+inline void write_record_field_(::fixy::View<std::byte, RecordBytes> record, Field const& value) noexcept {
+    const auto image = ::fixy::bit_cast<::fixy::FixedArray<std::byte, sizeof(Field)>>(value);
+    ::fixy::copy(record.template window<sizeof(Field)>(Offset).expect(
+                     "the bound of the template puts the field inside its record"),
+                 image.view());
+}
+
+// The lanes of a block of sizes or strides, as the array that a record holds.
+[[nodiscard]] inline ::fixy::FixedArray<int64_t, kMaxTensorNDim> record_lanes_(TensorDimArray const& block) noexcept {
+    ::fixy::FixedArray<int64_t, kMaxTensorNDim> lanes{};
+    ::fixy::copy(lanes.view(), block.lanes());
+    return lanes;
+}
+
+}  // namespace detail
+
+// The header of a trace of num_ops ops and num_metas metadata records.
+[[nodiscard]] inline ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES>
+encode_trace_header(uint32_t num_ops, uint32_t num_metas) noexcept {
+    using detail::write_record_field_;
+    ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header{};
+    const ::fixy::View<std::byte, TRACE_HEADER_BYTES> bytes = header.view();
+    write_record_field_<0>(bytes, TRACE_MAGIC);
+    write_record_field_<4>(bytes, TRACE_FORMAT_VERSION);
+    write_record_field_<8>(bytes, num_ops);
+    write_record_field_<12>(bytes, num_metas);
+    return header;
+}
+
+// The bytes of one op record, at the offsets of TraceOpRecord.
+[[nodiscard]] inline ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)>
+encode_trace_op(TraceOpRecord const& record) noexcept {
+    using detail::write_record_field_;
+    ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)> image{};
+    const ::fixy::View<std::byte, sizeof(TraceOpRecord)> bytes = image.view();
+    write_record_field_<offsetof(TraceOpRecord, schema_hash)>(bytes, record.schema_hash.raw());
+    write_record_field_<offsetof(TraceOpRecord, shape_hash)>(bytes, record.shape_hash.raw());
+    write_record_field_<offsetof(TraceOpRecord, scope_hash)>(bytes, record.scope_hash.raw());
+    write_record_field_<offsetof(TraceOpRecord, callsite_hash)>(bytes, record.callsite_hash.raw());
+    write_record_field_<offsetof(TraceOpRecord, scalar_values)>(bytes, record.scalar_values);
+    write_record_field_<offsetof(TraceOpRecord, num_inputs)>(bytes, record.num_inputs);
+    write_record_field_<offsetof(TraceOpRecord, num_outputs)>(bytes, record.num_outputs);
+    write_record_field_<offsetof(TraceOpRecord, num_scalars)>(bytes, record.num_scalars);
+    write_record_field_<offsetof(TraceOpRecord, grad_enabled)>(bytes, record.grad_enabled);
+    write_record_field_<offsetof(TraceOpRecord, inference_mode)>(bytes, record.inference_mode);
+    return image;
+}
+
+// The bytes of one metadata record, at the offsets of TensorMeta.  The data
+// pointer is an address of this process, so the record holds zero there, as
+// the image of Serialize.h does, and decode_trace_meta does not read it.  The
+// bytes of the pad hold zero too.  So two exports of one computation in two
+// runs give the same bytes.
+[[nodiscard]] inline ::fixy::FixedArray<std::byte, TRACE_META_BYTES>
+encode_trace_meta(TensorMeta const& meta) noexcept {
+    using detail::record_lanes_;
+    using detail::write_record_field_;
+    ::fixy::FixedArray<std::byte, TRACE_META_BYTES> image{};
+    const ::fixy::View<std::byte, TRACE_META_BYTES> bytes = image.view();
+    write_record_field_<offsetof(TensorMeta, sizes)>(bytes, record_lanes_(meta.sizes));
+    write_record_field_<offsetof(TensorMeta, strides)>(bytes, record_lanes_(meta.strides));
+    write_record_field_<offsetof(TensorMeta, ndim)>(bytes, meta.ndim);
+    write_record_field_<offsetof(TensorMeta, dtype)>(bytes, std::to_underlying(meta.dtype));
+    write_record_field_<offsetof(TensorMeta, device_type)>(bytes, std::to_underlying(meta.device_type));
+    write_record_field_<offsetof(TensorMeta, device_idx)>(bytes, meta.device_idx);
+    write_record_field_<offsetof(TensorMeta, layout)>(bytes, std::to_underlying(meta.layout));
+    write_record_field_<offsetof(TensorMeta, requires_grad)>(bytes, static_cast<uint8_t>(meta.requires_grad ? 1 : 0));
+    write_record_field_<offsetof(TensorMeta, flags)>(bytes, meta.flags);
+    write_record_field_<offsetof(TensorMeta, output_nr)>(bytes, meta.output_nr);
+    write_record_field_<offsetof(TensorMeta, storage_offset)>(bytes, meta.storage_offset);
+    write_record_field_<offsetof(TensorMeta, version)>(bytes, meta.version);
+    write_record_field_<offsetof(TensorMeta, storage_nbytes)>(bytes, meta.storage_nbytes);
+    write_record_field_<offsetof(TensorMeta, grad_fn_hash)>(bytes, meta.grad_fn_hash.value());
+    return image;
+}
+
 // Loads the trace at path.  When should_register_names is true, the schema
 // names of the trace go into the global table through schema_table_view.  An
 // empty view means that the table is sealed, and the names then stay out.

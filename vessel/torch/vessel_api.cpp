@@ -26,11 +26,15 @@
 #include <crucible/TraceLoader.h>
 #include <crucible/Vigil.h>
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/os/Fs.h>
+#include <fixy/os/Path.h>
 #include <foundation/Quarantine.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
-#include <cstdio>
 #include <cstring>
+#include <utility>
 
 // CrucibleDispatchResult is a small POD; size-pin is local to this
 // file because the struct is only consumed at this boundary.
@@ -61,6 +65,59 @@ static_assert(CRUCIBLE_STATUS_COMPLETE == static_cast<int>(crucible::ReplayStatu
     }
     return encoded;
 }
+
+namespace {
+
+// The bytes of the file of an export, written in order from the first byte.
+// Each put moves the place past its bytes.  The size pass of the export
+// counts each byte of the file, so each window fits, and the last put fills
+// the image.
+class ExportCursor {
+public:
+    explicit ExportCursor(::fixy::View<std::byte> image) noexcept : image_{image} {}
+
+    // The bytes of a record.
+    void put(::fixy::View<std::byte const> bytes) noexcept {
+        ::fixy::copy(next_(bytes.size()), bytes).expect("a window of the count of the bytes has that count");
+    }
+
+    // The bytes of an encoded record, which the call can take as a temporary.
+    template <std::size_t Count>
+    void put(::fixy::FixedArray<std::byte, Count> const& record) noexcept {
+        put(record.view());
+    }
+
+    // The bytes of one integer, little-endian, as the platform holds it.
+    template <class Field>
+    void put_field(Field value) noexcept {
+        const auto field = ::fixy::bit_cast<::fixy::FixedArray<std::byte, sizeof(Field)>>(value);
+        put(field.view());
+    }
+
+    // The characters of a text, one byte each.
+    void put_text(::fixy::TextView text) noexcept {
+        auto slot = next_(text.size()).begin();
+        for (const char character : text) {
+            *slot = static_cast<std::byte>(static_cast<unsigned char>(character));
+            ++slot;
+        }
+    }
+
+    [[nodiscard]] bool is_full() const noexcept { return place_ == image_.size(); }
+
+private:
+    [[nodiscard]] ::fixy::View<std::byte> next_(std::size_t count) noexcept {
+        const ::fixy::View<std::byte> window =
+            image_.window(place_, count).expect("the size pass counted each byte of the file");
+        place_ += count;
+        return window;
+    }
+
+    ::fixy::View<std::byte> image_;
+    std::size_t place_ = 0;
+};
+
+}  // namespace
 
 // The C answer for an op that the thunk refused before the Vigil saw it.
 // Each byte is zero, as the action REFUSED is.
@@ -371,7 +428,7 @@ const char* crucible_schema_name(uint64_t schema_hash) noexcept {
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
-    // FFI boundary: path validation before any fs::* / fopen call.
+    // FFI boundary: path validation before the read of the path and the open.
     //   - path != null
     //   - strnlen(path, PATH_MAX+1) ≤ PATH_MAX
     // A missing NUL-terminator from a malformed caller could otherwise
@@ -381,7 +438,17 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     if (path == nullptr) return 0;
     const size_t path_len = ::strnlen(path, MAX_PATH_LEN + 1);
     if (path_len == 0 || path_len > MAX_PATH_LEN) return 0;
+    const ::fixy::TextView path_text = ::fixy::mint_foreign_text(path, path_len);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+    // The path checks of the base refuse a ".." part, as each other open of
+    // a path that a caller gives.
+    using Sanitized = ::fixy::Path<::fixy::tags::source::Sanitized>;
+    const ::fixy::Option<Sanitized> sanitized =
+        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(path_text))
+            .match([](Sanitized checked) noexcept { return ::fixy::Option<Sanitized>::some(std::move(checked)); },
+                   [](::fixy::PathTraversalError) noexcept { return ::fixy::Option<Sanitized>{::fixy::none}; });
+    if (sanitized.is_none()) return 0;
 
     const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
     vigil->flush();
@@ -394,27 +461,45 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     if (region->num_ops() == 0) return 0;
     const uint32_t num_ops = region->num_ops();
 
-    std::FILE* f = std::fopen(path, "wb");
-    if (!f) return 0;
-
-    // Track write errors: if any fwrite fails (disk full, I/O error),
-    // we still close the file but report failure.
-    bool ok = true;
-    auto w = [&](const void* ptr, size_t size, size_t count) {
-        if (ok && std::fwrite(ptr, size, count, f) != count) ok = false;
-    };
-
     // Count total tensor metas across all ops.
     uint32_t total_metas = 0;
     for (const crucible::TraceEntry& te : region->ops) {
         total_metas += static_cast<uint32_t>(te.num_inputs() + te.num_outputs());
     }
 
+    // Schema name table: the union of the two tables described above.
+    // A hash registered before the seal and again after it appears in
+    // both, so the late table's copy is skipped -- the reader keys by
+    // hash and a second record for one hash is a malformed trace.
+    const auto& table = crucible::global_schema_table();
+    const auto& late = crucible::late_schema_table();
+    const auto is_in_global = [&table](crucible::SchemaHash hash) noexcept { return table.lookup(hash).is_some(); };
+
+    // The count is written before the records, so it has to be the
+    // post-dedup count, not the sum of the two sizes.  The size pass counts
+    // each byte of the file, so one buffer holds the file.
+    constexpr size_t kNameHead = sizeof(uint64_t) + sizeof(uint16_t);
+    uint32_t num_names = table.count();
+    size_t name_bytes = 0;
+    for (const crucible::SchemaEntry& entry : table.entries())
+        name_bytes += kNameHead + crucible::SchemaTable::name_of(entry).value().size();
+    for (const crucible::SchemaEntry& entry : late.entries()) {
+        if (is_in_global(entry.hash)) continue;
+        num_names++;
+        name_bytes += kNameHead + crucible::SchemaTable::name_of(entry).value().size();
+    }
+    const size_t file_bytes = crucible::TRACE_HEADER_BYTES + size_t{num_ops} * sizeof(crucible::TraceOpRecord)
+                            + size_t{total_metas} * crucible::TRACE_META_BYTES + sizeof(uint32_t) + name_bytes;
+
+    // The export runs on a thread of the caller, outside the hot path, and
+    // it waits on the disk.  The door of the init context gives the
+    // allocation of the buffer and the right to open and to write the file.
+    const ::fixy::InitLoadCtx io{::foundation::effects::host::InitOwner::mint_init_context()};
+    ::fixy::HeapArray<std::byte> image = ::fixy::mint_heap_array(io.cap().alloc, file_bytes, std::byte{0});
+    ExportCursor cursor{image.view()};
+
     // Header: "CRTR" + version + num_ops + num_metas = 16B.
-    w("CRTR", 1, 4);
-    w(&crucible::TRACE_FORMAT_VERSION, 4, 1);
-    w(&num_ops, 4, 1);
-    w(&total_metas, 4, 1);
+    cursor.put(crucible::encode_trace_header(num_ops, total_metas));
 
     // Op records: 80B each (TraceOpRecord layout).
     for (const crucible::TraceEntry& te : region->ops) {
@@ -443,51 +528,46 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
                 value;
             ++stored;
         }
-        w(&rec, sizeof(rec), 1);
+        cursor.put(crucible::encode_trace_op(rec));
     }
 
     // Meta records: TRACE_META_BYTES each (TensorMeta layout).
     for (const crucible::TraceEntry& te : region->ops) {
         for (const auto& m : te.input_metas())
-            w(&m, sizeof(crucible::TensorMeta), 1);
+            cursor.put(crucible::encode_trace_meta(m));
         for (const auto& m : te.output_metas())
-            w(&m, sizeof(crucible::TensorMeta), 1);
+            cursor.put(crucible::encode_trace_meta(m));
     }
 
-    // Schema name table: the union of the two tables described above.
-    // A hash registered before the seal and again after it appears in
-    // both, so the late table's copy is skipped -- the reader keys by
-    // hash and a second record for one hash is a malformed trace.
-    const auto& table = crucible::global_schema_table();
-    const auto& late = crucible::late_schema_table();
-
-    const auto is_in_global = [&table](crucible::SchemaHash hash) noexcept { return table.lookup(hash).is_some(); };
-
-    // The count is written before the records, so it has to be the
-    // post-dedup count, not the sum of the two sizes.
-    uint32_t num_names = table.count();
-    for (const crucible::SchemaEntry& entry : late.entries())
-        if (!is_in_global(entry.hash)) num_names++;
-    w(&num_names, 4, 1);
-
-    const auto write_entry = [&w](const crucible::SchemaEntry& entry) {
-        const ::fixy::CText name = crucible::SchemaTable::name_of(entry).value();
-        uint64_t sh = entry.hash.raw();
-        auto name_len = static_cast<uint16_t>(name.size());
-        w(&sh, 8, 1);
-        w(&name_len, 2, 1);
-        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fwrite of the C library reads the characters of the name")
-        w(::foundation::core::foreign_c_str(name), 1, name_len);
-        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    cursor.put_field(num_names);
+    const auto write_entry = [&cursor](const crucible::SchemaEntry& entry) noexcept {
+        const ::fixy::TextView name = crucible::SchemaTable::name_of(entry).value().view();
+        cursor.put_field(entry.hash.raw());
+        cursor.put_field(static_cast<uint16_t>(name.size()));
+        cursor.put_text(name);
     };
-
     for (const crucible::SchemaEntry& entry : table.entries())
         write_entry(entry);
     for (const crucible::SchemaEntry& entry : late.entries())
         if (!is_in_global(entry.hash)) write_entry(entry);
+    CRUCIBLE_FATAL_INVARIANT(cursor.is_full());
 
-    std::fclose(f);
-    return ok ? 1 : 0;
+    // An open that the kernel refuses, or a short write, gives 0.  The
+    // descriptor closes at the end of the match.
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    const ::fixy::View<std::byte const> file_image = image.view();
+    const bool is_written = sanitized.match(
+        [&io, file_image](const Sanitized& checked) noexcept {
+            return ::fixy::fs::mint_file<WriteTruncate>(io, checked)
+                .match(
+                    [&io, file_image](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept {
+                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                        return ::fixy::fs::write_full(io, file, file_image).is_ok();
+                    },
+                    [](::foundation::os::Errno) noexcept { return false; });
+        },
+        [] noexcept { return false; });
+    return is_written ? 1 : 0;
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
