@@ -2580,6 +2580,15 @@ foundation_neg_compile_test(neg_core_address_ordered
 foundation_neg_compile_test(neg_core_address_of_pointer
   "no matching function for call to .address_of\\(int\\*\\)."
   "mismatched types .foundation::core::Ref<[A-Za-z]+, [A-Za-z]+>. and .int\\*.")
+foundation_neg_compile_test(neg_core_address_key_ordered
+  "no match for .operator<."
+  "operand types are .const foundation::core::AddressKey. and .const foundation::core::AddressKey.")
+foundation_neg_compile_test(neg_core_address_key_of_function
+  "no matching function for call to .mint_address_key\\(int \\(\\*\\)\\(\\) noexcept\\)."
+  "types .const T. and .int\\(\\) noexcept. have incompatible cv-qualifiers")
+foundation_neg_compile_test(neg_core_address_key_of_integer
+  "no matching function for call to .mint_address_key\\(const uintptr_t&\\)."
+  "mismatched types .const T\\*. and .long unsigned int.")
 # The address of a run of data, alone and with its device.  The gate of a
 # device and the gate of a run of bytes are disjunctions, so their fixtures
 # take a concept depth of 3, and each regex names the part that fails.

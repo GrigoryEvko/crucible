@@ -11,7 +11,6 @@
 // then compiles no part of the pipeline and no channel type.
 
 #include <atomic>
-#include <bit>
 #include <cstdint>
 #include <memory>
 #include <type_traits>
@@ -992,8 +991,10 @@ private:
     // amortizes across iterations.
     void ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_inputs, uint32_t total_outputs);
 
+    // The bucket of a key is the low half of the hash of its address key.
+    // The address changes from run to run, so the map gives no order.
     [[nodiscard, gnu::const]] static uint32_t hash_ptr(void* ptr) noexcept {
-        return static_cast<uint32_t>(std::bit_cast<uintptr_t>(ptr) * 0x9E3779B97F4A7C15ULL >> 32);
+        return static_cast<uint32_t>(::fixy::mint_address_key(ptr).hash());
     }
 
     // The probes of the map start at the hash of the key, and the mask of

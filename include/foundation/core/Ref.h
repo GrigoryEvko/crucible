@@ -22,6 +22,11 @@
 // of the object, which answers is_aligned<N>() and ==, and gives no pointer
 // back.
 //
+// mint_address_key(pointer) gives the AddressKey of an address, such as the
+// address of a buffer that a foreign allocator gives.  A key answers == and
+// hash() for a lookup, and it has no order.  No pointer and no integer
+// comes back from a key.
+//
 // prefetch<Access, Locality>(object) asks the cache for the line of one
 // object, and prefetch_byte<Access, Locality, Offset>(object) asks for the
 // line of the byte at Offset of one object.  The hint changes no value.
@@ -234,19 +239,26 @@ namespace detail {
 // a use can still build an Address from each integer.
 struct AddressDoor;
 
-class [[nodiscard]] AddressKey final {
+class [[nodiscard]] AddressOfKey final {
     friend struct AddressDoor;
 
-    constexpr AddressKey() noexcept {}
-    constexpr AddressKey(AddressKey const&) noexcept {}
+    constexpr AddressOfKey() noexcept {}
+    constexpr AddressOfKey(AddressOfKey const&) noexcept {}
 
 public:
-    AddressKey& operator=(AddressKey const&) = delete("a key of an Address lives for one construction");
+    AddressOfKey& operator=(AddressOfKey const&) = delete("a key of an Address lives for one construction");
 };
 
 struct AddressDoor {
-    [[nodiscard]] static constexpr AddressKey key() noexcept { return AddressKey{}; }
+    [[nodiscard]] static constexpr AddressOfKey key() noexcept { return AddressOfKey{}; }
 };
+
+// The door of mint_address_key, and the one friend of AddressKey.  Only
+// mint_address_key calls it.  The door holds no template, so no explicit
+// specialization of a template reaches the constructor of a key.  The door
+// is in namespace detail, and a use of that namespace outside the base is a
+// finding.
+struct AddressKeyDoor;
 
 }  // namespace detail
 
@@ -261,7 +273,7 @@ class Address {
 
 public:
     // The address of one object, with the key that only address_of takes.
-    constexpr Address(std::uintptr_t value, detail::AddressKey const& /*key*/) noexcept : value_{value} {}
+    constexpr Address(std::uintptr_t value, detail::AddressOfKey const& /*key*/) noexcept : value_{value} {}
 
     // True when the address is a multiple of Alignment, a power of two.
     template <std::size_t Alignment>
@@ -280,6 +292,68 @@ public:
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
 [[nodiscard]] Address address_of(Ref<T, Brand> ref) noexcept {
     return Address{__builtin_bit_cast(std::uintptr_t, __builtin_addressof(*ref)), detail::AddressDoor::key()};
+}
+
+// The type of the object at an address that a key names: an object type or
+// void.  So a key comes from a pointer to an object or from a void pointer,
+// and not from a pointer to a function.
+template <class T>
+concept AddressKeyTarget = std::is_object_v<T> || std::is_void_v<T>;
+
+// An address as the key of a lookup, such as the address of a buffer that a
+// foreign allocator gives.  A key compares for equality and gives a hash,
+// and it has no order.  An address changes from run to run, and its hash
+// changes with it.  So a table that the hash places gives no order to read,
+// and a key that outlives the process is a content hash, not an AddressKey.
+// No pointer and no integer comes back from a key, and mint_address_key is
+// the one door.  The seal makes the assignment user-provided, so
+// std::bit_cast cannot build a key from an integer or read its integer.
+class AddressKey {
+    std::uintptr_t value_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    friend struct detail::AddressKeyDoor;
+
+    constexpr explicit AddressKey(std::uintptr_t value) noexcept : value_{value} {}
+
+public:
+    // The hash of the address.  The multiply by the odd constant
+    // 0x9E3779B97F4A7C15, 2^64 divided by the golden ratio, mixes the bits of
+    // the address into the high half of the product.  The fold then adds the
+    // high half into the low half with an exclusive or.  So the low bits of
+    // the hash depend on the high bits of the address too, and a table of a
+    // power-of-two size takes them with a mask.  The cost is one multiply,
+    // one shift and one exclusive or.
+    [[nodiscard]] constexpr std::uint64_t hash() const noexcept {
+        std::uint64_t const product = static_cast<std::uint64_t>(value_) * 0x9E3779B97F4A7C15ULL;
+        return product ^ (product >> 32);
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(AddressKey const& left, AddressKey const& right) noexcept {
+        return left.value_ == right.value_;
+    }
+};
+
+namespace detail {
+
+struct AddressKeyDoor {
+    // The key of the address that POINTER holds.  The parameter takes each
+    // pointer to an object, a const one or a volatile one.
+    [[nodiscard]] static AddressKey key_of(void const volatile* pointer) noexcept {
+        return AddressKey{__builtin_bit_cast(std::uintptr_t, pointer)};
+    }
+};
+
+}  // namespace detail
+
+// The key of the address that POINTER holds.  A null pointer gives the key
+// of the address zero, which is equal only to the key of a null pointer.
+// The key reads no object, so a pointer whose object has ended still gives
+// its key.  The address of an object is no constant of the compile, so the
+// mint runs only at run time.
+template <AddressKeyTarget T>
+[[nodiscard]] AddressKey mint_address_key(T const* pointer) noexcept {
+    return detail::AddressKeyDoor::key_of(pointer);
 }
 
 // The access that a prefetch prepares.  A write asks for the line in the

@@ -226,14 +226,42 @@ static_assert(!std::is_trivially_copyable_v<Address>);
 
 // The constructor of an Address takes the key, and only AddressDoor builds
 // a key.
-static_assert(!std::is_default_constructible_v<detail::AddressKey>);
-static_assert(!std::is_copy_constructible_v<detail::AddressKey>);
-static_assert(!std::is_copy_assignable_v<detail::AddressKey>);
-static_assert(!std::is_trivially_copyable_v<detail::AddressKey>);
+static_assert(!std::is_default_constructible_v<detail::AddressOfKey>);
+static_assert(!std::is_copy_constructible_v<detail::AddressOfKey>);
+static_assert(!std::is_copy_assignable_v<detail::AddressOfKey>);
+static_assert(!std::is_trivially_copyable_v<detail::AddressOfKey>);
 
 // An address compares for equality and has no order.
 static_assert(std::equality_comparable<Address>);
 static_assert(!std::totally_ordered<Address>);
+
+// ── AddressKey ─────────────────────────────────────────────────────────
+
+// One word, and no key from an integer, from a pointer or with no address.
+// No key is trivially copyable, so std::bit_cast reads no integer from a key.
+static_assert(sizeof(AddressKey) == sizeof(std::uintptr_t));
+static_assert(!std::is_default_constructible_v<AddressKey>);
+static_assert(!std::is_constructible_v<AddressKey, std::uintptr_t>);
+static_assert(!std::is_constructible_v<AddressKey, int*>);
+static_assert(!std::is_trivially_copyable_v<AddressKey>);
+static_assert(std::is_nothrow_copy_constructible_v<AddressKey>);
+static_assert(std::is_nothrow_copy_assignable_v<AddressKey>);
+
+// A key compares for equality, gives a hash of 64 bits, and has no order.
+static_assert(std::equality_comparable<AddressKey>);
+static_assert(!std::totally_ordered<AddressKey>);
+static_assert(std::is_same_v<decltype(std::declval<AddressKey const&>().hash()), std::uint64_t>);
+
+// A key comes from a pointer to an object or a void pointer, and not from a
+// pointer to a function.
+static_assert(AddressKeyTarget<int>);
+static_assert(AddressKeyTarget<int const>);
+static_assert(AddressKeyTarget<void>);
+static_assert(AddressKeyTarget<int volatile>);
+static_assert(!AddressKeyTarget<void(int)>);
+static_assert(!AddressKeyTarget<int&>);
+static_assert(std::is_same_v<decltype(mint_address_key(std::declval<int*>())), AddressKey>);
+static_assert(std::is_same_v<decltype(mint_address_key(std::declval<void const*>())), AddressKey>);
 
 // The alignment query takes a power of two only.
 template <class A, std::size_t Alignment>
@@ -321,13 +349,14 @@ static_assert(std::is_same_v<decltype(mint_hole(std::declval<Box<std::uint64_t>>
 // this list.  Ref and Box have no empty state, so they take the dereference.
 inline constexpr TextView ref_names{"Ref to same_object downcast KindFamily KindTagged Box mint_box BumpArena make "
                                     "array copy_text Slot emplace clear FnRef CallRef Address address_of is_aligned "
-                                    "Hole mint_hole"};
+                                    "AddressKey mint_address_key hash Hole mint_hole"};
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<Abstract, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Box<int>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Box<OverAligned>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Address);
+CRUCIBLE_CLOSED_SURFACE(ref_names, AddressKey);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Hole<8, 8>);
 
 }  // namespace detail::ref_checks

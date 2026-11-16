@@ -152,6 +152,11 @@
       "constructor": "\\bAddress\\("
     },
     {
+      "name": "neg_witness_core_addresskey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bAddressKey\\("
+    },
+    {
       "name": "neg_witness_core_alloc_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bAlloc\\("
@@ -187,9 +192,9 @@
       "constructor": "\\bDataAddress\\("
     },
     {
-      "name": "neg_witness_core_detail_addresskey_direct_construction",
+      "name": "neg_witness_core_detail_addressofkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bAddressKey\\("
+      "constructor": "\\bAddressOfKey\\("
     },
     {
       "name": "neg_witness_core_detail_boxkey_direct_construction",
@@ -1197,7 +1202,11 @@
       "header": "foundation/core/Ref.h"
     },
     {
-      "type": "foundation::core::detail::AddressKey",
+      "type": "foundation::core::detail::AddressOfKey",
+      "header": "foundation/core/Ref.h"
+    },
+    {
+      "type": "foundation::core::AddressKey",
       "header": "foundation/core/Ref.h"
     },
     {

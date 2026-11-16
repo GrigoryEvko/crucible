@@ -16,6 +16,8 @@ namespace {
 
 using ::foundation::core::Address;
 using ::foundation::core::address_of;
+using ::foundation::core::AddressKey;
+using ::foundation::core::mint_address_key;
 using ::foundation::core::none;
 using ::foundation::core::Option;
 using ::foundation::core::prefetch;
@@ -180,6 +182,37 @@ void test_address() {
     CRUCIBLE_FATAL_INVARIANT(address_of(to(number)).is_aligned<alignof(int)>());
 }
 
+// The key of an address is equal to each key of the same address, through a
+// typed pointer, a void pointer, a const pointer or a copy, and it gives the
+// same hash.  The keys of two objects differ, and the key of the first
+// member of a class is the key of the class.  The key of a null pointer is
+// equal only to the key of a null pointer, and its hash is zero.
+void test_address_key() {
+    Pair pair{3, 4};
+    Pair const& pair_read = pair;
+    AddressKey const of_pair = mint_address_key(&pair);
+    AddressKey const of_read = mint_address_key(&pair_read);
+    AddressKey const of_void = mint_address_key(static_cast<void const*>(&pair));
+    AddressKey const of_first = mint_address_key(&pair.first);
+    AddressKey const of_second = mint_address_key(&pair.second);
+    AddressKey copy = of_second;
+    copy = of_pair;
+    CRUCIBLE_FATAL_INVARIANT(of_pair == of_read && of_pair == of_void && of_pair == of_first && copy == of_pair);
+    CRUCIBLE_FATAL_INVARIANT(of_pair.hash() == of_read.hash() && of_pair.hash() == of_void.hash());
+    CRUCIBLE_FATAL_INVARIANT(copy.hash() == of_pair.hash());
+    CRUCIBLE_FATAL_INVARIANT(!(of_first == of_second));
+
+    AddressKey const of_null = mint_address_key(static_cast<int const*>(nullptr));
+    CRUCIBLE_FATAL_INVARIANT(of_null == mint_address_key(static_cast<void const*>(nullptr)));
+    CRUCIBLE_FATAL_INVARIANT(!(of_null == of_pair));
+    CRUCIBLE_FATAL_INVARIANT(of_null.hash() == 0);
+
+    // A key reads no object, so the pointer one past the end of an object
+    // gives a key too, and it differs from the key of each member.
+    AddressKey const past_end = mint_address_key(&pair + 1);
+    CRUCIBLE_FATAL_INVARIANT(!(past_end == of_first) && !(past_end == of_second));
+}
+
 // True when a prefetch of a named object of type T compiles.
 template <PrefetchAccess Access, int Locality, class T>
 concept PrefetchesObject = requires(T const& object) { prefetch<Access, Locality>(object); };
@@ -303,6 +336,7 @@ int main() {
     test_abstract_target();
     test_option_of_ref();
     test_address();
+    test_address_key();
     test_prefetch();
     test_prefetch_byte();
     test_agrees_with_plain_model();

@@ -686,7 +686,10 @@ witness <foundation/core/Ref.h> private | foundation::core::detail::RefKey | fou
 # An Address takes the key that only AddressDoor builds, so each Address
 # comes through address_of.
 witness <foundation/core/Ref.h> no-match | foundation::core::Address | foundation::core::Address{forge::rvalue<unsigned long>()}
-witness <foundation/core/Ref.h> private | foundation::core::detail::AddressKey | foundation::core::detail::AddressKey{}
+witness <foundation/core/Ref.h> private | foundation::core::detail::AddressOfKey | foundation::core::detail::AddressOfKey{}
+# An AddressKey has a private constructor from the word of an address, and
+# only AddressKeyDoor calls it, so each key comes through mint_address_key.
+witness <foundation/core/Ref.h> private | foundation::core::AddressKey | foundation::core::AddressKey{forge::rvalue<unsigned long>()}
 # A RunAddress has no constructor from a pointer, so no RunAddress holds the
 # null pointer.  Its constructor takes the key that only RunAddressDoor
 # builds, so each RunAddress comes through a mint.  A DataAddress comes from
