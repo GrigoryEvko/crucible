@@ -725,6 +725,10 @@ set_tests_properties(test_pre_post_cost PROPERTIES LABELS "foundation")
 # expression: the shape a native pre() clause skips.  The location regex
 # proves the trap fired inside Pre.h, and the note regex that it was
 # reached through the macro.
+# The message of the message form is a string literal.
+foundation_neg_compile_test(neg_pre_msg_message_not_a_literal
+  "neg_pre_msg_message_not_a_literal\\.cpp:13:[0-9]+: error: expected .\\). before .reason_code."
+  "in expansion of macro .CRUCIBLE_PRE_MSG.")
 foundation_neg_compile_test(neg_pre_violated_at_consteval
   "non-constant condition for static assertion"
   "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
