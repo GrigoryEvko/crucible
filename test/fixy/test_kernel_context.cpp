@@ -160,12 +160,23 @@ void a_context_under_an_inner_scope() {
     ::fixy::run_kernel(ctx, [](KernelCtx<core::kFpModeFlushToZero> const&) noexcept {});
 }
 
+// A raw write of the register under a live scope leaves the epoch of the
+// scope innermost, so the check reads the mode of the register itself.
+void a_context_after_a_raw_write() {
+    os::FpScope<core::kFpModeFlushToZero> const scope = os::mint_fp_scope<core::kFpModeFlushToZero>();
+    KernelCtx<core::kFpModeFlushToZero> const ctx = ::fixy::mint_kernel_context<KernelBrand>(scope);
+    os::write_fp_control(os::FpControlWord::read().with_mode(core::kFpModeIeee));
+    ::fixy::run_kernel(ctx, [](KernelCtx<core::kFpModeFlushToZero> const&) noexcept {});
+}
+
 void test_a_context_runs_only_under_its_scope(TestRunnerCtx const& test) {
     expect_dies(test, a_context_on_another_thread, ::fixy::TextView{"fatal invariant failed: ctx.cap().thread() == "});
     expect_dies(test, a_context_past_its_scope,
                 ::fixy::TextView{"fatal invariant failed: ::foundation::os::is_innermost_fp_scope"});
     expect_dies(test, a_context_under_an_inner_scope,
                 ::fixy::TextView{"fatal invariant failed: ::foundation::os::is_innermost_fp_scope"});
+    expect_dies(test, a_context_after_a_raw_write,
+                ::fixy::TextView{"fatal invariant failed: ::foundation::os::FpControlWord::read().mode() == Mode"});
     ::fixy::check::pass(test, "a kernel context runs only on its thread, under its own live scope\n");
 }
 

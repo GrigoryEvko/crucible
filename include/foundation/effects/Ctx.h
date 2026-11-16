@@ -663,11 +663,14 @@ namespace host {
 // calling thread is the thread of the mint, and that the scope of the
 // context is the innermost FP scope of that thread.  The epoch is unique in
 // the process, so the second check also proves that the scope lives and
-// that no inner scope of another mode is open.
+// that no inner scope of another mode is open.  A raw write of the register
+// under a live scope leaves the epoch as it was, so the third check reads the
+// mode of the register itself.
 template <class Brand, ::foundation::core::FpMode Mode>
 void require_kernel_scope(KernelCtx<Brand, Mode> const& ctx) noexcept {
     CRUCIBLE_FATAL_INVARIANT(ctx.cap().thread() == detail::producer_claim::calling_thread_identity());
     CRUCIBLE_FATAL_INVARIANT(::foundation::os::is_innermost_fp_scope(ctx.cap().fp_scope_epoch()));
+    CRUCIBLE_FATAL_INVARIANT(::foundation::os::FpControlWord::read().mode() == Mode);
 }
 
 }  // namespace host
@@ -676,8 +679,8 @@ void require_kernel_scope(KernelCtx<Brand, Mode> const& ctx) noexcept {
 // (host::require_kernel_scope).  The kernel takes the context first, and its
 // buffers after it.  It writes its results into its output buffers and
 // returns nothing.  The check is one read of the thread pointer, one read of
-// a thread-local slot and two compares for each kernel, not for each
-// element.
+// a thread-local slot, one read of the FP control register and three
+// compares for each kernel, not for each element.
 template <class Brand, ::foundation::core::FpMode Mode, class Kernel, class... Args>
     requires std::is_nothrow_invocable_r_v<void, Kernel&, KernelCtx<Brand, Mode> const&, Args&&...>
           && std::is_void_v<std::invoke_result_t<Kernel&, KernelCtx<Brand, Mode> const&, Args&&...>>
