@@ -41,8 +41,9 @@ namespace eff = ::foundation::effects;
     for (std::size_t index = 0; index < dir.size(); ++index) {
         root.append(store_ctx().cap().alloc, dir[index]).expect("the text holds each character of the directory");
     }
+    ::foundation::core::HeapText const root_path = ::foundation::core::freeze(std::move(root));
     return Cipher::open(store_ctx(), store_ctx().cap().alloc,
-                        ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()))
+                        ::fixy::mint_tagged<::fixy::tags::source::External>(root_path.view()))
         .expect("the test opens its store");
 }
 

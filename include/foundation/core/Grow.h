@@ -34,11 +34,7 @@
 //                       from offset after the last one, as append does.  The
 //                       growth copies them before it gives the old storage
 //                       back
-//   size(), view(), the loop and clear()
-//                       as FixedList gives them.  view() of a GrowText gives a
-//                       TextView
-//   get(position)       of a GrowList: the element at position as an Option of
-//                       a Ref, or no value at or past size(): one compare
+//   size() and clear()  as FixedList gives them
 //   freeze(std::move(text))
 //                       of a GrowText: gives the characters to a HeapText with
 //                       no copy, and leaves the text empty with its maximum
@@ -52,7 +48,9 @@
 //                       position, or on_none at or past size(), and gives the
 //                       result of the arm that it calls: one compare
 // A frame door lends the storage of its owner to the body for the time of
-// the call (THE LEND COUNT).
+// the call (THE LEND COUNT).  The frame doors are the only reads of the
+// elements and of the characters, so no borrow of a growable owner outlives
+// its frame.
 //
 // The allocation capability comes first in each append, so each growth shows
 // at its call.  A growth doubles the capacity, up to the maximum, and an
@@ -62,10 +60,10 @@
 // a count that is known at the start is a HeapArray.
 //
 // A growth moves each element into new storage, so append gives no
-// reference, and a growth ends each borrow of the owner: each View, each
-// cursor, each TextView and each Ref of get().  Take a borrow after the
-// last append.  A text appends a part of itself through append_self, which
-// copies the characters before the growth gives the old storage back.
+// reference, and a growth would end each borrow of the owner.  So the owners
+// give no View, no cursor, no TextView and no Ref out of a frame.  A text
+// appends a part of itself through append_self, which copies the characters
+// before the growth gives the old storage back.
 //
 // THE LEND COUNT
 //   A frame door lends the storage of its owner to a body.  A growth would
@@ -415,50 +413,6 @@ public:
         end_each_();
     }
 
-    // The View of the elements.  It borrows this list, and the next append
-    // can end what it borrows.  The mint bounds the count, and the list holds
-    // storage for each count above zero, so the View comes through the door
-    // of the base layer, with no check.
-    [[nodiscard]] constexpr View<T> view() & noexcept {
-        return View<T>{detail::ViewDoor::key(), first_(), this->state_.count};
-    }
-    [[nodiscard]] constexpr View<T const> view() const& noexcept {
-        return View<T const>{detail::ViewDoor::key(), first_(), this->state_.count};
-    }
-    void view() && = delete("a view of a temporary GrowList points into storage that the full expression frees");
-    void view() const&& = delete("a view of a temporary GrowList points into storage that the full expression frees");
-
-    // The loop `for (T& element : list)`.
-    [[nodiscard]] constexpr ViewCursor<T> begin() & noexcept { return view().begin(); }
-    [[nodiscard]] constexpr ViewCursor<T> end() & noexcept { return view().end(); }
-    [[nodiscard]] constexpr ViewCursor<T const> begin() const& noexcept { return view().begin(); }
-    [[nodiscard]] constexpr ViewCursor<T const> end() const& noexcept { return view().end(); }
-    void begin() && = delete("a cursor of a temporary GrowList points into storage that the full expression frees");
-    void end() && = delete("a cursor of a temporary GrowList points into storage that the full expression frees");
-    void
-    begin() const&& = delete("a cursor of a temporary GrowList points into storage that the full expression frees");
-    void end() const&& = delete("a cursor of a temporary GrowList points into storage that the full expression frees");
-
-    // The element at position, as an Option of a Ref with the fresh brand
-    // of the call, or no value at or past size(): one compare.  The pack
-    // refuses each explicit argument, and the result type holds the brand in
-    // undeducible_brand_t.
-    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
-    get(std::size_t position) & noexcept {
-        return detail::element_at_<Fresh>(first_(), this->state_.count, position);
-    }
-    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
-    get(std::size_t position) const& noexcept {
-        return detail::element_at_<Fresh>(static_cast<T const*>(first_()), this->state_.count, position);
-    }
-    void get(std::size_t) && = delete("an element of a temporary GrowList dangles at the end of the full expression");
-    void
-    get(std::size_t) const&& = delete("an element of a temporary GrowList dangles at the end of the full expression");
-
     // The frame door of the elements (THE FRAME DOORS): body gets the View
     // of the elements, and the list lends its storage until body returns.
     // The result of body holds no borrow.  A const list gives a View of
@@ -706,22 +660,6 @@ public:
                                                  "expression frees");
 
     friend constexpr auto freeze(GrowText&& text) noexcept -> HeapText;
-
-    // The characters of the text.  The TextView borrows this text, and the
-    // next append can end what it borrows.  The mint bounds the count at
-    // __PTRDIFF_MAX__, so the TextView comes through the door of the base
-    // layer, with no check.
-    [[nodiscard]] constexpr TextView view() const& noexcept { return detail::text_over_(state_.first, state_.size); }
-    TextView
-    view() const&& = delete("a view of a temporary GrowText points into storage that the full expression frees");
-
-    // The loop `for (char c : text)` reads each character that the text
-    // holds.
-    [[nodiscard]] constexpr ViewCursor<char const> begin() const& noexcept { return view().begin(); }
-    [[nodiscard]] constexpr ViewCursor<char const> end() const& noexcept { return view().end(); }
-    void
-    begin() const&& = delete("a cursor of a temporary GrowText points into storage that the full expression frees");
-    void end() const&& = delete("a cursor of a temporary GrowText points into storage that the full expression frees");
 };
 
 // Gives the characters of text to a HeapText with no copy, and leaves text

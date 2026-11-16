@@ -102,7 +102,8 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     for (std::size_t index = 0; root.c_str()[index] != '\0'; ++index) {
         root_text.append(test_alloc(), root.c_str()[index]).expect("the text holds each character of the directory");
     }
-    auto cipher = Cipher::open(ctx, test_alloc(), ::fixy::mint_tagged<::fixy::tags::source::External>(root_text.view()))
+    ::foundation::core::HeapText const root_path = ::foundation::core::freeze(std::move(root_text));
+    auto cipher = Cipher::open(ctx, test_alloc(), ::fixy::mint_tagged<::fixy::tags::source::External>(root_path.view()))
                       .expect("the harness opens its store");
     const auto view = cipher.mint_open_view(ctx);
 
@@ -156,12 +157,14 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 
     const auto loaded_events =
         cipher.load_session_events(ctx, view, test_alloc(), ::fixy::session::SessionTagId{session_raw});
-    for (const SessionEvent& event : loaded_events) {
-        CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op()));
-        CRUCIBLE_FUZZ_CLAIM("cipher_store", event.session().value == session_raw);
-        auto const record = event.encode();
-        CRUCIBLE_FUZZ_CLAIM("cipher_store", ::fixy::session::decode_session_event(record.view()).has_value());
-    }
+    loaded_events.with_view([session_raw](::fixy::View<SessionEvent const> events) {
+        for (const SessionEvent& event : events) {
+            CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op()));
+            CRUCIBLE_FUZZ_CLAIM("cipher_store", event.session().value == session_raw);
+            auto const record = event.encode();
+            CRUCIBLE_FUZZ_CLAIM("cipher_store", ::fixy::session::decode_session_event(record.view()).has_value());
+        }
+    });
 }
 
 // A store with one region object, a head that names it, a one-line head

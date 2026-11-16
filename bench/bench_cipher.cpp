@@ -101,7 +101,8 @@ int main() {
         for (std::size_t index = 0; dir[index] != '\0'; ++index) {
             root.append(A, dir[index]).expect("the text holds each character of the directory");
         }
-        auto cipher = Cipher::open(ctx, A, ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()))
+        ::foundation::core::HeapText const root_path = ::foundation::core::freeze(std::move(root));
+        auto cipher = Cipher::open(ctx, A, ::fixy::mint_tagged<::fixy::tags::source::External>(root_path.view()))
                           .expect("the bench opens its store");
         auto open_view = cipher.mint_open_view(ctx);
 

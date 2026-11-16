@@ -16,7 +16,7 @@
 
 int main() {
     crucible::CallSiteTable::InternedName stored =
-        ::fixy::mint_tagged<::fixy::tags::source::Interned>(::fixy::mint_grow_text(16));
+        ::fixy::mint_tagged<::fixy::tags::source::Interned>(::fixy::freeze(::fixy::mint_grow_text(16)));
     auto laundered = std::move(stored).retag<::fixy::tags::source::Sanitized>();
     (void)laundered;
     return 0;

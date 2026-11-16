@@ -91,15 +91,14 @@ static void test_refused_load_reports_its_reason(::fixy::TextView directory) {
     for (const char character : ::fixy::TextView{"/refused"}) {
         cfg.cipher_path.append(ctx.cap().alloc, character).expect("the store path fits the bound of the path");
     }
-    {
+    cfg.cipher_path.with_view([&ctx](::fixy::TextView path) {
         crucible::Cipher store =
-            crucible::Cipher::open(ctx, ctx.cap().alloc,
-                                   ::fixy::mint_tagged<::fixy::tags::source::External>(cfg.cipher_path.view()))
+            crucible::Cipher::open(ctx, ctx.cap().alloc, ::fixy::mint_tagged<::fixy::tags::source::External>(path))
                 .expect("the test opens its store");
         const auto open_view = store.mint_open_view(ctx);
         store.record_event(ctx, open_view, crucible::ContentHash{0x0123456789ABCDEFULL}, 1)
             .expect("the store commits a head that names no object");
-    }
+    });
     crucible::Vigil vigil(std::move(cfg));
     if (!vigil.has_store()) ::fixy::fatal("the store of the test does not open");
     const ::fixy::process::ChildReport report =
@@ -143,7 +142,7 @@ int main() {
         cfg.cipher_path.append(::foundation::effects::testing::test().alloc, dir[index])
             .expect("the directory fits the bound of the path");
     }
-    test_refused_load_reports_its_reason(cfg.cipher_path.view());
+    cfg.cipher_path.with_view([](::fixy::TextView path) { test_refused_load_reports_its_reason(path); });
     crucible::Vigil vigil(std::move(cfg));
 
     assert(!vigil.is_compiled());

@@ -74,33 +74,62 @@ template <class Owner>
     return owner;
 }
 
+// The element at position of a list, or no value at or past its size,
+// through the frame door with_element.
+template <class T>
+[[nodiscard]] ::foundation::core::Option<T> element_at(GrowList<T> const& list, std::size_t position) noexcept {
+    return list.with_element(
+        position, [](T const& element) noexcept { return ::foundation::core::Option<T>::some(element); },
+        [] noexcept { return ::foundation::core::Option<T>{::foundation::core::none}; });
+}
+
+// The count of the elements of a list, through the frame door with_view.
+template <class T>
+[[nodiscard]] std::size_t count_of(GrowList<T> const& list) noexcept {
+    return list.with_view([](View<T const> view) noexcept { return view.size(); });
+}
+
+// True when a text holds the characters of expected, through the frame door
+// with_view.
+[[nodiscard]] bool holds(GrowText const& text, TextView expected) noexcept {
+    return text.with_view([expected](TextView characters) noexcept { return characters == expected; });
+}
+
 // A list of integers grows from empty through many doublings, and each read
 // sees each appended value in order.
 void test_append_across_growths() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowList<std::uint32_t> list = mint_grow_list<std::uint32_t>(100000);
-    assert(list.size() == 0 && list.view().size() == 0 && list.get(0).is_none());
+    assert(list.size() == 0 && count_of(list) == 0 && element_at(list, 0).is_none());
     for (std::uint32_t value = 0; value < 5000; ++value) {
         list.append(alloc, value * 3).expect("the list is below its maximum");
     }
-    assert(list.size() == 5000 && list.view().size() == 5000);
-    std::uint32_t expected = 0;
-    for (std::uint32_t const element : list) {
-        assert(element == expected * 3);
-        ++expected;
-    }
-    assert(expected == 5000);
-    assert(*list.get(4999).expect("4999 is below the count") == 4999 * 3);
-    assert(list.get(5000).is_none());
-    *list.get(7).expect("7 is below the count") = 1;
-    GrowList<std::uint32_t> const& fixed = list;
-    assert(*fixed.get(7).expect("7 is below the count") == 1);
+    assert(list.size() == 5000 && count_of(list) == 5000);
+    std::uint32_t const in_order = list.with_view([](View<std::uint32_t> view) noexcept {
+        std::uint32_t expected = 0;
+        for (std::uint32_t const element : view) {
+            if (element != expected * 3) break;
+            ++expected;
+        }
+        return expected;
+    });
+    assert(in_order == 5000);
+    assert(element_at(list, 4999).expect("4999 is below the count") == 4999 * 3);
+    assert(element_at(list, 5000).is_none());
+    bool const is_written = list.with_element(
+        7,
+        [](std::uint32_t& element) noexcept {
+            element = 1;
+            return true;
+        },
+        [] noexcept { return false; });
+    assert(is_written && element_at(list, 7).expect("7 is below the count") == 1);
 
     // clear() keeps the storage, and the next appends reuse it.
     list.clear();
-    assert(list.size() == 0 && list.get(0).is_none());
+    assert(list.size() == 0 && element_at(list, 0).is_none());
     list.append(alloc, 9).expect("a cleared list is below its maximum");
-    assert(list.size() == 1 && *list.get(0).expect("0 is below the count") == 9);
+    assert(list.size() == 1 && element_at(list, 0).expect("0 is below the count") == 9);
 }
 
 // An append at the maximum gives Full and changes nothing.
@@ -111,7 +140,7 @@ void test_refusal_at_the_maximum() {
         list.append(alloc, value).expect("the list is below its maximum");
     }
     assert(list.append(alloc, 4).is_err());
-    assert(list.size() == 3 && *list.get(2).expect("2 is below the count") == 3);
+    assert(list.size() == 3 && element_at(list, 2).expect("2 is below the count") == 3);
 
     GrowList<int> none_fit = mint_grow_list<int>(0);
     assert(none_fit.append(alloc, 1).is_err() && none_fit.size() == 0);
@@ -130,12 +159,15 @@ void test_full_gives_a_linear_value_back() {
     Token back = std::move(refused).err().expect("the list is full").take();
     assert(back.id == 99);
     ::foundation::linear::drop(std::move(back));
-    int expected = 0;
-    for (Token const& token : list) {
-        assert(token.id == expected);
-        ++expected;
-    }
-    assert(expected == 40);
+    int const in_order = list.with_view([](View<Token> view) noexcept {
+        int expected = 0;
+        for (Token const& token : view) {
+            if (token.id != expected) break;
+            ++expected;
+        }
+        return expected;
+    });
+    assert(in_order == 40);
     ::foundation::linear::drop(std::move(list));
 }
 
@@ -153,11 +185,15 @@ void test_each_element_ends_once() {
             list.append(alloc, Element{counter, label}).expect("the list is below its maximum");
         }
         assert(ends == 0 && list.size() == 300);
-        int expected = 0;
-        for (Element const& element : list) {
-            assert(element.is_live && element.label == expected);
-            ++expected;
-        }
+        int const in_order = list.with_view([](View<Element> view) noexcept {
+            int expected = 0;
+            for (Element const& element : view) {
+                if (!element.is_live || element.label != expected) break;
+                ++expected;
+            }
+            return expected;
+        });
+        assert(in_order == 300);
         GrowList<Element> moved{std::move(list)};
         assert(moved.size() == 300 && ends == 0);
         moved.clear();
@@ -180,13 +216,17 @@ void test_nested_lists() {
         }
         pools.append(alloc, std::move(members)).expect("the pools are below their maximum");
     }
-    int pool = 0;
-    for (GrowList<int> const& members : pools) {
-        assert(members.size() == static_cast<std::size_t>(pool) + 1);
-        assert(*members.get(0).expect("each pool holds a member") == pool * 100);
-        ++pool;
-    }
-    assert(pool == 20);
+    int const in_order = pools.with_view([](View<GrowList<int>> view) noexcept {
+        int pool = 0;
+        for (GrowList<int> const& members : view) {
+            bool const holds_pool = members.size() == static_cast<std::size_t>(pool) + 1
+                                 && element_at(members, 0).expect("each pool holds a member") == pool * 100;
+            if (!holds_pool) break;
+            ++pool;
+        }
+        return pool;
+    });
+    assert(in_order == 20);
 }
 
 // A text grows through many appends of each kind, and refuses an append that
@@ -194,34 +234,35 @@ void test_nested_lists() {
 void test_text_appends() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowText text = mint_grow_text(4096);
-    assert(text.size() == 0 && text.view() == TextView{});
+    assert(text.size() == 0 && holds(text, TextView{}));
     text.append(alloc, "crucible").expect("the text is below its maximum");
     text.append(alloc, '/').expect("the text is below its maximum");
     FixedArray<char, 3> const letters{'a', 'b', 'c'};
     text.append(alloc, letters.view()).expect("the text is below its maximum");
-    assert(text.view() == TextView{"crucible/abc"});
+    assert(holds(text, TextView{"crucible/abc"}));
     for (int turn = 0; turn < 200; ++turn) {
         text.append(alloc, "0123456789").expect("the text is below its maximum");
     }
     assert(text.size() == 12 + 2000);
-    std::size_t digits = 0;
-    for (char const character : text) {
-        if (character >= '0' && character <= '9') {
-            ++digits;
+    std::size_t const digits = text.with_view([](TextView characters) noexcept {
+        std::size_t found = 0;
+        for (char const character : characters) {
+            found += character >= '0' && character <= '9' ? 1 : 0;
         }
-    }
+        return found;
+    });
     assert(digits == 2000);
 
     GrowText small = mint_grow_text(5);
     assert(small.append(alloc, "abcdef").is_err() && small.size() == 0);
     small.append(alloc, "abc").expect("three characters fit below five");
-    assert(small.append(alloc, "abc").is_err() && small.view() == TextView{"abc"});
+    assert(small.append(alloc, "abc").is_err() && holds(small, TextView{"abc"}));
     small.append(alloc, "de").expect("two characters fit below five");
-    assert(small.view() == TextView{"abcde"} && small.append(alloc, 'f').is_err());
+    assert(holds(small, TextView{"abcde"}) && small.append(alloc, 'f').is_err());
     small.clear();
     assert(small.size() == 0);
     small.append(alloc, "xyz").expect("a cleared text is below its maximum");
-    assert(small.view() == TextView{"xyz"});
+    assert(holds(small, TextView{"xyz"}));
 }
 
 // append_self copies the characters of the text before the growth gives the
@@ -240,15 +281,19 @@ void test_text_appends_itself() {
     window.append(alloc, "crucible").expect("the text is below its maximum");
     window.append_self(alloc, 2, 3).expect("the text is below its maximum");
     window.append_self(alloc, 0, 0).expect("an empty window fits");
-    assert(window.view() == TextView{"crucibleuci"});
+    assert(holds(window, TextView{"crucibleuci"}));
     GrowText full = mint_grow_text(4);
     full.append(alloc, "abc").expect("the text is below its maximum");
-    assert(full.append_self(alloc, 0, 2).is_err() && full.view() == TextView{"abc"});
-    std::size_t position = 0;
-    for (char const character : text) {
-        assert(character == (position % 2 == 0 ? 'a' : 'b'));
-        ++position;
-    }
+    assert(full.append_self(alloc, 0, 2).is_err() && holds(full, TextView{"abc"}));
+    std::size_t const in_order = text.with_view([](TextView characters) noexcept {
+        std::size_t position = 0;
+        for (char const character : characters) {
+            if (character != (position % 2 == 0 ? 'a' : 'b')) break;
+            ++position;
+        }
+        return position;
+    });
+    assert(in_order == std::size_t{2} << 12);
     GrowText moved = std::move(text);
     assert(moved.size() == std::size_t{2} << 12);
     GrowText other = mint_grow_text(8);
@@ -316,7 +361,7 @@ void test_freeze() {
     text.append(alloc, "crucible").expect("the text is below its maximum");
     ::foundation::core::HeapText const frozen = freeze(std::move(through(text)));
     assert(frozen.size() == 8 && frozen.view() == TextView{"crucible"});
-    assert(text.size() == 0 && text.view().size() == 0);
+    assert(text.size() == 0 && holds(text, TextView{}));
     text.append(alloc, "12345678").expect("a frozen text keeps its maximum");
     assert(text.append(alloc, '9').is_err());
     std::size_t letters = 0;
@@ -352,10 +397,13 @@ void test_agrees_with_a_model() {
                 ++model_count;
             }
         }
-        std::uint64_t sum = 0;
-        for (std::uint64_t const element : list) {
-            sum += element;
-        }
+        std::uint64_t const sum = list.with_view([](View<std::uint64_t> view) noexcept {
+            std::uint64_t total = 0;
+            for (std::uint64_t const element : view) {
+                total += element;
+            }
+            return total;
+        });
         assert(sum == model_sum && list.size() == model_count && text.size() == model_count);
     }
 }
@@ -381,12 +429,15 @@ void test_foreign_doors() {
 // of the first character, and the zero follows the last character.
 void test_c_text_doors() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    GrowText name = mint_grow_text(64);
-    name.append(alloc, "aten::mm").expect("the text is below its maximum");
+    GrowText growing = mint_grow_text(64);
+    growing.append(alloc, "aten::mm").expect("the text is below its maximum");
     // A view with no zero at its end.
-    assert(::foundation::core::mint_c_text(name.view()).is_none());
-    name.append(alloc, '\0').expect("the text is below its maximum");
-    // A valid name: the zero is the last character of the view.
+    assert(growing.with_view(
+        [](TextView characters) noexcept { return ::foundation::core::mint_c_text(characters).is_none(); }));
+    growing.append(alloc, '\0').expect("the text is below its maximum");
+    // A valid name: the zero is the last character of the view.  The name is
+    // frozen, so its CText lives as long as the HeapText.
+    ::foundation::core::HeapText const name = freeze(std::move(growing));
     CText const c_text = ::foundation::core::mint_c_text(name.view()).expect("one zero ends the view");
     assert(c_text.size() == 8 && c_text.view() == TextView{"aten::mm"});
     assert(::foundation::core::foreign_c_str(c_text)[0] == 'a');
@@ -404,11 +455,15 @@ void test_c_text_doors() {
     inner.append(alloc, '\0').expect("the text is below its maximum");
     inner.append(alloc, "mm").expect("the text is below its maximum");
     inner.append(alloc, '\0').expect("the text is below its maximum");
-    assert(::foundation::core::mint_c_text(inner.view()).is_none());
+    assert(inner.with_view(
+        [](TextView characters) noexcept { return ::foundation::core::mint_c_text(characters).is_none(); }));
     // A view of one zero gives the empty CText.
     GrowText zero = mint_grow_text(4);
     zero.append(alloc, '\0').expect("the text is below its maximum");
-    assert(::foundation::core::mint_c_text(zero.view()).expect("one zero ends the view").size() == 0);
+    std::size_t const empty_size = zero.with_view([](TextView characters) noexcept {
+        return ::foundation::core::mint_c_text(characters).expect("one zero ends the view").size();
+    });
+    assert(empty_size == 0);
     // The CText of a literal.
     assert(::foundation::core::foreign_c_str(CText{"ok"})[2] == '\0');
 }

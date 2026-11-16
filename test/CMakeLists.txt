@@ -1713,13 +1713,13 @@ crucible_neg_compile_test(neg_call_site_lineno_int_min
 #   * _interned_name_to_sanitized: no retag edge leaves Interned, so a
 #     stored name, which can hold External bytes, never becomes Sanitized.
 crucible_neg_compile_test(neg_call_site_filename_raw_string
-  "could not convert .* from .foundation::core::GrowText. to .crucible::CallSiteTable::InternedName. \\{aka .fixy::Tagged<foundation::core::GrowText, fixy::tags::source::Interned>.\\}"
+  "could not convert .* from .foundation::core::HeapText. to .crucible::CallSiteTable::InternedName. \\{aka .fixy::Tagged<foundation::core::HeapText, fixy::tags::source::Interned>.\\}"
   "fixy/Tagged.h:[0-9]+:[0-9]+: note: explicit conversion function was not considered")
 crucible_neg_compile_test(neg_call_site_filename_external_passback
   "invalid initialization of reference of type .const ExternalName&. .*from expression of type .const crucible::CallSiteTable::InternedName."
   "in passing argument 1 of .void wants_external_only\\(const ExternalName&\\).")
 crucible_neg_compile_test(neg_call_site_interned_name_to_sanitized
-  "no matching function for call to .fixy::Tagged<foundation::core::GrowText, fixy::tags::source::Interned>::retag<fixy::tags::source::Sanitized>\\(\\)."
+  "no matching function for call to .fixy::Tagged<foundation::core::HeapText, fixy::tags::source::Interned>::retag<fixy::tags::source::Sanitized>\\(\\)."
   "required for the satisfaction of .RetagAllowed<Tag, NewTag>. \\[with Tag = fixy::tags::source::Interned. NewTag = fixy::tags::source::Sanitized\\]")
 
 # IterationDetector::SignatureLen is the fixy BoundedMonotonic<uint32_t,

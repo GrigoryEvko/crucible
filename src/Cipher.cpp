@@ -773,10 +773,11 @@ Cipher::load_session_events_(FileCtx const& file_ctx, OpenView const&, ::foundat
     static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, session_dir, "index", index_text).is_ok();
     }));
+    const ::fixy::HeapText index = ::fixy::freeze(std::move(index_text));
 
     uint64_t highest_loaded = from_step.value;
     bool have_loaded = false;
-    for (::fixy::TextView rest = index_text.view(); rest.size() != 0;) {
+    for (::fixy::TextView rest = index.view(); rest.size() != 0;) {
         const LineSplit split = split_line_(rest);
         rest = split.rest;
         ::fixy::Option<IndexLine> parsed = parse_index_line_(split.line);
@@ -1089,7 +1090,8 @@ Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocat
     const bool is_head_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, root_dirfd_, "HEAD", head_text).is_ok();
     });
-    head_ = is_head_read ? parse_head_(head_text.view()).value_or(ContentHash{}) : ContentHash{};
+    const ::fixy::HeapText head = ::fixy::freeze(std::move(head_text));
+    head_ = is_head_read ? parse_head_(head.view()).value_or(ContentHash{}) : ContentHash{};
     return ::fixy::Unit{};
 }
 
@@ -1101,7 +1103,8 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
     static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, root_dirfd_, "log", text).is_ok();
     }));
-    for (::fixy::TextView rest = text.view(); rest.size() != 0;) {
+    const ::fixy::HeapText log_text = ::fixy::freeze(std::move(text));
+    for (::fixy::TextView rest = log_text.view(); rest.size() != 0;) {
         const LineSplit split = split_line_(rest);
         rest = split.rest;
         ::fixy::Option<LogLine> parsed = parse_log_line_(split.line);

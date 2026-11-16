@@ -134,10 +134,10 @@ static void test_name_past_the_bound_is_refused() {
     for (std::size_t index = 0; index < CallSiteTable::MAX_NAME_CHARS; ++index) {
         assert(longest.append(alloc_cap(), 'a').is_ok());
     }
-    assert(t.insert(alloc_cap(), NZ(11), longest.view(), "f", 1));
+    assert(longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(11), name, "f", 1); }));
     assert(longest.append(alloc_cap(), 'a').is_ok());
-    assert(!t.insert(alloc_cap(), NZ(12), longest.view(), "f", 2));
-    assert(!t.insert(alloc_cap(), NZ(13), "f.py", longest.view(), 3));
+    assert(!longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(12), name, "f", 2); }));
+    assert(!longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(13), "f.py", name, 3); }));
     assert(t.size() == 1 && t.has(H(11)) && !t.has(H(12)) && !t.has(H(13)));
     crucible::test::pass("  test_name_bound:                PASSED\n");
 }

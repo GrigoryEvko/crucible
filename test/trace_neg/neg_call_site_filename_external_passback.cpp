@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // CallSiteTable::Entry stores its filename and funcname as InternedName,
-// a fixy::Tagged<fixy::GrowText, source::Interned>.  External and internal
+// a fixy::Tagged<fixy::HeapText, source::Interned>.  External and internal
 // names go in, and an Interned name comes out.  Two tags of Tagged do not
 // convert, so a stored name cannot go back to an API that takes an
 // External name of the same text type.  This fixture tries that call.
@@ -18,7 +18,7 @@
 
 #include <cstdint>
 
-using ExternalName = ::fixy::Tagged<::fixy::GrowText, ::fixy::tags::source::External>;
+using ExternalName = ::fixy::Tagged<::fixy::HeapText, ::fixy::tags::source::External>;
 
 void wants_external_only(ExternalName const&);
 

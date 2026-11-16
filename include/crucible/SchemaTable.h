@@ -26,11 +26,12 @@ static constexpr uint32_t SCHEMA_TABLE_CAP = 512;
 inline constexpr std::size_t SCHEMA_NAME_MAX = 4096;
 
 // The name holds its characters and one zero after them, so a C caller reads
-// the name through foreign_c_str.  The text of an entry that no registration
-// wrote holds no storage.
+// the name through foreign_c_str.  The name is a HeapText, so no append
+// changes it, and a C text of it lives as long as the entry keeps it.  The
+// text of an entry that no registration wrote holds no storage.
 struct SchemaEntry {
     SchemaHash hash;
-    ::fixy::GrowText name = ::fixy::mint_grow_text(SCHEMA_NAME_MAX + 1);
+    ::fixy::HeapText name = ::fixy::freeze(::fixy::mint_grow_text(0));
 };
 
 namespace schema_state {
@@ -220,10 +221,10 @@ private:
         CRUCIBLE_POST(0, is_registered_(hash));
     }
 
-    // The characters of name before its first zero, and one zero after them.
-    // The copy allocates through the allocation capability of the caller.
-    // Complexity: the length of the name.
-    [[nodiscard]] static ::fixy::GrowText copy_name_(::foundation::effects::Alloc allocation, ::fixy::TextView name) {
+    // The characters of name before its first zero, and one zero after them,
+    // frozen into a HeapText.  The copy allocates through the allocation
+    // capability of the caller.  Complexity: the length of the name.
+    [[nodiscard]] static ::fixy::HeapText copy_name_(::foundation::effects::Alloc allocation, ::fixy::TextView name) {
         const ::fixy::Option<std::size_t> zero = ::fixy::find(name, '\0');
         const ::fixy::TextView characters = zero.match(
             [name](std::size_t position) noexcept {
@@ -237,7 +238,7 @@ private:
         ::fixy::GrowText copy = ::fixy::mint_grow_text(SCHEMA_NAME_MAX + 1);
         copy.append(allocation, characters).expect("the name fits below the maximum of its text");
         copy.append(allocation, '\0').expect("the zero fits below the maximum of its text");
-        return copy;
+        return ::fixy::freeze(static_cast<::fixy::GrowText&&>(copy));
     }
 
     // The position of the first entry whose hash is not below hash.  The

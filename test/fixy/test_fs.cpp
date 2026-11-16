@@ -421,7 +421,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 
     core::GrowText text = core::mint_grow_text(64);
     if (fs::read_whole_at(ctx, alloc, objects, "ab", text).value_or(0) != 5
-        || !(text.view() == core::TextView{"xxxyz"})) {
+        || !text.with_view([](core::TextView read) noexcept { return read == core::TextView{"xxxyz"}; })) {
         fixy::report(fixy::Sink::Err, "read_whole_at did not give the five bytes of the file\n");
         return 1;
     }

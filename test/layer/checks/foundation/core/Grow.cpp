@@ -97,7 +97,7 @@ concept Clears = requires(List& list) { list.clear(); };
 static_assert(Clears<GrowList<int>> && !Clears<GrowList<LinearToken>> && Clears<GrowText>);
 
 // An append takes the allocation capability first, and a different tag is
-// refused.  An append, a view and a read of a temporary owner are refused.
+// refused.  An append to a temporary owner is refused.
 template <class Owner, class Marker, class Value>
 concept Appends = requires(Owner& owner, Marker marker, Value value) { owner.append(marker, value); };
 struct OtherTag final {};
@@ -107,12 +107,19 @@ static_assert(Appends<GrowText, Alloc, View<char const>> && Appends<GrowText, Al
 static_assert(!Appends<GrowText, OtherTag, TextView>);
 template <class Owner>
 concept AppendsToTemporary = requires { std::declval<Owner>().append(std::declval<Alloc>(), 1); };
+static_assert(!AppendsToTemporary<GrowList<int>>);
+
+// A growable owner gives no borrow out of a frame: no view(), no get() and no
+// cursor.  A HeapText keeps view() and its loop, because no growth ends them.
 template <class Owner>
-concept ViewsTemporary = requires { std::declval<Owner>().view(); };
+concept Views = requires(Owner& owner) { owner.view(); };
 template <class Owner>
-concept ReadsTemporary = requires { std::declval<Owner>().get(0); };
-static_assert(!AppendsToTemporary<GrowList<int>> && !ViewsTemporary<GrowList<int>> && !ReadsTemporary<GrowList<int>>);
-static_assert(!ViewsTemporary<GrowList<int> const> && !ViewsTemporary<GrowText>);
+concept Reads = requires(Owner& owner) { owner.get(0); };
+template <class Owner>
+concept Loops = requires(Owner& owner) { owner.begin(); };
+static_assert(!Views<GrowList<int>> && !Reads<GrowList<int>> && !Loops<GrowList<int>>);
+static_assert(!Views<GrowList<int> const> && !Reads<GrowList<int> const> && !Loops<GrowList<int> const>);
+static_assert(!Views<GrowText> && !Loops<GrowText> && Views<HeapText const> && Loops<HeapText const>);
 
 // The mint gives an empty owner with no storage, also in a constant
 // evaluation, and a maximum past the largest View becomes that count.  The
@@ -122,9 +129,9 @@ static_assert(!ViewsTemporary<GrowList<int> const> && !ViewsTemporary<GrowText>)
     GrowList<int> const list = mint_grow_list<int>(8);
     GrowText text = mint_grow_text(~std::size_t{0});
     bool const is_list_empty =
-        list.size() == 0 && list.view().size() == 0 && list.get(0).is_none() && list.with_view(CountsElements{}) == 0
+        list.size() == 0 && list.with_view(CountsElements{}) == 0
         && list.with_element(0, [](int const&) noexcept { return false; }, [] noexcept { return true; });
-    bool const is_text_empty = text.size() == 0 && text.view().size() == 0 && text.with_view(CountsCharacters{}) == 0;
+    bool const is_text_empty = text.size() == 0 && text.with_view(CountsCharacters{}) == 0;
     HeapText const frozen = freeze(static_cast<GrowText&&>(text));
     return is_list_empty && is_text_empty && frozen.size() == 0 && frozen.view().size() == 0;
 }

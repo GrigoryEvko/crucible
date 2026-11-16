@@ -34,8 +34,9 @@ static auto g_test = ::foundation::effects::testing::test();
     for (std::size_t index = 0; dir[index] != '\0'; ++index) {
         root.append(g_test.alloc, dir[index]).expect("the text holds each character of the directory");
     }
+    ::foundation::core::HeapText const root_path = ::foundation::core::freeze(std::move(root));
     return crucible::Cipher::open(store_ctx(), g_test.alloc,
-                                  ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()))
+                                  ::fixy::mint_tagged<::fixy::tags::source::External>(root_path.view()))
         .expect("the test opens its store");
 }
 
@@ -124,7 +125,9 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
 // The step of the event at position of a list of loaded events.
 [[nodiscard]] static std::uint64_t step_at(::foundation::core::GrowList<crucible::Cipher::SessionEvent> const& events,
                                            std::size_t position) {
-    return events.view().get(position).expect("the position is inside the list")->step_id().value;
+    return events.with_element(
+        position, [](crucible::Cipher::SessionEvent const& event) noexcept { return event.step_id().value; },
+        [] noexcept -> std::uint64_t { ::fixy::fatal("the position is inside the list of loaded events"); });
 }
 
 // The region of a load that gives one.

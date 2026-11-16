@@ -31,8 +31,10 @@ struct CallSiteTable {
     // wrote it first, so a stored name claims Interned and neither tag of its
     // caller.  Nothing here sanitizes a name, so a stored name does not claim
     // Sanitized.  No retag leaves Interned, so a reader cannot hand a stored
-    // name back to something that wants an External or an internal name.
-    using InternedName = ::fixy::Tagged<::fixy::GrowText, ::fixy::tags::source::Interned>;
+    // name back to something that wants an External or an internal name.  A
+    // stored name is a HeapText, so no append changes it, and a view of it
+    // lives as long as the entry.
+    using InternedName = ::fixy::Tagged<::fixy::HeapText, ::fixy::tags::source::Interned>;
 
     struct Entry {
         CallsiteHash hash;
@@ -86,9 +88,11 @@ struct CallSiteTable {
                 h = hash;
                 // This is where the line number is checked: the checked mint
                 // of the wrapper is the guard.
-                entries.emplace(hash, ::fixy::mint_tagged<::fixy::tags::source::Interned>(std::move(stored_filename)),
-                                ::fixy::mint_tagged<::fixy::tags::source::Interned>(std::move(stored_funcname)),
-                                ::fixy::mint_refined<::fixy::non_negative>(lineno));
+                entries.emplace(
+                    hash,
+                    ::fixy::mint_tagged<::fixy::tags::source::Interned>(::fixy::freeze(std::move(stored_filename))),
+                    ::fixy::mint_tagged<::fixy::tags::source::Interned>(::fixy::freeze(std::move(stored_funcname))),
+                    ::fixy::mint_refined<::fixy::non_negative>(lineno));
                 return true;
             }
         }

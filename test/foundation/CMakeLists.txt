@@ -3169,6 +3169,12 @@ foundation_neg_compile_test(neg_core_grow_list_append_in_frame
 foundation_neg_compile_test(neg_core_grow_text_append_in_frame
   "this arm of a borrow match writes the sum that the match reads .mutating-call text."
   "the payload that the arm borrows can end while the arm holds its reference")
+foundation_neg_compile_test(neg_core_grow_list_ref_across_append
+  "has no member named .get."
+  "foundation::core::GrowList<int>")
+foundation_neg_compile_test(neg_core_grow_text_view_across_append
+  "has no member named .view."
+  "foundation::core::GrowText")
 foundation_neg_compile_test(neg_core_grow_list_frame_gives_view
   "use of deleted function .void foundation::core::GrowList<T>::with_view\\(Body&&\\) &"
   "the result of a frame door holds no borrow: the next append can end the storage of the list")

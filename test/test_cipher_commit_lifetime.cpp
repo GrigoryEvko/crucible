@@ -56,7 +56,9 @@ using RegionRef = ::fixy::Ref<const RegionNode>;
     for (std::size_t index = 0; chars[index] != '\0'; ++index) {
         root.append(g_test.alloc, chars[index]).expect("the text holds each character of the directory");
     }
-    return Cipher::open(store_ctx(), g_test.alloc, ::fixy::mint_tagged<::fixy::tags::source::External>(root.view()))
+    ::foundation::core::HeapText const root_path = ::foundation::core::freeze(std::move(root));
+    return Cipher::open(store_ctx(), g_test.alloc,
+                        ::fixy::mint_tagged<::fixy::tags::source::External>(root_path.view()))
         .expect("the test opens its store");
 }
 

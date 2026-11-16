@@ -72,6 +72,8 @@ using ::foundation::core::HeapText;
 using ::foundation::core::Hole;
 using ::foundation::core::MaskedArray;
 using ::foundation::core::Option;
+using ::foundation::core::Ref;
+using ::foundation::core::View;
 
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
@@ -229,8 +231,13 @@ struct Inner<MaskedArrayTag> {
     MaskedArray<Elem<MaskedArrayTag>> child{};
 };
 
+// The brand of the Inner of a GrowList element.  to() of a branded object
+// takes the brand of the object, so the GrowList probe names its Ref type.
+struct GrowListInnerBrand final {};
+
 template <>
 struct Inner<GrowListTag> {
+    using brand_type = GrowListInnerBrand;
     GrowList<Elem<GrowListTag>> child = ::foundation::core::mint_grow_list<Elem<GrowListTag>>(8);
 };
 
@@ -243,19 +250,25 @@ Inner<Tag>& inner_of(Elem<Tag>& element) {
     ::foundation::core::fatal("the element of the probe holds no child owner");
 }
 
+// Gives element a new Inner in a Box, and gives that Inner.  The Inner lives
+// in its Box, so no move of the owner of the element moves it.
+template <class Tag>
+Inner<Tag>& give_an_inner(Elem<Tag>& element) {
+    element.inner = ::foundation::core::some(::foundation::core::mint_box<Inner<Tag>>(kAlloc));
+    return inner_of(element);
+}
+
 // The hazards of a container of elements.  The probe derives from this
 // class, and it gives the types Owner and Tag, make(count), which builds an
-// owner of count elements, and first_of(owner), the first element.  The
-// count of each make is a power of two, as a MaskedArray needs.  The probe
-// is incomplete where it names this base, so only the bodies read it.
+// owner of count elements, and give_first_an_inner(owner), which gives the
+// first element a new Inner and gives that Inner.  The count of each make is
+// a power of two, as a MaskedArray needs.  The probe is incomplete where it
+// names this base, so only the bodies read it.
 template <class Probe>
 struct ElementArms {
     // Gives the first element of parent a child owner of count elements.
     static auto& put_child(auto& parent, unsigned count) {
-        using Tag = Probe::Tag;
-        Elem<Tag>& first = Probe::first_of(parent);
-        first.inner = ::foundation::core::some(::foundation::core::mint_box<Inner<Tag>>(kAlloc));
-        Inner<Tag>& inner = inner_of(first);
+        auto& inner = Probe::give_first_an_inner(parent);
         inner.child = Probe::make(count);
         return inner.child;
     }
@@ -322,9 +335,9 @@ struct HeapArrayProbe : ElementArms<HeapArrayProbe> {
 
     static Owner make(unsigned count) { return ::foundation::core::mint_heap_array(kAlloc, count, Elem<Tag>{}); }
 
-    static Elem<Tag>& first_of(Owner& owner) {
+    static Inner<Tag>& give_first_an_inner(Owner& owner) {
         for (Elem<Tag>& element : owner) {
-            return element;
+            return give_an_inner(element);
         }
         ::foundation::core::fatal("the HeapArray of the probe holds no element");
     }
@@ -351,7 +364,7 @@ struct MaskedArrayProbe : ElementArms<MaskedArrayProbe> {
 
     static Owner make(unsigned count) { return ::foundation::core::mint_masked_array<Elem<Tag>>(kAlloc, count); }
 
-    static Elem<Tag>& first_of(Owner& owner) { return owner.at_masked(0); }
+    static Inner<Tag>& give_first_an_inner(Owner& owner) { return give_an_inner(owner.at_masked(0)); }
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(!MoveAssignable<MaskedArray<LinearElement>>); }
 
@@ -383,11 +396,22 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
         return list;
     }
 
-    static Elem<Tag>& first_of(Owner& owner) {
-        for (Elem<Tag>& element : owner) {
-            return element;
-        }
-        ::foundation::core::fatal("the GrowList of the probe holds no element");
+    // The frame door with_element lends the first element, and a Ref of the
+    // new Inner leaves the frame through a capture.  The Inner lives in its
+    // Box and not in the storage of the list, so no growth ends the Ref.
+    using InnerRef = Ref<Inner<Tag>, GrowListInnerBrand>;
+
+    static Inner<Tag>& give_first_an_inner(Owner& owner) {
+        Option<InnerRef> given{::foundation::core::none};
+        bool const is_given = owner.with_element(
+            0,
+            [&given](Elem<Tag>& first) noexcept {
+                given = Option<InnerRef>::some(::foundation::core::to(give_an_inner(first)));
+                return true;
+            },
+            [] noexcept { return false; });
+        if (!is_given) ::foundation::core::fatal("the GrowList of the probe holds no element");
+        return *static_cast<Option<InnerRef>&&>(given).expect("the frame of the first element gave its Inner");
     }
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(!MoveAssignable<GrowList<LinearElement>>); }
@@ -399,8 +423,10 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
             Owner source = make(2);
             Owner const target{static_cast<Owner&&>(through(source))};
             CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
-            CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
-            CRUCIBLE_FATAL_INVARIANT(through(source).get(0).is_none());
+            CRUCIBLE_FATAL_INVARIANT(
+                through(source).with_view([](View<Elem<Tag>> view) noexcept { return view.size(); }) == 0);
+            CRUCIBLE_FATAL_INVARIANT(through(source).with_element(
+                0, [](Elem<Tag>&) noexcept { return false; }, [] noexcept { return true; }));
             through(source).append(kAlloc, Elem<Tag>{}).expect("a moved-from list keeps its maximum");
             CRUCIBLE_FATAL_INVARIANT(through(source).size() == 1);
         }
@@ -454,12 +480,15 @@ struct GrowTextProbe {
         return text;
     }
 
-    // The first character of a text that holds one.
+    // The first character of a text that holds one, through the frame door
+    // with_view.
     static char first_of(Owner const& text) {
-        for (char const character : text) {
-            return character;
-        }
-        ::foundation::core::fatal("the GrowText of the probe holds no character");
+        return text.with_view([](::foundation::core::TextView characters) noexcept {
+            for (char const character : characters) {
+                return character;
+            }
+            ::foundation::core::fatal("the GrowText of the probe holds no character");
+        });
     }
 
     static void self_move() {
@@ -493,7 +522,9 @@ struct GrowTextProbe {
         Owner source = make('a');
         Owner const target{static_cast<Owner&&>(through(source))};
         CRUCIBLE_FATAL_INVARIANT(target.size() == 1);
-        CRUCIBLE_FATAL_INVARIANT(through(source).view().size() == 0);
+        CRUCIBLE_FATAL_INVARIANT(through(source).with_view([](::foundation::core::TextView characters) noexcept {
+            return characters.size();
+        }) == 0);
         through(source).append(kAlloc, 'e').expect("a moved-from text keeps its maximum");
         CRUCIBLE_FATAL_INVARIANT(first_of(through(source)) == 'e');
     }
