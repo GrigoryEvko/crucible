@@ -67,8 +67,15 @@
 //   is at most 2 * floor(log2 k) + 1.  For a sum with the round to nearest of
 //   IEEE 754, the error of out[k] is at most gamma(d) * sum |x_i| over the
 //   elements of the prefix, with d the depth, gamma(d) = d * u / (1 - d * u),
-//   and u = 2^-24 for float and 2^-53 for double.  THE VALUES OUTSIDE THE
-//   BOUND of Reduce.h applies to a NaN and to an overflow.
+//   and u = 2^-24 for float and 2^-53 for double.
+//
+// THE VALUES OUTSIDE THE BOUND
+//   The rule of THE VALUES OUTSIDE THE BOUND of Reduce.h holds for each sum
+//   scan: each output that is a NaN is the canonical NaN quiet_nan_of<T>,
+//   with one compare and one select at each output.  So the inclusive output
+//   of a first element that is a NaN is the canonical NaN too, and not a copy
+//   of that element.  The scans with the combine of a caller give the bits of
+//   the combine.  The exclusive out[0] of a sum scan is +0.
 //
 // THE LANES
 //   A sum scan loads L consecutive elements into one vector, with L the count
@@ -79,7 +86,8 @@
 //   of the aligned block of that level that holds it.  In the upper lane of a
 //   pair the add takes its two operands in the other order.  An add of IEEE
 //   754 is commutative for each value that is not a NaN, so each such sum has
-//   the bits of the tree.  The down-sweep adds the carry and then one
+//   the bits of the tree.  A NaN output takes the canonical NaN, so the order
+//   of the operands of a NaN changes no bit either.  The down-sweep adds the carry and then one
 //   term of each level, from the largest block.  A lane with no block at a
 //   level adds -0, which is exact for each value.  A binary counter of the
 //   sums of the blocks gives the carry of each vector.  So 4, 8 or 16 lanes
@@ -302,9 +310,9 @@ void sum_scan_lanes_(T const* in, T* out, std::size_t count, T const* carry) noe
         T total{};
         V const prefix = scan_block_prefix_<T, Lanes, 0>(values, V{top == 0 ? base : folds[top - 1]}, total);
         if constexpr (Kind == ScanKind::Inclusive) {
-            simd::store(prefix + values, out + block * lanes);
+            simd::store(canonical_sums_<T, Lanes>(prefix + values), out + block * lanes);
         } else {
-            simd::store(prefix, out + block * lanes);
+            simd::store(canonical_sums_<T, Lanes>(prefix), out + block * lanes);
         }
         T sum = total;
         for (int merges = countr_one(block); merges > 0; --merges) {
@@ -322,6 +330,11 @@ void sum_scan_lanes_(T const* in, T* out, std::size_t count, T const* carry) noe
         bool const has_carry = top != 0 || carry != nullptr;
         TreeAdd add{};
         scan_run_<Kind>(in + done, out + done, count - done, has_carry ? &tail_carry : nullptr, &empty, add);
+        // The tail holds fewer than Lanes outputs, and an inclusive output of
+        // a run with no carry is a copy of its element.
+        for (std::size_t position = done; position < count; ++position) {
+            out[position] = canonical_sum_(out[position]);
+        }
     }
     if constexpr (Kind == ScanKind::Exclusive) {
         if (carry == nullptr && count > 0) out[0] = empty;

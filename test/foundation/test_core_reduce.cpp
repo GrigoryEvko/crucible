@@ -7,6 +7,7 @@
 #include <foundation/effects/Effect.h>
 
 #include "../test_assert.h"
+#include "nan_outputs.h"
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -331,6 +332,92 @@ void test_segments_take_the_tree_of_their_window() {
                .is_err());
 }
 
+// ── The canonical NaN ───────────────────────────────────────────────────
+
+using ::crucible::test::float_bits;
+using ::crucible::test::output_bits;
+
+// Each form of the tree sum of part gives the output bits of the naive tree.
+template <class T>
+void check_sum_outputs(View<T const> part) noexcept {
+    auto const expected = output_bits(naive_tree(part));
+    assert(float_bits(::foundation::core::tree_sum(part)) == expected);
+    assert(float_bits(::foundation::core::tree_sum_lanes<2>(part)) == expected);
+    assert(float_bits(::foundation::core::tree_sum_lanes<4>(part)) == expected);
+    assert(float_bits(::foundation::core::tree_sum_lanes<8>(part)) == expected);
+    assert(float_bits(::foundation::core::tree_sum_lanes<16>(part)) == expected);
+}
+
+// The short runs whose sum is a NaN with other bits on x86 without the rule:
+// +inf plus -inf, which gives 0xFFC00000, a NaN with a payload, a signaling
+// NaN alone, and a NaN with its sign bit set.  An infinity that is not a NaN
+// keeps its bits.
+template <class T, class Word>
+void check_short_runs(Word infinity, Word sign, Word quiet) noexcept {
+    ::fixy::FixedArray<T, 2> const infinities{::fixy::bit_cast<T>(infinity), ::fixy::bit_cast<T>(sign | infinity)};
+    ::fixy::FixedArray<T, 2> const payload{::fixy::bit_cast<T>(quiet | Word{0x12345}), T{1}};
+    ::fixy::FixedArray<T, 1> const signaling{::fixy::bit_cast<T>(infinity | Word{1})};
+    ::fixy::FixedArray<T, 2> const negative{::fixy::bit_cast<T>(sign | quiet), T{2}};
+    ::fixy::FixedArray<T, 2> const infinite{::fixy::bit_cast<T>(infinity), T{1}};
+    check_sum_outputs(View<T const>{infinities.view()});
+    check_sum_outputs(View<T const>{payload.view()});
+    check_sum_outputs(View<T const>{signaling.view()});
+    check_sum_outputs(View<T const>{negative.view()});
+    check_sum_outputs(View<T const>{infinite.view()});
+    assert(float_bits(::foundation::core::tree_sum(View<T const>{infinite.view()})) == infinity);
+}
+
+// Each output of a sum form that is a NaN is the canonical NaN, and each
+// other output keeps the bits of its adds: the tree sums for each count of
+// lanes, the segments, the grains and the sum of runs.
+void test_nan_outputs_are_canonical() {
+    check_short_runs<float>(std::uint32_t{0x7F800000u}, std::uint32_t{0x80000000u}, std::uint32_t{0x7FC00000u});
+    check_short_runs<double>(std::uint64_t{0x7FF0000000000000u}, std::uint64_t{0x8000000000000000u},
+                             std::uint64_t{0x7FF8000000000000u});
+    assert(float_bits(::foundation::core::quiet_nan_of<float>) == ::crucible::test::kCanonicalFloatNan);
+    HeapArray<float> run = draw_floats(4099, 0x7E570030u);
+    ::crucible::test::put_specials(run.view(), 0x7E570031u);
+    HeapArray<double> wide = draw_doubles(1000, 0x7E570032u);
+    ::crucible::test::put_specials(wide.view(), 0x7E570033u);
+    View<float const> const all{run.view()};
+    for_each_count(all.size(), [&](std::size_t count) noexcept {
+        if (count == 0) return;
+        check_sum_outputs(all.window(0, count).expect("the part fits the run"));
+    });
+    View<double const> const all_wide{wide.view()};
+    for (std::size_t count = 1; count <= all_wide.size(); count += 7) {
+        check_sum_outputs(all_wide.window(0, count).expect("the part fits the run"));
+    }
+    ::fixy::FixedArray<std::size_t, 8> const offsets{0, 1, 2, 17, 64, 300, 1100, 4099};
+    HeapArray<float> sums = ::foundation::core::mint_heap_array(test_alloc(), std::size_t{7}, 0.0f);
+    assert(::foundation::core::segmented_tree_sum(all, View<std::size_t const>{offsets.view()}, sums.view()).is_ok());
+    for (std::size_t segment = 0; segment < 7; ++segment) {
+        std::size_t const start = ::crucible::test::element_at(offsets, segment);
+        std::size_t const end = ::crucible::test::element_at(offsets, segment + 1);
+        float const expected = naive_tree(all.window(start, end - start).expect("the segment fits the run"));
+        assert(float_bits(::crucible::test::element_at(sums.view(), segment)) == output_bits(expected));
+    }
+    std::size_t const grains = ::foundation::core::tree_grain_count<16>(all.size());
+    HeapArray<float> partials = ::foundation::core::mint_heap_array(test_alloc(), grains, 0.0f);
+    ::foundation::core::tree_sum_grains<16>(all, 0, partials.view());
+    for (std::size_t grain = 0; grain < grains; ++grain) {
+        std::size_t const start = grain * 16;
+        std::size_t const size = all.size() - start < 16 ? all.size() - start : 16;
+        float const expected = naive_tree(all.window(start, size).expect("the grain fits the run"));
+        assert(float_bits(::crucible::test::element_at(partials.view(), grain)) == output_bits(expected));
+    }
+    ::fixy::FixedArray<View<float const>, 3> const runs{all.window(0, 1000).expect("a run fits"),
+                                                        all.window(1000, 1000).expect("a run fits"),
+                                                        all.window(2000, 1000).expect("a run fits")};
+    HeapArray<float> run_sums = ::foundation::core::mint_heap_array(test_alloc(), std::size_t{1000}, 0.0f);
+    assert(::foundation::core::tree_sum_of_runs(View<View<float const> const>{runs.view()}, run_sums.view()).is_ok());
+    for (std::size_t offset = 0; offset < 1000; ++offset) {
+        float const pair = ::crucible::test::element_at(all, offset) + ::crucible::test::element_at(all, 1000 + offset);
+        float const expected = pair + ::crucible::test::element_at(all, 2000 + offset);
+        assert(float_bits(::crucible::test::element_at(run_sums.view(), offset)) == output_bits(expected));
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -342,6 +429,7 @@ int main() {
     test_error_stays_inside_the_bound();
     test_sum_of_runs_takes_the_tree_of_the_runs();
     test_segments_take_the_tree_of_their_window();
+    test_nan_outputs_are_canonical();
     crucible::test::pass("test_core_reduce: all tests passed\n");
     return 0;
 }

@@ -73,11 +73,17 @@
 //   tree_depth(K) at each element, and a segment has the depth of its count.
 //
 // THE VALUES OUTSIDE THE BOUND
-//   A NaN element or an overflow gives a NaN or an infinity, and each such
-//   result is a NaN or an infinity on each host.  The payload bits and the
-//   sign of a NaN are not part of the stated order: x86 keeps the payload of
-//   one operand, aarch64 can give its default NaN, and GCC can swap the
-//   operands of an add.  Each other result has the same bits on each host.
+//   A NaN element or an overflow gives a NaN or an infinity.  An infinity has
+//   the same bits on each host, but a NaN does not.  x86 keeps the payload of
+//   one operand and gives 0xFFC00000 for inf + -inf, aarch64 gives its default
+//   NaN 0x7FC00000, and GCC can swap the operands of an add.  So each output
+//   of a sum form that is a NaN is the canonical NaN quiet_nan_of<T> of
+//   foundation/core/Number.h: 0x7FC00000 for a float, 0x7FF8000000000000 for
+//   a double.  The rule costs one compare and one select at each output, also
+//   at an output of one element.  Each other output keeps the bits of its
+//   adds.  The forms with the combine of a caller give the bits of the
+//   combine, so the caller states the rule of its combine.  A select or a
+//   copy of the base keeps the bits of its value.
 //
 // THE COSTS
 //   tree_reduce makes one combine for each element after the first, with a
@@ -96,6 +102,8 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Float.h>
+#include <foundation/core/Number.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
 
@@ -131,6 +139,13 @@ concept TreeGrain = has_single_bit(Grain);
 [[nodiscard]] constexpr int tree_depth(std::size_t count) noexcept { return count <= 1 ? 0 : bit_width(count - 1); }
 
 namespace detail {
+
+// The output of a sum by THE VALUES OUTSIDE THE BOUND: the canonical NaN for
+// a NaN, and value for each other value.  One compare and one select.
+template <class T>
+[[nodiscard]] CRUCIBLE_INLINE constexpr T canonical_sum_(T value) noexcept {
+    return fp::is_nan(value) ? quiet_nan_of<T> : value;
+}
 
 // The add of a tree sum.  The left operand is the result of the lower
 // elements.
@@ -170,6 +185,22 @@ template <class T, class Combine>
 }
 
 inline namespace CRUCIBLE_SIMD_TARGET {
+
+// The outputs of the lanes by THE VALUES OUTSIDE THE BOUND: the canonical NaN
+// in each lane that holds a NaN.  A lane holds a NaN when its bits with no
+// sign are above the bits of an infinity.  The test and the select work on
+// the bits as integers, so they need no compare of floats.  One compare and
+// one select for each vector.
+template <class T, int Lanes>
+[[nodiscard]] CRUCIBLE_INLINE simd::vec<T, Lanes> canonical_sums_(simd::vec<T, Lanes> sums) noexcept {
+    using Word = typename FloatBits<T>::Word;
+    using Words = simd::vec<Word, Lanes>;
+    Words const bits = simd::bit_cast<Words>(sums);
+    Words const magnitudes = bits & Words{static_cast<Word>(static_cast<Word>(~Word{0}) >> 1)};
+    Words const canonical =
+        simd::select<Word, Lanes>(magnitudes > Words{FloatBits<T>::infinity}, Words{FloatBits<T>::quiet_nan}, bits);
+    return simd::bit_cast<simd::vec<T, Lanes>>(canonical);
+}
 
 // The merge of two vectors of Lanes consecutive subtrees each: the sums of
 // the adjacent pairs of the 2 * Lanes subtrees, in order.
@@ -278,7 +309,8 @@ template <int Lanes, class T>
     requires TreeSumElement<T> && detail::TreeLanes<Lanes>
 [[nodiscard]] T tree_sum_lanes(View<T const> elements) noexcept {
     if (elements.size() == 0) return T{};
-    return detail::tree_sum_run_<T, Lanes>(first_of_(detail::ViewDoor::key(), elements), elements.size());
+    return detail::canonical_sum_(
+        detail::tree_sum_run_<T, Lanes>(first_of_(detail::ViewDoor::key(), elements), elements.size()));
 }
 
 // The tree sum of the elements, with the lanes of one register of the
@@ -352,10 +384,12 @@ template <class T>
     View<T const> const* const first_run = first_of_(detail::ViewDoor::key(), runs);
     std::size_t const whole = count - count % static_cast<std::size_t>(lanes);
     for (std::size_t offset = 0; offset < whole; offset += static_cast<std::size_t>(lanes)) {
-        simd::store(detail::tree_runs_vector_<T, lanes>(first_run, runs.size(), offset), out + offset);
+        simd::store(
+            detail::canonical_sums_<T, lanes>(detail::tree_runs_vector_<T, lanes>(first_run, runs.size(), offset)),
+            out + offset);
     }
     for (std::size_t offset = whole; offset < count; ++offset) {
-        out[offset] = detail::tree_runs_element_<T>(first_run, runs.size(), offset);
+        out[offset] = detail::canonical_sum_(detail::tree_runs_element_<T>(first_run, runs.size(), offset));
     }
     return Unit{};
 }
@@ -408,8 +442,9 @@ template <class T>
     T* const out = first_of_(detail::ViewDoor::key(), sums);
     for (std::size_t segment = 0; segment < sums.size(); ++segment) {
         std::size_t const count = offset[segment + 1] - offset[segment];
-        out[segment] =
-            count == 0 ? T{} : detail::tree_sum_run_<T, simd::native_lanes<T>>(first + offset[segment], count);
+        out[segment] = count == 0 ? T{}
+                                  : detail::canonical_sum_(detail::tree_sum_run_<T, simd::native_lanes<T>>(
+                                        first + offset[segment], count));
     }
     return Unit{};
 }
@@ -478,7 +513,7 @@ void tree_sum_grains(View<T const> elements, std::size_t first_grain, View<T> pa
     for (std::size_t index = 0; index < partials.size(); ++index) {
         std::size_t const start = (first_grain + index) * Grain;
         std::size_t const size = count - start < Grain ? count - start : Grain;
-        out[index] = detail::tree_sum_run_<T, simd::native_lanes<T>>(first + start, size);
+        out[index] = detail::canonical_sum_(detail::tree_sum_run_<T, simd::native_lanes<T>>(first + start, size));
     }
 }
 

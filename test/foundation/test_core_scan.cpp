@@ -7,6 +7,7 @@
 #include <foundation/effects/Effect.h>
 
 #include "../test_assert.h"
+#include "nan_outputs.h"
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -410,6 +411,66 @@ void test_large_plans_agree_with_the_scans() {
     }
 }
 
+// ── The canonical NaN ───────────────────────────────────────────────────
+
+// Each output of out has the output bits of the output of want at its
+// position: the canonical NaN for a NaN, and the bits of want for each other
+// value.
+void check_scan_outputs(View<float const> want, View<float const> out) noexcept {
+    for (auto const [model, output] : ::fixy::zip(want, out).expect("the two runs have one count")) {
+        assert(::crucible::test::float_bits(*output) == ::crucible::test::output_bits(*model));
+    }
+}
+
+// Each output of a sum scan that is a NaN is the canonical NaN, and each
+// other output keeps the bits of the recursion with an add: for each count of
+// lanes, for both kinds and for the grains.  A run of one signaling NaN has
+// that NaN as its inclusive output without the rule, and a run of +inf and
+// -inf gives 0xFFC00000 on x86.
+void test_nan_outputs_of_the_scans_are_canonical() {
+    HeapArray<float> run = draw_floats(2100, 0x5CA40040u);
+    ::crucible::test::put_specials(run.view(), 0x5CA40041u);
+    ::crucible::test::element_at(run.view(), 0) = ::fixy::bit_cast<float>(0x7F800001u);
+    ::crucible::test::element_at(run.view(), 1) = ::fixy::bit_cast<float>(0x7F800000u);
+    ::crucible::test::element_at(run.view(), 2) = ::fixy::bit_cast<float>(0xFF800000u);
+    View<float const> const all{run.view()};
+    HeapArray<float> expected = zeros(run.size());
+    HeapArray<float> got = zeros(run.size());
+    auto const add = [](float const& left, float const& right) noexcept { return left + right; };
+    auto const check_count = [&](std::size_t count, std::size_t first) noexcept {
+        View<float const> const part = all.window(first, count).expect("the part fits the run");
+        View<float> const want = expected.view().window(0, count).expect("the part fits");
+        View<float> const out = got.view().window(0, count).expect("the part fits");
+        View<float const> const want_view{want};
+        View<float const> const out_view{out};
+        assert(::foundation::core::inclusive_scan(part, want, add).is_ok());
+        assert(::foundation::core::inclusive_sum_scan(part, out).is_ok());
+        check_scan_outputs(want_view, out_view);
+        assert(::foundation::core::inclusive_sum_scan_lanes<2>(part, out).is_ok());
+        check_scan_outputs(want_view, out_view);
+        assert(::foundation::core::inclusive_sum_scan_lanes<16>(part, out).is_ok());
+        check_scan_outputs(want_view, out_view);
+        assert(::foundation::core::exclusive_scan(part, want, 0.0f, add).is_ok());
+        assert(::foundation::core::exclusive_sum_scan(part, out).is_ok());
+        check_scan_outputs(want_view, out_view);
+        assert(::foundation::core::exclusive_sum_scan_lanes<4>(part, out).is_ok());
+        check_scan_outputs(want_view, out_view);
+    };
+    for (std::size_t count = 1; count <= 300; ++count) {
+        check_count(count, 0);
+        check_count(count, 2);
+    }
+    check_count(2100, 0);
+    ::crucible::test::PhiloxStream stream{0x5CA40042u};
+    HeapArray<float> whole = zeros(all.size());
+    assert(::foundation::core::inclusive_sum_scan(all, whole.view()).is_ok());
+    HeapArray<float> const by_grains =
+        scan_by_shards<16>(all, ::foundation::core::ScanKind::Inclusive, 4, stream, GrainForm::Sum);
+    assert(same_runs(View<float const>{whole.view()}, View<float const>{by_grains.view()}));
+    assert(::crucible::test::float_bits(::crucible::test::element_at(whole.view(), 0))
+           == ::crucible::test::kCanonicalFloatNan);
+}
+
 }  // namespace
 
 int main() {
@@ -420,6 +481,7 @@ int main() {
     test_grains_give_the_bits_of_the_scan();
     test_scan_error_stays_inside_the_bound();
     test_large_plans_agree_with_the_scans();
+    test_nan_outputs_of_the_scans_are_canonical();
     crucible::test::pass("test_core_scan: all tests passed\n");
     return 0;
 }
