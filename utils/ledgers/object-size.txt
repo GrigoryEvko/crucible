@@ -1,0 +1,8 @@
+# The ledger of the rule object-size of utils/registry.txt: the items that a row keeps over the limit of their kind,
+# one row for each kind and item, and each row judges each build.  A row is '@build/OUTPUT | KIND | VALUE | - | REASON' with KIND function or object.  VALUE is the kept value, in
+# KB.  A row keeps its item up to VALUE with the noise of its unit (THE NOISE of utils/assay/core/budget.py).
+# `python3 utils/bin/guard explain object-size` tells the rule, and `python3 utils/bin/guard write --rule object-size
+# --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.
+format 1
+rule object-size
+@build/CMakeFiles/crucible_vigil.dir/src/BackgroundThread.cpp.o | object | 787.95 | - | the pipeline of the background thread moves its payloads as Box values through the SPSC channel of Box values, and the Debug build with ASan instruments each door of the channel.  The owner decision of 2026-11-15 raises a size limit for a correct change.

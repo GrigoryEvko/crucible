@@ -112,6 +112,16 @@
       "constructor": "\\bProducerHandle\\("
     },
     {
+      "name": "neg_witness_concurrent_permissionedspscboxchannel_consumerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bConsumerHandle\\("
+    },
+    {
+      "name": "neg_witness_concurrent_permissionedspscboxchannel_producerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bProducerHandle\\("
+    },
+    {
       "name": "neg_witness_concurrent_permissionedspscchannel_consumerhandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bConsumerHandle\\("
@@ -170,6 +180,16 @@
       "name": "neg_witness_core_box_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bBox\\("
+    },
+    {
+      "name": "neg_witness_core_box_word_key_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bbox_word_key\\("
+    },
+    {
+      "name": "neg_witness_core_boxword_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBoxWord\\("
     },
     {
       "name": "neg_witness_core_brandedindex_direct_construction",
@@ -1083,6 +1103,14 @@
       "header": "fixy/concurrent/PermissionedSpscChannel.h"
     },
     {
+      "type": "fixy::concurrent::PermissionedSpscBoxChannel<int, 8, fixy::concurrent::detail::spsc_channel_witness::WitnessTag, fixy::concurrent::detail::spsc_channel_witness::WitnessBrand>::ProducerHandle",
+      "header": "fixy/concurrent/PermissionedSpscBoxChannel.h"
+    },
+    {
+      "type": "fixy::concurrent::PermissionedSpscBoxChannel<int, 8, fixy::concurrent::detail::spsc_channel_witness::WitnessTag, fixy::concurrent::detail::spsc_channel_witness::WitnessBrand>::ConsumerHandle",
+      "header": "fixy/concurrent/PermissionedSpscBoxChannel.h"
+    },
+    {
       "type": "fixy::concurrent::PermissionedMpscChannel<int, 8, fixy::concurrent::detail::mpsc_channel_witness::WitnessTag, fixy::concurrent::detail::mpsc_channel_witness::WitnessBrand>::ProducerHandle",
       "header": "fixy/concurrent/PermissionedMpscChannel.h"
     },
@@ -1184,6 +1212,14 @@
     },
     {
       "type": "foundation::core::detail::BoxKey",
+      "header": "foundation/core/Ref.h"
+    },
+    {
+      "type": "foundation::core::box_word_key<forge::brand>",
+      "header": "foundation/core/Ref.h"
+    },
+    {
+      "type": "foundation::core::BoxWord<int, forge::brand>",
       "header": "foundation/core/Ref.h"
     },
     {
