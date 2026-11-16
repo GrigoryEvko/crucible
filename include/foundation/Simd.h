@@ -557,6 +557,62 @@ template <typename ElementType, int Lanes>
     return vec<ElementType, Lanes>{(on_true.raw() & bits) | (on_false.raw() & ~bits)};
 }
 
+namespace detail {
+
+// The lanes 2i + Offset of the concatenation of low and high, for each lane
+// i of the result.  Offset is 0 for the even lanes and 1 for the odd lanes.
+template <int Offset, typename Raw, int... Lane>
+[[nodiscard]] CRUCIBLE_INLINE constexpr Raw pick_alternate_lanes(Raw low, Raw high,
+                                                                 LaneList<Lane...> /*lanes*/) noexcept {
+    return __builtin_shufflevector(low, high, (2 * Lane + Offset)...);
+}
+
+// The lanes 2i + Offset of value, for each lane i of a result of half the
+// width.
+template <int Offset, typename Half, typename Raw, int... Lane>
+[[nodiscard]] CRUCIBLE_INLINE constexpr Half pick_alternate_half(Raw value, LaneList<Lane...> /*lanes*/) noexcept {
+    return __builtin_shufflevector(value, value, (2 * Lane + Offset)...);
+}
+
+}  // namespace detail
+
+// The even lanes and the odd lanes of the concatenation of low and high.
+// Lane i of even_lanes(low, high) is lane 2i of low when 2i is below Lanes,
+// and lane 2i - Lanes of high otherwise.  odd_lanes gives lane 2i + 1 in the
+// same way.  An add of the two results gives the sums of the adjacent pairs
+// of the 2 * Lanes elements, in order, with the lower element as the left
+// operand.  A shuffle moves bits and rounds nothing.  With AVX-512 each
+// shuffle is one vpermt2ps, and with NEON one uzp1 or uzp2.
+template <typename ElementType, int Lanes>
+[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes> even_lanes(vec<ElementType, Lanes> low,
+                                                                           vec<ElementType, Lanes> high) noexcept {
+    return vec<ElementType, Lanes>{
+        detail::pick_alternate_lanes<0>(low.raw(), high.raw(), detail::lane_list_t<Lanes>{})};
+}
+
+template <typename ElementType, int Lanes>
+[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes> odd_lanes(vec<ElementType, Lanes> low,
+                                                                          vec<ElementType, Lanes> high) noexcept {
+    return vec<ElementType, Lanes>{
+        detail::pick_alternate_lanes<1>(low.raw(), high.raw(), detail::lane_list_t<Lanes>{})};
+}
+
+// The even lanes and the odd lanes of one vector, as a vector of half the
+// lanes.  The half has at least two lanes, so value has at least four.
+template <typename ElementType, int Lanes>
+    requires(Lanes >= 4)
+[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes / 2> even_lanes(vec<ElementType, Lanes> value) noexcept {
+    using Half = vec<ElementType, Lanes / 2>;
+    return Half{detail::pick_alternate_half<0, typename Half::raw_type>(value.raw(), detail::lane_list_t<Lanes / 2>{})};
+}
+
+template <typename ElementType, int Lanes>
+    requires(Lanes >= 4)
+[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes / 2> odd_lanes(vec<ElementType, Lanes> value) noexcept {
+    using Half = vec<ElementType, Lanes / 2>;
+    return Half{detail::pick_alternate_half<1, typename Half::raw_type>(value.raw(), detail::lane_list_t<Lanes / 2>{})};
+}
+
 template <typename V>
     requires DetSafeSimd<V>
 [[nodiscard]] CRUCIBLE_INLINE typename V::value_type reduce_xor(V value) noexcept {
@@ -683,6 +739,26 @@ inline constexpr bool kNeonAvailable = true;
 #else
 inline constexpr bool kNeonAvailable = false;
 #endif
+
+// The width in bytes of the widest vector register of the target: 64 with
+// AVX-512F, 32 with AVX, and 16 on each other target, which covers SSE2 and
+// NEON.  A kernel whose result does not depend on its count of lanes, such as
+// the tree sums of foundation/core/Reduce.h, takes this width.  GCC splits a
+// wider vector into registers of this width, and a 16-lane float vector on
+// AVX2 then ran 16 times slower than an 8-lane one.
+#if defined(__AVX512F__)
+inline constexpr std::size_t native_vector_bytes = 64;
+#elif defined(__AVX__)
+inline constexpr std::size_t native_vector_bytes = 32;
+#else
+inline constexpr std::size_t native_vector_bytes = 16;
+#endif
+
+// The count of the lanes of ElementType in one register of
+// native_vector_bytes.
+template <typename ElementType>
+    requires detail::VectorShape<ElementType, static_cast<int>(native_vector_bytes / sizeof(ElementType))>
+inline constexpr int native_lanes = static_cast<int>(native_vector_bytes / sizeof(ElementType));
 
 #if defined(__x86_64__) || defined(__i386__)
 [[nodiscard, gnu::pure]] inline bool runtime_supports_avx512() noexcept { return __builtin_cpu_supports("avx512f"); }
