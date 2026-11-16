@@ -121,6 +121,9 @@ constexpr RosterEntry kEmptyRowRoster[] = {
      "the metrics channel names the brand of its reader root, so a root of another brand opens no reader"},
     {"fixy::detail::DummyTag", "a sample tag of fixy/os/OwnedMmap.h, which its checks and a test read"},
     {"fixy::detail::owned_region_test_tag", "a self-test tag of fixy/OwnedRegion.h"},
+    {"fixy::concurrent::detail::ParallelTreeSlots",
+     "the tag of the slots of one call of a parallel tree form: the form mints the root in its body, the split of "
+     "mint_parallel_for gives each shard its slots, and the root never leaves the call"},
     {"fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag",
      "a witness tag of fixy/channels/SwmrSession.h"},
     {"fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag",
