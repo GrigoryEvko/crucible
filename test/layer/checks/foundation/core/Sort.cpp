@@ -37,7 +37,7 @@ static_assert(StrictOrder<Ascending, int> && StrictOrder<Ascending, double>);
 static_assert(!StrictOrder<Ascending, Record> && !StrictOrder<ThrowingOrder, int>);
 
 // The network of four, and the counts of some networks.
-constexpr auto network_of_four = sort_network_plan<4>();
+constexpr auto network_of_four = plan_sort_network<4>();
 static_assert(network_of_four.at(index<0>()) == Comparator{0, 1} && network_of_four.at(index<1>()) == Comparator{2, 3});
 static_assert(network_of_four.at(index<2>()) == Comparator{0, 3} && network_of_four.at(index<3>()) == Comparator{1, 2});
 static_assert(network_of_four.at(index<4>()) == Comparator{0, 1} && network_of_four.at(index<5>()) == Comparator{2, 3});
@@ -55,7 +55,7 @@ template <std::size_t N>
             value = static_cast<std::uint8_t>((input >> wire) & 1u);
             ++wire;
         }
-        wires = with_mut(std::move(wires), [](auto out) noexcept { sort_network(std::move(out)); });
+        wires = with_mut(std::move(wires), [](auto out) noexcept { sort_by_network(std::move(out)); });
         std::uint8_t last = 0;
         for (std::uint8_t const value : wires) {
             if (value < last) return false;
@@ -72,14 +72,14 @@ template <std::size_t... N>
 static_assert(networks_sort(std::make_index_sequence<9>{}));
 
 // The stable sort keeps two records of one key in their order of input.
-[[nodiscard]] consteval bool stable_sort_keeps_equal_keys_in_order() noexcept {
+[[nodiscard]] consteval bool sort_stably_keeps_equal_keys_in_order() noexcept {
     FixedArray<Record, 6> records{Record{3, 0}, Record{1, 1}, Record{3, 2}, Record{2, 3}, Record{1, 4}, Record{3, 5}};
     FixedArray<Record, 6> scratch{};
     auto const by_key = [](Record const& left, Record const& right) noexcept { return left.key < right.key; };
     bool is_sorted = false;
     records = with_mut(std::move(records), [&](auto elements) noexcept {
         scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
-            is_sorted = stable_sort(std::move(elements), std::move(room), by_key).is_ok();
+            is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok();
         });
     });
     if (!is_sorted) return false;
@@ -92,7 +92,7 @@ static_assert(networks_sort(std::make_index_sequence<9>{}));
     }
     return true;
 }
-static_assert(stable_sort_keeps_equal_keys_in_order());
+static_assert(sort_stably_keeps_equal_keys_in_order());
 
 // A scratch of another count is refused.
 [[nodiscard]] consteval bool short_scratch_is_refused() noexcept {
@@ -101,7 +101,7 @@ static_assert(stable_sort_keeps_equal_keys_in_order());
     bool is_refused = false;
     values = with_mut(std::move(values), [&](auto elements) noexcept {
         scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
-            is_refused = stable_sort(std::move(elements), std::move(room)).is_err();
+            is_refused = sort_stably(std::move(elements), std::move(room)).is_err();
         });
     });
     return is_refused;
@@ -110,17 +110,17 @@ static_assert(short_scratch_is_refused());
 
 // The searches of a sorted View.
 constexpr FixedArray<int, 7> sorted{1, 3, 3, 3, 7, 9, 12};
-static_assert(lower_bound(sorted.view(), 3) == 1 && lower_bound(sorted.view(), 4) == 4);
-static_assert(lower_bound(sorted.view(), 0) == 0 && lower_bound(sorted.view(), 13) == 7);
-static_assert(binary_search(sorted.view(), 3).expect("3 is in the run") == 1);
-static_assert(binary_search(sorted.view(), 12).expect("12 is in the run") == 6);
-static_assert(binary_search(sorted.view(), 8).is_none() && binary_search(sorted.view(), 13).is_none());
-static_assert(lower_bound(View<int const>{}, 5) == 0 && binary_search(View<int const>{}, 5).is_none());
+static_assert(find_lower_bound(sorted.view(), 3) == 1 && find_lower_bound(sorted.view(), 4) == 4);
+static_assert(find_lower_bound(sorted.view(), 0) == 0 && find_lower_bound(sorted.view(), 13) == 7);
+static_assert(find_equivalent(sorted.view(), 3).expect("3 is in the run") == 1);
+static_assert(find_equivalent(sorted.view(), 12).expect("12 is in the run") == 6);
+static_assert(find_equivalent(sorted.view(), 8).is_none() && find_equivalent(sorted.view(), 13).is_none());
+static_assert(find_lower_bound(View<int const>{}, 5) == 0 && find_equivalent(View<int const>{}, 5).is_none());
 
 // A NaN has one place in a sorted View of floats.
 constexpr FixedArray<float, 4> sorted_floats{-1.0f, 0.0f, 2.0f, positive_nan};
-static_assert(binary_search(sorted_floats.view(), positive_nan).expect("the NaN is in the run") == 3);
-static_assert(binary_search(sorted_floats.view(), -0.0f).is_none());
+static_assert(find_equivalent(sorted_floats.view(), positive_nan).expect("the NaN is in the run") == 3);
+static_assert(find_equivalent(sorted_floats.view(), -0.0f).is_none());
 
 }  // namespace detail::sort_checks
 

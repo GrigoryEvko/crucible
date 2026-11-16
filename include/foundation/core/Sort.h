@@ -5,18 +5,19 @@
 //   Ascending                     the order of a sort when the caller gives
 //                                 none: < for an integer and an enumeration,
 //                                 and the total order of IEEE 754 for a float
-//   sort_network<N>(view, less)   a sort of N elements with a fixed network of
+//   sort_by_network<N>(view, less)
+//                                 a sort of N elements with a fixed network of
 //                                 compare-exchange steps, for N from 2 to 256,
 //                                 in a ViewMut of the fixed extent N
-//   sort_network_plan<N>()        the comparators of that network, in order
-//   stable_sort(view, scratch, less)
+//   plan_sort_network<N>()        the comparators of that network, in order
+//   sort_stably(view, scratch, less)
 //                                 a stable merge sort of a ViewMut of any
 //                                 count, with a ViewMut of scratch of the same
 //                                 count from the caller
-//   lower_bound(view, value, less)
+//   find_lower_bound(view, value, less)
 //                                 the first position whose element is not
 //                                 below value, in a sorted View
-//   binary_search(view, value, less)
+//   find_equivalent(view, value, less)
 //                                 the first position of an element equivalent
 //                                 to value, or no value
 //
@@ -29,7 +30,7 @@
 //   transitive, and with an equivalence that is transitive.  For such an
 //   order, the stable sort of a run is one permutation: the elements in the
 //   order of less, and two equivalent elements in their order in the input.
-//   So the result of stable_sort has no freedom, and each thread count, each
+//   So the result of sort_stably has no freedom, and each thread count, each
 //   split and each host give the same bits.
 //
 //   The network is the bitonic sort of the next power of two P >= N, in the
@@ -47,11 +48,11 @@
 //   equivalent.
 //
 // THE COSTS
-//   sort_network of N makes the comparators of its plan: about
-//   P * log2(P)^2 / 4 for P the next power of two.  stable_sort makes
+//   sort_by_network of N makes the comparators of its plan: about
+//   P * log2(P)^2 / 4 for P the next power of two.  sort_stably makes
 //   O(n log n) compares and copies: an insertion sort of each run of 32
 //   elements, and merges of the runs between the View and the scratch.
-//   lower_bound and binary_search make O(log n) compares.  No operation
+//   find_lower_bound and find_equivalent make O(log n) compares.  No operation
 //   allocates.
 
 #include <foundation/Platform.h>
@@ -70,12 +71,12 @@ namespace foundation::core {
 // The key of the total order of IEEE 754: a signed integer whose order is
 // the total order of the float.  A negative float has each bit below its
 // sign bit inverted, so a larger magnitude gives a smaller key.
-[[nodiscard]] constexpr std::int32_t total_order_key(float value) noexcept {
+[[nodiscard]] constexpr std::int32_t encode_total_order_key(float value) noexcept {
     auto const bits = __builtin_bit_cast(std::int32_t, value);
     return bits ^ static_cast<std::int32_t>(static_cast<std::uint32_t>(bits >> 31) >> 1);
 }
 
-[[nodiscard]] constexpr std::int64_t total_order_key(double value) noexcept {
+[[nodiscard]] constexpr std::int64_t encode_total_order_key(double value) noexcept {
     auto const bits = __builtin_bit_cast(std::int64_t, value);
     return bits ^ static_cast<std::int64_t>(static_cast<std::uint64_t>(bits >> 63) >> 1);
 }
@@ -91,7 +92,7 @@ struct Ascending {
     template <AscendingElement T>
     [[nodiscard]] constexpr bool operator()(T const& left, T const& right) const noexcept {
         if constexpr (std::same_as<T, float> || std::same_as<T, double>) {
-            return total_order_key(left) < total_order_key(right);
+            return encode_total_order_key(left) < encode_total_order_key(right);
         } else {
             return left < right;
         }
@@ -168,7 +169,7 @@ inline constexpr std::size_t sort_network_size = detail::write_network_(N, nullp
 // with it.
 template <std::size_t N>
     requires NetworkCount<N>
-[[nodiscard]] consteval FixedArray<Comparator, sort_network_size<N>> sort_network_plan() noexcept {
+[[nodiscard]] consteval FixedArray<Comparator, sort_network_size<N>> plan_sort_network() noexcept {
     FixedArray<Comparator, sort_network_size<N>> steps{};
     static_cast<void>(detail::write_network_(N, first_of_(detail::ViewDoor::key(), steps.view())));
     return steps;
@@ -177,7 +178,7 @@ template <std::size_t N>
 namespace detail {
 
 template <std::size_t N>
-inline constexpr FixedArray<Comparator, sort_network_size<N>> network_of = sort_network_plan<N>();
+inline constexpr FixedArray<Comparator, sort_network_size<N>> network_of = plan_sort_network<N>();
 
 // One compare-exchange.  The one compare gives the two selects, so the two
 // outputs agree also for an order that a NaN breaks.
@@ -199,7 +200,7 @@ CRUCIBLE_INLINE constexpr void compare_exchange_(T* elements, Comparator step, L
 // arithmetic element.
 template <std::size_t N, class T, class Brand, class Less = Ascending>
     requires NetworkCount<N> && SortElement<T> && StrictOrder<Less, T>
-constexpr void sort_network(ViewMut<T, Brand, N> elements, Less less = Less{}) noexcept {
+constexpr void sort_by_network(ViewMut<T, Brand, N> elements, Less less = Less{}) noexcept {
     T* const first = first_of_(detail::ViewDoor::key(), elements);
     for (Comparator const step : detail::network_of<N>) {
         detail::compare_exchange_(first, step, less);
@@ -263,7 +264,7 @@ constexpr void merge_runs_(T const* source, std::size_t middle, std::size_t coun
 template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::size_t ScratchExtent,
           class Less = Ascending>
     requires SortElement<T> && StrictOrder<Less, T>
-[[nodiscard]] constexpr Result<Unit, LengthMismatch> stable_sort(ViewMut<T, Brand, Extent> elements,
+[[nodiscard]] constexpr Result<Unit, LengthMismatch> sort_stably(ViewMut<T, Brand, Extent> elements,
                                                                  ViewMut<T, ScratchBrand, ScratchExtent> scratch,
                                                                  Less less = Less{}) noexcept {
     std::size_t const count = elements.size();
@@ -303,9 +304,9 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
 // View.  Complexity: O(log n) compares.
 template <class T, std::size_t Extent, class Less = Ascending>
     requires SortElement<std::remove_const_t<T>> && StrictOrder<Less, std::remove_const_t<T>>
-[[nodiscard]] constexpr std::size_t lower_bound(View<T, Extent> sorted,
-                                                std::type_identity_t<std::remove_const_t<T>> const& value,
-                                                Less less = Less{}) noexcept {
+[[nodiscard]] constexpr std::size_t find_lower_bound(View<T, Extent> sorted,
+                                                     std::type_identity_t<std::remove_const_t<T>> const& value,
+                                                     Less less = Less{}) noexcept {
     std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), sorted);
     std::size_t low = 0;
     std::size_t high = sorted.size();
@@ -324,10 +325,10 @@ template <class T, std::size_t Extent, class Less = Ascending>
 // the order of less, or no value.  Complexity: O(log n) compares.
 template <class T, std::size_t Extent, class Less = Ascending>
     requires SortElement<std::remove_const_t<T>> && StrictOrder<Less, std::remove_const_t<T>>
-[[nodiscard]] constexpr Option<std::size_t> binary_search(View<T, Extent> sorted,
-                                                          std::type_identity_t<std::remove_const_t<T>> const& value,
-                                                          Less less = Less{}) noexcept {
-    std::size_t const position = lower_bound(sorted, value, less);
+[[nodiscard]] constexpr Option<std::size_t> find_equivalent(View<T, Extent> sorted,
+                                                            std::type_identity_t<std::remove_const_t<T>> const& value,
+                                                            Less less = Less{}) noexcept {
+    std::size_t const position = find_lower_bound(sorted, value, less);
     if (position == sorted.size()) return none;
     if (less(value, first_of_(detail::ViewDoor::key(), sorted)[position])) return none;
     return Option<std::size_t>::some(position);

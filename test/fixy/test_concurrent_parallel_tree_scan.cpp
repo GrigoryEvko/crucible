@@ -1,6 +1,6 @@
 // The parallel sum scans of fixy/concurrent/ParallelTree.h, run for real on
 // 1, 2, 4, 8 and 64 threads (parallel_tree_test.h).  Each output must have
-// the bits of inclusive_sum_scan and exclusive_sum_scan of one thread.
+// the bits of scan_inclusive_sums and scan_exclusive_sums of one thread.
 
 #include <fixy/Core.h>
 #include <fixy/concurrent/ParallelTree.h>
@@ -26,13 +26,14 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards>
 void scan_both(tree::BgCtx const& ctx, ::foundation::core::ScanKind kind, View<float const> part,
                HeapArray<float>& parallel, HeapArray<float>& single) noexcept {
     parallel = ::foundation::core::with_mut(std::move(parallel), [&](auto out) noexcept {
-        ::fixy::concurrent::parallel_sum_scan<Coupling, Shards>(ctx, tree::test_alloc(), kind, part, std::move(out));
+        ::fixy::concurrent::scan_sums_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), kind, part,
+                                                                    std::move(out));
     });
     single = ::foundation::core::with_mut(std::move(single), [&](auto out) noexcept {
         if (kind == ::foundation::core::ScanKind::Inclusive) {
-            assert(::foundation::core::inclusive_sum_scan(part, std::move(out)).is_ok());
+            assert(::foundation::core::scan_inclusive_sums(part, std::move(out)).is_ok());
         } else {
-            assert(::foundation::core::exclusive_sum_scan(part, std::move(out)).is_ok());
+            assert(::foundation::core::scan_exclusive_sums(part, std::move(out)).is_ok());
         }
     });
 }

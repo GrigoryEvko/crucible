@@ -485,8 +485,8 @@ struct LaneRow {
             return splat;
         } else if constexpr (Class == LaneClass::StepTwo) {
             E const* const at = row + 2 * position;
-            return ::foundation::simd::even_lanes(::foundation::simd::load<V>(at),
-                                                  ::foundation::simd::load_prefix<V>(at + W, W - 1));
+            return ::foundation::simd::pick_even_lanes(::foundation::simd::load<V>(at),
+                                                       ::foundation::simd::load_prefix<V>(at + W, W - 1));
         } else {
             E const* const at = row + position * step;
             std::size_t const stride = step;
@@ -508,7 +508,7 @@ struct LaneRow {
             std::size_t const width = static_cast<std::size_t>(W);
             V const low = ::foundation::simd::load_prefix<V>(at, span < width ? span : width);
             V const high = span > width ? ::foundation::simd::load_prefix<V>(at + W, span - width) : V{};
-            return fill_dead_lanes_(::foundation::simd::even_lanes(low, high), live);
+            return fill_dead_lanes_(::foundation::simd::pick_even_lanes(low, high), live);
         } else {
             E const* const at = row + position * step;
             std::size_t const stride = step;

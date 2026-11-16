@@ -89,7 +89,7 @@ void write_window(Owner& owner, std::size_t offset, std::size_t count, Write wri
     std::size_t start = 0;
     for (std::size_t block = std::size_t{1} << 62; block > 0; block /= 2) {
         if ((position & block) == 0) continue;
-        float const sum = ::foundation::core::tree_sum(run.window(start, block).expect("the block fits the run"));
+        float const sum = ::foundation::core::sum_by_tree(run.window(start, block).expect("the block fits the run"));
         fold = has_block ? fold + sum : sum;
         has_block = true;
         start += block;
@@ -112,10 +112,10 @@ void test_sum_scans_agree_with_the_naive_fold() {
         View<float const> const exclusive_part =
             View<float const>{exclusive.view()}.window(0, count).expect("the part fits");
         assert(scan_into(inclusive, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan(part, std::move(out));
+            return ::foundation::core::scan_inclusive_sums(part, std::move(out));
         }));
         assert(scan_into(exclusive, count, [&](auto out) noexcept {
-            return ::foundation::core::exclusive_sum_scan(part, std::move(out));
+            return ::foundation::core::scan_exclusive_sums(part, std::move(out));
         }));
         for (std::size_t position = 0; position < count; ++position) {
             float const prefix = naive_prefix(part, position);
@@ -147,45 +147,45 @@ void test_sum_scan_lanes_agree_with_the_recursion() {
         View<float const> const want_view = View<float const>{expected.view()}.window(0, count).expect("the part fits");
         View<float const> const out_view = View<float const>{got.view()}.window(0, count).expect("the part fits");
         assert(scan_into(expected, count, [&](auto want) noexcept {
-            return ::foundation::core::inclusive_scan(part, std::move(want), add);
+            return ::foundation::core::scan_inclusive(part, std::move(want), add);
         }));
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan_lanes<2>(part, std::move(out));
+            return ::foundation::core::scan_inclusive_sums(part, std::move(out));
         }));
         assert(same_runs(want_view, out_view));
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan_lanes<4>(part, std::move(out));
+            return ::foundation::core::scan_inclusive_sums_in_lanes<2>(part, std::move(out));
         }));
         assert(same_runs(want_view, out_view));
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan_lanes<8>(part, std::move(out));
+            return ::foundation::core::scan_inclusive_sums_in_lanes<4>(part, std::move(out));
         }));
         assert(same_runs(want_view, out_view));
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan_lanes<16>(part, std::move(out));
+            return ::foundation::core::scan_inclusive_sums_in_lanes<8>(part, std::move(out));
         }));
         assert(same_runs(want_view, out_view));
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan_lanes<32>(part, std::move(out));
+            return ::foundation::core::scan_inclusive_sums_in_lanes<16>(part, std::move(out));
+        }));
+        assert(same_runs(want_view, out_view));
+        assert(scan_into(got, count, [&](auto out) noexcept {
+            return ::foundation::core::scan_inclusive_sums_in_lanes<32>(part, std::move(out));
         }));
         assert(same_runs(want_view, out_view));
         assert(scan_into(expected, count, [&](auto want) noexcept {
-            return ::foundation::core::exclusive_scan(part, std::move(want), 0.0f, add);
+            return ::foundation::core::scan_exclusive(part, std::move(want), 0.0f, add);
         }));
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::exclusive_sum_scan(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::exclusive_sum_scan_lanes<2>(part, std::move(out));
+            return ::foundation::core::scan_exclusive_sums(part, std::move(out));
         }));
         assert(same_runs(want_view, out_view));
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::exclusive_sum_scan_lanes<16>(part, std::move(out));
+            return ::foundation::core::scan_exclusive_sums_in_lanes<2>(part, std::move(out));
+        }));
+        assert(same_runs(want_view, out_view));
+        assert(scan_into(got, count, [&](auto out) noexcept {
+            return ::foundation::core::scan_exclusive_sums_in_lanes<16>(part, std::move(out));
         }));
         assert(same_runs(want_view, out_view));
     };
@@ -251,31 +251,31 @@ void test_sum_scan_lanes_keep_the_sign_of_zero() {
             View<float const> const want_view{want.view()};
             View<float const> const got_view{got.view()};
             assert(scan_into(want, count, [&](auto out) noexcept {
-                return ::foundation::core::inclusive_scan(in, std::move(out), add);
+                return ::foundation::core::scan_inclusive(in, std::move(out), add);
             }));
             assert(scan_into(got, count, [&](auto out) noexcept {
-                return ::foundation::core::inclusive_sum_scan_lanes<4>(in, std::move(out));
+                return ::foundation::core::scan_inclusive_sums_in_lanes<4>(in, std::move(out));
             }));
             assert(same_runs(want_view, got_view));
             assert(scan_into(got, count, [&](auto out) noexcept {
-                return ::foundation::core::inclusive_sum_scan_lanes<16>(in, std::move(out));
+                return ::foundation::core::scan_inclusive_sums_in_lanes<16>(in, std::move(out));
             }));
             assert(same_runs(want_view, got_view));
             assert(scan_into(want, count, [&](auto out) noexcept {
-                return ::foundation::core::exclusive_scan(in, std::move(out), 0.0f, add);
+                return ::foundation::core::scan_exclusive(in, std::move(out), 0.0f, add);
             }));
             assert(scan_into(got, count, [&](auto out) noexcept {
-                return ::foundation::core::exclusive_sum_scan_lanes<8>(in, std::move(out));
+                return ::foundation::core::scan_exclusive_sums_in_lanes<8>(in, std::move(out));
             }));
             assert(same_runs(want_view, got_view));
             assert(scan_into(got, count, [&](auto out) noexcept {
-                return ::foundation::core::exclusive_sum_scan(in, std::move(out));
+                return ::foundation::core::scan_exclusive_sums(in, std::move(out));
             }));
             assert(same_runs(want_view, got_view));
             if (count == 0) continue;
-            float const tree = ::foundation::core::tree_reduce(in, add).expect("the run has elements");
-            assert(same_bits(::foundation::core::tree_sum(in), tree));
-            assert(same_bits(::foundation::core::tree_sum_lanes<16>(in), tree));
+            float const tree = ::foundation::core::reduce_by_tree(in, add).expect("the run has elements");
+            assert(same_bits(::foundation::core::sum_by_tree(in), tree));
+            assert(same_bits(::foundation::core::sum_by_tree_in_lanes<16>(in), tree));
         }
     }
 }
@@ -286,17 +286,17 @@ void test_scan_in_place_and_under_append() {
     HeapArray<float> const run = draw_floats(3000, 0x5CA40002u);
     View<float const> const all{run.view()};
     HeapArray<float> out = zeros(3000);
-    assert(scan_into(out, 3000,
-                     [&](auto part) noexcept { return ::foundation::core::inclusive_sum_scan(all, std::move(part)); }));
+    assert(scan_into(
+        out, 3000, [&](auto part) noexcept { return ::foundation::core::scan_inclusive_sums(all, std::move(part)); }));
     HeapArray<float> in_place = ::foundation::core::mint_heap_array_copy<float>(test_alloc(), all);
     in_place = ::foundation::core::with_mut(std::move(in_place), [](auto whole) noexcept {
         View<float const> const in{whole.view()};
-        assert(::foundation::core::inclusive_sum_scan(in, std::move(whole)).is_ok());
+        assert(::foundation::core::scan_inclusive_sums(in, std::move(whole)).is_ok());
     });
     assert(same_runs(View<float const>{out.view()}, View<float const>{in_place.view()}));
     HeapArray<float> shorter = zeros(1777);
     assert(scan_into(shorter, 1777, [&](auto part) noexcept {
-        return ::foundation::core::inclusive_sum_scan(all.window(0, 1777).expect("the part fits"), std::move(part));
+        return ::foundation::core::scan_inclusive_sums(all.window(0, 1777).expect("the part fits"), std::move(part));
     }));
     assert(same_runs(View<float const>{shorter.view()},
                      View<float const>{out.view()}.window(0, 1777).expect("the part fits")));
@@ -337,18 +337,18 @@ template <std::size_t Grain>
 [[nodiscard]] HeapArray<float> scan_by_shards(View<float const> run, ::foundation::core::ScanKind kind,
                                               std::size_t shards, ::crucible::test::PhiloxStream& stream,
                                               GrainForm form = GrainForm::Generic) noexcept {
-    std::size_t const grains = ::foundation::core::tree_grain_count<Grain>(run.size());
+    std::size_t const grains = ::foundation::core::count_tree_grains<Grain>(run.size());
     HeapArray<float> carries = zeros(grains);
     View<float const> const carry_slots{carries.view()};
     HeapArray<std::size_t> const first_order = draw_order(grains, stream);
     for (std::size_t const grain : first_order) {
         write_window(carries, grain, 1, [&](auto slot) noexcept {
-            ::foundation::core::tree_sum_grains<Grain>(run, grain, std::move(slot));
+            ::foundation::core::sum_grains_by_tree<Grain>(run, grain, std::move(slot));
         });
     }
     carries = ::foundation::core::with_mut(std::move(carries), [](auto whole) noexcept {
         View<float const> const in{whole.view()};
-        assert(::foundation::core::exclusive_sum_scan(in, std::move(whole)).is_ok());
+        assert(::foundation::core::scan_exclusive_sums(in, std::move(whole)).is_ok());
     });
     HeapArray<float> out = zeros(run.size());
     HeapArray<std::size_t> const shard_order = draw_order(shards, stream);
@@ -365,13 +365,13 @@ template <std::size_t Grain>
             bool const is_inclusive = kind == ::foundation::core::ScanKind::Inclusive;
             write_window(out, start, size, [&](auto part) noexcept {
                 if (form == GrainForm::Sum && is_inclusive) {
-                    ::foundation::core::inclusive_sum_scan_grains<Grain>(run, grain, carry, std::move(part));
+                    ::foundation::core::scan_inclusive_sum_grains<Grain>(run, grain, carry, std::move(part));
                 } else if (form == GrainForm::Sum) {
-                    ::foundation::core::exclusive_sum_scan_grains<Grain>(run, grain, carry, std::move(part));
+                    ::foundation::core::scan_exclusive_sum_grains<Grain>(run, grain, carry, std::move(part));
                 } else if (is_inclusive) {
-                    ::foundation::core::inclusive_scan_grains<Grain>(run, grain, carry, std::move(part), add);
+                    ::foundation::core::scan_inclusive_grains<Grain>(run, grain, carry, std::move(part), add);
                 } else {
-                    ::foundation::core::exclusive_scan_grains<Grain>(run, grain, carry, std::move(part), 0.0f, add);
+                    ::foundation::core::scan_exclusive_grains<Grain>(run, grain, carry, std::move(part), 0.0f, add);
                 }
             });
         }
@@ -392,10 +392,10 @@ void test_grains_give_the_bits_of_the_scan() {
         HeapArray<float> inclusive = zeros(count);
         HeapArray<float> exclusive = zeros(count);
         assert(scan_into(inclusive, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan(part, std::move(out));
+            return ::foundation::core::scan_inclusive_sums(part, std::move(out));
         }));
         assert(scan_into(exclusive, count, [&](auto out) noexcept {
-            return ::foundation::core::exclusive_sum_scan(part, std::move(out));
+            return ::foundation::core::scan_exclusive_sums(part, std::move(out));
         }));
         View<float const> const whole_inclusive{inclusive.view()};
         View<float const> const whole_exclusive{exclusive.view()};
@@ -435,17 +435,17 @@ void test_scan_error_stays_inside_the_bound() {
     HeapArray<float> out = zeros(kCount);
     HeapArray<double> exact = ::foundation::core::mint_heap_array(test_alloc(), kCount, 0.0);
     assert(scan_into(out, kCount, [&](auto part) noexcept {
-        return ::foundation::core::inclusive_sum_scan(View<float const>{run.view()}, std::move(part));
+        return ::foundation::core::scan_inclusive_sums(View<float const>{run.view()}, std::move(part));
     }));
     assert(scan_into(exact, kCount, [&](auto part) noexcept {
-        return ::foundation::core::inclusive_sum_scan(View<double const>{wide_view}, std::move(part));
+        return ::foundation::core::scan_inclusive_sums(View<double const>{wide_view}, std::move(part));
     }));
     double absolute_sum = 0.0;
     double const unit = 1.0 / 16777216.0;
     for (std::size_t index = 0; index < kCount; ++index) {
         double const value = ::crucible::test::element_at(wide_view, index);
         absolute_sum += value < 0.0 ? -value : value;
-        double const depth = ::foundation::core::inclusive_scan_depth(index);
+        double const depth = ::foundation::core::count_inclusive_scan_depth(index);
         double const gamma = depth * unit / (1.0 - depth * unit);
         double const computed = static_cast<double>(::crucible::test::element_at(out.view(), index));
         double const model = ::crucible::test::element_at(exact.view(), index);
@@ -472,7 +472,7 @@ void test_large_plans_agree_with_the_scans() {
                                                                         ::foundation::core::ScanKind::Exclusive};
         for (::foundation::core::ScanKind const kind : kinds) {
             std::size_t const step_count =
-                ::foundation::core::scan_plan_steps(count, kind).expect("the count is below the limit");
+                ::foundation::core::count_scan_plan_steps(count, kind).expect("the count is below the limit");
             HeapArray<::foundation::core::TreeStep> steps =
                 ::foundation::core::mint_heap_array(test_alloc(), step_count, ::foundation::core::TreeStep{});
             HeapArray<::foundation::core::PlanNode> outputs =
@@ -500,9 +500,9 @@ void test_large_plans_agree_with_the_scans() {
             });
             bool const is_scanned = scan_into(from_scan, count, [&](auto out) noexcept {
                 if (kind == ::foundation::core::ScanKind::Inclusive) {
-                    return ::foundation::core::inclusive_scan(in, std::move(out), mix);
+                    return ::foundation::core::scan_inclusive(in, std::move(out), mix);
                 }
-                return ::foundation::core::exclusive_scan(in, std::move(out), std::uint64_t{0}, mix);
+                return ::foundation::core::scan_exclusive(in, std::move(out), std::uint64_t{0}, mix);
             });
             assert(is_scanned);
             assert(::foundation::core::equal(from_plan.view(), from_scan.view()));
@@ -541,29 +541,29 @@ void test_nan_outputs_of_the_scans_are_canonical() {
         View<float const> const want_view = View<float const>{expected.view()}.window(0, count).expect("the part fits");
         View<float const> const out_view = View<float const>{got.view()}.window(0, count).expect("the part fits");
         assert(scan_into(expected, count, [&](auto want) noexcept {
-            return ::foundation::core::inclusive_scan(part, std::move(want), add);
+            return ::foundation::core::scan_inclusive(part, std::move(want), add);
         }));
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan(part, std::move(out));
-        }));
-        check_scan_outputs(want_view, out_view);
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan_lanes<2>(part, std::move(out));
+            return ::foundation::core::scan_inclusive_sums(part, std::move(out));
         }));
         check_scan_outputs(want_view, out_view);
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::inclusive_sum_scan_lanes<16>(part, std::move(out));
+            return ::foundation::core::scan_inclusive_sums_in_lanes<2>(part, std::move(out));
+        }));
+        check_scan_outputs(want_view, out_view);
+        assert(scan_into(got, count, [&](auto out) noexcept {
+            return ::foundation::core::scan_inclusive_sums_in_lanes<16>(part, std::move(out));
         }));
         check_scan_outputs(want_view, out_view);
         assert(scan_into(expected, count, [&](auto want) noexcept {
-            return ::foundation::core::exclusive_scan(part, std::move(want), 0.0f, add);
+            return ::foundation::core::scan_exclusive(part, std::move(want), 0.0f, add);
         }));
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::exclusive_sum_scan(part, std::move(out));
+            return ::foundation::core::scan_exclusive_sums(part, std::move(out));
         }));
         check_scan_outputs(want_view, out_view);
         assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::exclusive_sum_scan_lanes<4>(part, std::move(out));
+            return ::foundation::core::scan_exclusive_sums_in_lanes<4>(part, std::move(out));
         }));
         check_scan_outputs(want_view, out_view);
     };
@@ -575,7 +575,7 @@ void test_nan_outputs_of_the_scans_are_canonical() {
     ::crucible::test::PhiloxStream stream{0x5CA40042u};
     HeapArray<float> whole = zeros(all.size());
     assert(scan_into(whole, all.size(),
-                     [&](auto out) noexcept { return ::foundation::core::inclusive_sum_scan(all, std::move(out)); }));
+                     [&](auto out) noexcept { return ::foundation::core::scan_inclusive_sums(all, std::move(out)); }));
     HeapArray<float> const by_grains =
         scan_by_shards<16>(all, ::foundation::core::ScanKind::Inclusive, 4, stream, GrainForm::Sum);
     assert(same_runs(View<float const>{whole.view()}, View<float const>{by_grains.view()}));

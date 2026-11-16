@@ -4,13 +4,13 @@
 // Each one gives the bits of the form of one thread, for each count of
 // shards, each count of threads and each schedule.
 //
-//   parallel_tree_sum<Coupling, Shards>(ctx, elements, partials)
-//   parallel_tree_sum<Coupling, Shards>(ctx, alloc, elements)
-//   parallel_tree_reduce<Coupling, Shards>(ctx, elements, partials, combine)
-//   parallel_tree_reduce<Coupling, Shards>(ctx, alloc, elements, combine)
-//   parallel_sum_scan<Coupling, Shards>(ctx, kind, in, out, carries)
-//   parallel_sum_scan<Coupling, Shards>(ctx, alloc, kind, in, out)
-//   parallel_segmented_tree_sum<Coupling, Shards>(ctx, elements, offsets, sums)
+//   sum_by_tree_in_parallel<Coupling, Shards>(ctx, elements, partials)
+//   sum_by_tree_in_parallel<Coupling, Shards>(ctx, alloc, elements)
+//   reduce_by_tree_in_parallel<Coupling, Shards>(ctx, elements, partials, combine)
+//   reduce_by_tree_in_parallel<Coupling, Shards>(ctx, alloc, elements, combine)
+//   scan_sums_in_parallel<Coupling, Shards>(ctx, kind, in, out, carries)
+//   scan_sums_in_parallel<Coupling, Shards>(ctx, alloc, kind, in, out)
+//   sum_segments_by_tree_in_parallel<Coupling, Shards>(ctx, elements, offsets, sums)
 //
 // A form with a region takes its slots from the caller, for a caller that
 // keeps one region for many calls.  A form with the allocation capability
@@ -19,14 +19,14 @@
 // THE SPLIT
 //   The run divides into grains of parallel_tree_grain elements, and the
 //   last grain holds the rest.  The caller gives a region of one slot for
-//   each grain (parallel_tree_partials).  mint_parallel_for of
+//   each grain (count_parallel_tree_partials).  mint_parallel_for of
 //   fixy/concurrent/Spawn.h cuts the region into Shards shards in proportion
 //   to the count of the slots, and each shard computes the grains of its
 //   slots.  A grain is a node of the tree (THE ORDER of
 //   foundation/core/Reduce.h), so the cut of the shards and the thread of
 //   each shard change no operand.  The calling thread then combines the
 //   slots by the tree of the same rule, and the result has the bits of
-//   tree_sum or tree_reduce of the run.
+//   sum_by_tree or reduce_by_tree of the run.
 //
 //   The coupling and the count of shards pass to mint_parallel_for.
 //   Independent shards run on the threads that the parallelism rule gives
@@ -91,8 +91,8 @@ inline constexpr std::size_t parallel_tree_grain = std::size_t{1} << 14;
 
 // The count of the slots of the region of a parallel form over count
 // elements.
-[[nodiscard]] constexpr std::size_t parallel_tree_partials(std::size_t count) noexcept {
-    return ::foundation::core::tree_grain_count<parallel_tree_grain>(count);
+[[nodiscard]] constexpr std::size_t count_parallel_tree_partials(std::size_t count) noexcept {
+    return ::foundation::core::count_tree_grains<parallel_tree_grain>(count);
 }
 
 // The result of a parallel tree sum: the sum, and the region of the slots.
@@ -134,9 +134,9 @@ template <typename Shard, typename T>
 
 // The region of the slots holds one slot for each grain of the run.
 inline void check_slots_(std::size_t slots, std::size_t count) noexcept {
-    if (slots != parallel_tree_partials(count)) [[unlikely]] {
+    if (slots != count_parallel_tree_partials(count)) [[unlikely]] {
         ::foundation::core::fatal("a parallel tree form of {} elements needs {} slots, and got {}", count,
-                                  parallel_tree_partials(count), slots);
+                                  count_parallel_tree_partials(count), slots);
     }
 }
 
@@ -176,30 +176,30 @@ split_by_shards_(::foundation::core::ViewMut<T, Brand, Extent> out, std::size_t 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the elements, by the grains of THE SPLIT, with the bits of
-// foundation::core::tree_sum.  An empty run gives +0.  Complexity: O(n), in
+// foundation::core::sum_by_tree.  An empty run gives +0.  Complexity: O(n), in
 // Shards shards, then O(slots) on the calling thread.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename T, typename Whole, typename Brand>
     requires(Shards > 0) && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeSumElement<T>
 [[nodiscard]] TreeSumParts<T, Whole, Brand>
-parallel_tree_sum(Ctx const& ctx, ::foundation::core::View<T const> elements,
-                  ::fixy::OwnedRegion<T, Whole, Brand>&& partials) noexcept {
+sum_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> elements,
+                        ::fixy::OwnedRegion<T, Whole, Brand>&& partials) noexcept {
     detail::check_slots_(partials.size(), elements.size());
     T const* const base = partials.data();
     auto whole = spawn::mint_parallel_for<Coupling, Shards>(
         ctx, detail::budget_of_<T>(elements.size(), partials.size()), std::move(partials),
         [elements, base](auto& shard) noexcept {
             if (shard.size() == 0) return;
-            ::foundation::core::detail::tree_sum_grains_<parallel_tree_grain>(
+            ::foundation::core::detail::sum_grains_by_tree_<parallel_tree_grain>(
                 elements, detail::first_slot_(shard, base), shard.data(), shard.size());
         });
-    T const sum = ::foundation::core::tree_sum(::foundation::core::View<T const>{detail::region_view_(whole)});
+    T const sum = ::foundation::core::sum_by_tree(::foundation::core::View<T const>{detail::region_view_(whole)});
     return TreeSumParts<T, Whole, Brand>{sum, std::move(whole)};
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
 
 // The tree of the elements with the combine of the caller, by the grains of
-// THE SPLIT, with the value of foundation::core::tree_reduce.  Each shard
+// THE SPLIT, with the value of foundation::core::reduce_by_tree.  Each shard
 // takes a copy of the combine.  Complexity: O(n) combines, in Shards shards,
 // then O(slots) on the calling thread.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename T, typename Whole, typename Brand,
@@ -208,26 +208,26 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
          && ::foundation::core::TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
          && std::is_nothrow_copy_constructible_v<Combine>
 [[nodiscard]] TreeReduceParts<T, Whole, Brand>
-parallel_tree_reduce(Ctx const& ctx, ::foundation::core::View<T const> elements,
-                     ::fixy::OwnedRegion<T, Whole, Brand>&& partials, Combine combine) noexcept {
+reduce_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> elements,
+                           ::fixy::OwnedRegion<T, Whole, Brand>&& partials, Combine combine) noexcept {
     detail::check_slots_(partials.size(), elements.size());
     T const* const base = partials.data();
     auto whole = spawn::mint_parallel_for<Coupling, Shards>(
         ctx, detail::budget_of_<T>(elements.size(), partials.size()), std::move(partials),
         [elements, base, combine](auto& shard) noexcept {
             if (shard.size() == 0) return;
-            ::foundation::core::detail::tree_reduce_grains_<parallel_tree_grain>(
+            ::foundation::core::detail::reduce_grains_by_tree_<parallel_tree_grain>(
                 elements, detail::first_slot_(shard, base), shard.data(), shard.size(), combine);
         });
     auto value =
-        ::foundation::core::tree_reduce(::foundation::core::View<T const>{detail::region_view_(whole)}, combine);
+        ::foundation::core::reduce_by_tree(::foundation::core::View<T const>{detail::region_view_(whole)}, combine);
     return TreeReduceParts<T, Whole, Brand>{std::move(value), std::move(whole)};
 }
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The sum scan of in into out, by the three phases of THE WRITES OF A SCAN,
-// with the bits of inclusive_sum_scan or exclusive_sum_scan of
+// with the bits of scan_inclusive_sums or scan_exclusive_sums of
 // foundation/core/Scan.h.  in and out hold one count, and in does not share
 // an element with out.  Two counts that differ end the process.  Complexity:
 // O(n) in Shards shards, two times, and O(slots) on the calling thread.
@@ -235,9 +235,9 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
           std::size_t OutExtent, typename Whole, typename Brand>
     requires(Shards > 0) && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeSumElement<T>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
-parallel_sum_scan(Ctx const& ctx, ::foundation::core::ScanKind kind, ::foundation::core::View<T const> in,
-                  ::foundation::core::ViewMut<T, OutBrand, OutExtent> out,
-                  ::fixy::OwnedRegion<T, Whole, Brand>&& carries) noexcept {
+scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, ::foundation::core::View<T const> in,
+                      ::foundation::core::ViewMut<T, OutBrand, OutExtent> out,
+                      ::fixy::OwnedRegion<T, Whole, Brand>&& carries) noexcept {
     if (in.size() != out.size()) [[unlikely]] {
         ::foundation::core::fatal("a parallel scan got an input of {} elements and an output of {}", in.size(),
                                   out.size());
@@ -249,8 +249,8 @@ parallel_sum_scan(Ctx const& ctx, ::foundation::core::ScanKind kind, ::foundatio
     auto summed =
         spawn::mint_parallel_for<Coupling, Shards>(ctx, budget, std::move(carries), [in, base](auto& shard) noexcept {
             if (shard.size() == 0) return;
-            ::foundation::core::detail::tree_sum_grains_<parallel_tree_grain>(in, detail::first_slot_(shard, base),
-                                                                              shard.data(), shard.size());
+            ::foundation::core::detail::sum_grains_by_tree_<parallel_tree_grain>(in, detail::first_slot_(shard, base),
+                                                                                 shard.data(), shard.size());
         });
     T* const slots = summed.data();
     ::foundation::core::detail::sum_scan_lanes_<::foundation::core::ScanKind::Exclusive, T,
@@ -271,10 +271,10 @@ parallel_sum_scan(Ctx const& ctx, ::foundation::core::ScanKind kind, ::foundatio
             if (shard.size() == 0) return;
             ::foundation::core::View<T const> const shard_carries{detail::region_view_(shard)};
             if (kind == ::foundation::core::ScanKind::Inclusive) {
-                ::foundation::core::inclusive_sum_scan_grains<parallel_tree_grain>(in, first, shard_carries,
+                ::foundation::core::scan_inclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
                                                                                    std::move(own));
             } else {
-                ::foundation::core::exclusive_sum_scan_grains<parallel_tree_grain>(in, first, shard_carries,
+                ::foundation::core::scan_exclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
                                                                                    std::move(own));
             }
         });
@@ -308,15 +308,15 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the elements, with the slots in a HeapArray that the
 // allocation capability of the caller gives.  The bits are the bits of
-// foundation::core::tree_sum.  Complexity: as the form with a region, and one
-// allocation of parallel_tree_partials(n) slots.
+// foundation::core::sum_by_tree.  Complexity: as the form with a region, and one
+// allocation of count_parallel_tree_partials(n) slots.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename T>
     requires(Shards > 0) && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeSumElement<T>
-[[nodiscard]] T parallel_tree_sum(Ctx const& ctx, ::foundation::core::Alloc alloc,
-                                  ::foundation::core::View<T const> elements) noexcept {
+[[nodiscard]] T sum_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::Alloc alloc,
+                                        ::foundation::core::View<T const> elements) noexcept {
     ::foundation::core::HeapArray<T> storage =
-        ::foundation::core::mint_heap_array(alloc, parallel_tree_partials(elements.size()), T{});
-    auto parts = parallel_tree_sum<Coupling, Shards>(
+        ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(elements.size()), T{});
+    auto parts = sum_by_tree_in_parallel<Coupling, Shards>(
         ctx, elements,
         ::fixy::mint_owned_region(detail::first_slot_of_(storage.view()), storage.size(),
                                   ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()));
@@ -335,14 +335,14 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
     requires(Shards > 0) && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeValue<T>
          && ::foundation::core::TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
          && std::is_nothrow_copy_constructible_v<Combine>
-[[nodiscard]] ::foundation::core::Option<T> parallel_tree_reduce(Ctx const& ctx, ::foundation::core::Alloc alloc,
-                                                                 ::foundation::core::View<T const> elements,
-                                                                 Combine combine) noexcept {
+[[nodiscard]] ::foundation::core::Option<T> reduce_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::Alloc alloc,
+                                                                       ::foundation::core::View<T const> elements,
+                                                                       Combine combine) noexcept {
     if (elements.size() == 0) return ::foundation::core::none;
     T const& fill = *elements.get(0).expect("the run has a first element");
     ::foundation::core::HeapArray<T> storage =
-        ::foundation::core::mint_heap_array(alloc, parallel_tree_partials(elements.size()), fill);
-    auto parts = parallel_tree_reduce<Coupling, Shards>(
+        ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(elements.size()), fill);
+    auto parts = reduce_by_tree_in_parallel<Coupling, Shards>(
         ctx, elements,
         ::fixy::mint_owned_region(detail::first_slot_of_(storage.view()), storage.size(),
                                   ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>()),
@@ -355,17 +355,17 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The sum scan of in into out, with the carries in a HeapArray that the
-// allocation capability gives.  The bits are the bits of inclusive_sum_scan
-// or exclusive_sum_scan.
+// allocation capability gives.  The bits are the bits of scan_inclusive_sums
+// or scan_exclusive_sums.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename T, typename OutBrand,
           std::size_t OutExtent>
     requires(Shards > 0) && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeSumElement<T>
-void parallel_sum_scan(Ctx const& ctx, ::foundation::core::Alloc alloc, ::foundation::core::ScanKind kind,
-                       ::foundation::core::View<T const> in,
-                       ::foundation::core::ViewMut<T, OutBrand, OutExtent> out) noexcept {
+void scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::Alloc alloc, ::foundation::core::ScanKind kind,
+                           ::foundation::core::View<T const> in,
+                           ::foundation::core::ViewMut<T, OutBrand, OutExtent> out) noexcept {
     ::foundation::core::HeapArray<T> storage =
-        ::foundation::core::mint_heap_array(alloc, parallel_tree_partials(in.size()), T{});
-    ::foundation::linear::drop(parallel_sum_scan<Coupling, Shards>(
+        ::foundation::core::mint_heap_array(alloc, count_parallel_tree_partials(in.size()), T{});
+    ::foundation::linear::drop(scan_sums_in_parallel<Coupling, Shards>(
         ctx, kind, in, std::move(out),
         ::fixy::mint_owned_region(detail::first_slot_of_(storage.view()), storage.size(),
                                   ::foundation::permissions::mint_permission_root<detail::ParallelTreeSlots>())));
@@ -373,7 +373,7 @@ void parallel_sum_scan(Ctx const& ctx, ::foundation::core::Alloc alloc, ::founda
 
 // The tree sum of each segment, by shards of the segments: sums[s] is the
 // tree sum of the elements [offsets[s], offsets[s + 1]), with the bits of
-// segmented_tree_sum.  The form wraps the run of the ViewMut of the sums in a
+// sum_segments_by_tree.  The form wraps the run of the ViewMut of the sums in a
 // region of its own, so the split of mint_parallel_for gives each shard its
 // own sums.  The offsets must pass check_segment_offsets for the count of the
 // sums, and offsets that fail it end the process before any write.
@@ -381,9 +381,9 @@ void parallel_sum_scan(Ctx const& ctx, ::foundation::core::Alloc alloc, ::founda
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename T, typename SumBrand,
           std::size_t SumExtent>
     requires(Shards > 0) && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeSumElement<T>
-void parallel_segmented_tree_sum(Ctx const& ctx, ::foundation::core::View<T const> elements,
-                                 ::foundation::core::View<std::size_t const> offsets,
-                                 ::foundation::core::ViewMut<T, SumBrand, SumExtent> sums) noexcept {
+void sum_segments_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> elements,
+                                      ::foundation::core::View<std::size_t const> offsets,
+                                      ::foundation::core::ViewMut<T, SumBrand, SumExtent> sums) noexcept {
     if (::foundation::core::check_segment_offsets(elements.size(), offsets, sums.size()).is_err()) [[unlikely]] {
         ::foundation::core::fatal("a parallel segmented sum got offsets that fail check_segment_offsets for {} sums",
                                   sums.size());
@@ -399,7 +399,7 @@ void parallel_segmented_tree_sum(Ctx const& ctx, ::foundation::core::View<T cons
             ::foundation::core::View<std::size_t const> const own_offsets =
                 offsets.window(first, shard.size() + 1).expect("the offsets of a shard fit the checked offsets");
             static_cast<void>(
-                ::foundation::core::detail::segmented_tree_sum_(elements, own_offsets, shard.data(), shard.size())
+                ::foundation::core::detail::sum_segments_by_tree_(elements, own_offsets, shard.data(), shard.size())
                     .expect("a window of checked offsets passes the check"));
         }));
 }

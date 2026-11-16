@@ -1,6 +1,6 @@
 // The parallel tree sum of fixy/concurrent/ParallelTree.h, run for real on 1,
 // 2, 4, 8 and 64 threads (parallel_tree_test.h).  Each result must have the
-// bits of tree_sum of one thread.
+// bits of sum_by_tree of one thread.
 
 #include <fixy/Core.h>
 #include <fixy/concurrent/ParallelTree.h>
@@ -20,14 +20,15 @@ namespace tree = ::crucible::test::parallel_tree;
 using ::foundation::core::HeapArray;
 using ::foundation::core::View;
 
-// The parallel tree sum gives the bits of tree_sum for each count.
+// The parallel tree sum gives the bits of sum_by_tree for each count.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, std::size_t Counts>
 void check_sums(View<float const> all, ::fixy::FixedArray<std::size_t, Counts> const& counts) noexcept {
     tree::BgCtx const ctx{tree::eff::testing::bg()};
     for (std::size_t const count : counts) {
         View<float const> const part = all.window(0, count).expect("the part fits the run");
-        float const parallel = ::fixy::concurrent::parallel_tree_sum<Coupling, Shards>(ctx, tree::test_alloc(), part);
-        assert(tree::same_bits(parallel, ::foundation::core::tree_sum(part)));
+        float const parallel =
+            ::fixy::concurrent::sum_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), part);
+        assert(tree::same_bits(parallel, ::foundation::core::sum_by_tree(part)));
     }
 }
 
@@ -50,8 +51,9 @@ void check_nan_sums(View<float const> all) noexcept {
     tree::BgCtx const ctx{tree::eff::testing::bg()};
     for (std::size_t const count : tree::kCounts) {
         View<float const> const part = all.window(0, count).expect("the part fits the run");
-        float const parallel = ::fixy::concurrent::parallel_tree_sum<Coupling, Shards>(ctx, tree::test_alloc(), part);
-        float const single = ::foundation::core::tree_sum(part);
+        float const parallel =
+            ::fixy::concurrent::sum_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), part);
+        float const single = ::foundation::core::sum_by_tree(part);
         assert(::crucible::test::float_bits(parallel) == ::crucible::test::output_bits(single));
         assert(::crucible::test::float_bits(single) == ::crucible::test::output_bits(single));
     }

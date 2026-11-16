@@ -40,7 +40,7 @@ inline constexpr std::size_t target_unit_run = 1000;
         std::uint32_t const sign = (state >> 26) & 1u;
         value = ::foundation::core::bit_cast<float>((sign << 31) | (exponent << 23) | (state & 0x7FFFFFu));
     }
-    float const sum = ::foundation::core::tree_sum(::foundation::core::View<float const>{run.view()});
+    float const sum = ::foundation::core::sum_by_tree(::foundation::core::View<float const>{run.view()});
     return ::foundation::core::bit_cast<std::uint32_t>(sum);
 }
 
@@ -49,9 +49,9 @@ inline constexpr std::size_t target_unit_run = 1000;
 [[nodiscard]] consteval TargetUnitBodies bodies_of_this_unit() noexcept {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a body or an object tells which unit of the link holds it")
     return TargetUnitBodies{
-        .tree_sum_body = &::foundation::core::tree_sum,
+        .sum_by_tree_body = &::foundation::core::sum_by_tree,
         .sum_scan_body =
-            &::foundation::core::inclusive_sum_scan<float, TargetProbeBrand, ::foundation::core::dynamic_extent>,
+            &::foundation::core::scan_inclusive_sums<float, TargetProbeBrand, ::foundation::core::dynamic_extent>,
         .fixed_copy_body = &::foundation::core::copy<std::uint8_t, 64>,
         .vector_bytes = &::foundation::simd::native_vector_bytes,
         .sum_bits_body = &sum_bits_of_this_unit,

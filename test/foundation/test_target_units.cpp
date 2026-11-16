@@ -25,11 +25,11 @@ using ::crucible::test::wide_unit_bodies;
 // functions in the two units.
 void test_each_unit_keeps_its_bodies() {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a body or an object tells which unit of the link holds it")
-    bool const is_tree_sum_shared = baseline_unit_bodies.tree_sum_body == wide_unit_bodies.tree_sum_body;
+    bool const is_sum_by_tree_shared = baseline_unit_bodies.sum_by_tree_body == wide_unit_bodies.sum_by_tree_body;
     bool const is_sum_scan_shared = baseline_unit_bodies.sum_scan_body == wide_unit_bodies.sum_scan_body;
     bool const is_fixed_copy_shared = baseline_unit_bodies.fixed_copy_body == wide_unit_bodies.fixed_copy_body;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    assert(!is_tree_sum_shared);
+    assert(!is_sum_by_tree_shared);
     assert(!is_sum_scan_shared);
     assert(!is_fixed_copy_shared);
 }

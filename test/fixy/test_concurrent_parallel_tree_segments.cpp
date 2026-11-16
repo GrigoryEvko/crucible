@@ -1,6 +1,6 @@
 // The parallel segmented sum of fixy/concurrent/ParallelTree.h, run for real
 // on 1, 2, 4, 8 and 64 threads (parallel_tree_test.h).  Each sum must have the
-// bits of segmented_tree_sum of one thread.
+// bits of sum_segments_by_tree of one thread.
 
 #include <fixy/Core.h>
 #include <fixy/concurrent/ParallelTree.h>
@@ -19,7 +19,7 @@ namespace tree = ::crucible::test::parallel_tree;
 using ::foundation::core::HeapArray;
 using ::foundation::core::View;
 
-// The parallel segmented sum gives the bits of segmented_tree_sum, for
+// The parallel segmented sum gives the bits of sum_segments_by_tree, for
 // segments of drawn lengths, some of them empty.
 template <spawn::BodyCoupling Coupling, std::size_t Shards>
 void check_segments(View<float const> all, ::crucible::test::PhiloxStream& stream) noexcept {
@@ -38,10 +38,10 @@ void check_segments(View<float const> all, ::crucible::test::PhiloxStream& strea
     HeapArray<float> single = ::foundation::core::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
     View<std::size_t const> const checked{offset_view};
     parallel = ::foundation::core::with_mut(std::move(parallel), [&](auto out) noexcept {
-        ::fixy::concurrent::parallel_segmented_tree_sum<Coupling, Shards>(ctx, part, checked, std::move(out));
+        ::fixy::concurrent::sum_segments_by_tree_in_parallel<Coupling, Shards>(ctx, part, checked, std::move(out));
     });
     single = ::foundation::core::with_mut(std::move(single), [&](auto out) noexcept {
-        assert(::foundation::core::segmented_tree_sum(part, checked, std::move(out)).is_ok());
+        assert(::foundation::core::sum_segments_by_tree(part, checked, std::move(out)).is_ok());
     });
     assert(tree::same_runs(View<float const>{parallel.view()}, View<float const>{single.view()}));
 }

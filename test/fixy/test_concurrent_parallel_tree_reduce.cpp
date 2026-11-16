@@ -1,7 +1,7 @@
 // The parallel tree reduce of fixy/concurrent/ParallelTree.h, run for real on
 // 1, 2, 4, 8 and 64 threads (parallel_tree_test.h).  A combine that records
 // the id of each thread that calls it proves the count of the threads, and
-// the value must be the value of tree_reduce of one thread.
+// the value must be the value of reduce_by_tree of one thread.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -69,7 +69,7 @@ struct RecordingMix {
 }
 
 // The parallel tree reduce with the recording combine gives the value of
-// tree_reduce, and the combine ran on Shards threads and on the calling
+// reduce_by_tree, and the combine ran on Shards threads and on the calling
 // thread.  One shard runs on the calling thread alone.
 template <std::size_t Shards>
 void check_reduce_on_stated_threads(View<std::uint64_t const> all) noexcept {
@@ -82,10 +82,10 @@ void check_reduce_on_stated_threads(View<std::uint64_t const> all) noexcept {
         ::foundation::core::mint_heap_array_with<::fixy::Atomic<std::uint32_t>>(
             tree::test_alloc(), 256, [](std::size_t) noexcept { return ::fixy::Atomic<std::uint32_t>{0}; });
     RecordingMix const mix{table.view(), ++next_generation};
-    auto const parallel = ::fixy::concurrent::parallel_tree_reduce<spawn::BodyCoupling::WaitOnEachOther, Shards>(
+    auto const parallel = ::fixy::concurrent::reduce_by_tree_in_parallel<spawn::BodyCoupling::WaitOnEachOther, Shards>(
         ctx, tree::test_alloc(), run, mix);
     std::size_t const threads = threads_in(table.view());
-    std::uint64_t const single = ::foundation::core::tree_reduce(run, mix).expect("the run has elements");
+    std::uint64_t const single = ::foundation::core::reduce_by_tree(run, mix).expect("the run has elements");
     assert(parallel.is_some());
     for (std::uint64_t const value : parallel) {
         assert(value == single);
@@ -116,6 +116,6 @@ void test_reduce_on_stated_threads() {
 
 int main() {
     test_reduce_on_stated_threads();
-    crucible::test::pass("test_concurrent_parallel_tree_reduce: all tests passed\n");
+    crucible::test::pass("test_concurrent_reduce_by_tree_in_parallel: all tests passed\n");
     return 0;
 }

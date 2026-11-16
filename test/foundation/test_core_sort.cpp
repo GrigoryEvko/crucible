@@ -35,7 +35,7 @@ using ::foundation::core::View;
 // wire holds the bits of 64 inputs, so a comparator is an and and an or.
 template <std::size_t N>
 [[nodiscard]] bool network_sorts_each_binary_input() noexcept {
-    constexpr auto plan = ::foundation::core::sort_network_plan<N>();
+    constexpr auto plan = ::foundation::core::plan_sort_network<N>();
     std::uint64_t const inputs = std::uint64_t{1} << N;
     std::uint64_t const lanes = inputs < 64 ? ((std::uint64_t{1} << inputs) - 1) : ~std::uint64_t{0};
     ::fixy::FixedArray<std::uint64_t, N> wires{};
@@ -94,8 +94,8 @@ void naive_sort(View<float> values) noexcept {
         float const moving = ::crucible::test::element_at(values, index);
         std::size_t position = index;
         while (position > 0
-               && ::foundation::core::total_order_key(moving)
-                      < ::foundation::core::total_order_key(::crucible::test::element_at(values, position - 1))) {
+               && ::foundation::core::encode_total_order_key(moving) < ::foundation::core::encode_total_order_key(
+                      ::crucible::test::element_at(values, position - 1))) {
             ::crucible::test::element_at(values, position) = ::crucible::test::element_at(values, position - 1);
             --position;
         }
@@ -125,7 +125,7 @@ void check_network_on_floats(::crucible::test::PhiloxStream& stream) noexcept {
         ::fixy::FixedArray<float, N> expected{values};
         naive_sort(View<float>{expected.view()});
         values = ::foundation::core::with_mut(
-            std::move(values), [](auto out) noexcept { ::foundation::core::sort_network(std::move(out)); });
+            std::move(values), [](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
         assert(same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
 }
@@ -149,11 +149,11 @@ void test_networks_agree_with_the_naive_sort() {
 // The stable sort of owner with the scratch of scratch, through a frame of
 // each.  True when the sort gave no error.
 template <class Owner, class... Less>
-[[nodiscard]] bool sort_stably(Owner& owner, Owner& scratch, Less... less) noexcept {
+[[nodiscard]] bool sort_through_frames(Owner& owner, Owner& scratch, Less... less) noexcept {
     bool is_sorted = false;
     owner = ::foundation::core::with_mut(std::move(owner), [&](auto elements) noexcept {
         scratch = ::foundation::core::with_mut(std::move(scratch), [&](auto room) noexcept {
-            is_sorted = ::foundation::core::stable_sort(std::move(elements), std::move(room), less...).is_ok();
+            is_sorted = ::foundation::core::sort_stably(std::move(elements), std::move(room), less...).is_ok();
         });
     });
     return is_sorted;
@@ -171,7 +171,7 @@ struct Keyed {
 // The stable sort orders the records by key, keeps the input order of the
 // records of one key, and keeps each record, for each count to 300 and the
 // counts around each power of two to 2^16.
-void test_stable_sort_is_stable() {
+void test_sort_stably_is_stable() {
     ::crucible::test::PhiloxStream stream{0x50470002u};
     auto const by_key = [](Keyed const& left, Keyed const& right) noexcept { return is_below(left, right); };
     auto const check_count = [&](std::size_t count) noexcept {
@@ -182,7 +182,7 @@ void test_stable_sort_is_stable() {
             record = Keyed{static_cast<std::uint32_t>(stream.below(1 + count / 4)), position};
             ++position;
         }
-        assert(sort_stably(records, scratch, by_key));
+        assert(sort_through_frames(records, scratch, by_key));
         HeapArray<std::uint8_t> seen = ::foundation::core::mint_heap_array(test_alloc(), count, std::uint8_t{0});
         View<Keyed> const sorted = records.view();
         for (std::size_t index = 0; index < count; ++index) {
@@ -206,7 +206,7 @@ void test_stable_sort_is_stable() {
 }
 
 // The stable sort of floats of each class gives the bits of the naive sort.
-void test_stable_sort_agrees_with_the_naive_sort() {
+void test_sort_stably_agrees_with_the_naive_sort() {
     ::crucible::test::PhiloxStream stream{0x50470003u};
     ::fixy::FixedArray<std::size_t, 8> const counts{0, 1, 2, 31, 32, 33, 100, 1500};
     for (std::size_t const count : counts) {
@@ -218,12 +218,12 @@ void test_stable_sort_agrees_with_the_naive_sort() {
             ::foundation::core::mint_heap_array_copy<float>(test_alloc(), View<float const>{values.view()});
         naive_sort(expected.view());
         HeapArray<float> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
-        assert(sort_stably(values, scratch));
+        assert(sort_through_frames(values, scratch));
         assert(same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
 }
 
-// lower_bound and binary_search give the first position that a scan finds.
+// find_lower_bound and find_equivalent give the first position that a scan finds.
 void test_searches_agree_with_a_scan() {
     ::crucible::test::PhiloxStream stream{0x50470004u};
     for (int trial = 0; trial < 400; ++trial) {
@@ -243,10 +243,10 @@ void test_searches_agree_with_a_scan() {
                     break;
                 }
             }
-            assert(::foundation::core::lower_bound(sorted, probe) == first_not_below);
+            assert(::foundation::core::find_lower_bound(sorted, probe) == first_not_below);
             bool const is_present =
                 first_not_below < count && ::crucible::test::element_at(sorted, first_not_below) == probe;
-            auto const found = ::foundation::core::binary_search(sorted, probe);
+            auto const found = ::foundation::core::find_equivalent(sorted, probe);
             assert(found.is_some() == is_present);
             for (std::size_t const position : found) {
                 assert(position == first_not_below);
@@ -260,8 +260,8 @@ void test_searches_agree_with_a_scan() {
 int main() {
     test_networks_sort_each_binary_input();
     test_networks_agree_with_the_naive_sort();
-    test_stable_sort_is_stable();
-    test_stable_sort_agrees_with_the_naive_sort();
+    test_sort_stably_is_stable();
+    test_sort_stably_agrees_with_the_naive_sort();
     test_searches_agree_with_a_scan();
     crucible::test::pass("test_core_sort: all tests passed\n");
     return 0;

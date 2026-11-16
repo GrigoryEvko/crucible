@@ -512,7 +512,7 @@ inline constexpr NetSignature<1, 6> value_kinds{
         {.name = "spin", .port_names = {"in", "out"}, .port_types = {meet(value), meet(value)}},
     }};
 
-// tree_plan<3>: (x0, x1), then (that, x2).  Agents: 0 to 2 num, 3 and 4
+// plan_tree<3>: (x0, x1), then (that, x2).  Agents: 0 to 2 num, 3 and 4
 // add, 5 result.  The same plan with the operands of the first step swapped
 // passes each check too: no structural check sees the order of operands.
 inline constexpr Net<1, 6, 6, 5> tree_of_three{
@@ -546,7 +546,7 @@ inline constexpr Net<1, 6, 20, 21> scan_part{
 static_assert(check_dataflow(scan_part).is_admitted() && check_vicious(scan_part).is_admitted());
 static_assert(!check_forest(scan_part).is_admitted());
 
-// sort_network_plan<4>: (0, 1), (2, 3), (0, 3), (1, 2), (0, 1), (2, 3).
+// plan_sort_network<4>: (0, 1), (2, 3), (0, 3), (1, 2), (0, 1), (2, 3).
 // Agents: 0 to 3 num, 4 to 9 cmp, 10 to 13 result.
 inline constexpr Net<1, 6, 14, 16> sort_of_four{
     .signature = value_kinds,

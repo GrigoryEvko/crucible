@@ -23,10 +23,13 @@ struct Mix {
 inline constexpr std::uint64_t empty_value = 0xE3E3E3E3u;
 
 // The depths of THE ERROR BOUND.
-static_assert(exclusive_scan_depth(0) == 0 && exclusive_scan_depth(1) == 0 && exclusive_scan_depth(2) == 1);
-static_assert(exclusive_scan_depth(3) == 2 && exclusive_scan_depth(4) == 2 && exclusive_scan_depth(7) == 4);
-static_assert(inclusive_scan_depth(0) == 0 && inclusive_scan_depth(1) == 1 && inclusive_scan_depth(3) == 3);
-static_assert(inclusive_scan_depth(7) == 5 && inclusive_scan_depth(8) == 4);
+static_assert(count_exclusive_scan_depth(0) == 0 && count_exclusive_scan_depth(1) == 0
+              && count_exclusive_scan_depth(2) == 1);
+static_assert(count_exclusive_scan_depth(3) == 2 && count_exclusive_scan_depth(4) == 2
+              && count_exclusive_scan_depth(7) == 4);
+static_assert(count_inclusive_scan_depth(0) == 0 && count_inclusive_scan_depth(1) == 1
+              && count_inclusive_scan_depth(3) == 3);
+static_assert(count_inclusive_scan_depth(7) == 5 && count_inclusive_scan_depth(8) == 4);
 
 template <std::size_t N>
 [[nodiscard]] consteval FixedArray<std::uint64_t, N> leaves_of() noexcept {
@@ -97,7 +100,7 @@ template <class Scratch, class Out>
         && outputs.at(index<1>()) == PlanNode{0} && outputs.at(index<2>()) == PlanNode{4}
         && outputs.at(index<3>()) == PlanNode{5};
 }
-static_assert(scan_plan_steps(4, ScanKind::Exclusive).value_or(0) == 2);
+static_assert(count_scan_plan_steps(4, ScanKind::Exclusive).value_or(0) == 2);
 static_assert(exclusive_plan_of_four_is_stated());
 
 // The plan of an inclusive scan of four: x0, (x0, x1), ((x0, x1), x2), and
@@ -112,7 +115,7 @@ static_assert(exclusive_plan_of_four_is_stated());
         && outputs.at(index<1>()) == PlanNode{4} && outputs.at(index<2>()) == PlanNode{5}
         && outputs.at(index<3>()) == PlanNode{6};
 }
-static_assert(scan_plan_steps(4, ScanKind::Inclusive).value_or(0) == 3);
+static_assert(count_scan_plan_steps(4, ScanKind::Inclusive).value_or(0) == 3);
 static_assert(inclusive_plan_of_four_is_stated());
 
 // The plan of a scan of N leaves gives the outputs of the scan for the
@@ -120,7 +123,7 @@ static_assert(inclusive_plan_of_four_is_stated());
 // are the same.
 template <std::size_t N, ScanKind Kind>
 [[nodiscard]] consteval bool plan_agrees_with_scan() noexcept {
-    constexpr std::size_t step_count = scan_plan_steps(N, Kind).value_or(0);
+    constexpr std::size_t step_count = count_scan_plan_steps(N, Kind).value_or(0);
     auto const leaves = leaves_of<N>();
     FixedArray<TreeStep, step_count + 1> step_storage{};
     FixedArray<std::uint64_t, step_count + 1> scratch_storage{};
@@ -137,9 +140,9 @@ template <std::size_t N, ScanKind Kind>
     }
     bool const is_scanned = write_first(from_scan, N, [&](auto out) noexcept {
         if constexpr (Kind == ScanKind::Inclusive) {
-            return inclusive_scan(leaf_view, std::move(out), Mix{}).is_ok();
+            return scan_inclusive(leaf_view, std::move(out), Mix{}).is_ok();
         } else {
-            return exclusive_scan(leaf_view, std::move(out), empty_value, Mix{}).is_ok();
+            return scan_exclusive(leaf_view, std::move(out), empty_value, Mix{}).is_ok();
         }
     });
     if (!is_scanned || !equal(from_plan.view(), from_scan.view())) return false;
@@ -194,9 +197,9 @@ static_assert(plan_agrees_with_scan<65, ScanKind::Inclusive>() && plan_agrees_wi
     View<std::uint64_t const> const all{leaves.view()};
     bool const is_scanned =
         write_first(longer, 6,
-                    [&](auto out) noexcept { return exclusive_scan(all, std::move(out), empty_value, Mix{}).is_ok(); })
+                    [&](auto out) noexcept { return scan_exclusive(all, std::move(out), empty_value, Mix{}).is_ok(); })
         && write_first(shorter, 5, [&](auto out) noexcept {
-               return exclusive_scan(all.window(0, 5).expect("five leaves fit"), std::move(out), empty_value, Mix{})
+               return scan_exclusive(all.window(0, 5).expect("five leaves fit"), std::move(out), empty_value, Mix{})
                    .is_ok();
            });
     return is_scanned
@@ -209,7 +212,7 @@ static_assert(scan_is_stable_under_append());
     auto const leaves = leaves_of<4>();
     FixedArray<std::uint64_t, 3> out{};
     return write_first(out, 3, [&](auto part) noexcept {
-        return inclusive_scan(View<std::uint64_t const>{leaves.view()}, std::move(part), Mix{}).is_err();
+        return scan_inclusive(View<std::uint64_t const>{leaves.view()}, std::move(part), Mix{}).is_err();
     });
 }
 static_assert(mismatched_scan_is_refused());

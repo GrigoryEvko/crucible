@@ -77,18 +77,18 @@ static_assert(collect_word_sign_bits(0xFF00FF00FF00FF00u) == 0xAAu);
     using Quad = vec<std::int32_t, 4>;
     Quad const low = iota_v<Quad>();
     Quad const high = low + Quad{std::int32_t{4}};
-    Quad const even = even_lanes(low, high);
-    Quad const odd = odd_lanes(low, high);
+    Quad const even = pick_even_lanes(low, high);
+    Quad const odd = pick_odd_lanes(low, high);
     bool is_ordered = true;
     for (int lane = 0; lane < 4; ++lane) {
         is_ordered = is_ordered && even[lane] == 2 * lane && odd[lane] == 2 * lane + 1;
     }
-    vec<std::int32_t, 2> const half_even = even_lanes(low);
-    vec<std::int32_t, 2> const half_odd = odd_lanes(low);
+    vec<std::int32_t, 2> const half_even = pick_even_lanes(low);
+    vec<std::int32_t, 2> const half_odd = pick_odd_lanes(low);
     return is_ordered && half_even[0] == 0 && half_even[1] == 2 && half_odd[0] == 1 && half_odd[1] == 3;
 }
 static_assert(alternate_lanes_keep_their_order());
-static_assert(std::is_same_v<decltype(even_lanes(vec<float, 16>{})), vec<float, 8>>);
+static_assert(std::is_same_v<decltype(pick_even_lanes(vec<float, 16>{})), vec<float, 8>>);
 static_assert(native_lanes<float> * sizeof(float) == native_vector_bytes);
 static_assert(native_lanes<double> * sizeof(double) == native_vector_bytes);
 

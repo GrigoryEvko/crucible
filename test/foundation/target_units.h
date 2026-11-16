@@ -23,13 +23,13 @@ struct TargetProbeBrand final {};
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a body or an object tells which unit of the link holds it")
 
 // The addresses that one unit gives:
-//   - tree_sum_body, sum_scan_body, fixed_copy_body: three bodies whose source
+//   - sum_by_tree_body, sum_scan_body, fixed_copy_body: three bodies whose source
 //     reads the vector width of the target
 //   - vector_bytes: the object of the vector width that the target sets
 //   - sum_bits_body: the bits of the tree sum of the run of the test, by the
 //     body of the unit.  The unit of x86-64-v4 runs only on such a processor.
 struct TargetUnitBodies {
-    float (*tree_sum_body)(::foundation::core::View<float const>) noexcept = nullptr;
+    float (*sum_by_tree_body)(::foundation::core::View<float const>) noexcept = nullptr;
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::LengthMismatch> (*sum_scan_body)(
         ::foundation::core::View<float const>, ::foundation::core::ViewMut<float, TargetProbeBrand>) noexcept = nullptr;
     void (*fixed_copy_body)(::foundation::core::View<std::uint8_t, 64>,

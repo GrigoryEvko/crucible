@@ -696,22 +696,22 @@ template <int Offset, typename Half, typename Raw, int... Lane>
 }  // namespace detail
 
 // The even lanes and the odd lanes of the concatenation of low and high.
-// Lane i of even_lanes(low, high) is lane 2i of low when 2i is below Lanes,
-// and lane 2i - Lanes of high otherwise.  odd_lanes gives lane 2i + 1 in the
+// Lane i of pick_even_lanes(low, high) is lane 2i of low when 2i is below Lanes,
+// and lane 2i - Lanes of high otherwise.  pick_odd_lanes gives lane 2i + 1 in the
 // same way.  An add of the two results gives the sums of the adjacent pairs
 // of the 2 * Lanes elements, in order, with the lower element as the left
 // operand.  A shuffle moves bits and rounds nothing.  With AVX-512 each
 // shuffle is one vpermt2ps, and with NEON one uzp1 or uzp2.
 template <typename ElementType, int Lanes>
-[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes> even_lanes(vec<ElementType, Lanes> low,
-                                                                           vec<ElementType, Lanes> high) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes> pick_even_lanes(vec<ElementType, Lanes> low,
+                                                                                vec<ElementType, Lanes> high) noexcept {
     return vec<ElementType, Lanes>{
         detail::pick_alternate_lanes<0>(low.raw(), high.raw(), detail::lane_list_t<Lanes>{})};
 }
 
 template <typename ElementType, int Lanes>
-[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes> odd_lanes(vec<ElementType, Lanes> low,
-                                                                          vec<ElementType, Lanes> high) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes> pick_odd_lanes(vec<ElementType, Lanes> low,
+                                                                               vec<ElementType, Lanes> high) noexcept {
     return vec<ElementType, Lanes>{
         detail::pick_alternate_lanes<1>(low.raw(), high.raw(), detail::lane_list_t<Lanes>{})};
 }
@@ -720,14 +720,16 @@ template <typename ElementType, int Lanes>
 // lanes.  The half has at least two lanes, so value has at least four.
 template <typename ElementType, int Lanes>
     requires(Lanes >= 4)
-[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes / 2> even_lanes(vec<ElementType, Lanes> value) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes / 2>
+pick_even_lanes(vec<ElementType, Lanes> value) noexcept {
     using Half = vec<ElementType, Lanes / 2>;
     return Half{detail::pick_alternate_half<0, typename Half::raw_type>(value.raw(), detail::lane_list_t<Lanes / 2>{})};
 }
 
 template <typename ElementType, int Lanes>
     requires(Lanes >= 4)
-[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes / 2> odd_lanes(vec<ElementType, Lanes> value) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes / 2>
+pick_odd_lanes(vec<ElementType, Lanes> value) noexcept {
     using Half = vec<ElementType, Lanes / 2>;
     return Half{detail::pick_alternate_half<1, typename Half::raw_type>(value.raw(), detail::lane_list_t<Lanes / 2>{})};
 }
