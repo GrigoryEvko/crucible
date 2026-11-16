@@ -471,8 +471,26 @@ template <std::size_t Size, std::size_t Align>
     requires HoleShape<Size, Align>
 class Hole;
 
+template <BoxPayload T>
+class Box;
+
 template <class T, class Marker, class... Args>
 concept CanMintBox = CompleteBoxPayload<T> && AllocationCapability<Marker> && std::constructible_from<T, Args&&...>;
+
+// True when a Box of T is linear: T is complete where the Box is first
+// named, and T is linear.  A Box of a linear payload holds a value that a
+// path must consume, so the Box is linear too, as each owner of an element
+// is.  A Box that a unit first names where T is only declared is not
+// linear, so the end of such a Box stops the build when T is linear.
+template <class T>
+[[nodiscard]] consteval bool is_linear_box_payload() {
+    return std::meta::is_complete_type(^^T) && ::foundation::linear::is_linear_type(^^T);
+}
+
+// The object of a Box that the mint of a Hole can end: a complete payload
+// that is not linear, because the end of a linear object drops it.
+template <class T>
+concept DroppableBoxPayload = CompleteBoxPayload<T> && !is_linear_box_payload<T>();
 
 namespace detail {
 
@@ -534,6 +552,10 @@ struct BoxState {
     // destructor of T.
     static void release(BoxState const& state) noexcept {
         if constexpr (CompleteBoxPayload<T>) {
+            static_assert(!::foundation::linear::is_linear_type(^^T)
+                              || ::foundation::linear::is_marked_linear(^^Box<T>),
+                          "a Box of a linear payload is linear only when a unit first names the Box where the payload "
+                          "is complete: name the Box first after the definition of the payload");
             if (state.object != nullptr) {
                 state.object->~T();
                 heap_release_(static_cast<void*>(state.object), sizeof(T), alignof(T));
@@ -564,8 +586,11 @@ struct HoleState {
 }  // namespace detail
 
 // The core of foundation/core/Owner.h gives the moves and the end of a Box.
+// A Box of a linear payload is linear, and it has no move assignment,
+// because the assignment ends the payload that the target holds.
 template <BoxPayload T>
-class [[nodiscard]] Box final : public detail::OwnerCore<detail::owner::BoxState<T>> {
+class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box_payload<T>()>]] Box final
+    : public detail::OwnerCore<detail::owner::BoxState<T>> {
     using State = detail::owner::BoxState<T>;
     using Core = detail::OwnerCore<State>;
 
@@ -619,9 +644,16 @@ public:
         : Core{State{::new(std::move(hole).detach_()) T(static_cast<Args&&>(args)...)}} {}
 
     // The assignment ends the object that this Box holds after it takes
-    // other, so other can live inside that object.
+    // other, so other can live inside that object.  A linear object must not
+    // end that way, so a Box of a linear payload has no assignment.
     Box(Box&&) noexcept = default;
-    Box& operator=(Box&&) noexcept = default;
+    Box& operator=(Box&&) noexcept
+        requires(!is_linear_box_payload<T>())
+    = default;
+    Box& operator=(Box&&)
+        requires(is_linear_box_payload<T>())
+    = delete("an assignment ends the linear payload that the target Box holds, and a linear value must not be "
+             "dropped: consume the target first, or build a new Box");
 
     Box(Box const&) = delete("a Box owns its object alone: a copy would free the object two times");
     Box& operator=(Box const&) = delete("a Box owns its object alone: a copy would free the object two times");
@@ -753,8 +785,10 @@ template <std::size_t Size, std::size_t Align, class Marker>
 
 // A Hole of the storage of a Box that the caller gives up.  The object of
 // the Box ends, and its storage stays with no call of the door.  A Box that
-// holds no object ends the process through fatal().
-template <CompleteBoxPayload T>
+// holds no object ends the process through fatal().  The end of a linear
+// object drops it, so a Box of a linear payload gives no Hole: consume the
+// Box, and take a Hole of new storage.
+template <DroppableBoxPayload T>
 [[nodiscard]] Hole<sizeof(T), alignof(T)> mint_hole(Box<T>&& box) noexcept {
     return Hole<sizeof(T), alignof(T)>{detail::HoleDoor::key(), std::move(box)};
 }

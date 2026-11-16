@@ -2707,6 +2707,21 @@ foundation_neg_compile_test(neg_core_hole_copied
   "use of deleted function .foundation::core::Hole<Size, Align>::Hole\\(const foundation::core::Hole<Size, Align>&\\) \\[with long unsigned int Size = 8; long unsigned int Align = 8\\]."
   "a Hole owns its storage alone: a copy would free the storage two times")
 
+# A Box of a linear payload is linear.  Its assignment and the mint of a
+# Hole from it end the payload with no consume, so each of the two is
+# refused.
+foundation_neg_compile_test(neg_core_box_of_linear_payload_assigned
+  "use of deleted function .foundation::core::Box<T>& foundation::core::Box<T>::operator=\\(foundation::core::Box<T>&&\\) requires \\(is_linear_box_payload<T>\\)\\(\\) \\[with T = foundation::core::Hole<8, 8>\\]."
+  "an assignment ends the linear payload that the target Box holds")
+foundation_neg_compile_test(neg_core_hole_of_box_of_linear_payload
+  "no matching function for call to .mint_hole\\(std::remove_reference<foundation::core::Box<foundation::core::Hole<8, 8> >&>::type\\)."
+  "required for the satisfaction of .DroppableBoxPayload<T>. \\[with T = foundation::core::Hole<8, 8>\\]")
+# A Box that a unit first names before its linear payload is complete is not
+# linear, so its end stops the build.
+foundation_neg_compile_test(neg_core_box_of_linear_payload_named_early
+  "static assertion failed: a Box of a linear payload is linear only when a unit first names the Box where the payload is complete"
+  "name the Box first after the definition of the payload")
+
 foundation_neg_compile_test(neg_core_box_mint_forged_body
   "no matching function for call to .foundation::core::Box<int>::Box\\(<brace-enclosed initializer list>\\)."
   "cannot convert .& stolen. \\(type .int\\*.\\) to type .const foundation::core::detail::BoxKey&.")

@@ -39,6 +39,14 @@ static_assert(std::is_nothrow_move_assignable_v<Box<int>>);
 static_assert(!std::is_trivially_copyable_v<Box<int>>);
 static_assert(!std::is_default_constructible_v<Box<int>>);
 
+// A Box of a linear payload is linear, and it has no move assignment, so the
+// rule must-consume refuses its drop.  A Box of a plain payload is not
+// linear.  A Hole is linear.
+static_assert(::foundation::linear::is_linear_v<Box<Hole<8, 8>>> && !std::is_move_assignable_v<Box<Hole<8, 8>>>);
+static_assert(std::is_nothrow_move_constructible_v<Box<Hole<8, 8>>>);
+static_assert(!::foundation::linear::is_linear_v<Box<int>> && !::foundation::linear::is_linear_v<Box<OverAligned>>);
+static_assert(!DroppableBoxPayload<Hole<8, 8>> && DroppableBoxPayload<int>);
+
 // No pointer converts to a Box.
 static_assert(!std::is_constructible_v<Box<int>, int*>);
 static_assert(!std::is_convertible_v<int*, Box<int>>);

@@ -14,15 +14,18 @@
 //                 owner releases its storage one time.  The probe reads no
 //                 moved-from owner, because the rule use-after-move refuses
 //                 such a read
-//   linear        an owner of a linear element has no move assignment,
-//                 because the assignment drops the elements of the target
+//   linear        an owner of a linear element is linear, so the rule
+//                 must-consume refuses its drop, and it has no move
+//                 assignment, because the assignment drops the elements of
+//                 the target
 //   empty         a door of a moved-from owner gives an empty answer, or it
 //                 ends the process through fatal().  No door reads through
 //                 the null address of the empty state.  The probe reaches the
 //                 moved-from owner through a reference, which the rule
 //                 use-after-move does not read
 //
-// An owner with no element has no child move and no linear hazard.  A Hole
+// An owner with no element has no child move and no linear hazard.  A Box is
+// an owner of one element, its payload.  A Hole
 // has no self-move, because the rule must-consume refuses an assignment over
 // a live Hole.  The count live_nodes holds the number of live nodes, so a
 // lost tail or a second end shows as a wrong count.
@@ -173,7 +176,7 @@ struct BoxProbe {
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    static void linear() {}
+    static void linear();
 
     // EMPTY: a read and a borrow of a moved-from Box end through fatal().
     static void empty() {
@@ -337,6 +340,20 @@ struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_o
     LinearElement& operator=(LinearElement const&) = delete("a linear element of the probe does not copy");
 };
 
+// An owner of a linear element is linear, so the rule must-consume refuses
+// its drop, and it has no move assignment.  The trait reads the owner where
+// the element is complete.
+template <class Owner>
+[[nodiscard]] constexpr bool keeps_its_linear_element() noexcept {
+    return ::foundation::linear::is_linear_v<Owner> && !MoveAssignable<Owner>;
+}
+
+// LINEAR: a Box of a linear payload is linear and has no move assignment.
+void BoxProbe::linear() {
+    CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<Box<LinearElement>>());
+    CRUCIBLE_FATAL_INVARIANT(!::foundation::linear::is_linear_v<Box<BoxNode>>);
+}
+
 struct HeapArrayProbe : ElementArms<HeapArrayProbe> {
     using Tag = HeapArrayTag;
     using Owner = HeapArray<Elem<Tag>>;
@@ -350,7 +367,7 @@ struct HeapArrayProbe : ElementArms<HeapArrayProbe> {
         ::foundation::core::fatal("the HeapArray of the probe holds no element");
     }
 
-    static void linear() { CRUCIBLE_FATAL_INVARIANT(!MoveAssignable<HeapArray<LinearElement>>); }
+    static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<HeapArray<LinearElement>>()); }
 
     // EMPTY: a moved-from HeapArray gives no element and an empty View.
     static void empty() {
@@ -374,7 +391,7 @@ struct MaskedArrayProbe : ElementArms<MaskedArrayProbe> {
 
     static Inner<Tag>& give_first_an_inner(Owner& owner) { return give_an_inner(owner.at_masked(0)); }
 
-    static void linear() { CRUCIBLE_FATAL_INVARIANT(!MoveAssignable<MaskedArray<LinearElement>>); }
+    static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<MaskedArray<LinearElement>>()); }
 
     // EMPTY: an element of a moved-from MaskedArray or of a default one ends
     // through fatal(), and its View is empty.
@@ -431,7 +448,7 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
         return *static_cast<Option<InnerRef>&&>(given).expect("the frame of the first element gave its Inner");
     }
 
-    static void linear() { CRUCIBLE_FATAL_INVARIANT(!MoveAssignable<GrowList<LinearElement>>); }
+    static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<GrowList<LinearElement>>()); }
 
     // EMPTY: a moved-from GrowList gives no element, and an append takes new
     // storage below the maximum that the list keeps.
