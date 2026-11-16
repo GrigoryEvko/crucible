@@ -377,6 +377,90 @@ static void test_matched_index_after_reset() {
     crucible::test::pass("  test_matched_index_after_reset: PASSED\n");
 }
 
+// The matched index and the matched entry of a three-op region name one op.
+// Each op has its own schema hash, so the entry names its own position.
+static void require_matched(const ReplayEngine& engine, uint32_t position) {
+    CRUCIBLE_FATAL_INVARIANT(engine.matched_op_index().value() == OpIndex{position});
+    CRUCIBLE_FATAL_INVARIANT(engine.current_entry().schema_hash == SchemaHash{700 + position});
+}
+
+// The engine reads the matched index from its cursor.  The matched op is the
+// op before the cursor, or the last op after the rewind at the end of an
+// iteration.  Each status keeps the two in step: a MATCH, a COMPLETE, the
+// rewind, a divergence at the first op after the rewind, and a divergence
+// after a MATCH.
+static void test_matched_index_follows_the_cursor() {
+    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
+    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    for (uint32_t i = 0; i < 3; i++) {
+        TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
+        op.schema_hash = SchemaHash{700 + i};
+        op.shape_hash = ShapeHash{800 + i};
+        set_output_slots(op, out_slot.view());
+    }
+    RegionNode region{};
+    init_region(&region, ops.view());
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
+    PoolAllocator pool;
+    pool.init(::foundation::effects::testing::test().alloc, plan);
+    ReplayEngine engine;
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    auto av = engine.mint_active_view(kVigilForeground);
+    for (uint32_t round = 0; round < 2; round++) {
+        for (uint32_t i = 0; i < 3; i++) {
+            const ReplayStatus status = engine.advance(SchemaHash{700 + i}, ShapeHash{800 + i}, av);
+            CRUCIBLE_FATAL_INVARIANT(status == (i < 2 ? ReplayStatus::MATCH : ReplayStatus::COMPLETE));
+            require_matched(engine, i);
+        }
+        engine.reset(av);
+        require_matched(engine, 2);
+    }
+    CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{999}, ShapeHash{800}, av) == ReplayStatus::DIVERGED);
+    require_matched(engine, 2);
+    CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{700}, ShapeHash{800}, av) == ReplayStatus::MATCH);
+    CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{999}, ShapeHash{801}, av) == ReplayStatus::DIVERGED);
+    require_matched(engine, 0);
+
+    crucible::test::pass("  test_matched_index_follows_the_cursor: PASSED\n");
+}
+
+// A rewind from the middle of a region abandons the iteration, so no op stays
+// matched, and each read of the matched op ends the process.  The next
+// iteration matches from the first op.
+static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx const& test) {
+    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
+    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    for (uint32_t i = 0; i < 3; i++) {
+        TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
+        op.schema_hash = SchemaHash{700 + i};
+        op.shape_hash = ShapeHash{800 + i};
+        set_output_slots(op, out_slot.view());
+    }
+    RegionNode region{};
+    init_region(&region, ops.view());
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
+    PoolAllocator pool;
+    pool.init(::foundation::effects::testing::test().alloc, plan);
+    ReplayEngine engine;
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    auto av = engine.mint_active_view(kVigilForeground);
+    CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{700}, ShapeHash{800}, av) == ReplayStatus::MATCH);
+    engine.reset(av);
+    CRUCIBLE_FATAL_INVARIANT(engine.ops_matched() == 0);
+    ::fixy::check::expect_dies(
+        test, [&engine] noexcept { static_cast<void>(engine.matched_op_index()); },
+        ::fixy::TextView{"contract violation: matched.has_value()"});
+    ::fixy::check::expect_dies(
+        test, [&engine, &av] noexcept { static_cast<void>(engine.output_ptr(0, av)); },
+        ::fixy::TextView{"contract violation: matched.has_value()"});
+    CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{700}, ShapeHash{800}, av) == ReplayStatus::MATCH);
+    require_matched(engine, 0);
+
+    crucible::test::pass("  test_rewind_in_the_middle_drops_the_matched_op: PASSED\n");
+}
+
 // The cursor never leaves the region: an advance after the last op, with no
 // reset, ends the process in each build before the guard compares a hash.
 static void test_advance_past_the_end_aborts(::fixy::TestRunnerCtx const& test) {
@@ -552,6 +636,8 @@ int main() {
     test_invalid_slot();
     test_current_entry();
     test_matched_index_after_reset();
+    test_matched_index_follows_the_cursor();
+    test_rewind_in_the_middle_drops_the_matched_op(test);
     test_advance_past_the_end_aborts(test);
     test_slot_id_past_the_table_aborts_init(test);
     test_integration_with_pool();

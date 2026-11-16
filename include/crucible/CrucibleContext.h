@@ -272,9 +272,11 @@ private:
                 return ReplayStatus::MATCH;
             case ReplayStatus::COMPLETE:
                 compiled_iterations_.bump();
-                // The reset keeps the current operation, so the output and
-                // input pointers stay valid until the next advance.
-                engine_.reset();
+                // The rewind keeps the current operation, so the output and
+                // input pointers stay valid until the next advance.  The
+                // status COMPLETE proves the cursor at the end of the region,
+                // so the rewind needs no test of the end.
+                engine_.rewind_after_complete_();
                 return ReplayStatus::COMPLETE;
             case ReplayStatus::DIVERGED:
                 diverged_count_.bump();

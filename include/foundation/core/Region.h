@@ -19,8 +19,6 @@
 //   window(o, c)      the c elements from o, or no value when they do not
 //                     fit: the one explicit branch of the family
 //   window<N>(o)      the same, as a View of the fixed extent N
-//   index_of(e)       the position of the element e of the View, or no
-//                     value when the View does not hold e
 //   copy(dst, src)    the elements of src into dst.  Two Views of one
 //                     fixed extent cannot fail.  Two Views of a dynamic
 //                     extent give a Result, with LengthMismatch when their
@@ -31,7 +29,12 @@
 //                     the same count and extent and the same const
 //   offset_of(whole, part)
 //                     the position of part inside whole, or no value when
-//                     part does not lie inside whole
+//                     part does not lie inside whole or starts between two
+//                     of its elements: the inverse of window(o, c)
+//   offset_of(whole, e)
+//                     the position of the element e inside whole, or no
+//                     value when e is no element of whole: the inverse of
+//                     get(position)
 //
 // A View<T> converts to a View<T const>, and a View<T, N> converts to a
 // View<T>.  No conversion adds a const or removes it the other way, and no
@@ -342,36 +345,6 @@ public:
         return detail::element_at_<Fresh>(first_, size(), position);
     }
 
-    // The position of element in this View, or no value when this View does
-    // not hold element: the inverse of get.  At run time it is one compare.
-    // The distance of the address of element from the first element, as an
-    // unsigned word, is below the bytes of the View only for an element of
-    // the View, and an element below the first one wraps to a large word.
-    // An element of the run starts a whole count of elements after the first
-    // one, so the difference of the two addresses is the position.  O(1) at
-    // run time.  A constant
-    // evaluation cannot read an address as a word, so it compares element
-    // with each element of the View: O(size()).
-    [[nodiscard]] constexpr Option<std::size_t> index_of(T const& element) const noexcept {
-        T const* const address = __builtin_addressof(element);
-        if consteval {
-            for (std::size_t position = 0; position < size(); ++position) {
-                if (first_ + position == address) return Option<std::size_t>::some(position);
-            }
-            return Option<std::size_t>{none};
-        } else {
-            std::size_t const offset =
-                __builtin_bit_cast(std::uintptr_t, address) - __builtin_bit_cast(std::uintptr_t, first_);
-            if (offset >= size() * sizeof(T)) [[unlikely]] {
-                return Option<std::size_t>{none};
-            }
-            // The two addresses are in one run now, so their difference is
-            // the exact division of the optimizer.
-            T const* const first = first_;
-            return Option<std::size_t>::some(static_cast<std::size_t>(address - first));
-        }
-    }
-
     // The loop `for (auto [index, element] : view.enumerate())` reads each
     // element with its proven index, in order.  Each step gives a Record of
     // the Index<Extent> of indices() and a Ref to the element, and each Ref
@@ -506,28 +479,66 @@ concept SameElement = std::same_as<std::remove_const_t<Whole>, std::remove_const
 
 // The position of the first element of part inside whole, or no value when
 // the elements of part do not all lie inside whole.  The position counts
-// elements, not bytes.  The function compares the two address ranges as
-// integers, so two Views of different objects give no value and no
-// undefined compare of pointers.  A part that starts between two elements
-// of whole gives no value.  An empty part at the end of whole gives the
-// count of whole.  An empty View with no address, such as a default View,
-// lies inside each other View with no address, at the position zero.  The
-// address of a run is no constant of the compile, so the function runs
-// only at run time.  Complexity: O(1).
+// elements, not bytes, so whole.window(position, part.size()) is part.  A
+// part that starts between two elements of whole gives no value.  An empty
+// part at the end of whole gives the count of whole.  An empty View with no
+// address, such as a default View, lies inside each other View with no
+// address, at the position zero.
+//
+// At run time the function compares the two address ranges as integers, so
+// two Views of different objects give no value and no undefined compare of
+// pointers: O(1).  A constant evaluation reads no address as a word.  It
+// compares the first address of part with the address of each position of
+// whole: O(whole.size()).  There, an empty part of a different object can
+// meet a compare with the address one past the end of an object.  Such a
+// compare has no specified result, so such a call does not compile.
 template <class Whole, std::size_t WholeExtent, class Part, std::size_t PartExtent>
     requires SameElement<Whole, Part>
-[[nodiscard]] Option<std::size_t> offset_of(View<Whole, WholeExtent> whole, View<Part, PartExtent> part) noexcept {
-    std::uintptr_t const whole_first = __builtin_bit_cast(std::uintptr_t, first_of_(detail::ViewDoor::key(), whole));
-    std::uintptr_t const part_first = __builtin_bit_cast(std::uintptr_t, first_of_(detail::ViewDoor::key(), part));
-    // The door of a View bounds its bytes by __PTRDIFF_MAX__, and an object
-    // ends below the top of the address space, so no sum overflows.
-    std::uintptr_t const whole_end = whole_first + whole.size() * sizeof(Whole);
-    std::uintptr_t const part_end = part_first + part.size() * sizeof(Part);
-    if (part_first < whole_first || part_end > whole_end) return Option<std::size_t>{none};
-    std::size_t const bytes = part_first - whole_first;
-    if (bytes % sizeof(Whole) != 0) return Option<std::size_t>{none};
-    return Option<std::size_t>::some(bytes / sizeof(Whole));
+[[nodiscard]] constexpr Option<std::size_t> offset_of(View<Whole, WholeExtent> whole,
+                                                      View<Part, PartExtent> part) noexcept {
+    Whole* const whole_first = first_of_(detail::ViewDoor::key(), whole);
+    Part* const part_first = first_of_(detail::ViewDoor::key(), part);
+    if consteval {
+        // A part with an element starts at an element of whole, and only an
+        // empty part can start at the end of whole.  The count of whole is
+        // at most max_view_count, so the sum does not overflow.
+        std::size_t const starts = part.size() == 0 ? whole.size() + 1 : whole.size();
+        for (std::size_t position = 0; position < starts; ++position) {
+            if (whole_first + position != part_first) continue;
+            if (part.size() > whole.size() - position) return Option<std::size_t>{none};
+            return Option<std::size_t>::some(position);
+        }
+        return Option<std::size_t>{none};
+    } else {
+        std::uintptr_t const whole_start = __builtin_bit_cast(std::uintptr_t, whole_first);
+        std::uintptr_t const part_start = __builtin_bit_cast(std::uintptr_t, part_first);
+        // The door of a View bounds its bytes by __PTRDIFF_MAX__, and an
+        // object ends below the top of the address space, so no sum
+        // overflows.
+        std::uintptr_t const whole_end = whole_start + whole.size() * sizeof(Whole);
+        std::uintptr_t const part_end = part_start + part.size() * sizeof(Part);
+        if (part_start < whole_start || part_end > whole_end) return Option<std::size_t>{none};
+        std::size_t const bytes = part_start - whole_start;
+        if (bytes % sizeof(Whole) != 0) return Option<std::size_t>{none};
+        return Option<std::size_t>::some(bytes / sizeof(Whole));
+    }
 }
+
+// The position of element inside whole, or no value when element is no
+// element of whole: the inverse of get(position).  The function gives the
+// position of the run of one element at element, so it has the one body
+// above, with its test of an address between two elements.  Complexity: O(1)
+// at run time, and O(whole.size()) in a constant evaluation.
+template <class Whole, std::size_t WholeExtent>
+[[nodiscard]] constexpr Option<std::size_t> offset_of(View<Whole, WholeExtent> whole,
+                                                      std::type_identity_t<Whole> const& element) noexcept {
+    return offset_of(whole, View<Whole const, 1>{detail::ViewDoor::key(), __builtin_addressof(element)});
+}
+
+// A temporary, also the result of a conversion, is no element of a View.
+template <class Whole, std::size_t WholeExtent>
+void offset_of(View<Whole, WholeExtent>, std::type_identity_t<Whole> const&&) =
+    delete("a temporary is no element of a View, so it has no position in one");
 
 // ── The doors of a foreign run ─────────────────────────────────────────
 

@@ -3005,6 +3005,9 @@ foundation_neg_compile_test(neg_core_offset_of_different_elements
 foundation_neg_compile_test(neg_core_offset_of_pointer
   "no matching function for call to .offset_of\\(int\\*, int\\*\\)."
   "mismatched types .foundation::core::View<T, Extent>. and .int\\*.")
+foundation_neg_compile_test(neg_core_offset_of_temporary
+  "use of deleted function .void foundation::core::offset_of\\("
+  "a temporary is no element of a View, so it has no position in one")
 foundation_neg_compile_test(neg_core_copy_extent_mismatch
   "no matching function for call to .copy\\(foundation::core::View<int, 4>&, foundation::core::View<const int, 8>&\\)."
   "In function .void copy_four_from_eight\\(foundation::core::View<int, 4>, foundation::core::View<const int, 8>\\).")

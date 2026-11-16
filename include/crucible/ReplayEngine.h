@@ -101,17 +101,16 @@ struct ReplayEngine {
         CRUCIBLE_POST(0, slot_table_.size() == pool->num_slots());
     }
 
-    // Rewinds to the first operation for the next iteration. The last matched
-    // entry is deliberately kept, so the pointers into it stay valid after the
-    // caller is told the region is complete and resets on its way out.
+    // Rewinds to the first operation for the next iteration. A rewind at the
+    // end of the region keeps the last matched entry, so the pointers into it
+    // stay valid after the caller is told the region is complete and resets
+    // on its way out. A rewind from a different position abandons the
+    // iteration, and no op stays matched. So the matched op is always the op
+    // before the cursor, or the last op when the cursor is at the first op,
+    // which is the position that matched_op_index reads.
     CRUCIBLE_INLINE void reset() {
-        cursor_ = ops_.begin();
-        load_first_guard_();
-
-        // Failing to rewind leaves the next iteration resuming from the middle
-        // of the region, which is a silent break in determinism. The last
-        // matched entry is deliberately absent from this: it survives.
-        CRUCIBLE_POST(0, cursor_ == ops_.begin());
+        if (!cursor_.is_at_end()) current_.reset();
+        rewind_();
     }
 
     // The completion of the last operation is reported by this call itself.
@@ -204,10 +203,16 @@ struct ReplayEngine {
         // the same folding reason as in current_entry.
         const ::fixy::WeakRef<const TraceEntry> matched = current_;
         CRUCIBLE_PRE(matched.has_value());
-        // The engine takes the matched op only from its cursor over ops_, so
-        // the region holds it.  Init bounds the count of ops by 32 bits.
-        const auto position = ops_.index_of(matched.get()).expect("the matched op is an op of the region");
-        return ::fixy::mint_tagged<op_role::Matched>(OpIndex{static_cast<uint32_t>(position)});
+        // The writers of the cursor and of the matched op keep the matched op
+        // before the cursor, or at the last op after the rewind at the end of
+        // an iteration (reset).  So the position of the cursor gives the
+        // position of the matched op, and no address of an op is read.  A
+        // matched op proves at least one op, so the last op exists.  At the
+        // first op, the position before the cursor wraps to the largest word,
+        // and the minimum with the last op gives the last op with no branch.
+        const uint32_t before_cursor = ops_matched() - uint32_t{1};
+        const uint32_t position = ::fixy::min(before_cursor, num_ops() - uint32_t{1});
+        return ::fixy::mint_tagged<op_role::Matched>(OpIndex{position});
     }
 
     // Distinct in type from the matched index, so a caller that could just as
@@ -274,6 +279,24 @@ private:
     [[nodiscard]] CRUCIBLE_INLINE constexpr ActiveView active_view_() const noexcept {
         CRUCIBLE_PRE(is_initialized());
         return ::fixy::mint_view<engine_state::Active>(*this);
+    }
+
+    // The rewind of the context after an advance that gave COMPLETE.  That
+    // advance left the cursor at the end of the region, so the rewind keeps
+    // the last matched op, as reset does there, with no test of the end.
+    // CrucibleContext::advance_ calls it only in its case of COMPLETE.
+    CRUCIBLE_INLINE void rewind_after_complete_() { rewind_(); }
+
+    // The cursor at the first op, and the guard values of that op.  The
+    // matched op does not change.
+    CRUCIBLE_INLINE void rewind_() {
+        cursor_ = ops_.begin();
+        load_first_guard_();
+
+        // Failing to rewind leaves the next iteration resuming from the middle
+        // of the region, which is a silent break in determinism. The last
+        // matched entry is deliberately absent from this: it survives.
+        CRUCIBLE_POST(0, cursor_ == ops_.begin());
     }
 
     // The guard values of the op at the cursor, or no change at the end of

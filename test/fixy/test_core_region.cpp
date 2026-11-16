@@ -173,6 +173,17 @@ void test_offset_of(IoBlockCtx const& ctx, Owner const& owner) {
     // Two empty Views with no address lie one inside the other.
     CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(fixy::View<int>{}, fixy::View<int const>{}).value_or(1) == 0);
     CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(words, fixy::View<std::uint64_t>{}).is_none());
+
+    // The records at byte 8 of the page start between record 0 and record 1
+    // of the records at byte 0.  So neither the run nor its first record has
+    // a position there.  The case reads the addresses of the records only.
+    fixy::View<Record> records = region.template view_at<Record>(0, 100).expect("a page holds 100 records");
+    fixy::View<Record> shifted = region.template view_at<Record>(8, 10).expect("ten records fit at byte 8");
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(records, shifted).is_none());
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(records, *shifted.begin()).is_none());
+    fixy::View<Record> aligned = region.template view_at<Record>(sizeof(Record), 10).expect("ten records fit");
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(records, aligned) == fixy::some(std::size_t{1}));
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(records, *aligned.begin()) == fixy::some(std::size_t{1}));
 }
 
 void test_windows() {
@@ -451,7 +462,7 @@ void test_cursor_position() {
     std::size_t position = 0;
     while (!cursor.is_at_end()) {
         CRUCIBLE_FATAL_INVARIANT(cursor.remaining() == run.size() - position);
-        CRUCIBLE_FATAL_INVARIANT(run.index_of(*cursor) == fixy::some(position));
+        CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(run, *cursor) == fixy::some(position));
         ++cursor;
         ++position;
     }
@@ -464,42 +475,48 @@ void test_cursor_position() {
 // The position of an element of a View is the inverse of get.  An element
 // before the first one, after the last one or in a different run is not an
 // element of the View.  Two FixedArrays own the two runs.
-void test_index_of() {
+void test_offset_of_an_element() {
     fixy::FixedArray<Record, 100> first_storage{};
     fixy::FixedArray<Record, 20> second_storage{};
     fixy::View<Record> const records = first_storage.view();
     fixy::View<Record> middle = records.window(10, 20).expect("twenty records fit");
     for (std::size_t position = 0; position < middle.size(); ++position) {
         Record const& element = *middle.get(position).expect("the position is below the count");
-        CRUCIBLE_FATAL_INVARIANT(middle.index_of(element) == fixy::some(position));
-        CRUCIBLE_FATAL_INVARIANT(records.index_of(element) == fixy::some(position + 10));
+        CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(middle, element) == fixy::some(position));
+        CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(records, element) == fixy::some(position + 10));
     }
     Record const& before = *records.get(9).expect("record 9 fits");
     Record const& after = *records.get(30).expect("record 30 fits");
-    CRUCIBLE_FATAL_INVARIANT(middle.index_of(before).is_none());
-    CRUCIBLE_FATAL_INVARIANT(middle.index_of(after).is_none());
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(middle, before).is_none());
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(middle, after).is_none());
     fixy::View<Record> const other = second_storage.view();
-    CRUCIBLE_FATAL_INVARIANT(middle.index_of(*other.begin()).is_none());
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(middle, *other.begin()).is_none());
     fixy::View<Record> const empty{};
-    CRUCIBLE_FATAL_INVARIANT(empty.index_of(*middle.begin()).is_none());
+    CRUCIBLE_FATAL_INVARIANT(fixy::offset_of(empty, *middle.begin()).is_none());
 }
 
-// A constant evaluation reads no address as a word, so index_of compares the
-// element with each element of the View there, and it gives the same answer.
-consteval bool index_of_agrees_in_constant_evaluation() {
+// A constant evaluation reads no address as a word, so offset_of compares the
+// first address of the part with the address of each position of the whole
+// there, and it gives the same answers: for an element, for a run, for an
+// empty run at the end and for a run past the end.
+consteval bool offset_of_agrees_in_constant_evaluation() {
     fixy::FixedArray<std::uint32_t, 6> numbers{};
     fixy::View<std::uint32_t const> const view = numbers.view();
     fixy::View<std::uint32_t const> const tail = view.window(2, 4).expect("four numbers fit");
     bool is_each_position_found = true;
     std::size_t position = 0;
     for (std::uint32_t const& number : view) {
-        is_each_position_found = is_each_position_found && view.index_of(number) == fixy::some(position);
+        is_each_position_found = is_each_position_found && fixy::offset_of(view, number) == fixy::some(position);
         ++position;
     }
-    return is_each_position_found && tail.index_of(*view.begin()).is_none()
-        && tail.index_of(*tail.begin()) == fixy::some(std::size_t{0});
+    fixy::View<std::uint32_t const> const end = view.window(6, 0).expect("an empty window fits at the end");
+    return is_each_position_found && fixy::offset_of(tail, *view.begin()).is_none()
+        && fixy::offset_of(tail, *tail.begin()) == fixy::some(std::size_t{0})
+        && fixy::offset_of(view, tail) == fixy::some(std::size_t{2}) && fixy::offset_of(tail, view).is_none()
+        && fixy::offset_of(view, end) == fixy::some(std::size_t{6})
+        && fixy::offset_of(tail, end) == fixy::some(std::size_t{4});
 }
-static_assert(index_of_agrees_in_constant_evaluation());
+static_assert(offset_of_agrees_in_constant_evaluation());
 
 // The property: for random windows of two pages, a window is present
 // exactly when it fits, it starts at its offset, and copy then gives
@@ -547,7 +564,7 @@ int main() {
     test_copy_of_unequal_counts_is_an_error();
     test_cursor_at_the_end_aborts();
     test_cursor_position();
-    test_index_of();
+    test_offset_of_an_element();
     test_agrees_with_plain_model();
     return 0;
 }

@@ -352,24 +352,28 @@ static_assert(read_reverse_after_steps(0) == 8 && read_reverse_after_steps(1) ==
 // ── The position of a run inside a run ───────────────────────────────
 
 // offset_of takes two Views of one element type, with or without a const
-// and of each extent, and gives an Option of a position.  The fixtures
-// neg_core_offset_of_different_elements and neg_core_offset_of_pointer show
-// the two refusals.
+// and of each extent, and gives an Option of a position.  The element form
+// takes an element of the first View as an lvalue.  The fixtures
+// neg_core_offset_of_different_elements, neg_core_offset_of_pointer and
+// neg_core_offset_of_temporary show the refusals of two element types, of
+// two pointers and of a temporary, which is no element of a View.
 static_assert(std::is_same_v<decltype(offset_of(std::declval<View<int>>(), std::declval<View<int const, 4>>())),
                              Option<std::size_t>>);
+static_assert(
+    std::is_same_v<decltype(offset_of(std::declval<View<int const>>(), std::declval<int&>())), Option<std::size_t>>);
 
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.4, with the names of the headers of
 // the family that are on main: element_type and extent of a View, capacity
-// of an owner, raw and check of an Index, rest of the chunks, index_of of a
-// View, and is_at_end and remaining of a cursor that a holder keeps between
-// two calls.  The niche of a View, of a TextView and of an Index is the
-// protocol of the Choice family, and its check reads it.
+// of an owner, raw and check of an Index, rest of the chunks, and is_at_end
+// and remaining of a cursor that a holder keeps between two calls.  The
+// niche of a View, of a TextView and of an Index is the protocol of the
+// Choice family, and its check reads it.
 inline constexpr TextView region_names{
     "View Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText HeapText FixedArray FixedList "
     "HeapArray GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent element_type "
-    "extent capacity window split_at indices index index_of parallel check raw rest take take_first take_last clear "
+    "extent capacity window split_at indices index parallel check raw rest take take_first take_last clear "
     "with_view with_element append_self freeze is_at_end remaining"};
 
 // The brand that the check of a branded type names.  A program gets each
