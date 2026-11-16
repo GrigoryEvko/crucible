@@ -407,6 +407,41 @@
       "constructor": "\\bRefMut\\("
     },
     {
+      "name": "neg_witness_core_rowcount_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bRowCount\\("
+    },
+    {
+      "name": "neg_witness_core_rowindex_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bRowIndex\\("
+    },
+    {
+      "name": "neg_witness_core_rowoffset_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bRowOffset\\("
+    },
+    {
+      "name": "neg_witness_core_rowstep_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bRowStep\\("
+    },
+    {
+      "name": "neg_witness_core_rowsteps_cursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bCursor\\("
+    },
+    {
+      "name": "neg_witness_core_rowsteps_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bRowSteps\\("
+    },
+    {
+      "name": "neg_witness_core_rowview_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bRowView\\("
+    },
+    {
       "name": "neg_witness_core_runaddress_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bRunAddress\\("
@@ -425,6 +460,11 @@
       "name": "neg_witness_core_stridedindex_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bStridedIndex\\("
+    },
+    {
+      "name": "neg_witness_core_stridedrow_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bStridedRow\\("
     },
     {
       "name": "neg_witness_core_stridedview_direct_construction",
@@ -1573,6 +1613,38 @@
     {
       "type": "foundation::core::StridedViewMut<int, 2, forge::brand>",
       "header": "foundation/core/Strided.h"
+    },
+    {
+      "type": "foundation::core::RowIndex<forge::brand>",
+      "header": "foundation/core/StridedRows.h"
+    },
+    {
+      "type": "foundation::core::RowCount<forge::brand>",
+      "header": "foundation/core/StridedRows.h"
+    },
+    {
+      "type": "foundation::core::RowStep<forge::brand>",
+      "header": "foundation/core/StridedRows.h"
+    },
+    {
+      "type": "foundation::core::RowOffset<forge::brand>",
+      "header": "foundation/core/StridedRows.h"
+    },
+    {
+      "type": "foundation::core::RowSteps<forge::brand>",
+      "header": "foundation/core/StridedRows.h"
+    },
+    {
+      "type": "foundation::core::RowSteps<forge::brand>::Cursor",
+      "header": "foundation/core/StridedRows.h"
+    },
+    {
+      "type": "foundation::core::RowView<int, forge::brand, 0, foundation::core::RowRead::Unit>",
+      "header": "foundation/core/StridedRows.h"
+    },
+    {
+      "type": "foundation::core::StridedRow<forge::brand, 2>",
+      "header": "foundation/core/StridedRows.h"
     },
     {
       "type": "foundation::algebra::grade_key<forge::brand>",

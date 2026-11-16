@@ -1035,6 +1035,28 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::StridedViewMut,
      "the unique borrow of the elements of the run of a frame at their strides: it owns nothing, it lives inside the "
      "body of the frame, and it makes no claim about what the elements hold"},
+    // The walk of rows of foundation/core/StridedRows.h.
+    {^^::foundation::core::RowViewBrand, "the brand of one view of one walk of rows: an empty tag, never a value"},
+    {^^::foundation::core::RowIndex,
+     "the number of a row of one walk of rows: it lives inside the body of the walk, and it is never a value in a "
+     "kernel signature"},
+    {^^::foundation::core::RowCount,
+     "the count of the positions of a row of one walk of rows: it lives inside the body of the walk, and it is never "
+     "a value in a kernel signature"},
+    {^^::foundation::core::RowStep,
+     "a position of a row of one walk of rows: it lives inside the body of the walk, and it is never a value in a "
+     "kernel signature"},
+    {^^::foundation::core::RowOffset,
+     "the offset of a row in one view of a walk of rows: it lives inside the body of the walk, and it is never a "
+     "value in a kernel signature"},
+    {^^::foundation::core::RowSteps,
+     "the counted loop over the positions of a row of one walk of rows: it lives inside the body of the walk"},
+    {^^::foundation::core::RowView,
+     "a view of one walk of rows: it owns nothing, it lives inside the body of the walk, and it makes no claim about "
+     "what the elements hold"},
+    {^^::foundation::core::StridedRow,
+     "one row of a walk of rows: it reads the offsets of the row loop, lives for one call of the body, and is never "
+     "a value in a kernel signature"},
     {^^::foundation::core::Full,
      "the error of a push into a full owner: it holds nothing, or the linear value of the push, and makes no claim"},
     // The FP mode.

@@ -824,6 +824,17 @@ witness <foundation/core/Strided.h> private | foundation::core::detail::StridedI
 # the ViewMut of a frame and refuses an overlap, so no plain view becomes the
 # one writer of its elements.
 witness <foundation/core/Strided.h> no-match | foundation::core::StridedViewMut<int, 2, forge::brand> | foundation::core::StridedViewMut<int, 2, forge::brand>{forge::rvalue<foundation::core::StridedView<int, 2>>()}
+# A row, its index, its count, its steps, the offset of a view and a view of a
+# walk of rows come only from mint_strided_rows, so no number becomes a
+# position or an offset of a walk, and no pointer becomes a view of it.
+witness <foundation/core/StridedRows.h> private | foundation::core::RowIndex<forge::brand> | foundation::core::RowIndex<forge::brand>{forge::rvalue<unsigned long>()}
+witness <foundation/core/StridedRows.h> private | foundation::core::RowCount<forge::brand> | foundation::core::RowCount<forge::brand>{forge::rvalue<unsigned long>()}
+witness <foundation/core/StridedRows.h> private | foundation::core::RowStep<forge::brand> | foundation::core::RowStep<forge::brand>{forge::rvalue<unsigned long>()}
+witness <foundation/core/StridedRows.h> private | foundation::core::RowOffset<forge::brand> | foundation::core::RowOffset<forge::brand>{forge::rvalue<unsigned long>()}
+witness <foundation/core/StridedRows.h> private | foundation::core::RowSteps<forge::brand> | foundation::core::RowSteps<forge::brand>{forge::rvalue<foundation::core::RowCount<forge::brand>>()}
+witness <foundation/core/StridedRows.h> private | foundation::core::RowSteps<forge::brand>::Cursor | foundation::core::RowSteps<forge::brand>::Cursor{forge::rvalue<unsigned long>()}
+witness <foundation/core/StridedRows.h> private | foundation::core::RowView<int, forge::brand, 0, foundation::core::RowRead::Unit> | foundation::core::RowView<int, forge::brand, 0, foundation::core::RowRead::Unit>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+witness <foundation/core/StridedRows.h> private | foundation::core::StridedRow<forge::brand, 2> | foundation::core::StridedRow<forge::brand, 2>{forge::rvalue<foundation::core::RowIndex<forge::brand>>(), forge::rvalue<foundation::core::RowCount<forge::brand>>(), forge::rvalue<unsigned long const*>()}
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

@@ -313,9 +313,10 @@ that the axis does not apply to the row.
 | `mint_masked_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_run_address` | `include/foundation/core/DataAddress.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_sole_writer` | `include/foundation/core/Atomic.h` | Y | - | Y | Y | token | · | HS14: 9 |
+| `mint_strided_rows` | `include/foundation/core/StridedRows.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_strided_scope` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 6 |
-| `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 15 |
-| `mint_strided_view_mut` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 16 |
+| `mint_strided_view_mut` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 
 ## include/foundation/diag/
 
@@ -365,4 +366,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 75 | 43 | 23 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 146 | 57 | 85 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 147 | 57 | 86 | 4 | 0 | 3 |
