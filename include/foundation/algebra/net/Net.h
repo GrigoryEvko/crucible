@@ -89,12 +89,21 @@
 //                       and a ready queue of the pars, as probe E4 measured
 //     check_vicious     O(A + W)
 //     check_dataflow    O(A + W), the topological sort of Kahn
-//   Each check is a template on the sizes of the net, and it reads arrays of
-//   those sizes: a read of an array costs less in constant evaluation than a
-//   read through a pointer.  The texts of the refusals come from helpers that
-//   are no templates, so a net of a new size makes a small instance.  This
-//   header includes no other header of the base and no <meta>, so a light
-//   header can include it.
+//   Each check reads arrays, because a read of an array costs less in constant
+//   evaluation than a read through a pointer.  The body of each check is a
+//   template on the capacity of its arrays, and it reads the first agents and
+//   the first wires up to the counts of the net:
+//     a small net      at most 16 agents and 32 wires.  The check copies the
+//                      agents and the wires into arrays of 16 and 32, so the
+//                      small nets of one signature share one instance of each
+//                      body
+//     each other net   the arrays of the net, so the body is an instance of
+//                      its sizes
+//   Each structural check calls check_wiring on the net itself, and not on
+//   the copy, so the compiler keeps one result for each net that some checks
+//   read.  The texts of the refusals come from helpers that are no templates.
+//   This header includes no other header of the base and no <meta>, so a
+//   light header can include it.
 //
 // SOURCES
 //   Lafont, Interaction nets, POPL 1990.  Lafont, Interaction combinators,
@@ -387,6 +396,33 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     return graph.signature.kinds[index_of(graph.agents[index_of(agent)])];
 }
 
+// ── The capacity class ──────────────────────────────────────────────────
+
+// The capacity of the arrays of a small net (THE COSTS).
+inline constexpr std::size_t small_net_agents = 16;
+inline constexpr std::size_t small_net_wires = 32;
+
+template <std::size_t Agents, std::size_t Wires>
+inline constexpr bool is_small_net = Agents <= small_net_agents && Wires <= small_net_wires;
+
+// A small net in the capacity of the small class.  The agents and the wires
+// past the counts of the net keep their defaults, and no check reads them.
+// Each public check copies a small net here and runs its body on the copy.
+// A dispatch through a lambda costs about 3 M compile instructions more for
+// each new size, so each check states the two arms.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+    requires is_small_net<Agents, Wires>
+[[nodiscard]] constexpr Net<Types, Kinds, small_net_agents, small_net_wires>
+copy_small_net_(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    Net<Types, Kinds, small_net_agents, small_net_wires> small{};
+    small.signature = graph.signature;
+    for (std::uint32_t agent = 0; agent < Agents; ++agent)
+        small.agents[agent] = graph.agents[agent];
+    for (std::uint32_t index = 0; index < Wires; ++index)
+        small.wires[index] = graph.wires[index];
+    return small;
+}
+
 // The texts of the refusals take names and numbers, so no helper depends on
 // the sizes of a net.
 
@@ -538,17 +574,19 @@ template <std::size_t Types, std::size_t Kinds>
 
 // ── Linearity and types ─────────────────────────────────────────────────
 
-// Each agent has a kind of the signature, each wire names a port that its
-// agent has, each port has exactly one wire, and the two ports of a wire have
-// dual types.  Complexity: O(K + A + W).
-template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetVerdict check_wiring(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    NetVerdict const signature = check_signature(graph.signature);
-    if (!signature.is_admitted()) return signature;
+namespace detail {
+
+// The body of check_wiring, on the first agent_count agents and the first
+// wire_count wires of the arrays of a capacity class.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] consteval NetVerdict check_wiring_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                    std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
+    NetVerdict const kinds = check_signature(graph.signature);
+    if (!kinds.is_admitted()) return kinds;
     std::uint32_t port_count[Kinds]{};
     for (std::uint32_t kind = 0; kind < Kinds; ++kind)
-        port_count[kind] = detail::port_count_of(graph.signature.kinds[kind]);
-    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
+        port_count[kind] = port_count_of(graph.signature.kinds[kind]);
+    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
         if (index_of(graph.agents[agent]) >= Kinds) {
             return NetVerdict::refuse("net: node ")
                 .put_number(agent)
@@ -559,62 +597,62 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
                 .put(" kinds.");
         }
     }
-    std::uint8_t uses[Agents * max_agent_ports]{};
-    for (std::uint32_t index = 0; index < Wires; ++index) {
+    std::uint8_t uses[AgentCapacity * max_agent_ports]{};
+    for (std::uint32_t index = 0; index < wire_count; ++index) {
         Wire const& wire = graph.wires[index];
         for (std::uint32_t side = 0; side < 2u; ++side) {
             PortRef const end = side == 0u ? wire.left : wire.right;
             std::uint32_t const node = index_of(end.agent);
-            if (node >= Agents) {
+            if (node >= agent_count) {
                 return NetVerdict::refuse("net: wire ")
                     .put_number(index)
                     .put(" names node ")
                     .put_number(node)
                     .put(", and the net has ")
-                    .put_number(Agents)
+                    .put_number(agent_count)
                     .put(" agents.");
             }
             std::uint32_t const ports = port_count[index_of(graph.agents[node])];
             if (end.port >= ports) {
                 NetVerdict refusal = NetVerdict::refuse("net: wire ");
                 refusal.put_number(index).put(" names port ").put_number(end.port).put(" of ");
-                detail::put_agent(refusal, detail::kind_of_(graph, end.agent), node);
+                put_agent(refusal, kind_of_(graph, end.agent), node);
                 refusal.put(", which has ").put_number(ports).put(" ports.");
                 return refusal;
             }
             std::uint8_t& count = uses[node * max_agent_ports + end.port];
             if (count != 0u) {
                 NetVerdict refusal = NetVerdict::refuse("net: ");
-                detail::put_port(refusal, detail::kind_of_(graph, end.agent), node, end.port);
+                put_port(refusal, kind_of_(graph, end.agent), node, end.port);
                 refusal.put(" has a second wire, wire ").put_number(index).put(".  Each port has exactly one wire.");
                 return refusal;
             }
             count = 1;
         }
-        AgentKind const& left_kind = detail::kind_of_(graph, wire.left.agent);
-        AgentKind const& right_kind = detail::kind_of_(graph, wire.right.agent);
+        AgentKind const& left_kind = kind_of_(graph, wire.left.agent);
+        AgentKind const& right_kind = kind_of_(graph, wire.right.agent);
         PortType const left = left_kind.port_types[wire.left.port];
         PortType const right = right_kind.port_types[wire.right.port];
         if (!(right == dual_of(left))) {
             NetVerdict refusal = NetVerdict::refuse("net: wire ");
             refusal.put_number(index).put(" joins ");
-            detail::put_port(refusal, left_kind, index_of(wire.left.agent), wire.left.port);
+            put_port(refusal, left_kind, index_of(wire.left.agent), wire.left.port);
             refusal.put(" of type ");
-            detail::put_type(refusal, graph.signature.type_names[index_of(left.type)], left.polarity);
+            put_type(refusal, graph.signature.type_names[index_of(left.type)], left.polarity);
             refusal.put(" with ");
-            detail::put_port(refusal, right_kind, index_of(wire.right.agent), wire.right.port);
+            put_port(refusal, right_kind, index_of(wire.right.agent), wire.right.port);
             refusal.put(" of type ");
-            detail::put_type(refusal, graph.signature.type_names[index_of(right.type)], right.polarity);
+            put_type(refusal, graph.signature.type_names[index_of(right.type)], right.polarity);
             refusal.put(", which is not its dual.");
             return refusal;
         }
     }
-    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
+    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
         std::uint32_t const count = port_count[index_of(graph.agents[agent])];
         for (std::uint32_t port = 0; port < count; ++port) {
             if (uses[agent * max_agent_ports + port] == 0u) {
                 NetVerdict refusal = NetVerdict::refuse("net: ");
-                detail::put_port(refusal, detail::kind_of_(graph, AgentId{agent}), agent, port);
+                put_port(refusal, kind_of_(graph, AgentId{agent}), agent, port);
                 refusal.put(" has no wire.  Each port has exactly one wire.");
                 return refusal;
             }
@@ -623,7 +661,60 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     return NetVerdict{};
 }
 
+}  // namespace detail
+
+// Each agent has a kind of the signature, each wire names a port that its
+// agent has, each port has exactly one wire, and the two ports of a wire have
+// dual types.  Complexity: O(K + A + W).
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_wiring(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
+    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+    if constexpr (detail::is_small_net<Agents, Wires>) {
+        auto const small = detail::copy_small_net_(graph);
+        return detail::check_wiring_in_(small, agent_count, wire_count);
+    } else {
+        return detail::check_wiring_in_(graph, agent_count, wire_count);
+    }
+}
+
 // ── The forest ──────────────────────────────────────────────────────────
+
+namespace detail {
+
+// The body of check_forest, on the arrays of a capacity class of a net that
+// check_wiring admitted.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] consteval NetVerdict check_forest_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                    std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
+    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
+        AgentKind const& kind = kind_of_(graph, AgentId{agent});
+        if (kind.par_ports == 0u) continue;
+        NetVerdict refusal = NetVerdict::refuse("net: ");
+        put_agent(refusal, kind, agent);
+        refusal.put(" has a par group, and check_forest reads no par group.  Use check_proof_net.");
+        return refusal;
+    }
+    UnionFind<AgentCapacity> classes{};
+    for (std::uint32_t index = 0; index < wire_count; ++index) {
+        Wire const& wire = graph.wires[index];
+        std::uint32_t const left = classes.find(index_of(wire.left.agent));
+        std::uint32_t const right = classes.find(index_of(wire.right.agent));
+        if (left == right) {
+            NetVerdict refusal = NetVerdict::refuse("net: wire ");
+            refusal.put_number(index).put(" from ");
+            put_port(refusal, kind_of_(graph, wire.left.agent), index_of(wire.left.agent), wire.left.port);
+            refusal.put(" to ");
+            put_port(refusal, kind_of_(graph, wire.right.agent), index_of(wire.right.agent), wire.right.port);
+            refusal.put(" closes a cycle.  The agents and the wires do not form a forest.");
+            return refusal;
+        }
+        static_cast<void>(classes.join_roots(left, right));
+    }
+    return NetVerdict{};
+}
+
+}  // namespace detail
 
 // The agents and the wires form a forest: each wire joins two trees, and no
 // wire closes a cycle.  A net can have several trees, because two separate
@@ -634,33 +725,14 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 [[nodiscard]] consteval NetVerdict check_forest(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetVerdict const wiring = check_wiring(graph);
     if (!wiring.is_admitted()) return wiring;
-    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
-        AgentKind const& kind = detail::kind_of_(graph, AgentId{agent});
-        if (kind.par_ports == 0u) continue;
-        NetVerdict refusal = NetVerdict::refuse("net: ");
-        detail::put_agent(refusal, kind, agent);
-        refusal.put(" has a par group, and check_forest reads no par group.  Use check_proof_net.");
-        return refusal;
+    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
+    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+    if constexpr (detail::is_small_net<Agents, Wires>) {
+        auto const small = detail::copy_small_net_(graph);
+        return detail::check_forest_in_(small, agent_count, wire_count);
+    } else {
+        return detail::check_forest_in_(graph, agent_count, wire_count);
     }
-    detail::UnionFind<Agents> classes{};
-    for (std::uint32_t index = 0; index < Wires; ++index) {
-        Wire const& wire = graph.wires[index];
-        std::uint32_t const left = classes.find(index_of(wire.left.agent));
-        std::uint32_t const right = classes.find(index_of(wire.right.agent));
-        if (left == right) {
-            NetVerdict refusal = NetVerdict::refuse("net: wire ");
-            refusal.put_number(index).put(" from ");
-            detail::put_port(refusal, detail::kind_of_(graph, wire.left.agent), index_of(wire.left.agent),
-                             wire.left.port);
-            refusal.put(" to ");
-            detail::put_port(refusal, detail::kind_of_(graph, wire.right.agent), index_of(wire.right.agent),
-                             wire.right.port);
-            refusal.put(" closes a cycle.  The agents and the wires do not form a forest.");
-            return refusal;
-        }
-        static_cast<void>(classes.join_roots(left, right));
-    }
-    return NetVerdict{};
 }
 
 // ── The criterion of Danos and Regnier, by contraction ──────────────────
@@ -678,34 +750,38 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 // queue.  Each class keeps a list of the pars that wait on it, and a merge
 // reads the shorter list, so each entry is read O(log P) times.
 // Complexity: O(P log P).
-template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetVerdict check_proof_net(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    NetVerdict const wiring = check_wiring(graph);
-    if (!wiring.is_admitted()) return wiring;
-    constexpr std::size_t vertices = Agents + Wires;
-    constexpr std::uint32_t none = detail::no_index;
-    std::uint32_t wire_at[Agents * max_agent_ports]{};
-    for (std::uint32_t index = 0; index < Wires; ++index) {
+namespace detail {
+
+// The body of check_proof_net, on the arrays of a capacity class of a net
+// that check_wiring admitted.  Vertex v
+// is agent v below agent_count, and wire v - agent_count above.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] consteval NetVerdict check_proof_net_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                       std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
+    constexpr std::size_t vertex_capacity = AgentCapacity + WireCapacity;
+    constexpr std::uint32_t none = no_index;
+    std::uint32_t const vertices = agent_count + wire_count;
+    std::uint32_t wire_at[AgentCapacity * max_agent_ports]{};
+    for (std::uint32_t index = 0; index < wire_count; ++index) {
         Wire const& wire = graph.wires[index];
         wire_at[index_of(wire.left.agent) * max_agent_ports + wire.left.port] = index;
         wire_at[index_of(wire.right.agent) * max_agent_ports + wire.right.port] = index;
     }
-    detail::UnionFind<vertices> classes{};
-    std::uint32_t class_count = static_cast<std::uint32_t>(vertices);
+    UnionFind<vertex_capacity> classes{};
+    std::uint32_t class_count = vertices;
 
     // The unpaired edges.
-    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
-        AgentKind const& kind = detail::kind_of_(graph, AgentId{agent});
-        std::uint32_t const count = detail::port_count_of(kind);
+    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
+        AgentKind const& kind = kind_of_(graph, AgentId{agent});
+        std::uint32_t const count = port_count_of(kind);
         for (std::uint32_t port = 0; port < count; ++port) {
-            if (detail::is_par_port(kind, port)) continue;
-            std::uint32_t const wire_vertex =
-                static_cast<std::uint32_t>(Agents) + wire_at[agent * max_agent_ports + port];
+            if (is_par_port(kind, port)) continue;
+            std::uint32_t const wire_vertex = agent_count + wire_at[agent * max_agent_ports + port];
             std::uint32_t const left = classes.find(agent);
             std::uint32_t const right = classes.find(wire_vertex);
             if (left == right) {
                 NetVerdict refusal = NetVerdict::refuse("net: a cycle closes at ");
-                detail::put_port(refusal, kind, agent, port);
+                put_port(refusal, kind, agent, port);
                 refusal.put(".  Each switching of the net keeps this cycle, so the net is no proof net.");
                 return refusal;
             }
@@ -717,20 +793,19 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     // The pars.  Each par has one entry in the list of the class of each of
     // its premise wires.  A par is ready when all its premises are in one
     // class.
-    std::uint32_t par_agent[Agents]{};
-    std::uint32_t par_premise[Agents][max_agent_ports]{};
-    std::uint32_t par_width[Agents]{};
-    bool is_par_done[Agents]{};
+    std::uint32_t par_agent[AgentCapacity]{};
+    std::uint32_t par_premise[AgentCapacity][max_agent_ports]{};
+    std::uint32_t par_width[AgentCapacity]{};
+    bool is_par_done[AgentCapacity]{};
     std::uint32_t par_count = 0;
-    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
-        AgentKind const& kind = detail::kind_of_(graph, AgentId{agent});
+    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
+        AgentKind const& kind = kind_of_(graph, AgentId{agent});
         if (kind.par_ports == 0u) continue;
         par_agent[par_count] = agent;
-        std::uint32_t const count = detail::port_count_of(kind);
+        std::uint32_t const count = port_count_of(kind);
         for (std::uint32_t port = 0; port < count; ++port) {
-            if (!detail::is_par_port(kind, port)) continue;
-            par_premise[par_count][par_width[par_count]] =
-                static_cast<std::uint32_t>(Agents) + wire_at[agent * max_agent_ports + port];
+            if (!is_par_port(kind, port)) continue;
+            par_premise[par_count][par_width[par_count]] = agent_count + wire_at[agent * max_agent_ports + port];
             ++par_width[par_count];
         }
         ++par_count;
@@ -743,19 +818,19 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
         return true;
     };
 
-    std::uint32_t list_head[vertices]{};
-    std::uint32_t list_tail[vertices]{};
-    std::uint32_t list_length[vertices]{};
+    std::uint32_t list_head[vertex_capacity]{};
+    std::uint32_t list_tail[vertex_capacity]{};
+    std::uint32_t list_length[vertex_capacity]{};
     for (std::uint32_t vertex = 0; vertex < vertices; ++vertex) {
         list_head[vertex] = none;
         list_tail[vertex] = none;
     }
-    std::uint32_t entry_par[max_agent_ports * Agents]{};
-    std::uint32_t entry_next[max_agent_ports * Agents]{};
+    std::uint32_t entry_par[max_agent_ports * AgentCapacity]{};
+    std::uint32_t entry_next[max_agent_ports * AgentCapacity]{};
     std::uint32_t entry_count = 0;
-    std::uint32_t ready[Agents]{};
+    std::uint32_t ready[AgentCapacity]{};
     std::uint32_t ready_count = 0;
-    bool is_queued[Agents]{};
+    bool is_queued[AgentCapacity]{};
 
     for (std::uint32_t par = 0; par < par_count; ++par) {
         for (std::uint32_t side = 0; side < par_width[par]; ++side) {
@@ -787,7 +862,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
         std::uint32_t const premises = classes.find(par_premise[par][0]);
         if (own == premises) {
             NetVerdict refusal = NetVerdict::refuse("net: ");
-            detail::put_agent(refusal, detail::kind_of_(graph, AgentId{agent}), agent);
+            put_agent(refusal, kind_of_(graph, AgentId{agent}), agent);
             refusal.put(" is a par whose ports reach the agent again.  A switching of it closes a cycle.");
             return refusal;
         }
@@ -835,27 +910,44 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     for (std::uint32_t par = 0; par < par_count; ++par) {
         if (is_par_done[par]) continue;
         NetVerdict refusal = NetVerdict::refuse("net: ");
-        detail::put_agent(refusal, detail::kind_of_(graph, AgentId{par_agent[par]}), par_agent[par]);
+        put_agent(refusal, kind_of_(graph, AgentId{par_agent[par]}), par_agent[par]);
         refusal.put(" is a par whose ports never meet.  A switching of it leaves the net in two parts.");
         return refusal;
     }
     if (class_count != 1u) {
         std::uint32_t const root = classes.find(0);
         std::uint32_t apart = 0;
-        for (std::uint32_t agent = 1; agent < Agents; ++agent) {
+        for (std::uint32_t agent = 1; agent < agent_count; ++agent) {
             if (classes.find(agent) != root) {
                 apart = agent;
                 break;
             }
         }
         NetVerdict refusal = NetVerdict::refuse("net: the net is not connected.  ");
-        detail::put_agent(refusal, detail::kind_of_(graph, AgentId{apart}), apart);
+        put_agent(refusal, kind_of_(graph, AgentId{apart}), apart);
         refusal.put(" has no path to ");
-        detail::put_agent(refusal, detail::kind_of_(graph, AgentId{0}), 0);
+        put_agent(refusal, kind_of_(graph, AgentId{0}), 0);
         refusal.put(".");
         return refusal;
     }
     return NetVerdict{};
+}
+
+}  // namespace detail
+
+// The criterion of Danos and Regnier above, on the net.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_proof_net(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    NetVerdict const wiring = check_wiring(graph);
+    if (!wiring.is_admitted()) return wiring;
+    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
+    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+    if constexpr (detail::is_small_net<Agents, Wires>) {
+        auto const small = detail::copy_small_net_(graph);
+        return detail::check_proof_net_in_(small, agent_count, wire_count);
+    } else {
+        return detail::check_proof_net_in_(graph, agent_count, wire_count);
+    }
 }
 
 // ── Vicious circles (Lafont 1990) ───────────────────────────────────────
@@ -867,24 +959,27 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 // cycle.  The check reads the net as it is, and a reduction can make a
 // vicious circle later.  The criterion of check_proof_net prevents that for
 // a proof net (Lafont 1990).  Complexity: O(K + A + W).
-template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetVerdict check_vicious(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    NetVerdict const wiring = check_wiring(graph);
-    if (!wiring.is_admitted()) return wiring;
-    constexpr std::uint32_t none = detail::no_index;
-    std::uint32_t next[Agents]{};
+namespace detail {
+
+// The body of check_vicious, on the arrays of a capacity class of a net that
+// check_wiring admitted.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] consteval NetVerdict check_vicious_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                     std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
+    constexpr std::uint32_t none = no_index;
+    std::uint32_t next[AgentCapacity]{};
     for (std::uint32_t& slot : next)
         slot = none;
-    for (std::uint32_t index = 0; index < Wires; ++index) {
+    for (std::uint32_t index = 0; index < wire_count; ++index) {
         PortRef const left = graph.wires[index].left;
         PortRef const right = graph.wires[index].right;
-        bool const is_left_principal = left.port == detail::kind_of_(graph, left.agent).principal;
-        bool const is_right_principal = right.port == detail::kind_of_(graph, right.agent).principal;
+        bool const is_left_principal = left.port == kind_of_(graph, left.agent).principal;
+        bool const is_right_principal = right.port == kind_of_(graph, right.agent).principal;
         if (is_left_principal && !is_right_principal) next[index_of(left.agent)] = index_of(right.agent);
         if (is_right_principal && !is_left_principal) next[index_of(right.agent)] = index_of(left.agent);
     }
-    std::uint8_t color[Agents]{};
-    for (std::uint32_t start = 0; start < Agents; ++start) {
+    std::uint8_t color[AgentCapacity]{};
+    for (std::uint32_t start = 0; start < agent_count; ++start) {
         if (color[start] != 0u) continue;
         std::uint32_t walk = start;
         while (walk != none && color[walk] == 0u) {
@@ -897,7 +992,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
             std::uint32_t shown = 0;
             do {
                 if (shown != 0u) refusal.put(" -> ");
-                detail::put_agent(refusal, detail::kind_of_(graph, AgentId{member}), member);
+                put_agent(refusal, kind_of_(graph, AgentId{member}), member);
                 member = next[member];
                 ++shown;
             } while (member != walk && shown < 6u);
@@ -911,6 +1006,23 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     return NetVerdict{};
 }
 
+}  // namespace detail
+
+// The check of vicious circles above, on the net.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_vicious(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    NetVerdict const wiring = check_wiring(graph);
+    if (!wiring.is_admitted()) return wiring;
+    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
+    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+    if constexpr (detail::is_small_net<Agents, Wires>) {
+        auto const small = detail::copy_small_net_(graph);
+        return detail::check_vicious_in_(small, agent_count, wire_count);
+    } else {
+        return detail::check_vicious_in_(graph, agent_count, wire_count);
+    }
+}
+
 // ── The dataflow ────────────────────────────────────────────────────────
 
 // Each wire goes from a give port to a take port, and the directed graph of
@@ -919,26 +1031,29 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 // agent: the order exists exactly when the graph has no cycle.  Then each
 // agent fires one time in each schedule.  A meet port has no direction, and
 // the check refuses it.  Complexity: O(K + A + W), the sort of Kahn.
-template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetVerdict check_dataflow(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
-    NetVerdict const wiring = check_wiring(graph);
-    if (!wiring.is_admitted()) return wiring;
-    constexpr std::uint32_t none = detail::no_index;
+namespace detail {
+
+// The body of check_dataflow, on the arrays of a capacity class of a net that
+// check_wiring admitted.
+template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
+[[nodiscard]] consteval NetVerdict check_dataflow_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+                                                      std::uint32_t agent_count, std::uint32_t wire_count) noexcept {
+    constexpr std::uint32_t none = no_index;
     // The producer and the consumer of each wire.
-    std::uint32_t source[Wires]{};
-    std::uint32_t target[Wires]{};
-    std::uint32_t indegree[Agents]{};
-    std::uint32_t out_first[Agents + 1]{};
-    for (std::uint32_t index = 0; index < Wires; ++index) {
+    std::uint32_t source[WireCapacity]{};
+    std::uint32_t target[WireCapacity]{};
+    std::uint32_t indegree[AgentCapacity]{};
+    std::uint32_t out_first[AgentCapacity + 1]{};
+    for (std::uint32_t index = 0; index < wire_count; ++index) {
         Wire const& wire = graph.wires[index];
-        AgentKind const& left_kind = detail::kind_of_(graph, wire.left.agent);
+        AgentKind const& left_kind = kind_of_(graph, wire.left.agent);
         PortType const left = left_kind.port_types[wire.left.port];
         if (left.polarity == Polarity::Meet) {
             NetVerdict refusal = NetVerdict::refuse("net: wire ");
             refusal.put_number(index).put(" joins ");
-            detail::put_port(refusal, left_kind, index_of(wire.left.agent), wire.left.port);
+            put_port(refusal, left_kind, index_of(wire.left.agent), wire.left.port);
             refusal.put(" of the type ");
-            detail::put_type(refusal, graph.signature.type_names[index_of(left.type)], left.polarity);
+            put_type(refusal, graph.signature.type_names[index_of(left.type)], left.polarity);
             refusal.put(", which has no direction.  A dataflow takes give and take ports.");
             return refusal;
         }
@@ -948,19 +1063,19 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
         ++indegree[target[index]];
         ++out_first[source[index] + 1];
     }
-    for (std::uint32_t agent = 0; agent < Agents; ++agent)
+    for (std::uint32_t agent = 0; agent < agent_count; ++agent)
         out_first[agent + 1] += out_first[agent];
-    std::uint32_t fill[Agents]{};
-    for (std::uint32_t agent = 0; agent < Agents; ++agent)
+    std::uint32_t fill[AgentCapacity]{};
+    for (std::uint32_t agent = 0; agent < agent_count; ++agent)
         fill[agent] = out_first[agent];
-    std::uint32_t out_wire[Wires]{};
-    for (std::uint32_t index = 0; index < Wires; ++index) {
+    std::uint32_t out_wire[WireCapacity]{};
+    for (std::uint32_t index = 0; index < wire_count; ++index) {
         out_wire[fill[source[index]]] = index;
         ++fill[source[index]];
     }
-    std::uint32_t order[Agents]{};
+    std::uint32_t order[AgentCapacity]{};
     std::uint32_t order_count = 0;
-    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
+    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
         if (indegree[agent] == 0u) {
             order[order_count] = agent;
             ++order_count;
@@ -977,24 +1092,24 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
             }
         }
     }
-    if (order_count == Agents) return NetVerdict{};
+    if (order_count == agent_count) return NetVerdict{};
 
     // A cycle remains.  Each agent that the sort left has an input from
     // another such agent, so a walk back along these inputs repeats an agent.
-    std::uint32_t into[Agents]{};
+    std::uint32_t into[AgentCapacity]{};
     for (std::uint32_t& slot : into)
         slot = none;
-    for (std::uint32_t index = 0; index < Wires; ++index) {
+    for (std::uint32_t index = 0; index < wire_count; ++index) {
         if (indegree[source[index]] != 0u && indegree[target[index]] != 0u) into[target[index]] = index;
     }
     std::uint32_t walk = none;
-    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
+    for (std::uint32_t agent = 0; agent < agent_count; ++agent) {
         if (indegree[agent] != 0u) {
             walk = agent;
             break;
         }
     }
-    std::uint8_t is_seen[Agents]{};
+    std::uint8_t is_seen[AgentCapacity]{};
     while (is_seen[walk] == 0u) {
         is_seen[walk] = 1;
         walk = source[into[walk]];
@@ -1002,19 +1117,36 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     Wire const& closing = graph.wires[into[walk]];
     PortRef const input = target[into[walk]] == index_of(closing.left.agent) ? closing.left : closing.right;
     NetVerdict refusal = NetVerdict::refuse("net: a cycle of waits closes at ");
-    detail::put_port(refusal, detail::kind_of_(graph, input.agent), index_of(input.agent), input.port);
+    put_port(refusal, kind_of_(graph, input.agent), index_of(input.agent), input.port);
     refusal.put(": ");
     std::uint32_t member = walk;
     std::uint32_t shown = 0;
     do {
         if (shown != 0u) refusal.put(" <- ");
-        detail::put_agent(refusal, detail::kind_of_(graph, AgentId{member}), member);
+        put_agent(refusal, kind_of_(graph, AgentId{member}), member);
         member = source[into[member]];
         ++shown;
     } while (member != walk && shown < 5u);
     if (member != walk) refusal.put(" <- ...");
     refusal.put(".  Each agent waits on its inputs, so no agent of the cycle starts.");
     return refusal;
+}
+
+}  // namespace detail
+
+// The dataflow check above, on the net.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_dataflow(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    NetVerdict const wiring = check_wiring(graph);
+    if (!wiring.is_admitted()) return wiring;
+    constexpr auto agent_count = static_cast<std::uint32_t>(Agents);
+    constexpr auto wire_count = static_cast<std::uint32_t>(Wires);
+    if constexpr (detail::is_small_net<Agents, Wires>) {
+        auto const small = detail::copy_small_net_(graph);
+        return detail::check_dataflow_in_(small, agent_count, wire_count);
+    } else {
+        return detail::check_dataflow_in_(graph, agent_count, wire_count);
+    }
 }
 
 }  // namespace foundation::algebra::net
