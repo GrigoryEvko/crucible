@@ -1055,6 +1055,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^fa::is_graded_specialization, kMetafunction},
     {^^fa::graded_modality, kMetafunction},
     {^^fa::grade_key, kPasskey},
+    {^^fa::graded_from_call_t,
+     "the tag that selects the keyed door of Graded that builds the value in place: it holds no value, and the door "
+     "takes a grade_key beside it"},
 
     {^^fp::can_split_into, kMetafunction},
     {^^fp::can_split_into_pack, kMetafunction},

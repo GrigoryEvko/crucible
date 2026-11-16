@@ -78,6 +78,13 @@ public:
                                                     "authority.");
 };
 
+// The tag of the keyed door that builds the value in place from the result
+// of a call.  The tag gives no authority: the door also takes a grade_key.
+struct graded_from_call_t {
+    explicit graded_from_call_t() = default;
+};
+inline constexpr graded_from_call_t graded_from_call{};
+
 template <typename L, typename T>
 concept LatticeDerivesGrade = requires(T const& v) {
     { L::grade_of(v) } -> std::same_as<typename L::element_type>;
@@ -254,6 +261,25 @@ public:
                      grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
                                                 && std::is_nothrow_move_constructible_v<grade_type>)
         : value_{std::move(value)}, grade_{stored_(grade)} {
+        if constexpr (stores_grade_) {
+            CRUCIBLE_PRE(detail::graded::inside_order<L>(grade_));
+        } else {
+            CRUCIBLE_PRE(detail::graded::witnessed<L>(this->grade(), grade));
+        }
+    }
+
+    // The keyed door that builds the value in its place from the result of
+    // make.  make gives the value as a prvalue, so the value is built in the
+    // member, and no parameter holds a copy of it.  A wrapper of a secret
+    // takes this door: the door above copies the value into its parameter,
+    // and nothing clears that copy.  The checks of the grade are the checks
+    // of the door above.
+    template <typename Authority, typename Make>
+        requires std::is_invocable_v<Make&&> && std::same_as<std::invoke_result_t<Make&&>, T>
+    constexpr Graded(grade_key<Authority> const&, graded_from_call_t, Make&& make,
+                     grade_type grade) noexcept(std::is_nothrow_invocable_v<Make&&>
+                                                && std::is_nothrow_move_constructible_v<grade_type>)
+        : value_(static_cast<Make&&>(make)()), grade_{stored_(grade)} {
         if constexpr (stores_grade_) {
             CRUCIBLE_PRE(detail::graded::inside_order<L>(grade_));
         } else {

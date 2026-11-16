@@ -212,6 +212,37 @@ template <class Param>
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// A payload that counts each copy and each move of itself.  A payload of
+// bytes leaves no trace of a copy, so the count shows the route of a value:
+// each copy or move is one more object that holds the bytes of the secret.
+struct CountedPayload {
+    static inline int copies_and_moves = 0;
+    int value = 0;
+
+    constexpr explicit CountedPayload(int initial) noexcept : value{initial} {}
+    CountedPayload(CountedPayload const& other) noexcept : value{other.value} { ++copies_and_moves; }
+    CountedPayload(CountedPayload&& other) noexcept : value{other.value} { ++copies_and_moves; }
+    CountedPayload& operator=(CountedPayload const&) = delete("the probe counts constructions only");
+    CountedPayload& operator=(CountedPayload&&) = delete("the probe counts constructions only");
+    ~CountedPayload() = default;
+};
+
+// The mint builds the payload in its place in the Secret, and the transform
+// builds the result of its callable in its place in the derived Secret.  So
+// no parameter and no local holds a copy of either payload.
+void check_payload_route() noexcept {
+    CountedPayload::copies_and_moves = 0;
+    ::fixy::Secret<CountedPayload> minted = ::fixy::mint_secret<CountedPayload>(7);
+    expect(CountedPayload::copies_and_moves == 0, "the mint of a Secret makes no copy and no move of the payload");
+
+    CountedPayload::copies_and_moves = 0;
+    ::fixy::Secret<CountedPayload> derived = std::move(minted).transform(
+        [](CountedPayload const& payload) noexcept { return CountedPayload{payload.value + 1}; });
+    expect(CountedPayload::copies_and_moves == 0,
+           "the transform of a Secret builds the result in the derived Secret, with no copy and no move");
+    static_cast<void>(std::move(derived).declassify<secret_policy::HashForCompare>());
+}
+
 template <class Param>
 void check_transform() noexcept {
     TransformFacts const facts = storage_after_transform<Param>();
@@ -240,6 +271,8 @@ int main() {
     ::fixy::report(::fixy::Sink::Err, "[Secret transform]\n");
     check_transform<KeyBytes&&>();
     check_transform<KeyBytes const&>();
+    ::fixy::report(::fixy::Sink::Err, "[Secret payload route]\n");
+    check_payload_route();
     if (failures != 0) {
         ::fixy::report(::fixy::Sink::Err, "test_secret_carrier_zeroize: {} failed\n", failures);
         return 1;

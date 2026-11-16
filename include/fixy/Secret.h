@@ -201,14 +201,38 @@ private:
 
     using key_ = ::foundation::algebra::grade_key<Secret>;
 
-    constexpr explicit Secret(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : impl_{key_{}, std::move(v), typename lattice_type::element_type{}} {}
+    // Clears the payload of its Secret at the end of its scope, after the
+    // return of transform has built the derived Secret.  A payload that the
+    // Secret does not zeroize stays as it is.
+    struct ZeroizeAtEnd_ {
+        Secret& source;
+
+        constexpr ~ZeroizeAtEnd_() {
+            if constexpr (zeroizes_payload_) {
+                source.zeroize();
+            }
+        }
+    };
+
+    // Each constructor builds the payload in its place in the Graded, from
+    // the prvalue of a call.  A constructor that took the payload by value
+    // would leave a copy of the secret bytes in its parameter, and in the
+    // parameter of the Graded, and nothing would clear either copy.
+    template <typename Make>
+        requires std::is_invocable_v<Make&&> && std::same_as<std::invoke_result_t<Make&&>, T>
+    constexpr Secret(::foundation::algebra::graded_from_call_t,
+                     Make&& make) noexcept(std::is_nothrow_invocable_v<Make&&>)
+        : impl_{key_{}, ::foundation::algebra::graded_from_call, static_cast<Make&&>(make),
+                typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Secret(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
-                                                                        && std::is_nothrow_move_constructible_v<T>)
-        : impl_{key_{}, T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
+    constexpr explicit Secret(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>)
+        : impl_{key_{}, ::foundation::algebra::graded_from_call,
+                [&args...]() noexcept(std::is_nothrow_constructible_v<T, Args...>) {
+                    return T(std::forward<Args>(args)...);
+                },
+                typename lattice_type::element_type{}} {}
 
     template <typename U, typename... Args>
         requires std::is_constructible_v<U, Args...>
@@ -329,11 +353,16 @@ public:
                                           " likely intent is a side-effecting observation on the"
                                           " classified payload — that belongs in declassify<Policy>(),"
                                           " not transform().");
-        Secret<R> derived{std::forward<F>(f)(std::move(impl_.peek_mut(key_{})))};
-        if constexpr (zeroizes_payload_) {
-            zeroize();
-        }
-        return derived;
+        // The derived Secret is the prvalue of the return, so it is built in
+        // the object of the caller, and the result of f is built in its
+        // payload.  No local and no parameter holds a copy of the result.
+        // The guard clears this payload when the return has built the
+        // derived Secret.
+        ZeroizeAtEnd_ const clear_after{*this};
+        return Secret<R>{::foundation::algebra::graded_from_call,
+                         [this, &f]() noexcept(std::is_nothrow_invocable_v<F, T&&>) -> R {
+                             return std::forward<F>(f)(std::move(impl_.peek_mut(key_{})));
+                         }};
     }
 
     // A callable that takes the payload by value or by reference to a
