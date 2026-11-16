@@ -76,6 +76,20 @@ static_assert(
 // and the axis of the tile path.
 static_assert(lane_class_of_(0) == LaneClass::Splat && lane_class_of_(1) == LaneClass::Dense);
 static_assert(lane_class_of_(2) == LaneClass::StepTwo && lane_class_of_(3) == LaneClass::General);
+static_assert(tile_class_of_(64, 1) == TileClass::Transposed && tile_class_of_(1, 64) == TileClass::Dense);
+static_assert(tile_class_of_(0, 64) == TileClass::Splat && tile_class_of_(3, 64) == TileClass::General);
+static_assert(tile_class_of_(1, 1) == TileClass::Dense, "a stride of one on a reads a dense register");
+
+// THE TRANSPOSE NETWORK gives the transpose for each shape of the targets:
+// 16, 8 and 4 lanes of 4 bytes, and 8, 4 and 2 lanes of 8 bytes.
+static_assert(transpose_map_<16, 4>.is_transpose && transpose_map_<8, 4>.is_transpose);
+static_assert(transpose_map_<4, 4>.is_transpose && transpose_map_<8, 2>.is_transpose);
+static_assert(transpose_map_<4, 2>.is_transpose && transpose_map_<2, 2>.is_transpose);
+// The first stages of 16 floats are unpcklps and unpcklpd, and the third is
+// vshuff32x4 with the selection 0x88: lane 4 takes the run 2 of the first
+// register.
+static_assert(transpose_source_(16, 4, 0, false, 1) == 16 && transpose_source_(16, 4, 1, false, 2) == 16);
+static_assert(transpose_source_(16, 4, 2, false, 4) == 8 && transpose_source_(16, 4, 2, true, 8) == 20);
 
 // The walk in a constant evaluation: the stated row-major order, with the op
 // on lanes of one live element.  The second input is the output in place.

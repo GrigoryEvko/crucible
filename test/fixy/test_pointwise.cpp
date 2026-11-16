@@ -633,6 +633,30 @@ void nan_rule_on_each_path(::fixy::TestRunnerCtx const& test, ::fixy::TextView n
     pass(test, "  nan_rule_on_each_path {}: PASSED\n", name);
 }
 
+// The tile path over 32 x 48 elements, which is two or four whole tiles on
+// each axis for each lane count: a transposed input with a second input of
+// each class of a tile, Dense, Splat, General and Transposed, on finite
+// values.  The tiles of the edges take a shape of 19 x 23 above.
+template <class E>
+void tile_classes(::fixy::TestRunnerCtx const& test, ::fixy::TextView name) noexcept {
+    auto const values = [](std::size_t position) noexcept {
+        return static_cast<E>(position % 1021) * static_cast<E>(0.25) + static_cast<E>(0.5);
+    };
+    Layout const out = plane_of(32, 48, 48, 1, 0);
+    Layout const transposed = plane_of(32, 48, 1, 32, 1536);
+    ::fixy::FixedArray<Case<2>, 4> const cases{
+        Case<2>{out, {transposed, plane_of(32, 48, 48, 1, 3072)}, 4608},
+        Case<2>{out, {transposed, plane_of(32, 48, 1, 0, 3072)}, 3104},
+        Case<2>{out, {transposed, plane_of(32, 48, 200, 3, 3072)}, 9414},
+        Case<2>{out, {transposed, plane_of(32, 48, 1, 32, 3072)}, 4608},
+    };
+    for (Case<2> const& directed : cases) {
+        CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(directed, Add{}, values, 0));
+        CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(directed, Divide{}, values, 0));
+    }
+    pass(test, "  tile_classes {}: PASSED\n", name);
+}
+
 // ── Unit tests ──────────────────────────────────────────────────────────
 
 // An input of another frame, with a brand of its own, takes the proof of the
@@ -732,6 +756,8 @@ int main() {
     fill_and_edges(test);
     nan_rule_on_each_path<float>(test, "float");
     nan_rule_on_each_path<double>(test, "double");
+    tile_classes<float>(test, "float");
+    tile_classes<double>(test, "double");
     pointwise_agrees_with_walk<float, 2>(test, "float add", kSeed, Add{});
     pointwise_agrees_with_walk<float, 3>(test, "float multiply-add", kSeed + 1, MultiplyAdd{});
     pointwise_agrees_with_walk<float, 2>(test, "float divide", kSeed + 2, Divide{});

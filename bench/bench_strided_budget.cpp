@@ -125,16 +125,19 @@ template <class Out>
     std::uint64_t const hundredths = static_cast<std::uint64_t>(ratio * 100.0 + 0.5);
     std::uint64_t const limit = static_cast<std::uint64_t>(budget.ratio * 100.0 + 0.5);
     std::uint64_t const drift = static_cast<std::uint64_t>(measured.drift_pct * 10.0 + 0.5);
+    // The hundredths below ten take a zero first, so 1.02 does not print as 1.2.
+    ::fixy::TextView const ratio_zero = hundredths % 100 < 10 ? ::fixy::TextView{"0"} : ::fixy::TextView{""};
+    ::fixy::TextView const limit_zero = limit % 100 < 10 ? ::fixy::TextView{"0"} : ::fixy::TextView{""};
     if (measured.drift_pct > kMaxDrift) {
-        ::fixy::report(::fixy::Sink::Out, "SKIP  {}  ratio {}.{} of budget {}.{}: the run drifted {}.{} percent\n",
-                       budget.name, hundredths / 100, hundredths % 100, limit / 100, limit % 100, drift / 10,
-                       drift % 10);
+        ::fixy::report(::fixy::Sink::Out, "SKIP  {}  ratio {}.{}{} of budget {}.{}{}: the run drifted {}.{} percent\n",
+                       budget.name, hundredths / 100, ratio_zero, hundredths % 100, limit / 100, limit_zero,
+                       limit % 100, drift / 10, drift % 10);
         return false;
     }
     bool const is_over = ratio > budget.ratio;
     ::fixy::TextView const verdict = is_over ? ::fixy::TextView{"FAIL"} : ::fixy::TextView{"PASS"};
-    ::fixy::report(::fixy::Sink::Out, "{}  {}  ratio {}.{} of budget {}.{}, median {} ns\n", verdict, budget.name,
-                   hundredths / 100, hundredths % 100, limit / 100, limit % 100,
+    ::fixy::report(::fixy::Sink::Out, "{}  {}  ratio {}.{}{} of budget {}.{}{}, median {} ns\n", verdict, budget.name,
+                   hundredths / 100, ratio_zero, hundredths % 100, limit / 100, limit_zero, limit % 100,
                    static_cast<std::uint64_t>(measured.pct.p50 + 0.5));
     return is_over;
 }
@@ -193,12 +196,12 @@ int main() {
 
     // The ratios of four runs on this host (EPYC 9754, Zen 4c, a shared VM):
     // dense 1.0 to 1.10, broadcast 0.64 to 0.67, step 2 1.47 to 1.55,
-    // transposed 3.28 to 3.38, three inputs 1.41 to 1.55, walk dense 0.99,
-    // and each scope 15.2.  Before the tile path, the general loop gave the
-    // transposed add 7.8.
+    // transposed 1.27 to 1.31, three inputs 1.41 to 1.55, walk dense 0.99,
+    // and each scope 15.2.  The tile path with its registers on the stack gave
+    // the transposed add 3.3, and the general loop gave it 7.8.
     ::fixy::FixedArray<Budget, 8> const budgets{
         Budget{.name = "pointwise dense", .ratio = 1.25},        Budget{.name = "pointwise broadcast", .ratio = 0.85},
-        Budget{.name = "pointwise step 2", .ratio = 1.80},       Budget{.name = "pointwise transposed", .ratio = 4.00},
+        Budget{.name = "pointwise step 2", .ratio = 1.80},       Budget{.name = "pointwise transposed", .ratio = 1.80},
         Budget{.name = "pointwise three inputs", .ratio = 1.80}, Budget{.name = "scope dense", .ratio = 18.0},
         Budget{.name = "scope transposed", .ratio = 18.0},       Budget{.name = "walk dense", .ratio = 1.25},
     };

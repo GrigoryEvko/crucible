@@ -104,6 +104,7 @@
 #include <foundation/Simd.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Float.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Strided.h>
 #include <foundation/reflect/Instance.h>
@@ -401,6 +402,122 @@ template <int W, std::size_t Views, std::size_t Capacity>
     return inner;
 }
 
+// The read of an input in a tile, from its strides on a and b.
+enum class TileClass : std::uint8_t {
+    // A stride of one on b and above one on a: W loads along b, and THE
+    // TRANSPOSE NETWORK in registers.
+    Transposed,
+    // A stride of one on a: one load of W elements for each position of b.
+    Dense,
+    // A stride of zero on a: one broadcast for each position of b.
+    Splat,
+    // Each other stride on a: W loads of one element for each position of b.
+    // A plan with such an input reads each tile with the classes at run time.
+    General,
+};
+
+// The classes of the inputs of one instance of the tile path.
+template <TileClass... Classes>
+struct TileClasses {};
+
+[[nodiscard]] constexpr TileClass tile_class_of_(std::size_t step_a, std::size_t step_b) noexcept {
+    if (step_b == 1 && step_a > 1) return TileClass::Transposed;
+    if (step_a == 1) return TileClass::Dense;
+    if (step_a == 0) return TileClass::Splat;
+    return TileClass::General;
+}
+
+// THE TRANSPOSE NETWORK
+// The transpose of W x W elements in W registers takes log2(W) stages.  A
+// register holds runs of 16 bytes, with P elements in each run.  Stage g pairs
+// each register r whose bit g is clear with the register r + 2^g, and it
+// writes two shuffles of the pair into the two registers.  A stage with 2^g
+// below P interleaves units of 2^g elements inside each run: unpcklps and
+// unpckhps, then unpcklpd and unpckhpd on x86, zip1 and zip2 on NEON.  Each
+// later stage takes the even runs of the pair into the low register and the
+// odd runs into the high register: vshuff32x4 with the selections 0x88 and
+// 0xDD with AVX-512, vperm2f128 with AVX.  Each shuffle is one instruction
+// that reads two registers and writes a third, so no stage copies a register.
+// After the network, lane i of the register registers[c] of the map holds the
+// element of the column c in the row i.  The check file runs the network on
+// each shape of the targets.
+
+// The count of the elements of E in a run of 16 bytes.
+template <class E>
+inline constexpr int run_lanes_ = static_cast<int>(16 / sizeof(E));
+
+// The lane of the pair that the lane `lane` of the low result, or of the high
+// result, of stage g takes: a lane of the first register below width, a lane
+// of the second register at width or above.
+[[nodiscard]] consteval int transpose_source_(int width, int run_lanes, int stage, bool is_high, int lane) noexcept {
+    int const run = lane / run_lanes;
+    int const offset = lane % run_lanes;
+    int const unit = 1 << stage;
+    if (unit < run_lanes) {
+        int const slot = offset / unit;
+        int const source_unit = slot / 2 + (is_high ? run_lanes / unit / 2 : 0);
+        return ((slot & 1) != 0 ? width : 0) + run * run_lanes + source_unit * unit + offset % unit;
+    }
+    int const half = width / run_lanes / 2;
+    int const source_run = 2 * (run % half) + (is_high ? 1 : 0);
+    return (run >= half ? width : 0) + source_run * run_lanes + offset;
+}
+
+// The register of each column after THE TRANSPOSE NETWORK, and true when the
+// network gives the transpose.
+template <int W>
+struct TransposeMap {
+    int registers[lane_count_<W>]{};
+    bool is_transpose = false;
+};
+
+// THE TRANSPOSE NETWORK of W registers with P elements in each run of 16
+// bytes, on the numbers of the elements.  O(W^2 log W) at compile time.
+template <int W, int P>
+[[nodiscard]] consteval TransposeMap<W> simulate_transpose_() noexcept {
+    int values[lane_count_<W>][lane_count_<W>]{};
+    for (int row = 0; row < W; ++row) {
+        for (int lane = 0; lane < W; ++lane) {
+            values[row][lane] = row * W + lane;
+        }
+    }
+    for (int stage = 0; (1 << stage) < W; ++stage) {
+        for (int low = 0; low < W; ++low) {
+            if ((low & (1 << stage)) != 0) continue;
+            int const high = low + (1 << stage);
+            int next_low[lane_count_<W>]{};
+            int next_high[lane_count_<W>]{};
+            for (int lane = 0; lane < W; ++lane) {
+                int const from_low = transpose_source_(W, P, stage, false, lane);
+                int const from_high = transpose_source_(W, P, stage, true, lane);
+                next_low[lane] = from_low < W ? values[low][from_low] : values[high][from_low - W];
+                next_high[lane] = from_high < W ? values[low][from_high] : values[high][from_high - W];
+            }
+            for (int lane = 0; lane < W; ++lane) {
+                values[low][lane] = next_low[lane];
+                values[high][lane] = next_high[lane];
+            }
+        }
+    }
+    TransposeMap<W> map{};
+    map.is_transpose = true;
+    for (int registered = 0; registered < W; ++registered) {
+        int const column = values[registered][0];
+        if (column < 0 || column >= W) {
+            map.is_transpose = false;
+            continue;
+        }
+        map.registers[column] = registered;
+        for (int lane = 0; lane < W; ++lane) {
+            map.is_transpose = map.is_transpose && values[registered][lane] == lane * W + column;
+        }
+    }
+    return map;
+}
+
+template <int W, int P>
+inline constexpr TransposeMap<W> transpose_map_ = simulate_transpose_<W, P>();
+
 // The body of the scalar path for one index.
 template <class Op, class T>
 struct ScalarStep {
@@ -567,11 +684,7 @@ struct LaneRow {
             return ::foundation::simd::pick_even_lanes(::foundation::simd::load<V>(at),
                                                        ::foundation::simd::load_prefix<V>(at + W, W - 1));
         } else {
-            E const* const at = row + position * step;
-            std::size_t const stride = step;
-            return V{[at, stride](auto lane) noexcept {
-                return at[static_cast<std::size_t>(decltype(lane)::value) * stride];
-            }};
+            return gather_(row + position * step, W, ::foundation::simd::detail::lane_list_t<W>{});
         }
     }
 
@@ -589,13 +702,18 @@ struct LaneRow {
             V const high = span > width ? ::foundation::simd::load_prefix<V>(at + W, span - width) : V{};
             return fill_dead_lanes_(::foundation::simd::pick_even_lanes(low, high), live);
         } else {
-            E const* const at = row + position * step;
-            std::size_t const stride = step;
-            return V{[at, stride, live](auto lane) noexcept {
-                std::size_t const index = static_cast<std::size_t>(decltype(lane)::value);
-                return at[(index < live ? index : 0) * stride];
-            }};
+            return gather_(row + position * step, live, ::foundation::simd::detail::lane_list_t<W>{});
         }
+    }
+
+    // The General read: one load of one element for each lane below live,
+    // and lane 0 again in each other lane.  The lanes are a pack, so the read
+    // has no call.
+    template <int... Lane>
+    [[nodiscard]] CRUCIBLE_INLINE V gather_(E const* at, std::size_t live,
+                                            ::foundation::simd::detail::LaneList<Lane...> /*lanes*/) const noexcept {
+        return V{typename V::raw_type{
+            at[(static_cast<std::size_t>(Lane) < live ? static_cast<std::size_t>(Lane) : 0) * step]...}};
     }
 };
 
@@ -681,28 +799,36 @@ run_lane_plan_(LaneClasses<InClasses...> /*classes*/, std::index_sequence<Is...>
 // class on a.  The op then gives one register of out for each position of b,
 // and the store is dense.
 
-// Writes the transpose of the W x W matrix of the registers rows: lane l of
-// the register r becomes lane r of the register l.  Each stage of the
-// distance D swaps the bit D of the number of a register with the bit D of
-// the number of a lane: W / 2 pairs of registers, two shuffles for each pair.
-// The log2(W) stages give W * log2(W) shuffles.
-template <int W, int D, class Raw, int... Lane>
-CRUCIBLE_INLINE void transpose_stage_(Raw (&rows)[lane_count_<W>],
-                                      ::foundation::simd::detail::LaneList<Lane...> /*lanes*/) noexcept {
-    for (int row = 0; row < W; ++row) {
-        if ((row & D) != 0) continue;
-        Raw const low = rows[row];
-        Raw const high = rows[row + D];
-        rows[row] = __builtin_shufflevector(low, high, ((Lane & D) != 0 ? W + Lane - D : Lane)...);
-        rows[row + D] = __builtin_shufflevector(low, high, ((Lane & D) != 0 ? W + Lane : Lane + D)...);
-    }
+// One pair of stage g of THE TRANSPOSE NETWORK: the registers Low and
+// Low + 2^g.
+template <int W, int P, int Stage, int Low, class Raw, int... Lane>
+CRUCIBLE_INLINE void transpose_pair_(Raw (&rows)[lane_count_<W>],
+                                     ::foundation::simd::detail::LaneList<Lane...> /*lanes*/) noexcept {
+    constexpr int high = Low + (1 << Stage);
+    Raw const first = rows[Low];
+    Raw const second = rows[high];
+    rows[Low] = __builtin_shufflevector(first, second, transpose_source_(W, P, Stage, false, Lane)...);
+    rows[high] = __builtin_shufflevector(first, second, transpose_source_(W, P, Stage, true, Lane)...);
 }
 
-template <int W, int D = 1, class Raw>
+// The W / 2 pairs of stage g.  The pair p has the low register with the bits
+// of p below g, a clear bit g, and the bits of p from g on one place higher.
+template <int W, int P, int Stage, class Raw, int... Pair>
+CRUCIBLE_INLINE void transpose_stage_(Raw (&rows)[lane_count_<W>],
+                                      ::foundation::simd::detail::LaneList<Pair...> /*pairs*/) noexcept {
+    (transpose_pair_<W, P, Stage, ((Pair >> Stage) << (Stage + 1)) | (Pair & ((1 << Stage) - 1))>(
+         rows, ::foundation::simd::detail::lane_list_t<W>{}),
+     ...);
+}
+
+// THE TRANSPOSE NETWORK on the registers rows, with P elements in each run
+// of 16 bytes: W * log2(W) shuffles.  Each index is a constant, so the
+// registers stay in registers.
+template <int W, int P, int Stage = 0, class Raw>
 CRUCIBLE_INLINE void transpose_registers_(Raw (&rows)[lane_count_<W>]) noexcept {
-    if constexpr (D < W) {
-        transpose_stage_<W, D>(rows, ::foundation::simd::detail::lane_list_t<W>{});
-        transpose_registers_<W, D * 2>(rows);
+    if constexpr ((1 << Stage) < W) {
+        transpose_stage_<W, P, Stage>(rows, ::foundation::simd::detail::lane_list_t<W / 2>{});
+        transpose_registers_<W, P, Stage + 1>(rows);
     }
 }
 
@@ -752,10 +878,10 @@ CRUCIBLE_INLINE void read_tile_(TileInput<W, E> const& input, E const* first, st
         registers[position] = live_b == width ? ::foundation::simd::load<V>(at).raw()
                                               : ::foundation::simd::load_prefix<V>(at, live_b).raw();
     }
-    transpose_registers_<W>(registers);
+    transpose_registers_<W, run_lanes_<E>>(registers);
     for (std::size_t position = 0; position < live_b; ++position) {
-        Lanes const lanes =
-            live_a == width ? registers[position] : fill_dead_lanes_(V{registers[position]}, live_a).raw();
+        Lanes const column = registers[transpose_map_<W, run_lanes_<E>>.registers[position]];
+        Lanes const lanes = live_a == width ? column : fill_dead_lanes_(V{column}, live_a).raw();
         tile[position] = __builtin_bit_cast(Raw, lanes);
     }
 }
@@ -793,42 +919,217 @@ run_tile_(Op const& op, std::index_sequence<Is...> /*inputs*/, T* out_row, std::
     }
 }
 
-// The tile path over the outer rows of outer, for tiles of the axes a and b
-// of the sizes size_a and size_b.  outer holds the axes other than a and b,
-// and a last axis of size one.  The tiles come in blocks of 8 x 8 tiles, so
-// the lines and the pages of the views of a block stay in L2 and in its TLB
-// while the block runs.  With AVX-512, three views of floats hold about
-// 192 KB of a block, in 384 pages of 4 KB.  The function is not inlined, so each instance is one hot function.
-// O(count) calls of the op, and W * log2(W) shuffles for each tile of each
-// transposed input.
-template <int W, class Op, std::size_t Capacity, std::size_t... Is, class T, class... Es>
-[[gnu::hot, gnu::noinline]] void run_tile_plan_(Op const& op, std::index_sequence<Is...> sequence,
-                                                WalkPlan<1 + sizeof...(Es), Capacity> const& outer, std::size_t rows,
-                                                std::size_t size_a, std::size_t size_b, T* out, std::size_t out_step_b,
-                                                TileInput<W, Es> const&... inputs) noexcept {
+// A tile at the end of a or of b, with live_a positions of a and live_b
+// positions of b.  The function reads the classes of the inputs at run time,
+// so each instance of the classes of run_tile_plan_ shares it, and it is not
+// inlined.
+template <int W, class Op, std::size_t... Is, class T, class... Es>
+[[gnu::noinline]] void run_edge_tile_(Op const& op, std::index_sequence<Is...> sequence, T* out_row,
+                                      std::size_t out_step_b, std::size_t a0, std::size_t b0, std::size_t live_a,
+                                      std::size_t live_b, std::size_t const (&offsets)[1 + sizeof...(Es)],
+                                      TileInput<W, Es> const&... inputs) noexcept {
     using Raw = typename ::foundation::simd::vec<T, W>::raw_type;
+    Raw tiles[sizeof...(Es)][lane_count_<W>]{};
+    run_tile_<W>(op, sequence, out_row, out_step_b, a0, b0, live_a, live_b, tiles, offsets, inputs...);
+}
+
+// The reads of one input in a full tile of W x W elements, for its class.  at
+// is the element at the positions a0 of a and b0 of b.  column<J>() gives the
+// register of the position b0 + J of b, over the W positions of a.
+template <TileClass Class, int W, class E>
+struct TileSource;
+
+// A transposed input loads the W rows along b, one for each position of a,
+// and runs THE TRANSPOSE NETWORK.  The registers are a member array with a
+// constant index at each use, so they stay in registers.
+template <int W, class E>
+struct TileSource<TileClass::Transposed, W, E> {
+    using V = ::foundation::simd::vec<E, W>;
+    using Raw = typename V::raw_type;
+
+    Raw rows[lane_count_<W>]{};
+
+    CRUCIBLE_INLINE TileSource(E const* at, std::size_t step_a, std::size_t /*step_b*/) noexcept {
+        load_rows_(at, step_a, ::foundation::simd::detail::lane_list_t<W>{});
+        transpose_registers_<W, run_lanes_<E>>(rows);
+    }
+
+    template <int... Row>
+    CRUCIBLE_INLINE void load_rows_(E const* at, std::size_t step_a,
+                                    ::foundation::simd::detail::LaneList<Row...> /*rows*/) noexcept {
+        ((rows[Row] = ::foundation::simd::load<V>(at + static_cast<std::size_t>(Row) * step_a).raw()), ...);
+    }
+
+    template <int Column>
+    [[nodiscard]] CRUCIBLE_INLINE V column() const noexcept {
+        return V{rows[transpose_map_<W, run_lanes_<E>>.registers[Column]]};
+    }
+};
+
+template <int W, class E>
+struct TileSource<TileClass::Dense, W, E> {
+    using V = ::foundation::simd::vec<E, W>;
+
+    E const* at = nullptr;
+    std::size_t step_b = 0;
+
+    CRUCIBLE_INLINE TileSource(E const* first, std::size_t /*step_a*/, std::size_t step) noexcept
+        : at{first}, step_b{step} {}
+
+    template <int Column>
+    [[nodiscard]] CRUCIBLE_INLINE V column() const noexcept {
+        return ::foundation::simd::load<V>(at + static_cast<std::size_t>(Column) * step_b);
+    }
+};
+
+template <int W, class E>
+struct TileSource<TileClass::Splat, W, E> {
+    using V = ::foundation::simd::vec<E, W>;
+
+    E const* at = nullptr;
+    std::size_t step_b = 0;
+
+    CRUCIBLE_INLINE TileSource(E const* first, std::size_t /*step_a*/, std::size_t step) noexcept
+        : at{first}, step_b{step} {}
+
+    template <int Column>
+    [[nodiscard]] CRUCIBLE_INLINE V column() const noexcept {
+        return V{at[static_cast<std::size_t>(Column) * step_b]};
+    }
+};
+
+// Asks L2 for the lines of the W rows of a transposed input at the element
+// at of each row: one prefetch for each row.  The hint changes no value.
+template <int W, class E, int... Row>
+CRUCIBLE_INLINE void prefetch_tile_rows_(E const* at, std::size_t step_a,
+                                         ::foundation::simd::detail::LaneList<Row...> /*rows*/) noexcept {
+    (::foundation::core::prefetch<::foundation::core::PrefetchAccess::read, 2>(
+         at[static_cast<std::size_t>(Row) * step_a]),
+     ...);
+}
+
+// The prefetch of an input of a full tile for the tile at the positions a0 of
+// a and b_next of b, which the loop over a reads eight tiles later.  A
+// transposed input reads W rows in W pages, so the prefetcher of the core
+// sees no stream.  Each other input reads its rows as streams of lines, and
+// it takes no prefetch.  The caller makes sure that the tile is inside the
+// view.
+template <TileClass Class, int W, class E>
+CRUCIBLE_INLINE void prefetch_next_tile_(E const* first, std::size_t step_a, std::size_t a0,
+                                         std::size_t b_next) noexcept {
+    if constexpr (Class == TileClass::Transposed) {
+        prefetch_tile_rows_<W>(first + a0 * step_a + b_next, step_a, ::foundation::simd::detail::lane_list_t<W>{});
+    }
+}
+
+// The position b0 + Column of b in a full tile: one call of the op and one
+// dense store of W elements.
+template <int Column, class Op, class T, class... Sources>
+CRUCIBLE_INLINE void store_tile_column_(Op const& op, T* out_at, std::size_t out_step_b,
+                                        Sources const&... sources) noexcept {
+    ::foundation::simd::store(op(sources.template column<Column>()...),
+                              out_at + static_cast<std::size_t>(Column) * out_step_b);
+}
+
+// A full tile of W x W elements at out_at: the W positions of b in order.
+template <class Op, class T, int... Column, class... Sources>
+CRUCIBLE_INLINE void run_full_tile_(Op const& op, ::foundation::simd::detail::LaneList<Column...> /*columns*/,
+                                    T* out_at, std::size_t out_step_b, Sources const&... sources) noexcept {
+    (store_tile_column_<Column>(op, out_at, out_step_b, sources...), ...);
+}
+
+// The tile path over the outer rows of outer, for tiles of the axes a and b
+// of the sizes size_a and size_b, with the classes of the inputs as template
+// arguments.  outer holds the axes other than a and b, and a last axis of size
+// one.  The tiles come in blocks of 8 x 8 tiles, so the lines and the pages of
+// the views of a block stay in L2 and in its TLB while the block runs.  With
+// AVX-512, three views of floats hold about 192 KB of a block, in 384 pages of
+// 4 KB.  A full tile takes run_full_tile_, with its registers in registers.  A
+// tile at the end of a or of b takes run_edge_tile_, with masked loads and
+// stores and the classes of the inputs at run time.  An empty list of classes
+// sends each tile to run_edge_tile_.  The function is not inlined, so each
+// instance is one hot function.  O(count) calls of the op, and W * log2(W)
+// shuffles for each tile of each transposed input.
+template <int W, TileClass... Classes, class Op, std::size_t Capacity, std::size_t... Is, class T, class... Es>
+[[gnu::hot, gnu::noinline]] void
+run_tile_plan_(TileClasses<Classes...> /*classes*/, Op const& op, std::index_sequence<Is...> sequence,
+               WalkPlan<1 + sizeof...(Es), Capacity> const& outer, std::size_t rows, std::size_t size_a,
+               std::size_t size_b, T* out, std::size_t out_step_b, TileInput<W, Es> const&... inputs) noexcept {
     std::size_t const width = static_cast<std::size_t>(W);
-    std::size_t const block = 8 * width;
+    std::size_t const block_a = 8 * width;
+    std::size_t const block_b = 8 * width;
     std::size_t counters[Capacity]{};
     std::size_t offsets[1 + sizeof...(Es)]{};
-    Raw tiles[sizeof...(Es)][lane_count_<W>]{};
     for (std::size_t row = 0; row < rows; ++row) {
         T* const out_row = out + offsets[0];
-        for (std::size_t b_block = 0; b_block < size_b; b_block += block) {
-            std::size_t const b_end = size_b - b_block < block ? size_b : b_block + block;
-            for (std::size_t a_block = 0; a_block < size_a; a_block += block) {
-                std::size_t const a_end = size_a - a_block < block ? size_a : a_block + block;
+        for (std::size_t b_block = 0; b_block < size_b; b_block += block_b) {
+            std::size_t const b_end = size_b - b_block < block_b ? size_b : b_block + block_b;
+            for (std::size_t a_block = 0; a_block < size_a; a_block += block_a) {
+                std::size_t const a_end = size_a - a_block < block_a ? size_a : a_block + block_a;
                 for (std::size_t b0 = b_block; b0 < b_end; b0 += width) {
                     std::size_t const live_b = b_end - b0 < width ? b_end - b0 : width;
                     for (std::size_t a0 = a_block; a0 < a_end; a0 += width) {
                         std::size_t const live_a = a_end - a0 < width ? a_end - a0 : width;
-                        run_tile_<W>(op, sequence, out_row, out_step_b, a0, b0, live_a, live_b, tiles, offsets,
-                                     inputs...);
+                        if constexpr (sizeof...(Classes) == 0) {
+                            run_edge_tile_<W>(op, sequence, out_row, out_step_b, a0, b0, live_a, live_b, offsets,
+                                              inputs...);
+                        } else if (live_a == width && live_b == width) [[likely]] {
+                            // The next position of b is inside the block, so
+                            // each element of the prefetch is an element of the
+                            // view.
+                            if (b0 + width < b_end) {
+                                (prefetch_next_tile_<Classes, W>(inputs.first + offsets[Is + 1], inputs.step_a, a0,
+                                                                 b0 + width),
+                                 ...);
+                            }
+                            run_full_tile_(op, ::foundation::simd::detail::lane_list_t<W>{},
+                                           out_row + b0 * out_step_b + a0, out_step_b,
+                                           TileSource<Classes, W, Es>{inputs.first + offsets[Is + 1]
+                                                                          + a0 * inputs.step_a + b0 * inputs.step_b,
+                                                                      inputs.step_a, inputs.step_b}...);
+                        } else {
+                            run_edge_tile_<W>(op, sequence, out_row, out_step_b, a0, b0, live_a, live_b, offsets,
+                                              inputs...);
+                        }
                     }
                 }
             }
         }
         step_rows_(outer, counters, offsets);
+    }
+}
+
+// Calls next with the classes of the tile inputs from the index Done on, as
+// template arguments.  The tile path has at least one transposed input, so a
+// list of classes with none is not instantiated.  An input of the class
+// General gives next the empty list, so its plan takes the classes at run
+// time.  The lists of k inputs have 3^k - 2^k instances of the full tile:
+// one for one input and five for two.
+template <std::size_t Done, std::size_t Inputs, TileClass... Chosen, class Next>
+CRUCIBLE_INLINE void choose_tile_classes_(TileClass const (&classes)[Inputs], Next const& next) noexcept {
+    if constexpr (Done == Inputs) {
+        if constexpr (((Chosen == TileClass::Transposed) || ...)) {
+            next(TileClasses<Chosen...>{});
+        } else {
+            ::foundation::core::unreachable();
+        }
+    } else {
+        switch (classes[Done]) {
+            case TileClass::Transposed:
+                choose_tile_classes_<Done + 1, Inputs, Chosen..., TileClass::Transposed>(classes, next);
+                return;
+            case TileClass::Dense:
+                choose_tile_classes_<Done + 1, Inputs, Chosen..., TileClass::Dense>(classes, next);
+                return;
+            case TileClass::Splat:
+                choose_tile_classes_<Done + 1, Inputs, Chosen..., TileClass::Splat>(classes, next);
+                return;
+            case TileClass::General:
+                next(TileClasses<>{});
+                return;
+            default:
+                ::foundation::core::unreachable();
+        }
     }
 }
 
@@ -858,6 +1159,14 @@ CRUCIBLE_INLINE void choose_lane_classes_(LaneClass const (&classes)[Inputs], Ne
     }
 }
 
+// The count of inputs up to which the tile path takes the classes of the
+// inputs as template arguments.  An op of three inputs would have 19
+// instances of the full tile, and an op of four 65, so an op of more inputs
+// reads each tile with the classes at run time, as a plan with a General
+// input does.  The bits do not change, because each tile computes each
+// element alone.
+inline constexpr std::size_t max_tile_class_inputs = 2;
+
 // The tile path for the tile axes inner and tile_axis of plan: the outer plan,
 // and the reads of each input on the two axes.
 template <int W, class Op, std::size_t Capacity, std::size_t... Is, class T, class... Es>
@@ -868,10 +1177,20 @@ CRUCIBLE_INLINE void run_tiles_(Op const& op, std::index_sequence<Is...> sequenc
     std::size_t const size_a = plan.sizes[inner];
     std::size_t const size_b = plan.sizes[tile_axis];
     WalkPlan<1 + sizeof...(Es), Capacity> const outer = outer_plan_(plan, inner, tile_axis);
-    run_tile_plan_<W>(op, sequence, outer, rows_of_(outer, 1), size_a, size_b, out, plan.strides[0][tile_axis],
-                      TileInput<W, Es>{inputs, plan.strides[Is + 1][inner], plan.strides[Is + 1][tile_axis],
-                                       lane_class_of_(plan.strides[Is + 1][inner]),
-                                       plan.strides[Is + 1][tile_axis] == 1 && plan.strides[Is + 1][inner] > 1}...);
+    auto const run_plan = [&]<TileClass... Classes>(TileClasses<Classes...> chosen) noexcept {
+        run_tile_plan_<W>(chosen, op, sequence, outer, rows_of_(outer, 1), size_a, size_b, out,
+                          plan.strides[0][tile_axis],
+                          TileInput<W, Es>{inputs, plan.strides[Is + 1][inner], plan.strides[Is + 1][tile_axis],
+                                           lane_class_of_(plan.strides[Is + 1][inner]),
+                                           plan.strides[Is + 1][tile_axis] == 1 && plan.strides[Is + 1][inner] > 1}...);
+    };
+    if constexpr (sizeof...(Es) > max_tile_class_inputs) {
+        run_plan(TileClasses<>{});
+    } else {
+        TileClass const classes[sizeof...(Es)] = {
+            tile_class_of_(plan.strides[Is + 1][inner], plan.strides[Is + 1][tile_axis])...};
+        choose_tile_classes_<0, sizeof...(Es)>(classes, run_plan);
+    }
 }
 
 // The lane path over a plan of at least one axis in the order that the walk
