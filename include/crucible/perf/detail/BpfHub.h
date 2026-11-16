@@ -299,7 +299,13 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
         report_unavailable(facade, "page size", "the auxiliary vector gave no usable page size (hardened sandbox?)");
         return ::fixy::none;
     }
-    const std::size_t length = (bytes + page - 1) & ~(page - 1);
+    ::fixy::Option<std::size_t> rounded = ::fixy::align_up(bytes, page);
+    if (rounded.is_none()) {
+        report_unavailable(facade, map_name.text,
+                           "the bytes of the map, rounded up to whole pages, do not fit in size_t");
+        return ::fixy::none;
+    }
+    const std::size_t length = std::move(rounded).expect("the test above found the rounded length");
     // The mapping is on the erased identity of its tag, because a facade
     // names the type of its mapping member before the root exists.  The
     // root drops its brand through the one door that drops a brand.

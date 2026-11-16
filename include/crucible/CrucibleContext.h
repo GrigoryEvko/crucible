@@ -261,7 +261,7 @@ private:
     // twice. It is far tighter than the allocator's own slot ceiling, which is
     // why the migration checks it separately.
     static constexpr uint32_t MIGRATION_MAX_SLOTS = 1024;
-    static constexpr uint32_t VISITED_WORDS = (MIGRATION_MAX_SLOTS + 63) / 64;
+    static constexpr uint32_t VISITED_WORDS = ::fixy::div_ceil(MIGRATION_MAX_SLOTS, uint32_t{64});
 
     // The one body of both advance overloads.  A switch rather than a chain
     // of tests, so that a status added later has to be given a meaning here

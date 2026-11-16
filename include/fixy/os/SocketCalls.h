@@ -18,6 +18,7 @@
 //   each word, each size and each offset with those headers.
 
 #include <foundation/core/Array.h>
+#include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/OneOf.h>
@@ -206,7 +207,8 @@ read_timestamp_control_(::foundation::core::View<std::byte const> control) noexc
                                     .expect("the message holds its three stamps"),
             };
         }
-        std::size_t const step = (header.length + control_alignment - 1) / control_alignment * control_alignment;
+        std::size_t const step = ::foundation::core::align_up(header.length, control_alignment)
+                                     .expect("a length inside the control bytes fits in size_t after its padding");
         if (step > control.size() - offset) {
             return NoTimestampMessage{};
         }

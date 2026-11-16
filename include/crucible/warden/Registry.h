@@ -32,8 +32,10 @@ namespace crucible::warden {
 // kernel rounded to it without saying so.
 inline constexpr size_t kHugePageBytes = 2 * 1024 * 1024;
 
-[[nodiscard]] constexpr size_t round_up_huge(size_t n) noexcept {
-    return (n + kHugePageBytes - 1) & ~(kHugePageBytes - 1);
+// The count n rounded up to whole huge pages, or no value when the rounded
+// count does not fit in size_t.
+[[nodiscard]] constexpr ::fixy::Option<size_t> round_up_huge(size_t n) noexcept {
+    return ::fixy::align_up(n, kHugePageBytes);
 }
 
 // pad holds the seven bytes after the hint, so a region has no padding

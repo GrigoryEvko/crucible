@@ -6,6 +6,7 @@
 
 #include <fixy/os/Pages.h>
 
+#include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/os/Auxiliary.h>
 #include <foundation/os/Errno.h>
@@ -58,10 +59,11 @@ core::Result<std::size_t, os::Errno> madvise_sys(void const* first, std::size_t 
     using Advised = core::Result<std::size_t, os::Errno>;
     constexpr std::uintptr_t kMask = huge_page_bytes - 1;
     std::uintptr_t const start = __builtin_bit_cast(std::uintptr_t, first);
-    if (start > ~std::uintptr_t{0} - kMask) {
+    core::Option<std::uintptr_t> boundary = core::align_up(start, std::uintptr_t{huge_page_bytes});
+    if (boundary.is_none()) {
         return std::size_t{0};
     }
-    std::uintptr_t const aligned = (start + kMask) & ~kMask;
+    std::uintptr_t const aligned = std::move(boundary).expect("the test above found the boundary");
     std::size_t const head = aligned - start;
     if (head >= bytes) {
         return std::size_t{0};

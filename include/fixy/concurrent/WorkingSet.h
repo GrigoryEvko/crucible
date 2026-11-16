@@ -8,6 +8,8 @@
 // would only add cache-line ping-pong?  A footprint declared per
 // operation is what makes that answerable without measuring.
 
+#include <foundation/core/Bits.h>
+
 #include <concepts>
 #include <cstddef>
 #include <limits>
@@ -49,8 +51,8 @@ inline constexpr std::size_t conservative_l2_per_core = 256 * 1024;
 inline constexpr std::size_t conservative_l3_total = 4 * 1024 * 1024;
 
 [[nodiscard]] consteval std::size_t cell_line_footprint(std::size_t value_bytes) noexcept {
-    if (value_bytes == 0) return 0;
-    return ((value_bytes + hot_path_cache_line_bytes - 1) / hot_path_cache_line_bytes) * hot_path_cache_line_bytes;
+    return ::foundation::core::align_up(value_bytes, hot_path_cache_line_bytes)
+        .expect("the bytes of a cell, rounded up to whole cache lines, fit in size_t");
 }
 
 template <std::size_t ControlLines, typename T>

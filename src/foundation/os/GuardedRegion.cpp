@@ -4,6 +4,7 @@
 
 #include <foundation/os/GuardedRegion.h>
 
+#include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
 #include <foundation/os/MapWords.h>
@@ -38,7 +39,9 @@ constexpr int kNoFile = -1;
 core::Result<GuardedRegion, Errno> map_guarded_region(std::size_t usable_bytes) noexcept {
     if (usable_bytes > kLargestUsable) return core::err(Errno::enomem);
     std::size_t const rounded =
-        usable_bytes == 0 ? kGuardBytes : (usable_bytes + kGuardBytes - 1) / kGuardBytes * kGuardBytes;
+        usable_bytes == 0 ? kGuardBytes
+                          : core::align_up(usable_bytes, kGuardBytes)
+                                .expect("a usable size at most kLargestUsable fits in size_t after its rounding");
     std::size_t const total = kGuardBytes + rounded;
     CRUCIBLE_TRY(address,
                  result_of(raw_syscall(Syscall::mmap, Word{}, total, kProtectNone, kMapPrivateAnonymous, kNoFile, 0)));

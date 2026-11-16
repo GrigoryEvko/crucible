@@ -22,6 +22,7 @@
 
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Arithmetic.h>
 #include <foundation/core/Choice.h>
 
 #include <array>
@@ -60,7 +61,7 @@ private:
     // A Capacity below 64 still gets one word.  Its unused high bits
     // stay zero, because every index derives from a masked position and
     // so is always below Capacity.
-    static constexpr std::size_t WORDS = (Capacity + 63) / 64;
+    static constexpr std::size_t WORDS = ::foundation::core::div_ceil(Capacity, std::size_t{64});
     static constexpr std::uint64_t kAllSet = ~std::uint64_t{0};
     // The bits of one word that name a cell.  Capacity is a power of two,
     // so each word of a ring of 64 cells or more names 64 cells.

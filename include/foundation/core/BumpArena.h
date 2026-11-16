@@ -58,6 +58,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/core/Arithmetic.h>
+#include <foundation/core/Bits.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
@@ -101,6 +102,28 @@ inline void bump_unpoison_(void const* /*first*/, std::size_t /*count*/) noexcep
 // past the largest count of a View.  The report is out of line, so the frame
 // of array() holds no arguments of a report and no stack canary.
 [[noreturn, gnu::cold, gnu::noinline]] void refuse_arena_array_(std::size_t count, std::size_t element_bytes) noexcept;
+
+// Ends the process for a next address of an arena that does not fit in the
+// address space at the alignment.  The report is out of line, as the report
+// of refuse_arena_array_ is, so the frame of the bump holds no stack canary.
+[[noreturn, gnu::cold, gnu::noinline]] void refuse_arena_address_(std::size_t alignment) noexcept;
+
+// The address at the alignment, or the end of the process when the rounding
+// does not fit in the address space.  A user address of Linux on x86_64 and
+// on aarch64 is in the lower half of the address space, and an alignment of
+// a type is at most the size of that half.  So the optimizer reads that the
+// rounding does not wrap, and the test of the Option folds away.  The refusal
+// is out of line.
+[[nodiscard, gnu::always_inline]] inline std::uintptr_t arena_aligned_(std::uintptr_t address,
+                                                                       std::size_t alignment) noexcept {
+    [[assume(address <= static_cast<std::uintptr_t>(__PTRDIFF_MAX__))]];
+    [[assume(alignment <= static_cast<std::size_t>(__PTRDIFF_MAX__))]];
+    Option<std::uintptr_t> rounded = align_up(address, std::uintptr_t{alignment});
+    if (rounded.is_none()) [[unlikely]] {
+        refuse_arena_address_(alignment);
+    }
+    return std::move(rounded).value_or(0);
+}
 
 }  // namespace detail
 
@@ -211,11 +234,11 @@ public:
 private:
     // The bump: bytes bytes at the alignment, from the current block.  bytes
     // is above zero and at most __PTRDIFF_MAX__, and the alignment is a power
-    // of two, so the sum below does not wrap.  An arena with no block has an
-    // end of zero, so its first request takes the cold path.
+    // of two, so the rounding below does not wrap.  An arena with no block has
+    // an end of zero, so its first request takes the cold path.
     [[nodiscard, gnu::always_inline]] void* bump_(std::size_t bytes, std::size_t alignment) noexcept {
         std::uintptr_t const base = __builtin_bit_cast(std::uintptr_t, cur_block_);
-        std::uintptr_t const aligned_address = (base + offset_ + alignment - 1) & ~(alignment - 1);
+        std::uintptr_t const aligned_address = detail::arena_aligned_(base + offset_, alignment);
         std::size_t const aligned = aligned_address - base;
         if (aligned + bytes <= end_offset_) [[likely]] {
             std::byte* const storage = cur_block_ + aligned;

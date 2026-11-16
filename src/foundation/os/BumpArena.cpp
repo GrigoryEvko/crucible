@@ -38,6 +38,10 @@ void refuse_arena_array_(std::size_t count, std::size_t element_bytes) noexcept 
     fatal("an array of {} elements of {} bytes in a BumpArena is longer than the largest View", count, element_bytes);
 }
 
+void refuse_arena_address_(std::size_t alignment) noexcept {
+    fatal("the next address of a BumpArena does not fit in the address space at the alignment {}", alignment);
+}
+
 }  // namespace detail
 
 BumpArena::~BumpArena() { free_blocks_from_(0); }
@@ -49,7 +53,7 @@ void* BumpArena::bump_slow_(std::size_t bytes, std::size_t alignment) noexcept {
     enter_block_(cur_block_ == nullptr ? 0u : cur_index_ + 1, needed);
 
     std::uintptr_t const base = __builtin_bit_cast(std::uintptr_t, cur_block_);
-    std::uintptr_t const aligned_address = (base + alignment - 1) & ~(alignment - 1);
+    std::uintptr_t const aligned_address = detail::arena_aligned_(base, alignment);
     std::size_t const aligned = aligned_address - base;
     std::byte* const storage = cur_block_ + aligned;
     offset_ = aligned + bytes;

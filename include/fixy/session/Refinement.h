@@ -13,6 +13,7 @@
 // POPL 2025, section 5).  A graph has one node for each distinct subtree.
 
 #include <fixy/session/Wire.h>
+#include <foundation/core/Arithmetic.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -740,7 +741,7 @@ struct split_branches {
     // One mark bit for each pair, at the pair key sub * width + super.
     // During the walk a mark is set for a visited pair, and after the walk
     // it is set for a pair that can end.
-    const std::size_t mark_word_count = (left.nodes.size() * width + 63) / 64;
+    const std::size_t mark_word_count = ::foundation::core::div_ceil(left.nodes.size() * width, std::size_t{64});
     stack<std::uint64_t> mark_words{};
     make_room(mark_words, mark_word_count);
     std::uint64_t* const marks = mark_words.items;

@@ -314,7 +314,7 @@ template <class Ctx>
 [[nodiscard]] constexpr ValidUtilization wave_efficiency(Ctx const&, uint64_t elements, const HardwareProfile& hw) {
     uint64_t tpw = static_cast<uint64_t>(hw.num_sms) * hw.warp_size.value();
     if (tpw == 0 || elements == 0) return ::fixy::mint_refined<valid_utilization>(0.0f);
-    uint64_t waves = (elements + tpw - 1) / tpw;
+    uint64_t waves = ::fixy::div_ceil(elements, tpw);
     // The ceiling division makes the denominator an upper bound on the
     // numerator, and round-to-nearest is monotonic on non-negative operands,
     // so the quotient is in range and the wrapper's check cannot fire. It is

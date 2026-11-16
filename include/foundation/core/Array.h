@@ -94,6 +94,7 @@
 #include <foundation/Linear.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Arithmetic.h>
+#include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
 #include <foundation/core/Heap.h>
@@ -326,9 +327,7 @@ template <class T, std::size_t Align>
     }
     std::size_t const element_bytes =
         checked_mul(count, sizeof(T)).expect("the bytes of the elements of a HeapArray fit in size_t");
-    std::size_t const padded =
-        checked_add(element_bytes, Align - 1).expect("the bytes of a HeapArray at its alignment fit in size_t");
-    return padded & ~(Align - 1);
+    return align_up(element_bytes, Align).expect("the bytes of a HeapArray at its alignment fit in size_t");
 }
 
 // Ends each of the count elements at first, from the last, and gives their

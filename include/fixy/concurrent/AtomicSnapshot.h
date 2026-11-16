@@ -188,7 +188,7 @@ public:
 private:
     static constexpr std::size_t kWordBytes = sizeof(std::uint64_t);
     // The words of the payload.  The last word holds the tail of T, and its other bytes stay zero.
-    static constexpr std::size_t kWords = (sizeof(T) + kWordBytes - 1) / kWordBytes;
+    static constexpr std::size_t kWords = ::fixy::div_ceil(sizeof(T), kWordBytes);
 
     // One index for each word.  A fold over the indices gives one access for each word with no
     // loop.  A loop of word accesses stays a loop in a Release build, because GCC does not unroll

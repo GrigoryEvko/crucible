@@ -83,6 +83,7 @@
 // bf16 and the two fp8 formats use the portable code on each target, and
 // aarch64 uses it for f16 too.  THE DISPATCH below gives the reasons.
 
+#include <foundation/core/Bits.h>
 #include <foundation/core/Number.h>
 
 #include <concepts>
@@ -231,7 +232,7 @@ template <class Format>
         if (Format::has_infinity && exponent == Facts::exponent_field) return sign | binary32_infinity;
         if (exponent == 0) {
             if (trailing == 0) return sign;
-            int const top = 31 - __builtin_clz(trailing);
+            int const top = ilog2(trailing).expect("the test above found a trailing field above zero");
             auto const field =
                 static_cast<std::uint32_t>(128 - static_cast<int>(Facts::bias) - Facts::trailing_bits + top);
             std::uint32_t const fraction = (trailing << (23 - top)) & binary32_trailing_mask;
@@ -390,7 +391,7 @@ template <class Format, Saturation Mode>
     if (field == 0) {
         if (fraction == 0) return sign;
         // The value is fraction * 2^-149, a normal binary64.
-        int const top = 63 - __builtin_clzll(fraction);
+        int const top = ilog2(fraction).expect("the test above found a fraction above zero");
         auto const double_field = static_cast<std::uint64_t>(1023 - 149 + top);
         std::uint64_t const double_fraction = (fraction << (52 - top)) & 0x000FFFFFFFFFFFFFu;
         return sign | (double_field << 52) | double_fraction;

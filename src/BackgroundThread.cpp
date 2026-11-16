@@ -1640,6 +1640,12 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
     auto prove_per_op = [](uint32_t position) noexcept {
         return PerOpSlot::check(position).expect("a capped count is at most MAX_PER_OP");
     };
+    // The bytes of a slot rounded up to the alignment of the pool.  The span
+    // of a slot saturates, so its rounding saturates too, at the largest
+    // multiple of the alignment, and no span wraps to a small slot.
+    auto aligned_bytes_of = [](uint64_t nbytes) noexcept {
+        return ::fixy::align_up(nbytes, uint64_t{ALIGNMENT}).value_or(~uint64_t{ALIGNMENT - 1});
+    };
 
     for (uint32_t op = 0; op < num_ops; op++) {
         uint32_t dying_begin = detail::csr_element_(death_off, op);
@@ -1660,14 +1666,13 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
             ::fixy::FixedArray<DyingInfo, MAX_PER_OP> dying_slot_info{};
             for (uint32_t i = 0; i < dying_count_capped; i++) {
                 const TensorSlot& dying_slot = slot_at(detail::csr_element_(dead_slots, dying_begin + i));
-                dying_slot_info.at(prove_per_op(i)) = {.aligned_size = (dying_slot.nbytes + ALIGNMENT - 1)
-                                                                     & ~uint64_t(ALIGNMENT - 1),
+                dying_slot_info.at(prove_per_op(i)) = {.aligned_size = aligned_bytes_of(dying_slot.nbytes),
                                                        .offset = dying_slot.offset_bytes};
             }
 
             for (uint32_t born_idx = 0; born_idx < born_count_capped; born_idx++) {
                 TensorSlot& born_slot = slot_at(detail::csr_element_(born_slots, born_begin + born_idx));
-                uint64_t born_aligned_size = (born_slot.nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1);
+                uint64_t born_aligned_size = aligned_bytes_of(born_slot.nbytes);
 
                 uint32_t best_dying_match_idx = UINT32_MAX;
                 uint64_t best_waste_bytes = UINT64_MAX;
@@ -1695,13 +1700,13 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
         for (uint32_t i = 0; i < num_dying; i++) {
             if (i < dying_count_capped && dying_consumed.at(prove_per_op(i))) continue;
             const TensorSlot& dying_slot = slot_at(detail::csr_element_(dead_slots, dying_begin + i));
-            free_block(dying_slot.offset_bytes, (dying_slot.nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
+            free_block(dying_slot.offset_bytes, aligned_bytes_of(dying_slot.nbytes));
         }
 
         for (uint32_t i = 0; i < num_born; i++) {
             if (i < born_count_capped && born_assigned.at(prove_per_op(i))) continue;
             uint32_t born_slot_id = detail::csr_element_(born_slots, born_begin + i);
-            alloc_slot(born_slot_id, (slot_at(born_slot_id).nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1));
+            alloc_slot(born_slot_id, aligned_bytes_of(slot_at(born_slot_id).nbytes));
         }
     }
 

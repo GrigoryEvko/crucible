@@ -39,6 +39,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace foundation {
 
@@ -72,13 +73,12 @@ template <std::size_t Alignment>
                                                              std::size_t element_bytes) noexcept {
     std::size_t element_total = 0;
     std::size_t total = 0;
-    std::size_t padded = 0;
     const bool wraps = __builtin_mul_overflow(count, element_bytes, &element_total)
-                    || __builtin_add_overflow(prefix_bytes, element_total, &total)
-                    || __builtin_add_overflow(total, Alignment - 1, &padded);
-    if (wraps) [[unlikely]]
+                    || __builtin_add_overflow(prefix_bytes, element_total, &total);
+    core::Option<std::size_t> rounded = core::align_up(total, Alignment);
+    if (wraps || rounded.is_none()) [[unlikely]]
         allocation_size_overflow_abort_(prefix_bytes, count, element_bytes, Alignment);
-    return padded & ~(Alignment - 1);
+    return std::move(rounded).value_or(0);
 }
 
 // The door of mint_aligned_bytes, and the key of the constructor of an
@@ -102,13 +102,14 @@ struct AlignedBytesDoor {
 };
 
 // The bytes that a block of `bytes` bytes takes at the alignment: the count
-// rounded up to the alignment.  A round up that wraps ends the process
-// through the fatal exit of a size that wraps.  Complexity: O(1).
+// rounded up to the alignment.  The caller gives a power of two.  A round up
+// that wraps ends the process through the fatal exit of a size that wraps.
+// Complexity: O(1).
 [[nodiscard]] constexpr std::size_t aligned_block_bytes(std::size_t bytes, std::size_t alignment) noexcept {
-    std::size_t padded = 0;
-    if (__builtin_add_overflow(bytes, alignment - 1, &padded)) [[unlikely]]
+    core::Option<std::size_t> rounded = core::align_up(bytes, alignment);
+    if (rounded.is_none()) [[unlikely]]
         allocation_size_overflow_abort_(0, bytes, 1, alignment);
-    return padded & ~(alignment - 1);
+    return std::move(rounded).value_or(0);
 }
 
 }  // namespace detail
