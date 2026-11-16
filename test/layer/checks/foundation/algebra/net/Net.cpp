@@ -86,6 +86,22 @@ static_assert(check_signature(unknown_type)
                   .says("net: port 'value' of agent kind 'num' has the type 2, and the "
                         "signature has 1 types."));
 
+inline constexpr NetSignature<2, 1> unnamed_type{
+    .type_names = {"Value", ""}, .kinds = {{.name = "num", .port_names = {"value"}, .port_types = {give(value)}}}};
+static_assert(check_signature(unnamed_type).says("net: type 1 of the signature has no name.  Each type has a name."));
+
+inline constexpr NetSignature<1, 2> unnamed_kind{
+    .type_names = {"Value"}, .kinds = {{.name = "num", .port_names = {"value"}, .port_types = {give(value)}}, {}}};
+static_assert(check_signature(unnamed_kind).says("net: kind 1 of the signature has no name."));
+
+inline constexpr NetSignature<1, 1> far_par{.type_names = {"Value"},
+                                            .kinds = {{.name = "far",
+                                                       .port_names = {"in", "out"},
+                                                       .port_types = {take(value), give(value)},
+                                                       .principal = 0,
+                                                       .par_ports = 0b1100}}};
+static_assert(check_signature(far_par).says("net: the par group of agent kind 'far' names a port past its 2 ports."));
+
 // ── The proof structures of multiplicative linear logic ─────────────────
 //
 //   identity        |- A par A~             provable      admit
@@ -185,13 +201,29 @@ inline constexpr Net<5, 12, 4, 4> two_tensors{
     .signature = proofs,
     .agents = {tensor_of_duals_kind, tensor_kind, take_ab_kind, give_ab_kind},
     .wires = {join_ports(0, 0, 1, 0), join_ports(0, 1, 1, 1), join_ports(0, 2, 2, 0), join_ports(1, 2, 3, 0)}};
-static_assert(check_wiring(two_tensors).is_admitted() && !check_proof_net(two_tensors).is_admitted());
+static_assert(check_wiring(two_tensors).is_admitted());
+static_assert(check_proof_net(two_tensors)
+                  .says("net: a cycle closes at port 'right' of agent 'tensor' (node 1).  Each switching of the net "
+                        "keeps this cycle, so the net is no proof net."));
 
 inline constexpr Net<5, 12, 4, 4> two_pars{
     .signature = proofs,
     .agents = {par_kind, par_of_atoms_kind, take_ab_kind, give_ab_kind},
     .wires = {join_ports(0, 0, 1, 0), join_ports(0, 1, 1, 1), join_ports(0, 2, 2, 0), join_ports(1, 2, 3, 0)}};
-static_assert(check_wiring(two_pars).is_admitted() && !check_proof_net(two_pars).is_admitted());
+static_assert(check_wiring(two_pars).is_admitted());
+static_assert(check_proof_net(two_pars).says(
+    "net: agent 'par' (node 0) is a par whose ports never meet.  A switching of it leaves the net "
+    "in two parts."));
+
+// A par and a tensor with each pair of ports joined: the ports of the par
+// reach the par again through the tensor.
+inline constexpr Net<5, 12, 2, 3> closed_par{
+    .signature = proofs,
+    .agents = {par_kind, tensor_kind},
+    .wires = {join_ports(0, 0, 1, 0), join_ports(0, 1, 1, 1), join_ports(0, 2, 1, 2)}};
+static_assert(check_proof_net(closed_par)
+                  .says("net: agent 'par' (node 0) is a par whose ports reach the agent again.  A switching of it "
+                        "closes a cycle."));
 
 // The inner par contracts before the outer one.
 inline constexpr Net<5, 12, 6, 7> nested_pars{
@@ -292,6 +324,24 @@ inline constexpr Net<7, 9, 6, 5> pipeline_past_the_arrays{
     .wires = {join_ports(0, 0, 1, 0), join_ports(1, 1, 2, 0), join_ports(2, 1, 3, 0), join_ports(3, 1, 4, 0),
               join_ports(4, 1, 40, 0)}};
 static_assert(check_wiring(pipeline_past_the_arrays).says("net: wire 4 names node 40, and the net has 6 agents."));
+
+// An agent of a kind past the signature, and a wire to a port past the ports
+// of its agent.
+inline constexpr Net<7, 9, 6, 5> pipeline_of_unknown_kind{
+    .signature = pipeline_kinds,
+    .agents = {KindId{0}, KindId{12}, KindId{2}, KindId{3}, KindId{4}, KindId{5}},
+    .wires = {join_ports(0, 0, 1, 0), join_ports(1, 1, 2, 0), join_ports(2, 1, 3, 0), join_ports(3, 1, 4, 0),
+              join_ports(4, 1, 5, 0)}};
+static_assert(
+    check_wiring(pipeline_of_unknown_kind).says("net: node 1 has the kind 12, and the signature has 9 kinds."));
+
+inline constexpr Net<7, 9, 6, 5> pipeline_past_its_ports{
+    .signature = pipeline_kinds,
+    .agents = {KindId{0}, KindId{1}, KindId{2}, KindId{3}, KindId{4}, KindId{5}},
+    .wires = {join_ports(0, 0, 1, 4), join_ports(1, 1, 2, 0), join_ports(2, 1, 3, 0), join_ports(3, 1, 4, 0),
+              join_ports(4, 1, 5, 0)}};
+static_assert(check_wiring(pipeline_past_its_ports)
+                  .says("net: wire 0 names port 4 of agent 'drain' (node 1), which has 2 ports."));
 
 // ── The fork tree ───────────────────────────────────────────────────────
 //
@@ -579,6 +629,40 @@ inline constexpr Net<1, 6, 2, 2> spins{.signature = value_kinds,
 static_assert(check_wiring(spins).is_admitted());
 static_assert(check_dataflow(spins).says("net: wire 0 joins port 'in' of agent 'spin' (node 0) of the type Value, "
                                          "which has no direction.  A dataflow takes give and take ports."));
+
+// ── Long cycles ─────────────────────────────────────────────────────────
+//
+// A refusal names the first agents of a long cycle and then "...": six
+// agents of a vicious circle, five agents of a cycle of waits.
+
+inline constexpr NetSignature<1, 2> ring_kinds{
+    .type_names = {"Value"},
+    .kinds = {
+        {.name = "relay", .port_names = {"in", "out"}, .port_types = {take(value), give(value)}},
+        {.name = "link", .port_names = {"principal", "aux"}, .port_types = {meet(value), meet(value)}},
+    }};
+
+// Seven relays, each output into the next input.
+inline constexpr Net<1, 2, 7, 7> relay_ring{
+    .signature = ring_kinds,
+    .agents = {KindId{0}, KindId{0}, KindId{0}, KindId{0}, KindId{0}, KindId{0}, KindId{0}},
+    .wires = {join_ports(0, 1, 1, 0), join_ports(1, 1, 2, 0), join_ports(2, 1, 3, 0), join_ports(3, 1, 4, 0),
+              join_ports(4, 1, 5, 0), join_ports(5, 1, 6, 0), join_ports(6, 1, 0, 0)}};
+static_assert(check_dataflow(relay_ring)
+                  .says("net: a cycle of waits closes at port 'in' of agent 'relay' (node 0): agent 'relay' (node 0) "
+                        "<- agent 'relay' (node 6) <- agent 'relay' (node 5) <- agent 'relay' (node 4) <- agent "
+                        "'relay' (node 3) <- ....  Each agent waits on its inputs, so no agent of the cycle starts."));
+
+// Seven links, each principal port into the auxiliary port of the next.
+inline constexpr Net<1, 2, 7, 7> link_ring{
+    .signature = ring_kinds,
+    .agents = {KindId{1}, KindId{1}, KindId{1}, KindId{1}, KindId{1}, KindId{1}, KindId{1}},
+    .wires = {join_ports(0, 0, 1, 1), join_ports(1, 0, 2, 1), join_ports(2, 0, 3, 1), join_ports(3, 0, 4, 1),
+              join_ports(4, 0, 5, 1), join_ports(5, 0, 6, 1), join_ports(6, 0, 0, 1)}};
+static_assert(check_vicious(link_ring).says(
+    "net: vicious circle: agent 'link' (node 0) -> agent 'link' (node 1) -> agent 'link' (node 2) "
+    "-> agent 'link' (node 3) -> agent 'link' (node 4) -> agent 'link' (node 5) -> ....  Each "
+    "principal port meets an auxiliary port, so no rule can fire."));
 
 }  // namespace detail::net_self_test
 
