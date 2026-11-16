@@ -119,6 +119,15 @@ CRUCIBLE_CONST constexpr ElementBytes element_size(ScalarType const t) noexcept 
     return result;
 }
 
+// The ScalarType of each storage format of the base.  fp8_e4m3 is the E4M3
+// of the OCP specification, which the foreign runtime names Float8_e4m3fn.
+// The fnuz formats of the foreign runtime have no storage type.
+template <::fixy::StorageFloat T>
+inline constexpr ScalarType storage_scalar_type = std::same_as<T, ::fixy::f16>      ? ScalarType::Half
+                                                : std::same_as<T, ::fixy::bf16>     ? ScalarType::BFloat16
+                                                : std::same_as<T, ::fixy::fp8_e4m3> ? ScalarType::Float8_e4m3fn
+                                                                                    : ScalarType::Float8_e5m2;
+
 // The ordinals mirror the foreign runtime's exactly.
 enum class DeviceType : int8_t {
     CPU = 0,

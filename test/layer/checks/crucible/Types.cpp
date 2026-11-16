@@ -14,6 +14,20 @@ namespace crucible {
 
 static_assert(sizeof(ElementBytes) == sizeof(uint8_t), "ElementBytes must be layout-identical to uint8_t");
 
+// Each storage format of the base has the ScalarType of its format, and the
+// element of that ScalarType has the size of the storage type.  The ordinals
+// of the foreign runtime stay.
+static_assert(storage_scalar_type<::fixy::f16> == ScalarType::Half);
+static_assert(storage_scalar_type<::fixy::bf16> == ScalarType::BFloat16);
+static_assert(storage_scalar_type<::fixy::fp8_e4m3> == ScalarType::Float8_e4m3fn);
+static_assert(storage_scalar_type<::fixy::fp8_e5m2> == ScalarType::Float8_e5m2);
+static_assert(element_size(storage_scalar_type<::fixy::f16>).raw() == sizeof(::fixy::f16));
+static_assert(element_size(storage_scalar_type<::fixy::bf16>).raw() == sizeof(::fixy::bf16));
+static_assert(element_size(storage_scalar_type<::fixy::fp8_e4m3>).raw() == sizeof(::fixy::fp8_e4m3));
+static_assert(element_size(storage_scalar_type<::fixy::fp8_e5m2>).raw() == sizeof(::fixy::fp8_e5m2));
+static_assert(static_cast<int>(ScalarType::Half) == 5 && static_cast<int>(ScalarType::BFloat16) == 15);
+static_assert(static_cast<int>(ScalarType::Float8_e5m2) == 23 && static_cast<int>(ScalarType::Float8_e4m3fn) == 24);
+
 // A device that its constructor builds has one index for the host, and a
 // device of a different type keeps its index.
 static_assert(TensorDevice{DeviceType::CPU, 0} == kHostDevice && TensorDevice{DeviceType::CPU, 0}.index() == -1);
