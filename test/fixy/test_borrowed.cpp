@@ -285,6 +285,50 @@ int check_span_constructor_keeps_its_callers() {
     return 0;
 }
 
+// A mint takes a run of the base: a View and a TextView, also as a
+// temporary, and an owner through its view().  The borrow reads and writes
+// the elements of the owner, and each mint gives a fresh brand.
+int check_mint_of_base_runs() {
+    ::fixy::FixedArray<int, 3> array{};
+    int next = 10;
+    for (int& element : array)
+        element = next++;
+    auto of_array = ::fixy::mint_borrowed<OwnerA>(array);
+    static_assert(std::is_same_v<::fixy::borrowed_value_t<decltype(of_array)>, int>);
+    static_assert(::foundation::brand::IsBranded<decltype(of_array)>);
+    if (of_array.size() != 3 || of_array[1] != 11) return 80;
+    of_array[2] = 42;
+    int last = 0;
+    for (int const element : array)
+        last = element;
+    if (last != 42) return 81;
+
+    ::fixy::FixedArray<int, 3> const& read_only = array;
+    auto of_const = ::fixy::mint_borrowed<OwnerA>(read_only);
+    static_assert(std::is_same_v<::fixy::borrowed_value_t<decltype(of_const)>, int const>);
+    static_assert(!::foundation::brand::SameBrand<decltype(of_array), decltype(of_const)>,
+                  "each mint gives a fresh brand");
+    if (of_const.data() != of_array.data()) return 82;
+
+    auto of_view = ::fixy::mint_borrowed<OwnerA>(array.view());
+    if (of_view.size() != 3 || of_view.data() != of_array.data()) return 83;
+
+    ::fixy::FixedList<int, 4> list{};
+    static_cast<void>(list.push(5).expect("the list has room"));
+    static_cast<void>(list.push(6).expect("the list has room"));
+    auto of_list = ::fixy::mint_borrowed<OwnerA>(list);
+    if (of_list.size() != 2 || of_list[1] != 6) return 84;
+
+    ::fixy::FixedText<8> const text{"hello"};
+    auto of_text = ::fixy::mint_borrowed<OwnerA>(text);
+    static_assert(std::is_same_v<::fixy::borrowed_value_t<decltype(of_text)>, char const>);
+    if (of_text.size() != 5 || of_text[4] != 'o') return 85;
+
+    auto of_literal = ::fixy::mint_borrowed<OwnerA>(::fixy::TextView{"abc"});
+    if (of_literal.size() != 3 || of_literal[0] != 'a') return 86;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
@@ -293,6 +337,7 @@ int main() {
     if (int rc = check_weak_ref_null_aborts(); rc != 0) return rc;
     if (int rc = check_mint_of_a_span_rvalue(); rc != 0) return rc;
     if (int rc = check_span_constructor_keeps_its_callers(); rc != 0) return rc;
+    if (int rc = check_mint_of_base_runs(); rc != 0) return rc;
 
     return 0;
 }

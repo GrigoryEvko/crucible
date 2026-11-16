@@ -190,6 +190,51 @@ template <class Source, class R>
 constexpr auto mint_borrowed(R&&) = delete("a borrow of a temporary range dangles at the end of the full expression; "
                                            "give the range a name that outlives the borrow");
 
+// A view of a run of the base: a View of the Region family, or a TextView.
+// A view borrows its run, so a borrow taken from a view borrows the run and
+// not the view, as a borrow of a span does.  A view of a temporary is then
+// admitted.  No base view is a range of std::ranges: its cursor is bounded,
+// and it gives no raw pointer outside the base.
+template <class V>
+concept BaseRunView = ::foundation::reflect::IsInstanceOf<V, ^^::foundation::core::View>
+                   || std::same_as<std::remove_cvref_t<V>, ::foundation::core::TextView>;
+
+// An owner of a run of the base, such as a FixedArray, a FixedList, a
+// HeapArray or a FixedText: an lvalue whose view() gives a BaseRunView.  The
+// view() of each owner refuses an rvalue, and so do the mints below.
+template <class R>
+concept BaseRunOwner = std::is_lvalue_reference_v<R> && !BaseRunView<R> && requires(R owner) {
+    { owner.view() } -> BaseRunView;
+};
+
+// The element of a borrow of a base view: the element that its loop reads.
+template <class V>
+    requires BaseRunView<V>
+using base_run_element_t = std::remove_reference_t<decltype(*std::declval<V const&>().begin())>;
+
+// A branded borrow of the run of a base view, tagged with its owner.  The
+// view gives the brand nothing, so the borrow carries a fresh brand.
+template <class Source, class... Refused, class V, class Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0 && BaseRunView<V>)
+[[nodiscard]] constexpr Borrowed<base_run_element_t<V>, Source, ::foundation::brand::undeducible_brand_t<Fresh>>
+mint_borrowed(V&& view) noexcept;
+
+// A branded borrow of the run of a base owner, through its view().
+template <class Source, class... Refused, class R, class Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0 && BaseRunOwner<R>)
+[[nodiscard]] constexpr Borrowed<base_run_element_t<decltype(std::declval<R>().view())>, Source,
+                                 ::foundation::brand::undeducible_brand_t<Fresh>>
+mint_borrowed(R&& owner CRUCIBLE_LIFETIMEBOUND) noexcept;
+
+// The run of a temporary owner ends with the owner, at the end of the full
+// expression, so a borrow of it dangles.
+template <class Source, class R>
+    requires(!std::is_lvalue_reference_v<R> && !BaseRunView<R> && requires(R& owner) {
+        { owner.view() } -> BaseRunView;
+    })
+constexpr auto mint_borrowed(R&&) = delete("a borrow of a temporary owner dangles at the end of the full expression; "
+                                           "give the owner a name that outlives the borrow");
+
 template <class T, class Brand>
 class [[nodiscard]] BorrowedRef {
     static_assert(::foundation::brand::IsBrand<Brand>, "BorrowedRef<T, Brand>: Brand must be an empty class type: "
@@ -294,6 +339,10 @@ private:
     // The branded door, for the mints and for subview.
     constexpr Borrowed(detail::borrow_mint_t, span_type span) noexcept : span_{span} {}
 
+    // The branded door of the mints of a base run: the count elements from
+    // first, which the doors of the base give.
+    constexpr Borrowed(detail::borrow_mint_t, T* first, std::size_t count) noexcept : span_{first, count} {}
+
     template <class USource, class... URefused, class R, class Fresh>
         requires(sizeof...(URefused) == 0
                  && std::is_lvalue_reference_v<R> && std::ranges::contiguous_range<R> && !IsBorrowed<R>)
@@ -305,6 +354,17 @@ private:
                  && std::ranges::borrowed_range<R> && !IsBorrowed<R>)
     friend constexpr Borrowed<range_element_t<R>, USource, ::foundation::brand::undeducible_brand_t<Fresh>>
     mint_borrowed(R&& range) noexcept;
+
+    template <class USource, class... URefused, class V, class Fresh>
+        requires(sizeof...(URefused) == 0 && BaseRunView<V>)
+    friend constexpr Borrowed<base_run_element_t<V>, USource, ::foundation::brand::undeducible_brand_t<Fresh>>
+    mint_borrowed(V&& view) noexcept;
+
+    template <class USource, class... URefused, class R, class Fresh>
+        requires(sizeof...(URefused) == 0 && BaseRunOwner<R>)
+    friend constexpr Borrowed<base_run_element_t<decltype(std::declval<R>().view())>, USource,
+                              ::foundation::brand::undeducible_brand_t<Fresh>>
+    mint_borrowed(R&& owner CRUCIBLE_LIFETIMEBOUND) noexcept;
 
     // A borrow of a branded region is minted in OwnedRegion.h and
     // carries the region's brand, so it needs this door too.
@@ -428,6 +488,38 @@ template <class Source, class... Refused, class R, class Fresh>
 mint_borrowed(R&& range) noexcept {
     return Borrowed<range_element_t<R>, Source, Fresh>{
         detail::borrow_mint_t{}, std::span<range_element_t<R>>{std::ranges::data(range), std::ranges::size(range)}};
+}
+
+namespace detail {
+
+// The first element of the run of a base view, through the door of the base.
+template <class V>
+[[nodiscard]] constexpr base_run_element_t<V>* first_of_run_(V const& view) noexcept {
+    if constexpr (std::same_as<std::remove_cvref_t<V>, ::foundation::core::TextView>) {
+        return ::foundation::core::detail::text_first_(view);
+    } else {
+        return first_of_(::foundation::core::detail::ViewDoor::key(), view);
+    }
+}
+
+}  // namespace detail
+
+template <class Source, class... Refused, class V, class Fresh>
+    requires(sizeof...(Refused) == 0 && BaseRunView<V>)
+[[nodiscard]] constexpr Borrowed<base_run_element_t<V>, Source, ::foundation::brand::undeducible_brand_t<Fresh>>
+mint_borrowed(V&& view) noexcept {
+    return Borrowed<base_run_element_t<V>, Source, Fresh>{detail::borrow_mint_t{}, detail::first_of_run_(view),
+                                                          view.size()};
+}
+
+template <class Source, class... Refused, class R, class Fresh>
+    requires(sizeof...(Refused) == 0 && BaseRunOwner<R>)
+[[nodiscard]] constexpr Borrowed<base_run_element_t<decltype(std::declval<R>().view())>, Source,
+                                 ::foundation::brand::undeducible_brand_t<Fresh>>
+mint_borrowed(R&& owner CRUCIBLE_LIFETIMEBOUND) noexcept {
+    auto const run = owner.view();
+    return Borrowed<base_run_element_t<decltype(run)>, Source, Fresh>{detail::borrow_mint_t{},
+                                                                      detail::first_of_run_(run), run.size()};
 }
 
 template <class T>

@@ -1568,6 +1568,9 @@ fixy_neg_compile_test(neg_borrowed_ref_names_held_brand
 fixy_neg_compile_test(neg_borrowed_names_held_brand
   "no matching function for call to .mint_borrowed<.anonymous.::Owner, int \\(&\\)\\[2\\], HeldBrand>"
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int \\(&\\)\\[2\\], ")
+fixy_neg_compile_test(neg_borrowed_view_names_held_brand
+  "no matching function for call to .mint_borrowed<.anonymous.::Owner, foundation::core::View<int, 2>, HeldBrand>"
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{foundation::core::View<int, 2>, ")
 fixy_neg_compile_test(neg_borrowed_address_names_held_brand
   "invalid initialization of non-const reference of type .HeldBorrow \\(&\\)\\(int \\(&\\)\\[2\\]\\) noexcept."
   "from an rvalue of type .<unresolved overloaded function type>.")
@@ -5940,6 +5943,10 @@ fixy_neg_compile_test(neg_brand_mint_borrowed_from_temporary_range
   "use of deleted function"
   "mint_borrowed\\(R&&\\) .with Source = \\{anonymous\\}::Owner"
   "a borrow of a temporary range dangles at the end of the full expression")
+fixy_neg_compile_test(neg_brand_mint_borrowed_from_temporary_owner
+  "use of deleted function"
+  "mint_borrowed\\(R&&\\) .with Source = \\{anonymous\\}::Owner. R = foundation::core::FixedArray<int, 3>"
+  "a borrow of a temporary owner dangles at the end of the full expression")
 
 # ── Disjointness: one split, one receipt, one rebuild ─────────────────
 #

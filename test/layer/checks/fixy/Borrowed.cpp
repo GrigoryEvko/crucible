@@ -1,6 +1,8 @@
 // The compile-time checks of fixy/Borrowed.h.
 
 #include <fixy/Borrowed.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/List.h>
 
 namespace fixy {
 
@@ -419,5 +421,29 @@ static_assert(IsWeakRef<WeakRef<int>&&>);
 static_assert(std::is_same_v<weak_ref_value_t<WeakRef<Holder>>, Holder>);
 
 }  // namespace detail::borrowed_self_test
+
+// The runs of the base that a mint of a borrow takes.  A view takes any
+// value category, because it borrows its run.  An owner takes only an
+// lvalue.  The two sets do not overlap, and no base view or owner is a range
+// of std::ranges, so no call of mint_borrowed is ambiguous.
+namespace detail::borrowed_base_runs {
+
+namespace core = ::foundation::core;
+
+static_assert(BaseRunView<core::View<int>> && BaseRunView<core::View<int const, 4>&>);
+static_assert(BaseRunView<core::TextView> && BaseRunView<core::TextView const&>);
+static_assert(!BaseRunView<core::FixedArray<int, 4>&> && !BaseRunView<core::FixedList<int, 4>&>);
+
+static_assert(BaseRunOwner<core::FixedArray<int, 4>&> && BaseRunOwner<core::FixedArray<int, 4> const&>);
+static_assert(BaseRunOwner<core::FixedList<int, 4>&> && BaseRunOwner<core::FixedText<8> const&>);
+static_assert(!BaseRunOwner<core::FixedArray<int, 4>> && !BaseRunOwner<core::FixedArray<int, 4>&&>,
+              "an owner of a run takes only an lvalue");
+static_assert(!BaseRunOwner<core::View<int>&>, "a view takes the form of a view");
+
+static_assert(std::is_same_v<base_run_element_t<core::View<int, 4>>, int>);
+static_assert(std::is_same_v<base_run_element_t<core::View<int const>>, int const>);
+static_assert(std::is_same_v<base_run_element_t<core::TextView>, char const>);
+
+}  // namespace detail::borrowed_base_runs
 
 }  // namespace fixy
