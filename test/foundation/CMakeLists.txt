@@ -3451,6 +3451,15 @@ foundation_neg_compile_test(neg_core_strided_view_mut_copies
   "a StridedViewMut is the one writer of its elements: a copy would be a second writer")
 
 # The member nan_rule of a pointwise op has the type NanRule.
+foundation_neg_compile_test(neg_core_side_aggregate_init
+  "converting to .foundation::core::Side<Count, int>. from initializer list would use explicit constructor"
+  "foundation::core::Side<Tag, T>::Side\\(T\\) \\[with Tag = Count; T = int\\]")
+foundation_neg_compile_test(neg_core_side_from_payload
+  "could not convert .3. from .int. to .foundation::core::Side<Count, int>."
+  "neg_core_side_from_payload.cpp")
+foundation_neg_compile_test(neg_core_side_compare
+  "no match for .operator==. \\(operand types are .const foundation::core::Side<Count, int>. and"
+  "neg_core_side_compare.cpp")
 foundation_neg_compile_test(neg_core_pointwise_nan_rule_of_bool
   "cannot convert .const bool. to .foundation::core::NanRule. in return"
   "CanonicalNanOp<\\{anonymous\\}::Copy, float>")

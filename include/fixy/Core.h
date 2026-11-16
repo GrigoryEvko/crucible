@@ -44,6 +44,7 @@
 #include <foundation/core/Report.h>
 #include <foundation/core/RunSet.h>
 #include <foundation/core/Scalar.h>
+#include <foundation/core/Side.h>
 #include <foundation/core/StorageFloat.h>
 #include <foundation/core/Strided.h>
 #include <foundation/core/Text.h>
@@ -304,6 +305,14 @@ using ::foundation::core::Exchangeable;
 
 using ::foundation::core::Digest;
 using ::foundation::core::Id;
+
+// The role of an argument as a type (foundation/core/Side.h).  The roles of
+// the base keep their namespace side.
+using ::foundation::core::Side;
+using ::foundation::core::side_as;
+using ::foundation::core::SidePayload;
+using ::foundation::core::SideTag;
+namespace side = ::foundation::core::side;
 
 using ::foundation::core::Philox4x32;
 

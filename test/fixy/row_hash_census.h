@@ -1039,6 +1039,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::Quantity,
      "a number with a unit: its unit is a part of its type, and it makes no claim that a grade carries"},
     {^^::foundation::core::Id, "a number whose kind is its tag: an id, which makes no claim that a grade carries"},
+    {^^::foundation::core::Side,
+     "a value in a role: the role is a part of its type, and it makes no claim that a grade carries"},
     {^^::foundation::core::Digest, "a hash whose kind is its tag: a value, which makes no claim that a grade carries"},
     {^^::foundation::core::StorageFloatOf,
      "the bits of a value of a storage format of a float: a number, which makes no claim that a grade carries"},
