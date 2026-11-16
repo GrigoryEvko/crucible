@@ -48,10 +48,8 @@ using ::foundation::core::View;
 
 [[nodiscard]] bool same_runs(View<float const> left, View<float const> right) noexcept {
     if (left.size() != right.size()) return false;
-    for (std::size_t index = 0; index < left.size(); ++index) {
-        if (!same_bits(::crucible::test::element_at(left, index), ::crucible::test::element_at(right, index))) {
-            return false;
-        }
+    for (auto const [first, second] : ::fixy::zip(left, right).expect("the two runs have one count")) {
+        if (!same_bits(*first, *second)) return false;
     }
     return true;
 }
@@ -102,6 +100,52 @@ void test_sum_scans_agree_with_the_naive_fold() {
     }
 }
 
+// The sum scans with 2, 4, 8, 16 and 32 lanes give the bits of the generic
+// recursion with an add, for each count to 600 and the counts around each
+// power of two to 2^14.
+void test_sum_scan_lanes_agree_with_the_recursion() {
+    HeapArray<float> const run = draw_floats((std::size_t{1} << 14) + 17, 0x5CA40007u);
+    View<float const> const all{run.view()};
+    HeapArray<float> expected = zeros(run.size());
+    HeapArray<float> got = zeros(run.size());
+    auto const add = [](float const& left, float const& right) noexcept { return left + right; };
+    auto const check_count = [&](std::size_t count) noexcept {
+        View<float const> const part = all.window(0, count).expect("the part fits the run");
+        View<float> const want = expected.view().window(0, count).expect("the part fits");
+        View<float> const out = got.view().window(0, count).expect("the part fits");
+        View<float const> const want_view{want};
+        View<float const> const out_view{out};
+        assert(::foundation::core::inclusive_scan(part, want, add).is_ok());
+        assert(::foundation::core::inclusive_sum_scan(part, out).is_ok());
+        assert(same_runs(want_view, out_view));
+        assert(::foundation::core::inclusive_sum_scan_lanes<2>(part, out).is_ok());
+        assert(same_runs(want_view, out_view));
+        assert(::foundation::core::inclusive_sum_scan_lanes<4>(part, out).is_ok());
+        assert(same_runs(want_view, out_view));
+        assert(::foundation::core::inclusive_sum_scan_lanes<8>(part, out).is_ok());
+        assert(same_runs(want_view, out_view));
+        assert(::foundation::core::inclusive_sum_scan_lanes<16>(part, out).is_ok());
+        assert(same_runs(want_view, out_view));
+        assert(::foundation::core::inclusive_sum_scan_lanes<32>(part, out).is_ok());
+        assert(same_runs(want_view, out_view));
+        assert(::foundation::core::exclusive_scan(part, want, 0.0f, add).is_ok());
+        assert(::foundation::core::exclusive_sum_scan(part, out).is_ok());
+        assert(same_runs(want_view, out_view));
+        assert(::foundation::core::exclusive_sum_scan_lanes<2>(part, out).is_ok());
+        assert(same_runs(want_view, out_view));
+        assert(::foundation::core::exclusive_sum_scan_lanes<16>(part, out).is_ok());
+        assert(same_runs(want_view, out_view));
+    };
+    for (std::size_t count = 0; count <= 600; ++count) {
+        check_count(count);
+    }
+    for (std::size_t power = 1024; power <= std::size_t{1} << 14; power *= 2) {
+        for (std::size_t count = power - 17; count <= power + 17; ++count) {
+            check_count(count);
+        }
+    }
+}
+
 // A scan in place gives the bits of a scan into a second View, and a scan of
 // a longer run gives the same bits at each position of the shorter one.
 void test_scan_in_place_and_under_append() {
@@ -139,12 +183,20 @@ void test_scan_in_place_and_under_append() {
     return shard * smaller + (shard < larger ? shard : larger);
 }
 
+// The form of the scan of the grains: the generic form with an add, or the
+// sum form with SIMD lanes.
+enum class GrainForm : std::uint8_t {
+    Generic = 0,
+    Sum = 1,
+};
+
 // The three phases of a parallel scan, with shards shards in drawn orders:
 // the tree sums of the grains, their exclusive scan, and the scan of each
 // grain with its carry.
 template <std::size_t Grain>
 [[nodiscard]] HeapArray<float> scan_by_shards(View<float const> run, ::foundation::core::ScanKind kind,
-                                              std::size_t shards, ::crucible::test::PhiloxStream& stream) noexcept {
+                                              std::size_t shards, ::crucible::test::PhiloxStream& stream,
+                                              GrainForm form = GrainForm::Generic) noexcept {
     std::size_t const grains = ::foundation::core::tree_grain_count<Grain>(run.size());
     HeapArray<float> carries = zeros(grains);
     View<float> const carry_slots = carries.view();
@@ -163,7 +215,12 @@ template <std::size_t Grain>
         for (std::size_t const offset : grain_order) {
             View<float const> const carry =
                 View<float const>{carry_slots}.window(first + offset, 1).expect("the carry fits");
-            if (kind == ::foundation::core::ScanKind::Inclusive) {
+            bool const is_inclusive = kind == ::foundation::core::ScanKind::Inclusive;
+            if (form == GrainForm::Sum && is_inclusive) {
+                ::foundation::core::inclusive_sum_scan_grains<Grain>(run, first + offset, carry, out.view());
+            } else if (form == GrainForm::Sum) {
+                ::foundation::core::exclusive_sum_scan_grains<Grain>(run, first + offset, carry, out.view());
+            } else if (is_inclusive) {
                 ::foundation::core::inclusive_scan_grains<Grain>(run, first + offset, carry, out.view(), add);
             } else {
                 ::foundation::core::exclusive_scan_grains<Grain>(run, first + offset, carry, out.view(), 0.0f, add);
@@ -195,10 +252,16 @@ void test_grains_give_the_bits_of_the_scan() {
             HeapArray<float> const by_sixteen = scan_by_shards<16>(part, ScanKind::Inclusive, shards, stream);
             HeapArray<float> const by_page = scan_by_shards<4096>(part, ScanKind::Inclusive, shards, stream);
             HeapArray<float> const exclusive_by_grains = scan_by_shards<256>(part, ScanKind::Exclusive, shards, stream);
+            HeapArray<float> const sum_by_sixteen =
+                scan_by_shards<16>(part, ScanKind::Inclusive, shards, stream, GrainForm::Sum);
+            HeapArray<float> const sum_by_page =
+                scan_by_shards<4096>(part, ScanKind::Exclusive, shards, stream, GrainForm::Sum);
             assert(same_runs(whole_inclusive, View<float const>{by_single.view()}));
             assert(same_runs(whole_inclusive, View<float const>{by_sixteen.view()}));
             assert(same_runs(whole_inclusive, View<float const>{by_page.view()}));
             assert(same_runs(whole_exclusive, View<float const>{exclusive_by_grains.view()}));
+            assert(same_runs(whole_inclusive, View<float const>{sum_by_sixteen.view()}));
+            assert(same_runs(whole_exclusive, View<float const>{sum_by_page.view()}));
         }
     }
 }
@@ -282,6 +345,7 @@ void test_large_plans_agree_with_the_scans() {
 
 int main() {
     test_sum_scans_agree_with_the_naive_fold();
+    test_sum_scan_lanes_agree_with_the_recursion();
     test_scan_in_place_and_under_append();
     test_grains_give_the_bits_of_the_scan();
     test_scan_error_stays_inside_the_bound();

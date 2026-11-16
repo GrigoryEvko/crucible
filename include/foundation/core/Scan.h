@@ -6,7 +6,14 @@
 //   inclusive_scan(in, out, combine)         out[k] combines in[0] to in[k]
 //   exclusive_scan(in, out, empty, combine)  out[k] combines in[0] to
 //                                            in[k - 1], and out[0] is empty
-//   inclusive_scan_grains<G>(...), exclusive_scan_grains<G>(...)
+//   inclusive_sum_scan(in, out), exclusive_sum_scan(in, out)
+//                                            the scans of a float or a double
+//                                            with an add, in SIMD lanes, and
+//                                            the forms _lanes<L> for a test of
+//                                            the rule that the lanes change no
+//                                            bit
+//   inclusive_scan_grains<G>(...), exclusive_scan_grains<G>(...),
+//   inclusive_sum_scan_grains<G>(...), exclusive_sum_scan_grains<G>(...)
 //                                            the scan of a range of grains of
 //                                            G elements with the carry of each
 //                                            grain, for a parallel scan
@@ -63,11 +70,30 @@
 //   and u = 2^-24 for float and 2^-53 for double.  THE VALUES OUTSIDE THE
 //   BOUND of Reduce.h applies to a NaN and to an overflow.
 //
+// THE LANES
+//   A sum scan loads L consecutive elements into one vector, with L the count
+//   of lanes of one register of the target.  The block of the vector is
+//   aligned, so its prefixes are its carry F(start) and then the blocks of the
+//   position inside it, from the largest.  The up-sweep adds each lane and the
+//   lane of its sibling block, level by level, so each lane holds the tree sum
+//   of the aligned block of that level that holds it.  In the upper lane of a
+//   pair the add takes its two operands in the other order.  An add of IEEE
+//   754 is commutative for each value that is not a NaN, so each such sum has
+//   the bits of the tree.  The down-sweep adds the carry and then one
+//   term of each level, from the largest block.  A lane with no block at a
+//   level adds -0, which is exact for each value.  A binary counter of the
+//   sums of the blocks gives the carry of each vector.  So 4, 8 or 16 lanes
+//   compute the folds of THE ORDER, and a test compares each count of lanes
+//   with the recursion.
+//
 // THE COSTS
 //   A scan makes at most two combines for each element, with a recursion of
-//   depth ceil(log2 n) + popcount(n).  It allocates nothing.  out can be the
-//   same View as in, and no other overlap is permitted.
+//   depth ceil(log2 n) + popcount(n).  A sum scan makes about 2 * log2(L)
+//   shuffles and adds for each vector of L lanes.  No scan allocates.  out can
+//   be the same View as in, and no other overlap is permitted.
 
+#include <foundation/Platform.h>
+#include <foundation/Simd.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Reduce.h>
@@ -194,27 +220,157 @@ template <class T, class Combine>
     return Unit{};
 }
 
-// The sum scans: the scans with the add of a tree sum.  The empty value of
-// the exclusive sum is +0.
+// ── The sum scans with SIMD lanes ───────────────────────────────────────
+
+namespace detail {
+
+// The sums of the sibling blocks of level Level: lane j takes lane
+// j ^ 2^Level.  When the sums hold in lane j the sum of the aligned block of
+// 2^Level elements that holds j, this is the sum of the other half of the
+// block of the next level.
+template <class T, int Lanes, int Level, int... Lane>
+[[nodiscard]] CRUCIBLE_INLINE simd::vec<T, Lanes> swap_scan_level_(simd::vec<T, Lanes> sums,
+                                                                   simd::detail::LaneList<Lane...> /*lanes*/) noexcept {
+    return simd::vec<T, Lanes>{__builtin_shufflevector(sums.raw(), sums.raw(), (Lane ^ (1 << Level))...)};
+}
+
+// The terms of level Level: lane j takes the sum of the sibling block when
+// bit Level of j is set, which is the block just before the block of j, and
+// -0 otherwise.  An add of -0 is exact for each value, so a lane with no term
+// at a level keeps its bits.  The pattern takes each lane from its own
+// position, so the shuffle is a blend.
+template <class T, int Lanes, int Level, int... Lane>
+[[nodiscard]] CRUCIBLE_INLINE simd::vec<T, Lanes>
+scan_level_terms_(simd::vec<T, Lanes> siblings, simd::detail::LaneList<Lane...> /*lanes*/) noexcept {
+    simd::vec<T, Lanes> const minus_zero{-T{}};
+    return simd::vec<T, Lanes>{__builtin_shufflevector(siblings.raw(), minus_zero.raw(),
+                                                       (((Lane >> Level) & 1) != 0 ? Lane : Lanes + Lane)...)};
+}
+
+// The exclusive prefixes of the Lanes elements of one aligned block, with the
+// carry F(start) of the block in each lane, and the tree sum of the block in
+// total.  sums holds in lane j the sum of the aligned block of 2^Level
+// elements that holds j.  The recursion forms the sums of each level on its
+// way down, the up-sweep.  On its way up it adds the carry and then the term
+// of each level, from the largest block, the left fold of THE ORDER.  Each
+// vector has the full width, so no step stores a part of a register: a
+// shuffle of a narrow vector into a wide one gave a failed store forwarding
+// on each block, and the scan ran at 2.3 ns for each element.
+template <class T, int Lanes, int Level>
+[[nodiscard]] CRUCIBLE_INLINE simd::vec<T, Lanes> scan_block_prefix_(simd::vec<T, Lanes> sums,
+                                                                     simd::vec<T, Lanes> carry, T& total) noexcept {
+    if constexpr ((1 << Level) == Lanes) {
+        total = sums[0];
+        return carry;
+    } else {
+        simd::vec<T, Lanes> const siblings =
+            swap_scan_level_<T, Lanes, Level>(sums, simd::detail::lane_list_t<Lanes>{});
+        simd::vec<T, Lanes> const prefix = scan_block_prefix_<T, Lanes, Level + 1>(sums + siblings, carry, total);
+        return prefix + scan_level_terms_<T, Lanes, Level>(siblings, simd::detail::lane_list_t<Lanes>{});
+    }
+}
+
+// The sum scan of the count elements from in, with vectors of Lanes lanes,
+// and the carry of the first element, or none.  Each aligned block of Lanes
+// elements takes its carry from a binary counter of the tree sums of the
+// blocks before it: an entry holds the sum of a full aligned block and the
+// fold of the entries from the bottom to it, so the fold of the top entry is
+// F(start) of the next block.  The elements after the last whole block take
+// the scalar recursion with that carry.  The bits are the bits of scan_run_
+// with an add: a lane with no carry adds -0, which is exact, and the
+// exclusive out[0] of a run with no carry is +0.
+template <ScanKind Kind, class T, int Lanes>
+void sum_scan_lanes_(T const* in, T* out, std::size_t count, T const* carry) noexcept {
+    using V = simd::vec<T, Lanes>;
+    constexpr auto lanes = static_cast<std::size_t>(Lanes);
+    T const base = carry == nullptr ? -T{} : *carry;
+    // At most popcount(count / Lanes) entries, so 64 entries hold each count.
+    T sums[64]{};
+    T folds[64]{};
+    std::size_t top = 0;
+    std::size_t const blocks = count / lanes;
+    for (std::size_t block = 0; block < blocks; ++block) {
+        V const values = simd::load<V>(in + block * lanes);
+        T total{};
+        V const prefix = scan_block_prefix_<T, Lanes, 0>(values, V{top == 0 ? base : folds[top - 1]}, total);
+        if constexpr (Kind == ScanKind::Inclusive) {
+            simd::store(prefix + values, out + block * lanes);
+        } else {
+            simd::store(prefix, out + block * lanes);
+        }
+        T sum = total;
+        for (int merges = countr_one(block); merges > 0; --merges) {
+            sum = sums[top - 1] + sum;
+            --top;
+        }
+        folds[top] = (top == 0 ? base : folds[top - 1]) + sum;
+        sums[top] = sum;
+        ++top;
+    }
+    std::size_t const done = blocks * lanes;
+    T const empty{};
+    if (done < count) {
+        T const tail_carry = top == 0 ? base : folds[top - 1];
+        bool const has_carry = top != 0 || carry != nullptr;
+        TreeAdd add{};
+        scan_run_<Kind>(in + done, out + done, count - done, has_carry ? &tail_carry : nullptr, &empty, add);
+    }
+    if constexpr (Kind == ScanKind::Exclusive) {
+        if (carry == nullptr && count > 0) out[0] = empty;
+    }
+}
+
+}  // namespace detail
+
+// The sum scans with Lanes lanes in each vector.  The count of lanes changes
+// no bit, so a test compares each count.  The empty value of the exclusive
+// sum is +0.  Complexity: O(n), with about log2(Lanes) shuffles and adds for
+// each vector in each direction.
+template <int Lanes, class T>
+    requires TreeSumElement<T> && detail::TreeLanes<Lanes>
+[[nodiscard]] Result<Unit, LengthMismatch> inclusive_sum_scan_lanes(View<T const> in, View<T> out) noexcept {
+    if (in.size() != out.size()) return err(LengthMismatch{});
+    detail::sum_scan_lanes_<ScanKind::Inclusive, T, Lanes>(first_of_(detail::ViewDoor::key(), in),
+                                                           first_of_(detail::ViewDoor::key(), out), in.size(),
+                                                           static_cast<T const*>(nullptr));
+    return Unit{};
+}
+
+template <int Lanes, class T>
+    requires TreeSumElement<T> && detail::TreeLanes<Lanes>
+[[nodiscard]] Result<Unit, LengthMismatch> exclusive_sum_scan_lanes(View<T const> in, View<T> out) noexcept {
+    if (in.size() != out.size()) return err(LengthMismatch{});
+    detail::sum_scan_lanes_<ScanKind::Exclusive, T, Lanes>(first_of_(detail::ViewDoor::key(), in),
+                                                           first_of_(detail::ViewDoor::key(), out), in.size(),
+                                                           static_cast<T const*>(nullptr));
+    return Unit{};
+}
+
+// The sum scans: the scans with the add of a tree sum, with the lanes of one
+// register of the target.  The bits are the bits of inclusive_scan and
+// exclusive_scan with an add.  The empty value of the exclusive sum is +0.
 template <class T>
     requires TreeSumElement<T>
-[[nodiscard]] constexpr Result<Unit, LengthMismatch> inclusive_sum_scan(View<T const> in, View<T> out) noexcept {
-    return inclusive_scan(in, out, detail::TreeAdd{});
+[[nodiscard]] Result<Unit, LengthMismatch> inclusive_sum_scan(View<T const> in, View<T> out) noexcept {
+    return inclusive_sum_scan_lanes<simd::native_lanes<T>>(in, out);
 }
 
 template <class T>
     requires TreeSumElement<T>
-[[nodiscard]] constexpr Result<Unit, LengthMismatch> exclusive_sum_scan(View<T const> in, View<T> out) noexcept {
-    return exclusive_scan(in, out, T{}, detail::TreeAdd{});
+[[nodiscard]] Result<Unit, LengthMismatch> exclusive_sum_scan(View<T const> in, View<T> out) noexcept {
+    return exclusive_sum_scan_lanes<simd::native_lanes<T>>(in, out);
 }
 
 // ── The split into grains ───────────────────────────────────────────────
 
 namespace detail {
 
-template <ScanKind Kind, std::size_t Grain, class T, class Combine>
-constexpr void scan_grains_(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out,
-                            T const* empty, Combine& combine) noexcept {
+// Calls scan_one for each grain of the range, with its input, its output,
+// its count and its carry, or none for grain 0.  An output of a different
+// count, or a range past the grains of the run, ends the process.
+template <std::size_t Grain, class T, class ScanOne>
+constexpr void for_each_scan_grain_(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out,
+                                    ScanOne scan_one) noexcept {
     std::size_t const count = in.size();
     if (out.size() != count) [[unlikely]] {
         fatal("a scan of grains got an input of {} elements and an output of {}", count, out.size());
@@ -227,8 +383,18 @@ constexpr void scan_grains_(View<T const> in, std::size_t first_grain, View<T co
         std::size_t const grain = first_grain + index;
         std::size_t const start = grain * Grain;
         std::size_t const size = count - start < Grain ? count - start : Grain;
-        scan_run_<Kind>(first + start, target + start, size, grain == 0 ? nullptr : carry + index, empty, combine);
+        scan_one(first + start, target + start, size, grain == 0 ? nullptr : carry + index);
     }
+}
+
+template <ScanKind Kind, std::size_t Grain, class T, class Combine>
+constexpr void scan_grains_(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out,
+                            T const* empty, Combine& combine) noexcept {
+    for_each_scan_grain_<Grain>(
+        in, first_grain, carries, out,
+        [empty, &combine](T const* first, T* target, std::size_t size, T const* carry) constexpr noexcept {
+            scan_run_<Kind>(first, target, size, carry, empty, combine);
+        });
 }
 
 }  // namespace detail
@@ -256,6 +422,27 @@ template <std::size_t Grain, class T, class Combine>
 constexpr void exclusive_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out,
                                      T const& empty, Combine combine) noexcept {
     detail::scan_grains_<ScanKind::Exclusive, Grain>(in, first_grain, carries, out, &empty, combine);
+}
+
+// The sum scans of the grains of the range, with the lanes of one register
+// of the target.  The carries obey the rule of inclusive_scan_grains, and the
+// bits are the bits of inclusive_sum_scan and exclusive_sum_scan of the run.
+template <std::size_t Grain, class T>
+    requires TreeGrain<Grain> && TreeSumElement<T>
+void inclusive_sum_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out) noexcept {
+    detail::for_each_scan_grain_<Grain>(
+        in, first_grain, carries, out, [](T const* first, T* target, std::size_t size, T const* carry) noexcept {
+            detail::sum_scan_lanes_<ScanKind::Inclusive, T, simd::native_lanes<T>>(first, target, size, carry);
+        });
+}
+
+template <std::size_t Grain, class T>
+    requires TreeGrain<Grain> && TreeSumElement<T>
+void exclusive_sum_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out) noexcept {
+    detail::for_each_scan_grain_<Grain>(
+        in, first_grain, carries, out, [](T const* first, T* target, std::size_t size, T const* carry) noexcept {
+            detail::sum_scan_lanes_<ScanKind::Exclusive, T, simd::native_lanes<T>>(first, target, size, carry);
+        });
 }
 
 // ── The plan of the scan ────────────────────────────────────────────────
