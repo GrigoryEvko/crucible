@@ -3,11 +3,20 @@
 // Walks a compiled region one operation at a time, checking each guard and
 // handing back the preallocated pointers for that operation's tensors.
 //
-// The position is a sliding pointer rather than an index, so advancing is one
-// increment instead of a multiply and an address computation. The next
-// operation's two guard hashes are copied into this object as each advance
-// finishes, so the comparison that starts the next one reads them from here
-// and never follows a pointer to reach them.
+// The position is a cursor of the View of the operations rather than an
+// index, so advancing is one increment instead of a multiply and an address
+// computation. The cursor knows the end of the region, so a read or a step
+// at the end ends the process in each build. The next operation's two guard
+// hashes are copied into this object as each advance finishes, so the
+// comparison that starts the next one reads them from here and never follows
+// a pointer to reach them.
+//
+// The slot table is a View of the column of addresses of the pool. A slot id
+// is a plain SlotId of a trace array, so no type proves it below the count
+// of the table. The read of the table compares the id with the count, and
+// that one compare also refuses the id with no slot, whose word is above
+// each count. Init checks each slot id of the region against the count once,
+// so an id of a region never misses the table.
 
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
@@ -18,6 +27,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Cursor.h>
 
 #include <cstdint>
 #include <type_traits>
@@ -61,62 +71,55 @@ struct ReplayEngine {
     ReplayEngine& operator=(ReplayEngine&&) = delete("non-owning pointers would alias with moved-from cursor");
 
     // An empty region is legitimate, but a non-empty one must have operations.
+    // Init runs at the activation of a region, and the check of the slot ids
+    // reads each slot id of the region once: O(ops + slot ids).
     void init(const RegionNode& region, PoolBorrow pool) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(pool->is_initialized());
-        // The engine slides a pointer over the ops, so it takes the address
-        // of the first op and the count of the View once, here.
-        ops_ = nullptr;
-        for (const TraceEntry& first : region.ops) {
-            ops_ = &first;
-            break;
-        }
-        end_ = ops_ + region.ops.size();
-        cursor_ = ops_;
+        // A region counts its ops in 32 bits, so each position below fits the
+        // word of an OpIndex.  num_ops() of the region checks that bound.
+        const uint32_t op_count = region.num_ops();
+        ops_ = region.ops;
+        cursor_ = ops_.begin();
         current_.reset();
         // The precondition above already established what minting this view
-        // checks, and the call it gates returns a pointer promised non-null,
-        // which is what the postcondition below rests on.
+        // checks.  An initialized pool holds at least one slot.
         const auto pool_view = pool->initialized_view_();
         slot_table_ = pool->table(pool_view);
+        check_slot_ids_(ops_, pool->num_slots());
         // Load the first operation's guard values, so the first advance finds
         // them here like every later one does.
-        if (ops_ != end_) [[likely]] {
-            expected_schema_ = ops_[0].schema_hash;
-            expected_shape_ = ops_[0].shape_hash;
-        } else {
-            expected_schema_ = SchemaHash{};
-            expected_shape_ = ShapeHash{};
-        }
+        expected_schema_ = SchemaHash{};
+        expected_shape_ = ShapeHash{};
+        load_first_guard_();
 
         // A contract predicate that reads a member through `this` is skipped
         // when the compiler folds the body at compile time, so every such
         // check in this file runs from the body rather than a clause. These
-        // three fold trivially true, which is exactly why they need that.
-        CRUCIBLE_POST(0, cursor_ == ops_);
-        CRUCIBLE_POST(0, slot_table_ != nullptr);
-        CRUCIBLE_POST(0, end_ == ops_ + region.ops.size());
+        // fold trivially true, which is exactly why they need that.
+        CRUCIBLE_POST(0, cursor_ == ops_.begin());
+        CRUCIBLE_POST(0, num_ops() == op_count);
+        CRUCIBLE_POST(0, slot_table_.size() == pool->num_slots());
     }
 
     // Rewinds to the first operation for the next iteration. The last matched
     // entry is deliberately kept, so the pointers into it stay valid after the
     // caller is told the region is complete and resets on its way out.
     CRUCIBLE_INLINE void reset() {
-        cursor_ = ops_;
-        if (ops_ != end_) [[likely]] {
-            expected_schema_ = ops_[0].schema_hash;
-            expected_shape_ = ops_[0].shape_hash;
-        }
+        cursor_ = ops_.begin();
+        load_first_guard_();
 
         // Failing to rewind leaves the next iteration resuming from the middle
         // of the region, which is a silent break in determinism. The last
         // matched entry is deliberately absent from this: it survives.
-        CRUCIBLE_POST(0, cursor_ == ops_);
+        CRUCIBLE_POST(0, cursor_ == ops_.begin());
     }
 
     // The completion of the last operation is reported by this call itself.
-    // The caller resets before advancing again.
+    // The caller resets before advancing again: the read of the cursor ends
+    // the process at the end of the region, in each build, before the guard
+    // compares a hash.
     [[nodiscard]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash) {
-        CRUCIBLE_PRE(cursor_ < end_);
+        const TraceEntry& entry = *cursor_;
 
         if (schema_hash != expected_schema_) [[unlikely]]
             return ReplayStatus::DIVERGED;
@@ -124,24 +127,29 @@ struct ReplayEngine {
         if (shape_hash != expected_shape_) [[unlikely]]
             return ReplayStatus::DIVERGED;
 
-        current_ = ::fixy::WeakRef<const TraceEntry>{*cursor_};
+        current_ = ::fixy::WeakRef<const TraceEntry>{entry};
 
         // The pointers of the slot ids and their counts end on the line after
         // the hashes of this entry, and the caller asks for them almost
         // immediately. Byte 64 of the entry is on that line.
-        ::fixy::prefetch_byte<::fixy::PrefetchAccess::read, 3, 64>(*cursor_);
+        ::fixy::prefetch_byte<::fixy::PrefetchAccess::read, 3, 64>(entry);
 
+        // The read above proved the cursor before its end, so the check of
+        // the step folds into it.
         ++cursor_;
 
-        if (cursor_ == end_) [[unlikely]]
+        if (cursor_.is_at_end()) [[unlikely]]
             return ReplayStatus::COMPLETE;
 
         // The next operation's guard values, loaded here so the comparison
         // that opens the next call reads them from this object. The load can
         // miss, but it sits after the comparisons and overlaps whatever the
-        // caller does with the pointers it is about to ask for.
-        expected_schema_ = cursor_->schema_hash;
-        expected_shape_ = cursor_->shape_hash;
+        // caller does with the pointers it is about to ask for.  The test
+        // above proved the cursor before its end, so the check of the read
+        // folds into it.
+        const TraceEntry& next = *cursor_;
+        expected_schema_ = next.schema_hash;
+        expected_shape_ = next.shape_hash;
         return ReplayStatus::MATCH;
     }
 
@@ -159,12 +167,7 @@ struct ReplayEngine {
         CRUCIBLE_PRE(j < slot_ids.size());
         SlotId const sid =
             slot_ids.window<1>(j).expect("the precondition bounds the output index").at(::fixy::index<0>());
-        ::fixy::Option<::fixy::RunAddress> const result =
-            sid.is_valid() ? slot_table_[sid.raw()] : ::fixy::Option<::fixy::RunAddress>{::fixy::none};
-        // Dropping the validity test would index the table with the sentinel
-        // and return either a stale slot or a read past the end of the table.
-        CRUCIBLE_POST(result, result.is_none() || sid.is_valid());
-        return result;
+        return address_of_slot_(sid);
     }
 
     // The same for one of the inputs.
@@ -175,10 +178,7 @@ struct ReplayEngine {
         CRUCIBLE_PRE(j < slot_ids.size());
         SlotId const sid =
             slot_ids.window<1>(j).expect("the precondition bounds the input index").at(::fixy::index<0>());
-        ::fixy::Option<::fixy::RunAddress> const result =
-            sid.is_valid() ? slot_table_[sid.raw()] : ::fixy::Option<::fixy::RunAddress>{::fixy::none};
-        CRUCIBLE_POST(result, result.is_none() || sid.is_valid());
-        return result;
+        return address_of_slot_(sid);
     }
 
     // The entry is in the region, and the engine only points at it.
@@ -195,28 +195,37 @@ struct ReplayEngine {
         return matched.get();
     }
 
+    // The position of the last matched op in the region.  The reset at the
+    // end of an iteration keeps the matched op, so after a COMPLETE this is
+    // the last op of the region, also when the cursor is back at the first.
     [[nodiscard]] ::fixy::Tagged<OpIndex, op_role::Matched> matched_op_index() const {
-        // Armed in every build.  An empty current_ would make the subtraction
-        // produce a garbage index rather than fault, and the index then
-        // reaches a caller that indexes with it.  The local is for the same
-        // folding reason as in current_entry.
+        // Armed in every build.  An empty current_ has no position, and the
+        // index then reaches a caller that indexes with it.  The local is for
+        // the same folding reason as in current_entry.
         const ::fixy::WeakRef<const TraceEntry> matched = current_;
         CRUCIBLE_PRE(matched.has_value());
-        return ::fixy::mint_tagged<op_role::Matched>(OpIndex{static_cast<uint32_t>(&matched.get() - ops_)});
+        // The engine takes the matched op only from its cursor over ops_, so
+        // the region holds it.  Init bounds the count of ops by 32 bits.
+        const auto position = ops_.index_of(matched.get()).expect("the matched op is an op of the region");
+        return ::fixy::mint_tagged<op_role::Matched>(OpIndex{static_cast<uint32_t>(position)});
     }
 
     // Distinct in type from the matched index, so a caller that could just as
     // well have been handed the matched index cannot be given this one.
     [[nodiscard]] ::fixy::Tagged<OpIndex, op_role::Diverged> diverged_op_index_tagged() const {
-        return ::fixy::mint_tagged<op_role::Diverged>(OpIndex{static_cast<uint32_t>(cursor_ - ops_)});
+        return ::fixy::mint_tagged<op_role::Diverged>(OpIndex{ops_matched()});
     }
 
-    [[nodiscard]] uint32_t ops_matched() const { return static_cast<uint32_t>(cursor_ - ops_); }
+    // The cursor and ops_ end at one place, the end of the region, so the
+    // count of ops minus the ops after the cursor is the position of the
+    // cursor.  Init bounds the count of ops by 32 bits.
+    [[nodiscard]] uint32_t ops_matched() const { return static_cast<uint32_t>(ops_.size() - cursor_.remaining()); }
 
-    [[nodiscard]] uint32_t num_ops() const { return static_cast<uint32_t>(end_ - ops_); }
+    [[nodiscard]] uint32_t num_ops() const { return static_cast<uint32_t>(ops_.size()); }
 
-    [[nodiscard]] bool is_complete() const { return cursor_ == end_; }
-    [[nodiscard]] constexpr bool is_initialized() const { return ops_ != nullptr; }
+    [[nodiscard]] bool is_complete() const { return cursor_.is_at_end(); }
+    // True after an init with a region of at least one op.
+    [[nodiscard]] constexpr bool is_initialized() const { return ops_.size() > 0; }
 
     using ActiveView = ::fixy::ScopedView<ReplayEngine, engine_state::Active>;
 
@@ -241,7 +250,6 @@ struct ReplayEngine {
     // preconditions live in the body they delegate to, so repeating them here
     // would only duplicate a check.
     [[nodiscard]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash, ActiveView const&) {
-        CRUCIBLE_PRE(cursor_ < end_);
         return advance(schema_hash, shape_hash);
     }
 
@@ -268,17 +276,71 @@ private:
         return ::fixy::mint_view<engine_state::Active>(*this);
     }
 
-    // Ordered so that an advance reads and writes them front to back, and
-    // padded so the whole object is one cache line. The assertion below pins
-    // that. A ninth field would cost a second line on every operation.
+    // The guard values of the op at the cursor, or no change at the end of
+    // the region.  The test proves the cursor before its end, so the check
+    // of the read folds into it.
+    CRUCIBLE_INLINE void load_first_guard_() {
+        if (cursor_.is_at_end()) [[unlikely]]
+            return;
+        const TraceEntry& first = *cursor_;
+        expected_schema_ = first.schema_hash;
+        expected_shape_ = first.shape_hash;
+    }
+
+    // The address of the slot sid, or no address for the id with no slot and
+    // for an external slot that its owner did not register.  The word of the
+    // id with no slot is the largest word, and the count of the table is at
+    // most kMaxNumSlots, so the one compare of the window refuses that id
+    // too.  The window of one entry is the read of the table that needs no
+    // second test: its View is never the empty value of its Option.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<::fixy::RunAddress> address_of_slot_(SlotId sid) const noexcept {
+        const SlotTable table = slot_table_;
+        const auto entry = table.window<1>(sid.raw());
+        return entry.match(
+            [](::fixy::View<const ::fixy::Option<::fixy::RunAddress>, 1> found) noexcept {
+                return found.at(::fixy::index<0>());
+            },
+            [] noexcept { return ::fixy::Option<::fixy::RunAddress>{::fixy::none}; });
+    }
+
+    // Each slot id of each op of ops is the id with no slot or an id below
+    // slot_count.  A region and its plan come from one build, so an id at or
+    // past the count is a defect of the build, and it ends the process in
+    // each build.  O(ops + slot ids), once for each init.
+    CRUCIBLE_COLD static void check_slot_ids_(::fixy::View<const TraceEntry> ops, uint32_t slot_count) noexcept {
+        uint32_t op_position = 0;
+        for (const TraceEntry& op : ops) {
+            for (const SlotId sid : op.output_slot_ids()) {
+                if (sid.is_valid() && sid.raw() >= slot_count) [[unlikely]]
+                    ::fixy::fatal("ReplayEngine: op {} has the output slot id {}, and the plan has {} slots",
+                                  op_position, sid.raw(), slot_count);
+            }
+            for (const SlotId sid : op.input_slot_ids()) {
+                if (sid.is_valid() && sid.raw() >= slot_count) [[unlikely]]
+                    ::fixy::fatal("ReplayEngine: op {} has the input slot id {}, and the plan has {} slots",
+                                  op_position, sid.raw(), slot_count);
+            }
+            ++op_position;
+        }
+    }
+
+    using SlotTable = ::fixy::View<const ::fixy::Option<::fixy::RunAddress>>;
+
+    // Ordered so that an advance reads and writes them front to back.  The
+    // members that each operation reads take bytes 0 to 56: the guard
+    // values, the cursor, the matched op and the slot table.  The context
+    // puts the engine at the start of a cache line, so they share one line.
+    // The View of the ops, which only the rewind and the position queries
+    // read, comes last and ends on the next line, beside the mode of the
+    // context that each dispatch reads too.  The check file of this header
+    // pins the size.
     SchemaHash expected_schema_{};
     ShapeHash expected_shape_{};
-    const TraceEntry* cursor_ = nullptr;  // where the next operation is read
-    const TraceEntry* end_ = nullptr;  // one past the last operation
+    // Where the next operation is read, and the end of the region.
+    ::foundation::core::ViewCursor<const TraceEntry> cursor_ = ::fixy::View<const TraceEntry>{}.begin();
     ::fixy::WeakRef<const TraceEntry> current_{};  // the last operation that matched
-    ::fixy::Option<::fixy::RunAddress> const* slot_table_ = nullptr;
-    const TraceEntry* ops_ = nullptr;  // the base, for rewinding
-    uint64_t pad_replay_ = 0;
+    SlotTable slot_table_{};
+    ::fixy::View<const TraceEntry> ops_{};  // the region, for rewinding and for the positions
 };
 
 }  // namespace crucible

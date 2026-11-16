@@ -4,7 +4,9 @@
 
 namespace crucible {
 
-static_assert(sizeof(ReplayEngine) == 64, "ReplayEngine: 8 × 8B = 64 bytes (one cache line)");
+// The guard values, the cursor, the matched op and the slot table take the
+// first 56 bytes, and the View of the ops takes the last 16.
+static_assert(sizeof(ReplayEngine) == 72, "ReplayEngine: 16 guard + 16 cursor + 8 matched + 16 table + 16 ops = 72");
 
 // A view must not outlive the frame that minted it, so storing one in a field
 // would let it escape.

@@ -361,16 +361,17 @@ private:
     }
 
     // The engine sits at offset zero, so its own hot cache line is this
-    // object's hot cache line. The mode and the counters share the next one,
-    // and the pool follows. The size assertion below pins the whole layout.
-    ReplayEngine engine_;  // 64 bytes, offset 0
-    ContextMode mode_ = ContextMode::RECORD;  // offset 64
+    // object's hot cache line. The View of the ops of the engine, the mode
+    // and the counters share the next one, and the pool follows. The check
+    // file of this header pins the size.
+    ReplayEngine engine_;  // 72 bytes, offset 0
+    ContextMode mode_ = ContextMode::RECORD;  // offset 72
     [[maybe_unused]] ::fixy::FixedArray<uint8_t, 3> pad_{};
     // Both counters only ever go up: one counts completed iterations, the
     // other divergences, and neither is reset. The type enforces that, and
     // catches the one way it could be broken, which is overflow.
-    ::fixy::Monotonic<uint32_t> compiled_iterations_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 68
-    ::fixy::Monotonic<uint32_t> diverged_count_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 72
+    ::fixy::Monotonic<uint32_t> compiled_iterations_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 76
+    ::fixy::Monotonic<uint32_t> diverged_count_ = ::fixy::mint_monotonic<uint32_t>(0u);  // offset 80
     [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad2_{};
     // The tag records that this pointer was published by the owning
     // foreground's background worker. A region allocated somewhere else has a
@@ -383,8 +384,8 @@ private:
                   "a tagged region pointer must be the size of the pointer it wraps");
     static_assert(alignof(ActiveRegionPtr) == alignof(const RegionNode*),
                   "a tagged region pointer must be aligned as the pointer it wraps");
-    ActiveRegionPtr active_region_{};  // offset 80
-    PoolAllocator pool_;  // 64 bytes, offset 88
+    ActiveRegionPtr active_region_{};  // offset 88
+    PoolAllocator pool_;  // 64 bytes, offset 96
     // The allocation capability that the constructor received.  The pool of
     // each activated region allocates only through it.  The tag is empty, so
     // it adds no storage.  It has no initializer, because the one

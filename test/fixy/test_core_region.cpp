@@ -439,6 +439,68 @@ void test_cursor_at_the_end_aborts() {
     CRUCIBLE_FATAL_INVARIANT(end_read_aborts && past_end_step_aborts && empty_read_aborts);
 }
 
+// A cursor tells if it is at its end and how many elements follow it, with
+// no end cursor of the run.  The count of the run minus the remaining count
+// is the position of the cursor.  A FixedArray owns the run, so the test
+// needs no mapping.
+void test_cursor_position() {
+    fixy::FixedArray<std::uint64_t, 16> storage{};
+    fixy::View<std::uint64_t> const words = storage.view();
+    fixy::View<std::uint64_t> run = words.window(3, 5).expect("five words fit");
+    auto cursor = run.begin();
+    std::size_t position = 0;
+    while (!cursor.is_at_end()) {
+        CRUCIBLE_FATAL_INVARIANT(cursor.remaining() == run.size() - position);
+        CRUCIBLE_FATAL_INVARIANT(run.index_of(*cursor) == fixy::some(position));
+        ++cursor;
+        ++position;
+    }
+    CRUCIBLE_FATAL_INVARIANT(position == 5 && cursor.remaining() == 0 && cursor == run.end());
+    CRUCIBLE_FATAL_INVARIANT(run.end().is_at_end() && run.end().remaining() == 0);
+    fixy::View<std::uint64_t> const empty{};
+    CRUCIBLE_FATAL_INVARIANT(empty.begin().is_at_end() && empty.begin().remaining() == 0);
+}
+
+// The position of an element of a View is the inverse of get.  An element
+// before the first one, after the last one or in a different run is not an
+// element of the View.  Two FixedArrays own the two runs.
+void test_index_of() {
+    fixy::FixedArray<Record, 100> first_storage{};
+    fixy::FixedArray<Record, 20> second_storage{};
+    fixy::View<Record> const records = first_storage.view();
+    fixy::View<Record> middle = records.window(10, 20).expect("twenty records fit");
+    for (std::size_t position = 0; position < middle.size(); ++position) {
+        Record const& element = *middle.get(position).expect("the position is below the count");
+        CRUCIBLE_FATAL_INVARIANT(middle.index_of(element) == fixy::some(position));
+        CRUCIBLE_FATAL_INVARIANT(records.index_of(element) == fixy::some(position + 10));
+    }
+    Record const& before = *records.get(9).expect("record 9 fits");
+    Record const& after = *records.get(30).expect("record 30 fits");
+    CRUCIBLE_FATAL_INVARIANT(middle.index_of(before).is_none());
+    CRUCIBLE_FATAL_INVARIANT(middle.index_of(after).is_none());
+    fixy::View<Record> const other = second_storage.view();
+    CRUCIBLE_FATAL_INVARIANT(middle.index_of(*other.begin()).is_none());
+    fixy::View<Record> const empty{};
+    CRUCIBLE_FATAL_INVARIANT(empty.index_of(*middle.begin()).is_none());
+}
+
+// A constant evaluation reads no address as a word, so index_of compares the
+// element with each element of the View there, and it gives the same answer.
+consteval bool index_of_agrees_in_constant_evaluation() {
+    fixy::FixedArray<std::uint32_t, 6> numbers{};
+    fixy::View<std::uint32_t const> const view = numbers.view();
+    fixy::View<std::uint32_t const> const tail = view.window(2, 4).expect("four numbers fit");
+    bool is_each_position_found = true;
+    std::size_t position = 0;
+    for (std::uint32_t const& number : view) {
+        is_each_position_found = is_each_position_found && view.index_of(number) == fixy::some(position);
+        ++position;
+    }
+    return is_each_position_found && tail.index_of(*view.begin()).is_none()
+        && tail.index_of(*tail.begin()) == fixy::some(std::size_t{0});
+}
+static_assert(index_of_agrees_in_constant_evaluation());
+
 // The property: for random windows of two pages, a window is present
 // exactly when it fits, it starts at its offset, and copy then gives
 // equal runs.  A plain loop over the positions is the model.
@@ -484,6 +546,8 @@ int main() {
     test_fill_of_an_empty_view();
     test_copy_of_unequal_counts_is_an_error();
     test_cursor_at_the_end_aborts();
+    test_cursor_position();
+    test_index_of();
     test_agrees_with_plain_model();
     return 0;
 }

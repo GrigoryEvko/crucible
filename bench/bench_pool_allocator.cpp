@@ -219,11 +219,11 @@ int main() {
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
-        ::fixy::Option<::fixy::RunAddress> const* tbl = pool.table(pv);
-        bench::do_not_optimize(tbl);
-        auto r = bench::run("table[sid] (100, captured raw)", [&] {
-            for (uint32_t i = 0; i < N; i++)
-                bench::do_not_optimize(tbl[i]);
+        const ::fixy::View<const ::fixy::Option<::fixy::RunAddress>> table = pool.table(pv);
+        bench::do_not_optimize(table);
+        auto r = bench::run("table (100, a View)", [&] {
+            for (const ::fixy::Option<::fixy::RunAddress>& address : table)
+                bench::do_not_optimize(address);
         });
         pool.destroy();
         return r;

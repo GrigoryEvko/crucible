@@ -26,7 +26,7 @@
 [[maybe_unused]] static auto anchor_active_view_mint() {
     crucible::ReplayEngine engine;
     // mint_active_view's pre `is_initialized()` would fire on the
-    // default-constructed (ops_ == nullptr) engine at runtime — but
+    // default-constructed engine, which has no ops, at runtime — but
     // this fixture is a compile-time test and runtime is never
     // reached.  The function-body-execution would also be suppressed
     // by the file's static_assert failure below.  The anchor exists

@@ -1,6 +1,8 @@
 #include <crucible/ReplayEngine.h>
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include "entry_arrays.h"
 #include "test_assert.h"
 #include "tensor_data.h"
@@ -342,6 +344,92 @@ static void test_current_entry() {
     crucible::test::pass("  test_current_entry: PASSED\n");
 }
 
+// The reset at the end of an iteration keeps the matched op, so the matched
+// index stays on the last op while the position goes back to the first.
+static void test_matched_index_after_reset() {
+    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
+    ::foundation::core::FixedArray<TraceEntry, 3> ops{};
+    for (uint32_t i = 0; i < 3; i++) {
+        TraceEntry& op = *ops.get(i).expect("i is below the count of ops");
+        op.schema_hash = SchemaHash{500 + i};
+        op.shape_hash = ShapeHash{600 + i};
+        set_output_slots(op, out_slot.view());
+    }
+    RegionNode region{};
+    init_region(&region, ops.view());
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
+    PoolAllocator pool;
+    pool.init(::foundation::effects::testing::test().alloc, plan);
+    ReplayEngine engine;
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    auto av = engine.mint_active_view(kVigilForeground);
+    for (uint32_t i = 0; i < 3; i++) {
+        static_cast<void>(engine.advance(SchemaHash{500 + i}, ShapeHash{600 + i}, av));
+    }
+    CRUCIBLE_FATAL_INVARIANT(engine.is_complete() && engine.ops_matched() == 3);
+    engine.reset(av);
+    CRUCIBLE_FATAL_INVARIANT(!engine.is_complete() && engine.ops_matched() == 0);
+    CRUCIBLE_FATAL_INVARIANT(engine.matched_op_index().value() == OpIndex{2});
+    CRUCIBLE_FATAL_INVARIANT(engine.current_entry().schema_hash == SchemaHash{502});
+    CRUCIBLE_FATAL_INVARIANT(engine.diverged_op_index_tagged().value() == OpIndex{0});
+
+    crucible::test::pass("  test_matched_index_after_reset: PASSED\n");
+}
+
+// The cursor never leaves the region: an advance after the last op, with no
+// reset, ends the process in each build before the guard compares a hash.
+static void test_advance_past_the_end_aborts(::fixy::TestRunnerCtx const& test) {
+    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
+    ::foundation::core::FixedArray<TraceEntry, 1> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{70};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{71};
+    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot.view());
+    RegionNode region{};
+    init_region(&region, ops.view());
+    ::foundation::core::FixedArray<TensorSlot, 1> slots{};
+    auto plan = make_simple_plan(slots.view());
+    PoolAllocator pool;
+    pool.init(::foundation::effects::testing::test().alloc, plan);
+    ReplayEngine engine;
+    engine.init(region, ReplayEngine::PoolBorrow{pool});
+    auto av = engine.mint_active_view(kVigilForeground);
+    CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{70}, ShapeHash{71}, av) == ReplayStatus::COMPLETE);
+    // A hash that differs from each op: the read of the cursor ends the
+    // process before a divergence can hide the step past the end.
+    ::fixy::check::expect_dies(
+        test, [&engine, &av] noexcept { static_cast<void>(engine.advance(SchemaHash{999}, ShapeHash{999}, av)); },
+        ::fixy::TextView{"a read through the end cursor of a View"});
+
+    crucible::test::pass("  test_advance_past_the_end_aborts: PASSED\n");
+}
+
+// A slot id of the region past the count of the plan is a defect of the
+// build.  The init refuses it, so no replay reads past the slot table.
+static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const& test) {
+    ::foundation::core::FixedArray<SlotId, 1> out_slot{SlotId{0}};
+    ::foundation::core::FixedArray<SlotId, 1> in_slot{SlotId{5}};
+    ::foundation::core::FixedArray<TraceEntry, 2> ops{};
+    ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{80};
+    ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{81};
+    set_output_slots(ops.at(::foundation::core::index<0>()), out_slot.view());
+    ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{82};
+    ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{83};
+    set_input_slots(ops.at(::foundation::core::index<1>()), in_slot.view());
+    RegionNode region{};
+    init_region(&region, ops.view());
+    ::foundation::core::FixedArray<TensorSlot, 2> slots{};
+    auto plan = make_simple_plan(slots.view());
+    PoolAllocator pool;
+    pool.init(::foundation::effects::testing::test().alloc, plan);
+    ReplayEngine engine;
+    ::fixy::check::expect_dies(
+        test, [&engine, &region, &pool] noexcept { engine.init(region, ReplayEngine::PoolBorrow{pool}); },
+        ::fixy::TextView{"op 1 has the input slot id 5"});
+
+    crucible::test::pass("  test_slot_id_past_the_table_aborts_init: PASSED\n");
+}
+
 // The plan here comes from the real sweep-line planner rather than the
 // fixed-stride helper above, so the offsets are whatever the planner
 // chooses and the assertions never name one.
@@ -452,6 +540,7 @@ static void test_integration_with_pool() {
 }
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::report(::fixy::Sink::Out, "test_replay_engine:\n");
     static_assert(std::is_same_v<ReplayEngine::PoolBorrow, ::fixy::BorrowedRef<const PoolAllocator>>);
     static_assert(sizeof(ReplayEngine::PoolBorrow) == sizeof(const PoolAllocator*));
@@ -462,6 +551,9 @@ int main() {
     test_input_ptr();
     test_invalid_slot();
     test_current_entry();
+    test_matched_index_after_reset();
+    test_advance_past_the_end_aborts(test);
+    test_slot_id_past_the_table_aborts_init(test);
     test_integration_with_pool();
     crucible::test::pass("test_replay_engine: all tests passed\n");
     return 0;

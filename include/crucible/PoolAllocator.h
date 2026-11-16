@@ -241,20 +241,17 @@ struct CRUCIBLE_OWNER PoolAllocator {
         CRUCIBLE_POST(0, *address == ::fixy::some(data.address()));
     }
 
-    // The first entry of the column of addresses, for an inner loop that
-    // wants to hoist the indirection out of itself. It escapes the per-call
-    // bounds check, so the caller owns the bound on every read from then on.
-    // The view is required so that the escape is at least gated on the pool
-    // being live.
-    [[nodiscard, gnu::pure, gnu::returns_nonnull]] CRUCIBLE_INLINE ::fixy::Option<::fixy::RunAddress> const*
+    // The column of addresses, for an inner loop that wants to hoist the
+    // indirection out of itself.  The View holds the count of slots, so each
+    // read of it checks its bound.  The view of the pool is required so that
+    // the table comes only from a live pool.  The table is read once for each
+    // activation of a region, not for each op.
+    [[nodiscard, gnu::pure]] CRUCIBLE_INLINE ::fixy::View<const ::fixy::Option<::fixy::RunAddress>>
     table(InitializedView const&) const& noexcept {
-        // The view proves at least one slot, so the read of the first entry
-        // does not fail.  The table is read once for each activation of a
-        // region, not for each op.
-        return &*addresses_.get(0).expect("an initialized pool holds at least one slot");
+        return addresses_.view();
     }
 
-    ::fixy::Option<::fixy::RunAddress> const* table(InitializedView const&) const&& =
+    ::fixy::View<const ::fixy::Option<::fixy::RunAddress>> table(InitializedView const&) const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
     // The bytes of the pool, and the address of its first byte (no address

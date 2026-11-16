@@ -19,6 +19,8 @@
 //   window(o, c)      the c elements from o, or no value when they do not
 //                     fit: the one explicit branch of the family
 //   window<N>(o)      the same, as a View of the fixed extent N
+//   index_of(e)       the position of the element e of the View, or no
+//                     value when the View does not hold e
 //   copy(dst, src)    the elements of src into dst.  Two Views of one
 //                     fixed extent cannot fail.  Two Views of a dynamic
 //                     extent give a Result, with LengthMismatch when their
@@ -338,6 +340,36 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto get(std::size_t position) const noexcept {
         return detail::element_at_<Fresh>(first_, size(), position);
+    }
+
+    // The position of element in this View, or no value when this View does
+    // not hold element: the inverse of get.  At run time it is one compare.
+    // The distance of the address of element from the first element, as an
+    // unsigned word, is below the bytes of the View only for an element of
+    // the View, and an element below the first one wraps to a large word.
+    // An element of the run starts a whole count of elements after the first
+    // one, so the difference of the two addresses is the position.  O(1) at
+    // run time.  A constant
+    // evaluation cannot read an address as a word, so it compares element
+    // with each element of the View: O(size()).
+    [[nodiscard]] constexpr Option<std::size_t> index_of(T const& element) const noexcept {
+        T const* const address = __builtin_addressof(element);
+        if consteval {
+            for (std::size_t position = 0; position < size(); ++position) {
+                if (first_ + position == address) return Option<std::size_t>::some(position);
+            }
+            return Option<std::size_t>{none};
+        } else {
+            std::size_t const offset =
+                __builtin_bit_cast(std::uintptr_t, address) - __builtin_bit_cast(std::uintptr_t, first_);
+            if (offset >= size() * sizeof(T)) [[unlikely]] {
+                return Option<std::size_t>{none};
+            }
+            // The two addresses are in one run now, so their difference is
+            // the exact division of the optimizer.
+            T const* const first = first_;
+            return Option<std::size_t>::some(static_cast<std::size_t>(address - first));
+        }
     }
 
     // The loop `for (auto [index, element] : view.enumerate())` reads each

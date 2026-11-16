@@ -7,7 +7,9 @@
 // process in each build, so a cursor never leaves its run.  A loop compares
 // the cursor with the end before each read and each step, and the optimizer
 // removes the two checks there, so the count of the run is the only bound of
-// the loop.
+// the loop.  A holder that keeps a cursor between two calls, such as the
+// replay of a region, asks the cursor itself: is_at_end() and remaining()
+// read its end, and they need no end cursor of the run.
 //
 // The constructor of a cursor takes the key detail::ViewCursorKey, and only
 // detail::ViewCursorDoor builds the key.  The key is no template, so no
@@ -19,6 +21,8 @@
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Fatal.h>
+
+#include <cstddef>
 
 namespace foundation::core {
 
@@ -67,6 +71,16 @@ public:
         ++at_;
         return *this;
     }
+
+    // True when the cursor is at the end of its run, where no element is.
+    // The test reads the end of the cursor, so a holder of a cursor needs no
+    // end cursor of the run.
+    [[nodiscard]] constexpr bool is_at_end() const noexcept { return at_ == end_; }
+
+    // The count of the elements from the cursor to the end of its run.  A
+    // cursor never leaves its run, so the count is never negative.  The count
+    // of the run minus this count is the position of the cursor in the run.
+    [[nodiscard]] constexpr std::size_t remaining() const noexcept { return static_cast<std::size_t>(end_ - at_); }
 
     [[nodiscard]] friend constexpr bool operator==(ViewCursor const& left, ViewCursor const& right) noexcept {
         return left.at_ == right.at_;
