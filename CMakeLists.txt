@@ -369,6 +369,7 @@ add_library(crucible STATIC
   src/cntp/Pacing.cpp
   src/cntp/_wip/Sharp.cpp
   src/forge/recipes/Network.cpp
+  src/mimic/cpu/Kernels.cpp
   src/observe/HdrHistogram.cpp
   src/observe/SdcDetect.cpp
   src/observe/SyntheticProbe.cpp

@@ -240,6 +240,19 @@ crucible_test(test_merkle_dag)
 crucible_test(test_merkle_links)
 crucible_test(test_merkle_loop)
 crucible_test(test_memory_plan)
+# The kernels of the CPU reference backend against the oracles of
+# test/exact_sum.h and test/product_rig.h.  On x86_64 two more units of the
+# levels x86-64-v3 and x86-64-v4 compute the digests of the kernels with
+# their own bodies.  The unit of the test comes first on the link line, so the
+# link keeps its copy of each shared body.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  crucible_test(test_mimic_cpu_kernels test_mimic_cpu_kernels.cpp mimic_cpu_kernel_unit_v3.cpp
+                mimic_cpu_kernel_unit_v4.cpp)
+  set_source_files_properties(mimic_cpu_kernel_unit_v3.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v3)
+  set_source_files_properties(mimic_cpu_kernel_unit_v4.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v4)
+else()
+  crucible_test(test_mimic_cpu_kernels)
+endif()
 # The DetSafe gate CLAUDE.md §XIII names first.  Labelled so it can be run
 # on its own against a build whose codegen changed — a profile-guided build
 # is the case that motivated it — and so that the reason a red line matters
