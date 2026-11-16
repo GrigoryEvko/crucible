@@ -46,7 +46,7 @@ static void test_single_append_returns_index_zero() {
     assert(idx.raw() == 0);
     assert(log.size().peek() == 1);
     const TensorMeta got = log.copy_record(0);
-    assert(raw_data_ptr(got) == raw_data_ptr(m));
+    assert(got.data_ptr.value() == m.data_ptr.value());
     assert(::crucible::raw_tensor_dim(got.sizes[0]) == 128);
     assert(::crucible::raw_tensor_dim(got.sizes[1]) == 256);
     crucible::test::pass("  test_single_append:             PASSED\n");
@@ -71,8 +71,8 @@ static void test_batch_append_and_monotonic() {
     ::fixy::FixedArray<TensorMeta, 8> copied{};
     log.copy_run(0, copied.view());
     for (size_t i = 0; i < 8; ++i) {
-        assert(raw_data_ptr(crucible::test::element_at(copied, i))
-               == raw_data_ptr(crucible::test::element_at(batch, i)));
+        assert(crucible::test::element_at(copied, i).data_ptr.value()
+               == crucible::test::element_at(batch, i).data_ptr.value());
     }
     crucible::test::pass("  test_batch_monotonic:           PASSED\n");
 }
@@ -136,15 +136,15 @@ static void test_copy_run_across_the_end() {
     ::fixy::FixedArray<TensorMeta, 5> copied{};
     log.copy_run(near_end, copied.view());
     for (uint32_t i = 0; i < 5; ++i) {
-        assert(raw_data_ptr(crucible::test::element_at(copied, i))
-               == raw_data_ptr(crucible::test::element_at(tail5, i)));
+        assert(crucible::test::element_at(copied, i).data_ptr.value()
+               == crucible::test::element_at(tail5, i).data_ptr.value());
     }
 
     // A run that does not pass the end is one copy.
     ::fixy::FixedArray<TensorMeta, 2> head2{};
     log.copy_run(near_end + 3, head2.view());
-    assert(raw_data_ptr(head2.at(::fixy::index<0>())) == raw_data_ptr(tail5.at(::fixy::index<3>())));
-    assert(raw_data_ptr(head2.at(::fixy::index<1>())) == raw_data_ptr(tail5.at(::fixy::index<4>())));
+    assert(head2.at(::fixy::index<0>()).data_ptr.value() == tail5.at(::fixy::index<3>()).data_ptr.value());
+    assert(head2.at(::fixy::index<1>()).data_ptr.value() == tail5.at(::fixy::index<4>()).data_ptr.value());
     crucible::test::pass("  test_copy_run_across_the_end:   PASSED\n");
 }
 
@@ -179,12 +179,13 @@ static void test_counters_pass_two_to_the_32() {
     ::fixy::FixedArray<TensorMeta, 32> copied{};
     log.copy_run(first.raw(), copied.view());
     for (uint32_t i = 0; i < 32; ++i) {
-        assert(raw_data_ptr(crucible::test::element_at(copied, i)) == raw_data_ptr(crucible::test::element_at(run, i)));
+        assert(crucible::test::element_at(copied, i).data_ptr.value()
+               == crucible::test::element_at(run, i).data_ptr.value());
     }
     const TensorMeta read_below = log.copy_record(last_below.raw());
     const TensorMeta read_across = log.copy_record(across.raw());
-    assert(raw_data_ptr(read_below) == raw_data_ptr(run.at(::fixy::index<15>())));
-    assert(raw_data_ptr(read_across) == raw_data_ptr(run.at(::fixy::index<16>())));
+    assert(read_below.data_ptr.value() == run.at(::fixy::index<15>()).data_ptr.value());
+    assert(read_across.data_ptr.value() == run.at(::fixy::index<16>()).data_ptr.value());
 
     log.advance_tail(across.raw() + 16);
     assert(log.size().peek() == 0);
@@ -253,7 +254,7 @@ static void test_spsc_concurrent_integrity() {
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta m = log.copy_record(next + k);
                 const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
-                assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
+                assert(std::bit_cast<uintptr_t>(m.data_ptr.value()) == expected);
                 // The remaining fields are identical in every record,
                 // so they carry no sequence information.  They are
                 // checked anyway: a torn read shows up here.
@@ -291,7 +292,7 @@ static void test_try_append_pure() {
         assert(idx.raw() == 0);
         assert(log.size().peek() == 1);
         const TensorMeta got = log.copy_record(idx.raw());
-        assert(raw_data_ptr(got) == raw_data_ptr(m));
+        assert(got.data_ptr.value() == m.data_ptr.value());
     }
 
     {
@@ -380,7 +381,7 @@ static void test_try_append_pure_concurrent() {
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta m = log.copy_record(next + k);
                 const uintptr_t expected = static_cast<uintptr_t>(next + k + 1) << 16;
-                assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
+                assert(std::bit_cast<uintptr_t>(m.data_ptr.value()) == expected);
                 assert(::crucible::raw_tensor_dim(m.sizes[0]) == 128);
                 assert(::crucible::raw_tensor_dim(m.sizes[1]) == 256);
                 assert(m.dtype == ScalarType::Float);

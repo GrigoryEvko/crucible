@@ -1226,13 +1226,13 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
                         const TensorMeta& next_input =
                             *meta_run.get(next_off).expect("the copied run holds the metadata of each op");
                         ::fixy::prefetch<::fixy::PrefetchAccess::read, 1>(
-                            scratch_map_.at_masked(hash_ptr(raw_data_ptr(next_input))));
+                            scratch_map_.at_masked(hash_ptr(next_input.data_ptr.value())));
                     }
                     if (next_re.num_outputs > 0) {
                         const TensorMeta& next_output = *meta_run.get(next_off + next_re.num_inputs)
                                                              .expect("the copied run holds the metadata of each op");
                         ::fixy::prefetch<::fixy::PrefetchAccess::write, 1>(
-                            scratch_map_.at_masked(hash_ptr(raw_data_ptr(next_output))));
+                            scratch_map_.at_masked(hash_ptr(next_output.data_ptr.value())));
                     }
                 },
                 [] noexcept {});

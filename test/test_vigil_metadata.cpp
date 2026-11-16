@@ -121,7 +121,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
         std::memcpy(&recorded[op][1], &crucible::test::element_at(region->op_at(op).output_metas(), 0),
                     sizeof(crucible::TensorMeta));
     }
-    assert(crucible::raw_data_ptr(recorded[0][0]) == parameter_ptr());
+    assert(recorded[0][0].data_ptr.value() == parameter_ptr());
     ::fixy::HeapArray<std::byte> serialized_before =
         ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, size_t{1} << 16, std::byte{0});
     const size_t bytes_before =

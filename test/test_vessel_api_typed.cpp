@@ -308,8 +308,7 @@ void test_ffi_records_read_the_c_records() {
         EXPECT(crucible::raw_tensor_dim(read.sizes[0]) == 12, "a record holds the size that the caller wrote");
         EXPECT(read.dtype == crucible::ScalarType::Float, "a record holds the element type that the caller wrote");
         EXPECT(read.requires_grad, "a record holds the gradient flag that the caller wrote");
-        EXPECT(crucible::raw_data_ptr(read) == written.data_ptr,
-               "a record holds the data pointer that the caller wrote");
+        EXPECT(read.data_ptr.value() == written.data_ptr, "a record holds the data pointer that the caller wrote");
         EXPECT(read.storage_nbytes == 444, "a record holds the storage size that the caller wrote");
         EXPECT(crucible::raw_grad_fn_hash(read) == 0xABC2U, "a record holds the hash that the caller wrote");
     }

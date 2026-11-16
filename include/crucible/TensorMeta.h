@@ -184,15 +184,14 @@ struct TensorMeta {
     }
 };
 
+// The door of the front end.  The front end gives the data pointer of a
+// tensor as a C pointer, and the door tags it as external.  value() of the
+// tagged pointer gives the C pointer back.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the front end gave the data pointer of the tensor at the record of the op")
 [[nodiscard]] inline constexpr ExternalDataPtr external_data_ptr(void* ptr) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::External>(ptr);
 }
-
-[[nodiscard]] inline constexpr void* raw_data_ptr(ExternalDataPtr ptr) noexcept { return ptr.value(); }
-
-[[nodiscard]] inline constexpr void* raw_data_ptr(const TensorMeta& meta) noexcept {
-    return raw_data_ptr(meta.data_ptr);
-}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The index of a device of the type, as Crucible keeps it.  The host has one
 // device, and PyTorch names it with the index -1 or 0.  Each host index thus

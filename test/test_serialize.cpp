@@ -135,7 +135,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         for (uint16_t j = 0; j < source_op.num_inputs(); j++) {
             const crucible::TensorMeta& loaded_meta = crucible::test::element_at(loaded_op.input_metas(), j);
             const crucible::TensorMeta& source_meta = crucible::test::element_at(source_op.input_metas(), j);
-            assert(crucible::raw_data_ptr(loaded_meta) == nullptr && "data_ptr must be null after deserialization");
+            assert(loaded_meta.data_ptr.value() == nullptr && "data_ptr must be null after deserialization");
             assert(crucible::raw_grad_fn_hash(source_meta) != 0
                    && "test fixture must exercise non-zero Family-B input");
             assert(crucible::raw_grad_fn_hash(loaded_meta) == 0 && "grad_fn_hash must be zero after deserialization");
@@ -151,7 +151,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         for (uint16_t j = 0; j < source_op.num_outputs(); j++) {
             const crucible::TensorMeta& loaded_meta = crucible::test::element_at(loaded_op.output_metas(), j);
             const crucible::TensorMeta& source_meta = crucible::test::element_at(source_op.output_metas(), j);
-            assert(crucible::raw_data_ptr(loaded_meta) == nullptr);
+            assert(loaded_meta.data_ptr.value() == nullptr);
             assert(crucible::raw_grad_fn_hash(source_meta) != 0);
             assert(crucible::raw_grad_fn_hash(loaded_meta) == 0);
         }

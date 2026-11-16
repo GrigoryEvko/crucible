@@ -302,7 +302,7 @@ void test_built_graph_owns_its_metadata() {
         const crucible::TensorMeta* const metas = &first_meta;
         assert((before(metas, log_begin) || !before(metas, log_end))
                && "an op of the graph points into the buffer of the metadata log");
-        assert(crucible::raw_data_ptr(first_meta) == crucible::raw_data_ptr(output_meta(op)));
+        assert(first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
         assert(crucible::raw_tensor_dim(first_meta.sizes[0]) == 64);
     }
 
@@ -351,7 +351,7 @@ void test_build_and_release_pass_two_to_the_32() {
     for (uint32_t op = 0; op < OPS; ++op) {
         const crucible::TensorMeta& first_meta =
             crucible::test::element_at(graph->op(crucible::OpIndex{op}).output_metas(), 0);
-        assert(crucible::raw_data_ptr(first_meta) == crucible::raw_data_ptr(output_meta(op)));
+        assert(first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
     }
 
     bt.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
