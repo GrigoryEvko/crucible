@@ -21,12 +21,14 @@ static_assert(TensorDevice{DeviceType::CPU, 3} == kHostDevice && kHostDevice.typ
 static_assert(TensorDevice{DeviceType::CUDA, 0}.index() == 0 && TensorDevice{DeviceType::CUDA, -1}.index() == -1);
 static_assert(!(TensorDevice{DeviceType::CUDA, 0} == TensorDevice{DeviceType::CUDA, 1}));
 
-// No road skips the constructor.  The type is no aggregate, and the
-// fixtures neg_tensor_device_designated_host_zero and
-// neg_tensor_device_index_write show the refusals of an initializer list
-// and of a write of a member.  The annotation refuses decode, the bit copy
-// of the base and a lifetime start over bytes.  The type stays a device of a
-// DataAddress.
+// No door of the language and no door of the base skips the constructor.
+// The type is no aggregate, and the fixtures
+// neg_tensor_device_designated_host_zero and neg_tensor_device_index_write
+// show the refusals of an initializer list and of a write of a member.  The
+// annotation refuses decode, the bit copy of the base and a lifetime start
+// over bytes.  The type stays trivially copyable, because a DataAddress
+// asks for that, so std::bit_cast and a byte copy of the C library still
+// compile.  The quarantine refuses the two outside the base.
 static_assert(!std::is_aggregate_v<TensorDevice>);
 static_assert(!::foundation::core::BitValid<TensorDevice>);
 static_assert(!::foundation::core::DecodableFrom<TensorDevice, std::uint16_t>);
