@@ -1305,6 +1305,7 @@ fixy_neg_compile_test(neg_refined_weaken_negative_bound_on_unsigned
 
 fixy_test(test_tagged)
 fixy_test(test_secret)
+fixy_test(test_secret_carrier_zeroize)
 fixy_test(test_siphash)
 fixy_test(test_federation)
 

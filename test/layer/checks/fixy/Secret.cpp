@@ -10,8 +10,14 @@ static_assert(!std::is_trivially_copyable_v<Secret<int>> && !std::is_trivially_c
               "std::bit_cast must not read a classified value out with no declassify<Policy>()");
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Secret<int>>,
               "std::start_lifetime_as must not build a classified value over bytes");
-static_assert(std::is_trivially_move_constructible_v<Secret<int>> && std::is_trivially_destructible_v<Secret<int>>,
-              "the move constructor stays trivial, so a Secret still passes in a register");
+// A move zeroizes the source and the end zeroizes the payload, so the two
+// members of a Secret of a trivially copyable payload run code.  A payload of
+// another kind keeps its own moves and its own end.
+static_assert(!std::is_trivially_move_constructible_v<Secret<int>> && !std::is_trivially_move_assignable_v<Secret<int>>
+                  && !std::is_trivially_destructible_v<Secret<int>>,
+              "a move and the end of a Secret zeroize its payload");
+static_assert(std::is_nothrow_move_constructible_v<Secret<int>> && std::is_nothrow_move_assignable_v<Secret<int>>
+              && std::is_nothrow_destructible_v<Secret<int>>);
 
 // The deleted operators refuse each flow of a classified value into a
 // branch, an address or an order.  A requires-expression over each flow

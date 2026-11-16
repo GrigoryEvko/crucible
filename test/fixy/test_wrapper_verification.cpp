@@ -85,32 +85,46 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, int*);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedUser, TwoWords);
 
-// Linear, Affine, Refined, SealedRefined and Secret keep the size, the
-// alignment and the trivial destructor of their value, and they break the
-// trivial-copy parity on purpose.  A trivially copyable Linear let
-// std::bit_cast build a linear value that no mint made, and an Option of
-// it copied the value.  A trivially copyable Refined let std::bit_cast build
-// a value the predicate never saw, and a trivially copyable Secret let it
-// read the value out with no policy.  The shared invariant asserts that
-// parity, so the three other properties are stated here one by one, and
-// the fourth inverted.  The checked lifetime start refuses each of the
-// five too.  Sealing removes the rvalue extractor from the API and
-// changes no storage.
+// Linear, Affine, Refined, SealedRefined and Secret keep the size and the
+// alignment of their value, and they break the trivial-copy parity on
+// purpose.  A trivially copyable Linear let std::bit_cast build a linear
+// value that no mint made, and an Option of it copied the value.  A
+// trivially copyable Refined let std::bit_cast build a value the predicate
+// never saw, and a trivially copyable Secret let it read the value out with
+// no policy.  The shared invariant asserts that parity, so the other
+// properties are stated here one by one, and the parity inverted.  The
+// checked lifetime start refuses each of the five too.  Sealing removes the
+// rvalue extractor from the API and changes no storage.  The first four keep
+// the trivial destructor of their value.  The end of a Secret zeroizes its
+// value, so its destructor runs code for each shape.
 template <template <typename> class Wrapper, typename T>
 inline constexpr bool keeps_the_value_layout_with_no_byte_route =
     sizeof(Wrapper<T>) == sizeof(T) && alignof(Wrapper<T>) == alignof(T)
-    && std::is_trivially_destructible_v<Wrapper<T>> == std::is_trivially_destructible_v<T>
     && !std::is_trivially_copyable_v<Wrapper<T>> && !::foundation::lifetime::ImplicitLifetimeThroughout<Wrapper<T>>;
 
+template <template <typename> class Wrapper, typename T>
+inline constexpr bool keeps_the_trivial_end =
+    std::is_trivially_destructible_v<Wrapper<T>> == std::is_trivially_destructible_v<T>;
+
+template <template <typename> class Wrapper, typename T>
+inline constexpr bool keeps_the_layout_and_the_end =
+    keeps_the_value_layout_with_no_byte_route<Wrapper, T> && keeps_the_trivial_end<Wrapper, T>;
+
+template <template <typename> class Wrapper, typename T>
+inline constexpr bool keeps_the_layout_and_zeroizes_at_the_end =
+    keeps_the_value_layout_with_no_byte_route<Wrapper, T> && !std::is_trivially_destructible_v<Wrapper<T>>;
+
 template <template <typename> class Wrapper>
-inline constexpr bool keeps_the_layout_of_every_shape = keeps_the_value_layout_with_no_byte_route<Wrapper, int>
-                                                     && keeps_the_value_layout_with_no_byte_route<Wrapper, double>
-                                                     && keeps_the_value_layout_with_no_byte_route<Wrapper, int*>
-                                                     && keeps_the_value_layout_with_no_byte_route<Wrapper, TwoWords>;
+inline constexpr bool keeps_the_layout_of_every_shape =
+    keeps_the_layout_and_the_end<Wrapper, int> && keeps_the_layout_and_the_end<Wrapper, double>
+    && keeps_the_layout_and_the_end<Wrapper, int*> && keeps_the_layout_and_the_end<Wrapper, TwoWords>;
 
 static_assert(keeps_the_layout_of_every_shape<Linear> && keeps_the_layout_of_every_shape<Affine>
-              && keeps_the_layout_of_every_shape<RefinedAny> && keeps_the_layout_of_every_shape<SealedAny>
-              && keeps_the_layout_of_every_shape<Secret>);
+              && keeps_the_layout_of_every_shape<RefinedAny> && keeps_the_layout_of_every_shape<SealedAny>);
+static_assert(keeps_the_layout_and_zeroizes_at_the_end<Secret, int>
+              && keeps_the_layout_and_zeroizes_at_the_end<Secret, double>
+              && keeps_the_layout_and_zeroizes_at_the_end<Secret, int*>
+              && keeps_the_layout_and_zeroizes_at_the_end<Secret, TwoWords>);
 
 // Monotonic's grade is its value, so the substrate holds one cell
 // instead of a value and a grade.

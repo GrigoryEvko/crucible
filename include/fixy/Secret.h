@@ -114,6 +114,24 @@ concept SecretTransformer = std::invocable<F, T&&> && TransformReturnsByValue<F,
 template <typename T>
 class Secret;
 
+// Writes zero to each byte of object.  The writes are volatile, so the
+// optimizer cannot drop a clear whose result no read uses.  The cast chain
+// adds the volatile qualifier by implicit conversion and then narrows through
+// a volatile void pointer, which keeps the qualifier all the way down without
+// reinterpreting or casting away a qualifier.  A constant evaluation writes
+// nothing, because its bytes never reach memory that a later read can see.
+// Complexity: one write for each byte of T.
+template <typename T>
+    requires std::is_trivially_copyable_v<T>
+constexpr void zeroize_bytes(T& object) noexcept {
+    if !consteval {
+        volatile T* const target = __builtin_addressof(object);
+        volatile auto* const bytes = static_cast<volatile unsigned char*>(static_cast<volatile void*>(target));
+        for (std::size_t index = 0; index < sizeof(T); ++index)
+            bytes[index] = 0;
+    }
+}
+
 // The constructors are private, so this is the door.
 template <typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
@@ -146,9 +164,14 @@ private:
     // No byte route builds a Secret, so no byte route reads a classified
     // value out with no declassify<Policy>() and no audit entry.
     // std::bit_cast refuses the class, and -Wclass-memaccess refuses a
-    // memcpy.  The move constructor stays trivial, so a Secret still passes
-    // in a register.
+    // memcpy.
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    // A payload whose bytes the Secret zeroizes: a payload that is trivially
+    // copyable.  A payload of another kind has its own moves and its own
+    // end, and such a payload zeroizes its own bytes, as the mTLS private
+    // key does.
+    static constexpr bool zeroizes_payload_ = std::is_trivially_copyable_v<T>;
 
     using key_ = ::foundation::algebra::grade_key<Secret>;
 
@@ -173,9 +196,39 @@ private:
 public:
     Secret(const Secret&) = delete("Secret<T> cannot be silently duplicated");
     Secret& operator=(const Secret&) = delete("Secret<T> cannot be silently duplicated");
-    Secret(Secret&&) = default;
-    Secret& operator=(Secret&&) = default;
-    ~Secret() = default;
+
+    // A move gives the payload to the target and zeroizes the source, and
+    // the end of a Secret zeroizes its payload.  So no dead Secret keeps a
+    // byte of a classified value.  A self-move keeps the payload.
+    constexpr Secret(Secret&& other) noexcept
+        requires zeroizes_payload_
+        : impl_{std::move(other.impl_)} {
+        other.zeroize();
+    }
+    constexpr Secret& operator=(Secret&& other) noexcept
+        requires(zeroizes_payload_ && std::is_move_assignable_v<T>)
+    {
+        if (this != &other) {
+            impl_ = std::move(other.impl_);
+            other.zeroize();
+        }
+        return *this;
+    }
+    constexpr ~Secret()
+        requires zeroizes_payload_
+    {
+        zeroize();
+    }
+
+    Secret(Secret&&)
+        requires(!zeroizes_payload_)
+    = default;
+    Secret& operator=(Secret&&)
+        requires(!zeroizes_payload_)
+    = default;
+    ~Secret()
+        requires(!zeroizes_payload_)
+    = default;
 
     // A classified value cannot steer a branch, an address or an order.
     // Each of these turns the value into timing or into a memory access
@@ -287,23 +340,15 @@ public:
         return impl_.peek().size();
     }
 
-    // Opt-in: overwrites the storage before destruction.  Reaching the
-    // mutable storage is admitted here because the substrate's
-    // mutation gate also accepts an empty grade, which this
-    // confidentiality lattice has, and this class holds the key.  The
-    // zeroed bytes are still secret, so the grade stays true.
-    void zeroize() noexcept
+    // Overwrites the payload with zero bytes.  A move and the end of a
+    // Secret call it too.  Reaching the mutable storage is admitted here
+    // because the substrate's mutation gate also accepts an empty grade,
+    // which this confidentiality lattice has, and this class holds the key.
+    // The zeroed bytes are still secret, so the grade stays true.
+    constexpr void zeroize() noexcept
         requires std::is_trivially_copyable_v<T>
     {
-        // The writes are volatile so the optimizer cannot drop a clear
-        // whose result is never read.  The cast chain adds the volatile
-        // qualifier by implicit conversion and then narrows through a
-        // volatile void pointer, which keeps the qualifier all the way
-        // down without reinterpreting or casting away a qualifier.
-        volatile T* vp = __builtin_addressof(impl_.peek_mut(key_{}));
-        volatile auto* p = static_cast<volatile unsigned char*>(static_cast<volatile void*>(vp));
-        for (std::size_t i = 0; i < sizeof(T); ++i)
-            p[i] = 0;
+        ::fixy::zeroize_bytes(impl_.peek_mut(key_{}));
     }
 };
 

@@ -92,7 +92,9 @@ private:
 // A constant-time value on a channel.  There is no == and no element
 // access: an element read invites a branch on the content, which the
 // carrier exists to prevent.  The only comparison is eq below, whose
-// time depends only on the size of T.
+// time depends only on the size of T.  A constant-time value is a key or a
+// tag, so the carrier zeroizes it as Secret does: a move zeroizes the
+// source, and the end zeroizes the value.  A self-move keeps the value.
 template <class T>
     requires(ConstantTimeValue<T> && std::is_trivially_copyable_v<T>)
 class [[nodiscard]] CTPayload {
@@ -104,9 +106,17 @@ public:
     CTPayload(const CTPayload&) = delete("CTPayload holds a constant-time value. A copy is a second copy of it");
     CTPayload&
     operator=(const CTPayload&) = delete("CTPayload holds a constant-time value. A copy is a second copy of it");
-    constexpr CTPayload(CTPayload&&) noexcept = default;
-    constexpr CTPayload& operator=(CTPayload&&) noexcept = default;
-    ~CTPayload() = default;
+    constexpr CTPayload(CTPayload&& other) noexcept : value_{other.value_} { ::fixy::zeroize_bytes(other.value_); }
+    constexpr CTPayload& operator=(CTPayload&& other) noexcept
+        requires std::is_copy_assignable_v<T>
+    {
+        if (this != &other) {
+            value_ = other.value_;
+            ::fixy::zeroize_bytes(other.value_);
+        }
+        return *this;
+    }
+    constexpr ~CTPayload() { ::fixy::zeroize_bytes(value_); }
 
     bool operator==(const CTPayload&) const =
         delete("a CTPayload compares only through fixy::session::eq, whose time does not depend on the content");
