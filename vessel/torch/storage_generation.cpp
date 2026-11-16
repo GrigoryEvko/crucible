@@ -22,11 +22,11 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the CPU allocator of PyTorch is a class with
 // life of a process.
 ::fixy::Atomic<uint64_t> g_allocations{};
 
-// The generation of a new allocation: the low word of the count.  A low word
-// of zero reads as 1, so zero stays the value of no generation.
-[[nodiscard]] uint32_t next_generation() noexcept {
+// The known generation of a new allocation, from the low word of the count
+// (crucible::StorageGeneration::known).
+[[nodiscard]] crucible::StorageGeneration next_generation() noexcept {
     const auto low = static_cast<uint32_t>(g_allocations.fetch_add_acq_rel(1) + 1);
-    return low == 0 ? 1U : low;
+    return crucible::StorageGeneration::known(crucible::AllocationCount{low});
 }
 
 class GenerationAllocator final : public c10::Allocator {
@@ -93,11 +93,26 @@ union GenerationAllocatorStore {
     return store.allocator;
 }
 
-// The state of the sessions.  The thread of a session writes it at the attach
-// and at the detach, as storage_generation.h states.
+// The state of the sessions.  The thread of the sessions writes it at the
+// attach, at the detach and at each change, as storage_generation.h states.
 uint32_t g_sessions = 0;
 c10::Allocator* g_prior = nullptr;
 uint8_t g_priority = 0;
+
+// Starts a new period of the allocator (THE PERIODS of storage_generation.h).
+void begin_period() noexcept { g_allocator_follow.epoch.store_release(g_allocator_follow.epoch.load_acquire() + 1); }
+
+// The next change of the CPU allocator comes at an op of a Vigil in the mode
+// next.
+void change_at(crucible::ContextMode next) noexcept {
+    g_allocator_follow.switch_mode.store_release(static_cast<uint8_t>(next));
+}
+
+// Starts a new period in which the CPU allocator follows no Vigil.
+void end_follow() noexcept {
+    begin_period();
+    g_allocator_follow.switch_mode.store_release(kNoAllocatorSwitch);
+}
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
@@ -117,17 +132,25 @@ void delete_generation_allocation(void* data) noexcept {
 
 // The priority of the CPU allocator of PyTorch is private.  A set with a
 // priority below it changes nothing, and a set at or above it takes.  So the
-// first priority that takes is the priority of the prior allocator, and the
-// detach puts that allocator back at that priority.  O(256) sets at most.
+// first priority that takes is the priority of the prior allocator, and each
+// change and the detach put that allocator back at that priority.  O(256) sets
+// at most.  A later session finds the allocator that follows the Vigils, and
+// the first op of its Vigil sets the allocator of its mode.
 bool attach_generation_allocator() noexcept {
     GenerationAllocator& allocator = the_allocator();
     if (g_sessions > 0) {
         ++g_sessions;
-        return c10::GetCPUAllocator() == &allocator;
+        return g_allocator_follow.switch_mode.load_acquire() != kNoAllocatorSwitch;
     }
     c10::Allocator* const prior = c10::GetCPUAllocator();
     if (prior == &allocator) {
+        // A library set the generation allocator again with no session, so
+        // the allocator of an earlier attach is its inner allocator.  An
+        // allocator that never attached has none, and it refuses.
+        if (g_prior == nullptr) return false;
         ++g_sessions;
+        begin_period();
+        change_at(crucible::ContextMode::COMPILED);
         return true;
     }
     allocator.set_inner(prior);
@@ -137,6 +160,8 @@ bool attach_generation_allocator() noexcept {
         g_prior = prior;
         g_priority = static_cast<uint8_t>(priority);
         ++g_sessions;
+        begin_period();
+        change_at(crucible::ContextMode::COMPILED);
         return true;
     }
     return false;
@@ -147,6 +172,29 @@ void detach_generation_allocator() noexcept {
     --g_sessions;
     if (g_sessions > 0) return;
     if (c10::GetCPUAllocator() == &the_allocator()) c10::SetCPUAllocator(g_prior, g_priority);
+    end_follow();
+}
+
+// The two sets take, because each one is at the priority that the attach
+// found, and no other set came between them.  A CPU allocator that is neither
+// of the two belongs to a library, and it stays.  A record keeps the period of
+// the replay before it, so the ops after a divergence read the storages of the
+// parent of the divergent op with the key that the parent gave them.
+void change_cpu_allocator(crucible::ContextMode mode) noexcept {
+    if (g_sessions == 0) {
+        end_follow();
+        return;
+    }
+    GenerationAllocator& allocator = the_allocator();
+    c10::Allocator* const current = c10::GetCPUAllocator();
+    if (mode == crucible::ContextMode::RECORD) {
+        if (current == g_prior) c10::SetCPUAllocator(&allocator, g_priority);
+        change_at(crucible::ContextMode::COMPILED);
+        return;
+    }
+    if (current == &allocator) c10::SetCPUAllocator(g_prior, g_priority);
+    begin_period();
+    change_at(crucible::ContextMode::RECORD);
 }
 
 uint64_t generation_allocator_address() noexcept { return std::bit_cast<uint64_t>(&the_allocator()); }

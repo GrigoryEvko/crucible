@@ -760,6 +760,10 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // its frame past these slots, and its frame closes before the redispatch
     // returns.  An unwind of a PyTorch error closes the frame too.
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    // The CPU allocator follows the mode of the Vigil at the entry and at the
+    // exit of the operation (storage_generation.h).  The scope comes before
+    // the nest, so its exit check follows the close of the nest.
+    const crucible::vessel::AllocatorFollowScope follow{vigil.context()};
     crucible::OpRecordStack& record_stack = vigil.op_record_stack(fg);
     const crucible::VigilOpNest nest{vigil, fg};
     const crucible::OpRecordFrame frame{record_stack, MAX_INLINE_METAS};
@@ -928,7 +932,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // loader of crucible_native.py refuses a library with a different stamp or
 // with no stamp.  Increment the two values together when a function of the
 // block or an ordinal of c10::CrucibleMode changes.
-constexpr uint64_t kDispatchAbiVersion = 3;
+constexpr uint64_t kDispatchAbiVersion = 4;
 
 extern "C" {
 
@@ -975,12 +979,14 @@ CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics() { return crucible::vess
 // ── The generation allocator (storage_generation.h) ─────────────────
 //
 // A session attaches the allocator after it creates its Vigil, and detaches
-// it at its end.  The attach gives 1 when the generation allocator is the CPU
-// allocator of PyTorch after the call.  The three addresses and the
-// generation of a storage are reads for the tests of the chain: an address is
-// 0 for no allocator.  The storage is the address of a c10::StorageImpl, which
-// Python gives as UntypedStorage._cdata, and the read gives 0 for a storage of
-// another allocator.
+// it at its end.  The attach gives 1 when the CPU allocator of PyTorch
+// follows the Vigils of the sessions after the call.  The three addresses and
+// the generation of a storage are reads for the tests of the chain: an
+// address is 0 for no allocator.  The storage is the address of a
+// c10::StorageImpl, which Python gives as UntypedStorage._cdata.  The read
+// gives the word of crucible::StorageGeneration that fill_meta gives the
+// storage at that time: a known generation, or the top bit and the period for
+// a storage that the generation allocator did not make.
 
 CRUCIBLE_API uint32_t crucible_dispatch_attach_allocator() {
     return crucible::vessel::attach_generation_allocator() ? 1U : 0U;

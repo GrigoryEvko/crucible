@@ -99,7 +99,13 @@ class SchemaNameResult(enum.IntEnum):
 # The value names the C ABI of the dispatch library: its TLS accessors, its
 # schema accessors, its doors of the generation allocator and the ordinals of
 # c10::CrucibleMode.
-EXPECTED_DISPATCH_ABI_VERSION = 3
+EXPECTED_DISPATCH_ABI_VERSION = 4
+
+# The top bit of the word of a storage generation (crucible::StorageGeneration
+# in include/crucible/Types.h).  A word with the bit holds the period of the
+# allocator for a storage that the generation allocator did not make.  Zero is
+# no generation, and each other word is a known generation.
+STORAGE_GENERATION_UNKNOWN_BIT = 1 << 31
 
 
 class AbiStamp(NamedTuple):
@@ -554,7 +560,14 @@ class _DispatchLib:
         return self._lib.crucible_dispatch_eager_numerics()
 
     def attach_allocator(self) -> bool:
-        """Set the generation allocator as the CPU allocator of PyTorch, for one more session."""
+        """Count one more session of the generation allocator, which then follows the mode of each Vigil.
+
+        The first session sets the generation allocator as the CPU allocator of
+        PyTorch.  At the entry and at the exit of each op, the CPU allocator
+        follows the mode of its Vigil: the generation allocator for a record,
+        the prior allocator for a replay.  True when the CPU allocator follows
+        the Vigils after the call.
+        """
         return self._lib.crucible_dispatch_attach_allocator() == 1
 
     def detach_allocator(self) -> None:
@@ -574,7 +587,11 @@ class _DispatchLib:
         return self._lib.crucible_dispatch_inner_allocator()
 
     def storage_generation(self, tensor: Any) -> int:
-        """The generation of the storage of tensor, or 0 when another allocator made it."""
+        """The word of the generation of the storage of tensor that fill_meta gives it at this time.
+
+        A known generation for a storage of the generation allocator, and else
+        STORAGE_GENERATION_UNKNOWN_BIT with the period of the allocator.
+        """
         return self._lib.crucible_dispatch_storage_generation(ctypes.c_void_p(tensor.untyped_storage()._cdata))
 
     def backward_enter(self) -> None:
@@ -781,12 +798,13 @@ class CrucibleNative:
         # From here the Vigil exists and owns a background thread, so every
         # later step that can fail has to give it back.
         try:
-            # The generation allocator gives each CPU storage of the session a
-            # generation, so the build tells a new storage from a dead one at
-            # the same address.  The flag says that this session counts in it.
+            # The generation allocator gives each CPU storage that the Vigil
+            # records a generation, so the build tells a new storage from a
+            # dead one at the same address.  A replay runs on the prior
+            # allocator.  The flag says that this session counts in it.
             self._allocator_attached = self._dispatch.attach_allocator()
             if not self._allocator_attached:
-                raise RuntimeError("the generation allocator did not become the CPU allocator of PyTorch")
+                raise RuntimeError("the generation allocator did not attach as the CPU allocator of PyTorch")
 
             # Set CrucibleState TLS: mode=RECORD, context=vigil handle
             self._dispatch.set_mode(self.RECORD)

@@ -324,8 +324,9 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
             flags |= crucible::meta_flags::IS_VIEW;
         }
         meta.storage_nbytes = impl->storage().nbytes();
-        // A storage of another allocator has no generation, and the build
-        // keys it on its address alone.
+        // A storage that the generation allocator did not make has an
+        // unknown generation in the period of the read, and the build keys
+        // it on its address in that period.
         meta.storage_generation = generation_of(storage_data);
     }
     if (strided && tensor.storage_offset() != 0) {
@@ -1389,6 +1390,10 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
             register_schema_name_once(vigil);
 
         const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+        // The CPU allocator follows the mode of the Vigil at the entry and at
+        // the exit of the operation (storage_generation.h).  The scope comes
+        // before the nest, so its exit check follows the close of the nest.
+        const AllocatorFollowScope follow{vigil.context()};
         crucible::OpRecordStack& stack = vigil.op_record_stack(fg);
         const crucible::VigilOpNest nest{vigil, fg};
         if constexpr (kRecordsInFrame) {
