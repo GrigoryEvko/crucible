@@ -1023,7 +1023,7 @@ void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, ui
 BackgroundThread::TraceBuild BackgroundThread::build_trace_from(
     ::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, ::fixy::View<const TraceRing::Entry> trace,
     ::fixy::View<const MetaIndex> meta_starts, ::fixy::View<const ScopeHash> scope_hashes,
-    ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths) {
+    ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths) noexcept {
     CRUCIBLE_PRE(meta_starts.size() == trace.size());
     CRUCIBLE_PRE(scope_hashes.size() == trace.size());
     CRUCIBLE_PRE(callsite_hashes.size() == trace.size());
@@ -1045,7 +1045,7 @@ template <class TraceColumn, class MetaColumn, class ScopeColumn, class Callsite
 BackgroundThread::TraceBuild
 BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
                                        TraceColumn trace_data, MetaColumn meta_data, ScopeColumn scope_data,
-                                       CallsiteColumn callsite_data, DepthColumn depth_data) {
+                                       CallsiteColumn callsite_data, DepthColumn depth_data) noexcept {
     // An op index has 32 bits, and a branded scope holds at most 0xFFFFFFFF
     // ops.
     const uint32_t count = ::fixy::narrow<uint32_t>(trace_data.size()).expect("a branded count fits in 32 bits");
@@ -1493,7 +1493,7 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
 
 ::fixy::Ref<MemoryPlan> BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,
                                                               ::fixy::BumpArena& scratch,
-                                                              ::fixy::View<TensorSlot> slots) {
+                                                              ::fixy::View<TensorSlot> slots) noexcept {
     static constexpr uint32_t ALIGNMENT = 256;
 
     MemoryPlan& plan = plan_storage;

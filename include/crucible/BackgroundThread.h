@@ -1171,17 +1171,20 @@ public:
                                               ::fixy::View<const MetaIndex> meta_starts,
                                               ::fixy::View<const ScopeHash> scope_hashes,
                                               ::fixy::View<const CallsiteHash> callsite_hashes,
-                                              ::fixy::View<const OpDepth> depths) CRUCIBLE_NO_THREAD_SAFETY;
+                                              ::fixy::View<const OpDepth> depths) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
 private:
     // The body of build_trace_from.  Each column is a fixy::BrandedView of
     // one branded scope over the ops, so one index of an op reads each
     // column with no check.  Only src/BackgroundThread.cpp instantiates it.
+    // The noexcept lambda of the branded scope calls it.  The body is
+    // noexcept too, so a Release inline of it in that lambda needs no
+    // terminate pad for its contract checks and its arrays.
     template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
     build_trace_columns_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, TraceColumn trace_data,
                          MetaColumn meta_data, ScopeColumn scope_data, CallsiteColumn callsite_data,
-                         DepthColumn depth_data) CRUCIBLE_NO_THREAD_SAFETY;
+                         DepthColumn depth_data) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
 public:
     // Orders birth and death events with an O(n + k) counting sort, then
@@ -1195,7 +1198,7 @@ public:
     // The plan borrows the slots.
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] ::fixy::Ref<MemoryPlan>
     compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage, ::fixy::BumpArena& scratch,
-                        ::fixy::View<TensorSlot> slots) CRUCIBLE_NO_THREAD_SAFETY;
+                        ::fixy::View<TensorSlot> slots) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 };
 
 // The two sentinels of the owner mailbox.  Only their addresses matter, so
