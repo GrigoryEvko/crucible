@@ -80,6 +80,27 @@ _MASK64     = (1 << 64) - 1
 
 EXPECTED_ABI_VERSION = 3
 
+# Mirrors kDispatchAbiVersion in vessel/torch/crucible_fallback.cpp, which
+# libcrucible_dispatch.so reports through crucible_dispatch_abi_version().
+# The value names the C ABI of the dispatch library: its TLS accessors, its
+# schema accessors and the ordinals of c10::CrucibleMode.
+EXPECTED_DISPATCH_ABI_VERSION = 1
+
+
+class AbiStamp(NamedTuple):
+    """The ABI stamp of one Crucible library, and the version that this module reads."""
+
+    library: str  # the file name of the library, for the message
+    symbol: str  # the C function that gives the stamp
+    expected: int
+    rebuild: str  # the build command that the message names
+
+
+VESSEL_STAMP = AbiStamp("libcrucible_vessel.so", "crucible_abi_version", EXPECTED_ABI_VERSION,
+                        "  cmake --build --preset release")
+DISPATCH_STAMP = AbiStamp("libcrucible_dispatch.so", "crucible_dispatch_abi_version",
+                          EXPECTED_DISPATCH_ABI_VERSION, "  cmake --build --preset vessel")
+
 
 class DispatchAction(enum.IntEnum):
     """The action of a CrucibleDispatchResult (CRUCIBLE_ACTION_* of vessel_api.h)."""
@@ -101,11 +122,10 @@ class DispatchStatus(enum.IntEnum):
 
 
 class CrucibleAbiMismatchError(RuntimeError):
-    """Raised when the loaded libcrucible_vessel.so reports a
-    crucible_abi_version() value that disagrees with this Python
-    module's EXPECTED_ABI_VERSION constant.  Usually means the .so
-    needs rebuilding (or the .py is stale).  Includes both observed
-    and expected values for debugging."""
+    """Raised when a loaded Crucible library has no ABI stamp, or a stamp
+    that is not the version of this module (AbiStamp.expected).  Usually
+    the library needs a rebuild, or the .py file is stale.  The message
+    names the library and the observed and the expected versions."""
 
 
 def _fnv1a(data: bytes) -> int:
@@ -125,6 +145,9 @@ def _fnv1a(data: bytes) -> int:
 # of them loads only when its runtime is already in the process: preloaded,
 # and so first in the load order.
 RELEASE_BUILD = "  cmake --preset release && cmake --build --preset release"
+# Only a build with the patched PyTorch has the dispatch library.
+VESSEL_BUILD = ("  cmake --preset vessel && cmake --build --preset vessel\n"
+                "and set CRUCIBLE_BUILD_DIR=build-vessel")
 
 class SanitizerRuntime(NamedTuple):
     """The runtime that an instrumented library needs in the process."""
@@ -240,40 +263,40 @@ def _is_runtime_loaded(runtime: SanitizerRuntime) -> bool:
     return hasattr(ctypes.CDLL(None), runtime.start)
 
 
-def check_abi_version(library: Any, path: str) -> None:
-    """Refuse a vessel library whose ABI stamp is not EXPECTED_ABI_VERSION.
+def check_abi_stamp(library: Any, path: str, stamp: AbiStamp) -> None:
+    """Refuse a loaded Crucible library whose ABI stamp is not stamp.expected.
 
-    LIBRARY is the loaded libcrucible_vessel.so, and PATH is the file that it
-    came from, for the message.  A library from before the stamp has no
-    crucible_abi_version symbol, and the check refuses it too.  The check
-    runs before a caller declares any other symbol, so a stale library gives
-    this message and not the error of a missing symbol.
+    LIBRARY is the loaded library, and PATH is the file that it came from,
+    for the message.  A library from before the stamp has no stamp.symbol,
+    and the check refuses it too.  The check runs before a caller declares
+    any other symbol, so a stale library gives this message and not the
+    error of a missing symbol.
 
     Raises:
         CrucibleAbiMismatchError: If the stamp is missing or names a
             different version.  The message names the two versions.
     """
     try:
-        stamp = library.crucible_abi_version
+        reader = getattr(library, stamp.symbol)
     except AttributeError:
         raise CrucibleAbiMismatchError(
-            f"libcrucible_vessel.so has no ABI stamp:\n"
+            f"{stamp.library} has no ABI stamp:\n"
             f"  loaded from   : {path}\n"
-            f"  observed ABI  : none (no crucible_abi_version symbol)\n"
-            f"  expected ABI  : {EXPECTED_ABI_VERSION}\n"
-            f"Rebuild Crucible after a vessel_api.h change:\n"
-            f"  cmake --build --preset release") from None
-    stamp.restype = ctypes.c_uint64
-    stamp.argtypes = []
-    observed = int(stamp())
-    if observed != EXPECTED_ABI_VERSION:
+            f"  observed ABI  : none (no {stamp.symbol} symbol)\n"
+            f"  expected ABI  : {stamp.expected}\n"
+            f"Rebuild Crucible after a change of the C ABI of the library:\n"
+            f"{stamp.rebuild}") from None
+    reader.restype = ctypes.c_uint64
+    reader.argtypes = []
+    observed = int(reader())
+    if observed != stamp.expected:
         raise CrucibleAbiMismatchError(
-            f"libcrucible_vessel.so ABI mismatch:\n"
+            f"{stamp.library} ABI mismatch:\n"
             f"  loaded from   : {path}\n"
             f"  observed ABI  : {observed}\n"
-            f"  expected ABI  : {EXPECTED_ABI_VERSION}\n"
-            f"Rebuild Crucible after a vessel_api.h change:\n"
-            f"  cmake --build --preset release")
+            f"  expected ABI  : {stamp.expected}\n"
+            f"Rebuild Crucible after a change of the C ABI of the library:\n"
+            f"{stamp.rebuild}")
 
 
 def load_vessel_library(lib_path: str | None = None) -> ctypes.CDLL:
@@ -287,11 +310,38 @@ def load_vessel_library(lib_path: str | None = None) -> ctypes.CDLL:
         RuntimeError: If no library is found, or if it needs a sanitizer
             runtime that the process does not hold (checked_lib_path).
         CrucibleAbiMismatchError: If the ABI stamp of the library is not
-            EXPECTED_ABI_VERSION (check_abi_version).
+            EXPECTED_ABI_VERSION (check_abi_stamp).
     """
-    path = checked_lib_path("libcrucible_vessel.so", lib_path, RELEASE_BUILD)
+    path = checked_lib_path(VESSEL_STAMP.library, lib_path, RELEASE_BUILD)
     library = ctypes.CDLL(path)
-    check_abi_version(library, path)
+    check_abi_stamp(library, path, VESSEL_STAMP)
+    return library
+
+
+def load_dispatch_library(lib_path: str | None = None) -> ctypes.CDLL:
+    """Load libcrucible_dispatch.so, and return it once its ABI stamp agrees.
+
+    LIB_PATH names the library, or None to search the build directories
+    (_find_lib).  The wrapper of the dispatch library loads it through this
+    function.
+
+    The load runs the global constructors of the library first, and they
+    register its kernels and its fallback for DispatchKey::Crucible.  No
+    check can come before them.  A kernel of the key runs only on a thread
+    that includes the key, and CrucibleNative includes it only after this
+    function returns.  So no kernel of a refused library runs.  Its kernels
+    stay registered for the life of the process, so load the rebuilt library
+    in a new process.
+
+    Raises:
+        RuntimeError: If no library is found, or if it needs a sanitizer
+            runtime that the process does not hold (checked_lib_path).
+        CrucibleAbiMismatchError: If the ABI stamp of the library is not
+            EXPECTED_DISPATCH_ABI_VERSION (check_abi_stamp).
+    """
+    path = checked_lib_path(DISPATCH_STAMP.library, lib_path, VESSEL_BUILD)
+    library = ctypes.CDLL(path)
+    check_abi_stamp(library, path, DISPATCH_STAMP)
     return library
 
 
@@ -392,16 +442,11 @@ class _DispatchLib:
     """Ctypes wrapper for libcrucible_dispatch.so — TLS state + scope."""
 
     def __init__(self, lib_path: str | None = None) -> None:
-        """Load the dispatch library, which activates the C++ fallback."""
+        """Load the dispatch library after the check of its ABI stamp."""
         # Ensure torch._C is loaded first (provides libc10 symbols).
         import torch._C  # noqa: F401
-        # CDLL triggers the .so's global constructors, which include
-        # TORCH_LIBRARY_IMPL registration — the C++ fallback is active
-        # as soon as the library is loaded.
-        self._lib = ctypes.CDLL(checked_lib_path(
-            "libcrucible_dispatch.so", lib_path,
-            "  cmake --preset vessel && cmake --build --preset vessel\n"
-            "and set CRUCIBLE_BUILD_DIR=build-vessel"))
+        # The load registers the C++ fallback (load_dispatch_library).
+        self._lib = load_dispatch_library(lib_path)
         self._setup()
 
     def _setup(self) -> None:

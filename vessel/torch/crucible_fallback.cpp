@@ -835,6 +835,14 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
 // set the Vigil handle and mode without additional fork modifications.
 // =====================================================================
 
+// The ABI stamp of this library: the version of the C ABI of the block below
+// and of the ordinals of c10::CrucibleMode that Python writes through it.
+// crucible_native.EXPECTED_DISPATCH_ABI_VERSION holds the same value, and the
+// loader of crucible_native.py refuses a library with a different stamp or
+// with no stamp.  Increment the two values together when a function of the
+// block or an ordinal of c10::CrucibleMode changes.
+constexpr uint64_t kDispatchAbiVersion = 1;
+
 extern "C" {
 
 // Prototypes first. These are the whole C ABI of libcrucible_dispatch.so,
@@ -843,6 +851,7 @@ extern "C" {
 // is its own first declaration and -Wmissing-declarations fires on all of
 // them. Stating the ABI once, in one place, is what silences it: a symbol
 // Python calls but this block does not name is a symbol nobody declared.
+CRUCIBLE_API uint64_t crucible_dispatch_abi_version();
 CRUCIBLE_API void crucible_dispatch_set_tls_mode(uint8_t mode);
 CRUCIBLE_API void crucible_dispatch_set_tls_context(void* ctx);
 CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode();
@@ -854,6 +863,10 @@ CRUCIBLE_API void crucible_dispatch_backward_exit();
 CRUCIBLE_API uint32_t crucible_dispatch_backward_depth();
 CRUCIBLE_API uint32_t crucible_dispatch_schema_count();
 CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name);
+
+// A constant return.  Python reads it after the load and before it declares
+// any other symbol.
+CRUCIBLE_API uint64_t crucible_dispatch_abi_version() { return kDispatchAbiVersion; }
 
 CRUCIBLE_API void crucible_dispatch_set_tls_mode(uint8_t mode) {
     c10::CrucibleState::get_tls_state().set_mode(static_cast<c10::CrucibleMode>(mode));
