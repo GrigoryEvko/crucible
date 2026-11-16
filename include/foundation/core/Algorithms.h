@@ -15,7 +15,7 @@
 //                              predicate accepts, or no value
 //   all_of, any_of, count_if   a scan of each element with a predicate
 //   starts_with, ends_with     a text that begins or ends with a second text
-//   lower_bound_by_key(view, key, probe)
+//   find_lower_bound_by_key(view, key, probe)
 //                              the first position whose key is not below the
 //                              probe, in a View that its key sorts
 //   bytes(object)              the bytes of a plain object, as a View of its
@@ -226,8 +226,8 @@ template <class T, std::size_t Extent, class Predicate>
 template <class T, std::size_t Extent, class Key>
     requires detail::KeyOf<Key, std::remove_const_t<T>>
 [[nodiscard]] constexpr std::size_t
-lower_bound_by_key(View<T, Extent> view, Key key,
-                   std::invoke_result_t<Key&, std::remove_const_t<T> const&> probe) noexcept {
+find_lower_bound_by_key(View<T, Extent> view, Key key,
+                        std::invoke_result_t<Key&, std::remove_const_t<T> const&> probe) noexcept {
     std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
     std::size_t low = 0;
     std::size_t high = view.size();

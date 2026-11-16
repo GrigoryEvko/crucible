@@ -3189,7 +3189,7 @@ foundation_neg_compile_test(neg_core_find_if_throwing_predicate
   "no matching function for call to .find_if\\(foundation::core::View<const int, 4>, has_large\\(const foundation::core::FixedArray<int, 4>&\\)::<lambda\\(int\\)>\\)."
   "the expression .is_nothrow_invocable_v<Predicate&, const T&> \\[with Predicate = has_large::._anon_[0-9]+; T = int\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_lower_bound_float_key
-  "no matching function for call to .lower_bound_by_key\\(foundation::core::View<const float, 4>, bound_of\\(const foundation::core::FixedArray<float, 4>&\\)::<lambda\\(float\\)>, float\\)."
+  "no matching function for call to .find_lower_bound_by_key\\(foundation::core::View<const float, 4>, bound_of\\(const foundation::core::FixedArray<float, 4>&\\)::<lambda\\(float\\)>, float\\)."
   "required for the satisfaction of .KeyOf<Key, typename std::remove_const<[A-Za-z_][A-Za-z0-9_]*>::type>. \\[with Key = bound_of::._anon_[0-9]+; T = const float\\]")
 
 # get of a View and of an owner gives an Option of a Ref: Array.h defines

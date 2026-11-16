@@ -318,7 +318,7 @@ private:
     // The position of the first entry whose hash is not below hash.  The
     // entries are in the order of their hashes.  Complexity: O(log n).
     [[nodiscard]] std::size_t position_of_(SchemaHash hash) const noexcept {
-        return ::fixy::lower_bound_by_key(
+        return ::fixy::find_lower_bound_by_key(
             entries_.view(), [](const SchemaEntry& entry) noexcept { return entry.hash.raw(); }, hash.raw());
     }
 

@@ -7,7 +7,7 @@
 #include <cstddef>
 
 inline std::size_t bound_of(::foundation::core::FixedArray<float, 4> const& values) {
-    return ::foundation::core::lower_bound_by_key(values.view(), [](float value) noexcept { return value; }, 1.0f);
+    return ::foundation::core::find_lower_bound_by_key(values.view(), [](float value) noexcept { return value; }, 1.0f);
 }
 
 int main() {}

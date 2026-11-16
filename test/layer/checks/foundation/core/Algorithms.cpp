@@ -112,14 +112,14 @@ static_assert(!ends_with(TextView{"cpulisx"}, TextView{"list"}));
 
 // The lower bound of a key in a sorted run.
 constexpr auto identity_key = [](int value) noexcept { return value; };
-static_assert(lower_bound_by_key(view_of(numbers), identity_key, 15) == 2);
-static_assert(lower_bound_by_key(view_of(numbers), identity_key, 14) == 2);
-static_assert(lower_bound_by_key(view_of(numbers), identity_key, 0) == 0);
-static_assert(lower_bound_by_key(view_of(numbers), identity_key, 100) == 6);
-static_assert(lower_bound_by_key(View<int const>{}, identity_key, 1) == 0);
+static_assert(find_lower_bound_by_key(view_of(numbers), identity_key, 15) == 2);
+static_assert(find_lower_bound_by_key(view_of(numbers), identity_key, 14) == 2);
+static_assert(find_lower_bound_by_key(view_of(numbers), identity_key, 0) == 0);
+static_assert(find_lower_bound_by_key(view_of(numbers), identity_key, 100) == 6);
+static_assert(find_lower_bound_by_key(View<int const>{}, identity_key, 1) == 0);
 constexpr auto float_key = [](int value) noexcept { return static_cast<float>(value); };
 template <class Key>
-constexpr bool bound_accepts = requires(View<int const> view, Key key) { lower_bound_by_key(view, key, 1); };
+constexpr bool bound_accepts = requires(View<int const> view, Key key) { find_lower_bound_by_key(view, key, 1); };
 static_assert(bound_accepts<decltype(identity_key)>);
 static_assert(!bound_accepts<decltype(float_key)>);
 

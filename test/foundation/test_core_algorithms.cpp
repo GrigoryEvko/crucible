@@ -59,14 +59,14 @@ void test_find_and_scans() {
     assert(::foundation::core::all_of(numbers.view(), below_fifty));
 }
 
-void test_lower_bound_by_key() {
+void test_find_lower_bound_by_key() {
     FixedArray<Record, 5> const records{Record{2, 0, 0}, Record{4, 0, 0}, Record{4, 1, 0}, Record{9, 0, 0},
                                         Record{12, 0, 0}};
     auto const key_of = [](Record const& record) noexcept { return record.key; };
-    assert(::foundation::core::lower_bound_by_key(records.view(), key_of, std::uint64_t{4}) == 1);
-    assert(::foundation::core::lower_bound_by_key(records.view(), key_of, std::uint64_t{5}) == 3);
-    assert(::foundation::core::lower_bound_by_key(records.view(), key_of, std::uint64_t{1}) == 0);
-    assert(::foundation::core::lower_bound_by_key(records.view(), key_of, std::uint64_t{13}) == 5);
+    assert(::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{4}) == 1);
+    assert(::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{5}) == 3);
+    assert(::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{1}) == 0);
+    assert(::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{13}) == 5);
 }
 
 // The bytes of a plain record are its bytes in memory, in order.
@@ -196,7 +196,7 @@ void test_view_scans_agree_with_std() {
 int main() {
     test_equal_of_views();
     test_find_and_scans();
-    test_lower_bound_by_key();
+    test_find_lower_bound_by_key();
     test_bytes_of_a_record();
     test_text_search();
     test_text_operations_agree_with_std();

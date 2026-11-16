@@ -47,7 +47,7 @@ namespace detail {
 // and the published table use this one lookup.  Complexity: O(log n).
 [[nodiscard]] constexpr CKernelId find_kernel_id_(::fixy::View<const CKernelEntry> entries,
                                                   SchemaHash schema_hash) noexcept {
-    const std::size_t position = ::fixy::lower_bound_by_key(
+    const std::size_t position = ::fixy::find_lower_bound_by_key(
         entries, [](const CKernelEntry& entry) noexcept { return entry.schema_hash.raw(); }, schema_hash.raw());
     return entries.get(position).match(
         [schema_hash](auto entry) noexcept {
