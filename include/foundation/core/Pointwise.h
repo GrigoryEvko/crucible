@@ -329,6 +329,61 @@ template <std::size_t Views, std::size_t Capacity>
     return plan;
 }
 
+// The plan of a pointwise walk, with the facts of THE ALIAS PROOF that pick
+// its path: is_shared when an input can name an element of out at a
+// different index, and is_restrict when no input names an element of out.
+template <std::size_t Views, std::size_t Capacity>
+struct PointwisePlan {
+    WalkPlan<Views, Capacity> plan{};
+    bool is_shared = false;
+    bool is_restrict = true;
+};
+
+// The plan of a pointwise walk over views of equal sizes that hold an
+// element: THE ORDER and THE ALIAS PROOF.  A shared input keeps the row-major
+// order of the logical sizes.  Else views that are each dense read one run,
+// and other views take the order of order_axes_.  write_pointwise and the walk
+// of rows share this plan.  O(rank^2 * views).
+template <class T, std::size_t Rank, std::size_t... Is, class... Es>
+[[nodiscard]] constexpr PointwisePlan<1 + sizeof...(Es), StridedLanes<Rank>::capacity>
+plan_pointwise_(std::index_sequence<Is...> /*inputs*/, bool const (&apart)[sizeof...(Es) + 1],
+                StridedView<T, Rank> const& target, StridedView<Es, Rank> const&... sources) noexcept {
+    using Lanes = StridedLanes<Rank>;
+    constexpr std::size_t views = 1 + sizeof...(Es);
+    using Views = std::make_index_sequence<views>;
+    Lanes const& shape = strided_lanes_of_(StridedDoor::key(), target);
+    Lanes const lanes[views] = {shape, strided_lanes_of_(StridedDoor::key(), sources)...};
+    PointwisePlan<views, Lanes::capacity> planned{};
+    if consteval {
+        // A constant evaluation reads no address as a number, so it takes
+        // the stated order.
+        planned.is_shared = true;
+    } else {
+        if constexpr (sizeof...(Es) > 0) {
+            T const* const out = strided_first_of_(StridedDoor::key(), target);
+            auto const relate = [&](bool is_apart, auto const& source) noexcept {
+                PointwiseRelation const relation =
+                    is_apart ? PointwiseRelation::Disjoint
+                             : relation_of_(out, shape, strided_first_of_(StridedDoor::key(), source),
+                                            strided_lanes_of_(StridedDoor::key(), source));
+                planned.is_shared = planned.is_shared || relation == PointwiseRelation::Shared;
+                planned.is_restrict = planned.is_restrict && relation == PointwiseRelation::Disjoint;
+            };
+            (relate(apart[Is + 1], sources), ...);
+        }
+    }
+    if (planned.is_shared) {
+        planned.plan = plan_of_lanes_(lanes, Views{});
+    } else if (target.is_dense() && (sources.is_dense() && ...)) {
+        planned.plan = dense_plan_<views, Lanes::capacity>(target.count());
+    } else {
+        Lanes ordered[views]{};
+        order_axes_(lanes, ordered);
+        planned.plan = plan_of_lanes_(ordered, Views{});
+    }
+    return planned;
+}
+
 // The count of the rows of a plan of at least one axis: the product of the
 // sizes of each axis but the inner one.  The count of the plan bounds it.
 template <std::size_t Views, std::size_t Capacity>
@@ -338,6 +393,39 @@ template <std::size_t Views, std::size_t Capacity>
         rows *= plan.sizes[axis];
     }
     return rows;
+}
+
+// Calls row(index, offsets) for each row of a plan of at least one axis, in
+// the order of the plan: the number of the row, and the offset of each view
+// at the zero position of the row.  A plan of one or two axes steps each view
+// by its stride on the outer axis, with the offsets in registers.  A plan of
+// more axes takes step_rows_.  The lanes of write_pointwise and the walk of
+// rows share this loop.  O(rows).
+template <std::size_t Views, std::size_t Capacity, class Row>
+CRUCIBLE_INLINE constexpr void for_each_row_(WalkPlan<Views, Capacity> const& plan, Row const& row) noexcept {
+    std::size_t const rows = rows_of_(plan, 1);
+    std::size_t offsets[Views]{};
+    if (Capacity <= 2 || plan.rank <= 2) {
+        std::size_t steps[Views]{};
+        for (std::size_t view = 0; view < Views; ++view) {
+            steps[view] = plan.rank == 2 ? plan.strides[view][0] : 0;
+        }
+        for (std::size_t index = 0; index < rows; ++index) {
+            row(index, offsets);
+            for (std::size_t view = 0; view < Views; ++view) {
+                offsets[view] += steps[view];
+            }
+        }
+        return;
+    }
+    // A plan of more than two axes exists only for a capacity above two.
+    if constexpr (Capacity > 2) {
+        std::size_t counters[Capacity]{};
+        for (std::size_t index = 0; index < rows; ++index) {
+            row(index, offsets);
+            step_rows_(plan, counters, offsets);
+        }
+    }
 }
 
 // The loop of a view of the lane path, from its stride on the inner axis.
@@ -768,8 +856,8 @@ CRUCIBLE_INLINE void run_lane_row_(Op const& op, std::size_t length, T* out, std
 }
 
 // The lane path over a plan of at least one axis, for the loops of the views.
-// The rows come in the order of the plan.  The function is not inlined, so
-// each instance of the classes is one hot function.  O(count).
+// The rows come from for_each_row_.  The function is not inlined, so each
+// instance of the classes is one hot function.  O(count).
 template <int W, LaneClass OutClass, LaneClass... InClasses, std::size_t... Is, class Op, std::size_t Capacity, class T,
           class... Es>
 [[gnu::hot, gnu::noinline]] void
@@ -777,14 +865,10 @@ run_lane_plan_(LaneClasses<InClasses...> /*classes*/, std::index_sequence<Is...>
                WalkPlan<1 + sizeof...(Es), Capacity> const& plan, T* out, Es const*... inputs) noexcept {
     std::size_t const inner = plan.rank - 1;
     std::size_t const length = plan.sizes[inner];
-    std::size_t const rows = rows_of_(plan, 1);
-    std::size_t counters[Capacity]{};
-    std::size_t offsets[1 + sizeof...(Es)]{};
-    for (std::size_t row = 0; row < rows; ++row) {
+    for_each_row_(plan, [&](std::size_t /*index*/, std::size_t const(&offsets)[1 + sizeof...(Es)]) noexcept {
         run_lane_row_<W, OutClass>(op, length, out + offsets[0], plan.strides[0][inner],
                                    lane_row_<InClasses, W>(inputs + offsets[Is + 1], plan.strides[Is + 1][inner])...);
-        step_rows_(plan, counters, offsets);
-    }
+    });
 }
 
 // ── The tile path ───────────────────────────────────────────────────────
@@ -1255,33 +1339,11 @@ write_pointwise_(Op const& op, std::index_sequence<Is...> sequence, bool const (
     if (!(same_sizes_(shape, strided_lanes_of_(StridedDoor::key(), sources)) && ...)) return err(ShapeMismatch{});
     std::size_t const count = target.count();
     if (count == 0) return Unit{};
-    Lanes const lanes[views] = {shape, strided_lanes_of_(StridedDoor::key(), sources)...};
     T* const out = strided_first_of_(StridedDoor::key(), target);
-    using Views = std::make_index_sequence<views>;
+    PointwisePlan<views, Lanes::capacity> const planned = plan_pointwise_(sequence, apart, target, sources...);
+    WalkPlan<views, Lanes::capacity> const& plan = planned.plan;
 
-    bool is_shared = false;
-    bool is_restrict = true;
-    if consteval {
-        // A constant evaluation reads no address as a number, so it takes
-        // the stated order.
-        is_shared = true;
-    } else {
-        if constexpr (sizeof...(Es) > 0) {
-            auto const relate = [&](bool is_apart, auto const& source) noexcept {
-                PointwiseRelation const relation =
-                    is_apart
-                        ? PointwiseRelation::Disjoint
-                        : relation_of_(static_cast<T const*>(out), shape, strided_first_of_(StridedDoor::key(), source),
-                                       strided_lanes_of_(StridedDoor::key(), source));
-                is_shared = is_shared || relation == PointwiseRelation::Shared;
-                is_restrict = is_restrict && relation == PointwiseRelation::Disjoint;
-            };
-            (relate(apart[Is + 1], sources), ...);
-        }
-    }
-
-    if (is_shared) {
-        WalkPlan<views, Lanes::capacity> const plan = plan_of_lanes_(lanes, Views{});
+    if (planned.is_shared) {
         if constexpr (is_lane_op) {
             LaneStep<Op, T> step{op};
             run_walk_(step, sequence, plan, count, out, strided_first_of_(StridedDoor::key(), sources)...);
@@ -1290,16 +1352,6 @@ write_pointwise_(Op const& op, std::index_sequence<Is...> sequence, bool const (
             run_walk_(step, sequence, plan, count, out, strided_first_of_(StridedDoor::key(), sources)...);
         }
         return Unit{};
-    }
-    // Views that are each dense read one run of count elements, so they need
-    // no sort and no merge of the axes.
-    WalkPlan<views, Lanes::capacity> plan{};
-    if (target.is_dense() && (sources.is_dense() && ...)) {
-        plan = dense_plan_<views, Lanes::capacity>(count);
-    } else {
-        Lanes ordered[views]{};
-        order_axes_(lanes, ordered);
-        plan = plan_of_lanes_(ordered, Views{});
     }
     if constexpr (is_lane_op) {
         if (plan.rank == 0) {
@@ -1313,7 +1365,8 @@ write_pointwise_(Op const& op, std::index_sequence<Is...> sequence, bool const (
             ScalarStep<Op, T> step{op};
             run_walk_(step, sequence, plan, count, out, strided_first_of_(StridedDoor::key(), sources)...);
         } else {
-            run_scalar_plan_(op, sequence, plan, is_restrict, out, strided_first_of_(StridedDoor::key(), sources)...);
+            run_scalar_plan_(op, sequence, plan, planned.is_restrict, out,
+                             strided_first_of_(StridedDoor::key(), sources)...);
         }
     }
     return Unit{};
