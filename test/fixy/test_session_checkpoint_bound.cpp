@@ -1,11 +1,11 @@
 // The bound of the work of the checkpoint walk of fixy/session/Checkpoint.h.
 //
 // Each pair below met the operation limit of a constant evaluation before
-// the walk counted its work.  The walk now stops at work_bound and gives
-// TooManyConfigurations: for a long chain, with one edge for each
-// configuration, and for a row of wide choices, with 150 edges for each
-// configuration.  The pairs stand in a test of their own, so the compile of
-// one unit stays small.
+// the walk counted its work.  The walk now stops at the default bound,
+// checkpoint_work_bound, and gives TooManyConfigurations: for a long chain,
+// with one edge for each configuration, and for a row of wide choices, with
+// 150 edges for each configuration.  The pairs stand in a test of their own,
+// so the compile of one unit stays small.
 
 #include <fixy/session/Checkpoint.h>
 

@@ -199,6 +199,26 @@ enum class CheckpointVerdict : std::uint8_t {
     TooManyConfigurations,
 };
 
+// The bound of the work of the compliance check of one pair, when the caller
+// gives none.  The check counts admit_work units for each node of the shape
+// that it visits and for each edge of the model that it admits, and one
+// unit for each kept answer and each configuration that it compares.  A
+// check past its bound gives TooManyConfigurations, and the gate refuses
+// the pair with the diagnostic Checkpoint_Work_Bound.  A caller with a
+// larger pair gives the gate and the mint a larger bound, the template
+// argument WorkBound.
+//
+// The default is below the operation limit of a constant evaluation
+// (-fconstexpr-ops-limit=33554432 in this project) for the shapes that the
+// tests try: a chain, a row of wide choices and a row of shared arms.  A
+// count of configurations cannot do that: a chain of eight branches meets
+// the limit near 800 configurations, and a row of choices with 150 labels
+// near 120.  The work of each of these at the limit is more than 360000
+// units, and the pair of 321 configurations of the tests needs 116132.  A
+// bound past the operation limit gives the error of the operation limit,
+// which names the flag that raises it.
+inline constexpr std::size_t checkpoint_work_bound = 196608;
+
 namespace detail::checkpoint {
 
 namespace tr = ::fixy::session::transition;
@@ -218,25 +238,14 @@ enum class Kind : std::uint8_t {
     Unknown
 };
 
-// The bound of the work of one walk.  The walk admits each edge of the
-// model, and the admit compares the next configuration with each
-// configuration that the walk saw.  One compare is one unit of work, and
-// one admit is admit_work units more, for its unfold, its reads of the
-// protocol and its label exchange.  So the work grows with the edges times
-// the configurations, and a wide choice costs as much as a long chain.  A
-// walk past the bound ends with TooManyConfigurations.
-//
-// The bound is below the operation limit of a constant evaluation
-// (-fconstexpr-ops-limit=33554432 in this project) for the shapes that the
-// tests try: a chain, a row of wide choices and a row of shared arms.  A
-// count of configurations cannot do that: a chain of eight branches meets
-// the limit near 800 configurations, and a row of choices with 150 labels
-// near 120.  The work of each of these at the limit is more than 360000
-// units, and the pair of 321 configurations of the tests needs 116132.  The
-// check of the shape before the walk counts admit_work units for each node
-// that it visits, and one unit for each kept answer that it compares, in
-// the same bound.
-inline constexpr std::size_t work_bound = 196608;
+// The work of one walk.  The walk admits each edge of the model, and the
+// admit compares the next configuration with each configuration that the
+// walk saw.  One compare is one unit of work, and one admit is admit_work
+// units more, for its unfold, its reads of the protocol and its label
+// exchange.  So the work grows with the edges times the configurations, and
+// a wide choice costs as much as a long chain.  A walk past its bound
+// (checkpoint_work_bound above) ends with TooManyConfigurations.  The check
+// of the shape before the walk counts its work in the same bound.
 inline constexpr std::size_t admit_work = 64;
 inline constexpr int unfold_bound = 64;
 inline constexpr int depth_bound = 256;
@@ -319,7 +328,7 @@ consteval bool is_primitive(Kind kind) { return kind == Kind::Commit || kind == 
 // branch.
 //
 // Each visit of a node is admit_work units of the work of the bound, and
-// each compare with a kept answer is one unit.  A check past work_bound, or
+// each compare with a kept answer is one unit.  A check past its bound, or
 // past depth_bound at the first visit of a node, answers false, and a false
 // answer of a node is the false answer of the protocol.  Complexity: each
 // choice and each branch of a choice is visited one time, and each chain of
@@ -335,10 +344,11 @@ struct ShapeAnswer {
     bool is_shaped = false;
 };
 
-// The kept answers of the check of one protocol, and its work.
+// The kept answers of the check of one protocol, its work and its bound.
 struct ShapeCheck {
     tr::stack<ShapeAnswer> answered;
     std::size_t work = 0;
+    std::size_t bound = 0;
 };
 
 // The check keeps the answer of a choice and of a branch of a choice.  The
@@ -359,7 +369,7 @@ consteval bool shaped(info type, bool at_branch, int depth, ShapeCheck& check) {
         }
     }
     check.work += admit_work;
-    if (depth > depth_bound || check.work > work_bound) return false;
+    if (depth > depth_bound || check.work > check.bound) return false;
     bool is_shaped = false;
     switch (kind) {
         case Kind::End:
@@ -406,9 +416,10 @@ consteval bool shaped(info type, bool at_branch, int depth, ShapeCheck& check) {
 
 // The check of the shape of one protocol, with answers of its own.  The two
 // protocols of a pair share the work of the bound.
-consteval bool is_checkpoint_shaped(info protocol, std::size_t& work) {
+consteval bool is_checkpoint_shaped(info protocol, std::size_t& work, std::size_t bound) {
     ShapeCheck check{};
     check.work = work;
+    check.bound = bound;
     const bool is_shaped = shaped(protocol, false, 0, check);
     work = check.work;
     return is_shaped;
@@ -462,19 +473,20 @@ consteval Party initial_party(info protocol) {
 // `seen` holds each configuration that the walk admitted, and `pending`
 // each admitted configuration that the walk has not stepped yet.  Each is
 // a stack of fixy/session/Registry.h, read through a pointer, so
-// the walk changes no vector.  `work` counts the units of work_bound.
+// the walk changes no vector.  `work` counts the units of `bound`.
 struct Exploration {
     tr::stack<Configuration> seen;
     tr::stack<Configuration> pending;
     CheckpointVerdict verdict = CheckpointVerdict::Compliant;
     std::size_t work = 0;
+    std::size_t bound = 0;
 };
 
 // Admits one edge into `next`.  The work of the admit is counted before the
-// scan of `seen`, so a walk past work_bound ends before it does the work.
+// scan of `seen`, so a walk past its bound ends before it does the work.
 consteval void admit(Exploration& run, Configuration next) {
     run.work += admit_work + run.seen.top;
-    if (run.work > work_bound) {
+    if (run.work > run.bound) {
         run.verdict = CheckpointVerdict::TooManyConfigurations;
         return;
     }
@@ -563,17 +575,18 @@ consteval CheckpointVerdict choose(Exploration& run, const Party& active, const 
 
 // The check of the shape and the walk share one bound of work.
 // Complexity: the number of edges times the cost of the visited-set
-// lookup, which is linear in the configurations.  work_bound caps it.
-consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) {
+// lookup, which is linear in the configurations.  `bound` caps it.
+consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol, std::size_t bound) {
     std::size_t shape_work = 0;
-    if (!is_checkpoint_shaped(left_protocol, shape_work) || !is_checkpoint_shaped(right_protocol, shape_work)) {
-        return shape_work > work_bound ? CheckpointVerdict::TooManyConfigurations
-                                       : CheckpointVerdict::NotCheckpointShaped;
+    if (!is_checkpoint_shaped(left_protocol, shape_work, bound)
+        || !is_checkpoint_shaped(right_protocol, shape_work, bound)) {
+        return shape_work > bound ? CheckpointVerdict::TooManyConfigurations : CheckpointVerdict::NotCheckpointShaped;
     }
     const Party left_start = initial_party(left_protocol);
     const Party right_start = initial_party(right_protocol);
     Exploration run{};
     run.work = shape_work;
+    run.bound = bound;
     admit(run, Configuration{left_start, right_start});
     while (run.verdict == CheckpointVerdict::Compliant && run.pending.top != 0) {
         const Configuration here = run.pending.items[run.pending.top - 1];
@@ -615,24 +628,52 @@ consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) 
 // the cell that the alias names.  A specialization of the cell class
 // changes its body, which no reader reads.  GCC keeps one specialization
 // of an alias template for each argument list, so a translation unit walks
-// each pair one time.
+// each pair one time for each bound.
 
 // The cell of the verdict of one pair.  It holds nothing.
 template <CheckpointVerdict Verdict>
 struct verdict_cell {};
 
-template <class Left, class Right>
-using verdict_cached = verdict_cell<verdict_of(^^Left, ^^Right)>;
+template <class Left, class Right, std::size_t Bound>
+using verdict_cached = verdict_cell<verdict_of(^^Left, ^^Right, Bound)>;
 
-// The verdict of a pair.  A reflection that is not a type has no cache
-// cell, so its verdict comes from the walk.  Complexity: one walk for each
-// pair of types in a translation unit, and a lookup after that.
-consteval CheckpointVerdict cached_verdict_of(info left_protocol, info right_protocol) {
+// The verdict of a pair under a bound of work.  A reflection that is not a
+// type has no cache cell, so its verdict comes from the walk.
+//
+// A walk that stops the constant evaluation of the cell, at the operation
+// limit or with an error, makes the substitution fail, and the failure of a
+// substitution names no cause.  The walk then runs again here, in the
+// evaluation that asked, so the error of the walk stops that evaluation with
+// its own text: the operation limit and the flag that raises it, or the text
+// of the error.  Complexity: one walk for each pair of types and bound in a
+// translation unit, and a lookup after that.  A walk that fails runs two
+// times.
+consteval CheckpointVerdict cached_verdict_of(info left_protocol, info right_protocol, std::size_t bound) {
     if (!std::meta::is_type(left_protocol) || !std::meta::is_type(right_protocol)) {
-        return verdict_of(left_protocol, right_protocol);
+        return verdict_of(left_protocol, right_protocol, bound);
     }
-    const info cell = std::meta::substitute(^^verdict_cached, {left_protocol, right_protocol});
+    const info bound_value = std::meta::reflect_constant(bound);
+    if (!std::meta::can_substitute(^^verdict_cached, {left_protocol, right_protocol, bound_value})) {
+        return verdict_of(left_protocol, right_protocol, bound);
+    }
+    const info cell = std::meta::substitute(^^verdict_cached, {left_protocol, right_protocol, bound_value});
     return std::meta::extract<CheckpointVerdict>(argument(cell, 0));
+}
+
+// The refusal of a pair whose check needs more work than its bound.  The
+// gate names the bound WorkBound in the context of the refusal.
+consteval bool walk_fits_bound(info left_protocol, info right_protocol, std::size_t bound) {
+    if (cached_verdict_of(left_protocol, right_protocol, bound) == CheckpointVerdict::TooManyConfigurations) {
+        throw std::meta::exception(
+            u8"fixy::session::diagnostic [Checkpoint_Work_Bound]: the compliance check of the checkpoint pair needs "
+            u8"more work than its bound, the template argument WorkBound.  The check counts admit_work units for each "
+            u8"node of the shape that it visits and for each edge of the model that it admits, and one unit for each "
+            u8"kept answer and each configuration that it compares.  The default bound is "
+            u8"fixy::session::checkpoint_work_bound.  Give a larger bound for this pair: "
+            u8"mint_checkpoint_session<Proto, PeerProto, Policy, WorkBound>.",
+            left_protocol);
+    }
+    return true;
 }
 
 // True when the question is a CheckpointPair whose verdict is Compliant.
@@ -641,13 +682,14 @@ consteval CheckpointVerdict cached_verdict_of(info left_protocol, info right_pro
 
 }  // namespace detail::checkpoint
 
-// The verdict for a pair of checkpoint protocols, one for each endpoint.
-// A function at namespace scope that is not a template, so no translation
-// unit can specialize the verdict.  It reads the sealed cache, so a
-// translation unit walks each pair one time.
-[[nodiscard]] consteval CheckpointVerdict checkpoint_verdict_of(std::meta::info protocol,
-                                                                std::meta::info peer_protocol) {
-    return detail::checkpoint::cached_verdict_of(protocol, peer_protocol);
+// The verdict for a pair of checkpoint protocols, one for each endpoint,
+// under a bound of work.  A function at namespace scope that is not a
+// template, so no translation unit can specialize the verdict.  It reads the
+// sealed cache, so a translation unit walks each pair one time for each
+// bound.
+[[nodiscard]] consteval CheckpointVerdict checkpoint_verdict_of(std::meta::info protocol, std::meta::info peer_protocol,
+                                                                std::size_t work_bound = checkpoint_work_bound) {
+    return detail::checkpoint::cached_verdict_of(protocol, peer_protocol, work_bound);
 }
 
 // The question "are these two protocols compliant", as a one-argument
@@ -662,46 +704,52 @@ consteval bool detail::checkpoint::pair_is_compliant(info question) {
         return false;
     }
     const std::vector<info> sides = std::meta::template_arguments_of(asked);
-    return cached_verdict_of(sides[0], sides[1]) == CheckpointVerdict::Compliant;
+    return cached_verdict_of(sides[0], sides[1], checkpoint_work_bound) == CheckpointVerdict::Compliant;
 }
 
 template <typename Q>
 using is_checkpoint_compliant = std::bool_constant<detail::checkpoint::pair_is_compliant(^^Q)>;
 
 template <typename P1, typename P2>
-concept checkpoint_compliant_v = detail::checkpoint::cached_verdict_of(^^P1, ^^P2) == CheckpointVerdict::Compliant;
+concept checkpoint_compliant_v =
+    detail::checkpoint::cached_verdict_of(^^P1, ^^P2, checkpoint_work_bound) == CheckpointVerdict::Compliant;
 
 // Whether Proto can run on one endpoint of a checkpoint session whose
-// other endpoint runs PeerProto.  Each refusal is its own atomic
-// constraint, so the diagnostic names the verdict.  The last verdict
-// clause asks for Compliant, so a verdict added later and not listed
-// here still refuses.  The runtime reads nested members of each protocol,
-// so the first two clauses refuse a node whose members disagree with its
-// arguments (fixy/session/Protocol.h).  Each clause calls a function at
-// namespace scope that is not a template, so no translation unit can
-// specialize a verdict.  The clauses read the sealed cache, so they share
-// one walk of the pair.
-template <typename Proto, typename PeerProto>
+// other endpoint runs PeerProto, with the bound WorkBound on the work of
+// the check.  Each refusal is its own atomic constraint, so the diagnostic
+// names the verdict.  A pair whose check needs more work than its bound is
+// refused with the diagnostic Checkpoint_Work_Bound, which names the bound
+// and the way to raise it.  The last verdict clause asks for Compliant, so a
+// verdict added later and not listed here still refuses.  The runtime reads
+// nested members of each protocol, so the first two clauses refuse a node
+// whose members disagree with its arguments (fixy/session/Protocol.h).  Each
+// clause calls a function at namespace scope that is not a template, so no
+// translation unit can specialize a verdict.  The clauses read the sealed
+// cache, so they share one walk of the pair.
+template <typename Proto, typename PeerProto, std::size_t WorkBound = checkpoint_work_bound>
 concept CheckpointSessionAdmissible =
     ::fixy::session::detail::require_agreeing_members(^^Proto)
     && ::fixy::session::detail::require_agreeing_members(^^PeerProto)
-    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::NotCheckpointShaped
-    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::Stuck
-    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LabelOutOfRange
-    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LabelsDisagree
-    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::RollToImposedCheckpoint
-    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::LoopUnresolved
-    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto) != CheckpointVerdict::TooManyConfigurations
-    && checkpoint_compliant_v<Proto, PeerProto> && WellFormedRunnableProtocol<checkpoint_erase_t<Proto>>
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::NotCheckpointShaped
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::Stuck
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::LabelOutOfRange
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::LabelsDisagree
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound)
+           != CheckpointVerdict::RollToImposedCheckpoint
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::LoopUnresolved
+    && detail::checkpoint::walk_fits_bound(^^Proto, ^^PeerProto, WorkBound)
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) == CheckpointVerdict::Compliant
+    && WellFormedRunnableProtocol<checkpoint_erase_t<Proto>>
     && WellFormedRunnableProtocol<checkpoint_erase_t<PeerProto>>;
 
-// The whole gate of mint_checkpoint_session: a compliant pair, a Resource
-// that a mint admits, and a context that admits the effect row of the
-// protocol that the plain handle runs (CtxAdmitsProtocolRow of
-// fixy/session/Admission.h).  The erasure keeps each payload, so that row
-// is the row of Proto.
-template <typename Ctx, typename Proto, typename PeerProto, typename Resource>
-concept CtxFitsCheckpointSession = CheckpointSessionAdmissible<Proto, PeerProto> && SessionResource<Resource>
+// The whole gate of mint_checkpoint_session: a compliant pair under the
+// bound WorkBound, a Resource that a mint admits, and a context that admits
+// the effect row of the protocol that the plain handle runs
+// (CtxAdmitsProtocolRow of fixy/session/Admission.h).  The erasure keeps
+// each payload, so that row is the row of Proto.
+template <typename Ctx, typename Proto, typename PeerProto, typename Resource,
+          std::size_t WorkBound = checkpoint_work_bound>
+concept CtxFitsCheckpointSession = CheckpointSessionAdmissible<Proto, PeerProto, WorkBound> && SessionResource<Resource>
                                 && CtxAdmitsProtocolRow<Ctx, checkpoint_erase_t<Proto>>;
 
 // ── The runtime ─────────────────────────────────────────────────────
@@ -829,8 +877,9 @@ public:
     // mint_checkpoint_session: opens the plain handle of the erased
     // protocol, and puts around it the checkpoint handle at the start of
     // Proto.  The first checkpoint of the session is the start.
-    template <typename Proto, typename PeerProto, AbandonmentPolicy Policy, typename Ctx, typename Resource>
-        requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource>
+    template <typename Proto, typename PeerProto, AbandonmentPolicy Policy,
+              std::size_t WorkBound = checkpoint_work_bound, typename Ctx, typename Resource>
+        requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource, WorkBound>
     [[nodiscard]] static constexpr auto open(Ctx const& ctx, Resource resource, std::source_location loc) noexcept {
         using Start = detail::checkpoint::resolve<Proto, void>;
         auto inner =
@@ -1011,14 +1060,16 @@ public:
 //
 // Mints one endpoint.  The other endpoint's protocol is a template
 // argument, so the pair is checked without a mint that holds both ends.
+// WorkBound is the bound of the work of the check of the pair.  A pair
+// whose check needs more work names a larger bound here.
 
-template <typename Proto, typename PeerProto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy, typename Ctx,
-          typename Resource>
-    requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource>
+template <typename Proto, typename PeerProto, AbandonmentPolicy Policy = DefaultAbandonmentPolicy,
+          std::size_t WorkBound = checkpoint_work_bound, typename Ctx, typename Resource>
+    requires CtxFitsCheckpointSession<Ctx, Proto, PeerProto, Resource, WorkBound>
 [[nodiscard]] constexpr auto
 mint_checkpoint_session(Ctx const& ctx, Resource resource,
                         std::source_location loc = std::source_location::current()) noexcept {
-    return CheckpointDoor::open<Proto, PeerProto, Policy>(ctx, std::forward<Resource>(resource), loc);
+    return CheckpointDoor::open<Proto, PeerProto, Policy, WorkBound>(ctx, std::forward<Resource>(resource), loc);
 }
 
 }  // namespace fixy::session

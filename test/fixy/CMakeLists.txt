@@ -3158,6 +3158,21 @@ fixy_test(test_session_checkpoint_bound)
 # spells it.
 fixy_test(test_session_checkpoint_shared_arms)
 
+# The bound of the work of the checkpoint check is the template argument
+# WorkBound of the gate and the mint.  A pair past the default bound is
+# compliant under a larger bound, and the refusal of a pair past its bound
+# names the bound and the constant of the default.
+fixy_test(test_session_checkpoint_work_bound)
+fixy_neg_compile_test(neg_sess_checkpoint_work_bound
+  "no matching function for call to .mint_checkpoint_session<Decide, Follow, fixy::session::DefaultAbandonmentPolicy, 64>"
+  "fixy::session::diagnostic \\[Checkpoint_Work_Bound\\]: the compliance check of the checkpoint pair needs more work than its bound, the template argument WorkBound.*fixy::session::checkpoint_work_bound"
+  "WorkBound = 64")
+# The cache of the verdict runs a walk that failed in its cell again, so the
+# refusal of a bound past the operation limit names the operation limit.
+fixy_neg_compile_test(neg_sess_checkpoint_operation_limit
+  "no matching function for call to .mint_checkpoint_session<neg_sess_checkpoint_operation_limit_types::Sender"
+  "evaluation operation count exceeds limit of [0-9]+ \\(use .-fconstexpr-ops-limit=. to increase the limit\\)")
+
 # HS14 for mint_checkpoint_session and for the one-endpoint refusal.
 # Each fixture is one way for one side to choose alone, or one rule of
 # the compliance check.

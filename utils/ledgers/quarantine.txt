@@ -151,11 +151,10 @@ include/fixy/collision/ | replace-pending:<string> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/collision/ | replace-pending:<vector> | 1 | - | -
 include/fixy/concurrent/ | base-c-library-call | 4 | - | -
-include/fixy/concurrent/ | base-std-entity | 121 | - | -
-include/fixy/concurrent/ | base-std-object | 43 | - | -
-include/fixy/concurrent/ | replace-pending:<algorithm> | 1 | - | -
+include/fixy/concurrent/ | base-std-entity | 109 | - | -
+include/fixy/concurrent/ | base-std-object | 34 | - | -
 include/fixy/concurrent/ | replace-pending:<array> | 6 | - | -
-include/fixy/concurrent/ | replace-pending:<atomic> | 3 | - | -
+include/fixy/concurrent/ | replace-pending:<atomic> | 2 | - | -
 include/fixy/concurrent/ | replace-pending:<bit> | 3 | - | -
 include/fixy/concurrent/ | replace-pending:<cstring> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<limits> | 1 | - | -
@@ -164,7 +163,7 @@ include/fixy/concurrent/ | replace-pending:<span> | 3 | - | -
 include/fixy/concurrent/ | replace-pending:<string> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<tuple> | 3 | - | -
-include/fixy/concurrent/ | replace-pending:<vector> | 3 | - | -
+include/fixy/concurrent/ | replace-pending:<vector> | 2 | - | -
 include/fixy/fp/ | base-std-entity | 14 | - | -
 include/fixy/fp/ | base-std-object | 4 | - | -
 include/fixy/fp/ | replace-pending:<array> | 1 | - | -
@@ -288,26 +287,26 @@ src/perf/ | c-library-call | 1 | - | -
 src/perf/ | c-library-object | 2 | - | -
 src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | raw-pointer-object | 2 | - | -
-test/ | c-array-object | 156 | - | -
-test/ | c-library-call | 821 | - | -
+test/ | c-array-object | 150 | - | -
+test/ | c-library-call | 754 | - | -
 test/ | c-library-object | 14 | - | -
 test/ | compiler-builtin | 1 | - | -
-test/ | door-header | 23 | - | -
+test/ | door-header | 15 | - | -
 test/ | foreign-symbol | 13 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | opted-out | 47 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | opted-out | 22 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
-test/ | raw-function-pointer | 19 | - | -
-test/ | raw-new-delete | 41 | - | -
-test/ | raw-pointer-object | 337 | - | -
+test/ | raw-function-pointer | 13 | - | -
+test/ | raw-new-delete | 39 | - | -
+test/ | raw-pointer-object | 331 | - | -
 test/ | region | 1 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 77 | - | -
 test/ | std-entity | 1467 | - | -
-test/ | std-object | 527 | - | -
+test/ | std-object | 526 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 3 | - | -
@@ -325,7 +324,7 @@ test/ct/ | std-entity | 20 | - | -
 test/ct/ | std-object | 13 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 89 | - | -
-test/fixy/ | c-library-call | 1337 | - | -
+test/fixy/ | c-library-call | 1327 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 21 | - | -
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -351,7 +350,7 @@ test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family,
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 32 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 151 | - | -
+test/fixy/ | raw-pointer-object | 150 | - | -
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the kernel header and the C library are the models of the perf event door | the test of the perf event door compares the record of its attributes with struct perf_event_attr of <linux/perf_event.h>, and it reads the close-on-exec flag of a descriptor through fcntl of the C library
 test/fixy/ | region | 1 | PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival | the test of the send door and of the full write of the file door installs a handler of SIGPIPE and unblocks SIGPIPE in its thread through the C library, because the base has no door that sets the action or the mask of a signal outside an Init context, and the runner of the tests can give the process SIG_IGN and a mask that hide the signal
@@ -615,10 +614,10 @@ test/layer/checks/foundation/reflect/ | std-object | 17 | - | -
 test/memory_neg/ | raw-pointer-object | 2 | - | -
 test/perf_neg/ | std-entity | 1 | - | -
 test/session_oracle/ | c-array-object | 37 | - | -
-test/session_oracle/ | c-library-call | 12 | - | -
-test/session_oracle/ | door-header | 2 | - | -
+test/session_oracle/ | c-library-call | 7 | - | -
+test/session_oracle/ | door-header | 1 | - | -
 test/session_oracle/ | raw-function-pointer | 3 | - | -
-test/session_oracle/ | raw-pointer-object | 9 | - | -
+test/session_oracle/ | raw-pointer-object | 8 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
 test/shape/ | opted-out | 207 | ORACLE: the raw form that the shape of each family probe is compared with | -

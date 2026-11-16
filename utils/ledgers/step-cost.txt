@@ -5,6 +5,7 @@
 # --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.
 format 1
 rule step-cost
+- | fixture | 113.215 | neg_sess_checkpoint_operation_limit | Owner decision of 2026-11-15: a correct change that fails only on a budget raises the limit.  The fixture shows that the refusal of a checkpoint bound past the operation limit names the operation limit.  Its compile runs the walk to the operation limit of a constant evaluation two times: in the cell of the cache of the verdict, and again in the evaluation that asked, which gives the error its text
 @build/vessel/torch/CMakeFiles/crucible_dispatch_register_1.dir/register.cpp.o | compile | 113.248 | - | Memory limits the parallel compiles of the 96 interleaved shards of vessel/torch/register.cpp, so more shards give no shorter wall time.  Each shard parses the PyTorch headers of record_kernel.h, about 63 G instructions
 @build/vessel/torch/CMakeFiles/crucible_dispatch_register_10.dir/register.cpp.o | compile | 113.505 | - | Memory limits the parallel compiles of the 96 interleaved shards of vessel/torch/register.cpp, so more shards give no shorter wall time.  Each shard parses the PyTorch headers of record_kernel.h, about 63 G instructions
 @build/vessel/torch/CMakeFiles/crucible_dispatch_register_11.dir/register.cpp.o | compile | 112.014 | - | Memory limits the parallel compiles of the 96 interleaved shards of vessel/torch/register.cpp, so more shards give no shorter wall time.  Each shard parses the PyTorch headers of record_kernel.h, about 63 G instructions

@@ -260,7 +260,7 @@ that the axis does not apply to the row.
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
 | `mint_atomic_session` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
-| `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
+| `mint_checkpoint_session` | `include/fixy/session/Checkpoint.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
 | `mint_crash_reporter` | `include/fixy/session/CrashTransport.h` | Y | - | Y | · | token | · | HS14: 3 |
 | `mint_crash_session` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | ctx | Y | HS14: 26 |
 | `mint_crash_writer` | `include/fixy/session/CrashTransport.h` | Y | - | Y | Y | token | · | HS14: 29 |
