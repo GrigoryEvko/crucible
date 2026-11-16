@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
     // Each iteration does O(N) inserts + O(N²) append-order scan at
     // N=48; cap at 5k iters to keep the sanitizer-instrumented runtime
     // reasonable under ctest's budget.
-    const Config cfg = parse_args(argc, argv, 5000);
+    const Config cfg = parse_args(::fixy::os::args(argc, argv), 5000);
 
     return run(
         "CallSiteTable dedup + round-trip", cfg,

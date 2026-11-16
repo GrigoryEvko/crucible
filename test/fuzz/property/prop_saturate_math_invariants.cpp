@@ -309,7 +309,7 @@ struct Input {
 
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(argc, argv);
+    const Config cfg = parse_args(::fixy::os::args(argc, argv));
 
     return run(
         "saturate math invariants (u64/i64/u32/i32)", cfg, [](Rng& rng) { return generate(rng); },

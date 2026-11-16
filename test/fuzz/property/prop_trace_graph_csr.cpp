@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
     using crucible::build_csr;
     using fixy::BumpArena;
 
-    const Config cfg = parse_args(argc, argv, 20000);  // O(E log E) per iter
+    const Config cfg = parse_args(::fixy::os::args(argc, argv), 20000);  // O(E log E) per iter
 
     return run(
         "trace_graph_csr", cfg,

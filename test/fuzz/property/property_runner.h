@@ -15,7 +15,7 @@
 //
 //   int main(int argc, char** argv) {
 //       using namespace crucible::fuzz::prop;
-//       const Config cfg = parse_args(argc, argv, 2'000'000);
+//       const Config cfg = parse_args(::fixy::os::args(argc, argv), 2'000'000);
 //       return run("recipe_hash_determinism", cfg,
 //           [](Rng& rng) { return random_recipe(rng); },
 //           [](const NumericalRecipe& r) {
@@ -58,6 +58,7 @@
 
 #include <crucible/Philox.h>
 #include <fixy/Core.h>
+#include <fixy/os/Args.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
@@ -195,20 +196,38 @@ struct Config {
     bool verbose = false;
 };
 
-// Parse --seed=N --iters=N --verbose from argv.  Defaults preserved
-// for missing args.  Unknown args are ignored.  The iteration count is
-// clamped to `max_iterations`, the bound past which one property run
-// costs more than its coverage returns.
-[[nodiscard]] inline Config parse_args(int argc, char** argv,
+// The value of the flag argument after its prefix, in the grammar of parse
+// of foundation/core/Parse.h: decimal digits, or "0x" and hexadecimal
+// digits.  A value that holds no such integer ends the run, so a typo in a
+// flag does not run the default.
+[[nodiscard]] inline uint64_t flag_value(::fixy::TextView const argument, ::fixy::TextView const prefix) noexcept {
+    ::fixy::TextView const value = argument.window(prefix.size(), argument.size() - prefix.size())
+                                       .expect("the argument of a flag starts with its prefix");
+    return ::fixy::parse<uint64_t>(value).match(
+        [](uint64_t const parsed) noexcept { return parsed; },
+        [](::fixy::ParseError) noexcept -> uint64_t {
+            ::fixy::fatal("property: the value of --seed= or --iters= is no decimal or 0x hexadecimal integer");
+        });
+}
+
+// Parse --seed=N --iters=N --verbose from the arguments of main, which the
+// argument door of fixy/os/Args.h gives.  Defaults preserved for missing
+// args.  Unknown args are ignored.  The iteration count is clamped to
+// `max_iterations`, the bound past which one property run costs more than
+// its coverage returns.  Complexity: linear in the characters of the
+// arguments.
+[[nodiscard]] inline Config parse_args(::fixy::os::Args const arguments,
                                        uint64_t max_iterations = std::numeric_limits<uint64_t>::max()) noexcept {
+    constexpr ::fixy::TextView kSeed{"--seed="};
+    constexpr ::fixy::TextView kIterations{"--iters="};
     Config cfg{};
-    for (int i = 1; i < argc; ++i) {
-        std::string_view a{argv[i]};
-        if (a.starts_with("--seed=")) {
-            cfg.seed = std::strtoull(a.data() + 7, nullptr, 0);
-        } else if (a.starts_with("--iters=")) {
-            cfg.iterations = std::strtoull(a.data() + 8, nullptr, 0);
-        } else if (a == "--verbose") {
+    for (std::size_t position = 1; position < arguments.size(); ++position) {
+        ::fixy::TextView const argument = arguments.get(position).expect("a position below the count").view();
+        if (::fixy::starts_with(argument, kSeed)) {
+            cfg.seed = flag_value(argument, kSeed);
+        } else if (::fixy::starts_with(argument, kIterations)) {
+            cfg.iterations = flag_value(argument, kIterations);
+        } else if (argument == ::fixy::TextView{"--verbose"}) {
             cfg.verbose = true;
         }
     }

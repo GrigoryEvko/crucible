@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
 
     // Each iteration runs up to ~4K ring ops + O(N) mirror bookkeeping
     // — cap to keep 100K iters tractable in CI.
-    const Config cfg = parse_args(argc, argv, 100000);
+    const Config cfg = parse_args(::fixy::os::args(argc, argv), 100000);
 
     // Hoist the 5.25 MB ring out of the per-iteration allocation path.
     // reset() restores all three cursors (head, tail, cached_tail_)

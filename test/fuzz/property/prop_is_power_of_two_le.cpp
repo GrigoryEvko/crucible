@@ -155,7 +155,7 @@ template <typename T>
 
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(argc, argv, 2000000);
+    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
 
     // Both instantiations run the full iteration budget; the signed
     // one exercises the x<=0 guard and negative-bound branch.

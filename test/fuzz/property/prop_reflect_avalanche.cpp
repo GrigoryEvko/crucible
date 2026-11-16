@@ -51,7 +51,7 @@ struct PerturbedPair {
 int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    Config cfg = parse_args(argc, argv);
+    Config cfg = parse_args(::fixy::os::args(argc, argv));
     if (cfg.iterations < 10000) cfg.iterations = 10000;
 
     // Aggregate stats across iterations.  static so the property

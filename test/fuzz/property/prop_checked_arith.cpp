@@ -227,7 +227,7 @@ template <typename T>
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
-    const Config cfg = parse_args(argc, argv, 2000000);
+    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
 
     int rc = 0;
     rc |= run_checked<std::int8_t>("checked_i8", cfg);

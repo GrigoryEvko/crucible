@@ -29,7 +29,7 @@
 int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(argc, argv);
+    const Config cfg = parse_args(::fixy::os::args(argc, argv));
 
     return run(
         "compute_recipe_hash idempotence under hashed()", cfg, [](Rng& rng) { return random_recipe(rng); },

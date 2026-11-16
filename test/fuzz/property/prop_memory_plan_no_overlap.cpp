@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
     using crucible::PoolAllocator;
     using crucible::live_intervals_disjoint_at;
 
-    Config cfg = parse_args(argc, argv);
+    Config cfg = parse_args(::fixy::os::args(argc, argv));
 
     return run(
         "memory_plan_no_overlap", cfg,

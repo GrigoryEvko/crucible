@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::detail_ser;
     using namespace crucible::fuzz::prop;
-    const Config cfg = parse_args(argc, argv);
+    const Config cfg = parse_args(::fixy::os::args(argc, argv));
 
     return run(
         "Serialize header write/read round-trip", cfg,

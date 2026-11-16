@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     namespace obs = crucible::observe;
 
-    const Config cfg = parse_args(argc, argv, 2000000);
+    const Config cfg = parse_args(::fixy::os::args(argc, argv), 2000000);
 
     // ── Run A: layout arithmetic across four distinct shapes ──
     // Distinct (Significant, MaxValue) pairs exercise different
@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
     constexpr std::uint64_t kMax = Hist::max_trackable_value;
 
     // Keep histogram-construction-per-iteration affordable on deep runs.
-    const Config batch_cfg = parse_args(argc, argv, 100000);
+    const Config batch_cfg = parse_args(::fixy::os::args(argc, argv), 100000);
 
     rc |= run(
         "hdr_percentile_monotonic", batch_cfg,
