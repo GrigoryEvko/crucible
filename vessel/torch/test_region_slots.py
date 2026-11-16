@@ -6,6 +6,12 @@ The checks:
     mlp             the region of the training loop of test_region_ops.py
                     plans the result of the first addmm of the forward pass as
                     a slot of the region, with bytes of the pool
+    reused address  a loop frees a storage that a recorded op made, makes a new
+                    storage at its address with no record, and reads the new
+                    storage in a recorded op.  The new storage has another
+                    generation, so the plan gives it an external slot of its
+                    own, and the read does not join the slot of the dead
+                    storage
 
 Usage:
     python test_region_slots.py
@@ -26,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 
-from crucible_native import RegionSlot, attach  # noqa: E402
+from crucible_native import CrucibleNative, RegionSlot, _DispatchLib, attach  # noqa: E402
 from test_region_ops import (  # noqa: E402
     BATCH,
     HIDDEN,
@@ -43,6 +49,16 @@ from test_region_ops import (  # noqa: E402
 FLOAT_BYTES = 4
 # The depth of the addmm of a linear layer in the region of the training loop.
 ADDMM_DEPTH = 1
+# The float elements of the storages of the loop of a reused address: 36 MiB,
+# above 32 MiB, the largest mmap threshold of glibc.  So malloc maps each
+# storage on its own, and the kernel gives the range of a freed storage to the
+# next map of the same size.  A chunk of the heap does not serve here, because
+# the aligned allocation of PyTorch asks for more bytes than a freed chunk of
+# the same storage holds.
+REUSED_ELEMENTS = 9 << 20
+# The most iterations of the loop of a reused address before its region is
+# active.
+MAX_REUSE_ITERATIONS = 200
 
 
 def record_mlp(directory: Path) -> tuple[list[RegionOp], list[RegionSlot], int]:
@@ -111,9 +127,45 @@ def check_mlp() -> list[str]:
     return problems
 
 
+def check_reused_address() -> list[str]:
+    """Check that a storage at the address of a dead storage, with no record of its allocation, is a new input."""
+    lib = _DispatchLib()
+    problems = []
+    is_each_address_reused = True
+    with CrucibleNative() as ctx:
+        for _ in range(MAX_REUSE_ITERATIONS):
+            dead = torch.full((REUSED_ELEMENTS,), 1.0)
+            # The sum is one element, so no storage of the size of the dead
+            # one is freed between the free and the new storage.
+            kept = torch.sum(dead)
+            address = dead.data_ptr()
+            del dead
+            # The TLS mode INACTIVE keeps the op out of the record, so the
+            # recorder sees no allocation at the address.
+            lib.set_mode(CrucibleNative.INACTIVE)
+            fresh = torch.full((REUSED_ELEMENTS,), 3.0)
+            lib.set_mode(CrucibleNative.RECORD)
+            is_each_address_reused = is_each_address_reused and fresh.data_ptr() == address
+            torch.add(fresh, kept)
+            if ctx.active_num_ops() > 0:
+                break
+            ctx.flush()
+        if ctx.active_num_ops() == 0:
+            return [f"the loop of a reused address has no region after {MAX_REUSE_ITERATIONS} iterations"]
+        slots = ctx.active_region_slots()
+    if not is_each_address_reused:
+        problems.append("malloc gave the new storage another address in some iteration, so the plan proves nothing")
+    reused_bytes = REUSED_ELEMENTS * FLOAT_BYTES
+    external = [slot for slot in slots if slot.is_external and slot.nbytes == reused_bytes]
+    if len(external) != 1:
+        problems.append(f"the region has {len(external)} external slots of {reused_bytes} bytes, not one: the read "
+                        f"of the new storage at the address of the dead storage reads the slot of the dead storage")
+    return problems
+
+
 def main() -> int:
     """Run each check and report."""
-    problems = check_mlp()
+    problems = check_mlp() + check_reused_address()
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:
