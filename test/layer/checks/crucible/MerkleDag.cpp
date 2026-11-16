@@ -31,9 +31,9 @@ static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
 static_assert(std::is_trivially_destructible_v<TraceNode>, "an arena ends no TraceNode");
 
 // The link to the plan of a region takes one pointer, so the region keeps
-// its 80 bytes.  An arena ends no region.
+// its 88 bytes.  An arena ends no region.
 static_assert(sizeof(PlanLink) == sizeof(void*), "a link to a plan takes one pointer");
-static_assert(sizeof(RegionNode) == 80, "RegionNode must be 80 bytes — the persisted layout matches this");
+static_assert(sizeof(RegionNode) == 88, "RegionNode must be 88 bytes — the persisted layout matches this");
 static_assert(std::is_trivially_destructible_v<RegionNode>, "an arena ends no RegionNode");
 
 static_assert(sizeof(BranchNode) == 56, "BranchNode must be 56 bytes — the persisted layout matches this");

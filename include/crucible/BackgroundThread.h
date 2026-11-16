@@ -336,6 +336,10 @@ private:
     // owns it.  The first start() sets it to the tail of the metadata log.
     uint64_t meta_cursor_ = 0;
 
+    // The numerics hash that the build folds into each region: the hash of
+    // the default policy until the owner sets one before start.
+    NumericsHash numerics_ = compute_numerics_hash(NumericsPolicy{}, EagerNumerics{});
+
     // The position of the op that the detect stage reads, from its metadata
     // index: the index when it is valid, else the cursor.  A valid index
     // moves the cursor past the records of the op.  A valid index before the
@@ -388,6 +392,8 @@ public:
         // The slots of the memory plan.
         ::fixy::HeapArray<TensorSlot> slots;
         ContentHash content_hash;
+        // The numerics hash that the content hash folds.
+        NumericsHash numerics;
     };
 
     // A build: the trace graph, in the scratch arena that the caller gave,
@@ -875,6 +881,14 @@ public:
     // start that names a different ring or log breaks the contract.
     void start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank_ = -1,
                int32_t world_size_ = 0, uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
+
+    // Sets the numerics hash that the build folds into each region.  The
+    // owner calls it before start, and the start of the pipeline thread
+    // orders the write before each read of the build stage.  A call while the
+    // pipeline runs breaks the contract.
+    void set_numerics(NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+
+    [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
 
     // Signals the drain stage to stop and joins the pipeline thread.  The
     // pipeline joins its stage threads before the thread ends.  The signal

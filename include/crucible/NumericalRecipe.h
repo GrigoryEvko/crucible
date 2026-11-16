@@ -170,6 +170,71 @@ inline constexpr uint64_t kReservedSalt = 0x5245434950454944ULL;  // "RECIPEID"
     return r;
 }
 
+// The numerics policy of a run: the part of the numerics that the ops of a
+// region do not show.  The content hash of a region already folds the dtype
+// and the device of each tensor, so the policy holds only the choices that a
+// kernel of Crucible makes past them: the determinism tier, the accumulator
+// of each class of narrow float, and the flags.  One region can hold ops of
+// different dtypes, such as bf16 activations and f32 master weights, so the
+// policy is a value of the run and not a recipe of one op.  The recipe of
+// one op is the policy, the dtype and the device together, and the compile of
+// a kernel derives it.
+struct NumericsPolicy {
+    ReductionDeterminism determinism = ReductionDeterminism::ORDERED;
+    // The accumulator of Half and BFloat16.
+    ScalarType accum_16bit = ScalarType::Float;
+    // The accumulator of the fp8 formats.
+    ScalarType accum_8bit = ScalarType::Float;
+    ::fixy::Bits<RecipeFlags> flags{};
+
+    [[nodiscard]] friend constexpr bool operator==(NumericsPolicy const&, NumericsPolicy const&) noexcept = default;
+};
+
+// The state of the front end that changes the numerics of its eager ops, in
+// one word.  The front end reads it at the attach.  The word folds into the
+// hash of each region beside the policy, so a region records under the eager
+// numerics that its ops ran with.
+struct EagerNumerics {
+    // The precision of a float32 matmul of PyTorch: 0 for highest, 1 for high
+    // and 2 for medium.
+    static constexpr uint32_t MATMUL_PRECISION_MASK = 0x3;
+    // A cuBLAS matmul can use TF32.
+    static constexpr uint32_t MATMUL_TF32 = 1u << 2;
+    // A cuDNN convolution can use TF32.
+    static constexpr uint32_t CUDNN_TF32 = 1u << 3;
+    // The host flushes denormal floats to zero.
+    static constexpr uint32_t FLUSH_DENORMAL = 1u << 4;
+
+    uint32_t bits = 0;
+
+    [[nodiscard]] friend constexpr bool operator==(EagerNumerics, EagerNumerics) noexcept = default;
+};
+
+namespace detail_recipe {
+// The salt of the hash of a numerics policy, so the word of a policy and the
+// word of a recipe of the same bytes give two hashes.
+inline constexpr uint64_t kNumericsSalt = 0x4E554D4552494353ULL;  // "NUMERICS"
+}  // namespace detail_recipe
+
+// The hash of the policy and the eager word.  The four bytes of the policy and
+// the 32 bits of the word pack into one word, and the finalizer of a recipe
+// mixes it.  The result is never 0 and never the sentinel, so a region with a
+// policy never has the hash of a region with none.  The packed word holds no
+// address, so the hash is the same in each process.
+[[nodiscard, gnu::pure]] constexpr NumericsHash compute_numerics_hash(const NumericsPolicy& policy,
+                                                                      EagerNumerics eager) noexcept {
+    using detail_recipe::enum_byte;
+    const uint64_t packed = (uint64_t(enum_byte(policy.determinism)) << 0)
+                          | (uint64_t(enum_byte(policy.accum_16bit)) << 8)
+                          | (uint64_t(enum_byte(policy.accum_8bit)) << 16) | (uint64_t(policy.flags.raw()) << 24)
+                          | (uint64_t(eager.bits) << 32);
+    const uint64_t mixed = detail_recipe::fmix64(packed ^ detail_recipe::kNumericsSalt);
+    const bool is_reserved = mixed == 0 || mixed == NumericsHash::sentinel().raw();
+    const NumericsHash result{is_reserved ? detail_recipe::fmix64(mixed ^ detail_recipe::kReservedSalt) : mixed};
+    CRUCIBLE_POST(result, ::foundation::decide::is_non_zero(result) && !result.is_sentinel());
+    return result;
+}
+
 [[nodiscard, gnu::const]] constexpr bool is_bitexact(ReductionDeterminism d) noexcept {
     return d == ReductionDeterminism::BITEXACT_TC || d == ReductionDeterminism::BITEXACT_STRICT;
 }

@@ -59,8 +59,9 @@ namespace {
 constexpr size_t kKindOffset = 8;  // first byte after magic+version.
 
 // Region payload after the 32B header:
-//   num_ops(4) first_op_schema(8) measured_ms(4) variant_id(4) has_plan(1)
-constexpr size_t kRegionPrefix = 32 + 4 + 8 + 4 + 4 + 1;  // = 53
+//   num_ops(4) first_op_schema(8) numerics(8) measured_ms(4) variant_id(4)
+//   has_plan(1)
+constexpr size_t kRegionPrefix = 32 + 4 + 8 + 8 + 4 + 4 + 1;  // = 61
 // TraceEntry header:
 //   schema(8) shape(8) scope(8) callsite(8) num_inputs(2) num_outputs(2)
 //   num_scalar_args(2) grad_enabled(1) op_flags(1) kernel_id(1) depth(2)

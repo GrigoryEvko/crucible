@@ -371,9 +371,14 @@ using ValidContentHash = ::fixy::Refined<::fixy::non_zero, ContentHash>;
 // A compilable sequence of ops.
 struct RegionNode : TraceNode {
     ContentHash content_hash;
+    // The hash of the numerics policy and the eager word that the content
+    // hash folds (compute_numerics_hash), or zero for a region that a caller
+    // hashed with no policy.  A load of the region folds the ops under it
+    // again to check the content hash.
+    NumericsHash numerics;
     // One writer publishes the compiled kernel once and every reader
     // acquire-loads it.  sizeof(PublishOnce<T*>) equals sizeof(atomic<T*>),
-    // so the 80-byte layout below holds.
+    // so the 88-byte layout below holds.
     ::fixy::handle::PublishOnce<CompiledKernel> compiled;
 
     // The ops are in the memory of the region, and the node only borrows them.
@@ -666,6 +671,17 @@ public:
         state_ = detail::combine_ids(state_, recipe.hash.raw());
     }
 
+    // The fold of a region that the background pipeline records: the hash of
+    // the numerics policy of the run and of the eager word folds in before
+    // any op, as a recipe does.  So two runs of the same ops under two
+    // policies, or under two eager words, give two content hashes.  A hash of
+    // zero is the hash of no policy, and the precondition refuses it.
+    explicit ContentHashFold(NumericsHash numerics) noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(numerics));
+        CRUCIBLE_PRE(!numerics.is_sentinel());
+        state_ = detail::combine_ids(state_, numerics.raw());
+    }
+
     [[gnu::always_inline]] void fold(const TraceEntry& op_record) noexcept { fold_entry_(state_, op_record); }
 
     [[nodiscard, gnu::always_inline]] ContentHash finish() const noexcept {
@@ -777,6 +793,19 @@ private:
 // The content hash of ops under no numerical recipe.
 [[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(::fixy::View<const TraceEntry> ops) noexcept {
     ContentHashFold fold{ContentHashFold::NoRecipe{}};
+    for (const TraceEntry& op_record : ops) {
+        fold.fold(op_record);
+    }
+    return fold.finish();
+}
+
+// The content hash of ops under the numerics policy of a run, as the
+// background pipeline folds it while it builds a region.
+[[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(::fixy::View<const TraceEntry> ops,
+                                                                 NumericsHash numerics) noexcept {
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(numerics));
+    CRUCIBLE_PRE(!numerics.is_sentinel());
+    ContentHashFold fold{numerics};
     for (const TraceEntry& op_record : ops) {
         fold.fold(op_record);
     }
@@ -896,15 +925,18 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
     return node;
 }
 
-// For a caller that has already folded the hash while streaming the ops, and
-// that owns the storage of the node.  The node must be default-constructed.
-inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, ContentHash precomputed_hash) noexcept {
+// For a caller that has already folded the hash while streaming the ops under
+// the numerics hash, and that owns the storage of the node.  The node must be
+// default-constructed.
+inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, ContentHash precomputed_hash,
+                             NumericsHash numerics) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(precomputed_hash) || ops.size() == 0);
     // A non-zero hash here means a second construction over a live node.
     CRUCIBLE_PRE(node.content_hash.raw() == 0);
     node.kind = TraceNodeKind::REGION;
     node.ops = ops;
     node.content_hash = precomputed_hash;
+    node.numerics = numerics;
     node.first_op_schema = first_op_schema_of(ops);
     CRUCIBLE_POST(0, node.kind == TraceNodeKind::REGION);
     CRUCIBLE_POST(0, node.ops.size() == ops.size());

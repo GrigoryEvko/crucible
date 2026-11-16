@@ -306,6 +306,7 @@ CRUCIBLE_STRONG_HASH(CallsiteHash);  // identity of a source location
 CRUCIBLE_STRONG_HASH(ContentHash);  // structural identity of one region
 CRUCIBLE_STRONG_HASH(MerkleHash);  // identity of a subtree, descendants included
 CRUCIBLE_STRONG_HASH(RecipeHash);  // identity of a numerical recipe
+CRUCIBLE_STRONG_HASH(NumericsHash);  // identity of the numerics policy of a run
 CRUCIBLE_STRONG_HASH(RowHash);  // identity of an effect row
 
 #undef CRUCIBLE_STRONG_HASH
@@ -350,6 +351,10 @@ struct hash_family_of<MerkleHash> {
 };
 template <>
 struct hash_family_of<RecipeHash> {
+    using family = hash_family::FamilyA;
+};
+template <>
+struct hash_family_of<NumericsHash> {
     using family = hash_family::FamilyA;
 };
 template <>

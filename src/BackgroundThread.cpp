@@ -557,7 +557,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         .published = {},
         .left_generation = NOT_LEFT};
     RegionNode& region = *memory.node.get(0).expect("the region memory holds one node");
-    init_region_node(region, memory.parts.ops.view(), memory.parts.content_hash);
+    init_region_node(region, memory.parts.ops.view(), memory.parts.content_hash, memory.parts.numerics);
     const uint32_t num_slots = static_cast<uint32_t>(memory.parts.slots.size());
     if (num_slots > 0) {
         memory.plan =
@@ -871,6 +871,13 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
     }
 }
 
+void BackgroundThread::set_numerics(NumericsHash numerics) noexcept {
+    CRUCIBLE_PRE(!pipeline_->thread.is_some());
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(numerics));
+    CRUCIBLE_PRE(!numerics.is_sentinel());
+    numerics_ = numerics;
+}
+
 void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
                              int32_t rank_, int32_t world_size_, uint64_t device_cap) {
     CRUCIBLE_PRE(!pipeline_->thread.is_some());
@@ -1158,30 +1165,15 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
     // MerkleDag.h.  Spelling the seed here instead is what used to make
     // a change to one of them silent.
     //
-    // NoRecipe, and it is a statement about this build rather than about
-    // these ops.  A region's content hash is the compiler's cache key,
-    // and the key is only sound if it separates regions whose numerics
-    // differ.  Nothing in the runtime selects numerics: RecipePool and
-    // RecipeRegistry exist and are tested, and no production translation
-    // unit constructs either one, so there is exactly one unnamed
-    // numerical regime and every region belongs to it.  Under one regime
-    // a recipe-blind key separates nothing it needs to separate, and
-    // folding a placeholder in its place would move every persisted hash
-    // to distinguish a set of size one from itself.
-    //
-    // What must not happen is a SECOND regime arriving while this line
-    // still says NoRecipe: two regions with identical ops under
-    // different recipes would then share a key, and a lookup made under
-    // one would be served a kernel compiled under the other.  A wrong
-    // kernel is worse than no kernel, so the recipe has to reach this
-    // fold in the same change that first selects one.  It would reach it
-    // from the recording boundary, which is the only place that knows
-    // which numerics the caller asked for: Vigil::dispatch_op fills a
-    // TraceRing::Entry, that entry is drained into the TraceEntry below,
-    // and neither carries a recipe field today.  Adding one is a change
-    // to TraceRing.h and Vigil.h, and from there the recipe arrives here
-    // and this construction takes it.
-    ContentHashFold content_fold{ContentHashFold::NoRecipe{}};
+    // The content hash of a region is the key of the kernel cache, so it
+    // separates two regions whose numerics differ.  The fold already reads
+    // the dtype and the device of each tensor.  The rest of the numerics is
+    // the policy of the run and the eager word of the front end, and their
+    // hash folds in first (compute_numerics_hash).  The recipe of one op is
+    // the policy, the dtype and the device together, and the compile of a
+    // kernel derives it, so no op carries a recipe.
+    const NumericsHash numerics = numerics_;
+    ContentHashFold content_fold{numerics};
 
     for (const auto index : trace_data.indices()) {
         const uint32_t i = ::fixy::narrow<uint32_t>(index.raw()).expect("a branded index fits in 32 bits");
@@ -1491,7 +1483,8 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
                                             .producers = std::move(producer_buffer),
                                             .slot_ids = std::move(slot_buffer),
                                             .slots = std::move(slots),
-                                            .content_hash = graph->content_hash}};
+                                            .content_hash = graph->content_hash,
+                                            .numerics = numerics}};
 }
 
 ::fixy::Ref<MemoryPlan> BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, MemoryPlan& plan_storage,

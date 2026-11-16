@@ -201,7 +201,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 13;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 14;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -211,11 +211,13 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         // CDAG_VERSION 11 writes the storage size of each meta in 8 bytes,
         // not 4.  CDAG_VERSION 12 writes the nesting depth of each op in 2
         // bytes, and CDAG_VERSION 13 the tags of its scalars in 2 more.  The
-        // image holds 3 ops, so it is 12 bytes longer than in 11.  The
-        // content hash of the header folds the tags, the depths, the
-        // producers and the outputs of the ops.
-        constexpr size_t EXPECTED_WIRE_BYTES = 1820;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0x85fd00c92300cd48ULL;
+        // image holds 3 ops, so it is 12 bytes longer than in 11.
+        // CDAG_VERSION 14 writes the numerics hash of the region in 8 bytes,
+        // zero for this region of make_region.  The content hash of the
+        // header folds the tags, the depths, the producers and the outputs of
+        // the ops.
+        constexpr size_t EXPECTED_WIRE_BYTES = 1828;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0x866b5e2b6fcc8043ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,
@@ -485,6 +487,54 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         const crucible::TraceEntry& loaded_op = loaded_scalars.op_at(0);
         assert(loaded_op.num_inputs() == 0 && loaded_op.num_outputs() == 0);
         assert(::fixy::equal(loaded_op.scalar_args(), scalar_op.scalar_args()));
+    }
+
+    // A region of the background pipeline holds the numerics hash that its
+    // content hash folds.  The image keeps the hash, the load folds the ops
+    // under it, and an image whose hash names a different policy is refused.
+    {
+        ::fixy::BumpArena policy_arena{1 << 16};
+        const ::fixy::View<crucible::TraceEntry> policy_ops =
+            policy_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        crucible::TraceEntry& policy_op = *policy_ops.get(0).expect("the region holds one op");
+        policy_op.schema_hash = crucible::SchemaHash{0x78};
+        policy_op.set_scalar_args(crucible::test::run_of(test.alloc, policy_arena, int64_t{7}));
+        crucible::NumericsPolicy strict{};
+        strict.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
+        const crucible::NumericsHash numerics = crucible::compute_numerics_hash(strict, crucible::EagerNumerics{});
+        crucible::RegionNode& policy_region = *policy_arena.make<crucible::RegionNode>(test.alloc);
+        crucible::init_region_node(policy_region, policy_ops, crucible::compute_content_hash(policy_ops, numerics),
+                                   numerics);
+
+        ::fixy::HeapArray<std::byte> policy_buf = ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0});
+        const size_t policy_bytes =
+            crucible::serialize_region(crucible::SerializedRegion{policy_region}, policy_buf.view());
+        assert(policy_bytes > 0);
+        ::fixy::BumpArena policy_load{1 << 16};
+        const crucible::RegionNode& loaded_policy =
+            *crucible::deserialize_region(
+                 test.alloc, policy_buf.view().window(0, policy_bytes).expect("the writer writes inside its image"),
+                 policy_load)
+                 .expect("a region under a policy loads back")
+                 .value();
+        assert(loaded_policy.numerics == numerics && loaded_policy.content_hash == policy_region.content_hash);
+
+        // The numerics hash follows the first schema, after the 32 bytes of
+        // the header and the count of the ops.
+        constexpr size_t kNumericsOffset = 32 + 4 + 8;
+        ::fixy::HeapArray<std::byte> other = ::fixy::mint_heap_array(test.alloc, policy_bytes, std::byte{0});
+        ::fixy::copy(other.view(), policy_buf.view().window(0, policy_bytes).expect("the image fits"))
+            .expect("the two runs hold the image");
+        const crucible::NumericsHash ordered =
+            crucible::compute_numerics_hash(crucible::NumericsPolicy{}, crucible::EagerNumerics{});
+        for (size_t byte = 0; byte < 8; ++byte) {
+            *other.view().get(kNumericsOffset + byte).expect("the image holds the hash") =
+                static_cast<std::byte>((ordered.raw() >> (8 * byte)) & 0xFF);
+        }
+        ::fixy::BumpArena other_load{1 << 16};
+        assert(reason_of(crucible::deserialize_region(test.alloc, other.view(), other_load))
+                   == crucible::LoadError::content_hash_mismatch
+               && "the ops of the image do not hash to its content hash under another policy");
     }
 
     crucible::test::pass("test_serialize: all tests passed\n");

@@ -186,8 +186,8 @@ void test_reused_address_keeps_the_hash() {
     const BackgroundThread::BuiltRegion reused = build_three_ops(kX);
     assert(fresh.content_hash == reused.content_hash
            && "the content hash does not depend on the address that the allocator gives a new tensor");
-    assert(fresh.content_hash == crucible::compute_content_hash(fresh.ops.view()));
-    assert(reused.content_hash == crucible::compute_content_hash(reused.ops.view()));
+    assert(fresh.content_hash == crucible::compute_content_hash(fresh.ops.view(), fresh.numerics));
+    assert(reused.content_hash == crucible::compute_content_hash(reused.ops.view(), reused.numerics));
     crucible::test::pass("  test_reused_address_keeps_the_hash: PASSED\n");
 }
 
@@ -295,6 +295,35 @@ void test_result_of_a_nest_is_internal() {
     crucible::test::pass("  test_result_of_a_nest_is_internal: PASSED\n");
 }
 
+// The same ops under the default policy, under the strict tier, and under
+// the default policy with the host that flushes denormal floats give three
+// content hashes.  Each region keeps the numerics hash that its content hash
+// folds.
+void test_numerics_policy_moves_the_hash() {
+    const BackgroundThread::BuiltRegion ordered = build_three_ops(kZ);
+    assert(ordered.numerics == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, crucible::EagerNumerics{}));
+
+    crucible::NumericsPolicy strict_policy{};
+    strict_policy.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
+    const crucible::EagerNumerics flushing{.bits = crucible::EagerNumerics::FLUSH_DENORMAL};
+    const ::fixy::FixedArray<crucible::NumericsHash, 2> others{
+        crucible::compute_numerics_hash(strict_policy, crucible::EagerNumerics{}),
+        crucible::compute_numerics_hash(crucible::NumericsPolicy{}, flushing)};
+    for (const crucible::NumericsHash numerics : others) {
+        Rig rig;
+        rig.bt.set_numerics(numerics);
+        rig.work.push_source(*rig.log, 0, vector_at(kX));
+        rig.work.push_unary(*rig.log, 1, vector_at(kX), vector_at(kY));
+        rig.work.push_unary(*rig.log, 2, vector_at(kY), vector_at(kZ));
+        const BackgroundThread::BuiltRegion region = rig.build();
+        assert(region.numerics == numerics);
+        assert(region.content_hash != ordered.content_hash && "the numerics of the run separate two regions");
+        assert(region.content_hash == crucible::compute_content_hash(region.ops.view(), numerics));
+    }
+    assert(*others.view().get(0).expect("two hashes") != *others.view().get(1).expect("two hashes"));
+    crucible::test::pass("  test_numerics_policy_moves_the_hash: PASSED\n");
+}
+
 // Two ops read the external storage X, the first one at the first element
 // and the second one at element 8.  The two reads have one external slot and
 // no producer.
@@ -325,6 +354,7 @@ int main() {
     test_return_of_the_nest_keeps_the_slot();
     test_result_of_a_nest_is_internal();
     test_reads_of_an_external_take_one_slot();
+    test_numerics_policy_moves_the_hash();
     crucible::test::pass("test_build_address_reuse: ALL PASSED\n");
     return 0;
 }

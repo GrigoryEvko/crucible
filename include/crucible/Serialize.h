@@ -53,8 +53,10 @@ using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::s
 // id, so a region of the store keeps the ops that a lowering takes.
 // 13 (2026-11-16): each op has the tags of its scalars on the wire, after its
 // depth, and the content hash folds them.
+// 14 (2026-11-16): each region has the hash of its numerics policy on the wire,
+// after its first schema, and the content hash folds it.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{13});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{14});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
@@ -462,6 +464,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
 
     w.w(region->num_ops());
     w.w(region->first_op_schema.raw());
+    w.w(region->numerics.raw());
     w.w(region->measured_ms);
     w.w(region->variant_id.get());
 
@@ -548,6 +551,12 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     const uint32_t num_ops = r.r<uint32_t>();
     if (num_ops > CDAG_MAX_OPS) return ::fixy::err(r.reason_or(LoadError::count_above_limit));
     const SchemaHash first_op_schema = SchemaHash{r.r<uint64_t>()};
+    // The numerics hash that the content hash folds, or zero for a region
+    // that its maker hashed with no policy.  The sentinel names no policy.
+    const NumericsHash numerics = NumericsHash{r.r<uint64_t>()};
+    if (numerics.is_sentinel()) [[unlikely]] {
+        return ::fixy::err(r.reason_or(LoadError::content_hash_mismatch));
+    }
     // RegionNode::set_measured_ms keeps the time finite and not negative.
     // The comparison also refuses a NaN.
     const float measured_ms =
@@ -710,10 +719,13 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     // stated hash is not the hash of its operations.  A peer that could state
     // any hash could make this region take the kernels of another one.
     //
-    // The fold is the one make_region uses with no recipe.  A region hashed
-    // under a recipe is refused here, because the image does not carry the
-    // recipe and the loader cannot fold it.
-    if (compute_content_hash(ops) != hdr.content_hash) [[unlikely]] {
+    // The fold is the one of the background pipeline under the numerics hash
+    // of the image, or the one make_region uses with no recipe when the hash
+    // is zero.  A region hashed under a recipe is refused here, because the
+    // image does not carry the recipe and the loader cannot fold it.
+    const ContentHash folded =
+        ::foundation::decide::is_non_zero(numerics) ? compute_content_hash(ops, numerics) : compute_content_hash(ops);
+    if (folded != hdr.content_hash) [[unlikely]] {
         return ::fixy::err(LoadError::content_hash_mismatch);
     }
     // make_region sets the first schema from the operations, so the field is
@@ -726,6 +738,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     node->kind = TraceNodeKind::REGION;
     node->merkle_hash = hdr.merkle_hash;
     node->content_hash = hdr.content_hash;
+    node->numerics = numerics;
     node->next = ::fixy::none;
     node->ops = ops;
     node->first_op_schema = first_op_schema;

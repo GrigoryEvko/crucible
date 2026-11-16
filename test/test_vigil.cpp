@@ -117,7 +117,38 @@ static void test_refused_load_reports_its_reason(::fixy::TextView directory) {
     crucible::test::pass("  refused_load_reports_its_reason: PASSED\n");
 }
 
+// A Vigil hashes each region that it publishes under the numerics policy and
+// the eager word of its Config.  Two Vigils that record the same ops under two
+// policies publish two content hashes.
+static void test_region_hashes_under_the_numerics_of_the_config() {
+    crucible::Vigil::Config strict_config;
+    strict_config.numerics.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
+    strict_config.eager.bits = crucible::EagerNumerics::FLUSH_DENORMAL;
+    crucible::Vigil strict{std::move(strict_config)};
+    crucible::Vigil ordered;
+    divrig::feed_one_region(strict, 0);
+    divrig::feed_one_region(ordered, 0);
+    crucible::test::flush_and_wait_region_published(strict);
+    crucible::test::flush_and_wait_region_published(ordered);
+
+    const ::fixy::Ref<const crucible::RegionNode> strict_region =
+        strict.active_region().expect("the flush published a region");
+    const ::fixy::Ref<const crucible::RegionNode> ordered_region =
+        ordered.active_region().expect("the flush published a region");
+    crucible::NumericsPolicy strict_policy{};
+    strict_policy.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
+    assert(strict_region->numerics
+           == crucible::compute_numerics_hash(
+               strict_policy, crucible::EagerNumerics{.bits = crucible::EagerNumerics::FLUSH_DENORMAL}));
+    assert(ordered_region->numerics
+           == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, crucible::EagerNumerics{}));
+    assert(strict_region->content_hash != ordered_region->content_hash
+           && "the numerics of the run separate two regions of the same ops");
+    crucible::test::pass("  region_hashes_under_the_numerics_of_the_config: PASSED\n");
+}
+
 int main() {
+    test_region_hashes_under_the_numerics_of_the_config();
     test_vigil::test_divergence_drops_the_unobserved_region();
     test_vigil::test_divergence_drops_the_regions_of_the_backlog();
     test_vigil::test_divergence_drops_a_half_finished_alignment();

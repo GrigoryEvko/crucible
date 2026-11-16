@@ -68,10 +68,11 @@ void Gate::on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&
     const crucible::RegionNode* const region = ready.region.try_get();
 
     // The hash the background thread folded while streaming the ops must
-    // equal the hash the canonical span fold produces over the same ops.
-    // This is the assertion that binds the production producer to the
-    // canonical one on a region that really came off the pipeline.
-    const crucible::ContentHash canonical = crucible::compute_content_hash(region->ops);
+    // equal the hash the canonical span fold produces over the same ops,
+    // under the numerics hash of the region.  This is the assertion that
+    // binds the production producer to the canonical one on a region that
+    // really came off the pipeline.
+    const crucible::ContentHash canonical = crucible::compute_content_hash(region->ops, region->numerics);
     if (canonical != region->content_hash) (void)hash_mismatches.fetch_add_acq_rel(1u);
 
     const bool after_reset = reset_observed.load_acquire();

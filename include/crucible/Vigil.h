@@ -148,6 +148,12 @@ public:
 
         // Only the deadline-miss budget and the window length are read here.
         warden::Policy watchdog_policy = warden::Policy::production();
+
+        // The numerics policy of the run, fixed for the life of the Vigil,
+        // and the eager word that the front end read at the attach.  The
+        // hash of each region folds the two (compute_numerics_hash).
+        NumericsPolicy numerics{};
+        EagerNumerics eager{};
     };
 
     // Consecutive op matches required to confirm an iteration boundary
