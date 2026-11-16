@@ -1,10 +1,10 @@
 // The contract handler of src/foundation/ContractHandler.cpp, in child
 // processes.
 //
-// A report names the violated condition, its position and the note of a
-// message form, and the child ends by SIGABRT.  These two cases run through
-// the child door of fixy/os/Process.h, and the test reads the report of the
-// child.
+// A report names the violated condition and its position, and the child
+// ends by SIGABRT.  The predicate text of a message form holds its message.
+// These two cases run through the child door of fixy/os/Process.h, and the
+// test reads the report of the child.
 //
 // A second violation on the thread that reports the first one aborts at
 // once.  The child fills the pipe that is its standard error, so the report
@@ -45,8 +45,8 @@ volatile bool g_condition_holds = false;
 
 [[gnu::noinline]] void violate_a_clause() noexcept { contract_assert(g_condition_holds); }
 
-[[gnu::noinline]] void violate_with_a_note() noexcept {
-    CRUCIBLE_PRE_MSG(g_condition_holds, "the note of the message form");
+[[gnu::noinline]] void violate_with_a_message() noexcept {
+    CRUCIBLE_PRE_MSG(g_condition_holds, "the message of the message form");
 }
 
 // Runs body in a child through the child door, and gives its report.
@@ -77,17 +77,20 @@ void clause_report_names_the_condition(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "  a violated clause is reported with its condition and position\n");
 }
 
-void message_report_carries_its_note(::fixy::TestRunnerCtx const& test) {
-    ::fixy::process::ChildReport const report = run_through_the_door(test, [] noexcept { violate_with_a_note(); });
+// The message is a part of the predicate text, and the report has no other
+// line that can hold it.  So the report starts with the condition, and it
+// holds the message.
+void message_report_carries_its_message(::fixy::TestRunnerCtx const& test) {
+    ::fixy::process::ChildReport const report = run_through_the_door(test, [] noexcept { violate_with_a_message(); });
     ::fixy::TextView const text = report.output();
     bool const is_reported =
         report.is_signaled_by(::foundation::os::kAbortSignal)
-        && ::fixy::starts_with(text, ::fixy::TextView{"foundation: contract violation: g_condition_holds\n"})
-        && ::fixy::find(text, ::fixy::TextView{"violate_with_a_note"}).is_some()
-        && ::fixy::find(text, ::fixy::TextView{"\n  note: the note of the message form\n"}).is_some();
+        && ::fixy::starts_with(text, ::fixy::TextView{"foundation: contract violation: g_condition_holds"})
+        && ::fixy::find(text, ::fixy::TextView{"violate_with_a_message"}).is_some()
+        && ::fixy::find(text, ::fixy::TextView{"the message of the message form"}).is_some();
     if (!is_reported) show_the_child_output(report);
     CRUCIBLE_TEST_ASSERT(test, is_reported);
-    ::fixy::check::pass(test, "  a violated message form is reported with its note\n");
+    ::fixy::check::pass(test, "  a violated message form is reported with its message\n");
 }
 
 }  // namespace
@@ -114,8 +117,8 @@ void violate_a_clause_in_a_signal(int /*signal*/) {
     if (g_first_violation_started != 0) violate_a_clause();
 }
 
-void violate_with_a_note_in_a_signal(int /*signal*/) {
-    if (g_first_violation_started != 0) violate_with_a_note();
+void violate_with_a_message_in_a_signal(int /*signal*/) {
+    if (g_first_violation_started != 0) violate_with_a_message();
 }
 
 struct ChildResult {
@@ -215,12 +218,12 @@ template <void (*First)() noexcept, void (*Second)(int)>
 }
 
 [[nodiscard]] bool clause_violation_during_a_message_report_aborts() {
-    return second_violation_aborts_at_once<violate_with_a_note, violate_a_clause_in_a_signal>(
+    return second_violation_aborts_at_once<violate_with_a_message, violate_a_clause_in_a_signal>(
         "a clause violation during a blocked message report aborts at once");
 }
 
 [[nodiscard]] bool message_violation_during_a_clause_report_aborts() {
-    return second_violation_aborts_at_once<violate_a_clause, violate_with_a_note_in_a_signal>(
+    return second_violation_aborts_at_once<violate_a_clause, violate_with_a_message_in_a_signal>(
         "a message violation during a blocked clause report aborts at once");
 }
 
@@ -230,7 +233,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     clause_report_names_the_condition(test);
-    message_report_carries_its_note(test);
+    message_report_carries_its_message(test);
     CRUCIBLE_TEST_ASSERT(test, second_clause_violation_aborts());
     CRUCIBLE_TEST_ASSERT(test, clause_violation_during_a_message_report_aborts());
     CRUCIBLE_TEST_ASSERT(test, message_violation_during_a_clause_report_aborts());

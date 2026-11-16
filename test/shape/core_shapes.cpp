@@ -844,6 +844,14 @@ using ProbeToken = ::foundation::permissions::Permission<ProbeRegion, ProbeBrand
     return tripled;
 }
 
+// The message form is a precondition whose condition carries the message.
+// The compiler folds the message out of the condition, so the message is
+// only a constant of the report.
+[[gnu::used]] std::uint64_t contract_pre_msg(std::uint64_t index, std::uint64_t count) noexcept {
+    CRUCIBLE_PRE_MSG(index < count, "the index is less than the count");
+    return index * 3;
+}
+
 // ── The raw forms ───────────────────────────────────────────────────────────
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the raw form that the shape of each family probe is compared with")
@@ -1511,6 +1519,11 @@ struct RawToken final {};
     std::uint64_t const tripled = index * 3;
     contract_assert(tripled != count);
     return tripled;
+}
+
+[[gnu::used]] std::uint64_t contract_pre_msg_raw(std::uint64_t index, std::uint64_t count) noexcept {
+    contract_assert(index < count);
+    return index * 3;
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

@@ -692,12 +692,12 @@ foundation_test(test_decide_fuzz)
 foundation_test(test_pre_post)
 
 # The contract handler of src/foundation/ContractHandler.cpp, in child
-# processes.  A report names the condition, its position and the note of a
-# message form.  A second violation that interrupts a blocked report on the
-# same thread aborts at once.  The first two cases start their child through
-# the child door of fixy/os/Process.h.  For the blocked report, the parent
-# sleeps between two waits for the child through the bounded sleeper of
-# fixy/os/Time.h.  So the test links fixy.
+# processes.  A report names the condition and its position, and the
+# condition of a message form holds its message.  A second violation that
+# interrupts a blocked report on the same thread aborts at once.  The first
+# two cases start their child through the child door of fixy/os/Process.h.
+# For the blocked report, the parent sleeps between two waits for the child
+# through the bounded sleeper of fixy/os/Time.h.  So the test links fixy.
 foundation_test(test_contract_handler)
 target_link_libraries(test_contract_handler PRIVATE fixy)
 

@@ -60,7 +60,7 @@ CRUCIBLE_PROCESS_WIDE [[gnu::tls_model(
 namespace {
 
 // The most characters that a report takes from one C string of a violation:
-// the comment, the file, the function or the note.  A longer string loses its
+// the comment, the file or the function.  A longer string loses its
 // end, and a string with no terminating zero in that span stops at the bound.
 constexpr std::size_t kTextBound = 4096;
 
@@ -176,9 +176,10 @@ void report_fatal_text(char const* text, char const* file, std::uint32_t line, c
     report.append("\n");
 }
 
+// The comment is the predicate text.  The message forms of
+// foundation/contracts/Pre.h put their message at its end.
 [[gnu::cold]]
-void report_violation(char const* comment, char const* file, unsigned line, char const* function,
-                      char const* note) noexcept {
+void report_violation(char const* comment, char const* file, unsigned line, char const* function) noexcept {
     stderr_report report;
     report.append("foundation: contract violation: ");
     report.append_or(comment, "(no comment)");
@@ -189,11 +190,6 @@ void report_violation(char const* comment, char const* file, unsigned line, char
     report.append(" in ");
     report.append_or(function, "(unknown function)");
     report.append("\n");
-    if (note != nullptr && *note != '\0') {
-        report.append("  note: ");
-        report.append_or(note, "");
-        report.append("\n");
-    }
 }
 
 }  // namespace
@@ -205,32 +201,11 @@ void handle_contract_violation(const std::contracts::contract_violation& v) noex
 void handle_contract_violation(const std::contracts::contract_violation& v) noexcept {
     enter_report_or_abort();
     const std::source_location loc = v.location();
-    report_violation(v.comment(), loc.file_name(), loc.line(), loc.function_name(), /*note=*/nullptr);
+    report_violation(v.comment(), loc.file_name(), loc.line(), loc.function_name());
     leave_report();
     ::foundation::detail::breakpoint_if_debugging();
     ::foundation::os::abort_process();
 }
-
-// The message forms CRUCIBLE_PRE_MSG and CRUCIBLE_POST_MSG call this.  A
-// language contract clause has no message, and user code cannot make a
-// std::contracts::contract_violation, because its implementation pointer
-// is internal to the standard library.  So this function repeats the abort
-// discipline of handle_contract_violation, and it does not call the handler.
-namespace foundation::detail {
-
-[[noreturn, gnu::cold]]
-void contract_failed_msg(char const* expr, char const* file, int line, char const* fn, char const* msg) noexcept;
-
-[[noreturn, gnu::cold]]
-void contract_failed_msg(char const* expr, char const* file, int line, char const* fn, char const* msg) noexcept {
-    enter_report_or_abort();
-    report_violation(expr, file, static_cast<unsigned>(line), fn, msg);
-    leave_report();
-    ::foundation::detail::breakpoint_if_debugging();
-    ::foundation::os::abort_process();
-}
-
-}  // namespace foundation::detail
 
 // The cold arms of fatal() and unreachable().  The texts are constant
 // arrays that the consteval constructors of Fmt and Site checked, so each

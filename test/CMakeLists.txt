@@ -317,6 +317,9 @@ crucible_contract_ignore_target(test_crucible_context_migration_ignore)
 # under the ignore semantic.
 crucible_test(test_fatal_invariants_under_ignore)
 crucible_contract_ignore_target(test_fatal_invariants_under_ignore)
+# The message forms of a contract in a function of the namespace crucible
+# report the message, and the rule layer-boundary gives the unit no finding.
+crucible_test(test_contract_message)
 # Each group of tests is a source file of its own, so that no translation
 # unit compiles all of them.
 crucible_test(test_vigil_dispatch test_vigil_dispatch.cpp test_vigil_dispatch_threads.cpp

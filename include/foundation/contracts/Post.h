@@ -34,8 +34,9 @@
         CRUCIBLE_PRE_FAST(cond);         \
     } while (0)
 
-// Adds a note line to the runtime diagnostic.  At consteval the message is
-// unused and the behaviour matches the unannotated form.
+// Adds the message to the predicate text of the runtime report, as
+// CRUCIBLE_PRE_MSG does.  At consteval the message is unused and the
+// behaviour matches the unannotated form.
 #define CRUCIBLE_POST_MSG(retvar, cond, msg) \
     do {                                     \
         (void)(retvar);                      \

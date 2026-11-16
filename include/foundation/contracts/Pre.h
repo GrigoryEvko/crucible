@@ -45,30 +45,19 @@
 //
 // Each translation unit that instantiates a template with one of these
 // macros references the violation handler, as a language contract clause
-// does.  The message form also references contract_failed_msg.  So a
-// library or a program that instantiates such a template links
-// `foundation`, which defines the two functions.
+// does.  So a library or a program that instantiates such a template links
+// `foundation`, which defines the handler.
 //
-// The violation handler and the reporting function of the message form
-// are in src/foundation/ContractHandler.cpp.  Every binary that links
-// `foundation` contains them.  The macro names keep their CRUCIBLE_
-// prefix for the reason foundation/Platform.h gives: macros have no
-// namespace, and the layer rule is stated over namespace roots.
+// The violation handler is in src/foundation/ContractHandler.cpp.  Every
+// binary that links `foundation` contains it.  The macro names keep their
+// CRUCIBLE_ prefix for the reason foundation/Platform.h gives: macros have
+// no namespace, and the layer rule is stated over namespace roots.  No
+// expansion of these macros spells a name, so a function of each layer can
+// use each of them.
 
 #pragma once
 
 #include <foundation/Platform.h>
-
-namespace foundation::detail {
-
-// Writes the predicate text, the source location and the message of the
-// caller to file descriptor 2 with async-signal-safe calls only.  Then it
-// stops at a breakpoint if a debugger is attached, and aborts.  A second
-// violation on the thread while it reports aborts at once.
-[[noreturn, gnu::cold]]
-void contract_failed_msg(char const* expr, char const* file, int line, char const* fn, char const* msg) noexcept;
-
-}  // namespace foundation::detail
 
 #if defined(CRUCIBLE_CONTRACT_SEMANTIC_IGNORE)
 
@@ -132,38 +121,29 @@ void contract_failed_msg(char const* expr, char const* file, int line, char cons
 
 #endif
 
-// The message reaches the runtime report only.  A trap during constant
-// evaluation carries no extra text either way.  The message must be a
-// string literal.  The `""` before it causes a compile error for a
-// message of a different kind.
+// The message form is CRUCIBLE_PRE of the condition `cond ? true : false
+// && msg`, which has the value of cond.  The compiler folds the message out
+// of the code, so the code is the code of CRUCIBLE_PRE under each contract
+// semantic.  The message must be a string literal: the `""` before it
+// refuses a message of a different kind.  The conditional operator binds
+// more loosely than each operator of a condition, apart from an assignment
+// and a comma.  So a condition with `||` keeps its value, and it gives no
+// -Wparentheses warning.  A trap during constant evaluation has no text.
 //
-// A language contract clause has no message.  Because of this, the
-// checking arm of this form calls a reporting function of its own.  That
-// function aborts, as the handler of this project does.  A program that
-// replaces the handler does not change that function.
-#if defined(CRUCIBLE_CONTRACT_SEMANTIC_IGNORE)
-
-#define CRUCIBLE_PRE_MSG(cond, msg) \
-    do {                            \
-        (void)("" msg);             \
-        CRUCIBLE_PRE(cond);         \
+// The violation handler prints the predicate text, and the message is its
+// last token.  The text runs from the first token of cond to the message,
+// so it keeps the message when the last token of cond comes from a macro.
+// When the first token comes from a macro, the text is wrong as for
+// CRUCIBLE_PRE.  A macro of a different file gives the expression in the
+// form of the compiler, with the message.  A macro of the same file gives
+// the source text from the definition of the macro to the message.  The
+// report keeps at most 4096 characters of that text, so a long span loses
+// the message.
+#define CRUCIBLE_PRE_MSG(cond, msg)               \
+    do {                                          \
+        (void)("" msg);                           \
+        CRUCIBLE_PRE(cond ? true : false && msg); \
     } while (0)
-
-#else
-
-#define CRUCIBLE_PRE_MSG(cond, msg)                                                                  \
-    do {                                                                                             \
-        if (!(cond)) [[unlikely]] {                                                                  \
-            if consteval {                                                                           \
-                __builtin_trap();                                                                    \
-            } else {                                                                                 \
-                ::foundation::detail::contract_failed_msg(#cond, __builtin_FILE(), __builtin_LINE(), \
-                                                          __PRETTY_FUNCTION__, "" msg);              \
-            }                                                                                        \
-        }                                                                                            \
-    } while (0)
-
-#endif
 
 // An optimizer that reasons from undefined behaviour is entitled to
 // delete code standing BEFORE an `[[assume(cond)]]`, on the grounds

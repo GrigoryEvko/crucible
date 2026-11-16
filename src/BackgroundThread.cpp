@@ -839,8 +839,10 @@ void BackgroundThread::Pipeline::MakeRegionFn(GraphPublishInput&& in, BgSinkProd
 void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
                              int32_t rank_, int32_t world_size_, uint64_t device_cap) {
     CRUCIBLE_PRE(!pipeline_->thread.is_some());
-    CRUCIBLE_PRE(detail::bg_pipeline::is_unset_or_holds(ring, trace_ring));
-    CRUCIBLE_PRE(detail::bg_pipeline::is_unset_or_holds(meta_log, trace_meta_log));
+    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(ring, trace_ring),
+                     "a start after stop names the trace ring of the first start");
+    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(meta_log, trace_meta_log),
+                     "a start after stop names the metadata log of the first start");
     global_schema_table().seal();
     global_ckernel_table().value()->seal();
     if (!ring.has_value()) ring.set(&trace_ring);

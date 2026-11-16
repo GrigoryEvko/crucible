@@ -219,8 +219,9 @@ void test_start_again_continues_the_stream() {
 }
 
 // A start after stop() that names a different ring or a different log breaks
-// the contract of start().  Each refused start ends its child process.  A
-// start with the first ring and log then runs a pipeline in the test process.
+// the contract of start(), and the report holds the message of the contract.
+// Each refused start ends its child process.  A start with the first ring and
+// log then runs a pipeline in the test process.
 void test_start_again_with_another_ring_breaks_the_contract(::fixy::TestRunnerCtx const& test) {
     TraceRing& ring = test_ring();
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
@@ -228,11 +229,10 @@ void test_start_again_with_another_ring_breaks_the_contract(::fixy::TestRunnerCt
     bt.stop();
     ::fixy::check::expect_dies(
         test, [&bt] noexcept { bt.start(startup(), control_ring(), test_log()); },
-        ::fixy::TextView{"foundation: contract violation: detail::bg_pipeline::is_unset_or_holds(ring, trace_ring)"});
+        ::fixy::TextView{"a start after stop names the trace ring of the first start"});
     ::fixy::check::expect_dies(
         test, [&bt, &ring] noexcept { bt.start(startup(), ring, control_log()); },
-        ::fixy::TextView{"foundation: contract violation: "
-                         "detail::bg_pipeline::is_unset_or_holds(meta_log, trace_meta_log)"});
+        ::fixy::TextView{"a start after stop names the metadata log of the first start"});
     bt.start(startup(), ring, test_log());
     bt.stop();
 }

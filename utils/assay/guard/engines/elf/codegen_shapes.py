@@ -977,6 +977,12 @@ PROBES: tuple[Probe, ...] = (
         f"return, under the same contract semantic.  {HARDENED_BUILDS}.  These flags put the same second test on each "
         "edge of the branch of the two forms",
     ),
+    Probe(
+        "contract_pre_msg",
+        "CRUCIBLE_PRE_MSG evaluates its condition one time.  It is the contract_assert of the raw form, and the "
+        "compiler folds the message out of the condition, under the same contract semantic.  "
+        f"{HARDENED_BUILDS}.  These flags put the same second test on each edge of the branch of the two forms",
+    ),
 )
 
 
