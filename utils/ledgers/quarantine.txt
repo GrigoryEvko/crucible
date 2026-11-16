@@ -285,7 +285,7 @@ src/perf/ | c-library-object | 2 | - | -
 src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | raw-pointer-object | 2 | - | -
 test/ | c-array-object | 149 | - | -
-test/ | c-library-call | 729 | - | -
+test/ | c-library-call | 723 | - | -
 test/ | c-library-object | 9 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 11 | - | -
@@ -296,7 +296,7 @@ test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts t
 test/ | opted-out | 22 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | raw-function-pointer | 13 | - | -
 test/ | raw-new-delete | 39 | - | -
-test/ | raw-pointer-object | 329 | - | -
+test/ | raw-pointer-object | 327 | - | -
 test/ | region | 1 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent

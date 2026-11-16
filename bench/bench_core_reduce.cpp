@@ -238,11 +238,30 @@ struct FloatTotalOrder {
     return words;
 }
 
+// The words of 64 bits of the float bits of all, two floats for each word,
+// as keys of eight bytes.
+[[nodiscard]] HeapArray<std::uint64_t> wide_words_of(View<float const> all) noexcept {
+    HeapArray<std::uint64_t> words = ::foundation::core::mint_heap_array(kAlloc, all.size() / 2, std::uint64_t{0});
+    std::size_t position = 0;
+    for (std::uint64_t& word : words) {
+        std::uint64_t const low = ::fixy::bit_cast<std::uint32_t>(*all.get(position).expect("the element fits"));
+        std::uint64_t const high = ::fixy::bit_cast<std::uint32_t>(*all.get(position + 1).expect("the element fits"));
+        word = (high << 32) | low;
+        position += 2;
+    }
+    return words;
+}
+
 void bench_sorts(View<float const> all) {
     print_row("sort_by_network<16> float", 16, measure_network<16>(bench::Run{"sort_by_network 16"}, all));
     print_row("sort_by_network<64> float", 64, measure_network<64>(bench::Run{"sort_by_network 64"}, all));
     print_row("sort_by_network<256> float", 256, measure_network<256>(bench::Run{"sort_by_network 256"}, all));
+    print_row("sort_stably float, 256", 256, measure_sort_stably(bench::Run{"sort_stably 256"}, first(all, 256)));
+    print_row("sort_stably float by an order of the caller, 256", 256,
+              measure_sort_stably(bench::Run{"sort_stably order 256"}, first(all, 256), FloatTotalOrder{}));
     print_row("sort_stably float, 1024", 1024, measure_sort_stably(bench::Run{"sort_stably 1024"}, first(all, 1024)));
+    print_row("sort_stably float by an order of the caller, 1024", 1024,
+              measure_sort_stably(bench::Run{"sort_stably order 1024"}, first(all, 1024), FloatTotalOrder{}));
     print_row("sort_stably float, 65536", 65536,
               measure_sort_stably(bench::Run{"sort_stably 65536"}, first(all, 65536)));
     print_row("sort_stably float, 1048576", std::size_t{1} << 20,
@@ -250,6 +269,9 @@ void bench_sorts(View<float const> all) {
     HeapArray<std::uint32_t> const words = words_of(first(all, std::size_t{1} << 20));
     print_row("sort_stably uint32, 1048576", std::size_t{1} << 20,
               measure_sort_stably(bench::Run{"sort_stably uint32 2^20"}, View<std::uint32_t const>{words.view()}));
+    HeapArray<std::uint64_t> const wide_words = wide_words_of(first(all, std::size_t{1} << 21));
+    print_row("sort_stably uint64, 1048576", std::size_t{1} << 20,
+              measure_sort_stably(bench::Run{"sort_stably uint64 2^20"}, View<std::uint64_t const>{wide_words.view()}));
     print_row("sort_stably float by an order of the caller, 65536", 65536,
               measure_sort_stably(bench::Run{"sort_stably order 65536"}, first(all, 65536), FloatTotalOrder{}));
     print_row(
