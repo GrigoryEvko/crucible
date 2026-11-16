@@ -220,9 +220,9 @@ private:
     // src/Vigil.cpp, so a translation unit that makes a Vigil compiles no
     // part of the background pipeline.
     //
-    // The transaction log reads the monotonic clock, and the program load
-    // of the watchdog waits in the kernel for the verifier, so both take the
-    // startup load context.
+    // The program load of the watchdog waits in the kernel for the verifier,
+    // so the constructor takes the startup load context.  The transaction log
+    // reads no clock and takes no context.
     Vigil(Config cfg, ::fixy::InitLoadCtx const& startup);
 
 public:
