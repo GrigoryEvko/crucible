@@ -116,7 +116,10 @@ def planted_bench(directory: Path, name: str, script: str, shell: str) -> Path:
 
 
 def run_cases(expect: testing.Expect) -> None:
-    """Run three planted benches through the runner with a quiet planted host (THE SELECTION, THE BUDGET)."""
+    """Run three planted benches through the runner with a quiet planted host (THE SELECTION, THE BUDGET).
+
+    The planted host has a share of 1 % and no steal time, so a loaded host of the test does not change a verdict.
+    """
     shell = shutil.which("sh")
     has_tools = shell is not None and shutil.which("taskset") is not None
     expect("PATH gives a shell and taskset for the planted benches", has_tools)
@@ -131,7 +134,7 @@ def run_cases(expect: testing.Expect) -> None:
         failing = planted_bench(root, "bench_fail", "exit 3", shell)
 
         def quiet_run(path: Path, where: bench.Placement, cwd: Path, limit_s: float) -> measurement.Ran:
-            return dataclasses.replace(measurement.run_once(path, where, cwd, limit_s), others_pct=1.0)
+            return dataclasses.replace(measurement.run_once(path, where, cwd, limit_s), others_pct=1.0, steal_ms=0.0)
 
         chosen = [
             measurement.Measured("bench_quiet", quiet, "key-quiet", 0.0, 2.0, 0.1),
