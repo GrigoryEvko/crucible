@@ -14,6 +14,11 @@
 //   bit_ceil(v)                     the smallest power of two that is not
 //                                   less than v, or no value when T cannot
 //                                   hold it
+//   ilog2(v)                        the floor of the base-2 logarithm of
+//                                   v, or no value for 0
+//   align_up(v, a)                  the smallest multiple of a that is not
+//                                   less than v, or no value when a is not
+//                                   a power of two or T cannot hold it
 //   rotl(v, n), rotr(v, n)          the rotation by n modulo the width.  A
 //                                   negative n turns the other way
 //   low_mask<T>(n)                  the n low bits: 0 for n <= 0, and each
@@ -28,9 +33,13 @@
 // argument, which is the result for 0, so the count of 0 has no branch.
 //
 // std::bit_ceil is undefined when T cannot hold the power.  bit_ceil gives
-// no value in its place.  std::rotl takes the count modulo the width too, and
-// rotl here gives the same result for each count, also for the minimum of
-// int.
+// no value in its place.  The logarithm of 0 has no value, so ilog2 of 0
+// gives no value, and the count of each other value is an int.  align_up
+// adds a - 1 and clears the low bits.  The add is checked, so a value near
+// the maximum gives no value and not the small wrapped value that
+// (v + a - 1) & ~(a - 1) gives.  std::rotl takes the count modulo the width
+// too, and rotl here gives the same result for each count, also for the
+// minimum of int.
 
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Choice.h>
@@ -93,6 +102,21 @@ template <UnsignedInteger T>
     if (value > top_bit) return none;
     int const shift = bit_width(static_cast<T>(value - T{1})) & (bits_of<T> - 1);
     return Option<T>::some(static_cast<T>(T{1} << shift));
+}
+
+template <UnsignedInteger T>
+[[nodiscard]] constexpr Option<int> ilog2(T value) noexcept {
+    if (value == T{0}) return none;
+    return Option<int>::some(bit_width(value) - 1);
+}
+
+template <UnsignedInteger T>
+[[nodiscard]] constexpr Option<T> align_up(T value, T alignment) noexcept {
+    if (!has_single_bit(alignment)) return none;
+    auto const low_bits = static_cast<T>(alignment - T{1});
+    T sum{};
+    if (__builtin_add_overflow(value, low_bits, &sum)) return none;
+    return Option<T>::some(static_cast<T>(sum & static_cast<T>(~low_bits)));
 }
 
 // The step of each direction is the count modulo the width, and the step of

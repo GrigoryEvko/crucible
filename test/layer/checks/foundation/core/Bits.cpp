@@ -49,6 +49,25 @@ static_assert(empty(bit_ceil(std::uint8_t{129})) && empty(bit_ceil(max_of<std::u
 static_assert(holds(bit_ceil(std::uint64_t{1} << 63), std::uint64_t{1} << 63));
 static_assert(empty(bit_ceil((std::uint64_t{1} << 63) + 1)));
 
+// ilog2 gives no value for 0, and its count is an int.
+static_assert(empty(ilog2(std::uint8_t{0})) && holds(ilog2(std::uint8_t{1}), 0) && holds(ilog2(std::uint8_t{255}), 7));
+static_assert(holds(ilog2(std::uint32_t{1024}), 10) && holds(ilog2(std::uint32_t{1023}), 9));
+static_assert(holds(ilog2(max_of<std::uint64_t>), 63) && holds(ilog2(std::uint64_t{1} << 40), 40));
+
+// align_up gives no value for an alignment that is not a power of two, and
+// for a multiple past the maximum.
+static_assert(holds(align_up(std::uint8_t{0}, std::uint8_t{64}), std::uint8_t{0}));
+static_assert(holds(align_up(std::uint8_t{1}, std::uint8_t{64}), std::uint8_t{64}));
+static_assert(holds(align_up(std::uint8_t{64}, std::uint8_t{64}), std::uint8_t{64}));
+static_assert(holds(align_up(std::uint8_t{192}, std::uint8_t{64}), std::uint8_t{192}));
+static_assert(empty(align_up(std::uint8_t{193}, std::uint8_t{64}))
+              && empty(align_up(std::uint8_t{5}, std::uint8_t{0})));
+static_assert(empty(align_up(std::uint8_t{5}, std::uint8_t{3})) && empty(align_up(std::uint8_t{5}, std::uint8_t{96})));
+static_assert(holds(align_up(max_of<std::uint64_t>, std::uint64_t{1}), max_of<std::uint64_t>));
+static_assert(empty(align_up(max_of<std::uint64_t>, std::uint64_t{2})));
+static_assert(holds(align_up(std::uint64_t{1}, std::uint64_t{1} << 63), std::uint64_t{1} << 63));
+static_assert(empty(align_up((std::uint64_t{1} << 63) + 1, std::uint64_t{1} << 63)));
+
 // A rotation takes each count modulo the width, and a negative count turns
 // the other way.
 static_assert(rotl(std::uint8_t{0x81}, 1) == 0x03 && rotr(std::uint8_t{0x81}, 1) == 0xC0);

@@ -97,6 +97,20 @@ static_assert(saturating_div(std::uint8_t{255}, std::uint8_t{5}) == std::uint8_t
 static_assert(DividesAsConstant<7, 2> && !DividesAsConstant<7, 0>
               && !DividesAsConstant<std::uint64_t{7}, std::uint64_t{0}>);
 
+// div_ceil rounds toward positive infinity.  A zero divisor and the minimum
+// by -1 end the process through fatal(), so their calls are no constants.
+template <auto Dividend, auto Divisor>
+concept DividesCeilAsConstant =
+    requires { typename std::integral_constant<decltype(Dividend), ::foundation::core::div_ceil(Dividend, Divisor)>; };
+static_assert(div_ceil(7, 2) == 4 && div_ceil(-7, 2) == -3 && div_ceil(7, -2) == -3 && div_ceil(-7, -2) == 4);
+static_assert(div_ceil(8, 2) == 4 && div_ceil(0, 5) == 0 && div_ceil(-8, -2) == 4 && div_ceil(1, -2) == 0);
+static_assert(div_ceil(max_of<std::uint64_t>, std::uint64_t{2}) == std::uint64_t{1} << 63);
+static_assert(div_ceil(min_of<std::int8_t>, std::int8_t{1}) == min_of<std::int8_t>);
+static_assert(div_ceil(min_of<std::int8_t>, std::int8_t{-2}) == std::int8_t{64});
+static_assert(std::is_same_v<decltype(div_ceil(std::uint8_t{1}, std::uint8_t{1})), std::uint8_t>);
+static_assert(DividesCeilAsConstant<7, 2> && !DividesCeilAsConstant<7, 0> && !DividesCeilAsConstant<min_of<int>, -1>
+              && !DividesCeilAsConstant<std::uint8_t{0}, std::uint8_t{0}>);
+
 // gcd is unsigned and total.
 static_assert(std::is_same_v<decltype(gcd(1, 2)), unsigned>
               && std::is_same_v<decltype(gcd(std::uint8_t{1}, std::uint8_t{2})), std::uint8_t>);

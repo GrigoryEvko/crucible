@@ -1952,6 +1952,10 @@ fixy_neg_compile_test(neg_bytes_fit_exceeded
   "static assertion failed: \\[Byte_Budget_Exceeded\\] ensure_bytes_fit<Budget, Used>\\(\\): the computed byte usage exceeds the declared budget"
   "fixy::bytes_fit_v<64, 72>. evaluates to false")
 fixy_test(test_bits)
+# div_ceil, align_up and ilog2 hold their definitions on each pair of bytes,
+# the edges of each width and Philox draws.  A zero divisor and the minimum
+# by -1 of div_ceil end the process.
+fixy_test(test_core_integer_rounding)
 
 # The leak witness is one reflection query over the atom catalog, so no
 # translation unit can mint an authorization out of a type of its own.

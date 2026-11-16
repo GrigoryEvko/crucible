@@ -24,6 +24,10 @@
 //   saturating_div                          the quotient, and the maximum
 //                                           for the minimum by -1.  A zero
 //                                           divisor ends the process
+//   div_ceil(a, b)                          the quotient rounded toward
+//                                           positive infinity.  A zero
+//                                           divisor and the minimum by -1
+//                                           end the process
 //   gcd(a, b)                             the greatest common divisor as
 //                                           an unsigned value, for each input
 //   widening_mul(a, b)                      the full product of two unsigned
@@ -46,7 +50,12 @@
 //
 // A quotient has no nearest limit for a zero divisor, so saturating_div
 // ends the process through fatal() there, as std::saturating_div has the
-// precondition of a divisor other than 0.  The saturating form of a cast
+// precondition of a divisor other than 0.  div_ceil ends the process for
+// the same divisor, and for the minimum by -1, whose quotient 2^(bits-1) the
+// type does not hold.  For each other pair it computes no sum, so it has no
+// overflow where (a + b - 1) / b has one: the truncated quotient gets 1
+// when the remainder is not 0 and the exact quotient is positive.  The
+// saturating form of a cast
 // is saturating_narrow of Convert.h.  For an integer source it gives the
 // value of std::saturating_cast.
 //
@@ -266,6 +275,28 @@ template <Integer T>
         return max_of<T>;
     }
     return static_cast<T>(dividend / divisor);
+}
+
+// The remainder has the sign of the dividend, so the exact quotient is above
+// the truncated one when the remainder is not 0 and the remainder and the
+// divisor have one sign.  A remainder other than 0 needs a divisor of 2 or
+// more in magnitude, so the truncated quotient is at most half the dividend,
+// and the step of 1 does not overflow.
+template <Integer T>
+[[nodiscard]] constexpr T div_ceil(T dividend, T divisor) noexcept {
+    if (divisor == T{0}) [[unlikely]] {
+        fatal("div_ceil got the divisor 0, which gives no quotient");
+    }
+    if (detail::is_minimum_by_minus_one(dividend, divisor)) [[unlikely]] {
+        fatal("div_ceil got the minimum by -1, whose quotient the type does not hold");
+    }
+    auto const quotient = static_cast<T>(dividend / divisor);
+    auto const remainder = static_cast<T>(dividend % divisor);
+    bool rounds_up = remainder != T{0};
+    if constexpr (std::is_signed_v<T>) {
+        rounds_up = rounds_up && (remainder < T{0}) == (divisor < T{0});
+    }
+    return rounds_up ? static_cast<T>(quotient + T{1}) : quotient;
 }
 
 template <Integer T>

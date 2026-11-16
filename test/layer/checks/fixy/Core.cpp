@@ -129,6 +129,7 @@ static_assert(std::is_lt(::fixy::compare(-1, 1u)) && ::fixy::fits<std::uint8_t>(
 static_assert(::fixy::unsigned_abs(-3) == 3u && ::fixy::abs_diff(2, 7) == 5u);
 static_assert(::fixy::narrow<std::uint8_t>(300).is_none() && ::fixy::wrapping_narrow<std::uint8_t>(300) == 44);
 static_assert(::fixy::saturating_narrow<std::uint8_t>(300) == 255 && ::fixy::widen<long>(3) == 3);
+static_assert(::fixy::div_ceil(7, 2) == 4 && ::fixy::ilog2(8u).is_some() && ::fixy::align_up(5u, 4u).is_some());
 static_assert(::fixy::popcount(0xF0u) == 4 && ::fixy::countl_zero(std::uint8_t{1}) == 7 && ::fixy::bit_width(5u) == 3);
 static_assert(::fixy::countr_zero(8u) == 3 && ::fixy::countl_one(0xF0000000u) == 4 && ::fixy::countr_one(7u) == 3);
 static_assert(::fixy::has_single_bit(64u) && ::fixy::bit_floor(100u) == 64u && ::fixy::bit_ceil(100u).is_some());
