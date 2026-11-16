@@ -6,17 +6,25 @@
 #include <crucible/CKernel.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/Vigil.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include "test_assert.h"
-#include "test_abort_probe.h"
-#include <cstdio>
-#include <cstdlib>
 #include <thread>
 
 using namespace crucible;
 
 namespace test_vigil_dispatch {
+
+namespace {
+
+// The text of the claim check of a thread that holds no producer claim.
+constexpr ::fixy::TextView kNotTheHolder{"foundation: fatal invariant failed: holder == current_tid"};
+
+}  // namespace
 
 // The recording ring is single-producer. Two threads calling dispatch_op
 // claim the same slot and the later write erases the earlier one, with no
@@ -30,44 +38,39 @@ namespace test_vigil_dispatch {
 // and the same source runs under the release preset where a contract clause
 // would have been compiled out.
 //
-// The rejection ends the process by design, so test::aborts arms a jump on
-// the intruder thread and catches it there. The arming is thread-local, which
-// is what lets the guard fire on a thread other than the one running main.
-void test_second_producer_is_rejected() {
-    bool rejected = false;
-    {
-        Vigil vigil;
+// The rejection ends the process by design, so each case runs in a child
+// through expect_dies of the Check family.  The child builds the Vigil,
+// claims it on its first thread, and starts the intruder thread.  The test
+// process has no second thread at the fork, so the child may start threads.
+void test_second_producer_is_rejected(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            Vigil vigil;
 
-        // Claims this thread as the producer.
-        auto first = make_op(0, 0);
-        auto r0 = crucible::test::dispatch_synthetic(vigil, first.entry, first.metas, first.n_metas);
-        assert(r0.action == DispatchResult::Action::RECORD);
+            // Claims this thread as the producer.
+            auto first = make_op(0, 0);
+            static_cast<void>(crucible::test::dispatch_synthetic(vigil, first.entry, first.metas, first.n_metas));
 
-        std::thread intruder([&vigil, &rejected] {
-            rejected = crucible::test::aborts([&vigil] {
+            std::thread intruder([&vigil] {
                 auto second = make_op(0, 1);
                 (void)crucible::test::dispatch_synthetic(vigil, second.entry, second.metas, second.n_metas);
             });
-        });
-        intruder.join();
-    }
-
-    if (!rejected) {
-        std::fprintf(stderr, "  test_second_producer_is_rejected: a second thread reached the ring\n");
-        std::abort();
-    }
+            intruder.join();
+        },
+        kNotTheHolder);
 
     // The same call from the claiming thread keeps working, so the gate is a
     // gate and not a blanket refusal.
     Vigil vigil;
     auto d = make_op(0, 0);
     auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
-    assert(r.action == DispatchResult::Action::RECORD);
+    CRUCIBLE_TEST_ASSERT(test, r.action == DispatchResult::Action::RECORD);
     auto again = make_op(0, 1);
     auto r2 = crucible::test::dispatch_synthetic(vigil, again.entry, again.metas, again.n_metas);
-    assert(r2.action == DispatchResult::Action::RECORD);
+    CRUCIBLE_TEST_ASSERT(test, r2.action == DispatchResult::Action::RECORD);
 
-    crucible::test::pass("  test_second_producer_is_rejected: PASSED\n");
+    ::fixy::check::pass(test, "  test_second_producer_is_rejected: PASSED\n");
 }
 
 // A reference to the producer context can reach another thread, and there
@@ -76,40 +79,56 @@ void test_second_producer_is_rejected() {
 // metadata log of the Vigil.  Each one ends the process on a thread that
 // does not hold the claim, and admits the thread that holds it.  The claim
 // of the Vigil also refuses a second claim from the other thread.
-void test_cold_gates_reject_a_context_on_another_thread() {
-    Vigil vigil;
-    const VigilFgCtx fg = vigil.mint_producer_context();
+//
+// Each refusal runs in its own child: the child builds a Vigil, claims it,
+// and calls the gate on an intruder thread with the context of the claim.
+template <typename Gate>
+void expect_gate_refuses_the_intruder(::fixy::TestRunnerCtx const& test, Gate gate, ::fixy::TextView refusal) {
+    ::fixy::check::expect_dies(
+        test,
+        [gate] noexcept {
+            Vigil vigil;
+            const VigilFgCtx fg = vigil.mint_producer_context();
+            std::thread intruder([&vigil, &fg, gate] { gate(vigil, fg); });
+            intruder.join();
+        },
+        refusal);
+}
 
-    bool is_vigil_claim_rejected = false;
-    bool is_schema_view_rejected = false;
-    bool is_ckernel_view_rejected = false;
-    bool is_ring_rejected = false;
-    bool is_meta_log_rejected = false;
-    std::thread intruder([&] {
-        is_vigil_claim_rejected =
-            crucible::test::aborts([&vigil] { static_cast<void>(vigil.mint_producer_context()); });
-        is_schema_view_rejected =
-            crucible::test::aborts([&fg] { static_cast<void>(global_schema_table().mint_mutable_view(fg)); });
-        is_ckernel_view_rejected =
-            crucible::test::aborts([&fg] { static_cast<void>(global_ckernel_table().value()->mint_mutable_view(fg)); });
-        is_ring_rejected = crucible::test::aborts([&vigil, &fg] { static_cast<void>(vigil.ring(fg)); });
-        is_meta_log_rejected = crucible::test::aborts([&vigil, &fg] { static_cast<void>(vigil.meta_log(fg)); });
-    });
-    intruder.join();
-
-    assert(is_vigil_claim_rejected && "the claim of the Vigil admitted a second thread");
-    assert(is_schema_view_rejected && "the schema table view admitted a thread that holds no claim");
-    assert(is_ckernel_view_rejected && "the kernel table view admitted a thread that holds no claim");
-    assert(is_ring_rejected && "the ring admitted a thread that holds no claim");
-    assert(is_meta_log_rejected && "the metadata log admitted a thread that holds no claim");
+void test_cold_gates_reject_a_context_on_another_thread(::fixy::TestRunnerCtx const& test) {
+    constexpr ::fixy::TextView kNotTheBrandThread{
+        "foundation: fatal invariant failed: ProducerClaim<Brand>::can_caller_use_brand()"};
+    constexpr ::fixy::TextView kNotTheVigilThread{
+        "foundation: fatal invariant failed: producer_claim_.is_claimable_by_caller()"};
+    expect_gate_refuses_the_intruder(
+        test, [](Vigil& vigil, VigilFgCtx const&) noexcept { static_cast<void>(vigil.mint_producer_context()); },
+        kNotTheHolder);
+    expect_gate_refuses_the_intruder(
+        test,
+        [](Vigil&, VigilFgCtx const& fg) noexcept { static_cast<void>(global_schema_table().mint_mutable_view(fg)); },
+        kNotTheBrandThread);
+    expect_gate_refuses_the_intruder(
+        test,
+        [](Vigil&, VigilFgCtx const& fg) noexcept {
+            static_cast<void>(global_ckernel_table().value()->mint_mutable_view(fg));
+        },
+        kNotTheBrandThread);
+    expect_gate_refuses_the_intruder(
+        test, [](Vigil& vigil, VigilFgCtx const& fg) noexcept { static_cast<void>(vigil.ring(fg)); },
+        kNotTheVigilThread);
+    expect_gate_refuses_the_intruder(
+        test, [](Vigil& vigil, VigilFgCtx const& fg) noexcept { static_cast<void>(vigil.meta_log(fg)); },
+        kNotTheVigilThread);
 
     // The claiming thread passes the same gates.
+    Vigil vigil;
+    const VigilFgCtx fg = vigil.mint_producer_context();
     static_cast<void>(global_schema_table().mint_mutable_view(fg));
     static_cast<void>(global_ckernel_table().value()->mint_mutable_view(fg));
     static_cast<void>(vigil.ring(fg));
     static_cast<void>(vigil.meta_log(fg));
 
-    crucible::test::pass("  test_cold_gates_reject_a_context_on_another_thread: PASSED\n");
+    ::fixy::check::pass(test, "  test_cold_gates_reject_a_context_on_another_thread: PASSED\n");
 }
 
 // A brand of this test.  Its claim obeys the rule of each brand, and the
@@ -122,21 +141,21 @@ struct ClaimBrand {
 // The cold gate of a table asks which thread holds the live claims of the
 // brand, so one thread at a time holds them.  A second thread that claims
 // another object of the brand while this thread holds a claim ends the
-// process.
-void test_second_thread_cannot_claim_the_brand() {
-    bool is_second_claim_rejected = false;
-    {
-        ClaimBrand first;
-        static_cast<void>(first.claim.mint_producer_context());
+// process.  The two claims run in a child through expect_dies.
+void test_second_thread_cannot_claim_the_brand(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            ClaimBrand first;
+            static_cast<void>(first.claim.mint_producer_context());
 
-        std::thread other([&is_second_claim_rejected] {
-            ClaimBrand second;
-            is_second_claim_rejected =
-                crucible::test::aborts([&second] { static_cast<void>(second.claim.mint_producer_context()); });
-        });
-        other.join();
-    }
-    assert(is_second_claim_rejected && "a second thread claimed the brand while this thread held a claim");
+            std::thread other([] {
+                ClaimBrand second;
+                static_cast<void>(second.claim.mint_producer_context());
+            });
+            other.join();
+        },
+        ::fixy::TextView{"foundation: fatal invariant failed: record != nullptr"});
 
     // The Vigils of the cases above are gone, so another thread claims the
     // brand of the Vigil.
@@ -147,9 +166,10 @@ void test_second_thread_cannot_claim_the_brand() {
         is_later_claim_admitted = later.is_producer_thread();
     });
     later_thread.join();
-    assert(is_later_claim_admitted && "no claim of the brand was live, so another thread must claim it");
+    CRUCIBLE_TEST_ASSERT(test,
+                         is_later_claim_admitted && "no claim of the brand was live, so another thread must claim it");
 
-    crucible::test::pass("  test_second_thread_cannot_claim_the_brand: PASSED\n");
+    ::fixy::check::pass(test, "  test_second_thread_cannot_claim_the_brand: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

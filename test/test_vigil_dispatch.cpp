@@ -24,6 +24,7 @@
 #include <crucible/Vigil.h>
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include <bit>
@@ -142,9 +143,10 @@ static_assert(DispatchResult::record().is_record() && !DispatchResult::record().
 int main() {
     using namespace test_vigil_dispatch;
     ::fixy::report(::fixy::Sink::Out, "test_vigil_dispatch:\n");
-    test_second_producer_is_rejected();
-    test_cold_gates_reject_a_context_on_another_thread();
-    test_second_thread_cannot_claim_the_brand();
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_second_producer_is_rejected(test);
+    test_cold_gates_reject_a_context_on_another_thread(test);
+    test_second_thread_cannot_claim_the_brand(test);
     test_dispatch_basic();
     test_dispatch_divergence();
     test_dispatch_recovery();

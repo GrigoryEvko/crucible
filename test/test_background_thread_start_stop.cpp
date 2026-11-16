@@ -3,7 +3,9 @@
 // pipeline thread runs breaks the contract of start(), and the end of a
 // BackgroundThread joins a pipeline that runs.  A start after stop() with
 // the same ring and log continues the stream of ops, and a start after
-// stop() with a different ring or log breaks the contract.
+// stop() with a different ring or log breaks the contract.  Each broken
+// contract runs in a child process through expect_dies of the Check family,
+// while the test process has one thread.
 // The tsan preset runs the same binary, so each start and each join has a
 // check of ThreadSanitizer.
 
@@ -12,10 +14,12 @@
 #include <crucible/MetaLog.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/os/Time.h>
+#include <foundation/effects/Effect.h>
 
-#include "test_abort_probe.h"
 #include "test_assert.h"
 #include "test_harness.h"
 #include <cstdint>
@@ -81,12 +85,18 @@ void test_start_and_stop() {
     bt.stop();
 }
 
-void test_start_while_running_breaks_the_contract() {
-    TraceRing& ring = test_ring();
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(startup(), ring, test_log());
-    assert(::crucible::test::aborts([&] { bt.start(startup(), ring, test_log()); }));
-    bt.stop();
+// The child starts the pipeline thread and then starts again, so the test
+// process has no second thread at the fork.
+void test_start_while_running_breaks_the_contract(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            TraceRing& ring = test_ring();
+            BackgroundThread bt{::foundation::effects::testing::test().alloc};
+            bt.start(startup(), ring, test_log());
+            bt.start(startup(), ring, test_log());
+        },
+        ::fixy::TextView{"foundation: contract violation: !pipeline_->thread.is_some()"});
 }
 
 void test_end_joins_a_running_pipeline() {
@@ -209,15 +219,20 @@ void test_start_again_continues_the_stream() {
 }
 
 // A start after stop() that names a different ring or a different log breaks
-// the contract of start().  A refused start changes nothing, so a start with
-// the first ring and log then runs a pipeline.
-void test_start_again_with_another_ring_breaks_the_contract() {
+// the contract of start().  Each refused start ends its child process.  A
+// start with the first ring and log then runs a pipeline in the test process.
+void test_start_again_with_another_ring_breaks_the_contract(::fixy::TestRunnerCtx const& test) {
     TraceRing& ring = test_ring();
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     bt.start(startup(), ring, test_log());
     bt.stop();
-    assert(::crucible::test::aborts([&] { bt.start(startup(), control_ring(), test_log()); }));
-    assert(::crucible::test::aborts([&] { bt.start(startup(), ring, control_log()); }));
+    ::fixy::check::expect_dies(
+        test, [&bt] noexcept { bt.start(startup(), control_ring(), test_log()); },
+        ::fixy::TextView{"foundation: contract violation: detail::bg_pipeline::is_unset_or_holds(ring, trace_ring)"});
+    ::fixy::check::expect_dies(
+        test, [&bt, &ring] noexcept { bt.start(startup(), ring, control_log()); },
+        ::fixy::TextView{"foundation: contract violation: "
+                         "detail::bg_pipeline::is_unset_or_holds(meta_log, trace_meta_log)"});
     bt.start(startup(), ring, test_log());
     bt.stop();
 }
@@ -225,10 +240,12 @@ void test_start_again_with_another_ring_breaks_the_contract() {
 }  // namespace
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_start_and_stop();
-    test_start_while_running_breaks_the_contract();
+    test_start_while_running_breaks_the_contract(test);
     test_end_joins_a_running_pipeline();
     test_start_again_continues_the_stream();
-    test_start_again_with_another_ring_breaks_the_contract();
+    test_start_again_with_another_ring_breaks_the_contract(test);
+    ::fixy::check::pass(test, "test_background_thread_start_stop: PASSED\n");
     return 0;
 }

@@ -6,6 +6,7 @@
 // Each other source file of the test holds one group of tests.
 
 #include <crucible/Vigil.h>
+#include <fixy/Ctx.h>
 
 #include <cstdint>
 
@@ -43,10 +44,12 @@ void feed_trigger(crucible::Vigil& vigil, uint32_t iter);
 // which is what leaves the engine back at position 0.
 void align_and_activate(crucible::Vigil& vigil, uint32_t iter);
 
-// The producer thread gate (test_vigil_dispatch_threads.cpp).
-void test_second_producer_is_rejected();
-void test_cold_gates_reject_a_context_on_another_thread();
-void test_second_thread_cannot_claim_the_brand();
+// The producer thread gate (test_vigil_dispatch_threads.cpp).  Each refusal
+// runs in a child process, so main runs these first, while the test process
+// has one thread.
+void test_second_producer_is_rejected(::fixy::TestRunnerCtx const& test);
+void test_cold_gates_reject_a_context_on_another_thread(::fixy::TestRunnerCtx const& test);
+void test_second_thread_cannot_claim_the_brand(::fixy::TestRunnerCtx const& test);
 
 // Replay, divergence and recovery through dispatch_op
 // (test_vigil_dispatch_replay.cpp).

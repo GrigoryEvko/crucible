@@ -21,45 +21,21 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <type_traits>
 #include <utility>
-#include "../test_abort_probe.h"
-#include "../test_assert.h"
 
 namespace eff = ::foundation::effects;
 namespace perm = ::foundation::permissions;
 namespace s = ::fixy::session;
 
-struct TestFailure {};
-
-#define CRUCIBLE_TEST_REQUIRE(...)                                                        \
-    do {                                                                                  \
-        if (!(__VA_ARGS__)) [[unlikely]] {                                                \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", #__VA_ARGS__, __FILE__, __LINE__); \
-            throw TestFailure{};                                                          \
-        }                                                                                 \
-    } while (0)
-
 namespace {
 
-int total_passed = 0;
-int total_failed = 0;
-
-template <typename F>
-void run_test(const char* name, F&& body) {
-    std::fprintf(stderr, "  %s: ", name);
-    try {
-        body();
-        ++total_passed;
-        std::fprintf(stderr, "PASSED\n");
-    } catch (TestFailure&) {
-        ++total_failed;
-        std::fprintf(stderr, "FAILED\n");
-    }
-}
+using ::fixy::check::pass;
 
 // ── The two obligations, and what discharges each ────────────────────
 
@@ -114,7 +90,7 @@ concept HasBareAccessor = requires(Wit const& w) { w.size(); } || requires(Wit c
 
 // ── EFFECT ───────────────────────────────────────────────────────────
 
-void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it() {
+void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it(::fixy::TestRunnerCtx const& test) {
     static std::uint64_t storage[4] = {2, 4, 6, 8};
     FgCtx ctx = eff::testing::foreground();
 
@@ -127,14 +103,14 @@ void test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it() {
     static_assert(std::is_same_v<decltype(witnessed)::witness_type, ::fixy::session::witness::UnderRow<Cache>>);
 
     auto read = deref(witnessed, ctx);
-    CRUCIBLE_TEST_REQUIRE(read.size() == 4);
-    CRUCIBLE_TEST_REQUIRE(read[0] == 2);
-    CRUCIBLE_TEST_REQUIRE(read[3] == 8);
+    CRUCIBLE_TEST_ASSERT(test, read.size() == 4);
+    CRUCIBLE_TEST_ASSERT(test, read[0] == 2);
+    CRUCIBLE_TEST_ASSERT(test, read[3] == 8);
 
     std::uint64_t sum = 0;
     for (std::uint64_t value : read)
         sum += value;
-    CRUCIBLE_TEST_REQUIRE(sum == 20);
+    CRUCIBLE_TEST_ASSERT(test, sum == 20);
 }
 
 void test_a_context_that_refuses_the_row_refuses_the_read() {
@@ -149,13 +125,11 @@ void test_a_context_that_refuses_the_row_refuses_the_read() {
     static_assert(CanDeref<CacheWitnessed, FgCtx>);
     static_assert(!CanDeref<SpilledWitnessed, FgCtx>, "a foreground context does not admit a spilled region");
     static_assert(CanDeref<SpilledWitnessed, IoCtx>, "and a context that carries IO does");
-
-    CRUCIBLE_TEST_REQUIRE(true);
 }
 
 // ── TEMPORAL ─────────────────────────────────────────────────────────
 
-void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there() {
+void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there(::fixy::TestRunnerCtx const& test) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto handle = s::mint_session<Sending>(ctx, Wire{});
     auto borrow = ::fixy::mint_borrowed<Cache>(protocol_storage);
@@ -166,8 +140,8 @@ void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there() {
         "the witness names the full type of the handle");
 
     auto read = deref(witnessed, handle);
-    CRUCIBLE_TEST_REQUIRE(read.size() == 3);
-    CRUCIBLE_TEST_REQUIRE(read[1] == 6);
+    CRUCIBLE_TEST_ASSERT(test, read.size() == 3);
+    CRUCIBLE_TEST_ASSERT(test, read[1] == 6);
 
     // Advancing the session consumes the handle and hands back one at
     // the next position.  The borrow's witness names the old handle, so
@@ -180,7 +154,7 @@ void test_a_protocol_witnessed_borrow_reads_while_the_session_is_there() {
                   "a handle one step on is not a handle at the position the borrow was minted at");
 
     Wire closed = std::move(at_end).close();
-    CRUCIBLE_TEST_REQUIRE(closed.last_sent == 11);
+    CRUCIBLE_TEST_ASSERT(test, closed.last_sent == 11);
 }
 
 void test_the_position_is_the_witness_and_not_the_spelling() {
@@ -199,8 +173,6 @@ void test_the_position_is_the_witness_and_not_the_spelling() {
     // session took.
     static_assert(!std::is_copy_constructible_v<AtSend>);
     static_assert(!std::is_copy_assignable_v<AtSend>);
-
-    CRUCIBLE_TEST_REQUIRE(true);
 }
 
 // ── TEMPORAL at run time ─────────────────────────────────────────────
@@ -208,45 +180,49 @@ void test_the_position_is_the_witness_and_not_the_spelling() {
 // Two handles of one type pass the gate of the type: two sessions of one
 // shape, or one session before and after a loop iteration.  The carrier
 // keeps the time of the handle of the mint, and a read against a handle
-// of another time ends the process with Witness_Stale.  The abort probe
-// catches that end.
+// of another time ends the process with Witness_Stale.  Each such read runs
+// in a child through expect_dies of the Check family.
 
-void test_a_witness_refuses_another_session_of_the_same_type() {
+constexpr ::fixy::TextView kStale{"fixy::session: diagnostic [Witness_Stale]"};
+
+void test_a_witness_refuses_another_session_of_the_same_type(::fixy::TestRunnerCtx const& test) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto first = s::mint_session<Sending>(ctx, Wire{});
     auto second = s::mint_session<Sending>(ctx, Wire{});
     static_assert(std::is_same_v<decltype(first), decltype(second)>);
     auto witnessed = ::fixy::session::mint_witnessed_at(first, ::fixy::mint_borrowed<Cache>(protocol_storage));
 
-    CRUCIBLE_TEST_REQUIRE(deref(witnessed, first).size() == 3);
-    CRUCIBLE_TEST_REQUIRE(crucible::test::aborts([&] { static_cast<void>(deref(witnessed, second)); }));
+    CRUCIBLE_TEST_ASSERT(test, deref(witnessed, first).size() == 3);
+    ::fixy::check::expect_dies(
+        test, [&witnessed, &second] noexcept { static_cast<void>(deref(witnessed, second)); }, kStale);
 
     static_cast<void>(std::move(first).send(Ping{1}, send_ping).close());
     static_cast<void>(std::move(second).send(Ping{2}, send_ping).close());
 }
 
-void test_a_witness_refuses_the_same_session_after_a_loop_iteration() {
+void test_a_witness_refuses_the_same_session_after_a_loop_iteration(::fixy::TestRunnerCtx const& test) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto head = s::mint_session<Looping>(ctx, Wire{});
     auto witnessed = ::fixy::session::mint_witnessed_at(head, ::fixy::mint_borrowed<Cache>(protocol_storage));
-    CRUCIBLE_TEST_REQUIRE(deref(witnessed, head).size() == 3);
+    CRUCIBLE_TEST_ASSERT(test, deref(witnessed, head).size() == 3);
 
     head = std::move(head).send(Ping{3}, send_ping);
     static_assert(CanDeref<decltype(witnessed), decltype(head)>, "a loop iteration gives the handle its type again");
-    CRUCIBLE_TEST_REQUIRE(crucible::test::aborts([&] { static_cast<void>(deref(witnessed, head)); }));
+    ::fixy::check::expect_dies(
+        test, [&witnessed, &head] noexcept { static_cast<void>(deref(witnessed, head)); }, kStale);
 
     std::move(head).detach(s::detach_reason::InfiniteLoopProtocol{});
 }
 
 // A move is not a step, so the witness reads against the handle that the
 // move filled.
-void test_a_witness_follows_a_move_of_the_handle() {
+void test_a_witness_follows_a_move_of_the_handle(::fixy::TestRunnerCtx const& test) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto head = s::mint_session<Sending>(ctx, Wire{});
     auto witnessed = ::fixy::session::mint_witnessed_at(head, ::fixy::mint_borrowed<Cache>(protocol_storage));
     auto moved = std::move(head);
 
-    CRUCIBLE_TEST_REQUIRE(deref(witnessed, moved).size() == 3);
+    CRUCIBLE_TEST_ASSERT(test, deref(witnessed, moved).size() == 3);
 
     static_cast<void>(std::move(moved).send(Ping{4}, send_ping).close());
 }
@@ -254,7 +230,7 @@ void test_a_witness_follows_a_move_of_the_handle() {
 // A session that ends releases its record, and the next session of the
 // same type can claim the same record.  The claim gives the record a new
 // generation, so the witness of the first session refuses the second.
-void test_a_witness_refuses_a_later_session_on_the_same_record() {
+void test_a_witness_refuses_a_later_session_on_the_same_record(::fixy::TestRunnerCtx const& test) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto first = s::mint_session<Sending>(ctx, Wire{});
     const s::watch::endpoint_id record = first.watch_endpoint();
@@ -262,9 +238,10 @@ void test_a_witness_refuses_a_later_session_on_the_same_record() {
     static_cast<void>(std::move(first).send(Ping{5}, send_ping).close());
 
     auto second = s::mint_session<Sending>(ctx, Wire{});
-    CRUCIBLE_TEST_REQUIRE(second.watch_endpoint() == record);
-    CRUCIBLE_TEST_REQUIRE(second.step_count() == 1);
-    CRUCIBLE_TEST_REQUIRE(crucible::test::aborts([&] { static_cast<void>(deref(witnessed, second)); }));
+    CRUCIBLE_TEST_ASSERT(test, second.watch_endpoint() == record);
+    CRUCIBLE_TEST_ASSERT(test, second.step_count() == 1);
+    ::fixy::check::expect_dies(
+        test, [&witnessed, &second] noexcept { static_cast<void>(deref(witnessed, second)); }, kStale);
 
     static_cast<void>(std::move(second).send(Ping{6}, send_ping).close());
 }
@@ -286,30 +263,30 @@ void test_a_witness_of_one_kind_is_not_the_other() {
     // the gate has nothing to call.
     static_assert(!HasBareAccessor<RowWitnessed>);
     static_assert(!HasBareAccessor<PositionWitnessed>);
-
-    CRUCIBLE_TEST_REQUIRE(true);
 }
 
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_witnessed:\n");
-    run_test("test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it",
-             test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it);
-    run_test("test_a_context_that_refuses_the_row_refuses_the_read",
-             test_a_context_that_refuses_the_row_refuses_the_read);
-    run_test("test_a_protocol_witnessed_borrow_reads_while_the_session_is_there",
-             test_a_protocol_witnessed_borrow_reads_while_the_session_is_there);
-    run_test("test_the_position_is_the_witness_and_not_the_spelling",
-             test_the_position_is_the_witness_and_not_the_spelling);
-    run_test("test_a_witness_refuses_another_session_of_the_same_type",
-             test_a_witness_refuses_another_session_of_the_same_type);
-    run_test("test_a_witness_refuses_the_same_session_after_a_loop_iteration",
-             test_a_witness_refuses_the_same_session_after_a_loop_iteration);
-    run_test("test_a_witness_follows_a_move_of_the_handle", test_a_witness_follows_a_move_of_the_handle);
-    run_test("test_a_witness_refuses_a_later_session_on_the_same_record",
-             test_a_witness_refuses_a_later_session_on_the_same_record);
-    run_test("test_a_witness_of_one_kind_is_not_the_other", test_a_witness_of_one_kind_is_not_the_other);
-    crucible::test::pass("test_witnessed: {} passed, {} failed\n", total_passed, total_failed);
-    return total_failed == 0 ? 0 : 1;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it(test);
+    pass(test, "  test_a_row_witnessed_borrow_reads_under_a_context_that_admits_it: PASSED\n");
+    test_a_context_that_refuses_the_row_refuses_the_read();
+    pass(test, "  test_a_context_that_refuses_the_row_refuses_the_read: PASSED\n");
+    test_a_protocol_witnessed_borrow_reads_while_the_session_is_there(test);
+    pass(test, "  test_a_protocol_witnessed_borrow_reads_while_the_session_is_there: PASSED\n");
+    test_the_position_is_the_witness_and_not_the_spelling();
+    pass(test, "  test_the_position_is_the_witness_and_not_the_spelling: PASSED\n");
+    test_a_witness_refuses_another_session_of_the_same_type(test);
+    pass(test, "  test_a_witness_refuses_another_session_of_the_same_type: PASSED\n");
+    test_a_witness_refuses_the_same_session_after_a_loop_iteration(test);
+    pass(test, "  test_a_witness_refuses_the_same_session_after_a_loop_iteration: PASSED\n");
+    test_a_witness_follows_a_move_of_the_handle(test);
+    pass(test, "  test_a_witness_follows_a_move_of_the_handle: PASSED\n");
+    test_a_witness_refuses_a_later_session_on_the_same_record(test);
+    pass(test, "  test_a_witness_refuses_a_later_session_on_the_same_record: PASSED\n");
+    test_a_witness_of_one_kind_is_not_the_other();
+    pass(test, "  test_a_witness_of_one_kind_is_not_the_other: PASSED\n");
+    pass(test, "test_witnessed: PASSED\n");
+    return 0;
 }

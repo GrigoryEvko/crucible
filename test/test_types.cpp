@@ -1,8 +1,11 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/contracts/Decide.h>
+#include <foundation/effects/Effect.h>
 
-#include "test_abort_probe.h"
 #include "test_assert.h"
 
 #include <bit>
@@ -145,18 +148,25 @@ static void test_noexcept_ctors_propagate() {
 
 // Each value of the underlying type that no enumerator names reaches the
 // default arm of element_size, and the arm ends the process in each build.
-// Each enumerator gives its size.  The predicate of the deserializer gate is
-// the oracle for the enumerators.
-static void expect_element_size_ends_the_process_outside_the_enumerators() {
+// Each such value runs in a child through expect_dies of the Check family.
+// Each enumerator gives its size in the test process.  The predicate of the
+// deserializer gate is the oracle for the enumerators.  Complexity: one
+// child process for each value that no enumerator names.
+static void expect_element_size_ends_the_process_outside_the_enumerators(::fixy::TestRunnerCtx const& test) {
+    constexpr ::fixy::TextView kUnreachable{
+        "foundation: fatal: control reached a point that the code marks as unreachable"};
     for (int raw = -128; raw <= 127; ++raw) {
         ScalarType const type = static_cast<ScalarType>(static_cast<int8_t>(raw));
-        bool const ends_the_process =
-            ::crucible::test::aborts([type] { CRUCIBLE_FATAL_INVARIANT(element_size(type).raw() <= 16); });
-        CRUCIBLE_FATAL_INVARIANT(ends_the_process == !valid_scalar_type(raw));
+        if (valid_scalar_type(raw)) {
+            CRUCIBLE_TEST_ASSERT(test, element_size(type).raw() <= 16);
+        } else {
+            ::fixy::check::expect_dies(
+                test, [type] noexcept { CRUCIBLE_FATAL_INVARIANT(element_size(type).raw() <= 16); }, kUnreachable);
+        }
     }
 }
 
-static void test_scalar_type_element_sizes() {
+static void test_scalar_type_element_sizes(::fixy::TestRunnerCtx const& test) {
     // element_size returns a strong type, so a bare integer literal does not
     // compare against it. The expected sizes are written as ElementBytes.
     assert(element_size(ScalarType::Bool) == ElementBytes{1});
@@ -171,8 +181,8 @@ static void test_scalar_type_element_sizes() {
     assert(element_size(ScalarType::ComplexDouble) == ElementBytes{16});
     assert(element_size(ScalarType::Float8_e4m3fn) == ElementBytes{1});
     assert(element_size(ScalarType::Undefined).is_zero());
-    expect_element_size_ends_the_process_outside_the_enumerators();
-    crucible::test::pass("  test_element_size:              PASSED\n");
+    expect_element_size_ends_the_process_outside_the_enumerators(test);
+    ::fixy::check::pass(test, "  test_element_size:              PASSED\n");
 }
 
 static void test_bit_cast_round_trip() {
@@ -191,6 +201,7 @@ static void test_bit_cast_round_trip() {
 }
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_layout_and_trivial_relocatability();
     test_default_ctor_is_sentinel();
     test_explicit_construction();
@@ -198,8 +209,8 @@ int main() {
     test_hash_sentinel_distinct_from_default();
     test_hash_sentinel_under_decide();
     test_noexcept_ctors_propagate();
-    test_scalar_type_element_sizes();
+    test_scalar_type_element_sizes(test);
     test_bit_cast_round_trip();
-    crucible::test::pass("test_types: 9 groups, all passed\n");
+    ::fixy::check::pass(test, "test_types: 9 groups, all passed\n");
     return 0;
 }

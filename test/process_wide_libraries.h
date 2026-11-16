@@ -62,7 +62,9 @@ extern "C" {
 [[gnu::visibility("default")]] std::uint8_t process_wide_classify(std::uint64_t schema_hash) noexcept;
 [[gnu::visibility("default")]] ::fixy::TextView process_wide_schema_name(std::uint64_t schema_hash) noexcept;
 [[gnu::visibility("default")]] int process_wide_is_brand_usable() noexcept;
-[[gnu::visibility("default")]] int process_wide_does_second_claim_abort() noexcept;
+// Claims a second brand object on the calling thread.  The claim ends the
+// process when a different thread holds a claim of the brand.
+[[gnu::visibility("default")]] void process_wide_claim_a_second_brand() noexcept;
 
 // Defined in the two libraries.  Null past the last object.
 [[gnu::visibility("default")]] const void* process_wide_object_address(unsigned index) noexcept;

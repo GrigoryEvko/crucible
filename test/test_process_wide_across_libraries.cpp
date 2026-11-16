@@ -17,12 +17,16 @@
 #include "test_assert.h"
 
 #include <crucible/CKernel.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <fixy/os/Args.h>
+#include <foundation/effects/Effect.h>
 
 #include <dlfcn.h>
 
 #include <bit>
 #include <cstdio>
-#include <cstring>
 #include <thread>
 #include <utility>
 
@@ -142,21 +146,25 @@ void test_the_reader_sees_each_write(const Library& writer, const Library& reade
     crucible::test::pass("  test_the_reader_sees_each_write: PASSED\n");
 }
 
-void test_the_reader_sees_the_claim(const Library& writer, const Library& reader) {
+// The second claim ends the process, so it runs on a second thread of a
+// child through expect_dies of the Check family.  The test process has one
+// thread at the fork, so the child may start the second thread.
+void test_the_reader_sees_the_claim(::fixy::TestRunnerCtx const& test, const Library& writer, const Library& reader) {
     auto* const is_usable = reader.symbol<decltype(process_wide_is_brand_usable)>("process_wide_is_brand_usable");
-    auto* const does_second_claim_abort =
-        reader.symbol<decltype(process_wide_does_second_claim_abort)>("process_wide_does_second_claim_abort");
+    auto* const claim_a_second_brand =
+        reader.symbol<decltype(process_wide_claim_a_second_brand)>("process_wide_claim_a_second_brand");
 
     void* const brand = writer.symbol<decltype(process_wide_claim_brand)>("process_wide_claim_brand")();
     require(is_usable() == 1, "the thread that holds the claim can use the brand");
     require(on_other_thread(is_usable) == 0,
             "the reader library refuses a thread that holds no claim, because it sees the writer's claim");
-    require(on_other_thread(does_second_claim_abort) == 1,
-            "the reader library refuses a second thread's claim while the writer's claim is live");
+    ::fixy::check::expect_dies(
+        test, [claim_a_second_brand] noexcept { std::jthread{claim_a_second_brand}.join(); },
+        ::fixy::TextView{"foundation: fatal invariant failed: record != nullptr"});
 
     writer.symbol<decltype(process_wide_release_brand)>("process_wide_release_brand")(brand);
     require(on_other_thread(is_usable) == 1, "the claim ends when its brand is destroyed");
-    crucible::test::pass("  test_the_reader_sees_the_claim: PASSED\n");
+    ::fixy::check::pass(test, "  test_the_reader_sees_the_claim: PASSED\n");
 }
 
 // The run-time witness of the rule static-tls.  The control and the plant come
@@ -180,17 +188,23 @@ void test_static_tls_holds_the_rule_threshold() {
 }  // namespace
 
 // With no argument, every case runs.  One argument names the one case to run,
-// so that each case can be seen to fail on its own.
+// so that each case can be seen to fail on its own.  The argument door of
+// fixy/os/Args.h reads the argument.
 int main(int argc, char** argv) {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::fixy::os::Args const arguments = ::fixy::os::args(argc, argv);
     const Library writer{PROCESS_WIDE_WRITER_PATH};
     const Library reader{PROCESS_WIDE_READER_PATH};
-    const auto is_selected = [argc, argv](const char* name) { return argc < 2 || std::strcmp(argv[1], name) == 0; };
+    const auto is_selected = [&arguments](::fixy::TextView const name) noexcept {
+        return arguments.get(1).match([name](::fixy::CText const argument) noexcept { return argument.view() == name; },
+                                      [] noexcept { return true; });
+    };
     ::fixy::report(::fixy::Sink::Out, "test_process_wide_across_libraries:\n");
-    if (is_selected("addresses")) test_each_object_has_one_address(writer, reader);
-    if (is_selected("threads")) test_each_thread_object_is_one_for_the_thread(writer, reader);
-    if (is_selected("writes")) test_the_reader_sees_each_write(writer, reader);
-    if (is_selected("claim")) test_the_reader_sees_the_claim(writer, reader);
-    if (is_selected("static_tls")) test_static_tls_holds_the_rule_threshold();
-    crucible::test::pass("test_process_wide_across_libraries: all tests passed\n");
+    if (is_selected(::fixy::TextView{"addresses"})) test_each_object_has_one_address(writer, reader);
+    if (is_selected(::fixy::TextView{"threads"})) test_each_thread_object_is_one_for_the_thread(writer, reader);
+    if (is_selected(::fixy::TextView{"writes"})) test_the_reader_sees_each_write(writer, reader);
+    if (is_selected(::fixy::TextView{"claim"})) test_the_reader_sees_the_claim(test, writer, reader);
+    if (is_selected(::fixy::TextView{"static_tls"})) test_static_tls_holds_the_rule_threshold();
+    ::fixy::check::pass(test, "test_process_wide_across_libraries: all tests passed\n");
     return 0;
 }

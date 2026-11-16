@@ -3,17 +3,19 @@
 // The owner of the cell lends its ModeWriter to the mode session, and the
 // move leaves the owner a writer with no right to write.  A write with that
 // writer ends the process, so the cell has one writer at each time.  The
-// close of the session gives the writer back, and the owner writes again.
+// write runs in a child through expect_dies of the Check family.  The close
+// of the session gives the writer back, and the owner writes again.
 //
 // The test writes with the moved-from writer on purpose, so the rule
 // use-after-move lists this file with its probe.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/VigilMode.h>
 
-#include "../test_abort_probe.h"
-
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <utility>
 
@@ -27,22 +29,25 @@ using BgCtx = ::fixy::BgDrainCtx;
 
 // While the writer is lent, the owner holds a moved-from writer, and a
 // write with it ends the process.  So the cell has one writer at each time.
-[[nodiscard]] int the_owner_cannot_write_while_the_writer_is_lent() {
+void the_owner_cannot_write_while_the_writer_is_lent(::fixy::TestRunnerCtx const& test) {
     vm::ModeWriter writer = vm::mint_mode_writer();
     vm::ModeCell cell{writer};
     const BgCtx ctx{eff::testing::bg()};
     auto session = vm::mint_vigil_mode_bridge(ctx, cell, std::move(writer));
-    const bool is_ended = crucible::test::aborts([&cell, &writer] { cell.publish_compiled(writer); });
+    ::fixy::check::expect_dies(
+        test, [&cell, &writer] noexcept { cell.publish_compiled(writer); },
+        ::fixy::TextView{"fixy::session::diagnostic [VigilMode_Writer_Not_Held]"});
     auto terminal = std::move(session).select<2>(s::no_label);
     const vm::ModeWriter returned = std::move(terminal).close().return_writer();
     cell.publish_compiled(returned);
-    if (!is_ended || s::atomic_machine_state(cell) != vm::Mode::COMPILED) {
-        ::fixy::report(::fixy::Sink::Err, "the owner wrote the cell while the session held the writer\n");
-        return 1;
-    }
-    return 0;
+    CRUCIBLE_TEST_ASSERT(test, s::atomic_machine_state(cell) == vm::Mode::COMPILED);
 }
 
 }  // namespace
 
-int main() { return the_owner_cannot_write_while_the_writer_is_lent(); }
+int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    the_owner_cannot_write_while_the_writer_is_lent(test);
+    ::fixy::check::pass(test, "test_session_vigil_mode_writer_lent: PASSED\n");
+    return 0;
+}

@@ -13,13 +13,15 @@
 // then be mostly unreachable through its own factory, and no check
 // notices.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <fixy/session/VigilMode.h>
-
-#include "../test_abort_probe.h"
 
 #include <foundation/Platform.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstdio>
 #include <string_view>
@@ -277,23 +279,22 @@ constexpr auto apply = []<typename Transition>(vm::ModeLease& lease, Transition&
 // sends the edge RECORDING -> COMPILED, whose source the cell does not
 // hold.  The session holds the one writer, so a later try cannot succeed,
 // and the edge ends the process.  A cell that answered true here would
-// let the session log an edge that it did not take.
-[[nodiscard]] int an_edge_from_another_mode_ends_the_process() {
+// let the session log an edge that it did not take.  The session runs in a
+// child through expect_dies of the Check family.
+void an_edge_from_another_mode_ends_the_process(::fixy::TestRunnerCtx const& test) {
     vm::ModeWriter writer = vm::mint_mode_writer();
     vm::ModeCell cell{writer};
     cell.publish_compiled(writer);
     const BgCtx ctx{eff::testing::bg()};
-    const bool is_ended = crucible::test::aborts([&cell, &writer, &ctx] {
-        auto session = vm::mint_vigil_mode_bridge(ctx, cell, std::move(writer));
-        auto to_compiled = std::move(session).select<0>(s::no_label);
-        auto after = std::move(to_compiled).send(vm::ModeRecordingToCompiled{}, apply);
-        std::move(after).detach(s::detach_reason::TestInstrumentation{});
-    });
-    if (!is_ended) {
-        ::fixy::report(::fixy::Sink::Err, "the session took an edge from a mode that the cell does not hold\n");
-        return 1;
-    }
-    return 0;
+    ::fixy::check::expect_dies(
+        test,
+        [&cell, &writer, &ctx] noexcept {
+            auto session = vm::mint_vigil_mode_bridge(ctx, cell, std::move(writer));
+            auto to_compiled = std::move(session).select<0>(s::no_label);
+            auto after = std::move(to_compiled).send(vm::ModeRecordingToCompiled{}, apply);
+            std::move(after).detach(s::detach_reason::TestInstrumentation{});
+        },
+        ::fixy::TextView{"fixy::session::diagnostic [VigilModeBridge_Edge_Not_At_Source]"});
 }
 
 // ── Runtime: a published mode orders the writes before it ────────────
@@ -330,7 +331,8 @@ int main() {
     if (const int rc = bridge_owns_and_lends(); rc != 0) return rc;
     if (const int rc = terminal_view_ends(); rc != 0) return rc;
     if (const int rc = mode_protocol_round_trip(); rc != 0) return rc;
-    if (const int rc = an_edge_from_another_mode_ends_the_process(); rc != 0) return rc;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    an_edge_from_another_mode_ends_the_process(test);
     if (const int rc = published_mode_orders_the_owner_writes(); rc != 0) return rc;
     return 0;
 }

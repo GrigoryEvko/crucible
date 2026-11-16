@@ -2,10 +2,11 @@
 #include <crucible/MetaLog.h>
 #include <fixy/Aliases.h>
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
-#include "test_abort_probe.h"
 #include "test_assert.h"
 
 #include <atomic>
@@ -194,15 +195,16 @@ static void test_counters_pass_two_to_the_32() {
 }
 
 // A run longer than the buffer holds records that the producer wrote over.
-// The copy refuses such a run before it reads a slot.
-static void test_copy_run_refuses_a_run_longer_than_the_buffer() {
+// The copy refuses such a run before it reads a slot.  The copy runs in a
+// child through expect_dies of the Check family.
+static void test_copy_run_refuses_a_run_longer_than_the_buffer(::fixy::TestRunnerCtx const& test) {
     MetaLog log{::foundation::effects::testing::test().alloc};
-    // The probe leaves its body through longjmp, so the buffer lives outside
-    // the body, and its destructor runs.
     ::fixy::HeapArray<TensorMeta> destination =
         ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, MetaLog::CAPACITY + 1, TensorMeta{});
-    assert(crucible::test::aborts([&] { log.copy_run(0, destination.view()); }));
-    crucible::test::pass("  test_copy_run_refuses_long_run: PASSED\n");
+    ::fixy::check::expect_dies(
+        test, [&log, &destination] noexcept { log.copy_run(0, destination.view()); },
+        ::fixy::TextView{"foundation: contract violation: dst.size() <= CAPACITY"});
+    ::fixy::check::pass(test, "  test_copy_run_refuses_long_run: PASSED\n");
 }
 
 // The producer reads its own head relaxed and publishes with a release
@@ -401,6 +403,10 @@ static void test_try_append_pure_concurrent() {
 }
 
 int main() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    // First, while the test process has one thread: the refused copy runs in
+    // a child process.
+    test_copy_run_refuses_a_run_longer_than_the_buffer(test);
     test_empty_state();
     test_single_append_returns_index_zero();
     test_batch_append_and_monotonic();
@@ -411,9 +417,6 @@ int main() {
     test_spsc_concurrent_integrity();
     test_try_append_pure();
     test_try_append_pure_concurrent();
-    // Last: the contract handler reports one violation in a process, and this
-    // test makes one on purpose.
-    test_copy_run_refuses_a_run_longer_than_the_buffer();
-    crucible::test::pass("test_meta_log: 11 groups, all passed\n");
+    ::fixy::check::pass(test, "test_meta_log: 11 groups, all passed\n");
     return 0;
 }

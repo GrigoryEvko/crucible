@@ -1,8 +1,10 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/BackgroundThread.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include "test_assert.h"
-#include "test_abort_probe.h"
 #include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
@@ -497,25 +499,24 @@ static void test_device_of_slots() {
 // evaluation semantic is set to for the translation unit doing the including.
 // The pointer they guard later becomes a memcpy destination.
 //
-// The guard ends the process by design, so test::aborts catches the abort in
-// place. Running this with NDEBUG defined is the point of it: the same body
-// under a bare assert returns normally and hands out the pointer.
-//
-// The allocator lives outside the aborting body on purpose. Leaving through
-// the guard skips every destructor between the abort and the arming point, so
-// an allocator declared inside would never free the pool init had already
-// taken. Declared here, its destructor runs when this function returns.
-static void expect_abort_on_init(const TensorSlot& slot, uint64_t pool_bytes, const char* what) {
+// The guard ends the process by design, so the init runs in a child through
+// expect_dies of the Check family.  Running this with NDEBUG defined is the
+// point of it: the same body under a bare assert returns normally and hands
+// out the pointer.
+static void expect_abort_on_init(::fixy::TestRunnerCtx const& test, const TensorSlot& slot, uint64_t pool_bytes,
+                                 ::fixy::TextView refusal) {
     ::foundation::core::FixedArray<TensorSlot, 1> slots{slot};
     MemoryPlan plan = make_manual_plan(slots.view(), pool_bytes, 0);
-    PoolAllocator pool;
-    if (!crucible::test::aborts([&pool, &plan] { pool.init(::foundation::effects::testing::test().alloc, plan); })) {
-        std::fprintf(stderr, "  %s: the guard did not fire\n", what);
-        std::abort();
-    }
+    ::fixy::check::expect_dies(
+        test,
+        [&plan] noexcept {
+            PoolAllocator pool;
+            pool.init(::foundation::effects::testing::test().alloc, plan);
+        },
+        refusal);
 }
 
-static void test_slot_bounds_guard_is_armed() {
+static void test_slot_bounds_guard_is_armed(::fixy::TestRunnerCtx const& test) {
     TensorSlot past_end = {.offset_bytes = 512,
                            .nbytes = 1024,  // 512 + 1024 runs 512 bytes past a 1024-byte pool
                            .birth_op = OpIndex{0},
@@ -528,7 +529,9 @@ static void test_slot_bounds_guard_is_armed() {
                            .pad = {},
                            .slot_id = SlotId{0},
                            .pad2 = {}};
-    expect_abort_on_init(past_end, 1024, "slot past pool end");
+    expect_abort_on_init(
+        test, past_end, 1024,
+        ::fixy::TextView{"PoolAllocator: slot 0 does not fit the pool: offset=512 nbytes=1024 pool_bytes=1024"});
 
     TensorSlot misaligned = {.offset_bytes = 1,  // not a multiple of PoolAllocator::ALIGNMENT
                              .nbytes = 16,
@@ -542,9 +545,11 @@ static void test_slot_bounds_guard_is_armed() {
                              .pad = {},
                              .slot_id = SlotId{0},
                              .pad2 = {}};
-    expect_abort_on_init(misaligned, 4096, "misaligned slot offset");
+    expect_abort_on_init(
+        test, misaligned, 4096,
+        ::fixy::TextView{"PoolAllocator: slot 0 does not fit the pool: offset=1 nbytes=16 pool_bytes=4096"});
 
-    crucible::test::pass("  test_slot_bounds_guard_is_armed: PASSED\n");
+    ::fixy::check::pass(test, "  test_slot_bounds_guard_is_armed: PASSED\n");
 }
 
 int main() {
@@ -556,7 +561,8 @@ int main() {
     test_reinit();
     test_integration_with_sweep_line();
     test_device_of_slots();
-    test_slot_bounds_guard_is_armed();
-    crucible::test::pass("test_pool_allocator: all tests passed\n");
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_slot_bounds_guard_is_armed(test);
+    ::fixy::check::pass(test, "test_pool_allocator: all tests passed\n");
     return 0;
 }

@@ -1,12 +1,13 @@
 #include <crucible/CKernel.h>
 #include <crucible/MerkleDag.h>
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "padding_bytes.h"
-#include "test_abort_probe.h"
-#include "test_assert.h"
-#include <cstdio>
 #include <type_traits>
 
 // Real schema hashes come from the adapter's hash function.  These are
@@ -33,24 +34,26 @@ static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::
 
 // NUM_KERNELS is the count of the kernel ids, and it names no kernel.  Its
 // arm in ckernel_name is the unreachable point, which ends the process in
-// each build.
-static void expect_name_of_the_count_ends_the_process() {
-    bool const ends_the_process = ::crucible::test::aborts(
-        [] { CRUCIBLE_FATAL_INVARIANT(crucible::ckernel_name(crucible::CKernelId::NUM_KERNELS).size() != 0); });
-    CRUCIBLE_FATAL_INVARIANT(ends_the_process);
+// each build.  The call runs in a child through expect_dies of the Check
+// family.
+static void expect_name_of_the_count_ends_the_process(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test, [] noexcept { static_cast<void>(crucible::ckernel_name(crucible::CKernelId::NUM_KERNELS)); },
+        ::fixy::TextView{"foundation: fatal: control reached a point that the code marks as unreachable"});
 }
 
 int main() {
     using namespace crucible;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
 
-    assert(classify_kernel(HASH_LINEAR) == CKernelId::OPAQUE);
-    assert(classify_kernel(HASH_CONV2D) == CKernelId::OPAQUE);
-    assert(classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_LINEAR) == CKernelId::OPAQUE);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_CONV2D) == CKernelId::OPAQUE);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
 
     // Each registration below reaches an unsealed table, so each one lands.
-    const auto register_or_fail = [](ExtHash schema_hash, CKernelId id) {
+    const auto register_or_fail = [&test](ExtHash schema_hash, CKernelId id) {
         const bool was_registered = register_schema_hash(kVigilForeground, schema_hash, id);
-        assert(was_registered);
+        CRUCIBLE_TEST_ASSERT(test, was_registered);
     };
     register_or_fail(external_hash(HASH_LINEAR), CKernelId::GEMM_LINEAR);
     register_or_fail(external_hash(HASH_CONV2D), CKernelId::CONV2D);
@@ -58,41 +61,41 @@ int main() {
     register_or_fail(external_hash(HASH_RELU), CKernelId::ACT_RELU);
     register_or_fail(external_hash(HASH_EWISE_ADD), CKernelId::EWISE_ADD);
 
-    assert(classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
-    assert(classify_kernel(HASH_CONV2D) == CKernelId::CONV2D);
-    assert(classify_kernel(HASH_SDPA) == CKernelId::SDPA);
-    assert(classify_kernel(HASH_RELU) == CKernelId::ACT_RELU);
-    assert(classify_kernel(HASH_EWISE_ADD) == CKernelId::EWISE_ADD);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_CONV2D) == CKernelId::CONV2D);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_SDPA) == CKernelId::SDPA);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_RELU) == CKernelId::ACT_RELU);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_EWISE_ADD) == CKernelId::EWISE_ADD);
 
-    assert(classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
-    assert(classify_kernel(SchemaHash{0ULL}) == CKernelId::OPAQUE);
-    assert(classify_kernel(SchemaHash{UINT64_MAX}) == CKernelId::OPAQUE);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(SchemaHash{0ULL}) == CKernelId::OPAQUE);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(SchemaHash{UINT64_MAX}) == CKernelId::OPAQUE);
 
     // Lookup is a binary search, so the two values that fall outside the
     // registered range on either side are the interesting misses.
-    assert(classify_kernel(SchemaHash{0x0001ULL}) == CKernelId::OPAQUE);
-    assert(classify_kernel(SchemaHash{0xFFFF000000000010ULL}) == CKernelId::OPAQUE);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(SchemaHash{0x0001ULL}) == CKernelId::OPAQUE);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(SchemaHash{0xFFFF000000000010ULL}) == CKernelId::OPAQUE);
 
     // Registering the same pair twice must leave the answer unchanged.
     register_or_fail(external_hash(HASH_LINEAR), CKernelId::GEMM_LINEAR);
-    assert(classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
 
-    assert(ckernel_name(CKernelId::OPAQUE) == ::fixy::TextView{"OPAQUE"});
-    assert(ckernel_name(CKernelId::GEMM_LINEAR) == ::fixy::TextView{"GEMM_LINEAR"});
-    assert(ckernel_name(CKernelId::CONV2D) == ::fixy::TextView{"CONV2D"});
-    assert(ckernel_name(CKernelId::SDPA) == ::fixy::TextView{"SDPA"});
-    assert(ckernel_name(CKernelId::ACT_RELU) == ::fixy::TextView{"ACT_RELU"});
-    assert(ckernel_name(CKernelId::EWISE_ADD) == ::fixy::TextView{"EWISE_ADD"});
+    CRUCIBLE_TEST_ASSERT(test, ckernel_name(CKernelId::OPAQUE) == ::fixy::TextView{"OPAQUE"});
+    CRUCIBLE_TEST_ASSERT(test, ckernel_name(CKernelId::GEMM_LINEAR) == ::fixy::TextView{"GEMM_LINEAR"});
+    CRUCIBLE_TEST_ASSERT(test, ckernel_name(CKernelId::CONV2D) == ::fixy::TextView{"CONV2D"});
+    CRUCIBLE_TEST_ASSERT(test, ckernel_name(CKernelId::SDPA) == ::fixy::TextView{"SDPA"});
+    CRUCIBLE_TEST_ASSERT(test, ckernel_name(CKernelId::ACT_RELU) == ::fixy::TextView{"ACT_RELU"});
+    CRUCIBLE_TEST_ASSERT(test, ckernel_name(CKernelId::EWISE_ADD) == ::fixy::TextView{"EWISE_ADD"});
     static_assert(ckernel_name(CKernelId::COMM_BARRIER) == ::fixy::TextView{"COMM_BARRIER"});
 
     // Trace building fills this field in.  Until then it defaults to
     // OPAQUE rather than to an arbitrary kernel.
     {
         TraceEntry te{};
-        assert(te.kernel_id == CKernelId::OPAQUE);
-        assert(te.is_mutable == false);
+        CRUCIBLE_TEST_ASSERT(test, te.kernel_id == CKernelId::OPAQUE);
+        CRUCIBLE_TEST_ASSERT(test, te.is_mutable == false);
         te.kernel_id = CKernelId::GEMM_ADDMM;
-        assert(te.kernel_id == CKernelId::GEMM_ADDMM);
+        CRUCIBLE_TEST_ASSERT(test, te.kernel_id == CKernelId::GEMM_ADDMM);
     }
 
     // The fallback name for an unnamed id opens with an angle bracket,
@@ -102,7 +105,8 @@ int main() {
         const bool opens_with_an_angle_bracket =
             name.window(0, 1).match([](::fixy::TextView first) noexcept { return first == ::fixy::TextView{"<"}; },
                                     [] noexcept { return false; });
-        assert(name.size() != 0 && !opens_with_an_angle_bracket && "all known ids must have proper names");
+        CRUCIBLE_TEST_ASSERT(test, name.size() != 0 && !opens_with_an_angle_bracket
+                                       && "all known ids must have proper names");
     }
 
     // Rejection of an out-of-range byte is pinned by negative-compile
@@ -118,15 +122,15 @@ int main() {
         // Zero is the lowest valid value, and the default of the field.
         {
             const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(uint8_t{0});
-            assert(make_ckernel_id(raw) == CKernelId::OPAQUE);
+            CRUCIBLE_TEST_ASSERT(test, make_ckernel_id(raw) == CKernelId::OPAQUE);
         }
 
         // One below the kernel count is the highest valid value.
         {
             constexpr uint8_t LAST = static_cast<uint8_t>(CKernelId::NUM_KERNELS) - uint8_t{1};
             const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(LAST);
-            assert(make_ckernel_id(raw) == CKernelId::COMM_BARRIER);
-            assert(static_cast<uint8_t>(make_ckernel_id(raw)) == LAST);
+            CRUCIBLE_TEST_ASSERT(test, make_ckernel_id(raw) == CKernelId::COMM_BARRIER);
+            CRUCIBLE_TEST_ASSERT(test, static_cast<uint8_t>(make_ckernel_id(raw)) == LAST);
         }
 
         // Widening must preserve the underlying byte, not renumber it.
@@ -134,55 +138,56 @@ int main() {
                           static_cast<uint8_t>(CKernelId::CONV2D), static_cast<uint8_t>(CKernelId::ACT_RELU)}) {
             const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(v);
             const CKernelId id = make_ckernel_id(raw);
-            assert(static_cast<uint8_t>(id) == v && "make_ckernel_id must preserve underlying byte");
+            CRUCIBLE_TEST_ASSERT(test,
+                                 static_cast<uint8_t>(id) == v && "make_ckernel_id must preserve underlying byte");
         }
     }
 
     {
         CKernelTable t;
-        assert(!t.is_sealed());
+        CRUCIBLE_TEST_ASSERT(test, !t.is_sealed());
         const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
 
         const bool was_registered = t.register_op(mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
-        assert(was_registered);
-        assert(t.count() == 1);
+        CRUCIBLE_TEST_ASSERT(test, was_registered);
+        CRUCIBLE_TEST_ASSERT(test, t.count() == 1);
 
         t.seal();
-        assert(t.is_sealed());
+        CRUCIBLE_TEST_ASSERT(test, t.is_sealed());
         // Sealing twice leaves the table sealed rather than unsealing it.
         t.seal();
-        assert(t.is_sealed());
+        CRUCIBLE_TEST_ASSERT(test, t.is_sealed());
 
         // A sealed table mints no mutable view, in every build mode.
-        assert(t.mint_mutable_view(kVigilForeground).is_none());
+        CRUCIBLE_TEST_ASSERT(test, t.mint_mutable_view(kVigilForeground).is_none());
 
         // A view minted before the seal proves only that the table was open
         // then.  Its write after the seal is refused and changes nothing.
         const bool was_added_after_seal = t.register_op(mv, SchemaHash{0x3}, CKernelId::SDPA);
-        assert(!was_added_after_seal);
+        CRUCIBLE_TEST_ASSERT(test, !was_added_after_seal);
         const bool was_replaced_after_seal = t.register_op(mv, SchemaHash{0x1}, CKernelId::SDPA);
-        assert(!was_replaced_after_seal);
-        assert(t.count() == 1);
-        assert(t.classify(SchemaHash{0x1}) == CKernelId::GEMM_MM);
-        assert(t.classify(SchemaHash{0x3}) == CKernelId::OPAQUE);
+        CRUCIBLE_TEST_ASSERT(test, !was_replaced_after_seal);
+        CRUCIBLE_TEST_ASSERT(test, t.count() == 1);
+        CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x1}) == CKernelId::GEMM_MM);
+        CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x3}) == CKernelId::OPAQUE);
 
         // Clearing resets the seal along with the entries.
         t.clear(::foundation::effects::testing::test());
-        assert(!t.is_sealed());
-        assert(t.count() == 0);
+        CRUCIBLE_TEST_ASSERT(test, !t.is_sealed());
+        CRUCIBLE_TEST_ASSERT(test, t.count() == 0);
 
         const auto mv_after_clear = t.mint_mutable_view(kVigilForeground).expect("a cleared table is open");
         const bool was_registered_after_clear = t.register_op(mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
-        assert(was_registered_after_clear);
-        assert(t.classify(SchemaHash{0x2}) == CKernelId::SDPA);
+        CRUCIBLE_TEST_ASSERT(test, was_registered_after_clear);
+        CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x2}) == CKernelId::SDPA);
     }
 
     {
         CKernelTable t;
         const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
         const bool was_registered = t.register_op(mv, SchemaHash{0x42}, CKernelId::CONV2D);
-        assert(was_registered);
-        assert(t.classify(SchemaHash{0x42}) == CKernelId::CONV2D);
+        CRUCIBLE_TEST_ASSERT(test, was_registered);
+        CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x42}) == CKernelId::CONV2D);
     }
 
     // Classification is the read path a background thread takes, and it
@@ -191,13 +196,13 @@ int main() {
         CKernelTable t;
         const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
         const bool was_mm_registered = t.register_op(mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
-        assert(was_mm_registered);
+        CRUCIBLE_TEST_ASSERT(test, was_mm_registered);
         const bool was_norm_registered = t.register_op(mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
-        assert(was_norm_registered);
+        CRUCIBLE_TEST_ASSERT(test, was_norm_registered);
         t.seal();
-        assert(t.classify(SchemaHash{0x111}) == CKernelId::GEMM_MM);
-        assert(t.classify(SchemaHash{0x222}) == CKernelId::LAYER_NORM);
-        assert(t.classify(SchemaHash{0xBAD}) == CKernelId::OPAQUE);
+        CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x111}) == CKernelId::GEMM_MM);
+        CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x222}) == CKernelId::LAYER_NORM);
+        CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0xBAD}) == CKernelId::OPAQUE);
         // Minting a sealed view is permitted once the table is sealed.
         (void)t.mint_sealed_view();
     }
@@ -210,8 +215,8 @@ int main() {
     global_ckernel_table().value()->seal();
     const bool was_registered_after_seal =
         register_schema_hash(kVigilForeground, external_hash(HASH_UNKNOWN), CKernelId::SDPA);
-    assert(!was_registered_after_seal);
-    assert(classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
+    CRUCIBLE_TEST_ASSERT(test, !was_registered_after_seal);
+    CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
 
     global_ckernel_table().value()->clear(::foundation::effects::testing::test());
 
@@ -219,8 +224,8 @@ int main() {
     // store at each initialization of an automatic table (padding_bytes.h).
     crucible::test::expect_no_padding_byte<^^CKernelEntry>();
 
-    expect_name_of_the_count_ends_the_process();
+    expect_name_of_the_count_ends_the_process(test);
 
-    crucible::test::pass("test_ckernel: all tests passed\n");
+    ::fixy::check::pass(test, "test_ckernel: all tests passed\n");
     return 0;
 }
