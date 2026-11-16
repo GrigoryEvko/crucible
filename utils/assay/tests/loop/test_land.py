@@ -1639,7 +1639,7 @@ def right_cases(expect: testing.Expect) -> None:
             and not land.queue_file(queue, 5, land.RIGHT_SUFFIX).exists(),
         )
         pauses: list[float] = []
-        is_moved, printed = testing.captured(lambda: land.RightOfWay(queue, 5, pauses.append).wait(lambda: False))
+        is_moved, printed = testing.captured(lambda: land.RightOfWay(queue, 5, pauses.append).wait(land.SWAP_STEP))
         expect(
             "a right of way that is never freed, with no move of the branch, holds the swap for RIGHT_WAIT_S seconds "
             "only, with a line",
@@ -1655,7 +1655,7 @@ def right_cases(expect: testing.Expect) -> None:
             if not added:
                 added.append(other_right(queue, 7))
 
-        _, printed = testing.captured(lambda: land.RightOfWay(queue, 5, new_holder).wait(lambda: False))
+        _, printed = testing.captured(lambda: land.RightOfWay(queue, 5, new_holder).wait(land.SWAP_STEP))
         os.close(added[0])
         expect(
             "a holder that takes a right of way during the wait gets its own line, and no line names a holder again",
@@ -1676,12 +1676,13 @@ def right_cases(expect: testing.Expect) -> None:
 
         decisions, printed = right_batch(root, queue, 5, passing(seen), holder_lands)
         expect(
-            "the swap of a batch waits while a different batch holds the right of way, then composes again on the "
-            "commit of that batch, and lands",
+            f"a batch waits before its first run while a different batch holds the right of way, then runs one time on "
+            f"the commit of that batch, and lands: {len(seen)} runs",
             decisions[5].status == 0
-            and "waits before its swap" in printed
-            and len(seen) == 2
-            and seen[1][0].head == moved[0]
+            and "waits before its run for the right of way of 00000001" in printed
+            and f"waited {land.POLL_S:.0f} s for a right of way before its run" in printed
+            and len(seen) == 1
+            and seen[0][0].head == moved[0]
             and git.parent(root, "HEAD") == moved[0],
         )
         holder = [other_right(queue, 1)]
@@ -1690,33 +1691,62 @@ def right_cases(expect: testing.Expect) -> None:
         gate_runs: list[tuple[gate.Candidate, bool]] = []
 
         def holder_moves_then_frees(seconds: float) -> None:
-            """Move the branch on the first poll of the wait, and free the right of way on a poll after the next run."""
+            """Move the branch on the first poll of the wait, and free the right of way on the second poll."""
             if seconds != land.POLL_S:
                 return
             polls.append((len(gate_runs), git.head(root)))
             if len(polls) == 1:
                 short_landing(root, "a different lane landed during the wait\n")
                 landed_first.append(git.head(root))
-            elif len(gate_runs) == 2 and holder:
+            elif holder:
                 os.close(holder.pop())
 
         decisions, printed = right_batch(root, queue, 6, passing(gate_runs), holder_moves_then_frees)
         expect(
-            "a batch that waits for a held right of way while a different lane moves the branch ends the wait at the "
-            "next poll, long before RIGHT_WAIT_S, and runs the gate again on the new commit",
-            "moved while the batch waited for a right of way" in printed
-            and polls[0][0] == 1
-            and len(polls) == 2
-            and len(gate_runs) == 2
-            and gate_runs[1][0].head == landed_first[0],
-        )
-        expect(
-            "after it composes again, the batch waits for the held right of way before its swap, so the branch stays "
-            "at the commit of the other lane until the holder frees it, and then the batch lands on that commit",
+            "a move of the branch does not end the wait before the run: the batch waits until the holder frees its "
+            "right of way, then runs one time on the last commit, and lands on it",
             decisions[6].status == 0
-            and polls[1] == (2, landed_first[0])
+            and [count for count, _ in polls] == [0, 0]
+            and polls[1][1] == landed_first[0]
+            and len(gate_runs) == 1
+            and gate_runs[0][0].head == landed_first[0]
             and git.parent(root, "HEAD") == landed_first[0]
+            and "moved while the batch waited" not in printed
             and not holder,
+        )
+        taken: list[int] = []
+        holder_landed: list[str] = []
+        runs: list[tuple[gate.Candidate, bool]] = []
+
+        def take_during_run() -> None:
+            """Let a different batch take a smaller right of way during the first run of the batch."""
+            if not taken:
+                taken.append(other_right(queue, 1))
+
+        def holder_lands_then_frees(seconds: float) -> None:
+            """Land the batch with the right of way on the first poll, and free its right of way on the second poll."""
+            if seconds != land.POLL_S or not taken:
+                return
+            if not holder_landed:
+                short_landing(root, "the holder landed during the swap wait\n")
+                holder_landed.append(git.head(root))
+            elif taken[0] >= 0:
+                os.close(taken[0])
+                taken[0] = -1
+
+        decisions, printed = right_batch(root, queue, 8, passing(runs, take_during_run), holder_lands_then_frees)
+        expect(
+            "a right of way that a different batch takes during the run holds the swap.  The move of its landing ends "
+            "that wait at once, and the batch waits before its next run until the holder frees its right of way.  "
+            "Then it runs one more time on the commit of the holder, and lands",
+            decisions[8].status == 0
+            and "waits before its swap for the right of way of 00000001" in printed
+            and "moved while the batch waited for a right of way" in printed
+            and "waits before its run for the right of way of 00000001" in printed
+            and len(runs) == 2
+            and runs[1][0].head == holder_landed[0]
+            and git.parent(root, "HEAD") == holder_landed[0]
+            and taken == [-1],
         )
 
 

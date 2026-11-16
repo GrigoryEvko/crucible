@@ -359,19 +359,25 @@ THE RIGHT OF WAY
     file NUMBER.right of the queue, with the number of its first request,
     until the batch ends.  The kernel frees the lock of a holder that ends.
 
-    Before each swap, a batch waits while a different batch holds a right of
-    way.  A batch that holds a right of way waits only for a right of way
-    with a smaller number, so the oldest batch goes first and no two batches
-    wait for each other.  The wait looks again each POLL_S seconds, for at
-    most RIGHT_WAIT_S seconds.  Each line of the wait names the holders that
-    no earlier line of that wait named.
-
-    When the branch moves from the base of the waiting batch, its swap
-    cannot succeed, so the wait ends at once.  The batch counts a refused
-    swap and composes again on the new commit.  Its next run tests only the
-    inputs that changed, and it runs while the holder runs.  Before its next
-    swap, the batch waits again for each right of way that goes first.  Thus
-    it does not move the branch ahead of such a holder.
+    A right of way goes first when a different batch holds it.  For a batch
+    that holds a right of way, only a right of way with a smaller number goes
+    first.  Thus the oldest batch goes first, and no two batches wait for
+    each other.  A batch waits while a right of way that goes first is held,
+    at two points:
+      * Before each round, also the first one.  A holder that goes first
+        moves the branch when it lands, and the swap of a run that started
+        before it then cannot succeed.  Such a run only takes slots and
+        memory from the run of the holder.  Thus the batch composes after
+        the wait, on the commit that the last such holder leaves.  A move of
+        the branch does not end this wait.
+      * Before each swap.  A batch can take its right of way while a
+        different batch runs.  When the branch moves from the base of the
+        waiting batch, its swap cannot succeed, so this wait ends at once.
+        The batch counts a refused swap, and it composes again.
+    The wait looks again each POLL_S seconds, for at most RIGHT_WAIT_S
+    seconds.  Each line of the wait names the holders that no earlier line
+    of that wait named.  At its end, a wait before a round writes the
+    seconds that it waited.
 
 THE JOURNAL
     Before the swap, the holder writes the file NUMBER.journal of each
@@ -506,6 +512,9 @@ PAUSE_RANGE_S = (0.1, 0.9)
 # different batch (THE RIGHT OF WAY).  A run of --all-configurations takes approximately 12 minutes.
 RIGHT_AFTER = 2
 RIGHT_WAIT_S = 1800.0
+# The two steps of a batch before which it waits for a right of way that goes first (THE RIGHT OF WAY).
+RUN_STEP = "run"
+SWAP_STEP = "swap"
 # The two kinds of an edit of a shared file (THE REQUEST).
 INSERT = "insert"
 REPLACE = "replace"
@@ -1653,27 +1662,33 @@ class RightOfWay:
                 found.append(number)
         return sorted(found)
 
-    def wait(self, is_moved: Callable[[], bool]) -> bool:
-        """Wait while a right of way of a different batch goes first, for at most RIGHT_WAIT_S seconds.
+    def wait(self, step: str, is_moved: Callable[[], bool] | None = None) -> bool:
+        """Wait before a step of the batch while a right of way goes first, for at most RIGHT_WAIT_S seconds.
 
-        The wait ends early when is_moved() tells that the branch moved from the base of the batch, because the swap
-        of the batch then cannot succeed.  Each line of the wait names the holders that no earlier line named.
+        `step` is RUN_STEP or SWAP_STEP, and the lines of the wait name it.  The wait ends early when is_moved() tells
+        that the branch moved from the base of the batch, because the swap of the batch then cannot succeed.  A wait
+        before a round gives no is_moved, and the lines of its end give the seconds that it waited (THE RIGHT OF
+        WAY).  Each line of the wait names the holders that no earlier line named.
 
         Returns:
-            True if the branch moved during the wait, and False if the batch can try its swap
+            True if the branch moved during the wait, and False if the batch can go on to its step
         """
         waited = 0.0
         shown: set[int] = set()
         while waited < RIGHT_WAIT_S:
             first = self.first()
             if not first:
+                if waited and step == RUN_STEP:
+                    check_report.write_line(
+                        f"loop land: the batch waited {waited:.0f} s for a right of way before its run"
+                    )
                 return False
             new = [number for number in first if number not in shown]
             if new:
                 names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in new)
-                check_report.write_line(f"loop land: the batch waits before its swap for the right of way of {names}")
+                check_report.write_line(f"loop land: the batch waits before its {step} for the right of way of {names}")
                 shown.update(new)
-            if is_moved():
+            if is_moved is not None and is_moved():
                 check_report.write_line(
                     "loop land: the branch moved while the batch waited for a right of way, so its swap cannot succeed"
                 )
@@ -1681,7 +1696,7 @@ class RightOfWay:
             self.pause(POLL_S)
             waited += POLL_S
         check_report.write_line(
-            f"loop land: the batch waited {RIGHT_WAIT_S:.0f} seconds for a right of way, and it tries its swap",
+            f"loop land: the batch waited {RIGHT_WAIT_S:.0f} seconds for a right of way, and it goes on to its {step}",
             is_error=True,
         )
         return False
@@ -2103,9 +2118,9 @@ class BatchLanding:
     def landed_pending(self, pending: list[Queued]) -> None:
         """Run the rounds of land() until the swap, a refusal of each request, or ATTEMPTS refused swaps.
 
-        After RIGHT_AFTER refused swaps, the batch takes its right of way before its next round.  Before each swap, it
-        waits for each right of way that goes first (THE RIGHT OF WAY).  A move of the branch during that wait counts
-        as a refused swap.  The caller frees the right of way.
+        After RIGHT_AFTER refused swaps, the batch takes its right of way before its next round.  Before each round and
+        before each swap, it waits for each right of way that goes first (THE RIGHT OF WAY).  A move of the branch during
+        the wait before the swap counts as a refused swap.  The caller frees the right of way.
         """
         swaps_refused = 0
         while pending:
@@ -2114,8 +2129,10 @@ class BatchLanding:
                 right.take()
                 check_report.write_line(
                     f"loop land: the branch moved {swaps_refused} times, and the batch takes the right of way: the "
-                    "other lanes wait before their swap until this batch ends"
+                    "other lanes wait before their run and their swap until this batch ends"
                 )
+            if right is not None and not self.is_check:
+                right.wait(RUN_STEP)
             self.base = self.tip()
             self.base_run = -1
             accepted, run = self.search(pending)
@@ -2138,7 +2155,7 @@ class BatchLanding:
                 return
             final = verdict.final or accepted[-1].commit
             decisions = self.landed_decisions(accepted, verdict, final)
-            is_moved = self.right is not None and self.right.wait(lambda: self.tip() != self.base)
+            is_moved = self.right is not None and self.right.wait(SWAP_STEP, lambda: self.tip() != self.base)
             if not is_moved and self.landed_swap(accepted, decisions, final, run):
                 return
             swaps_refused += 1
