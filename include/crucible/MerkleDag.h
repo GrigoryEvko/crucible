@@ -610,6 +610,24 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     return ContentHash{detail::fmix64(body_hash_state)};
 }
 
+// The word of one tensor in the content hash of a region: the XOR fold of its
+// extents and strides (DimHash.h), its element type and its device.  The
+// device comes through device_of, so the word agrees with the equality of a
+// device: one index for the host.  The guard word of an op folds this word for
+// each input too (compute_shape_hash of vessel/torch/entry_slots.h), so the
+// guard and the content hash tell two inputs apart in the same way.
+//
+// The word is part of the content-hash format.  A change of it changes each
+// stored content hash and each guard word.
+[[nodiscard, gnu::always_inline]] inline uint64_t pack_tensor_word(const TensorMeta& meta) noexcept {
+    const uint64_t per_dim_hash_xor = raw_dim_hash(detail::dim_hash_simd_det(meta));
+    const TensorDevice device = device_of(meta);
+    const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(meta.dtype))
+                               | (static_cast<uint64_t>(std::to_underlying(device.type())) << 8)
+                               | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16);
+    return per_dim_hash_xor ^ meta_packed;
+}
+
 // The whole region content-hash format, and the only place it is written.
 //
 // A region's content hash is the compiler's cache key, so it has to come out
@@ -745,14 +763,14 @@ private:
         for (std::size_t input = 0; input < input_metas.size(); ++input) {
             content_hash_state = detail::combine_ids(
                 content_hash_state,
-                packed_meta_(*input_metas.get(input).expect("the input arrays of an entry hold one count")));
+                pack_tensor_word(*input_metas.get(input).expect("the input arrays of an entry hold one count")));
             content_hash_state = detail::combine_ids(
                 content_hash_state,
                 uint64_t{producers.get(input).expect("the input arrays of an entry hold one count")->raw()});
         }
 
         for (const TensorMeta& output_meta : op_record.output_metas()) {
-            content_hash_state = detail::combine_ids(content_hash_state, packed_meta_(output_meta));
+            content_hash_state = detail::combine_ids(content_hash_state, pack_tensor_word(output_meta));
         }
 
         content_hash_state =
@@ -766,19 +784,6 @@ private:
         const uint32_t tagged = ::fixy::min(uint32_t{op_record.num_scalar_args()}, uint32_t{5});
         const uint32_t tag_mask = (uint32_t{1} << (2 * tagged)) - 1;
         content_hash_state = detail::combine_ids(content_hash_state, uint64_t{op_record.scalar_types & tag_mask});
-    }
-
-    // One value of the metadata of a tensor: the XOR fold of its dimensions,
-    // and its element type and device.  The device comes through device_of,
-    // so the hash agrees with the equality of a device: one index for the
-    // host.
-    [[nodiscard, gnu::always_inline]] static uint64_t packed_meta_(const TensorMeta& meta) noexcept {
-        const uint64_t per_dim_hash_xor = raw_dim_hash(detail::dim_hash_simd_det(meta));
-        const TensorDevice device = device_of(meta);
-        const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(meta.dtype))
-                                   | (static_cast<uint64_t>(std::to_underlying(device.type())) << 8)
-                                   | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16);
-        return per_dim_hash_xor ^ meta_packed;
     }
 
     // The golden-ratio constant, matching the seed every other fold in this
