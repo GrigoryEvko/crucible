@@ -42,7 +42,12 @@ struct DispatchResult {
 
     Action action = Action::RECORD;
     ReplayStatus status = ReplayStatus::MATCH;
-    ::fixy::FixedArray<uint8_t, 2> pad{};
+    // True when the next op starts an iteration of a region: this op
+    // completed the region, or its dispatch activated a region.  The front
+    // end then reads its eager numerics again and gives them to the Vigil
+    // (Vigil::observe_eager_numerics), once for each iteration.
+    bool enters_region = false;
+    uint8_t pad = 0;
     // On the compiled arm, the position of the matched op in the region that
     // the Vigil replays.  After a COMPLETE, it is the last op of the region.
     OpIndex op_index;
@@ -66,7 +71,11 @@ struct DispatchResult {
 
     [[nodiscard]] static constexpr DispatchResult record() noexcept { return DispatchResult{}; }
     [[nodiscard]] static constexpr DispatchResult compiled(ReplayStatus s, OpIndex idx) noexcept {
-        return DispatchResult{.action = Action::COMPILED, .status = s, .pad = {}, .op_index = idx};
+        return DispatchResult{.action = Action::COMPILED,
+                              .status = s,
+                              .enters_region = s == ReplayStatus::COMPLETE,
+                              .pad = 0,
+                              .op_index = idx};
     }
 };
 
@@ -112,6 +121,15 @@ struct CrucibleContext {
         // prefix against a region that is gone.
         CRUCIBLE_POST(0, mode_ == ContextMode::RECORD);
         CRUCIBLE_POST(0, active_region_.value() == nullptr);
+    }
+
+    // Stops the replay at a divergence that no guard of an op saw, such as
+    // a change of the numerics of the run, and counts the divergence as an
+    // advance that gives DIVERGED does.
+    void deactivate_on_divergence() {
+        CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
+        diverged_count_.bump();
+        deactivate();
     }
 
     [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash) {

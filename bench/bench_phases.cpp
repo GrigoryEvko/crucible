@@ -100,7 +100,7 @@ void check_ops_without_metas(::fixy::View<const TraceEntry> ops, ::fixy::View<co
 BackgroundThread::TraceBuild build_recorded(BackgroundThread& bg, ::fixy::BumpArena& scratch,
                                             const LoadedTrace& trace) {
     return bg.build_trace_from(A, scratch, trace.entries.view(), trace.meta_starts.view(), trace.scope_hashes.view(),
-                               trace.callsite_hashes.view(), trace.depths.view());
+                               trace.callsite_hashes.view(), trace.depths.view(), bg.numerics());
 }
 
 // ── Top-level Report via bench::run ──────────────────────────────────

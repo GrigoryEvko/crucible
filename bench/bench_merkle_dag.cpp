@@ -366,7 +366,7 @@ int main(int argc, char* argv[]) {
             scratch.with_epoch([&]() noexcept {
                 repopulate_meta_log();
                 auto built = bg.build_trace_from(test.alloc, scratch, drained, drained_metas, drained_scopes,
-                                                 drained_callsites, drained_depths);
+                                                 drained_callsites, drained_depths, bg.numerics());
                 bench::do_not_optimize(built);
             });
         });
@@ -407,9 +407,9 @@ int main(int argc, char* argv[]) {
                 const LoadedTrace& loaded = trace;
                 scratch.with_epoch([&]() noexcept {
                     bench::refill_meta_log(meta_log, loaded);
-                    auto built = bg.build_trace_from(test.alloc, scratch, loaded.entries.view(),
-                                                     loaded.meta_starts.view(), loaded.scope_hashes.view(),
-                                                     loaded.callsite_hashes.view(), loaded.depths.view());
+                    auto built = bg.build_trace_from(
+                        test.alloc, scratch, loaded.entries.view(), loaded.meta_starts.view(),
+                        loaded.scope_hashes.view(), loaded.callsite_hashes.view(), loaded.depths.view(), bg.numerics());
                     bench::do_not_optimize(built);
                 });
             });

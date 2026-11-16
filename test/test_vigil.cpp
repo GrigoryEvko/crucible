@@ -196,8 +196,62 @@ static void test_region_of_other_numerics_does_not_replay(::fixy::TextView direc
     crucible::test::pass("  region_of_other_numerics_does_not_replay: PASSED\n");
 }
 
+// A change of the eager word stops the replay of the region of the old word,
+// counts one divergence, and the pipeline cuts the next region under the new
+// word, which replays.  The dispatch that activates a region and the
+// dispatch that completes it report a region entry, and no other dispatch
+// does.  The old Vigil had no door for the eager word after the attach, so
+// the region of the old word kept on replaying.
+static void test_eager_word_change_is_a_divergence() {
+    crucible::Vigil vigil;
+    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    divrig::feed_one_region(vigil, 0);
+    crucible::test::flush_and_wait_region_published(vigil);
+    uint32_t entries = 0;
+    for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
+        auto aligned = divrig::op_at(3, i);
+        const crucible::DispatchResult result =
+            crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
+        if (result.enters_region) {
+            ++entries;
+            assert((i + 1 == divrig::K || i + 1 == divrig::NUM_OPS)
+                   && "only the activation and the completion of the region report an entry");
+        }
+    }
+    assert(entries == 2 && "the activation and the completion each report a region entry");
+    assert(vigil.context().is_compiled() && "the foreground replays the region of the attach word");
+    const crucible::ContentHash attach_hash =
+        vigil.active_region().expect("the flush published a region")->content_hash;
+    const uint32_t diverged = vigil.diverged_count();
+
+    vigil.observe_eager_numerics(fg, crucible::EagerNumerics{});
+    assert(vigil.context().is_compiled() && vigil.diverged_count() == diverged && "the same word changes nothing");
+
+    const crucible::EagerNumerics flushing{.bits = crucible::EagerNumerics::FLUSH_DENORMAL};
+    vigil.observe_eager_numerics(fg, flushing);
+    assert(!vigil.context().is_compiled() && !vigil.is_compiled() && "a changed word stops the replay");
+    assert(vigil.diverged_count() == diverged + 1 && "a changed word counts one divergence");
+    assert(vigil.eager_numerics() == flushing);
+
+    divrig::feed_one_region(vigil, 4);
+    crucible::test::flush_and_wait_region_published(vigil);
+    const ::fixy::Ref<const crucible::RegionNode> flushed =
+        vigil.active_region().expect("the pipeline published a region after the change");
+    assert(flushed->numerics == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, flushing)
+           && "the region after the change holds the hash of the new word");
+    assert(flushed->content_hash != attach_hash && "the new word gives the region a new content hash");
+    for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
+        auto aligned = divrig::op_at(7, i);
+        (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
+    }
+    assert(vigil.context().is_compiled() && "the region of the new word replays");
+    assert(vigil.diverged_count() == diverged + 1);
+    crucible::test::pass("  eager_word_change_is_a_divergence: PASSED\n");
+}
+
 int main() {
     test_region_hashes_under_the_numerics_of_the_config();
+    test_eager_word_change_is_a_divergence();
     test_vigil::test_divergence_drops_the_unobserved_region();
     test_vigil::test_divergence_drops_the_regions_of_the_backlog();
     test_vigil::test_divergence_drops_a_half_finished_alignment();

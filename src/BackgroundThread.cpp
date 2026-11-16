@@ -487,6 +487,7 @@ BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc allo
     if (meta_log && completed_len > 0) {
         ::fixy::Box<BgBuildWork> work = ::fixy::mint_box<BgBuildWork>(alloc);
         work->reset_point = applied_reset_.peek_relaxed();
+        work->numerics = stream_numerics_;
         // Each buffer takes the oldest completed_len held ops, in order.
         PendingOps const& held = pending_ops_;
         work->trace = ::fixy::mint_heap_array_with<TraceRing::Entry>(
@@ -513,7 +514,9 @@ BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc allo
 // A newer request replaces an older one that the detect stage did not reach,
 // and a restart at the newer point also clears the ops between the two
 // points.  A mark keeps the held ops: they belong to the same stream, and
-// only the regions cut before the mark are stale.
+// only the regions cut before the mark are stale.  Each applied reset reads
+// the numerics of the newest request (request_numerics), so each work cut
+// after it carries them.
 void BackgroundThread::apply_due_reset_() noexcept {
     const StreamPoint requested = requested_reset_.get();
     if (requested == applied_reset_.peek_relaxed()) return;
@@ -523,6 +526,7 @@ void BackgroundThread::apply_due_reset_() noexcept {
         detector.restart_after_divergence();
         pending_ops_.clear();
     }
+    stream_numerics_ = requested_numerics_.load_acquire();
     applied_reset_.advance(requested);
 }
 
@@ -794,7 +798,8 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         owner.build_scratch_.with_epoch([&]() noexcept {
             owner
                 .build_trace_from(ctx.cap().alloc, owner.build_scratch_, work->trace.view(), work->meta_starts.view(),
-                                  work->scope_hashes.view(), work->callsite_hashes.view(), work->depths.view())
+                                  work->scope_hashes.view(), work->callsite_hashes.view(), work->depths.view(),
+                                  work->numerics)
                 .match([&](BuiltTrace trace) noexcept { built = ::fixy::some(std::move(trace.region)); },
                        [](MetaLogOverflow /*overflow*/) noexcept {});
         });
@@ -883,6 +888,8 @@ void BackgroundThread::set_numerics(NumericsHash numerics) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(numerics));
     CRUCIBLE_PRE(!numerics.is_sentinel());
     numerics_ = numerics;
+    stream_numerics_ = numerics;
+    requested_numerics_.store_release(numerics);
 }
 
 void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
@@ -1026,11 +1033,14 @@ void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, ui
 BackgroundThread::TraceBuild BackgroundThread::build_trace_from(
     ::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, ::fixy::View<const TraceRing::Entry> trace,
     ::fixy::View<const MetaIndex> meta_starts, ::fixy::View<const ScopeHash> scope_hashes,
-    ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths) noexcept {
+    ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths,
+    NumericsHash numerics) noexcept {
     CRUCIBLE_PRE(meta_starts.size() == trace.size());
     CRUCIBLE_PRE(scope_hashes.size() == trace.size());
     CRUCIBLE_PRE(callsite_hashes.size() == trace.size());
     CRUCIBLE_PRE(depths.size() == trace.size());
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(numerics));
+    CRUCIBLE_PRE(!numerics.is_sentinel());
 
     // The five arrays take the brand of one scope over the ops.  The scope
     // ends the process for more than 0xFFFFFFFF ops.
@@ -1040,15 +1050,14 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_from(
             trace_data.parallel(meta_starts).expect("the metadata starts are parallel to the ops"),
             trace_data.parallel(scope_hashes).expect("the scope hashes are parallel to the ops"),
             trace_data.parallel(callsite_hashes).expect("the callsite hashes are parallel to the ops"),
-            trace_data.parallel(depths).expect("the depths are parallel to the ops"));
+            trace_data.parallel(depths).expect("the depths are parallel to the ops"), numerics);
     });
 }
 
 template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
-BackgroundThread::TraceBuild
-BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
-                                       TraceColumn trace_data, MetaColumn meta_data, ScopeColumn scope_data,
-                                       CallsiteColumn callsite_data, DepthColumn depth_data) noexcept {
+BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
+    ::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, TraceColumn trace_data, MetaColumn meta_data,
+    ScopeColumn scope_data, CallsiteColumn callsite_data, DepthColumn depth_data, NumericsHash numerics) noexcept {
     // An op index has 32 bits, and a branded scope holds at most 0xFFFFFFFF
     // ops.
     const uint32_t count = ::fixy::narrow<uint32_t>(trace_data.size()).expect("a branded count fits in 32 bits");
@@ -1178,8 +1187,8 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
     // the policy of the run and the eager word of the front end, and their
     // hash folds in first (compute_numerics_hash).  The recipe of one op is
     // the policy, the dtype and the device together, and the compile of a
-    // kernel derives it, so no op carries a recipe.
-    const NumericsHash numerics = numerics_;
+    // kernel derives it, so no op carries a recipe.  The numerics are the
+    // numerics of the stream at the cut of the work (BgBuildWork::numerics).
     ContentHashFold content_fold{numerics};
 
     for (const auto index : trace_data.indices()) {

@@ -369,6 +369,25 @@ public:
     // reads the thread id and an atomic.
     [[nodiscard]] CRUCIBLE_INLINE VigilFgCtx mint_producer_context() noexcept { return assert_producer_thread_(); }
 
+    // The eager word of the front end that the regions of the Vigil record
+    // under: the word of the Config, or the last word that
+    // observe_eager_numerics gave.
+    [[nodiscard]] EagerNumerics eager_numerics() const noexcept { return eager_; }
+
+    // The front end reads its eager word again at each region entry, which a
+    // dispatch reports (DispatchResult::enters_region), and gives it here.  A
+    // word that did not change costs one compare.  A changed word changes the
+    // numerics of the run (compute_numerics_hash): a region that replays
+    // under the old word stops, as at a divergence, and the pipeline cuts
+    // each region after this point under the new word.  The word changes
+    // between two ops of the stream, so the point is the count of the ops in
+    // the ring.
+    CRUCIBLE_INLINE void observe_eager_numerics(VigilFgCtx const&, EagerNumerics live) {
+        if (live == eager_) [[likely]]
+            return;
+        change_eager_numerics_(live);
+    }
+
     // Registers the name of one schema from the thread that holds the
     // producer claim of this Vigil, as crucible::register_schema_name does.
     // The copy of the name allocates through the allocation capability of the
@@ -956,18 +975,45 @@ private:
         // ops keeps the walk (take_published_region_).
         if (pending_region_.load_acquire().is_some()) consume_pending_region_();
 
+        // An alignment that completes activates the region, and the next op
+        // is the first op that replays: the front end reads its eager word.
+        bool enters_region = false;
         if (pending_activation_) {
             // Nothing is recorded during alignment, because it would create
             // false iteration boundaries in the background detector.  The
             // bound of try_align_ ends an alignment that finds no match.
             try_align_(fg, entry.schema_hash, entry.shape_hash);
+            enters_region = replay_.context().is_compiled();
         } else {
             (void)record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash, depth);
         }
         publish_held_regions_();
 
-        return {
-            .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
+        return {.action = DispatchResult::Action::RECORD,
+                .status = ReplayStatus::MATCH,
+                .enters_region = enters_region,
+                .pad = 0,
+                .op_index = OpIndex{}};
+    }
+
+    // The body of observe_eager_numerics for a changed word.  The region in
+    // the slot and the region of an open alignment were cut under the old
+    // word, so they go to the cache, and a replayed region goes there too.
+    // The cache keeps them for a return to the old word, and the doors of a
+    // replay refuse them under the new word.  The pipeline drops each
+    // region cut before the point, so none reaches the slot after it.
+    [[gnu::cold]] CRUCIBLE_NOINLINE void change_eager_numerics_(EagerNumerics live) {
+        eager_ = live;
+        const NumericsHash numerics = compute_numerics_hash(cfg_.numerics, live);
+        cache_pending_region_();
+        if (pending_activation_.has_value()) region_cache_.insert(pending_activation_.get());
+        pending_activation_.reset();
+        alignment_pos_ = alignment_pos_at(0);
+        alignment_ops_ = 0;
+        const ::fixy::WeakRef<const RegionNode> replayed = replay_.context().active_region();
+        if (replay_.change_numerics(numerics)) region_cache_.insert(replayed.get());
+        bg_.request_numerics(ring_total_produced(), numerics);
+        publish_held_regions_();
     }
 
     // Moves the region in the slot to the cache, for a caller that knows that
@@ -1292,6 +1338,10 @@ private:
     AlignmentPos alignment_pos_ = alignment_pos_at(0);
     // The ops that the alignment of pending_activation_ read (alignment_bound).
     uint32_t alignment_ops_ = 0;
+    // The eager word of the front end that the regions record under.  The
+    // constructor sets the word of the Config, and only the producer thread
+    // changes it (observe_eager_numerics).
+    EagerNumerics eager_{};
 
     // The replay context and the mode that an observer reads.  The producer
     // thread changes the context only through this class, and each change
@@ -1344,6 +1394,18 @@ private:
         [[nodiscard]] bool switch_region(const RegionNode& alt, uint32_t div_pos) {
             if (!(alt.numerics == numerics_)) return false;
             return ctx_.switch_region(alt, div_pos);
+        }
+
+        // The numerics of the run become numerics.  A region that replays
+        // under the old numerics stops, the context counts a divergence, and
+        // it records from the next op.  Returns true when the context
+        // replayed.
+        bool change_numerics(NumericsHash numerics) {
+            numerics_ = numerics;
+            if (!ctx_.is_compiled()) return false;
+            ctx_.deactivate_on_divergence();
+            mode_.publish_recording_after_divergence(mode_writer_);
+            return true;
         }
 
         [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash,

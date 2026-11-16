@@ -63,7 +63,7 @@ struct Work {
     [[nodiscard]] BackgroundThread::TraceBuild build(BackgroundThread& bt, ::foundation::effects::Alloc alloc,
                                                      ::fixy::BumpArena& scratch) const {
         return bt.build_trace_from(alloc, scratch, first_ops(trace), first_ops(meta_starts), first_ops(scope_hashes),
-                                   first_ops(callsite_hashes), first_ops(depths));
+                                   first_ops(callsite_hashes), first_ops(depths), bt.numerics());
     }
 
     // The first count elements of one array of the work.

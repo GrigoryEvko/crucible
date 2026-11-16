@@ -336,9 +336,15 @@ private:
     // owns it.  The first start() sets it to the tail of the metadata log.
     uint64_t meta_cursor_ = 0;
 
-    // The numerics hash that the build folds into each region: the hash of
-    // the default policy until the owner sets one before start.
+    // The numerics hash of the run at its start: the hash of the default
+    // policy until the owner sets one before start.
     NumericsHash numerics_ = compute_numerics_hash(NumericsPolicy{}, EagerNumerics{});
+
+    // The numerics of the ops that the detect stage reads: the hash of the
+    // start, until the detect stage applies a reset after a change of the
+    // numerics (request_numerics).  Each work item carries the hash of its
+    // cut, and the build folds it into the region.  The detect stage owns it.
+    NumericsHash stream_numerics_ = numerics_;
 
     // The position of the op that the detect stage reads, from its metadata
     // index: the index when it is valid, else the cursor.  A valid index
@@ -618,6 +624,26 @@ public:
                                                                  : StreamPoint::mark_at(ops_before));
     }
 
+    // A change of the numerics of the run at a point, such as a change of
+    // the eager word of the front end.  The op stream does not change with
+    // the numerics, so the request is a mark: each region cut before the
+    // point is stale, and the detector keeps its ops and its periods.  A
+    // restart would refute the period of the region that replayed, and the
+    // same loop would then get no region under the new numerics.  Each work
+    // that the detect stage cuts after the point carries the new hash.
+    //
+    // The hash goes out with release order before the point, and the detect
+    // stage reads it after it reads the point, so it reads the hash of this
+    // request or of a newer one.  A newer request has a point that is not
+    // before this one, so each region cut between the two points is stale,
+    // and no region gives out an old point with a newer hash.
+    void request_numerics(uint64_t ops_before, NumericsHash numerics) noexcept {
+        CRUCIBLE_PRE(::foundation::decide::is_non_zero(numerics));
+        CRUCIBLE_PRE(!numerics.is_sentinel());
+        requested_numerics_.store_release(numerics);
+        request_mark(ops_before);
+    }
+
     [[nodiscard]] StreamPoint requested_reset() const noexcept { return requested_reset_.get(); }
 
     // The point of the last reset that the detect stage applied.
@@ -625,6 +651,10 @@ public:
 
 private:
     ::fixy::AtomicMonotonic<StreamPoint> requested_reset_ = ::fixy::mint_atomic_monotonic<StreamPoint>(StreamPoint{});
+    // The numerics of the last request_numerics, or of set_numerics.  The
+    // producer writes it, and the detect stage reads it at each reset that it
+    // applies.
+    ::fixy::Atomic<NumericsHash> requested_numerics_{compute_numerics_hash(NumericsPolicy{}, EagerNumerics{})};
     // The detect stage is the one writer of the two below.
     ::fixy::AtomicMonotonic<StreamPoint, ::fixy::CounterWriters::sole> applied_reset_ =
         ::fixy::mint_atomic_monotonic<StreamPoint, ::fixy::CounterWriters::sole>(StreamPoint{});
@@ -752,6 +782,9 @@ public:
         // The point of the last reset before the cut of this work.
         // Meaningless on a commit-only marker, which is never dropped.
         StreamPoint reset_point{};
+        // The numerics of the stream at the cut, which the build folds into
+        // the region.  Meaningless on a commit-only marker.
+        NumericsHash numerics{};
         // On a commit-only marker, the oldest record that a later work can
         // hold (meta_floor_() when the detect stage made the marker).
         uint64_t meta_floor = 0;
@@ -882,10 +915,11 @@ public:
     void start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank_ = -1,
                int32_t world_size_ = 0, uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
 
-    // Sets the numerics hash that the build folds into each region.  The
-    // owner calls it before start, and the start of the pipeline thread
-    // orders the write before each read of the build stage.  A call while the
-    // pipeline runs breaks the contract.
+    // Sets the numerics hash of the start of the run, which the build folds
+    // into each region until a request_numerics.  The owner calls it before
+    // start, and the start of the pipeline thread orders the write before
+    // each read of the pipeline.  A call while the pipeline runs breaks the
+    // contract.
     void set_numerics(NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
     [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
@@ -1166,12 +1200,13 @@ public:
     // go into scratch.  The ops, their tensor metadata, their side arrays
     // and their slots go into the parts of the region, which own their
     // memory.
-    [[nodiscard]] TraceBuild build_trace_from(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
-                                              ::fixy::View<const TraceRing::Entry> trace,
-                                              ::fixy::View<const MetaIndex> meta_starts,
-                                              ::fixy::View<const ScopeHash> scope_hashes,
-                                              ::fixy::View<const CallsiteHash> callsite_hashes,
-                                              ::fixy::View<const OpDepth> depths) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+    // The content hash of the region folds numerics, the numerics of the
+    // stream at the cut of the ops (BgBuildWork::numerics).
+    [[nodiscard]] TraceBuild
+    build_trace_from(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
+                     ::fixy::View<const TraceRing::Entry> trace, ::fixy::View<const MetaIndex> meta_starts,
+                     ::fixy::View<const ScopeHash> scope_hashes, ::fixy::View<const CallsiteHash> callsite_hashes,
+                     ::fixy::View<const OpDepth> depths, NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
 private:
     // The body of build_trace_from.  Each column is a fixy::BrandedView of
@@ -1184,7 +1219,7 @@ private:
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
     build_trace_columns_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, TraceColumn trace_data,
                          MetaColumn meta_data, ScopeColumn scope_data, CallsiteColumn callsite_data,
-                         DepthColumn depth_data) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+                         DepthColumn depth_data, NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
 public:
     // Orders birth and death events with an O(n + k) counting sort, then
