@@ -81,6 +81,10 @@ static_assert(std::is_same_v<::fixy::box_word_key<CoreCheckRole>, ::foundation::
 }
 static_assert(sole_writer_names_are_one_entity());
 static_assert(std::is_same_v<::fixy::View<int, 4>, ::foundation::core::View<int, 4>>);
+// The brand of a chunk range of the check.
+struct CoreCheckChunksBrand final {};
+static_assert(std::is_same_v<::fixy::ViewMutChunks<int, CoreCheckChunksBrand>,
+                             ::foundation::core::ViewMutChunks<int, CoreCheckChunksBrand>>);
 static_assert(std::is_same_v<::fixy::RunSet<std::uint16_t, ::fixy::RunOf<int, 0>>,
                              ::foundation::core::RunSet<std::uint16_t, ::foundation::core::RunOf<int, 0>>>);
 static_assert(::fixy::ForeignElement<float> && !::fixy::ForeignElement<bool>);
