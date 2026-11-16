@@ -1046,64 +1046,67 @@ template <int W, class Op, std::size_t... Is, class T, class... Es>
 // is the element at the positions a0 of a and b0 of b.  column<J>() gives the
 // register of the position b0 + J of b, over the W positions of a.
 template <TileClass Class, int W, class E>
-struct TileSource;
+class TileSource;
 
 // A transposed input loads the W rows along b, one for each position of a,
 // and runs THE TRANSPOSE NETWORK.  The registers are a member array with a
 // constant index at each use, so they stay in registers.
 template <int W, class E>
-struct TileSource<TileClass::Transposed, W, E> {
+class TileSource<TileClass::Transposed, W, E> {
     using V = ::foundation::simd::vec<E, W>;
     using Raw = typename V::raw_type;
 
-    Raw rows[lane_count_<W>]{};
-
-    CRUCIBLE_INLINE TileSource(E const* at, std::size_t step_a, std::size_t /*step_b*/) noexcept {
-        load_rows_(at, step_a, ::foundation::simd::detail::lane_list_t<W>{});
-        transpose_registers_<W, run_lanes_<E>>(rows);
-    }
+    Raw rows_[lane_count_<W>]{};
 
     template <int... Row>
     CRUCIBLE_INLINE void load_rows_(E const* at, std::size_t step_a,
                                     ::foundation::simd::detail::LaneList<Row...> /*rows*/) noexcept {
-        ((rows[Row] = ::foundation::simd::load<V>(at + static_cast<std::size_t>(Row) * step_a).raw()), ...);
+        ((rows_[Row] = ::foundation::simd::load<V>(at + static_cast<std::size_t>(Row) * step_a).raw()), ...);
+    }
+
+public:
+    CRUCIBLE_INLINE TileSource(E const* at, std::size_t step_a, std::size_t /*step_b*/) noexcept {
+        load_rows_(at, step_a, ::foundation::simd::detail::lane_list_t<W>{});
+        transpose_registers_<W, run_lanes_<E>>(rows_);
     }
 
     template <int Column>
     [[nodiscard]] CRUCIBLE_INLINE V column() const noexcept {
-        return V{rows[transpose_map_<W, run_lanes_<E>>.registers[Column]]};
-    }
-};
-
-template <int W, class E>
-struct TileSource<TileClass::Dense, W, E> {
-    using V = ::foundation::simd::vec<E, W>;
-
-    E const* at = nullptr;
-    std::size_t step_b = 0;
-
-    CRUCIBLE_INLINE TileSource(E const* first, std::size_t /*step_a*/, std::size_t step) noexcept
-        : at{first}, step_b{step} {}
-
-    template <int Column>
-    [[nodiscard]] CRUCIBLE_INLINE V column() const noexcept {
-        return ::foundation::simd::load<V>(at + static_cast<std::size_t>(Column) * step_b);
+        return V{rows_[transpose_map_<W, run_lanes_<E>>.registers[Column]]};
     }
 };
 
 template <int W, class E>
-struct TileSource<TileClass::Splat, W, E> {
+class TileSource<TileClass::Dense, W, E> {
     using V = ::foundation::simd::vec<E, W>;
 
-    E const* at = nullptr;
-    std::size_t step_b = 0;
+    E const* at_ = nullptr;
+    std::size_t step_b_ = 0;
 
+public:
     CRUCIBLE_INLINE TileSource(E const* first, std::size_t /*step_a*/, std::size_t step) noexcept
-        : at{first}, step_b{step} {}
+        : at_{first}, step_b_{step} {}
 
     template <int Column>
     [[nodiscard]] CRUCIBLE_INLINE V column() const noexcept {
-        return V{at[static_cast<std::size_t>(Column) * step_b]};
+        return ::foundation::simd::load<V>(at_ + static_cast<std::size_t>(Column) * step_b_);
+    }
+};
+
+template <int W, class E>
+class TileSource<TileClass::Splat, W, E> {
+    using V = ::foundation::simd::vec<E, W>;
+
+    E const* at_ = nullptr;
+    std::size_t step_b_ = 0;
+
+public:
+    CRUCIBLE_INLINE TileSource(E const* first, std::size_t /*step_a*/, std::size_t step) noexcept
+        : at_{first}, step_b_{step} {}
+
+    template <int Column>
+    [[nodiscard]] CRUCIBLE_INLINE V column() const noexcept {
+        return V{at_[static_cast<std::size_t>(Column) * step_b_]};
     }
 };
 
