@@ -18,13 +18,15 @@
 //                    writes the register two times
 //
 // The host of the tree is x86_64, so this bench measures MXCSR.  An aarch64
-// host measures FPCR with the same rows.
+// host measures FPCR with the same rows.  Each line gives the percentiles of
+// one call in picoseconds, the cycles of one call, and the coefficient of
+// variation in thousandths.
 
-#include <cstdint>
-#include <cstdio>
-
+#include <fixy/Core.h>
 #include <foundation/core/FpMode.h>
 #include <foundation/os/FpControl.h>
+
+#include <cstdint>
 
 #include "bench_harness.h"
 
@@ -32,6 +34,19 @@ namespace {
 
 namespace core = ::foundation::core;
 namespace os = ::foundation::os;
+
+// A time in nanoseconds, as the nearest integer of picoseconds.
+[[nodiscard]] std::uint64_t picoseconds(double nanoseconds) noexcept {
+    return static_cast<std::uint64_t>(nanoseconds * 1000.0 + 0.5);
+}
+
+// Writes one line: the name of the row and the percentiles of its samples.
+void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
+    fixy::report(fixy::Sink::Out, "{}  p50={} ps  p99={} ps  max={} ps  cycles={}  cv={} permille\n", name,
+                 picoseconds(measured.pct.p50), picoseconds(measured.pct.p99), picoseconds(measured.pct.max),
+                 static_cast<std::uint64_t>(measured.cycles_per_op + 0.5),
+                 static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5));
+}
 
 // Eight dependent multiplies.  The factor is one, so the value stays the
 // same, and the compiler keeps each multiply because the value goes to
@@ -107,19 +122,14 @@ bench::Report scope_other() {
 }  // namespace
 
 int main() {
-    bench::print_system_info();
     bench::elevate_priority();
-
-    const bool json = bench::env_json();
-
-    std::printf("=== fp_control ===\n");
-    std::printf("  The cost of one read and one write of the FP control register.\n\n");
-
-    bench::Report reports[] = {
-        read_register(), write_same(), write_toggle(), chain_alone(), toggle_and_chain(), scope_same(), scope_other(),
-    };
-
-    bench::emit_reports_text(reports);
-    bench::emit_reports_json(reports, json);
+    fixy::report(fixy::Sink::Out, "=== fp_control: the cost of one read and one write of the FP control register\n");
+    print_row("read          ", read_register());
+    print_row("write, same   ", write_same());
+    print_row("write, toggle ", write_toggle());
+    print_row("mul chain     ", chain_alone());
+    print_row("toggle + chain", toggle_and_chain());
+    print_row("scope, same   ", scope_same());
+    print_row("scope, other  ", scope_other());
     return 0;
 }
