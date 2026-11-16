@@ -1889,10 +1889,10 @@ crucible_neg_compile_test(neg_transaction_log_capacity_two
 # under the Loaded tag, the tag of a loaded region, both fail at the commit
 # boundary.
 crucible_neg_compile_test(neg_transaction_region_raw_pointer
-  "neg_transaction_region_raw_pointer.cpp:32:41: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
+  "neg_transaction_region_raw_pointer.cpp:32:33: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
   "\\{aka .fixy::Tagged<foundation::core::Ref<crucible::RegionNode>, fixy::tags::source::Arena>.\\}")
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
-  "neg_transaction_region_loaded_cross_tag.cpp:37:41: error: cannot convert"
+  "neg_transaction_region_loaded_cross_tag.cpp:37:33: error: cannot convert"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
 
 # Transaction::step_id is fixy::Monotonic<uint64_t>.
@@ -1907,26 +1907,14 @@ crucible_neg_compile_test(neg_transaction_step_id_advance_retrograde
   "in .constexpr. expansion of .tx.crucible::Transaction::step_id.fixy::Monotonic<long unsigned int(, std::less<long unsigned int> )?>::advance\\(50\\)."
   "error: .__builtin_trap\\(\\). is not a constant expression")
 
-# The log holds a monotonic clock reader, so CtxFitsTransactionLog admits
-# only a context whose row claims Nondet.
-#   * neg_transaction_log_foreground_ctx: the foreground context.
-#   * neg_transaction_log_bg_cap_without_bg_row: a background capability
-#     with a row that claims Alloc alone.
-crucible_neg_compile_test(neg_transaction_log_foreground_ctx
-  "neg_transaction_log_foreground_ctx.cpp:24:89: error: no matching function for call to .crucible::TransactionLog<16, Owner>::TransactionLog"
-  "required for the satisfaction of .CtxFitsTransactionLog<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
-crucible_neg_compile_test(neg_transaction_log_bg_cap_without_bg_row
-  "neg_transaction_log_bg_cap_without_bg_row.cpp:29:55: error: no matching function for call to .crucible::TransactionLog<16, Owner>::TransactionLog"
-  "required for the satisfaction of .CtxFitsTransactionLog<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Alloc> >\\]")
-
 # The transaction log has one owner.  Each member takes the owner proof,
 # a call with no proof does not compile, and a proof that could travel to
 # a second thread is refused as an owner.  The publish-stage proof is
 # built by the background thread alone, and neither bit_cast nor the
 # checked lifetime start can make one from bytes.
 crucible_neg_compile_test(neg_transaction_log_rollback_without_owner
-  "neg_transaction_log_rollback_without_owner.cpp:27:23: error: no matching function for call to .crucible::TransactionLog<16, Owner>::rollback\\(foundation::effects::cap::Nondet\\)."
-  "candidate expects 2 arguments, 1 provided")
+  "neg_transaction_log_rollback_without_owner.cpp:[0-9]+:[0-9]+: error: no matching function for call to .crucible::TransactionLog<16, Owner>::rollback\\(\\)."
+  "candidate expects 1 argument, 0 provided")
 crucible_neg_compile_test(neg_transaction_log_copyable_owner
   "neg_transaction_log_copyable_owner.cpp:16:47: error: template constraint failure for .template<unsigned int N, class Owner>  requires  OwnerProof<Owner> class crucible::TransactionLog."
   "the expression .!\\(is_copy_constructible_v<P>\\) \\[with P = CopyableOwner\\]. evaluated to .false.")
@@ -3137,18 +3125,11 @@ crucible_neg_compile_test(neg_background_thread_callback_type_identity_drift
   "static assertion failed: RegionReadyCall carries noexcept, so it is not the CallRef of the plain signature"
   ".class foundation::core::CallRef<void\\(${BG_CALLBACK_PARAMS}\\) noexcept>. is not the same as .class foundation::core::CallRef<void\\(${BG_CALLBACK_PARAMS}\\)>.")
 
-# Transaction::ts_ns holds an Option of a reading of the monotonic clock.
-# Option::some takes only a value that builds a reading.
-#   - neg_transaction_ts_ns_bare_u64_assign: a bare integer is no reading,
-#     because the constructor of ClockSource from its value is private.
-#   - neg_transaction_ts_ns_cross_source: a boot clock reading is a distinct
-#     type from a monotonic one.
-crucible_neg_compile_test(neg_transaction_ts_ns_bare_u64_assign
-  "neg_transaction_ts_ns_bare_u64_assign.cpp:18:70: error: no matching function for call to .foundation::core::Option<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >::some\\(uint64_t\\)."
-  "required for the satisfaction of .constructible_from<T, U&&>. \\[with T = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>; U = long unsigned int\\]")
-crucible_neg_compile_test(neg_transaction_ts_ns_cross_source
-  "neg_transaction_ts_ns_cross_source.cpp:26:63: error: no matching function for call to .foundation::core::Option<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >::some\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\)."
-  "required for the satisfaction of .constructible_from<T, U&&>. \\[with T = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>; U = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\]")
+# Transaction::event_order is a place in the order of the events of its log.
+# The place only grows, so no code assigns it.
+crucible_neg_compile_test(neg_transaction_event_order_assign
+  "neg_transaction_event_order_assign.cpp:[0-9]+:[0-9]+: error: use of deleted function"
+  "Monotonic")
 
 # ─── hash_family_of HS14 negative-compile fixtures ────────────────
 #   - neg_types_hash_family_unspecialized  (incomplete primary template)

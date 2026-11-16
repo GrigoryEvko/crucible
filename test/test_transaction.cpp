@@ -70,31 +70,11 @@ using Log = crucible::TransactionLog<16, SoloOwner>;
 // The smallest ring that the log admits.
 using SmallestLog = crucible::TransactionLog<4, SoloOwner>;
 
-// Each method of the log that stamps a transaction takes the bare tag of
-// Nondet, and a test context gives it.
-constexpr ::foundation::effects::cap::Nondet kTestNondet = ::foundation::effects::testing::test().nondet;
-
-// A body that holds the log but no tag of Nondet stamps nothing: each
-// stamping method takes the tag.
-static_assert(!std::is_invocable_v<decltype(&Log::rollback), Log&, SoloOwner const&>);
-static_assert(
-    std::is_invocable_v<decltype(&Log::rollback), Log&, SoloOwner const&, ::foundation::effects::cap::Nondet>);
-
-// The log reads the monotonic clock, so only a context whose row holds
-// Nondet builds one.  The drain row and the cold init row hold no Nondet.
-static_assert(crucible::CtxFitsTransactionLog<::fixy::TestRunnerCtx>);
-static_assert(crucible::CtxFitsTransactionLog<::fixy::InitLoadCtx>);
-static_assert(crucible::CtxFitsTransactionLog<::fixy::BgLoadCtx>);
-static_assert(!crucible::CtxFitsTransactionLog<::fixy::ColdInitCtx>);
-static_assert(!crucible::CtxFitsTransactionLog<::fixy::BgDrainCtx>);
-static_assert(!crucible::CtxFitsTransactionLog<::fixy::HotFgCtx>);
-static_assert(!std::is_constructible_v<Log, ::fixy::HotFgCtx const&>);
-static_assert(!std::is_default_constructible_v<Log>);
-
-// A slot that the log never stamped holds no reading, and nothing builds a
-// reading from a raw integer.
-static_assert(!std::is_constructible_v<crucible::Transaction::Timestamp, std::uint64_t>);
-static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
+// The log stamps each event with a place of its own count and reads no
+// clock.  So a rollback takes the owner proof and no tag of Nondet, and the
+// log needs no context.
+static_assert(std::is_invocable_v<decltype(&Log::rollback), Log&, SoloOwner const&>);
+static_assert(std::is_default_constructible_v<Log>);
 
 [[nodiscard]] crucible::Transaction::ArenaRegion arena_region(crucible::RegionNode& region) {
     return ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<crucible::RegionNode>{::fixy::to(region)});
@@ -105,12 +85,9 @@ static_assert(!std::is_trivially_copyable_v<crucible::Transaction>);
 static_assert(!std::is_constructible_v<crucible::Transaction::ArenaRegion, std::nullptr_t>);
 static_assert(sizeof(crucible::Transaction::ArenaRegionLink) == sizeof(void*));
 
-// The nanoseconds of the reading of a transaction, or zero when it holds no
-// reading.
-[[nodiscard]] std::uint64_t stamp_nanos(crucible::Transaction const& tx) noexcept {
-    return tx.ts_ns.match([](crucible::Transaction::Timestamp const& stamp) noexcept { return stamp.peek(); },
-                          []() noexcept { return std::uint64_t{0}; });
-}
+// The place of the last event of a transaction, or zero when the log never
+// stamped it.
+[[nodiscard]] std::uint64_t stamp_of(crucible::Transaction const& tx) noexcept { return tx.event_order.get(); }
 
 // One region for each step, so that each transaction holds a region that no
 // other transaction holds.  The region and a copy of its op are in the arena.
@@ -128,9 +105,9 @@ static_assert(sizeof(crucible::Transaction::ArenaRegionLink) == sizeof(void*));
 // stage of a Vigil does for each region.  Returns the transaction that the
 // activation displaced.
 crucible::Transaction* publish(auto& log, const SoloOwner& owner, uint32_t step, crucible::RegionNode* region) {
-    auto& tx = log.begin_tx(owner, kTestNondet, step);
-    assert(log.commit(owner, kTestNondet, tx, arena_region(*region), region->content_hash, region->merkle_hash));
-    return log.activate(owner, kTestNondet, tx).try_get();
+    auto& tx = log.begin_tx(owner, step);
+    assert(log.commit(owner, tx, arena_region(*region), region->content_hash, region->merkle_hash));
+    return log.activate(owner, tx).try_get();
 }
 
 // The log holds the transaction of `step` as the active one, with its region.
@@ -161,10 +138,10 @@ enum class RollbackOrder : uint8_t {
 // activation then displaces the transaction that was live, and a rollback
 // restores it with its region.  Each order fills the ring so that the next
 // claim lands on the slot of the active transaction.
-void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const ::fixy::TestRunnerCtx& ctx,
-                                       const SoloOwner& owner, RollbackOrder order) {
+void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const SoloOwner& owner,
+                                       RollbackOrder order) {
     constexpr uint32_t kSlots = 16;
-    Log log{ctx};
+    Log log{};
     ::fixy::BumpArena arena(1 << 14);
     std::array<crucible::RegionNode*, kSlots + 2> regions{};
     for (uint32_t step = 1; step <= kSlots + 1; ++step)
@@ -174,12 +151,12 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
         for (uint32_t step = 1; step <= kSlots; ++step)
             (void)publish(log, owner, step, regions[step]);
         for (uint32_t step = kSlots; step > 1; --step)
-            assert(log.rollback(owner, kTestNondet));
+            assert(log.rollback(owner));
     } else {
         (void)publish(log, owner, 1, regions[1]);
         for (uint32_t step = 2; step <= kSlots; ++step) {
             (void)publish(log, owner, step, regions[step]);
-            assert(log.rollback(owner, kTestNondet));
+            assert(log.rollback(owner));
         }
     }
     assert(log.size(owner) == kSlots);
@@ -193,50 +170,49 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
     expect_active(log, owner, kSlots + 1, regions[kSlots + 1]);
     assert(log.previous(owner).try_get() == displaced);
 
-    assert(log.rollback(owner, kTestNondet));
+    assert(log.rollback(owner));
     expect_active(log, owner, 1, regions[1]);
 }
 
 // The rollback target is the transaction that the last activation displaced.
 // The activations here do not follow the order of the claims, so the
 // rollback target is not the superseded transaction with the newest claim.
-void previous_follows_the_order_of_displacements(::foundation::effects::Alloc alloc, const ::fixy::TestRunnerCtx& ctx,
-                                                 const SoloOwner& owner) {
+void previous_follows_the_order_of_displacements(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     constexpr uint32_t kSteps = 4;
-    Log log{ctx};
+    Log log{};
     ::fixy::BumpArena arena(1 << 12);
     std::array<crucible::RegionNode*, kSteps + 1> regions{};
     std::array<crucible::Transaction*, kSteps + 1> txs{};
     for (uint32_t step = 1; step <= kSteps; ++step) {
         regions[step] = region_of_step(alloc, arena, step);
-        txs[step] = &log.begin_tx(owner, kTestNondet, step);
-        assert(log.commit(owner, kTestNondet, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
+        txs[step] = &log.begin_tx(owner, step);
+        assert(log.commit(owner, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
                           regions[step]->merkle_hash));
     }
 
     // The third transaction displaces nothing, the first displaces the
     // third, and the second displaces the first.
-    assert(log.activate(owner, kTestNondet, *txs[3]).try_get() == nullptr);
-    assert(log.activate(owner, kTestNondet, *txs[1]).try_get() == txs[3]);
-    assert(log.activate(owner, kTestNondet, *txs[2]).try_get() == txs[1]);
+    assert(log.activate(owner, *txs[3]).try_get() == nullptr);
+    assert(log.activate(owner, *txs[1]).try_get() == txs[3]);
+    assert(log.activate(owner, *txs[2]).try_get() == txs[1]);
     assert(log.previous(owner).try_get() == txs[1]);
 
-    assert(log.rollback(owner, kTestNondet));
+    assert(log.rollback(owner));
     expect_active(log, owner, 1, regions[1]);
     assert(log.previous(owner).try_get() == txs[3]);
 
     // A second displacement of the restored first transaction comes after
     // the displacement of the third, although its claim comes before.
-    assert(log.activate(owner, kTestNondet, *txs[4]).try_get() == txs[1]);
+    assert(log.activate(owner, *txs[4]).try_get() == txs[1]);
     assert(log.previous(owner).try_get() == txs[1]);
 
-    assert(log.rollback(owner, kTestNondet));
+    assert(log.rollback(owner));
     expect_active(log, owner, 1, regions[1]);
     assert(log.previous(owner).try_get() == txs[3]);
-    assert(log.rollback(owner, kTestNondet));
+    assert(log.rollback(owner));
     expect_active(log, owner, 3, regions[3]);
     assert(log.previous(owner).try_get() == nullptr);
-    assert(!log.rollback(owner, kTestNondet));
+    assert(!log.rollback(owner));
 }
 
 // A full ring recycles its oldest slot, but a claim must keep the rollback
@@ -245,33 +221,32 @@ void previous_follows_the_order_of_displacements(::foundation::effects::Alloc al
 // the third displaces the first.  The claim must not recycle the slot of the
 // first, and a rollback after the claim restores the first with its region.
 // The fourth transaction stays committed, and its slot does not change.
-void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::Alloc alloc,
-                                                        const ::fixy::TestRunnerCtx& ctx, const SoloOwner& owner) {
+void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     constexpr uint32_t kSlots = 4;
-    SmallestLog log{ctx};
+    SmallestLog log{};
     ::fixy::BumpArena arena(1 << 12);
     std::array<crucible::RegionNode*, kSlots + 1> regions{};
     std::array<crucible::Transaction*, kSlots + 1> txs{};
     for (uint32_t step = 1; step <= kSlots; ++step) {
         regions[step] = region_of_step(alloc, arena, step);
-        txs[step] = &log.begin_tx(owner, kTestNondet, step);
-        assert(log.commit(owner, kTestNondet, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
+        txs[step] = &log.begin_tx(owner, step);
+        assert(log.commit(owner, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
                           regions[step]->merkle_hash));
     }
-    assert(log.activate(owner, kTestNondet, *txs[2]).try_get() == nullptr);
-    assert(log.activate(owner, kTestNondet, *txs[1]).try_get() == txs[2]);
-    assert(log.activate(owner, kTestNondet, *txs[3]).try_get() == txs[1]);
+    assert(log.activate(owner, *txs[2]).try_get() == nullptr);
+    assert(log.activate(owner, *txs[1]).try_get() == txs[2]);
+    assert(log.activate(owner, *txs[3]).try_get() == txs[1]);
     assert(log.size(owner) == kSlots);
     assert(log.previous(owner).try_get() == txs[1]);
 
-    const crucible::Transaction* claimed = &log.begin_tx(owner, kTestNondet, kSlots + 1);
+    const crucible::Transaction* claimed = &log.begin_tx(owner, kSlots + 1);
     assert(claimed != txs[1] && claimed != txs[3] && claimed != txs[4]);
     assert(log.previous(owner).try_get() == txs[1]);
     assert(txs[1]->step_id.get() == 1);
     assert(txs[4]->status == crucible::TxStatus::COMMITTED);
     assert(txs[4]->step_id.get() == 4);
 
-    assert(log.rollback(owner, kTestNondet));
+    assert(log.rollback(owner));
     expect_active(log, owner, 1, regions[1]);
 }
 
@@ -282,39 +257,73 @@ void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::A
 // does not activate the fifth transaction, and it claims a sixth.  That
 // claim must not recycle the slot of the second or the slot of the third.
 void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::effects::Alloc alloc,
-                                                               const ::fixy::TestRunnerCtx& ctx,
                                                                const SoloOwner& owner) {
     constexpr uint32_t kSlots = 4;
-    SmallestLog log{ctx};
+    SmallestLog log{};
     ::fixy::BumpArena arena(1 << 12);
     std::array<crucible::RegionNode*, kSlots + 1> regions{};
     for (uint32_t step = 1; step <= kSlots; ++step) {
         regions[step] = region_of_step(alloc, arena, step);
         (void)publish(log, owner, step, regions[step]);
     }
-    (void)log.begin_tx(owner, kTestNondet, kSlots + 1);
-    assert(log.rollback(owner, kTestNondet));
+    (void)log.begin_tx(owner, kSlots + 1);
+    assert(log.rollback(owner));
     expect_active(log, owner, 3, regions[3]);
     const crucible::Transaction* target = log.previous(owner).try_get();
     assert(target != nullptr);
     assert(target->step_id.get() == 2);
 
-    const crucible::Transaction* claimed = &log.begin_tx(owner, kTestNondet, kSlots + 2);
+    const crucible::Transaction* claimed = &log.begin_tx(owner, kSlots + 2);
     assert(claimed != target && claimed != log.active(owner).try_get());
     assert(log.previous(owner).try_get() == target);
     assert(target->step_id.get() == 2);
 
-    assert(log.rollback(owner, kTestNondet));
+    assert(log.rollback(owner));
     expect_active(log, owner, 2, regions[2]);
+}
+
+// The stamps of a log are places of its own count, so two runs of one
+// computation give two logs with the same stamps.  A clock time in a stamp
+// made two such logs differ.
+constexpr uint32_t kRunSteps = 6;
+using RunStamps = ::fixy::FixedArray<uint64_t, kRunSteps>;
+
+// Publishes kRunSteps regions into a log of its own, rolls back after each
+// third, and gives the stamp of each transaction at the end.
+[[nodiscard]] RunStamps publish_and_stamp(::foundation::effects::Alloc alloc, ::fixy::BumpArena& arena,
+                                          const SoloOwner& owner) {
+    Log log{};
+    ::fixy::FixedArray<::fixy::WeakRef<crucible::Transaction>, kRunSteps> txs{};
+    for (const ::fixy::Index<kRunSteps> slot : txs.indices()) {
+        const uint32_t step = static_cast<uint32_t>(slot.raw()) + 1;
+        crucible::RegionNode& region = *region_of_step(alloc, arena, step);
+        crucible::Transaction& tx = log.begin_tx(owner, step);
+        assert(log.commit(owner, tx, arena_region(region), region.content_hash, region.merkle_hash));
+        (void)log.activate(owner, tx);
+        if (step % 3 == 0) assert(log.rollback(owner));
+        txs.at(slot) = ::fixy::WeakRef<crucible::Transaction>{tx};
+    }
+    RunStamps stamps{};
+    for (const ::fixy::Index<kRunSteps> slot : stamps.indices())
+        stamps.at(slot) = txs.at(slot)->event_order.get();
+    return stamps;
+}
+
+void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
+    ::fixy::BumpArena arena(1 << 13);
+    const RunStamps first = publish_and_stamp(alloc, arena, owner);
+    const RunStamps second = publish_and_stamp(alloc, arena, owner);
+    assert(first == second);
+    for (const uint64_t stamp : first)
+        assert(stamp != 0);
 }
 
 }  // namespace
 
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
-    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     const SoloOwner owner = SoloOwner::claim();
-    Log log{ctx};
+    Log log{};
     ::fixy::BumpArena arena(1 << 12);
 
     ::foundation::core::FixedArray<crucible::TraceEntry, 1> ops{};
@@ -336,106 +345,95 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     assert(log.active(owner).try_get() == nullptr);
     assert(log.previous(owner).try_get() == nullptr);
 
-    auto* tx1 = &log.begin_tx(owner, kTestNondet, 1);
+    auto* tx1 = &log.begin_tx(owner, 1);
     assert(tx1->step_id.get() == 1);
     assert(tx1->status == crucible::TxStatus::RECORDING);
     assert(log.size(owner) == 1);
 
     const crucible::ContentHash hash1 = region1->content_hash;
     const crucible::MerkleHash merkle1 = region1->merkle_hash;
-    // The log stamped the transaction when it began it, and the stamp is a
-    // reading of the monotonic clock.
-    assert(tx1->ts_ns.is_some());
-    const std::uint64_t begun_at = stamp_nanos(*tx1);
+    // The log stamped the claim with the first place of its count.
+    assert(stamp_of(*tx1) == 1);
 
     // A transaction that the log began and did not commit holds no region.
     assert(tx1->region.value().is_none());
     assert(!crucible::holds_region(*tx1, region1));
 
-    const bool committed = log.commit(owner, kTestNondet, *tx1, arena_region(*region1), hash1, merkle1);
+    const bool committed = log.commit(owner, *tx1, arena_region(*region1), hash1, merkle1);
     assert(committed);
     assert(tx1->status == crucible::TxStatus::COMMITTED);
     assert(tx1->content_hash == hash1);
     assert(tx1->merkle_root == merkle1);
     assert(crucible::holds_region(*tx1, region1));
     assert(!crucible::holds_region(*tx1, region2));
-    // The reader clamps, so a later stamp through the same log never reads
-    // earlier than a former one.
-    assert(tx1->ts_ns.is_some() && stamp_nanos(*tx1) >= begun_at);
+    // Each event takes the next place, so the commit comes after the claim.
+    assert(stamp_of(*tx1) == 2);
 
-    const bool double_commit = log.commit(owner, kTestNondet, *tx1, arena_region(*region1), hash1, merkle1);
+    const bool double_commit = log.commit(owner, *tx1, arena_region(*region1), hash1, merkle1);
     assert(!double_commit && "commit on COMMITTED tx must return false");
 
-    auto* prev = log.activate(owner, kTestNondet, *tx1).try_get();
+    auto* prev = log.activate(owner, *tx1).try_get();
     assert(prev == nullptr && "no previous ACTIVE on first activation");
     assert(tx1->status == crucible::TxStatus::ACTIVE);
     assert(log.active(owner).try_get() == tx1);
     assert(log.previous(owner).try_get() == nullptr);
 
-    auto* tx2 = &log.begin_tx(owner, kTestNondet, 2);
+    auto* tx2 = &log.begin_tx(owner, 2);
     assert(tx2->step_id.get() == 2);
     assert(tx2->status == crucible::TxStatus::RECORDING);
     assert(log.size(owner) == 2);
 
     const crucible::ContentHash hash2 = region2->content_hash;
     const crucible::MerkleHash merkle2 = region2->merkle_hash;
-    assert(log.commit(owner, kTestNondet, *tx2, arena_region(*region2), hash2, merkle2));
+    assert(log.commit(owner, *tx2, arena_region(*region2), hash2, merkle2));
     assert(tx2->status == crucible::TxStatus::COMMITTED);
 
-    auto* superseded = log.activate(owner, kTestNondet, *tx2).try_get();
+    auto* superseded = log.activate(owner, *tx2).try_get();
     assert(superseded == tx1 && "tx1 must be returned as the superseded tx");
     assert(tx1->status == crucible::TxStatus::SUPERSEDED);
     assert(tx2->status == crucible::TxStatus::ACTIVE);
     assert(log.active(owner).try_get() == tx2);
     assert(log.previous(owner).try_get() == tx1);
 
-    const bool rolled = log.rollback(owner, kTestNondet);
+    // The activation of tx1 took place 3, the claim and the commit of tx2
+    // took 4 and 5, the displacement of tx1 took 6 and the activation of tx2
+    // took 7.
+    assert(stamp_of(*tx1) == 6 && stamp_of(*tx2) == 7);
+
+    const bool rolled = log.rollback(owner);
     assert(rolled);
     assert(tx1->status == crucible::TxStatus::ACTIVE);
     assert(tx2->status == crucible::TxStatus::ROLLED_BACK);
+    // The rollback stamps the current transaction first, then the restored one.
+    assert(stamp_of(*tx2) == 8 && stamp_of(*tx1) == 9);
     assert(log.active(owner).try_get() == tx1);
     assert(log.previous(owner).try_get() == nullptr && "no more SUPERSEDED after rollback");
 
-    const bool rolled2 = log.rollback(owner, kTestNondet);
+    const bool rolled2 = log.rollback(owner);
     assert(!rolled2 && "rollback with no SUPERSEDED must return false");
 
     // More entries than the ring holds, so it wraps at least once.
     for (uint32_t i = 3; i <= 32; i++) {
-        auto& tx = log.begin_tx(owner, kTestNondet, i);
+        auto& tx = log.begin_tx(owner, i);
         crucible::TraceEntry e{};
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
         const ::fixy::Ref<crucible::RegionNode> r =
             crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, e));
         // Recomputed before the commit, for the reason given above.
         crucible::recompute_merkle(*r);
-        assert(log.commit(owner, kTestNondet, tx, arena_region(*r), r->content_hash, r->merkle_hash));
-        (void)log.activate(owner, kTestNondet, tx);
+        assert(log.commit(owner, tx, arena_region(*r), r->content_hash, r->merkle_hash));
+        (void)log.activate(owner, tx);
     }
     // The loop ends at 32, so the last transaction is the active one.
     assert(log.active(owner).has_value());
     assert(log.active(owner)->step_id.get() == 32);
 
-    claim_passes_over_the_active_slot(test.alloc, ctx, owner, RollbackOrder::AfterEachPublication);
-    claim_passes_over_the_active_slot(test.alloc, ctx, owner, RollbackOrder::InARow);
-    previous_follows_the_order_of_displacements(test.alloc, ctx, owner);
-    claim_keeps_the_target_of_out_of_order_activations(test.alloc, ctx, owner);
-    claim_keeps_the_target_after_a_rollback_before_activation(test.alloc, ctx, owner);
-
-    // A failed clock read leaves the transaction with no reading.  The
-    // result of a failed read stands in for a clock that fails, because a
-    // working clock cannot be made to fail here.  The stamp before it is a
-    // real reading, so the test shows that a failed read clears it rather
-    // than keeping a reading of an earlier event.
-    {
-        crucible::Transaction stamped{};
-        const auto reader = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
-        crucible::stamp_transaction(stamped, reader.read(kTestNondet));
-        assert(stamped.ts_ns.is_some());
-        const ::fixy::Result<crucible::Transaction::Timestamp, ::foundation::os::Errno> failed_read{
-            ::fixy::err(::foundation::os::Errno::eio)};
-        crucible::stamp_transaction(stamped, failed_read);
-        assert(stamped.ts_ns.is_none() && "a failed clock read must leave the timestamp empty");
-    }
+    claim_passes_over_the_active_slot(test.alloc, owner, RollbackOrder::AfterEachPublication);
+    claim_passes_over_the_active_slot(test.alloc, owner, RollbackOrder::InARow);
+    previous_follows_the_order_of_displacements(test.alloc, owner);
+    claim_keeps_the_target_of_out_of_order_activations(test.alloc, owner);
+    claim_keeps_the_target_after_a_rollback_before_activation(test.alloc, owner);
+    two_runs_of_one_computation_give_one_log(test.alloc, owner);
 
     crucible::test::pass("test_transaction: all tests passed\n");
     return 0;

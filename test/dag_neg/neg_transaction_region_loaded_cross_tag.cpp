@@ -27,13 +27,13 @@ private:
 
 int main() {
     const Owner owner = Owner::claim();
-    crucible::TransactionLog<16, Owner> log{::fixy::TestRunnerCtx{::foundation::effects::testing::test()}};
-    const ::foundation::effects::cap::Nondet nondet = ::foundation::effects::testing::test().nondet;
-    auto& tx = log.begin_tx(owner, nondet, 1);
+    crucible::TransactionLog<16, Owner> log{};
+    // The log stamps with its own count, so no call takes a tag.
+    auto& tx = log.begin_tx(owner, 1);
     crucible::RegionNode region{};
     const auto loaded =
         ::fixy::mint_tagged<::fixy::tags::source::Replayed>(::fixy::Ref<crucible::RegionNode>{::fixy::to(region)})
             .retag<::fixy::tags::source::Loaded>();
-    (void)log.commit(owner, nondet, tx, loaded, crucible::ContentHash{}, crucible::MerkleHash{1});
+    (void)log.commit(owner, tx, loaded, crucible::ContentHash{}, crucible::MerkleHash{1});
     return 0;
 }

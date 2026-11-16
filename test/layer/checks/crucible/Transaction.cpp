@@ -4,15 +4,11 @@
 
 namespace crucible {
 
-// The reading is not trivially copyable, so no byte copy builds a
-// transaction that claims a time.  The empty state of the reading adds
-// eight bytes to the layout, and the place in the order of displacements
-// adds eight more.
+// A transaction fills one cache line: five words, the place of its last
+// event, the status and fifteen bytes of padding.
 static_assert(sizeof(Transaction) == 64, "Transaction layout must be 64 bytes");
-static_assert(std::is_same_v<decltype(std::declval<Transaction>().ts_ns), ::fixy::Option<Transaction::Timestamp>>,
-              "a transaction timestamp must carry its monotonic-clock provenance");
-static_assert(!std::is_trivially_copyable_v<Transaction>,
-              "a transaction must not be built from bytes, because its timestamp claims a clock read");
+static_assert(std::is_same_v<decltype(std::declval<Transaction>().event_order), ::fixy::Monotonic<std::uint64_t>>,
+              "the stamp of a transaction is a place in the order of the events of its log, which only grows");
 
 // The ring composition adds nothing beyond its three members.
 static_assert(sizeof(::fixy::CyclicBuffer<Transaction, 16>)

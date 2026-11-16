@@ -121,7 +121,7 @@ void rollback_while_regions_are_in_flight() {
     constexpr uint32_t kRounds = 24;
     for (uint32_t round = 1; round <= kRounds; ++round) {
         feed_one_region(vigil, round * 4);
-        (void)vigil.rollback(::foundation::effects::testing::test().nondet);
+        (void)vigil.rollback();
     }
     vigil.flush();
 
@@ -131,14 +131,12 @@ void rollback_while_regions_are_in_flight() {
     vigil.flush();
     feed_one_region(vigil, 1004);
     vigil.flush();
-    if (!vigil.rollback(::foundation::effects::testing::test().nondet))
-        fail("a rollback with a superseded transaction restored nothing");
+    if (!vigil.rollback()) fail("a rollback with a superseded transaction restored nothing");
 }
 
 void rollback_on_a_fresh_vigil() {
     crucible::Vigil vigil;
-    if (vigil.rollback(::foundation::effects::testing::test().nondet))
-        fail("a rollback on an empty log restored a transaction");
+    if (vigil.rollback()) fail("a rollback on an empty log restored a transaction");
 }
 
 // A background thread that never started has no publish stage, so a job

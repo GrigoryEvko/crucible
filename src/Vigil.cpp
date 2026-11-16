@@ -26,7 +26,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
       ring_{ring_owner_.view()},
       meta_log_owner_{::fixy::mint_box<MetaLog>(startup.cap().alloc, startup.cap().alloc)},
       meta_log_{meta_log_owner_.view()},
-      tx_log_{startup},
+      tx_log_{},
       replay_{startup.cap().alloc, compute_numerics_hash(cfg_.numerics, cfg_.eager)},
       allocation_{startup.cap().alloc},
       region_ready_{BackgroundThread::RegionReadyCall::bind<&Vigil::on_region_ready>(*this)},
@@ -81,7 +81,7 @@ ContentHash Vigil::head_hash() const noexcept {
                          []() noexcept { return ContentHash{}; });
 }
 
-bool Vigil::rollback(::foundation::effects::cap::Nondet nondet) {
+bool Vigil::rollback() {
     const VigilFgCtx fg = assert_producer_thread_();
     // No op reaches the ring while this thread rolls back, so this is the
     // point of the rollback.
@@ -89,7 +89,7 @@ bool Vigil::rollback(::foundation::effects::cap::Nondet nondet) {
     bool restored_one = false;
     ::fixy::WeakRef<RegionNode> restored{};
     bg_.run_on_publish_stage([&](BackgroundThread::PublishStage const& stage) noexcept {
-        restored_one = tx_log_.rollback(stage, nondet);
+        restored_one = tx_log_.rollback(stage);
         if (!restored_one) return;
         // The job runs between two publications, so each publication after
         // it reads the mark, and none gives the foreground a region cut
@@ -136,17 +136,17 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // reserved.  The background thread is the sole writer.
     const uint64_t step = step_.bump();
 
-    Transaction& tx = tx_log_.begin_tx(stage, bg.nondet, step);
+    Transaction& tx = tx_log_.begin_tx(stage, step);
     // The result is discarded because a state-machine logic error here
     // is not something the background thread can recover from.
     //
     // The merkle root goes through the checked accessor so the non-zero
     // invariant is witnessed at this call site: its precondition fires
     // here if the hash was never recomputed.
-    (void)tx_log_.commit(stage, bg.nondet, tx,
+    (void)tx_log_.commit(stage, tx,
                          ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<RegionNode>{::fixy::to(region)}),
                          region.content_hash, ::crucible::make_merkle_root(region.computed_merkle_hash()));
-    (void)tx_log_.activate(stage, bg.nondet, tx);
+    (void)tx_log_.activate(stage, tx);
 
     // Publishing the region signals the foreground, which picks it up
     // on its next dispatch.  The mode stays RECORDING here.  The

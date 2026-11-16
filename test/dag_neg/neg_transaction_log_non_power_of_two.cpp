@@ -37,7 +37,7 @@ public:
 
 int main() {
     // A valid context, so the log is refused for its capacity alone.
-    crucible::TransactionLog<7, Owner> bad{::fixy::TestRunnerCtx{::foundation::effects::testing::test()}};
+    crucible::TransactionLog<7, Owner> bad{};
     (void)bad;
     return 0;
 }

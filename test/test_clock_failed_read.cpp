@@ -1,12 +1,12 @@
 // A clock read that fails, or that gives a value that the stamp cannot
-// hold, gives an error and no reading.  A transaction keeps no reading
-// after a refused read.
+// hold, gives an error and no reading.  The transaction log reads no clock,
+// so a clock that fails changes none of its stamps.
 //
 // A working clock does not fail, so this executable has its own
 // clock_gettime.  The linker connects each call of clock_gettime in this
 // executable to that function, and not to the function in the C library.
-// The readers, the sleeper and the transaction log read the clock through
-// the door of fixy/os/MonotonicClock.h.  The door is a member of the static
+// The readers and the sleeper read the clock through the door of
+// fixy/os/MonotonicClock.h.  The door is a member of the static
 // library libfixy.a, so its call of clock_gettime is a call in this
 // executable too.  The function asks the kernel through the raw system call,
 // unless a case gives it a plan: fail with an errno, or give a specified
@@ -268,42 +268,16 @@ private:
     SoloOwner() noexcept {}
 };
 
-// The nanoseconds of the reading of a transaction, or zero when it holds no
-// reading.
-[[nodiscard]] std::uint64_t stamp_nanos(crucible::Transaction const& tx) noexcept {
-    return tx.ts_ns.match([](crucible::Transaction::Timestamp const& stamp) noexcept { return stamp.peek(); },
-                          []() noexcept { return std::uint64_t{0}; });
-}
-
-// Says whether a transaction holds the reading `expected_nanos`.
-[[nodiscard]] bool holds_reading(crucible::Transaction const* tx, std::uint64_t expected_nanos, char const* what) {
+// Says whether a transaction holds the place `expected` in the order of the
+// events of its log.
+[[nodiscard]] bool holds_place(crucible::Transaction const* tx, std::uint64_t expected, char const* what) {
     if (tx == nullptr) {
         std::fprintf(stderr, "%s: the log gave no transaction\n", what);
         return false;
     }
-    if (tx->ts_ns.is_none()) {
-        std::fprintf(stderr, "%s: the transaction holds no reading, and it must hold %llu\n", what,
-                     static_cast<unsigned long long>(expected_nanos));
-        return false;
-    }
-    if (stamp_nanos(*tx) != expected_nanos) {
-        std::fprintf(stderr, "%s: the transaction holds %llu, and it must hold %llu\n", what,
-                     static_cast<unsigned long long>(stamp_nanos(*tx)),
-                     static_cast<unsigned long long>(expected_nanos));
-        return false;
-    }
-    return true;
-}
-
-// Says whether a transaction holds no reading.
-[[nodiscard]] bool holds_no_reading(crucible::Transaction const* tx, char const* what) {
-    if (tx == nullptr) {
-        std::fprintf(stderr, "%s: the log gave no transaction\n", what);
-        return false;
-    }
-    if (tx->ts_ns.is_some()) {
-        std::fprintf(stderr, "%s: the transaction holds the reading %llu after a failed read\n", what,
-                     static_cast<unsigned long long>(stamp_nanos(*tx)));
+    if (tx->event_order.get() != expected) {
+        std::fprintf(stderr, "%s: the transaction holds the place %llu, and it must hold %llu\n", what,
+                     static_cast<unsigned long long>(tx->event_order.get()), static_cast<unsigned long long>(expected));
         return false;
     }
     return true;
@@ -319,17 +293,15 @@ private:
     return &*region;
 }
 
-// The log stamps the transaction at each change of state.  After a stamp
-// under a failed read, the transaction has no reading, and the reading of a
-// previous change does not stay.  A failed read here is a reading that the
-// reader refuses.  The case does a test of each stamp site of the log:
-// begin_tx, commit, activate (the displaced transaction and the new one) and
-// rollback (the two again).
-void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
+// The log stamps the transaction at each change of state with the next place
+// of its own count, and it reads no clock.  So a clock that refuses each read
+// or gives a fixed reading changes no stamp.  The case does a test of each
+// stamp site of the log: begin_tx, commit, activate (the displaced
+// transaction and the new one) and rollback (the two again).
+void transaction_stamps_read_no_clock(Tally& tally) {
     const auto test = eff::testing::test();
-    const fixy::TestRunnerCtx ctx{eff::testing::test()};
     const SoloOwner owner = SoloOwner::claim();
-    crucible::TransactionLog<16, SoloOwner> log{ctx};
+    crucible::TransactionLog<16, SoloOwner> log{};
     ::fixy::BumpArena arena(1 << 12);
 
     crucible::TraceEntry ops[3]{};
@@ -345,52 +317,51 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
             return;
         }
     }
-    const eff::cap::Nondet nondet = test.nondet;
-    const auto commit = [&log, &owner, nondet](crucible::Transaction* tx, crucible::RegionNode* region) {
+    const auto commit = [&log, &owner](crucible::Transaction* tx, crucible::RegionNode* region) {
         return log.commit(
-            owner, nondet, *tx,
+            owner, *tx,
             ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<crucible::RegionNode>{::fixy::to(*region)}),
             region->content_hash, region->merkle_hash);
     };
 
     give_each_read(7, 0);
-    auto* first = &log.begin_tx(owner, nondet, 1);
-    tally.expect(holds_reading(first, 7000000000, "begin_tx of the first transaction at 7 s"));
+    auto* first = &log.begin_tx(owner, 1);
+    tally.expect(holds_place(first, 1, "begin_tx of the first transaction, with the clock at 7 s"));
 
     refuse_each_read();
     tally.expect(commit(first, regions[0]));
-    tally.expect(holds_no_reading(first, "commit of the first transaction under a failed read"));
+    tally.expect(holds_place(first, 2, "commit of the first transaction, with a clock that fails"));
 
     give_each_read(8, 0);
-    tally.expect(log.activate(owner, nondet, *first).try_get() == nullptr);
-    tally.expect(holds_reading(first, 8000000000, "activate of the first transaction at 8 s"));
+    tally.expect(log.activate(owner, *first).try_get() == nullptr);
+    tally.expect(holds_place(first, 3, "activate of the first transaction, with the clock at 8 s"));
 
     refuse_each_read();
-    auto* second = &log.begin_tx(owner, nondet, 2);
-    tally.expect(holds_no_reading(second, "begin_tx of the second transaction under a failed read"));
+    auto* second = &log.begin_tx(owner, 2);
+    tally.expect(holds_place(second, 4, "begin_tx of the second transaction, with a clock that fails"));
 
     give_each_read(9, 0);
     tally.expect(commit(second, regions[1]));
-    tally.expect(holds_reading(second, 9000000000, "commit of the second transaction at 9 s"));
+    tally.expect(holds_place(second, 5, "commit of the second transaction, with the clock at 9 s"));
 
     refuse_each_read();
-    tally.expect(log.activate(owner, nondet, *second).try_get() == first);
-    tally.expect(holds_no_reading(first, "the first transaction, displaced under a failed read"));
-    tally.expect(holds_no_reading(second, "activate of the second transaction under a failed read"));
+    tally.expect(log.activate(owner, *second).try_get() == first);
+    tally.expect(holds_place(first, 6, "the first transaction, displaced with a clock that fails"));
+    tally.expect(holds_place(second, 7, "activate of the second transaction, with a clock that fails"));
 
     give_each_read(10, 0);
-    auto* third = &log.begin_tx(owner, nondet, 3);
+    auto* third = &log.begin_tx(owner, 3);
     give_each_read(11, 0);
     tally.expect(commit(third, regions[2]));
     give_each_read(12, 0);
-    tally.expect(log.activate(owner, nondet, *third).try_get() == second);
-    tally.expect(holds_reading(second, 12000000000, "the second transaction, displaced at 12 s"));
-    tally.expect(holds_reading(third, 12000000000, "activate of the third transaction at 12 s"));
+    tally.expect(log.activate(owner, *third).try_get() == second);
+    tally.expect(holds_place(second, 10, "the second transaction, displaced with the clock at 12 s"));
+    tally.expect(holds_place(third, 11, "activate of the third transaction, with the clock at 12 s"));
 
     refuse_each_read();
-    tally.expect(log.rollback(owner, nondet));
-    tally.expect(holds_no_reading(third, "the third transaction, rolled back under a failed read"));
-    tally.expect(holds_no_reading(second, "the second transaction, restored under a failed read"));
+    tally.expect(log.rollback(owner));
+    tally.expect(holds_place(third, 12, "the third transaction, rolled back with a clock that fails"));
+    tally.expect(holds_place(second, 13, "the second transaction, restored with a clock that fails"));
     use_the_kernel_clock();
 }
 
@@ -402,7 +373,7 @@ int main() {
     monotonic_reader_gives_no_floor_for_a_failed_read(tally);
     sleeper_gives_the_error_of_a_failed_call(tally);
     read_of_a_clock_the_kernel_refuses_gives_its_error(tally);
-    transaction_keeps_no_reading_after_a_failed_read(tally);
+    transaction_stamps_read_no_clock(tally);
     if (tally.failures != 0) {
         std::fprintf(stderr, "test_clock_failed_read: %d check(s) failed\n", tally.failures);
         return 1;
