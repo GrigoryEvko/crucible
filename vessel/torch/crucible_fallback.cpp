@@ -779,9 +779,16 @@ TORCH_LIBRARY_IMPL(_, Crucible, m) { m.fallback(torch::CppFunction::makeFromBoxe
 // Profiler ops: passthrough (do not record).
 // These are injected by PyTorch's profiling infrastructure and would
 // pollute the trace with zero-tensor ops that break iteration detection.
+// A fallthrough covers one overload, so each overload of the namespace has
+// its own line.  The record_function scope of an optimizer step calls
+// _record_function_exit._RecordFunction.  test_profiler_ops.py asks the
+// dispatcher for each overload of the namespace, so an overload that PyTorch
+// adds later fails that test until it has a line here.
 TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
+    m.impl("_record_function_enter", torch::CppFunction::makeFallthrough());
     m.impl("_record_function_enter_new", torch::CppFunction::makeFallthrough());
     m.impl("_record_function_exit", torch::CppFunction::makeFallthrough());
+    m.impl("_record_function_exit._RecordFunction", torch::CppFunction::makeFallthrough());
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 

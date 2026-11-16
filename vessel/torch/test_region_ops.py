@@ -162,7 +162,7 @@ def check_nests(ops: list[RegionOp]) -> list[str]:
     the depth d - 1.  Each operation between the two runs inside the parent
     too, so its depth is at least d.  An operation of the end of the region
     has no parent in the region, and it holds no line.  O(n^2) in the
-    operations, for a region of 94.
+    operations, for a region of 92.
     """
     problems = []
     for index, op in enumerate(ops):
@@ -192,6 +192,12 @@ EXPECTED_DEPTHS = (
 )
 
 
+def check_no_profiler_ops(ops: list[RegionOp]) -> list[str]:
+    """Return one line for each operation of the namespace profiler, which computes nothing of the model."""
+    return [f"op {index} {op.name} is an op of the profiler, which the dispatch library must let fall through"
+            for index, op in enumerate(ops) if op.name.startswith("profiler::")]
+
+
 def check_expected_depths(ops: list[RegionOp]) -> list[str]:
     """Return one line for each row of EXPECTED_DEPTHS that no operation of the forward pass matches."""
     problems = []
@@ -213,7 +219,7 @@ def main() -> int:
     if "--print" in sys.argv:
         print("\n".join(lines))
         return 0
-    problems = check_nests(ops) + check_expected_depths(ops)
+    problems = check_nests(ops) + check_expected_depths(ops) + check_no_profiler_ops(ops)
     for line in problems:
         print(f"  FAIL: {line}")
     if "--write" in sys.argv:
