@@ -185,6 +185,7 @@ using ::foundation::core::StaticIndex;
 using ::foundation::core::View;
 using ::foundation::core::ViewMut;
 using ::foundation::core::with_mut;
+using ::foundation::core::write_each;
 using ::foundation::core::WriteLease;
 using ::foundation::core::zip;
 

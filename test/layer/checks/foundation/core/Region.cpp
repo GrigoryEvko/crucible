@@ -386,6 +386,38 @@ static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> con
 static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand>&>().view()), View<int>>);
 static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> const&>().view()), View<int const>>);
 
+// The doors of a kernel.  A ViewMut and a View are inputs, and only a ViewMut
+// of a different brand proves that its run does not overlap the output.  An
+// op holds no state.  A copy and write_each give a Result of the counts.
+struct OtherBrand final {};
+struct PlusOne final {
+    int operator()(int const& value) const noexcept { return value + 1; }
+};
+static_assert(KernelInput<ViewMut<int, UniqueBrand>> && KernelInput<View<int const>> && KernelInput<View<int, 4>>);
+static_assert(!KernelInput<int*> && !KernelInput<FixedArray<int, 4>> && !KernelInput<TextView>);
+static_assert(DisjointInput<ViewMut<int, OtherBrand>, UniqueBrand>);
+static_assert(!DisjointInput<ViewMut<int, UniqueBrand>, UniqueBrand> && !DisjointInput<View<int const>, UniqueBrand>);
+static_assert(KernelOp<PlusOne, int, ViewMut<int, OtherBrand>> && KernelOp<PlusOne, int, View<int const>>);
+static_assert(!KernelOp<PlusOne, int, int*>);
+
+// The restrict loop needs inputs of other brands whose elements hold no
+// borrow, and an output whose element holds none.  An element that is a View
+// could name the run of the output, so it takes the loop of plain pointers.
+static_assert(RestrictKernel<int, UniqueBrand, ViewMut<int, OtherBrand>, ViewMut<long, OtherBrand>>);
+static_assert(RestrictKernel<int, UniqueBrand>);
+static_assert(!RestrictKernel<int, UniqueBrand, ViewMut<int, UniqueBrand>>);
+static_assert(!RestrictKernel<int, UniqueBrand, View<int const>>);
+static_assert(!RestrictKernel<int, UniqueBrand, ViewMut<View<int>, OtherBrand>>);
+static_assert(!RestrictKernel<View<int>, UniqueBrand, ViewMut<int, OtherBrand>>);
+static_assert(std::is_same_v<decltype(copy(std::declval<ViewMut<int, UniqueBrand>>(),
+                                           std::declval<ViewMut<int, OtherBrand> const&>())),
+                             Result<Unit, LengthMismatch>>);
+static_assert(std::is_same_v<decltype(copy(std::declval<ViewMut<int, UniqueBrand>>(), std::declval<View<int>>())),
+                             Result<Unit, LengthMismatch>>);
+static_assert(std::is_same_v<decltype(write_each(std::declval<ViewMut<int, UniqueBrand>>(), PlusOne{},
+                                                 std::declval<ViewMut<int, OtherBrand> const&>())),
+                             Result<Unit, LengthMismatch>>);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.4, with the names of the headers of

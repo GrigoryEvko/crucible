@@ -1213,6 +1213,8 @@ Each owner fills each element on its mint, or takes a fill value: no owner reads
 |---|---|---|---|
 | `copy(dst, src)` | Two views of one fixed extent cannot fail. Two views of a dynamic extent give `Result<Unit, LengthMismatch>`. An overlap is safe, as `__builtin_memmove` | the raw copy | main |
 | `fill(dst, value)` | Each element. An element of one byte takes one `memset` | the raw fill | main |
+| `copy(dst, src)` of a `ViewMut` | `dst` is a `ViewMut` by value, and `src` a `ViewMut` by const reference or a `View`. Two brands prove that the runs do not overlap, so the copy is one `memcpy`. One brand and a `View` take one `memmove`. Gives `Result<Unit, LengthMismatch>` | the raw copy | main |
+| `write_each(out, op, inputs...)` | `out[i] = op(inputs[i]...)` in the order of `i`. `op` holds no state. When each input is a `ViewMut` of a brand other than the brand of `out`, and no element of an input or of `out` holds a borrow (`RestrictKernel`), the loop reads through restrict pointers and needs no alias check. Each other input takes the loop of plain pointers, with the same values. Gives `Result<Unit, LengthMismatch>` | the raw loop | main |
 | `equal(a, b)` | Element by element, with no read of padding | the raw compare | design |
 | `find(view, x)`, `find_if(view, predicate)` | `Option<std::size_t>` | a scan | design |
 | `all_of`, `any_of`, `count_if` | A predicate over each element | a scan | design |

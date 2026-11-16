@@ -25,6 +25,11 @@
 //                     counts differ
 //   fill(dst, value)  value into each element of dst.  An element of one
 //                     byte takes one memset, the code of the raw form
+//   copy(dst, src) and write_each(out, op, inputs...) of a ViewMut
+//                     the doors of a kernel, after copy(View, View): a
+//                     copy or an elementwise loop into the run of a frame,
+//                     with restrict pointers when the brands prove that no
+//                     input overlaps the output
 //   byte_view(run)    the bytes of a run of unsigned chars as std::byte, of
 //                     the same count and extent and the same const
 //   offset_of(whole, part)
@@ -102,6 +107,7 @@
 #include <foundation/core/Report.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
+#include <foundation/reflect/Instance.h>
 
 #include <concepts>
 #include <cstddef>
@@ -1222,6 +1228,133 @@ template <class T>
     if (dst.size() != src.size()) return err(LengthMismatch{});
     __builtin_memmove(first_of_(detail::ViewDoor::key(), dst), first_of_(detail::ViewDoor::key(), src),
                       dst.size() * sizeof(T));
+    return Unit{};
+}
+
+// ── The doors of a kernel ──────────────────────────────────────────────
+//
+// A door of a kernel writes the run of a ViewMut and reads its inputs.  An
+// input is a ViewMut through a const reference, which keeps the brand of its
+// frame, or a View, which has no brand.  When the brand
+// of an input differs from the brand of the output, the frames of the two
+// hold two owners, and the two runs do not overlap (THE ALIAS PROOF of
+// foundation/core/Frame.h).  When each input proves that, the door gives
+// the compiler restrict pointers, so the loop needs no run-time alias check.
+// Each other input takes the loop of plain pointers, which the compiler
+// guards with an alias check, or the memmove of a copy.  The door takes the
+// output by value, as the decision on the alias proof states.
+
+// An input of a door of a kernel: a ViewMut or a View.  The door reads each
+// input through a pointer to a const element.
+template <class In>
+concept KernelInput =
+    ::foundation::reflect::IsInstanceOf<In, ^^ViewMut> || ::foundation::reflect::IsInstanceOf<In, ^^View>;
+
+// An input whose run does not overlap the run of an output of the brand
+// Brand: a ViewMut of a different brand (THE ALIAS PROOF of Frame.h).
+template <class In, class Brand>
+concept DisjointInput =
+    ::foundation::reflect::IsInstanceOf<In, ^^ViewMut> && !std::same_as<typename In::brand_type, Brand>;
+
+// The calls of write_each that take the restrict loop: each input is a
+// ViewMut of a brand other than Brand, and no element of an input or of the
+// output holds a borrow.  An element that holds a borrow, such as a View
+// that the caller made before the frame of the output, could name the run of
+// the output, and the op could read that run through it while the loop
+// writes it.  So such an element takes the loop of plain pointers.
+template <class T, class Brand, class... Inputs>
+concept RestrictKernel = (DisjointInput<Inputs, Brand> && ...)
+                      && HoldsNoBorrow<T> && (HoldsNoBorrow<std::remove_const_t<typename Inputs::element_type>> && ...);
+
+// The op of write_each for an element T and the inputs: an object with no
+// state, which takes one element of each input by const reference and gives
+// a value that converts to T, with no throw.  An op with no state holds no
+// capture, so it reaches no run of the call through a capture, and
+// RestrictKernel keeps a borrow in an element out of the restrict loop.  The
+// proof assumes that the op reaches no run through an object of static
+// storage duration either.
+template <class Op, class T, class... Inputs>
+concept KernelOp = std::is_empty_v<Op> && std::is_nothrow_copy_constructible_v<Op> && (KernelInput<Inputs> && ...)
+                && std::is_nothrow_invocable_r_v<T, Op const&, typename Inputs::element_type const&...>;
+
+namespace detail {
+
+// The loop of write_each when no input overlaps the output.  Each pointer is
+// a restrict parameter, and GCC keeps the restrict of a parameter of an
+// inlined function, so the vectorized loop has no alias check.  Complexity:
+// O(count).
+template <class T, class Op, class... Elements>
+[[gnu::always_inline]] inline void write_each_disjoint_(T* __restrict out, std::size_t count, Op const& op,
+                                                        Elements const* __restrict... inputs) noexcept {
+    for (std::size_t position = 0; position != count; ++position) {
+        out[position] = op(inputs[position]...);
+    }
+}
+
+// The loop of write_each when an input can overlap the output, such as an
+// input of the brand of the output or a View.  The loop reads each input at
+// a position before it writes the output at that position.  Complexity:
+// O(count).
+template <class T, class Op, class... Elements>
+[[gnu::always_inline]] inline void write_each_aliased_(T* out, std::size_t count, Op const& op,
+                                                       Elements const*... inputs) noexcept {
+    for (std::size_t position = 0; position != count; ++position) {
+        out[position] = op(inputs[position]...);
+    }
+}
+
+}  // namespace detail
+
+// Copies the elements of src into dst, a ViewMut and the ViewMut of a frame.
+// Two brands prove that the runs do not overlap, so the copy is one memcpy.
+// One brand proves no difference, so the copy is the memmove of
+// copy(View, View).  The counts can differ, so the copy gives a Result, with
+// LengthMismatch when they differ, and the copy then writes nothing.
+template <class T, class Brand, class SourceBrand>
+    requires RegionCopyElement<T>
+[[nodiscard]] Result<Unit, LengthMismatch> copy(ViewMut<T, Brand> dst, ViewMut<T, SourceBrand> const& src) noexcept {
+    if (dst.size() != src.size()) return err(LengthMismatch{});
+    void* const target = first_of_(detail::ViewDoor::key(), dst);
+    void const* const source = first_of_(detail::ViewDoor::key(), src);
+    if constexpr (std::is_same_v<Brand, SourceBrand>) {
+        __builtin_memmove(target, source, dst.size() * sizeof(T));
+    } else {
+        __builtin_memcpy(target, source, dst.size() * sizeof(T));
+    }
+    return Unit{};
+}
+
+// Copies the elements of a View into a ViewMut.  A View has no brand, so the
+// copy is one memmove.
+template <class T, class Brand>
+    requires RegionCopyElement<T>
+[[nodiscard]] Result<Unit, LengthMismatch> copy(ViewMut<T, Brand> dst,
+                                                std::type_identity_t<View<T const>> src) noexcept {
+    if (dst.size() != src.size()) return err(LengthMismatch{});
+    __builtin_memmove(first_of_(detail::ViewDoor::key(), dst), first_of_(detail::ViewDoor::key(), src),
+                      dst.size() * sizeof(T));
+    return Unit{};
+}
+
+// Writes op(input[i]...) into each element out[i], in the order of i.  Each
+// input has the count of out, or the door gives LengthMismatch and writes
+// nothing.  When each input is a ViewMut of a brand other than the brand of
+// out, and no element holds a borrow (RestrictKernel), the loop reads through
+// restrict pointers.  Each other call takes the loop of plain pointers.  The
+// two loops give the same values, because the
+// loop of plain pointers reads each input at a position before it writes out
+// at that position.  Complexity: O(out.size()).
+template <class T, class Brand, class Op, class... Inputs>
+    requires KernelOp<Op, T, Inputs...>
+[[nodiscard]] Result<Unit, LengthMismatch> write_each(ViewMut<T, Brand> out, Op op, Inputs const&... inputs) noexcept {
+    std::size_t const count = out.size();
+    if (((inputs.size() != count) || ...)) return err(LengthMismatch{});
+    T* const target = first_of_(detail::ViewDoor::key(), out);
+    if constexpr (RestrictKernel<T, Brand, Inputs...>) {
+        detail::write_each_disjoint_(target, count, op, first_of_(detail::ViewDoor::key(), inputs)...);
+    } else {
+        detail::write_each_aliased_(target, count, op, first_of_(detail::ViewDoor::key(), inputs)...);
+    }
     return Unit{};
 }
 

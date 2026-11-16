@@ -236,6 +236,103 @@ void test_brands_and_shape() {
     assert(sum_of(inner) == 3 + 4 + 2 * 3);
 }
 
+// The ops of the doors of a kernel.  Each holds no state.
+struct AddOp final {
+    int operator()(int const& left, int const& right) const noexcept { return left + right; }
+};
+struct TwiceOp final {
+    int operator()(int const& value) const noexcept { return 2 * value; }
+};
+
+// True when each element of a run holds the value that expected gives for its
+// position.
+template <class Run, class Expected>
+[[nodiscard]] bool holds_each(Run const& run, Expected expected) noexcept {
+    std::size_t position = 0;
+    for (int const element : run) {
+        if (element != expected(position)) return false;
+        ++position;
+    }
+    return position == run.size();
+}
+
+// The door write_each over inputs of two other frames takes the loop of
+// restrict pointers, and over a View or an input of the frame of the output
+// the loop of plain pointers.  The two loops give the same values, and an
+// input of a different count gives LengthMismatch and writes nothing.
+void test_write_each() {
+    HeapArray<int> left = ::foundation::core::mint_heap_array(allocation(), 100, 3);
+    HeapArray<int> right = ::foundation::core::mint_heap_array_with<int>(
+        allocation(), 100, [](std::size_t position) noexcept { return static_cast<int>(position); });
+    HeapArray<int> out = ::foundation::core::mint_heap_array(allocation(), 100, 0);
+    left = with_mut(std::move(left), [&right, &out](auto left_view) noexcept {
+        right = with_mut(std::move(right), [&left_view, &out](auto right_view) noexcept {
+            out = with_mut(std::move(out), [&left_view, &right_view](auto out_view) noexcept {
+                using Out = std::remove_cvref_t<decltype(out_view)>;
+                using Left = std::remove_cvref_t<decltype(left_view)>;
+                static_assert(::foundation::core::DisjointInput<Left, typename Out::brand_type>);
+                static_assert(!::foundation::core::DisjointInput<Out, typename Out::brand_type>);
+                static_assert(!::foundation::core::DisjointInput<View<int const>, typename Out::brand_type>);
+                ::foundation::core::write_each(std::move(out_view), AddOp{}, left_view, right_view)
+                    .expect("the three runs have one count");
+            });
+        });
+    });
+    assert(holds_each(out, [](std::size_t position) noexcept { return 3 + static_cast<int>(position); }));
+
+    out = with_mut(std::move(out), [&right](auto out_view) noexcept {
+        ::foundation::core::write_each(std::move(out_view), AddOp{}, right.view(), right.view())
+            .expect("the three runs have one count");
+    });
+    assert(holds_each(out, [](std::size_t position) noexcept { return 2 * static_cast<int>(position); }));
+
+    out = with_mut(std::move(out), [](auto out_view) noexcept {
+        ::foundation::core::write_each(std::move(through(out_view)), TwiceOp{}, out_view)
+            .expect("the run has its own count");
+    });
+    assert(holds_each(out, [](std::size_t position) noexcept { return 4 * static_cast<int>(position); }));
+
+    HeapArray<int> shorter = ::foundation::core::mint_heap_array(allocation(), 10, 7);
+    shorter = with_mut(std::move(shorter), [&right](auto out_view) noexcept {
+        bool const is_refused = ::foundation::core::write_each(std::move(out_view), TwiceOp{}, right.view()).is_err();
+        assert(is_refused);
+    });
+    assert(holds_each(shorter, [](std::size_t) noexcept { return 7; }));
+}
+
+// The door copy between two frames is one memcpy, and from a View or from the
+// frame of the output one memmove.  A source of a different count gives
+// LengthMismatch and writes nothing.
+void test_copy_between_frames() {
+    HeapArray<int> source = ::foundation::core::mint_heap_array_with<int>(
+        allocation(), 50, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; });
+    HeapArray<int> target = ::foundation::core::mint_heap_array(allocation(), 50, 0);
+    source = with_mut(std::move(source), [&target](auto source_view) noexcept {
+        target = with_mut(std::move(target), [&source_view](auto target_view) noexcept {
+            ::foundation::core::copy(std::move(target_view), source_view).expect("the two runs have one count");
+        });
+    });
+    assert(holds_each(target, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
+
+    HeapArray<int> again = ::foundation::core::mint_heap_array(allocation(), 50, 0);
+    again = with_mut(std::move(again), [&target](auto again_view) noexcept {
+        ::foundation::core::copy(std::move(again_view), target.view()).expect("the two runs have one count");
+    });
+    assert(holds_each(again, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
+
+    again = with_mut(std::move(again), [](auto again_view) noexcept {
+        ::foundation::core::copy(std::move(through(again_view)), again_view).expect("the run has its own count");
+    });
+    assert(holds_each(again, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
+
+    HeapArray<int> shorter = ::foundation::core::mint_heap_array(allocation(), 5, 1);
+    shorter = with_mut(std::move(shorter), [&again](auto shorter_view) noexcept {
+        bool const is_refused = ::foundation::core::copy(std::move(shorter_view), again.view()).is_err();
+        assert(is_refused);
+    });
+    assert(holds_each(shorter, [](std::size_t) noexcept { return 1; }));
+}
+
 }  // namespace
 
 int main() {
@@ -248,5 +345,7 @@ int main() {
     test_result();
     test_one_of();
     test_brands_and_shape();
+    test_write_each();
+    test_copy_between_frames();
     return 0;
 }

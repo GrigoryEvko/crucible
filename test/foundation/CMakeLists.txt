@@ -3250,6 +3250,14 @@ foundation_neg_compile_test(neg_core_with_mut_niche_view
 foundation_neg_compile_test(neg_core_with_mut_niche_member
   "static assertion failed: Option::with_mut: a write through the RefMut can write the empty value of the niche"
   "T = .anonymous.::Slot")
+# The op of a door of a kernel holds no state, so no capture reaches the run
+# that the restrict loop writes.
+foundation_neg_compile_test(neg_core_write_each_op_with_state
+  "no matching function for call to .write_each\\("
+  "the expression .is_empty_v<Op> .with Op = main::")
+foundation_neg_compile_test(neg_core_write_each_op_with_reference
+  "no matching function for call to .write_each\\("
+  "the expression .is_empty_v<Op> .with Op = main::")
 
 # A foreign run holds each bit pattern, so its View refuses a bool and an
 # enumeration with enumerators.  The text door takes a run of char, and its
