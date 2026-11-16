@@ -17,6 +17,8 @@
 //   segmented_tree_reduce(view, offsets, results, empty, combine)
 //                                the tree of each segment [offsets[s],
 //                                offsets[s + 1]) of the elements
+//   check_segment_offsets(n, offsets, S)
+//                                the check of the offsets of S segments
 //   tree_grain_count<G>(n), tree_sum_grains<G>(...), tree_reduce_grains<G>(...)
 //                                the split of a run into grains of G
 //                                elements, for a parallel reduce: the tree of
@@ -349,21 +351,21 @@ enum class SegmentError : std::uint8_t {
     OffsetPastEnd = 2,
 };
 
-namespace detail {
-
-// The check of the offsets of the segments, before any write.
+// The check of the offsets of results segments of a run of elements
+// elements: the offsets hold one more element than the results, they do not
+// decrease, and the last one is at most the count of the elements.  A
+// parallel caller checks the offsets with it before the split.  A window of
+// checked offsets passes the check too.  Complexity: O(S).
 [[nodiscard]] constexpr Result<Unit, SegmentError>
-check_segments_(std::size_t elements, View<std::size_t const> offsets, std::size_t results) noexcept {
+check_segment_offsets(std::size_t elements, View<std::size_t const> offsets, std::size_t results) noexcept {
     if (offsets.size() != results + 1) return err(SegmentError::CountMismatch);
-    std::size_t const* const offset = first_of_(ViewDoor::key(), offsets);
+    std::size_t const* const offset = first_of_(detail::ViewDoor::key(), offsets);
     for (std::size_t segment = 0; segment < results; ++segment) {
         if (offset[segment + 1] < offset[segment]) return err(SegmentError::OffsetsOutOfOrder);
     }
     if (offset[results] > elements) return err(SegmentError::OffsetPastEnd);
     return Unit{};
 }
-
-}  // namespace detail
 
 // The tree sum of each segment: sums[s] is the tree sum of the elements
 // [offsets[s], offsets[s + 1]), and an empty segment gives +0.  The offsets
@@ -374,7 +376,7 @@ template <class T>
     requires TreeSumElement<T>
 [[nodiscard]] Result<Unit, SegmentError> segmented_tree_sum(View<T const> elements, View<std::size_t const> offsets,
                                                             View<T> sums) noexcept {
-    auto const checked = detail::check_segments_(elements.size(), offsets, sums.size());
+    auto const checked = check_segment_offsets(elements.size(), offsets, sums.size());
     if (checked.is_err()) return checked;
     T const* const first = first_of_(detail::ViewDoor::key(), elements);
     std::size_t const* const offset = first_of_(detail::ViewDoor::key(), offsets);
@@ -396,7 +398,7 @@ template <class T, class Combine>
 [[nodiscard]] constexpr Result<Unit, SegmentError>
 segmented_tree_reduce(View<T const> elements, View<std::size_t const> offsets, View<T> results, T const& empty,
                       Combine combine) noexcept {
-    auto const checked = detail::check_segments_(elements.size(), offsets, results.size());
+    auto const checked = check_segment_offsets(elements.size(), offsets, results.size());
     if (checked.is_err()) return checked;
     T const* const first = first_of_(detail::ViewDoor::key(), elements);
     std::size_t const* const offset = first_of_(detail::ViewDoor::key(), offsets);

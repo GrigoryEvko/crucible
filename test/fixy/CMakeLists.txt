@@ -5437,6 +5437,12 @@ fixy_test(test_os_spinlock)
 # with.
 fixy_test(test_concurrent_spawn)
 
+# test_concurrent_parallel_tree runs the parallel tree sum, reduce, scan and
+# segmented sum on 1, 2, 4, 8 and 64 threads, and compares each result with
+# the bits of the form of one thread.  A combine that records its threads
+# proves the count of the threads.
+fixy_test(test_concurrent_parallel_tree)
+
 # test_os_thread_tasks starts threads through the door of
 # fixy/os/ThreadTasks.h with each option, and reads each option back from
 # the thread that it started.  test_concurrent_permission_fork runs the fork
