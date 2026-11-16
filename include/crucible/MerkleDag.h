@@ -720,16 +720,41 @@ private:
     uint64_t state_ = kSeed;
 };
 
-[[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(::fixy::View<const TraceEntry> ops,
-                                                                 const NumericalRecipe* recipe = nullptr) noexcept {
-    CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
-    CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
-    ContentHashFold fold =
-        (recipe == nullptr) ? ContentHashFold{ContentHashFold::NoRecipe{}} : ContentHashFold{*recipe};
+// The content hash of ops under no numerical recipe.
+[[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(::fixy::View<const TraceEntry> ops) noexcept {
+    ContentHashFold fold{ContentHashFold::NoRecipe{}};
     for (const TraceEntry& op_record : ops) {
         fold.fold(op_record);
     }
     return fold.finish();
+}
+
+// The content hash of ops under one numerical recipe.  The recipe is
+// borrowed for the call.
+[[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(::fixy::View<const TraceEntry> ops,
+                                                                 const NumericalRecipe& recipe) noexcept {
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe.hash));
+    CRUCIBLE_PRE(!recipe.hash.is_sentinel());
+    ContentHashFold fold{recipe};
+    for (const TraceEntry& op_record : ops) {
+        fold.fold(op_record);
+    }
+    return fold.finish();
+}
+
+// The recipe that a fold covers, or no recipe.  A function that takes it has
+// no default for it, so a caller states the choice: ::fixy::none for a
+// producer that selects no numerics.
+using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
+
+// True for no recipe, and for a recipe whose hash was interned: a hash that
+// is not zero and not the end-of-region marker.
+[[nodiscard]] constexpr bool is_foldable_recipe(RecipeChoice const& recipe) noexcept {
+    return recipe.match(
+        [](::fixy::Ref<const NumericalRecipe> chosen) noexcept {
+            return ::foundation::decide::is_non_zero(chosen->hash) && !chosen->hash.is_sentinel();
+        },
+        []() noexcept { return true; });
 }
 
 // The schema of the first op, or the zero schema for no ops.  A region keeps
@@ -834,15 +859,14 @@ inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, Con
 
 // The recipe is borrowed, and the node does not keep it: it participates in
 // the content hash and is then dropped, so a caller that needs to recover the
-// recipe later must track it separately.  A null recipe is rejected rather
-// than accepted, because the overload above already covers that case.
+// recipe later must track it separately.  The overload above covers a region
+// with no recipe.
 [[nodiscard]] inline ::fixy::Ref<RegionNode> make_region(::foundation::effects::Alloc a,
                                                          ::fixy::BumpArena& arena CRUCIBLE_LIFETIMEBOUND,
                                                          ::fixy::View<TraceEntry> ops,
-                                                         const NumericalRecipe* recipe) noexcept {
-    CRUCIBLE_PRE(recipe != nullptr);
-    CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe->hash));
-    CRUCIBLE_PRE(!recipe->hash.is_sentinel());
+                                                         const NumericalRecipe& recipe) noexcept {
+    CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe.hash));
+    CRUCIBLE_PRE(!recipe.hash.is_sentinel());
     const ::fixy::Ref<RegionNode> node = arena.make<RegionNode>(a);
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
@@ -990,17 +1014,16 @@ inline void recompute_merkle(TraceNode& node) {
 // Returns the link to the first node of the shared suffix, or an empty link
 // when the new ops and the existing continuation share no tail.
 //
-// The recipe is required rather than defaulted, and null is how a caller says
-// it selects no numerics. The comparison below is between a hash folded here
-// and a hash folded when the existing region was built, so the two have to be
-// folded under the same recipe to be comparable at all. A defaulted parameter
-// would let a caller that has a recipe omit it and get a silent stream of
-// missed merges, every suffix looking distinct because the two sides folded
-// different things.
+// The recipe is required rather than defaulted, and ::fixy::none is how a
+// caller says it selects no numerics. The comparison below is between a hash
+// folded here and a hash folded when the existing region was built, so the
+// two have to be folded under the same recipe to be comparable at all. A
+// defaulted parameter would let a caller that has a recipe omit it and get a
+// silent stream of missed merges, every suffix looking distinct because the
+// two sides folded different things.
 [[nodiscard]] inline TraceLink find_merge_point(::fixy::View<const TraceEntry> new_ops, TraceLink existing_continuation,
-                                                const NumericalRecipe* recipe) {
-    CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
-    CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
+                                                RecipeChoice const& recipe) {
+    CRUCIBLE_PRE(is_foldable_recipe(recipe));
     constexpr uint32_t MAX_REGIONS = 1024;
     // The regions at the start of the continuation, up to the first node of
     // a different kind, or up to MAX_REGIONS regions.
@@ -1022,9 +1045,11 @@ inline void recompute_merkle(TraceNode& node) {
         const uint32_t region_ops = region->num_ops();
         if (new_pos < region_ops) break;
 
-        ContentHash new_hash = compute_content_hash(
-            new_ops.window(new_pos - region_ops, region_ops).expect("the tail of the new ops holds the region"),
-            recipe);
+        const ::fixy::View<const TraceEntry> tail =
+            new_ops.window(new_pos - region_ops, region_ops).expect("the tail of the new ops holds the region");
+        const ContentHash new_hash = recipe.match(
+            [tail](::fixy::Ref<const NumericalRecipe> chosen) noexcept { return compute_content_hash(tail, *chosen); },
+            [tail]() noexcept { return compute_content_hash(tail); });
 
         if (new_hash != region->content_hash) break;
         merge = make_link(*region);

@@ -103,9 +103,8 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
 
-        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_tc);
-        const crucible::RegionNode& region_strict =
-            *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_strict);
+        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_tc);
+        const crucible::RegionNode& region_strict = *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_strict);
         // The overload with no recipe.
         const crucible::RegionNode& region_none = *crucible::make_region(alloc_cap(), arena, ops.view());
 
@@ -139,7 +138,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
-        const crucible::RegionNode& region_orig = *crucible::make_region(alloc_cap(), arena, ops.view(), recipe_orig);
+        const crucible::RegionNode& region_orig = *crucible::make_region(alloc_cap(), arena, ops.view(), *recipe_orig);
         const ContentHash persisted_content_hash = region_orig.content_hash;
 
         // What is persisted per region is the pair of the region's content
@@ -158,7 +157,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         // Rebuilding the region with the recovered recipe reproduces the
         // original content hash, which is the end-to-end claim.
         const crucible::RegionNode& region_recovered =
-            *crucible::make_region(alloc_cap(), arena, ops.view(), &*recovered);
+            *crucible::make_region(alloc_cap(), arena, ops.view(), *recovered);
         assert(region_recovered.content_hash == persisted_content_hash);
     }
 
@@ -178,7 +177,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_a{};
         mk_ops(ops_a);
-        const crucible::RegionNode& region_a = *crucible::make_region(alloc_cap(), arena_a, ops_a.view(), &*rec_a);
+        const crucible::RegionNode& region_a = *crucible::make_region(alloc_cap(), arena_a, ops_a.view(), *rec_a);
         const ContentHash hash_in_proc_a = region_a.content_hash;
 
         // A second process, with its own pool, registry and arena, and so
@@ -196,7 +195,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_b{};
         mk_ops(ops_b);
-        const crucible::RegionNode& region_b = *crucible::make_region(alloc_cap(), arena_b, ops_b.view(), &*rec_b);
+        const crucible::RegionNode& region_b = *crucible::make_region(alloc_cap(), arena_b, ops_b.view(), *rec_b);
         const ContentHash hash_in_proc_b = region_b.content_hash;
 
         // The content hashes agree although no pointer is shared, which is
@@ -224,10 +223,10 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
 
-        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_tc);
-        const crucible::RegionNode& region_ord = *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_ord);
+        const crucible::RegionNode& region_tc = *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_tc);
+        const crucible::RegionNode& region_ord = *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_ord);
         const crucible::RegionNode& region_bf16_tc =
-            *crucible::make_region(alloc_cap(), arena, ops.view(), &*rec_bf16_tc);
+            *crucible::make_region(alloc_cap(), arena, ops.view(), *rec_bf16_tc);
 
         // Three hashes, so three cache slots.
         assert(region_tc.content_hash != region_ord.content_hash);
@@ -294,7 +293,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         entry.at(::fixy::index<0>()).schema_hash = SchemaHash{0xAA01};
 
         const ContentHash with_recipe =
-            crucible::make_region(alloc_cap(), arena, entry.view(), &*pool.intern(alloc_cap(), zero_bytes))
+            crucible::make_region(alloc_cap(), arena, entry.view(), *pool.intern(alloc_cap(), zero_bytes))
                 ->content_hash;
         const ContentHash with_no_recipe = crucible::make_region(alloc_cap(), arena, entry.view())->content_hash;
         assert(with_recipe != with_no_recipe);

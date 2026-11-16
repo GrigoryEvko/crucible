@@ -473,7 +473,7 @@ private:
 // Splits a straight-line trace at a divergence point into a two-arm branch
 // that rejoins where the continuations become identical again.
 //
-// The recipe is required, and null is how a caller says it selects no
+// The recipe is required, and ::fixy::none is how a caller says it selects no
 // numerics. This function holds the only KernelCache::lookup in the tree, so
 // the hash it builds is the one the compiler's cache is keyed on, and a hash
 // that leaves the numerics out keys a kernel by what it computes and not by
@@ -483,16 +483,18 @@ private:
 // So this is the one parameter on this signature that cannot be defaulted.
 // It has no caller today -- this whole function does not -- and a default
 // would hand the first one a wrong-kernel path it never had to think about.
-[[nodiscard]] inline BranchNode* add_branch(::foundation::effects::Alloc a, ::fixy::BumpArena& arena,
-                                            KernelCache& kernel_cache, TraceNode& divergence_point,
-                                            ::fixy::View<TraceEntry> new_ops, int64_t old_guard_value,
-                                            int64_t new_guard_value, Guard guard, TraceLink existing_suffix,
-                                            const NumericalRecipe* recipe) {
+[[nodiscard]] inline ::fixy::Ref<BranchNode> add_branch(::foundation::effects::Alloc a, ::fixy::BumpArena& arena,
+                                                        KernelCache& kernel_cache, TraceNode& divergence_point,
+                                                        ::fixy::View<TraceEntry> new_ops, int64_t old_guard_value,
+                                                        int64_t new_guard_value, Guard guard, TraceLink existing_suffix,
+                                                        RecipeChoice const& recipe) {
     CRUCIBLE_PRE(old_guard_value != new_guard_value);
-    CRUCIBLE_PRE(recipe == nullptr || ::foundation::decide::is_non_zero(recipe->hash));
-    CRUCIBLE_PRE(recipe == nullptr || !recipe->hash.is_sentinel());
-    const ::fixy::Ref<RegionNode> new_region =
-        (recipe == nullptr) ? make_region(a, arena, new_ops) : make_region(a, arena, new_ops, recipe);
+    CRUCIBLE_PRE(is_foldable_recipe(recipe));
+    const ::fixy::Ref<RegionNode> new_region = recipe.match(
+        [a, &arena, new_ops](::fixy::Ref<const NumericalRecipe> chosen) noexcept {
+            return make_region(a, arena, new_ops, *chosen);
+        },
+        [a, &arena, new_ops]() noexcept { return make_region(a, arena, new_ops); });
 
     const TraceLink merge = find_merge_point(new_ops, existing_suffix, recipe);
 
@@ -510,7 +512,7 @@ private:
         .match([new_region](KernelCache::KernelRef kernel) noexcept { new_region->compiled.publish(&*kernel); },
                []() noexcept {});
 
-    BranchNode* branch = &*arena.make<BranchNode>(a);
+    const ::fixy::Ref<BranchNode> branch = arena.make<BranchNode>(a);
     branch->kind = TraceNodeKind::BRANCH;
     branch->guard = guard;
     // Arms go in sorted by value: replay binary-searches them.
@@ -526,7 +528,6 @@ private:
 
     recompute_merkle(*branch);
 
-    CRUCIBLE_POST(branch, branch != nullptr);
     CRUCIBLE_POST(branch, branch->kind == TraceNodeKind::BRANCH);
     CRUCIBLE_POST(branch, branch->num_arms() == 2u);
     return branch;

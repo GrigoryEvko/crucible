@@ -202,10 +202,10 @@ namespace {
     // find_merge_point gives the link to the first region of the shared
     // tail, and an empty link when the tails differ.
     const ::fixy::View<const crucible::TraceEntry> tail_ops = ops_b.view();
-    assert(
-        crucible::is_link_to(crucible::find_merge_point(tail_ops, crucible::make_link(region_b), nullptr), region_b));
-    assert(crucible::find_merge_point(tail_ops, crucible::make_link(region_a), nullptr).is_none());
-    assert(crucible::find_merge_point(tail_ops, crucible::TraceLink{}, nullptr).is_none());
+    assert(crucible::is_link_to(crucible::find_merge_point(tail_ops, crucible::make_link(region_b), ::fixy::none),
+                                region_b));
+    assert(crucible::find_merge_point(tail_ops, crucible::make_link(region_a), ::fixy::none).is_none());
+    assert(crucible::find_merge_point(tail_ops, crucible::TraceLink{}, ::fixy::none).is_none());
 
     crucible::test::pass("test_merkle_links: all tests passed\n");
     return 0;

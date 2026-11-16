@@ -5,8 +5,8 @@
 // Property: for any random ops sequence and two semantically distinct
 // recipes A, B:
 //
-//   compute_content_hash(ops, &A) != compute_content_hash(ops, &B)
-//   compute_content_hash(ops, nullptr) != compute_content_hash(ops, &A)
+//   compute_content_hash(ops, A) != compute_content_hash(ops, B)
+//   compute_content_hash(ops) != compute_content_hash(ops, A)
 //
 // This is THE load-bearing safety property of the recipe fold:
 // KernelCache lookups must NOT collide across recipes.
@@ -70,8 +70,8 @@ int main(int argc, char** argv) {
                 t.ops.view().window(0, t.count).expect("the count is at most MAX");
 
             const auto h_none = compute_content_hash(ops_span);
-            const auto h_a = compute_content_hash(ops_span, &t.recipe_a);
-            const auto h_b = compute_content_hash(ops_span, &t.recipe_b);
+            const auto h_a = compute_content_hash(ops_span, t.recipe_a);
+            const auto h_b = compute_content_hash(ops_span, t.recipe_b);
 
             // Three pairwise inequalities — the cross-recipe-cache-
             // collision-prevention contract.

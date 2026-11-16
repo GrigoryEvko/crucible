@@ -319,17 +319,15 @@ template <class Fake>
         recipe_ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xBEEF};
         const ::fixy::View<const crucible::TraceEntry> ops_span = recipe_ops.view();
 
-        const ContentHash h_default = crucible::compute_content_hash(ops_span);
-        const ContentHash h_null = crucible::compute_content_hash(ops_span, nullptr);
-        assert(h_default == h_null);
+        const ContentHash h_null = crucible::compute_content_hash(ops_span);
 
-        const ContentHash h_tc = crucible::compute_content_hash(ops_span, &recipe_tc);
-        const ContentHash h_strict = crucible::compute_content_hash(ops_span, &recipe_strict);
+        const ContentHash h_tc = crucible::compute_content_hash(ops_span, recipe_tc);
+        const ContentHash h_strict = crucible::compute_content_hash(ops_span, recipe_strict);
         assert(h_tc != h_strict);
         assert(h_tc != h_null);
         assert(h_strict != h_null);
 
-        const ContentHash h_tc_again = crucible::compute_content_hash(ops_span, &recipe_tc);
+        const ContentHash h_tc_again = crucible::compute_content_hash(ops_span, recipe_tc);
         assert(h_tc == h_tc_again);
 
         // The recipe contribution is additive: ops still disambiguate
@@ -338,7 +336,7 @@ template <class Fake>
         alt_recipe_ops.at(::fixy::index<0>()).schema_hash = SchemaHash{0xFACE};
         alt_recipe_ops.at(::fixy::index<1>()).schema_hash = SchemaHash{0xBEEF};
         const ::fixy::View<const crucible::TraceEntry> alt_ops_span = alt_recipe_ops.view();
-        const ContentHash h_alt_tc = crucible::compute_content_hash(alt_ops_span, &recipe_tc);
+        const ContentHash h_alt_tc = crucible::compute_content_hash(alt_ops_span, recipe_tc);
         assert(h_alt_tc != h_tc);
 
         ::foundation::core::FixedArray<crucible::TraceEntry, 2> rops_a{};
@@ -348,15 +346,15 @@ template <class Fake>
         rops_b.at(::fixy::index<0>()).schema_hash = SchemaHash{0x0A0A};
         rops_b.at(::fixy::index<1>()).schema_hash = SchemaHash{0x0B0B};
 
-        const crucible::RegionNode& r_tc = *crucible::make_region(test.alloc, arena, rops_a.view(), &recipe_tc);
-        const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, arena, rops_b.view(), &recipe_strict);
+        const crucible::RegionNode& r_tc = *crucible::make_region(test.alloc, arena, rops_a.view(), recipe_tc);
+        const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, arena, rops_b.view(), recipe_strict);
         const crucible::RegionNode& r_none = *crucible::make_region(test.alloc, arena, rops_a.view());
 
         assert(r_tc.content_hash != r_strict.content_hash);
         assert(r_tc.content_hash != r_none.content_hash);
         assert(r_strict.content_hash != r_none.content_hash);
 
-        const ContentHash direct_tc = crucible::compute_content_hash(rops_a.view(), &recipe_tc);
+        const ContentHash direct_tc = crucible::compute_content_hash(rops_a.view(), recipe_tc);
         assert(r_tc.content_hash == direct_tc);
 
         crucible::KernelCache rcache{test.alloc};
@@ -557,7 +555,7 @@ template <class Fake>
             .flags = {},
             .hash = {},
         });
-        golden("mixed five-op region under a recipe", crucible::compute_content_hash(real_mix_sp, &golden_recipe),
+        golden("mixed five-op region under a recipe", crucible::compute_content_hash(real_mix_sp, golden_recipe),
                0x49BFFF74C7DD564CULL);
 
         assert(moved_vectors == 0
@@ -706,8 +704,8 @@ template <class Fake>
                && "a recipe-blind hash is a function of the ops alone, so both tiers land on it");
 
         // What a recipe-aware producer computes: one key per tier.
-        const auto keyed_unordered = crucible::compute_content_hash(numerics_sp, &unordered);
-        const auto keyed_strict = crucible::compute_content_hash(numerics_sp, &strict);
+        const auto keyed_unordered = crucible::compute_content_hash(numerics_sp, unordered);
+        const auto keyed_strict = crucible::compute_content_hash(numerics_sp, strict);
         assert(keyed_unordered != keyed_strict
                && "the recipe left the content hash: two numerics tiers over identical ops "
                   "now share a KernelCache slot, so a lookup under one is served the other's kernel");
