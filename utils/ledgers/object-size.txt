@@ -6,3 +6,4 @@
 format 1
 rule object-size
 @build/CMakeFiles/crucible_vigil.dir/src/BackgroundThread.cpp.o | object | 788.243 | - | the owner decision of 2026-11-15: a correct change that fails only on a size limit raises the limit.  The frame doors and the doors of a kernel in the core headers add 0.25 KB to the object of the background thread
+@build/test/fixy/CMakeFiles/test_concurrent_parallel_tree_scan.dir/test_concurrent_parallel_tree_scan.cpp.o | object | 872.66 | - | the unit runs the parallel sum scans with 1, 2, 4, 8 and 64 shards, each scan is two calls of mint_parallel_for, and a call of 64 shards instantiates 64 shard types that the Debug build with ASan instruments.  The owner decision of 2026-11-15 raises a size limit for a correct change.

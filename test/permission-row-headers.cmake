@@ -16,6 +16,7 @@ set(CRUCIBLE_PERMISSION_ROW_HEADERS
     fixy/Federation.h
     fixy/OwnedRegion.h
     fixy/channels/SwmrSession.h
+    fixy/concurrent/ParallelTree.h
     fixy/concurrent/PermissionedMpscChannel.h
     fixy/concurrent/PermissionedSpscChannel.h
     fixy/os/OwnedMmap.h
