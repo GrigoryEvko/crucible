@@ -178,16 +178,18 @@ template <typename Reason>
         return DetachReasonKind::Unknown;
 }
 
-// The checkpoint kind of a branch, or no event.
+// The checkpoint kind of a branch, or no event.  The branch is read under
+// its vendor pins, as the checkpoint door reads it.
 template <typename Branch>
 [[nodiscard]] constexpr std::optional<SessionEvent> checkpoint_event(RoleTagId self, RoleTagId peer,
                                                                      CheckpointRole role) noexcept {
-    if constexpr (std::is_same_v<Branch, Roll>) {
+    using Bare = ::fixy::session::detail::checkpoint::unpinned_t<Branch>;
+    if constexpr (std::is_same_v<Bare, Roll>) {
         return SessionEvent::checkpoint_roll(self, peer, role);
-    } else if constexpr (std::is_same_v<Branch, Abort>) {
+    } else if constexpr (std::is_same_v<Bare, Abort>) {
         return SessionEvent::checkpoint_abort(self, peer, role);
-    } else if constexpr (is_checkpoint_primitive<Branch>::value) {
-        return SessionEvent::checkpoint_commit(self, peer, role, default_proto_hash<typename Branch::next>);
+    } else if constexpr (is_checkpoint_primitive<Bare>::value) {
+        return SessionEvent::checkpoint_commit(self, peer, role, default_proto_hash<typename Bare::next>);
     } else {
         return std::nullopt;
     }

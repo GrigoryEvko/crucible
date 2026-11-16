@@ -130,6 +130,55 @@ int check_checkpoint_recording() {
     return 0;
 }
 
+// A Roll under a vendor pin, on each side, is a Roll in the log.  The decider
+// rolls back, and then the pair commits and closes.
+int check_pinned_roll_recording() {
+    using Decide = s::Select<s::Commit<s::End>, s::VendorPinned<s::VendorBackend::NV, s::Roll>>;
+    using Follow = s::Offer<s::Commit<s::End>, s::VendorPinned<s::VendorBackend::NV, s::Roll>>;
+    Mailbox to_left;
+    Mailbox to_right;
+    s::SessionEventLog log_left;
+    s::SessionEventLog log_right;
+    auto left =
+        s::mint_recorded_session(s::mint_checkpoint_session<Decide, Follow>(bg_ctx(), Port{&to_left, &to_right}),
+                                 s::mint_session_event_writer(log_left), kSelf, kPeer);
+    auto right =
+        s::mint_recorded_session(s::mint_checkpoint_session<Follow, Decide>(bg_ctx(), Port{&to_right, &to_left}),
+                                 s::mint_session_event_writer(log_right), kPeer, kSelf);
+    using RightStart = decltype(right);
+    auto left_back = std::move(left).select<1>(push_label);
+    bool is_closed = false;
+    std::move(right).branch(pop_label, [&](auto right_back) {
+        if constexpr (std::is_same_v<decltype(right_back), RightStart>) {
+            auto left_end = std::move(left_back).template select<0>(push_label);
+            std::move(right_back).branch(pop_label, [&](auto right_end) {
+                if constexpr (std::is_same_v<typename decltype(right_end)::protocol, s::End>) {
+                    (void)std::move(right_end).close();
+                    is_closed = true;
+                } else {
+                    ::fixy::fatal("test_session_recording: the follower did not commit after the pinned Roll");
+                }
+            });
+            (void)std::move(left_end).close();
+        } else {
+            ::fixy::fatal("test_session_recording: the follower did not roll back for the pinned Roll");
+        }
+    });
+    if (!is_closed) return fail("the pinned roll exchange did not close");
+    // Select, CheckpointRoll, Select, CheckpointCommit and Close on the
+    // decider, and Offer in place of each Select on the follower.
+    if (log_left.size() != 5 || log_left[1].op() != s::SessionOp::CheckpointRoll
+        || log_left[1].checkpoint_role() != s::CheckpointRole::Active
+        || log_left[3].op() != s::SessionOp::CheckpointCommit)
+        return fail("the decider did not record an active roll for the pinned Roll");
+    if (log_right.size() != 5 || log_right[0].op() != s::SessionOp::Offer
+        || log_right[1].op() != s::SessionOp::CheckpointRoll
+        || log_right[1].checkpoint_role() != s::CheckpointRole::Passive
+        || log_right[3].op() != s::SessionOp::CheckpointCommit)
+        return fail("the follower did not record a passive roll for the pinned Roll");
+    return 0;
+}
+
 // A keyed choice inside a checkpoint session.  The checkpoint handle
 // follows its inner handle past the label word of the keyed branch, to the
 // value step.

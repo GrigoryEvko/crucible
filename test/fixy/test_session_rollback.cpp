@@ -14,6 +14,7 @@
 // types are the types at the checkpoint and at the start, which is how
 // the test shows that both sides reverted to the same pair.
 
+#include <fixy/Core.h>
 #include <fixy/session/Checkpoint.h>
 #include <fixy/session/Watch.h>
 
@@ -165,6 +166,39 @@ static_assert(s::is_terminal_state_v<s::checkpoint_erase_t<s::Roll>>
 using LoopDecide = s::Loop<s::Select<s::Commit<s::Send<int, s::Continue>>, s::Roll, s::End>>;
 using LoopFollow = s::Loop<s::Offer<s::Commit<s::Recv<int, s::Continue>>, s::Roll, s::End>>;
 static_assert(s::checkpoint_verdict_of(^^LoopDecide, ^^LoopFollow) == s::CheckpointVerdict::Compliant);
+
+// ── A primitive under a vendor pin ──────────────────────────────────
+//
+// The check reads each position under its vendor pins.  So a pinned Roll
+// rolls back, a pinned Abort starts again, a pinned Commit saves its
+// continuation, and a pinned End closes, on the side that selects and on the
+// side that offers.  The runtime half below runs each pair.  No pair carries
+// a payload, so each step of a pair is a label.
+template <typename P>
+using Pinned = s::VendorPinned<s::VendorBackend::NV, P>;
+
+using CommitDecide = s::Select<s::Commit<s::End>, s::Roll>;
+using CommitFollow = s::Offer<s::Commit<s::End>, s::Roll>;
+using PinnedRollDecide = s::Select<s::Commit<s::End>, Pinned<s::Roll>>;
+using PinnedRollFollow = s::Offer<s::Commit<s::End>, Pinned<s::Roll>>;
+using TwoPinsDecide = s::Select<s::Commit<s::End>, s::VendorPinned<s::VendorBackend::CPU, Pinned<s::Roll>>>;
+using PinnedStartDecide = Pinned<CommitDecide>;
+using PinnedCommitDecide = s::Select<Pinned<s::Commit<s::Select<s::End, s::Roll>>>, s::Roll>;
+using PinnedCommitFollow = s::Offer<s::Commit<s::Offer<s::End, s::Roll>>, s::Roll>;
+using PinnedAbortDecide = s::Select<s::Commit<s::Select<s::End, Pinned<s::Abort>>>, s::End>;
+using PinnedAbortFollow = s::Offer<s::Commit<s::Offer<s::End, s::Abort>>, s::End>;
+using PinnedEndDecide = s::Select<s::Commit<s::End>, Pinned<s::End>>;
+using PinnedEndFollow = s::Offer<s::Commit<s::End>, s::End>;
+using PinnedTailDecide = s::Select<s::Commit<Pinned<s::End>>, s::Roll>;
+
+static_assert(s::checkpoint_verdict_of(^^PinnedRollDecide, ^^CommitFollow) == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^PinnedRollFollow, ^^CommitDecide) == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^TwoPinsDecide, ^^CommitFollow) == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^PinnedStartDecide, ^^CommitFollow) == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^PinnedCommitDecide, ^^PinnedCommitFollow) == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^PinnedAbortDecide, ^^PinnedAbortFollow) == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^PinnedEndDecide, ^^PinnedEndFollow) == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^PinnedTailDecide, ^^CommitFollow) == s::CheckpointVerdict::Compliant);
 
 // ── The context gate ────────────────────────────────────────────────
 //
@@ -473,10 +507,134 @@ int run_loop_rollback() {
     return rc;
 }
 
+// ── The pinned primitives at run time ───────────────────────────────
+
+// No head of a checkpoint handle holds a vendor pin, because the check reads
+// each position under its pins.
+template <typename Handle>
+inline constexpr bool is_unpinned_head = !s::is_vendor_pinned_v<typename Handle::protocol>;
+
+// Label L reaches End on the two ends, and the two ends close.
+template <std::size_t Label, typename Left, typename Right>
+void finish_at_end(Left left, Right right) {
+    auto left_end = std::move(left).template select<Label>(push_label);
+    static_assert(is_unpinned_head<decltype(left_end)>, "no head of a checkpoint handle holds a vendor pin");
+    bool is_closed = false;
+    std::move(right).branch(pop_label, [&](auto right_end) {
+        static_assert(is_unpinned_head<decltype(right_end)>, "no head of a checkpoint handle holds a vendor pin");
+        if constexpr (std::is_same_v<typename decltype(right_end)::protocol, s::End>) {
+            (void)std::move(right_end).close();
+            is_closed = true;
+        } else {
+            ::fixy::fatal("test_session_rollback: the follower took a branch that is not End");
+        }
+    });
+    (void)std::move(left_end).close();
+    if (!is_closed) ::fixy::fatal("test_session_rollback: the follower did not close");
+}
+
+// The decider rolls back at the first label, and each end stands at its
+// start again.  Then the pair commits at label 0 and ends.
+template <typename DecideProto, typename FollowProto>
+void run_roll_at_start() {
+    Mailbox to_left;
+    Mailbox to_right;
+    auto left = s::mint_checkpoint_session<DecideProto, FollowProto>(bg_ctx(), Port{&to_left, &to_right});
+    auto right = s::mint_checkpoint_session<FollowProto, DecideProto>(bg_ctx(), Port{&to_right, &to_left});
+    static_assert(is_unpinned_head<decltype(left)>, "no head of a checkpoint handle holds a vendor pin");
+    using LeftStart = decltype(left);
+    using RightStart = decltype(right);
+    auto left_back = std::move(left).template select<1>(push_label);
+    static_assert(std::is_same_v<decltype(left_back), LeftStart>, "a pinned Roll returns the decider to its start");
+    std::move(right).branch(pop_label, [&](auto right_back) {
+        static_assert(is_unpinned_head<decltype(right_back)>, "no head of a checkpoint handle holds a vendor pin");
+        if constexpr (std::is_same_v<decltype(right_back), RightStart>) {
+            finish_at_end<0>(std::move(left_back), std::move(right_back));
+        } else {
+            ::fixy::fatal("test_session_rollback: the follower did not roll back to its start");
+        }
+    });
+}
+
+// The decider commits through a pinned Commit and then rolls back.  Each end
+// stands at the handle that the Commit gave it.  Then the pair ends.
+void run_roll_after_pinned_commit() {
+    Mailbox to_left;
+    Mailbox to_right;
+    auto left = s::mint_checkpoint_session<PinnedCommitDecide, PinnedCommitFollow>(bg_ctx(), Port{&to_left, &to_right});
+    auto right =
+        s::mint_checkpoint_session<PinnedCommitFollow, PinnedCommitDecide>(bg_ctx(), Port{&to_right, &to_left});
+    using RightStart = decltype(right);
+    auto left_saved = std::move(left).select<0>(push_label);
+    static_assert(is_unpinned_head<decltype(left_saved)>, "no head of a checkpoint handle holds a vendor pin");
+    std::move(right).branch(pop_label, [&](auto right_saved) {
+        if constexpr (!std::is_same_v<decltype(right_saved), RightStart>) {
+            auto left_back = std::move(left_saved).template select<1>(push_label);
+            static_assert(std::is_same_v<decltype(left_back), decltype(left_saved)>,
+                          "a Roll after a pinned Commit returns the decider to the checkpoint of the Commit");
+            std::move(right_saved).branch(pop_label, [&](auto right_back) {
+                if constexpr (std::is_same_v<decltype(right_back), decltype(right_saved)>) {
+                    finish_at_end<0>(std::move(left_back), std::move(right_back));
+                } else {
+                    ::fixy::fatal("test_session_rollback: the follower did not roll back to the checkpoint");
+                }
+            });
+        } else {
+            ::fixy::fatal("test_session_rollback: the follower did not commit");
+        }
+    });
+}
+
+// The decider commits and then takes a pinned Abort.  Each end stands at its
+// start again, not at the checkpoint of the Commit.  Then the pair ends.
+void run_pinned_abort() {
+    Mailbox to_left;
+    Mailbox to_right;
+    auto left = s::mint_checkpoint_session<PinnedAbortDecide, PinnedAbortFollow>(bg_ctx(), Port{&to_left, &to_right});
+    auto right = s::mint_checkpoint_session<PinnedAbortFollow, PinnedAbortDecide>(bg_ctx(), Port{&to_right, &to_left});
+    using LeftStart = decltype(left);
+    using RightStart = decltype(right);
+    auto left_saved = std::move(left).select<0>(push_label);
+    std::move(right).branch(pop_label, [&](auto right_saved) {
+        if constexpr (s::is_offer_v<typename decltype(right_saved)::protocol>) {
+            auto left_back = std::move(left_saved).template select<1>(push_label);
+            static_assert(std::is_same_v<decltype(left_back), LeftStart>,
+                          "a pinned Abort returns the decider to its start");
+            std::move(right_saved).branch(pop_label, [&](auto right_back) {
+                if constexpr (std::is_same_v<decltype(right_back), RightStart>) {
+                    finish_at_end<1>(std::move(left_back), std::move(right_back));
+                } else {
+                    ::fixy::fatal("test_session_rollback: the follower did not start again");
+                }
+            });
+        } else {
+            ::fixy::fatal("test_session_rollback: the follower did not commit");
+        }
+    });
+}
+
+// A pinned End is an End that closes: as a branch, and as the continuation of
+// a Commit.
+void run_pinned_end() {
+    Mailbox to_left;
+    Mailbox to_right;
+    finish_at_end<1>(s::mint_checkpoint_session<PinnedEndDecide, PinnedEndFollow>(bg_ctx(), Port{&to_left, &to_right}),
+                     s::mint_checkpoint_session<PinnedEndFollow, PinnedEndDecide>(bg_ctx(), Port{&to_right, &to_left}));
+    finish_at_end<0>(s::mint_checkpoint_session<PinnedTailDecide, CommitFollow>(bg_ctx(), Port{&to_left, &to_right}),
+                     s::mint_checkpoint_session<CommitFollow, PinnedTailDecide>(bg_ctx(), Port{&to_right, &to_left}));
+}
+
 }  // namespace
 
 int main() {
     if (const int rc = run_video_on_demand(); rc != 0) return rc;
     if (const int rc = run_loop_rollback(); rc != 0) return rc;
+    run_roll_at_start<PinnedRollDecide, CommitFollow>();
+    run_roll_at_start<CommitDecide, PinnedRollFollow>();
+    run_roll_at_start<TwoPinsDecide, CommitFollow>();
+    run_roll_at_start<PinnedStartDecide, CommitFollow>();
+    run_roll_after_pinned_commit();
+    run_pinned_abort();
+    run_pinned_end();
     return 0;
 }

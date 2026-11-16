@@ -162,8 +162,10 @@ struct erase_loop<void> {
 template <typename LoopCtx>
 using erase_loop_t = typename erase_loop<LoopCtx>::type;
 
-// Continue and Loop resolved, as the handle resolves them: the head of
-// R and the loop context at that head.
+// Continue, Loop and a vendor pin resolved, as the handle resolves them:
+// the head of R and the loop context at that head.  The check of the pair
+// reads each position under its pins, so no head of a checkpoint handle
+// holds a pin.
 template <typename R, typename LoopCtx>
 struct resolve {
     using head = R;
@@ -173,6 +175,8 @@ template <typename LoopCtx>
 struct resolve<Continue, LoopCtx> : resolve<::fixy::session::detail::loop_body_t<LoopCtx>, LoopCtx> {};
 template <typename B, typename LoopCtx>
 struct resolve<Loop<B>, LoopCtx> : resolve<B, Loop<B>> {};
+template <VendorBackend V, typename P, typename LoopCtx>
+struct resolve<VendorPinned<V, P>, LoopCtx> : resolve<P, LoopCtx> {};
 
 }  // namespace detail::checkpoint
 
@@ -257,6 +261,11 @@ consteval info strip(info type) {
     }
     return type;
 }
+
+// The type under each vendor pin of P.  The door and the recorder read a
+// branch through it, so they see the primitive that the check saw.
+template <typename P>
+using unpinned_t = typename[:strip(^^P):];
 
 consteval Kind kind_of(info type) {
     type = strip(type);
@@ -808,19 +817,21 @@ class CheckpointDoor final : ::foundation::NoObject<CheckpointDoor> {
             std::move(at_end));
     }
 
-    // The effect of branch B, given the plain handle it reached.
+    // The effect of branch B, given the plain handle it reached.  The check
+    // reads the branch under its vendor pins, so a pinned Roll rolls back.
     template <typename Branch, typename HeadLoop, typename Frame, typename Next>
     [[nodiscard]] static constexpr auto take_branch_(Next next) noexcept {
-        if constexpr (std::is_same_v<Branch, Roll>) {
+        using Bare = detail::checkpoint::unpinned_t<Branch>;
+        if constexpr (std::is_same_v<Bare, Roll>) {
             using Saved = typename Frame::saved;
             using SavedLoop = typename Frame::saved_loop;
             return wrap_<Saved, SavedLoop, Frame>(rebuild_<Saved, SavedLoop>(std::move(next)));
-        } else if constexpr (std::is_same_v<Branch, Abort>) {
+        } else if constexpr (std::is_same_v<Bare, Abort>) {
             using Initial = typename Frame::initial;
             using Restart = CheckpointFrame<Initial, Initial, void>;
             return wrap_<Initial, void, Restart>(rebuild_<Initial, void>(std::move(next)));
-        } else if constexpr (is_checkpoint_primitive<Branch>::value) {
-            using K = typename Branch::next;
+        } else if constexpr (is_checkpoint_primitive<Bare>::value) {
+            using K = typename Bare::next;
             using Saved = CheckpointFrame<typename Frame::initial, K, HeadLoop>;
             return wrap_<K, HeadLoop, Saved>(std::move(next));
         } else {

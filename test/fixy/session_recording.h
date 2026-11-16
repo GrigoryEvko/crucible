@@ -76,6 +76,7 @@ struct No {};
 // claims hold.
 int check_crash_recording();
 int check_checkpoint_recording();
+int check_pinned_roll_recording();
 int check_keyed_checkpoint();
 
 }  // namespace test_session_recording_types

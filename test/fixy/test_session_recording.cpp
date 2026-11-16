@@ -451,6 +451,7 @@ int main() {
     if (const int rc = check_plain_recording(); rc != 0) return rc;
     if (const int rc = check_crash_recording(); rc != 0) return rc;
     if (const int rc = check_checkpoint_recording(); rc != 0) return rc;
+    if (const int rc = check_pinned_roll_recording(); rc != 0) return rc;
     if (const int rc = check_handoff_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_recording(); rc != 0) return rc;
     if (const int rc = check_keyed_checkpoint(); rc != 0) return rc;
