@@ -25,6 +25,13 @@ as a .crtrace file, and reads the file back:
                     operations.  The frames of the first four fill the stack,
                     so the fifth and the sixth record through the list of the
                     cold path.  Each level holds the records of its own tensors
+    depth           crucible_deep::level_N has the nesting depth N, and
+                    crucible_nest::inner has the depth 1 inside
+                    crucible_nest::outer.  Before them, aten::linear with a
+                    weight of the wrong shape raises inside the aten::addmm
+                    that it runs, and crucible_nest::fail raises in its kernel.
+                    The two unwinds close their nests, so crucible_nest::scale
+                    and crucible_nest::outer have the depth 0
 
 Usage:
     python test_nested_boxed_ops.py
@@ -87,6 +94,11 @@ FULL_RECORD = (4,)
 DEPTH = 6
 LEVEL_INPUTS = [(level + 2, 3) for level in range(DEPTH)]
 LEVEL_OUTPUTS = [(level + 20,) for level in range(DEPTH)]
+
+# An input and a weight that aten::linear cannot multiply, so the aten::addmm
+# that it runs raises.
+LINEAR_INPUT = (2, 3)
+LINEAR_WEIGHT = (4, 5)
 
 
 @torch.library.custom_op("crucible_nest::inner", mutates_args=())
@@ -175,6 +187,10 @@ def record(directory: Path) -> tuple[list[TraceOp], list[int]]:
     with CrucibleNative() as ctx:
         dispatch_op = bind_dispatch_op(ctx)
         for _ in range(MAX_ITERATIONS):
+            try:
+                torch.nn.functional.linear(torch.ones(LINEAR_INPUT), torch.ones(LINEAR_WEIGHT))
+            except RuntimeError:
+                pass
             for _ in range(FAILURES):
                 try:
                     torch.ops.crucible_nest.fail(source)
@@ -221,6 +237,15 @@ def check_records(ops: list[TraceOp], name: str, inputs: list[tuple[int, ...]],
     return problems
 
 
+def check_depth(ops: list[TraceOp], name: str, depth: int) -> list[str]:
+    """Return one line for each operation of name that does not have the nesting depth."""
+    named = ops_named(ops, name)
+    if not named:
+        return [f"the region holds no {name}"]
+    return [f"an op with the hash of {name} has the depth {op.depth}, not {depth}" for op in named
+            if op.depth != depth]
+
+
 def main() -> int:
     """Run each check and report."""
     with tempfile.TemporaryDirectory(prefix="crucible-nested-boxed-ops-") as scratch:
@@ -236,6 +261,10 @@ def main() -> int:
     for level in range(DEPTH):
         problems += check_records(ops, f"crucible_deep::level_{level}", [LEVEL_INPUTS[level]],
                                   [LEVEL_OUTPUTS[level]])
+        problems += check_depth(ops, f"crucible_deep::level_{level}", level)
+    problems += check_depth(ops, "crucible_nest::scale", 0)
+    problems += check_depth(ops, "crucible_nest::outer", 0)
+    problems += check_depth(ops, "crucible_nest::inner", 1)
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:

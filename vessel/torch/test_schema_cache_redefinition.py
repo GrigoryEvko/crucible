@@ -44,7 +44,7 @@ from crucible_native import CrucibleNative  # noqa: E402
 # The import sets one intra-op thread and one inter-op thread, so the
 # instruction count of the test is the same in each run.  PyTorch refuses a
 # second set of the inter-op threads, so this file does not set them again.
-from test_record_coverage import HEADER, MAX_ITERATIONS, OP_RECORD, schema_hash  # noqa: E402
+from test_record_coverage import MAX_ITERATIONS, read_trace, schema_hash  # noqa: E402
 
 NAMESPACE = "crucible_redefine"
 OPERATOR = f"{NAMESPACE}::step"
@@ -72,15 +72,7 @@ def empty_like_source(source: torch.Tensor) -> torch.Tensor:
 
 def operation_flags(path: Path) -> list[tuple[int, int]]:
     """Return the schema hash and the op flags of each operation of a .crtrace file."""
-    data = path.read_bytes()
-    magic, _version, num_ops, _num_metas = HEADER.unpack_from(data, 0)
-    if magic != b"CRTR":
-        raise ValueError(f"{path} is no .crtrace file")
-    operations = []
-    for index in range(num_ops):
-        record = OP_RECORD.unpack_from(data, HEADER.size + index * OP_RECORD.size)
-        operations.append((record[0], record[-1]))
-    return operations
+    return [(op.schema_hash, op.flags) for op in read_trace(path)]
 
 
 def record(directory: Path) -> list[tuple[int, int]]:

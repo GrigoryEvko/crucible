@@ -9,12 +9,13 @@
 //     uint32   op count
 //     uint32   metadata-record count
 //
-//   Op records, 80 bytes each, at the offsets of TraceOpRecord:
+//   Op records, 88 bytes each, at the offsets of TraceOpRecord:
 //     uint64 schema hash, uint64 shape hash,
 //     uint64 scope hash, uint64 callsite hash,
 //     int64  scalar values, five of them,
 //     uint16 input count, uint16 output count, uint16 scalar count,
-//     uint8  gradient flag, uint8 packed operation flags
+//     uint8  gradient flag, uint8 packed operation flags,
+//     uint16 nesting depth (OpDepth), six zero bytes
 //
 //   Metadata records, 176 bytes each, at the offsets of the tensor metadata
 //   struct.  Each record goes through decode_tensor_meta, the checked door of
@@ -80,6 +81,9 @@ struct TraceOpRecord {
     // The name is a misnomer this byte is stuck with: it carries the whole
     // packed set of operation flags, not one of them.
     uint8_t inference_mode = 0;
+    OpDepth depth{};
+    // The writer writes zero here, and the loader reads nothing.
+    ::fixy::FixedArray<uint8_t, 6> pad{};
 };
 
 struct LoadedTrace {
@@ -131,8 +135,9 @@ enum class TraceLoadError : uint8_t {
 inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 
 // The version of the format.  Version 2 has metadata records of 176 bytes,
-// with a storage size of 64 bits.  The loader refuses each other version.
-inline constexpr uint32_t TRACE_FORMAT_VERSION = 2;
+// with a storage size of 64 bits.  Version 3 has op records of 88 bytes, with
+// the nesting depth of each op.  The loader refuses each other version.
+inline constexpr uint32_t TRACE_FORMAT_VERSION = 3;
 
 // The length of each metadata record.  A count whose records would not fit
 // in the bytes that remain is refused before any array is sized from it.
@@ -287,6 +292,8 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
         ScopeHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, scope_hash)>(op_record)};
     *trace.callsite_hashes.get(i).expect("an op index is below the op count") =
         CallsiteHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, callsite_hash)>(op_record)};
+    *trace.depths.get(i).expect("an op index is below the op count") =
+        OpDepth{read_record_field_<uint16_t, offsetof(TraceOpRecord, depth)>(op_record)};
     return ::fixy::Unit{};
 }
 
@@ -397,6 +404,7 @@ encode_trace_op(TraceOpRecord const& record) noexcept {
     write_record_field_<offsetof(TraceOpRecord, num_scalars)>(bytes, record.num_scalars);
     write_record_field_<offsetof(TraceOpRecord, grad_enabled)>(bytes, record.grad_enabled);
     write_record_field_<offsetof(TraceOpRecord, inference_mode)>(bytes, record.inference_mode);
+    write_record_field_<offsetof(TraceOpRecord, depth)>(bytes, record.depth.raw());
     return image;
 }
 

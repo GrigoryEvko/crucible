@@ -4,9 +4,11 @@
 
 namespace crucible {
 
-// The strong hash types are the size of the integers they wrap, so the record
-// stays byte-compatible with a file written before they were introduced.
-static_assert(sizeof(TraceOpRecord) == 80, "TraceOpRecord must be 80 bytes");
+// The strong hash types are the size of the integers they wrap.  Version 3
+// of the format puts the depth at offset 80 and six bytes of pad after it, so
+// a record of the file is 88 bytes.
+static_assert(sizeof(TraceOpRecord) == 88, "TraceOpRecord must be 88 bytes");
+static_assert(offsetof(TraceOpRecord, depth) == 80, "the depth follows the packed op flags");
 static_assert(std::is_trivially_copyable_v<TraceOpRecord>);
 static_assert(std::is_standard_layout_v<TraceOpRecord>);
 

@@ -58,7 +58,10 @@ MAX_ITERATIONS = 60
 UPDATE_WIDTH = 40
 
 HEADER = struct.Struct("<4sIII")
-OP_RECORD = struct.Struct("<QQQQ5qHHHBB")
+# The op record of version 3 of the format: the four hashes, the five scalar
+# values, the three counts, the gradient flag, the packed op flags, the nesting
+# depth, and six bytes of pad.
+OP_RECORD = struct.Struct("<QQQQ5qHHHBBH6x")
 NAME_HEAD = struct.Struct("<QH")
 META_SIZE = ctypes.sizeof(crucible_mode._VesselLib.Meta)
 META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset
@@ -87,6 +90,8 @@ class TraceOp:
     metas: tuple[bytes, ...]
     # The packed op flags of the record: the mode bits and the phase.
     flags: int
+    # The nesting depth of the op: zero for an op that no recorded op runs.
+    depth: int
 
     def dtypes(self) -> list[int]:
         """Return the element type byte of each meta."""
@@ -108,12 +113,13 @@ def read_trace(path: Path) -> list[TraceOp]:
     for record in records:
         schema_hash, _shape, _scope, _callsite, *values = record[:9]
         num_inputs, num_outputs, num_scalars = record[9:12]
-        flags = record[13]
+        flags, depth = record[13], record[14]
         metas = []
         for _ in range(num_inputs + num_outputs):
             metas.append(data[offset:offset + META_SIZE])
             offset += META_SIZE
-        ops.append(TraceOp(schema_hash, tuple(values[:num_scalars]), num_inputs, num_outputs, tuple(metas), flags))
+        ops.append(TraceOp(schema_hash, tuple(values[:num_scalars]), num_inputs, num_outputs, tuple(metas), flags,
+                           depth))
     return ops
 
 

@@ -276,7 +276,7 @@ CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j) CRUCI
 
 // Export the active compiled region as .crtrace binary.
 // Flushes the ring first, then serializes the RegionNode's TraceEntry
-// data to disk.  Format: 16B header + 80B/op + 176B/meta + schema table.
+// data to disk.  Format: 16B header + 88B/op + 176B/meta + schema table.
 // Returns 1 on success, 0 on failure (no active region, file I/O error).
 CRUCIBLE_VESSEL_API int crucible_export_crtrace(CrucibleHandle h, const char* path) CRUCIBLE_VESSEL_NOEXCEPT;
 

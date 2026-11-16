@@ -80,6 +80,8 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         op.is_mutable = (i == 1);
         op.training_phase = static_cast<crucible::TrainingPhase>(i % 4);
         op.torch_function = (i == 2);
+        // Ops 0 and 1 run inside op 2, and op 0 inside op 1.
+        op.depth = crucible::OpDepth{static_cast<uint16_t>(NUM_OPS - 1 - i)};
 
         crucible::TensorMeta large_input = make_meta(4, 8);
         large_input.storage_nbytes = kLargeStorageBytes;
@@ -131,6 +133,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         assert(loaded_op.is_mutable == source_op.is_mutable);
         assert(loaded_op.training_phase == source_op.training_phase);
         assert(loaded_op.torch_function == source_op.torch_function);
+        assert(loaded_op.depth == source_op.depth && "the store keeps the nesting depth of each op");
 
         for (uint16_t j = 0; j < source_op.num_inputs(); j++) {
             const crucible::TensorMeta& loaded_meta = crucible::test::element_at(loaded_op.input_metas(), j);
@@ -195,7 +198,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 11;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 12;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -203,9 +206,10 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         const uint64_t wire_hash = fnv1a_bytes(wire);
 
         // CDAG_VERSION 11 writes the storage size of each meta in 8 bytes,
-        // not 4.  The image holds 9 metas, so it is 36 bytes longer.
-        constexpr size_t EXPECTED_WIRE_BYTES = 1808;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0x848a85ba074a6246ULL;
+        // not 4.  CDAG_VERSION 12 writes the nesting depth of each op in 2
+        // bytes.  The image holds 3 ops, so it is 6 bytes longer than in 11.
+        constexpr size_t EXPECTED_WIRE_BYTES = 1814;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0x61e3b395612f25e8ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,

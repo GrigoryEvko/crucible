@@ -49,8 +49,10 @@ using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::s
 // bump makes cdag_version_matches reject those files outright.
 // 11 (2026-11-13): the storage size of a tensor has 64 bits on the wire, so
 // a storage of 4 GiB or more keeps its size.
+// 12 (2026-11-16): each op has its nesting depth on the wire, after its kernel
+// id, so a region of the store keeps the ops that a lowering takes.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{11});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{12});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
@@ -501,6 +503,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
             w.w(flags);
         }
         w.w(std::to_underlying(te.kernel_id));
+        w.w(te.depth.raw());
 
         // Each array of the entry holds its count.
         for (const TensorMeta& meta : te.input_metas()) {
@@ -638,6 +641,8 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             }
             te.kernel_id = make_ckernel_id(::fixy::mint_refined<kValidCKernelIdBound>(raw_kernel_id));
         }
+        // Each value of the word is a depth (OpDepth).
+        te.depth = OpDepth{r.r<uint16_t>()};
 
         const ::fixy::View<TensorMeta> input_metas = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
         for (TensorMeta& meta : input_metas) {

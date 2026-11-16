@@ -15,7 +15,8 @@ namespace crucible::fuzz::boundary {
 // One operation with one input and one output, two metadata records, and a
 // name table that gives one hash the name aten::x and then aten::y.  The
 // first name registers, and the second name reaches the refusal of a
-// collision in the schema table.
+// collision in the schema table.  The seed has the version that the loader
+// reads, so the fuzzer starts from a trace that loads.
 [[nodiscard]] inline Seeds seeds_trace_file() {
     std::vector<std::uint8_t> seed = text_bytes("CRTR");
     append_raw(seed, TRACE_FORMAT_VERSION);
@@ -25,6 +26,7 @@ namespace crucible::fuzz::boundary {
     record.schema_hash = SchemaHash{0xABCD};
     record.num_inputs = 1;
     record.num_outputs = 1;
+    record.depth = OpDepth{1};
     append_raw(seed, record);
     TensorMeta meta{};
     meta.ndim = 1;
@@ -82,6 +84,7 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
     CRUCIBLE_FUZZ_CLAIM("trace_file", global_schema_table().count() <= SCHEMA_TABLE_CAP);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.metas.size() == trace.num_metas);
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.entries.size() == trace.num_ops);
+    CRUCIBLE_FUZZ_CLAIM("trace_file", trace.depths.size() == trace.num_ops);
     for (const TensorMeta& meta : trace.metas)
         claim_meta_in_range("trace_file", meta);
     for (const auto [entry, meta_start] :

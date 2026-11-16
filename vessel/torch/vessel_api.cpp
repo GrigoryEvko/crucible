@@ -506,13 +506,14 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     // Header: "CRTR" + version + num_ops + num_metas = 16B.
     cursor.put(crucible::encode_trace_header(num_ops, total_metas));
 
-    // Op records: 80B each (TraceOpRecord layout).
+    // Op records: 88B each (TraceOpRecord layout).
     for (const crucible::TraceEntry& te : region->ops) {
         crucible::TraceOpRecord rec{};
         rec.schema_hash = te.schema_hash;
         rec.shape_hash = te.shape_hash;
         rec.scope_hash = te.scope_hash;
         rec.callsite_hash = te.callsite_hash;
+        rec.depth = te.depth;
         rec.num_inputs = te.num_inputs();
         rec.num_outputs = te.num_outputs();
         rec.num_scalars = te.num_scalar_args();

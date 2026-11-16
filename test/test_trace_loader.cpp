@@ -118,7 +118,7 @@ static void test_truncated_header() {
 
 static void test_truncated_op_records() {
     // The header claims five ops, and the file holds forty bytes after
-    // it, which is half of one eighty-byte op record.
+    // it, which is less than one op record.
     struct {
         char magic[4];
         uint32_t version;
@@ -168,8 +168,8 @@ static void test_adversarial_num_ops_rejected() {
 }
 
 static void test_round_trip_single_op() {
-    // Header, one eighty-byte op record, no metas.
-    char buf[16 + 80] = {};
+    // Header, one op record, no metas.
+    char buf[16 + sizeof(TraceOpRecord)] = {};
     const char magic[4] = {'C', 'R', 'T', 'R'};
     const uint32_t version = crucible::TRACE_FORMAT_VERSION, n_ops = 1, n_metas = 0;
     std::memcpy(buf + 0, magic, 4);
@@ -185,8 +185,9 @@ static void test_round_trip_single_op() {
     std::memcpy(buf + 16 + 8, &shape, 8);
     std::memcpy(buf + 16 + 16, &scope, 8);
     std::memcpy(buf + 16 + 24, &callsite, 8);
-    // The rest of the record is the scalar values, the tensor and
-    // scalar counts and the flag bytes, all left zero.
+    // The rest of the record is the scalar values, the tensor and scalar
+    // counts, the flag bytes, the depth, the tags and the pad, all left zero.
+    // The round trip of the encoders below gives the depth a value.
 
     std::string path = write_tmp(buf, sizeof(buf));
     const LoadedTrace t = load_trace(kTestIo, sanitized(path)).expect("a trace of one op loads");
@@ -196,6 +197,7 @@ static void test_round_trip_single_op() {
     assert(t.entries.get(0).expect("the trace holds one op")->shape_hash.raw() == shape);
     assert(t.scope_hashes.get(0).expect("the trace holds one op")->raw() == scope);
     assert(t.callsite_hashes.get(0).expect("the trace holds one op")->raw() == callsite);
+    assert(t.depths.get(0).expect("the trace holds one op")->is_top());
     crucible::test::pass("  test_round_trip_single_op:      PASSED\n");
 }
 
@@ -226,6 +228,7 @@ static void test_encoders_round_trip_through_the_loader() {
     record.num_inputs = 1;
     record.num_scalars = 1;
     record.grad_enabled = 1;
+    record.depth = OpDepth{5};
 
     const ::fixy::FixedArray<std::byte, TRACE_META_BYTES> meta_bytes = encode_trace_meta(meta);
     for (const std::byte byte : meta_bytes.view()
@@ -278,6 +281,7 @@ static void test_encoders_round_trip_through_the_loader() {
     assert((entry.op_flags & op_flag::GRAD_ENABLED) != 0);
     assert(*trace.scope_hashes.get(0).expect("the trace holds one op") == record.scope_hash);
     assert(*trace.callsite_hashes.get(0).expect("the trace holds one op") == record.callsite_hash);
+    assert(*trace.depths.get(0).expect("the trace holds one op") == record.depth);
 
     const TensorMeta& loaded = *trace.metas.get(0).expect("the trace holds one meta");
     assert(loaded.ndim == 2);
@@ -537,7 +541,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
 // Build a 1-op .crtrace with the given num_metas and op tensor counts.
 // The metas region is zero-filled (ndim=0, valid).  Returns the temp path.
 static std::string write_one_op_trace(uint32_t n_metas, uint16_t num_inputs, uint16_t num_outputs) {
-    std::vector<uint8_t> buf(16 + 80 + static_cast<size_t>(n_metas) * TRACE_META_BYTES, 0);
+    std::vector<uint8_t> buf(16 + sizeof(TraceOpRecord) + static_cast<size_t>(n_metas) * TRACE_META_BYTES, 0);
     const char magic[4] = {'C', 'R', 'T', 'R'};
     const uint32_t version = crucible::TRACE_FORMAT_VERSION, n_ops = 1;
     std::memcpy(buf.data() + 0, magic, 4);
@@ -622,7 +626,7 @@ static void set_meta_field(MetaRecord& record, std::size_t field_offset, Field v
 
 // Loads a trace of one op with one tensor, whose metadata is the record.
 static bool loads_with_meta(const MetaRecord& record) {
-    std::vector<uint8_t> buf(16 + 80 + sizeof(TensorMeta), 0);
+    std::vector<uint8_t> buf(16 + sizeof(TraceOpRecord) + sizeof(TensorMeta), 0);
     const char magic[4] = {'C', 'R', 'T', 'R'};
     const uint32_t version = crucible::TRACE_FORMAT_VERSION, n_ops = 1, n_metas = 1;
     const uint16_t num_inputs = 1;
@@ -631,7 +635,7 @@ static bool loads_with_meta(const MetaRecord& record) {
     std::memcpy(buf.data() + 8, &n_ops, 4);
     std::memcpy(buf.data() + 12, &n_metas, 4);
     std::memcpy(buf.data() + 16 + 72, &num_inputs, 2);
-    std::memcpy(buf.data() + 16 + 80, &record.at(::fixy::index<0>()), record.size());
+    std::memcpy(buf.data() + 16 + sizeof(TraceOpRecord), &record.at(::fixy::index<0>()), record.size());
     std::string path = write_tmp(buf.data(), buf.size());
     const auto loaded = load_trace(kTestIo, sanitized(path));
     std::remove(path.c_str());

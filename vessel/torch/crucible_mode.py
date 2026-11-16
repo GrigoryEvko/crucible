@@ -315,11 +315,11 @@ class CrucibleMode(TorchDispatchMode):
         File format (all little-endian):
           Header (16B):
             char[4]  magic    = "CRTR"
-            uint32   version  = 2
+            uint32   version  = 3
             uint32   num_ops
             uint32   num_metas (total across all ops)
 
-          Op records (num_ops × 80B each):
+          Op records (num_ops × 88B each):
             uint64   schema_hash
             uint64   shape_hash
             uint64   scope_hash     FNV-1a of the innermost active nn.Module
@@ -336,6 +336,9 @@ class CrucibleMode(TorchDispatchMode):
             uint16   num_scalars
             uint8    grad_enabled
             uint8    inference_mode
+            uint16   depth          zero: a TorchDispatchMode sees no op
+                                    that another op runs
+            uint8[6] pad, zero
 
           Meta records (num_metas × 176B each):
             Raw TensorMeta structs, same layout as CrucibleMeta.
@@ -349,9 +352,9 @@ class CrucibleMode(TorchDispatchMode):
         with open(path, "wb") as f:
             # Header
             f.write(b"CRTR")
-            f.write(struct.pack("<III", 2, num_ops, num_metas))
+            f.write(struct.pack("<III", 3, num_ops, num_metas))
 
-            # Op records (80B each)
+            # Op records (88B each)
             for entry in self._trace_ops:
                 (sh, hsh, sv, n_in, n_out, n_sc, grad, infer,
                  mutable, scope_h, tags) = entry
@@ -362,6 +365,8 @@ class CrucibleMode(TorchDispatchMode):
                 # Pack is_mutable into bit 1 of inference_mode byte
                 infer_packed = (infer & 1) | ((mutable & 1) << 1)
                 f.write(struct.pack("<BB", grad, infer_packed))
+                # The depth and the pad.
+                f.write(struct.pack("<H6x", 0))
 
             # Meta records (raw bytes, already in CrucibleMeta layout)
             f.write(self._trace_metas)
@@ -379,7 +384,7 @@ class CrucibleMode(TorchDispatchMode):
                 f.write(struct.pack("<QH", h, len(name_bytes)))
                 f.write(name_bytes)
 
-        total = 16 + num_ops * 80 + num_metas * meta_size
+        total = 16 + num_ops * 88 + num_metas * meta_size
         print(f"  [crucible] Exported {num_ops} ops, {num_metas} metas "
               f"({meta_size}B each), {len(names)} names "
               f"({total // 1024}KB) → {path}")

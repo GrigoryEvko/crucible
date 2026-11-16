@@ -14,13 +14,22 @@ A line holds these fields:
     index     the position of the operation in the region
     phase     F for the forward pass, B for the backward pass, O for the
               optimizer, X for each other phase
-    name      the qualified name of the operator, from the name table
+    depth     the nesting depth: 0 for an operation that no recorded
+              operation runs, and d + 1 for an operation that an operation
+              of depth d runs
+    name      the qualified name of the operator, from the name table, after
+              two spaces for each level of the depth
     inputs    the shape and the element type of each input tensor
     outputs   the shape and the element type of each output tensor
 
 A recording kernel gives its operation to the Vigil after the operation runs.
 So an operation that another operation runs comes before the operation that
-runs it.
+runs it.  The parent of an operation of depth d is the first operation after
+it with the depth d - 1.
+
+The test also checks the depths that the plan of the first compute path reads:
+aten::linear and aten::mse_loss of the forward pass are at depth 0, and the
+operations that they run are below them.
 
 Usage:
     python test_region_ops.py            compare the list with the golden file
@@ -85,14 +94,16 @@ class RegionOp:
 
     name: str
     phase: str
+    depth: int
     inputs: tuple[str, ...]
     outputs: tuple[str, ...]
 
     def line(self, index: int) -> str:
-        """Return the line of the operation at index."""
+        """Return the line of the operation at index, with the name indented by its depth."""
         inputs = " ".join(self.inputs) or "-"
         outputs = " ".join(self.outputs) or "-"
-        return f"{index:3d} {self.phase} {self.name} : {inputs} -> {outputs}"
+        indent = "  " * self.depth
+        return f"{index:3d} {self.phase} {self.depth} {indent}{self.name} : {inputs} -> {outputs}"
 
 
 def describe_meta(meta: bytes) -> str:
@@ -109,6 +120,7 @@ def region_op(op: TraceOp, names: dict[int, str]) -> RegionOp:
     return RegionOp(
         name=names.get(op.schema_hash, f"schema{op.schema_hash:016x}"),
         phase=PHASE_LETTERS[(op.flags >> PHASE_SHIFT) & 0x3],
+        depth=op.depth,
         inputs=tuple(metas[:op.num_inputs]),
         outputs=tuple(metas[op.num_inputs:]),
     )
@@ -143,6 +155,56 @@ def record_region(directory: Path) -> list[RegionOp]:
     return read_region(path)
 
 
+def check_nests(ops: list[RegionOp]) -> list[str]:
+    """Return one line for each operation whose nest does not close on a parent one level up.
+
+    An operation of depth d > 0 runs inside its parent, which comes later with
+    the depth d - 1.  Each operation between the two runs inside the parent
+    too, so its depth is at least d.  An operation of the end of the region
+    has no parent in the region, and it holds no line.  O(n^2) in the
+    operations, for a region of 94.
+    """
+    problems = []
+    for index, op in enumerate(ops):
+        if op.depth == 0:
+            continue
+        for later in ops[index + 1:]:
+            if later.depth < op.depth:
+                if later.depth != op.depth - 1:
+                    problems.append(f"op {index} {op.name} of depth {op.depth} closes on {later.name} of depth "
+                                    f"{later.depth}")
+                break
+    return problems
+
+
+# The depths that the plan of the first compute path reads, as (name, the
+# shape of the first input, depth).  A lowering takes only the operations of
+# depth 0.
+EXPECTED_DEPTHS = (
+    ("aten::linear", "f32[8,16]", 0),
+    ("aten::addmm", "f32[24]", 1),
+    ("aten::copy_", "f32[8,24]", 2),
+    ("aten::relu", "f32[8,24]", 0),
+    ("aten::mse_loss", "f32[8,4]", 0),
+    ("aten::mean.out", "f32[8,4]", 1),
+    ("aten::sum.IntList_out", "f32[8,4]", 2),
+    ("aten::div_.Scalar", "f32[]", 2),
+)
+
+
+def check_expected_depths(ops: list[RegionOp]) -> list[str]:
+    """Return one line for each row of EXPECTED_DEPTHS that no operation of the forward pass matches."""
+    problems = []
+    for name, first_input, depth in EXPECTED_DEPTHS:
+        found = [op for op in ops if op.phase == "F" and op.name == name and op.inputs[:1] == (first_input,)]
+        if not found:
+            problems.append(f"the forward pass holds no {name} with the first input {first_input}")
+        elif any(op.depth != depth for op in found):
+            problems.append(f"{name} with the first input {first_input} has the depths "
+                            f"{sorted({op.depth for op in found})}, not {depth}")
+    return problems
+
+
 def main() -> int:
     """Record the region, then print it, write it, or compare it with the golden file."""
     with tempfile.TemporaryDirectory(prefix="crucible-region-ops-") as scratch:
@@ -151,15 +213,20 @@ def main() -> int:
     if "--print" in sys.argv:
         print("\n".join(lines))
         return 0
+    problems = check_nests(ops) + check_expected_depths(ops)
+    for line in problems:
+        print(f"  FAIL: {line}")
     if "--write" in sys.argv:
         GOLDEN.write_text("\n".join(lines) + "\n")
         print(f"test_region_ops: wrote {len(lines)} operations into {GOLDEN.name}")
-        return 0
+        return 1 if problems else 0
     golden = GOLDEN.read_text().splitlines()
     if lines != golden:
         print(f"  FAIL: the region of {len(lines)} operations is not the list of {len(golden)} operations of "
               f"{GOLDEN.name}.  If the change of the list is correct, run this file with --write")
         print("\n".join(difflib.unified_diff(golden, lines, GOLDEN.name, "the region", lineterm="")))
+        return 1
+    if problems:
         return 1
     print(f"test_region_ops: the region holds the {len(lines)} operations of {GOLDEN.name}")
     return 0
