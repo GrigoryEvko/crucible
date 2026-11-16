@@ -70,6 +70,16 @@ using Log = crucible::TransactionLog<16, SoloOwner>;
 // The smallest ring that the log admits.
 using SmallestLog = crucible::TransactionLog<4, SoloOwner>;
 
+// Each method of the log that stamps a transaction takes the bare tag of
+// Nondet, and a test context gives it.
+constexpr ::foundation::effects::cap::Nondet kTestNondet = ::foundation::effects::testing::test().nondet;
+
+// A body that holds the log but no tag of Nondet stamps nothing: each
+// stamping method takes the tag.
+static_assert(!std::is_invocable_v<decltype(&Log::rollback), Log&, SoloOwner const&>);
+static_assert(
+    std::is_invocable_v<decltype(&Log::rollback), Log&, SoloOwner const&, ::foundation::effects::cap::Nondet>);
+
 // The log reads the monotonic clock, so only a context whose row holds
 // Nondet builds one.  The drain row and the cold init row hold no Nondet.
 static_assert(crucible::CtxFitsTransactionLog<::fixy::TestRunnerCtx>);
@@ -118,9 +128,9 @@ static_assert(sizeof(crucible::Transaction::ArenaRegionLink) == sizeof(void*));
 // stage of a Vigil does for each region.  Returns the transaction that the
 // activation displaced.
 crucible::Transaction* publish(auto& log, const SoloOwner& owner, uint32_t step, crucible::RegionNode* region) {
-    auto& tx = log.begin_tx(owner, step);
-    assert(log.commit(owner, tx, arena_region(*region), region->content_hash, region->merkle_hash));
-    return log.activate(owner, tx).try_get();
+    auto& tx = log.begin_tx(owner, kTestNondet, step);
+    assert(log.commit(owner, kTestNondet, tx, arena_region(*region), region->content_hash, region->merkle_hash));
+    return log.activate(owner, kTestNondet, tx).try_get();
 }
 
 // The log holds the transaction of `step` as the active one, with its region.
@@ -164,12 +174,12 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
         for (uint32_t step = 1; step <= kSlots; ++step)
             (void)publish(log, owner, step, regions[step]);
         for (uint32_t step = kSlots; step > 1; --step)
-            assert(log.rollback(owner));
+            assert(log.rollback(owner, kTestNondet));
     } else {
         (void)publish(log, owner, 1, regions[1]);
         for (uint32_t step = 2; step <= kSlots; ++step) {
             (void)publish(log, owner, step, regions[step]);
-            assert(log.rollback(owner));
+            assert(log.rollback(owner, kTestNondet));
         }
     }
     assert(log.size(owner) == kSlots);
@@ -183,7 +193,7 @@ void claim_passes_over_the_active_slot(::foundation::effects::Alloc alloc, const
     expect_active(log, owner, kSlots + 1, regions[kSlots + 1]);
     assert(log.previous(owner).try_get() == displaced);
 
-    assert(log.rollback(owner));
+    assert(log.rollback(owner, kTestNondet));
     expect_active(log, owner, 1, regions[1]);
 }
 
@@ -199,34 +209,34 @@ void previous_follows_the_order_of_displacements(::foundation::effects::Alloc al
     std::array<crucible::Transaction*, kSteps + 1> txs{};
     for (uint32_t step = 1; step <= kSteps; ++step) {
         regions[step] = region_of_step(alloc, arena, step);
-        txs[step] = &log.begin_tx(owner, step);
-        assert(log.commit(owner, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
+        txs[step] = &log.begin_tx(owner, kTestNondet, step);
+        assert(log.commit(owner, kTestNondet, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
                           regions[step]->merkle_hash));
     }
 
     // The third transaction displaces nothing, the first displaces the
     // third, and the second displaces the first.
-    assert(log.activate(owner, *txs[3]).try_get() == nullptr);
-    assert(log.activate(owner, *txs[1]).try_get() == txs[3]);
-    assert(log.activate(owner, *txs[2]).try_get() == txs[1]);
+    assert(log.activate(owner, kTestNondet, *txs[3]).try_get() == nullptr);
+    assert(log.activate(owner, kTestNondet, *txs[1]).try_get() == txs[3]);
+    assert(log.activate(owner, kTestNondet, *txs[2]).try_get() == txs[1]);
     assert(log.previous(owner).try_get() == txs[1]);
 
-    assert(log.rollback(owner));
+    assert(log.rollback(owner, kTestNondet));
     expect_active(log, owner, 1, regions[1]);
     assert(log.previous(owner).try_get() == txs[3]);
 
     // A second displacement of the restored first transaction comes after
     // the displacement of the third, although its claim comes before.
-    assert(log.activate(owner, *txs[4]).try_get() == txs[1]);
+    assert(log.activate(owner, kTestNondet, *txs[4]).try_get() == txs[1]);
     assert(log.previous(owner).try_get() == txs[1]);
 
-    assert(log.rollback(owner));
+    assert(log.rollback(owner, kTestNondet));
     expect_active(log, owner, 1, regions[1]);
     assert(log.previous(owner).try_get() == txs[3]);
-    assert(log.rollback(owner));
+    assert(log.rollback(owner, kTestNondet));
     expect_active(log, owner, 3, regions[3]);
     assert(log.previous(owner).try_get() == nullptr);
-    assert(!log.rollback(owner));
+    assert(!log.rollback(owner, kTestNondet));
 }
 
 // A full ring recycles its oldest slot, but a claim must keep the rollback
@@ -244,24 +254,24 @@ void claim_keeps_the_target_of_out_of_order_activations(::foundation::effects::A
     std::array<crucible::Transaction*, kSlots + 1> txs{};
     for (uint32_t step = 1; step <= kSlots; ++step) {
         regions[step] = region_of_step(alloc, arena, step);
-        txs[step] = &log.begin_tx(owner, step);
-        assert(log.commit(owner, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
+        txs[step] = &log.begin_tx(owner, kTestNondet, step);
+        assert(log.commit(owner, kTestNondet, *txs[step], arena_region(*regions[step]), regions[step]->content_hash,
                           regions[step]->merkle_hash));
     }
-    assert(log.activate(owner, *txs[2]).try_get() == nullptr);
-    assert(log.activate(owner, *txs[1]).try_get() == txs[2]);
-    assert(log.activate(owner, *txs[3]).try_get() == txs[1]);
+    assert(log.activate(owner, kTestNondet, *txs[2]).try_get() == nullptr);
+    assert(log.activate(owner, kTestNondet, *txs[1]).try_get() == txs[2]);
+    assert(log.activate(owner, kTestNondet, *txs[3]).try_get() == txs[1]);
     assert(log.size(owner) == kSlots);
     assert(log.previous(owner).try_get() == txs[1]);
 
-    const crucible::Transaction* claimed = &log.begin_tx(owner, kSlots + 1);
+    const crucible::Transaction* claimed = &log.begin_tx(owner, kTestNondet, kSlots + 1);
     assert(claimed != txs[1] && claimed != txs[3] && claimed != txs[4]);
     assert(log.previous(owner).try_get() == txs[1]);
     assert(txs[1]->step_id.get() == 1);
     assert(txs[4]->status == crucible::TxStatus::COMMITTED);
     assert(txs[4]->step_id.get() == 4);
 
-    assert(log.rollback(owner));
+    assert(log.rollback(owner, kTestNondet));
     expect_active(log, owner, 1, regions[1]);
 }
 
@@ -282,19 +292,19 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
         regions[step] = region_of_step(alloc, arena, step);
         (void)publish(log, owner, step, regions[step]);
     }
-    (void)log.begin_tx(owner, kSlots + 1);
-    assert(log.rollback(owner));
+    (void)log.begin_tx(owner, kTestNondet, kSlots + 1);
+    assert(log.rollback(owner, kTestNondet));
     expect_active(log, owner, 3, regions[3]);
     const crucible::Transaction* target = log.previous(owner).try_get();
     assert(target != nullptr);
     assert(target->step_id.get() == 2);
 
-    const crucible::Transaction* claimed = &log.begin_tx(owner, kSlots + 2);
+    const crucible::Transaction* claimed = &log.begin_tx(owner, kTestNondet, kSlots + 2);
     assert(claimed != target && claimed != log.active(owner).try_get());
     assert(log.previous(owner).try_get() == target);
     assert(target->step_id.get() == 2);
 
-    assert(log.rollback(owner));
+    assert(log.rollback(owner, kTestNondet));
     expect_active(log, owner, 2, regions[2]);
 }
 
@@ -326,7 +336,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     assert(log.active(owner).try_get() == nullptr);
     assert(log.previous(owner).try_get() == nullptr);
 
-    auto* tx1 = &log.begin_tx(owner, 1);
+    auto* tx1 = &log.begin_tx(owner, kTestNondet, 1);
     assert(tx1->step_id.get() == 1);
     assert(tx1->status == crucible::TxStatus::RECORDING);
     assert(log.size(owner) == 1);
@@ -342,7 +352,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     assert(tx1->region.value().is_none());
     assert(!crucible::holds_region(*tx1, region1));
 
-    const bool committed = log.commit(owner, *tx1, arena_region(*region1), hash1, merkle1);
+    const bool committed = log.commit(owner, kTestNondet, *tx1, arena_region(*region1), hash1, merkle1);
     assert(committed);
     assert(tx1->status == crucible::TxStatus::COMMITTED);
     assert(tx1->content_hash == hash1);
@@ -353,53 +363,53 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     // earlier than a former one.
     assert(tx1->ts_ns.is_some() && stamp_nanos(*tx1) >= begun_at);
 
-    const bool double_commit = log.commit(owner, *tx1, arena_region(*region1), hash1, merkle1);
+    const bool double_commit = log.commit(owner, kTestNondet, *tx1, arena_region(*region1), hash1, merkle1);
     assert(!double_commit && "commit on COMMITTED tx must return false");
 
-    auto* prev = log.activate(owner, *tx1).try_get();
+    auto* prev = log.activate(owner, kTestNondet, *tx1).try_get();
     assert(prev == nullptr && "no previous ACTIVE on first activation");
     assert(tx1->status == crucible::TxStatus::ACTIVE);
     assert(log.active(owner).try_get() == tx1);
     assert(log.previous(owner).try_get() == nullptr);
 
-    auto* tx2 = &log.begin_tx(owner, 2);
+    auto* tx2 = &log.begin_tx(owner, kTestNondet, 2);
     assert(tx2->step_id.get() == 2);
     assert(tx2->status == crucible::TxStatus::RECORDING);
     assert(log.size(owner) == 2);
 
     const crucible::ContentHash hash2 = region2->content_hash;
     const crucible::MerkleHash merkle2 = region2->merkle_hash;
-    assert(log.commit(owner, *tx2, arena_region(*region2), hash2, merkle2));
+    assert(log.commit(owner, kTestNondet, *tx2, arena_region(*region2), hash2, merkle2));
     assert(tx2->status == crucible::TxStatus::COMMITTED);
 
-    auto* superseded = log.activate(owner, *tx2).try_get();
+    auto* superseded = log.activate(owner, kTestNondet, *tx2).try_get();
     assert(superseded == tx1 && "tx1 must be returned as the superseded tx");
     assert(tx1->status == crucible::TxStatus::SUPERSEDED);
     assert(tx2->status == crucible::TxStatus::ACTIVE);
     assert(log.active(owner).try_get() == tx2);
     assert(log.previous(owner).try_get() == tx1);
 
-    const bool rolled = log.rollback(owner);
+    const bool rolled = log.rollback(owner, kTestNondet);
     assert(rolled);
     assert(tx1->status == crucible::TxStatus::ACTIVE);
     assert(tx2->status == crucible::TxStatus::ROLLED_BACK);
     assert(log.active(owner).try_get() == tx1);
     assert(log.previous(owner).try_get() == nullptr && "no more SUPERSEDED after rollback");
 
-    const bool rolled2 = log.rollback(owner);
+    const bool rolled2 = log.rollback(owner, kTestNondet);
     assert(!rolled2 && "rollback with no SUPERSEDED must return false");
 
     // More entries than the ring holds, so it wraps at least once.
     for (uint32_t i = 3; i <= 32; i++) {
-        auto& tx = log.begin_tx(owner, i);
+        auto& tx = log.begin_tx(owner, kTestNondet, i);
         crucible::TraceEntry e{};
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
         const ::fixy::Ref<crucible::RegionNode> r =
             crucible::make_region(test.alloc, arena, arena.array<crucible::TraceEntry>(test.alloc, 1, e));
         // Recomputed before the commit, for the reason given above.
         crucible::recompute_merkle(*r);
-        assert(log.commit(owner, tx, arena_region(*r), r->content_hash, r->merkle_hash));
-        (void)log.activate(owner, tx);
+        assert(log.commit(owner, kTestNondet, tx, arena_region(*r), r->content_hash, r->merkle_hash));
+        (void)log.activate(owner, kTestNondet, tx);
     }
     // The loop ends at 32, so the last transaction is the active one.
     assert(log.active(owner).has_value());
@@ -419,7 +429,7 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     {
         crucible::Transaction stamped{};
         const auto reader = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
-        crucible::stamp_transaction(stamped, reader.read());
+        crucible::stamp_transaction(stamped, reader.read(kTestNondet));
         assert(stamped.ts_ns.is_some());
         const ::fixy::Result<crucible::Transaction::Timestamp, ::foundation::os::Errno> failed_read{
             ::fixy::err(::foundation::os::Errno::eio)};

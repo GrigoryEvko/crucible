@@ -4749,6 +4749,22 @@ fixy_neg_compile_test(neg_endpoint_mpsc_consumer_ctx_without_nondet
 fixy_neg_compile_test(neg_os_socket_receive_ctx_without_nondet
   "no matching function for call to .receive_bytes\\(const \\{anonymous\\}::IoBlockCtx&"
   "required for the satisfaction of .CtxFitsSocketCall<Ctx>.")
+# The read of a clock reader takes the bare tag of Nondet, so the gate holds
+# at each read and not only at the mint.  A read with no tag has no
+# overload.  A reader that a reference takes into a body under the drain
+# context reads nothing there, because the drain context gives no tag.  The
+# field nondet of the background source is out of reach of a narrow
+# context, because cap() lends the source only to a context whose row holds
+# each atom of the source.
+fixy_neg_compile_test(neg_os_clock_reader_read_without_nondet_tag
+  "no matching function for call to .fixy::time::ClockReader<foundation::algebra::lattices::ClockSource::Monotonic>::read\\(\\) const."
+  "candidate expects 1 argument, 0 provided")
+fixy_neg_compile_test(neg_os_clock_reader_read_in_body_without_nondet
+  "no matching function for call to .extract_bare_from_ctx<foundation::effects::Effect::Nondet>\\(const fixy::BgDrainCtx&\\)."
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, E>.")
+fixy_neg_compile_test(neg_nondet_tag_from_the_source_of_a_narrow_ctx
+  "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >::cap\\(\\) const."
+  "required for the satisfaction of .Subrow<foundation::effects::cap_permitted_row_t<Cap>, Row>.")
 fixy_neg_compile_test(neg_os_clock_reader_direct_ctor
   "is private within this context"
   "ClockReader\\(\\) \\[with foundation::algebra::lattices::ClockSource Source = foundation::algebra::lattices::ClockSource::Monotonic\\]")

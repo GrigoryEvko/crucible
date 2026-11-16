@@ -40,6 +40,7 @@
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Time.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Capability.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
@@ -111,7 +112,9 @@ public:
         // The reader is new on each call, so its clamp never replaces a
         // reading.
         const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(ctx);
-        return observe_at(ctx, boot_clock.read());
+        return observe_at(
+            ctx,
+            boot_clock.read(::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx)));
     }
 
     // The same step, over a boot-clock reading that the caller took.  A

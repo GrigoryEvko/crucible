@@ -259,7 +259,7 @@ static void test_linux_boundaries_if_available() {
     auto clock = topology::open_ptp_clock(bg_fs, std::move(index0).expect("0 is a device index"));
     if (clock.is_ok()) {
         topology::PtpClockReader const reader = std::move(clock).expect("the clock opened");
-        auto stamp = topology::ptp_now(reader);
+        auto stamp = topology::ptp_now(reader, ::foundation::effects::testing::test().nondet);
         assert(stamp.is_ok() || error_of(stamp) == topology::PtpError::ClockReadFailed
                || error_of(stamp) == topology::PtpError::TimestampOverflow);
         auto caps = topology::query_ptp_clock_caps(reader);

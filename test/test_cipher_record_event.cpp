@@ -87,7 +87,9 @@ static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view,
 // A reading of CLOCK_MONOTONIC in nanoseconds.
 [[nodiscard]] static std::uint64_t monotonic_now_ns() {
     const auto clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(store_ctx());
-    return clock.read().expect("the monotonic clock gives a reading").peek();
+    return clock.read(::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(store_ctx()))
+        .expect("the monotonic clock gives a reading")
+        .peek();
 }
 
 static void test_t01_required_row_pinned() {

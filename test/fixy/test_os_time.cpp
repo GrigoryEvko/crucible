@@ -144,6 +144,10 @@ using BootU64 = fixy::BootClockBytes<std::uint64_t>;
 using MonoU64 = fixy::MonotonicClockBytes<std::uint64_t>;
 using foundation::os::Errno;
 
+// The read of each reader takes the bare tag of Nondet, and a test context
+// gives it.
+constexpr eff::cap::Nondet kTestNondet = eff::testing::test().nondet;
+
 // The value of a reading, or zero for a read that failed.
 template <typename Reading>
 [[nodiscard]] std::uint64_t peek_or_zero(Reading const& reading) noexcept {
@@ -195,8 +199,8 @@ using BgWitness = fixy::BgObserveCtx;
     InitWitness init{eff::testing::init()};
     auto boot_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Boot>(init);
 
-    auto earlier_read = boot_reader.read();
-    auto later_read = boot_reader.read();
+    auto earlier_read = boot_reader.read(kTestNondet);
+    auto later_read = boot_reader.read(kTestNondet);
     if (earlier_read.is_err() || later_read.is_err()) {
         std::fprintf(stderr, "a read of the boot clock failed\n");
         return 1;
@@ -245,7 +249,7 @@ using BgWitness = fixy::BgObserveCtx;
     // stays nameable for the gates that read it.  The PTP source has a
     // reader of its own, and a case below exercises it.
     auto realtime_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Realtime>(init);
-    if (peek_or_zero(realtime_reader.read()) == 0) {
+    if (peek_or_zero(realtime_reader.read(kTestNondet)) == 0) {
         std::fprintf(stderr, "the realtime clock read zero, which a running system never does\n");
         return 1;
     }
@@ -258,7 +262,7 @@ using BgWitness = fixy::BgObserveCtx;
     BlockWitness blocking{eff::testing::test()};
 
     auto boot_reader = fixy::time::mint_clock_reader<fixy::ClockSource_v::Boot>(init);
-    if (peek_or_zero(boot_reader.read()) == 0) {
+    if (peek_or_zero(boot_reader.read(kTestNondet)) == 0) {
         std::fprintf(stderr, "the boot clock read zero, which a running system never does\n");
         return 1;
     }
@@ -300,9 +304,9 @@ using BgWitness = fixy::BgObserveCtx;
 
     auto sleeper = fixy::time::mint_bounded_sleep<sleep_nanos>(blocking);
     auto clock = fixy::time::mint_clock_reader<fixy::ClockSource_v::Monotonic>(bg);
-    const auto before = clock.read();
+    const auto before = clock.read(kTestNondet);
     const auto slept = sleeper.sleep_for(sleep_nanos);
-    const auto after = clock.read();
+    const auto after = clock.read(kTestNondet);
     is_sleep_done.store(true, std::memory_order_release);
     signaller.join();
 
@@ -407,8 +411,8 @@ using BgWitness = fixy::BgObserveCtx;
         return 1;
     }
     const auto tsc = std::move(reader).expect("the TSC mint gave a reader");
-    const auto first = tsc.read();
-    const auto second = tsc.read();
+    const auto first = tsc.read(kTestNondet);
+    const auto second = tsc.read(kTestNondet);
     if (first.is_err() || second.is_err()) {
         std::fprintf(stderr, "a TSC read on the pinned thread gave an error\n");
         return 1;
@@ -479,7 +483,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     // The read on the other thread gives Errno::eperm and no reading.
     bool is_refused_on_other_thread = false;
     std::jthread other([moved = std::move(reader).expect("the TSC mint gave a reader"), &is_refused_on_other_thread] {
-        is_refused_on_other_thread = moved.read().err().value_or(Errno::eio) == Errno::eperm;
+        is_refused_on_other_thread = moved.read(kTestNondet).err().value_or(Errno::eio) == Errno::eperm;
     });
     other.join();
     if (!is_refused_on_other_thread) {
@@ -494,7 +498,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     }
     const auto second_reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(*second_pin))
                                    .expect("the TSC mint gives a reader over a pin in force");
-    if (second_reader.read().is_err()) {
+    if (second_reader.read(kTestNondet).is_err()) {
         std::fprintf(stderr, "a reader over a pin in force did not read\n");
         return 1;
     }
@@ -502,7 +506,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
         std::fprintf(stderr, "a runtime pin to CPU 0 failed where a mint to CPU 0 succeeded\n");
         return 1;
     }
-    if (second_reader.read().err().value_or(Errno::eio) != Errno::eperm) {
+    if (second_reader.read(kTestNondet).err().value_or(Errno::eio) != Errno::eperm) {
         std::fprintf(stderr, "a TSC reader read after its thread pinned again, or gave no eperm\n");
         return 1;
     }
@@ -523,8 +527,8 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     auto monotonic = fixy::time::mint_clock_reader<fixy::ClockSource_v::Monotonic>(bg);
     auto realtime = fixy::time::mint_clock_reader<fixy::ClockSource_v::Realtime>(init);
 
-    const auto first = monotonic.read();
-    const auto second = monotonic.read();
+    const auto first = monotonic.read(kTestNondet);
+    const auto second = monotonic.read(kTestNondet);
     if (first.is_err() || second.is_err()) {
         std::fprintf(stderr, "a read of the monotonic clock failed\n");
         return 1;
@@ -533,7 +537,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
         std::fprintf(stderr, "the monotonic reader returned a lower value on its second read\n");
         return 1;
     }
-    if (peek_or_zero(realtime.read()) == 0) {
+    if (peek_or_zero(realtime.read(kTestNondet)) == 0) {
         std::fprintf(stderr, "the realtime clock read zero, which a running system never does\n");
         return 1;
     }
@@ -584,7 +588,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     auto minted = fixy::time::mint_ptp_clock_reader(bg, index);
     if (minted.is_ok()) {
         const auto reader = std::move(minted).expect("the PTP mint gave a reader");
-        if (reader.read().err().value_or(Errno::eio) == Errno::erange) {
+        if (reader.read(kTestNondet).err().value_or(Errno::eio) == Errno::erange) {
             std::fprintf(stderr, "the PTP clock returned a negative or out-of-range timespec\n");
             return 1;
         }

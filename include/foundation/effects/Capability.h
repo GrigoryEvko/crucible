@@ -202,6 +202,16 @@ template <Effect E, IsExecCtx Ctx>
     return Capability<E, cap_type_of_t<Ctx>>{cap_mint_key{}};
 }
 
+// The bare tag of the atom E, from a context whose row holds E.  It is the
+// short form of extract_bare(mint_from_ctx<E>(ctx)), for a door that takes a
+// bare tag.  The read of a clock reader and the pop of a merge take
+// cap::Nondet in this form.
+template <Effect E, IsExecCtx Ctx>
+    requires CtxOwnsCapability<Ctx, E> && HasBareTag<E>
+[[nodiscard]] constexpr bare_tag_t<E> extract_bare_from_ctx(Ctx const& ctx) noexcept {
+    return extract_bare(mint_from_ctx<E>(ctx));
+}
+
 // The capability may have been minted in another scope.  This says the
 // surrounding context is still authorized for that effect.
 template <class Cap, class Ctx>

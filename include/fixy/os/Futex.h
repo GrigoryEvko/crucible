@@ -76,24 +76,28 @@ enum class WaitEnd : std::uint8_t {
 };
 
 // A reader of the monotonic clock of fixy/os/Time.h: its read gives a
-// reading of CLOCK_MONOTONIC, the clock of a deadline.
+// reading of CLOCK_MONOTONIC, the clock of a deadline.  The read takes the
+// bare tag of Nondet.
 template <typename Clock>
-concept MonotonicClockReader =
-    std::same_as<typename Clock::result_type, MonotonicClockBytes<std::uint64_t>> && requires(Clock const& clock) {
-        { clock.read() } -> std::same_as<core::Result<MonotonicClockBytes<std::uint64_t>, os::Errno>>;
-    };
+concept MonotonicClockReader = std::same_as<typename Clock::result_type, MonotonicClockBytes<std::uint64_t>>
+                            && requires(Clock const& clock, eff::cap::Nondet nondet) {
+                                   {
+                                       clock.read(nondet)
+                                   } -> std::same_as<core::Result<MonotonicClockBytes<std::uint64_t>, os::Errno>>;
+                               };
 
 // An absolute time of CLOCK_MONOTONIC, in nanoseconds (THE DEADLINE).
 class Deadline final {
 public:
     // The time BOUND_NANOS after a read of CLOCK, as a Result<Deadline,
     // os::Errno>.  A sum past the last time of the clock gives the last time.
-    // A read that fails gives its error number.  The return type is deduced,
-    // because the class is complete only in the body.
+    // A read that fails gives its error number.  The read takes the bare tag
+    // of Nondet.  The return type is deduced, because the class is complete
+    // only in the body.
     template <MonotonicClockReader Clock>
-    [[nodiscard]] static auto after(Clock const& clock, std::uint64_t bound_nanos) noexcept {
+    [[nodiscard]] static auto after(Clock const& clock, eff::cap::Nondet nondet, std::uint64_t bound_nanos) noexcept {
         using Answer = core::Result<Deadline, os::Errno>;
-        return clock.read().match(
+        return clock.read(nondet).match(
             [bound_nanos](MonotonicClockBytes<std::uint64_t> reading) noexcept -> Answer {
                 std::uint64_t end = 0;
                 if (__builtin_add_overflow(reading.peek(), bound_nanos, &end)) {

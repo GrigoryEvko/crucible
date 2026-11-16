@@ -22,6 +22,7 @@ int main() {
     const auto boot_reader = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(ctx);
 
     crucible::Transaction tx{};
-    tx.ts_ns = ::fixy::Option<crucible::Transaction::Timestamp>::some(boot_reader.read().expect("a reading"));
+    tx.ts_ns =
+        ::fixy::Option<crucible::Transaction::Timestamp>::some(boot_reader.read(ctx.cap().nondet).expect("a reading"));
     return 0;
 }

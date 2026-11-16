@@ -1885,10 +1885,10 @@ crucible_neg_compile_test(neg_transaction_log_capacity_two
 # under the Loaded tag, the tag of a loaded region, both fail at the commit
 # boundary.
 crucible_neg_compile_test(neg_transaction_region_raw_pointer
-  "neg_transaction_region_raw_pointer.cpp:31:33: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
+  "neg_transaction_region_raw_pointer.cpp:32:41: error: cannot convert .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion."
   "\\{aka .fixy::Tagged<foundation::core::Ref<crucible::RegionNode>, fixy::tags::source::Arena>.\\}")
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
-  "neg_transaction_region_loaded_cross_tag.cpp:36:33: error: cannot convert"
+  "neg_transaction_region_loaded_cross_tag.cpp:37:41: error: cannot convert"
   ".Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
 
 # Transaction::step_id is fixy::Monotonic<uint64_t>.
@@ -1904,7 +1904,7 @@ crucible_neg_compile_test(neg_transaction_step_id_advance_retrograde
   "error: .__builtin_trap\\(\\). is not a constant expression")
 
 # The log holds a monotonic clock reader, so CtxFitsTransactionLog admits
-# only a context whose row claims Bg, Init or Test.
+# only a context whose row claims Nondet.
 #   * neg_transaction_log_foreground_ctx: the foreground context.
 #   * neg_transaction_log_bg_cap_without_bg_row: a background capability
 #     with a row that claims Alloc alone.
@@ -1921,8 +1921,8 @@ crucible_neg_compile_test(neg_transaction_log_bg_cap_without_bg_row
 # built by the background thread alone, and neither bit_cast nor the
 # checked lifetime start can make one from bytes.
 crucible_neg_compile_test(neg_transaction_log_rollback_without_owner
-  "neg_transaction_log_rollback_without_owner.cpp:26:23: error: no matching function for call to .crucible::TransactionLog<16, Owner>::rollback\\(\\)."
-  "candidate expects 1 argument, 0 provided")
+  "neg_transaction_log_rollback_without_owner.cpp:27:23: error: no matching function for call to .crucible::TransactionLog<16, Owner>::rollback\\(foundation::effects::cap::Nondet\\)."
+  "candidate expects 2 arguments, 1 provided")
 crucible_neg_compile_test(neg_transaction_log_copyable_owner
   "neg_transaction_log_copyable_owner.cpp:16:47: error: template constraint failure for .template<unsigned int N, class Owner>  requires  OwnerProof<Owner> class crucible::TransactionLog."
   "the expression .!\\(is_copy_constructible_v<P>\\) \\[with P = CopyableOwner\\]. evaluated to .false.")
@@ -3143,7 +3143,7 @@ crucible_neg_compile_test(neg_transaction_ts_ns_bare_u64_assign
   "neg_transaction_ts_ns_bare_u64_assign.cpp:18:70: error: no matching function for call to .foundation::core::Option<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >::some\\(uint64_t\\)."
   "required for the satisfaction of .constructible_from<T, U&&>. \\[with T = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>; U = long unsigned int\\]")
 crucible_neg_compile_test(neg_transaction_ts_ns_cross_source
-  "neg_transaction_ts_ns_cross_source.cpp:25:70: error: no matching function for call to .foundation::core::Option<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >::some\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\)."
+  "neg_transaction_ts_ns_cross_source.cpp:26:63: error: no matching function for call to .foundation::core::Option<fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int> >::some\\(fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\)."
   "required for the satisfaction of .constructible_from<T, U&&>. \\[with T = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Monotonic, long unsigned int>; U = fixy::ClockSource<foundation::algebra::lattices::ClockSource::Boot, long unsigned int>\\]")
 
 # ─── hash_family_of HS14 negative-compile fixtures ────────────────

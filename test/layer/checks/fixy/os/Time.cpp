@@ -38,6 +38,16 @@ static_assert(!std::is_constructible_v<TscReader<TscMode::Raw, SinglePin>, Singl
 static_assert(!std::is_copy_constructible_v<TscReader<TscMode::Raw, SinglePin>>);
 static_assert(std::is_nothrow_move_constructible_v<TscReader<TscMode::Raw, SinglePin>>);
 
+// The read of each reader takes the bare tag of Nondet, so a body that holds
+// a reader and no tag reads nothing.
+template <class Reader>
+concept ReadsWithNoTag = requires(Reader const& reader) { reader.read(); };
+template <class Reader>
+concept ReadsWithTag = requires(Reader const& reader, eff::cap::Nondet nondet) { reader.read(nondet); };
+static_assert(!ReadsWithNoTag<MonotonicClock> && ReadsWithTag<MonotonicClock>);
+static_assert(!ReadsWithNoTag<TscReader<TscMode::Raw, SinglePin>> && ReadsWithTag<TscReader<TscMode::Raw, SinglePin>>);
+static_assert(!ReadsWithNoTag<PtpClockReader> && ReadsWithTag<PtpClockReader>);
+
 // The gate of the TSC mint: a context off the foreground path, a pin the
 // caller gives up, and the explicit posture.
 using AutoPin = sf::CpuPinned<ml::AffinityMask::single(0), sf::PinningPosture::PinnedAuto, int>;

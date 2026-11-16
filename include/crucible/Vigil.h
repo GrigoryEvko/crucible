@@ -481,7 +481,11 @@ public:
     // rollback replaces the restored region.  The foreground part then acts
     // on that copy alone, on the producer thread (adopt_region_).  The body
     // is in src/Vigil.cpp.
-    [[nodiscard, gnu::cold]] bool rollback();
+    //
+    // The job stamps the two transactions with the monotonic clock, so the
+    // rollback takes the bare tag of Nondet.  The foreground context holds no
+    // Nondet, so the caller gives the tag of its own context.
+    [[nodiscard, gnu::cold]] bool rollback(::foundation::effects::cap::Nondet nondet);
 
     // Traverses the compiled DAG without the adapter.  eval_guard takes a
     // guard and returns the currently observed value; exec_region executes

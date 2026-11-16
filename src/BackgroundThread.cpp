@@ -26,6 +26,7 @@
 #include <foundation/Linear.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/effects/Capability.h>
 #include <foundation/permissions/Permission.h>
 
 #include <algorithm>
@@ -94,8 +95,9 @@ inline constexpr uint64_t MAILBOX_MAX_SLEEP_NANOS = 1000000;
 [[nodiscard]] inline ::fixy::Option<::fixy::futex::Deadline> deadline_after(::fixy::BgLoadCtx const& ctx,
                                                                             uint64_t nanos) noexcept {
     const auto clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
-    return ::fixy::some(
-        ::fixy::futex::Deadline::after(clock, nanos).expect("the monotonic clock gives the deadline of a park"));
+    const auto nondet = ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx);
+    return ::fixy::some(::fixy::futex::Deadline::after(clock, nondet, nanos)
+                            .expect("the monotonic clock gives the deadline of a park"));
 }
 
 // The wait word of one channel of the pipeline.  The consumer parks on it

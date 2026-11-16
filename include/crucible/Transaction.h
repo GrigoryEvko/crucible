@@ -128,9 +128,11 @@ concept OwnerProof =
     && !std::is_default_constructible_v<P> && !std::is_trivially_copyable_v<P> && !std::is_implicit_lifetime_v<P>;
 
 // The log stamps each transaction with the monotonic clock, and a clock
-// reader is minted only by a context that owns Bg, Init or Test.  So the
-// log is built only from such a context.  The foreground dispatch path is
-// replay-bound and reads no clock.
+// reader is minted only by a context whose row holds Nondet.  So the log is
+// built only from such a context.  Each method that stamps a transaction
+// takes the bare tag of Nondet as well, because the read of the reader takes
+// it.  So a body whose context holds no Nondet, such as the foreground
+// dispatch path, stamps nothing through a log that it reaches.
 template <typename Ctx>
 concept CtxFitsTransactionLog = ::fixy::time::CtxFitsClockReaderMint<Ctx, ::fixy::ClockSource_v::Monotonic>;
 
@@ -171,7 +173,8 @@ public:
     TransactionLog(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
     TransactionLog& operator=(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
 
-    [[nodiscard, gnu::cold]] Transaction& begin_tx(Owner const& owner, uint64_t step_id) noexcept {
+    [[nodiscard, gnu::cold]] Transaction& begin_tx(Owner const& owner, ::foundation::effects::cap::Nondet nondet,
+                                                   uint64_t step_id) noexcept {
         // A full ring claims its oldest slot, but two slots must stay.  A
         // rollback can make a transaction of any age the active one.  If a
         // claim recycles that slot, the live transaction ends.  Then activate
@@ -196,7 +199,7 @@ public:
         // Set rather than assigned, so a later edit cannot reintroduce a write
         // that goes backwards.
         tx.step_id.advance(step_id);
-        stamp_transaction(tx, clock_.read());
+        stamp_transaction(tx, clock_.read(nondet));
         // A failed clock read leaves the
         // timestamp empty, so the postcondition of stamp_transaction states
         // the timestamp, and none here does.  A contract predicate reads each
@@ -216,7 +219,8 @@ public:
     // committed entry carrying zero is indistinguishable from an uncommitted
     // one and any search over the log becomes ambiguous. Refusing it here also
     // catches the case where the commit runs before the hash was recomputed.
-    [[nodiscard]] bool commit(Owner const&, Transaction& tx, Transaction::ArenaRegion region, ContentHash content_hash,
+    [[nodiscard]] bool commit(Owner const&, ::foundation::effects::cap::Nondet nondet, Transaction& tx,
+                              Transaction::ArenaRegion region, ContentHash content_hash,
                               MerkleHash merkle_root) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(merkle_root));
         if (tx.status != TxStatus::RECORDING && tx.status != TxStatus::CLOSED) {
@@ -229,7 +233,7 @@ public:
         tx.content_hash = content_hash;
         tx.merkle_root = merkle_root;
         tx.status = TxStatus::COMMITTED;
-        stamp_transaction(tx, clock_.read());
+        stamp_transaction(tx, clock_.read(nondet));
         // Dropping any one of these assignments leaves the field at the value
         // the slot was reset to, which reads as an uncommitted transaction.
         CRUCIBLE_POST(true, tx.status == TxStatus::COMMITTED);
@@ -241,7 +245,8 @@ public:
 
     // Returns the transaction this one displaces, which is the target a
     // rollback would restore, or an empty reference if there was none.
-    [[nodiscard]] ::fixy::WeakRef<Transaction> activate(Owner const&, Transaction& tx) noexcept {
+    [[nodiscard]] ::fixy::WeakRef<Transaction> activate(Owner const&, ::foundation::effects::cap::Nondet nondet,
+                                                        Transaction& tx) noexcept {
         if (tx.status != TxStatus::COMMITTED) {
             CRUCIBLE_POST(0, true || tx.status == TxStatus::ACTIVE);
             return ::fixy::WeakRef<Transaction>{};
@@ -252,11 +257,11 @@ public:
             prev->status = TxStatus::SUPERSEDED;
             displacements_.bump();
             prev->displacement_order.advance(displacements_.get());
-            stamp_transaction(*prev, clock_.read());
+            stamp_transaction(*prev, clock_.read(nondet));
         }
 
         tx.status = TxStatus::ACTIVE;
-        stamp_transaction(tx, clock_.read());
+        stamp_transaction(tx, clock_.read(nondet));
         active_tx_ = ::fixy::mint_tagged<::fixy::tags::source::Ring>(&tx);
         // The displaced transaction must end up in the superseded state, since
         // that is what a rollback searches for.  It must also hold the newest
@@ -277,17 +282,17 @@ public:
 
     // Restores the most recently displaced transaction and marks the current
     // one rolled back. Returns false when there is nothing to restore.
-    [[nodiscard]] bool rollback(Owner const& owner) noexcept {
+    [[nodiscard]] bool rollback(Owner const& owner, ::foundation::effects::cap::Nondet nondet) noexcept {
         const ::fixy::WeakRef<Transaction> prev = previous(owner);
         if (!prev.has_value()) return false;
 
         const ::fixy::WeakRef<Transaction> current = active_ref_();
         if (current.has_value()) {
             current->status = TxStatus::ROLLED_BACK;
-            stamp_transaction(*current, clock_.read());
+            stamp_transaction(*current, clock_.read(nondet));
         }
         prev->status = TxStatus::ACTIVE;
-        stamp_transaction(*prev, clock_.read());
+        stamp_transaction(*prev, clock_.read(nondet));
         active_tx_ = ::fixy::mint_tagged<::fixy::tags::source::Ring>(prev.try_get());
         return true;
     }
@@ -354,7 +359,8 @@ public:
     }
 
 private:
-    static_assert(std::is_same_v<decltype(std::declval<::fixy::time::MonotonicClock const&>().read()),
+    static_assert(std::is_same_v<decltype(std::declval<::fixy::time::MonotonicClock const&>().read(
+                                     std::declval<::foundation::effects::cap::Nondet>())),
                                  ::fixy::Result<Transaction::Timestamp, ::foundation::os::Errno>>,
                   "the log's clock reader must return the reading a transaction stores, or the error of a failed read");
 

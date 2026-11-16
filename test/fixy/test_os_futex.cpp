@@ -13,6 +13,7 @@
 #include <foundation/Quarantine.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/effects/Capability.h>
 #include <foundation/effects/Ctx.h>
 
 #include <cstdint>
@@ -132,7 +133,8 @@ constexpr std::uint64_t kMillisecond = 1000000U;
 // The deadline BOUND_NANOS after now.
 [[nodiscard]] Deadline deadline_after(BlockCtx const& ctx, std::uint64_t bound_nanos) noexcept {
     auto const clock = ::fixy::time::mint_clock_reader<ClockSource_v::Monotonic>(ctx);
-    return Deadline::after(clock, bound_nanos).expect("the monotonic clock gives a reading");
+    return Deadline::after(clock, eff::extract_bare_from_ctx<eff::Effect::Nondet>(ctx), bound_nanos)
+        .expect("the monotonic clock gives a reading");
 }
 
 // A word that does not hold the expected value ends the wait at once.

@@ -227,7 +227,8 @@ void test_divergence_drops_a_half_finished_alignment() {
     assert(!vigil.context().is_compiled() && "two ops are short of the K that activates");
 
     // Compile the context out from under the open walk.
-    assert(vigil.rollback() && "rollback() needs the superseded transaction the second region left");
+    assert(vigil.rollback(::foundation::effects::testing::test().nondet)
+           && "rollback() needs the superseded transaction the second region left");
     assert(vigil.context().is_compiled() && "rollback() must activate the restored region");
 
     OpData foreign_op = op_at(9, 0);
@@ -302,7 +303,8 @@ void test_rollback_drops_the_region_in_the_slot() {
     publish_planless_then_planned(vigil);
     assert(vigil.has_pending_region());
 
-    assert(vigil.rollback() && "the second region left a superseded transaction");
+    assert(vigil.rollback(::foundation::effects::testing::test().nondet)
+           && "the second region left a superseded transaction");
     assert(!vigil.context().is_compiled() && "a region with no memory plan cannot replay");
 
     const uint64_t produced_before = vigil.ring_total_produced();
@@ -336,7 +338,8 @@ void test_rollback_closes_an_open_alignment() {
     }
     assert(!vigil.has_pending_region() && "the first dispatch takes the region and opens the walk");
 
-    assert(vigil.rollback() && "the second region left a superseded transaction");
+    assert(vigil.rollback(::foundation::effects::testing::test().nondet)
+           && "the second region left a superseded transaction");
     assert(!vigil.context().is_compiled() && "a region with no memory plan cannot replay");
 
     const uint64_t produced_before = vigil.ring_total_produced();

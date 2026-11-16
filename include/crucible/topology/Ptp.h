@@ -349,7 +349,10 @@ timestamp_packet_view(::fixy::View<std::byte const> payload, PtpTimestampNs time
 
 [[nodiscard]] ::fixy::Result<PtpClockCaps, PtpError> query_ptp_clock_caps(PtpClockReader const& clock) noexcept;
 
-[[nodiscard]] ::fixy::Result<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock) noexcept;
+// The read of the clock takes the bare tag of Nondet, which only a context
+// whose row holds Nondet gives.
+[[nodiscard]] ::fixy::Result<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock,
+                                                               ::foundation::effects::cap::Nondet nondet) noexcept;
 
 namespace detail {
 

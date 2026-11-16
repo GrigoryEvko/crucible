@@ -17,6 +17,6 @@ namespace eff = ::foundation::effects;
 int main() {
     eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Nondet>> const ctx{eff::testing::bg()};
     auto const clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::MonotonicRaw>(ctx);
-    [[maybe_unused]] auto deadline = ::fixy::futex::Deadline::after(clock, 1000);
+    [[maybe_unused]] auto deadline = ::fixy::futex::Deadline::after(clock, eff::testing::bg().nondet, 1000);
     return 0;
 }

@@ -52,9 +52,10 @@ timestamp_from_stamp(::foundation::os::KernelTimespec const& stamp) noexcept {
 // The reading is stamped as a PHC reading by the reader, which read it from
 // the clock of its own descriptor.  The value keeps that provenance under
 // the Ptp source tag.
-::fixy::Result<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock) noexcept {
+::fixy::Result<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock,
+                                                 ::foundation::effects::cap::Nondet nondet) noexcept {
     using Stamped = ::fixy::Result<PtpTimestampNs, PtpError>;
-    return clock.read().match(
+    return clock.read(nondet).match(
         [](::fixy::PtpHwClockBytes<std::uint64_t> reading) noexcept -> Stamped {
             return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::move(reading).consume());
         },

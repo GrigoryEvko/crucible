@@ -269,10 +269,10 @@ concept IsOwnedExplicitSingletonPin = IsSingletonCpuPin<PinT> && !std::is_refere
 // or kernel context holds no Nondet, so no clock value reaches the result
 // of such a context.  The name says monotonic, but the gate holds for
 // every source, the counter and the PTP clock too, because the argument
-// does not depend on which clock diverges.  The gate is on the mint.  A
-// clock reader has no copy and no move, and a counter reader or a PTP
-// reader owns its pin or its descriptor, so each reader stays with the
-// evidence of the frame of its mint.
+// does not depend on which clock diverges.  The gate is on the mint and on
+// each read.  The read of each reader takes the bare tag of Nondet, which
+// only a context whose row holds Nondet gives.  So a reader that a reference
+// takes into a body with no Nondet does not read there.
 template <typename Ctx>
 concept CtxFitsMonotonicClock = eff::CtxOwnsCapability<Ctx, eff::Effect::Nondet>;
 
@@ -328,8 +328,11 @@ struct ClockReader final {
 
     // A read that fails, or that returns a value the stamp cannot hold,
     // gives an error and no reading.  The floor of a clamped reader does
-    // not move on a failed read.
-    [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno> read() const noexcept {
+    // not move on a failed read.  The read takes the bare tag of Nondet, so
+    // a reader that a reference takes into a body whose context holds no
+    // Nondet does not read there.
+    [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno>
+    read(eff::cap::Nondet) const noexcept {
         using Reading = ::foundation::core::Result<result_type, ::foundation::os::Errno>;
         return detail::read_clock_nanos(clockid_for(Source))
             .match(
@@ -415,7 +418,10 @@ struct TscReader final {
     TscReader& operator=(TscReader&&) noexcept = default;
     ~TscReader() = default;
 
-    [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno> read() const noexcept {
+    // The read takes the bare tag of Nondet, as the read of a clock reader
+    // does.
+    [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno>
+    read(eff::cap::Nondet) const noexcept {
         if (!pin_.is_in_force()) [[unlikely]] {
             return ::foundation::core::err(::foundation::os::Errno::eperm);
         }
@@ -496,7 +502,10 @@ struct PtpClockReader final {
     PtpClockReader& operator=(PtpClockReader&&) noexcept = default;
     ~PtpClockReader() = default;
 
-    [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno> read() const noexcept {
+    // The read takes the bare tag of Nondet, as the read of a clock reader
+    // does.
+    [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno>
+    read(eff::cap::Nondet) const noexcept {
         using Reading = ::foundation::core::Result<result_type, ::foundation::os::Errno>;
         return detail::read_ptp_clock_nanos(fd_.get()).match(
             [](std::uint64_t nanos) noexcept -> Reading {

@@ -244,7 +244,8 @@ int main() {
             DeadlineWatchdog sensing =
                 mint_deadline_watchdog(startup, crucible::warden::WatchdogSource::some(::fixy::to(senses)), policy);
             const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(runner);
-            const auto reading = boot_clock.read();
+            const auto reading = boot_clock.read(
+                ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(runner));
             if (reading.is_err()) {
                 std::fprintf(stderr, "a read of the boot clock failed\n");
                 ++failures;

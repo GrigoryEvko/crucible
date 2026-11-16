@@ -158,19 +158,20 @@ template <typename Result>
 void realtime_reader_refuses_what_it_cannot_stamp(Tally& tally) {
     const fixy::TestRunnerCtx ctx{eff::testing::test()};
     const auto realtime = fixy::time::mint_clock_reader<fixy::ClockSource_v::Realtime>(ctx);
+    const eff::cap::Nondet nondet = ctx.cap().nondet;
 
     give_each_read(2, 5);
-    const auto fixed = realtime.read();
+    const auto fixed = realtime.read(nondet);
     fail_each_read(EINVAL);
-    const auto asked_the_kernel = realtime.read();
+    const auto asked_the_kernel = realtime.read(nondet);
     give_each_read(-5, 0);
-    const auto before_epoch = realtime.read();
+    const auto before_epoch = realtime.read(nondet);
     give_each_read(0, -1);
-    const auto negative_nanos = realtime.read();
+    const auto negative_nanos = realtime.read(nondet);
     give_each_read(0, 1000000000);
-    const auto full_second = realtime.read();
+    const auto full_second = realtime.read(nondet);
     give_each_read(max_seconds, 999999999);
-    const auto past_64_bits = realtime.read();
+    const auto past_64_bits = realtime.read(nondet);
     use_the_kernel_clock();
 
     tally.expect(is_reading_of(fixed, 2000000005, "Realtime, a reading of 2 s and 5 ns"));
@@ -187,17 +188,18 @@ void realtime_reader_refuses_what_it_cannot_stamp(Tally& tally) {
 void monotonic_reader_gives_no_floor_for_a_failed_read(Tally& tally) {
     const fixy::TestRunnerCtx ctx{eff::testing::test()};
     const auto monotonic = fixy::time::mint_clock_reader<fixy::ClockSource_v::Monotonic>(ctx);
+    const eff::cap::Nondet nondet = ctx.cap().nondet;
 
     give_each_read(100, 0);
-    const auto first = monotonic.read();
+    const auto first = monotonic.read(nondet);
     give_each_read(50, 0);
-    const auto regressed = monotonic.read();
+    const auto regressed = monotonic.read(nondet);
     give_each_read(-5, 0);
-    const auto negative = monotonic.read();
+    const auto negative = monotonic.read(nondet);
     give_each_read(max_seconds, 999999999);
-    const auto past_64_bits = monotonic.read();
+    const auto past_64_bits = monotonic.read(nondet);
     give_each_read(150, 0);
-    const auto later = monotonic.read();
+    const auto later = monotonic.read(nondet);
     use_the_kernel_clock();
 
     tally.expect(is_reading_of(first, 100000000000, "Monotonic, a reading of 100 s"));
@@ -343,15 +345,16 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
             return;
         }
     }
-    const auto commit = [&log, &owner](crucible::Transaction* tx, crucible::RegionNode* region) {
+    const eff::cap::Nondet nondet = test.nondet;
+    const auto commit = [&log, &owner, nondet](crucible::Transaction* tx, crucible::RegionNode* region) {
         return log.commit(
-            owner, *tx,
+            owner, nondet, *tx,
             ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Ref<crucible::RegionNode>{::fixy::to(*region)}),
             region->content_hash, region->merkle_hash);
     };
 
     give_each_read(7, 0);
-    auto* first = &log.begin_tx(owner, 1);
+    auto* first = &log.begin_tx(owner, nondet, 1);
     tally.expect(holds_reading(first, 7000000000, "begin_tx of the first transaction at 7 s"));
 
     refuse_each_read();
@@ -359,11 +362,11 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     tally.expect(holds_no_reading(first, "commit of the first transaction under a failed read"));
 
     give_each_read(8, 0);
-    tally.expect(log.activate(owner, *first).try_get() == nullptr);
+    tally.expect(log.activate(owner, nondet, *first).try_get() == nullptr);
     tally.expect(holds_reading(first, 8000000000, "activate of the first transaction at 8 s"));
 
     refuse_each_read();
-    auto* second = &log.begin_tx(owner, 2);
+    auto* second = &log.begin_tx(owner, nondet, 2);
     tally.expect(holds_no_reading(second, "begin_tx of the second transaction under a failed read"));
 
     give_each_read(9, 0);
@@ -371,21 +374,21 @@ void transaction_keeps_no_reading_after_a_failed_read(Tally& tally) {
     tally.expect(holds_reading(second, 9000000000, "commit of the second transaction at 9 s"));
 
     refuse_each_read();
-    tally.expect(log.activate(owner, *second).try_get() == first);
+    tally.expect(log.activate(owner, nondet, *second).try_get() == first);
     tally.expect(holds_no_reading(first, "the first transaction, displaced under a failed read"));
     tally.expect(holds_no_reading(second, "activate of the second transaction under a failed read"));
 
     give_each_read(10, 0);
-    auto* third = &log.begin_tx(owner, 3);
+    auto* third = &log.begin_tx(owner, nondet, 3);
     give_each_read(11, 0);
     tally.expect(commit(third, regions[2]));
     give_each_read(12, 0);
-    tally.expect(log.activate(owner, *third).try_get() == second);
+    tally.expect(log.activate(owner, nondet, *third).try_get() == second);
     tally.expect(holds_reading(second, 12000000000, "the second transaction, displaced at 12 s"));
     tally.expect(holds_reading(third, 12000000000, "activate of the third transaction at 12 s"));
 
     refuse_each_read();
-    tally.expect(log.rollback(owner));
+    tally.expect(log.rollback(owner, nondet));
     tally.expect(holds_no_reading(third, "the third transaction, rolled back under a failed read"));
     tally.expect(holds_no_reading(second, "the second transaction, restored under a failed read"));
     use_the_kernel_clock();

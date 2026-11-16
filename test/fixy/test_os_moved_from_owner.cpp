@@ -179,9 +179,10 @@ template <typename T>
     }
     fixy::time::PtpClockReader source = std::move(minted).expect("the PTP mint gave a reader");
     fixy::time::PtpClockReader const live = std::move(source);
-    if (!refuses_with(source.read(), Errno::ebadf)) return answered(name, "read");
+    eff::cap::Nondet const nondet = eff::testing::test().nondet;
+    if (!refuses_with(source.read(nondet), Errno::ebadf)) return answered(name, "read");
     if (!refuses_with(source.caps(), Errno::ebadf)) return answered(name, "caps");
-    if (refuses_with(live.read(), Errno::ebadf)) return answered(name, "nothing, and its new owner refused");
+    if (refuses_with(live.read(nondet), Errno::ebadf)) return answered(name, "nothing, and its new owner refused");
     return 0;
 }
 

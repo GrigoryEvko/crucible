@@ -93,8 +93,8 @@ public:
         requires(D == Direction::Consumer)
     [[nodiscard, gnu::hot]] auto try_recv() noexcept {
         if constexpr (::fixy::concurrent::is_merge_consumer_handle_v<handle_type>) {
-            return handle_.try_pop(::foundation::effects::extract_bare(
-                ::foundation::effects::mint_from_ctx<::foundation::effects::Effect::Nondet>(ctx_)));
+            return handle_.try_pop(
+                ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx_));
         } else {
             return handle_.try_pop();
         }

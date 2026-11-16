@@ -42,6 +42,7 @@
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/diag/RowHash.h>
+#include <foundation/effects/Capability.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -460,11 +461,12 @@ public:
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         const ::fixy::time::MonotonicClock clock =
             ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
-        return clock.read().match(
-            [&](::fixy::MonotonicClockBytes<std::uint64_t> committed_at) -> CommitResult {
-                return advance_head(file_ctx_(ctx), view, content_hash, step_id, committed_at);
-            },
-            [](::foundation::os::Errno) -> CommitResult { return ::fixy::err(CommitError::clock_read); });
+        return clock.read(::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx))
+            .match(
+                [&](::fixy::MonotonicClockBytes<std::uint64_t> committed_at) -> CommitResult {
+                    return advance_head(file_ctx_(ctx), view, content_hash, step_id, committed_at);
+                },
+                [](::foundation::os::Errno) -> CommitResult { return ::fixy::err(CommitError::clock_read); });
     }
 
     // Stores one batch of session events and indexes it, and gives the
