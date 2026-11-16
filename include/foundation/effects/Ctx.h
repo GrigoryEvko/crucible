@@ -264,6 +264,110 @@ using cap_permitted_row_t = typename cap_permitted_row<Cap>::type;
 template <class Cap, class Row>
 concept WellFormedExecCtx = IsCapType<Cap> && IsEffectRow<Row> && Subrow<Row, cap_permitted_row_t<Cap>>;
 
+// A type is an execution context when it is a specialization of ExecCtx
+// with the structure that the primary template gives it:
+//
+//   - a capability source and a row that WellFormedExecCtx admits
+//   - cap_type and row_type naming exactly those two arguments
+//   - exactly two data members, both private: the source, then the row.
+//
+// The check reads that structure by reflection.  A name match alone
+// admits an explicit specialization of an unused row spelling, which
+// replaces the whole class: it can have a public default constructor and
+// no source at all, and every ctx-bound gate then admits the forged
+// scope.  A specialization that passes the check holds a real capability
+// source, and no route builds a source without its key.  Complexity: one
+// walk over two data members for each context type.
+//
+// The walk reads every member with unchecked access, because the members
+// it asks about are private.  It reads the type and the access of each
+// member, and no splice follows, so no private state is written.
+//
+// Top-level cv and reference are stripped before the check, so a concept
+// fed a forwarding-reference deduction still recognizes the context.
+//
+// The check is a function that is not a template, and the concept reads
+// it directly.  No translation unit can specialize either.  A variable
+// template or a function template in their place is a door: an explicit
+// specialization of it skips the structure test, and a plain struct with a
+// row_type then passes every ctx-bound gate.
+//
+// The check and the concepts of the row come before the class, because the
+// class names the tag door below as a friend, and the head of the door
+// reads them.  Each one reads the class only when a gate evaluates it, and
+// the class is complete then.
+namespace detail {
+
+// True when the class has a public member type with the identifier, and
+// that member names the expected type.
+[[nodiscard]] consteval bool names_member_type_(std::meta::info type, std::string_view identifier,
+                                                std::meta::info expected) {
+    for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::current())) {
+        if (!std::meta::is_type(member) || !std::meta::has_identifier(member)) continue;
+        if (std::meta::identifier_of(member) != identifier) continue;
+        return std::meta::dealias(member) == std::meta::dealias(expected);
+    }
+    return false;
+}
+
+}  // namespace detail
+
+[[nodiscard]] consteval bool is_exec_ctx(std::meta::info spelled) {
+    const std::meta::info type = std::meta::dealias(std::meta::remove_cvref(spelled));
+    if (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != ^^ExecCtx) return false;
+    const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(type);
+    const std::meta::info cap = arguments[0];
+    const std::meta::info row = arguments[1];
+    if (!std::meta::extract<bool>(std::meta::substitute(^^WellFormedExecCtx, {cap, row}))) return false;
+    if (!detail::names_member_type_(type, "cap_type", cap) || !detail::names_member_type_(type, "row_type", row)) {
+        return false;
+    }
+    const std::vector<std::meta::info> members =
+        std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked());
+    const std::meta::info expected_types[] = {std::meta::dealias(cap), std::meta::dealias(row)};
+    if (members.size() != std::size(expected_types)) return false;
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        if (!std::meta::is_private(members[index])) return false;
+        if (std::meta::dealias(std::meta::type_of(members[index])) != expected_types[index]) return false;
+    }
+    return true;
+}
+
+template <class T>
+concept IsExecCtx = is_exec_ctx(^^T);
+
+template <IsExecCtx Ctx>
+using cap_type_of_t = typename Ctx::cap_type;
+template <IsExecCtx Ctx>
+using row_type_of_t = typename Ctx::row_type;
+
+// A body that claims row R may run in a context whose row covers R.
+template <class Ctx, class R>
+concept CtxAdmits = IsExecCtx<Ctx> && IsEffectRow<R> && Subrow<R, row_type_of_t<Ctx>>;
+
+template <class Ctx, Effect Cap>
+concept CtxOwnsCapability = IsExecCtx<Ctx> && row_contains(^^row_type_of_t<Ctx>, Cap);
+
+// The two named lifts below cost exactly what writing the fold by hand
+// costs.  What they buy is that a reviewer recognizes the shape of an
+// authorization at a glance, and that a rename of the row extractor
+// reaches every site through one definition.
+template <class Ctx, Effect... Es>
+concept CtxOwnsAnyOf = IsExecCtx<Ctx> && (row_contains(^^row_type_of_t<Ctx>, Es) || ...);
+
+template <class Ctx, Effect... Es>
+concept CtxOwnsAllOf = IsExecCtx<Ctx> && (row_contains(^^row_type_of_t<Ctx>, Es) && ...);
+
+// The bare tag of the value atom E, from a context whose row holds E.  The
+// read of a clock reader and the pop of a merge take cap::Nondet in this
+// form.  The context names this door as a friend, and the door copies the
+// atom from the source of the context.  It makes no capability token, so it
+// holds no contract check, and a noexcept body that calls it needs no
+// terminate pad.  The definition is below the class.
+template <Effect E, IsExecCtx Ctx>
+    requires CtxOwnsCapability<Ctx, E> && HasBareTag<E>
+[[nodiscard]] constexpr bare_tag_t<E> extract_bare_from_ctx(Ctx const& ctx) noexcept;
+
 template <class Cap = ctx_cap::Fg, class Row = ::foundation::effects::Row<>>
 class [[nodiscard]] ExecCtx {
 public:
@@ -325,6 +429,12 @@ private:
         requires ::foundation::os::EncodableFpMode<Mode>
     friend auto mint_kernel_context(::foundation::os::FpScope<Mode> const& scope) noexcept
         -> ExecCtx<ctx_cap::KernelSource<Brand, Mode>, ::foundation::effects::Row<>>;
+
+    // The tag door reads the source of a context whose row does not claim
+    // each atom of the source.  It copies only the atom that the row claims.
+    template <Effect E, IsExecCtx Ctx>
+        requires CtxOwnsCapability<Ctx, E> && HasBareTag<E>
+    friend constexpr bare_tag_t<E> extract_bare_from_ctx(Ctx const& ctx) noexcept;
 
 public:
     // The only way to reach the capability, and it borrows rather than
@@ -764,94 +874,25 @@ template <class Brand = void>
 
 }  // namespace testing
 
-// A type is an execution context when it is a specialization of ExecCtx
-// with the structure that the primary template gives it:
-//
-//   - a capability source and a row that WellFormedExecCtx admits
-//   - cap_type and row_type naming exactly those two arguments
-//   - exactly two data members, both private: the source, then the row.
-//
-// The check reads that structure by reflection.  A name match alone
-// admits an explicit specialization of an unused row spelling, which
-// replaces the whole class: it can have a public default constructor and
-// no source at all, and every ctx-bound gate then admits the forged
-// scope.  A specialization that passes the check holds a real capability
-// source, and no route builds a source without its key.  Complexity: one
-// walk over two data members for each context type.
-//
-// The walk reads every member with unchecked access, because the members
-// it asks about are private.  It reads the type and the access of each
-// member, and no splice follows, so no private state is written.
-//
-// Top-level cv and reference are stripped before the check, so a concept
-// fed a forwarding-reference deduction still recognizes the context.
-//
-// The check is a function that is not a template, and the concept reads
-// it directly.  No translation unit can specialize either.  A variable
-// template or a function template in their place is a door: an explicit
-// specialization of it skips the structure test, and a plain struct with a
-// row_type then passes every ctx-bound gate.
-namespace detail {
-
-// True when the class has a public member type with the identifier, and
-// that member names the expected type.
-[[nodiscard]] consteval bool names_member_type_(std::meta::info type, std::string_view identifier,
-                                                std::meta::info expected) {
-    for (const std::meta::info member : std::meta::members_of(type, std::meta::access_context::current())) {
-        if (!std::meta::is_type(member) || !std::meta::has_identifier(member)) continue;
-        if (std::meta::identifier_of(member) != identifier) continue;
-        return std::meta::dealias(member) == std::meta::dealias(expected);
+// The row holds E, and the source permits each atom of the row.  Only a
+// context permits a value atom, and a context holds each value atom that it
+// permits as a field.  So the source has the field of E, and the door copies
+// it.  The copy of an atom is an empty body, so the door costs no
+// instruction in each build.
+template <Effect E, IsExecCtx Ctx>
+    requires CtxOwnsCapability<Ctx, E> && HasBareTag<E>
+[[nodiscard]] constexpr bare_tag_t<E> extract_bare_from_ctx(Ctx const& ctx) noexcept {
+    if constexpr (E == Effect::Alloc) {
+        return ctx.cap_.alloc;
+    } else if constexpr (E == Effect::IO) {
+        return ctx.cap_.io;
+    } else if constexpr (E == Effect::Block) {
+        return ctx.cap_.block;
+    } else {
+        static_assert(E == Effect::Nondet, "a value atom with a bare tag needs its arm in extract_bare_from_ctx");
+        return ctx.cap_.nondet;
     }
-    return false;
 }
-
-}  // namespace detail
-
-[[nodiscard]] consteval bool is_exec_ctx(std::meta::info spelled) {
-    const std::meta::info type = std::meta::dealias(std::meta::remove_cvref(spelled));
-    if (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != ^^ExecCtx) return false;
-    const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(type);
-    const std::meta::info cap = arguments[0];
-    const std::meta::info row = arguments[1];
-    if (!std::meta::extract<bool>(std::meta::substitute(^^WellFormedExecCtx, {cap, row}))) return false;
-    if (!detail::names_member_type_(type, "cap_type", cap) || !detail::names_member_type_(type, "row_type", row)) {
-        return false;
-    }
-    const std::vector<std::meta::info> members =
-        std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked());
-    const std::meta::info expected_types[] = {std::meta::dealias(cap), std::meta::dealias(row)};
-    if (members.size() != std::size(expected_types)) return false;
-    for (std::size_t index = 0; index < members.size(); ++index) {
-        if (!std::meta::is_private(members[index])) return false;
-        if (std::meta::dealias(std::meta::type_of(members[index])) != expected_types[index]) return false;
-    }
-    return true;
-}
-
-template <class T>
-concept IsExecCtx = is_exec_ctx(^^T);
-
-template <IsExecCtx Ctx>
-using cap_type_of_t = typename Ctx::cap_type;
-template <IsExecCtx Ctx>
-using row_type_of_t = typename Ctx::row_type;
-
-// A body that claims row R may run in a context whose row covers R.
-template <class Ctx, class R>
-concept CtxAdmits = IsExecCtx<Ctx> && IsEffectRow<R> && Subrow<R, row_type_of_t<Ctx>>;
-
-template <class Ctx, Effect Cap>
-concept CtxOwnsCapability = IsExecCtx<Ctx> && row_contains(^^row_type_of_t<Ctx>, Cap);
-
-// The two named lifts below cost exactly what writing the fold by hand
-// costs.  What they buy is that a reviewer recognizes the shape of an
-// authorization at a glance, and that a rename of the row extractor
-// reaches every site through one definition.
-template <class Ctx, Effect... Es>
-concept CtxOwnsAnyOf = IsExecCtx<Ctx> && (row_contains(^^row_type_of_t<Ctx>, Es) || ...);
-
-template <class Ctx, Effect... Es>
-concept CtxOwnsAllOf = IsExecCtx<Ctx> && (row_contains(^^row_type_of_t<Ctx>, Es) && ...);
 
 namespace detail::ctx_witnesses {
 

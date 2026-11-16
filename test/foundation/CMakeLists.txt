@@ -457,6 +457,10 @@ foundation_neg_compile_test(neg_mint_from_ctx_atom_outside_the_row
 foundation_neg_compile_test(neg_mint_from_ctx_source_is_not_a_context
   "no matching function for call to .mint_from_ctx<foundation::effects::Effect::Alloc>\\(const foundation::effects::Bg&\\)."
   "required for the satisfaction of .IsExecCtx<Ctx>. \\[with Ctx = foundation::effects::Bg\\]")
+# The tag door reads the source of the context, and the row is its bound.
+foundation_neg_compile_test(neg_extract_bare_from_ctx_atom_outside_the_row
+  "no matching function for call to .extract_bare_from_ctx<foundation::effects::Effect::IO>\\(const foundation::effects::detail::ctx_witnesses::BgObserveCtx&\\)."
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, E>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Nondet> >; E = foundation::effects::Effect::IO\\]")
 
 # A context lends its source only when its row covers the source, and it
 # narrows its row but never widens it.  The second regex of each names the
