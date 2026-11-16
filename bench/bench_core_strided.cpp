@@ -10,10 +10,9 @@
 //   memory  4096 x 4096   16777216 elements, 192 MB
 //
 // The rows of each size:
-//   raw add, restrict   the raw loop of out = left + right with restrict
-//                       pointers: the roof of the size
-//   raw add             the same loop with plain pointers, the code of an
-//                       index loop: the compiler guards it with an alias check
+//   roof                write_each of foundation/core/Region.h over the
+//                       ViewMuts of three frames, out = left + right through
+//                       restrict pointers: the roof of the size
 //   raw transposed, raw step 2
 //                       the raw loop with a left matrix of two run-time
 //                       strides: the baselines of the strided rows
@@ -114,33 +113,29 @@ template <class Element>
     return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("the plane fits its run");
 }
 
-// The raw loops: the roof and the baselines.  noipa stops a clone of a
-// function for the constant sizes and strides of a call, because the walks
-// read them at run time too.  The caller gives Views that hold each element
-// that the strides reach.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loops are the roof and the baselines of the strided walks")
-[[gnu::always_inline]] inline void add_restrict(float* __restrict target, float const* __restrict left,
-                                                float const* __restrict right, std::size_t count) noexcept {
-    for (std::size_t position = 0; position < count; ++position) {
-        target[position] = left[position] + right[position];
+// The roof: write_each of foundation/core/Region.h over the ViewMuts of three
+// frames, which reads through restrict pointers.
+struct AddOp final {
+    template <class X>
+    constexpr X operator()(X left, X right) const noexcept {
+        return left + right;
+    }
+};
+
+template <class Out, class First, class Second>
+[[gnu::noinline, gnu::hot]] void roof_add(Out out, First const& first, Second const& second) noexcept {
+    if (::fixy::write_each(std::move(out), AddOp{}, first, second).is_err()) {
+        ::fixy::fatal("the three runs of the roof have one count");
     }
 }
 
-[[gnu::noipa, gnu::hot]] void add_raw_restrict(::fixy::View<float> out, ::fixy::View<float const> left,
-                                               ::fixy::View<float const> right) noexcept {
-    add_restrict(&*out.begin(), &*left.begin(), &*right.begin(), out.size());
-}
-
-[[gnu::noipa, gnu::hot]] void add_raw(::fixy::View<float> out, ::fixy::View<float const> left,
-                                      ::fixy::View<float const> right) noexcept {
-    float* const target = &*out.begin();
-    float const* const first = &*left.begin();
-    float const* const second = &*right.begin();
-    for (std::size_t position = 0; position < out.size(); ++position) {
-        target[position] = first[position] + second[position];
-    }
-}
-
+// The raw loop of the add with a left matrix of two strides, in the
+// row-major order of the walk: the baseline of the strided rows.  The walk
+// reads its strides at run time, so the baseline does too: noipa stops a
+// clone of the function for the constant strides of a call.  The caller
+// gives a View of the left run that holds each element that the strides
+// reach.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loop over two strides is the baseline of the strided walk")
 [[gnu::noipa, gnu::hot]] void add_raw_strided(::fixy::View<float> out, ::fixy::View<float const> left_run,
                                               ::fixy::View<float const> right, std::size_t rows, std::size_t columns,
                                               std::size_t row_stride, std::size_t column_stride) noexcept {
@@ -193,14 +188,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     });
 }
 
-// The ops of the pointwise rows.  Each one is a generic call, so it is a lane
-// op of 16 floats.
-struct AddOp final {
-    template <class X>
-    constexpr X operator()(X left, X right) const noexcept {
-        return left + right;
-    }
-};
+// The op of three inputs of the pointwise rows.  AddOp and this op are generic
+// calls, so they are lane ops.
 struct MultiplyAddOp final {
     template <class X>
     constexpr X operator()(X first, X second, X third) const noexcept {
@@ -230,20 +219,35 @@ template <class Out>
     return static_cast<float>(position % 1021) * 0.25f + 0.5f;
 }
 
-// The rows of one size.
-void run_level(Level const& level) noexcept {
+// The rows of one size.  The result is the roof of the size in GB/s.
+[[nodiscard]] double run_level(Level const& level) noexcept {
     auto const test = ::foundation::effects::testing::test();
     std::size_t const rows = level.rows;
     std::size_t const columns = level.columns;
     std::size_t const count = rows * columns;
     auto const fill = [](std::size_t position) noexcept { return value_at(position); };
     Storage out = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
-    Storage const left = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
-    Storage const right = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
+    Storage left = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
+    Storage right = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
     Storage const third = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
     Storage const row = ::fixy::mint_heap_array_with<float, 64>(test.alloc, columns, fill);
     Storage const wide = ::fixy::mint_heap_array_with<float, 64>(test.alloc, 2 * count, fill);
     Storage const wider = ::fixy::mint_heap_array_with<float, 64>(test.alloc, 3 * count, fill);
+    std::size_t const three_views = 3 * 4 * count;
+    std::size_t const four_views = 4 * 4 * count;
+    std::size_t const wall = level.wall_ms;
+
+    // The roof, with a frame of each owner for each pass.
+    bench::Report const roof_report = measure(bench::Run{"roof"}, wall, [&] {
+        out = ::fixy::with_mut(std::move(out), [&](auto target) noexcept {
+            left = ::fixy::with_mut(std::move(left), [&](auto first) noexcept {
+                right = ::fixy::with_mut(std::move(right),
+                                         [&](auto second) noexcept { roof_add(std::move(target), first, second); });
+            });
+        });
+    });
+    double const roof = bandwidth_of(roof_report, three_views);
+    print_row(level, "roof, write_each over three frames", roof_report, three_views, roof);
 
     ::fixy::View<float const> const left_run = left.view();
     ::fixy::View<float const> const right_run = right.view();
@@ -266,23 +270,6 @@ void run_level(Level const& level) noexcept {
             .broadcast_to(plane_sizes.view())
             .expect("a row broadcasts to the plane");
 
-    std::size_t const three_views = 3 * 4 * count;
-    std::size_t const four_views = 4 * 4 * count;
-    std::size_t const wall = level.wall_ms;
-
-    bench::Report const roof_report = measure(bench::Run{"raw add, restrict"}, wall, [&] {
-        add_raw_restrict(out.view(), left_run, right_run);
-        bench::do_not_optimize(out);
-    });
-    double const roof = bandwidth_of(roof_report, three_views);
-    print_row(level, "raw add, restrict", roof_report, three_views, roof);
-    print_row(level, "raw add",
-              measure(bench::Run{"raw add"}, wall,
-                      [&] {
-                          add_raw(out.view(), left_run, right_run);
-                          bench::do_not_optimize(out);
-                      }),
-              three_views, roof);
     print_row(level, "raw transposed",
               measure(bench::Run{"raw transposed"}, wall,
                       [&] {
@@ -378,10 +365,11 @@ void run_level(Level const& level) noexcept {
                           [&] { pointwise_three(unique, left_view, right_view, third_view); }),
                   four_views, roof);
     });
+    return roof;
 }
 
-// The FixedArray row of the L1 size.
-void run_small_index_loop(Level const& level) noexcept {
+// The FixedArray row of the L1 size, against the roof of that size.
+void run_small_index_loop(Level const& level, double roof) noexcept {
     SmallMatrix left{};
     SmallMatrix right{};
     SmallMatrix out{};
@@ -395,7 +383,7 @@ void run_small_index_loop(Level const& level) noexcept {
                           add_indexed(out, left, right);
                           bench::do_not_optimize(out);
                       }),
-              3 * 4 * kSmallCount, 0.0);
+              3 * 4 * kSmallCount, roof);
 }
 
 }  // namespace
@@ -408,9 +396,9 @@ int main() {
         Level{.name = "L3", .rows = 1024, .columns = 512, .wall_ms = 800},
         Level{.name = "memory", .rows = 4096, .columns = 4096, .wall_ms = 2500},
     };
-    run_small_index_loop(*levels.get(0).expect("four levels"));
     for (Level const& level : levels) {
-        run_level(level);
+        double const roof = run_level(level);
+        if (level.rows == kSmallRows && level.columns == kSmallColumns) run_small_index_loop(level, roof);
     }
     return 0;
 }
