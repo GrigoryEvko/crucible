@@ -84,6 +84,13 @@
 //   recursion of depth ceil(log2 n) + popcount(n).  tree_sum makes one load
 //   and about two shuffles and one add for each vector.  No operation
 //   allocates, and each split form takes its partials from the caller.
+//
+// THE TARGET
+//   tree_sum, tree_sum_lanes, tree_sum_of_runs, segmented_tree_sum and
+//   tree_sum_grains read the vector width of the target.  So they and their
+//   SIMD helpers are in the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET
+//   NAMESPACE of foundation/Platform.h).  The forms with the combine of a
+//   caller, the types and the plans read no target, and they stay outside it.
 
 #include <foundation/Simd.h>
 #include <foundation/core/Array.h>
@@ -162,6 +169,8 @@ template <class T, class Combine>
     return combine(left, right);
 }
 
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 // The merge of two vectors of Lanes consecutive subtrees each: the sums of
 // the adjacent pairs of the 2 * Lanes subtrees, in order.
 template <class T, int Lanes>
@@ -239,6 +248,8 @@ template <class T, int Lanes>
     return left + right;
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 // The count of the lanes of a test of tree_sum_lanes: a power of two from 2
 // to 64.
 template <int Lanes>
@@ -257,6 +268,8 @@ template <class T, std::size_t Extent, class Combine>
     Value const* const first = first_of_(detail::ViewDoor::key(), elements);
     return Option<Value>::some(detail::tree_of_run_(first, elements.size(), combine));
 }
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the elements with Lanes lanes in each vector.  The count
 // of lanes changes no bit (THE LANES), so a test compares each count.  An
@@ -278,9 +291,13 @@ template <int Lanes, class T>
     return tree_sum_lanes<simd::native_lanes<double>>(elements);
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 // ── The sum of runs, element by element ─────────────────────────────────
 
 namespace detail {
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree over the runs [first, first + count) of the vector at offset of
 // each run.  The count is at least 1.
@@ -295,6 +312,8 @@ template <class T, int Lanes>
     return left + right;
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 // The tree over the runs [first, first + count) of the element at offset of
 // each run.  The count is at least 1.
 template <class T>
@@ -307,6 +326,8 @@ template <class T>
 }
 
 }  // namespace detail
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the runs element by element: sums[i] is the tree of the
 // elements at i of the runs, in run order, by the rule of THE ORDER.  So a
@@ -339,6 +360,8 @@ template <class T>
     return Unit{};
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 // ── The segments ────────────────────────────────────────────────────────
 
 // The error of a list of the offsets of segments.
@@ -367,6 +390,8 @@ check_segment_offsets(std::size_t elements, View<std::size_t const> offsets, std
     return Unit{};
 }
 
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 // The tree sum of each segment: sums[s] is the tree sum of the elements
 // [offsets[s], offsets[s + 1]), and an empty segment gives +0.  The offsets
 // hold one more element than the sums, they do not decrease, and the last one
@@ -388,6 +413,8 @@ template <class T>
     }
     return Unit{};
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 // The tree of each segment with the combine of the caller: results[s] is the
 // tree of the elements [offsets[s], offsets[s + 1]), and an empty segment
@@ -434,6 +461,8 @@ constexpr void check_grain_range_(std::size_t count, std::size_t first_grain, st
 
 }  // namespace detail
 
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 // The tree sum of each grain of the range: partials[i] is the tree sum of the
 // grain first_grain + i of the elements.  The tree sum of all the partials of
 // the run is then the tree sum of the run, so tree_sum(partials) gives it.  A
@@ -452,6 +481,8 @@ void tree_sum_grains(View<T const> elements, std::size_t first_grain, View<T> pa
         out[index] = detail::tree_sum_run_<T, simd::native_lanes<T>>(first + start, size);
     }
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 // The tree of each grain of the range with the combine of the caller:
 // partials[i] is the tree of the grain first_grain + i.  tree_reduce of all

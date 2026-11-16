@@ -50,11 +50,18 @@
 //   ends the process.  The sums of segments wrap the View of the sums in a
 //   region of their own, one slot for each segment, and need no scratch.
 //   Only a form with the allocation capability allocates.
+//
+// THE TARGET
+//   The sum forms call the SIMD kernels of foundation/core, so they are in
+//   the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of
+//   foundation/Platform.h).  The reduce forms with the combine of a caller
+//   read no target, and they stay outside it.
 
 #include <fixy/OwnedRegion.h>
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/concurrent/Spawn.h>
 #include <foundation/Linear.h>
+#include <foundation/Platform.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
@@ -139,6 +146,8 @@ template <typename T>
 
 }  // namespace detail
 
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 // The tree sum of the elements, by the grains of THE SPLIT, with the bits of
 // foundation::core::tree_sum.  An empty run gives +0.  Complexity: O(n), in
 // Shards shards, then O(slots) on the calling thread.
@@ -159,6 +168,8 @@ parallel_tree_sum(Ctx const& ctx, ::foundation::core::View<T const> elements,
     T const sum = ::foundation::core::tree_sum(::foundation::core::View<T const>{detail::region_view_(whole)});
     return TreeSumParts<T, Whole, Brand>{sum, std::move(whole)};
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 // The tree of the elements with the combine of the caller, by the grains of
 // THE SPLIT, with the value of foundation::core::tree_reduce.  Each shard
@@ -185,6 +196,8 @@ parallel_tree_reduce(Ctx const& ctx, ::foundation::core::View<T const> elements,
         ::foundation::core::tree_reduce(::foundation::core::View<T const>{detail::region_view_(whole)}, combine);
     return TreeReduceParts<T, Whole, Brand>{std::move(value), std::move(whole)};
 }
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The sum scan of in into out, by the three phases of THE WRITES OF A SCAN,
 // with the bits of inclusive_sum_scan or exclusive_sum_scan of
@@ -225,6 +238,8 @@ parallel_sum_scan(Ctx const& ctx, ::foundation::core::ScanKind kind, ::foundatio
         });
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 // ── The forms that allocate their slots ─────────────────────────────────
 
 namespace detail {
@@ -247,6 +262,8 @@ template <typename T>
 
 }  // namespace detail
 
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 // The tree sum of the elements, with the slots in a HeapArray that the
 // allocation capability of the caller gives.  The bits are the bits of
 // foundation::core::tree_sum.  Complexity: as the form with a region, and one
@@ -265,6 +282,8 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
     ::foundation::linear::drop(std::move(parts.partials));
     return sum;
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 // The tree of the elements with the combine of the caller, with the slots in
 // a HeapArray that the allocation capability gives.  An empty run gives no
@@ -290,6 +309,8 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typena
     ::foundation::linear::drop(std::move(parts.partials));
     return value;
 }
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The sum scan of in into out, with the carries in a HeapArray that the
 // allocation capability gives.  The bits are the bits of inclusive_sum_scan
@@ -336,5 +357,7 @@ void parallel_segmented_tree_sum(Ctx const& ctx, ::foundation::core::View<T cons
                                   .expect("a window of checked offsets passes the check"));
         }));
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace fixy::concurrent

@@ -14,6 +14,25 @@
 // Floating-point reductions have neither property under IEEE rounding,
 // so their result would move with the register width.  The DetSafeSimd
 // concept keeps them out of every reduction here.
+//
+// The facade is in the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET
+// NAMESPACE of foundation/Platform.h), so each target has its own vec, its
+// own mask and its own body of each operation.  The rule for new code:
+//   - An inline function or template of the base whose body uses the facade,
+//     or reads a target macro or a constant such as native_lanes, is in the
+//     inline namespace CRUCIBLE_SIMD_TARGET of its own namespace.  So is each
+//     inline function or template of the base whose body calls such a
+//     function.  A type, a concept and a function with no such body stay
+//     outside it.
+//   - In a namespace that also holds names outside the inline namespace, open
+//     the inline namespace as the innermost namespace, as in
+//     `namespace detail { inline namespace CRUCIBLE_SIMD_TARGET {`.  A
+//     namespace detail inside the inline namespace hides the outer detail
+//     from the functions in it.  This header holds each name of
+//     foundation::simd in the inline namespace, so its detail is inside.
+//   - Declare no name of this facade outside this header.  A declaration of
+//     foundation::simd::vec outside the inline namespace declares a second
+//     template.
 
 #include <foundation/Platform.h>
 #include <foundation/core/Region.h>
@@ -28,6 +47,7 @@
 #include <utility>
 
 namespace foundation::simd {
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 namespace detail {
 
@@ -770,4 +790,5 @@ inline constexpr int native_lanes = static_cast<int>(native_vector_bytes / sizeo
 [[nodiscard]] constexpr bool runtime_supports_sse42() noexcept { return false; }
 #endif
 
+}  // namespace CRUCIBLE_SIMD_TARGET
 }  // namespace foundation::simd

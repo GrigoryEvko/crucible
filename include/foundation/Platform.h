@@ -68,6 +68,61 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
               "GCC another distance. Before you change the distance, audit each alignas(64).");
 #endif
 
+// THE TARGET NAMESPACE
+//   The source of some inline functions of the base reads the vector
+//   extensions of the target: an arm on a macro such as __AVX512F__, or a
+//   constant that such an arm sets, such as simd::native_lanes.  If a program
+//   links two units that two -march flags compile, such a function has two
+//   bodies with one name.  The link keeps one body for the two units, so a
+//   body of AVX-512 can run in the unit of a smaller target.
+//
+//   So each such function, and each such constant, is in the inline namespace
+//   CRUCIBLE_SIMD_TARGET of its namespace.  The name of its symbol then holds
+//   the target, and each unit keeps its own body.  A name of the outer
+//   namespace finds it, so no caller writes the target.  foundation/Simd.h
+//   gives the rule for new code.
+//
+//   The name of the target is the highest step of the ladder of the macros
+//   that the arms read: sse2, sse42, avx, avx2, avx512f and avx512bw on
+//   x86_64, and neon on aarch64.  A build with no step has the name
+//   target_scalar.  GCC sets each lower step with a higher step, so the steps
+//   of a build are a prefix of the ladder, and the check below refuses each
+//   other set.  An arm on a macro outside the ladder needs a step of its own
+//   first.
+//
+//   The namespace holds only a function whose source reads the target.  GCC
+//   also picks the instructions of each other inline function from the
+//   flags, and no name holds that choice.  So a binary compiles each of its
+//   units for one target, and a test links two targets only to probe the
+//   namespace.
+#if defined(__x86_64__)
+#if (defined(__AVX512BW__) && !defined(__AVX512F__)) || (defined(__AVX512F__) && !defined(__AVX2__)) \
+    || (defined(__AVX2__) && !defined(__AVX__)) || (defined(__AVX__) && !defined(__SSE4_2__))        \
+    || (defined(__SSE4_2__) && !defined(__SSE2__))
+#error \
+    "the vector extensions of the target skip a step of the ladder sse2, sse42, avx, avx2, avx512f, avx512bw. Each step implies the steps below it, and CRUCIBLE_SIMD_TARGET names the highest step. Before you add such a target, give it a step of its own."
+#endif
+#if defined(__AVX512BW__)
+#define CRUCIBLE_SIMD_TARGET target_avx512bw
+#elif defined(__AVX512F__)
+#define CRUCIBLE_SIMD_TARGET target_avx512f
+#elif defined(__AVX2__)
+#define CRUCIBLE_SIMD_TARGET target_avx2
+#elif defined(__AVX__)
+#define CRUCIBLE_SIMD_TARGET target_avx
+#elif defined(__SSE4_2__)
+#define CRUCIBLE_SIMD_TARGET target_sse42
+#elif defined(__SSE2__)
+#define CRUCIBLE_SIMD_TARGET target_sse2
+#else
+#define CRUCIBLE_SIMD_TARGET target_scalar
+#endif
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+#define CRUCIBLE_SIMD_TARGET target_neon
+#else
+#define CRUCIBLE_SIMD_TARGET target_scalar
+#endif
+
 #define CRUCIBLE_INLINE [[gnu::always_inline]] inline
 #define CRUCIBLE_HOT [[gnu::hot, gnu::always_inline]] inline
 #define CRUCIBLE_COLD [[gnu::cold, gnu::noinline]]

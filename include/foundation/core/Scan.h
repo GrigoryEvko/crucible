@@ -91,6 +91,12 @@
 //   depth ceil(log2 n) + popcount(n).  A sum scan makes about 2 * log2(L)
 //   shuffles and adds for each vector of L lanes.  No scan allocates.  out can
 //   be the same View as in, and no other overlap is permitted.
+//
+// THE TARGET
+//   The sum scans and their grain forms read the vector width of the target.
+//   So they and their SIMD helpers are in the inline namespace
+//   CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of foundation/Platform.h).  The
+//   scans with the combine of a caller and the plans stay outside it.
 
 #include <foundation/Platform.h>
 #include <foundation/Simd.h>
@@ -224,6 +230,8 @@ template <class T, class Combine>
 
 namespace detail {
 
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 // The sums of the sibling blocks of level Level: lane j takes lane
 // j ^ 2^Level.  When the sums hold in lane j the sum of the aligned block of
 // 2^Level elements that holds j, this is the sum of the other half of the
@@ -320,7 +328,11 @@ void sum_scan_lanes_(T const* in, T* out, std::size_t count, T const* carry) noe
     }
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 }  // namespace detail
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The sum scans with Lanes lanes in each vector.  The count of lanes changes
 // no bit, so a test compares each count.  The empty value of the exclusive
@@ -360,6 +372,8 @@ template <class T>
 [[nodiscard]] Result<Unit, LengthMismatch> exclusive_sum_scan(View<T const> in, View<T> out) noexcept {
     return exclusive_sum_scan_lanes<simd::native_lanes<T>>(in, out);
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 // ── The split into grains ───────────────────────────────────────────────
 
@@ -424,6 +438,8 @@ constexpr void exclusive_scan_grains(View<T const> in, std::size_t first_grain, 
     detail::scan_grains_<ScanKind::Exclusive, Grain>(in, first_grain, carries, out, &empty, combine);
 }
 
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 // The sum scans of the grains of the range, with the lanes of one register
 // of the target.  The carries obey the rule of inclusive_scan_grains, and the
 // bits are the bits of inclusive_sum_scan and exclusive_sum_scan of the run.
@@ -444,6 +460,8 @@ void exclusive_sum_scan_grains(View<T const> in, std::size_t first_grain, View<T
             detail::sum_scan_lanes_<ScanKind::Exclusive, T, simd::native_lanes<T>>(first, target, size, carry);
         });
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 // ── The plan of the scan ────────────────────────────────────────────────
 

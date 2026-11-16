@@ -159,6 +159,13 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     "the tree separates two shared atomics by 64 bytes")
   set_property(TEST neg_platform_destructive_interference_size APPEND PROPERTY ENVIRONMENT
     "CRUCIBLE_NEG_EXTRA_FLAGS=--param=destructive-interference-size=128")
+  # The name of the target namespace is the highest step of a ladder of
+  # vector extensions, so a set that skips a step has no name.
+  foundation_neg_compile_test(neg_platform_simd_target_gap
+    "Platform\\.h:[0-9]+:[0-9]+: error: #error"
+    "the vector extensions of the target skip a step of the ladder")
+  set_property(TEST neg_platform_simd_target_gap APPEND PROPERTY ENVIRONMENT
+    "CRUCIBLE_NEG_EXTRA_FLAGS=-mavx512f -U__AVX2__ -Wfatal-errors")
 endif()
 foundation_neg_compile_test(neg_platform_longer_cache_line
   "Platform\\.h:[0-9]+:[0-9]+: error: static assertion failed"
@@ -3078,6 +3085,17 @@ foundation_test(test_core_reduce)
 foundation_test(test_core_scan)
 foundation_test(test_core_sort)
 
+# Two units of one program, built for x86-64 and for x86-64-v4, keep their
+# own body of each function whose source reads the vector width (THE TARGET
+# NAMESPACE of foundation/Platform.h).  The flags name x86 targets, so the
+# test exists only on x86_64.  The unit of the baseline target comes first on
+# the link line, so the link keeps its copy of each other shared body.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  foundation_test(test_target_units test_target_units.cpp target_unit_baseline.cpp target_unit_wide.cpp)
+  set_source_files_properties(target_unit_baseline.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64)
+  set_source_files_properties(target_unit_wide.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v4)
+endif()
+
 foundation_neg_compile_test(neg_core_view_windows_zero_width
   "no matching function for call to .foundation::core::View<int>::windows<0>\\(\\)."
   "required for the satisfaction of .ViewExtent<T, Width>. \\[with T = int; Width = 0\\]")
@@ -3555,7 +3573,7 @@ foundation_neg_compile_test(neg_signature_traits_of_a_non_function
   "In instantiation of .struct foundation::reflect::signature_traits<42>."
   "reflection does not represent a function or function type")
 foundation_neg_compile_test(neg_simd_iota_of_a_scalar
-  "In instantiation of .constexpr V foundation::simd::iota_v\\(\\) \\[with V = int\\]."
+  "In instantiation of .constexpr V foundation::simd::target_[a-z0-9]+::iota_v\\(\\) \\[with V = int\\]."
   ".int. is not a class, struct, or union type")
 
 # ── The death tests of the base ───────────────────────────────────────

@@ -402,7 +402,9 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::foundation::core,
     ^^::foundation::algebra,
     ^^::foundation::permissions,
-    ^^::foundation::simd,
+    // The classes of the Simd facade are in its target namespace, whose name
+    // follows the target (THE TARGET NAMESPACE of foundation/Platform.h).
+    std::meta::parent_of(^^::foundation::simd::vec),
     ^^::foundation::effects,
     ^^::foundation::effects::resource,
     ^^::fixy,

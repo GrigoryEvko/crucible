@@ -99,6 +99,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Cursor.h>
 #include <foundation/core/Index.h>
@@ -1092,16 +1093,6 @@ namespace detail {
 // sizes.  The words of copy_small_ give no call in each block of each build.
 inline constexpr std::size_t small_copy_bytes = 64;
 
-// The width of the widest word of copy_small_: the width of a vector
-// register of the target.
-#if defined(__AVX512F__)
-inline constexpr std::size_t widest_copy_word = 64;
-#elif defined(__AVX__)
-inline constexpr std::size_t widest_copy_word = 32;
-#else
-inline constexpr std::size_t widest_copy_word = 16;
-#endif
-
 // The word of Width bytes, for one load of copy_small_: an unsigned integer,
 // or a vector of bytes for 16 bytes or more.
 template <std::size_t Width>
@@ -1135,22 +1126,36 @@ struct CopyWord<64> {
     using type [[gnu::vector_size(64)]] = std::uint8_t;
 };
 
-// The width of the first word of a copy of bytes: the largest power of two
-// that is at most bytes and at most widest_copy_word.
-[[nodiscard]] consteval std::size_t copy_word_width_(std::size_t bytes) noexcept {
-    std::size_t width = widest_copy_word;
-    while (width > bytes) {
-        width /= 2;
-    }
-    return width;
-}
-
 // The width of the tail word of a rest of bytes: the smallest power of two
 // that is at least bytes.
 [[nodiscard]] consteval std::size_t copy_tail_width_(std::size_t bytes) noexcept {
     std::size_t width = 1;
     while (width < bytes) {
         width *= 2;
+    }
+    return width;
+}
+
+// The words of copy_small_ follow the vector width of the target, so they
+// are in the target namespace (THE TARGET NAMESPACE of foundation/Platform.h).
+inline namespace CRUCIBLE_SIMD_TARGET {
+
+// The width of the widest word of copy_small_: the width of a vector
+// register of the target.
+#if defined(__AVX512F__)
+inline constexpr std::size_t widest_copy_word = 64;
+#elif defined(__AVX__)
+inline constexpr std::size_t widest_copy_word = 32;
+#else
+inline constexpr std::size_t widest_copy_word = 16;
+#endif
+
+// The width of the first word of a copy of bytes: the largest power of two
+// that is at most bytes and at most widest_copy_word.
+[[nodiscard]] consteval std::size_t copy_word_width_(std::size_t bytes) noexcept {
+    std::size_t width = widest_copy_word;
+    while (width > bytes) {
+        width /= 2;
     }
     return width;
 }
@@ -1195,7 +1200,12 @@ inline void copy_small_(unsigned char* target, unsigned char const* source) noex
     store_copy_word_<width>(target, first);
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
 }  // namespace detail
+
+// The copy of a fixed extent calls copy_small_, so it is in the target
+// namespace too.
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // Copies the elements of src into dst, two Views of one fixed extent.  The
 // type gives the two the same count, so the copy cannot fail.  Two Views of
@@ -1217,6 +1227,8 @@ void copy(View<T, Extent> dst, std::type_identity_t<View<T const, Extent>> src) 
         __builtin_memmove(target, source, bytes);
     }
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 // Copies the elements of src into dst, two Views of a dynamic extent.  The
 // counts can differ, so the copy gives a Result: LengthMismatch when they
