@@ -1180,15 +1180,21 @@ private:
 public:
     static constexpr uint32_t MAX_SLOTS = 65536;
 
-    // The error of a build that meets an op with tensors and no metadata
-    // index.  The foreground records such an op when the metadata log is
-    // full, and the build then makes no graph.  The build releases nothing.
-    // The floor of a later commit marker passes the records of the work.
-    struct MetaLogOverflow {};
+    // The reason that a build makes no region.  The build releases nothing,
+    // and the floor of a later commit marker passes the records of the work.
+    enum class BuildRefusal : uint8_t {
+        // An op has tensors and no metadata index.  The foreground records
+        // such an op when the metadata log is full.
+        MetaLogOverflow,
+        // An op is the closing entry of a nest whose op did not reach the
+        // Vigil (kUnrecordedNestSchema of TraceRing.h).  That op did not
+        // finish its computation in the trace, so the region stays eager.
+        UnrecordedNest,
+    };
 
-    // A graph and the parts of its region, or the overflow that stopped the
-    // build.
-    using TraceBuild = ::fixy::Result<BuiltTrace, MetaLogOverflow>;
+    // A graph and the parts of its region, or the reason that the build
+    // made none.
+    using TraceBuild = ::fixy::Result<BuiltTrace, BuildRefusal>;
 
     // Turns the ring entries of trace and their tensor metadata into a CSR
     // property graph in scratch, and the parts of its region.  The caller

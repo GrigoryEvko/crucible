@@ -113,6 +113,18 @@ struct Work {
         crucible::test::element_at(meta_starts, count) = MetaIndex::none();
         ++count;
     }
+
+    // The closing entry of a nest whose op did not reach the Vigil, at the
+    // depth of that op, with no tensor, as Vigil::give_unrecorded_nest gives it.
+    void push_closing_entry(crucible::OpDepth depth) {
+        assert(count < CAPACITY);
+        TraceRing::Entry& entry = crucible::test::element_at(trace, count);
+        entry.schema_hash = crucible::kUnrecordedNestSchema;
+        entry.shape_hash = crucible::ShapeHash{0x8100ULL};
+        crucible::test::element_at(meta_starts, count) = MetaIndex::none();
+        crucible::test::element_at(depths, count) = depth;
+        ++count;
+    }
 };
 
 // The kernel classification of a build reads the global tables, which
@@ -145,7 +157,7 @@ void test_overflow_build_leaves_tail() {
 
     ::fixy::BumpArena scratch{size_t{1} << 16};
     const BackgroundThread::TraceBuild built = overflowing.build(bt, test.alloc, scratch);
-    assert(built.is_err());
+    assert(built.err().expect("the overflow refuses the build") == BackgroundThread::BuildRefusal::MetaLogOverflow);
     assert(metalog->tail.get() == 0u && "the build stage moved the tail of the metadata log");
 
     // The overflow at the first op reads no metadata.
@@ -153,10 +165,41 @@ void test_overflow_build_leaves_tail() {
     overflowing_at_start.push_op_without_meta(3);
     (void)overflowing_at_start.push_op_with_meta(*metalog, 4);
     const BackgroundThread::TraceBuild built_at_start = overflowing_at_start.build(bt, test.alloc, scratch);
-    assert(built_at_start.is_err());
+    assert(built_at_start.err().expect("the overflow refuses the build")
+           == BackgroundThread::BuildRefusal::MetaLogOverflow);
     assert(metalog->tail.get() == 0u);
 
     crucible::test::pass("  overflow_build_leaves_tail:                PASSED\n");
+}
+
+// A work that holds the closing entry of a nest whose op did not reach the
+// Vigil holds ops of a computation that the trace does not finish.  The build
+// refuses it, so the region stays eager.  The same work with no closing entry
+// builds.  The ops hold no tensor, so the build reads no metadata log.
+void test_unrecorded_nest_refuses_the_build() {
+    using namespace meta_rig;
+    seal_global_tables();
+
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    const auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena scratch{size_t{1} << 16};
+
+    Work raised;
+    raised.push_op_with_scalars(0, 1, 2);
+    crucible::test::element_at(raised.depths, 0) = crucible::OpDepth{1};
+    raised.push_closing_entry(crucible::OpDepth{0});
+    raised.push_op_with_scalars(1, 3, 4);
+    const BackgroundThread::TraceBuild refused = raised.build(bt, test.alloc, scratch);
+    assert(refused.err().expect("the closing entry refuses the build")
+           == BackgroundThread::BuildRefusal::UnrecordedNest);
+
+    Work recorded;
+    recorded.push_op_with_scalars(0, 1, 2);
+    crucible::test::element_at(recorded.depths, 0) = crucible::OpDepth{1};
+    recorded.push_op_with_scalars(1, 3, 4);
+    assert(recorded.build(bt, test.alloc, scratch).is_ok() && "the work with no closing entry builds");
+
+    crucible::test::pass("  unrecorded_nest_refuses_the_build:         PASSED\n");
 }
 
 // The order that the pipeline permits: the build stage builds a graph and

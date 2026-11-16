@@ -134,4 +134,140 @@ void test_op_nest_counts_the_open_records() {
     crucible::test::pass("  test_op_nest_counts_the_open_records: PASSED\n");
 }
 
+namespace {
+
+// Gives the Vigil one op with no tensor at the depth, as an adapter gives an
+// op of a nest.
+void give_op_at(crucible::Vigil& vigil, uint64_t schema, crucible::OpDepth depth) {
+    crucible::TraceRing::Entry entry{};
+    entry.schema_hash = crucible::SchemaHash{schema};
+    entry.shape_hash = crucible::ShapeHash{schema + 0x1000};
+    (void)vigil.dispatch_op(crucible::test::certify_synthetic_op(entry), crucible::ScopeHash{},
+                            crucible::CallsiteHash{}, depth);
+}
+
+}  // namespace
+
+// A nest gives its closing entry at its own depth only when an op inside it
+// reached the Vigil and its own op did not.  The record stack counts each op
+// that reaches the Vigil, so the count and the last depth show each entry.
+void test_unrecorded_nest_gives_its_closing_entry() {
+    crucible::Vigil vigil;
+    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    const crucible::OpRecordStack& stack = vigil.op_record_stack(fg);
+    const crucible::OpDepth top{0};
+    const crucible::OpDepth child{1};
+    const crucible::OpDepth grandchild{2};
+
+    // The op raises after a child reached the Vigil: one closing entry at
+    // the depth of the op.
+    uint64_t given = stack.given();
+    {
+        const crucible::VigilOpNest raised{vigil, fg};
+        give_op_at(vigil, 0x300, child);
+    }
+    assert(stack.given() == given + 2 && stack.last_given_depth() == top
+           && "a raise after a child gives the closing entry at the depth of the op");
+
+    // The op raises before an op inside it reached the Vigil: no entry.
+    given = stack.given();
+    { const crucible::VigilOpNest raised{vigil, fg}; }
+    assert(stack.given() == given && "a raise with no child gives no entry");
+
+    // A child raises after its own child reached the Vigil, and the unwind
+    // passes through the parent: one entry at each depth, the child first.
+    given = stack.given();
+    {
+        const crucible::VigilOpNest parent{vigil, fg};
+        {
+            const crucible::VigilOpNest raised{vigil, fg};
+            give_op_at(vigil, 0x301, grandchild);
+        }
+        assert(stack.given() == given + 2 && stack.last_given_depth() == child
+               && "the child gives its entry at its own depth");
+    }
+    assert(stack.given() == given + 3 && stack.last_given_depth() == top
+           && "the parent gives its entry after the entry of the child");
+
+    // The parent catches the raise of the child and reaches the Vigil: the
+    // child gives its entry, and the parent gives none.
+    given = stack.given();
+    {
+        const crucible::VigilOpNest parent{vigil, fg};
+        {
+            const crucible::VigilOpNest raised{vigil, fg};
+            give_op_at(vigil, 0x302, grandchild);
+        }
+        give_op_at(vigil, 0x303, top);
+    }
+    assert(stack.given() == given + 3 && stack.last_given_depth() == top
+           && "a parent that reaches the Vigil gives no closing entry");
+
+    // An op of a larger depth that reached the Vigil before the nest opened
+    // does not count for the nest.
+    give_op_at(vigil, 0x304, crucible::OpDepth{3});
+    given = stack.given();
+    { const crucible::VigilOpNest raised{vigil, fg}; }
+    assert(stack.given() == given && "an op given before the open does not count for the nest");
+
+    // An op that reaches the Vigil after its child gives no entry.
+    given = stack.given();
+    {
+        const crucible::VigilOpNest recorded{vigil, fg};
+        give_op_at(vigil, 0x305, child);
+        give_op_at(vigil, 0x306, top);
+    }
+    assert(stack.given() == given + 2 && "a recorded op gives no closing entry");
+
+    crucible::test::pass("  test_unrecorded_nest_gives_its_closing_entry: PASSED\n");
+}
+
+namespace {
+
+// One iteration of a loop of NUM_OPS ops: op 3 runs op 2 inside it, and the
+// other ops run at the top.  When does_raise is true, op 3 raises after op 2
+// reached the Vigil, so its nest gives the closing entry in its place.
+void give_iteration(crucible::Vigil& vigil, bool does_raise) {
+    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    for (uint32_t op = 0; op < NUM_OPS; ++op) {
+        if (op == 2) continue;
+        if (op != 3) {
+            give_op_at(vigil, 0x400 + op, crucible::OpDepth{0});
+            continue;
+        }
+        const crucible::VigilOpNest nest{vigil, fg};
+        give_op_at(vigil, 0x402, crucible::OpDepth{1});
+        if (!does_raise) give_op_at(vigil, 0x403, nest.depth());
+    }
+}
+
+// The count of the iterations of each loop.  The detector of a loop of the
+// control publishes a region after two iterations and a head of the third.
+constexpr uint32_t kIterations = 6;
+
+}  // namespace
+
+// A loop whose op raises after an op inside it reached the Vigil gives the
+// closing entry in each iteration.  The build refuses each region that holds
+// it, so the loop stays eager.  The same loop with no raise builds a region.
+void test_unrecorded_nest_keeps_the_loop_eager() {
+    {
+        crucible::Vigil vigil;
+        for (uint32_t iter = 0; iter < kIterations; ++iter)
+            give_iteration(vigil, true);
+        vigil.flush();
+        assert(vigil.flush_complete() && "flush() returned but bg thread did not finish processing");
+        assert(!vigil.has_pending_region() && vigil.active_region().is_none()
+               && "a region that holds the closing entry of a nest must not build");
+    }
+    {
+        crucible::Vigil vigil;
+        for (uint32_t iter = 0; iter < kIterations; ++iter)
+            give_iteration(vigil, false);
+        crucible::test::flush_and_wait_region_published(vigil);
+    }
+
+    crucible::test::pass("  test_unrecorded_nest_keeps_the_loop_eager: PASSED\n");
+}
+
 }  // namespace test_vigil

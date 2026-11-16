@@ -195,6 +195,7 @@ int main() {
     test_published_regions_keep_their_hashes();
     test_long_run_keeps_its_scratch();
     test_overflow_build_leaves_tail();
+    test_unrecorded_nest_refuses_the_build();
     test_publish_stage_releases_in_order();
     test_pipeline_releases_after_overflow();
     test_built_graph_owns_its_metadata();

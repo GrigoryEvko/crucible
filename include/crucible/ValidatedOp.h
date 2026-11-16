@@ -67,6 +67,19 @@ public:
     // The depth of an op that starts now: the count of the open nests.
     [[nodiscard]] constexpr OpDepth depth() const noexcept { return depth_; }
 
+    // An adapter calls it each time it gives an op of the depth to the Vigil,
+    // on each path: a recorded op, a replayed op and a closing entry.  A nest
+    // reads the two values to tell if its own op reached the Vigil after the
+    // ops inside it (OpNest::is_unrecorded).  O(1).
+    constexpr void note_given(OpDepth depth) noexcept {
+        ++given_;
+        last_given_depth_ = depth;
+    }
+
+    // The count of the ops that note_given saw, and the depth of the last.
+    [[nodiscard]] constexpr uint64_t given() const noexcept { return given_; }
+    [[nodiscard]] constexpr OpDepth last_given_depth() const noexcept { return last_given_depth_; }
+
 private:
     friend class OpRecordFrame;
     friend class OpNest;
@@ -75,7 +88,11 @@ private:
     // At most kMaxOpRecords.  A frame opens only when its slots fit.
     uint32_t top_ = 0;
     OpDepth depth_{};
-    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 2> pad_{};
+    // The depth of the last op that note_given saw.
+    OpDepth last_given_depth_{};
+    // The count of the ops that note_given saw.  It wraps after 2^64 ops,
+    // which a stream of one op in each nanosecond reaches after 584 years.
+    uint64_t given_ = 0;
 };
 
 // The nest of the record of one op on an OpRecordStack.  The constructor
@@ -86,7 +103,8 @@ private:
 // nest too.  O(1) for each open and each close.
 class [[nodiscard]] OpNest {
 public:
-    explicit OpNest(OpRecordStack& stack) noexcept : stack_{::fixy::to(stack)}, depth_{stack.depth_} {
+    explicit OpNest(OpRecordStack& stack) noexcept
+        : stack_{::fixy::to(stack)}, depth_{stack.depth_}, given_at_open_{stack.given_} {
         stack.depth_ = depth_.nested();
     }
 
@@ -104,9 +122,22 @@ public:
     // The depth of the op of this nest.
     [[nodiscard]] constexpr OpDepth depth() const noexcept { return depth_; }
 
+    // True when an op inside this nest reached the Vigil and the op of this
+    // nest did not.  The Vigil takes the ops in post-order, so the last op
+    // given since the open is the op of this nest when it reached the Vigil,
+    // and an op of a larger depth when it did not: the op raised, or the
+    // adapter refused its record.  The adapter then gives the closing entry
+    // (kUnrecordedNestSchema of TraceRing.h) at the depth of this nest, so
+    // the ops inside it do not pass to the next op.  An op given before the
+    // open does not count, also when it is deeper.  O(1).
+    [[nodiscard]] bool is_unrecorded() const noexcept {
+        return stack_->given_ != given_at_open_ && depth_.raw() < stack_->last_given_depth_.raw();
+    }
+
 private:
     ::fixy::Ref<OpRecordStack> stack_;
     OpDepth depth_{};
+    uint64_t given_at_open_ = 0;
 };
 
 // The slots of the records of one op, at the top of an OpRecordStack.  The

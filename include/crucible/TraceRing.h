@@ -58,6 +58,17 @@
 
 namespace crucible {
 
+// The schema hash of the closing entry of a nest whose op did not reach the
+// Vigil: the op raised, or the adapter refused its record, after an op inside
+// its nest reached the Vigil (OpNest::is_unrecorded).  The adapter gives the
+// entry at the depth of the op, with no record, so a reader of the post-order
+// stream gives the ops of the nest to it and not to the next op.  The op did
+// not finish its computation in the trace, so the build refuses each region
+// that holds the entry, and the region stays eager.  The value is the FNV-1a
+// hash of the name "crucible::unrecorded_nest", the fold of the schema hash of
+// each name of the vessel, and no operator of PyTorch has that name.
+inline constexpr SchemaHash kUnrecordedNestSchema{0xb984e8ae07060156ULL};
+
 namespace op_flag {
 inline constexpr uint8_t INFERENCE_MODE = 1 << 0;
 inline constexpr uint8_t IS_MUTABLE = 1 << 1;

@@ -793,7 +793,8 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         // One epoch of the build scratch covers this work item.  The graph
         // and its CSR arrays die at its end, so only the region leaves the
         // epoch.  The region owns its buffers and does not point into the
-        // scratch.  A work that met the overflow builds no region.
+        // scratch.  A work that the build refuses (BuildRefusal) builds no
+        // region.
         ::fixy::Option<BuiltRegion> built{::fixy::none};
         owner.build_scratch_.with_epoch([&]() noexcept {
             owner
@@ -801,11 +802,11 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
                                   work->scope_hashes.view(), work->callsite_hashes.view(), work->depths.view(),
                                   work->numerics)
                 .match([&](BuiltTrace trace) noexcept { built = ::fixy::some(std::move(trace.region)); },
-                       [](MetaLogOverflow /*overflow*/) noexcept {});
+                       [](BuildRefusal /*refusal*/) noexcept {});
         });
 
-        // A work that met the overflow sends no region.  The floor of a later
-        // commit marker releases its records.
+        // A refused work sends no region.  The floor of a later commit marker
+        // releases its records.
         if (built.is_none()) {
             continue;
         }
@@ -1072,11 +1073,13 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
     uint32_t total_outputs = 0;
     uint32_t total_scalars = 0;
     bool has_overflow = false;
+    bool has_unrecorded_nest = false;
     for (const auto index : trace_data.indices()) {
         MetaIndex ms = meta_data.at(index);
         const TraceRing::Entry& re = trace_data.at(index);
         // An overflow is an op that has tensors and no metadata index.
         has_overflow |= !ms.is_valid() && (re.num_inputs + re.num_outputs) > 0;
+        has_unrecorded_nest |= re.schema_hash == kUnrecordedNestSchema;
         if (ms.is_valid()) {
             if (!first_meta.is_valid()) first_meta = ms;
             const uint64_t meta_end = ms.raw() + re.num_inputs + re.num_outputs;
@@ -1087,7 +1090,12 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         total_scalars += ::fixy::min(re.num_scalar_args, uint16_t{5});
     }
     if (has_overflow) {
-        return ::fixy::err(MetaLogOverflow{});
+        return ::fixy::err(BuildRefusal::MetaLogOverflow);
+    }
+    // A nest whose op did not reach the Vigil holds ops of a computation that
+    // the trace does not finish, so a region of it must not compile.
+    if (has_unrecorded_nest) {
+        return ::fixy::err(BuildRefusal::UnrecordedNest);
     }
 
     ensure_scratch_buffers(a, total_inputs, total_outputs);

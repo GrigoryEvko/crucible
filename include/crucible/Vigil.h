@@ -253,9 +253,12 @@ public:
     // different ownership rules for one ring.
     //
     // A caller that names no depth records an op that no recorded op runs.
+    // The record stack notes the op (OpRecordStack::note_given), as for
+    // dispatch_op.
     [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(const ValidatedOp& op, ScopeHash scope_hash = {},
                                                            CallsiteHash callsite_hash = {}, OpDepth depth = {}) {
         (void)assert_producer_thread_();
+        op_record_stack_.note_given(depth);
         return record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash, depth);
     }
 
@@ -302,6 +305,11 @@ public:
         // of the replay chain below is minted from it.
         const VigilFgCtx fg = assert_producer_thread_();
         const TraceRing::Entry& entry = op.entry();
+
+        // The record stack notes each op that reaches the Vigil, on each
+        // path, so a nest can tell if its own op reached it after the ops
+        // inside it (OpNest::is_unrecorded).
+        op_record_stack_.note_given(depth);
 
         // The branch itself proves the context is compiled.  Minting the
         // view once here is what makes the engine transition below reachable
@@ -637,6 +645,27 @@ public:
     [[nodiscard]] OpRecordStack& op_record_stack(VigilFgCtx const&) & noexcept { return op_record_stack_; }
     OpRecordStack& op_record_stack(VigilFgCtx const&) && =
         delete("a temporary Vigil releases its slots at the end of the statement. Use a Vigil that has a name");
+
+    // Gives the closing entry of a nest whose op did not reach this Vigil
+    // after an op inside the nest did (OpNest::is_unrecorded): the op raised,
+    // or the adapter refused its record.  The entry has the schema hash
+    // kUnrecordedNestSchema, the depth of the nest and no record, so a reader
+    // of the post-order stream gives the ops of the nest to it and not to the
+    // next op.  The build refuses each region that holds it.  A replay
+    // diverges at it, because no region holds it.  The result of the dispatch
+    // tells the adapter nothing, so the call drops it.  VigilOpNest calls it
+    // at its close, also in an unwind.  Cold: an op that raises is rare.
+    [[gnu::cold]] CRUCIBLE_NOINLINE void give_unrecorded_nest(OpDepth depth) {
+        TraceRing::Entry entry{};
+        entry.schema_hash = kUnrecordedNestSchema;
+        entry.shape_hash = ShapeHash{detail::combine_ids(kUnrecordedNestSchema.raw(), depth.raw())};
+        // This code builds each field of the entry, so the entry is valid by
+        // construction, as the comment of TraceRing::ValidatedEntryPtr states.
+        const ValidatedOp op = mint_validated_op(mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),
+                                                 ::fixy::View<const TensorMeta>{})
+                                   .expect("an entry with no tensor takes no record");
+        (void)dispatch_op(op, ScopeHash{}, CallsiteHash{}, depth);
+    }
 
     // Counters that any thread can read with no context.  Each value is a
     // snapshot, and it can be stale by the time the caller reads it.
@@ -1494,6 +1523,37 @@ private:
     BackgroundThread::RegionReadyCall const region_ready_;
 
     BackgroundThread bg_;  // Must stay last.
+};
+
+// The nest of the record of one op that an adapter gives to a Vigil.  It
+// opens an OpNest on the record stack of the Vigil, and the adapter gives the
+// op its depth.  At the close, when the op did not reach the Vigil after an
+// op inside the nest did, the nest gives the closing entry at its depth
+// (Vigil::give_unrecorded_nest).  The nest lives in the call of its op, so an
+// unwind of a raise in that call closes it too.  An adapter opens it before
+// the OpRecordFrame of the op, so the frame closes first.  O(1) for each open
+// and each close that gives no entry.
+class [[nodiscard]] VigilOpNest {
+public:
+    VigilOpNest(Vigil& vigil, VigilFgCtx const& fg) noexcept
+        : vigil_{::fixy::to(vigil)}, nest_{vigil.op_record_stack(fg)} {}
+
+    ~VigilOpNest() {
+        if (nest_.is_unrecorded()) [[unlikely]]
+            vigil_->give_unrecorded_nest(nest_.depth());
+    }
+
+    VigilOpNest(const VigilOpNest&) = delete("a nest closes at the end of the scope of its op");
+    VigilOpNest& operator=(const VigilOpNest&) = delete("a nest closes at the end of the scope of its op");
+    VigilOpNest(VigilOpNest&&) = delete("a nest closes at the end of the scope of its op");
+    VigilOpNest& operator=(VigilOpNest&&) = delete("a nest closes at the end of the scope of its op");
+
+    // The depth of the op of this nest.
+    [[nodiscard]] constexpr OpDepth depth() const noexcept { return nest_.depth(); }
+
+private:
+    ::fixy::Ref<Vigil> vigil_;
+    OpNest nest_;
 };
 
 }  // namespace crucible

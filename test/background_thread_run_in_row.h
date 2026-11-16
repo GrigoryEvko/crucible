@@ -35,6 +35,7 @@ void test_long_run_keeps_its_scratch();
 // The release of the metadata log, and the copy of its records that a built
 // graph holds (test_background_thread_run_in_row_meta.cpp).
 void test_overflow_build_leaves_tail();
+void test_unrecorded_nest_refuses_the_build();
 void test_publish_stage_releases_in_order();
 void test_pipeline_releases_after_overflow();
 void test_built_graph_owns_its_metadata();

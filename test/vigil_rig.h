@@ -84,6 +84,8 @@ void test_region_keeps_its_metadata_after_the_log_wraps();
 void test_region_keeps_the_depth_of_each_op();
 void test_region_keeps_the_depth_past_a_growth_of_the_held_ops();
 void test_op_nest_counts_the_open_records();
+void test_unrecorded_nest_gives_its_closing_entry();
+void test_unrecorded_nest_keeps_the_loop_eager();
 
 // The data address of an external slot follows the live op of each
 // iteration (test_vigil_external.cpp).
