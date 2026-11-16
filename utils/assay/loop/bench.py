@@ -37,15 +37,17 @@ THE CAPABILITIES
 THE RESERVED CPUS
     The host reserves CPUs for dedicated work in one of two ways.
     read_reserved() reads the first one that the host gives:
-      1. /sys/devices/system/cpu/isolated, which isolcpus=domain fills.  A
-         process can run on these CPUs with taskset alone.
-      2. One cgroup cpuset partition: a cgroup below the root with the value
+      1. One cgroup cpuset partition: a cgroup below the root with the value
          "root" or "isolated" in its cpuset.cpus.partition.  A partition that
          the kernel refuses does not count.  A process of a different cgroup
-         cannot run on the CPUs of the partition.  The command then starts
-         each bench in the systemd slice of the partition, with `sudo -n
-         systemd-run --scope`, as the calling user.  When the host has two
-         partitions, CRUCIBLE_BENCH_SLICE must name one of them.
+         cannot run on the CPUs of the partition, also when the CPUs are in
+         the isolated file.  So the partition comes first, and the command
+         starts each bench in the systemd slice of the partition, with `sudo
+         -n systemd-run --scope`, as the calling user.  When the isolated file
+         holds other CPUs, the command prints the two lists.  When the host
+         has two partitions, CRUCIBLE_BENCH_SLICE must name one of them.
+      2. /sys/devices/system/cpu/isolated, which isolcpus=domain fills.  A
+         process can run on these CPUs with taskset alone.
     A core of the runs is the lowest CPU of an SMT group that holds only
     reserved CPUs.  The SMT sibling of the core then stays idle.
 
@@ -108,6 +110,7 @@ import calendar
 import contextlib
 import dataclasses
 import fcntl
+import io
 import os
 import shutil
 import sys
@@ -330,8 +333,6 @@ def read_reserved(slice_name: str = "", cpu_root: Path = CPU_ROOT, cgroup_root: 
         BenchError: If the host has two partitions and slice_name names none of them
     """
     isolated = parse_cpu_list(read_text(cpu_root / "isolated"))
-    if isolated:
-        return Reserved(isolated, "isolated")
     partitions: dict[str, tuple[int, ...]] = {}
     for depth in ("*", "*/*"):
         for marker in sorted(cgroup_root.glob(f"{depth}/cpuset.cpus.partition")):
@@ -349,14 +350,22 @@ def read_reserved(slice_name: str = "", cpu_root: Path = CPU_ROOT, cgroup_root: 
                 f"CRUCIBLE_BENCH_SLICE names {slice_name}, and the partitions of the host are "
                 f"{sorted(partitions) or 'none'}"
             )
-        return Reserved(partitions[slice_name], "partition", slice_name)
-    if len(partitions) > 1:
+        name, cpus = slice_name, partitions[slice_name]
+    elif len(partitions) > 1:
         raise BenchError(
             f"the host has the partitions {sorted(partitions)}.  Set CRUCIBLE_BENCH_SLICE to the slice of the benches"
         )
-    if not partitions:
+    elif partitions:
+        ((name, cpus),) = partitions.items()
+    elif isolated:
+        return Reserved(isolated, "isolated")
+    else:
         return Reserved()
-    ((name, cpus),) = partitions.items()
+    if isolated and isolated != cpus:
+        warn(
+            f"the isolated cpus {list(isolated)} and the cpus {list(cpus)} of the partition {name} differ: the benches "
+            "run in the partition"
+        )
     return Reserved(cpus, "partition", name)
 
 
@@ -856,10 +865,37 @@ def self_test() -> int:
             "CRUCIBLE_BENCH_SLICE chooses one of two partitions",
             read_reserved("other.slice", cpu_root, cgroup_root).cpus == (220, 221, 222, 223),
         )
+        both = Path(work, "cgroup-both")
+        plant(both / "bench.slice" / "cpuset.cpus.partition", "isolated\n")
+        plant(both / "bench.slice" / "cpuset.cpus.exclusive.effective", "224-255\n")
+        plant(cpu_root / "isolated", "224-255\n")
+        printed = io.StringIO()
+        with contextlib.redirect_stderr(printed):
+            agreed = read_reserved("", cpu_root, both)
+        expect(
+            "a valid partition wins over the isolated file, and the same cpus print nothing",
+            agreed == Reserved(tuple(range(224, 256)), "partition", "bench.slice") and not printed.getvalue(),
+        )
         plant(cpu_root / "isolated", "220-227\n")
+        printed = io.StringIO()
+        with contextlib.redirect_stderr(printed):
+            differed = read_reserved("", cpu_root, both)
+        expect(
+            "a partition and an isolated file that differ give the partition and print the two lists",
+            differed.source == "partition" and "[220, 221" in printed.getvalue() and "[224, 225" in printed.getvalue(),
+        )
+        refused = Path(work, "cgroup-refused")
+        plant(refused / "bench.slice" / "cpuset.cpus.partition", "isolated invalid (Cpu list is not exclusive)\n")
+        plant(refused / "bench.slice" / "cpuset.cpus.exclusive.effective", "224-255\n")
+        expect(
+            "a partition that the kernel refuses gives the isolated file",
+            read_reserved("", cpu_root, refused) == Reserved(tuple(range(220, 228)), "isolated"),
+        )
+        # The cases of the isolated file alone, with no partition.
+        cgroup_root = Path(work, "cgroup-none")
         with claim(Settings("b", "p")) as where:
             expect(
-                "isolcpus comes first, and taskset alone puts the bench on its core",
+                "isolcpus with no partition: taskset alone puts the bench on its core",
                 where.reserved.source == "isolated" and where.core == "220" and "sudo" not in where.prefix,
             )
             with claim(Settings("b", "p")) as second:
