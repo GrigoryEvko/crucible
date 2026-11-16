@@ -184,10 +184,16 @@ void check_round(Test const& test, std::uint32_t input) {
     CRUCIBLE_TEST_ASSERT(test, (holds_rule<T, Mode>(input, word)));
 }
 
+#if defined(__x86_64__)
+
+// The AVX-512 BF16 check of check_input reads it, so it exists only where
+// that check does.
 [[nodiscard]] bool is_binary32_subnormal(std::uint32_t input) noexcept {
     std::uint32_t const magnitude = input & 0x7FFFFFFFu;
     return magnitude != 0 && magnitude < 0x00800000u;
 }
+
+#endif
 
 void check_input(Test const& test, std::uint32_t input, bool has_f16c, bool has_avx512_bf16, Counts& counts) {
     check_round<core::f16, Saturation::nonsaturating>(test, input);
