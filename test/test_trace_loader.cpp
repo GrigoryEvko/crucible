@@ -372,6 +372,56 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
     crucible::test::pass("  test_schema_name_table_collision_is_refused: PASSED\n");
 }
 
+// The trace of trace_path gives aten::add, aten::mul and aten::matmul to
+// three hashes, and the table holds one name less than SCHEMA_TABLE_CAP
+// first.  aten::add takes the last place.  A full table refuses aten::mul,
+// because input from outside can name more schemas than the table holds.  The
+// load stops the names of the trace there, it reports the reason, and the
+// process lives.  The load runs in a child, so the test reads the report on
+// the standard error of the child.
+static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::source::Sanitized> const& trace_path) {
+    global_schema_table().clear(::foundation::effects::testing::test());
+    constexpr SchemaHash kFirstHash{0xAAAA111122223333ULL};
+    constexpr SchemaHash kRefusedHash{0xBBBB444455556666ULL};
+    constexpr SchemaHash kLaterHash{0xCCCC777788889999ULL};
+    for (const SchemaTable::MutableView& view : global_schema_table().mint_mutable_view(kVigilForeground)) {
+        for (uint64_t filler = 1; filler < SCHEMA_TABLE_CAP; ++filler) {
+            const bool was_registered = register_schema_name(kTestIo.cap().alloc, view, SchemaHash{filler},
+                                                             ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(
+                                                                 ::fixy::TextView{"aten::filler"}))
+                                            .is_ok();
+            assert(was_registered);
+        }
+    }
+    assert(global_schema_table().count() == SCHEMA_TABLE_CAP - 1);
+
+    const ::fixy::process::ChildReport report =
+        ::fixy::process::wait(
+            ::fixy::process::spawn_child(
+                kTestIo,
+                [&trace_path] noexcept {
+                    const LoadedTrace loaded = load_trace(kTestIo, kVigilForeground, trace_path)
+                                                   .expect("a full schema table ends the names of the trace only");
+                    const bool keeps_earlier = is_named(global_schema_table().lookup(kFirstHash), "aten::add");
+                    const bool refuses_next = missing(global_schema_table().lookup(kRefusedHash));
+                    const bool stops_there = missing(global_schema_table().lookup(kLaterHash));
+                    const bool is_full_table = global_schema_table().count() == SCHEMA_TABLE_CAP;
+                    if (loaded.num_ops != 0 || !keeps_earlier || !refuses_next || !stops_there || !is_full_table) {
+                        ::fixy::fatal("the full schema table took a name past its last place");
+                    }
+                })
+                .expect("the test starts a child"))
+            .expect("the test waits for its child");
+    assert(report.is_exit_with(0));
+    assert(::fixy::find(report.output(),
+                        ::fixy::TextView{"load_trace: the schema table holds 512 names, so it refuses the name "
+                                         "aten::mul of the schema hash 13527480966017541734"})
+               .is_some());
+
+    global_schema_table().clear(::foundation::effects::testing::test());
+    crucible::test::pass("  test_schema_name_table_full_is_refused: PASSED\n");
+}
+
 static void test_schema_name_table_round_trip() {
     global_schema_table().clear(::foundation::effects::testing::test());
 
@@ -407,6 +457,7 @@ static void test_schema_name_table_round_trip() {
     assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFULL})));
 
     test_schema_name_table_collision_is_refused(sanitized(path));
+    test_schema_name_table_full_is_refused(sanitized(path));
     std::remove(path.c_str());
 
     global_schema_table().clear(::foundation::effects::testing::test());

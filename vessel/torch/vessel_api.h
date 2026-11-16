@@ -155,7 +155,7 @@ typedef struct {
 // Python ctypes consumers cross-check via crucible_abi_version() at
 // load.  The constant is also exposed as a #define so C consumers can
 // bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 4ULL
+#define CRUCIBLE_VESSEL_ABI_VERSION 5ULL
 
 // Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
 // Never aborts — pure constant return.  Used by crucible_native.py
@@ -235,7 +235,10 @@ enum {
     CRUCIBLE_SCHEMA_NAME_REFUSED = 1,
     // The table holds a different name for the hash.  It keeps that name, and
     // it refuses this one.
-    CRUCIBLE_SCHEMA_NAME_COLLISION = 2
+    CRUCIBLE_SCHEMA_NAME_COLLISION = 2,
+    // The table holds the most names that it can hold, and the hash is not
+    // one of them.  It keeps each name, and it refuses this one.
+    CRUCIBLE_SCHEMA_NAME_FULL = 3
 };
 
 // Register an op name for a schema hash, for the labels of trace

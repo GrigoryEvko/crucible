@@ -299,6 +299,17 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
                    schema_hash, name);
 }
 
+// The report of a name of a trace that the schema table refuses, because the
+// table holds SCHEMA_TABLE_CAP names and the hash is not one of them.  The
+// load keeps the names before it, and the table of names of the trace stops
+// there.
+[[gnu::cold, gnu::noinline]] inline void report_name_table_full_(uint64_t schema_hash, ::fixy::TextView name) noexcept {
+    ::fixy::report(::fixy::Sink::Err,
+                   "load_trace: the schema table holds {} names, so it refuses the name {} of the schema hash {}, "
+                   "and the names of the trace stop there\n",
+                   SCHEMA_TABLE_CAP, name, schema_hash);
+}
+
 }  // namespace detail
 
 // Builds one metadata record from its bytes through decode_tensor_meta, the
@@ -589,7 +600,9 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
                             .retag<::fixy::tags::source::Sanitized>();
             // A name that the table refuses ends the table here, as a
             // malformed tail does.  A collision is a name that the file gives
-            // a held hash in place of its first name, and the report names it.
+            // a held hash in place of its first name.  A full table holds
+            // SCHEMA_TABLE_CAP names and refuses each new hash.  The report
+            // names the name of each of the two.
             const SchemaRegistration registration = schema_table_view.match(
                 [&](SchemaTable::MutableView const& view) {
                     return register_schema_name(io.cap().alloc, view, SchemaHash{schema_hash_raw}, name);
@@ -597,6 +610,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
                 [] noexcept { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
             if (registration.is_err()) {
                 if (is_collision(registration)) detail::report_name_collision_(schema_hash_raw, name_text.view());
+                if (is_full(registration)) detail::report_name_table_full_(schema_hash_raw, name_text.view());
                 break;
             }
         }

@@ -507,11 +507,16 @@ class CrucibleMode(TorchDispatchMode):
             # Register name in the global SchemaTable for visualization/diagnostics.
             # A collision means that two op names give one schema hash.  The
             # table keeps the first name, and two ops share one schema hash.
+            # A full table keeps each name, and this op has no name in it.
             result = self._vessel.crucible_register_schema_name(
                 self._handle, h, op_name.encode("ascii"))
             if result == SchemaNameResult.COLLISION:
                 raise RuntimeError(
                     f"crucible: the schema hash {h} of the op {op_name} names a different op in the schema table")
+            if result == SchemaNameResult.FULL:
+                raise RuntimeError(
+                    f"crucible: the schema table is full, so it has no place for the op {op_name}.  Raise "
+                    f"SCHEMA_TABLE_CAP in crucible/SchemaTable.h")
         return h
 
     def _compute_shape_hash(self, tensors):

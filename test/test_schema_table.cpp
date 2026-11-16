@@ -32,11 +32,6 @@ static void reg(SchemaTable& t, SchemaTable::MutableView const& view, SchemaHash
     assert(was_registered);
 }
 
-// True when a registration gave the refusal sealed.
-static bool is_sealed_refusal(SchemaRegistration const& registration) {
-    return registration.is_err() && registration.err().value_or(SchemaRefusal::collision) == SchemaRefusal::sealed;
-}
-
 // The table admits exactly two provenances, and a looked-up name claims
 // neither of them: it is the table's interned copy.
 static_assert(SchemaNameSource<source::Sanitized>);
@@ -155,6 +150,64 @@ static ::fixy::FixedText<16> op_name(uint32_t i) {
     ::fixy::FixedText<16> name{};
     static_cast<void>(::fixy::format(name, "op_{}", i).expect("op_ and a 32-bit number fit in 16 characters"));
     return name;
+}
+
+// The hash of filler i of a full table.  Each hash of a filler is above the
+// hash that the full table refuses.
+static SchemaHash filler_hash(uint32_t i) { return H(0x1000 + i); }
+
+// Fills the table with SCHEMA_TABLE_CAP internal names.
+static void fill_table(SchemaTable& t, SchemaTable::MutableView const& view) {
+    for (uint32_t i = 0; i < SCHEMA_TABLE_CAP; ++i) {
+        const ::fixy::FixedText<16> name = op_name(i);
+        reg(t, view, filler_hash(i), S(name.view()));
+    }
+    assert(t.count() == SCHEMA_TABLE_CAP);
+}
+
+// A full table refuses a new hash from outside with full, and the process
+// lives.  The refused hash is below each held hash, so a refusal after the
+// pass of the order would lose the entry of the largest hash.  The table keeps
+// each name, and a held hash still gives its first name or a collision.
+static void test_outside_name_at_full_table_is_refused() {
+    SchemaTable t;
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    fill_table(t, mv);
+    const SchemaTable::SanitizedName outside =
+        ::fixy::mint_tagged<source::External>(::fixy::TextView{"aten::outside"}).retag<source::Sanitized>();
+    assert(is_full(t.register_name(::foundation::effects::testing::test().alloc, mv, H(1), outside)));
+    assert(t.count() == SCHEMA_TABLE_CAP);
+    assert(missing(t.lookup(H(1))));
+    const ::fixy::FixedText<16> first = op_name(0);
+    const ::fixy::FixedText<16> last = op_name(SCHEMA_TABLE_CAP - 1);
+    assert(eq(t.lookup(filler_hash(0)), first.view()));
+    assert(eq(t.lookup(filler_hash(SCHEMA_TABLE_CAP - 1)), last.view()));
+    const SchemaTable::SanitizedName same =
+        ::fixy::mint_tagged<source::External>(first.view()).retag<source::Sanitized>();
+    assert(t.register_name(::foundation::effects::testing::test().alloc, mv, filler_hash(0), same).is_ok());
+    assert(is_collision(t.register_name(::foundation::effects::testing::test().alloc, mv, filler_hash(0), outside)));
+    assert(t.count() == SCHEMA_TABLE_CAP);
+    crucible::test::pass("  test_outside_name_at_full_table: PASSED\n");
+}
+
+// Fills a table and registers one more internal name.
+static void register_past_a_full_table() noexcept {
+    SchemaTable t;
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    fill_table(t, mv);
+    reg(t, mv, H(1), S("aten::one_too_many"));
+}
+
+// A full table has no place for an internal name, a defect of the program,
+// and the registration ends the process with the reason, in a child process
+// of expect_dies.
+static void test_internal_name_at_full_table_ends_the_process() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
+    ::fixy::check::expect_dies(
+        test, register_past_a_full_table,
+        ::fixy::TextView{"crucible: the schema table holds 512 names, so it has no place for the schema "
+                         "aten::one_too_many"});
+    crucible::test::pass("  test_internal_name_at_full_table: PASSED\n");
 }
 
 static void test_binary_search_across_many() {
@@ -322,6 +375,8 @@ int main() {
     test_other_name_of_one_hash_is_a_collision();
     test_outside_name_collision_is_refused();
     test_binary_search_across_many();
+    test_outside_name_at_full_table_is_refused();
+    test_internal_name_at_full_table_ends_the_process();
     test_global_table_convenience();
     test_empty_name_is_noop();
     test_name_ends_at_its_first_zero();
@@ -333,6 +388,6 @@ int main() {
     test_sanitized_boundary_name_registers();
     test_lookup_works_post_seal();
     test_entry_has_no_padding_byte();
-    crucible::test::pass("test_schema_table: 18 groups, all passed\n");
+    crucible::test::pass("test_schema_table: 20 groups, all passed\n");
     return 0;
 }

@@ -548,6 +548,41 @@ void test_schema_name_registration_codes() {
            "an empty name gives the refusal code");
 }
 
+// A table that holds SCHEMA_TABLE_CAP names gives the code of a full table
+// for each new hash, and the process lives.  A Vigil seals the global table,
+// so the names go to the late table, and other cases of this test hold some of
+// its places.  So the case registers new hashes until the code changes, and
+// that takes at most SCHEMA_TABLE_CAP of them.  A held hash of the full table
+// still gives its own codes.  A full late table would refuse each later name
+// of this process, so the case clears it after the end of its Vigil.
+void test_schema_name_full_code() {
+    constexpr uint64_t first_hash = 0xF0F0000000000000ULL;
+    {
+        crucible::Vigil vigil;
+        uint32_t registered = 0;
+        int code = CRUCIBLE_SCHEMA_NAME_REGISTERED;
+        while (code == CRUCIBLE_SCHEMA_NAME_REGISTERED && registered <= crucible::SCHEMA_TABLE_CAP) {
+            code = crucible::vessel::register_schema_name_typed(vigil, first_hash + registered,
+                                                                ::fixy::TextView{"aten::filler"});
+            if (code == CRUCIBLE_SCHEMA_NAME_REGISTERED) ++registered;
+        }
+        EXPECT(code == CRUCIBLE_SCHEMA_NAME_FULL, "a new hash at a full table gives the code of a full table");
+        EXPECT(registered >= 1 && registered <= crucible::SCHEMA_TABLE_CAP,
+               "the table took each name until it was full");
+        EXPECT(crucible::vessel::register_schema_name_typed(vigil, first_hash, ::fixy::TextView{"aten::filler"})
+                   == CRUCIBLE_SCHEMA_NAME_REGISTERED,
+               "the same name of a held hash registers at a full table");
+        EXPECT(crucible::vessel::register_schema_name_typed(vigil, first_hash, ::fixy::TextView{"aten::other"})
+                   == CRUCIBLE_SCHEMA_NAME_COLLISION,
+               "a different name of a held hash gives the collision code at a full table");
+        EXPECT(crucible::vessel::register_schema_name_typed(vigil, first_hash + registered + 1,
+                                                            ::fixy::TextView{"aten::filler"})
+                   == CRUCIBLE_SCHEMA_NAME_FULL,
+               "each new hash at a full table gives the code of a full table");
+    }
+    crucible::late_schema_table().clear(::foundation::effects::testing::test());
+}
+
 void test_abi_version_constant() {
     // The shared library's version accessor returns this same macro, so
     // checking the macro covers the translation unit.  Cross-checking the
@@ -698,6 +733,7 @@ int main() {
     test_ffi_decode_refuses_each_broken_claim();
     test_schema_name_typed();
     test_schema_name_registration_codes();
+    test_schema_name_full_code();
     test_abi_version_constant();
     test_handle_distinct_pointers();
     test_ladder_refuses_unnamed_enumerations();

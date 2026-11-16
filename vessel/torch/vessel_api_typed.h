@@ -301,9 +301,11 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
 // empty or longer than kMaxSchemaNameBytes, gives
 // CRUCIBLE_SCHEMA_NAME_REFUSED, and the tables stay as they were.  These
 // checks are the sanitizer of the boundary, so each other name is Sanitized.
-// Its registration gives CRUCIBLE_SCHEMA_NAME_REGISTERED, or
+// Its registration gives CRUCIBLE_SCHEMA_NAME_REGISTERED,
 // CRUCIBLE_SCHEMA_NAME_COLLISION when the table holds a different name of
-// the hash.  The table then keeps its first name.
+// the hash, or CRUCIBLE_SCHEMA_NAME_FULL when the table holds
+// SCHEMA_TABLE_CAP names and the hash is not one of them.  The table then
+// keeps each name that it holds.
 
 // The longest name that the C interface takes, in bytes.  The ATen op names
 // of PyTorch fit in 128 bytes.
@@ -320,7 +322,9 @@ template <class VigilType>
         ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name).retag<::fixy::tags::source::Sanitized>();
     const crucible::SchemaRegistration registration =
         vigil.register_schema_name(crucible::SchemaHash{schema_hash}, name_tag);
-    return crucible::is_collision(registration) ? CRUCIBLE_SCHEMA_NAME_COLLISION : CRUCIBLE_SCHEMA_NAME_REGISTERED;
+    if (crucible::is_collision(registration)) return CRUCIBLE_SCHEMA_NAME_COLLISION;
+    if (crucible::is_full(registration)) return CRUCIBLE_SCHEMA_NAME_FULL;
+    return CRUCIBLE_SCHEMA_NAME_REGISTERED;
 }
 
 // ── Recording trust ladder ─────────────────────────────────────────

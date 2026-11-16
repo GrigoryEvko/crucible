@@ -58,6 +58,10 @@ enum class SchemaRefusal : std::uint8_t {
     // outside the process, so the table keeps its first name and refuses
     // this one.
     collision,
+    // The table holds SCHEMA_TABLE_CAP names, and the hash is not one of
+    // them.  The name came from outside the process, so the table keeps each
+    // name that it holds and refuses this one.
+    full,
 };
 
 // The result of the registration of a schema name.
@@ -142,11 +146,13 @@ public:
     // the caller.
     //
     // A different name of a held hash is a collision of two schemas, and
-    // the table keeps its first name.  A Sanitized name comes from outside
-    // the process, such as a trace file or the C interface, and outside
-    // input can be wrong, so its collision gives the refusal collision.  An
-    // internal name comes from the program itself, so its collision is a
-    // defect, and it ends the process with the hash and the two names.
+    // the table keeps its first name.  A new hash in a table that holds
+    // SCHEMA_TABLE_CAP names finds no place, and the table keeps each name
+    // that it holds.  A Sanitized name comes from outside the process, such
+    // as a trace file or the C interface, and outside input can be wrong, so
+    // it gives the refusal collision or full.  An internal name comes from
+    // the program itself, so each of the two is a defect, and it ends the
+    // process with the reason.
     template <SchemaNameSource Tag>
     [[nodiscard]] SchemaRegistration register_name(::foundation::effects::Alloc allocation, MutableView const& view,
                                                    SchemaHash hash, Name<Tag> const& name_tag) {
@@ -154,12 +160,12 @@ public:
         const ::fixy::TextView name = name_tag.value();
         if (name.size() == 0) return ::fixy::Unit{};
         constexpr bool is_internal_name = std::same_as<Tag, ::fixy::tags::source::FromInternal>;
-        bool is_refused = false;
+        ::fixy::Option<SchemaRefusal> refusal = ::fixy::none;
         const bool was_open =
-            seal_.with_write_section([&] { is_refused = !write_name_(allocation, hash, name, is_internal_name); });
+            seal_.with_write_section([&] { refusal = write_name_(allocation, hash, name, is_internal_name); });
         if (!was_open) return ::fixy::err(SchemaRefusal::sealed);
-        if (is_refused) return ::fixy::err(SchemaRefusal::collision);
-        return ::fixy::Unit{};
+        return refusal.match([](SchemaRefusal why) noexcept { return SchemaRegistration{::fixy::err(why)}; },
+                             [] noexcept { return SchemaRegistration{::fixy::Unit{}}; });
     }
 
     // The unqualified form is safe in either phase. The overload taking a
@@ -223,39 +229,41 @@ public:
 
 private:
     // Runs inside the write section, so no seal and no other writer runs
-    // at the same time.  A hash that the table holds keeps its first copy:
-    // the same name again writes nothing, and a different name is a
-    // collision of two schemas.  The collision of an internal name ends the
-    // process with the two names, and the collision of a name from outside
-    // gives false.  A new hash takes one pass in the order of the hashes,
-    // which keeps that order: the carried entry changes place with each entry
-    // of a larger hash, so each such entry moves one place up, and the last
-    // one goes to the end.  Complexity: O(log n) for a held hash, O(n) for a
-    // new one.
-    [[nodiscard]] bool write_name_(::foundation::effects::Alloc allocation, SchemaHash hash, ::fixy::TextView name,
-                                   bool is_internal_name) {
+    // at the same time.  It gives the refusal of a name from outside, or no
+    // value when the table holds the name.  A hash that the table holds
+    // keeps its first copy: the same name again writes nothing, and a
+    // different name is a collision of two schemas.  A new hash in a full
+    // table finds no place.  The check of the room comes before the copy of
+    // the name and before the pass below, so a refused name allocates nothing
+    // and moves no entry.  An internal name ends the process at a collision
+    // and at a full table.  A new hash takes one pass in the order of the
+    // hashes, which keeps that order: the carried entry changes place with
+    // each entry of a larger hash, so each such entry moves one place up, and
+    // the last one goes to the end.  Complexity: O(log n) for a held hash,
+    // O(n) for a new one.
+    [[nodiscard]] ::fixy::Option<SchemaRefusal> write_name_(::foundation::effects::Alloc allocation, SchemaHash hash,
+                                                            ::fixy::TextView name, bool is_internal_name) {
         const ::fixy::TextView characters = characters_of_(name);
         for (const auto& held : entries_.get(position_of_(hash))) {
             if (held->hash == hash) {
                 const ::fixy::TextView stored = stored_characters_of_(*held);
-                if (stored == characters) return true;
+                if (stored == characters) return ::fixy::none;
                 if (is_internal_name) report_collision_(hash, stored, characters);
-                return false;
+                return ::fixy::some(SchemaRefusal::collision);
             }
+        }
+        if (entries_.size() == SCHEMA_TABLE_CAP) [[unlikely]] {
+            if (is_internal_name) report_full_(characters);
+            return ::fixy::some(SchemaRefusal::full);
         }
         SchemaEntry carried{.hash = hash, .name = copy_name_(allocation, characters)};
         for (SchemaEntry& entry : entries_) {
             if (carried.hash < entry.hash) ::fixy::swap(entry, carried);
         }
-        // A full table ends the process.  A quiet return leaves each later
-        // schema unregistered, and the fallback dispatch that results shows
-        // far from the registration that was lost.
-        if (entries_.push(static_cast<SchemaEntry&&>(carried)).is_err()) [[unlikely]] {
-            ::fixy::fatal("crucible: the schema table holds SCHEMA_TABLE_CAP names.  Raise SCHEMA_TABLE_CAP in "
-                          "crucible/SchemaTable.h, or register fewer schemas");
-        }
+        const bool is_pushed = entries_.push(static_cast<SchemaEntry&&>(carried)).is_ok();
+        CRUCIBLE_FATAL_INVARIANT(is_pushed);
         CRUCIBLE_POST(0, is_registered_(hash));
-        return true;
+        return ::fixy::none;
     }
 
     // The characters of name before its first zero.  Complexity: the length
@@ -281,6 +289,15 @@ private:
         ::fixy::fatal("crucible: the schema hash {} names two schemas, {} and {}.  A second name of one hash is a "
                       "collision of the schema hash",
                       hash.raw(), stored, other);
+    }
+
+    // A full table refuses an internal name.  A quiet return leaves each later
+    // schema unregistered, and the fallback dispatch that results shows far
+    // from the registration that was lost.
+    [[noreturn, gnu::cold]] static void report_full_(::fixy::TextView name) noexcept {
+        ::fixy::fatal("crucible: the schema table holds {} names, so it has no place for the schema {}.  Raise "
+                      "SCHEMA_TABLE_CAP in crucible/SchemaTable.h, or register fewer schemas",
+                      SCHEMA_TABLE_CAP, name);
     }
 
     // The characters of a name, and one zero after them, frozen into a
@@ -350,13 +367,25 @@ template <SchemaNameSource Tag>
     return registration.is_err() && registration.err().value_or(SchemaRefusal::sealed) == SchemaRefusal::collision;
 }
 
+// True when a registration gave the refusal of a full table.
+[[nodiscard]] inline bool is_full(SchemaRegistration const& registration) noexcept {
+    return registration.is_err() && registration.err().value_or(SchemaRefusal::sealed) == SchemaRefusal::full;
+}
+
+// True when a registration gave the refusal of a sealed table.
+[[nodiscard]] inline bool is_sealed_refusal(SchemaRegistration const& registration) noexcept {
+    return registration.is_err() && registration.err().value_or(SchemaRefusal::collision) == SchemaRefusal::sealed;
+}
+
 // Registers the name of one schema from the thread that holds the producer
 // claim of a Vigil.  The name goes to the global table while that table takes
-// writes, and to the late table after the seal, so no seal drops it.  A
-// collision in the table that takes the name gives its refusal, and an
-// internal name ends the process there (SchemaTable::register_name).  The
-// foreground context holds no allocation capability, so the caller gives
-// one.  A Vigil gives the one of its startup context.
+// writes, and to the late table after the seal, so no seal drops it.  Each
+// other refusal of the global table is the result, so a full global table
+// puts no name in the late table.  A collision or a full table in the table
+// that takes the name gives its refusal, and an internal name ends the
+// process there (SchemaTable::register_name).  The foreground context holds
+// no allocation capability, so the caller gives one.  A Vigil gives the one
+// of its startup context.
 template <SchemaNameSource Tag>
 [[nodiscard]] inline SchemaRegistration register_schema_name(VigilFgCtx const& fg,
                                                              ::foundation::effects::Alloc allocation, SchemaHash hash,
@@ -364,7 +393,7 @@ template <SchemaNameSource Tag>
     SchemaTable& global_table = global_schema_table();
     for (const SchemaTable::MutableView& global_view : global_table.mint_mutable_view(fg)) {
         SchemaRegistration in_global = global_table.register_name(allocation, global_view, hash, name);
-        if (in_global.is_ok() || is_collision(in_global)) return in_global;
+        if (!is_sealed_refusal(in_global)) return in_global;
     }
     // Nothing seals the late table, so its view exists and no seal refuses
     // its write.
@@ -372,7 +401,7 @@ template <SchemaNameSource Tag>
     const SchemaTable::MutableView late_view =
         late_table.mint_mutable_view(fg).expect("nothing seals the late schema table, so it mints a mutable view");
     SchemaRegistration in_late = late_table.register_name(allocation, late_view, hash, name);
-    CRUCIBLE_FATAL_INVARIANT(in_late.is_ok() || is_collision(in_late));
+    CRUCIBLE_FATAL_INVARIANT(!is_sealed_refusal(in_late));
     return in_late;
 }
 

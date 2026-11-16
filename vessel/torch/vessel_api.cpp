@@ -401,6 +401,8 @@ int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const 
     // claim of this Vigil.  The Vigil mints that context for the write, and
     // the mint ends the process on any other thread.  A different name of a
     // held hash comes back as a collision, and the table keeps its first name.
+    // A new hash in a full table comes back as full, and the table keeps each
+    // name that it holds.
     return crucible::vessel::register_schema_name_typed(*crucible::vessel::as_vigil_typed(h).value(), schema_hash,
                                                         name_text);
 }
