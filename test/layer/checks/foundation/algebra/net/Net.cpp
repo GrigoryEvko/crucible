@@ -275,6 +275,24 @@ static_assert(check_wiring(pipeline_doubled)
                   .says("net: port 'out' of agent 'build' (node 3) has a second wire, wire 4.  Each port has exactly "
                         "one wire."));
 
+// A wire to a node past the agents of the net.  A check copies a net of at
+// most 16 agents into arrays of 16 agents, so node 9 is in the arrays of the
+// copy and not in the net.  Node 40 is also past the arrays.
+inline constexpr Net<7, 9, 6, 5> pipeline_past_its_agents{
+    .signature = pipeline_kinds,
+    .agents = {KindId{0}, KindId{1}, KindId{2}, KindId{3}, KindId{4}, KindId{5}},
+    .wires = {join_ports(0, 0, 1, 0), join_ports(1, 1, 2, 0), join_ports(2, 1, 3, 0), join_ports(3, 1, 4, 0),
+              join_ports(4, 1, 9, 0)}};
+static_assert(check_wiring(pipeline_past_its_agents).says("net: wire 4 names node 9, and the net has 6 agents."));
+static_assert(check_dataflow(pipeline_past_its_agents).says("net: wire 4 names node 9, and the net has 6 agents."));
+
+inline constexpr Net<7, 9, 6, 5> pipeline_past_the_arrays{
+    .signature = pipeline_kinds,
+    .agents = {KindId{0}, KindId{1}, KindId{2}, KindId{3}, KindId{4}, KindId{5}},
+    .wires = {join_ports(0, 0, 1, 0), join_ports(1, 1, 2, 0), join_ports(2, 1, 3, 0), join_ports(3, 1, 4, 0),
+              join_ports(4, 1, 40, 0)}};
+static_assert(check_wiring(pipeline_past_the_arrays).says("net: wire 4 names node 40, and the net has 6 agents."));
+
 // ── The fork tree ───────────────────────────────────────────────────────
 //
 // run_on_four_threads of test/fixy/test_core_atomic.cpp: Whole splits into
