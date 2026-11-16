@@ -25,6 +25,7 @@
 #include <fixy/check/Check.h>
 #include <fixy/check/Property.h>
 #include <foundation/core/Pointwise.h>
+#include <foundation/core/StridedRows.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -435,9 +436,32 @@ struct Written {
     bool is_written = false;
 };
 
-// Writes the views of a case with write_pointwise over run, and with walk()
-// and the op on scalars over a copy of run.
-template <class E, class Op, std::size_t... Is>
+// The walk under test: write_pointwise, or the walk of rows of
+// foundation/core/StridedRows.h with a body that calls the op for each step.
+enum class Walker : std::uint8_t {
+    Pointwise,
+    Rows,
+};
+
+// The walk of rows of the views with the op: the counted loop of each row, and
+// the NaN rule of the oracle in the body, because the walk of rows applies none.
+template <class E, class Op, class Out, class... Inputs>
+[[nodiscard]] bool write_rows(Out& out, Op op, Inputs const&... inputs) noexcept {
+    return ::foundation::core::mint_strided_rows(
+               out,
+               [op](auto const& row, auto out_view, auto const&... input_views) noexcept {
+                   for (auto const step : row.steps()) {
+                       out_view.at(row.offset(out_view), step) =
+                           oracle_output<E, Op>(op(input_views.at(row.offset(input_views), step)...));
+                   }
+               },
+               inputs...)
+        .is_ok();
+}
+
+// Writes the views of a case with the walk under test over run, and with
+// walk() and the op on scalars over a copy of run.
+template <class E, Walker Under = Walker::Pointwise, class Op, std::size_t... Is>
 [[nodiscard]] Written<E> write_case(Case<sizeof...(Is)> const& drawn, Op op, ::fixy::HeapArray<E> run,
                                     std::index_sequence<Is...> /*inputs*/) noexcept {
     auto const test = ::foundation::effects::testing::test();
@@ -467,31 +491,35 @@ template <class E, class Op, std::size_t... Is>
         auto out = ::fixy::mint_strided_view_mut(std::move(frame_run), sizes_of(drawn.out), strides_of(drawn.out),
                                                  drawn.out.offset)
                        .expect("the output has no overlap");
-        return ::foundation::core::write_pointwise(out, op, input_of(whole, Is)...).is_ok();
+        if constexpr (Under == Walker::Rows) {
+            return write_rows<E>(out, op, input_of(whole, Is)...);
+        } else {
+            return ::foundation::core::write_pointwise(out, op, input_of(whole, Is)...).is_ok();
+        }
     });
     return Written<E>{std::move(written), std::move(expected), is_walked && is_written};
 }
 
-// True when write_pointwise over the views of a drawn case writes the bits
-// of walk() with the op on scalars.
-template <class E, class Op, std::size_t... Is>
+// True when the walk under test over the views of a drawn case writes the
+// bits of walk() with the op on scalars.
+template <class E, Walker Under, class Op, std::size_t... Is>
 [[nodiscard]] bool agrees_with_walk(Draw& draw, Op op, Outcomes& outcomes, std::index_sequence<Is...> inputs) noexcept {
     auto const test = ::foundation::effects::testing::test();
     Case<sizeof...(Is)> const drawn = draw_case<sizeof...(Is)>(draw, outcomes);
     ::fixy::HeapArray<E> run = ::fixy::mint_heap_array_with<E>(
         test.alloc, drawn.total, [&draw](std::size_t) noexcept { return draw_value<E>(draw); });
-    Written<E> const written = write_case<E>(drawn, op, std::move(run), inputs);
+    Written<E> const written = write_case<E, Under>(drawn, op, std::move(run), inputs);
     return written.is_written
         && same_bits(::fixy::View<E const>{written.run.view()}, ::fixy::View<E const>{written.expected.view()});
 }
 
 // The property of one element type and one op of Inputs inputs.
-template <class E, std::size_t Inputs, class Op>
+template <class E, std::size_t Inputs, class Op, Walker Under = Walker::Pointwise>
 void pointwise_agrees_with_walk(::fixy::TestRunnerCtx const& test, ::fixy::TextView name, std::uint64_t seed,
                                 Op op) noexcept {
     Outcomes outcomes{};
     property(test, seed, kRuns, [&outcomes, op](Draw& draw) noexcept {
-        return agrees_with_walk<E>(draw, op, outcomes, std::make_index_sequence<Inputs>{});
+        return agrees_with_walk<E, Under>(draw, op, outcomes, std::make_index_sequence<Inputs>{});
     });
     pass(test, "  {}: {} runs apart, {} in place, {} shared\n", name, outcomes.apart, outcomes.in_place,
          outcomes.shared);
@@ -774,6 +802,19 @@ int main() {
     pointwise_agrees_with_walk<std::uint64_t, 3>(test, "uint64 multiply-add", kSeed + 7, MultiplyAdd{});
     pointwise_agrees_with_walk<std::int64_t, 1>(test, "int64 negate", kSeed + 9, Negate{});
     pointwise_agrees_with_walk<std::uint16_t, 2>(test, "uint16 add on the scalar path", kSeed + 8, Add{});
+    // The walk of rows gives the bits of walk() for each op, on the layouts of
+    // the draw: dense, transposed, broadcast and stepped views, in place and
+    // shared.
+    constexpr Walker rows = Walker::Rows;
+    pointwise_agrees_with_walk<float, 2, Add, rows>(test, "rows: float add", kSeed + 20, Add{});
+    pointwise_agrees_with_walk<float, 3, MultiplyAdd, rows>(test, "rows: float multiply-add", kSeed + 21,
+                                                            MultiplyAdd{});
+    pointwise_agrees_with_walk<float, 2, Divide, rows>(test, "rows: float divide", kSeed + 22, Divide{});
+    pointwise_agrees_with_walk<float, 1, Copy, rows>(test, "rows: float copy that keeps its bits", kSeed + 23, Copy{});
+    pointwise_agrees_with_walk<double, 2, Add, rows>(test, "rows: double add", kSeed + 24, Add{});
+    pointwise_agrees_with_walk<std::uint32_t, 2, Add, rows>(test, "rows: uint32 add", kSeed + 25, Add{});
+    pointwise_agrees_with_walk<std::int64_t, 1, Negate, rows>(test, "rows: int64 negate", kSeed + 26, Negate{});
+    pointwise_agrees_with_walk<std::uint16_t, 2, Add, rows>(test, "rows: uint16 add", kSeed + 27, Add{});
     pass(test, "test_pointwise: all tests passed\n");
     return 0;
 }

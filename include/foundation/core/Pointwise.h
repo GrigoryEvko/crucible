@@ -385,11 +385,13 @@ plan_pointwise_(std::index_sequence<Is...> /*inputs*/, bool const (&apart)[sizeo
 }
 
 // The count of the rows of a plan of at least one axis: the product of the
-// sizes of each axis but the inner one.  The count of the plan bounds it.
+// sizes of each axis but the inner one.  The count of the plan bounds it.  The
+// rank of a plan is at most its capacity, and the bound of the loop states it,
+// so the optimizer reads no size past the array.
 template <std::size_t Views, std::size_t Capacity>
 [[nodiscard]] constexpr std::size_t rows_of_(WalkPlan<Views, Capacity> const& plan, std::size_t inner_axes) noexcept {
     std::size_t rows = 1;
-    for (std::size_t axis = 0; axis + inner_axes < plan.rank; ++axis) {
+    for (std::size_t axis = 0; axis < Capacity && axis + inner_axes < plan.rank; ++axis) {
         rows *= plan.sizes[axis];
     }
     return rows;

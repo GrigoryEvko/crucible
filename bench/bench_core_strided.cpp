@@ -29,6 +29,9 @@
 //                       the same views, in one frame of the output.  Step 3
 //                       takes the General loop, and the transposed left view
 //                       takes the tile path
+//   rows dense, rows transposed
+//                       mint_strided_rows of foundation/core/StridedRows.h with
+//                       the add as the counted loop of each row
 // The L1 size also has the loop of a FixedArray with a proven Index, the
 // code of the index loop of the type system.
 //
@@ -47,6 +50,7 @@
 #include <fixy/Core.h>
 #include <foundation/Quarantine.h>
 #include <foundation/core/Pointwise.h>
+#include <foundation/core/StridedRows.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -214,6 +218,21 @@ template <class Out>
     }
 }
 
+// The walk of rows of foundation/core/StridedRows.h: the add of the bench as
+// the counted loop of each row.
+template <class Out>
+[[gnu::noinline, gnu::hot]] void rows_add(Out& out, PlaneRead left, PlaneRead right) noexcept {
+    auto const body = [](auto const& row, auto target, auto const& first, auto const& second) noexcept {
+        for (auto const step : row.steps()) {
+            target.at(row.offset(target), step) =
+                first.at(row.offset(first), step) + second.at(row.offset(second), step);
+        }
+    };
+    if (::foundation::core::mint_strided_rows(out, body, left, right).is_err()) {
+        ::fixy::fatal("the three views of the bench have one shape");
+    }
+}
+
 // The value of the element at position of an input.
 [[nodiscard]] float value_at(std::size_t position) noexcept {
     return static_cast<float>(position % 1021) * 0.25f + 0.5f;
@@ -364,6 +383,12 @@ template <class Out>
                   measure(bench::Run{"pointwise three inputs"}, wall,
                           [&] { pointwise_three(unique, left_view, right_view, third_view); }),
                   four_views, roof);
+        print_row(level, "rows dense",
+                  measure(bench::Run{"rows dense"}, wall, [&] { rows_add(unique, left_view, right_view); }),
+                  three_views, roof);
+        print_row(level, "rows transposed",
+                  measure(bench::Run{"rows transposed"}, wall, [&] { rows_add(unique, transposed, right_view); }),
+                  three_views, roof);
     });
     return roof;
 }

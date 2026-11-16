@@ -3467,6 +3467,15 @@ foundation_neg_compile_test(neg_core_strided_view_mut_copies
   "use of deleted function"
   "a StridedViewMut is the one writer of its elements: a copy would be a second writer")
 
+# The offset of a row in one view does not read another view, and the body
+# of a walk of rows gives no value, so no index of the walk leaves it.
+foundation_neg_compile_test(neg_core_rows_offset_of_other_view
+  "cannot convert .RowOffset<RowViewBrand<\\[\\.\\.\\.\\],1>>. to .RowOffset<RowViewBrand<\\[\\.\\.\\.\\],0>>."
+  "RowOffset<RowViewBrand<")
+foundation_neg_compile_test(neg_core_rows_index_out_of_body
+  "no matching function for call to .mint_strided_rows\\(foundation::core::StridedViewMut<float, 1, "
+  "template argument deduction/substitution failed")
+
 # The member nan_rule of a pointwise op has the type NanRule.
 foundation_neg_compile_test(neg_core_side_swap
   "invalid initialization of reference of type .std::type_identity_t<foundation::core::Side<foundation::core::side::LeftFactor, foundation::core::StridedView<const float, 2> > >&."
