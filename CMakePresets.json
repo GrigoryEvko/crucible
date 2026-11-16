@@ -42,6 +42,17 @@
       "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-release" } }
     },
     {
+      "name": "release-v3",
+      "inherits": "release",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Release) at x86-64-v3: the AVX2 arms and the 256-bit width",
+      "binaryDir": "${sourceDir}/build-release-v3",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-O1 -march=x86-64-v3 -DNDEBUG -g",
+        "CRUCIBLE_X86_LEVEL": "v3"
+      },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-release-v3" } }
+    },
+    {
       "name": "bench",
       "inherits": "release",
       "displayName": "GCC 16 + libstdc++ 16 (C++26, Bench)",
@@ -198,6 +209,7 @@
     { "name": "default", "configurePreset": "default" },
     { "name": "analyzer", "configurePreset": "analyzer" },
     { "name": "release", "configurePreset": "release" },
+    { "name": "release-v3", "configurePreset": "release-v3" },
     { "name": "bench",   "configurePreset": "bench" },
     { "name": "vessel",  "configurePreset": "vessel" },
     { "name": "pgo-generate", "configurePreset": "pgo-generate" },
@@ -219,6 +231,12 @@
     {
       "name": "release",
       "configurePreset": "release",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": "", "timeout": 300 }
+    },
+    {
+      "name": "release-v3",
+      "configurePreset": "release-v3",
       "output": { "outputOnFailure": true },
       "execution": { "jobs": "", "timeout": 300 }
     },

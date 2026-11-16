@@ -106,6 +106,7 @@ The gate of `loop land` is the check that counts. It builds the configurations t
 |---|---|---|
 | `default` | `build` | Debug, ASan, and UBSan on the tests |
 | `release` | `build-release` | Release, `-O3 -march=native` |
+| `release-v3` | `build-release-v3` | Release, `-O3 -march=x86-64-v3`: the AVX2 arms at the width of 256 bits |
 | `tsan` | `build-tsan` | ThreadSanitizer |
 | `ubsan-strict` | `build-ubsan-strict` | Full UBSan on each target |
 | `bench-fuzz` | `build-bench-fuzz` | The benches and the fuzz harnesses |

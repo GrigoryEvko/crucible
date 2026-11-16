@@ -82,6 +82,7 @@ LAUNCHER_MODULE = "utils/assay/loop/teststep.py"
 # The build directory of each configuration of objects of the gate other than default, with the mode clean.
 OTHER_BUILDS = {
     "build-release": "clean",
+    "build-release-v3": "clean",
     "build-tsan": "clean",
     "build-ubsan-strict": "clean",
     "build-bench-fuzz": "clean",
@@ -442,18 +443,27 @@ def select_cases(expect: testing.Expect) -> None:
         names_of(gate.select(["CLAUDE.md", "utils/assay/loop/land.py"], [], False)) == ["default"],
     )
     expect(
-        "a change of a C++ test selects the default build, the release build and ThreadSanitizer",
-        names_of(gate.select(["test/test_arena.cpp"], [], False)) == ["default", "release", "tsan"],
+        "a change of a C++ test selects the default build, the two release builds and ThreadSanitizer",
+        names_of(gate.select(["test/test_arena.cpp"], [], False)) == ["default", "release", "release-v3", "tsan"],
     )
     expect(
         "a change of include/ or of a top build file adds ThreadSanitizer and UBSan-strict",
         names_of(gate.select(["include/foundation/Platform.h"], [], False))
         == names_of(gate.select(["CMakeLists.txt"], [], False))
-        == ["default", "release", "tsan", "ubsan-strict"],
+        == ["default", "release", "release-v3", "tsan", "ubsan-strict"],
+    )
+    expect(
+        "a change of a header of the Simd family or of a body in the inline namespace CRUCIBLE_SIMD_TARGET selects "
+        "the release build at x86-64-v3, which runs the AVX2 arms at the width of 256 bits",
+        all(
+            "release-v3" in names_of(gate.select([path], [], False))
+            for path in ("include/foundation/Simd.h", "include/fixy/atoms/Simd.h", "include/foundation/core/Reduce.h")
+        ),
     )
     expect(
         "a change of bench/ or test/fuzz/ adds the bench and fuzz build",
-        names_of(gate.select(["test/fuzz/CMakeLists.txt"], [], False)) == ["default", "release", "tsan", "bench-fuzz"],
+        names_of(gate.select(["test/fuzz/CMakeLists.txt"], [], False))
+        == ["default", "release", "release-v3", "tsan", "bench-fuzz"],
     )
     expect(
         "the parse presets of an arm join, in the sequence of the table",
@@ -476,7 +486,7 @@ def select_cases(expect: testing.Expect) -> None:
         [(run.mode, run.is_build_only) for run in changed] == [(gate.Mode.CHANGED, True)] * len(others)
         and [(run.mode, run.names) for run in touched] == [(gate.Mode.TOUCHED, ("guard_rule",))] * len(others)
         and gate.other_runs(others, False, ()) == ()
-        and len(others) == 4,
+        and len(others) == 5,
     )
 
 
@@ -1451,7 +1461,8 @@ def changed_tests_cases(expect: testing.Expect) -> None:
             "a change of a C++ test runs the suite of its configurations with --all, and the tests of the changed "
             "inputs in UBSan-strict and in the bench and fuzz build with no --all",
             verdicts["clean"].is_accepted
-            and verdicts["clean"].configurations == ("default", "release", "tsan", "ubsan-strict", "bench-fuzz")
+            and verdicts["clean"].configurations
+            == ("default", "release", "release-v3", "tsan", "ubsan-strict", "bench-fuzz")
             and words["build"][0].endswith("--all")
             and not any("--all" in line.split() for line in words["build-bench-fuzz"]),
         )
@@ -1482,7 +1493,7 @@ def touched_cases(expect: testing.Expect) -> None:
         previous = planted_repository(root)
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, previous)
-        objects = ("default", "release", "tsan", "ubsan-strict", "bench-fuzz")
+        objects = ("default", "release", "release-v3", "tsan", "ubsan-strict", "bench-fuzz")
         cases = (
             ("the module of a rule that reads the build", BUILD_RULE_MODULE, objects, f"--only {BUILD_RULE_TEST}"),
             ("a self-test module that reads no build", "utils/assay/tests/sample/test_one.py", ("default",), ""),
@@ -1553,7 +1564,7 @@ def thread_cases(expect: testing.Expect) -> None:
         commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
-        builds = ("build", "build-release", "build-tsan", "build-ubsan-strict", "build-bench-fuzz")
+        builds = ("build", "build-release", "build-release-v3", "build-tsan", "build-ubsan-strict", "build-bench-fuzz")
         planted = planted_gate(work, root, tree, "meet", dict.fromkeys(builds[1:], "meet"))
         wide = replace(planted, jobs=8)
         verdict, printed = testing.captured(lambda: wide.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
@@ -1693,6 +1704,7 @@ def kind_cases(expect: testing.Expect) -> None:
     values = {
         "default": gate.gb_per_job_of("default"),
         "release": gate.gb_per_job_of("release"),
+        "release-v3": gate.gb_per_job_of("release-v3"),
         "tsan": gate.gb_per_job_of("tsan"),
         "ubsan-strict": gate.gb_per_job_of("ubsan-strict"),
         "bench-fuzz": gate.gb_per_job_of("bench-fuzz"),
@@ -1707,6 +1719,7 @@ def kind_cases(expect: testing.Expect) -> None:
         == {
             "default": 0.6,
             "release": 0.6,
+            "release-v3": 0.6,
             "tsan": 0.5,
             "ubsan-strict": 0.6,
             "bench-fuzz": 0.9,
@@ -1759,7 +1772,9 @@ def stop_cases(expect: testing.Expect) -> None:
         verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
         elapsed_s = time.monotonic() - started
         hung = [
-            name for name in ("build", "build-release", "build-tsan", "build-ubsan-strict") if times_of(tree / name)
+            name
+            for name in ("build", "build-release", "build-release-v3", "build-tsan", "build-ubsan-strict")
+            if times_of(tree / name)
         ]
         pid_file = tree / "build" / "deep.pid"
         grandchild = int(pid_file.read_text(encoding="utf-8")) if pid_file.is_file() else -1
@@ -1856,7 +1871,7 @@ def base_run_cases(expect: testing.Expect) -> None:
         others = {**OTHER_BUILDS, "build-release": "broken"}
         batch = planted_gate(work, root, tree, "clean", others)
         batch_verdict, _ = testing.captured(lambda: batch.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
-        for name in ("build", "build-release", "build-tsan", "build-ubsan-strict", "build-bench-fuzz"):
+        for name in ("build", *OTHER_BUILDS):
             (tree / name / "words.txt").unlink(missing_ok=True)
         focus = batch_verdict.focus + (gate.Focus("bench-fuzz"),)
         base = planted_gate(work, root, tree, "clean", others)
@@ -1865,7 +1880,7 @@ def base_run_cases(expect: testing.Expect) -> None:
         )
         ran = {
             name: (tree / name / "words.txt").read_text(encoding="utf-8").splitlines()
-            for name in ("build", "build-release", "build-tsan", "build-bench-fuzz")
+            for name in ("build", *OTHER_BUILDS)
             if (tree / name / "words.txt").is_file()
         }
         holds = (

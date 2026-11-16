@@ -28,9 +28,14 @@ THE SELECTION
       * The full suite, `loop test BUILD --all`.  select() gives these
         configurations:
           - default for each change
-          - release and tsan for a change of a C++ file or of a build file.
-            ThreadSanitizer gives incorrect errors of -Wmaybe-uninitialized
-            that the other builds do not give, also for a change of a test
+          - release, release-v3 and tsan for a change of a C++ file or of a
+            build file.  ThreadSanitizer gives incorrect errors of
+            -Wmaybe-uninitialized that the other builds do not give, also
+            for a change of a test.  release-v3 compiles for x86-64-v3, so
+            each test runs the AVX2 arms at the width of 256 bits.  A
+            header of the Simd family and a body in the inline namespace
+            CRUCIBLE_SIMD_TARGET are C++ files, so each change of them
+            selects release-v3
           - tsan and ubsan-strict for a change of include/, src/ or cmake/,
             or of a build file at the top of the tree
           - bench-fuzz for a change of bench/ or test/fuzz/
@@ -606,7 +611,7 @@ LIVE = ".live"
 AGAIN_MARK = ".again"
 # The step name of the copy of the report of the suite, which holds the output of each red test (THE LOGS).
 SUITE_REPORT = "suite.junit.xml"
-# The build files of a change that selects the release build and ThreadSanitizer, as a C or C++ file does (THE
+# The build files of a change that selects the release builds and ThreadSanitizer, as a C or C++ file does (THE
 # SELECTION, COMPILED_SUFFIXES of assay.loop.inputs).
 BUILD_FILE_NAMES = ("CMakeLists.txt", "CMakePresets.json")
 BUILD_FILE_SUFFIX = ".cmake"
@@ -640,10 +645,13 @@ TORCH_VENV = ".venv-torch"
 # launcher of the seven lanes gave them on 2026-11-15, from 926 to 2461 compiles, 3081 to 3817 links and about 23000
 # tests for each configuration.  A link is about as heavy as each other link, so its peak counts.  The vessel compiles
 # 96 shards of the same size, so its compile counts at a peak too: 1.65 GB, the peak of a shard on 2026-11-14 with the
-# full debug information, above the 1.56 GB with -g1.
+# full debug information, above the 1.56 GB with -g1.  release-v3 takes the row of release.  On 2026-11-16, the same
+# method gave 0.578, 0.316 and 0.372 GB for one build of release-v3, and 0.572, 0.318 and 0.368 GB for the release
+# build of the first lane.
 KIND_GB_PER_JOB = {
     "default": {"compile": 0.56, "link": 0.50, "test": 0.35},
     "release": {"compile": 0.52, "link": 0.32, "test": 0.31},
+    "release-v3": {"compile": 0.52, "link": 0.32, "test": 0.31},
     "tsan": {"compile": 0.49, "link": 0.36, "test": 0.40},
     "ubsan-strict": {"compile": 0.51, "link": 0.38, "test": 0.31},
     "bench-fuzz": {"compile": 0.81, "link": 0.50, "test": 0.30},
@@ -963,7 +971,7 @@ def select(changed: Sequence[str], parse_presets: Sequence[str], is_every: bool)
     names = {ALWAYS}
     for path in changed:
         if is_compiled_change(path):
-            names.update(("release", "tsan"))
+            names.update(("release", "release-v3", "tsan"))
         is_top_build_file = is_build_file(path) and "/" not in path
         if path.startswith(SANITIZED_PREFIXES) or is_top_build_file:
             names.update(("tsan", "ubsan-strict"))
