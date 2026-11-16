@@ -234,7 +234,8 @@ enum class Kind : std::uint8_t {
 // near 120.  The work of each of these at the limit is more than 360000
 // units, and the pair of 321 configurations of the tests needs 116132.  The
 // check of the shape before the walk counts admit_work units for each node
-// that it visits, in the same bound.
+// that it visits, and one unit for each kept answer that it compares, in
+// the same bound.
 inline constexpr std::size_t work_bound = 196608;
 inline constexpr std::size_t admit_work = 64;
 inline constexpr int unfold_bound = 64;
@@ -306,44 +307,111 @@ consteval bool payload_admitted(info payload) {
 
 consteval bool is_primitive(Kind kind) { return kind == Kind::Commit || kind == Kind::Roll || kind == Kind::Abort; }
 
-// The check visits the protocol as a tree, so two branches that share one
-// arm visit it two times, and the tree can be far larger than the protocol.
-// Each visit is admit_work units of `work`, and a visit past work_bound
-// answers false.  Complexity: linear in the size of the protocol tree, and
-// at most work_bound / admit_work visits.
-consteval bool shaped(info type, bool at_branch, int depth, std::size_t& work) {
-    work += admit_work;
-    if (depth > depth_bound || work > work_bound) return false;
-    switch (kind_of(type)) {
+// ── The check of the shape ──────────────────────────────────────────
+//
+// The check visits the protocol from its start.  A choice whose branches
+// share one arm, and a row of such choices, makes a protocol tree that is
+// exponential in the length of the row.  So the check keeps the answer of
+// each choice and of each branch of a choice that it visited, and a second
+// visit reads the kept answer.  A send, a receive and a loop have their
+// answers from their children, so a chain of steps between two choices keeps
+// no answer.  A branch that is the branch before it has the answer of that
+// branch.
+//
+// Each visit of a node is admit_work units of the work of the bound, and
+// each compare with a kept answer is one unit.  A check past work_bound, or
+// past depth_bound at the first visit of a node, answers false, and a false
+// answer of a node is the false answer of the protocol.  Complexity: each
+// choice and each branch of a choice is visited one time, and each chain of
+// steps one time for each choice or branch above it.  A search of the kept
+// answers is linear in them.
+
+// The kept answer of a node at one place: in a branch of a choice or not.
+// A primitive is legal only in a branch, so the place is part of the
+// question.
+struct ShapeAnswer {
+    info node = ^^void;
+    bool is_at_branch = false;
+    bool is_shaped = false;
+};
+
+// The kept answers of the check of one protocol, and its work.
+struct ShapeCheck {
+    tr::stack<ShapeAnswer> answered;
+    std::size_t work = 0;
+};
+
+// The check keeps the answer of a choice and of a branch of a choice.  The
+// search reads the newest answer first, because the arm that a choice shares
+// with an earlier choice is the last node that the check answered.  The
+// check of a node and of its children is one function, so each level of the
+// protocol is one call deep, as the payload walk of each step needs.
+consteval bool shaped(info type, bool at_branch, int depth, ShapeCheck& check) {
+    const info node = strip(type);
+    const Kind kind = kind_of(node);
+    const bool is_kept = at_branch || kind == Kind::Select || kind == Kind::Offer;
+    if (is_kept) {
+        const ShapeAnswer* const known = check.answered.items;
+        for (std::size_t place = check.answered.top; place != 0; --place) {
+            ++check.work;
+            const ShapeAnswer& answer = known[place - 1];
+            if (answer.node == node && answer.is_at_branch == at_branch) return answer.is_shaped;
+        }
+    }
+    check.work += admit_work;
+    if (depth > depth_bound || check.work > work_bound) return false;
+    bool is_shaped = false;
+    switch (kind) {
         case Kind::End:
         case Kind::Continue:
-            return true;
+            is_shaped = true;
+            break;
         case Kind::Send:
         case Kind::Recv:
-            return payload_admitted(argument(type, 0)) && shaped(argument(type, 1), false, depth + 1, work);
+            is_shaped = payload_admitted(argument(node, 0)) && shaped(argument(node, 1), false, depth + 1, check);
+            break;
         case Kind::Select:
         case Kind::Offer: {
-            const BranchList branches = branches_of(type);
+            const BranchList branches = branches_of(node);
             const info* const branch = branches.data();
             const std::size_t branch_count = branches.size();
-            if (branch_count == 0) return false;
-            for (std::size_t place = 0; place < branch_count; ++place) {
-                if (!shaped(branch[place], true, depth + 1, work)) return false;
+            is_shaped = branch_count != 0;
+            info previous = ^^void;
+            for (std::size_t place = 0; is_shaped && place < branch_count; ++place) {
+                const info arm = strip(branch[place]);
+                if (place != 0 && arm == previous) continue;
+                previous = arm;
+                is_shaped = shaped(arm, true, depth + 1, check);
             }
-            return true;
+            break;
         }
         case Kind::Loop:
-            return shaped(argument(type, 0), false, depth + 1, work);
+            is_shaped = shaped(argument(node, 0), false, depth + 1, check);
+            break;
         case Kind::Commit:
-            return at_branch && shaped(argument(type, 0), false, depth + 1, work);
+            is_shaped = at_branch && shaped(argument(node, 0), false, depth + 1, check);
+            break;
         case Kind::Roll:
         case Kind::Abort:
-            return at_branch;
+            is_shaped = at_branch;
+            break;
         case Kind::Unknown:
-            return false;
         default:
-            return false;
+            is_shaped = false;
+            break;
     }
+    if (is_kept) tr::push(check.answered, ShapeAnswer{node, at_branch, is_shaped});
+    return is_shaped;
+}
+
+// The check of the shape of one protocol, with answers of its own.  The two
+// protocols of a pair share the work of the bound.
+consteval bool is_checkpoint_shaped(info protocol, std::size_t& work) {
+    ShapeCheck check{};
+    check.work = work;
+    const bool is_shaped = shaped(protocol, false, 0, check);
+    work = check.work;
+    return is_shaped;
 }
 
 struct Party {
@@ -498,7 +566,7 @@ consteval CheckpointVerdict choose(Exploration& run, const Party& active, const 
 // lookup, which is linear in the configurations.  work_bound caps it.
 consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol) {
     std::size_t shape_work = 0;
-    if (!shaped(left_protocol, false, 0, shape_work) || !shaped(right_protocol, false, 0, shape_work)) {
+    if (!is_checkpoint_shaped(left_protocol, shape_work) || !is_checkpoint_shaped(right_protocol, shape_work)) {
         return shape_work > work_bound ? CheckpointVerdict::TooManyConfigurations
                                        : CheckpointVerdict::NotCheckpointShaped;
     }

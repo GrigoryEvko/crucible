@@ -3143,6 +3143,12 @@ fixy_test(test_session_rollback)
 # constant evaluation.
 fixy_test(test_session_checkpoint_bound)
 
+# The check of the shape of a checkpoint pair visits each node of a protocol
+# with shared arms one time, so a long row of wide choices is compliant.  No
+# declaration names a protocol of the test, so GCC writes no debug name that
+# spells it.
+fixy_test(test_session_checkpoint_shared_arms)
+
 # HS14 for mint_checkpoint_session and for the one-endpoint refusal.
 # Each fixture is one way for one side to choose alone, or one rule of
 # the compliance check.
