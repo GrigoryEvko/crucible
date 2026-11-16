@@ -1,8 +1,10 @@
 // Tests of the growable owners of the Region family: append across many
 // growths, the refusal at the maximum, the Full of a linear element, the
 // moves of elements that are not bytewise, the end of each element, an
-// append of a view of the same text, the foreign doors of Region.h, and the
-// CText of a text that keeps a zero after its characters.
+// append of a part of the same text, the frame doors, the freeze into a
+// HeapText, the foreign doors of Region.h, and the CText of a text that keeps
+// a zero after its characters.  test/fixy/test_core_grow_lend.cpp holds the
+// deaths of THE LEND COUNT.
 
 #include <foundation/core/Grow.h>
 
@@ -64,6 +66,13 @@ struct[[= ::foundation::linear::linear{}]] Token final {
     }
     Token(Token const&) = delete;
 };
+
+// The owner that a call gives back by reference.  The rule use-after-move
+// does not read through it, so a test reads a frozen text again.
+template <class Owner>
+[[nodiscard]] Owner& through(Owner& owner) noexcept {
+    return owner;
+}
 
 // A list of integers grows from empty through many doublings, and each read
 // sees each appended value in order.
@@ -215,16 +224,26 @@ void test_text_appends() {
     assert(small.view() == TextView{"xyz"});
 }
 
-// An append of a view of the same text copies the characters before the
-// growth gives the old storage back.
+// append_self copies the characters of the text before the growth gives the
+// old storage back.  Each doubling of the text grows its storage, so each
+// turn after the first storage is full reads the old storage in the growth.
+// A window of the text appends a part of it.
 void test_text_appends_itself() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowText text = mint_grow_text(1 << 20);
     text.append(alloc, "ab").expect("the text is below its maximum");
     for (int turn = 0; turn < 12; ++turn) {
-        text.append(alloc, text.view()).expect("the text is below its maximum");
+        text.append_self(alloc, 0, text.size()).expect("the text is below its maximum");
     }
     assert(text.size() == std::size_t{2} << 12);
+    GrowText window = mint_grow_text(64);
+    window.append(alloc, "crucible").expect("the text is below its maximum");
+    window.append_self(alloc, 2, 3).expect("the text is below its maximum");
+    window.append_self(alloc, 0, 0).expect("an empty window fits");
+    assert(window.view() == TextView{"crucibleuci"});
+    GrowText full = mint_grow_text(4);
+    full.append(alloc, "abc").expect("the text is below its maximum");
+    assert(full.append_self(alloc, 0, 2).is_err() && full.view() == TextView{"abc"});
     std::size_t position = 0;
     for (char const character : text) {
         assert(character == (position % 2 == 0 ? 'a' : 'b'));
@@ -236,6 +255,79 @@ void test_text_appends_itself() {
     other.append(alloc, "q").expect("the text is below its maximum");
     other = std::move(moved);
     assert(other.size() == std::size_t{2} << 12);
+}
+
+// A frame door gives its body the elements or the characters, and gives the
+// result of the body.  with_element writes through its arm, and gives on_none
+// at and past size().  A const owner lends const elements.  After a frame,
+// the owner appends again.
+void test_frame_doors() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    GrowList<std::uint32_t> list = mint_grow_list<std::uint32_t>(1000);
+    for (std::uint32_t value = 0; value < 300; ++value) {
+        list.append(alloc, value).expect("the list is below its maximum");
+    }
+    std::uint64_t const sum = list.with_view([](View<std::uint32_t> view) noexcept {
+        std::uint64_t total = 0;
+        for (std::uint32_t const element : view) {
+            total += element;
+        }
+        return total;
+    });
+    assert(sum == std::uint64_t{299} * 300 / 2);
+    bool const is_written = list.with_element(
+        7,
+        [](std::uint32_t& element) noexcept {
+            element = 70;
+            return true;
+        },
+        [] noexcept { return false; });
+    bool const is_past_end =
+        list.with_element(300, [](std::uint32_t&) noexcept { return false; }, [] noexcept { return true; });
+    assert(is_written && is_past_end);
+    GrowList<std::uint32_t> const& fixed = list;
+    std::uint32_t const seventh = fixed.with_element(
+        7, [](std::uint32_t const& element) noexcept { return element; }, [] noexcept { return std::uint32_t{0}; });
+    std::size_t const count = fixed.with_view([](View<std::uint32_t const> view) noexcept { return view.size(); });
+    assert(seventh == 70 && count == 300);
+    list.append(alloc, 300).expect("the list is below its maximum");
+    assert(list.size() == 301);
+
+    GrowText text = mint_grow_text(64);
+    text.append(alloc, "aten::mm").expect("the text is below its maximum");
+    std::size_t const colons = text.with_view([](TextView characters) noexcept {
+        std::size_t found = 0;
+        for (char const character : characters) {
+            found += character == ':' ? 1 : 0;
+        }
+        return found;
+    });
+    assert(colons == 2);
+    text.append(alloc, '\0').expect("the text is below its maximum");
+    assert(text.size() == 9);
+}
+
+// A freeze gives the characters to a HeapText with no copy, and leaves the
+// text empty with its maximum.  The HeapText keeps its characters across each
+// later append of the text, and across a move.
+void test_freeze() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    GrowText text = mint_grow_text(8);
+    text.append(alloc, "crucible").expect("the text is below its maximum");
+    ::foundation::core::HeapText const frozen = freeze(std::move(through(text)));
+    assert(frozen.size() == 8 && frozen.view() == TextView{"crucible"});
+    assert(text.size() == 0 && text.view().size() == 0);
+    text.append(alloc, "12345678").expect("a frozen text keeps its maximum");
+    assert(text.append(alloc, '9').is_err());
+    std::size_t letters = 0;
+    for (char const character : frozen) {
+        letters += character >= 'a' && character <= 'z' ? 1 : 0;
+    }
+    assert(letters == 8 && frozen.view() == TextView{"crucible"});
+    ::foundation::core::HeapText moved = freeze(std::move(through(text)));
+    assert(moved.view() == TextView{"12345678"});
+    moved = freeze(mint_grow_text(4));
+    assert(moved.size() == 0);
 }
 
 // The property: random appends to a list and a text agree with a model of a
@@ -331,6 +423,8 @@ int main() {
     test_nested_lists();
     test_text_appends();
     test_text_appends_itself();
+    test_frame_doors();
+    test_freeze();
     test_agrees_with_a_model();
     test_foreign_doors();
     test_c_text_doors();

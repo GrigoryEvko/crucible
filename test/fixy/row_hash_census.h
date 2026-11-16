@@ -973,6 +973,9 @@ inline constexpr StatedZero kZeros[] = {
      "a list of elements on the heap that grows: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::GrowText,
      "a text on the heap that grows: it holds characters and makes no claim about them"},
+    {^^::foundation::core::HeapText,
+     "the characters of a text on the heap after its last append: it holds characters and makes no claim about "
+     "them"},
     {^^::foundation::core::BrandedIndex,
      "the proof of an index below the count of one branded scope: it lives inside the scope, and it is never a value "
      "in a kernel signature"},

@@ -3160,6 +3160,18 @@ foundation_neg_compile_test(neg_core_grow_text_append_without_allocation_marker
 foundation_neg_compile_test(neg_core_grow_text_copied
   "use of deleted function .foundation::core::GrowText::GrowText\\(const foundation::core::GrowText&\\)."
   "a copy of a GrowText allocates, and no allocation capability shows at a copy")
+# A growth ends each borrow of the owner.  The rule borrow-match refuses an
+# append in the body of a frame door, and a frame door refuses a body that
+# gives its View out.
+foundation_neg_compile_test(neg_core_grow_list_append_in_frame
+  "this arm of a borrow match writes the sum that the match reads .mutating-call list."
+  "the payload that the arm borrows can end while the arm holds its reference")
+foundation_neg_compile_test(neg_core_grow_text_append_in_frame
+  "this arm of a borrow match writes the sum that the match reads .mutating-call text."
+  "the payload that the arm borrows can end while the arm holds its reference")
+foundation_neg_compile_test(neg_core_grow_list_frame_gives_view
+  "use of deleted function .void foundation::core::GrowList<T>::with_view\\(Body&&\\) &"
+  "the result of a frame door holds no borrow: the next append can end the storage of the list")
 
 # A foreign run holds each bit pattern, so its View refuses a bool and an
 # enumeration with enumerators.  The text door takes a run of char, and its

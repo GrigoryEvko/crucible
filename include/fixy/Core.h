@@ -65,7 +65,9 @@ using ::foundation::core::unreachable;
 // only in an ABI region, and the full name shows the reader the escape.
 using ::foundation::core::CText;
 using ::foundation::core::FixedText;
+using ::foundation::core::freeze;
 using ::foundation::core::GrowText;
+using ::foundation::core::HeapText;
 using ::foundation::core::mint_c_text;
 using ::foundation::core::mint_foreign_text;
 using ::foundation::core::mint_grow_text;

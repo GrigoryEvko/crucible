@@ -760,6 +760,10 @@ witness <foundation/core/Array.h> no-match | foundation::core::MaskedArray<int> 
 # through its mint.
 witness <foundation/core/Grow.h> no-match | foundation::core::GrowList<int> | foundation::core::GrowList<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/Grow.h> no-match | foundation::core::GrowText | foundation::core::GrowText{forge::rvalue<char*>(), forge::rvalue<unsigned long>()}
+# A HeapText has no constructor from a pointer either.  Its one constructor
+# is private, and freeze is its friend, so each HeapText comes from the
+# freeze of a GrowText.
+witness <foundation/core/Grow.h> no-match | foundation::core::HeapText | foundation::core::HeapText{forge::rvalue<char*>(), forge::rvalue<unsigned long>()}
 # A cursor of enumerate() or zip comes only from its range, so no position
 # that a caller holds becomes an index, and no pointer becomes a pair.
 witness <foundation/core/Region.h> private | foundation::core::detail::EnumerateCursor<int, 4, forge::brand> | foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}

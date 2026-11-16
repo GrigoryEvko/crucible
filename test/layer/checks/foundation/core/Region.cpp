@@ -367,10 +367,10 @@ static_assert(std::is_same_v<decltype(offset_of(std::declval<View<int>>(), std::
 // two calls.  The niche of a View, of a TextView and of an Index is the
 // protocol of the Choice family, and its check reads it.
 inline constexpr TextView region_names{
-    "View Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText FixedArray FixedList HeapArray "
-    "GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent element_type extent "
-    "capacity window split_at indices index index_of parallel check raw rest take take_first take_last clear "
-    "with_view freeze is_at_end remaining"};
+    "View Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText HeapText FixedArray FixedList "
+    "HeapArray GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent element_type "
+    "extent capacity window split_at indices index index_of parallel check raw rest take take_first take_last clear "
+    "with_view with_element append_self freeze is_at_end remaining"};
 
 // The brand that the check of a branded type names.  A program gets each
 // brand from mint_branded_scope.
@@ -397,6 +397,7 @@ CRUCIBLE_CLOSED_SURFACE(region_names, Full<int>);
 CRUCIBLE_CLOSED_SURFACE(region_names, GrowList<int>);
 CRUCIBLE_CLOSED_SURFACE(region_names, GrowList<Record>);
 CRUCIBLE_CLOSED_SURFACE(region_names, GrowText);
+CRUCIBLE_CLOSED_SURFACE(region_names, HeapText);
 CRUCIBLE_CLOSED_SURFACE(region_names, BrandedIndex<SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, BrandedView<int, SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, LengthMismatch);

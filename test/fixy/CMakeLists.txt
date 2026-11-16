@@ -4496,6 +4496,10 @@ fixy_neg_compile_test(neg_exit_now_without_test_context
 # with an exit code.  Only a context that owns the Test capability calls an
 # operation of the family.
 fixy_test(test_check_family)
+# THE LEND COUNT of foundation/core/Grow.h: an append, a clear, a move, a
+# freeze and the end of a growable owner from a callee of a frame door end
+# the process, each in a child process of expect_dies.
+fixy_test(test_core_grow_lend)
 fixy_neg_compile_test(neg_check_expect_dies_without_test_context
   "no matching function for call to .expect_dies"
   "TestContext")

@@ -302,6 +302,11 @@
       "constructor": "\\bHeapArray\\("
     },
     {
+      "name": "neg_witness_core_heaptext_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bHeapText\\("
+    },
+    {
       "name": "neg_witness_core_hole_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bHole\\("
@@ -1315,6 +1320,10 @@
     },
     {
       "type": "foundation::core::GrowText",
+      "header": "foundation/core/Grow.h"
+    },
+    {
+      "type": "foundation::core::HeapText",
       "header": "foundation/core/Grow.h"
     },
     {

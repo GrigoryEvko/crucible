@@ -43,13 +43,48 @@ struct MovedPin final : ::foundation::Pinned<MovedPin> {
     MovedPin(MovedPin&& other) noexcept : ::foundation::Pinned<MovedPin>{}, value{other.value} {}
 };
 
-// An owner holds a pointer and three counts.  It moves and does not copy,
-// and a list of a linear element is linear and has no clear().
-static_assert(sizeof(GrowList<int>) == 4 * sizeof(std::size_t));
-static_assert(sizeof(GrowText) == 4 * sizeof(std::size_t));
+// A growable owner holds a pointer, three counts and a word of its lend
+// count and its padding.  A HeapText holds a pointer and two counts.  Each
+// owner moves and does not copy, and a list of a linear element is linear and
+// has no clear().
+static_assert(sizeof(GrowList<int>) == 5 * sizeof(std::size_t));
+static_assert(sizeof(GrowText) == 5 * sizeof(std::size_t));
+static_assert(sizeof(HeapText) == 3 * sizeof(std::size_t));
 static_assert(std::is_nothrow_move_constructible_v<GrowList<int>> && !std::is_copy_constructible_v<GrowList<int>>);
 static_assert(std::is_nothrow_move_assignable_v<GrowText> && !std::is_copy_assignable_v<GrowText>);
+static_assert(std::is_nothrow_move_assignable_v<HeapText> && !std::is_copy_constructible_v<HeapText>);
 static_assert(!std::is_default_constructible_v<GrowList<int>> && !std::is_default_constructible_v<GrowText>);
+static_assert(!std::is_default_constructible_v<HeapText>);
+static_assert(OwnerState<owner::GrowListState<int>> && OwnerState<owner::GrowTextState>
+              && OwnerState<owner::HeapTextState>);
+
+// Only an rvalue of a GrowText freezes, and the freeze gives a HeapText.
+template <class Text>
+concept Freezes = requires(Text&& text) {
+    { freeze(static_cast<Text&&>(text)) } -> std::same_as<HeapText>;
+};
+static_assert(Freezes<GrowText> && !Freezes<GrowText&> && !Freezes<GrowText const&> && !Freezes<GrowText const>);
+
+// A frame door gives the result of its body when that result holds no
+// borrow, and a temporary owner lends nothing.
+template <class Owner, class Body>
+concept Lends = requires(Owner&& owner, Body body) { static_cast<Owner&&>(owner).with_view(body); };
+struct CountsElements final {
+    [[nodiscard]] constexpr std::size_t operator()(View<int const> view) const noexcept { return view.size(); }
+};
+struct GivesElements final {
+    [[nodiscard]] constexpr View<int const> operator()(View<int const> view) const noexcept { return view; }
+};
+struct CountsCharacters final {
+    [[nodiscard]] constexpr std::size_t operator()(TextView text) const noexcept { return text.size(); }
+};
+struct GivesCharacters final {
+    [[nodiscard]] constexpr TextView operator()(TextView text) const noexcept { return text; }
+};
+static_assert(Lends<GrowList<int>&, CountsElements> && Lends<GrowList<int> const&, CountsElements>);
+static_assert(!Lends<GrowList<int>&, GivesElements> && !Lends<GrowList<int>, CountsElements>);
+static_assert(Lends<GrowText&, CountsCharacters> && !Lends<GrowText&, GivesCharacters>);
+static_assert(!Lends<GrowText, CountsCharacters>);
 static_assert(::foundation::linear::is_linear_v<GrowList<LinearToken>>);
 static_assert(!::foundation::linear::is_linear_v<GrowList<int>>);
 static_assert(GrowListElement<int> && GrowListElement<GrowList<int>> && GrowListElement<Box<int>>);
@@ -80,12 +115,18 @@ static_assert(!AppendsToTemporary<GrowList<int>> && !ViewsTemporary<GrowList<int
 static_assert(!ViewsTemporary<GrowList<int> const> && !ViewsTemporary<GrowText>);
 
 // The mint gives an empty owner with no storage, also in a constant
-// evaluation, and a maximum past the largest View becomes that count.
+// evaluation, and a maximum past the largest View becomes that count.  The
+// frame doors read an empty owner, and the freeze of an empty text gives an
+// empty HeapText.
 [[nodiscard]] consteval bool minted_owners_are_empty() noexcept {
     GrowList<int> const list = mint_grow_list<int>(8);
-    GrowText const text = mint_grow_text(~std::size_t{0});
-    return list.size() == 0 && list.view().size() == 0 && list.get(0).is_none() && text.size() == 0
-        && text.view().size() == 0;
+    GrowText text = mint_grow_text(~std::size_t{0});
+    bool const is_list_empty =
+        list.size() == 0 && list.view().size() == 0 && list.get(0).is_none() && list.with_view(CountsElements{}) == 0
+        && list.with_element(0, [](int const&) noexcept { return false; }, [] noexcept { return true; });
+    bool const is_text_empty = text.size() == 0 && text.view().size() == 0 && text.with_view(CountsCharacters{}) == 0;
+    HeapText const frozen = freeze(static_cast<GrowText&&>(text));
+    return is_list_empty && is_text_empty && frozen.size() == 0 && frozen.view().size() == 0;
 }
 static_assert(minted_owners_are_empty());
 

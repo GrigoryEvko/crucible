@@ -1,10 +1,13 @@
 #pragma once
 
 // The growable owners of the Region family: a list and a text on the heap,
-// each with a maximum that its mint states.
+// each with a maximum that its mint states, and the text that a GrowText
+// gives after its last append.
 //
 //   GrowList<T>     the elements on the heap, in the order of their appends
 //   GrowText        the characters on the heap
+//   HeapText        the characters of a GrowText after its last append, which
+//                   no operation changes
 //
 // THE MINTS
 //   mint_grow_list<T>(maximum)   the one door of a GrowList: an empty list
@@ -26,11 +29,30 @@
 //                       one, and gives Unit, or Full<char> when they do not
 //                       fit below the maximum.  A refused append changes
 //                       nothing
+//   append_self(alloc, offset, count)
+//                       of a GrowText: puts the count characters of the text
+//                       from offset after the last one, as append does.  The
+//                       growth copies them before it gives the old storage
+//                       back
 //   size(), view(), the loop and clear()
 //                       as FixedList gives them.  view() of a GrowText gives a
 //                       TextView
 //   get(position)       of a GrowList: the element at position as an Option of
 //                       a Ref, or no value at or past size(): one compare
+//   freeze(std::move(text))
+//                       of a GrowText: gives the characters to a HeapText with
+//                       no copy, and leaves the text empty with its maximum
+//
+// THE FRAME DOORS
+//   with_view(body)     of a GrowList and of a GrowText: calls body with the
+//                       View of the elements, or with the TextView of the
+//                       characters, and gives the result of body
+//   with_element(position, on_some, on_none)
+//                       of a GrowList: calls on_some with the element at
+//                       position, or on_none at or past size(), and gives the
+//                       result of the arm that it calls: one compare
+// A frame door lends the storage of its owner to the body for the time of
+// the call (THE LEND COUNT).
 //
 // The allocation capability comes first in each append, so each growth shows
 // at its call.  A growth doubles the capacity, up to the maximum, and an
@@ -42,8 +64,41 @@
 // A growth moves each element into new storage, so append gives no
 // reference, and a growth ends each borrow of the owner: each View, each
 // cursor, each TextView and each Ref of get().  Take a borrow after the
-// last append.  An append of a view of the same text is safe: the growth
-// copies the characters before it gives the old storage back.
+// last append.  A text appends a part of itself through append_self, which
+// copies the characters before the growth gives the old storage back.
+//
+// THE LEND COUNT
+//   A frame door lends the storage of its owner to a body.  A growth would
+//   move that storage, and a clear or the end of the owner would end what it
+//   holds.  Each door carries the annotation borrow_match, so the rule
+//   borrow-match of the quarantine plugin refuses an append, a clear, a move
+//   and each other call of a member that is not const of the owner in the
+//   body (utils/tools/quarantine/borrow.cpp).  A function that the body calls
+//   can still change the owner, so the state of the owner counts its lends.
+//   An append, a clear, a move, a freeze and the end of the owner while the
+//   count is not zero end the process, in each build.  An append ends the
+//   process also when the storage has room, so the refusal does not depend
+//   on the capacity.  The count holds 255 lends, and one more ends the
+//   process.
+//
+//   An owner has one owner thread, and only that thread lends it, so the
+//   count is a plain byte, with no atomic step.  A frame door of an owner
+//   from a second thread is a race on the count.
+//
+//   The result of a body holds no borrow (HoldsNoBorrow of Choice.h), so no
+//   body gives the View, a Ref or an address out.  The concept refuses each
+//   class that holds an address, an owner too, so a body that builds an
+//   owner writes it to a variable of the caller.  A body can still copy its
+//   View into a variable that it captures by reference, and the next growth
+//   then ends what that copy borrows.  No rule of the quarantine plugin
+//   refuses that route.  The escape rules of the linear design
+//   (misc/12_10_2026_linear.md, section 11) are its planned refusal.
+//
+// A HeapText holds the characters that a GrowText held at its freeze, and no
+// operation of it changes them.  Its view() and its loop then give borrows
+// that only its end or a move assignment of it ends, as the View of a
+// HeapArray does.  A name that a table keeps for the life of the table is a
+// HeapText.
 //
 // An owner owns its storage alone.  A copy would allocate with no
 // capability at its call, so an owner does not copy.  A move gives the
@@ -59,6 +114,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
@@ -66,6 +122,7 @@
 #include <foundation/core/Owner.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/Report.h>
 #include <foundation/core/Text.h>
 
 #include <cstddef>
@@ -83,21 +140,68 @@ namespace detail {
 [[nodiscard]] std::size_t next_capacity_(std::size_t capacity, std::size_t needed, std::size_t maximum,
                                          std::size_t element_bytes) noexcept;
 
+// The fatal exits of THE LEND COUNT.  The calls take no argument, so each
+// inlined test of a count adds only a compare and a branch to one call.
+[[noreturn]] CRUCIBLE_COLD inline void report_lent_owner_change_() noexcept {
+    fatal("an append, a clear, a move, a freeze or the end of a growable owner while a frame door lends its storage");
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void report_owner_lend_overflow_() noexcept {
+    fatal("more than 255 frame doors lend the storage of one growable owner at one time");
+}
+
+// The fatal exit of a window of append_self that does not lie in the text.
+[[noreturn]] CRUCIBLE_COLD inline void report_self_window_outside_(std::size_t offset, std::size_t count,
+                                                                   std::size_t size) noexcept {
+    fatal("append_self got the {} characters from {} of a text of {} characters", count, offset, size);
+}
+
+// Ends the process while a frame door lends the storage (THE LEND COUNT).
+constexpr void refuse_lent_owner_change_(unsigned char lend_count) noexcept {
+    if (lend_count != 0) [[unlikely]] {
+        report_lent_owner_change_();
+    }
+}
+
+// The lend of one frame door, until its destructor (THE LEND COUNT).  The
+// owner has one owner thread, so the steps of the count are plain.
+class [[nodiscard]] OwnerLend final {
+    unsigned char& lend_count_;
+
+public:
+    constexpr explicit OwnerLend(unsigned char& lend_count) noexcept : lend_count_{lend_count} {
+        if (lend_count_ == 255) [[unlikely]] {
+            report_owner_lend_overflow_();
+        }
+        ++lend_count_;
+    }
+    constexpr ~OwnerLend() { --lend_count_; }
+
+    OwnerLend(OwnerLend const&) = delete("a lend lives in one frame door");
+    OwnerLend& operator=(OwnerLend const&) = delete("a lend lives in one frame door");
+};
+
 namespace owner {
 
 // The fields of a GrowList.  The storage holds capacity elements, or it is
 // null when the capacity is zero, and the first count slots hold the
 // elements.  The storage names no type of an element, so an assignment of it
 // drops no element: each element ends through end_slot_.  A moved-from list
-// keeps its maximum.
+// keeps its maximum.  The lend count is mutable, because a frame door of a
+// const list lends it too (THE LEND COUNT).  The core empties the state at a
+// move and releases it at a move assignment and at the end, so emptied and
+// release refuse a lent list.
 template <class T>
 struct GrowListState {
     void* storage = nullptr;
     std::size_t count = 0;
     std::size_t capacity = 0;
     std::size_t maximum = 0;
+    mutable unsigned char lend_count = 0;
+    FixedArray<unsigned char, 7> padding_{};
 
     [[nodiscard]] static constexpr GrowListState emptied(GrowListState const& state) noexcept {
+        refuse_lent_owner_change_(state.lend_count);
         return GrowListState{nullptr, 0, 0, state.maximum};
     }
 
@@ -119,6 +223,7 @@ struct GrowListState {
     // Ends each element, and gives the storage back to the allocation door
     // with the bytes and the alignment of its allocation.
     static constexpr void release(GrowListState const& state) noexcept {
+        refuse_lent_owner_change_(state.lend_count);
         end_each_(state);
         if (state.storage != nullptr) {
             heap_release_(state.storage, state.capacity * sizeof(T), alignof(T));
@@ -127,18 +232,43 @@ struct GrowListState {
 };
 
 // The fields of a GrowText: the characters, or null when the capacity is
-// zero.  A moved-from text keeps its maximum.
+// zero.  A moved-from text keeps its maximum.  The lend count is that of the
+// state of a GrowList.
 struct GrowTextState {
     char* first = nullptr;
     std::size_t size = 0;
     std::size_t capacity = 0;
     std::size_t maximum = 0;
+    mutable unsigned char lend_count = 0;
+    FixedArray<unsigned char, 7> padding_{};
 
     [[nodiscard]] static constexpr GrowTextState emptied(GrowTextState const& state) noexcept {
+        refuse_lent_owner_change_(state.lend_count);
         return GrowTextState{nullptr, 0, 0, state.maximum};
     }
 
     static constexpr void release(GrowTextState const& state) noexcept {
+        refuse_lent_owner_change_(state.lend_count);
+        if (state.first != nullptr) {
+            heap_release_(static_cast<void*>(state.first), state.capacity, 1);
+        }
+    }
+};
+
+// The fields of a HeapText: the characters of a GrowText at its freeze, and
+// the capacity of their storage, which the release gives back.  The
+// characters are null when the capacity is zero.  The HeapText gives only
+// const borrows of them.
+struct HeapTextState {
+    char* first = nullptr;
+    std::size_t size = 0;
+    std::size_t capacity = 0;
+
+    [[nodiscard]] static constexpr HeapTextState emptied(HeapTextState const& /*state*/) noexcept {
+        return HeapTextState{};
+    }
+
+    static constexpr void release(HeapTextState const& state) noexcept {
         if (state.first != nullptr) {
             heap_release_(static_cast<void*>(state.first), state.capacity, 1);
         }
@@ -252,12 +382,13 @@ public:
     [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
 
     // Puts value after the last element, or gives Full<T> when the list
-    // holds maximum elements.  Two compares, and a growth when the storage is
-    // full.  The growth moves each element, so the append gives no
-    // reference.
+    // holds maximum elements.  Three compares, and a growth when the storage
+    // is full.  The growth moves each element, so the append gives no
+    // reference, and a lent list ends the process (THE LEND COUNT).
     template <class Marker>
         requires AllocationCapability<Marker>
     [[nodiscard]] Result<Unit, Full<T>> append(Marker /*allocation*/, T value) & noexcept {
+        detail::refuse_lent_owner_change_(this->state_.lend_count);
         if (this->state_.count == this->state_.maximum) [[unlikely]] {
             if constexpr (::foundation::linear::is_linear_type(^^T)) {
                 return err(Full<T>{static_cast<T&&>(value)});
@@ -275,10 +406,12 @@ public:
 
     // Ends each element and keeps the storage.  Only an element that a
     // holder can drop has clear(): the end of a linear element would lose
-    // what it proves.  Complexity: O(size()).
+    // what it proves.  A lent list ends the process (THE LEND COUNT).
+    // Complexity: O(size()).
     constexpr void clear() & noexcept
         requires DroppablePayload<T>
     {
+        detail::refuse_lent_owner_change_(this->state_.lend_count);
         end_each_();
     }
 
@@ -325,6 +458,82 @@ public:
     void get(std::size_t) && = delete("an element of a temporary GrowList dangles at the end of the full expression");
     void
     get(std::size_t) const&& = delete("an element of a temporary GrowList dangles at the end of the full expression");
+
+    // The frame door of the elements (THE FRAME DOORS): body gets the View
+    // of the elements, and the list lends its storage until body returns.
+    // The result of body holds no borrow.  A const list gives a View of
+    // const elements.
+    template <class Body>
+        requires std::is_invocable_v<Body, View<T>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T>>
+        with_view(Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, View<T>>) {
+        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
+        return static_cast<Body&&>(body)(View<T>{detail::ViewDoor::key(), first_(), this->state_.count});
+    }
+    template <class Body>
+        requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
+        with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View<T const>>) {
+        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
+        return static_cast<Body&&>(body)(View<T const>{detail::ViewDoor::key(), first_(), this->state_.count});
+    }
+
+    // A body whose result holds a borrow binds to these overloads, so the
+    // refusal gives its reason.
+    template <class Body>
+        requires std::is_invocable_v<Body, View<T>> && (!HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>)
+    void with_view(Body&& body) & = delete("the result of a frame door holds no borrow: the next append can end the "
+                                           "storage of the list.  Give a value with no reference and no address");
+    template <class Body>
+        requires std::is_invocable_v<Body, View<T const>> && (!HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>)
+    void with_view(Body&& body) const& = delete("the result of a frame door holds no borrow: the next append can end "
+                                                "the storage of the list.  Give a value with no reference and no "
+                                                "address");
+    template <class Body>
+    void with_view(Body&& body) && = delete("a frame door of a temporary GrowList lends storage that the full "
+                                            "expression frees");
+    template <class Body>
+    void with_view(Body&& body) const&& = delete("a frame door of a temporary GrowList lends storage that the full "
+                                                 "expression frees");
+
+    // The frame door of one element (THE FRAME DOORS): on_some gets the
+    // element at position, and the list lends its storage until on_some
+    // returns.  At or past size(), on_none runs, with no lend.  The two arms
+    // give the same type, which holds no borrow.  One compare.
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
+              && std::same_as<std::invoke_result_t<OnSome, T&>, std::invoke_result_t<OnNone>>
+              && HoldsNoBorrow<std::invoke_result_t<OnNone>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
+        with_element(std::size_t position, OnSome&& on_some,
+                     OnNone&& on_none) & noexcept(std::is_nothrow_invocable_v<OnSome, T&>
+                                                  && std::is_nothrow_invocable_v<OnNone>) {
+        if (position >= this->state_.count) {
+            return static_cast<OnNone&&>(on_none)();
+        }
+        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
+        return static_cast<OnSome&&>(on_some)(first_()[position]);
+    }
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+              && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
+              && HoldsNoBorrow<std::invoke_result_t<OnNone>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
+        with_element(std::size_t position, OnSome&& on_some,
+                     OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
+                                                       && std::is_nothrow_invocable_v<OnNone>) {
+        if (position >= this->state_.count) {
+            return static_cast<OnNone&&>(on_none)();
+        }
+        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
+        return static_cast<OnSome&&>(on_some)(static_cast<T const*>(first_())[position]);
+    }
+    template <class OnSome, class OnNone>
+    void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) && =
+        delete("a frame door of a temporary GrowList lends storage that the full expression frees");
+    template <class OnSome, class OnNone>
+    void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) const&& =
+        delete("a frame door of a temporary GrowList lends storage that the full expression frees");
 };
 
 // The one door of a GrowList: an empty list of at most maximum elements.  It
@@ -335,6 +544,48 @@ template <class T>
     std::size_t const largest = max_view_count(sizeof(T));
     return GrowList<T>{maximum < largest ? maximum : largest};
 }
+
+// The characters that a GrowText held at its freeze.  No operation changes
+// them, so a borrow of them ends only at the end or at a move assignment of
+// the text.  The one door is freeze(std::move(text)) of a GrowText.
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] HeapText final
+    : public detail::OwnerCore<detail::owner::HeapTextState> {
+    using State = detail::owner::HeapTextState;
+    using Core = detail::OwnerCore<State>;
+
+    // The characters of a frozen GrowText.  Only freeze calls it.
+    constexpr explicit HeapText(State const& state) noexcept : Core{state} {}
+
+    friend constexpr auto freeze(GrowText&& text) noexcept -> HeapText;
+
+public:
+    // The core of foundation/core/Owner.h gives the moves and the end of a
+    // text.
+    constexpr HeapText(HeapText&&) noexcept = default;
+    constexpr HeapText& operator=(HeapText&&) noexcept = default;
+
+    HeapText(HeapText const&) = delete("a copy of a HeapText allocates, and no allocation capability shows at a copy");
+    HeapText&
+    operator=(HeapText const&) = delete("a copy of a HeapText allocates, and no allocation capability shows at a copy");
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return state_.size; }
+
+    // The characters of the text.  The TextView borrows this text, and no
+    // operation of the text ends what it borrows.  The GrowText that gave
+    // the characters bounds the count at __PTRDIFF_MAX__, so the TextView
+    // comes through the door of the base layer, with no check.
+    [[nodiscard]] constexpr TextView view() const& noexcept { return detail::text_over_(state_.first, state_.size); }
+    TextView
+    view() const&& = delete("a view of a temporary HeapText points into storage that the full expression frees");
+
+    // The loop `for (char c : text)` reads each character that the text
+    // holds.
+    [[nodiscard]] constexpr ViewCursor<char const> begin() const& noexcept { return view().begin(); }
+    [[nodiscard]] constexpr ViewCursor<char const> end() const& noexcept { return view().end(); }
+    void
+    begin() const&& = delete("a cursor of a temporary HeapText points into storage that the full expression frees");
+    void end() const&& = delete("a cursor of a temporary HeapText points into storage that the full expression frees");
+};
 
 class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText final
     : public detail::OwnerCore<detail::owner::GrowTextState> {
@@ -350,10 +601,12 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText 
     void grow_and_put_(char const* characters, std::size_t count) noexcept;
 
     // Puts the count characters at characters after the last one, or gives
-    // Full<char> when they do not fit below the maximum.  Two compares and
+    // Full<char> when they do not fit below the maximum.  Three compares and
     // one copy.  The characters can lie in the storage of this text, below
     // its count or past it after a clear(), so the copy is a move of bytes.
+    // A lent text ends the process (THE LEND COUNT).
     [[nodiscard]] Result<Unit, Full<char>> put_(char const* characters, std::size_t count) noexcept {
+        detail::refuse_lent_owner_change_(state_.lend_count);
         if (count > state_.maximum - state_.size) [[unlikely]] {
             return err(Full<char>{});
         }
@@ -407,8 +660,52 @@ public:
         return put_(first_of_(detail::ViewDoor::key(), characters), characters.size());
     }
 
-    // The text then holds no character, and it keeps its storage.
-    constexpr void clear() & noexcept { state_.size = 0; }
+    // Puts the count characters of this text from offset after the last
+    // one, or gives Full<char> when they do not fit below the maximum.  The
+    // door takes the place of the characters and not a TextView, so no
+    // borrow of the storage lives across the growth.  The growth copies the
+    // characters before it gives the old storage back.  A window that does
+    // not lie in the text ends the process.
+    template <class Marker>
+        requires AllocationCapability<Marker>
+    [[nodiscard]] Result<Unit, Full<char>> append_self(Marker /*allocation*/, std::size_t offset,
+                                                       std::size_t count) & noexcept {
+        if (offset > state_.size || count > state_.size - offset) [[unlikely]] {
+            detail::report_self_window_outside_(offset, count, state_.size);
+        }
+        return put_(state_.first + offset, count);
+    }
+
+    // The text then holds no character, and it keeps its storage.  A lent
+    // text ends the process (THE LEND COUNT).
+    constexpr void clear() & noexcept {
+        detail::refuse_lent_owner_change_(state_.lend_count);
+        state_.size = 0;
+    }
+
+    // The frame door of the characters (THE FRAME DOORS): body gets the
+    // TextView of the characters, and the text lends its storage until body
+    // returns.  The result of body holds no borrow.
+    template <class Body>
+        requires std::is_invocable_v<Body, TextView> && HoldsNoBorrow<std::invoke_result_t<Body, TextView>>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, TextView>
+        with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, TextView>) {
+        [[maybe_unused]] detail::OwnerLend const lend{state_.lend_count};
+        return static_cast<Body&&>(body)(detail::text_over_(state_.first, state_.size));
+    }
+
+    // A body whose result holds a borrow binds to this overload, so the
+    // refusal gives its reason.
+    template <class Body>
+        requires std::is_invocable_v<Body, TextView> && (!HoldsNoBorrow<std::invoke_result_t<Body, TextView>>)
+    void with_view(Body&& body) const& = delete("the result of a frame door holds no borrow: the next append can end "
+                                                "the storage of the text.  Give a value with no reference and no "
+                                                "address, or freeze the text into a HeapText");
+    template <class Body>
+    void with_view(Body&& body) const&& = delete("a frame door of a temporary GrowText lends storage that the full "
+                                                 "expression frees");
+
+    friend constexpr auto freeze(GrowText&& text) noexcept -> HeapText;
 
     // The characters of the text.  The TextView borrows this text, and the
     // next append can end what it borrows.  The mint bounds the count at
@@ -426,6 +723,18 @@ public:
     begin() const&& = delete("a cursor of a temporary GrowText points into storage that the full expression frees");
     void end() const&& = delete("a cursor of a temporary GrowText points into storage that the full expression frees");
 };
+
+// Gives the characters of text to a HeapText with no copy, and leaves text
+// empty with its maximum.  A lent text ends the process (THE LEND COUNT).
+// Only an rvalue freezes, so the call shows the move.  Complexity: O(1).
+[[nodiscard]] constexpr auto freeze(GrowText&& text) noexcept -> HeapText {
+    detail::owner::GrowTextState const frozen = text.state_;
+    text.state_ = detail::owner::GrowTextState::emptied(frozen);
+    return HeapText{detail::owner::HeapTextState{frozen.first, frozen.size, frozen.capacity}};
+}
+
+void freeze(GrowText& text) = delete("a freeze gives the characters away: freeze an rvalue, such as std::move(text)");
+void freeze(GrowText const& text) = delete("a freeze gives the characters away, so it needs a text that is not const");
 
 // The one door of a GrowText: an empty text of at most maximum characters.
 // It allocates nothing.  Complexity: O(1).

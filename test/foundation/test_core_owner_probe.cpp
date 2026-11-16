@@ -68,6 +68,7 @@ using ::foundation::core::Box;
 using ::foundation::core::GrowList;
 using ::foundation::core::GrowText;
 using ::foundation::core::HeapArray;
+using ::foundation::core::HeapText;
 using ::foundation::core::Hole;
 using ::foundation::core::MaskedArray;
 using ::foundation::core::Option;
@@ -498,6 +499,57 @@ struct GrowTextProbe {
     }
 };
 
+struct HeapTextProbe {
+    using Owner = HeapText;
+
+    static Owner make(char character) {
+        GrowText text = ::foundation::core::mint_grow_text(4);
+        text.append(kAlloc, character).expect("the text of the probe has room below its maximum");
+        return ::foundation::core::freeze(static_cast<GrowText&&>(text));
+    }
+
+    // The first character of a text that holds one.
+    static char first_of(Owner const& text) {
+        for (char const character : text) {
+            return character;
+        }
+        ::foundation::core::fatal("the HeapText of the probe holds no character");
+    }
+
+    static void self_move() {
+        Owner held = make('a');
+        Owner& alias = held;
+        held = static_cast<Owner&&>(alias);
+        CRUCIBLE_FATAL_INVARIANT(held.size() == 1);
+    }
+
+    static void child_move() {}
+
+    // MOVED-FROM: a new value in the source leaves the characters of the
+    // target in place, and the ASan run finds a read of freed storage if the
+    // source kept them.
+    static void moved_from() {
+        Owner target = make('a');
+        Owner source = make('b');
+        target = static_cast<Owner&&>(source);
+        source = make('c');
+        CRUCIBLE_FATAL_INVARIANT(first_of(target) == 'b');
+        Owner taken{static_cast<Owner&&>(target)};
+        target = make('d');
+        CRUCIBLE_FATAL_INVARIANT(first_of(taken) == 'b');
+    }
+
+    static void linear() {}
+
+    // EMPTY: a moved-from HeapText gives an empty view and no character.
+    static void empty() {
+        Owner source = make('a');
+        Owner const target{static_cast<Owner&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(target.size() == 1);
+        CRUCIBLE_FATAL_INVARIANT(through(source).size() == 0 && through(source).view().size() == 0);
+    }
+};
+
 struct AlignedBytesProbe {
     using Owner = AlignedBytes;
 
@@ -649,7 +701,7 @@ struct ProbeList {
 };
 
 using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
-                            AlignedBytesProbe, SwissTableBufferProbe, OwnedMmapProbe>;
+                            HeapTextProbe, AlignedBytesProbe, SwissTableBufferProbe, OwnedMmapProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "

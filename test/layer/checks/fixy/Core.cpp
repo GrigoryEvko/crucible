@@ -88,6 +88,8 @@ static_assert(
     std::is_same_v<decltype(::fixy::mint_foreign_text(static_cast<char const*>(nullptr), 0)), ::fixy::TextView>);
 static_assert(std::is_same_v<::fixy::GrowText, ::foundation::core::GrowText>);
 static_assert(std::is_same_v<decltype(::fixy::mint_grow_text(std::size_t{4})), ::fixy::GrowText>);
+static_assert(std::is_same_v<::fixy::HeapText, ::foundation::core::HeapText>);
+static_assert(std::is_same_v<decltype(::fixy::freeze(::fixy::mint_grow_text(std::size_t{4}))), ::fixy::HeapText>);
 static_assert(std::is_same_v<decltype(::fixy::mint_c_text(::fixy::TextView{})), ::fixy::Option<::fixy::CText>>);
 static_assert(::fixy::mint_c_text(::fixy::TextView{}).is_none());
 static_assert(::fixy::dynamic_extent == ::foundation::core::dynamic_extent);
