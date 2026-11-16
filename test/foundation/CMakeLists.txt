@@ -3106,6 +3106,11 @@ foundation_test(test_core_reduce)
 foundation_test(test_core_scan)
 foundation_test(test_core_sort)
 
+# The golden bits: a digest of the bits of each output of each form, against
+# a digest that the test holds.  One digest holds for each target and each
+# count of SIMD lanes.
+foundation_test(test_core_golden_bits)
+
 # Two units of one program, built for x86-64 and for x86-64-v4, keep their
 # own body of each function whose source reads the vector width (THE TARGET
 # NAMESPACE of foundation/Platform.h).  The flags name x86 targets, so the
