@@ -17,7 +17,8 @@ THE RUN
     variable JSON_VARIABLE of assay.readers.bench, and it then prints its
     reports as a JSON tail.  The runner reads the load of the host and the
     steal time of the core before and after the run (assay.loop.history,
-    others_share(), and THE STEAL TIME of assay.loop.bench).  Only one run
+    others_share(), and THE STEAL TIME of assay.loop.bench).  A run with
+    steal time adds its line to the record of that section.  Only one run
     occurs at a time, because two runs at the same time change the times of
     the two.
       * A run counts when its status is 0, the host was quiet, the core lost
@@ -174,6 +175,7 @@ def run_once(path: Path, where: bench.Placement, cwd: Path, limit_s: float) -> R
     wall_s = time.monotonic() - started
     steal_after = bench.read_steal_ticks(core) if core is not None else None
     steal_ms = None if steal_before is None or steal_after is None else (steal_after - steal_before) * bench.tick_ms()
+    bench.note_steal(where, steal_before, steal_after)
     return Ran(
         words, completed, wall_s, loop_history.others_share(before, loop_history.sample_host(), wall_s), steal_ms
     )
