@@ -237,13 +237,19 @@ public:
 
 // The context a pool operation may run in: none, which is the token
 // form and asks the tag's row to be empty in the body, or one that
-// admits the tag's row.
+// admits the tag's row and holds Nondet.  A lend fails while the exclusive
+// is out, and an upgrade fails while a share is out.  Another thread ends a
+// share or deposits the exclusive at a time that the schedule decides, so
+// two runs with the same inputs can get two outcomes.  The token form takes
+// no context, so no row gates it.
 namespace detail {
 struct no_ctx {};
 }  // namespace detail
 
 template <typename Tag, typename Ctx>
-concept PoolCtx = std::same_as<Ctx, detail::no_ctx> || CtxAdmitsPermission<Tag, Ctx>;
+concept PoolCtx = std::same_as<Ctx, detail::no_ctx>
+               || (CtxAdmitsPermission<Tag, Ctx>
+                   && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>);
 
 // The pool carries the brand of the exclusive it was built from, so its
 // shares are shares of that region and its upgrade hands that region
@@ -420,7 +426,7 @@ mint_permission_share(Args&&...) noexcept {
 namespace detail {
     // True when the argument list is an optional context, a pool as an
     // lvalue, and a body that takes a share of the pool, and the context,
-    // when there is one, admits the row of the tag.  The test is a
+    // when there is one, fits the lend of the pool (PoolCtx).  The test is a
     // function that is not a template, so no translation unit can
     // specialize it to lend from a class that is no pool.
     [[nodiscard]] consteval bool with_shared_read_shaped(std::initializer_list<std::meta::info> arguments) {
@@ -437,7 +443,7 @@ namespace detail {
         if (!std::meta::is_invocable_type(args[n_ctx + 1], {token})) return false;
         if (n_ctx == 0) return true;
         return std::meta::extract<bool>(
-            std::meta::substitute(^^CtxAdmitsPermission, {pool_arguments[0], std::meta::remove_cvref(args[0])}));
+            std::meta::substitute(^^PoolCtx, {pool_arguments[0], std::meta::remove_cvref(args[0])}));
     }
 
     template <typename... Args>

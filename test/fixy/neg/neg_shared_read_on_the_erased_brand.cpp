@@ -13,8 +13,9 @@ namespace {
 struct Cache {
     using permission_row = ::foundation::effects::Row<>;
 };
-using BgCtx = ::foundation::effects::ExecCtx<::foundation::effects::Bg,
-                                             ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
+using BgCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Bg,
+    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Nondet>>;
 }  // namespace
 
 int main() {

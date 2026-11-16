@@ -157,6 +157,8 @@ void test_permission_row_compile() {
     using HotFgCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
     using BgDrainCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
     using BgCompileCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>>;
+    using BgPoolCtx =
+        eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Nondet>>;
     using TestRunnerCtx =
         eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
@@ -197,15 +199,22 @@ void test_permission_row_compile() {
     auto huge_shared = perm::mint_permission_share(bg_compile, std::move(huge));
     (void)huge_shared;
 
+    // The outcome of a lend and of an upgrade reads the schedule, so a pool
+    // takes a context that holds Nondet.  The compile context admits the row
+    // of the tag and holds no Nondet.
+    static_assert(!perm::PoolCtx<HugePage, BgCompileCtx>);
+    static_assert(perm::PoolCtx<HugePage, BgPoolCtx>);
+    BgPoolCtx bg_pool{::foundation::effects::testing::bg()};
+
     auto huge_for_pool = perm::mint_permission_root<HugePage>(bg_compile);
     perm::SharedPermissionPool pool{std::move(huge_for_pool)};
     {
-        auto guard = pool.lend(bg_compile);
+        auto guard = pool.lend(bg_pool);
         if (guard.is_none()) ::foundation::core::fatal("an idle pool refused a share");
     }
     using PoolBrand = decltype(pool)::brand_type;
-    auto value = perm::with_shared_read(bg_compile, pool,
-                                        [](perm::SharedPermission<HugePage, PoolBrand>) noexcept { return 7; });
+    auto value =
+        perm::with_shared_read(bg_pool, pool, [](perm::SharedPermission<HugePage, PoolBrand>) noexcept { return 7; });
     if (!value || *value != 7) std::abort();
 
     TestRunnerCtx test_ctx{::foundation::effects::testing::test()};

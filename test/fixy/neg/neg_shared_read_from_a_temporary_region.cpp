@@ -16,8 +16,9 @@ namespace {
 struct Cache {
     using permission_row = ::foundation::effects::Row<>;
 };
-using BgCtx = ::foundation::effects::ExecCtx<::foundation::effects::Bg,
-                                             ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
+using BgCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Bg,
+    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Nondet>>;
 
 // Each call returns a region of the same brand.
 auto region_over(int* storage) {

@@ -1736,6 +1736,14 @@ foundation_neg_compile_test(neg_share_pool_lend_ctx_refuses_row
 foundation_neg_compile_test(neg_share_pool_upgrade_ctx_refuses_row
   "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg"
   "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo")
+# The outcome of a lend and of an upgrade reads the schedule, so a context
+# that admits the row of the tag and holds no Nondet fits no pool operation.
+foundation_neg_compile_test(neg_share_pool_lend_ctx_without_nondet
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::lend\\(const foundation::effects::detail::ctx_witnesses::BgCompileCtx&\\)."
+  "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo; Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
+foundation_neg_compile_test(neg_share_pool_upgrade_ctx_without_nondet
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(const foundation::effects::detail::ctx_witnesses::BgCompileCtx&\\)."
+  "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo; Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
 foundation_neg_compile_test(neg_share_pool_lend_without_ctx_refuses_row
   "static assertion failed: SharedPermissionPool<Tag>::lend\\(\\) without ExecCtx is only valid"
   "foundation::permissions::permission_row_empty\\(\\^\\^.anonymous.::NeedsIo\\)\\). evaluates to false")

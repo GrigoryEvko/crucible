@@ -27,7 +27,9 @@ namespace {
 using ::fixy::TestRunnerCtx;
 using ::fixy::check::pass;
 
-using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>>;
+// A lend and an upgrade of a pool read the schedule, so the context holds
+// Nondet.
+using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Nondet>>;
 
 struct Cache {
     using permission_row = eff::Row<>;

@@ -16,7 +16,8 @@ struct Spilled {
 };
 using IoCtx = ::foundation::effects::ExecCtx<
     ::foundation::effects::Bg,
-    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::IO>>;
+    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::IO,
+                               ::foundation::effects::Effect::Nondet>>;
 using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
 }  // namespace
 
