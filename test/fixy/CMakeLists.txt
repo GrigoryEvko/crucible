@@ -4240,6 +4240,19 @@ fixy_neg_compile_test(neg_topology_probe_tree_needs_test_ctx
 fixy_test(test_pipeline_dispatch)
 fixy_test(test_pipeline_dag)
 
+# The CPUs of the stages of a threaded run: the order of the candidates and
+# the claims, on a planted tree of eight CPUs in two cache clusters of four,
+# and two threaded runs at the same time on the host.
+set(_stage_cpus_root "${CMAKE_CURRENT_BINARY_DIR}/sysfs_stage_cpus")
+foreach(_cpu RANGE 0 3)
+  crucible_planted_sysfs_cpu("${_stage_cpus_root}" ${_cpu} 0 ${_cpu} "0-3")
+endforeach()
+foreach(_cpu RANGE 4 7)
+  crucible_planted_sysfs_cpu("${_stage_cpus_root}" ${_cpu} 0 ${_cpu} "4-7")
+endforeach()
+fixy_test(test_stage_cpus)
+target_compile_definitions(test_stage_cpus PRIVATE STAGE_CPUS_SYSFS_ROOT="${_stage_cpus_root}")
+
 # The nine refusals of mint_stage and of the stage it returns.  Every
 # second regex is a string the compiler emits and the fixture source
 # does not: a satisfaction note naming the conjunct, a substitution with

@@ -35,6 +35,7 @@
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/concurrent/Stage.h>
+#include <fixy/concurrent/StageCpus.h>
 #include <fixy/os/Topology.h>
 #include <fixy/concurrent/WorkingSet.h>
 #include <fixy/os/Sched.h>
@@ -42,21 +43,20 @@
 #include <foundation/ChannelBinding.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Index.h>
 #include <foundation/core/Region.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/diag/Runtime.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
-#include <algorithm>
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 // The claims the carriers in this header make that no lattice grades.
 // foundation/diag/RowHash.h folds each identity, so every carrier here
@@ -600,60 +600,16 @@ enum class PipelineDispatchKind : std::uint8_t {
 
 namespace detail {
 
-// One cursor for all pipelines of the process, in each shared library too.
-// Each threaded run takes the next N positions, so two runs at the same time
-// start on different CPUs.
-CRUCIBLE_PROCESS_WIDE inline constinit std::atomic<std::size_t> pipeline_cpu_cursor_{0};
-
-// The CPUs that the calling thread can run on, in increasing order.  A core
-// that the process must not use, such as a reserved or an isolated core, is
-// outside that mask, so no stage goes there.  An unreadable mask gives no
-// CPU, and the stages then run unpinned.  The context proves that the caller
-// can start threads, which is the authority that a pin asks for.  The mask
-// comes from read_affinity, the affinity door of fixy/os/Sched.h.
+// The CPUs that the calling thread can run on.  A core that the process must
+// not use, such as a reserved or an isolated core, is outside that mask, so
+// no stage goes there.  An unreadable mask is the empty mask, and each stage
+// then runs unpinned.  The context proves that the caller can start threads,
+// which is the authority that a pin asks for.  The mask comes from
+// read_affinity, the affinity door of fixy/os/Sched.h.
 template <class Ctx>
     requires CtxStartsStageThreads<Ctx>
-[[nodiscard]] std::vector<int> caller_allowed_cpus_(Ctx const& ctx) noexcept {
-    using ::foundation::algebra::lattices::AffinityMask;
-    std::vector<int> cpus;
-    for (AffinityMask const& mask : ::fixy::sched::read_affinity(ctx).ok()) {
-        for (std::uint16_t cpu = 0; cpu < AffinityMask::kBits; ++cpu) {
-            if (mask.contains(cpu)) cpus.push_back(static_cast<int>(cpu));
-        }
-    }
-    return cpus;
-}
-
-// The CPUs that one threaded run of N stages takes, one for each stage, or
-// -1 for a stage that runs unpinned.  The candidates are the CPUs of the
-// cache cluster that holds the most CPUs of the caller's mask, so the stages
-// of one run share one last-level cache.  When no cluster meets the mask,
-// the candidates are the whole mask.  The work is O(C log C) for C CPUs in
-// the mask, once for each run, next to the start of N threads.
-template <std::size_t N, class Ctx>
-    requires CtxStartsStageThreads<Ctx>
-[[nodiscard]] std::array<int, N> pipeline_affinity_cpus_(Ctx const& ctx) noexcept {
-    std::array<int, N> cpus{};
-    cpus.fill(-1);
-
-    const std::vector<int> allowed = caller_allowed_cpus_(ctx);
-    if (allowed.empty()) return cpus;
-
-    std::vector<int> candidates;
-    for (auto const& cluster : ::fixy::topology::Topology::instance().cache_clusters()) {
-        std::vector<int> inside;
-        for (int cpu : cluster) {
-            if (std::binary_search(allowed.begin(), allowed.end(), cpu)) inside.push_back(cpu);
-        }
-        if (inside.size() > candidates.size()) candidates = std::move(inside);
-    }
-    if (candidates.empty()) candidates = allowed;
-
-    const std::size_t start = pipeline_cpu_cursor_.fetch_add(N, std::memory_order_acq_rel);
-    for (std::size_t i = 0; i < N; ++i) {
-        cpus[i] = candidates[(start + i) % candidates.size()];
-    }
-    return cpus;
+[[nodiscard]] ::foundation::algebra::lattices::AffinityMask caller_affinity_(Ctx const& ctx) noexcept {
+    return ::fixy::sched::read_affinity(ctx).value_or(::foundation::algebra::lattices::AffinityMask{});
 }
 
 // The pin goes through the context-gated surface rather than the raw system
@@ -669,6 +625,18 @@ void pin_current_pipeline_thread_(Ctx const& ctx, int cpu) noexcept {
         (void)::fixy::sched::apply_affinity_to_cpu(ctx, cpu);
     } else {
         (void)ctx;
+        (void)cpu;
+    }
+}
+
+// A stage whose context cannot pin its thread gives its claim back before
+// its thread starts, so a run of pinned stages can take that CPU.
+template <class Stage>
+void give_back_unpinnable_stage_cpu_(int& cpu) noexcept {
+    if constexpr (!::fixy::sched::CtxFitsRuntimeAffinity<typename Stage::ctx_type>) {
+        if (cpu >= 0) process_stage_cpu_claims()->give_back(static_cast<std::uint16_t>(cpu));
+        cpu = -1;
+    } else {
         (void)cpu;
     }
 }
@@ -783,22 +751,29 @@ private:
         std::move(stage).run();
     }
 
-    // The CPUs come from the mask of the caller at each run.  Two pipelines
-    // of one size then do not share their cores, and a mask that the caller
-    // sets after the first run still applies.  The threads start and join in
-    // src/fixy/os/ThreadTasks.cpp, the door of fixy/os/ThreadTasks.h.  The
-    // stages wait on each other, so when no stage thread starts, the
-    // process ends.
+    // The CPUs come from the mask of the caller at each run, and each stage
+    // claims its CPU in the table of the process (fixy/concurrent/
+    // StageCpus.h).  Two runs at the same time then pin no two stages to one
+    // CPU, and a mask that the caller sets after the first run still applies.
+    // The run gives its CPUs back after the join.  The threads start and join
+    // in src/fixy/os/ThreadTasks.cpp, the door of fixy/os/ThreadTasks.h.  The
+    // stages wait on each other, so when no stage thread starts, the process
+    // ends.
     template <class Ctx, std::size_t... Is>
     void run_threaded_(Ctx const& ctx, std::index_sequence<Is...>) && noexcept {
-        const std::array<int, sizeof...(Is)> affinity_cpus = pipeline_affinity_cpus_<sizeof...(Is)>(ctx);
-        std::tuple<stage_frame_<Stages>...> frames{stage_frame_<Stages>{&std::get<Is>(stages_), affinity_cpus[Is]}...};
+        ::foundation::core::FixedArray<int, sizeof...(Is)> affinity_cpus{};
+        claim_stage_cpus(*process_stage_cpu_claims(), caller_affinity_(ctx),
+                         ::fixy::topology::Topology::instance().cache_clusters(), affinity_cpus.view());
+        (give_back_unpinnable_stage_cpu_<Stages>(affinity_cpus.at(::foundation::core::index<Is>())), ...);
+        std::tuple<stage_frame_<Stages>...> frames{
+            stage_frame_<Stages>{&std::get<Is>(stages_), affinity_cpus.at(::foundation::core::index<Is>())}...};
         std::array<::fixy::thread::detail::thread_task, sizeof...(Is)> tasks{
             ::fixy::thread::detail::thread_task{&std::get<Is>(frames), &run_threaded_stage_<Stages>}...};
         ::fixy::thread::detail::run_thread_tasks(::foundation::core::detail::view_over_(tasks.data(), tasks.size()),
                                                  ::fixy::thread::ThreadOptions{})
             .expect("Pipeline: no stage thread started.  The stages wait on each other, so the pipeline cannot run "
                     "them on the calling thread");
+        give_back_stage_cpus(*process_stage_cpu_claims(), affinity_cpus.view());
     }
 
     std::tuple<Stages...> stages_;

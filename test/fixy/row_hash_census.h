@@ -1266,6 +1266,12 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::ParallelismDecision, kPayload},
     {^^::fixy::concurrent::ParallelismRule,
      "the parallelism rule: it has static members only, no object of it exists, and it is never a value"},
+    {^^::fixy::concurrent::ProcessStageCpuClaims,
+     "the type of the one table of claimed CPUs of the process: an object of libfixy, and never a value in a "
+     "signature"},
+    {^^::fixy::concurrent::StageCpuClaims,
+     "the table of the CPUs that the pinned stages of the live pipeline runs hold: an object of libfixy, and never a "
+     "value in a signature"},
     {^^::fixy::concurrent::StagePack, kGraphShape},
     {^^::fixy::concurrent::EdgePack, kGraphShape},
     {^^::fixy::concurrent::StageEdge, kGraphShape},
