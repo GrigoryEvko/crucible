@@ -550,7 +550,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the boxed fallback takes the operator handle and the stack of PyTorch")
 static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet dispatch_keys, torch::jit::Stack& stack,
                             c10::CrucibleState& state, crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
-                            MetaSlots metas) {
+                            crucible::OpDepth depth, MetaSlots metas) {
     const auto& schema = op.schema();
 
     // -- Extract input tensor metadata + scalars ----------------------
@@ -619,7 +619,7 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     const auto validated =
         crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), first_records(metas, counts.total()));
     for (const crucible::ValidatedOp& certified : validated) {
-        static_cast<void>(vigil.dispatch_op_pure(fg, certified, scope_hash));
+        static_cast<void>(vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth));
     }
 }
 
@@ -631,9 +631,10 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
 // crucibleFallback holds no list.
 CRUCIBLE_COLD static void record_boxed_op_on_stack(const c10::OperatorHandle& op, c10::DispatchKeySet dispatch_keys,
                                                    torch::jit::Stack& stack, c10::CrucibleState& state,
-                                                   crucible::Vigil& vigil, crucible::VigilFgCtx const& fg) {
+                                                   crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                                   crucible::OpDepth depth) {
     InlineMetas metas{};
-    record_boxed_op(op, dispatch_keys, stack, state, vigil, fg, metas.view());
+    record_boxed_op(op, dispatch_keys, stack, state, vigil, fg, depth, metas.view());
 }
 
 void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatch_keys, torch::jit::Stack* stack) {
@@ -714,19 +715,25 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // claim, so the mint claims this thread or confirms its claim.  The
     // context gives the record stack of the Vigil and the dispatch to it.
     //
+    // The nest holds the depth of the operation until the operation returns
+    // or unwinds, as in the unboxed kernels of record_kernel.h.  Each
+    // operation that the redispatch runs gets a depth one more.
+    //
     // The frame holds MAX_INLINE_METAS slots from the extraction of the
     // inputs to the dispatch.  An operation that the redispatch runs opens
     // its frame past these slots, and its frame closes before the redispatch
     // returns.  An unwind of a PyTorch error closes the frame too.
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
-    const crucible::OpRecordFrame frame{vigil.op_record_stack(fg), MAX_INLINE_METAS};
+    crucible::OpRecordStack& record_stack = vigil.op_record_stack(fg);
+    const crucible::OpNest nest{record_stack};
+    const crucible::OpRecordFrame frame{record_stack, MAX_INLINE_METAS};
     for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
         for (const MetaSlots metas : slots.window<MAX_INLINE_METAS>(0)) {
-            record_boxed_op(op, dispatch_keys, *stack, state, vigil, fg, metas);
+            record_boxed_op(op, dispatch_keys, *stack, state, vigil, fg, nest.depth(), metas);
             return;
         }
     }
-    record_boxed_op_on_stack(op, dispatch_keys, *stack, state, vigil, fg);
+    record_boxed_op_on_stack(op, dispatch_keys, *stack, state, vigil, fg, nest.depth());
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 

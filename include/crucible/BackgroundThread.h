@@ -262,12 +262,12 @@ struct BackgroundThread {
     IterationDetector detector;
 
     // The ops that the detect stage holds, from the oldest op that a future
-    // iteration can hold to the newest op.  It is a ring of five parallel
+    // iteration can hold to the newest op.  It is a ring of six parallel
     // arrays that grows by doubling.  The detect stage drops each op that
     // IterationDetector::oldest_claimable() passes, so the ring holds at
     // most half of the history of the detector and K ops more, and it never
     // grows past IterationDetector::HISTORY_MAX_CAPACITY ops.  At that
-    // capacity it takes 48 MiB.
+    // capacity it takes 49 MiB.
     class PendingOps {
     public:
         // Adds the newest op.  record_start is the position of the op in the
@@ -275,7 +275,7 @@ struct BackgroundThread {
         // allocation capability of the detect stage.  Complexity: O(1), and
         // O(n) when the ring grows.
         void push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry, MetaIndex meta_start,
-                  uint64_t record_start, ScopeHash scope_hash, CallsiteHash callsite_hash);
+                  uint64_t record_start, ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth);
 
         // Drops the count oldest ops.  A count past size() drops each op.
         void drop_oldest(uint64_t count) noexcept {
@@ -307,6 +307,7 @@ struct BackgroundThread {
         [[nodiscard]] CallsiteHash callsite_hash(uint64_t index) const noexcept {
             return callsite_hashes_.at_masked(head_ + index);
         }
+        [[nodiscard]] OpDepth depth(uint64_t index) const noexcept { return depths_.at_masked(head_ + index); }
 
     private:
         static constexpr uint64_t MIN_CAPACITY = uint64_t{1} << 12;
@@ -318,6 +319,7 @@ struct BackgroundThread {
         ::fixy::MaskedArray<uint64_t> record_starts_;
         ::fixy::MaskedArray<ScopeHash> scope_hashes_;
         ::fixy::MaskedArray<CallsiteHash> callsite_hashes_;
+        ::fixy::MaskedArray<OpDepth> depths_;
         // The capacity minus one, zero before the first push.
         uint64_t mask_ = 0;
         // The slot of the oldest held op, before the mask.
@@ -735,6 +737,7 @@ public:
         ::fixy::FixedArray<MetaIndex, BATCH_SIZE> meta_starts{};
         ::fixy::FixedArray<ScopeHash, BATCH_SIZE> scope_hashes{};
         ::fixy::FixedArray<CallsiteHash, BATCH_SIZE> callsite_hashes{};
+        ::fixy::FixedArray<OpDepth, BATCH_SIZE> depths{};
     };
 
     struct BgBuildWork {
@@ -748,13 +751,14 @@ public:
         uint64_t meta_floor = 0;
         // The ops of the iteration, one element of each buffer for each op,
         // each built from the held op.  An iteration has at most
-        // IterationDetector::MAX_PERIOD ops, so the four buffers take at most
-        // 88 bytes for each op, 22 MiB together.  A commit-only marker holds
-        // none.
+        // IterationDetector::MAX_PERIOD ops, so the five buffers take at most
+        // 90 bytes for each op, 22.5 MiB together.  A commit-only marker
+        // holds none.
         ::fixy::HeapArray<TraceRing::Entry> trace;
         ::fixy::HeapArray<MetaIndex> meta_starts;
         ::fixy::HeapArray<ScopeHash> scope_hashes;
         ::fixy::HeapArray<CallsiteHash> callsite_hashes;
+        ::fixy::HeapArray<OpDepth> depths;
     };
 
     struct BgPipelineDone {};
@@ -1112,29 +1116,30 @@ public:
 
     // Turns the ring entries of trace and their tensor metadata into a CSR
     // property graph in scratch, and the parts of its region.  The caller
-    // owns the four arrays, which hold one element for each op:
-    // meta_starts, scope_hashes and callsite_hashes are parallel to trace.
-    // meta_starts holds MetaIndex::none() for an op with no tensor
+    // owns the five arrays, which hold one element for each op:
+    // meta_starts, scope_hashes, callsite_hashes and depths are parallel to
+    // trace.  meta_starts holds MetaIndex::none() for an op with no tensor
     // arguments.  The build stage calls it on each work item.  It reads the
     // metadata log and never writes its tail.  The graph and its CSR arrays
     // go into scratch.  The ops, their tensor metadata, their side arrays
     // and their slots go into the parts of the region, which own their
     // memory.
-    [[nodiscard]] TraceBuild
-    build_trace_from(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
-                     ::fixy::View<const TraceRing::Entry> trace, ::fixy::View<const MetaIndex> meta_starts,
-                     ::fixy::View<const ScopeHash> scope_hashes, ::fixy::View<const CallsiteHash> callsite_hashes)
-        CRUCIBLE_NO_THREAD_SAFETY;
+    [[nodiscard]] TraceBuild build_trace_from(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
+                                              ::fixy::View<const TraceRing::Entry> trace,
+                                              ::fixy::View<const MetaIndex> meta_starts,
+                                              ::fixy::View<const ScopeHash> scope_hashes,
+                                              ::fixy::View<const CallsiteHash> callsite_hashes,
+                                              ::fixy::View<const OpDepth> depths) CRUCIBLE_NO_THREAD_SAFETY;
 
 private:
     // The body of build_trace_from.  Each column is a fixy::BrandedView of
     // one branded scope over the ops, so one index of an op reads each
     // column with no check.  Only src/BackgroundThread.cpp instantiates it.
-    template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn>
+    template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] TraceBuild
     build_trace_columns_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, TraceColumn trace_data,
-                         MetaColumn meta_data, ScopeColumn scope_data, CallsiteColumn callsite_data)
-        CRUCIBLE_NO_THREAD_SAFETY;
+                         MetaColumn meta_data, ScopeColumn scope_data, CallsiteColumn callsite_data,
+                         DepthColumn depth_data) CRUCIBLE_NO_THREAD_SAFETY;
 
 public:
     // Orders birth and death events with an O(n + k) counting sort, then

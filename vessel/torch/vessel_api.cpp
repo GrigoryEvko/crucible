@@ -254,15 +254,21 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     // on the record stack of the Vigil and decodes the records of the caller
     // into it.  A count that does not fit the free slots, or a record that the
     // decode refuses, records nothing.
+    //
+    // The op runs no other op through this entry, so it opens no nest.  Its
+    // depth is the count of the nests that are open when it arrives.
     const auto vigil = ::fixy::to(*vigil_typed.value());
     const crucible::VigilFgCtx fg = vigil->mint_producer_context();
-    const crucible::OpRecordFrame frame{vigil->op_record_stack(fg), n_metas};
+    crucible::OpRecordStack& record_stack = vigil->op_record_stack(fg);
+    const crucible::OpDepth depth = record_stack.depth();
+    const crucible::OpRecordFrame frame{record_stack, n_metas};
     for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
         for (const ::fixy::View<const crucible::TensorMeta> records :
              crucible::vessel::decode_ffi_records(metas_typed, slots)) {
             for (const crucible::ValidatedOp& op :
                  crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
-                return encode_dispatch_result(vigil->dispatch_op_pure(fg, op));
+                return encode_dispatch_result(
+                    vigil->dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
             }
         }
     }
@@ -312,16 +318,20 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
 
     // The trust ladder of crucible_dispatch_op.  The producer claim gates
     // this entry and its decode as it gates crucible_dispatch_op, and an op
-    // that a check refuses gives the action REFUSED.
+    // that a check refuses gives the action REFUSED.  The depth comes from
+    // the record stack, as in crucible_dispatch_op.
     const auto vigil = ::fixy::to(*vigil_typed.value());
     const crucible::VigilFgCtx fg = vigil->mint_producer_context();
-    const crucible::OpRecordFrame frame{vigil->op_record_stack(fg), n_metas};
+    crucible::OpRecordStack& record_stack = vigil->op_record_stack(fg);
+    const crucible::OpDepth depth = record_stack.depth();
+    const crucible::OpRecordFrame frame{record_stack, n_metas};
     for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
         for (const ::fixy::View<const crucible::TensorMeta> records :
              crucible::vessel::decode_ffi_records(metas_typed, slots)) {
             for (const crucible::ValidatedOp& op :
                  crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
-                return encode_dispatch_result(vigil->dispatch_op_pure(fg, op));
+                return encode_dispatch_result(
+                    vigil->dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
             }
         }
     }

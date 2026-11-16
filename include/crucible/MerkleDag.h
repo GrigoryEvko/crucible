@@ -179,6 +179,10 @@ public:
     TrainingPhase training_phase = TrainingPhase::FORWARD;
     bool torch_function = false;
 
+    // The nesting depth of the op.  A lowering takes only the ops of depth
+    // zero, because each op of a larger depth runs inside one of them.
+    OpDepth depth{};
+
     // The counts.
     [[nodiscard]] uint16_t num_inputs() const noexcept { return arrays_.count<kInputCount>(); }
     [[nodiscard]] uint16_t num_outputs() const noexcept { return arrays_.count<kOutputCount>(); }

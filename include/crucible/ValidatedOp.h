@@ -47,6 +47,11 @@ class OpRecordFrame;
 // Each slot holds a TensorMeta from the construction of the stack on.  The
 // thread that holds the producer claim of the Vigil is the one thread that
 // reads or writes the stack.
+//
+// The stack also counts the ops whose record is open (OpNest).  An adapter
+// opens one OpNest for each op that it records, also for an op that keeps
+// its records on its own stack.  The count is the depth of the next op that
+// opens.
 class OpRecordStack {
 public:
     constexpr OpRecordStack() noexcept = default;
@@ -59,13 +64,49 @@ public:
     // The count of the slots that the open frames hold.
     [[nodiscard]] constexpr uint32_t held() const noexcept { return top_; }
 
+    // The depth of an op that starts now: the count of the open nests.
+    [[nodiscard]] constexpr OpDepth depth() const noexcept { return depth_; }
+
 private:
     friend class OpRecordFrame;
+    friend class OpNest;
 
     OpRecordSlots slots_{};
     // At most kMaxOpRecords.  A frame opens only when its slots fit.
     uint32_t top_ = 0;
-    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad_{};
+    OpDepth depth_{};
+    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 2> pad_{};
+};
+
+// The nest of the record of one op on an OpRecordStack.  The constructor
+// takes the depth of the op from the stack, and each op that opens a nest
+// before the destructor runs gets a depth one more.  A nest cannot copy or
+// move, so the nests of one stack close in the reverse order of their opens.
+// A nest lives in the call of its op, so an unwind of that call closes the
+// nest too.  O(1) for each open and each close.
+class [[nodiscard]] OpNest {
+public:
+    explicit OpNest(OpRecordStack& stack) noexcept : stack_{::fixy::to(stack)}, depth_{stack.depth_} {
+        stack.depth_ = depth_.nested();
+    }
+
+    ~OpNest() {
+        // Each nest that opened after this one closed before it.
+        CRUCIBLE_FATAL_INVARIANT(stack_->depth_ == depth_.nested());
+        stack_->depth_ = depth_;
+    }
+
+    OpNest(const OpNest&) = delete("a nest closes at the end of the scope of its op");
+    OpNest& operator=(const OpNest&) = delete("a nest closes at the end of the scope of its op");
+    OpNest(OpNest&&) = delete("a nest closes at the end of the scope of its op");
+    OpNest& operator=(OpNest&&) = delete("a nest closes at the end of the scope of its op");
+
+    // The depth of the op of this nest.
+    [[nodiscard]] constexpr OpDepth depth() const noexcept { return depth_; }
+
+private:
+    ::fixy::Ref<OpRecordStack> stack_;
+    OpDepth depth_{};
 };
 
 // The slots of the records of one op, at the top of an OpRecordStack.  The

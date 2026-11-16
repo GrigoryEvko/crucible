@@ -55,7 +55,7 @@ FillRun& fill_run() {
 
 [[nodiscard]] bool record(TraceRing& ring, MetaLog& log, const TraceRing::Entry& entry, OpMetas const& metas) {
     return crucible::record_into(ring, log, crucible::test::certify_synthetic_op(entry, metas.view()),
-                                 crucible::ScopeHash{}, crucible::CallsiteHash{});
+                                 crucible::ScopeHash{}, crucible::CallsiteHash{}, crucible::OpDepth{});
 }
 
 // Drains one entry and its metadata index.  The ring holds at least one.

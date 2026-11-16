@@ -269,7 +269,7 @@ crucible_test(test_transaction_owner)
 # Each group of tests is a source file of its own, so that no translation
 # unit compiles all of them.
 crucible_test(test_vigil test_vigil.cpp test_vigil_divergence.cpp test_vigil_producer.cpp
-  test_vigil_metadata.cpp)
+  test_vigil_metadata.cpp test_vigil_depth.cpp)
 crucible_test(test_ckernel)
 # Each process-wide object, written in one shared library and read in
 # another.  The test loads the two libraries with dlopen and RTLD_LOCAL, as

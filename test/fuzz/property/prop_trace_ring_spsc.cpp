@@ -65,6 +65,7 @@ using crucible::ShapeHash;
 using crucible::ScopeHash;
 using crucible::CallsiteHash;
 using crucible::MetaIndex;
+using crucible::OpDepth;
 
 // Per-iteration schedule.  Fixed-size for deterministic layout and to
 // avoid heap in the input (random_input.h convention).
@@ -86,12 +87,13 @@ constexpr unsigned MIRROR_CAPACITY = K_PHASES * MAX_OPS_PER_PHASE;
 
 // One queued-but-not-yet-drained append, kept on the mirror side to
 // compare against the ring's output.  Stored as raw Entry bytes +
-// the three parallel-array scalars so a memcmp verifies round-trip.
+// the four parallel-array scalars so a memcmp verifies round-trip.
 struct MirrorSlot {
     TraceRing::Entry entry{};
     MetaIndex meta_start{};
     ScopeHash scope_hash{};
     CallsiteHash callsite_hash{};
+    OpDepth depth{};
 };
 
 // Populate `e` from RNG.  Keep scalar_types / op_flags legal so that
@@ -170,7 +172,8 @@ int main(int argc, char** argv) {
             TraceRing::Entry e{};
             e.schema_hash = SchemaHash{uint64_t{i} + 1};  // non-zero, unique
             e.shape_hash = ShapeHash{~uint64_t{i} + 1};
-            if (!ring->try_append(e, MetaIndex{i}, ScopeHash{0xA0000000ULL | i}, CallsiteHash{0xB0000000ULL | i}))
+            if (!ring->try_append(e, MetaIndex{i}, ScopeHash{0xA0000000ULL | i}, CallsiteHash{0xB0000000ULL | i},
+                                  OpDepth{static_cast<uint16_t>(i)}))
                 std::abort();
         }
         if (ring->size().peek() != CAP) std::abort();
@@ -190,9 +193,10 @@ int main(int argc, char** argv) {
         ::fixy::FixedArray<MetaIndex, CHUNK> out_m{};
         ::fixy::FixedArray<ScopeHash, CHUNK> out_s{};
         ::fixy::FixedArray<CallsiteHash, CHUNK> out_c{};
+        ::fixy::FixedArray<OpDepth, CHUNK> out_d{};
         uint32_t delivered = 0;
         while (delivered < CAP) {
-            const uint32_t got = ring->drain(out_e.view(), out_m.view(), out_s.view(), out_c.view());
+            const uint32_t got = ring->drain(out_e.view(), out_m.view(), out_s.view(), out_c.view(), out_d.view());
             if (got == 0) std::abort();  // ring has CAP entries, must deliver
             for (uint32_t k = 0; k < got; ++k) {
                 const uint32_t i = delivered + k;
@@ -202,6 +206,8 @@ int main(int argc, char** argv) {
                 if (out_m.at(slot) != MetaIndex{i}) std::abort();
                 if (out_s.at(slot) != ScopeHash{0xA0000000ULL | i}) std::abort();
                 if (out_c.at(slot) != CallsiteHash{0xB0000000ULL | i}) std::abort();
+                if (out_d.at(slot) != OpDepth{static_cast<uint16_t>(i)})
+                    ::fixy::fatal("the drain changed the depth of an op");
             }
             delivered += got;
         }
@@ -230,6 +236,7 @@ int main(int argc, char** argv) {
                 slot.meta_start = (rng.next32() & 0xFu) == 0u ? MetaIndex{} : MetaIndex{rng.next32() & 0x00FFFFFFu};
                 slot.scope_hash = ScopeHash{rng.next64()};
                 slot.callsite_hash = CallsiteHash{rng.next64()};
+                slot.depth = OpDepth{static_cast<uint16_t>(rng.next32() & 0xFFFFu)};
             }
             return s;
         },
@@ -256,6 +263,7 @@ int main(int argc, char** argv) {
             ::fixy::FixedArray<MetaIndex, MAX_OPS_PER_PHASE> out_m{};
             ::fixy::FixedArray<ScopeHash, MAX_OPS_PER_PHASE> out_s{};
             ::fixy::FixedArray<CallsiteHash, MAX_OPS_PER_PHASE> out_c{};
+            ::fixy::FixedArray<OpDepth, MAX_OPS_PER_PHASE> out_d{};
 
             for (unsigned p = 0; p < K_PHASES; ++p) {
                 const uint16_t n = s.count[p];
@@ -267,7 +275,7 @@ int main(int argc, char** argv) {
 
                         const uint32_t size_before = ring->size().peek();
                         const bool accepted =
-                            ring->try_append(src.entry, src.meta_start, src.scope_hash, src.callsite_hash);
+                            ring->try_append(src.entry, src.meta_start, src.scope_hash, src.callsite_hash, src.depth);
 
                         // (B) capacity: single-threaded, cannot be full
                         //     in this harness (mirror_live ≤ 4K « CAP).
@@ -288,7 +296,8 @@ int main(int argc, char** argv) {
                     const uint32_t got = ring->drain(out_e.view().window(0, want).expect("a phase fits the buffer"),
                                                      out_m.view().window(0, want).expect("a phase fits the buffer"),
                                                      out_s.view().window(0, want).expect("a phase fits the buffer"),
-                                                     out_c.view().window(0, want).expect("a phase fits the buffer"));
+                                                     out_c.view().window(0, want).expect("a phase fits the buffer"),
+                                                     out_d.view().window(0, want).expect("a phase fits the buffer"));
 
                     // Consumer cannot receive more than was enqueued.
                     const uint32_t mirror_live = mirror_head - mirror_tail;
@@ -306,6 +315,7 @@ int main(int argc, char** argv) {
                         if (out_m.at(slot) != want_slot.meta_start) return false;
                         if (out_s.at(slot) != want_slot.scope_hash) return false;
                         if (out_c.at(slot) != want_slot.callsite_hash) return false;
+                        if (out_d.at(slot) != want_slot.depth) return false;
                     }
                     mirror_tail += got;
                     total_drained += got;

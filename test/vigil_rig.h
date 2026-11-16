@@ -79,4 +79,10 @@ void test_foreground_reads_the_iteration_count();
 // foreground writes over the metadata log (test_vigil_metadata.cpp).
 void test_region_keeps_its_metadata_after_the_log_wraps();
 
+// The depth of each op goes from the dispatch to the region, and the record
+// stack counts the open nests (test_vigil_depth.cpp).
+void test_region_keeps_the_depth_of_each_op();
+void test_region_keeps_the_depth_past_a_growth_of_the_held_ops();
+void test_op_nest_counts_the_open_records();
+
 }  // namespace test_vigil

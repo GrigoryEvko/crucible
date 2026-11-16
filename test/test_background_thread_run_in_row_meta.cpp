@@ -56,13 +56,14 @@ struct Work {
     ::fixy::FixedArray<MetaIndex, CAPACITY> meta_starts{};
     ::fixy::FixedArray<crucible::ScopeHash, CAPACITY> scope_hashes{};
     ::fixy::FixedArray<crucible::CallsiteHash, CAPACITY> callsite_hashes{};
+    ::fixy::FixedArray<crucible::OpDepth, CAPACITY> depths{};
 
     // The graph of the count ops of the work.  The build reads the first
     // count elements of each array.
     [[nodiscard]] BackgroundThread::TraceBuild build(BackgroundThread& bt, ::foundation::effects::Alloc alloc,
                                                      ::fixy::BumpArena& scratch) const {
         return bt.build_trace_from(alloc, scratch, first_ops(trace), first_ops(meta_starts), first_ops(scope_hashes),
-                                   first_ops(callsite_hashes));
+                                   first_ops(callsite_hashes), first_ops(depths));
     }
 
     // The first count elements of one array of the work.

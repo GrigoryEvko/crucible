@@ -424,25 +424,28 @@ void BackgroundThread::PendingOps::grow_(::foundation::effects::Alloc alloc) {
     ::fixy::MaskedArray<uint64_t> record_starts = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
     ::fixy::MaskedArray<ScopeHash> scope_hashes = ::fixy::mint_masked_array<ScopeHash>(alloc, new_capacity);
     ::fixy::MaskedArray<CallsiteHash> callsite_hashes = ::fixy::mint_masked_array<CallsiteHash>(alloc, new_capacity);
+    ::fixy::MaskedArray<OpDepth> depths = ::fixy::mint_masked_array<OpDepth>(alloc, new_capacity);
     for (uint64_t index = 0; index < count_; ++index) {
         entries.at_masked(index) = entry(index);
         meta_starts.at_masked(index) = meta_start(index);
         record_starts.at_masked(index) = record_start(index);
         scope_hashes.at_masked(index) = scope_hash(index);
         callsite_hashes.at_masked(index) = callsite_hash(index);
+        depths.at_masked(index) = depth(index);
     }
     entries_ = std::move(entries);
     meta_starts_ = std::move(meta_starts);
     record_starts_ = std::move(record_starts);
     scope_hashes_ = std::move(scope_hashes);
     callsite_hashes_ = std::move(callsite_hashes);
+    depths_ = std::move(depths);
     mask_ = new_capacity - 1;
     head_ = 0;
 }
 
 void BackgroundThread::PendingOps::push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry,
                                         MetaIndex meta_start, uint64_t record_start, ScopeHash scope_hash,
-                                        CallsiteHash callsite_hash) {
+                                        CallsiteHash callsite_hash, OpDepth depth) {
     if (mask_ == 0 || count_ == mask_ + 1) [[unlikely]]
         grow_(alloc);
     const uint64_t slot = head_ + count_;
@@ -451,6 +454,7 @@ void BackgroundThread::PendingOps::push(::foundation::effects::Alloc alloc, Trac
     record_starts_.at_masked(slot) = record_start;
     scope_hashes_.at_masked(slot) = scope_hash;
     callsite_hashes_.at_masked(slot) = callsite_hash;
+    depths_.at_masked(slot) = depth;
     ++count_;
 }
 
@@ -486,6 +490,8 @@ BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc allo
             alloc, completed_len, [&held](size_t index) noexcept { return held.scope_hash(index); });
         work->callsite_hashes = ::fixy::mint_heap_array_with<CallsiteHash>(
             alloc, completed_len, [&held](size_t index) noexcept { return held.callsite_hash(index); });
+        work->depths = ::fixy::mint_heap_array_with<OpDepth>(
+            alloc, completed_len, [&held](size_t index) noexcept { return held.depth(index); });
         built = ::fixy::some(std::move(work));
     }
 
@@ -653,7 +659,8 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
         if (owner.stop_requested.peek()) break;
 
         batch->count = owner.ring.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(),
-                                                       batch->scope_hashes.view(), batch->callsite_hashes.view());
+                                                       batch->scope_hashes.view(), batch->callsite_hashes.view(),
+                                                       batch->depths.view());
 
         if (batch->count == 0) {
             idle.pause_or_sleep(in.ctx());
@@ -665,8 +672,9 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename Trac
         batch = ::fixy::mint_box<BgTraceBatch>(alloc);
     }
 
-    batch->count = owner.ring.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(),
-                                                   batch->scope_hashes.view(), batch->callsite_hashes.view());
+    batch->count =
+        owner.ring.get()->try_pop_batch(batch->entries.view(), batch->meta_starts.view(), batch->scope_hashes.view(),
+                                        batch->callsite_hashes.view(), batch->depths.view());
     if (batch->count > 0) {
         push_pipeline(in.ctx(), next, out, std::move(batch));
     }
@@ -709,7 +717,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
 
             owner.pending_ops_.push(alloc, entry, ops.meta_starts.at(slot),
                                     owner.take_record_start_(entry, ops.meta_starts.at(slot)),
-                                    ops.scope_hashes.at(slot), ops.callsite_hashes.at(slot));
+                                    ops.scope_hashes.at(slot), ops.callsite_hashes.at(slot), ops.depths.at(slot));
 
             if (owner.detector.check(alloc, entry.schema_hash, entry.shape_hash)) {
                 ::fixy::Option<::fixy::Box<BgBuildWork>> work = owner.prepare_iteration_build_work(alloc);
@@ -779,7 +787,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(BuildWorkInput&& in, typename Grap
         owner.build_scratch_.with_epoch([&]() noexcept {
             owner
                 .build_trace_from(ctx.cap().alloc, owner.build_scratch_, work->trace.view(), work->meta_starts.view(),
-                                  work->scope_hashes.view(), work->callsite_hashes.view())
+                                  work->scope_hashes.view(), work->callsite_hashes.view(), work->depths.view())
                 .match([&](BuiltTrace trace) noexcept { built = ::fixy::some(std::move(trace.region)); },
                        [](MetaLogOverflow /*overflow*/) noexcept {});
         });
@@ -1001,32 +1009,32 @@ void BackgroundThread::ensure_scratch_buffers(::foundation::effects::Alloc a, ui
     }
 }
 
-BackgroundThread::TraceBuild BackgroundThread::build_trace_from(::foundation::effects::Alloc a,
-                                                                ::fixy::BumpArena& scratch,
-                                                                ::fixy::View<const TraceRing::Entry> trace,
-                                                                ::fixy::View<const MetaIndex> meta_starts,
-                                                                ::fixy::View<const ScopeHash> scope_hashes,
-                                                                ::fixy::View<const CallsiteHash> callsite_hashes) {
+BackgroundThread::TraceBuild BackgroundThread::build_trace_from(
+    ::foundation::effects::Alloc a, ::fixy::BumpArena& scratch, ::fixy::View<const TraceRing::Entry> trace,
+    ::fixy::View<const MetaIndex> meta_starts, ::fixy::View<const ScopeHash> scope_hashes,
+    ::fixy::View<const CallsiteHash> callsite_hashes, ::fixy::View<const OpDepth> depths) {
     CRUCIBLE_PRE(meta_starts.size() == trace.size());
     CRUCIBLE_PRE(scope_hashes.size() == trace.size());
     CRUCIBLE_PRE(callsite_hashes.size() == trace.size());
+    CRUCIBLE_PRE(depths.size() == trace.size());
 
-    // The four arrays take the brand of one scope over the ops.  The scope
+    // The five arrays take the brand of one scope over the ops.  The scope
     // ends the process for more than 0xFFFFFFFF ops.
     return ::fixy::mint_branded_scope(trace, [&](auto trace_data) noexcept -> TraceBuild {
         return build_trace_columns_(
             a, scratch, trace_data,
             trace_data.parallel(meta_starts).expect("the metadata starts are parallel to the ops"),
             trace_data.parallel(scope_hashes).expect("the scope hashes are parallel to the ops"),
-            trace_data.parallel(callsite_hashes).expect("the callsite hashes are parallel to the ops"));
+            trace_data.parallel(callsite_hashes).expect("the callsite hashes are parallel to the ops"),
+            trace_data.parallel(depths).expect("the depths are parallel to the ops"));
     });
 }
 
-template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn>
-BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a,
-                                                                    ::fixy::BumpArena& scratch, TraceColumn trace_data,
-                                                                    MetaColumn meta_data, ScopeColumn scope_data,
-                                                                    CallsiteColumn callsite_data) {
+template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
+BackgroundThread::TraceBuild
+BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::BumpArena& scratch,
+                                       TraceColumn trace_data, MetaColumn meta_data, ScopeColumn scope_data,
+                                       CallsiteColumn callsite_data, DepthColumn depth_data) {
     // An op index has 32 bits, and a branded scope holds at most 0xFFFFFFFF
     // ops.
     const uint32_t count = ::fixy::narrow<uint32_t>(trace_data.size()).expect("a branded count fits in 32 bits");
@@ -1176,6 +1184,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(::foundation
         te.shape_hash = re.shape_hash;
         te.scope_hash = scope_data.at(index);
         te.callsite_hash = callsite_data.at(index);
+        te.depth = depth_data.at(index);
         te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
         te.kernel_id = classify_kernel(re.schema_hash);
 

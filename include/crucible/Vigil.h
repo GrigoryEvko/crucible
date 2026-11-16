@@ -89,11 +89,12 @@ namespace crucible {
 // an op makes no call apart from the copy of the records.
 [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool record_into(TraceRing& ring, MetaLog& log,
                                                                        const ValidatedOp& op, ScopeHash scope_hash,
-                                                                       CallsiteHash callsite_hash) noexcept {
+                                                                       CallsiteHash callsite_hash,
+                                                                       OpDepth depth) noexcept {
     return ring.try_reserve().match(
         [&](TraceRing::Reservation reserved) noexcept {
             const MetaIndex meta_start = log.try_append(op.metas());
-            ring.commit(std::move(reserved), op.entry(), meta_start, scope_hash, callsite_hash);
+            ring.commit(std::move(reserved), op.entry(), meta_start, scope_hash, callsite_hash, depth);
             return true;
         },
         [] noexcept { return false; });
@@ -244,10 +245,12 @@ public:
     // caller that reaches the ring through here from a second thread gets
     // the torn append dispatch_op refuses, and the two entry points state
     // different ownership rules for one ring.
+    //
+    // A caller that names no depth records an op that no recorded op runs.
     [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(const ValidatedOp& op, ScopeHash scope_hash = {},
-                                                           CallsiteHash callsite_hash = {}) {
+                                                           CallsiteHash callsite_hash = {}, OpDepth depth = {}) {
         (void)assert_producer_thread_();
-        return record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash);
+        return record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash, depth);
     }
 
     // Called once per op by the adapter.  A RECORD action means the caller
@@ -258,9 +261,14 @@ public:
     // Only the hot paths live inline here.  Divergence recovery, consuming a
     // pending region and alignment all sit in noinline helpers, so the hot
     // path needs no callee-saved registers for them.
+    //
+    // The depth is the nesting depth of the op (OpDepth).  A replay reads no
+    // depth: the cursor walks the ops in the order that they arrive, and a
+    // recording gives that order.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op(const ValidatedOp& op,
                                                                                      ScopeHash scope_hash = {},
-                                                                                     CallsiteHash callsite_hash = {}) {
+                                                                                     CallsiteHash callsite_hash = {},
+                                                                                     OpDepth depth = {}) {
         // Armed in every build mode, release included. The ring behind this
         // call is single-producer: two threads appending concurrently claim
         // the same slot, and the second overwrites the first with no
@@ -306,9 +314,9 @@ public:
         // record it instead of aligning, which costs an extra op before
         // alignment completes.
         if (pending_region_.load_acquire().is_some() || pending_activation_) [[unlikely]]
-            return dispatch_transition_(fg, op, scope_hash, callsite_hash);
+            return dispatch_transition_(fg, op, scope_hash, callsite_hash, depth);
 
-        (void)record_op(op, scope_hash, callsite_hash);
+        (void)record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash, depth);
         return {
             .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
     }
@@ -326,9 +334,10 @@ public:
     // The context proves the claim at the time of the mint.  A reference to
     // it can still reach another thread, so dispatch_op checks the thread
     // again before the ring head can advance.
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op_pure(
-        VigilFgCtx const&, const ValidatedOp& op, ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}) {
-        return dispatch_op(op, scope_hash, callsite_hash);
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
+    dispatch_op_pure(VigilFgCtx const&, const ValidatedOp& op, ScopeHash scope_hash = {},
+                     CallsiteHash callsite_hash = {}, OpDepth depth = {}) {
+        return dispatch_op(op, scope_hash, callsite_hash, depth);
     }
 
     // True when a call to record_op or dispatch_op from this thread is
@@ -875,7 +884,8 @@ private:
     // puts a canary on each path of dispatch_op.
     [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(VigilFgCtx const& fg, ValidatedOp op,
                                                                                    ScopeHash scope_hash,
-                                                                                   CallsiteHash callsite_hash) {
+                                                                                   CallsiteHash callsite_hash,
+                                                                                   OpDepth depth) {
         const TraceRing::Entry& entry = op.entry();
         // A newer region arriving mid-alignment replaces the pending one.  A
         // region with other ops restarts the alignment from zero, because
@@ -889,7 +899,7 @@ private:
             // bound of try_align_ ends an alignment that finds no match.
             try_align_(fg, entry.schema_hash, entry.shape_hash);
         } else {
-            (void)record_op(op, scope_hash, callsite_hash);
+            (void)record_into(*ring_, *meta_log_, op, scope_hash, callsite_hash, depth);
         }
         publish_held_regions_();
 

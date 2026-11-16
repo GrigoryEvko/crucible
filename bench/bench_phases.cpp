@@ -100,7 +100,7 @@ void check_ops_without_metas(::fixy::View<const TraceEntry> ops, ::fixy::View<co
 BackgroundThread::TraceBuild build_recorded(BackgroundThread& bg, ::fixy::BumpArena& scratch,
                                             const LoadedTrace& trace) {
     return bg.build_trace_from(A, scratch, trace.entries.view(), trace.meta_starts.view(), trace.scope_hashes.view(),
-                               trace.callsite_hashes.view());
+                               trace.callsite_hashes.view(), trace.depths.view());
 }
 
 // ── Top-level Report via bench::run ──────────────────────────────────
@@ -412,7 +412,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const uint64_t t0 = bench::rdtsc_start();
 
         // The reads of the loop of build_trace_from: one branded index of an
-        // op reads each of the four arrays and the op buffer.
+        // op reads each of the five arrays and the op buffer.
         const uint32_t copied = ::fixy::mint_branded_scope(trace.entries.view(), [&](auto trace_data) noexcept {
             const auto meta_data =
                 trace_data.parallel(trace.meta_starts.view()).expect("the arrays of a trace are parallel");
@@ -420,6 +420,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 trace_data.parallel(trace.scope_hashes.view()).expect("the arrays of a trace are parallel");
             const auto callsite_data =
                 trace_data.parallel(trace.callsite_hashes.view()).expect("the arrays of a trace are parallel");
+            const auto depth_data =
+                trace_data.parallel(trace.depths.view()).expect("the arrays of a trace are parallel");
             const auto op_data = trace_data.parallel(ops).expect("the op buffer holds one op for each entry");
             uint32_t copied_ops = 0;
             for (const auto index : trace_data.indices()) {
@@ -432,6 +434,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.shape_hash = re.shape_hash;
                 te.scope_hash = scope_data.at(index);
                 te.callsite_hash = callsite_data.at(index);
+                te.depth = depth_data.at(index);
                 te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
 
                 const uint8_t flags = re.op_flags;

@@ -20,6 +20,7 @@ using crucible::ShapeHash;
 using crucible::ScopeHash;
 using crucible::CallsiteHash;
 using crucible::MetaIndex;
+using crucible::OpDepth;
 using crucible::TraceRing;
 using crucible::test::element_at;
 
@@ -40,12 +41,16 @@ static ScopeHash make_scope(uint64_t i) noexcept { return ScopeHash{i * 0x9E3779
 
 static CallsiteHash make_callsite(uint64_t i) noexcept { return CallsiteHash{i ^ 0xCBF29CE484222325ULL}; }
 
+// The depths go round 0 to 6, so a depth that a drain drops or moves reads
+// as a different depth at most positions.
+static OpDepth make_depth(uint64_t i) noexcept { return OpDepth{static_cast<uint16_t>(i % 7)}; }
+
 // The one call of try_pop_batch in this file.  The batch drain inlines with
 // its copies, and one copy of it keeps the object below its size limit.
 [[gnu::noinline]] static uint32_t pop_batch(TraceRing& ring, ::fixy::View<TraceRing::Entry> entries,
                                             ::fixy::View<MetaIndex> metas, ::fixy::View<ScopeHash> scopes,
-                                            ::fixy::View<CallsiteHash> calls) noexcept {
-    return ring.try_pop_batch(entries, metas, scopes, calls);
+                                            ::fixy::View<CallsiteHash> calls, ::fixy::View<OpDepth> depths) noexcept {
+    return ring.try_pop_batch(entries, metas, scopes, calls, depths);
 }
 
 static void test_empty_returns_zero() {
@@ -55,15 +60,17 @@ static void test_empty_returns_zero() {
     ::fixy::FixedArray<MetaIndex, 8> out_metas{};
     ::fixy::FixedArray<ScopeHash, 8> out_scopes{};
     ::fixy::FixedArray<CallsiteHash, 8> out_calls{};
+    ::fixy::FixedArray<OpDepth, 8> out_depths{};
 
-    uint32_t n = pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view());
+    uint32_t n =
+        pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view(), out_depths.view());
     assert(n == 0);
     assert(ring->size().peek() == 0);
 
     crucible::test::pass("  test_empty_returns_zero: PASSED\n");
 }
 
-// Four empty outputs return zero and drain nothing.
+// Five empty outputs return zero and drain nothing.
 static void test_max_count_zero() {
     auto ring = std::make_unique<TraceRing>();
 
@@ -73,7 +80,7 @@ static void test_max_count_zero() {
     assert(ring->size().peek() == 1);
 
     uint32_t n = pop_batch(*ring, ::fixy::View<TraceRing::Entry>{}, ::fixy::View<MetaIndex>{},
-                           ::fixy::View<ScopeHash>{}, ::fixy::View<CallsiteHash>{});
+                           ::fixy::View<ScopeHash>{}, ::fixy::View<CallsiteHash>{}, ::fixy::View<OpDepth>{});
     assert(n == 0);
     assert(ring->size().peek() == 1);  // entry not drained
 
@@ -85,7 +92,7 @@ static void test_single_thread_fifo() {
 
     constexpr uint32_t N = 100;
     for (uint64_t i = 0; i < N; ++i) {
-        assert(ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i)));
+        assert(ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
     assert(ring->size().peek() == N);
 
@@ -93,8 +100,10 @@ static void test_single_thread_fifo() {
     ::fixy::FixedArray<MetaIndex, N> out_metas{};
     ::fixy::FixedArray<ScopeHash, N> out_scopes{};
     ::fixy::FixedArray<CallsiteHash, N> out_calls{};
+    ::fixy::FixedArray<OpDepth, N> out_depths{};
 
-    uint32_t n = pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view());
+    uint32_t n =
+        pop_batch(*ring, out_entries.view(), out_metas.view(), out_scopes.view(), out_calls.view(), out_depths.view());
     assert(n == N);
     assert(ring->size().peek() == 0);
 
@@ -105,6 +114,7 @@ static void test_single_thread_fifo() {
         assert(element_at(out_metas, i) == make_meta(i));
         assert(element_at(out_scopes, i) == make_scope(i));
         assert(element_at(out_calls, i) == make_callsite(i));
+        assert(element_at(out_depths, i) == make_depth(i));
     }
 
     crucible::test::pass("  test_single_thread_fifo: PASSED\n");
@@ -115,13 +125,14 @@ static void test_multi_batch_drain() {
 
     constexpr uint32_t N = 1000;
     for (uint64_t i = 0; i < N; ++i) {
-        assert(ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i)));
+        assert(ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
 
     ::fixy::FixedArray<TraceRing::Entry, N> out_entries{};
     ::fixy::FixedArray<MetaIndex, N> out_metas{};
     ::fixy::FixedArray<ScopeHash, N> out_scopes{};
     ::fixy::FixedArray<CallsiteHash, N> out_calls{};
+    ::fixy::FixedArray<OpDepth, N> out_depths{};
 
     // The sizes are irregular on purpose, so no drain starts or ends on
     // a round boundary and none of them is a multiple of another.  The
@@ -133,7 +144,8 @@ static void test_multi_batch_drain() {
         uint32_t n = pop_batch(*ring, out_entries.view().window(total, batch).expect("the batch fits"),
                                out_metas.view().window(total, batch).expect("the batch fits"),
                                out_scopes.view().window(total, batch).expect("the batch fits"),
-                               out_calls.view().window(total, batch).expect("the batch fits"));
+                               out_calls.view().window(total, batch).expect("the batch fits"),
+                               out_depths.view().window(total, batch).expect("the batch fits"));
         total += n;
         if (total >= N) break;
     }
@@ -142,6 +154,7 @@ static void test_multi_batch_drain() {
     for (uint32_t i = 0; i < N; ++i) {
         assert(element_at(out_entries, i).schema_hash == SchemaHash{i});
         assert(element_at(out_metas, i) == make_meta(i));
+        assert(element_at(out_depths, i) == make_depth(i));
     }
 
     crucible::test::pass("  test_multi_batch_drain: PASSED\n");
@@ -166,7 +179,8 @@ static void test_wrap_around() {
         static ::fixy::FixedArray<MetaIndex, HALF> half_m{};
         static ::fixy::FixedArray<ScopeHash, HALF> half_s{};
         static ::fixy::FixedArray<CallsiteHash, HALF> half_c{};
-        uint32_t n = pop_batch(*ring, half_e.view(), half_m.view(), half_s.view(), half_c.view());
+        static ::fixy::FixedArray<OpDepth, HALF> half_d{};
+        uint32_t n = pop_batch(*ring, half_e.view(), half_m.view(), half_s.view(), half_c.view(), half_d.view());
         assert(n == HALF);
     }
 
@@ -174,18 +188,21 @@ static void test_wrap_around() {
     for (uint64_t i = 0; i < WRAP_N; ++i) {
         // The payloads start well above the ones drained already, so an
         // entry from the first round would be recognisable here.
-        assert(ring->try_append(make_entry(0x10000ULL + i)));
+        assert(ring->try_append(make_entry(0x10000ULL + i), MetaIndex::none(), ScopeHash{}, CallsiteHash{},
+                                make_depth(i)));
     }
 
     ::fixy::FixedArray<TraceRing::Entry, WRAP_N> e{};
     ::fixy::FixedArray<MetaIndex, WRAP_N> m{};
     ::fixy::FixedArray<ScopeHash, WRAP_N> s{};
     ::fixy::FixedArray<CallsiteHash, WRAP_N> c{};
-    uint32_t n = pop_batch(*ring, e.view(), m.view(), s.view(), c.view());
+    ::fixy::FixedArray<OpDepth, WRAP_N> d{};
+    uint32_t n = pop_batch(*ring, e.view(), m.view(), s.view(), c.view(), d.view());
     assert(n == WRAP_N);
 
     for (uint32_t i = 0; i < WRAP_N; ++i) {
         assert(element_at(e, i).schema_hash == SchemaHash{0x10000ULL + i});
+        assert(element_at(d, i) == make_depth(i));
     }
 
     crucible::test::pass("  test_wrap_around: PASSED\n");
@@ -202,8 +219,8 @@ static void test_equivalence_with_single_pop() {
 
     constexpr uint32_t N = 5000;
     for (uint64_t i = 0; i < N; ++i) {
-        assert(ring_a->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i)));
-        assert(ring_b->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i)));
+        assert(ring_a->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
+        assert(ring_b->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
 
     // The outputs have static storage: the two entry arrays would not fit
@@ -216,6 +233,8 @@ static void test_equivalence_with_single_pop() {
     static ::fixy::FixedArray<ScopeHash, N> b_scopes{};
     static ::fixy::FixedArray<CallsiteHash, N> a_calls{};
     static ::fixy::FixedArray<CallsiteHash, N> b_calls{};
+    static ::fixy::FixedArray<OpDepth, N> a_depths{};
+    static ::fixy::FixedArray<OpDepth, N> b_depths{};
 
     // The seed is fixed, so a failing schedule is reproducible.
     std::mt19937_64 rng{0xCAFEBABEDEADBEEFULL};
@@ -226,7 +245,8 @@ static void test_equivalence_with_single_pop() {
         uint32_t n = pop_batch(*ring_a, a_entries.view().window(a_total, batch).expect("the batch fits"),
                                a_metas.view().window(a_total, batch).expect("the batch fits"),
                                a_scopes.view().window(a_total, batch).expect("the batch fits"),
-                               a_calls.view().window(a_total, batch).expect("the batch fits"));
+                               a_calls.view().window(a_total, batch).expect("the batch fits"),
+                               a_depths.view().window(a_total, batch).expect("the batch fits"));
         assert(n == batch);  // the batch is clamped, so it always fills
         a_total += n;
     }
@@ -235,7 +255,8 @@ static void test_equivalence_with_single_pop() {
         uint32_t n = ring_b->drain(b_entries.view().window(i, 1).expect("one entry fits"),
                                    b_metas.view().window(i, 1).expect("one entry fits"),
                                    b_scopes.view().window(i, 1).expect("one entry fits"),
-                                   b_calls.view().window(i, 1).expect("one entry fits"));
+                                   b_calls.view().window(i, 1).expect("one entry fits"),
+                                   b_depths.view().window(i, 1).expect("one entry fits"));
         assert(n == 1);
     }
 
@@ -247,6 +268,8 @@ static void test_equivalence_with_single_pop() {
         assert(element_at(a_metas, i) == element_at(b_metas, i));
         assert(element_at(a_scopes, i) == element_at(b_scopes, i));
         assert(element_at(a_calls, i) == element_at(b_calls, i));
+        assert(element_at(a_depths, i) == make_depth(i));
+        assert(element_at(b_depths, i) == make_depth(i));
     }
 
     crucible::test::pass("  test_equivalence_with_single_pop: PASSED ({} entries)\n", N);
@@ -289,6 +312,7 @@ static void test_spsc_stress() {
         ::fixy::FixedArray<MetaIndex, 64> out_metas{};
         ::fixy::FixedArray<ScopeHash, 64> out_scopes{};
         ::fixy::FixedArray<CallsiteHash, 64> out_calls{};
+        ::fixy::FixedArray<OpDepth, 64> out_depths{};
 
         // The first batch entries of each output.
         const auto drain_batch = [&](uint32_t batch, bool is_pop_batch) -> uint32_t {
@@ -296,8 +320,9 @@ static void test_spsc_stress() {
             const auto metas = out_metas.view().window(0, batch).expect("the batch fits");
             const auto scopes = out_scopes.view().window(0, batch).expect("the batch fits");
             const auto calls = out_calls.view().window(0, batch).expect("the batch fits");
-            return is_pop_batch ? pop_batch(*ring, entries, metas, scopes, calls)
-                                : ring->drain(entries, metas, scopes, calls);
+            const auto depths = out_depths.view().window(0, batch).expect("the batch fits");
+            return is_pop_batch ? pop_batch(*ring, entries, metas, scopes, calls, depths)
+                                : ring->drain(entries, metas, scopes, calls, depths);
         };
 
         uint64_t mode = 0;

@@ -1204,12 +1204,17 @@ void write_recorded_scalars(crucible::TraceRing::Entry& entry, const Recording<C
 // argument rather than as a template parameter so that one instantiation
 // serves every operator of the same capacity, mutability and kernel family,
 // which is around a hundred rather than 3110.  The dispatch keys of PyTorch
-// give the flags of the entry, so the signature is in an ABI region.
+// give the flags of the entry, so the signature is in an ABI region.  The
+// context is the context of the producer claim, which call_recording took.
+//
+// Never inlined: an inline copy in each of the 3110 kernels would take the
+// place of the one copy of each family.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the dispatch keys of PyTorch give the flags of the entry")
 template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow>
-void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, crucible::SchemaHash schema_hash,
-                        crucible::ShapeHash shape_hash, c10::DispatchKeySet dispatch_keys, crucible::Vigil& vigil,
-                        crucible::ScopeHash scope_hash) {
+[[gnu::noinline]] void
+append_trace_entry(const Recording<Capacity, MayOverflow>& recording, crucible::SchemaHash schema_hash,
+                   crucible::ShapeHash shape_hash, c10::DispatchKeySet dispatch_keys, crucible::Vigil& vigil,
+                   crucible::VigilFgCtx const& fg, crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     // A tensor whose element type, device or layout names no crucible
     // enumerator has no meta, so the operation stays out of the ring, as an
@@ -1257,7 +1262,7 @@ void append_trace_entry(const Recording<Capacity, MayOverflow>& recording, cruci
     // context has no such context, so its call does not compile.
     const auto op = crucible::mint_validated_op(std::move(binding).value(), records);
     for (const crucible::ValidatedOp& certified : op)
-        (void)vigil.dispatch_op_pure(vigil.mint_producer_context(), certified, scope_hash);
+        (void)vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth);
 }
 
 // =====================================================================
@@ -1360,6 +1365,12 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // a redispatch. Not cold: when recording is on this is the only path that
     // runs, and `cold` would put it in .text.unlikely on that claim.
     //
+    // The nest holds the depth of the operation from here until the
+    // operation returns or unwinds.  Each operation that the redispatch runs
+    // opens its nest inside this one, so it gets a depth one more.  The
+    // dispatch to the Vigil stays after the redispatch, so a child gets to
+    // the Vigil before its parent, as the replay cursor expects.
+    //
     // The frame holds the slots from the record of the inputs to the dispatch
     // to the Vigil.  An operation that the redispatch runs opens its frame
     // past these slots, and its frame closes before the redispatch returns.
@@ -1375,28 +1386,32 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         if (!schema_name_registered.load_acquire()) [[unlikely]]
             register_schema_name_once(vigil);
 
+        const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+        crucible::OpRecordStack& stack = vigil.op_record_stack(fg);
+        const crucible::OpNest nest{stack};
         if constexpr (kRecordsInFrame) {
-            const crucible::OpRecordFrame frame{vigil.op_record_stack(vigil.mint_producer_context()), kCapacity};
+            const crucible::OpRecordFrame frame{stack, kCapacity};
             for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
                 for (const typename OpRecording::Slots metas : slots.template window<OpRecording::kSlots>(0)) {
-                    return record_in_slots(vigil, dispatch_keys, metas, args...);
+                    return record_in_slots(vigil, fg, dispatch_keys, nest.depth(), metas, args...);
                 }
             }
-            return call_recording_on_stack(vigil, dispatch_keys, args...);
+            return call_recording_on_stack(vigil, fg, dispatch_keys, nest.depth(), args...);
         } else {
             typename OpRecording::List metas{};
-            return record_operation(vigil, dispatch_keys, metas.view(), args...);
+            return record_operation(vigil, fg, dispatch_keys, nest.depth(), metas.view(), args...);
         }
     }
 
     // The record of an operator with no exact bound, into the slots of a frame
     // or of the list of the cold path.  One body serves the two paths, so the
     // kernel holds one copy of it.
-    [[gnu::noinline]] static Ret record_in_slots(crucible::Vigil& vigil, c10::DispatchKeySet dispatch_keys,
+    [[gnu::noinline]] static Ret record_in_slots(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                                 c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
                                                  typename OpRecording::Slots metas, Args... args)
         requires kRecordsInFrame
     {
-        return record_operation(vigil, dispatch_keys, metas, args...);
+        return record_operation(vigil, fg, dispatch_keys, depth, metas, args...);
     }
 
     // Records the operation through a list on the stack of this call.  The
@@ -1404,19 +1419,21 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // fewer free slots than kCapacity, which a deep nest of operations needs.
     // The list costs a fill of each of its slots.  The list is in this
     // function, so the frame of call_recording holds no list.
-    CRUCIBLE_COLD static Ret call_recording_on_stack(crucible::Vigil& vigil, c10::DispatchKeySet dispatch_keys,
+    CRUCIBLE_COLD static Ret call_recording_on_stack(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                                     c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
                                                      Args... args)
         requires kRecordsInFrame
     {
         typename OpRecording::List metas{};
-        return record_in_slots(vigil, dispatch_keys, metas.view(), args...);
+        return record_in_slots(vigil, fg, dispatch_keys, depth, metas.view(), args...);
     }
 
     // Records the inputs into the slots, runs the operation, records its
     // results, and gives the operation to the Vigil.  The slots hold the
     // records from the first record_argument to the dispatch, and no other
     // operation writes them in between.
-    CRUCIBLE_INLINE static Ret record_operation(crucible::Vigil& vigil, c10::DispatchKeySet dispatch_keys,
+    CRUCIBLE_INLINE static Ret record_operation(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                                c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
                                                 typename OpRecording::Slots metas, Args... args) {
         // Inputs before the operation runs, because an out= argument is
         // written by it.
@@ -1427,8 +1444,8 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
 
         if constexpr (std::is_void_v<Ret>) {
             Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
-            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil,
-                                                       scope_hash);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil, fg,
+                                                       scope_hash, depth);
         } else if constexpr (std::is_reference_v<Ret>) {
             // An in-place or out= operator returns a reference to an argument
             // the caller owns, which outlives this frame. The result is held
@@ -1438,14 +1455,14 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
             // DispatchKeySet by value.
             auto* result = &Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
             record_result(recording, *result);
-            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil,
-                                                       scope_hash);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil, fg,
+                                                       scope_hash, depth);
             return *result;
         } else {
             Ret result = Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
             record_result(recording, result);
-            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil,
-                                                       scope_hash);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, shape_hash, dispatch_keys, vigil, fg,
+                                                       scope_hash, depth);
             return result;
         }
     }

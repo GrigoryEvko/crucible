@@ -244,6 +244,38 @@ CRUCIBLE_STRONG_ID(MetaIndex, uint64_t);
 
 #undef CRUCIBLE_STRONG_ID
 
+// The nesting depth of an op: the count of the ops whose record was open on
+// the producer thread when the op started.  An op that no recorded op runs has
+// the depth zero, and an op that an op of depth d runs has the depth d + 1.
+//
+// A recording kernel gives its op to the Vigil after the op runs, so the ops
+// of one nest come in post-order.  The parent of an op of depth d is the first
+// op after it with the depth d - 1.
+//
+// The count stops at the largest value of its word.  Each level of a nest is a
+// call of the dispatcher on the stack of one thread, so no nest gets near that
+// value.  Zero is a value of its own, and an op that names no depth has it.
+class OpDepth {
+public:
+    constexpr OpDepth() noexcept = default;
+    constexpr explicit OpDepth(uint16_t depth) noexcept : depth_{depth} {}
+
+    [[nodiscard]] constexpr uint16_t raw() const noexcept { return depth_; }
+
+    // True for an op that no recorded op runs.
+    [[nodiscard]] constexpr bool is_top() const noexcept { return depth_ == 0; }
+
+    // The depth of an op that an op of this depth runs.
+    [[nodiscard]] constexpr OpDepth nested() const noexcept {
+        return OpDepth{::fixy::saturating_add(depth_, uint16_t{1})};
+    }
+
+    constexpr auto operator<=>(const OpDepth&) const noexcept = default;
+
+private:
+    uint16_t depth_ = 0;
+};
+
 // Distinct hash types that cannot be passed for one another. Zero means unset.
 // Arithmetic is absent for the same reason as on the index types above.
 

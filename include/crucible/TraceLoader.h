@@ -88,6 +88,7 @@ struct LoadedTrace {
     ::fixy::HeapArray<MetaIndex> meta_starts;
     ::fixy::HeapArray<ScopeHash> scope_hashes;
     ::fixy::HeapArray<CallsiteHash> callsite_hashes;
+    ::fixy::HeapArray<OpDepth> depths;
 
     // Every operation's metadata concatenated. The array above holds each
     // operation's offset into this one.
@@ -519,6 +520,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     trace.meta_starts = ::fixy::mint_heap_array(io.cap().alloc, num_ops, MetaIndex{});
     trace.scope_hashes = ::fixy::mint_heap_array(io.cap().alloc, num_ops, ScopeHash{});
     trace.callsite_hashes = ::fixy::mint_heap_array(io.cap().alloc, num_ops, CallsiteHash{});
+    trace.depths = ::fixy::mint_heap_array(io.cap().alloc, num_ops, OpDepth{});
     trace.metas = ::fixy::mint_heap_array(io.cap().alloc, num_metas, TensorMeta{});
 
     using Step = ::fixy::Result<::fixy::Unit, TraceLoadError>;

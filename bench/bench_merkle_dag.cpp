@@ -319,9 +319,11 @@ int main(int argc, char* argv[]) {
         static ::fixy::FixedArray<MetaIndex, 4096> meta_batch{};
         static ::fixy::FixedArray<ScopeHash, 4096> scope_batch{};
         static ::fixy::FixedArray<CallsiteHash, 4096> callsite_batch{};
-        // The first n entries of the four batches are the drained trace.  No
+        static ::fixy::FixedArray<OpDepth, 4096> depth_batch{};
+        // The first n entries of the five batches are the drained trace.  No
         // later code writes the batches.
-        const uint32_t n = ring->drain(batch.view(), meta_batch.view(), scope_batch.view(), callsite_batch.view());
+        const uint32_t n =
+            ring->drain(batch.view(), meta_batch.view(), scope_batch.view(), callsite_batch.view(), depth_batch.view());
 
         auto repopulate_meta_log = [&] {
             meta_log.reset();
@@ -356,13 +358,15 @@ int main(int argc, char* argv[]) {
             scope_batch.view().window(0, n).expect("the drain fills at most the batch");
         const ::fixy::View<const CallsiteHash> drained_callsites =
             callsite_batch.view().window(0, n).expect("the drain fills at most the batch");
+        const ::fixy::View<const OpDepth> drained_depths =
+            depth_batch.view().window(0, n).expect("the drain fills at most the batch");
 
         ::fixy::BumpArena scratch{1 << 20};
         return bench::run("build_trace (481 ops, full pipeline)", [&] {
             scratch.with_epoch([&]() noexcept {
                 repopulate_meta_log();
-                auto built =
-                    bg.build_trace_from(test.alloc, scratch, drained, drained_metas, drained_scopes, drained_callsites);
+                auto built = bg.build_trace_from(test.alloc, scratch, drained, drained_metas, drained_scopes,
+                                                 drained_callsites, drained_depths);
                 bench::do_not_optimize(built);
             });
         });
@@ -403,9 +407,9 @@ int main(int argc, char* argv[]) {
                 const LoadedTrace& loaded = trace;
                 scratch.with_epoch([&]() noexcept {
                     bench::refill_meta_log(meta_log, loaded);
-                    auto built =
-                        bg.build_trace_from(test.alloc, scratch, loaded.entries.view(), loaded.meta_starts.view(),
-                                            loaded.scope_hashes.view(), loaded.callsite_hashes.view());
+                    auto built = bg.build_trace_from(test.alloc, scratch, loaded.entries.view(),
+                                                     loaded.meta_starts.view(), loaded.scope_hashes.view(),
+                                                     loaded.callsite_hashes.view(), loaded.depths.view());
                     bench::do_not_optimize(built);
                 });
             });

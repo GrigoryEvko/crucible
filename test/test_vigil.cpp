@@ -130,6 +130,9 @@ int main() {
     test_vigil::test_producer_surface_takes_the_claim_context();
     test_vigil::test_foreground_reads_the_iteration_count();
     test_vigil::test_region_keeps_its_metadata_after_the_log_wraps();
+    test_vigil::test_region_keeps_the_depth_of_each_op();
+    test_vigil::test_region_keeps_the_depth_past_a_growth_of_the_held_ops();
+    test_vigil::test_op_nest_counts_the_open_records();
     test_store_that_does_not_open_gives_no_store();
 
     char tmpdir[] = "/tmp/crucible_vigil_XXXXXX";

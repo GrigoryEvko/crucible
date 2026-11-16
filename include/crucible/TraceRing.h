@@ -197,6 +197,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     ::fixy::FixedArray<MetaIndex, CAPACITY> meta_starts{};
     ::fixy::FixedArray<ScopeHash, CAPACITY> scope_hashes{};
     ::fixy::FixedArray<CallsiteHash, CAPACITY> callsite_hashes{};
+    ::fixy::FixedArray<OpDepth, CAPACITY> depths{};
 
     // The slot of a counter of the ring: its low bits.  The mask keeps the
     // slot below CAPACITY, so the optimizer removes the check.
@@ -262,32 +263,37 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     }
 
     // Appends one entry, or returns false when the ring is full.  The append
-    // is a reservation and its commit.
+    // is a reservation and its commit.  A caller that names no depth records
+    // an op that no recorded op runs.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
     try_append(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
-               CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+               CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return try_reserve().match(
             [&](Reservation reserved) noexcept {
-                commit(std::move(reserved), e, meta_start, scope_hash, callsite_hash);
+                commit(std::move(reserved), e, meta_start, scope_hash, callsite_hash, depth);
                 return true;
             },
             [] noexcept { return false; });
     }
 
     // Writes the entry into the reserved slot, and moves the head past it.
-    // The consumer then sees the entry.
-    [[gnu::hot]] CRUCIBLE_INLINE void commit(Reservation reserved, const Entry& e,
-                                             MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
-                                             CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    // The consumer then sees the entry.  Each argument has no default, so a
+    // caller cannot drop a field of the slot.
+    [[gnu::hot]] CRUCIBLE_INLINE void commit(Reservation reserved, const Entry& e, MetaIndex meta_start,
+                                             ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = reserved.head_;
         const RingSlot slot = mask_slot_(h);
         entries.at(slot) = e;
         meta_starts.at(slot) = meta_start;
         scope_hashes.at(slot) = scope_hash;
         callsite_hashes.at(slot) = callsite_hash;
+        depths.at(slot) = depth;
 
         // Warm the destination of the following append while the caller is
-        // still busy with its own post-append work.
+        // still busy with its own post-append work.  One line of the depths
+        // holds the depths of 32 slots, so the prefetch of that line warms
+        // the next 31 appends too.
         {
             const RingSlot next_slot = mask_slot_(h + 1);
             constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
@@ -295,9 +301,10 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(meta_starts.at(next_slot));
             ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(scope_hashes.at(next_slot));
             ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(callsite_hashes.at(next_slot));
+            ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(depths.at(next_slot));
         }
 
-        // This release publishes all four slot writes above to the consumer.
+        // This release publishes all five slot writes above to the consumer.
         head.advance_sole_writer_from(h, h + 1);
     }
 
@@ -307,9 +314,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // tier here, and every fenced consumer would then reject the call.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>
     try_append_pinned(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
-                      CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+                      CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>>(
-            try_append(e, meta_start, scope_hash, callsite_hash));
+            try_append(e, meta_start, scope_hash, callsite_hash, depth));
     }
 
     // Preferred at new call sites: appending touches memory only, so the
@@ -321,8 +328,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         requires ::fixy::IsPure<CallerRow>
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
     try_append_pure(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
-                    CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return try_append(e, meta_start, scope_hash, callsite_hash);
+                    CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return try_append(e, meta_start, scope_hash, callsite_hash, depth);
     }
 
     // Copies the count slots from slot_offset of one ring array into out,
@@ -340,16 +347,17 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             .expect("the two windows hold the same count");
     }
 
-    // Drains at most out.size() entries into out.  Each of the three
+    // Drains at most out.size() entries into out.  Each of the four
     // parallel-array outputs is optional: an empty View skips its array, and
     // a View that is not empty holds out.size() elements.
     [[nodiscard, gnu::hot]] uint32_t drain(::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
                                            ::fixy::View<ScopeHash> out_scope_hashes = {},
-                                           ::fixy::View<CallsiteHash> out_callsite_hashes = {}) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
+                                           ::fixy::View<CallsiteHash> out_callsite_hashes = {},
+                                           ::fixy::View<OpDepth> out_depths = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(out_meta_starts.size() == 0 || out_meta_starts.size() == out.size());
         CRUCIBLE_PRE(out_scope_hashes.size() == 0 || out_scope_hashes.size() == out.size());
         CRUCIBLE_PRE(out_callsite_hashes.size() == 0 || out_callsite_hashes.size() == out.size());
+        CRUCIBLE_PRE(out_depths.size() == 0 || out_depths.size() == out.size());
         if (out.size() == 0) [[unlikely]]
             return 0;
 
@@ -371,6 +379,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const bool has_meta_starts = out_meta_starts.size() != 0;
         const bool has_scope_hashes = out_scope_hashes.size() != 0;
         const bool has_callsite_hashes = out_callsite_hashes.size() != 0;
+        const bool has_depths = out_depths.size() != 0;
         const ::fixy::View<MetaIndex> meta_starts_out =
             has_meta_starts ? out_meta_starts.window(0, count).expect("the count fits the output")
                             : ::fixy::View<MetaIndex>{};
@@ -380,6 +389,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         const ::fixy::View<CallsiteHash> callsite_hashes_out =
             has_callsite_hashes ? out_callsite_hashes.window(0, count).expect("the count fits the output")
                                 : ::fixy::View<CallsiteHash>{};
+        const ::fixy::View<OpDepth> depths_out =
+            has_depths ? out_depths.window(0, count).expect("the count fits the output") : ::fixy::View<OpDepth>{};
 
         // A run that wraps the end of the ring splits into two.  The one
         // test below proves each window of the two arms.
@@ -388,6 +399,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             if (has_meta_starts) copy_slots_(meta_starts_out, 0, meta_starts, start, count);
             if (has_scope_hashes) copy_slots_(scope_hashes_out, 0, scope_hashes, start, count);
             if (has_callsite_hashes) copy_slots_(callsite_hashes_out, 0, callsite_hashes, start, count);
+            if (has_depths) copy_slots_(depths_out, 0, depths, start, count);
         } else {
             const std::size_t first = CAPACITY - start;
             const std::size_t second = count - first;
@@ -398,10 +410,12 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             if (has_meta_starts) copy_slots_(meta_starts_out, 0, meta_starts, start, first);
             if (has_scope_hashes) copy_slots_(scope_hashes_out, 0, scope_hashes, start, first);
             if (has_callsite_hashes) copy_slots_(callsite_hashes_out, 0, callsite_hashes, start, first);
+            if (has_depths) copy_slots_(depths_out, 0, depths, start, first);
             copy_slots_(entries_out, first, entries, 0, second);
             if (has_meta_starts) copy_slots_(meta_starts_out, first, meta_starts, 0, second);
             if (has_scope_hashes) copy_slots_(scope_hashes_out, first, scope_hashes, 0, second);
             if (has_callsite_hashes) copy_slots_(callsite_hashes_out, first, callsite_hashes, 0, second);
+            if (has_depths) copy_slots_(depths_out, first, depths, 0, second);
         }
 
         // Publishing the new tail declares slots [t, t + count) free. The
@@ -420,10 +434,10 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // so a consumer fenced to the hot tier rejects a value from here.
     [[nodiscard, gnu::hot]] ::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>
     drain_pinned(::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
-                 ::fixy::View<ScopeHash> out_scope_hashes = {},
-                 ::fixy::View<CallsiteHash> out_callsite_hashes = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+                 ::fixy::View<ScopeHash> out_scope_hashes = {}, ::fixy::View<CallsiteHash> out_callsite_hashes = {},
+                 ::fixy::View<OpDepth> out_depths = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>>(
-            drain(out, out_meta_starts, out_scope_hashes, out_callsite_hashes));
+            drain(out, out_meta_starts, out_scope_hashes, out_callsite_hashes, out_depths));
     }
 
     // The consumer counterpart of try_append_pure. A drain touches memory
@@ -433,24 +447,26 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         requires ::fixy::IsPure<CallerRow>
     [[nodiscard, gnu::hot]] uint32_t drain_pure(::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
                                                 ::fixy::View<ScopeHash> out_scope_hashes = {},
-                                                ::fixy::View<CallsiteHash> out_callsite_hashes = {}) noexcept
+                                                ::fixy::View<CallsiteHash> out_callsite_hashes = {},
+                                                ::fixy::View<OpDepth> out_depths = {}) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
-        return drain(out, out_meta_starts, out_scope_hashes, out_callsite_hashes);
+        return drain(out, out_meta_starts, out_scope_hashes, out_callsite_hashes, out_depths);
     }
 
-    // drain with every output mandatory, and the four outputs of one size.
+    // drain with every output mandatory, and the five outputs of one size.
     // The caller gives up the option of skipping an array, and in exchange
     // the copies below carry no test of an empty output, and a batch consumer
-    // can rely on every popped entry having all four arrays populated.  The
+    // can rely on every popped entry having all five arrays populated.  The
     // drain stage of the background thread calls it, and the forced inline
     // with its copies keeps that stage free of a call and of a window check.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE uint32_t
     try_pop_batch(::fixy::View<Entry> out_entries, ::fixy::View<MetaIndex> out_meta_starts,
-                  ::fixy::View<ScopeHash> out_scope_hashes, ::fixy::View<CallsiteHash> out_callsite_hashes) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
+                  ::fixy::View<ScopeHash> out_scope_hashes, ::fixy::View<CallsiteHash> out_callsite_hashes,
+                  ::fixy::View<OpDepth> out_depths) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(out_meta_starts.size() == out_entries.size());
         CRUCIBLE_PRE(out_scope_hashes.size() == out_entries.size());
         CRUCIBLE_PRE(out_callsite_hashes.size() == out_entries.size());
+        CRUCIBLE_PRE(out_depths.size() == out_entries.size());
         if (out_entries.size() == 0) [[unlikely]]
             return 0;
 
@@ -472,6 +488,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             out_scope_hashes.window(0, count).expect("the count fits the output");
         const ::fixy::View<CallsiteHash> callsite_hashes_out =
             out_callsite_hashes.window(0, count).expect("the count fits the output");
+        const ::fixy::View<OpDepth> depths_out = out_depths.window(0, count).expect("the count fits the output");
 
         // The split of a wrapped run has the form of the split of drain.
         if (count <= CAPACITY - start) [[likely]] {
@@ -479,6 +496,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             copy_slots_(meta_starts_out, 0, meta_starts, start, count);
             copy_slots_(scope_hashes_out, 0, scope_hashes, start, count);
             copy_slots_(callsite_hashes_out, 0, callsite_hashes, start, count);
+            copy_slots_(depths_out, 0, depths, start, count);
         } else {
             const std::size_t first = CAPACITY - start;
             const std::size_t second = count - first;
@@ -487,10 +505,12 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             copy_slots_(meta_starts_out, 0, meta_starts, start, first);
             copy_slots_(scope_hashes_out, 0, scope_hashes, start, first);
             copy_slots_(callsite_hashes_out, 0, callsite_hashes, start, first);
+            copy_slots_(depths_out, 0, depths, start, first);
             copy_slots_(entries_out, first, entries, 0, second);
             copy_slots_(meta_starts_out, first, meta_starts, 0, second);
             copy_slots_(scope_hashes_out, first, scope_hashes, 0, second);
             copy_slots_(callsite_hashes_out, first, callsite_hashes, 0, second);
+            copy_slots_(depths_out, first, depths, 0, second);
         }
 
         const uint64_t next_tail = t + count;
