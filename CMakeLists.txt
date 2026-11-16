@@ -1146,9 +1146,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 
     # ── 3.13  GCC hardening flags ────────────────────────────
     # 194, 195, 198 and 203 are in CRUCIBLE_CODE_FLAGS (section 1.10).
-    # A Debug build does not take CRUCIBLE_RELEASE_CODE_FLAGS (196 and
-    # 197).  cmake/CodeFlags.cmake tells why.
-    "$<$<NOT:$<CONFIG:Debug>>:${CRUCIBLE_RELEASE_CODE_FLAGS}>"  # 196, 197  cmake/CodeFlags.cmake
+    # A Debug build does not take CRUCIBLE_RELEASE_CODE_FLAGS (196).  No
+    # build takes 197.  cmake/CodeFlags.cmake tells why.
+    "$<$<NOT:$<CONFIG:Debug>>:${CRUCIBLE_RELEASE_CODE_FLAGS}>"  # 196  cmake/CodeFlags.cmake
     -fdiagnostics-color=always          # 199  colored output
     -ftemplate-backtrace-limit=0        # 200  full template errors
     -fconstexpr-ops-limit=${CRUCIBLE_CONSTEXPR_OPS_LIMIT}  # 201  the operation limit of section 2

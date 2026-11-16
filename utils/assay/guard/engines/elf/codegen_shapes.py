@@ -116,8 +116,9 @@ THE VERDICT
     These family-only instructions are errors:
       - A check of a kind that the probe does not declare with check=KIND.
         In a unit with a flag of HARDENING_FLAGS, a check of the kind trap
-        is a second test on an edge of a branch.  The rule accepts two such
-        checks for each family-only check and branch that the probe declares.
+        is a second test of a compare or of an edge of a branch.  The rule
+        accepts two such checks for each family-only check and branch that
+        the probe declares.
       - A branch, when the probe does not declare branch=yes.
       - A call of a callee that the probe does not declare with calls=NAME.
       - A division, and an indexed load.
@@ -242,12 +243,12 @@ LOCAL_CONSTANT = ".LC"
 KEPT_PREFIXES = frozenset({"lock", "rep", "repz", "repe", "repnz", "repne"})
 # The words of a compile command that start a sanitizer.  The compile of the verdict has none of them (THE COMPILES).
 SANITIZER_WORDS = ("-fsanitize", "-fno-sanitize")
-# The flags that put a second test and a trap on each edge of a conditional branch (THE VERDICT).  A word with the
-# prefix HARDENING_OFF turns such a flag off.
+# The flags that put a second test and a trap after a compare that gives a value (-fharden-compares), or on each edge
+# of a conditional branch (-fharden-conditional-branches) (THE VERDICT).  Each build type other than Debug takes
+# -fharden-compares, and no build takes -fharden-conditional-branches (cmake/CodeFlags.cmake).  A word with the prefix
+# HARDENING_OFF turns such a flag off.
 HARDENING_FLAGS = ("-fharden-compares", "-fharden-conditional-branches")
 HARDENING_OFF = "-fno-harden-"
-# The sentence of a claim that tells the builds with the flags of HARDENING_FLAGS (cmake/CodeFlags.cmake).
-HARDENED_BUILDS = f"Each build type other than Debug takes {' and '.join(HARDENING_FLAGS)}"
 # The sentence of a claim that tells the check of the tag of a plain Option or Result (include/foundation/core/Choice.h).
 TAG_CHECK = (
     "Each read of the state of a plain Option or Result compares the tag with 1 and branches to a call of the fatal "
@@ -443,17 +444,13 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "atomic_fetch_max",
         "fetch_max_acq_rel is a lock cmpxchg loop with a branch that does not write when the value stays the same.  "
-        f"The raw form writes each time, and its loop has a different shape.  {HARDENED_BUILDS}.  On each edge of the "
-        "two branches of the loop, these flags add a second test with a branch to a trap.  They also add copies of "
-        "the operands and keep the success flag of the cmpxchg in a register",
+        "The raw form writes each time, and its loop has a different shape",
         branches=True,
     ),
     Probe(
         "atomic_fetch_min",
         "fetch_min_acq_rel is a lock cmpxchg loop with a branch that does not write when the value stays the same.  "
-        f"The raw form writes each time, and its loop has a different shape.  {HARDENED_BUILDS}.  On each edge of the "
-        "two branches of the loop, these flags add a second test with a branch to a trap.  They also add copies of "
-        "the operands and keep the success flag of the cmpxchg in a register",
+        "The raw form writes each time, and its loop has a different shape",
         branches=True,
     ),
     Probe("tally_add", "Tally::add is the lock add of a relaxed std::atomic counter"),
@@ -462,15 +459,13 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "sole_load_owned",
         "load_owned is the relaxed load of std::atomic, after one compare of the run-time id of the proof with the id "
-        f"that the cell keeps, and one branch to a call of the fatal exit.  {HARDENED_BUILDS}.  On the hot path, these "
-        "flags add a second compare of the ids, with a branch to a trap",
+        "that the cell keeps, and one branch to a call of the fatal exit",
         checks=("fatal",),
     ),
     Probe(
         "sole_store",
         "store_release of a cell of one writer is the release store of std::atomic, with no lock, after one compare "
-        "of the run-time id of the proof with the id that the cell keeps, and one branch to a call of the fatal exit.  "
-        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second compare of the ids, with a branch to a trap",
+        "of the run-time id of the proof with the id that the cell keeps, and one branch to a call of the fatal exit",
         checks=("fatal",),
     ),
     Probe("sole_load", "load_acquire of a cell of one writer is the acquire load of std::atomic"),
@@ -498,9 +493,7 @@ PROBES: tuple[Probe, ...] = (
         "view_sum",
         "a range-for over a View is the loop of a raw pointer, because the optimizer removes the checks of the "
         "cursor.  Outside the loops, the family side compares the end pointer with the start, and the raw side "
-        f"tests the byte count.  {HARDENED_BUILDS}.  At x86-64-v3 and x86-64-v4, the second test of the empty "
-        "range that these flags add then gives the family side one more instruction outside the loops",
-        longer=1,
+        "tests the byte count",
     ),
     Probe("view_window", "window gives its Option with no test of the niche of the Option"),
     Probe(
@@ -525,18 +518,14 @@ PROBES: tuple[Probe, ...] = (
         "text_window_digits",
         "a loop over the window of a TextView is the bounds compare of the window and the loop of a raw pointer, with "
         "no call.  The family side tests an empty window with a compare of two pointers, and the raw side tests the "
-        f"count, so the second tests that the hardening adds go to a different compare.  {HARDENED_BUILDS}.  At -O1, "
-        "the loop over the Option of the window keeps the test of its niche",
-        checks=(TRAP,),
+        "count.  At -O1, the loop over the Option of the window keeps the test of its niche",
         branches=True,
     ),
     Probe(
         "view_window_sum",
         "a loop over the window of a View is the bounds compare of the window and the loop of a raw pointer, with no "
         "call.  The family side tests an empty window and the tail of the vector loop with compares of two pointers, "
-        "and the raw side tests the counts, so the second tests that the hardening adds go to different compares.  "
-        f"{HARDENED_BUILDS}",
-        checks=(TRAP,),
+        "and the raw side tests the counts",
         branches=True,
     ),
     Probe(
@@ -558,9 +547,7 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "fixed_list_take_last",
         "take_last of a FixedList is the compare of the count, the step and the load of a raw list, with no call.  "
-        "value_or() tests the tag of the Option on a separate compare, so the second test that the hardening adds "
-        f"goes to that compare.  {HARDENED_BUILDS}",
-        checks=(TRAP,),
+        "value_or() tests the tag of the Option on a separate compare",
         branches=True,
     ),
     Probe(
@@ -571,10 +558,10 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "heap_array_sum",
         "a loop over a HeapArray is the loop of a raw pointer up to the count, with no test of the pointer and no "
-        "check of the count.  Outside the loops, the family side compares the end pointer with the start, and the "
-        f"raw side tests the byte count.  {HARDENED_BUILDS}.  At x86-64-v3 and x86-64-v4, the second test of the "
-        "empty range that these flags add then gives the family side one more instruction outside the loops",
-        longer=1,
+        "check of the count.  Outside the loops, the family side computes the end pointer and compares it with the "
+        "start, and the raw side tests the byte count with the flags of its shift.  At x86-64-v3 and x86-64-v4, the "
+        "family side then has two more instructions outside the loops: the lea of the end pointer and its compare",
+        longer=2,
     ),
     Probe(
         "fixed_list_sum",
@@ -590,10 +577,8 @@ PROBES: tuple[Probe, ...] = (
         "view_zip_sum",
         "a zip loop over two Views of a dynamic extent is the compare of the two counts and the loop of two raw "
         "pointers, with no call.  The family side tests an empty loop with a compare of two pointers, and the raw side "
-        "tests the count, so the second tests that the hardening adds go to a different compare.  "
-        f"{HARDENED_BUILDS}.  At -O1, the match of the Result of zip reads the checked tag, and GCC then gives the path "
+        "tests the count.  At -O1, the match of the Result of zip reads the checked tag, and GCC then gives the path "
         "of an empty loop a jump to the shared return",
-        checks=(TRAP,),
         branches=True,
     ),
     Probe(
@@ -605,54 +590,45 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "box_read",
-        f"A read through the dereference of a Box adds one test and one branch to a call of the fatal exit.  {HARDENED_BUILDS}.  On the hot path, "
-        "these flags add a copy of the pointer and a second test of the copy, with a branch to a trap",
+        "A read through the dereference of a Box adds one test and one branch to a call of the fatal exit",
         checks=("fatal",),
     ),
     Probe(
         "box_in_hole",
         "mint_box in a Hole is the placement new of the raw form in the storage of the Hole, with no call of the "
         "allocation door.  It adds one test of the storage and one branch to a call of the fatal exit, the clear of "
-        "the Hole, and the store of the object pointer into the Box that the call gives back.  "
-        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second test of the storage, with a branch to a trap",
+        "the Hole, and the store of the object pointer into the Box that the call gives back",
         checks=("fatal",),
     ),
     Probe("ref_read", "a read through a Ref is the load of a raw pointer: a Ref has no empty state, so it has no test"),
     Probe(
         "option_expect",
         "Option::expect adds one test and one branch to a call of the fatal exit.  The payload is the low word of the "
-        "register and the flag is bit 32, as in std::optional, so the test of the flag takes a shift.  "
-        f"{HARDENED_BUILDS}.  On the hot path, these flags add a copy of the register and a second test of the flag "
-        "in the copy, with a branch to a trap",
+        "register and the flag is bit 32, as in std::optional, so the test of the flag takes a shift",
         checks=("fatal",),
     ),
     Probe(
         "option_expect_niche",
-        "Option::expect of an Option with a niche adds one compare and one branch to a call of the fatal exit.  "
-        f"{HARDENED_BUILDS}.  On the hot path, these flags add a copy of the count of the View and a second compare "
-        "of the copy, with a branch to a trap",
+        "Option::expect of an Option with a niche adds one compare and one branch to a call of the fatal exit",
         checks=("fatal",),
     ),
     Probe(
         "option_match",
         f"the match of an Option is the check of the tag and one test of the tag, as the raw form is one test.  "
-        f"{TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch "
-        "to a trap",
+        f"{TAG_CHECK}",
         checks=("fatal",),
     ),
     Probe(
         "option_loop",
         "a loop over an Option is the check of the tag and one test of the tag.  The optimizer removes the check of the "
-        f"cursor, because the loop reads the cursor only after a compare with the end.  {TAG_CHECK}.  "
-        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch to a trap",
+        f"cursor, because the loop reads the cursor only after a compare with the end.  {TAG_CHECK}",
         checks=("fatal",),
     ),
     Probe(
         "option_value_or",
         "value_or of an Option is the check of the tag and one test of the tag.  The family form branches on no value "
         "and the raw form branches on a value, so the targets of the branches are different.  "
-        f"{TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a "
-        "branch to a trap",
+        f"{TAG_CHECK}",
         checks=("fatal",),
         branches=True,
     ),
@@ -663,8 +639,7 @@ PROBES: tuple[Probe, ...] = (
         "zero vector, so each empty Option of at most 16 bytes has the same bytes, as a compare of the bytes in an "
         "Atomic cell needs.  The raw form writes the one byte of its flag, so the family side has one more plain "
         "instruction, the clear of the vector register.  The family form falls through to the take and the raw form "
-        f"falls through to the empty case, so the targets of the branches are different.  {TAG_CHECK}.  "
-        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch to a trap",
+        f"falls through to the empty case, so the targets of the branches are different.  {TAG_CHECK}",
         checks=("fatal",),
         branches=True,
     ),
@@ -672,8 +647,7 @@ PROBES: tuple[Probe, ...] = (
         "option_is_some",
         "is_some of an Option of a word in memory is the check of the tag word after the payload and a test of the "
         "tag.  The flag of std::optional is a bool, so has_value loads its byte with no compare.  At -O3 the low bit "
-        f"of the checked tag is the bool.  {TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags add a "
-        "second test of each edge, with a branch to a trap",
+        f"of the checked tag is the bool.  {TAG_CHECK}",
         checks=("fatal",),
     ),
     Probe(
@@ -682,8 +656,7 @@ PROBES: tuple[Probe, ...] = (
         "and one branch.  The two forms put the return of the value and of the error in a different order, so the "
         "targets of their branches are different.  At -O3, GCC builds the tag and the value of the Result in two "
         "registers and then merges them with a shift and an or, and the raw form sets the tag with one bts.  "
-        f"{TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a "
-        "branch to a trap",
+        f"{TAG_CHECK}",
         checks=("fatal",),
         branches=True,
     ),
@@ -712,8 +685,7 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "option_sealed_match",
         "the match of an Option of a sealed word comes in two registers and is the check of the tag word and one test "
-        f"of it, as the raw pair of a size and a flag word is one test.  {TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot "
-        "path, these flags add a second test of each edge, with a branch to a trap",
+        f"of it, as the raw pair of a size and a flag word is one test.  {TAG_CHECK}",
         checks=("fatal",),
     ),
     Probe(
@@ -721,8 +693,7 @@ PROBES: tuple[Probe, ...] = (
         "a compare of two Options of a 4-byte payload checks the two tags and compares them, and compares the payloads "
         "only when both hold one, as the compare of two std::optional does.  The tag is the state, so the family side "
         "builds no bool of a state.  At -O1, GCC puts the blocks of the family side in a different order, so the "
-        f"targets of its branches are different.  {TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags add "
-        "a second test of each edge, with a branch to a trap",
+        f"targets of its branches are different.  {TAG_CHECK}",
         checks=("fatal",),
         branches=True,
     ),
@@ -731,8 +702,7 @@ PROBES: tuple[Probe, ...] = (
         "a compare of two Options of a word checks the two tag words and compares them, and compares the payloads "
         "only when both hold one, as the compare of two std::optional does.  The tag is the state, so the family side "
         "builds no bool of a state.  At -O1, GCC puts the blocks of the family side in a different order, so the "
-        f"targets of its branches are different.  {TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags add "
-        "a second test of each edge, with a branch to a trap",
+        f"targets of its branches are different.  {TAG_CHECK}",
         checks=("fatal",),
         branches=True,
     ),
@@ -741,16 +711,14 @@ PROBES: tuple[Probe, ...] = (
         "a full Option of a Ref is the address in one register, as the raw address is, after one test of the null "
         "pointer with a branch to a call of the fatal exit.  The niche of Ref states that no door builds the null "
         "pointer, and the niche slot still tests each payload in each build, so a false statement ends the process.  "
-        "A caller that states the address with an [[assume]], as get() of a OneOf does, has no test.  "
-        f"{HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch to a trap",
+        "A caller that states the address with an [[assume]], as get() of a OneOf does, has no test",
         checks=("fatal",),
     ),
     Probe(
         "option_try",
         "CRUCIBLE_TRY of an Option is the check of the tag and one test of the tag.  The value takes a second test of "
         "the tag in expect, which the optimizer removes, because no code writes the operand between the two tests.  "
-        f"{TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch "
-        "to a trap",
+        f"{TAG_CHECK}",
         checks=("fatal",),
     ),
     Probe(
@@ -758,8 +726,7 @@ PROBES: tuple[Probe, ...] = (
         "CRUCIBLE_TRY of a Result is the check of the tag and one test of the tag, and the optimizer removes the second "
         "test of the tag in expect.  At -O3, the family form falls through to the return of the value and the raw form "
         "falls through to the return of the error, so the targets of the branches are different.  "
-        f"{TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch "
-        "to a trap",
+        f"{TAG_CHECK}",
         checks=("fatal",),
         branches=True,
     ),
@@ -768,24 +735,20 @@ PROBES: tuple[Probe, ...] = (
         "CRUCIBLE_TRY of a Result whose error converts to the error of the caller is the check of the tag and one test "
         "of the tag.  The conversion of the error is one zero extension of its byte in each form.  At -O3, the family "
         "form falls through to the return of the value and the raw form falls through to the return of the error, so "
-        f"the targets of the branches are different.  {TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags "
-        "add a second test of each edge, with a branch to a trap",
+        f"the targets of the branches are different.  {TAG_CHECK}",
         checks=("fatal",),
         branches=True,
     ),
     Probe(
         "result_expect",
         "Result::expect adds one test and one branch to a call of the fatal exit.  The value is the low word of the "
-        "register and the tag is bit 32, as in std::expected, so the test of the tag takes a shift.  "
-        f"{HARDENED_BUILDS}.  On the hot path, these flags add a copy of the register and a second test of the tag in "
-        "the copy, with a branch to a trap",
+        "register and the tag is bit 32, as in std::expected, so the test of the tag takes a shift",
         checks=("fatal",),
     ),
     Probe(
         "result_match",
         f"the match of a Result is the check of the tag and one test of the tag, as the raw form is one test.  "
-        f"{TAG_CHECK}.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch "
-        "to a trap",
+        f"{TAG_CHECK}",
         checks=("fatal",),
     ),
     Probe(
@@ -795,8 +758,7 @@ PROBES: tuple[Probe, ...] = (
         "alternative with no compare.  A copy of bytes over a plain OneOf can write a tag that names no alternative, "
         "and the arm of the last alternative would then read the storage as that alternative.  The family form falls "
         "through to the arm of the first alternative and the raw form jumps to it, so the first branch tests the other "
-        f"way.  {HARDENED_BUILDS}.  On the hot path, these flags add a second test of each edge, with a branch to a "
-        "trap",
+        "way",
         checks=("fatal",),
         branches=True,
     ),
@@ -804,8 +766,7 @@ PROBES: tuple[Probe, ...] = (
         "one_of_which",
         "which() of a OneOf is the load of its tag and one compare with the count of the alternatives, with a branch "
         "to a call of the fatal exit.  A copy of bytes over a plain OneOf can write a tag outside the alternatives, and "
-        f"the Index that which() gives is trusted with no second check.  {HARDENED_BUILDS}.  On the hot path, these "
-        "flags add a second compare of the tag, with a branch to a trap",
+        "the Index that which() gives is trusted with no second check",
         checks=("fatal",),
     ),
     Probe(
@@ -816,8 +777,7 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "switch_unreachable",
         "a switch with fixy::unreachable() adds one bounds compare and one branch to a call of the fatal exit.  At "
-        f"-O1, std::unreachable stops the process with a trap after the same compare.  {HARDENED_BUILDS}.  On the hot "
-        "path, these flags add a copy of the value and a second bounds compare of the copy, with a branch to a trap",
+        "-O1, std::unreachable stops the process with a trap after the same compare",
         checks=("fatal",),
     ),
     # The Record family.
@@ -846,8 +806,7 @@ PROBES: tuple[Probe, ...] = (
         "scalar_checked_div",
         "checked_div is the tests of the raw form and one idiv.  The family puts the path of a zero divisor out of line "
         "and gives the Option back in a register, and the raw form puts the other path out of line, so the targets of "
-        f"the branches are different.  {HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch "
-        "to a trap",
+        "the branches are different",
         branches=True,
     ),
     Probe("scalar_wrapping_shl", "wrapping_shl is one shl, because the shl instruction takes its count modulo 64"),
@@ -855,8 +814,7 @@ PROBES: tuple[Probe, ...] = (
         "scalar_saturating_add",
         "saturating_add is the add and the clamp of std::saturating_add.  The family keeps the exact result on the "
         "fall-through path with no taken jump, and std::saturating_add jumps to it, so the targets of the branches "
-        f"are different.  {HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch to a trap, "
-        "and a copy of a register",
+        "are different",
         branches=True,
     ),
     Probe("scalar_widening_mul", "widening_mul is one mul, and the low and the high half come back in rax and rdx"),
@@ -880,8 +838,7 @@ PROBES: tuple[Probe, ...] = (
         "scalar_narrow_checked",
         "narrow of a word is the one range test of the raw form, and the Option comes back in one register.  The raw "
         "form builds std::optional on the stack, so the family side has fewer instructions.  The two forms put a "
-        f"different path out of line, so the targets of their branches are different.  {HARDENED_BUILDS}.  These "
-        "flags add a second test of each edge, with a branch to a trap",
+        "different path out of line, so the targets of their branches are different",
         branches=True,
     ),
     Probe(
@@ -889,7 +846,7 @@ PROBES: tuple[Probe, ...] = (
         "narrow of a double is the two compares of the range and the cvttsd2si of the raw form, and the Option comes "
         "back in one register.  The raw form builds std::optional on the stack, so the family side has fewer "
         "instructions.  The two forms put a different path out of line, so the targets of their branches are "
-        f"different.  {HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch to a trap",
+        "different",
         branches=True,
     ),
     Probe("scalar_narrow_saturating", "saturating_narrow is the two compares and the two selects of the raw clamp"),
@@ -904,7 +861,7 @@ PROBES: tuple[Probe, ...] = (
         "raw form tests value <= 1 with a branch.  The family form has no such test, because its count of 0 is the "
         "width.  For -march=x86-64, which has no lzcnt, GCC gives that count with a test of zero and a branch, so "
         "the two forms have a different branch.  For -march=x86-64-v3 and -march=x86-64-v4, lzcnt gives the count "
-        f"with no branch.  {HARDENED_BUILDS}.  These flags add a second test of each edge, with a branch to a trap",
+        "with no branch",
         branches=True,
     ),
     Probe("scalar_low_mask", "low_mask is the two range tests and the shift of the raw form"),
@@ -930,8 +887,7 @@ PROBES: tuple[Probe, ...] = (
         "scalar_fp_sqrt",
         "fp::sqrt is a quiet compare with 0, one branch and the sqrtsd of std::sqrt.  The family gives the canonical "
         "NaN from a constant for a negative value or a NaN, and std::sqrt calls the library sqrt for errno, so the "
-        f"family side has no call and the two branches are different.  {HARDENED_BUILDS}.  These flags add a second "
-        "test of each edge, with a branch to a trap",
+        "family side has no call and the two branches are different",
         branches=True,
     ),
     Probe(
@@ -954,7 +910,10 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "scalar_quantity_to_coarser",
         "convert to a coarser unit is the division by a constant of the raw form, and it multiplies the quotient back "
-        "where the raw form takes the remainder",
+        "where the raw form takes the remainder.  Each form has one branch for a count that is not a whole number of "
+        "the coarser unit: the family form compares the product of the quotient with the count, and the raw form "
+        "compares the product of the inverse with a bound, so the two branches test different compares",
+        branches=True,
     ),
     Probe(
         "scalar_philox_generate",
@@ -968,20 +927,17 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "contract_pre",
         "CRUCIBLE_PRE evaluates its condition one time.  Its runtime arm is the contract_assert of the raw form, under "
-        f"the same contract semantic.  {HARDENED_BUILDS}.  These flags put the same second test on each edge of the "
-        "branch of the two forms",
+        "the same contract semantic",
     ),
     Probe(
         "contract_post",
         "CRUCIBLE_POST evaluates its condition one time.  It is the contract_assert of the raw form before the "
-        f"return, under the same contract semantic.  {HARDENED_BUILDS}.  These flags put the same second test on each "
-        "edge of the branch of the two forms",
+        "return, under the same contract semantic",
     ),
     Probe(
         "contract_pre_msg",
         "CRUCIBLE_PRE_MSG evaluates its condition one time.  It is the contract_assert of the raw form, and the "
-        "compiler folds the message out of the condition, under the same contract semantic.  "
-        f"{HARDENED_BUILDS}.  These flags put the same second test on each edge of the branch of the two forms",
+        "compiler folds the message out of the condition, under the same contract semantic",
     ),
 )
 
@@ -1548,8 +1504,11 @@ def family_only(family: Sequence[Step], raw: Sequence[Step]) -> list[Step]:
     return added
 
 
-def is_hardened(flags: Sequence[str]) -> bool:
-    """True when the last word of a flag of HARDENING_FLAGS, or of its negation, turns that flag on."""
+def hardening_flags_on(flags: Sequence[str]) -> tuple[str, ...]:
+    """Return each flag of HARDENING_FLAGS that the last word of the flag, or of its negation, turns on.
+
+    Complexity: linear in the words, times the flags of HARDENING_FLAGS.
+    """
     states: dict[str, bool] = {}
     for word in flags:
         for flag in HARDENING_FLAGS:
@@ -1557,7 +1516,12 @@ def is_hardened(flags: Sequence[str]) -> bool:
                 states[flag] = True
             elif word == HARDENING_OFF + flag.removeprefix("-fharden-"):
                 states[flag] = False
-    return any(states.values())
+    return tuple(flag for flag in HARDENING_FLAGS if states.get(flag, False))
+
+
+def is_hardened(flags: Sequence[str]) -> bool:
+    """True when the last word of a flag of HARDENING_FLAGS, or of its negation, turns that flag on."""
+    return bool(hardening_flags_on(flags))
 
 
 def step_problem(probe: Probe, step: Step) -> str | None:

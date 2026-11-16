@@ -1047,11 +1047,12 @@ Adding the flags is the wrong repair; the opt-out table in §III says why for ea
 `-ftrapping-math`. With `-ffp-contract=off`, GCC contracts no multiply and add
 into an FMA, also in one statement. No build takes `-fno-math-errno`.
 
-Each build type other than Debug also takes `-fharden-compares` and
-`-fharden-conditional-branches` (`CRUCIBLE_RELEASE_CODE_FLAGS`). No build takes
-`-fharden-control-flow-redundancy`. These flags defend a binary against fault
-injection, and they find no defect in a test. On a heavy translation unit, they
-cost 20% to 46% of the back end.
+Each build type other than Debug also takes `-fharden-compares`
+(`CRUCIBLE_RELEASE_CODE_FLAGS`). No build takes `-fharden-conditional-branches`
+or `-fharden-control-flow-redundancy`. These flags defend a binary against
+fault injection, and they find no defect in a test. Fault injection is not a
+threat to this runtime. `-fharden-conditional-branches` doubles the compares
+and the jumps of each hot branch.
 
 Each link of the tree runs the linker mold 3.0.0, which the rows `mold` of the
 pin table pin (§I). `cmake/Linker.cmake` gives each executable, shared library
@@ -1231,7 +1232,6 @@ Common flags +
 -DNDEBUG
 -g                                    frame information for profiling
 -fharden-compares                     CRUCIBLE_RELEASE_CODE_FLAGS, cmake/CodeFlags.cmake
--fharden-conditional-branches         CRUCIBLE_RELEASE_CODE_FLAGS, cmake/CodeFlags.cmake
 -fcontract-evaluation-semantic=observe  the Release default. It does the check
                                       and reports a violation. The handler
                                       aborts, so a violation ends the process.

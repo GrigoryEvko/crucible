@@ -192,7 +192,7 @@ private:
 
     // One index for each word.  A fold over the indices gives one access for each word with no
     // loop.  A loop of word accesses stays a loop in a Release build, because GCC does not unroll
-    // it, and the hardening flags then add two checks to each turn.
+    // it, and each turn then costs a compare and a branch.
     using word_indices_ = std::make_index_sequence<kWords>;
 
     // The bytes of T that one word holds: kWordBytes, or the tail in the last word.

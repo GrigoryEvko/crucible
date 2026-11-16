@@ -152,7 +152,7 @@ if(SELF_TEST)
   set(failures "")
   set(release_base
     -O3 -march=native -DNDEBUG -g -std=c++26 -freflection -fcontracts -fstack-protector-strong
-    -fcf-protection=full -fharden-compares -fharden-conditional-branches -ftrivial-auto-var-init=zero
+    -fcf-protection=full -fharden-compares -ftrivial-auto-var-init=zero
     -fcontract-evaluation-semantic=observe -fPIC -Wall -fdiagnostics-color=always _FORTIFY_SOURCE=3)
   set(debug_base
     -g -O1 -std=c++26 -freflection -fcontracts -fstack-protector-strong -fcf-protection=full
@@ -160,7 +160,7 @@ if(SELF_TEST)
     -D_GLIBCXX_ASSERTIONS=1 -D_GLIBCXX_SANITIZE_VECTOR=1 _FORTIFY_SOURCE=3)
   set(taint
     -O1 -march=native -O3 -march=x86-64-v3 -DNDEBUG -g -fno-sanitize=all -std=c++26 -freflection -fcontracts
-    -fstack-protector-strong -fcf-protection=full -fharden-compares -fharden-conditional-branches
+    -fstack-protector-strong -fcf-protection=full -fharden-compares
     -ftrivial-auto-var-init=zero -fcontract-evaluation-semantic=observe -DCRUCIBLE_QUARANTINE_ACTIVE
     -fplugin=crucible_quarantine.so -D_FORTIFY_SOURCE=3)
 

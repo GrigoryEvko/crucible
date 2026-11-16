@@ -82,7 +82,6 @@ RELEASE = [
     "-O3",
     "-DNDEBUG",
     "-fharden-compares",
-    "-fharden-conditional-branches",
     "-fcontract-evaluation-semantic=observe",
 ]
 
@@ -399,15 +398,21 @@ def flag_cases(expect: testing.Expect) -> None:
         [shapes.code_flags([*base, "-march=x86-64-v3"], "u.cpp")],
     )
     expect("a probe unit and a foundation unit that differ only in their target give no finding", not found)
-    hardening = (
-        (["-O3", "-fharden-compares"], True),
-        (["-fharden-conditional-branches", "-fno-harden-conditional-branches"], False),
-        (["-fharden-compares", "-fno-harden-conditional-branches"], True),
-        (["-O1"], False),
+    hardening: tuple[tuple[list[str], tuple[str, ...]], ...] = (
+        (["-O3", "-fharden-compares"], ("-fharden-compares",)),
+        (["-fharden-conditional-branches", "-fno-harden-conditional-branches"], ()),
+        (["-fharden-compares", "-fno-harden-conditional-branches"], ("-fharden-compares",)),
+        (["-fharden-conditional-branches", "-fharden-compares"], shapes.HARDENING_FLAGS),
+        (
+            ["-fharden-compares", "-fno-harden-compares", "-fharden-conditional-branches"],
+            ("-fharden-conditional-branches",),
+        ),
+        (["-O1"], ()),
     )
-    for words, is_on in hardening:
+    for words, held in hardening:
         expect(
-            f"the flags {words} turn the second tests {'on' if is_on else 'off'}", shapes.is_hardened(words) == is_on
+            f"the flags {words} turn on the second tests of {list(held) or 'no flag'}",
+            shapes.hardening_flags_on(words) == held and shapes.is_hardened(words) == bool(held),
         )
     entry = compdb.CompileEntry(
         "p.cpp", "/b", "/b/p.o", "g++ -O1 -fsanitize=address -fno-sanitize-recover=all -o /b/p.o -c p.cpp"
@@ -480,7 +485,6 @@ def wrapper_flag_cases(expect: testing.Expect) -> None:
         "-O3",
         "-march=native",
         "-fharden-compares",
-        "-fharden-conditional-branches",
         "-fcontract-evaluation-semantic=enforce",
     ]
     profiled = [*RELEASE, "-fprofile-use=p", "-DCRUCIBLE_PGO=1"]
@@ -681,12 +685,12 @@ def compile_words(entry: compdb.CompileEntry, obj: Path, include: Path | None, t
 
 def judged_probes(
     entry: compdb.CompileEntry, include: Path | None, probes: Sequence[shapes.Probe], target: str
-) -> tuple[set[str], dict[str, shapes.Verdict], bool]:
+) -> tuple[set[str], dict[str, shapes.Verdict], tuple[str, ...]]:
     """Compile the probe unit of a row for a target with the command of the verdict, and judge each pair.
 
     Returns:
-        The name of each probe with an error, the verdict of each probe, and True when the unit has a flag of
-        HARDENING_FLAGS
+        The name of each probe with an error, the verdict of each probe, and each flag of HARDENING_FLAGS that the
+        unit turns on
 
     Raises:
         proc.ToolFailed: If the compile fails
@@ -696,17 +700,18 @@ def judged_probes(
         words = compile_words(entry, obj, include, target)
         proc.require(proc.run(proc.Command(words, timeout_s=proc.TOOL_S, cwd=Path(entry.directory))))
         functions = shapes.codes_of(shapes.disassembled(obj))
-    hardened = shapes.is_hardened(shapes.code_flags(entry.argv(), entry.file))
-    _, _, verdicts = shapes.pair_findings(functions, probes, hardened, target)
-    return {name for name, result in verdicts.items() if result.problems}, verdicts, hardened
+    held = shapes.hardening_flags_on(shapes.code_flags(entry.argv(), entry.file))
+    _, _, verdicts = shapes.pair_findings(functions, probes, bool(held), target)
+    return {name for name, result in verdicts.items() if result.problems}, verdicts, held
 
 
-def hardening_unexplained(verdicts: dict[str, shapes.Verdict], hardened: bool) -> list[str]:
+def hardening_unexplained(verdicts: dict[str, shapes.Verdict], held: Sequence[str]) -> list[str]:
     """Return each probe with a second test of the `-fharden-` flags on its family side and no such flag in its claim.
 
     A second test is a family-only check into a trap path that the probe does not declare (THE VERDICT of the rule).
+    The claim of such a probe names each flag of HELD, the flags of HARDENING_FLAGS that the unit turns on.
     """
-    if not hardened:
+    if not held:
         return []
     return [
         probe.name
@@ -716,7 +721,7 @@ def hardening_unexplained(verdicts: dict[str, shapes.Verdict], hardened: bool) -
             step.kind is shapes.StepClass.CHECK and step.detail == shapes.TRAP and shapes.TRAP not in probe.checks
             for step in verdicts[probe.name].added
         )
-        and not all(flag in probe.claim for flag in shapes.HARDENING_FLAGS)
+        and not all(flag in probe.claim for flag in held)
     ]
 
 
@@ -736,16 +741,17 @@ def build_probe_cases(expect: testing.Expect) -> None:
     if entry is None:
         return
     for target in shapes.TARGETS:
-        failed, verdicts, hardened = judged_probes(entry, None, shapes.PROBES, target)
+        failed, verdicts, held = judged_probes(entry, None, shapes.PROBES, target)
         expect(
             f"each pair of PROBES holds on the probe unit of the build for -march={target}: "
             f"{', '.join(sorted(failed)) or 'each pair holds'}",
             failed == set(),
         )
-        unexplained = hardening_unexplained(verdicts, hardened)
+        unexplained = hardening_unexplained(verdicts, held)
         expect(
-            f"for -march={target} in a unit with the -fharden- flags, the claim of each probe with a second test into "
-            f"a trap on its family side names the two flags: {', '.join(unexplained) or 'each claim names them'}",
+            f"for -march={target} in a unit with {list(held) or 'no -fharden- flag'}, the claim of each probe with a "
+            f"second test into a trap on its family side names each such flag: "
+            f"{', '.join(unexplained) or 'each claim names them'}",
             not unexplained,
         )
     with tempfile.TemporaryDirectory(prefix="codegen-shapes-plant-") as scratch:

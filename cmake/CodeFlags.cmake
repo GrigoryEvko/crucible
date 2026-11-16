@@ -58,15 +58,16 @@ set(CRUCIBLE_CODE_FLAGS
   -ftrivial-auto-var-init=zero         # 229  zero-fill uninit stack (P2795R5)
 )
 
-# A Debug build does not take 196 and 197.  The two flags defend a binary
-# against fault injection, and they find no defect in a test.  On a heavy
-# translation unit they cost 20% to 46% of the back end.  No build takes
-# -fharden-control-flow-redundancy.  It defends a binary against fault
-# injection, it finds no defect in a test, and it cannot instrument a
-# function that calls setjmp.
+# A Debug build does not take 196.  The flag defends a binary against fault
+# injection, and it finds no defect in a test.  No build takes
+# -fharden-conditional-branches (197).  It defends only against fault
+# injection, which is not a threat to this runtime, and it doubles the
+# compares and the jumps of each hot branch.  The owner removed it on
+# 2026-11-16.  No build takes -fharden-control-flow-redundancy.  It defends a
+# binary against fault injection, it finds no defect in a test, and it cannot
+# instrument a function that calls setjmp.
 set(CRUCIBLE_RELEASE_CODE_FLAGS
   -fharden-compares                    # 196  redundant compare checks
-  -fharden-conditional-branches        # 197  redundant branch checks
 )
 
 set(CRUCIBLE_CODE_DEFINITIONS

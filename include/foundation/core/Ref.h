@@ -184,9 +184,10 @@ public:
     // with an [[assume]], as get() of a OneOf does.  The constructor has no
     // [[assume]] that the pointer is not null.
     // That condition reads a member through this, so GCC makes it an .ASSUME
-    // call, and -fharden-conditional-branches then keeps a branch that the
-    // optimizer removes with no assume, such as the null test of the decode
-    // of an atomic word.
+    // call.  Under -fharden-conditional-branches, that call keeps a branch
+    // that the optimizer removes with no assume, such as the null test of the
+    // decode of an atomic word.  No build takes that flag
+    // (cmake/CodeFlags.cmake).
     constexpr Ref(T& object, detail::RefKey const& /*key*/) noexcept : object_{__builtin_addressof(object)} {}
 
     // Adds a const to the target, erases the brand, or does the two.
