@@ -226,6 +226,13 @@ public:
     [[nodiscard]] friend constexpr vec operator+(vec a, vec b) noexcept { return unwrap_(wrap_(a) + wrap_(b)); }
     [[nodiscard]] friend constexpr vec operator-(vec a, vec b) noexcept { return unwrap_(wrap_(a) - wrap_(b)); }
     [[nodiscard]] friend constexpr vec operator*(vec a, vec b) noexcept { return unwrap_(wrap_(a) * wrap_(b)); }
+    // The IEEE division of each lane of a floating vector.  An integer lane
+    // has no division: a lane of zero would trap.
+    [[nodiscard]] friend constexpr vec operator/(vec a, vec b) noexcept
+        requires std::floating_point<ElementType>
+    {
+        return vec{a.v_ / b.v_};
+    }
     [[nodiscard]] friend constexpr vec operator&(vec a, vec b) noexcept { return vec{a.v_ & b.v_}; }
     [[nodiscard]] friend constexpr vec operator|(vec a, vec b) noexcept { return vec{a.v_ | b.v_}; }
     [[nodiscard]] friend constexpr vec operator^(vec a, vec b) noexcept { return vec{a.v_ ^ b.v_}; }
@@ -362,6 +369,98 @@ template <typename V, typename Byte, std::size_t Bytes>
 CRUCIBLE_INLINE void store(V value, core::View<Byte, Bytes> bytes) noexcept {
     const typename V::raw_type raw = value.raw();
     __builtin_memcpy(first_of_(core::detail::ViewDoor::key(), bytes), &raw, sizeof(raw));
+}
+
+namespace detail {
+
+// The mask of the first bytes of a register of 64, 32 or 16 bytes: bit i set
+// for each byte i below bytes.
+[[nodiscard]] constexpr std::uint64_t prefix_byte_mask(std::size_t bytes) noexcept {
+    return bytes >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << bytes) - 1;
+}
+
+}  // namespace detail
+
+// The first count lanes of a vector from ptr, and zero in each lane at or
+// past count.  The load reads the count elements and no other byte, so a run
+// that ends at the last of them is safe to read.  With AVX-512BW, a register
+// of 16, 32 or 64 bytes takes one masked load of bytes, which suppresses the
+// fault of each byte past the mask.  Each other target copies the bytes into
+// a zeroed register.  A count past the lane count ends the process in each
+// build.
+template <typename V>
+[[nodiscard]] CRUCIBLE_INLINE V load_prefix(const typename V::value_type* ptr, std::size_t count) noexcept {
+    using Raw = typename V::raw_type;
+    constexpr std::size_t lane_bytes = sizeof(typename V::value_type);
+    if (count > V::size()) [[unlikely]] {
+        ::foundation::core::fatal("a prefix load of {} lanes into a vector of {} lanes", count, V::size());
+    }
+#if defined(__AVX512BW__) && defined(__AVX512VL__)
+    char const* const bytes = static_cast<char const*>(static_cast<void const*>(ptr));
+    std::uint64_t const mask = detail::prefix_byte_mask(count * lane_bytes);
+    if constexpr (sizeof(Raw) == 64) {
+        using Chars = detail::raw_vector_t<char, 64>;
+        return V{__builtin_bit_cast(Raw, __builtin_ia32_loaddquqi512_mask(bytes, Chars{}, mask))};
+    } else if constexpr (sizeof(Raw) == 32) {
+        using Chars = detail::raw_vector_t<char, 32>;
+        return V{__builtin_bit_cast(
+            Raw, __builtin_ia32_loaddquqi256_mask(bytes, Chars{}, static_cast<std::uint32_t>(mask)))};
+    } else if constexpr (sizeof(Raw) == 16) {
+        using Chars = detail::raw_vector_t<char, 16>;
+        return V{__builtin_bit_cast(
+            Raw, __builtin_ia32_loaddquqi128_mask(bytes, Chars{}, static_cast<std::uint16_t>(mask)))};
+    }
+#endif
+    Raw raw{};
+    __builtin_memcpy(&raw, ptr, count * lane_bytes);
+    return V{raw};
+}
+
+// Writes the first count lanes of value to ptr, and no other byte.  The arms
+// are the arms of load_prefix.  A count past the lane count ends the process
+// in each build.
+template <typename V>
+CRUCIBLE_INLINE void store_prefix(V value, typename V::value_type* ptr, std::size_t count) noexcept {
+    using Raw = typename V::raw_type;
+    constexpr std::size_t lane_bytes = sizeof(typename V::value_type);
+    if (count > V::size()) [[unlikely]] {
+        ::foundation::core::fatal("a prefix store of {} lanes from a vector of {} lanes", count, V::size());
+    }
+    Raw const raw = value.raw();
+#if defined(__AVX512BW__) && defined(__AVX512VL__)
+    char* const bytes = static_cast<char*>(static_cast<void*>(ptr));
+    std::uint64_t const mask = detail::prefix_byte_mask(count * lane_bytes);
+    if constexpr (sizeof(Raw) == 64) {
+        __builtin_ia32_storedquqi512_mask(bytes, __builtin_bit_cast(detail::raw_vector_t<char, 64>, raw), mask);
+        return;
+    } else if constexpr (sizeof(Raw) == 32) {
+        __builtin_ia32_storedquqi256_mask(bytes, __builtin_bit_cast(detail::raw_vector_t<char, 32>, raw),
+                                          static_cast<std::uint32_t>(mask));
+        return;
+    } else if constexpr (sizeof(Raw) == 16) {
+        __builtin_ia32_storedquqi128_mask(bytes, __builtin_bit_cast(detail::raw_vector_t<char, 16>, raw),
+                                          static_cast<std::uint16_t>(mask));
+        return;
+    }
+#endif
+    __builtin_memcpy(ptr, &raw, count * lane_bytes);
+}
+
+// The prefix load of the lanes of a View: the first lanes.size() lanes, and
+// zero in each other lane.  A View of more lanes than V holds ends the
+// process in each build.
+template <typename V, typename Lane>
+    requires std::is_same_v<std::remove_const_t<Lane>, typename V::value_type>
+[[nodiscard]] CRUCIBLE_INLINE V load_prefix(core::View<Lane> lanes) noexcept {
+    return load_prefix<V>(first_of_(core::detail::ViewDoor::key(), lanes), lanes.size());
+}
+
+// The prefix store into the lanes of a View: the first lanes.size() lanes of
+// value, and no other byte.
+template <typename V, typename Lane>
+    requires std::is_same_v<Lane, typename V::value_type>
+CRUCIBLE_INLINE void store_prefix(V value, core::View<Lane> lanes) noexcept {
+    store_prefix(value, first_of_(core::detail::ViewDoor::key(), lanes), lanes.size());
 }
 
 // The bits of one register as a vector of a different lane type, the view

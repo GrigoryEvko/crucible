@@ -63,6 +63,11 @@ foundation_test(test_simd_operator_limits)
 # the generic shuffle, and the Release build runs vpshufb of AVX2 and of
 # AVX-512BW.
 foundation_test(test_simd_lookup_nibbles)
+# The prefix load and the prefix store of foundation/Simd.h for each count, at
+# 16, 32 and 64 bytes, and the division of floating lanes.  The Debug build
+# runs the copy arm under the address sanitizer, and the Release build runs
+# the masked arm of AVX-512BW.
+foundation_test(test_simd_prefix)
 
 # Negative-compile fixtures for the foundation layer.
 #
