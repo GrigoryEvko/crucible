@@ -1380,11 +1380,12 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             const uint64_t output_span = span_bytes_of_(output_meta);
             const ::fixy::WeakRef<PtrSlot> entry = ptr_map_find(scratch_map_, local_gen, output_key);
 
-            // A key with a generation names one storage of the process, so a
-            // key of the map with a generation is the same storage.
+            // A key with a known generation names one storage of the process,
+            // so a key of the map with a known generation is the same storage.
             //
-            // A key with no generation is the address of the first byte of
-            // the storage, and the allocator can give that address to a new
+            // A key with no known generation is the address of the first byte
+            // of the storage, in one period of the allocator for an unknown
+            // generation.  The allocator can give that address to a new
             // storage after a free.  So such a key in the map names the same
             // storage only when the op shows that the storage lives across
             // it: the op reads the
@@ -1399,7 +1400,10 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
             // batch norm writes its running statistics in place and returns
             // new tensors.  An input with no generation at the address of a
             // dead storage still reads the slot of the dead storage, because
-            // a read shows no allocation.
+            // a read shows no allocation.  An input with an unknown generation
+            // does so only in the period of the dead storage, and in one
+            // period the front end records no new storage with no generation
+            // at the address of a dead one.
             const bool is_written_in_the_nest =
                 entry && entry->op_index.is_valid() && entry->op_index.raw() >= nest_start;
             const bool is_same_storage = entry && entry->slot_id.is_valid()

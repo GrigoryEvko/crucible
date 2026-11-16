@@ -136,4 +136,18 @@ static_assert(sizeof(KernelCacheKey) == 16, "KernelCacheKey must be exactly two 
 static_assert(alignof(KernelCacheKey) == 8, "KernelCacheKey must be 8-byte aligned to stay compatible with a "
                                             "paired atomic on the supported architectures.");
 
+// The three cases of a storage generation are three sets of words.  A count of
+// zero and a count of 2^31 give a known generation, and the period of an
+// unknown generation is part of its word.
+static_assert(!StorageGeneration{}.is_known() && !StorageGeneration{}.is_unknown() && StorageGeneration{}.raw() == 0);
+static_assert(StorageGeneration::known(AllocationCount{0}).is_known());
+static_assert(StorageGeneration::known(AllocationCount{0}) == StorageGeneration::known(AllocationCount{1}));
+static_assert(StorageGeneration::known(AllocationCount{uint32_t{1} << 31}).is_known());
+static_assert(StorageGeneration::known(AllocationCount{0xFFFFFFFFU}).is_known());
+static_assert(StorageGeneration::unknown(AllocatorEpoch{0}).is_unknown());
+static_assert(!StorageGeneration::unknown(AllocatorEpoch{7}).is_known());
+static_assert(StorageGeneration::unknown(AllocatorEpoch{1}) != StorageGeneration::unknown(AllocatorEpoch{2}));
+static_assert(StorageGeneration::unknown(AllocatorEpoch{1}) != StorageGeneration::known(AllocationCount{1}));
+static_assert(StorageGeneration::unknown(AllocatorEpoch{0}) != StorageGeneration{});
+
 }  // namespace crucible

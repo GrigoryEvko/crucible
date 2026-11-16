@@ -161,10 +161,10 @@ struct TensorMeta {
 
     int64_t storage_offset = 0;
     uint32_t version = 0;  // bumped on in-place mutation
-    // The generation of the allocation of the storage, or zero when its
-    // allocator gives none.  It is local to the process, as data_ptr is, so
-    // the image of Serialize.h and the record of a trace file do not hold it,
-    // and no hash folds it.
+    // The generation of the allocation of the storage: none, known, or
+    // unknown in a period of the allocator (StorageGeneration).  It is local
+    // to the process, as data_ptr is, so the image of Serialize.h and the
+    // record of a trace file do not hold it, and no hash folds it.
     StorageGeneration storage_generation{};
     // The size of the storage in bytes, which a view does not span.  A
     // storage of 4 GiB or more is usual for a large model, so the field has
@@ -217,10 +217,13 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The key of one storage: the key of the address of its first byte, and the
 // generation of its allocation.  The allocator can give the address of a dead
-// storage to a new storage after a free.  A storage with a generation then
-// has a new key, so its key names it for the life of the process.  A storage
-// with no generation keeps the key of its address alone, and that key names
-// the storage only while the storage lives.  The key has no order.
+// storage to a new storage after a free.  A storage with a known generation
+// then has a new key, so its key names it for the life of the process.  A
+// storage with an unknown generation has the key of its address in one period
+// of the allocator, so a new storage at the address of a dead one in another
+// period has another key.  A storage with no generation keeps the key of its
+// address alone, and that key names the storage only while the storage lives.
+// The key has no order.
 struct StorageKey {
     ::fixy::AddressKey address = ::fixy::mint_address_key(static_cast<void const*>(nullptr));
     StorageGeneration generation{};

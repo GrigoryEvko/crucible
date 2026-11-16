@@ -57,7 +57,12 @@ static_assert(is_unequal_after([](TensorMeta& meta) { meta.flags = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.output_nr = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_offset = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.version = 1; }));
-static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_generation = StorageGeneration{1}; }));
+static_assert(is_unequal_after([](TensorMeta& meta) {
+    meta.storage_generation = StorageGeneration::known(AllocationCount{1});
+}));
+static_assert(is_unequal_after([](TensorMeta& meta) {
+    meta.storage_generation = StorageGeneration::unknown(AllocatorEpoch{1});
+}));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_nbytes = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.grad_fn_hash = grad_fn_hash(1); }));
 

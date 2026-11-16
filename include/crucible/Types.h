@@ -276,32 +276,75 @@ private:
     uint16_t depth_ = 0;
 };
 
-// The generation of the allocation of a storage: a count that an allocator
-// of the front end gives each allocation, such as the CPU allocator of the
-// vessel.  The allocator can give the address of a dead storage to a new
-// storage, and the new storage then has another generation.  So the address
-// and the generation together name one storage of the process
-// (storage_key of crucible/TensorMeta.h).
+struct AllocationCountTag {};
+struct AllocatorEpochTag {};
+
+// The number of one allocation in the count of the allocations of an
+// allocator of the front end, such as the CPU allocator of the vessel.
+using AllocationCount = ::fixy::Id<AllocationCountTag, uint32_t>;
+
+// The number of one period of the CPU allocator of the front end.  The front
+// end starts a new period each time that it sets a CPU allocator that gives no
+// generation, such as the allocator of the vessel for the replay of a region.
+using AllocatorEpoch = ::fixy::Id<AllocatorEpochTag, uint32_t>;
+
+// The generation of the allocation of a storage.  The allocator can give the
+// address of a dead storage to a new storage, and the recorder sees no free.
+// So the key of a storage is its address and its generation (storage_key of
+// crucible/TensorMeta.h).  One word holds one of three cases:
 //
-// Zero means no generation: the storage of an allocator that gives none, such
-// as a mapped file, a pinned buffer or the memory of another library.  Such a
-// storage keeps the key of its address alone.  The count is local to one
-// process, as an address is, so no file and no hash holds it.  Two storages of
-// one region at one address with equal generations are 2^32 allocations
-// apart, which no region holds.
+//   none     zero.  The front end gives no generation, as the C entries and
+//            the record of a trace file do.  The key is the address alone.
+//   known    the low 31 bits of the count of the allocation (AllocationCount),
+//            which the allocator of the front end gave the storage.  The key
+//            names one storage of the process.  Two storages of one region at
+//            one address with one generation are 2^31 allocations apart, which
+//            no region holds.
+//   unknown  the top bit and the low 31 bits of the period (AllocatorEpoch) in
+//            which the front end read a storage that its allocator did not
+//            make.  The front end starts each period so that, in the ops that
+//            it records in one period, one address with an unknown generation
+//            names one storage (vessel/torch/storage_generation.h gives the
+//            rule of the vessel).  The key of the address and the period then
+//            never joins a dead storage to a new one, at the cost of a second
+//            slot for a storage that lives across two periods.  An allocator
+//            that the front end does not watch can still reuse an address
+//            inside one period.
+//
+// The count and the period are local to one process, as an address is, so no
+// file and no hash holds the word.
 class StorageGeneration {
 public:
     constexpr StorageGeneration() noexcept = default;
-    constexpr explicit StorageGeneration(uint32_t generation) noexcept : generation_{generation} {}
+
+    [[nodiscard]] static constexpr StorageGeneration known(AllocationCount count) noexcept {
+        const uint32_t low = count.raw() & COUNT_MASK;
+        return StorageGeneration{low == 0 ? 1U : low};
+    }
+
+    [[nodiscard]] static constexpr StorageGeneration unknown(AllocatorEpoch epoch) noexcept {
+        return StorageGeneration{UNKNOWN_BIT | (epoch.raw() & COUNT_MASK)};
+    }
 
     [[nodiscard]] constexpr uint32_t raw() const noexcept { return generation_; }
 
     // True for a storage whose allocator gave it a generation.
-    [[nodiscard]] constexpr bool is_known() const noexcept { return generation_ != 0; }
+    [[nodiscard]] constexpr bool is_known() const noexcept {
+        return generation_ != 0 && (generation_ & UNKNOWN_BIT) == 0;
+    }
+
+    // True for a storage that the front end read in a period of its
+    // allocator, with no generation of that allocator.
+    [[nodiscard]] constexpr bool is_unknown() const noexcept { return (generation_ & UNKNOWN_BIT) != 0; }
 
     constexpr auto operator<=>(const StorageGeneration&) const noexcept = default;
 
 private:
+    static constexpr uint32_t UNKNOWN_BIT = uint32_t{1} << 31;
+    static constexpr uint32_t COUNT_MASK = UNKNOWN_BIT - 1;
+
+    constexpr explicit StorageGeneration(uint32_t generation) noexcept : generation_{generation} {}
+
     uint32_t generation_ = 0;
 };
 

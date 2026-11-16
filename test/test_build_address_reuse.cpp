@@ -1,6 +1,7 @@
 // The slots that the build of a region gives the tensors of one iteration.
 // A slot holds one storage, and the key of a storage is the address of its
-// first byte and the generation of its allocation.
+// first byte and the generation of its allocation, or the period of the
+// allocator for a storage with an unknown generation.
 //
 // Op 0 writes a tensor at the address X, op 1 reads it and writes Y, and op 2
 // reads Y.  In one run op 2 writes a new address Z.  In the other run X is
@@ -38,12 +39,24 @@ using crucible::TraceRing;
 // reads an address as a key and never through it.
 ::fixy::FixedArray<std::byte, 4096> g_memory{};
 
+// Four known generations, and the unknown generations of two periods of the
+// allocator.
+constexpr crucible::StorageGeneration kKnownFirst = crucible::StorageGeneration::known(crucible::AllocationCount{1});
+constexpr crucible::StorageGeneration kKnownSecond = crucible::StorageGeneration::known(crucible::AllocationCount{2});
+constexpr crucible::StorageGeneration kKnownThird = crucible::StorageGeneration::known(crucible::AllocationCount{3});
+constexpr crucible::StorageGeneration kKnownFourth = crucible::StorageGeneration::known(crucible::AllocationCount{4});
+constexpr crucible::StorageGeneration kUnknownInFirstPeriod =
+    crucible::StorageGeneration::unknown(crucible::AllocatorEpoch{1});
+constexpr crucible::StorageGeneration kUnknownInSecondPeriod =
+    crucible::StorageGeneration::unknown(crucible::AllocatorEpoch{2});
+
 // A tensor of `elements` floats whose storage starts at the offset base of
 // g_memory, at element `first` of that storage, with the storage generation
 // `generation`.  A tensor past the first element of its storage is a view.
-[[nodiscard]] TensorMeta vector_at(uint32_t base, uint32_t first = 0, int64_t elements = 64, uint32_t generation = 0) {
+[[nodiscard]] TensorMeta vector_at(uint32_t base, uint32_t first = 0, int64_t elements = 64,
+                                   crucible::StorageGeneration generation = {}) {
     TensorMeta meta{};
-    meta.storage_generation = crucible::StorageGeneration{generation};
+    meta.storage_generation = generation;
     meta.ndim = 1;
     meta.sizes[0] = crucible::tensor_dim(elements);
     meta.strides[0] = crucible::tensor_dim(1);
@@ -350,9 +363,9 @@ void test_reads_of_an_external_take_one_slot() {
 // apart, and the read of op 2 reads the slot that op 0 wrote.
 void test_new_storage_at_a_dead_address_is_a_new_input() {
     Rig known;
-    known.work.push_source(*known.log, 0, vector_at(kX, 0, 64, 1));
-    known.work.push_unary(*known.log, 1, vector_at(kX, 0, 64, 1), vector_at(kY, 0, 64, 2));
-    known.work.push_unary(*known.log, 2, vector_at(kX, 0, 64, 3), vector_at(kZ, 0, 64, 4));
+    known.work.push_source(*known.log, 0, vector_at(kX, 0, 64, kKnownFirst));
+    known.work.push_unary(*known.log, 1, vector_at(kX, 0, 64, kKnownFirst), vector_at(kY, 0, 64, kKnownSecond));
+    known.work.push_unary(*known.log, 2, vector_at(kX, 0, 64, kKnownThird), vector_at(kZ, 0, 64, kKnownFourth));
     const BackgroundThread::BuiltRegion fresh = known.build();
     const crucible::SlotId written = output_slot(fresh, 0, 0);
     const crucible::SlotId read = input_slot(fresh, 2, 0);
@@ -380,8 +393,8 @@ void test_new_storage_at_a_dead_address_is_a_new_input() {
 // its own.
 void test_output_with_the_same_generation_keeps_the_slot() {
     Rig known;
-    known.work.push_source(*known.log, 0, vector_at(kX, 0, 64, 1));
-    known.work.push_unary(*known.log, 1, vector_at(kY, 0, 64, 2), vector_at(kX, 0, 64, 1));
+    known.work.push_source(*known.log, 0, vector_at(kX, 0, 64, kKnownFirst));
+    known.work.push_unary(*known.log, 1, vector_at(kY, 0, 64, kKnownSecond), vector_at(kX, 0, 64, kKnownFirst));
     const BackgroundThread::BuiltRegion same = known.build();
     assert(output_slot(same, 1, 0) == output_slot(same, 0, 0) && "one generation is one storage");
     assert(slot_of(same, output_slot(same, 0, 0)).death_op == crucible::OpIndex{1});
@@ -393,6 +406,37 @@ void test_output_with_the_same_generation_keeps_the_slot() {
     assert(output_slot(split, 1, 0) != output_slot(split, 0, 0)
            && "with no generation, an output that the op does not read is a new storage");
     crucible::test::pass("  test_output_with_the_same_generation_keeps_the_slot: PASSED\n");
+}
+
+// Op 0 adds into the storage U at X in place, in the first period of the
+// allocator, and op 1 reads U in that period.  While the front end records,
+// its allocator gives each new storage a known generation, so the key of X in
+// one period names U, and op 1 reads the slot that op 0 wrote.  A replay then
+// starts the second period, frees U, and makes a new storage at X with an
+// allocator that gives no generation.  Op 2 reads it in the second period.
+// Its key holds the second period, so its read takes an external slot of its
+// own, with no producer.  With no period in the key, the read of op 2 reads
+// the slot that op 0 wrote.
+void test_unknown_storage_of_another_period_is_a_new_input() {
+    Rig periods;
+    periods.work.push_unary(*periods.log, 0, vector_at(kX, 0, 64, kUnknownInFirstPeriod),
+                            vector_at(kX, 0, 64, kUnknownInFirstPeriod));
+    periods.work.push_unary(*periods.log, 1, vector_at(kX, 0, 64, kUnknownInFirstPeriod),
+                            vector_at(kY, 0, 64, kKnownFirst));
+    periods.work.push_unary(*periods.log, 2, vector_at(kX, 0, 64, kUnknownInSecondPeriod),
+                            vector_at(kZ, 0, 64, kKnownSecond));
+    const BackgroundThread::BuiltRegion region = periods.build();
+
+    const crucible::SlotId first = input_slot(region, 0, 0);
+    assert(output_slot(region, 0, 0) == first && "an in-place op writes the storage that it reads");
+    assert(input_slot(region, 1, 0) == first && producer(region, 1, 0) == crucible::OpIndex{0}
+           && "one period keeps one storage at one address");
+    const crucible::SlotId later = input_slot(region, 2, 0);
+    assert(later != first && "a storage of another period at the address is a new input");
+    assert(!producer(region, 2, 0).is_valid() && slot_of(region, later).is_external);
+    assert(slot_of(region, first).death_op == crucible::OpIndex{1} && "the storage of the first period dies at op 1");
+    assert(region.slots.size() == 4);
+    crucible::test::pass("  test_unknown_storage_of_another_period_is_a_new_input: PASSED\n");
 }
 
 }  // namespace
@@ -411,6 +455,7 @@ int main() {
     test_numerics_policy_moves_the_hash();
     test_new_storage_at_a_dead_address_is_a_new_input();
     test_output_with_the_same_generation_keeps_the_slot();
+    test_unknown_storage_of_another_period_is_a_new_input();
     crucible::test::pass("test_build_address_reuse: ALL PASSED\n");
     return 0;
 }
