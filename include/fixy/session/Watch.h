@@ -627,6 +627,12 @@ inline void check_wait_order(std::uint64_t self, std::uint32_t waited) noexcept 
 /// The nanoseconds of the monotonic clock, through the clock door of
 /// fixy/os/MonotonicClock.h.  A failed read gives zero, and poll() then
 /// traces no chain.  src/fixy/session/Watch.cpp holds the body.
+///
+/// The read takes no tag of Nondet, and it runs in the wait of each session,
+/// also in a context whose row holds no Nondet.  The reading decides only
+/// when a wait that did not end traces its chain of waits.  A trace changes
+/// the run only when it finds the same cycle two times.  The cycle is a
+/// deadlock, and the watch then reports it and ends the process.
 [[nodiscard]] std::uint64_t monotonic_ns() noexcept;
 
 /// Installs the hooks of the watch one time for the process, and gives the

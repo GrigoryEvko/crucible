@@ -153,6 +153,13 @@ struct SpinChoice {
 // The counter of the core (THE COUNTER).  The read is not serialized, so the
 // core can run it before or after the work around it.  A spin reads it only
 // to end a wait.
+//
+// The value is a source of nondeterminism, and the read takes no tag of
+// Nondet.  It goes to two readers.  wait_for_change compares it with the
+// deadline of its caller, and its SpinEnd then tells whether the word
+// changed first.  The TimingSink of fixy/os/TimingSink.h writes it as a
+// count in a body with no context, and only a context whose row holds Nondet
+// reads a count of the sink.
 [[nodiscard]] CRUCIBLE_INLINE std::uint64_t read_spin_counter() noexcept {
 #if defined(__x86_64__)
     return __builtin_ia32_rdtsc();

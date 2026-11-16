@@ -394,7 +394,10 @@ private:
 // The count of the CPUs in the affinity mask of the thread group leader, as
 // CPU_COUNT gives it after sched_getaffinity(2) (THE CPUS OF THE PROCESS).
 // The id of the process is the thread id of its leader.  Zero when the call
-// fails, which the caller reads as "use the count of the online CPUs".
+// fails, which the caller reads as "use the count of the online CPUs".  The
+// raw getpid takes no tag of Nondet: the id only names the process to
+// sched_getaffinity, and only the count of the CPUs of the mask leaves the
+// probe.
 [[nodiscard]] std::size_t probe_process_cpu_count_() noexcept {
     long const leader = os_door::raw_syscall(os_door::Syscall::getpid);
     std::uint64_t mask[kAffinityWords]{};
