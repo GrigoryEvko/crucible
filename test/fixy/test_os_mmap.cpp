@@ -254,27 +254,28 @@ inline constexpr std::size_t kPageBytes = 4096;
         }
     }
 
-    // Each arm gives the exclusive back to the pool, also when a check fails.
-    return pool.try_upgrade().match(
-        [&](auto exclusive) noexcept {
-            int failures = 0;
-            if (auto discarded =
-                    fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, mapped->peek_mut(), exclusive);
-                !discarded) {
-                std::fprintf(stderr, "madvise(MADV_DONTNEED) with the pooled exclusive failed (%s)\n",
-                             discarded.error().message().c_str());
-                ++failures;
-            } else if (bytes[0] != 0 || bytes[kPageBytes - 1] != 0) {
-                std::fprintf(stderr, "MADV_DONTNEED with the pooled exclusive did not discard the page\n");
-                ++failures;
-            }
-            pool.deposit_exclusive(std::move(exclusive));
-            return failures;
-        },
-        []() noexcept {
-            std::fprintf(stderr, "the pool kept the exclusive after the last share ended\n");
-            return 1;
-        });
+    auto exclusive = pool.try_upgrade();
+    int failures = 0;
+    if (exclusive.is_none()) {
+        std::fprintf(stderr, "the pool kept the exclusive after the last share ended\n");
+        ++failures;
+    }
+    for (auto const& held : exclusive) {
+        if (auto discarded =
+                fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, mapped->peek_mut(), held);
+            !discarded) {
+            std::fprintf(stderr, "madvise(MADV_DONTNEED) with the pooled exclusive failed (%s)\n",
+                         discarded.error().message().c_str());
+            ++failures;
+        } else if (bytes[0] != 0 || bytes[kPageBytes - 1] != 0) {
+            std::fprintf(stderr, "MADV_DONTNEED with the pooled exclusive did not discard the page\n");
+            ++failures;
+        }
+    }
+    // The one exit gives the exclusive back to the pool, also when a check failed.
+    std::move(exclusive).match([&pool](auto held) noexcept { pool.deposit_exclusive(std::move(held)); },
+                               []() noexcept {});
+    return failures;
 }
 
 [[nodiscard]] int the_leak_door_hands_back_the_mapping() {
