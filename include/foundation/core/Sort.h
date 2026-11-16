@@ -310,6 +310,7 @@ template <class T>
 // with the sign bit flipped when its order reads a sign.  Each key is a
 // bijection of the bits, so two elements with one key have the same bits.
 template <AscendingElement T>
+    requires(sizeof(T) <= 8)
 [[nodiscard]] CRUCIBLE_INLINE constexpr radix_key_t<T> radix_key_(T value) noexcept {
     using Key = radix_key_t<T>;
     constexpr Key sign = Key{1} << (8 * sizeof(T) - 1);
@@ -333,6 +334,7 @@ inline constexpr std::size_t radix_buckets = 256;
 // count is at least 1.  Complexity: one read of the elements for the counts
 // of each byte, and one read and one write of the elements for each pass.
 template <AscendingElement T>
+    requires(sizeof(T) <= 8)
 constexpr void radix_sort_(T* elements, T* scratch, std::size_t count) noexcept {
     constexpr std::size_t bytes = sizeof(T);
     FixedArray<std::size_t, radix_buckets * bytes> counts{};
@@ -392,7 +394,9 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
     if (scratch.size() != count) return err(LengthMismatch{});
     T* source = first_of_(detail::ViewDoor::key(), elements);
     T* target = first_of_(detail::ViewDoor::key(), scratch);
-    if constexpr (std::same_as<Less, Ascending>) {
+    // The key of the radix sort has at most eight bytes.  A wider integer of a
+    // GNU dialect, such as __int128, takes the merge sort.
+    if constexpr (std::same_as<Less, Ascending> && sizeof(T) <= 8) {
         if (count >= stable_sort_radix_count) {
             detail::radix_sort_(source, target, count);
             return Unit{};
