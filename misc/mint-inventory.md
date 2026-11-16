@@ -188,7 +188,7 @@ that the axis does not apply to the row.
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_sealed_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
-| `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | HS14: 19 |
+| `mint_secret` | `include/fixy/Secret.h` | Y | Y | Y | Y | token | · | HS14: 20 |
 | `mint_sequence_source` | `include/fixy/Stale.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 4 |
