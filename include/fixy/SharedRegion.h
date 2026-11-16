@@ -211,10 +211,12 @@ public:
     // exclusive comes back, and with it the region it covered.
     template <typename Ctx = ::foundation::permissions::detail::no_ctx>
         requires ::foundation::permissions::PoolCtx<Tag, Ctx>
-    [[nodiscard]] std::optional<OwnedRegion<T, Tag, Brand>> try_upgrade(Ctx const& ctx = {}) noexcept {
+    [[nodiscard]] ::foundation::core::Option<OwnedRegion<T, Tag, Brand>> try_upgrade(Ctx const& ctx = {}) noexcept {
+        using Upgraded = ::foundation::core::Option<OwnedRegion<T, Tag, Brand>>;
         auto exclusive = pool_.try_upgrade(ctx);
-        if (!exclusive.has_value()) return std::nullopt;
-        return OwnedRegion<T, Tag, Brand>{base_, count_, std::move(*exclusive)};
+        if (exclusive.is_none()) return Upgraded{::foundation::core::none};
+        return Upgraded::some(OwnedRegion<T, Tag, Brand>{
+            base_, count_, std::move(exclusive).expect("the test above found the exclusive")});
     }
 
     [[nodiscard]] std::uint64_t outstanding() const noexcept { return pool_.outstanding(); }

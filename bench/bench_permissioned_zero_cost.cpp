@@ -85,9 +85,7 @@ bench::Report wrapped_mpsc_push() {
     auto [producer_root, consumer_perm] = bench_halves();
     (void)consumer_perm;
     auto ch = std::make_unique<Channel>(std::move(producer_root));
-    auto p_opt = ch->producer();
-    CRUCIBLE_BENCH_CHECK(p_opt.has_value());
-    auto p = std::move(*p_opt);
+    auto p = ch->producer().expect("the pool lends a producer to a fresh channel");
     Item i = 0;
     return bench::run("wrapped Permissioned MPSC.ProducerHandle::try_push", [&] {
         const bool ok = p.try_push(++i);
@@ -111,9 +109,7 @@ bench::Report wrapped_mpsc_pop() {
     auto [producer_root, consumer_perm] = bench_halves();
     auto ch = std::make_unique<Channel>(std::move(producer_root));
     {
-        auto p_opt = ch->producer();
-        CRUCIBLE_BENCH_CHECK(p_opt.has_value());
-        auto p = std::move(*p_opt);
+        auto p = ch->producer().expect("the pool lends a producer to a fresh channel");
         for (Item i = 0; i < kCap / 2; ++i)
             (void)p.try_push(i);
     }

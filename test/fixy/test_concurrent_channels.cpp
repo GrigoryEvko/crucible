@@ -49,6 +49,9 @@ auto bulk_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole
 
 using Spsc = c::spsc_channel_t<int, 8, decltype(trace_root())>;
 using Mpsc = c::mpsc_channel_t<int, 8, decltype(meta_root())>;
+// The lend of a producer gives the Option of the base.
+static_assert(
+    std::is_same_v<decltype(std::declval<Mpsc&>().producer()), ::foundation::core::Option<Mpsc::ProducerHandle>>);
 using OtherSpsc = c::spsc_channel_t<int, 8, decltype(other_root())>;
 
 // ── Ownership is in the types ────────────────────────────────────────
@@ -228,12 +231,14 @@ template <class Channel, class Producer, class Consumer>
     }
 
     {
-        auto first = channel.producer();
-        auto second = channel.producer();
-        if (!first || !second) {
+        auto first_lent = channel.producer();
+        auto second_lent = channel.producer();
+        if (first_lent.is_none() || second_lent.is_none()) {
             std::fprintf(stderr, "the pool refused a second producer — the fractional side is not fractional\n");
             return 1;
         }
+        auto first = std::move(first_lent).expect("the test above found a producer");
+        auto second = std::move(second_lent).expect("the test above found a producer");
         if (channel.outstanding_producers() != 2) {
             std::fprintf(stderr, "the pool counted %llu shares where two were out\n",
                          static_cast<unsigned long long>(channel.outstanding_producers()));
@@ -252,7 +257,7 @@ template <class Channel, class Producer, class Consumer>
             return 1;
         }
 
-        if (!first->try_push(1) || !second->try_push(2)) {
+        if (!first.try_push(1) || !second.try_push(2)) {
             std::fprintf(stderr, "a producer handle could not push\n");
             return 1;
         }
@@ -277,7 +282,7 @@ template <class Channel, class Producer, class Consumer>
     // the exclusive window scoped rather than terminal.
     {
         auto after = channel.producer();
-        if (!after) {
+        if (after.is_none()) {
             std::fprintf(stderr, "the pool stayed exclusive after the body returned\n");
             return 1;
         }
@@ -329,14 +334,15 @@ template <class Channel, class Producer, class Consumer>
         std::vector<std::jthread> producers;
         for (int p = 0; p < kProducers; ++p) {
             producers.emplace_back([&channel, &failures, &finished] {
-                auto handle = channel.producer();
-                if (!handle) {
+                auto lent = channel.producer();
+                if (lent.is_none()) {
                     static_cast<void>(failures.fetch_add_acq_rel(1));
                     static_cast<void>(finished.fetch_add_acq_rel(1));
                     return;
                 }
+                auto handle = std::move(lent).expect("the test above found a producer");
                 for (int i = 0; i < kPerProducer;) {
-                    if (handle->try_push(1)) ++i;
+                    if (handle.try_push(1)) ++i;
                 }
                 static_cast<void>(finished.fetch_add_acq_rel(1));
             });

@@ -214,15 +214,15 @@ void test_door_over_a_share_guard(::fixy::TestRunnerCtx const& test) {
         CRUCIBLE_TEST_ASSERT(test, counted == 1);
         CRUCIBLE_TEST_ASSERT(test, held.holds_share());
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
-        // The refused upgrade gives an empty std::optional.  The answer has a
-        // name, so the temporary ends in this file and not in the macro.
-        bool const is_refused = !pool.try_upgrade().has_value();
+        // The refused upgrade gives an empty Option.  The answer has a name,
+        // so the temporary ends in this file and not in the macro.
+        bool const is_refused = pool.try_upgrade().is_none();
         CRUCIBLE_TEST_ASSERT(test, is_refused);
     }
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
     auto exclusive = pool.try_upgrade();
-    CRUCIBLE_TEST_ASSERT(test, exclusive.has_value());
-    ::foundation::linear::drop(std::move(*exclusive));
+    CRUCIBLE_TEST_ASSERT(test, exclusive.is_some());
+    ::foundation::linear::drop(std::move(exclusive).expect("the test above found the exclusive"));
 }
 
 // A loan travels to a reader on another thread.  The lender holds a

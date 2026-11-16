@@ -292,7 +292,7 @@ public:
     // already incremented makes this compare-exchange fail.
     template <typename Ctx = detail::no_ctx>
         requires PoolCtx<Tag, Ctx>
-    [[nodiscard]] std::optional<Permission<Tag, Brand>> try_upgrade(Ctx const& = {}) noexcept {
+    [[nodiscard]] ::foundation::core::Option<Permission<Tag, Brand>> try_upgrade(Ctx const& = {}) noexcept {
         static_assert(!std::same_as<Ctx, detail::no_ctx> || permission_row_empty(^^Tag),
                       "SharedPermissionPool<Tag>::try_upgrade() without ExecCtx is only "
                       "valid for permission_row<Tag> == Row<>.  Effectful permission "
@@ -352,18 +352,19 @@ private:
         }
     }
 
-    [[nodiscard]] std::optional<Permission<Tag, Brand>> try_upgrade_raw_() noexcept {
+    [[nodiscard]] ::foundation::core::Option<Permission<Tag, Brand>> try_upgrade_raw_() noexcept {
+        using Upgraded = ::foundation::core::Option<Permission<Tag, Brand>>;
         std::uint64_t expected = 0;
         if (!state_.compare_exchange_strong(expected, EXCLUSIVE_OUT_BIT, std::memory_order_acq_rel,
                                             std::memory_order_acquire)) {
-            return std::nullopt;
+            return Upgraded{::foundation::core::none};
         }
         // The parked permission is populated whenever the exclusive-out
         // bit is clear, and the exchange above just moved that bit from
         // clear to set, so the dereference here cannot be empty.
         Permission<Tag, Brand> exc = std::move(*parked_);
         parked_.reset();
-        return exc;
+        return Upgraded::some(std::move(exc));
     }
 
     friend class SharedPermissionGuard<Tag, Brand>;
@@ -482,13 +483,13 @@ namespace detail {
                 std::forward<Body>(body)(guard.token());
                 return true;
             } else {
-                return std::optional<Result>{std::forward<Body>(body)(guard.token())};
+                return ::foundation::core::Option<Result>::some(std::forward<Body>(body)(guard.token()));
             }
         }
         if constexpr (std::is_void_v<Result>) {
             return false;
         } else {
-            return std::optional<Result>{std::nullopt};
+            return ::foundation::core::Option<Result>{::foundation::core::none};
         }
     }
 
@@ -499,7 +500,7 @@ concept WithSharedReadArgs = detail::with_shared_read_shaped({^^Args...});
 
 template <typename... Args>
     requires WithSharedReadArgs<Args...> && (!std::is_void_v<detail::shared_read_result_t<Args...>>)
-[[nodiscard]] std::optional<detail::shared_read_result_t<Args...>>
+[[nodiscard]] ::foundation::core::Option<detail::shared_read_result_t<Args...>>
 with_shared_read(Args&&... args) noexcept(detail::shared_read_nothrow_v<Args...>) {
     return detail::with_shared_read_(std::forward<Args>(args)...);
 }

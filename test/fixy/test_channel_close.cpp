@@ -69,7 +69,7 @@ template <class Received>
 // ends the process.
 template <class Channel>
 [[nodiscard]] typename Channel::ProducerHandle lend(Channel& channel) noexcept {
-    return std::move(channel.producer().value());
+    return channel.producer().expect("the channel lends a producer while no exclusive is out");
 }
 
 template <class Producer>

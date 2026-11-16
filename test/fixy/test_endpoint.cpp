@@ -214,13 +214,14 @@ void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out
     (void)feeder.try_push(1);
     (void)feeder.try_push(2);
 
-    std::optional out_producer = out_channel.producer();
-    if (!out_producer) return fail("the MPSC channel lent no producer share");
+    auto out_producer = out_channel.producer();
+    if (out_producer.is_none()) return fail("the MPSC channel lent no producer share");
     auto stage = channels::mint_stage_from_endpoints<&forwarding_stage>(
         ctx,
         channels::mint_endpoint<FeedIn, channels::Direction::Consumer>(
             ctx, in_channel.consumer(std::move(in_consumer_perm))),
-        channels::mint_endpoint<FeedOut, channels::Direction::Producer>(ctx, std::move(*out_producer)));
+        channels::mint_endpoint<FeedOut, channels::Direction::Producer>(
+            ctx, std::move(out_producer).expect("the test above found a producer share")));
     std::move(stage).run();
 
     // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.

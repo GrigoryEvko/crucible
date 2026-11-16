@@ -49,7 +49,7 @@ void test_stashed_token_does_not_unblock_upgrade(::fixy::TestRunnerCtx const& te
         stashed_token = guard.token();
 
         auto blocked = pool.try_upgrade();
-        CRUCIBLE_TEST_ASSERT(test, !blocked.has_value());
+        CRUCIBLE_TEST_ASSERT(test, blocked.is_none());
         CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
     }
     // The guard is gone and the count is back to zero. The stashed token is
@@ -59,7 +59,7 @@ void test_stashed_token_does_not_unblock_upgrade(::fixy::TestRunnerCtx const& te
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
     auto upgraded = pool.try_upgrade();
-    CRUCIBLE_TEST_ASSERT(test, upgraded.has_value());
+    CRUCIBLE_TEST_ASSERT(test, upgraded.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.is_exclusive_out());
 
     // The other half of the invariant: while the exclusive permission is
@@ -67,7 +67,7 @@ void test_stashed_token_does_not_unblock_upgrade(::fixy::TestRunnerCtx const& te
     auto cannot_lend = pool.lend();
     CRUCIBLE_TEST_ASSERT(test, cannot_lend.is_none());
 
-    pool.deposit_exclusive(std::move(*upgraded));
+    pool.deposit_exclusive(std::move(upgraded).expect("the test above found the exclusive"));
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
 
     auto relent = pool.lend();
@@ -93,21 +93,21 @@ void test_multiple_guards_block_upgrade(::fixy::TestRunnerCtx const& test) {
         [[maybe_unused]] auto t2 = guard.token();
     }
 
-    // Each refused upgrade gives an empty std::optional.  The answer has a
-    // name, so the temporary ends in this file and not in the macro.
-    bool const is_refused_under_two_guards = !pool.try_upgrade().has_value();
+    // Each refused upgrade gives an empty Option.  The answer has a name, so
+    // the temporary ends in this file and not in the macro.
+    bool const is_refused_under_two_guards = pool.try_upgrade().is_none();
     CRUCIBLE_TEST_ASSERT(test, is_refused_under_two_guards);
 
     g1 = ::foundation::core::none;
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
-    bool const is_refused_under_one_guard = !pool.try_upgrade().has_value();
+    bool const is_refused_under_one_guard = pool.try_upgrade().is_none();
     CRUCIBLE_TEST_ASSERT(test, is_refused_under_one_guard);
 
     g2 = ::foundation::core::none;
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
     auto up = pool.try_upgrade();
-    CRUCIBLE_TEST_ASSERT(test, up.has_value());
+    CRUCIBLE_TEST_ASSERT(test, up.is_some());
 }
 
 }  // namespace

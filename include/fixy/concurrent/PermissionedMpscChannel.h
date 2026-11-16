@@ -263,12 +263,12 @@ public:
     // Lends a pool share, and refuses while an exclusive transition is
     // in flight.  Several producer handles coexisting is the point of
     // the fractional side.  A lent handle opens the channel.
-    [[nodiscard]] std::optional<ProducerHandle> producer() noexcept {
+    [[nodiscard]] ::foundation::core::Option<ProducerHandle> producer() noexcept {
         auto lent = producer_pool_.lend();
-        if (lent.is_none()) return std::nullopt;
+        if (lent.is_none()) return ::foundation::core::none;
         producers_.add_producer();
-        return ProducerHandle{*this,
-                              std::move(lent).expect("PermissionedMpscChannel::producer: the pool lent a share")};
+        return ::foundation::core::Option<ProducerHandle>::some(
+            ProducerHandle{*this, std::move(lent).expect("PermissionedMpscChannel::producer: the pool lent a share")});
     }
 
     // Takes the claim of the consumer role first, so a second live
@@ -289,9 +289,9 @@ public:
         requires std::is_invocable_v<Body>
     bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         auto upgrade = producer_pool_.try_upgrade();
-        if (!upgrade) return false;
+        if (upgrade.is_none()) return false;
         std::forward<Body>(body)();
-        producer_pool_.deposit_exclusive(std::move(*upgrade));
+        producer_pool_.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
         return true;
     }
 
@@ -309,13 +309,13 @@ public:
         requires __is_empty
     (__remove_cvref(Drop)) && std::is_nothrow_invocable_v<Drop&, T> void drain(Drop&& drop) noexcept {
         auto exclusive = producer_pool_.try_upgrade();
-        if (!exclusive) [[unlikely]] {
+        if (exclusive.is_none()) [[unlikely]] {
             ::foundation::core::fatal("a drain of an MPSC channel while a producer handle lives.");
         }
         consumer_claim_.take("a drain of an MPSC channel while its consumer handle lives.");
         ring_.drain(std::forward<Drop>(drop));
         consumer_claim_.release();
-        producer_pool_.deposit_exclusive(std::move(*exclusive));
+        producer_pool_.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
     }
 
     [[nodiscard]] std::uint64_t outstanding_producers() const noexcept { return producer_pool_.outstanding(); }

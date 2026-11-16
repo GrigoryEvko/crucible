@@ -97,13 +97,16 @@ void test_try_upgrade_succeeds_when_idle(::fixy::TestRunnerCtx const& test) {
     SharedPermissionPool pool{std::move(exc)};
 
     auto recovered = pool.try_upgrade();
-    CRUCIBLE_TEST_ASSERT(test, recovered.has_value());
+    // The upgrade gives the Option of the base.
+    static_assert(std::is_same_v<decltype(recovered),
+                                 ::foundation::core::Option<Permission<ConfigRegion, decltype(pool)::brand_type>>>);
+    CRUCIBLE_TEST_ASSERT(test, recovered.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.is_exclusive_out());
 
     auto fail_guard = pool.lend();
     CRUCIBLE_TEST_ASSERT(test, fail_guard.is_none());
 
-    pool.deposit_exclusive(std::move(*recovered));
+    pool.deposit_exclusive(std::move(recovered).expect("the test above found the exclusive"));
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
     auto post_guard = pool.lend();
     CRUCIBLE_TEST_ASSERT(test, post_guard.is_some());
@@ -116,7 +119,7 @@ void test_try_upgrade_fails_when_outstanding(::fixy::TestRunnerCtx const& test) 
     auto guard = pool.lend().expect("an idle pool lends a share");
 
     auto upgrade = pool.try_upgrade();
-    CRUCIBLE_TEST_ASSERT(test, !upgrade.has_value());
+    CRUCIBLE_TEST_ASSERT(test, !upgrade.is_some());
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
     CRUCIBLE_TEST_ASSERT(test, guard.holds_share());
 }
@@ -156,7 +159,7 @@ void test_lend_vs_upgrade_no_simultaneity(::fixy::TestRunnerCtx const& test) {
 
                     if (prefer_write && (i % 4 == 0)) {
                         auto upgrade = pool.try_upgrade();
-                        if (upgrade) {
+                        if (upgrade.is_some()) {
                             if (in_shared_count.load(std::memory_order_acquire) != 0) {
                                 violation.store(true, std::memory_order_release);
                             }
@@ -167,7 +170,7 @@ void test_lend_vs_upgrade_no_simultaneity(::fixy::TestRunnerCtx const& test) {
                             // Widen the race window.
                             CRUCIBLE_SPIN_PAUSE;
                             --in_exclusive_count;
-                            pool.deposit_exclusive(std::move(*upgrade));
+                            pool.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
                         }
                     } else {
                         auto guard = pool.lend();
@@ -236,11 +239,11 @@ void test_swmr_sees_consistent_state(::fixy::TestRunnerCtx const& test) {
         for (int i = 0; i < ITERATIONS; ++i) {
             for (;;) {
                 auto upgrade = pool.try_upgrade();
-                if (upgrade) {
+                if (upgrade.is_some()) {
                     const std::uint64_t v = static_cast<std::uint64_t>(i) + 1;
                     counter.lo = v;
                     counter.hi = v;
-                    pool.deposit_exclusive(std::move(*upgrade));
+                    pool.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
                     break;
                 }
                 CRUCIBLE_SPIN_PAUSE;
@@ -307,8 +310,10 @@ void test_with_shared_read_helper(::fixy::TestRunnerCtx const& test) {
     SharedPermissionPool pool{std::move(exc)};
 
     auto result_opt = with_shared_read(pool, [](auto) noexcept { return 42; });
-    CRUCIBLE_TEST_ASSERT(test, result_opt.has_value());
-    CRUCIBLE_TEST_ASSERT(test, *result_opt == 42);
+    // The read gives the result of the body in the Option of the base.
+    static_assert(std::is_same_v<decltype(result_opt), ::foundation::core::Option<int>>);
+    CRUCIBLE_TEST_ASSERT(test, result_opt.is_some());
+    CRUCIBLE_TEST_ASSERT(test, std::move(result_opt).value_or(0) == 42);
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
     // A void body makes the helper return bool.
@@ -319,10 +324,10 @@ void test_with_shared_read_helper(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
     auto upgrade = pool.try_upgrade();
-    CRUCIBLE_TEST_ASSERT(test, upgrade.has_value());
+    CRUCIBLE_TEST_ASSERT(test, upgrade.is_some());
     auto failed_opt = with_shared_read(pool, [](auto) noexcept { return 99; });
-    CRUCIBLE_TEST_ASSERT(test, !failed_opt.has_value());
-    pool.deposit_exclusive(std::move(*upgrade));
+    CRUCIBLE_TEST_ASSERT(test, !failed_opt.is_some());
+    pool.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
 }
 
 // A one-shot conversion with no pool tracking.

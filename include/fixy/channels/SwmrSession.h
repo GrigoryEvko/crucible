@@ -240,9 +240,9 @@ public:
         requires std::is_invocable_v<Body>
     bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         auto upgrade = reader_pool_.try_upgrade();
-        if (!upgrade) return false;
+        if (upgrade.is_none()) return false;
         std::forward<Body>(body)();
-        reader_pool_.deposit_exclusive(std::move(*upgrade));
+        reader_pool_.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
         return true;
     }
 

@@ -610,14 +610,21 @@ void readers_hold_past_an_upgrade_attempt() {
         while (holding.load(std::memory_order_acquire) != kReaders)
             std::this_thread::yield();
         for (int attempt = 0; attempt < 1000; ++attempt) {
-            require(!pool.try_upgrade().has_value(), "an upgrade succeeds while shares are out");
+            // An exclusive that the pool gives here goes back to the pool at once.
+            const bool is_upgraded = pool.try_upgrade().match(
+                [&pool](auto exclusive) noexcept {
+                    pool.deposit_exclusive(std::move(exclusive));
+                    return true;
+                },
+                []() noexcept { return false; });
+            require(!is_upgraded, "an upgrade succeeds while shares are out");
         }
         release.store(true, std::memory_order_release);
     }
     auto exclusive = pool.try_upgrade();
-    require(exclusive.has_value(), "the upgrade succeeds once every share is back");
+    require(exclusive.is_some(), "the upgrade succeeds once every share is back");
     require(pool.lend().is_none(), "a reader gets a share while the writer holds the region");
-    pool.deposit_exclusive(std::move(*exclusive));
+    pool.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
 }
 
 // Readers take and drop shares in a loop while a writer upgrades and
@@ -646,15 +653,19 @@ void readers_and_writer_race() {
         }
         int writes = 0;
         while (writes < kWrites) {
-            auto exclusive = pool.try_upgrade();
-            if (!exclusive) {
+            const bool is_written = pool.try_upgrade().match(
+                [&](auto exclusive) noexcept {
+                    writer_inside.store(true, std::memory_order_release);
+                    if (readers_inside.load(std::memory_order_acquire) != 0) overlaps.fetch_add(1);
+                    writer_inside.store(false, std::memory_order_release);
+                    pool.deposit_exclusive(std::move(exclusive));
+                    return true;
+                },
+                []() noexcept { return false; });
+            if (!is_written) {
                 std::this_thread::yield();
                 continue;
             }
-            writer_inside.store(true, std::memory_order_release);
-            if (readers_inside.load(std::memory_order_acquire) != 0) overlaps.fetch_add(1);
-            writer_inside.store(false, std::memory_order_release);
-            pool.deposit_exclusive(std::move(*exclusive));
             ++writes;
         }
         stop.store(true, std::memory_order_release);
@@ -813,17 +824,19 @@ void read_proof_ends_with_the_share() {
     {
         auto guard = pool.lend().expect("a reader gets a share of a free pool");
         auto [upgraded_inside, held] = fp::with_read_view(std::move(guard), [&pool](auto const&) noexcept {
-            auto attempt = pool.try_upgrade();
-            const bool upgraded = attempt.has_value();
-            if (upgraded) pool.deposit_exclusive(std::move(*attempt));
-            return upgraded;
+            return pool.try_upgrade().match(
+                [&pool](auto exclusive) noexcept {
+                    pool.deposit_exclusive(std::move(exclusive));
+                    return true;
+                },
+                []() noexcept { return false; });
         });
         require(!upgraded_inside, "an upgrade succeeds while a read proof lives");
         require(held.holds_share(), "the door hands the share back");
     }
     auto exclusive = pool.try_upgrade();
-    require(exclusive.has_value(), "the upgrade succeeds once the share ends");
-    pool.deposit_exclusive(std::move(*exclusive));
+    require(exclusive.is_some(), "the upgrade succeeds once the share ends");
+    pool.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
 }
 
 }  // namespace

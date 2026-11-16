@@ -117,9 +117,9 @@ void mpsc_producer() {
     auto [producer_root, consumer_perm] = mpsc_halves();
     (void)consumer_perm;
     Mpsc channel{std::move(producer_root)};
-    auto producer = channel.producer();
-    [[maybe_unused]] auto moved = std::move(*producer);
-    (void)opaque_ref(*producer).try_push(1);
+    auto producer = channel.producer().expect("the channel lends a producer while no exclusive is out");
+    [[maybe_unused]] auto moved = std::move(producer);
+    (void)opaque_ref(producer).try_push(1);
 }
 
 // The moved-from producer holds no pool share, so the drained window opens.
@@ -128,9 +128,9 @@ void mpsc_producer_in_drained_window() {
     auto [producer_root, consumer_perm] = mpsc_halves();
     (void)consumer_perm;
     Mpsc channel{std::move(producer_root)};
-    auto producer = channel.producer();
-    { [[maybe_unused]] auto moved = std::move(*producer); }
-    (void)channel.with_drained_access([&producer] { (void)opaque_ref(*producer).try_push(1); });
+    auto producer = channel.producer().expect("the channel lends a producer while no exclusive is out");
+    { [[maybe_unused]] auto moved = std::move(producer); }
+    (void)channel.with_drained_access([&producer] { (void)opaque_ref(producer).try_push(1); });
 }
 
 void mpsc_consumer() {

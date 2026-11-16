@@ -11,6 +11,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
@@ -88,14 +89,25 @@ void test_an_upgrade_waits_for_every_share(TestRunnerCtx const& test) {
         auto guard = shared.lend(ctx);
         CRUCIBLE_TEST_ASSERT(test, guard.is_some());
         CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 1);
-        CRUCIBLE_TEST_ASSERT(test, !shared.try_upgrade(ctx).has_value());
+        // A region that the upgrade gives here ends at once.
+        const bool is_upgraded_under_a_share = shared.try_upgrade(ctx).match(
+            [](auto owned) noexcept {
+                ::foundation::linear::drop(std::move(owned));
+                return true;
+            },
+            []() noexcept { return false; });
+        CRUCIBLE_TEST_ASSERT(test, !is_upgraded_under_a_share);
     }
 
     CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 0);
-    auto exclusive = shared.try_upgrade(ctx);
-    CRUCIBLE_TEST_ASSERT(test, exclusive.has_value());
-    CRUCIBLE_TEST_ASSERT(test, exclusive->size() == 4);
-    CRUCIBLE_TEST_ASSERT(test, exclusive->data() == storage);
+    const bool is_whole_region = shared.try_upgrade(ctx).match(
+        [](auto owned) noexcept {
+            const bool is_same_region = owned.size() == 4 && owned.data() == storage;
+            ::foundation::linear::drop(std::move(owned));
+            return is_same_region;
+        },
+        []() noexcept { return false; });
+    CRUCIBLE_TEST_ASSERT(test, is_whole_region);
 }
 
 void test_two_readers_hold_one_region(TestRunnerCtx const& test) {

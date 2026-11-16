@@ -216,8 +216,9 @@ public:
     // transition is in flight.  A lent handle opens the channel.
     [[nodiscard]] ::foundation::core::Option<ProducerHandle> producer() noexcept {
         auto lent = cells_.producer();
-        if (!lent) return ::foundation::core::none;
-        return ::foundation::core::Option<ProducerHandle>::some(ProducerHandle{std::move(*lent)});
+        if (lent.is_none()) return ::foundation::core::none;
+        return ::foundation::core::Option<ProducerHandle>::some(
+            ProducerHandle{std::move(lent).expect("the test above found a producer")});
     }
 
     // Takes the claim of the consumer role first, so a second live consumer
