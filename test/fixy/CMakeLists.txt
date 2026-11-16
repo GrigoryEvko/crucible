@@ -2472,6 +2472,9 @@ fixy_neg_compile_test(neg_sess_mint_unguarded_loop
 fixy_neg_compile_test(neg_sess_mint_unguarded_pinned_loop
   "no matching function for call to .mint_session<Spin>"
   "Loop<fixy::session::VendorPinned<foundation::algebra::lattices::VendorBackend::NV, fixy::session::Continue> >\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_sess_mint_unguarded_loop_under_pin
+  "no matching function for call to .mint_session<Spin>"
+  "with P = fixy::session::VendorPinned<foundation::algebra::lattices::VendorBackend::NV, fixy::session::Loop<fixy::session::Continue> >\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_sess_mint_vendor_none
   "no matching function for call to .mint_session<Nowhere>"
   "VendorPinned<foundation::algebra::lattices::VendorBackend::None, fixy::session::Send<.*Ping, fixy::session::End> >\\]. evaluated to .false.")

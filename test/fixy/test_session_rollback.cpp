@@ -200,6 +200,18 @@ static_assert(s::checkpoint_verdict_of(^^PinnedAbortDecide, ^^PinnedAbortFollow)
 static_assert(s::checkpoint_verdict_of(^^PinnedEndDecide, ^^PinnedEndFollow) == s::CheckpointVerdict::Compliant);
 static_assert(s::checkpoint_verdict_of(^^PinnedTailDecide, ^^CommitFollow) == s::CheckpointVerdict::Compliant);
 
+// A pin around a Loop: at the start of each side, and as a branch.  The handle
+// removes the pin first and then enters the Loop.
+using PinnedLoopDecide = Pinned<LoopDecide>;
+using PinnedLoopFollow = Pinned<LoopFollow>;
+using PinnedLoopBranchDecide = s::Select<s::Commit<s::Send<int, s::End>>, PinnedLoopDecide>;
+using PinnedLoopBranchFollow = s::Offer<s::Commit<s::Recv<int, s::End>>, LoopFollow>;
+
+static_assert(s::checkpoint_verdict_of(^^PinnedLoopDecide, ^^LoopFollow) == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^PinnedLoopFollow, ^^LoopDecide) == s::CheckpointVerdict::Compliant);
+static_assert(s::checkpoint_verdict_of(^^PinnedLoopBranchDecide, ^^PinnedLoopBranchFollow)
+              == s::CheckpointVerdict::Compliant);
+
 // ── The context gate ────────────────────────────────────────────────
 //
 // The context of a checkpoint session admits the effect row of each
@@ -455,15 +467,17 @@ int run_video_on_demand() {
 }
 
 // A loop whose checkpoint is inside it: commit, send, roll back to the
-// send, send again, end.
+// send, send again, end.  A vendor pin around the loop of one side changes
+// none of the steps.
+template <typename DecideProto, typename FollowProto>
 int run_loop_rollback() {
     Mailbox to_left;
     Mailbox to_right;
     const std::uint32_t baseline = s::watch::live_count();
-    auto left = s::mint_checkpoint_session<LoopDecide, LoopFollow>(bg_ctx(), Port{&to_left, &to_right});
-    auto right = s::mint_checkpoint_session<LoopFollow, LoopDecide>(bg_ctx(), Port{&to_right, &to_left});
+    auto left = s::mint_checkpoint_session<DecideProto, FollowProto>(bg_ctx(), Port{&to_left, &to_right});
+    auto right = s::mint_checkpoint_session<FollowProto, DecideProto>(bg_ctx(), Port{&to_right, &to_left});
 
-    auto left_saved = std::move(left).select<0>(push_label);
+    auto left_saved = std::move(left).template select<0>(push_label);
     int rc = 1;
     std::move(right).branch(pop_label, [&](auto right_saved) {
         if constexpr (std::is_same_v<typename decltype(right_saved)::protocol, s::Recv<int, s::Continue>>) {
@@ -624,11 +638,35 @@ void run_pinned_end() {
                      s::mint_checkpoint_session<CommitFollow, PinnedTailDecide>(bg_ctx(), Port{&to_right, &to_left}));
 }
 
+// The decider takes the branch that is a pinned Loop, and each end stands at
+// the head of the body of its loop.  Then the pair ends inside the loop.
+void run_pinned_loop_branch() {
+    Mailbox to_left;
+    Mailbox to_right;
+    auto left =
+        s::mint_checkpoint_session<PinnedLoopBranchDecide, PinnedLoopBranchFollow>(bg_ctx(), Port{&to_left, &to_right});
+    auto right =
+        s::mint_checkpoint_session<PinnedLoopBranchFollow, PinnedLoopBranchDecide>(bg_ctx(), Port{&to_right, &to_left});
+    auto left_loop = std::move(left).select<1>(push_label);
+    static_assert(std::is_same_v<typename decltype(left_loop)::protocol,
+                                 s::Select<s::Commit<s::Send<int, s::Continue>>, s::Roll, s::End>>,
+                  "the pinned Loop branch enters the body of the loop");
+    std::move(right).branch(pop_label, [&](auto right_loop) {
+        if constexpr (s::is_offer_v<typename decltype(right_loop)::protocol>) {
+            finish_at_end<2>(std::move(left_loop), std::move(right_loop));
+        } else {
+            ::fixy::fatal("test_session_rollback: the follower did not enter its loop");
+        }
+    });
+}
+
 }  // namespace
 
 int main() {
     if (const int rc = run_video_on_demand(); rc != 0) return rc;
-    if (const int rc = run_loop_rollback(); rc != 0) return rc;
+    if (const int rc = run_loop_rollback<LoopDecide, LoopFollow>(); rc != 0) return rc;
+    if (const int rc = run_loop_rollback<PinnedLoopDecide, LoopFollow>(); rc != 0) return rc;
+    if (const int rc = run_loop_rollback<LoopDecide, PinnedLoopFollow>(); rc != 0) return rc;
     run_roll_at_start<PinnedRollDecide, CommitFollow>();
     run_roll_at_start<CommitDecide, PinnedRollFollow>();
     run_roll_at_start<TwoPinsDecide, CommitFollow>();
@@ -636,5 +674,6 @@ int main() {
     run_roll_after_pinned_commit();
     run_pinned_abort();
     run_pinned_end();
+    run_pinned_loop_branch();
     return 0;
 }

@@ -751,6 +751,38 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
     return 0;
 }
 
+// A vendor pin around a Loop.  The handle removes the pin first and then
+// enters the Loop, so each Continue lands at the head of the body again.
+using PinnedLoopBody = s::Select<s::Send<Ping, s::Continue>, s::End>;
+using PinnedLoop = s::VendorPinned<::fixy::session::VendorBackend::NV, s::Loop<PinnedLoopBody>>;
+
+[[nodiscard]] int walk_vendor_pinned_loop() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto head = s::mint_session<PinnedLoop>(ctx, ValueWire{});
+    static_assert(std::is_same_v<typename decltype(head)::protocol, PinnedLoopBody>);
+    static_assert(std::is_same_v<typename decltype(head)::loop_ctx, s::Loop<PinnedLoopBody>>);
+    std::size_t labels = 0;
+    const auto push_label = [&labels](ValueWire&, std::size_t label) noexcept {
+        labels += label + 1;
+        return true;
+    };
+    for (int round = 0; round < 3; ++round) {
+        auto sending = std::move(head).select<0>(push_label);
+        auto next = std::move(sending).send(Ping{round}, [](ValueWire& w, Ping& p) noexcept {
+            w.last_sent = p.value;
+            return true;
+        });
+        static_assert(std::is_same_v<decltype(next), decltype(head)>, "a Continue lands at the head of the body");
+        head = std::move(next);
+    }
+    auto at_end = std::move(head).select<1>(push_label);
+    if (std::move(at_end).close().last_sent != 2 || labels != 5) {
+        ::fixy::report(::fixy::Sink::Err, "the vendor-pinned loop did not walk three rounds and then end\n");
+        return 1;
+    }
+    return 0;
+}
+
 // ── Runtime: a token moves through a session ─────────────────────────
 //
 // The sender holds Region and sends its token, so its End handle holds
@@ -1347,6 +1379,7 @@ int main() {
     if (const int rc = walk_loop_with_permission_set(); rc != 0) return rc;
     if (const int rc = move_token_through_session(); rc != 0) return rc;
     if (const int rc = walk_vendor_pinned_session(); rc != 0) return rc;
+    if (const int rc = walk_vendor_pinned_loop(); rc != 0) return rc;
     if (const int rc = walk_test_channel(); rc != 0) return rc;
     if (const int rc = walk_forked_channel(); rc != 0) return rc;
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};

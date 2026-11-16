@@ -1603,16 +1603,18 @@ constexpr auto HandleFactory::step_(Resource r, watch::session_ref session, std:
         // recurses.  Forwarding `loc` keeps the outermost caller's site
         // rather than replacing it with this frame's.
         return step_<NextBody, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
+    } else if constexpr (is_vendor_pinned_v<R>) {
+        // The vendor is a declaration for the layer above.  The handle
+        // steps the protocol that it pins.  This arm comes before the Loop
+        // arm, because is_loop_v reads under a pin, and the body of a Loop
+        // is read from the Loop itself.
+        return step_<typename R::protocol, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = detail::loop_body_t<R>;
         using InnerCtx = session_loop_ctx_rebind_inner_t<LoopCtx, detail::loop_frame_t<R, PS>>;
         // Entering an inner Loop shadows the enclosing loop context.
         // That shadowing is what binds Continue to the nearest Loop.
         return step_<InnerBody, Resource, InnerCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
-    } else if constexpr (is_vendor_pinned_v<R>) {
-        // The vendor is a declaration for the layer above.  The handle
-        // steps the protocol that it pins.
-        return step_<typename R::protocol, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
     } else {
         static_assert(is_head_v<R>, "fixy::session::diagnostic [Protocol_Ill_Formed]: "
                                     "unexpected protocol shape after resolution.  "
