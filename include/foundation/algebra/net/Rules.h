@@ -60,9 +60,11 @@
 //
 // THE COSTS
 //   R rules and K kinds.  check_rules is O(K^2 + R * E) for E the ends of a
-//   right side, with a table of K * K pairs.  Probe E4 measured 114 M compile
-//   instructions for a table that reflection read, most of it in the vector of
-//   each lookup of an annotation.  This header reads plain arrays.
+//   right side, with a table of K * K pairs.  This header reads plain arrays.
+//   The check of the value table and the combinator table of its check file
+//   costs about 88 M compile instructions together.  A table that reflection
+//   reads costs more, because of the constant arrays and strings of
+//   foundation/algebra/net/Reflect.h (THE COSTS there).
 
 #include <foundation/algebra/net/Net.h>
 

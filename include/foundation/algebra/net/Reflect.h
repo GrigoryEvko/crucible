@@ -43,8 +43,15 @@
 //
 // THE COSTS
 //   O(M + A * P + R) for M members of the namespace, A agents of P ports and R
-//   rules, then check_rules.  Probe E4 measured 114 M compile instructions
-//   for a table of three agents and two rules that reflection read.
+//   rules, then check_rules.  The constant arrays and the static strings cost
+//   the most.  reflect_constant_array and reflect_constant_string make one
+//   instance for each new length of an array or a string, and each instance
+//   costs about 25 M compile instructions.  A new content of a known length
+//   costs about 6 M.  Thus the first table of a unit, with three agents and
+//   two rules, costs about 450 M instructions, and each later table about
+//   140 M.  A read through the vector of each query and through the data of
+//   identifier_of costs about 110 M and 54 M, but each such read is a
+//   finding of the quarantine rules of the base.
 
 #include <foundation/algebra/net/Net.h>
 #include <foundation/algebra/net/Rules.h>
