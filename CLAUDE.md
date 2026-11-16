@@ -37,7 +37,7 @@ This file is the short guide. It tells you what the project needs, which command
 ### The order of work
 
 1. Move the product code onto the base: `include/crucible/`, `src/` and `vessel/`. Correct the known defects of the record path in the same work.
-2. Build the first compute path: the portable kernel graph (IR002), a CPU reference backend, and a replay that runs Crucible kernels on the memory plan. The first target is one small model whose result is the same as the result of eager PyTorch, bit for bit.
+2. Build the first compute path: the portable kernel graph (IR002), a CPU reference backend, and a replay that runs Crucible kernels on the memory plan. The first target is one small model. Crucible computes each op in its own stated order, so the result has the same bits on each run, thread count and host. A test compares that result with a higher-precision oracle within the error bound of the recipe. Eager PyTorch is not a reference, because its bits change from release to release.
 3. Add shadow handles, so that Python gets metadata and Crucible does the work.
 4. Add the first GPU backend, then the kernel search and its calibration.
 5. Add the Keeper, the Canopy and the Cipher tiers.
