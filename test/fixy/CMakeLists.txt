@@ -970,6 +970,9 @@ fixy_neg_compile_test(neg_secret_transform_takes_payload_by_value
 fixy_neg_compile_test(neg_secret_transform_takes_payload_by_value_generic
   "use of deleted function .void fixy::Secret<T>::transform\\(F&&\\) && \\[with F = .*T = long unsigned int\\]."
   "Secret_TransformCopiesPayload")
+fixy_neg_compile_test(neg_secret_transform_takes_payload_by_converted_reference
+  "use of deleted function .void fixy::Secret<T>::transform\\(F&&\\) && \\[with F = .*T = int\\]."
+  "Secret_TransformCopiesPayload")
 fixy_neg_compile_test(neg_secret_transform_with_two_call_operators
   "use of deleted function .void fixy::Secret<T>::transform\\(F&&\\) && \\[with F = .anonymous.::TwoCalls. T = int\\]."
   "Secret_TransformCopiesPayload")

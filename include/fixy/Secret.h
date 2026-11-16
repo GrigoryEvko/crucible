@@ -111,21 +111,25 @@ concept TransformReturnsNonVoid = !std::is_void_v<std::invoke_result_t<F, T&&>>;
 
 namespace detail {
 
-// True when the call of F takes its one parameter by reference.
+// True when the call of F takes its one parameter by reference to T.
 // Reflection reads the parameter, as the rvalue match of
-// foundation/core/Choice.h reads the parameter of an arm.  A callable whose
-// parameter reflection cannot read gives false, so the rule fails closed.
+// foundation/core/Choice.h reads the parameter of an arm.  A reference to a
+// different type binds to a temporary that a conversion builds from the
+// payload, which is a copy too, so the referred type must be T.  A callable
+// whose parameter reflection cannot read gives false, so the rule fails
+// closed.
 template <typename F, typename T>
 [[nodiscard]] consteval bool transform_takes_payload_by_reference_() {
     std::meta::info const parameter = ::foundation::core::detail::arm_parameter_of_<F, T>();
-    return parameter != std::meta::info{} && std::meta::is_reference_type(parameter);
+    return parameter != std::meta::info{} && std::meta::is_reference_type(parameter)
+        && std::meta::dealias(std::meta::remove_cvref(parameter)) == std::meta::dealias(^^T);
 }
 
 }  // namespace detail
 
-// A parameter by value is a copy of the payload, and nothing zeroizes that
-// copy at the end of the call.  So the callable takes the payload by
-// reference, as T const& or T&&.
+// A parameter by value is a copy of the payload, and so is a reference to a
+// different type, and nothing zeroizes that copy at the end of the call.  So
+// the callable takes the payload by reference to T, as T const& or T&&.
 template <typename F, typename T>
 concept TransformTakesPayloadByReference = detail::transform_takes_payload_by_reference_<F, T>();
 
@@ -332,15 +336,16 @@ public:
         return derived;
     }
 
-    // A callable that takes the payload by value, or whose parameter
-    // reflection cannot read, binds to this overload, so the refusal gives
-    // its reason.
+    // A callable that takes the payload by value or by reference to a
+    // different type, or whose parameter reflection cannot read, binds to
+    // this overload, so the refusal gives its reason.
     template <typename F>
         requires std::invocable<F, T&&> && TransformReturnsByValue<F, T> && TransformReturnsNonVoid<F, T>
                   && (!TransformTakesPayloadByReference<F, T>)
     void transform(F&& f) && = delete("[Secret_TransformCopiesPayload] the callable of transform() takes the payload "
-                                      "by value, and nothing zeroizes that copy at the end of the call.  Take the "
-                                      "payload by reference, as T const& or T&&, with one call operator.");
+                                      "by value or by reference to a different type, and nothing zeroizes that copy "
+                                      "at the end of the call.  Take the payload by reference, as T const& or T&&, "
+                                      "with one call operator.");
 
     // The length of a classified value is classified.  The deleted
     // accessor gives the reason at a call, and a requires-expression over
