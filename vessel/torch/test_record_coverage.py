@@ -59,6 +59,7 @@ UPDATE_WIDTH = 40
 
 HEADER = struct.Struct("<4sIII")
 OP_RECORD = struct.Struct("<QQQQ5qHHHBB")
+NAME_HEAD = struct.Struct("<QH")
 META_SIZE = ctypes.sizeof(crucible_mode._VesselLib.Meta)
 META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset
 META_DTYPE_OFFSET = crucible_mode._VesselLib.Meta.dtype.offset
@@ -84,6 +85,8 @@ class TraceOp:
     num_inputs: int
     num_outputs: int
     metas: tuple[bytes, ...]
+    # The packed op flags of the record: the mode bits and the phase.
+    flags: int
 
     def dtypes(self) -> list[int]:
         """Return the element type byte of each meta."""
@@ -105,12 +108,35 @@ def read_trace(path: Path) -> list[TraceOp]:
     for record in records:
         schema_hash, _shape, _scope, _callsite, *values = record[:9]
         num_inputs, num_outputs, num_scalars = record[9:12]
+        flags = record[13]
         metas = []
         for _ in range(num_inputs + num_outputs):
             metas.append(data[offset:offset + META_SIZE])
             offset += META_SIZE
-        ops.append(TraceOp(schema_hash, tuple(values[:num_scalars]), num_inputs, num_outputs, tuple(metas)))
+        ops.append(TraceOp(schema_hash, tuple(values[:num_scalars]), num_inputs, num_outputs, tuple(metas), flags))
     return ops
+
+
+def read_schema_names(path: Path) -> dict[int, str]:
+    """Return the name table of a .crtrace file, from each schema hash to its name.
+
+    The table follows the metadata records.  A file with no table gives an
+    empty dict.  O(n) in the size of the table.
+    """
+    data = path.read_bytes()
+    _magic, _version, num_ops, num_metas = HEADER.unpack_from(data, 0)
+    offset = HEADER.size + num_ops * OP_RECORD.size + num_metas * META_SIZE
+    if offset + 4 > len(data):
+        return {}
+    (num_names,) = struct.unpack_from("<I", data, offset)
+    offset += 4
+    names = {}
+    for _ in range(num_names):
+        schema, length = NAME_HEAD.unpack_from(data, offset)
+        offset += NAME_HEAD.size
+        names[schema] = data[offset:offset + length].decode("ascii")
+        offset += length
+    return names
 
 
 def schema_hash(name: str) -> int:

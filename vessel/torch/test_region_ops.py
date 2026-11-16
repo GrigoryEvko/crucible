@@ -32,7 +32,6 @@ Exit 0 when the list is the list of the golden file, 1 otherwise.
 
 from __future__ import annotations
 
-import ctypes
 import difflib
 import struct
 import sys
@@ -50,10 +49,11 @@ import torch.nn as nn  # noqa: E402
 import crucible_mode  # noqa: E402
 from crucible_native import attach  # noqa: E402
 
-# One intra-op thread and one inter-op thread, so that each run takes the
-# same kernels of PyTorch and gives the same operations.
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
+# The import sets one intra-op thread and one inter-op thread, so that each run
+# takes the same kernels of PyTorch and gives the same operations.  PyTorch
+# refuses a second set of the inter-op threads, so this file does not set them
+# again.
+from test_record_coverage import TraceOp, read_schema_names, read_trace  # noqa: E402
 
 GOLDEN = Path(__file__).resolve().parent / "region_ops_mlp.txt"
 
@@ -68,13 +68,9 @@ OUT_FEATURES = 4
 SEED = 0
 LEARNING_RATE = 0.01
 
-HEADER = struct.Struct("<4sIII")
-OP_RECORD = struct.Struct("<QQQQ5qHHHBB")
-META_SIZE = ctypes.sizeof(crucible_mode._VesselLib.Meta)
 META_SIZES_OFFSET = crucible_mode._VesselLib.Meta.sizes.offset
 META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset
 META_DTYPE_OFFSET = crucible_mode._VesselLib.Meta.dtype.offset
-NAME_HEAD = struct.Struct("<QH")
 
 PHASE_SHIFT = 2
 PHASE_LETTERS = "FBOX"
@@ -107,44 +103,21 @@ def describe_meta(meta: bytes) -> str:
     return f"{DTYPE_NAMES.get(dtype, f'dtype{dtype}')}[{','.join(str(size) for size in sizes)}]"
 
 
+def region_op(op: TraceOp, names: dict[int, str]) -> RegionOp:
+    """Return the line fields of one operation of a trace, with its name from the name table."""
+    metas = [describe_meta(meta) for meta in op.metas]
+    return RegionOp(
+        name=names.get(op.schema_hash, f"schema{op.schema_hash:016x}"),
+        phase=PHASE_LETTERS[(op.flags >> PHASE_SHIFT) & 0x3],
+        inputs=tuple(metas[:op.num_inputs]),
+        outputs=tuple(metas[op.num_inputs:]),
+    )
+
+
 def read_region(path: Path) -> list[RegionOp]:
     """Return the operations of a .crtrace file, each with its name.  O(n) in the size of the file."""
-    data = path.read_bytes()
-    magic, _version, num_ops, num_metas = HEADER.unpack_from(data, 0)
-    if magic != b"CRTR":
-        raise ValueError(f"{path} is no .crtrace file")
-    offset = HEADER.size
-    records = []
-    for _ in range(num_ops):
-        records.append(OP_RECORD.unpack_from(data, offset))
-        offset += OP_RECORD.size
-    metas_start = offset
-    offset += num_metas * META_SIZE
-    (num_names,) = struct.unpack_from("<I", data, offset)
-    offset += 4
-    names = {}
-    for _ in range(num_names):
-        schema, length = NAME_HEAD.unpack_from(data, offset)
-        offset += NAME_HEAD.size
-        names[schema] = data[offset:offset + length].decode("ascii")
-        offset += length
-    ops = []
-    meta_offset = metas_start
-    for record in records:
-        schema = record[0]
-        num_inputs, num_outputs = record[9], record[10]
-        flags = record[13]
-        metas = []
-        for _ in range(num_inputs + num_outputs):
-            metas.append(describe_meta(data[meta_offset:meta_offset + META_SIZE]))
-            meta_offset += META_SIZE
-        ops.append(RegionOp(
-            name=names.get(schema, f"schema{schema:016x}"),
-            phase=PHASE_LETTERS[(flags >> PHASE_SHIFT) & 0x3],
-            inputs=tuple(metas[:num_inputs]),
-            outputs=tuple(metas[num_inputs:]),
-        ))
-    return ops
+    names = read_schema_names(path)
+    return [region_op(op, names) for op in read_trace(path)]
 
 
 def record_region(directory: Path) -> list[RegionOp]:
