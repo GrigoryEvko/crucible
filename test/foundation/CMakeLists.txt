@@ -3624,6 +3624,12 @@ foundation_neg_compile_test(neg_net_rules_growth_without_door
 foundation_neg_compile_test(neg_net_rules_asymmetric
   "static assertion failed: rules: rule 'pivots_twist' for the pair 'pivot', 'pivot'"
   "changes when the two agents change places\\.")
+foundation_neg_compile_test(neg_net_reflect_stray_member
+  "static assertion failed: net: member 'count' of agent 'num' is no port"
+  "A port is a member of the type Give<T>, Take<T> or Meet<T>\\.")
+foundation_neg_compile_test(neg_net_reflect_growth_without_door
+  "static assertion failed: rules: rule 'relay_grows' replaces 2 agents with 3"
+  "only the door allow_growth admits a rule that adds agents\\.")
 
 # ── The death tests of the base ───────────────────────────────────────
 #
