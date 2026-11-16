@@ -36,6 +36,10 @@
 //     that takes the place of an interface port has the type of that port.
 //     Two ports of new agents, or two ports of the interface, have dual types
 //   - a new agent with no path to the interface, which no other agent reaches
+//   - a wire of the right side that joins the principal ports of two new
+//     agents.  Such an active pair fires again at once, so a rule of ping and
+//     pong that makes its own pair never stops.  Lafont 1990 asks for a right
+//     side with no active pair
 //   - a rule for a pair of one kind whose right side changes when the two
 //     agents change places.  The pair has no order, so such a rule gives two
 //     results for one net (an inference from the commutation of the steps)
@@ -51,7 +55,10 @@
 //                       ends after at most A steps
 //     AllocatesNothing  each right side has at most 2 agents.  The count of
 //                       the agents of a net never increases, so a reduction
-//                       reuses the slots of each pair and allocates nothing
+//                       reuses the slots of each pair and allocates nothing.
+//                       This class bounds the agents, not the steps: a token
+//                       that goes past a node replaces 2 agents with 2, and
+//                       on a ring of nodes it never stops
 //     Grows             a rule went through the growth door.  The verdict
 //                       counts the growing rules and the most agents that one
 //                       of them adds
@@ -529,6 +536,30 @@ template <std::size_t Types, std::size_t Kinds>
             .put("' (agent ")
             .put_number(agent)
             .put(" of the right side) has no path to the interface, so no other agent reaches it.");
+        return refusal;
+    }
+
+    // No wire joins the principal ports of two new agents.
+    for (std::uint32_t wire = 0; wire < side.wire_count; ++wire) {
+        RuleEnd const one = side.wires[wire].left;
+        RuleEnd const other = side.wires[wire].right;
+        if (one.side != RuleEndSide::Agent || other.side != RuleEndSide::Agent) continue;
+        AgentKind const& one_kind = signature.kinds[index_of(side.agents[one.agent])];
+        AgentKind const& other_kind = signature.kinds[index_of(side.agents[other.agent])];
+        if (one.port != one_kind.principal || other.port != other_kind.principal) continue;
+        NetVerdict refusal = NetVerdict::refuse("rules: ");
+        put_rule(refusal, rule);
+        refusal.put(": wire ")
+            .put_number(wire)
+            .put(" of the right side joins the principal ports of the new agents '")
+            .put_name(one_kind.name)
+            .put("' (agent ")
+            .put_number(one.agent)
+            .put(") and '")
+            .put_name(other_kind.name)
+            .put("' (agent ")
+            .put_number(other.agent)
+            .put(").  A right side holds no active pair, because such a pair fires again at once.");
         return refusal;
     }
 

@@ -216,6 +216,8 @@ static_assert(check_rules_of<^^twice>().says("rules: rule 'num_meets_sink' is a 
                                              "after rule 'sink_meets_num'.  A pair has at most one rule, so each step "
                                              "commutes."));
 
+// relay >< num gives the value as a join of two copies, so it makes 3 agents
+// from 2.  join gives the pair on its principal port.
 namespace grows_without_door {
 struct[[= agent{}]] num {
     Give<Value> value;
@@ -224,12 +226,25 @@ struct[[= agent{}]] relay {
     Take<Value> in;
     Give<Value> out;
 };
+struct[[= agent{}]] join {
+    Give<Value> out;
+    Take<Value> left;
+    Take<Value> right;
+};
 [[= rule<relay, num>{}]] consteval ReflectedSide relay_grows() {
-    return ReflectedSide{.agents = {^^num, ^^relay, ^^relay},
-                         .wires = {RuleWire{point_at_agent(0, 0), point_at_agent(1, 0)},
-                                   RuleWire{point_at_agent(1, 1), point_at_agent(2, 0)},
-                                   RuleWire{point_at_agent(2, 1), point_at_interface(0)}},
+    return ReflectedSide{.agents = {^^join, ^^num, ^^num},
+                         .wires = {RuleWire{point_at_agent(0, 0), point_at_interface(0)},
+                                   RuleWire{point_at_agent(1, 0), point_at_agent(0, 1)},
+                                   RuleWire{point_at_agent(2, 0), point_at_agent(0, 2)}},
                          .agent_count = 3,
+                         .wire_count = 3};
+}
+[[= rule<relay, join>{}]] consteval ReflectedSide relay_meets_join() {
+    return ReflectedSide{.agents = {^^join},
+                         .wires = {RuleWire{point_at_agent(0, 0), point_at_interface(0)},
+                                   RuleWire{point_at_agent(0, 1), point_at_interface(1)},
+                                   RuleWire{point_at_agent(0, 2), point_at_interface(2)}},
+                         .agent_count = 1,
                          .wire_count = 3};
 }
 }  // namespace grows_without_door

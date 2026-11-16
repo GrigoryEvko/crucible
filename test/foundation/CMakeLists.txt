@@ -3706,6 +3706,9 @@ foundation_neg_compile_test(neg_net_rules_changed_type
 foundation_neg_compile_test(neg_net_rules_growth_without_door
   "static assertion failed: rules: rule 'relay_grows' replaces 2 agents with 3"
   "only the door allow_growth admits a rule that adds agents\\.")
+foundation_neg_compile_test(neg_net_rules_active_pair
+  "static assertion failed: rules: rule 'ping_meets_pong': wire 0 of the right side joins the principal ports"
+  "of the new agents 'ping' \\(agent 0\\) and 'pong' \\(agent 1\\)\\.  A right side holds no active pair")
 foundation_neg_compile_test(neg_net_rules_asymmetric
   "static assertion failed: rules: rule 'pivots_twist' for the pair 'pivot', 'pivot'"
   "changes when the two agents change places\\.")

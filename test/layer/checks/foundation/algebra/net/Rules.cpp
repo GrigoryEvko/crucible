@@ -163,27 +163,55 @@ static_assert(check_rules(changed_type_table)
                         "'dup' (agent 0 of the right side) of type Value? with port 'out' of the left agent 'probe' "
                         "of type Value!.  A new port in the place of a free port keeps its type."));
 
-// A right side of three agents with no growth door.
-inline constexpr Rule relay_grows{"relay_grows", relay_kind, num_kind,
-                                  RightSide{.agents = {num_kind, relay_kind, relay_kind},
-                                            .wires = {join_ends(point_at_agent(0, 0), point_at_agent(1, 0)),
-                                                      join_ends(point_at_agent(1, 1), point_at_agent(2, 0)),
-                                                      join_ends(point_at_agent(2, 1), point_at_interface(0))},
+// ── The growth door ─────────────────────────────────────────────────────
+//
+// In the value table each kind but num takes on its principal port, so a
+// right side that grows holds an active pair or a cycle.  This table adds
+// join, which gives a pair of two values on its principal port.  relay >< num
+// gives the value as a pair of two copies, so it makes 3 agents from 2, and
+// relay >< join gives the pair on.
+
+inline constexpr KindId grown_num_kind{0};
+inline constexpr KindId grown_relay_kind{1};
+inline constexpr KindId grown_join_kind{2};
+
+inline constexpr NetSignature<1, 3> growth_kinds{
+    .type_names = {"Value"},
+    .kinds = {
+        {.name = "num", .port_names = {"value"}, .port_types = {give(value)}},
+        {.name = "relay", .port_names = {"in", "out"}, .port_types = {take(value), give(value)}},
+        {.name = "join", .port_names = {"out", "left", "right"}, .port_types = {give(value), take(value), take(value)}},
+    }};
+
+// relay >< num(a) => join(num(a), num(a)).  The interface: relay.out (0).
+inline constexpr Rule relay_grows{"relay_grows", grown_relay_kind, grown_num_kind,
+                                  RightSide{.agents = {grown_join_kind, grown_num_kind, grown_num_kind},
+                                            .wires = {join_ends(point_at_agent(0, 0), point_at_interface(0)),
+                                                      join_ends(point_at_agent(1, 0), point_at_agent(0, 1)),
+                                                      join_ends(point_at_agent(2, 0), point_at_agent(0, 2))},
                                             .agent_count = 3,
                                             .wire_count = 3}};
-inline constexpr RuleTable<1, 10, 8> growth_table{.signature = value_kinds,
-                                                  .rules = {add_meets_num, add_left_meets_num, dup_meets_num,
-                                                            cmp_meets_num, cmp_high_meets_num, negate_meets_num,
-                                                            probe_meets_num, relay_grows}};
+
+// relay >< join(l, r) => join(l, r).  The interface: relay.out (0),
+// join.left (1), join.right (2).
+inline constexpr Rule relay_meets_join{"relay_meets_join", grown_relay_kind, grown_join_kind,
+                                       RightSide{.agents = {grown_join_kind},
+                                                 .wires = {join_ends(point_at_agent(0, 0), point_at_interface(0)),
+                                                           join_ends(point_at_agent(0, 1), point_at_interface(1)),
+                                                           join_ends(point_at_agent(0, 2), point_at_interface(2))},
+                                                 .agent_count = 1,
+                                                 .wire_count = 3}};
+
+// A right side of three agents with no growth door.
+inline constexpr RuleTable<1, 3, 2> growth_table{.signature = growth_kinds, .rules = {relay_grows, relay_meets_join}};
 static_assert(check_rules(growth_table)
                   .says("rules: rule 'relay_grows' replaces 2 agents with 3, and only the door allow_growth admits a "
                         "rule that adds agents.  Such a step allocates."));
 
 // The same rule through the door: the table grows by one agent.
-inline constexpr RuleTable<1, 10, 8> door_table{
-    .signature = value_kinds,
-    .rules = {add_meets_num, add_left_meets_num, dup_meets_num, cmp_meets_num, cmp_high_meets_num, negate_meets_num,
-              probe_meets_num, allow_growth(relay_grows, "a relay copies itself for each value that it passes")}};
+inline constexpr RuleTable<1, 3, 2> door_table{
+    .signature = growth_kinds,
+    .rules = {allow_growth(relay_grows, "a relay gives each value as a pair of two copies"), relay_meets_join}};
 inline constexpr RuleVerdict door_verdict = check_rules(door_table);
 static_assert(door_verdict.is_admitted(), door_verdict);
 static_assert(door_verdict.growth() == NetGrowth::Grows && !door_verdict.allocates_nothing());
@@ -197,11 +225,45 @@ inline constexpr RuleTable<1, 10, 8> idle_door_table{
 static_assert(check_rules(idle_door_table)
                   .says("rules: rule 'add_meets_num' goes through the growth door, and its right side has 1 agents.  "
                         "Only a rule that adds agents takes the door."));
-inline constexpr RuleTable<1, 10, 8> empty_reason_table{.signature = value_kinds,
-                                                        .rules = {add_meets_num, add_left_meets_num, dup_meets_num,
-                                                                  cmp_meets_num, cmp_high_meets_num, negate_meets_num,
-                                                                  probe_meets_num, allow_growth(relay_grows, "")}};
+inline constexpr RuleTable<1, 3, 2> empty_reason_table{.signature = growth_kinds,
+                                                       .rules = {allow_growth(relay_grows, ""), relay_meets_join}};
 static_assert(!check_rules(empty_reason_table).is_admitted());
+
+// ── An active pair in a right side ──────────────────────────────────────
+//
+// ping >< pong => ping, pong with their principal ports joined.  The step
+// makes its own pair again, so the reduction never stops, and the count of
+// the agents stays the same.
+
+inline constexpr NetSignature<1, 2> ping_pong_kinds{
+    .type_names = {"Value"},
+    .kinds = {
+        {.name = "ping", .port_names = {"out", "in"}, .port_types = {give(value), take(value)}},
+        {.name = "pong", .port_names = {"in", "out"}, .port_types = {take(value), give(value)}},
+    }};
+
+// The interface: ping.in (0), pong.out (1).
+inline constexpr Rule ping_meets_pong{"ping_meets_pong", KindId{0}, KindId{1},
+                                      RightSide{.agents = {KindId{0}, KindId{1}},
+                                                .wires = {join_ends(point_at_agent(0, 0), point_at_agent(1, 0)),
+                                                          join_ends(point_at_agent(0, 1), point_at_interface(0)),
+                                                          join_ends(point_at_agent(1, 1), point_at_interface(1))},
+                                                .agent_count = 2,
+                                                .wire_count = 3}};
+inline constexpr RuleTable<1, 2, 1> ping_pong_table{.signature = ping_pong_kinds, .rules = {ping_meets_pong}};
+static_assert(check_rules(ping_pong_table)
+                  .says("rules: rule 'ping_meets_pong': wire 0 of the right side joins the principal ports of the new "
+                        "agents 'ping' (agent 0) and 'pong' (agent 1).  A right side holds no active pair, because "
+                        "such a pair fires again at once."));
+
+// The same pair with a right side that joins the two free ports shrinks.
+inline constexpr Rule ping_pong_annihilate{"ping_pong_annihilate", KindId{0}, KindId{1},
+                                           RightSide{.agents = {},
+                                                     .wires = {join_ends(point_at_interface(0), point_at_interface(1))},
+                                                     .agent_count = 0,
+                                                     .wire_count = 1}};
+inline constexpr RuleTable<1, 2, 1> annihilate_table{.signature = ping_pong_kinds, .rules = {ping_pong_annihilate}};
+static_assert(check_rules(annihilate_table).growth() == NetGrowth::Shrinks);
 
 // A rule that reads a boundary agent, and a rule whose pair is not dual.
 inline constexpr Rule result_meets_num{"result_meets_num", result_kind, num_kind, RightSide{}};
