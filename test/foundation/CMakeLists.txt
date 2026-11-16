@@ -3076,6 +3076,7 @@ foundation_test(test_core_iteration)
 # grains.
 foundation_test(test_core_reduce)
 foundation_test(test_core_scan)
+foundation_test(test_core_sort)
 
 foundation_neg_compile_test(neg_core_view_windows_zero_width
   "no matching function for call to .foundation::core::View<int>::windows<0>\\(\\)."
