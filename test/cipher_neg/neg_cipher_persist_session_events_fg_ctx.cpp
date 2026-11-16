@@ -17,5 +17,5 @@ int main() {
     const auto hash =
         cipher.persist_session_events(::foundation::effects::testing::foreground(), view, store_ctx.cap().alloc,
                                       ::fixy::View<const ::crucible::Cipher::SessionEvent>{});
-    return static_cast<bool>(hash) ? 0 : 1;
+    return hash.is_ok() ? 0 : 1;
 }

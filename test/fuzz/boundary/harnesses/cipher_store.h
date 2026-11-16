@@ -157,7 +157,7 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
 
     const auto loaded_events =
         cipher.load_session_events(ctx, view, test_alloc(), ::fixy::session::SessionTagId{session_raw});
-    loaded_events.with_view([session_raw](::fixy::View<SessionEvent const> events) {
+    loaded_events.events.with_view([session_raw](::fixy::View<SessionEvent const> events) {
         for (const SessionEvent& event : events) {
             CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op()));
             CRUCIBLE_FUZZ_CLAIM("cipher_store", event.session().value == session_raw);

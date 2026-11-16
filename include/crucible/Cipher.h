@@ -212,6 +212,38 @@ public:
     // The text of a reason, for a report to a person.
     [[nodiscard]] static ::fixy::TextView open_error_text(OpenError reason) noexcept;
 
+    // The reason that persist_session_events stores no batch.  Each value
+    // is a condition that the store tests.
+    enum class PersistRefusal : std::uint8_t {
+        // The batch holds no event.
+        empty_batch,
+        // The batch holds more than MAX_SESSION_EVENT_BATCH_EVENTS events.
+        batch_above_limit,
+        // The events of the batch belong to more than one session.
+        mixed_sessions,
+        // The step ids of the events are not consecutive.
+        steps_not_consecutive,
+        // The federation entry of the batch does not encode.
+        entry_encode_failed,
+        // The directory of the session does not open, or its sync fails.
+        session_directory_failed,
+        // The store holds a batch file of the hash with different bytes.
+        stored_batch_differs,
+        // The write or the flush of the batch file fails.
+        batch_write_failed,
+        // The append or the flush of the index line fails.
+        index_append_failed,
+    };
+
+    // The text of a refusal, for a report to a person.
+    [[nodiscard]] static ::fixy::TextView persist_refusal_text(PersistRefusal reason) noexcept;
+
+    // The reason that persist_session_events gives no hash: a refusal of
+    // the store, or the LoadError of a batch file that the store holds
+    // under the hash and that does not read.
+    using PersistError = ::fixy::OneOf<PersistRefusal, LoadError>;
+    using PersistResult = ::fixy::Result<ContentHash, PersistError>;
+
     // The open call creates the root and its object directory and reads
     // HEAD and the log.  Its context must admit IO and Block, and the read
     // of the log takes the allocation capability.  A root that the open
@@ -435,25 +467,39 @@ public:
             [](::foundation::os::Errno) -> CommitResult { return ::fixy::err(CommitError::clock_read); });
     }
 
-    // Stores one batch of session events and indexes it.  The events must
-    // belong to one session and carry consecutive step ids.  A refused or
-    // failed batch gives the none hash.  The encode of the batch takes the
-    // allocation capability.
+    // Stores one batch of session events and indexes it, and gives the
+    // content hash of the batch.  The events must belong to one session and
+    // carry consecutive step ids.  A refused or failed batch gives its
+    // reason.  A batch file of the hash that the store holds already and
+    // that does not read gives the LoadError of its read.  The encode of the
+    // batch takes the allocation capability.
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
-    [[nodiscard]] ContentHash persist_session_events(Ctx const& ctx, OpenView const& view,
-                                                     ::foundation::effects::Alloc allocation,
-                                                     ::fixy::View<SessionEvent const> events) {
+    [[nodiscard]] PersistResult persist_session_events(Ctx const& ctx, OpenView const& view,
+                                                       ::foundation::effects::Alloc allocation,
+                                                       ::fixy::View<SessionEvent const> events) {
         return persist_session_events_(file_ctx_(ctx), view, allocation, events);
     }
+
+    // The events of a load, in step order, and the number of batches of the
+    // index that the load skips.  A batch is skipped when its file does not
+    // read or when it fails a check, and the load reports each skip with
+    // its LoadError.  A second index line of a batch that the load holds is
+    // no skip, because a writer that stores a batch again appends its line
+    // again.  A batch whose steps overlap the events of the load is a skip.
+    struct SessionEventLoad {
+        ::foundation::core::GrowList<SessionEvent> events =
+            ::foundation::core::mint_grow_list<SessionEvent>(::fixy::max_of<std::size_t>);
+        std::size_t skipped_batches = 0;
+    };
 
     // The events of one session from the step from_step on, in step order.
     // The read of the index takes the allocation capability.
     template <typename Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
-    [[nodiscard]] auto load_session_events(Ctx const& ctx, OpenView const& view, ::foundation::effects::Alloc a,
-                                           ::fixy::session::SessionTagId session,
-                                           ::fixy::session::StepId from_step = {}) const {
+    [[nodiscard]] SessionEventLoad
+    load_session_events(Ctx const& ctx, OpenView const& view, ::foundation::effects::Alloc a,
+                        ::fixy::session::SessionTagId session, ::fixy::session::StepId from_step = {}) const {
         return load_session_events_(file_ctx_(ctx), view, a, session, from_step);
     }
 
@@ -556,9 +602,10 @@ private:
                                                      ::foundation::effects::Alloc a, ContentHash content_hash,
                                                      ::fixy::BumpArena& arena) const;
 
-    [[nodiscard]] ::foundation::core::GrowList<SessionEvent>
-    load_session_events_(FileCtx const& file_ctx, OpenView const&, ::foundation::effects::Alloc a,
-                         ::fixy::session::SessionTagId session, ::fixy::session::StepId from_step) const;
+    [[nodiscard]] SessionEventLoad load_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                                        ::foundation::effects::Alloc a,
+                                                        ::fixy::session::SessionTagId session,
+                                                        ::fixy::session::StepId from_step) const;
 
     // The commit that record_event starts.  The reading is the time of the
     // commit, and a clock reader is the only source of one.  The in-memory
@@ -567,9 +614,9 @@ private:
     [[nodiscard]] CommitResult advance_head(FileCtx const& file_ctx, OpenView const&, ContentHash content_hash,
                                             uint64_t step_id, ::fixy::MonotonicClockBytes<std::uint64_t> committed_at);
 
-    [[nodiscard]] ContentHash persist_session_events_(FileCtx const& file_ctx, OpenView const&,
-                                                      ::foundation::effects::Alloc allocation,
-                                                      ::fixy::View<SessionEvent const> events);
+    [[nodiscard]] PersistResult persist_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                                        ::foundation::effects::Alloc allocation,
+                                                        ::fixy::View<SessionEvent const> events);
 
     // The head hash that the text of a HEAD file names, or none when the
     // text before its first newline is no hexadecimal number.

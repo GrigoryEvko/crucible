@@ -2,8 +2,9 @@
 
 // The reason that a loader gives when it refuses an image: deserialize_region
 // and deserialize_branch of crucible/Serialize.h, and load_content_addressed
-// of crucible/Cipher.h.  A report of a damaged cache names the reason, so a
-// person can act on it.  Each value is a condition that a loader tests.
+// and load_session_events of crucible/Cipher.h.  A report of a damaged cache
+// names the reason, so a person can act on it.  Each value is a condition
+// that a loader tests.
 // load_error_text gives the text of a reason for report() of the Report
 // family.
 
@@ -49,6 +50,19 @@ enum class LoadError : std::uint8_t {
     file_size,
     // The object of the hash holds a region with a different content hash.
     object_hash_mismatch,
+    // The federation entry of a session-event batch does not decode.
+    batch_entry_malformed,
+    // The entry of a session-event batch names a content hash or a row hash
+    // that is not the hash of its index line, or its payload does not hash
+    // to that content hash.
+    batch_hash_mismatch,
+    // A session-event batch holds a count of events or a range of steps that
+    // is not the count or the range of its index line.
+    batch_count_mismatch,
+    // An event of a session-event batch belongs to a different session, its
+    // steps are not consecutive, or the batch names a step that the load
+    // holds already.
+    batch_steps_mismatch,
 };
 
 // The text of a reason, for a report to a person.  Each reason has its own
@@ -85,6 +99,15 @@ enum class LoadError : std::uint8_t {
             return ::fixy::TextView{"the file of the object is empty, above its limit, or shorter than its size"};
         case LoadError::object_hash_mismatch:
             return ::fixy::TextView{"the object of the hash holds a region with a different content hash"};
+        case LoadError::batch_entry_malformed:
+            return ::fixy::TextView{"the federation entry of the session-event batch does not decode"};
+        case LoadError::batch_hash_mismatch:
+            return ::fixy::TextView{"the session-event batch does not have the hashes that its index line names"};
+        case LoadError::batch_count_mismatch:
+            return ::fixy::TextView{"the session-event batch does not hold the events that its index line counts"};
+        case LoadError::batch_steps_mismatch:
+            return ::fixy::TextView{
+                "an event of the session-event batch has another session, a gap in its steps, or a loaded step"};
         default:
             ::fixy::unreachable();
     }

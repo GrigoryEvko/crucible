@@ -507,6 +507,27 @@ struct IndexLine {
     return ::fixy::some(IndexLine{.first = first, .last = last, .count = count, .hash = hash});
 }
 
+// True when lines holds a line equal to line.  The lines are in the order of
+// their first steps, so the search halves its range at each step.
+// Complexity: O(log n) in the number of lines.
+[[nodiscard]] bool holds_index_line_(::fixy::View<IndexLine const> lines, IndexLine const& line) noexcept {
+    std::size_t low = 0;
+    std::size_t high = lines.size();
+    while (low < high) {
+        const std::size_t middle = low + (high - low) / 2;
+        if (lines.get(middle).expect("the middle is inside the lines")->first < line.first) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    for (const ::fixy::Ref<const IndexLine> found : lines.get(low)) {
+        return found->first == line.first && found->last == line.last && found->count == line.count
+            && found->hash == line.hash;
+    }
+    return false;
+}
+
 // The name of the batch file of hash in its session directory:
 // "<16 hexadecimal digits>.cfed".
 [[nodiscard]] EntryPath batch_entry_(std::uint64_t hash) noexcept {
@@ -650,13 +671,13 @@ Cipher::LoadResult Cipher::load_content_addressed_(FileCtx const& file_ctx, Open
     return LoadedContentAddressedRegionPayload{loaded_region.value(), false};
 }
 
-ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView const&,
-                                            ::foundation::effects::Alloc allocation,
-                                            ::fixy::View<SessionEvent const> events) {
-    if (events.size() == 0) return ContentHash{};
+Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                                      ::foundation::effects::Alloc allocation,
+                                                      ::fixy::View<SessionEvent const> events) {
+    if (events.size() == 0) return ::fixy::err(PersistRefusal::empty_batch);
 
     if (events.size() > MAX_SESSION_EVENT_BATCH_EVENTS) {
-        return ContentHash{};
+        return ::fixy::err(PersistRefusal::batch_above_limit);
     }
 
     const ::fixy::session::SessionTagId session = events.get(0).expect("the batch holds an event")->session();
@@ -666,11 +687,11 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
     uint64_t previous_step = 0;
     for (const SessionEvent& event : events) {
         if (event.session() != session) [[unlikely]] {
-            return ContentHash{};
+            return ::fixy::err(PersistRefusal::mixed_sessions);
         }
         const uint64_t step = event.step_id().value;
         if (has_previous && (previous_step == ::fixy::max_of<uint64_t> || previous_step + 1 != step)) [[unlikely]] {
-            return ContentHash{};
+            return ::fixy::err(PersistRefusal::steps_not_consecutive);
         }
         previous_step = step;
         has_previous = true;
@@ -678,7 +699,7 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
 
     const std::size_t payload_bytes = events.size() * sizeof(SessionEvent);
     if (payload_bytes > MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES) {
-        return ContentHash{};
+        return ::fixy::err(PersistRefusal::batch_above_limit);
     }
 
     // Each event goes to the batch through its own encoder, which is
@@ -701,7 +722,7 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
     ::fixy::HeapArray<std::byte> encoded =
         ::fixy::mint_heap_array(allocation, cipher::federation::FEDERATION_HEADER_BYTES + payload_bytes, std::byte{0});
     if (cipher::federation::serialize_federation_entry(encoded.view(), key, payload.view()).is_err()) {
-        return ContentHash{};
+        return ::fixy::err(PersistRefusal::entry_encode_failed);
     }
 
     // The index line: "<first_step>,<last_step>,<count>,<16-hex hash>\n".
@@ -729,41 +750,42 @@ ContentHash Cipher::persist_session_events_(FileCtx const& file_ctx, OpenView co
     // model.  The open of each level makes it when it is missing and syncs
     // the directory that holds it.  A batch file of the hash must hold the
     // same bytes, and the replace makes a new batch file durable before the
-    // index names it.
-    const bool is_indexed = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+    // index names it.  A batch file of the hash that does not read gives
+    // the LoadError of its read.
+    using Indexed = ::fixy::Result<::fixy::Unit, PersistError>;
+    Indexed indexed = with_file_ctx_(file_ctx, [&](auto const& ctx) -> Indexed {
         const ::fixy::fs::Dirfd session_dir = open_durable_directory_at_(
             ctx, open_durable_directory_at_(ctx, root_dirfd_, "session_events"), session_name.c_text());
-        if (!session_dir.is_open()) return false;
+        if (!session_dir.is_open()) return ::fixy::err(PersistRefusal::session_directory_failed);
         const bool is_batch_present = ::fixy::fs::has_entry_at(ctx, session_dir, batch.c_text()).value_or(false);
-        const bool is_batch_stored = is_batch_present
-                                       ? read_batch_at_(ctx, allocation, session_dir, batch.c_text(), encoded.size())
-                                             .match(
-                                                 [&encoded](::fixy::HeapArray<std::byte> stored) {
-                                                     return ::fixy::equal(stored.view(), encoded.view());
-                                                 },
-                                                 [](LoadError) { return false; })
-                                       : replace_entry_at_(ctx, session_dir, batch.c_text().view(),
-                                                           ::fixy::View<std::byte const>{encoded.view()});
-        return is_batch_stored && append_entry_at_(ctx, session_dir, "index", index_line);
+        if (is_batch_present) {
+            CRUCIBLE_TRY(stored, read_batch_at_(ctx, allocation, session_dir, batch.c_text(), encoded.size()));
+            if (!::fixy::equal(stored.view(), encoded.view())) return ::fixy::err(PersistRefusal::stored_batch_differs);
+        } else if (!replace_entry_at_(ctx, session_dir, batch.c_text().view(),
+                                      ::fixy::View<std::byte const>{encoded.view()})) {
+            return ::fixy::err(PersistRefusal::batch_write_failed);
+        }
+        if (!append_entry_at_(ctx, session_dir, "index", index_line)) {
+            return ::fixy::err(PersistRefusal::index_append_failed);
+        }
+        return ::fixy::Unit{};
     });
-    if (!is_indexed) {
-        return ContentHash{};
-    }
+    CRUCIBLE_TRY(_, std::move(indexed));
     return hash;
 }
 
-::foundation::core::GrowList<Cipher::SessionEvent>
-Cipher::load_session_events_(FileCtx const& file_ctx, OpenView const&, ::foundation::effects::Alloc allocation,
-                             ::fixy::session::SessionTagId session, ::fixy::session::StepId from_step) const {
-    // The index bounds no count of events, so the list takes the largest
-    // count of a View.
-    ::foundation::core::GrowList<SessionEvent> out =
-        ::foundation::core::mint_grow_list<SessionEvent>(::fixy::max_of<std::size_t>);
+Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, OpenView const&,
+                                                      ::foundation::effects::Alloc allocation,
+                                                      ::fixy::session::SessionTagId session,
+                                                      ::fixy::session::StepId from_step) const {
+    // The index bounds no count of events, so the list of the load takes
+    // the largest count of a View.
+    SessionEventLoad loaded{};
     const EntryPath session_directory = session_entry_(session);
     auto opened = with_file_ctx_(file_ctx, [&](auto const& ctx) {
         return ::fixy::fs::open_dirfd_at(ctx, root_dirfd_, session_directory.c_text());
     });
-    if (opened.is_err()) return out;
+    if (opened.is_err()) return loaded;
     const ::fixy::fs::Dirfd session_dir = std::move(opened).expect("the session directory opened");
 
     // The index has no bound of its own, so the text takes the largest
@@ -777,88 +799,121 @@ Cipher::load_session_events_(FileCtx const& file_ctx, OpenView const&, ::foundat
 
     uint64_t highest_loaded = from_step.value;
     bool have_loaded = false;
-    for (::fixy::TextView rest = index.view(); rest.size() != 0;) {
-        const LineSplit split = split_line_(rest);
-        rest = split.rest;
-        ::fixy::Option<IndexLine> parsed = parse_index_line_(split.line);
-        if (parsed.is_none()) continue;
-        const IndexLine index_line = std::move(parsed).expect("the index line parsed");
+    // The lines of the loaded batches.  Each loaded batch starts after the
+    // last step that the load held before it, so the lines are in the order
+    // of their first steps.
+    ::foundation::core::GrowList<IndexLine> loaded_lines =
+        ::foundation::core::mint_grow_list<IndexLine>(::fixy::max_of<std::size_t>);
+
+    // The events of the batch of one index line, or the reason that the load
+    // skips the batch.  The hashes prove only that the batch is the one its
+    // writer stored, and anyone who writes the store can compute them.  So
+    // each record goes through the event decoder, which is the one route
+    // from bytes to an event and refuses a record with a byte outside its
+    // field.  Complexity: one read of the batch file and linear in its size.
+    using CheckedBatch = ::fixy::Result<::fixy::HeapArray<SessionEvent>, LoadError>;
+    const auto read_checked_batch = [&](IndexLine const& index_line) -> CheckedBatch {
         const uint64_t first = index_line.first;
         const uint64_t last = index_line.last;
         const uint64_t count = index_line.count;
-        if (last < from_step.value) continue;
-        if (count == 0 || count > MAX_SESSION_EVENT_BATCH_EVENTS) continue;
-        if ((last - first + 1u) != count) continue;
+        if (count == 0 || count > MAX_SESSION_EVENT_BATCH_EVENTS || (last - first + 1u) != count) {
+            return ::fixy::err(LoadError::batch_count_mismatch);
+        }
 
         const ContentHash hash{index_line.hash};
         const EntryPath batch = batch_entry_(index_line.hash);
-        // A batch that does not read is skipped, whatever the reason.
-        ::fixy::Result<::fixy::HeapArray<std::byte>, LoadError> read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-            return read_batch_at_(ctx, allocation, session_dir, batch.c_text(),
-                                  cipher::federation::FEDERATION_HEADER_BYTES + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES);
-        });
-        if (read.is_err()) continue;
-        const ::fixy::HeapArray<std::byte> bytes = std::move(read).expect("the batch file read");
+        CRUCIBLE_TRY(bytes, with_file_ctx_(file_ctx, [&](auto const& ctx) {
+                         return read_batch_at_(ctx, allocation, session_dir, batch.c_text(),
+                                               cipher::federation::FEDERATION_HEADER_BYTES
+                                                   + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES);
+                     }));
 
         auto entry = cipher::federation::deserialize_untrusted_federation_entry(
             bytes.view(), cipher::federation::FEDERATION_UNIVERSE_CARDINALITY);
-        if (entry.is_err()) continue;
+        if (entry.is_err()) return ::fixy::err(LoadError::batch_entry_malformed);
         const cipher::federation::FederationEntryView view = std::move(entry).expect("the entry decoded");
-        if (view.header.content_hash != hash) continue;
-        if (view.header.row_hash != SESSION_EVENT_FEDERATION_ROW_HASH) {
-            continue;
+        const bool has_named_hashes = view.header.content_hash == hash
+                                   && view.header.row_hash == SESSION_EVENT_FEDERATION_ROW_HASH
+                                   && session_event_batch_hash(view.payload) == hash;
+        if (!has_named_hashes) return ::fixy::err(LoadError::batch_hash_mismatch);
+        if ((view.payload.size() % sizeof(SessionEvent)) != 0u || view.payload.size() / sizeof(SessionEvent) != count) {
+            return ::fixy::err(LoadError::batch_count_mismatch);
         }
-        if (session_event_batch_hash(view.payload) != hash) continue;
-        if ((view.payload.size() % sizeof(SessionEvent)) != 0u) continue;
 
-        const std::size_t n = view.payload.size() / sizeof(SessionEvent);
-        if (n != count) continue;
-
-        // The hashes prove only that the batch is the one its writer
-        // stored, and anyone who writes the store can compute them.  So
-        // each record goes through the event decoder, which is the one
-        // route from bytes to an event and refuses a record with a byte
-        // outside its field.
         auto decoded = ::fixy::session::decode_session_log(allocation, view.payload);
-        if (decoded.is_err()) continue;
-        const ::fixy::HeapArray<SessionEvent> events = std::move(decoded).expect("the batch decoded");
+        if (decoded.is_err()) return ::fixy::err(LoadError::field_out_of_range);
+        ::fixy::HeapArray<SessionEvent> events = std::move(decoded).expect("the batch decoded");
         // The count check above gives the batch count events, and count is
         // above zero.
-        if (events.view().get(0).expect("the batch holds an event")->step_id().value != first) continue;
-        if (events.view().get(events.size() - 1).expect("the batch holds an event")->step_id().value != last) {
-            continue;
-        }
-        bool is_valid_batch = true;
+        const bool has_named_range =
+            events.view().get(0).expect("the batch holds an event")->step_id().value == first
+            && events.view().get(events.size() - 1).expect("the batch holds an event")->step_id().value == last;
+        if (!has_named_range) return ::fixy::err(LoadError::batch_count_mismatch);
         bool has_previous = false;
         uint64_t previous_step = 0;
         for (const SessionEvent& event : events.view()) {
             const uint64_t step = event.step_id().value;
-            const bool is_out_of_session = event.session() != session;
             const bool is_out_of_sequence =
                 has_previous && (previous_step == ::fixy::max_of<uint64_t> || previous_step + 1u != step);
-            const bool is_loaded_already = have_loaded && step <= highest_loaded;
-            if (is_out_of_session || is_out_of_sequence || is_loaded_already) {
-                is_valid_batch = false;
-                break;
-            }
+            if (event.session() != session || is_out_of_sequence) return ::fixy::err(LoadError::batch_steps_mismatch);
             previous_step = step;
             has_previous = true;
         }
-        if (!is_valid_batch) continue;
+        // The steps of the batch are consecutive, so a batch whose first
+        // step is at or before the last step of the load overlaps the steps
+        // of the load.  The check comes after the read, so a second line of
+        // a batch that does not read gives the reason of the read.
+        if (have_loaded && first <= highest_loaded) return ::fixy::err(LoadError::batch_steps_mismatch);
+        return events;
+    };
+
+    for (::fixy::TextView rest = index.view(); rest.size() != 0;) {
+        const LineSplit split = split_line_(rest);
+        rest = split.rest;
+        // A line that does not parse names no batch.  A crash in the middle
+        // of an append leaves such a line, and the next persist of its batch
+        // appends the line again.
+        ::fixy::Option<IndexLine> parsed = parse_index_line_(split.line);
+        if (parsed.is_none()) continue;
+        const IndexLine index_line = std::move(parsed).expect("the index line parsed");
+        if (index_line.last < from_step.value) continue;
+        // A writer that stores a batch again appends its line again, and the
+        // load holds the events of that batch.  Each other line whose first
+        // step the load holds names a batch that overlaps the events of the
+        // load, and the check of the batch skips it with a report.
+        const bool is_loaded_again =
+            have_loaded && index_line.last <= highest_loaded
+            && loaded_lines.with_view([&index_line](::fixy::View<IndexLine const> lines) noexcept {
+                   return holds_index_line_(lines, index_line);
+               });
+        if (is_loaded_again) continue;
+
+        CheckedBatch checked = read_checked_batch(index_line);
+        for (const LoadError reason : checked.err()) {
+            const ::fixy::FixedText<16> hash_digits = hex_digits_(index_line.hash);
+            ::fixy::report(::fixy::Sink::Err,
+                           "[crucible] the Cipher store skips the session-event batch {} of the steps {} to {}: {}\n",
+                           hash_digits.view(), index_line.first, index_line.last, load_error_text(reason));
+            ++loaded.skipped_batches;
+        }
+        if (checked.is_err()) continue;
+        const ::fixy::HeapArray<SessionEvent> events = std::move(checked).expect("the batch passed each check");
 
         // The steps of the batch are first, first + 1, ..., last, and
         // last is at or after from_step.  So the events at from_step or
         // after are one suffix of the batch, and it is not empty.
-        const std::uint64_t skipped = from_step.value > first ? from_step.value - first : std::uint64_t{0};
+        const std::uint64_t skipped =
+            from_step.value > index_line.first ? from_step.value - index_line.first : std::uint64_t{0};
         const ::fixy::View<SessionEvent const> suffix =
             events.view().window(skipped, events.size() - skipped).expect("the suffix is inside the batch");
         for (const SessionEvent& event : suffix) {
-            out.append(allocation, event).expect("the list of the events has no maximum");
+            loaded.events.append(allocation, event).expect("the list of the events has no maximum");
         }
-        highest_loaded = last;
+        loaded_lines.append(allocation, index_line).expect("the list of the loaded lines has no maximum");
+        highest_loaded = index_line.last;
         have_loaded = true;
     }
-    return out;
+    return loaded;
 }
 
 ContentHash Cipher::hash_at_step(OpenView const&, uint64_t step_id) const {
@@ -1045,6 +1100,31 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
             return ::fixy::TextView{"the process may not make or open a part of the root"};
         case OpenError::open_failed:
             return ::fixy::TextView{"the make or the open of a part of the root fails"};
+        default:
+            ::fixy::unreachable();
+    }
+}
+
+::fixy::TextView Cipher::persist_refusal_text(PersistRefusal reason) noexcept {
+    switch (reason) {
+        case PersistRefusal::empty_batch:
+            return ::fixy::TextView{"the batch holds no event"};
+        case PersistRefusal::batch_above_limit:
+            return ::fixy::TextView{"the batch holds more events than the limit of a batch"};
+        case PersistRefusal::mixed_sessions:
+            return ::fixy::TextView{"the events of the batch belong to more than one session"};
+        case PersistRefusal::steps_not_consecutive:
+            return ::fixy::TextView{"the step ids of the events of the batch are not consecutive"};
+        case PersistRefusal::entry_encode_failed:
+            return ::fixy::TextView{"the federation entry of the batch does not encode"};
+        case PersistRefusal::session_directory_failed:
+            return ::fixy::TextView{"the directory of the session does not open, or its sync fails"};
+        case PersistRefusal::stored_batch_differs:
+            return ::fixy::TextView{"the store holds a batch file of the hash with different bytes"};
+        case PersistRefusal::batch_write_failed:
+            return ::fixy::TextView{"the write or the flush of the batch file fails"};
+        case PersistRefusal::index_append_failed:
+            return ::fixy::TextView{"the append or the flush of the index line fails"};
         default:
             ::fixy::unreachable();
     }

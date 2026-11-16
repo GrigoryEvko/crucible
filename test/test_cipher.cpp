@@ -5,6 +5,7 @@
 #include <memory>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/Process.h>
 #include <fixy/os/Time.h>
 #include <fixy/session/Subtype.h>
 #include "test_assert.h"
@@ -123,11 +124,66 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
 }
 
 // The step of the event at position of a list of loaded events.
-[[nodiscard]] static std::uint64_t step_at(::foundation::core::GrowList<crucible::Cipher::SessionEvent> const& events,
-                                           std::size_t position) {
-    return events.with_element(
+[[nodiscard]] static std::uint64_t step_at(crucible::Cipher::SessionEventLoad const& loaded, std::size_t position) {
+    return loaded.events.with_element(
         position, [](crucible::Cipher::SessionEvent const& event) noexcept { return event.step_id().value; },
         [] noexcept -> std::uint64_t { ::fixy::fatal("the position is inside the list of loaded events"); });
+}
+
+// The hash of a batch that the store persists.  A refusal ends the test.
+[[nodiscard]] static crucible::ContentHash persisted_hash(crucible::Cipher::PersistResult const& persisted) {
+    return persisted.match([](crucible::ContentHash hash) { return hash; },
+                           [](crucible::Cipher::PersistError const&) -> crucible::ContentHash {
+                               ::fixy::fatal("the store refuses a batch that the test persists");
+                           });
+}
+
+// The directory of the root of cipher.
+[[nodiscard]] static ::fixy::fs::Dirfd root_dirfd_of(crucible::Cipher const& cipher) {
+    return ::fixy::fs::open_dirfd(
+               store_ctx(), ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(cipher.root()))
+                                .expect("the sanitizer passes the root of the test"))
+        .expect("the root of the test opens");
+}
+
+// The path of the directory of the events of session under the root:
+// "session_events/<16 digits>/".
+[[nodiscard]] static ::foundation::os::PathText<64> session_events_path(::fixy::session::SessionTagId session) {
+    ::foundation::os::PathText<64> path{};
+    path.append(::fixy::TextView{"session_events/"}).expect("the session path fits its text");
+    path.append_hex<16>(session.value).expect("the session path fits its text");
+    path.append('/').expect("the session path fits its text");
+    return path;
+}
+
+// Writes bytes over the batch file of hash in the directory of session under
+// the root of cipher.  No bytes empty the file, so that a read of the file
+// gives LoadError::file_size.
+static void overwrite_batch_file(crucible::Cipher const& cipher, ::fixy::session::SessionTagId session,
+                                 crucible::ContentHash hash, ::fixy::View<std::byte const> bytes) {
+    ::foundation::os::PathText<64> batch = session_events_path(session);
+    batch.append_hex<16>(hash.raw()).expect("the batch path fits its text");
+    batch.append(::fixy::TextView{".cfed"}).expect("the batch path fits its text");
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    const ::fixy::fs::OwnedFd file =
+        ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root_dirfd_of(cipher), batch.c_text())
+            .expect("the test opens the batch file to write it")
+            .consume();
+    assert(::fixy::fs::write_full(store_ctx(), file, bytes).is_ok());
+}
+
+// Appends line to the index of the events of session under the root of
+// cipher.
+static void append_index_line(crucible::Cipher const& cipher, ::fixy::session::SessionTagId session,
+                              ::fixy::TextView line) {
+    ::foundation::os::PathText<64> index = session_events_path(session);
+    index.append(::fixy::TextView{"index"}).expect("the index path fits its text");
+    using WriteAppend = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteAppend>;
+    const ::fixy::fs::OwnedFd file =
+        ::fixy::fs::mint_file_at<WriteAppend>(store_ctx(), root_dirfd_of(cipher), index.c_text())
+            .expect("the test opens the index to append a line")
+            .consume();
+    assert(::fixy::fs::write_full(store_ctx(), file, line).is_ok());
 }
 
 // The region of a load that gives one.
@@ -505,27 +561,113 @@ int main() {
         const auto first_batch = session_batch(10, 10);
         const auto second_batch = session_batch(20, 5);
         const crucible::ContentHash first_hash =
-            cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view());
+            persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()));
         assert(static_cast<bool>(first_hash));
-        assert(static_cast<bool>(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch.view())));
+        const crucible::ContentHash second_hash =
+            persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch.view()));
+        assert(static_cast<bool>(second_hash));
         // A batch whose file the store holds gives its hash again, after a
         // compare of the stored bytes with the bytes of the batch.
-        assert(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()) == first_hash);
+        assert(persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()))
+               == first_hash);
 
         const ::fixy::session::SessionTagId session =
             first_batch.view().get(0).expect("the first batch holds ten events")->session();
         const auto from_middle =
             cipher.load_session_events(store_ctx(), ov, g_test.alloc, session, ::fixy::session::StepId{15});
-        assert(from_middle.size() == 10);
-        for (std::size_t i = 0; i < from_middle.size(); ++i) {
+        assert(from_middle.events.size() == 10 && from_middle.skipped_batches == 0);
+        for (std::size_t i = 0; i < from_middle.events.size(); ++i) {
             assert(step_at(from_middle, i) == 15 + i);
         }
+        // The index holds the line of the first batch two times, and the
+        // second line is no skip.
         const auto every_event = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
-        assert(every_event.size() == 15);
+        assert(every_event.events.size() == 15 && every_event.skipped_batches == 0);
         assert(step_at(every_event, 0) == 10 && step_at(every_event, 14) == 24);
         const auto second_only =
             cipher.load_session_events(store_ctx(), ov, g_test.alloc, session, ::fixy::session::StepId{20});
-        assert(second_only.size() == 5 && step_at(second_only, 0) == 20);
+        assert(second_only.events.size() == 5 && step_at(second_only, 0) == 20);
+
+        // A batch at steps 35 to 39, and then a batch at steps 30 to 34.  The
+        // load holds steps 35 to 39 when it reads the second line, so it skips
+        // that batch, counts the skip and reports it.
+        const auto latest_batch = session_batch(35, 5);
+        const auto late_batch = session_batch(30, 5);
+        assert(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, latest_batch.view()).is_ok());
+        assert(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, late_batch.view()).is_ok());
+        const auto out_of_order = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
+        assert(out_of_order.events.size() == 20 && step_at(out_of_order, 15) == 35);
+        assert(out_of_order.skipped_batches == 1 && "a batch that overlaps the events of the load is a skip");
+
+        // The batch file of the first batch does not read.  A persist of
+        // the first batch gives the LoadError of the read, and no hash.
+        overwrite_batch_file(cipher, session, first_hash, ::fixy::View<std::byte const>{});
+        const bool is_unreadable_reported =
+            cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view())
+                .match([](crucible::ContentHash) { return false; },
+                       [](crucible::Cipher::PersistError error) {
+                           return error.match(
+                               [](crucible::Cipher::PersistRefusal) { return false; },
+                               [](crucible::LoadError reason) { return reason == crucible::LoadError::file_size; });
+                       });
+        assert(is_unreadable_reported && "a stored batch that does not read gives its LoadError");
+
+        // A load skips the first batch at each of its two lines, and the
+        // batch at steps 30 to 34.  It counts each skip and reports it.  The
+        // load runs in a child, so the test reads the report.
+        const auto without_first = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
+        assert(without_first.events.size() == 10 && step_at(without_first, 0) == 20);
+        assert(step_at(without_first, 5) == 35 && without_first.skipped_batches == 3);
+        const ::fixy::TestRunnerCtx child_ctx = store_ctx();
+        const ::fixy::process::ChildReport report =
+            ::fixy::process::wait(::fixy::process::spawn_child(child_ctx,
+                                                               [&cipher, &ov, &child_ctx, session] noexcept {
+                                                                   static_cast<void>(cipher.load_session_events(
+                                                                       child_ctx, ov, g_test.alloc, session));
+                                                               })
+                                      .expect("the test starts a child"))
+                .expect("the test waits for its child");
+        assert(report.is_exit_with(0));
+        assert(::fixy::find(report.output(),
+                            ::fixy::TextView{"[crucible] the Cipher store skips the session-event batch "})
+                   .is_some());
+        assert(::fixy::find(report.output(), crucible::load_error_text(crucible::LoadError::file_size)).is_some());
+        assert(::fixy::find(report.output(), crucible::load_error_text(crucible::LoadError::batch_steps_mismatch))
+                   .is_some());
+
+        // The batch file at steps 35 to 39 holds bytes that are no
+        // federation entry, and a new line of the index counts 3 events for
+        // the 5 steps 60 to 64.  The load skips the two, and the batch at
+        // steps 30 to 34 then overlaps no loaded step.
+        const crucible::ContentHash latest_hash =
+            persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, latest_batch.view()));
+        ::fixy::FixedArray<std::byte, 24> garbage{};
+        ::fixy::fill(garbage.view(), std::byte{0x5A});
+        overwrite_batch_file(cipher, session, latest_hash, garbage.view());
+        ::fixy::FixedText<16> latest_digits{};
+        ::foundation::core::append_hex<16>(latest_digits, latest_hash.raw()).expect("sixteen digits fit the text");
+        ::fixy::FixedText<96> counted_line{};
+        append_index_line(cipher, session,
+                          ::fixy::format(counted_line, "60,64,3,{}\n", latest_digits.view())
+                              .expect("an index line fits 96 characters"));
+        const auto damaged = cipher.load_session_events(store_ctx(), ov, g_test.alloc, session);
+        assert(damaged.events.size() == 10 && step_at(damaged, 5) == 30);
+        assert(damaged.skipped_batches == 5 && "two lines of each damaged batch, and the line of the wrong count");
+        const ::fixy::process::ChildReport damaged_report =
+            ::fixy::process::wait(::fixy::process::spawn_child(child_ctx,
+                                                               [&cipher, &ov, &child_ctx, session] noexcept {
+                                                                   static_cast<void>(cipher.load_session_events(
+                                                                       child_ctx, ov, g_test.alloc, session));
+                                                               })
+                                      .expect("the test starts a child"))
+                .expect("the test waits for its child");
+        assert(damaged_report.is_exit_with(0));
+        assert(
+            ::fixy::find(damaged_report.output(), crucible::load_error_text(crucible::LoadError::batch_entry_malformed))
+                .is_some());
+        assert(
+            ::fixy::find(damaged_report.output(), crucible::load_error_text(crucible::LoadError::batch_count_mismatch))
+                .is_some());
 
         std::filesystem::remove_all(dir_events);
     }

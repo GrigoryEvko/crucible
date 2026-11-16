@@ -287,8 +287,9 @@ TraceLog g_trace_log{};
         ctx.cap().alloc, 1,
         crucible::Cipher::SessionEvent::cipher_event(fixy::session::SessionOp::StoreCommitted, fixy::session::StepId{1},
                                                      fixy::session::StateHash{0x5E55}, 1));
-    const crucible::ContentHash persisted = cipher.persist_session_events(ctx, view, ctx.cap().alloc, events.view());
-    return static_cast<bool>(stored) && static_cast<bool>(persisted);
+    const crucible::Cipher::PersistResult persisted =
+        cipher.persist_session_events(ctx, view, ctx.cap().alloc, events.view());
+    return static_cast<bool>(stored) && persisted.is_ok();
 }
 
 }  // namespace
