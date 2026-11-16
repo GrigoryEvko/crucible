@@ -57,6 +57,36 @@ struct GivesIndex final {
 static_assert(CanMintStridedScope<int, 2, GivesCount, CheckBrand>);
 static_assert(!CanMintStridedScope<int, 2, GivesIndex, CheckBrand>);
 
+// A unique view holds the parts of a view and nothing more.  It moves and
+// does not copy, and no plain view becomes a unique view.
+static_assert(sizeof(StridedViewMut<int, 2, CheckBrand>) == sizeof(StridedView<int, 2>));
+static_assert(!std::is_trivially_copyable_v<StridedViewMut<int, 2, CheckBrand>>);
+static_assert(!std::is_copy_constructible_v<StridedViewMut<int, 2, CheckBrand>>);
+static_assert(!std::is_copy_assignable_v<StridedViewMut<int, 2, CheckBrand>>);
+static_assert(std::is_nothrow_move_constructible_v<StridedViewMut<int, 2, CheckBrand>>);
+static_assert(!std::is_constructible_v<StridedViewMut<int, 2, CheckBrand>, StridedView<int, 2>>);
+static_assert(!std::is_default_constructible_v<StridedViewMut<int, 2, CheckBrand>>);
+
+// The test of no overlap: a dense matrix and its transpose pass, a stride
+// that steps inside the span of a smaller axis and a stride of zero fail,
+// and an axis of size one reads no stride.
+[[nodiscard]] consteval bool has_no_overlap(std::size_t rows, std::size_t columns, std::size_t row_stride,
+                                            std::size_t column_stride) noexcept {
+    StridedLanes<2> lanes{};
+    lanes.sizes[0] = rows;
+    lanes.sizes[1] = columns;
+    lanes.strides[0] = row_stride;
+    lanes.strides[1] = column_stride;
+    return has_no_overlap_(lanes);
+}
+static_assert(has_no_overlap(3, 4, 4, 1));
+static_assert(has_no_overlap(3, 4, 1, 3));
+static_assert(has_no_overlap(3, 4, 5, 1));
+static_assert(!has_no_overlap(3, 4, 3, 1));
+static_assert(!has_no_overlap(3, 4, 0, 1));
+static_assert(has_no_overlap(1, 4, 0, 1));
+static_assert(!has_no_overlap(3, 2, 2, 3));
+
 // The view of a 3 x 4 matrix in row-major order over 12 elements.
 [[nodiscard]] consteval int matrix_sum() noexcept {
     FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};

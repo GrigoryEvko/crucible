@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -445,6 +446,69 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
     pass(test, "  scope_and_parallel: PASSED\n");
 }
 
+// True when the unique door gives a view of the 3 x 4 run of a frame for the
+// sizes and the strides.
+[[nodiscard]] bool mints_unique(::fixy::View<std::size_t const> sizes, ::fixy::View<std::size_t const> strides,
+                                std::size_t offset) noexcept {
+    ::fixy::FixedArray<int, 12> values{};
+    auto [is_minted, kept] = ::fixy::with_mut(std::move(values), [sizes, strides, offset](auto run) noexcept {
+        return ::fixy::mint_strided_view_mut(std::move(run), sizes, strides, offset).is_some();
+    });
+    static_cast<void>(kept);
+    return is_minted;
+}
+
+// The unique door refuses each layout in which two indexes can name one
+// element, and a layout that does not fit, and it takes each other layout.
+void unique_door_cases(::fixy::TestRunnerCtx const& test) noexcept {
+    ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
+    ::fixy::FixedArray<std::size_t, 2> const row_major{4, 1};
+    ::fixy::FixedArray<std::size_t, 2> const column_major{1, 3};
+    ::fixy::FixedArray<std::size_t, 2> const repeated{0, 1};
+    ::fixy::FixedArray<std::size_t, 2> const overlapping{2, 1};
+    ::fixy::FixedArray<std::size_t, 2> const small_sizes{3, 2};
+    ::fixy::FixedArray<std::size_t, 2> const interleaved{2, 3};
+    ::fixy::FixedArray<std::size_t, 2> const empty_sizes{0, 4};
+    ::fixy::FixedArray<std::size_t, 2> const one_row{1, 4};
+    CRUCIBLE_TEST_ASSERT(test, mints_unique(sizes.view(), row_major.view(), 0));
+    CRUCIBLE_TEST_ASSERT(test, mints_unique(sizes.view(), column_major.view(), 0));
+    CRUCIBLE_TEST_ASSERT(test, !mints_unique(sizes.view(), row_major.view(), 1));
+    CRUCIBLE_TEST_ASSERT(test, !mints_unique(sizes.view(), repeated.view(), 0));
+    CRUCIBLE_TEST_ASSERT(test, !mints_unique(sizes.view(), overlapping.view(), 0));
+    // The offsets of sizes 3 and 2 with strides 2 and 3 are 0, 3, 2, 5, 4
+    // and 7: no overlap, but the stride 3 is not above the span 4 of the axis
+    // of stride 2, so the sufficient test refuses it.
+    CRUCIBLE_TEST_ASSERT(test, !mints_unique(small_sizes.view(), interleaved.view(), 0));
+    // An axis of size one and a view with no element have no overlap at each
+    // stride.
+    CRUCIBLE_TEST_ASSERT(test, mints_unique(one_row.view(), repeated.view(), 0));
+    CRUCIBLE_TEST_ASSERT(test, mints_unique(empty_sizes.view(), repeated.view(), 99));
+    pass(test, "  unique_door_cases: PASSED\n");
+}
+
+// A unique view writes through its plain view, and a transpose keeps each
+// index on its own element.
+void unique_view_writes(::fixy::TestRunnerCtx const& test) noexcept {
+    ::fixy::FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
+    ::fixy::FixedArray<std::size_t, 2> const strides{4, 1};
+    auto [is_written, written] = ::fixy::with_mut(std::move(values), [&sizes, &strides](auto run) noexcept {
+        auto unique = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
+                          .expect("a dense matrix has no overlap");
+        bool const is_shaped = unique.count() == 12 && unique.rank() == 2 && unique.is_dense()
+                            && unique.size(::fixy::index<1>()) == 4 && unique.stride(::fixy::index<0>()) == 4;
+        auto columns = std::move(unique).transpose(::fixy::index<0>(), ::fixy::index<1>());
+        bool const is_scaled = ::fixy::walk([](int& element) noexcept { element *= 10; }, columns.view()).is_ok();
+        // Columns 1 and 3 of the matrix are the rows 1 and 3 of the transpose.
+        auto const odd = columns.view().slice(::fixy::index<0>(), 1, 2, 2).expect("columns 1 and 3 fit");
+        bool const is_added = ::fixy::walk([](int& element) noexcept { element += 1; }, odd).is_ok();
+        return is_shaped && is_scaled && is_added && !columns.is_dense() && columns.stride(::fixy::index<1>()) == 4;
+    });
+    CRUCIBLE_TEST_ASSERT(
+        test, is_written && written == (::fixy::FixedArray<int, 12>{0, 11, 20, 31, 40, 51, 60, 71, 80, 91, 100, 111}));
+    pass(test, "  unique_view_writes: PASSED\n");
+}
+
 // A cursor of a scope never leaves its loop: a read and a step with no index
 // left end the process in each build.
 void read_past_the_end() noexcept {
@@ -797,6 +861,70 @@ void reshape_agrees_with_oracle(::fixy::TestRunnerCtx const& test) noexcept {
          outcomes.accepted, outcomes.refused, outcomes.other);
 }
 
+// True when no offset of the sequence occurs two times.  O(count^2).
+[[nodiscard]] bool has_distinct_offsets(Sequence const& sequence) noexcept {
+    for (std::size_t first = 0; first < sequence.count; ++first) {
+        for (std::size_t second = first + 1; second < sequence.count; ++second) {
+            if (offset_at(sequence, first) == offset_at(sequence, second)) return false;
+        }
+    }
+    return true;
+}
+
+// The rule of the unique door, as a model: the axes of a size above one in
+// the order of their strides, and each stride above the span of the axes
+// before it.  The model picks the smallest stride that it did not take yet,
+// so it shares no sort with the header.  O(rank^2).
+[[nodiscard]] bool passes_sorted_strides(Layout const& layout) noexcept {
+    if (count_of(layout) == 0) return true;
+    Lanes taken{};
+    std::size_t span = 0;
+    for (std::size_t step = 0; step < layout.rank; ++step) {
+        std::size_t best = layout.rank;
+        for (std::size_t axis = 0; axis < layout.rank; ++axis) {
+            if (lane(taken, axis) != 0 || lane(layout.sizes, axis) <= 1) continue;
+            if (best == layout.rank || lane(layout.strides, axis) < lane(layout.strides, best)) best = axis;
+        }
+        if (best == layout.rank) return true;
+        lane(taken, best) = 1;
+        if (lane(layout.strides, best) <= span) return false;
+        span += (lane(layout.sizes, best) - 1) * lane(layout.strides, best);
+    }
+    return true;
+}
+
+// The unique door gives a view exactly when the door of a view gives one and
+// the model of the rule passes.  Each view that it gives names each element
+// at most one time, and it visits the sequence of the model.  The other
+// outcome counts the refusals of layouts with no overlap, which the
+// sufficient test refuses.
+void unique_door_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
+    Outcomes outcomes{};
+    property(test, kSeed + 6, kRuns, [&outcomes](Draw& draw) noexcept {
+        Layout const layout = draw_fitting_layout(draw);
+        Sequence const model = model_sequence(layout);
+        bool const is_distinct = has_distinct_offsets(model);
+        bool const passes = passes_sorted_strides(layout);
+        auto [is_agreed, kept] = ::fixy::with_mut(make_run(), [&](auto run) noexcept {
+            return ::fixy::mint_strided_view_mut(std::move(run), sizes_of(layout), strides_of(layout), layout.offset)
+                .match(
+                    [&](auto unique) noexcept {
+                        ++outcomes.accepted;
+                        return passes && is_distinct && same_sequence(walk_sequence(unique.view()), model);
+                    },
+                    [&] noexcept {
+                        ++(is_distinct ? outcomes.other : outcomes.refused);
+                        return !passes;
+                    });
+        });
+        static_cast<void>(kept);
+        return is_agreed;
+    });
+    pass(test, "  unique_door_agrees_with_model: {} views, {} refusals of an overlap, {} refusals of no overlap\n",
+         outcomes.accepted, outcomes.refused, outcomes.other);
+    CRUCIBLE_TEST_ASSERT(test, outcomes.accepted >= kOutcomeFloor && outcomes.refused >= kOutcomeFloor);
+}
+
 }  // namespace
 
 int main() {
@@ -807,6 +935,8 @@ int main() {
     rank_zero_and_empty(test);
     mismatch_and_dynamic_axes(test);
     scope_and_parallel(test);
+    unique_door_cases(test);
+    unique_view_writes(test);
     expect_dies(test, read_past_the_end,
                 ::fixy::TextView{"a read through the end cursor of a loop over the indexes of a strided view"});
     expect_dies(test, step_past_the_end,
@@ -817,6 +947,7 @@ int main() {
     slice_and_select_agree_with_model(test);
     broadcast_agrees_with_model(test);
     reshape_agrees_with_oracle(test);
+    unique_door_agrees_with_model(test);
     pass(test, "test_strided_view: all tests passed\n");
     return 0;
 }

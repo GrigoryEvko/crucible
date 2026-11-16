@@ -819,6 +819,10 @@ witness <foundation/core/Strided.h> private | foundation::core::StridedIndex<2, 
 witness <foundation/core/Strided.h> private | foundation::core::BrandedStridedView<int, 2, forge::brand> | foundation::core::BrandedStridedView<int, 2, forge::brand>{forge::rvalue<foundation::core::StridedView<int, 2>>()}
 witness <foundation/core/Strided.h> private | foundation::core::detail::StridedIndexRange<2, forge::brand> | foundation::core::detail::StridedIndexRange<2, forge::brand>{forge::rvalue<foundation::core::detail::StridedCoordinates<2>>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/Strided.h> private | foundation::core::detail::StridedIndexCursor<2, forge::brand> | foundation::core::detail::StridedIndexCursor<2, forge::brand>{forge::rvalue<foundation::core::detail::StridedCoordinates<2>>(), forge::rvalue<unsigned long>()}
+# A unique strided view comes only from mint_strided_view_mut, which consumes
+# the ViewMut of a frame and refuses an overlap, so no plain view becomes the
+# one writer of its elements.
+witness <foundation/core/Strided.h> no-match | foundation::core::StridedViewMut<int, 2, forge::brand> | foundation::core::StridedViewMut<int, 2, forge::brand>{forge::rvalue<foundation::core::StridedView<int, 2>>()}
 
 # -- The graded substrate --------------------------------------------
 # A grade that nothing derives is paired with a value only through a key,

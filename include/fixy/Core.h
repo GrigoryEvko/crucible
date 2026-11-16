@@ -195,10 +195,12 @@ using ::foundation::core::max_strided_count;
 using ::foundation::core::max_strided_rank;
 using ::foundation::core::mint_strided_scope;
 using ::foundation::core::mint_strided_view;
+using ::foundation::core::mint_strided_view_mut;
 using ::foundation::core::ReshapeError;
 using ::foundation::core::ShapeMismatch;
 using ::foundation::core::StridedIndex;
 using ::foundation::core::StridedView;
+using ::foundation::core::StridedViewMut;
 using ::foundation::core::walk;
 
 using ::foundation::core::bit_cast;

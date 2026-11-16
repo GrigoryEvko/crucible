@@ -3402,6 +3402,15 @@ foundation_neg_compile_test(neg_core_strided_dynamic_to_static
   "conversion from .StridedView<\\[\\.\\.\\.\\],18446744073709551615>."
   "to non-scalar type .StridedView<\\[\\.\\.\\.\\],2>. requested")
 
+# The door of a unique strided view takes only the ViewMut of a frame, and a
+# unique view does not copy.
+foundation_neg_compile_test(neg_core_strided_view_mut_of_view
+  "no matching function for call to .mint_strided_view_mut\\(foundation::core::View<int, 6>"
+  ".foundation::core::View<int, 6>. is not derived from .foundation::core::ViewMut<T, Brand>.")
+foundation_neg_compile_test(neg_core_strided_view_mut_copies
+  "use of deleted function"
+  "a StridedViewMut is the one writer of its elements: a copy would be a second writer")
+
 # A push into or a view of a temporary list is refused, and a list of a
 # linear element has no clear().
 foundation_neg_compile_test(neg_core_fixed_list_push_of_temporary

@@ -86,6 +86,19 @@
 // are the offsets of a strided view of the new sizes.  The test file holds
 // that proof as a property test with a naive oracle.
 //
+// THE UNIQUE VIEW
+//   mint_strided_view_mut(run, sizes, strides, offset)
+//                       the StridedViewMut<T, Rank, Brand> of the elements of
+//                       the ViewMut run of a frame (foundation/core/Frame.h),
+//                       or no value.  The mint consumes run.  It makes the
+//                       checks of mint_strided_view, and it refuses a view in
+//                       which two indexes can name one element: it sorts the
+//                       axes of a size above one by stride, and each stride
+//                       must be larger than the span of the axes before it
+// A unique view is the one writer of its elements, and it does not copy.  It
+// has the reads of a view, the plain view(), and a transpose of a static
+// rank.  The pointwise walk of foundation/core/Pointwise.h writes through it.
+//
 // THE WALK
 //   walk(body, views...)
 //                       calls body(element, ...) one time for each index of
@@ -816,6 +829,158 @@ mint_strided_view(View<T, RunExtent> run, View<S, SizesExtent> sizes, View<D, St
         return Minted{none};
     }
     return Minted::some(StridedView<T, rank>{detail::StridedDoor::key(), first + offset, lanes});
+}
+
+// ── The unique view ─────────────────────────────────────────────────────
+
+namespace detail {
+
+// True when no two indexes of the lanes name one element.  The test sorts
+// the axes of a size above one by stride, and each stride must be larger
+// than the span of the axes before it: the highest offset that those axes
+// reach.  Then the coordinate of each axis is the quotient of the offset by
+// its stride, from the largest stride down, so the offset gives the index.
+// The test is sufficient and not necessary: it refuses some layouts that do
+// not overlap, such as sizes 3 and 2 with strides 2 and 3.  A stride of zero
+// on an axis of a size above one is refused.  The span of a view is at most
+// max_strided_count, so no sum wraps.  O(rank^2) for the sort.
+template <class Lanes>
+[[nodiscard]] constexpr bool has_no_overlap_(Lanes const& lanes) noexcept {
+    std::size_t order[Lanes::capacity]{};
+    std::size_t kept = 0;
+    for (std::size_t axis = 0; axis < lanes.rank(); ++axis) {
+        if (lanes.sizes[axis] <= 1) continue;
+        std::size_t place = kept;
+        while (place > 0 && lanes.strides[order[place - 1]] > lanes.strides[axis]) {
+            order[place] = order[place - 1];
+            --place;
+        }
+        order[place] = axis;
+        ++kept;
+    }
+    std::size_t span = 0;
+    for (std::size_t position = 0; position < kept; ++position) {
+        std::size_t const axis = order[position];
+        if (lanes.strides[axis] <= span) return false;
+        span += (lanes.sizes[axis] - 1) * lanes.strides[axis];
+    }
+    return true;
+}
+
+}  // namespace detail
+
+// The unique borrow of a strided view of the run of a frame: the run of a
+// ViewMut of foundation/core/Region.h.  No two indexes of the view name one
+// element, so a write at one index changes no other index.  The brand is the
+// brand of the frame, so two unique views of two brands name runs that do not
+// overlap (THE ALIAS PROOF of foundation/core/Frame.h).  A StridedViewMut does
+// not copy.  A move leaves the source with its parts, and the rule
+// use-after-move refuses a later use of the source.
+//
+//   rank(), count(), sizes(), strides(), size(axis), stride(axis), is_dense()
+//                       as the StridedView of the same parts gives them
+//   view()              the plain StridedView, with no brand
+//   transpose(a, b)     of a static rank: consumes the view, and gives the
+//                       unique view with the two axes in place of each other
+// A unique view of a different layout of the same run comes from the mint
+// with that layout.  An Option of this class reads its members through
+// reflection, because the class does not copy, so no member gives an Option
+// of this class.
+template <class T, std::size_t Rank, ::foundation::brand::IsBrand Brand>
+    requires ViewElement<T> && (!std::is_const_v<T>) && StridedRank<Rank>
+class [[nodiscard]] StridedViewMut final {
+    using Axis = detail::strided_axis_t<Rank>;
+
+    // The seal of the view keeps this class from being trivially copyable,
+    // so std::bit_cast builds no unique view.
+    StridedView<T, Rank> view_;
+
+public:
+    using element_type = T;
+    using brand_type = Brand;
+    static constexpr std::size_t static_rank = Rank;
+
+    // The door of the base layer: the unique view of view, with no check.
+    // The caller proves that no two indexes of view name one element and
+    // that the run of view belongs to the frame of Brand, as the mint does.
+    constexpr StridedViewMut(detail::StridedKey const& /*key*/, StridedView<T, Rank> view) noexcept : view_{view} {}
+
+    StridedViewMut(StridedViewMut const&) = delete(
+        "a StridedViewMut is the one writer of its elements: a copy would be "
+        "a second writer");
+    StridedViewMut& operator=(StridedViewMut const&) = delete("a StridedViewMut is the one writer of its elements: a "
+                                                              "copy would be a second writer");
+    constexpr StridedViewMut(StridedViewMut&&) noexcept = default;
+    constexpr StridedViewMut& operator=(StridedViewMut&&) noexcept = default;
+    ~StridedViewMut() = default;
+
+    // The plain view, for the walks of the base layer.  The key keeps each
+    // caller outside the base out.  Argument-dependent lookup finds it.
+    [[nodiscard]] friend constexpr StridedView<T, Rank> strided_view_of_(detail::StridedKey const& /*key*/,
+                                                                         StridedViewMut const& view) noexcept {
+        return view.view_;
+    }
+
+    [[nodiscard]] constexpr std::size_t rank() const noexcept { return view_.rank(); }
+    [[nodiscard]] constexpr std::size_t count() const noexcept { return view_.count(); }
+    [[nodiscard]] constexpr bool is_dense() const noexcept { return view_.is_dense(); }
+
+    // The sizes and the strides, rank() elements each.  The View borrows
+    // this view.
+    [[nodiscard]] constexpr View<std::size_t const> sizes() const& noexcept { return view_.sizes(); }
+    void sizes() const&& = delete("the sizes of a temporary view dangle at the end of the full expression");
+    [[nodiscard]] constexpr View<std::size_t const> strides() const& noexcept { return view_.strides(); }
+    void strides() const&& = delete("the strides of a temporary view dangle at the end of the full expression");
+
+    [[nodiscard]] constexpr std::size_t size(Axis axis) const noexcept
+        requires(Rank != dynamic_rank && Rank > 0)
+    {
+        return view_.size(axis);
+    }
+    [[nodiscard]] constexpr std::size_t stride(Axis axis) const noexcept
+        requires(Rank != dynamic_rank && Rank > 0)
+    {
+        return view_.stride(axis);
+    }
+
+    // The plain view of the elements.  It has no brand, so it proves no
+    // difference of two runs, and the write through it is the write of this
+    // borrow.
+    [[nodiscard]] constexpr StridedView<T, Rank> view() & noexcept { return view_; }
+    [[nodiscard]] constexpr StridedView<T const, Rank> view() const& noexcept { return view_; }
+
+    // The view with the axes first and second in place of each other.  A new
+    // order of the axes keeps each index on its own element.
+    [[nodiscard]] constexpr StridedViewMut transpose(Axis first, Axis second) && noexcept
+        requires(Rank != dynamic_rank && Rank > 0)
+    {
+        return StridedViewMut{detail::StridedDoor::key(), view_.transpose(first, second)};
+    }
+};
+
+// The unique view of the elements of the ViewMut run with the sizes and the
+// strides, with the element at the zero index at the position offset of run,
+// or no value.  The mint consumes run, so the view is the one writer of the
+// run.  It gives no value in each case where mint_strided_view gives none,
+// and for a view that holds an element, when two indexes can name one element
+// by the test of detail::has_no_overlap_.  O(rank^2).
+template <class T, class Brand, class S, std::size_t SizesExtent, class D, std::size_t StridesExtent>
+    requires CanMintStridedView<S, SizesExtent, D, StridesExtent>
+[[nodiscard]] constexpr Option<StridedViewMut<T, detail::minted_rank<SizesExtent, StridesExtent>, Brand>>
+mint_strided_view_mut(ViewMut<T, Brand> run, View<S, SizesExtent> sizes, View<D, StridesExtent> strides,
+                      std::size_t offset) noexcept {
+    constexpr std::size_t rank = detail::minted_rank<SizesExtent, StridesExtent>;
+    using Minted = Option<StridedViewMut<T, rank, Brand>>;
+    // The arms of a match would give the brand of the frame through a return
+    // type that no template argument of the match names, so the mint reads
+    // the Option with a test and an expect.
+    Option<StridedView<T, rank>> plain = mint_strided_view(run.view(), sizes, strides, offset);
+    if (plain.is_none()) return Minted{none};
+    StridedView<T, rank> const view = std::move(plain).expect("the test above");
+    if (view.count() != 0 && !detail::has_no_overlap_(strided_lanes_of_(detail::StridedDoor::key(), view))) {
+        return Minted{none};
+    }
+    return Minted::some(StridedViewMut<T, rank, Brand>{detail::StridedDoor::key(), view});
 }
 
 // ── The walk ────────────────────────────────────────────────────────────
