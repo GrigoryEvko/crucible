@@ -100,7 +100,7 @@ struct RecipeSpec {
     crucible::ScalarType accum_dtype;
     crucible::ScalarType out_dtype;
     crucible::ReductionAlgo reduction_algo;
-    crucible::RoundingMode rounding;
+    ::foundation::core::RoundingMode rounding;
     crucible::ScalePolicy scale_policy;
     crucible::SoftmaxRecurrence softmax;
     crucible::ReductionDeterminism determinism;

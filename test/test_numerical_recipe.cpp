@@ -15,7 +15,7 @@ int main() {
     using crucible::RecipeFlags;
     using crucible::ReductionAlgo;
     using crucible::ReductionDeterminism;
-    using crucible::RoundingMode;
+    using ::foundation::core::RoundingMode;
     using crucible::ScalarType;
     using crucible::ScalePolicy;
     using crucible::SoftmaxRecurrence;

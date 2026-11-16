@@ -9,20 +9,21 @@
 //
 // Design notes:
 //
-//  1. The two axes the gate reads are fixy's own enums.
-//     crucible/NumericalRecipe.h names RoundingMode and
-//     ReductionDeterminism, but it is a chain header above this layer,
-//     and fixy cannot include it.  CanonicalizeRecipeSpec below carries
-//     the two axes and nothing else, and the crucible side builds the
-//     spec at its own boundary.
+//  1. The gate reads two axes.  The rounding mode is
+//     ::foundation::core::RoundingMode, the type of the field rounding of a
+//     recipe of crucible/NumericalRecipe.h as well.  The determinism tier is
+//     the enum of this header, because crucible/NumericalRecipe.h is a
+//     chain header above this layer, and fixy cannot include it.
+//     CanonicalizeRecipeSpec below carries the two axes and nothing else,
+//     and the crucible side builds the spec at its own boundary.
 //
-//  2. The enumerator values are pinned.  Crucible converts a recipe's two
-//     fields into this spec, and the cheapest correct conversion is a
-//     cast, which is only correct while the ordinals agree.  The cells of
+//  2. The enumerator values of the determinism tier are pinned.  Crucible
+//     converts the field of a recipe into this spec, and the cheapest
+//     correct conversion is a cast, which is only correct while the
+//     ordinals agree.  The cells of
 //     test/layer/checks/fixy/fp/Canonicalize.cpp pin every value and the
 //     cardinality of each enum, so a reordering here or there is a build
-//     error rather than a silently different spec.  The values are the
-//     values of the crucible enums.
+//     error rather than a silently different spec.
 //
 //  3. There is no converting constructor from a recipe, because the
 //     recipe type is not visible here.  The spec's two-argument
@@ -40,9 +41,8 @@
 namespace fixy::fp {
 
 // The rounding mode a kernel realizes is ::foundation::core::RoundingMode,
-// the vocabulary of the base in foundation/core/FpMode.h.  It has the same
-// enumerators and the same values as the crucible RoundingMode enum, per
-// design note 2.
+// the vocabulary of the base in foundation/core/FpMode.h.  A recipe of
+// crucible names the same type, per design note 1.
 
 // How much reordering a reduction may do.  Same enumerators and same
 // values as the crucible ReductionDeterminism enum, per design note 2.

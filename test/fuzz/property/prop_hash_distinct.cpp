@@ -59,7 +59,8 @@ int main(int argc, char** argv) {
                     p.b.reduction_algo = static_cast<ReductionAlgo>((static_cast<uint8_t>(p.a.reduction_algo) + 1) & 3);
                     break;
                 case 3:
-                    p.b.rounding = static_cast<RoundingMode>((static_cast<uint8_t>(p.a.rounding) + 1) & 3);
+                    p.b.rounding =
+                        static_cast<::foundation::core::RoundingMode>((static_cast<uint8_t>(p.a.rounding) + 1) & 3);
                     break;
                 case 4:
                     p.b.scale_policy = static_cast<ScalePolicy>((static_cast<uint8_t>(p.a.scale_policy) + 1) % 6);

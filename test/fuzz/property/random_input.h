@@ -52,7 +52,7 @@ namespace crucible::fuzz::prop {
     r.accum_dtype = random_scalar_type(rng);
     r.out_dtype = random_scalar_type(rng);
     r.reduction_algo = rng.pick<ReductionAlgo>();
-    r.rounding = rng.pick<RoundingMode>();
+    r.rounding = rng.pick<::foundation::core::RoundingMode>();
     r.scale_policy = rng.pick<ScalePolicy>();
     r.softmax = rng.pick<SoftmaxRecurrence>();
     r.determinism = rng.pick<ReductionDeterminism>();

@@ -37,7 +37,7 @@ struct RecipeWords {
 [[nodiscard]] constexpr bool names_each_enumerator(RecipeWords words) noexcept {
     return valid_scalar_type(byte_of(words.low, 0)) && valid_scalar_type(byte_of(words.low, 1))
         && byte_of(words.low, 2) <= std::to_underlying(ReductionAlgo::BLOCK_STABLE)
-        && byte_of(words.low, 3) <= std::to_underlying(RoundingMode::RP)
+        && byte_of(words.low, 3) <= std::to_underlying(::foundation::core::RoundingMode::RP)
         && byte_of(words.low, 4) <= std::to_underlying(ScalePolicy::PER_CHANNEL)
         && byte_of(words.low, 5) <= std::to_underlying(SoftmaxRecurrence::FLASH3)
         && byte_of(words.low, 6) <= std::to_underlying(ReductionDeterminism::BITEXACT_STRICT);

@@ -38,7 +38,7 @@ using crucible::RecipePool;
 using crucible::RecipeRegistry;
 using crucible::ReductionAlgo;
 using crucible::ReductionDeterminism;
-using crucible::RoundingMode;
+using ::foundation::core::RoundingMode;
 using crucible::ScalarType;
 using crucible::ScalePolicy;
 using crucible::SoftmaxRecurrence;

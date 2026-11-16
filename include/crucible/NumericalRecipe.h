@@ -10,6 +10,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/core/FpMode.h>
 
 #include <cstdint>
 #include <utility>
@@ -22,14 +23,6 @@ enum class ReductionAlgo : uint8_t {
     LINEAR,  // sequential left fold
     KAHAN,  // compensated summation
     BLOCK_STABLE,  // block tree, for formats carrying an explicit per-block scale
-};
-
-// The IEEE 754 rounding modes.
-enum class RoundingMode : uint8_t {
-    RN,  // to nearest, ties to even
-    RZ,  // toward zero
-    RM,  // toward minus infinity
-    RP,  // toward plus infinity
 };
 
 // The policy belongs in the recipe because it decides where in the
@@ -99,7 +92,8 @@ struct alignas(16) NumericalRecipe {
     ScalarType accum_dtype = ScalarType::Float;
     ScalarType out_dtype = ScalarType::Undefined;
     ReductionAlgo reduction_algo = ReductionAlgo::PAIRWISE;
-    RoundingMode rounding = RoundingMode::RN;
+    // The IEEE 754 rounding direction, in the FP mode vocabulary of the core.
+    ::foundation::core::RoundingMode rounding = ::foundation::core::RoundingMode::RN;
     ScalePolicy scale_policy = ScalePolicy::NONE;
     SoftmaxRecurrence softmax = SoftmaxRecurrence::ONLINE_LSE;
     ReductionDeterminism determinism = ReductionDeterminism::ORDERED;

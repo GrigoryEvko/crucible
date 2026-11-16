@@ -141,7 +141,7 @@ void test_collective_node_admission() {
     assert(shape_hash != header.content_hash);
 
     auto changed_recipe = op;
-    changed_recipe.attrs.recipe.rounding = crucible::RoundingMode::RZ;
+    changed_recipe.attrs.recipe.rounding = ::foundation::core::RoundingMode::RZ;
     auto const recipe_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_recipe)).content_hash;
     assert(recipe_hash != header.content_hash);
 

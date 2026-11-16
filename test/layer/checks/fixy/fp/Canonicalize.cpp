@@ -8,13 +8,14 @@ using ::foundation::core::RoundingMode;
 
 // ── The pinned enumerator values (design note 2) ─────────────────────
 //
-// Crucible converts its RoundingMode and ReductionDeterminism
-// enums into the two enums of fixy/fp/Canonicalize.h.  These cells
-// are what make that conversion a cast rather than a switch.
+// A crucible recipe names foundation::core::RoundingMode itself, and it
+// converts its ReductionDeterminism into the enum of
+// fixy/fp/Canonicalize.h.  These cells are what make that conversion a cast
+// rather than a switch.  The rounding cells pin the four IEEE directions
+// that the FP control door encodes.
 
 static_assert(std::meta::enumerators_of(^^::foundation::core::RoundingMode).size() == 4,
-              "foundation::core::RoundingMode drifted from four enumerators. The crucible enum it converts from "
-              "has four; adding one here without adding it there makes the conversion lossy.");
+              "foundation::core::RoundingMode drifted from the four IEEE rounding directions.");
 static_assert(std::to_underlying(RoundingMode::RN) == 0);
 static_assert(std::to_underlying(RoundingMode::RZ) == 1);
 static_assert(std::to_underlying(RoundingMode::RM) == 2);

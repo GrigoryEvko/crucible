@@ -178,7 +178,7 @@ int main() {
 
     crucible::NumericalRecipe r2 = r1;
     crucible::NumericalRecipe r3 = r1;
-    r3.rounding = crucible::RoundingMode::RZ;
+    r3.rounding = ::foundation::core::RoundingMode::RZ;
 
     assert(crucible::reflect_hash(r1) == crucible::reflect_hash(r2));
     assert(crucible::reflect_hash(r1) != crucible::reflect_hash(r3));

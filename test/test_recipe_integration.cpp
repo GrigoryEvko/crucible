@@ -282,7 +282,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
             .accum_dtype = crucible::ScalarType::Byte,
             .out_dtype = crucible::ScalarType::Byte,
             .reduction_algo = crucible::ReductionAlgo::PAIRWISE,
-            .rounding = crucible::RoundingMode::RN,
+            .rounding = ::foundation::core::RoundingMode::RN,
             .scale_policy = crucible::ScalePolicy::NONE,
             .softmax = crucible::SoftmaxRecurrence::NAIVE,
             .determinism = crucible::ReductionDeterminism::UNORDERED,
