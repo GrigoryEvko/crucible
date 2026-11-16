@@ -133,8 +133,10 @@ void run_cycle(std::size_t producer_count) {
         }
         std::array<Item, 64> buf{};
         std::size_t local = 0;
+        // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
+        const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
         while (local < total) {
-            const std::size_t n = ring.try_pop_batch(std::span<Item>(buf));
+            const std::size_t n = ring.try_pop_batch(merge, std::span<Item>(buf));
             if (n == 0) {
                 CRUCIBLE_SPIN_PAUSE;
                 continue;

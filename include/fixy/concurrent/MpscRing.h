@@ -146,34 +146,33 @@ public:
         }
     }
 
-    // The caller guarantees no concurrent try_pop or try_pop_batch.
-    // The acquire load of the bitmap pairs with the producer's release
-    // fetch_or, so the cell read below sees the published payload.
+    // The caller guarantees no concurrent try_pop or try_pop_batch.  A pop
+    // is a merge: the schedule of the producers decides the order of the
+    // items, so two runs with the same inputs can pop two sequences.  Thus
+    // each pop takes the bare tag of Nondet.
 
-    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept {
-        const std::uint64_t pos = tail_.peek_relaxed();
-        const std::size_t cell_idx = pos & MASK;
-        const std::size_t word_idx = cell_idx >> 6;
-        const std::size_t bit_idx = cell_idx & 63;
-        const std::uint64_t mask = std::uint64_t{1} << bit_idx;
-
-        const std::uint64_t word = ready_[word_idx].load(std::memory_order_acquire);
-        if ((word & mask) == 0) {
-            return ::foundation::core::none;
-        }
-
-        const T item = cells_[cell_idx];
-        // Clear the bit before advancing tail.  A producer that then
-        // passes the capacity gate observes the new tail and therefore
-        // the cleared bit.
-        ready_[word_idx].fetch_and(~mask, std::memory_order_release);
-        tail_.advance_sole_writer_from(pos, pos + 1);
-        return ::foundation::core::Option<T>::some(item);
+    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop(::foundation::effects::cap::Nondet) noexcept {
+        return pop_one_();
     }
 
-    // The caller guarantees no concurrent try_pop or try_pop_batch.
+    // Gives each item that the ring holds to drop, the oldest first, and
+    // returns when the ring is empty.  The caller guarantees no concurrent
+    // push and no concurrent pop.  The order of the items reads the merge,
+    // so the drop holds no state: its class is empty, and it can only end
+    // each item.  A drop with no state can still write a global, and no gate
+    // refuses that.  Complexity: linear in the count of the items.
+    template <typename Drop>
+        requires __is_empty
+    (__remove_cvref(Drop)) && __is_nothrow_invocable(Drop&, T) void drain(Drop&& drop) noexcept {
+        for (::foundation::core::Option<T> item = pop_one_(); item.is_some(); item = pop_one_()) {
+            drop(static_cast<::foundation::core::Option<T>&&>(item).expect("the test of the loop found an item"));
+        }
+    }
 
-    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(std::span<T> out) noexcept {
+    // The caller guarantees no concurrent try_pop or try_pop_batch.  A batch
+    // pop is a merge, as a pop is, so it takes the bare tag of Nondet.
+
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::effects::cap::Nondet, std::span<T> out) noexcept {
         // The ring holds at most Capacity live items, so a request
         // larger than Capacity has to be clamped.  Unclamped, the
         // prefix scan below wraps past the buffer end, re-reads the
@@ -246,6 +245,30 @@ public:
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
+    // The oldest item, or no value when its cell is not ready.  The acquire
+    // load of the bitmap pairs with the release fetch_or of the producer, so
+    // the cell read below sees the published payload.
+    [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_one_() noexcept {
+        const std::uint64_t pos = tail_.peek_relaxed();
+        const std::size_t cell_idx = pos & MASK;
+        const std::size_t word_idx = cell_idx >> 6;
+        const std::size_t bit_idx = cell_idx & 63;
+        const std::uint64_t mask = std::uint64_t{1} << bit_idx;
+
+        const std::uint64_t word = ready_[word_idx].load(std::memory_order_acquire);
+        if ((word & mask) == 0) {
+            return ::foundation::core::none;
+        }
+
+        const T item = cells_[cell_idx];
+        // Clear the bit before advancing tail.  A producer that then
+        // passes the capacity gate observes the new tail and therefore
+        // the cleared bit.
+        ready_[word_idx].fetch_and(~mask, std::memory_order_release);
+        tail_.advance_sole_writer_from(pos, pos + 1);
+        return ::foundation::core::Option<T>::some(item);
+    }
+
     void publish_range_(std::size_t bit_start, std::size_t bit_end, std::size_t N) noexcept {
         // A full batch sets the bits of each cell and no other bit.  The
         // prefix scan of try_pop_batch reads a set bit past Capacity as one

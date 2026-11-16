@@ -4771,6 +4771,14 @@ fixy_neg_compile_test(neg_os_clock_reader_read_in_body_without_nondet
 fixy_neg_compile_test(neg_ring_snapshot_without_nondet_tag
   "no matching function for call to .fixy::concurrent::SpscRing<int, 8>::empty_approx\\(\\)."
   "candidate expects 1 argument, 0 provided")
+# A pop of the raw MPSC ring is a merge, so it takes the tag of Nondet.  A
+# drain gives the items in the order of the merge, so its drop holds no state.
+fixy_neg_compile_test(neg_mpsc_ring_pop_without_nondet_tag
+  "no matching function for call to .fixy::concurrent::MpscRing<int, 8>::try_pop\\(\\)."
+  "candidate expects 1 argument, 0 provided")
+fixy_neg_compile_test(neg_mpsc_drain_with_state
+  "no matching function for call to .fixy::concurrent::PermissionedMpscChannel<int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::drain\\("
+  "__is_empty")
 fixy_neg_compile_test(neg_nondet_tag_from_the_source_of_a_narrow_ctx
   "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >::cap\\(\\) const."
   "required for the satisfaction of .Subrow<foundation::effects::cap_permitted_row_t<Cap>, Row>.")

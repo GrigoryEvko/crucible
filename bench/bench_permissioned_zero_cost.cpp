@@ -99,8 +99,10 @@ bench::Report bare_mpsc_pop() {
     auto ring = std::make_unique<::fixy::concurrent::MpscRing<Item, kCap>>();
     for (Item i = 0; i < kCap / 2; ++i)
         (void)ring->try_push(i);
+    // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
+    const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
     return bench::run("bare MpscRing.try_pop", [&] {
-        auto v = ring->try_pop();
+        auto v = ring->try_pop(merge);
         bench::do_not_optimize(v);
     });
 }

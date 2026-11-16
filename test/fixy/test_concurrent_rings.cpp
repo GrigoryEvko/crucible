@@ -27,8 +27,9 @@ namespace c = fixy::concurrent;
 
 namespace {
 
-// The tag of a snapshot of a ring.  The test context holds Nondet.
-constexpr ::foundation::effects::cap::Nondet kSnapshot = ::foundation::effects::testing::test().nondet;
+// The tag of a snapshot of a ring and of a pop of an MPSC ring.  The test
+// context holds Nondet.
+constexpr ::foundation::effects::cap::Nondet kNondet = ::foundation::effects::testing::test().nondet;
 
 // ── What a cell may hold ─────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ using MpscWide = c::MpscRing<int, 128>;
 
 [[nodiscard]] int spsc_single_threaded() {
     Spsc ring{};
-    if (!ring.empty_approx(kSnapshot) || ring.size_approx(kSnapshot) != 0) {
+    if (!ring.empty_approx(kNondet) || ring.size_approx(kNondet) != 0) {
         std::fprintf(stderr, "a fresh SPSC ring did not read as empty\n");
         return 1;
     }
@@ -139,7 +140,7 @@ using MpscWide = c::MpscRing<int, 128>;
         std::fprintf(stderr, "SPSC accepted a push past capacity\n");
         return 1;
     }
-    if (ring.size_approx(kSnapshot) != 8) {
+    if (ring.size_approx(kNondet) != 8) {
         std::fprintf(stderr, "SPSC size_approx disagreed with the pushes\n");
         return 1;
     }
@@ -179,7 +180,7 @@ using MpscWide = c::MpscRing<int, 128>;
         std::fprintf(stderr, "SPSC batch pop returned the wrong sequence across the wrap\n");
         return 1;
     }
-    if (!ring.empty_approx(kSnapshot)) {
+    if (!ring.empty_approx(kNondet)) {
         std::fprintf(stderr, "SPSC ring did not read as empty after the drain\n");
         return 1;
     }
@@ -188,7 +189,7 @@ using MpscWide = c::MpscRing<int, 128>;
 
 [[nodiscard]] int mpsc_single_threaded() {
     Mpsc ring{};
-    if (!ring.empty_approx(kSnapshot) || ring.try_pop().is_some()) {
+    if (!ring.empty_approx(kNondet) || ring.try_pop(kNondet).is_some()) {
         std::fprintf(stderr, "a fresh MPSC ring did not read as empty\n");
         return 1;
     }
@@ -205,7 +206,7 @@ using MpscWide = c::MpscRing<int, 128>;
     }
 
     for (int i = 0; i < 8; ++i) {
-        const Plain item = ring.try_pop().value_or(Plain{-1, 0});
+        const Plain item = ring.try_pop(kNondet).value_or(Plain{-1, 0});
         if (item.value != i) {
             std::fprintf(stderr, "MPSC pop %d came back out of order\n", i);
             return 1;
@@ -230,7 +231,7 @@ using MpscWide = c::MpscRing<int, 128>;
     // took, and leaves tail ahead of head — after which the producer's
     // unsigned gate underflows and the ring reads as full forever.
     Run<Plain, 64> oversized{};
-    const std::size_t taken = ring.try_pop_batch(oversized.each());
+    const std::size_t taken = ring.try_pop_batch(kNondet, oversized.each());
     if (taken != 6) {
         std::fprintf(stderr, "MPSC oversized batch pop returned %zu, not the six available\n", taken);
         return 1;
@@ -239,7 +240,7 @@ using MpscWide = c::MpscRing<int, 128>;
         std::fprintf(stderr, "MPSC batch pop returned the wrong sequence\n");
         return 1;
     }
-    if (!ring.empty_approx(kSnapshot) || ring.size_approx(kSnapshot) != 0) {
+    if (!ring.empty_approx(kNondet) || ring.size_approx(kNondet) != 0) {
         std::fprintf(stderr, "MPSC ring did not read as empty after the clamped drain\n");
         return 1;
     }
@@ -250,7 +251,7 @@ using MpscWide = c::MpscRing<int, 128>;
         std::fprintf(stderr, "MPSC ring refused a push after the oversized drain — the capacity gate underflowed\n");
         return 1;
     }
-    (void)ring.try_pop();
+    (void)ring.try_pop(kNondet);
     return 0;
 }
 
@@ -264,7 +265,7 @@ using MpscWide = c::MpscRing<int, 128>;
     }
     if (small.try_push(4)) return 1;
     std::array<int, 4> out{};
-    if (small.try_pop_batch(std::span<int>{out}) != 4 || out[3] != 3) return 1;
+    if (small.try_pop_batch(kNondet, std::span<int>{out}) != 4 || out[3] != 3) return 1;
 
     MpscWide wide{};
     std::vector<int> items(100);
@@ -274,7 +275,7 @@ using MpscWide = c::MpscRing<int, 128>;
 
     // The drain crosses the boundary between bitmap words 0 and 1.
     std::vector<int> drained(100);
-    if (wide.try_pop_batch(std::span<int>{drained}) != 100) return 1;
+    if (wide.try_pop_batch(kNondet, std::span<int>{drained}) != 100) return 1;
     for (int i = 0; i < 100; ++i) {
         if (drained[static_cast<std::size_t>(i)] != i) {
             std::fprintf(stderr, "the wide MPSC drain broke at index %d\n", i);
@@ -304,21 +305,21 @@ template <std::size_t Capacity>
 
     if (offset > 0) {
         if (ring.try_push_batch(items.first(offset)) != offset) return fail(fixy::TextView{"offset push"});
-        if (ring.try_pop_batch(drained.each()) != offset) return fail(fixy::TextView{"offset pop"});
+        if (ring.try_pop_batch(kNondet, drained.each()) != offset) return fail(fixy::TextView{"offset pop"});
     }
 
     for (std::size_t i = 0; i < Capacity; ++i)
         items.at(i) = static_cast<int>(i);
     if (ring.try_push_batch(items.first(count)) != count) return fail(fixy::TextView{"batch push"});
     for (std::size_t i = 0; i < singles; ++i) {
-        if (ring.try_pop().value_or(-1) != static_cast<int>(i)) return fail(fixy::TextView{"single pop"});
+        if (ring.try_pop(kNondet).value_or(-1) != static_cast<int>(i)) return fail(fixy::TextView{"single pop"});
     }
-    const std::size_t rest = ring.try_pop_batch(drained.each());
+    const std::size_t rest = ring.try_pop_batch(kNondet, drained.each());
     if (rest != count - singles) return fail(fixy::TextView{"the batch pop count"});
     for (std::size_t i = 0; i < rest; ++i) {
         if (drained.at(i) != static_cast<int>(singles + i)) return fail(fixy::TextView{"the batch pop order"});
     }
-    if (ring.try_pop().is_some() || ring.size_approx(kSnapshot) != 0 || !ring.empty_approx(kSnapshot)) {
+    if (ring.try_pop(kNondet).is_some() || ring.size_approx(kNondet) != 0 || !ring.empty_approx(kNondet)) {
         return fail(fixy::TextView{"the drained ring"});
     }
 
@@ -326,7 +327,9 @@ template <std::size_t Capacity>
         items.at(i) = static_cast<int>(Capacity + i);
     if (ring.try_push_batch(items.first(Capacity)) != Capacity) return fail(fixy::TextView{"the refill"});
     if (ring.try_push(-1)) return fail(fixy::TextView{"a push past capacity"});
-    if (ring.try_pop_batch(drained.each()) != Capacity) return fail(fixy::TextView{"the refill drain count"});
+    if (ring.try_pop_batch(kNondet, drained.each()) != Capacity) {
+        return fail(fixy::TextView{"the refill drain count"});
+    }
     for (std::size_t i = 0; i < Capacity; ++i) {
         if (drained.at(i) != static_cast<int>(Capacity + i)) return fail(fixy::TextView{"the refill drain order"});
     }
@@ -394,7 +397,7 @@ template <std::size_t Capacity>
                 }
                 ++next_expected;
                 ++received;
-            } else if (producer_done.load(std::memory_order_acquire) && ring.empty_approx(kSnapshot)) {
+            } else if (producer_done.load(std::memory_order_acquire) && ring.empty_approx(kNondet)) {
                 break;
             }
         }
@@ -434,7 +437,7 @@ template <std::size_t Capacity>
         }
 
         while (received < kTotal) {
-            auto popped = ring.try_pop();
+            auto popped = ring.try_pop(kNondet);
             if (popped.is_some()) {
                 const Plain item = std::move(popped).expect("the test above found an item");
                 const std::size_t who = item.producer;
@@ -449,7 +452,7 @@ template <std::size_t Capacity>
                 }
                 last_seen[who] = item.value;
                 ++received;
-            } else if (finished.load(std::memory_order_acquire) == kProducers && ring.empty_approx(kSnapshot)) {
+            } else if (finished.load(std::memory_order_acquire) == kProducers && ring.empty_approx(kNondet)) {
                 break;
             }
         }
@@ -522,22 +525,22 @@ template <std::size_t Capacity>
 
         bool is_ordered = true;
         while (is_ordered && received < kTotal) {
-            auto single = ring.try_pop();
+            auto single = ring.try_pop(kNondet);
             const bool has_single = single.is_some();
             if (has_single) {
                 is_ordered = take(std::move(single).expect("the test above found an item"));
             }
-            const std::size_t got = ring.try_pop_batch(drained.each());
+            const std::size_t got = ring.try_pop_batch(kNondet, drained.each());
             for (std::size_t i = 0; is_ordered && i < got; ++i)
                 is_ordered = take(drained.at(i));
-            if (got == 0 && !has_single && finished.load_acquire() == kProducers && ring.empty_approx(kSnapshot)) {
+            if (got == 0 && !has_single && finished.load_acquire() == kProducers && ring.empty_approx(kNondet)) {
                 break;
             }
         }
         if (!is_ordered) {
             // The producers wait for room, so the drain goes on until they end.
             while (finished.load_acquire() != kProducers) {
-                static_cast<void>(ring.try_pop_batch(drained.each()));
+                static_cast<void>(ring.try_pop_batch(kNondet, drained.each()));
             }
             return 1;
         }
@@ -609,9 +612,9 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
         }
 
         for (;;) {
-            if (ring->try_pop().is_some()) {
+            if (ring->try_pop(kNondet).is_some()) {
                 ++received;
-            } else if (finished.load(std::memory_order_acquire) == kProducers && ring->empty_approx(kSnapshot)) {
+            } else if (finished.load(std::memory_order_acquire) == kProducers && ring->empty_approx(kNondet)) {
                 break;
             }
         }

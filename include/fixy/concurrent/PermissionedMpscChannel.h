@@ -229,20 +229,21 @@ public:
 
         // The oldest item, or no value when the ring is empty.  It does not
         // tell an empty ring from a closed channel: try_receive does.
-        [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop(::foundation::effects::cap::Nondet) noexcept {
-            return ch_->ring_.try_pop();
+        [[nodiscard, gnu::hot]] ::foundation::core::Option<T>
+        try_pop(::foundation::effects::cap::Nondet nondet) noexcept {
+            return ch_->ring_.try_pop(nondet);
         }
 
         // The oldest item, NoItem::Empty, or NoItem::Closed after the last
         // item of a closed channel (THE END OF THE STREAM of
         // fixy/concurrent/ChannelEnd.h).
         [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem>
-        try_receive(::foundation::effects::cap::Nondet) noexcept {
-            ::foundation::core::Option<T> item = ch_->ring_.try_pop();
+        try_receive(::foundation::effects::cap::Nondet nondet) noexcept {
+            ::foundation::core::Option<T> item = ch_->ring_.try_pop(nondet);
             if (item.is_some()) [[likely]] {
                 return std::move(item).ok_or(NoItem::Empty);
             }
-            return ch_->receive_after_empty_();
+            return ch_->receive_after_empty_(nondet);
         }
 
         [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
@@ -301,21 +302,18 @@ public:
     // the ready bit of each of its items before its end, and the upgrade
     // reads that end with acquire order, so the drain finds each item.  An
     // owner of items that end only through a door, such as the words of a
-    // Box channel, calls it at its own end.  Complexity: linear in the count
-    // of the items.
+    // Box channel, calls it at its own end.  The order of the items reads
+    // the merge, so the drop holds no state, as the drain of the ring asks.
+    // Complexity: linear in the count of the items.
     template <typename Drop>
-        requires std::is_nothrow_invocable_v<Drop&, T>
-    void drain(Drop&& drop) noexcept {
+        requires __is_empty
+    (__remove_cvref(Drop)) && std::is_nothrow_invocable_v<Drop&, T> void drain(Drop&& drop) noexcept {
         auto exclusive = producer_pool_.try_upgrade();
         if (!exclusive) [[unlikely]] {
             ::foundation::core::fatal("a drain of an MPSC channel while a producer handle lives.");
         }
         consumer_claim_.take("a drain of an MPSC channel while its consumer handle lives.");
-        for (;;) {
-            ::foundation::core::Option<T> item = ring_.try_pop();
-            if (item.is_none()) break;
-            drop(std::move(item).expect("the test above found an item"));
-        }
+        ring_.drain(std::forward<Drop>(drop));
         consumer_claim_.release();
         producer_pool_.deposit_exclusive(std::move(*exclusive));
     }
@@ -342,16 +340,18 @@ private:
     // fixy/concurrent/PermissionedSpscChannel.h.  Each producer sets the
     // ready bit of each item before its handle ends, so the pop after the
     // acquire read of the closed state finds each item of the stream.
-    [[nodiscard]] ::foundation::core::Result<T, NoItem> receive_after_empty_() noexcept {
+    [[nodiscard]] ::foundation::core::Result<T, NoItem>
+    receive_after_empty_(::foundation::effects::cap::Nondet nondet) noexcept {
         if (!producers_.is_closed()) [[likely]] {
             return ::foundation::core::err(NoItem::Empty);
         }
-        return receive_after_close_();
+        return receive_after_close_(nondet);
     }
 
     // A stream ends one time, so the pop after its end is cold.
-    [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_close_() noexcept {
-        return ring_.try_pop().ok_or(NoItem::Closed);
+    [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem>
+    receive_after_close_(::foundation::effects::cap::Nondet nondet) noexcept {
+        return ring_.try_pop(nondet).ok_or(NoItem::Closed);
     }
 
     MpscRing<T, Capacity> ring_;
