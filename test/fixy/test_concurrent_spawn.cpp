@@ -74,7 +74,7 @@ namespace {
 
     // Each body borrows its child under the brand of the parent, and a
     // body may spell that brand.
-    auto rebuilt = spawn::mint_spawn<Left, Right>(
+    auto rebuilt = spawn::mint_spawn<spawn::BodyCoupling::Independent, Left, Right>(
         ctx, dram_bound_budget(), std::move(whole),
         [&ran](perm::WriteView<Left, WholeBrand> const&, BgCtx const&) noexcept {
             static_cast<void>(ran.fetch_add_acq_rel(1));
@@ -101,15 +101,15 @@ namespace {
     return 0;
 }
 
-// The parallelism rule chooses the arm from the budget.  A set in one
-// core's private cache runs both bodies on the calling thread, and a set
-// past L3 runs each body on a thread of its own.
+// The parallelism rule chooses the arm of independent bodies from the
+// budget.  A set in one core's private cache runs both bodies on the calling
+// thread, and a set past L3 runs each body on a thread of its own.
 [[nodiscard]] int spawn_arm_follows_the_budget() {
     BgCtx ctx{eff::testing::bg()};
     const std::thread::id caller = std::this_thread::get_id();
 
     std::array<std::thread::id, 2> inline_ids{};
-    auto after_inline = spawn::mint_spawn<Left, Right>(
+    auto after_inline = spawn::mint_spawn<spawn::BodyCoupling::Independent, Left, Right>(
         ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, perm::mint_permission_root<Whole>(),
         [&inline_ids](auto const&, BgCtx const&) noexcept { inline_ids[0] = std::this_thread::get_id(); },
         [&inline_ids](auto const&, BgCtx const&) noexcept { inline_ids[1] = std::this_thread::get_id(); });
@@ -120,7 +120,7 @@ namespace {
     }
 
     std::array<std::thread::id, 2> spawned_ids{};
-    auto after_spawn = spawn::mint_spawn<Left, Right>(
+    auto after_spawn = spawn::mint_spawn<spawn::BodyCoupling::Independent, Left, Right>(
         ctx, dram_bound_budget(), perm::mint_permission_root<Whole>(),
         [&spawned_ids](auto const&, BgCtx const&) noexcept { spawned_ids[0] = std::this_thread::get_id(); },
         [&spawned_ids](auto const&, BgCtx const&) noexcept { spawned_ids[1] = std::this_thread::get_id(); });
@@ -130,6 +130,142 @@ namespace {
         return 1;
     }
     return 0;
+}
+
+// True on the thread that runs main, and false on each worker thread.
+constinit thread_local bool is_main_thread = false;
+
+// Two bodies that exchange messages: the left body sends a ping and waits for
+// the pong, and the right body waits for the ping and sends the pong.  The
+// two waits end only when the two bodies run at the same time.  A body that
+// runs on the spawning thread counts itself and does not wait, because a wait
+// there never ends: the other body runs only after it returns.  The spawn
+// gives the two bodies to the mint, and the test gives zero when no body ran
+// on the spawning thread.
+template <class Spawn>
+[[nodiscard]] int exchange_messages(::fixy::TextView what, Spawn spawn) noexcept {
+    ::fixy::Atomic<int> ping{0};
+    ::fixy::Atomic<int> pong{0};
+    ::fixy::Atomic<int> bodies_on_the_spawning_thread{0};
+    spawn(
+        [&ping, &pong, &bodies_on_the_spawning_thread](auto const&, BgCtx const&) noexcept {
+            if (is_main_thread) {
+                static_cast<void>(bodies_on_the_spawning_thread.fetch_add_acq_rel(1));
+                return;
+            }
+            ping.store_release(1);
+            while (pong.load_acquire() == 0) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+        },
+        [&ping, &pong, &bodies_on_the_spawning_thread](auto const&, BgCtx const&) noexcept {
+            if (is_main_thread) {
+                static_cast<void>(bodies_on_the_spawning_thread.fetch_add_acq_rel(1));
+                return;
+            }
+            while (ping.load_acquire() == 0) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+            pong.store_release(1);
+        });
+    if (int const count = bodies_on_the_spawning_thread.load_acquire(); count != 0) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "{}: {} bodies that wait on each other ran one after another on the spawning thread, so the "
+                       "first wait would never end\n",
+                       what, count);
+        return 1;
+    }
+    return 0;
+}
+
+// The budgets of the exchange: one in L1 of each host, one between L2 and L3
+// of this host, and one past L3 of this host.
+[[nodiscard]] fixy::concurrent::WorkBudget l3_resident_budget() noexcept {
+    const auto& topo = fixy::topology::Topology::instance();
+    return fixy::concurrent::WorkBudget{.read_bytes = (topo.l2_per_core_bytes() + topo.l3_instance_bytes()) / 2};
+}
+
+constexpr std::size_t KiB = 1024;
+constexpr std::size_t MiB = 1024 * KiB;
+constexpr std::size_t GiB = 1024 * MiB;
+
+// The fake hosts of the exchange: caches so small that no budget fits, and
+// caches so large that each budget fits a private cache.
+constexpr fixy::concurrent::HostFacts kTinyCaches{
+    .l1d_bytes = 1 * KiB, .l2_bytes = 2 * KiB, .l3_bytes = 4 * KiB, .process_cpus = 4, .largest_l3_group_cpus = 4};
+constexpr fixy::concurrent::HostFacts kHugeCaches{
+    .l1d_bytes = 1 * GiB, .l2_bytes = 2 * GiB, .l3_bytes = 4 * GiB, .process_cpus = 4, .largest_l3_group_cpus = 4};
+
+// Two bodies that exchange messages end under each budget, on this host and
+// on each fake host, because bodies that wait on each other get a thread
+// each.  The pure arm function gives the same answer for each budget and
+// each host.  An independent spawn still follows the budget and the host.
+[[nodiscard]] int spawn_exchange_ends_under_each_budget() noexcept {
+    BgCtx ctx{eff::testing::bg()};
+    const eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>> test_ctx{eff::testing::test()};
+    int failures = 0;
+    ::fixy::FixedArray<fixy::concurrent::WorkBudget, 4> const budgets{
+        fixy::concurrent::WorkBudget{.read_bytes = 64}, fixy::concurrent::WorkBudget{.read_bytes = 1 * MiB},
+        l3_resident_budget(), dram_bound_budget()};
+    ::fixy::FixedArray<fixy::concurrent::HostFacts, 3> const hosts{kTinyCaches, kHugeCaches,
+                                                                   fixy::concurrent::ParallelismRule::host_facts()};
+    for (fixy::concurrent::WorkBudget const budget : budgets) {
+        failures += exchange_messages(
+            "mint_spawn of two bodies that exchange messages", [&ctx, budget](auto&& left, auto&& right) noexcept {
+                auto rebuilt = spawn::mint_spawn<spawn::BodyCoupling::WaitOnEachOther, Left, Right>(
+                    ctx, budget, perm::mint_permission_root<Whole>(), std::forward<decltype(left)>(left),
+                    std::forward<decltype(right)>(right));
+                ::foundation::linear::drop(std::move(rebuilt));
+            });
+        for (fixy::concurrent::HostFacts const& host : hosts) {
+            failures +=
+                exchange_messages("mint_spawn_on_host of two bodies that exchange messages",
+                                  [&ctx, &test_ctx, &host, budget](auto&& left, auto&& right) noexcept {
+                                      auto rebuilt =
+                                          spawn::mint_spawn_on_host<spawn::BodyCoupling::WaitOnEachOther, Left, Right>(
+                                              ctx, test_ctx, host, budget, perm::mint_permission_root<Whole>(),
+                                              std::forward<decltype(left)>(left), std::forward<decltype(right)>(right));
+                                      ::foundation::linear::drop(std::move(rebuilt));
+                                  });
+            if (spawn::choose_spawn_arm(spawn::BodyCoupling::WaitOnEachOther, host, budget)
+                != spawn::SpawnArm::ThreadPerChild) {
+                ::fixy::report(::fixy::Sink::Err, "the arm of bodies that wait on each other is not a thread each\n");
+                ++failures;
+            }
+        }
+    }
+
+    // Independent bodies follow the host: the huge caches hold a budget of
+    // 1 MiB in a private cache, and the tiny caches hold none.
+    constexpr fixy::concurrent::WorkBudget one_mib{.read_bytes = 1 * MiB};
+    if (spawn::choose_spawn_arm(spawn::BodyCoupling::Independent, kHugeCaches, one_mib) != spawn::SpawnArm::Inline
+        || spawn::choose_spawn_arm(spawn::BodyCoupling::Independent, kTinyCaches, one_mib)
+               != spawn::SpawnArm::ThreadPerChild) {
+        ::fixy::report(::fixy::Sink::Err, "the arm of independent bodies does not follow the caches of the host\n");
+        ++failures;
+    }
+    for (fixy::concurrent::HostFacts const& host :
+         ::fixy::FixedArray<fixy::concurrent::HostFacts, 2>{kHugeCaches, kTinyCaches}) {
+        ::fixy::Atomic<int> bodies_on_main{0};
+        auto rebuilt = spawn::mint_spawn_on_host<spawn::BodyCoupling::Independent, Left, Right>(
+            ctx, test_ctx, host, one_mib, perm::mint_permission_root<Whole>(),
+            [&bodies_on_main](auto const&, BgCtx const&) noexcept {
+                if (is_main_thread) static_cast<void>(bodies_on_main.fetch_add_acq_rel(1));
+            },
+            [&bodies_on_main](auto const&, BgCtx const&) noexcept {
+                if (is_main_thread) static_cast<void>(bodies_on_main.fetch_add_acq_rel(1));
+            });
+        ::foundation::linear::drop(std::move(rebuilt));
+        int const want =
+            spawn::choose_spawn_arm(spawn::BodyCoupling::Independent, host, one_mib) == spawn::SpawnArm::Inline ? 2 : 0;
+        if (bodies_on_main.load_acquire() != want) {
+            ::fixy::report(::fixy::Sink::Err,
+                           "mint_spawn_on_host ran {} independent bodies on the calling thread, want {}\n",
+                           bodies_on_main.load_acquire(), want);
+            ++failures;
+        }
+    }
+    return failures;
 }
 
 // One shard per worker, each writing its own slice, then recombined. The
@@ -293,9 +429,6 @@ struct ShardThreads {
     return 0;
 }
 
-// True on the thread that runs main, and false on each worker thread.
-constinit thread_local bool is_main_thread = false;
-
 // The thread door refuses each worker of this run: the one CPU of the mask
 // is past each CPU of the host, so the kernel refuses it and no worker
 // starts.  The mint then runs each shard on the calling thread, and each
@@ -391,6 +524,7 @@ int main() {
     is_main_thread = true;
     if (const int rc = spawn_runs_every_child_and_returns_the_parent(); rc != 0) return rc;
     if (const int rc = spawn_arm_follows_the_budget(); rc != 0) return rc;
+    if (const int rc = spawn_exchange_ends_under_each_budget(); rc != 0) return rc;
     if (const int rc = parallel_for_visits_every_element_once(); rc != 0) return rc;
     if (const int rc = parallel_for_with_one_shard_runs_inline(); rc != 0) return rc;
     if (const int rc = parallel_for_core_resident_runs_inline(); rc != 0) return rc;

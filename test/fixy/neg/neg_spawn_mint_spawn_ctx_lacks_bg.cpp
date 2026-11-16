@@ -35,7 +35,7 @@ struct has_split_pack_authoring_witness<Whole, Left, Right> : std::true_type {};
 int main() {
     FgCtx ctx{eff::testing::test()};
     auto whole = perm::mint_permission_root<Whole>();
-    [[maybe_unused]] auto rebuilt = fixy::spawn::mint_spawn<Left, Right>(
+    [[maybe_unused]] auto rebuilt = fixy::spawn::mint_spawn<fixy::spawn::BodyCoupling::Independent, Left, Right>(
         ctx, fixy::concurrent::WorkBudget{}, std::move(whole), [](auto const& /*left_view*/, FgCtx const&) noexcept {},
         [](auto const& /*right_view*/, FgCtx const&) noexcept {});
     return 0;

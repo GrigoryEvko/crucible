@@ -151,7 +151,7 @@ include/fixy/collision/ | replace-pending:<string> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/collision/ | replace-pending:<vector> | 1 | - | -
 include/fixy/concurrent/ | base-c-library-call | 4 | - | -
-include/fixy/concurrent/ | base-std-entity | 123 | - | -
+include/fixy/concurrent/ | base-std-entity | 121 | - | -
 include/fixy/concurrent/ | base-std-object | 43 | - | -
 include/fixy/concurrent/ | replace-pending:<algorithm> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<array> | 6 | - | -
@@ -376,7 +376,7 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2764 | - | -
+test/fixy/ | std-entity | 2758 | - | -
 test/fixy/ | std-object | 1000 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -

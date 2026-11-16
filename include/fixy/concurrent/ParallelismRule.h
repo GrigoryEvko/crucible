@@ -170,17 +170,22 @@ public:
         return Tier::DRAMBound;
     }
 
-    // Not gnu::pure: the first call probes the topology, and each call reads
-    // the guard of Topology::instance().
-    [[nodiscard]] static Tier classify(std::size_t ws_bytes) noexcept {
+    // The facts of this host, from its topology.  Not gnu::pure: the first
+    // call probes the topology, and each call reads the guard of
+    // Topology::instance().
+    [[nodiscard]] static HostFacts host_facts() noexcept {
         const auto& topo = ::fixy::topology::Topology::instance();
-        const HostFacts caches{
+        return HostFacts{
             .l1d_bytes = topo.l1d_per_core_bytes(),
             .l2_bytes = topo.l2_per_core_bytes(),
             .l3_bytes = topo.l3_instance_bytes(),
+            .process_cpus = topo.process_cpu_count(),
+            .largest_l3_group_cpus = topo.largest_l3_group_cpus(),
+            .numa_nodes = topo.numa_nodes(),
         };
-        return classify_for(caches, ws_bytes);
     }
+
+    [[nodiscard]] static Tier classify(std::size_t ws_bytes) noexcept { return classify_for(host_facts(), ws_bytes); }
 
     // The question a caller asks when it chooses between inline and
     // threaded work.  A set in one core's private cache is already hot
@@ -237,16 +242,7 @@ public:
     }
 
     [[nodiscard]] static ParallelismDecision recommend(WorkBudget budget) noexcept {
-        const auto& topo = ::fixy::topology::Topology::instance();
-        const HostFacts host{
-            .l1d_bytes = topo.l1d_per_core_bytes(),
-            .l2_bytes = topo.l2_per_core_bytes(),
-            .l3_bytes = topo.l3_instance_bytes(),
-            .process_cpus = topo.process_cpu_count(),
-            .largest_l3_group_cpus = topo.largest_l3_group_cpus(),
-            .numa_nodes = topo.numa_nodes(),
-        };
-        return recommend_for(host, budget);
+        return recommend_for(host_facts(), budget);
     }
 
     // A span read and written in place.  The byte count saturates, for

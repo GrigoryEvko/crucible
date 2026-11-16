@@ -5492,8 +5492,24 @@ fixy_neg_compile_test(neg_canonicalize_for_wrong_rounding
 # floored by the throws gate above and by the context gate here;
 # mint_parallel_for by its context gate and by its body signature.
 fixy_neg_compile_test(neg_spawn_mint_spawn_ctx_lacks_bg
+  "no matching function for call to .mint_spawn<fixy::spawn::BodyCoupling::Independent, \\{anonymous\\}::Left, \\{anonymous\\}::Right>\\("
+  "required for the satisfaction of .CtxFitsSpawn<Ctx, Parent, Brand, foundation::core::Pack<[A-Za-z_]+ \\.\\.\\.>")
+
+# The arm of a spawn changes with the budget and with the caches of the host,
+# so a spawn states whether its bodies wait on each other, with no default.
+fixy_neg_compile_test(neg_spawn_mint_spawn_no_coupling
   "no matching function for call to .mint_spawn<\\{anonymous\\}::Left, \\{anonymous\\}::Right>\\("
-  "required for the satisfaction of .CtxFitsSpawn<Ctx, Parent, Brand, std::tuple<_Ts \\.\\.\\.>")
+  "BodyCoupling")
+
+# The door of a test runs a spawn on the facts of a host that the test
+# gives, so its second context must own Test and its first context must own
+# Bg.
+fixy_neg_compile_test(neg_spawn_mint_spawn_on_host_needs_test_ctx
+  "no matching function for call to .mint_spawn_on_host<fixy::spawn::BodyCoupling::WaitOnEachOther, \\{anonymous\\}::Left, \\{anonymous\\}::Right>\\("
+  "required for the satisfaction of .CtxOwnsCapability<TestCtx, foundation::effects::Effect::Test>.")
+fixy_neg_compile_test(neg_spawn_mint_spawn_on_host_ctx_lacks_bg
+  "no matching function for call to .mint_spawn_on_host<fixy::spawn::BodyCoupling::WaitOnEachOther, \\{anonymous\\}::Left, \\{anonymous\\}::Right>\\("
+  "required for the satisfaction of .CtxFitsSpawn<Ctx, Parent, Brand, ChildrenPack, CallablesPack>.")
 
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_lacks_bg
   "constraints not satisfied"

@@ -29,19 +29,25 @@
 //     nothing.  The shards stay in the tuple, each worker mutates its own
 //     element, and recombine consumes all of them to reissue the parent.
 //
-//  4. mint_spawn takes the budget of its children as a parameter, and
-//     fixy/concurrent/ParallelismRule.h chooses the arm from it.  The two
-//     arms are mint_permission_fork of fixy/concurrent/PermissionFork.h
+//  4. mint_spawn takes the coupling of its bodies as a template argument
+//     with no default, and the budget of its children as a parameter.  The
+//     two arms are mint_permission_fork of fixy/concurrent/PermissionFork.h
 //     (one thread per child, needs Effect::Bg) and
 //     mint_permission_fork_inline of foundation/permissions/PermissionFork.h
-//     (bodies in child order on the calling thread).  A working set in
-//     the private cache of one core runs inline, and a larger one starts
-//     one thread per child.  The context carries no workload axis, and
-//     foundation/effects/Ctx.h tells a fork to take its budget as a
-//     parameter.  The context must still own Effect::Bg, because the
-//     choice happens at run time and the spawning arm must be admissible.
-//     Bodies that wait on each other must not share a fork, because the
-//     inline arm runs them one after another.
+//     (bodies in child order on the calling thread).  choose_spawn_arm
+//     gives the arm.  Bodies that wait on each other, such as the two sides
+//     of a channel, always get one thread each: on one thread the first
+//     wait never ends, because the other body runs only after it returns.
+//     Their liveness then does not change with the budget or with the host.
+//     For independent bodies, fixy/concurrent/ParallelismRule.h chooses
+//     from the budget: a working set in the private cache of one core runs
+//     inline, and a larger one starts one thread per child.  The context
+//     carries no workload axis, and foundation/effects/Ctx.h tells a fork to
+//     take its budget as a parameter.  The context must still own
+//     Effect::Bg, because the choice happens at run time and the spawning
+//     arm must be admissible.  mint_spawn_on_host is the door of a test: it
+//     reads the facts of a host that the test gives, so a test runs the
+//     mint under each cache size with no global state.
 //
 //     mint_parallel_for takes a budget too, and asks the rule for the
 //     whole decision.  A sequential decision runs every shard on the
@@ -77,6 +83,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -86,6 +93,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <meta>
 #include <tuple>
 #include <type_traits>
@@ -183,23 +191,30 @@ namespace perm = ::foundation::permissions;
 
 namespace detail {
 
-// True when the two tuples are std::tuple, the fork admits the context, the
-// parent and the children, and each body takes the view of its own child.
-// The test is a function at namespace scope that is not a template, so no
-// translation unit can specialize it to spawn a body that the fork refuses.
+// The std::tuple of the types of a foundation::core::Pack, in the shape that
+// each_body_takes_its_child of foundation reads.
+[[nodiscard]] consteval std::meta::info tuple_of_pack(std::meta::info pack) {
+    return std::meta::substitute(^^std::tuple, std::meta::template_arguments_of(pack));
+}
+
+// True when the two packs are foundation::core::Pack, the fork admits the
+// context, the parent and the children, and each body takes the view of its
+// own child.  The test is a function at namespace scope that is not a
+// template, so no translation unit can specialize it to spawn a body that the
+// fork refuses.
 [[nodiscard]] consteval bool spawn_fits(std::meta::info ctx, std::meta::info parent, std::meta::info brand,
-                                        std::meta::info children_tuple, std::meta::info callables_tuple) {
-    const std::meta::info children = std::meta::dealias(children_tuple);
-    const std::meta::info callables = std::meta::dealias(callables_tuple);
-    const bool are_tuples = std::meta::has_template_arguments(children) && std::meta::has_template_arguments(callables)
-                         && std::meta::template_of(children) == (^^std::tuple)
-                         && std::meta::template_of(callables) == (^^std::tuple);
-    if (!are_tuples) return false;
+                                        std::meta::info children_pack, std::meta::info callables_pack) {
+    const std::meta::info children = std::meta::dealias(children_pack);
+    const std::meta::info callables = std::meta::dealias(callables_pack);
+    const bool are_packs = std::meta::has_template_arguments(children) && std::meta::has_template_arguments(callables)
+                        && std::meta::template_of(children) == (^^::foundation::core::Pack)
+                        && std::meta::template_of(callables) == (^^::foundation::core::Pack);
+    if (!are_packs) return false;
     const std::vector<std::meta::info> child_tags = std::meta::template_arguments_of(children);
     std::vector<std::meta::info> fork_arguments{ctx, parent};
     fork_arguments.insert(fork_arguments.end(), child_tags.begin(), child_tags.end());
     return std::meta::extract<bool>(std::meta::substitute(^^::fixy::concurrent::CtxFitsPermissionFork, fork_arguments))
-        && perm::detail::each_body_takes_its_child(ctx, brand, children, callables);
+        && perm::detail::each_body_takes_its_child(ctx, brand, tuple_of_pack(children), tuple_of_pack(callables));
 }
 
 // True when no callable's type carries the throws atom anywhere in its
@@ -211,32 +226,113 @@ inline constexpr bool no_callable_throws_v = !(::fixy::type_tree_contains_throws
 
 // The two substrate gates are folded into one concept so the declaration
 // below carries a single requires clause.
-template <typename Ctx, typename Parent, typename Brand, typename ChildrenTuple, typename CallablesTuple>
-concept CtxFitsSpawn = detail::spawn_fits(^^Ctx, ^^Parent, ^^Brand, ^^ChildrenTuple, ^^CallablesTuple);
+// ChildrenPack and CallablesPack are foundation::core::Pack of the children
+// and of the decayed bodies.
+template <typename Ctx, typename Parent, typename Brand, typename ChildrenPack, typename CallablesPack>
+concept CtxFitsSpawn = detail::spawn_fits(^^Ctx, ^^Parent, ^^Brand, ^^ChildrenPack, ^^CallablesPack);
 
-// The call returns once every child has joined.  The budget states the
-// bytes the children touch together, and the parallelism rule chooses
-// the arm from it, per design note 4.  Each body borrows its child through
-// a WriteView of the parent's brand, as the fork lends it.
-template <typename... Children, typename Ctx, typename Parent, typename Brand, typename... Callables>
-    requires CtxFitsSpawn<Ctx, Parent, Brand, std::tuple<Children...>, std::tuple<std::decay_t<Callables>...>>
-[[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
-                                                         perm::Permission<Parent, Brand>&& parent,
-                                                         Callables&&... callables) noexcept {
+// The gate of the door of a test (design note 4): the gate of mint_spawn,
+// and a second context that owns Test, which only the testing door of
+// foundation/effects/Effect.h mints.
+template <typename Ctx, typename TestCtx, typename Parent, typename Brand, typename ChildrenPack,
+          typename CallablesPack>
+concept CtxFitsSpawnOnHost =
+    CtxFitsSpawn<Ctx, Parent, Brand, ChildrenPack, CallablesPack> && eff::CtxOwnsCapability<TestCtx, eff::Effect::Test>;
+
+// The coupling of the bodies of one spawn or one parallel loop, which the
+// caller states (design note 4).
+enum class BodyCoupling : std::uint8_t {
+    // No body waits on another body of the call.  The bodies can run one
+    // after another on one thread, and the budget chooses the arm.
+    Independent = 0,
+    // A body can wait on another body of the call, for example on a message
+    // through a channel.  Each body runs on a thread of its own.
+    WaitOnEachOther = 1,
+};
+
+// The arm of one spawn.
+enum class SpawnArm : std::uint8_t {
+    // Each body in child order, on the calling thread.
+    Inline = 0,
+    // One thread for each body.
+    ThreadPerChild = 1,
+};
+
+// The arm of a spawn of bodies of this coupling, with this budget, on this
+// host (design note 4).  Bodies that wait on each other get one thread each
+// for each budget and each host.
+[[nodiscard]] constexpr SpawnArm choose_spawn_arm(BodyCoupling coupling, ::fixy::concurrent::HostFacts const& host,
+                                                  ::fixy::concurrent::WorkBudget budget) noexcept {
+    if (coupling == BodyCoupling::WaitOnEachOther) return SpawnArm::ThreadPerChild;
+    const bool is_core_resident = ::fixy::concurrent::is_core_private_tier(
+        ::fixy::concurrent::ParallelismRule::classify_for(host, budget.working_set_bytes()));
+    return is_core_resident ? SpawnArm::Inline : SpawnArm::ThreadPerChild;
+}
+
+namespace detail {
+
+// The body of the two spawn mints, on the facts of a host.  The arm of bodies
+// that wait on each other is the fork of threads alone, so the inline arm is
+// not part of that instantiation.
+template <BodyCoupling Coupling, typename... Children, typename Ctx, typename Parent, typename Brand,
+          typename... Callables>
+    requires CtxFitsSpawn<Ctx, Parent, Brand, ::foundation::core::Pack<Children...>,
+                          ::foundation::core::Pack<std::decay_t<Callables>...>>
+[[nodiscard]] perm::Permission<Parent, Brand>
+spawn_on_host_(Ctx const& ctx, ::fixy::concurrent::HostFacts const& host, ::fixy::concurrent::WorkBudget budget,
+               perm::Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept {
     // Design note 1.  The clause above has already checked each callable's
     // noexcept specification through foundation's gate; this is the
     // structural half, which foundation cannot express because the atom is
     // a fixy name.
-    static_assert(detail::no_callable_throws_v<Callables...>,
+    static_assert(no_callable_throws_v<Callables...>,
                   "mint_spawn: a callable's type carries fixy::atom::ctrl::throws. A noexcept declaration is "
                   "a promise the callable can still break, and a throw out of a child tears through the join "
                   "instead of unwinding it. Remove the atom from the callable's type, or do not spawn it.");
-    if (::fixy::concurrent::ParallelismRule::is_core_resident(budget.working_set_bytes())) {
-        return perm::mint_permission_fork_inline<Children...>(ctx, std::move(parent),
-                                                              std::forward<Callables>(callables)...);
+    if constexpr (Coupling == BodyCoupling::Independent) {
+        if (choose_spawn_arm(Coupling, host, budget) == SpawnArm::Inline) {
+            return perm::mint_permission_fork_inline<Children...>(ctx, std::move(parent),
+                                                                  std::forward<Callables>(callables)...);
+        }
+    } else {
+        static_cast<void>(host);
+        static_cast<void>(budget);
     }
     return ::fixy::concurrent::mint_permission_fork<Children...>(ctx, std::move(parent),
                                                                  std::forward<Callables>(callables)...);
+}
+
+}  // namespace detail
+
+// The call returns once every child has joined.  The coupling states whether
+// a body can wait on another body, and the budget states the bytes the
+// children touch together.  choose_spawn_arm gives the arm from the two and
+// the facts of this host, per design note 4.  Each body borrows its child
+// through a WriteView of the parent's brand, as the fork lends it.
+template <BodyCoupling Coupling, typename... Children, typename Ctx, typename Parent, typename Brand,
+          typename... Callables>
+    requires CtxFitsSpawn<Ctx, Parent, Brand, ::foundation::core::Pack<Children...>,
+                          ::foundation::core::Pack<std::decay_t<Callables>...>>
+[[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
+                                                         perm::Permission<Parent, Brand>&& parent,
+                                                         Callables&&... callables) noexcept {
+    return detail::spawn_on_host_<Coupling, Children...>(ctx, ::fixy::concurrent::ParallelismRule::host_facts(), budget,
+                                                         std::move(parent), std::forward<Callables>(callables)...);
+}
+
+// mint_spawn on the facts of a host that a test gives, for a test (design
+// note 4).  The test context is the authority of the facts.
+template <BodyCoupling Coupling, typename... Children, typename Ctx, typename TestCtx, typename Parent, typename Brand,
+          typename... Callables>
+    requires CtxFitsSpawnOnHost<Ctx, TestCtx, Parent, Brand, ::foundation::core::Pack<Children...>,
+                                ::foundation::core::Pack<std::decay_t<Callables>...>>
+[[nodiscard]] perm::Permission<Parent, Brand>
+mint_spawn_on_host(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::HostFacts const& host,
+                   ::fixy::concurrent::WorkBudget budget, perm::Permission<Parent, Brand>&& parent,
+                   Callables&&... callables) noexcept {
+    static_cast<void>(test);
+    return detail::spawn_on_host_<Coupling, Children...>(ctx, host, budget, std::move(parent),
+                                                         std::forward<Callables>(callables)...);
 }
 
 // The background capability is demanded even when N is one or the budget
