@@ -7,6 +7,9 @@
 
 #include "taint.h"
 
+#include <fixy/Core.h>
+#include <fixy/os/Args.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -184,16 +187,17 @@ int run_control(Leak&& leak) noexcept {
 }
 
 // The shared entry: a control mode when one is named, the checks
-// otherwise.  `run_checks` is the list of checks of the test.
+// otherwise.  The argument door of fixy/os/Args.h gives the arguments of
+// main.  `run_checks` is the list of checks of the test.
 template <typename Checks>
-int run(int argc, char** argv, Checks&& run_checks) noexcept {
+int run(::fixy::os::Args const arguments, Checks&& run_checks) noexcept {
     require_valgrind();
     require_no_debuginfod();
-    if (argc == 2) {
-        std::string_view const mode{argv[1]};
-        if (mode == "--control-branch") return run_control(control_branch_on_secret);
-        if (mode == "--control-index") return run_control(control_index_by_secret);
-        std::fprintf(stderr, "ct_taint: unknown mode %s\n", argv[1]);
+    if (arguments.size() == 2) {
+        ::fixy::TextView const mode = arguments.get(1).expect("a count of two holds a first argument").view();
+        if (mode == ::fixy::TextView{"--control-branch"}) return run_control(control_branch_on_secret);
+        if (mode == ::fixy::TextView{"--control-index"}) return run_control(control_index_by_secret);
+        ::fixy::report(::fixy::Sink::Err, "ct_taint: unknown mode {}\n", mode);
         return 2;
     }
     Tally tally;

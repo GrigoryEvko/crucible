@@ -111,7 +111,7 @@ void check_mtls_private_key(Tally& tally) noexcept {
 }  // namespace
 
 int main(int argc, char** argv) {
-    return ct_taint::run(argc, argv, [](Tally& tally) noexcept {
+    return ct_taint::run(::fixy::os::args(argc, argv), [](Tally& tally) noexcept {
         ct_taint::check_scalars<FixyCt>(tally);
         ct_taint::check_eq<FixyCt>(tally);
         check_session_payload(tally);

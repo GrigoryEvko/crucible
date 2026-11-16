@@ -192,8 +192,8 @@ include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 450 | - | -
-include/fixy/session/ | base-std-object | 187 | - | -
+include/fixy/session/ | base-std-entity | 447 | - | -
+include/fixy/session/ | base-std-object | 184 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 1 | - | -
@@ -317,11 +317,11 @@ test/cntp_neg/ | std-object | 5 | - | -
 test/cog_neg/ | std-entity | 1 | - | -
 test/cog_neg/ | std-object | 1 | - | -
 test/ct/ | c-array-object | 5 | - | -
-test/ct/ | c-library-call | 16 | - | -
+test/ct/ | c-library-call | 14 | - | -
 test/ct/ | inline-asm | 5 | - | -
-test/ct/ | raw-pointer-object | 5 | - | -
-test/ct/ | std-entity | 20 | - | -
-test/ct/ | std-object | 13 | - | -
+test/ct/ | raw-pointer-object | 4 | - | -
+test/ct/ | std-entity | 18 | - | -
+test/ct/ | std-object | 12 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 89 | - | -
 test/fixy/ | c-library-call | 1327 | - | -
@@ -375,8 +375,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2737 | - | -
-test/fixy/ | std-object | 995 | - | -
+test/fixy/ | std-entity | 2719 | - | -
+test/fixy/ | std-object | 989 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 254 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -428,8 +428,8 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 104 | - | -
-test/fixy/neg/ | std-object | 48 | - | -
+test/fixy/neg/ | std-entity | 101 | - | -
+test/fixy/neg/ | std-object | 47 | - | -
 test/foundation/ | c-array-object | 25 | - | -
 test/foundation/ | c-library-call | 329 | - | -
 test/foundation/ | c-library-object | 5 | - | -
@@ -543,13 +543,13 @@ test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text
 test/fuzz/boundary/harnesses/ | std-entity | 146 | - | -
 test/fuzz/boundary/harnesses/ | std-object | 80 | - | -
 test/fuzz/property/ | c-array-object | 17 | - | -
-test/fuzz/property/ | c-library-call | 48 | - | -
+test/fuzz/property/ | c-library-call | 46 | - | -
 test/fuzz/property/ | compiler-builtin | 4 | - | -
 test/fuzz/property/ | raw-function-pointer | 2 | - | -
-test/fuzz/property/ | raw-pointer-object | 43 | - | -
+test/fuzz/property/ | raw-pointer-object | 42 | - | -
 test/fuzz/property/ | replace-pending:<limits> | 27 | - | -
-test/fuzz/property/ | std-entity | 143 | - | -
-test/fuzz/property/ | std-object | 30 | - | -
+test/fuzz/property/ | std-entity | 138 | - | -
+test/fuzz/property/ | std-object | 29 | - | -
 test/kernel_neg/ | raw-pointer-object | 1 | - | -
 test/kernel_neg/ | replace-pending:<limits> | 1 | - | -
 test/layer/ | door-header | 1 | - | -
