@@ -382,6 +382,16 @@ namespace detail {
 
 }  // namespace detail
 
+// True when load_prefix and store_prefix take one masked load or store of
+// bytes, and false when they copy the bytes through memory.  A copy of a
+// run-time size is much slower than a full load, so a loop can choose a full
+// load when it knows that the bytes past the prefix are inside its run.
+#if defined(__AVX512BW__) && defined(__AVX512VL__)
+inline constexpr bool kPrefixLoadIsMasked = true;
+#else
+inline constexpr bool kPrefixLoadIsMasked = false;
+#endif
+
 // The first count lanes of a vector from ptr, and zero in each lane at or
 // past count.  The load reads the count elements and no other byte, so a run
 // that ends at the last of them is safe to read.  With AVX-512BW, a register

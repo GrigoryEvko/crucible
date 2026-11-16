@@ -754,8 +754,9 @@ template <class T, class Op>
 // position of the row, the stride of the inner axis, and the broadcast of a
 // Splat row.  full(position) reads the W elements from position, and
 // tail(position, live) reads live elements, with copies of lane 0 in the
-// other lanes.  A read touches only elements of the row, and the elements
-// between them inside the span of the view.
+// other lanes.  inner(position) reads the same W elements as full, for a
+// block with an element of the row after it.  A read touches only elements of
+// the row, and the elements between them inside the span of the view.
 template <LaneClass Class, int W, class E>
 struct LaneRow {
     using V = ::foundation::simd::vec<E, W>;
@@ -763,6 +764,20 @@ struct LaneRow {
     E const* row = nullptr;
     std::size_t step = 0;
     V splat{};
+
+    // A StepTwo block reads 2W elements with two full loads.  The last of
+    // them lies between the last element of the block and the element of the
+    // row after it, so it is inside the span.  The prefix load of full costs
+    // a copy of bytes on a target with no masked load of bytes, such as AVX2.
+    [[nodiscard]] CRUCIBLE_INLINE V inner(std::size_t position) const noexcept {
+        if constexpr (Class == LaneClass::StepTwo) {
+            E const* const at = row + 2 * position;
+            return ::foundation::simd::pick_even_lanes(::foundation::simd::load<V>(at),
+                                                       ::foundation::simd::load<V>(at + W));
+        } else {
+            return full(position);
+        }
+    }
 
     [[nodiscard]] CRUCIBLE_INLINE V full(std::size_t position) const noexcept {
         if constexpr (Class == LaneClass::Dense) {
@@ -844,12 +859,20 @@ CRUCIBLE_INLINE void store_tail_(T* row, std::size_t step, std::size_t position,
 }
 
 // One row of the lane path: the whole blocks of W elements, then the masked
-// block of the rest.  O(length).
+// block of the rest.  A target with a masked load of bytes reads each whole
+// block with full().  Each other target reads a whole block with an element of
+// the row after it with inner(), and the last whole block with full().
+// O(length).
 template <int W, LaneClass OutClass, class Op, class T, class... Rows>
 CRUCIBLE_INLINE void run_lane_row_(Op const& op, std::size_t length, T* out, std::size_t out_step,
                                    Rows const&... rows) noexcept {
     std::size_t const width = static_cast<std::size_t>(W);
     std::size_t position = 0;
+    if constexpr (!::foundation::simd::kPrefixLoadIsMasked) {
+        for (; position + width < length; position += width) {
+            store_full_<OutClass, W>(out, out_step, position, op(rows.inner(position)...));
+        }
+    }
     for (; position + width <= length; position += width) {
         store_full_<OutClass, W>(out, out_step, position, op(rows.full(position)...));
     }

@@ -685,6 +685,22 @@ void tile_classes(::fixy::TestRunnerCtx const& test, ::fixy::TextView name) noex
     pass(test, "  tile_classes {}: PASSED\n", name);
 }
 
+// A step-two input whose row of 32 elements, a whole count of blocks for each
+// lane count, ends the run: the blocks before the last one read the element
+// after their last element, and the last block reads no element past the run,
+// which the address sanitizer of a Debug build finds.
+template <class E>
+void step_two_ends_the_run(::fixy::TestRunnerCtx const& test, ::fixy::TextView name) noexcept {
+    auto const values = [](std::size_t position) noexcept {
+        return static_cast<E>(position % 97) * static_cast<E>(0.5) + static_cast<E>(1);
+    };
+    Case<2> const ending{line_of(32, 1, 0), {line_of(32, 1, 32), line_of(32, 2, 64)}, 127};
+    CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(ending, Add{}, values, 0));
+    Case<2> const two_rows{plane_of(2, 32, 32, 1, 0), {plane_of(2, 32, 32, 1, 64), plane_of(2, 32, 64, 2, 128)}, 255};
+    CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(two_rows, Add{}, values, 0));
+    pass(test, "  step_two_ends_the_run {}: PASSED\n", name);
+}
+
 // ── Unit tests ──────────────────────────────────────────────────────────
 
 // An input of another frame, with a brand of its own, takes the proof of the
@@ -786,6 +802,8 @@ int main() {
     nan_rule_on_each_path<double>(test, "double");
     tile_classes<float>(test, "float");
     tile_classes<double>(test, "double");
+    step_two_ends_the_run<float>(test, "float");
+    step_two_ends_the_run<double>(test, "double");
     pointwise_agrees_with_walk<float, 2>(test, "float add", kSeed, Add{});
     pointwise_agrees_with_walk<float, 3>(test, "float multiply-add", kSeed + 1, MultiplyAdd{});
     pointwise_agrees_with_walk<float, 2>(test, "float divide", kSeed + 2, Divide{});
