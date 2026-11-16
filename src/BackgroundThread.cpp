@@ -275,8 +275,13 @@ struct BackgroundThread::Pipeline {
 
         // True when the channel holds an item, or when its stream ended.  A
         // test after the mark of a park sees each item of a push and the end
-        // of each close whose wake the mark could miss.
-        [[nodiscard]] bool has_item_or_end() const noexcept { return !inner_.empty_approx() || inner_.is_closed(); }
+        // of each close whose wake the mark could miss.  The snapshot takes
+        // the tag of Nondet from the load context.
+        [[nodiscard]] bool has_item_or_end() const noexcept {
+            return !inner_.empty_approx(
+                       ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx_))
+                || inner_.is_closed();
+        }
 
         [[nodiscard]] BackgroundThread& owner() const noexcept { return *owner_; }
         [[nodiscard]] ::fixy::BgLoadCtx const& ctx() const noexcept { return ctx_; }

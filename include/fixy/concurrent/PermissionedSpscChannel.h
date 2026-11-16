@@ -164,9 +164,14 @@ public:
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return ch_->ring_.try_push(item); }
 
         // Snapshots.  Sound for telemetry and for deciding whether to
-        // keep retrying, never for a correctness invariant.
-        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
+        // keep retrying, never for a correctness invariant.  Each takes the
+        // bare tag of Nondet, as the snapshot of the ring does.
+        [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return ch_->ring_.empty_approx(nondet);
+        }
+        [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return ch_->ring_.size_approx(nondet);
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<PermissionedSpscChannel>
@@ -230,8 +235,12 @@ public:
             return ch_->receive_after_empty_();
         }
 
-        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
+        [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return ch_->ring_.empty_approx(nondet);
+        }
+        [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return ch_->ring_.size_approx(nondet);
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
         // True when the producer handle ended and no handle opened the
@@ -303,8 +312,12 @@ public:
         producer_claim_.release();
     }
 
-    [[nodiscard]] bool empty_approx() const noexcept { return ring_.empty_approx(); }
-    [[nodiscard]] std::size_t size_approx() const noexcept { return ring_.size_approx(); }
+    [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return ring_.empty_approx(nondet);
+    }
+    [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return ring_.size_approx(nondet);
+    }
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
     // Always false, and present only so this channel matches the shape

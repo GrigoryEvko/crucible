@@ -28,6 +28,12 @@ namespace perm = foundation::permissions;
 namespace {
 
 using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
+// A context that holds Nondet and no other atom, for a snapshot.
+using SnapshotCtx = ::foundation::effects::ExecCtx<::foundation::effects::Test,
+                                                   ::foundation::effects::Row<::foundation::effects::Effect::Nondet>>;
+
+// The tag of a snapshot of a channel.  The test context holds Nondet.
+constexpr ::foundation::effects::cap::Nondet kSnapshot = ::foundation::effects::testing::test().nondet;
 
 [[nodiscard]] int fail(const char* what) noexcept {
     std::fprintf(stderr, "test_endpoint: %s\n", what);
@@ -63,7 +69,7 @@ static_assert(!channels::IsBridgeableDirection<BridgeSpsc, static_cast<channels:
         producer.emplace(std::move(*producer).send(value * 10, push_int));
     }
     std::move(*producer).detach(s::detach_reason::InfiniteLoopProtocol{});
-    if (channel.size_approx() != 3) return fail("the producer session left the wrong number of values");
+    if (channel.size_approx(kSnapshot) != 3) return fail("the producer session left the wrong number of values");
 
     std::optional consumer{channels::mint_substrate_session<BridgeSpsc, channels::Direction::Consumer>(
         ctx, channel.consumer(std::move(consumer_perm)))};
@@ -73,7 +79,7 @@ static_assert(!channels::IsBridgeableDirection<BridgeSpsc, static_cast<channels:
         consumer.emplace(std::move(next));
     }
     std::move(*consumer).detach(s::detach_reason::InfiniteLoopProtocol{});
-    if (!channel.empty_approx()) return fail("the consumer session left values in the channel");
+    if (!channel.empty_approx(kSnapshot)) return fail("the consumer session left values in the channel");
     return 0;
 }
 
@@ -83,14 +89,27 @@ struct EndpointTag {};
 auto endpoint_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<EndpointTag>>(); }
 using EndpointSpsc = c::spsc_channel_t<int, 8, decltype(endpoint_root())>;
 
+// A snapshot of an endpoint takes the tag of Nondet from its context, so an
+// endpoint of the foreground context reads no snapshot.
+template <class EndpointType>
+concept ReadsSnapshot = requires(EndpointType const& endpoint) {
+    endpoint.size_approx();
+    endpoint.empty_approx();
+};
+static_assert(!ReadsSnapshot<channels::Endpoint<EndpointSpsc, channels::Direction::Producer, FgCtx>>);
+static_assert(!ReadsSnapshot<channels::Endpoint<EndpointSpsc, channels::Direction::Consumer, FgCtx>>);
+static_assert(ReadsSnapshot<channels::Endpoint<EndpointSpsc, channels::Direction::Producer, SnapshotCtx>>);
+static_assert(ReadsSnapshot<channels::Endpoint<EndpointSpsc, channels::Direction::Consumer, SnapshotCtx>>);
+
 [[nodiscard]] int endpoint_send_recv_and_hand_back() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();
     EndpointSpsc channel{};
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<EndpointSpsc::producer_tag, EndpointSpsc::consumer_tag>(endpoint_root());
 
+    // The producer endpoint reads a snapshot, so its context holds Nondet.
     auto producer = channels::mint_endpoint<EndpointSpsc, channels::Direction::Producer>(
-        ctx, channel.producer(std::move(producer_perm)));
+        SnapshotCtx{::foundation::effects::testing::test()}, channel.producer(std::move(producer_perm)));
     auto consumer = channels::mint_endpoint<EndpointSpsc, channels::Direction::Consumer>(
         ctx, channel.consumer(std::move(consumer_perm)));
 
@@ -116,7 +135,7 @@ using EndpointSpsc = c::spsc_channel_t<int, 8, decltype(endpoint_root())>;
     session.emplace(std::move(after_second));
     if (first != 8 || second != 9) return fail("the endpoint session read the wrong values");
     std::move(*session).detach(s::detach_reason::InfiniteLoopProtocol{});
-    if (!channel.empty_approx()) return fail("the endpoint session left values in the channel");
+    if (!channel.empty_approx(kSnapshot)) return fail("the endpoint session left values in the channel");
     return 0;
 }
 

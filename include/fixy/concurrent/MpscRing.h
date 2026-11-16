@@ -24,6 +24,7 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <atomic>
@@ -220,7 +221,11 @@ public:
         return R;
     }
 
-    [[nodiscard]] bool empty_approx() const noexcept {
+    // A snapshot reads cells and indexes that the producers write, and the
+    // schedule decides when they write them.  So two runs with the same
+    // inputs can read two values, and each snapshot takes the bare tag of
+    // Nondet.
+    [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet) const noexcept {
         const std::uint64_t pos = tail_.get();
         const std::size_t cell_idx = pos & MASK;
         const std::size_t word_idx = cell_idx >> 6;
@@ -231,7 +236,7 @@ public:
 
     // The two loads are not one snapshot, so head can outrun the tail
     // that was read for it.  The clamp absorbs that.
-    [[nodiscard]] std::size_t size_approx() const noexcept {
+    [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet) const noexcept {
         const std::uint64_t h = head_.get();
         const std::uint64_t t = tail_.get();
         const std::uint64_t d = (h > t) ? (h - t) : 0;

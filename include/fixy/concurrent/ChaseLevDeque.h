@@ -27,6 +27,7 @@
 #include <fixy/Mutation.h>
 
 #include <foundation/Pinned.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <atomic>
@@ -159,16 +160,20 @@ public:
 
     // Snapshots.  Both values can change before the call returns, so
     // these are for telemetry and polling decisions, never for a
-    // correctness invariant in the caller.
+    // correctness invariant in the caller.  The schedule of the owner and
+    // the thieves decides the values, so each snapshot takes the bare tag
+    // of Nondet.
 
-    [[nodiscard]] std::size_t size_approx() const noexcept {
+    [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet) const noexcept {
         const std::int64_t t = top_.get();
         const std::int64_t b = bottom_.load(std::memory_order_acquire);
         const std::int64_t diff = b - t;
         return diff > 0 ? static_cast<std::size_t>(diff) : 0;
     }
 
-    [[nodiscard]] bool empty_approx() const noexcept { return size_approx() == 0; }
+    [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return size_approx(nondet) == 0;
+    }
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 

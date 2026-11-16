@@ -33,6 +33,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Linear.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 #include <foundation/permissions/Permission.h>
 
@@ -149,7 +150,12 @@ public:
             return ch_->log_.try_append(metas);
         }
 
-        [[nodiscard]] std::uint32_t size_approx() const { return ch_->log_.size().peek(); }
+        // A snapshot reads the index of the consumer, and the schedule decides
+        // when the consumer moves it.  So the snapshot takes the bare tag of
+        // Nondet.
+        [[nodiscard]] std::uint32_t size_approx(::foundation::effects::cap::Nondet) const {
+            return ch_->log_.size().peek();
+        }
     };
 
     // The tail index is read relaxed.  The consumer permission is linear, so
@@ -245,7 +251,11 @@ public:
 
         [[nodiscard]] std::uint64_t tail_index() const { return ch_->log_.tail.get(); }
 
-        [[nodiscard]] std::uint32_t size_approx() const { return ch_->log_.size().peek(); }
+        // A snapshot reads the index of the producer, so it takes the bare tag
+        // of Nondet, as the snapshot of the producer does.
+        [[nodiscard]] std::uint32_t size_approx(::foundation::effects::cap::Nondet) const {
+            return ch_->log_.size().peek();
+        }
     };
 
     // Each accessor takes the claim of its role first, so a second live

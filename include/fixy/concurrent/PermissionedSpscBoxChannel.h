@@ -129,8 +129,12 @@ public:
             return ::foundation::core::Option<value_type>::some(open_(word));
         }
 
-        [[nodiscard]] bool empty_approx() const noexcept { return cells_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return cells_.size_approx(); }
+        [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return cells_.empty_approx(nondet);
+        }
+        [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return cells_.size_approx(nondet);
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<cell_channel> channel_identity() const noexcept {
@@ -188,8 +192,12 @@ public:
                 });
         }
 
-        [[nodiscard]] bool empty_approx() const noexcept { return cells_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return cells_.size_approx(); }
+        [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return cells_.empty_approx(nondet);
+        }
+        [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return cells_.size_approx(nondet);
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
         // The closed state of the channel of the words, with acquire order.
@@ -209,8 +217,12 @@ public:
         return ConsumerHandle{cells_.consumer(std::move(perm))};
     }
 
-    [[nodiscard]] bool empty_approx() const noexcept { return cells_.empty_approx(); }
-    [[nodiscard]] std::size_t size_approx() const noexcept { return cells_.size_approx(); }
+    [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return cells_.empty_approx(nondet);
+    }
+    [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return cells_.size_approx(nondet);
+    }
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:

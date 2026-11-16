@@ -11,6 +11,7 @@
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <bit>
@@ -129,7 +130,12 @@ public:
         return count;
     }
 
-    [[nodiscard]] bool empty_approx() const noexcept { return head_.get() == tail_.get(); }
+    // A snapshot reads the index of the other side, and the schedule decides
+    // when that side moves it.  So two runs with the same inputs can read two
+    // values, and each snapshot takes the bare tag of Nondet.
+    [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet) const noexcept {
+        return head_.get() == tail_.get();
+    }
 
     // The count of items between a head and a tail that a reader loaded in
     // that order.  A reader on a third thread can load a tail that is newer
@@ -146,7 +152,7 @@ public:
         return count > Capacity ? Capacity : count;
     }
 
-    [[nodiscard]] std::size_t size_approx() const noexcept {
+    [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet) const noexcept {
         const std::uint64_t h = head_.get();
         const std::uint64_t t = tail_.get();
         return count_between(h, t);

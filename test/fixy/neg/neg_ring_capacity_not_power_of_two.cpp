@@ -16,5 +16,5 @@ using Broken = c::SpscRing<int, 12>;
 
 int main() {
     Broken ring{};
-    return ring.empty_approx() ? 0 : 1;
+    return ring.empty_approx(::foundation::effects::testing::test().nondet) ? 0 : 1;
 }

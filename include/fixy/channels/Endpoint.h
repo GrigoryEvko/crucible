@@ -100,15 +100,22 @@ public:
         }
     }
 
+    // A snapshot of the channel.  The schedule decides its value, so the
+    // snapshot takes the bare tag of Nondet from the context of the
+    // endpoint, and only a context whose row holds Nondet reads one.
     [[nodiscard]] bool empty_approx() const noexcept
-        requires requires(handle_type const& h) { h.empty_approx(); }
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>
+              && requires(handle_type const& h, ::foundation::effects::cap::Nondet nondet) { h.empty_approx(nondet); }
     {
-        return handle_.empty_approx();
+        return handle_.empty_approx(
+            ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx_));
     }
     [[nodiscard]] std::size_t size_approx() const noexcept
-        requires requires(handle_type const& h) { h.size_approx(); }
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>
+              && requires(handle_type const& h, ::foundation::effects::cap::Nondet nondet) { h.size_approx(nondet); }
     {
-        return handle_.size_approx();
+        return handle_.size_approx(
+            ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx_));
     }
 
     // The session carries an empty permission set.  The handle's own

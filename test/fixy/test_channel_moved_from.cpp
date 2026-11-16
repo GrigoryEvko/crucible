@@ -175,7 +175,8 @@ void moved_from_handles_end_the_process(::fixy::TestRunnerCtx const& test) {
     auto second_producer = channel.producer(std::move(producer_moved).release());
     auto second_consumer = channel.consumer(std::move(consumer_moved).release());
     if (producer_moved.channel_identity().is_bound() || consumer_moved.channel_identity().is_bound()) return 1;
-    if (!second_producer.try_push(8) || second_consumer.size_approx() != 1) return 1;
+    if (!second_producer.try_push(8) || second_consumer.size_approx(::foundation::effects::testing::test().nondet) != 1)
+        return 1;
     foundation::linear::drop(std::move(second_producer).release());
     foundation::linear::drop(std::move(second_consumer).release());
     return 0;

@@ -41,6 +41,9 @@ using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>
 using FgCtx = ::fixy::HotFgCtx;
 using BgCtx = ::fixy::BgDrainCtx;
 
+// The tag of a snapshot of the log.  The test context holds Nondet.
+constexpr ::foundation::effects::cap::Nondet kSnapshot = ::foundation::effects::testing::test().nondet;
+
 // The gate of each mint reads the context, the log and the handle.
 static_assert(ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::ProducerHandle>
               && ms::CtxFitsMetaLogConsumerSession<FgCtx, PermissionedLog, PermissionedLog::ConsumerHandle>);
@@ -193,7 +196,7 @@ void test_single_append_drain() {
     auto second_producer = log.producer(std::move(producer).release());
     auto second_consumer = log.consumer(std::move(consumer).release());
     CRUCIBLE_TEST_REQUIRE(second_producer.try_append_one(source));
-    CRUCIBLE_TEST_REQUIRE(second_consumer.size_approx() == 1);
+    CRUCIBLE_TEST_REQUIRE(second_consumer.size_approx(kSnapshot) == 1);
     ::foundation::linear::drop(std::move(second_producer).release());
     ::foundation::linear::drop(std::move(second_consumer).release());
 }
@@ -222,8 +225,8 @@ void test_partial_drain() {
     for (std::size_t i = 0; i < first_three.size(); ++i) {
         CRUCIBLE_TEST_REQUIRE(same_meta(first_three[i], crucible::test::element_at(source, i)));
     }
-    CRUCIBLE_TEST_REQUIRE(consumer.size_approx() == 2);
-    CRUCIBLE_TEST_REQUIRE(producer.size_approx() == 2);
+    CRUCIBLE_TEST_REQUIRE(consumer.size_approx(kSnapshot) == 2);
+    CRUCIBLE_TEST_REQUIRE(producer.size_approx(kSnapshot) == 2);
 
     std::array<::crucible::TensorMeta, 2> rest{};
     std::size_t rest_next = 0;
@@ -232,7 +235,7 @@ void test_partial_drain() {
     CRUCIBLE_TEST_REQUIRE(remaining == 2);
     CRUCIBLE_TEST_REQUIRE(same_meta(rest[0], source.at(::fixy::index<3>())));
     CRUCIBLE_TEST_REQUIRE(same_meta(rest[1], source.at(::fixy::index<4>())));
-    CRUCIBLE_TEST_REQUIRE(consumer.size_approx() == 0);
+    CRUCIBLE_TEST_REQUIRE(consumer.size_approx(kSnapshot) == 0);
 }
 
 // A bulk append returns the index of the first record it wrote, and copy_at()
@@ -267,7 +270,7 @@ void test_empty_drain() {
     const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta&) { ++visited; });
     CRUCIBLE_TEST_REQUIRE(count == 0);
     CRUCIBLE_TEST_REQUIRE(visited == 0);
-    CRUCIBLE_TEST_REQUIRE(consumer.size_approx() == 0);
+    CRUCIBLE_TEST_REQUIRE(consumer.size_approx(kSnapshot) == 0);
     CRUCIBLE_TEST_REQUIRE(consumer.tail_index() == 0);
     CRUCIBLE_TEST_REQUIRE(consumer.head_index() == 0);
 }
@@ -297,7 +300,8 @@ void test_typed_session_round_trip() {
             head.emplace(std::move(*head).select<0>(::fixy::session::no_label).send(make_meta(i + 10), ms::append_one));
         }
         auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
-        producer_handle_back.store(back.size_approx() <= static_cast<std::uint32_t>(kCount), std::memory_order_release);
+        producer_handle_back.store(back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount),
+                                   std::memory_order_release);
         producer_done.store(true, std::memory_order_release);
     }};
 

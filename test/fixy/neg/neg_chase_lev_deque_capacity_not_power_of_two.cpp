@@ -6,5 +6,5 @@
 
 int main() {
     ::fixy::concurrent::ChaseLevDeque<int, 12> deque{};
-    return deque.empty_approx() ? 0 : 1;
+    return deque.empty_approx(::foundation::effects::testing::test().nondet) ? 0 : 1;
 }

@@ -131,8 +131,12 @@ public:
             return ::foundation::core::Option<value_type>::some(open_(word));
         }
 
-        [[nodiscard]] bool empty_approx() const noexcept { return cells_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return cells_.size_approx(); }
+        [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return cells_.empty_approx(nondet);
+        }
+        [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return cells_.size_approx(nondet);
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<cell_channel> channel_identity() const noexcept {
@@ -195,8 +199,12 @@ public:
                 });
         }
 
-        [[nodiscard]] bool empty_approx() const noexcept { return cells_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return cells_.size_approx(); }
+        [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return cells_.empty_approx(nondet);
+        }
+        [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return cells_.size_approx(nondet);
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<cell_channel> channel_identity() const noexcept {
@@ -228,8 +236,12 @@ public:
 
     [[nodiscard]] std::uint64_t outstanding_producers() const noexcept { return cells_.outstanding_producers(); }
     [[nodiscard]] bool is_exclusive_active() const noexcept { return cells_.is_exclusive_active(); }
-    [[nodiscard]] bool empty_approx() const noexcept { return cells_.empty_approx(); }
-    [[nodiscard]] std::size_t size_approx() const noexcept { return cells_.size_approx(); }
+    [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return cells_.empty_approx(nondet);
+    }
+    [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return cells_.size_approx(nondet);
+    }
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
     // True when the last producer handle ended and no handle was lent after

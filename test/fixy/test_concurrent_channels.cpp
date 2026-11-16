@@ -30,6 +30,9 @@ namespace perm = foundation::permissions;
 
 namespace {
 
+// The tag of a snapshot of a channel.  The test context holds Nondet.
+constexpr ::foundation::effects::cap::Nondet kSnapshot = ::foundation::effects::testing::test().nondet;
+
 struct TraceTag {};
 struct MetaTag {};
 struct OtherTag {};
@@ -139,7 +142,7 @@ template <class Channel, class Producer, class Consumer>
                 static_cast<void>(handle.try_pop());
         });
         for (int read = 0; read < kReads; ++read) {
-            const std::size_t size = channel.size_approx();
+            const std::size_t size = channel.size_approx(kSnapshot);
             largest = size > largest ? size : largest;
         }
         is_done.store_release(1);
@@ -186,7 +189,8 @@ template <class Channel, class Producer, class Consumer>
         std::fprintf(stderr, "SPSC producer pushed past capacity\n");
         return 1;
     }
-    if (producer.size_approx() != 8 || consumer.size_approx() != 8 || channel.size_approx() != 8) {
+    if (producer.size_approx(kSnapshot) != 8 || consumer.size_approx(kSnapshot) != 8
+        || channel.size_approx(kSnapshot) != 8) {
         std::fprintf(stderr, "the three size views disagreed\n");
         return 1;
     }
@@ -344,7 +348,7 @@ template <class Channel, class Producer, class Consumer>
             if (item.is_some()) {
                 sum += std::move(item).expect("the test above found an item");
                 ++received;
-            } else if (finished.load_acquire() == kProducers && consumer.empty_approx()) {
+            } else if (finished.load_acquire() == kProducers && consumer.empty_approx(kSnapshot)) {
                 break;
             }
         }

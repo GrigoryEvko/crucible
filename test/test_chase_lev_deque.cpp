@@ -21,6 +21,9 @@ using namespace fixy::concurrent;
 
 using TestDeque = ChaseLevDeque<uint64_t, 256>;
 
+// The tag of a snapshot of the deque.  The test context holds Nondet.
+static constexpr ::foundation::effects::cap::Nondet kSnapshot = ::foundation::effects::testing::test().nondet;
+
 static_assert(!std::is_copy_constructible_v<TestDeque>, "ChaseLevDeque must not be copyable (Pinned contract)");
 static_assert(!std::is_move_constructible_v<TestDeque>, "ChaseLevDeque must not be movable (interior atomics)");
 static_assert(TestDeque::capacity() == 256);
@@ -38,8 +41,8 @@ static_assert(DequeValue<uint64_t>);
 
 static void test_empty_deque() {
     ChaseLevDeque<uint64_t, 64> dq;
-    assert(dq.empty_approx());
-    assert(dq.size_approx() == 0);
+    assert(dq.empty_approx(kSnapshot));
+    assert(dq.size_approx(kSnapshot) == 0);
     assert(!dq.pop_bottom().has_value());
     assert(!dq.steal_top().has_value());
     crucible::test::pass("  test_empty_deque: PASSED\n");
@@ -51,7 +54,7 @@ static void test_single_thread_lifo() {
     for (uint64_t i = 0; i < 32; ++i) {
         assert(dq.push_bottom(i));
     }
-    assert(dq.size_approx() == 32);
+    assert(dq.size_approx(kSnapshot) == 32);
 
     // The owner's own end is last in, first out.
     for (uint64_t i = 0; i < 32; ++i) {
@@ -60,7 +63,7 @@ static void test_single_thread_lifo() {
         assert(opt.has_value());
         assert(*opt == expected);
     }
-    assert(dq.empty_approx());
+    assert(dq.empty_approx(kSnapshot));
     assert(!dq.pop_bottom().has_value());
 
     crucible::test::pass("  test_single_thread_lifo: PASSED\n");
@@ -89,7 +92,7 @@ static void test_capacity_bound() {
         assert(dq.push_bottom(i));
     }
     assert(!dq.push_bottom(99));
-    assert(dq.size_approx() == 8);
+    assert(dq.size_approx(kSnapshot) == 8);
 
     // Freeing one slot has to make room again, so the refusal above is
     // about occupancy and not a latched state.
@@ -97,7 +100,7 @@ static void test_capacity_bound() {
     assert(popped.has_value());
     assert(*popped == 7);
     assert(dq.push_bottom(99));
-    assert(dq.size_approx() == 8);
+    assert(dq.size_approx(kSnapshot) == 8);
 
     crucible::test::pass("  test_capacity_bound: PASSED\n");
 }
@@ -120,7 +123,7 @@ static void test_interleaved_single_thread() {
     auto c = dq.steal_top();
     assert(c.has_value() && *c == 2);
 
-    assert(dq.empty_approx());
+    assert(dq.empty_approx(kSnapshot));
 
     crucible::test::pass("  test_interleaved_single_thread: PASSED\n");
 }
@@ -196,7 +199,7 @@ static void test_stress_one_owner_n_thieves() {
                     receive(*opt);
                 } else {
                     empty_steal_count.fetch_add(1, std::memory_order_relaxed);
-                    if (owner_done.load(std::memory_order_acquire) && dq.empty_approx()) {
+                    if (owner_done.load(std::memory_order_acquire) && dq.empty_approx(kSnapshot)) {
                         // The emptiness query is approximate, so a
                         // thief only leaves after one more steal comes
                         // back with nothing.  Trusting the query alone
@@ -289,7 +292,7 @@ static void test_stress_high_contention() {
             while (true) {
                 if (auto opt = dq.steal_top()) {
                     receive(*opt);
-                } else if (owner_done.load(std::memory_order_acquire) && dq.empty_approx()) {
+                } else if (owner_done.load(std::memory_order_acquire) && dq.empty_approx(kSnapshot)) {
                     if (auto last = dq.steal_top()) {
                         receive(*last);
                     } else {

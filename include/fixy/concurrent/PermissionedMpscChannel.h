@@ -158,9 +158,14 @@ public:
         [[nodiscard, gnu::hot]] bool try_push(T const& item) noexcept { return ch_->ring_.try_push(item); }
 
         // Snapshots.  Sound for telemetry and for deciding whether to
-        // keep retrying, never for a correctness invariant.
-        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
+        // keep retrying, never for a correctness invariant.  Each takes the
+        // bare tag of Nondet, as the snapshot of the ring does.
+        [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return ch_->ring_.empty_approx(nondet);
+        }
+        [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return ch_->ring_.size_approx(nondet);
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<PermissionedMpscChannel>
@@ -240,8 +245,12 @@ public:
             return ch_->receive_after_empty_();
         }
 
-        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
-        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
+        [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return ch_->ring_.empty_approx(nondet);
+        }
+        [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+            return ch_->ring_.size_approx(nondet);
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
         [[nodiscard]] constexpr ::foundation::ChannelIdentity<PermissionedMpscChannel>
@@ -315,8 +324,12 @@ public:
 
     [[nodiscard]] bool is_exclusive_active() const noexcept { return producer_pool_.is_exclusive_out(); }
 
-    [[nodiscard]] bool empty_approx() const noexcept { return ring_.empty_approx(); }
-    [[nodiscard]] std::size_t size_approx() const noexcept { return ring_.size_approx(); }
+    [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return ring_.empty_approx(nondet);
+    }
+    [[nodiscard]] std::size_t size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return ring_.size_approx(nondet);
+    }
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
     // True when the last producer handle ended and no handle was lent after
