@@ -239,7 +239,7 @@ foundation_neg_compile_test(neg_graded_witness_names_another_grade
 # regex of each names the refused candidate or the claim-subject gate.
 foundation_neg_compile_test(neg_graded_grade_without_key
   "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::Graded\\(<brace-enclosed initializer list>\\)."
-  "candidate 1: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
+  "candidate [0-9]+: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
 foundation_neg_compile_test(neg_graded_key_outside_its_authority
   "grade_key<Authority>::grade_key\\(\\) \\[with Authority = \\{anonymous\\}::Stranger\\]. is private within this context"
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: declared private here")

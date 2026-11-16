@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::Secret<int>{42};
+    [[maybe_unused]] auto forged = fixy::Secret<int>{foundation::algebra::graded_from_call, []() noexcept { return 42; }};
     return 0;
 }

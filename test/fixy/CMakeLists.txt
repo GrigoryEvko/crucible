@@ -1883,7 +1883,7 @@ fixy_neg_compile_test(neg_bands_residency_heat_cold_at_hot
 # candidate or the clause that refused it.
 fixy_neg_compile_test(neg_bands_braces_without_door
   "no matching function for call to .foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::DetSafeLattice::At<foundation::algebra::lattices::DetSafeTier::Pure>, int>::Graded\\(<brace-enclosed initializer list>\\)."
-  "candidate 1: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
+  "candidate [0-9]+: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
 fixy_neg_compile_test(neg_bands_peek_mut_rewrites_tier
   "no matching function for call to .foundation::algebra::Graded<.*DetSafeTier::Pure>, int>::peek_mut\\(\\)."
   "the expression .\\(claim_subject_v<L>\\) == foundation::algebra::ClaimSubject::slot \\[with L = foundation::algebra::lattices::DetSafeLattice::At<foundation::algebra::lattices::DetSafeTier::Pure>\\]. evaluated to .false.")
@@ -1899,7 +1899,7 @@ fixy_neg_compile_test(neg_bands_mint_band_not_a_band
 # a payload that cannot move.
 fixy_neg_compile_test(neg_recipe_spec_braces_without_door
   "no matching function for call to .foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::ProductLattice<foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::ToleranceLattice>, foundation::algebra::lattices::DualLattice<foundation::algebra::lattices::RecipeFamilyLattice> >, int>::Graded\\(<brace-enclosed initializer list>\\)."
-  "candidate 1: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
+  "candidate [0-9]+: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
 fixy_neg_compile_test(neg_mint_recipe_spec_reference_payload
   "required for the satisfaction of .RecipeSpecPayload<T>. \\[with T = int&\\]"
   "the expression .is_object_v<T> \\[with T = int&\\]. evaluated to .false.")

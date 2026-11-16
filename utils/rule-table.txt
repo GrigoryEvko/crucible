@@ -661,7 +661,7 @@ witness <fixy/channels/SwmrSession.h> private | fixy::channels::swmr_session::Sw
 # -- fixy value wrappers ---------------------------------------------
 witness <fixy/Qtt.h> private | fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int> | fixy::Qtt<foundation::algebra::lattices::QttGrade::One, int>{std::in_place, 42}
 witness <fixy/Refined.h> no-match | fixy::Refinement<fixy::positive, int, false> | fixy::Refinement<fixy::positive, int, false>{42}
-witness <fixy/Secret.h> private | fixy::Secret<int> | fixy::Secret<int>{42}
+witness <fixy/Secret.h> private | fixy::Secret<int> | fixy::Secret<int>{foundation::algebra::graded_from_call, []() noexcept { return 42; }}
 witness <fixy/Tagged.h> private | fixy::Tagged<int, fixy::tags::source::External> | fixy::Tagged<int, fixy::tags::source::External>{42}
 witness <fixy/Fn.h> private | fixy::fn<int> | fixy::fn<int>{42}
 witness <fixy/Machine.h> private | fixy::Machine<int> | fixy::Machine<int>{42}
