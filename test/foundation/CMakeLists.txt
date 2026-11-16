@@ -3681,7 +3681,9 @@ foundation_neg_compile_test(neg_simd_iota_of_a_scalar
 # one check refuses.  The first regex names the refusal, and the second names
 # the agent, the node or the rule and the port.
 foundation_test(test_algebra_net_scale)
-foundation_test(test_net_reductions_match)
+foundation_test(test_net_reductions_match_checks)
+foundation_test(test_net_reductions_match_tree_bits)
+foundation_test(test_net_reductions_match_scan_bits)
 foundation_neg_compile_test(neg_net_port_without_wire
   "static assertion failed: net: port 'out' of agent 'drain' \\(node 1\\)"
   "has no wire\\.  Each port has exactly one wire\\.")
