@@ -79,7 +79,9 @@ THE STEAL TIME
     "2026-11-16T15:04:05Z cpu228 40 ms".  A probe of the claim adds no line,
     because its core is skipped at once.  A short probe misses a steal rate
     below about 1 %, and the record keeps such a core behind the clean
-    cores.  To clear the record of a host, delete the file.
+    cores.  Only a line of the last 24 hours counts, so a core gets its place
+    back one day after its last run with steal.  To clear the record of a
+    host, delete the file.
 
 THE ENVIRONMENT
     CRUCIBLE_BENCH_BUILD   The build directory of the bench preset, relative to the tree.  The default is build-bench
@@ -102,6 +104,7 @@ a usage error or a failed self-test.
 
 from __future__ import annotations
 
+import calendar
 import contextlib
 import dataclasses
 import fcntl
@@ -148,6 +151,8 @@ STAT_FILE = Path("/proc/stat")
 STEAL_COLUMN = 8
 # The record of the runs with steal time, in CORE_LOCK_DIR (THE STEAL TIME).
 STEAL_RECORD = "steal-record.txt"
+# The age of the oldest line of the record that counts, in seconds: 24 hours (THE STEAL TIME).
+RECORD_AGE_S = 24 * 3600
 # The type and the FOLDER property of a bench target in the code model of CMake.  The function crucible_bench() of
 # bench/CMakeLists.txt sets the folder.
 TARGET_TYPE = "EXECUTABLE"
@@ -438,17 +443,32 @@ def lock_dir_of(root: Path = REPO_ROOT) -> Path:
     return heavy.main_work_tree(root) / CORE_LOCK_DIR
 
 
-def read_steal_record(record: Path) -> dict[int, int]:
+def read_steal_record(record: Path, moment: float | None = None) -> dict[int, int]:
     """Return the count of the lines of each core in the record of the runs with steal time (THE STEAL TIME).
 
-    A line that does not read, and a record that does not exist, count nothing.  Complexity: linear in the lines.
+    Only a line of the last RECORD_AGE_S seconds before moment counts, so a core whose host core has no more steal
+    gets its place back in a day.  A line that does not read, and a record that does not exist, count nothing.
+
+    Args:
+        record: The record file
+        moment: The time of now in seconds since the epoch, or None for the clock
+
+    Complexity: linear in the lines.
     """
+    oldest = (time.time() if moment is None else moment) - RECORD_AGE_S
     counts: dict[int, int] = {}
     for line in read_text(record).splitlines():
         words = line.split()
-        if len(words) == 4 and words[1].startswith("cpu") and words[1][3:].isdigit() and words[3] == "ms":
-            core = int(words[1][3:])
-            counts[core] = counts.get(core, 0) + 1
+        if len(words) != 4 or not words[1].startswith("cpu") or not words[1][3:].isdigit() or words[3] != "ms":
+            continue
+        try:
+            stamp = calendar.timegm(time.strptime(words[0], "%Y-%m-%dT%H:%M:%SZ"))
+        except ValueError:
+            continue
+        if stamp < oldest:
+            continue
+        core = int(words[1][3:])
+        counts[core] = counts.get(core, 0) + 1
     return counts
 
 
@@ -483,6 +503,7 @@ def claimed(
     cgroup_root: Path = CGROUP_ROOT,
     probe: Callable[[int], int | None] = probe_steal,
     pause: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.time,
 ) -> Iterator[Placement]:
     """Hold a core that no other bench holds for the block, and give its placement (THE CORE OF A RUN).
 
@@ -496,6 +517,7 @@ def claimed(
         cgroup_root: The root of the cgroup v2 hierarchy
         probe: The steal ticks of a core in a busy loop, or None when the probe cannot run there
         pause: The wait between two tries of the cores
+        clock: The time of now in seconds since the epoch, for the age of the lines of the record
 
     Raises:
         BenchError: If read_reserved() refuses, if taskset is not on PATH, if CRUCIBLE_BENCH_CORE is not a CPU number,
@@ -520,7 +542,7 @@ def claimed(
     directory = lock_dir if lock_dir is not None else lock_dir_of()
     directory.mkdir(parents=True, exist_ok=True)
     record = directory / STEAL_RECORD
-    counts = read_steal_record(record)
+    counts = read_steal_record(record, clock())
     cores = tuple(sorted(cores, key=lambda core: (counts.get(core, 0), core)))
     stolen_cores: set[int] = set()
     has_waited = False
@@ -768,6 +790,8 @@ def self_test() -> int:
             path.write_text(text, encoding="ascii")
 
         locks = Path(work, "locks")
+        # The time of now of the test: 2026-11-16T13:20:00Z, a little after the lines of the record below.
+        now = 1794835200.0
 
         def no_steal(core: int) -> int | None:
             del core
@@ -778,7 +802,7 @@ def self_test() -> int:
             probe: Callable[[int], int | None] = no_steal,
             pause: Callable[[float], None] = time.sleep,
         ) -> contextlib.AbstractContextManager[Placement]:
-            return claimed(settings, locks, cpu_root, cgroup_root, probe, pause)
+            return claimed(settings, locks, cpu_root, cgroup_root, probe, pause, lambda: now)
 
         for cpu in range(220, 256):
             plant(cpu_root / f"cpu{cpu}" / "topology" / "thread_siblings_list", f"{cpu & ~1}-{cpu | 1}\n")
@@ -882,7 +906,14 @@ def self_test() -> int:
         expect(
             "the record holds the date in UTC, the core and the steal time of each run, and a bad line counts nothing",
             read_text(record).splitlines()[0] == "2026-11-16T13:18:43Z cpu220 40 ms"
-            and read_steal_record(record) == {220: 2, 224: 1},
+            and read_steal_record(record, now) == {220: 2, 224: 1},
+        )
+        aged = Path(work, "aged.txt")
+        record_steal(aged, 230, 20.0, now - 25 * 3600)
+        record_steal(aged, 232, 20.0, now - 23 * 3600)
+        expect(
+            "a line older than 24 hours counts nothing, and a line of the last 24 hours counts",
+            read_steal_record(aged, now) == {232: 1},
         )
         with claim(Settings("b", "p")) as where:
             expect("a claim tries the cores with a clean record first", where.core == "222" and where.record == record)
@@ -896,7 +927,7 @@ def self_test() -> int:
         note_steal(Placement("226", Reserved(), ()), 5, 9)
         expect(
             "a run with steal time on a claim adds one line, and a clean run or no claim adds none",
-            read_steal_record(record).get(226) == 1,
+            read_steal_record(record, now).get(226) == 1,
         )
         expect("a build with no reply of the cache runs each bench with no capabilities", not uses_launcher(Path(work)))
         try:
