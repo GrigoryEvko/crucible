@@ -65,9 +65,9 @@
 //   inputs, so an order exists exactly when the directed wires form no cycle.
 //
 //   No structural check sees the order of the operands of an agent: a net and
-//   the same net with two operands swapped pass the same checks.  The match
-//   of an implementation and its net runs the implementation on the agents of
-//   the net (foundation/core/Reduce.h, Scan.h, Sort.h).
+//   the same net with two operands swapped pass the same checks.  A test that
+//   an implementation follows its net must also read the operand of each
+//   port.
 //
 // THE VERDICT
 //   A check gives a NetVerdict.  An admitted verdict has no text.  A refusal
@@ -281,7 +281,8 @@ public:
     // The admitted verdict.
     constexpr NetVerdict() noexcept = default;
 
-    // A refusal whose text starts with opening, a text of static storage.
+    // A refusal whose text starts with opening, a text of static storage.  A
+    // null opening gives a refusal with no text.
     [[nodiscard]] static constexpr NetVerdict refuse(char const* opening) noexcept {
         NetVerdict verdict{};
         verdict.is_refused_ = true;
@@ -324,8 +325,10 @@ public:
 
     // Puts the characters of a text of static storage, up to its zero.  A
     // check passes each string literal of its text here, so a literal makes
-    // no instance of the constructor template of NetName.
+    // no instance of the constructor template of NetName.  A null text puts
+    // nothing.
     constexpr NetVerdict& put(char const* text) noexcept {
+        if (text == nullptr) return *this;
         for (; *text != '\0' && size_ < net_verdict_capacity; ++text) {
             text_[size_] = *text;
             ++size_;

@@ -266,8 +266,11 @@ static_assert(!waiting_ring.is_admitted());
 }  // namespace
 
 // The text of a refusal is a constant, and a program reads it at run time.
+// A null text at run time puts nothing.
 int main() {
     bool const is_named = waiting_ring.starts_with(
         "priorities: a cycle of waits: role waits on 'queue' step 0 before 'queue' step 0, role waits on");
-    return is_named ? 0 : 1;
+    NetVerdict const empty = NetVerdict::refuse(nullptr);
+    bool const is_empty_refusal = empty.size() == 0 && !empty.is_admitted();
+    return is_named && is_empty_refusal ? 0 : 1;
 }

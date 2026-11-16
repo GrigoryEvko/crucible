@@ -29,6 +29,10 @@ static_assert(NetName{"kids"}.size() == 4 && NetName{}.is_empty() && NetName{"ki
 // A name of a static string, as reflection gives it.
 static_assert(NetName{static_cast<char const*>("drain")} == NetName{"drain"});
 
+// A null text puts nothing, and the verdict stays a refusal.
+static_assert(NetVerdict::refuse(nullptr).size() == 0 && !NetVerdict::refuse(nullptr).is_admitted());
+static_assert(NetVerdict::refuse("net: ").put(nullptr).says("net: "));
+
 // ── The signature ───────────────────────────────────────────────────────
 
 inline constexpr TypeId value{0};
