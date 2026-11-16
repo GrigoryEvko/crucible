@@ -3124,11 +3124,11 @@ endif()
 
 # fp::fma against the exact oracle of test/exact_sum.h.  The unit of the test
 # takes the target of its preset: with no -march it runs the exact form in
-# integers.  The second unit runs the instruction: of x86-64-v4 on x86_64,
+# integers.  The second unit runs the instruction: of x86-64-v3 on x86_64,
 # so the test also compares the two forms there, and of aarch64 on aarch64.
 foundation_test(test_core_fma test_core_fma.cpp fma_unit_wide.cpp)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-  set_source_files_properties(fma_unit_wide.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v4)
+  set_source_files_properties(fma_unit_wide.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v3)
 endif()
 
 foundation_neg_compile_test(neg_core_view_windows_zero_width

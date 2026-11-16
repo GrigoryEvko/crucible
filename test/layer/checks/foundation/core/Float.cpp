@@ -104,7 +104,7 @@ static_assert(same_bits(fp::fma(0x1.8p-75f, 0x1.8p-75f, 0.0f), min_subnormal_of<
 static_assert(same_bits(fp::fma(0x1.8p-75f, 0x1.8p-75f, -min_subnormal_of<float>), 0.0f));
 static_assert(same_bits(fp::fma(-0x1.8p-75f, 0x1.8p-75f, min_subnormal_of<float>), -0.0f));
 static_assert(same_bits(fp::fma(0x1.8p-75f, 0x1.8p-75f, min_normal_of<float>),
-                        __builtin_bit_cast(float, FloatBits<float>::min_normal + 1u)));
+                        bit_cast<float>(FloatBits<float>::min_normal + 1u)));
 static_assert(same_bits(fp::fma(0x1.8p-538, 0x1.8p-538, -min_subnormal_of<double>), -0.0));
 static_assert(same_bits(fp::fma(0x1.8p-537, 0x1.8p-537, min_subnormal_of<double>), 0x3p-1074));
 

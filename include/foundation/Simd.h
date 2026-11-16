@@ -903,14 +903,27 @@ template <typename ElementType>
     requires detail::VectorShape<ElementType, static_cast<int>(native_vector_bytes / sizeof(ElementType))>
 inline constexpr int native_lanes = static_cast<int>(native_vector_bytes / sizeof(ElementType));
 
+// The features and the levels of the host.  A level of x86-64 holds each
+// feature of its definition: x86-64-v3 adds AVX2, FMA, BMI1, BMI2, F16C,
+// LZCNT and MOVBE to x86-64-v2, and x86-64-v4 adds AVX512F, AVX512BW,
+// AVX512CD, AVX512DQ and AVX512VL.  A unit built for a level runs only on a
+// host of that level.  Each other target has none of them.
 #if defined(__x86_64__) || defined(__i386__)
 [[nodiscard, gnu::pure]] inline bool runtime_supports_avx512() noexcept { return __builtin_cpu_supports("avx512f"); }
 [[nodiscard, gnu::pure]] inline bool runtime_supports_avx2() noexcept { return __builtin_cpu_supports("avx2"); }
 [[nodiscard, gnu::pure]] inline bool runtime_supports_sse42() noexcept { return __builtin_cpu_supports("sse4.2"); }
+[[nodiscard, gnu::pure]] inline bool runtime_supports_x86_64_v3() noexcept {
+    return __builtin_cpu_supports("x86-64-v3");
+}
+[[nodiscard, gnu::pure]] inline bool runtime_supports_x86_64_v4() noexcept {
+    return __builtin_cpu_supports("x86-64-v4");
+}
 #else
 [[nodiscard]] constexpr bool runtime_supports_avx512() noexcept { return false; }
 [[nodiscard]] constexpr bool runtime_supports_avx2() noexcept { return false; }
 [[nodiscard]] constexpr bool runtime_supports_sse42() noexcept { return false; }
+[[nodiscard]] constexpr bool runtime_supports_x86_64_v3() noexcept { return false; }
+[[nodiscard]] constexpr bool runtime_supports_x86_64_v4() noexcept { return false; }
 #endif
 
 }  // namespace CRUCIBLE_SIMD_TARGET

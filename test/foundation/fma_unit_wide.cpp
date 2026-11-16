@@ -1,5 +1,5 @@
 // The unit of test_core_fma with a fused multiply-add.  On x86_64 the build
-// compiles this file with -march=x86-64-v4, so fp::fma is the instruction
+// compiles this file with -march=x86-64-v3, so fp::fma is the instruction
 // here.
 
 #include "fma_units.h"

@@ -4,7 +4,7 @@
 // The oracle is the exact sum of test/exact_sum.h: the exact product and the
 // addend in a fixed-point integer, rounded one time.  The test compares the
 // bits of fp::fma of this unit with the oracle, and with fp::fma of the unit
-// of x86-64-v4, which runs the instruction.  With no -march, this unit runs
+// of x86-64-v3, which runs the instruction.  With no -march, this unit runs
 // the exact form in integers, so the test compares that form with the oracle
 // and with the instruction.  The cases are the hard cases of a fused
 // multiply-add: exact ties and near ties of the round, the error of a product
@@ -13,6 +13,7 @@
 // two signs, the infinities and the NaNs, and random values from a fixed
 // Philox seed.
 
+#include <foundation/Simd.h>
 #include <foundation/core/Float.h>
 
 #include "../exact_sum.h"
@@ -56,6 +57,16 @@ struct Counts {
     std::size_t fused = 0;
 };
 
+// True when the host runs the code of the wide unit: x86-64-v3 on x86_64,
+// and each aarch64 host.
+[[nodiscard]] bool can_run_wide_unit() noexcept {
+#if defined(__x86_64__)
+    return ::foundation::simd::runtime_supports_x86_64_v3();
+#else
+    return true;
+#endif
+}
+
 // Compares fp::fma of this unit and of the wide unit with the oracle.
 template <class T>
 void check_case(T left, T right, T addend, Counts& counts) noexcept {
@@ -68,7 +79,7 @@ void check_case(T left, T right, T addend, Counts& counts) noexcept {
     }
     assert(agree(computed, expected));
     ++counts.cases;
-    if (::crucible::test::is_wide_unit_fused()) {
+    if (::crucible::test::is_wide_unit_fused() && can_run_wide_unit()) {
         T const fused = ::crucible::test::fma_of_wide_unit(left, right, addend);
         assert(agree(fused, expected));
         ++counts.fused;
@@ -81,8 +92,8 @@ template <class T>
     constexpr int fraction_bits = ExactLayout<T>::precision - 1;
     constexpr int sign_shift = ExactLayout<T>::precision + ExactLayout<T>::exponent_bits - 1;
     std::uint64_t const mask = (std::uint64_t{1} << fraction_bits) - 1;
-    std::uint64_t const bits = (std::uint64_t{is_negative ? 1u : 0u} << sign_shift)
-                             | (biased << fraction_bits) | (fraction & mask);
+    std::uint64_t const bits =
+        (std::uint64_t{is_negative ? 1u : 0u} << sign_shift) | (biased << fraction_bits) | (fraction & mask);
     return ::fixy::bit_cast<T>(static_cast<Word<T>>(bits));
 }
 
@@ -121,7 +132,8 @@ template <class T>
     constexpr int fraction_bits = ExactLayout<T>::precision - 1;
     Word<T> const bits = bits_of_value(value);
     Word<T> const sign_and_exponent = static_cast<Word<T>>(bits >> fraction_bits);
-    Word<T> const biased = static_cast<Word<T>>(sign_and_exponent & ((Word<T>{1} << ExactLayout<T>::exponent_bits) - 1));
+    Word<T> const biased =
+        static_cast<Word<T>>(sign_and_exponent & ((Word<T>{1} << ExactLayout<T>::exponent_bits) - 1));
     bool const is_negative = (sign_and_exponent >> ExactLayout<T>::exponent_bits) != 0;
     if (biased == 0) return value_of<T>(is_negative, 0, 1);
     if (biased <= Word<T>{fraction_bits}) return value_of<T>(is_negative, 0, std::uint64_t{1} << (biased - 1));
