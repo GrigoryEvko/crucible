@@ -159,7 +159,8 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
     for (const SessionEvent& event : loaded_events) {
         CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op()));
         CRUCIBLE_FUZZ_CLAIM("cipher_store", event.session().value == session_raw);
-        CRUCIBLE_FUZZ_CLAIM("cipher_store", ::fixy::session::decode_session_event(event.encode()).has_value());
+        auto const record = event.encode();
+        CRUCIBLE_FUZZ_CLAIM("cipher_store", ::fixy::session::decode_session_event(record.view()).has_value());
     }
 }
 

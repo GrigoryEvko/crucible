@@ -20,4 +20,10 @@ static_assert(!std::is_implicit_lifetime_v<SessionEvent>,
               "SessionEvent must not be an implicit-lifetime type, or std::start_lifetime_as builds an event over a "
               "buffer.");
 
+// The two byte routes read and write the types of the base: the record is
+// a FixedArray, and the decoder reads a View of bytes.
+static_assert(std::is_same_v<decltype(std::declval<SessionEvent const&>().encode()),
+                             ::foundation::core::FixedArray<std::byte, session_event_size>>);
+static_assert(std::is_invocable_v<decltype(&decode_session_event), ::foundation::core::View<std::byte const>>);
+
 }  // namespace fixy::session

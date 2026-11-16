@@ -73,7 +73,8 @@ int check_crash_recording() {
     ::foundation::core::FixedArray<std::byte, 5 * s::session_event_size> block{};
     std::size_t position = 0;
     for (const s::SessionEvent& event : log_p) {
-        for (const std::byte byte : event.encode()) {
+        auto const record = event.encode();
+        for (const std::byte byte : record) {
             *block.get(position).expect("the block holds five records") = byte;
             ++position;
         }

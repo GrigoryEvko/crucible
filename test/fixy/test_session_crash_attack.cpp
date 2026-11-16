@@ -156,8 +156,8 @@ void corrupt_event_bytes() {
     for (std::size_t index = 0; index < bytes.size(); ++index) {
         for (unsigned value = 0; value < 256; ++value) {
             auto corrupt = bytes;
-            corrupt[index] = static_cast<std::byte>(value);
-            const auto decoded = s::decode_session_event(corrupt);
+            *corrupt.get(index).expect("the index lies inside the record") = static_cast<std::byte>(value);
+            const auto decoded = s::decode_session_event(corrupt.view());
             if (!decoded) {
                 ++refused;
                 continue;
@@ -167,7 +167,8 @@ void corrupt_event_bytes() {
         }
     }
     for (std::size_t length = 0; length < bytes.size(); ++length) {
-        const auto decoded = s::decode_session_event(std::span<const std::byte>{bytes.data(), length});
+        const auto decoded =
+            s::decode_session_event(bytes.view().window(0, length).expect("the prefix lies inside the record"));
         if (decoded || decoded.error() != s::EventDecodeError::Truncated) finish(Outcome::Silent);
     }
     ::foundation::core::FixedArray<std::byte, 2 * s::session_event_size - 1> torn{};

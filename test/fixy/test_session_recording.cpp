@@ -47,7 +47,7 @@ namespace test_session_recording_types {
 
 constexpr bool round_trips(const s::SessionEvent& event) {
     const auto bytes = event.encode();
-    const auto decoded = s::decode_session_event(bytes);
+    const auto decoded = s::decode_session_event(bytes.view());
     return decoded.has_value() && decoded->encode() == bytes;
 }
 
@@ -125,15 +125,20 @@ constexpr std::size_t kReasonOffset = 66;
 constexpr std::size_t kCrashOffset = 67;
 constexpr std::size_t kEpochOffset = 48;
 
-constexpr std::array<std::byte, 72> with_byte(std::array<std::byte, 72> bytes, std::size_t offset, std::uint8_t value) {
-    bytes[offset] = static_cast<std::byte>(value);
+using Record = ::foundation::core::FixedArray<std::byte, s::session_event_size>;
+
+constexpr Record with_byte(Record bytes, std::size_t offset, std::uint8_t value) {
+    *bytes.get(offset).expect("the offset lies inside the record") = static_cast<std::byte>(value);
     return bytes;
 }
 
-constexpr s::EventDecodeError error_of(const std::array<std::byte, 72>& bytes) {
-    const auto decoded = s::decode_session_event(bytes);
+constexpr s::EventDecodeError error_of(const Record& bytes) {
+    const auto decoded = s::decode_session_event(bytes.view());
     return decoded ? s::EventDecodeError::Truncated : decoded.error();
 }
+
+// The event of a record, or no event.
+constexpr auto decoded_of(const Record& bytes) { return s::decode_session_event(bytes.view()); }
 
 constexpr auto kStopBytes =
     s::SessionEvent::stop(kSelf, kPeer, kPeer, s::StopReasonKind::PeerCrashed, s::CrashCause::Throw).encode();
@@ -154,8 +159,8 @@ static_assert(error_of(with_byte(kSendBytes, kEpochOffset, 1)) == s::EventDecode
 
 // A legacy checkpoint kind decodes only with its own choice byte.
 constexpr auto kLegacyBase = with_byte(with_byte(kCloseBytes, kOpOffset, 8), kReasonOffset, 1);
-static_assert(s::decode_session_event(kLegacyBase).has_value());
-static_assert(s::decode_session_event(kLegacyBase)->legacy_checkpoint_choice() == s::CheckpointChoice::Base);
+static_assert(decoded_of(kLegacyBase).has_value());
+static_assert(decoded_of(kLegacyBase)->legacy_checkpoint_choice() == s::CheckpointChoice::Base);
 static_assert(error_of(with_byte(kLegacyBase, kReasonOffset, 2)) == s::EventDecodeError::ControlByteOutOfRange);
 
 // An epoched hand-off decodes with its thresholds, and it writes the same
@@ -163,18 +168,20 @@ static_assert(error_of(with_byte(kLegacyBase, kReasonOffset, 2)) == s::EventDeco
 constexpr auto kEpochedBytes = with_byte(with_byte(s::SessionEvent::delegate_handoff(kSelf, kPeer, {5}, {6}).encode(),
                                                    kOpOffset, std::to_underlying(s::SessionOp::EpochedDelegate)),
                                          kEpochOffset, 7);
-static_assert(s::decode_session_event(kEpochedBytes).has_value());
-static_assert(s::decode_session_event(kEpochedBytes)->op() == s::SessionOp::EpochedDelegate);
-static_assert(s::decode_session_event(kEpochedBytes)->min_epoch() == 7);
-static_assert(s::decode_session_event(kEpochedBytes)->encode() == kEpochedBytes);
+static_assert(decoded_of(kEpochedBytes).has_value());
+static_assert(decoded_of(kEpochedBytes)->op() == s::SessionOp::EpochedDelegate);
+static_assert(decoded_of(kEpochedBytes)->min_epoch() == 7);
+static_assert(decoded_of(kEpochedBytes)->encode() == kEpochedBytes);
 
 // A stored log can hold 3 in the crash lane for a crash graded "no throw".
-static_assert(s::decode_session_event(with_byte(kStopBytes, kCrashOffset, 3))->crash_cause() == s::CrashCause::Unknown);
+static_assert(decoded_of(with_byte(kStopBytes, kCrashOffset, 3))->crash_cause() == s::CrashCause::Unknown);
 
-// A short span is truncated.
-static_assert(!s::decode_session_event(std::span<const std::byte>{kSendBytes.data(), 71}).has_value());
-static_assert(s::decode_session_event(std::span<const std::byte>{kSendBytes.data(), 71}).error()
-              == s::EventDecodeError::Truncated);
+// A short View is truncated.
+constexpr auto truncated_decode() {
+    return s::decode_session_event(kSendBytes.view().window(0, 71).expect("71 bytes lie inside the record"));
+}
+static_assert(!truncated_decode().has_value());
+static_assert(truncated_decode().error() == s::EventDecodeError::Truncated);
 
 namespace {
 

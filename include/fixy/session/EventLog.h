@@ -267,7 +267,7 @@ inline constexpr std::size_t session_event_size = 72;
 class SessionEvent;
 
 [[nodiscard]] constexpr std::expected<SessionEvent, EventDecodeError>
-decode_session_event(std::span<const std::byte> bytes) noexcept;
+decode_session_event(::foundation::core::View<std::byte const> bytes) noexcept;
 
 namespace detail::event_log {
 
@@ -323,7 +323,7 @@ class SessionEvent {
 
     friend class SessionEventLog;
     friend constexpr std::expected<SessionEvent, EventDecodeError>
-    decode_session_event(std::span<const std::byte> bytes) noexcept;
+    decode_session_event(::foundation::core::View<std::byte const> bytes) noexcept;
 
 public:
     // User-provided, and not defaulted.  A defaulted copy is trivial, so
@@ -492,7 +492,7 @@ public:
     }
 
     // The bytes, for a drain to durable storage.
-    [[nodiscard]] constexpr std::array<std::byte, session_event_size> encode() const noexcept {
+    [[nodiscard]] constexpr ::foundation::core::FixedArray<std::byte, session_event_size> encode() const noexcept {
         detail::event_log::RawEvent raw{};
         raw.step_id = step_id_.value;
         raw.session = session_.value;
@@ -506,7 +506,7 @@ public:
         raw.branch_index = branch_index_;
         raw.reason_kind = reason_kind_;
         raw.pad = pad_;
-        return std::bit_cast<std::array<std::byte, session_event_size>>(raw);
+        return std::bit_cast<::foundation::core::FixedArray<std::byte, session_event_size>>(raw);
     }
 };
 
@@ -558,14 +558,16 @@ namespace detail::event_log {
 
 }  // namespace detail::event_log
 
-// Complexity: constant.
+// The event of the first session_event_size bytes.  Complexity: constant.
 [[nodiscard]] constexpr std::expected<SessionEvent, EventDecodeError>
-decode_session_event(std::span<const std::byte> bytes) noexcept {
+decode_session_event(::foundation::core::View<std::byte const> bytes) noexcept {
     using detail::event_log::names_enumerator;
     if (bytes.size() < session_event_size) return std::unexpected(EventDecodeError::Truncated);
-    std::array<std::byte, session_event_size> block{};
-    for (std::size_t index = 0; index < session_event_size; ++index)
-        block[index] = bytes[index];
+    auto const record =
+        bytes.template window<session_event_size>(0).expect("the test above found the bytes of one record");
+    ::foundation::core::FixedArray<std::byte, session_event_size> block{};
+    for (auto const index : block.indices())
+        block.at(index) = record.at(index);
     const auto raw = std::bit_cast<detail::event_log::RawEvent>(block);
 
     if (!names_enumerator<SessionOp>(raw.op)) return std::unexpected(EventDecodeError::UnknownOperation);
@@ -626,8 +628,7 @@ decode_session_log(::foundation::core::Alloc allocation, ::foundation::core::Vie
     std::size_t index = 0;
     for (::foundation::core::View<std::byte const, session_event_size> const record :
          bytes.chunks<session_event_size>()) {
-        auto decoded = decode_session_event(std::span<const std::byte>{
-            first_of_(::foundation::core::detail::ViewDoor::key(), record), session_event_size});
+        auto decoded = decode_session_event(record);
         if (!decoded) return ::foundation::core::err(EventLogDecodeFailure{index, decoded.error()});
         *events.get(index).expect("the events hold a slot for each record") = *decoded;
         ++index;
