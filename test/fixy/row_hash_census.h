@@ -42,6 +42,7 @@
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/concurrent/PermissionFork.h>
+#include <fixy/concurrent/PermissionedMpscBoxChannel.h>
 #include <fixy/concurrent/PermissionedMpscChannel.h>
 #include <fixy/concurrent/PermissionedSpscBoxChannel.h>
 #include <fixy/concurrent/PermissionedSpscChannel.h>
@@ -667,6 +668,8 @@ using SpscWitness = ::fixy::concurrent::PermissionedSpscChannel<int, 8, SpscWitn
 using MpscWitness = ::fixy::concurrent::PermissionedMpscChannel<int, 8, MpscWitnessTag, ChannelWitnessBrand>;
 struct SpscBoxWitnessTag {};
 using SpscBoxWitness = ::fixy::concurrent::PermissionedSpscBoxChannel<int, 8, SpscBoxWitnessTag, ChannelWitnessBrand>;
+struct MpscBoxWitnessTag {};
+using MpscBoxWitness = ::fixy::concurrent::PermissionedMpscBoxChannel<int, 8, MpscBoxWitnessTag, ChannelWitnessBrand>;
 struct PureRegionBrand {};
 using SwmrWitness =
     ::fixy::channels::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
@@ -799,6 +802,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::PermissionedMpscChannel, ^^MpscWitness},
     {^^::fixy::concurrent::PermissionedSpscChannel, ^^SpscWitness},
     {^^::fixy::concurrent::PermissionedSpscBoxChannel, ^^SpscBoxWitness},
+    {^^::fixy::concurrent::PermissionedMpscBoxChannel, ^^MpscBoxWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
     {^^::fixy::channels::swmr_session::SwmrSession, ^^SwmrWitness},
     {^^::fixy::concurrent::Stage, ^^StageWitness},

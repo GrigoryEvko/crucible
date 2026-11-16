@@ -285,6 +285,32 @@ public:
         return true;
     }
 
+    // Gives each item that the ring still holds to drop, the oldest first.
+    // The call takes the exclusive of the producer pool and the claim of the
+    // consumer role.  So a live handle of each role ends the process here,
+    // and no handle starts while the call runs.  Each producer handle set
+    // the ready bit of each of its items before its end, and the upgrade
+    // reads that end with acquire order, so the drain finds each item.  An
+    // owner of items that end only through a door, such as the words of a
+    // Box channel, calls it at its own end.  Complexity: linear in the count
+    // of the items.
+    template <typename Drop>
+        requires std::is_nothrow_invocable_v<Drop&, T>
+    void drain(Drop&& drop) noexcept {
+        auto exclusive = producer_pool_.try_upgrade();
+        if (!exclusive) [[unlikely]] {
+            ::foundation::core::fatal("a drain of an MPSC channel while a producer handle lives.");
+        }
+        consumer_claim_.take("a drain of an MPSC channel while its consumer handle lives.");
+        for (;;) {
+            ::foundation::core::Option<T> item = ring_.try_pop();
+            if (item.is_none()) break;
+            drop(std::move(item).expect("the test above found an item"));
+        }
+        consumer_claim_.release();
+        producer_pool_.deposit_exclusive(std::move(*exclusive));
+    }
+
     [[nodiscard]] std::uint64_t outstanding_producers() const noexcept { return producer_pool_.outstanding(); }
 
     [[nodiscard]] bool is_exclusive_active() const noexcept { return producer_pool_.is_exclusive_out(); }

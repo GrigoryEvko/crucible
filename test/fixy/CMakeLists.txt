@@ -4078,6 +4078,12 @@ fixy_test(test_spsc_box_channel)
 fixy_neg_compile_test(neg_spsc_box_channel_of_linear_payload
   "template constraint failure for .template<class T, long unsigned int Capacity, class Root>  requires  DroppableBoxPayload<T> using fixy::concurrent::spsc_box_channel_t"
   "required for the satisfaction of .DroppableBoxPayload<T>. \\[with T = foundation::core::Hole<8, 8>\\]")
+# The MPSC channel of Box values, and the drain of the MPSC channel under it.
+# The tsan preset runs its producer threads and its consumer thread.
+fixy_test(test_mpsc_box_channel)
+fixy_neg_compile_test(neg_mpsc_box_channel_of_linear_payload
+  "template constraint failure for .template<class T, long unsigned int Capacity, class Root>  requires  DroppableBoxPayload<T> using fixy::concurrent::mpsc_box_channel_t"
+  "required for the satisfaction of .DroppableBoxPayload<T>. \\[with T = foundation::core::Hole<8, 8>\\]")
 # The end of the stream: the close and the open of the SPSC and the MPSC
 # channel, many threaded rounds, and pipelines with no sentinel.
 fixy_test(test_channel_close)
