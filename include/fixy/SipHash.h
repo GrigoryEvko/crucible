@@ -107,8 +107,8 @@ constexpr void absorb(SipState& state, std::uint64_t block) noexcept {
 // length, with one absorb for each eight bytes and one for the tail.
 [[nodiscard]] constexpr Tag compute(Key const& key, std::span<const std::byte> message) noexcept {
     std::span<const std::byte, key_bytes> const key_view{key};
-    std::uint64_t const key_low = load_le64(key_view.first<word_bytes>());
-    std::uint64_t const key_high = load_le64(key_view.last<word_bytes>());
+    std::uint64_t key_low = load_le64(key_view.first<word_bytes>());
+    std::uint64_t key_high = load_le64(key_view.last<word_bytes>());
     SipState state{.word0 = initial_word0 ^ key_low,
                    .word1 = initial_word1 ^ key_high,
                    .word2 = initial_word2 ^ key_low,
@@ -129,6 +129,13 @@ constexpr void absorb(SipState& state, std::uint64_t block) noexcept {
         sip_round(state);
     }
     std::uint64_t const out = state.word0 ^ state.word1 ^ state.word2 ^ state.word3;
+
+    // The two words of the key and the state end here.  The state holds the
+    // key under a public constant, so each of the three is a copy of the key.
+    // The volatile clear keeps no word of the key in the frame of the call.
+    ::fixy::zeroize_bytes(key_low);
+    ::fixy::zeroize_bytes(key_high);
+    ::fixy::zeroize_bytes(state);
 
     Tag tag{};
     for (std::size_t i = 0; i < tag_bytes; ++i) {
