@@ -1996,8 +1996,12 @@ fixy_test(test_core_integer_rounding)
 # bits of the portable code under each MXCSR state.
 fixy_test(test_core_storage_float)
 # Each round on each of the 2^32 binary32 inputs, against the rule of the
-# header, the product arm, F16C, the half casts of GCC and AVX-512 BF16.
-fixy_parted_test(test_core_storage_float_exhaustive 256)
+# header, the product arm, F16C, the half casts of GCC and AVX-512 BF16.  The
+# test runs on one thread, so ThreadSanitizer finds no bug class in it, and
+# the tsan preset does not build its 256 parts.  Each other preset runs them.
+if(NOT CRUCIBLE_TSAN)
+  fixy_parted_test(test_core_storage_float_exhaustive 256)
+endif()
 # A storage value has no compare, takes no float without a named round, and
 # a round takes no double.
 fixy_neg_compile_test(neg_core_storage_float_compare
