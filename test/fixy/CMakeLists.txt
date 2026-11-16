@@ -5290,6 +5290,12 @@ fixy_neg_compile_test(neg_os_socket_unmapped_kind
 # the anonymous-namespace prefix that the compiler emits and the source
 # does not.
 fixy_test(test_os_perf_event)
+# The id of a process changes from run to run, so the identity door needs
+# Nondet.  The compile context holds IO and no Nondet, and the door refuses
+# it for that atom alone.
+fixy_neg_compile_test(neg_process_identity_read_without_nondet
+  "no matching function for call to .current_process\\(const fixy::BgCompileCtx&\\)."
+  "R = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Nondet>")
 fixy_neg_compile_test(neg_os_perf_event_ctx_lacks_block
   "no matching function for call"
   "mint_perf_event\\(\\{anonymous\\}::IoNondetCtx&, const fixy::perf::Event&, int, fixy::process::ProcessId\\)")
