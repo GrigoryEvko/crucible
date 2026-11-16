@@ -36,9 +36,10 @@ THE CASES
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from assay.core import configuration as build_config
@@ -189,14 +190,20 @@ class Scratch:
         self.fixtures[name] = (source, stamp)
         self.flush()
 
-    def record(self, name: str, census: list[cost_record.CensusFinding], stamp: str = STAMP_VALUE) -> None:
-        """Write the record of a run of one fixture, with its census and the stamp of the census."""
+    def record(
+        self,
+        name: str,
+        census: list[cost_record.CensusFinding],
+        stamp: str = STAMP_VALUE,
+        reads: Sequence[str] = (),
+    ) -> None:
+        """Write the record of a run of one fixture, with its census, the stamp of the census, and the files of the
+        tree that its compile read besides its source."""
         source, _ = self.fixtures[name]
         path = Path(cost_record.fixture_record_file(self.build, name))
         path.parent.mkdir(parents=True, exist_ok=True)
-        cost_record.write(
-            path, cost_record.FixtureRecord(name, "compiled", 0.1, 0.0, None, (str(self.root / source),), stamp, census)
-        )
+        inputs = (str(self.root / source), *(str(self.root / read) for read in reads))
+        cost_record.write(path, cost_record.FixtureRecord(name, "compiled", 0.1, 0.0, None, inputs, stamp, census))
 
     def flush(self) -> None:
         """Write each object, the compile database, the inputs of all and the test list of the fixtures."""
@@ -1047,6 +1054,27 @@ def fixture_problem_cases(expect: testing.Expect, scratch: Scratch) -> None:
     expect(
         "a fixture with an empty census passes, and loop test runs no fixture for the census",
         scratch.errors() == [] and fixtures.unsettled_fixtures(scratch.build, scratch.root) == frozenset(),
+    )
+    scratch.record("neg_b", [], reads=("include/candidate/Added.h",))
+    expect(
+        "the record of a candidate that names a file the base does not have, as a lane holds it after its move back to "
+        "the base, makes loop test run that fixture also with --only",
+        fixtures.unsettled_fixtures(scratch.build, scratch.root) == frozenset({"neg_b"}),
+    )
+    shared = scratch.root / "include" / "Shared.h"
+    shared.parent.mkdir(parents=True, exist_ok=True)
+    shared.write_text("int shared();\n", encoding="utf-8")
+    scratch.record("neg_b", [], reads=("include/Shared.h",))
+    record_path = Path(cost_record.fixture_record_file(scratch.build, "neg_b"))
+    written = record_path.stat().st_mtime_ns
+    os.utime(shared, ns=(written + 10**9, written + 10**9))
+    newer = fixtures.unsettled_fixtures(scratch.build, scratch.root)
+    os.utime(shared, ns=(written - 10**9, written - 10**9))
+    older = fixtures.unsettled_fixtures(scratch.build, scratch.root)
+    expect(
+        "a record that names a file that changed after the run, as a move of the lane writes it, makes loop test run "
+        "that fixture, and a file that did not change after the run makes it run none",
+        newer == frozenset({"neg_b"}) and older == frozenset(),
     )
     sources = {name: source for name, (source, _stamp) in scratch.fixtures.items()}
     for name, source in sources.items():

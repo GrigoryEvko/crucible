@@ -58,7 +58,16 @@ THE PROBLEMS
         configure changed after the run
       * the record cannot be read.
     Each problem is an error with no kind, and `guard write` writes no ledger
-    with one.  An opted-out line with no region at or before its line is a
+    with one.
+
+    A record can also be stale: a file that it names is missing, or it
+    changed after the run of the fixture.  A record of a candidate that the
+    gate tested in a lane is such a record after the lane goes back to its
+    base, because the move writes each file that the two commits do not
+    share.  `loop test` with --only runs each fixture with a stale record
+    too (unsettled_fixtures()), so a run of the base reads only records of
+    the base.  A stale record is no problem of the rule, because a full run
+    of `loop test` runs such a fixture again by its inputs.  An opted-out line with no region at or before its line is a
     problem of the rule quarantine (THE OPT-OUT REGIONS of that module).
 
 THE FILES OF THE FIXTURES
@@ -154,7 +163,8 @@ class FixtureFacts:
     `source` is the source as a message shows it, relative to the source root (THE SOURCE).  `stamp` is the stamp
     argument of the compile command, or None when the command loads no plugin.  `census_stamp` and `census` are those
     of the record, each None when the record holds no census.  `problem` tells why the record cannot be read, MISSING
-    for no record, or is empty.
+    for no record, or is empty.  `is_stale` tells that a file of the record is missing or changed after the record
+    (THE PROBLEMS).
     """
 
     name: str
@@ -163,6 +173,7 @@ class FixtureFacts:
     census_stamp: str | None
     census: tuple[cost_record.CensusFinding, ...] | None
     problem: str = ""
+    is_stale: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -367,19 +378,45 @@ def read_fixtures(build_dir: Path, root: Path) -> tuple[tuple[FixtureFacts, ...]
     roots = sorted({found for _, _, entry in entries if entry is not None and (found := root_of(entry.argv()))})
     source_root = Path(os.path.realpath(roots[0] if roots else root))
     facts: list[FixtureFacts] = []
+    changed: dict[str, int | None] = {}
     for name, source, entry in entries:
         stamp = runner.stamp_of(entry.command) if entry is not None else None
         shown = build_census.shown(os.path.realpath(source), source_root)
+        path = Path(cost_record.fixture_record_file(build_dir, name))
         try:
-            record = cost_record.read_fixture(Path(cost_record.fixture_record_file(build_dir, name)))
+            record = cost_record.read_fixture(path)
         except cost_record.MissingRecord:
             facts.append(FixtureFacts(name, shown, stamp, None, None, MISSING))
             continue
         except cost_record.RecordError as problem:
             facts.append(FixtureFacts(name, shown, stamp, None, None, str(problem)))
             continue
-        facts.append(FixtureFacts(name, shown, stamp, record.census_stamp, record.census))
+        is_stale = is_stale_record(path, record.inputs or (), build_dir, changed)
+        facts.append(FixtureFacts(name, shown, stamp, record.census_stamp, record.census, is_stale=is_stale))
     return tuple(facts), source_root
+
+
+def is_stale_record(path: Path, inputs: Sequence[str], build_dir: Path, changed: dict[str, int | None]) -> bool:
+    """Tell if a file that a fixture record names is missing, or changed after the record (THE PROBLEMS).
+
+    `changed` caches the time of change of each file in ns, or None for a missing file, over the records of one read.
+    Complexity: one stat of each file that no earlier record of the read names.
+    """
+    try:
+        written = path.stat().st_mtime_ns
+    except OSError:
+        return True
+    for name in inputs:
+        real = name if os.path.isabs(name) else os.path.join(build_dir, name)
+        if real not in changed:
+            try:
+                changed[real] = os.stat(real).st_mtime_ns
+            except OSError:
+                changed[real] = None
+        when = changed[real]
+        if when is None or when > written:
+            return True
+    return False
 
 
 def problem_of(item: FixtureFacts, build_shown: str) -> str:
@@ -407,8 +444,9 @@ def unsettled_fixtures(build_dir: Path, root: Path) -> frozenset[str]:
 
     A run of such a fixture writes its record again with the stamp of its compile command.  The problems are a census
     of a different stamp, a record with no census, and a record that does not read.  When the build holds the record
-    of a fixture with the plugin, a fixture with no record is a problem too (NO FIXTURE RUN).  `loop test` runs each
-    such fixture also with --only (assay.loop.affected).  Complexity: the cost of read_fixtures().
+    of a fixture with the plugin, a fixture with no record is a problem too (NO FIXTURE RUN).  A stale record also
+    gives its fixture (THE PROBLEMS).  `loop test` runs each such fixture also with --only (assay.loop.affected).
+    Complexity: the cost of read_fixtures().
 
     Raises:
         runner.BuildError: If the test list or the compile database cannot be read
@@ -418,7 +456,7 @@ def unsettled_fixtures(build_dir: Path, root: Path) -> frozenset[str]:
     missing = [item.name for item in counted if item.problem == MISSING]
     if len(missing) == len(counted):
         return frozenset()
-    return frozenset(item.name for item in counted if item.problem == MISSING or problem_of(item, ""))
+    return frozenset(item.name for item in counted if item.problem == MISSING or item.is_stale or problem_of(item, ""))
 
 
 def census_of(
