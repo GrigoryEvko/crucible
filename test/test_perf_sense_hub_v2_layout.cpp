@@ -56,6 +56,15 @@ static_assert(sizeof(crucible::perf::Snapshot) == 96 * sizeof(std::uint64_t));
 static_assert(static_cast<std::uint32_t>(crucible::perf::MCE_COUNT) == 74);
 static_assert(std::uint64_t{crucible::perf::NUM_COUNTERS} != std::uint64_t{v2::NUM_COUNTERS});
 
+// Each read of a hub takes the tag of Nondet, so a read with no tag does not
+// compile, and a read with the tag does.
+template <class Hub>
+concept ReadsWithNoTag = requires(Hub const& hub) { hub.read(); };
+template <class Hub>
+concept ReadsWithTag = requires(Hub const& hub, ::foundation::effects::cap::Nondet nondet) { hub.read(nondet); };
+static_assert(!ReadsWithNoTag<crucible::perf::SenseHubV2> && ReadsWithTag<crucible::perf::SenseHubV2>);
+static_assert(!ReadsWithNoTag<crucible::perf::SenseHub> && ReadsWithTag<crucible::perf::SenseHub>);
+
 }  // namespace
 
 int main() {

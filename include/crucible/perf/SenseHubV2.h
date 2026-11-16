@@ -433,18 +433,25 @@ inline constexpr bool sense_hub_v2_implemented = false;
 
 class SenseHubV2 {
 public:
-    [[nodiscard]] v2::CounterSnapshot read_counters() const noexcept;
+    // The kernel and the samplers write the counters and the gauges at times
+    // that the schedule decides, so each read and each view of the live
+    // slots takes the bare tag of Nondet, as the reads of SenseHub do.
+    [[nodiscard]] v2::CounterSnapshot read_counters(::foundation::effects::cap::Nondet nondet) const noexcept;
 
     // Reading the gauges also polls the files behind the
     // userspace-sampled slots, which costs far more than reading the
     // counters.
-    [[nodiscard]] v2::GaugeSnapshot read_gauges() const noexcept;
+    [[nodiscard]] v2::GaugeSnapshot read_gauges(::foundation::effects::cap::Nondet nondet) const noexcept;
 
-    [[nodiscard]] v2::FullSnapshot read() const noexcept { return {read_counters(), read_gauges()}; }
+    [[nodiscard]] v2::FullSnapshot read(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return {read_counters(nondet), read_gauges(nondet)};
+    }
 
-    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHubV2> counters_view() const noexcept;
+    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>
+    counters_view(::foundation::effects::cap::Nondet nondet) const noexcept;
 
-    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHubV2> gauges_view() const noexcept;
+    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>
+    gauges_view(::foundation::effects::cap::Nondet nondet) const noexcept;
 
     [[nodiscard]] v2::LoadReport coverage() const noexcept;
 

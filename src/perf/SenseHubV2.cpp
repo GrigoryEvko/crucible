@@ -16,15 +16,21 @@ SenseHubV2::~SenseHubV2() noexcept = default;
 // the loader opens the v2 object.
 ::fixy::Option<SenseHubV2> load_sense_hub_v2(::fixy::InitLoadCtx const&) noexcept { return ::fixy::none; }
 
-v2::CounterSnapshot SenseHubV2::read_counters() const noexcept { return v2::CounterSnapshot{}; }
+v2::CounterSnapshot SenseHubV2::read_counters(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
+    return v2::CounterSnapshot{};
+}
 
-v2::GaugeSnapshot SenseHubV2::read_gauges() const noexcept { return v2::GaugeSnapshot{}; }
+v2::GaugeSnapshot SenseHubV2::read_gauges(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
+    return v2::GaugeSnapshot{};
+}
 
-::fixy::Borrowed<const volatile uint64_t, SenseHubV2> SenseHubV2::counters_view() const noexcept {
+::fixy::Borrowed<const volatile uint64_t, SenseHubV2>
+SenseHubV2::counters_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
     return ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>{};
 }
 
-::fixy::Borrowed<const volatile uint64_t, SenseHubV2> SenseHubV2::gauges_view() const noexcept {
+::fixy::Borrowed<const volatile uint64_t, SenseHubV2>
+SenseHubV2::gauges_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
     return ::fixy::Borrowed<const volatile uint64_t, SenseHubV2>{};
 }
 
