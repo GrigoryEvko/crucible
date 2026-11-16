@@ -31,6 +31,10 @@
 //                                the tree as a list of combine steps, and an
 //                                evaluation of such a list
 //
+// Each output is a ViewMut of a frame door (foundation/core/Region.h), which
+// the call takes by value, so the output has one writer by its type.  The
+// inputs are Views.
+//
 // THE ORDER
 //   The tree of a run of n elements splits the run at p, the largest power of
 //   two below n.  The left part holds the elements [0, p), and the right part
@@ -399,9 +403,10 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 // sums, gives PartialOverlap.  Each error comes before the first write.
 // Complexity: O(K) checks, then O(K * n) loads and adds, with a recursion of
 // depth ceil(log2 K) for each vector of sums.
-template <class T>
+template <class T, class Brand, std::size_t Extent>
     requires TreeSumElement<T>
-[[nodiscard]] Result<Unit, RunsError> tree_sum_of_runs(View<View<T const> const> runs, View<T> sums) noexcept {
+[[nodiscard]] Result<Unit, RunsError> tree_sum_of_runs(View<View<T const> const> runs,
+                                                       ViewMut<T, Brand, Extent> sums) noexcept {
     constexpr int lanes = simd::native_lanes<T>;
     std::size_t const count = sums.size();
     T* const out = first_of_(detail::ViewDoor::key(), sums);
@@ -412,7 +417,7 @@ template <class T>
         }
     }
     if (runs.size() == 0) {
-        fill(sums, T{});
+        fill(View<T>{sums.view()}, T{});
         return Unit{};
     }
     View<T const> const* const first_run = first_of_(detail::ViewDoor::key(), runs);
@@ -458,6 +463,33 @@ check_segment_offsets(std::size_t elements, View<std::size_t const> offsets, std
     return Unit{};
 }
 
+namespace detail {
+
+inline namespace CRUCIBLE_SIMD_TARGET {
+
+// The tree sums of the segments into the count sums from out.  The kernel of
+// segmented_tree_sum on a raw run, which a parallel form calls for the run of
+// a shard of its region.  The raw run stays until a region has a frame door
+// that gives a ViewMut.
+template <class T>
+[[nodiscard]] Result<Unit, SegmentError> segmented_tree_sum_(View<T const> elements, View<std::size_t const> offsets,
+                                                             T* out, std::size_t count) noexcept {
+    auto const checked = check_segment_offsets(elements.size(), offsets, count);
+    if (checked.is_err()) return checked;
+    T const* const first = first_of_(ViewDoor::key(), elements);
+    std::size_t const* const offset = first_of_(ViewDoor::key(), offsets);
+    for (std::size_t segment = 0; segment < count; ++segment) {
+        std::size_t const size = offset[segment + 1] - offset[segment];
+        out[segment] =
+            size == 0 ? T{} : canonical_sum_(tree_sum_run_<T, simd::native_lanes<T>>(first + offset[segment], size));
+    }
+    return Unit{};
+}
+
+}  // namespace CRUCIBLE_SIMD_TARGET
+
+}  // namespace detail
+
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of each segment: sums[s] is the tree sum of the elements
@@ -465,22 +497,11 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 // hold one more element than the sums, they do not decrease, and the last one
 // is at most the count of the elements.  Else the call gives a SegmentError
 // and writes nothing.  Complexity: O(n + S).
-template <class T>
+template <class T, class Brand, std::size_t Extent>
     requires TreeSumElement<T>
 [[nodiscard]] Result<Unit, SegmentError> segmented_tree_sum(View<T const> elements, View<std::size_t const> offsets,
-                                                            View<T> sums) noexcept {
-    auto const checked = check_segment_offsets(elements.size(), offsets, sums.size());
-    if (checked.is_err()) return checked;
-    T const* const first = first_of_(detail::ViewDoor::key(), elements);
-    std::size_t const* const offset = first_of_(detail::ViewDoor::key(), offsets);
-    T* const out = first_of_(detail::ViewDoor::key(), sums);
-    for (std::size_t segment = 0; segment < sums.size(); ++segment) {
-        std::size_t const count = offset[segment + 1] - offset[segment];
-        out[segment] = count == 0 ? T{}
-                                  : detail::canonical_sum_(detail::tree_sum_run_<T, simd::native_lanes<T>>(
-                                        first + offset[segment], count));
-    }
-    return Unit{};
+                                                            ViewMut<T, Brand, Extent> sums) noexcept {
+    return detail::segmented_tree_sum_(elements, offsets, first_of_(detail::ViewDoor::key(), sums), sums.size());
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
@@ -489,11 +510,11 @@ template <class T>
 // tree of the elements [offsets[s], offsets[s + 1]), and an empty segment
 // gives empty.  The offsets obey the rules of segmented_tree_sum.
 // Complexity: O(n + S) combines.
-template <class T, class Combine>
+template <class T, class Brand, std::size_t Extent, class Combine>
     requires TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
 [[nodiscard]] constexpr Result<Unit, SegmentError>
-segmented_tree_reduce(View<T const> elements, View<std::size_t const> offsets, View<T> results, T const& empty,
-                      Combine combine) noexcept {
+segmented_tree_reduce(View<T const> elements, View<std::size_t const> offsets, ViewMut<T, Brand, Extent> results,
+                      T const& empty, Combine combine) noexcept {
     auto const checked = check_segment_offsets(elements.size(), offsets, results.size());
     if (checked.is_err()) return checked;
     T const* const first = first_of_(detail::ViewDoor::key(), elements);
@@ -528,6 +549,41 @@ constexpr void check_grain_range_(std::size_t count, std::size_t first_grain, st
     }
 }
 
+// The tree of each grain of the range with the combine of the caller into the
+// partials partials from out.  The kernel of tree_reduce_grains on a raw run,
+// which a parallel form calls for the run of a shard of its region.  The raw
+// run stays until a region has a frame door that gives a ViewMut.
+template <std::size_t Grain, class T, class Combine>
+constexpr void tree_reduce_grains_(View<T const> elements, std::size_t first_grain, T* out, std::size_t partials,
+                                   Combine& combine) noexcept {
+    std::size_t const count = elements.size();
+    check_grain_range_<Grain>(count, first_grain, partials);
+    T const* const first = first_of_(ViewDoor::key(), elements);
+    for (std::size_t index = 0; index < partials; ++index) {
+        std::size_t const start = (first_grain + index) * Grain;
+        std::size_t const size = count - start < Grain ? count - start : Grain;
+        out[index] = tree_of_run_(first + start, size, combine);
+    }
+}
+
+inline namespace CRUCIBLE_SIMD_TARGET {
+
+// The tree sum of each grain of the range into the partials partials from
+// out: the kernel of tree_sum_grains on a raw run, as tree_reduce_grains_ is.
+template <std::size_t Grain, class T>
+void tree_sum_grains_(View<T const> elements, std::size_t first_grain, T* out, std::size_t partials) noexcept {
+    std::size_t const count = elements.size();
+    check_grain_range_<Grain>(count, first_grain, partials);
+    T const* const first = first_of_(ViewDoor::key(), elements);
+    for (std::size_t index = 0; index < partials; ++index) {
+        std::size_t const start = (first_grain + index) * Grain;
+        std::size_t const size = count - start < Grain ? count - start : Grain;
+        out[index] = canonical_sum_(tree_sum_run_<T, simd::native_lanes<T>>(first + start, size));
+    }
+}
+
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 }  // namespace detail
 
 inline namespace CRUCIBLE_SIMD_TARGET {
@@ -537,18 +593,11 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 // the run is then the tree sum of the run, so tree_sum(partials) gives it.  A
 // range past the grains of the run ends the process.  Complexity: O(Grain)
 // for each partial.
-template <std::size_t Grain, class T>
+template <std::size_t Grain, class T, class Brand, std::size_t Extent>
     requires TreeGrain<Grain> && TreeSumElement<T>
-void tree_sum_grains(View<T const> elements, std::size_t first_grain, View<T> partials) noexcept {
-    std::size_t const count = elements.size();
-    detail::check_grain_range_<Grain>(count, first_grain, partials.size());
-    T const* const first = first_of_(detail::ViewDoor::key(), elements);
-    T* const out = first_of_(detail::ViewDoor::key(), partials);
-    for (std::size_t index = 0; index < partials.size(); ++index) {
-        std::size_t const start = (first_grain + index) * Grain;
-        std::size_t const size = count - start < Grain ? count - start : Grain;
-        out[index] = detail::canonical_sum_(detail::tree_sum_run_<T, simd::native_lanes<T>>(first + start, size));
-    }
+void tree_sum_grains(View<T const> elements, std::size_t first_grain, ViewMut<T, Brand, Extent> partials) noexcept {
+    detail::tree_sum_grains_<Grain>(elements, first_grain, first_of_(detail::ViewDoor::key(), partials),
+                                    partials.size());
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
@@ -557,19 +606,12 @@ void tree_sum_grains(View<T const> elements, std::size_t first_grain, View<T> pa
 // partials[i] is the tree of the grain first_grain + i.  tree_reduce of all
 // the partials of the run then gives the tree of the run.  A range past the
 // grains of the run ends the process.
-template <std::size_t Grain, class T, class Combine>
+template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Combine>
     requires TreeGrain<Grain> && TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
-constexpr void tree_reduce_grains(View<T const> elements, std::size_t first_grain, View<T> partials,
+constexpr void tree_reduce_grains(View<T const> elements, std::size_t first_grain, ViewMut<T, Brand, Extent> partials,
                                   Combine combine) noexcept {
-    std::size_t const count = elements.size();
-    detail::check_grain_range_<Grain>(count, first_grain, partials.size());
-    T const* const first = first_of_(detail::ViewDoor::key(), elements);
-    T* const out = first_of_(detail::ViewDoor::key(), partials);
-    for (std::size_t index = 0; index < partials.size(); ++index) {
-        std::size_t const start = (first_grain + index) * Grain;
-        std::size_t const size = count - start < Grain ? count - start : Grain;
-        out[index] = detail::tree_of_run_(first + start, size, combine);
-    }
+    detail::tree_reduce_grains_<Grain>(elements, first_grain, first_of_(detail::ViewDoor::key(), partials),
+                                       partials.size(), combine);
 }
 
 // ── The plan of the tree ────────────────────────────────────────────────
@@ -626,8 +668,8 @@ namespace detail {
 // operands, and the last step gives the root.  A net check reads the plan as
 // the specification of the order.  A plan of more than max_plan_leaves
 // leaves gives TooManyLeaves and writes nothing.  Complexity: O(n).
-template <std::size_t Extent>
-[[nodiscard]] constexpr Result<Unit, PlanError> write_tree_plan(View<TreeStep, Extent> steps) noexcept {
+template <class Brand, std::size_t Extent>
+[[nodiscard]] constexpr Result<Unit, PlanError> write_tree_plan(ViewMut<TreeStep, Brand, Extent> steps) noexcept {
     if (steps.size() >= max_plan_leaves) return err(PlanError::TooManyLeaves);
     auto const leaves = static_cast<std::uint32_t>(steps.size() + 1);
     std::uint32_t next = 0;
@@ -635,12 +677,15 @@ template <std::size_t Extent>
     return Unit{};
 }
 
-// The plan of the tree of Leaves leaves, as a constant.
+// The plan of the tree of Leaves leaves, as a constant.  The plan writes its
+// own array, so it calls the writer of write_tree_plan with no frame door.
 template <std::size_t Leaves>
     requires(Leaves >= 2 && Leaves <= 4096)
 [[nodiscard]] consteval FixedArray<TreeStep, Leaves - 1> tree_plan() noexcept {
     FixedArray<TreeStep, Leaves - 1> steps{};
-    static_cast<void>(write_tree_plan(steps.view()).expect("a plan of at most 4096 leaves fits a PlanNode"));
+    std::uint32_t next = 0;
+    static_cast<void>(
+        detail::write_tree_plan_(first_of_(detail::ViewDoor::key(), steps.view()), Leaves, 0, Leaves, next));
     return steps;
 }
 
@@ -648,10 +693,11 @@ template <std::size_t Leaves>
 // scratch holds the value of each step.  The leaves hold one more element than
 // the steps, and the scratch holds as many as the steps.  A step that reads a
 // node of a later step gives NodeNotReady.  Complexity: O(steps) combines.
-template <class T, class Combine>
+template <class T, class Brand, std::size_t Extent, class Combine>
     requires TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
 [[nodiscard]] constexpr Result<T, PlanError> evaluate_tree_plan(View<TreeStep const> steps, View<T const> leaves,
-                                                                View<T> scratch, Combine combine) noexcept {
+                                                                ViewMut<T, Brand, Extent> scratch,
+                                                                Combine combine) noexcept {
     std::size_t const count = steps.size();
     if (leaves.size() != count + 1 || scratch.size() != count) return err(PlanError::CountMismatch);
     TreeStep const* const step = first_of_(detail::ViewDoor::key(), steps);

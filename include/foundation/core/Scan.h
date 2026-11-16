@@ -25,6 +25,10 @@
 //                                            steps, and an evaluation of such a
 //                                            list
 //
+// Each output is a ViewMut of a frame door (foundation/core/Region.h), which
+// the call takes by value, so the output has one writer by its type.  The
+// inputs are Views.
+//
 // THE ORDER
 //   Write k as a sum of different powers of two, from the largest.  The
 //   prefix [0, k) divides into blocks of these sizes, in that order, and each
@@ -97,8 +101,8 @@
 // THE COSTS
 //   A scan makes at most two combines for each element, with a recursion of
 //   depth ceil(log2 n) + popcount(n).  A sum scan makes about 2 * log2(L)
-//   shuffles and adds for each vector of L lanes.  No scan allocates.  out can
-//   be the same View as in, and no other overlap is permitted.
+//   shuffles and adds for each vector of L lanes.  No scan allocates.  in can
+//   be the View of the run of out, and no other overlap is permitted.
 //
 // THE TARGET
 //   The sum scans and their grain forms read the vector width of the target.
@@ -205,12 +209,12 @@ constexpr void scan_run_(T const* in, T* out, std::size_t count, T const* carry,
 }  // namespace detail
 
 // The inclusive scan of in into out, by THE ORDER, with the combine of the
-// caller.  The two Views hold one count, and two counts that differ give
-// LengthMismatch with no write.  out can be the same View as in.
+// caller.  The two runs hold one count, and two counts that differ give
+// LengthMismatch with no write.  in can be the View of the run of out.
 // Complexity: at most 2n combines.
-template <class T, class Combine>
+template <class T, class Brand, std::size_t Extent, class Combine>
     requires TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
-[[nodiscard]] constexpr Result<Unit, LengthMismatch> inclusive_scan(View<T const> in, View<T> out,
+[[nodiscard]] constexpr Result<Unit, LengthMismatch> inclusive_scan(View<T const> in, ViewMut<T, Brand, Extent> out,
                                                                     Combine combine) noexcept {
     if (in.size() != out.size()) return err(LengthMismatch{});
     detail::scan_run_<ScanKind::Inclusive>(first_of_(detail::ViewDoor::key(), in),
@@ -220,13 +224,13 @@ template <class T, class Combine>
 }
 
 // The exclusive scan of in into out, by THE ORDER: out[0] is empty, and
-// out[k] combines in[0] to in[k - 1].  The two Views hold one count, and two
+// out[k] combines in[0] to in[k - 1].  The two runs hold one count, and two
 // counts that differ give LengthMismatch with no write.  Complexity: at most
 // 2n combines.
-template <class T, class Combine>
+template <class T, class Brand, std::size_t Extent, class Combine>
     requires TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
-[[nodiscard]] constexpr Result<Unit, LengthMismatch> exclusive_scan(View<T const> in, View<T> out, T const& empty,
-                                                                    Combine combine) noexcept {
+[[nodiscard]] constexpr Result<Unit, LengthMismatch> exclusive_scan(View<T const> in, ViewMut<T, Brand, Extent> out,
+                                                                    T const& empty, Combine combine) noexcept {
     if (in.size() != out.size()) return err(LengthMismatch{});
     detail::scan_run_<ScanKind::Exclusive>(first_of_(detail::ViewDoor::key(), in),
                                            first_of_(detail::ViewDoor::key(), out), in.size(),
@@ -351,9 +355,10 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 // no bit, so a test compares each count.  The empty value of the exclusive
 // sum is +0.  Complexity: O(n), with about log2(Lanes) shuffles and adds for
 // each vector in each direction.
-template <int Lanes, class T>
+template <int Lanes, class T, class Brand, std::size_t Extent>
     requires TreeSumElement<T> && detail::TreeLanes<Lanes>
-[[nodiscard]] Result<Unit, LengthMismatch> inclusive_sum_scan_lanes(View<T const> in, View<T> out) noexcept {
+[[nodiscard]] Result<Unit, LengthMismatch> inclusive_sum_scan_lanes(View<T const> in,
+                                                                    ViewMut<T, Brand, Extent> out) noexcept {
     if (in.size() != out.size()) return err(LengthMismatch{});
     detail::sum_scan_lanes_<ScanKind::Inclusive, T, Lanes>(first_of_(detail::ViewDoor::key(), in),
                                                            first_of_(detail::ViewDoor::key(), out), in.size(),
@@ -361,9 +366,10 @@ template <int Lanes, class T>
     return Unit{};
 }
 
-template <int Lanes, class T>
+template <int Lanes, class T, class Brand, std::size_t Extent>
     requires TreeSumElement<T> && detail::TreeLanes<Lanes>
-[[nodiscard]] Result<Unit, LengthMismatch> exclusive_sum_scan_lanes(View<T const> in, View<T> out) noexcept {
+[[nodiscard]] Result<Unit, LengthMismatch> exclusive_sum_scan_lanes(View<T const> in,
+                                                                    ViewMut<T, Brand, Extent> out) noexcept {
     if (in.size() != out.size()) return err(LengthMismatch{});
     detail::sum_scan_lanes_<ScanKind::Exclusive, T, Lanes>(first_of_(detail::ViewDoor::key(), in),
                                                            first_of_(detail::ViewDoor::key(), out), in.size(),
@@ -374,16 +380,18 @@ template <int Lanes, class T>
 // The sum scans: the scans with the add of a tree sum, with the lanes of one
 // register of the target.  The bits are the bits of inclusive_scan and
 // exclusive_scan with an add.  The empty value of the exclusive sum is +0.
-template <class T>
+template <class T, class Brand, std::size_t Extent>
     requires TreeSumElement<T>
-[[nodiscard]] Result<Unit, LengthMismatch> inclusive_sum_scan(View<T const> in, View<T> out) noexcept {
-    return inclusive_sum_scan_lanes<simd::native_lanes<T>>(in, out);
+[[nodiscard]] Result<Unit, LengthMismatch> inclusive_sum_scan(View<T const> in,
+                                                              ViewMut<T, Brand, Extent> out) noexcept {
+    return inclusive_sum_scan_lanes<simd::native_lanes<T>>(in, std::move(out));
 }
 
-template <class T>
+template <class T, class Brand, std::size_t Extent>
     requires TreeSumElement<T>
-[[nodiscard]] Result<Unit, LengthMismatch> exclusive_sum_scan(View<T const> in, View<T> out) noexcept {
-    return exclusive_sum_scan_lanes<simd::native_lanes<T>>(in, out);
+[[nodiscard]] Result<Unit, LengthMismatch> exclusive_sum_scan(View<T const> in,
+                                                              ViewMut<T, Brand, Extent> out) noexcept {
+    return exclusive_sum_scan_lanes<simd::native_lanes<T>>(in, std::move(out));
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
@@ -393,85 +401,101 @@ template <class T>
 namespace detail {
 
 // Calls scan_one for each grain of the range, with its input, its output,
-// its count and its carry, or none for grain 0.  An output of a different
-// count, or a range past the grains of the run, ends the process.
+// its count and its carry, or none for grain 0.  The outputs from target
+// hold the outputs of the elements of the grains of the range, from the
+// first element of grain first_grain.  A count of outputs that differs from
+// the count of those elements, or a range past the grains of the run, ends
+// the process.
 template <std::size_t Grain, class T, class ScanOne>
-constexpr void for_each_scan_grain_(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out,
-                                    ScanOne scan_one) noexcept {
+constexpr void for_each_scan_grain_(View<T const> in, std::size_t first_grain, View<T const> carries, T* target,
+                                    std::size_t outputs, ScanOne scan_one) noexcept {
     std::size_t const count = in.size();
-    if (out.size() != count) [[unlikely]] {
-        fatal("a scan of grains got an input of {} elements and an output of {}", count, out.size());
-    }
     check_grain_range_<Grain>(count, first_grain, carries.size());
+    std::size_t const begin = first_grain * Grain;
+    std::size_t const limit = (first_grain + carries.size()) * Grain;
+    std::size_t const end = limit < count ? limit : count;
+    std::size_t const elements = end > begin ? end - begin : 0;
+    if (outputs != elements) [[unlikely]] {
+        fatal("a scan of grains got {} outputs for the {} elements of its grains", outputs, elements);
+    }
     T const* const first = first_of_(ViewDoor::key(), in);
-    T* const target = first_of_(ViewDoor::key(), out);
     T const* const carry = first_of_(ViewDoor::key(), carries);
     for (std::size_t index = 0; index < carries.size(); ++index) {
         std::size_t const grain = first_grain + index;
         std::size_t const start = grain * Grain;
         std::size_t const size = count - start < Grain ? count - start : Grain;
-        scan_one(first + start, target + start, size, grain == 0 ? nullptr : carry + index);
+        scan_one(first + start, target + (start - begin), size, grain == 0 ? nullptr : carry + index);
     }
 }
 
 template <ScanKind Kind, std::size_t Grain, class T, class Combine>
-constexpr void scan_grains_(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out,
-                            T const* empty, Combine& combine) noexcept {
+constexpr void scan_grains_(View<T const> in, std::size_t first_grain, View<T const> carries, T* target,
+                            std::size_t outputs, T const* empty, Combine& combine) noexcept {
     for_each_scan_grain_<Grain>(
-        in, first_grain, carries, out,
-        [empty, &combine](T const* first, T* target, std::size_t size, T const* carry) constexpr noexcept {
-            scan_run_<Kind>(first, target, size, carry, empty, combine);
+        in, first_grain, carries, target, outputs,
+        [empty, &combine](T const* first, T* part, std::size_t size, T const* carry) constexpr noexcept {
+            scan_run_<Kind>(first, part, size, carry, empty, combine);
         });
 }
 
 }  // namespace detail
 
 // The inclusive scan of the grains first_grain to first_grain +
-// carries.size() - 1 of in, into the same positions of out.  carries[i] is
+// carries.size() - 1 of in.  out holds the outputs of the elements of these
+// grains: the elements from the first element of grain first_grain to the
+// end of the last grain of the range or of the run.  A parallel caller gives
+// each shard the part of its grains of a split of the output.  carries[i] is
 // the carry F(g * Grain) of the grain g = first_grain + i: the exclusive scan
 // of the tree sums of the grains gives it.  The carry of grain 0 is not read.
 // The scan of each grain of the run then gives the bits of inclusive_scan of
 // the run.  A range past the grains of the run, or an output of a different
-// count, ends the process.  Complexity: at most 2 * Grain combines for each
-// grain.
-template <std::size_t Grain, class T, class Combine>
+// count, ends the process.  in can be the View of a run whose elements from
+// grain first_grain are the run of out.  Complexity: at most 2 * Grain
+// combines for each grain.
+template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Combine>
     requires TreeGrain<Grain> && TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
-constexpr void inclusive_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out,
-                                     Combine combine) noexcept {
-    detail::scan_grains_<ScanKind::Inclusive, Grain>(in, first_grain, carries, out, static_cast<T const*>(nullptr),
-                                                     combine);
+constexpr void inclusive_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
+                                     ViewMut<T, Brand, Extent> out, Combine combine) noexcept {
+    detail::scan_grains_<ScanKind::Inclusive, Grain>(in, first_grain, carries, first_of_(detail::ViewDoor::key(), out),
+                                                     out.size(), static_cast<T const*>(nullptr), combine);
 }
 
-// The exclusive scan of the grains of the range, with the carries of
-// inclusive_scan_grains.  out[0] of the run is empty.
-template <std::size_t Grain, class T, class Combine>
+// The exclusive scan of the grains of the range, with the outputs and the
+// carries of inclusive_scan_grains.  out[0] of the run is empty.
+template <std::size_t Grain, class T, class Brand, std::size_t Extent, class Combine>
     requires TreeGrain<Grain> && TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
-constexpr void exclusive_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out,
-                                     T const& empty, Combine combine) noexcept {
-    detail::scan_grains_<ScanKind::Exclusive, Grain>(in, first_grain, carries, out, &empty, combine);
+constexpr void exclusive_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
+                                     ViewMut<T, Brand, Extent> out, T const& empty, Combine combine) noexcept {
+    detail::scan_grains_<ScanKind::Exclusive, Grain>(in, first_grain, carries, first_of_(detail::ViewDoor::key(), out),
+                                                     out.size(), &empty, combine);
 }
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The sum scans of the grains of the range, with the lanes of one register
-// of the target.  The carries obey the rule of inclusive_scan_grains, and the
-// bits are the bits of inclusive_sum_scan and exclusive_sum_scan of the run.
-template <std::size_t Grain, class T>
+// of the target.  The outputs and the carries obey the rules of
+// inclusive_scan_grains, and the bits are the bits of inclusive_sum_scan and
+// exclusive_sum_scan of the run.
+template <std::size_t Grain, class T, class Brand, std::size_t Extent>
     requires TreeGrain<Grain> && TreeSumElement<T>
-void inclusive_sum_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out) noexcept {
-    detail::for_each_scan_grain_<Grain>(
-        in, first_grain, carries, out, [](T const* first, T* target, std::size_t size, T const* carry) noexcept {
-            detail::sum_scan_lanes_<ScanKind::Inclusive, T, simd::native_lanes<T>>(first, target, size, carry);
-        });
+void inclusive_sum_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
+                               ViewMut<T, Brand, Extent> out) noexcept {
+    detail::for_each_scan_grain_<Grain>(in, first_grain, carries, first_of_(detail::ViewDoor::key(), out), out.size(),
+                                        [](T const* first, T* part, std::size_t size, T const* carry) noexcept {
+                                            detail::sum_scan_lanes_<ScanKind::Inclusive, T, simd::native_lanes<T>>(
+                                                first, part, size, carry);
+                                        });
 }
 
-template <std::size_t Grain, class T>
+template <std::size_t Grain, class T, class Brand, std::size_t Extent>
     requires TreeGrain<Grain> && TreeSumElement<T>
-void exclusive_sum_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries, View<T> out) noexcept {
-    detail::for_each_scan_grain_<Grain>(
-        in, first_grain, carries, out, [](T const* first, T* target, std::size_t size, T const* carry) noexcept {
-            detail::sum_scan_lanes_<ScanKind::Exclusive, T, simd::native_lanes<T>>(first, target, size, carry);
-        });
+void exclusive_sum_scan_grains(View<T const> in, std::size_t first_grain, View<T const> carries,
+                               ViewMut<T, Brand, Extent> out) noexcept {
+    detail::for_each_scan_grain_<Grain>(in, first_grain, carries, first_of_(detail::ViewDoor::key(), out), out.size(),
+                                        [](T const* first, T* part, std::size_t size, T const* carry) noexcept {
+                                            detail::sum_scan_lanes_<ScanKind::Exclusive, T, simd::native_lanes<T>>(
+                                                first, part, size, carry);
+                                        });
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
@@ -564,8 +588,10 @@ template <ScanKind Kind>
 // the steps of its operands, and each step feeds an output or a later step.
 // The steps hold scan_plan_steps(n, kind) elements, and a different count
 // gives CountMismatch with no write.  Complexity: O(n).
-[[nodiscard]] constexpr Result<Unit, PlanError> write_scan_plan(ScanKind kind, View<TreeStep> steps,
-                                                                View<PlanNode> outputs) noexcept {
+template <class StepBrand, std::size_t StepExtent, class OutputBrand, std::size_t OutputExtent>
+[[nodiscard]] constexpr Result<Unit, PlanError>
+write_scan_plan(ScanKind kind, ViewMut<TreeStep, StepBrand, StepExtent> steps,
+                ViewMut<PlanNode, OutputBrand, OutputExtent> outputs) noexcept {
     auto counted = scan_plan_steps(outputs.size(), kind);
     if (counted.is_err()) return err(PlanError::TooManyLeaves);
     if (steps.size() != std::move(counted).expect("the count of a plan of fewer leaves than the limit")) {
@@ -589,11 +615,12 @@ template <ScanKind Kind>
 // agree: leaves, outputs and out hold one count, and scratch holds the count
 // of the steps.  A step or an output that reads a node of a later step gives
 // NodeNotReady.  Complexity: O(steps + n) combines and copies.
-template <class T, class Combine>
+template <class T, class ScratchBrand, std::size_t ScratchExtent, class OutBrand, std::size_t OutExtent, class Combine>
     requires TreeValue<T> && TreeCombine<Combine, T> && std::is_nothrow_copy_assignable_v<T>
 [[nodiscard]] constexpr Result<Unit, PlanError>
-evaluate_scan_plan(View<TreeStep const> steps, View<PlanNode const> outputs, View<T const> leaves, View<T> scratch,
-                   View<T> out, T const& empty, Combine combine) noexcept {
+evaluate_scan_plan(View<TreeStep const> steps, View<PlanNode const> outputs, View<T const> leaves,
+                   ViewMut<T, ScratchBrand, ScratchExtent> scratch, ViewMut<T, OutBrand, OutExtent> out, T const& empty,
+                   Combine combine) noexcept {
     std::size_t const count = leaves.size();
     if (outputs.size() != count || out.size() != count || scratch.size() != steps.size()) {
         return err(PlanError::CountMismatch);

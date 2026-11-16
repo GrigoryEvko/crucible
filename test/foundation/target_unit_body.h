@@ -50,7 +50,8 @@ inline constexpr std::size_t target_unit_run = 1000;
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a body or an object tells which unit of the link holds it")
     return TargetUnitBodies{
         .tree_sum_body = &::foundation::core::tree_sum,
-        .sum_scan_body = &::foundation::core::inclusive_sum_scan<float>,
+        .sum_scan_body =
+            &::foundation::core::inclusive_sum_scan<float, TargetProbeBrand, ::foundation::core::dynamic_extent>,
         .fixed_copy_body = &::foundation::core::copy<std::uint8_t, 64>,
         .vector_bytes = &::foundation::simd::native_vector_bytes,
         .sum_bits_body = &sum_bits_of_this_unit,

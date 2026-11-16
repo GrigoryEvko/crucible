@@ -20,6 +20,23 @@ namespace tree = ::crucible::test::parallel_tree;
 using ::foundation::core::HeapArray;
 using ::foundation::core::View;
 
+// The parallel sum scan of kind of part into parallel, and the scan of one
+// thread into single, each through a frame of its owner.
+template <spawn::BodyCoupling Coupling, std::size_t Shards>
+void scan_both(tree::BgCtx const& ctx, ::foundation::core::ScanKind kind, View<float const> part,
+               HeapArray<float>& parallel, HeapArray<float>& single) noexcept {
+    parallel = ::foundation::core::with_mut(std::move(parallel), [&](auto out) noexcept {
+        ::fixy::concurrent::parallel_sum_scan<Coupling, Shards>(ctx, tree::test_alloc(), kind, part, std::move(out));
+    });
+    single = ::foundation::core::with_mut(std::move(single), [&](auto out) noexcept {
+        if (kind == ::foundation::core::ScanKind::Inclusive) {
+            assert(::foundation::core::inclusive_sum_scan(part, std::move(out)).is_ok());
+        } else {
+            assert(::foundation::core::exclusive_sum_scan(part, std::move(out)).is_ok());
+        }
+    });
+}
+
 // The parallel sum scans give the bits of the scans of one thread for each
 // count.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, std::size_t Counts>
@@ -29,13 +46,9 @@ void check_scans(View<float const> all, ::fixy::FixedArray<std::size_t, Counts> 
         View<float const> const part = all.window(0, count).expect("the part fits the run");
         HeapArray<float> parallel_scan = ::foundation::core::mint_heap_array(tree::test_alloc(), count, 0.0f);
         HeapArray<float> single_scan = ::foundation::core::mint_heap_array(tree::test_alloc(), count, 0.0f);
-        ::fixy::concurrent::parallel_sum_scan<Coupling, Shards>(
-            ctx, tree::test_alloc(), ::foundation::core::ScanKind::Inclusive, part, parallel_scan.view());
-        assert(::foundation::core::inclusive_sum_scan(part, single_scan.view()).is_ok());
+        scan_both<Coupling, Shards>(ctx, ::foundation::core::ScanKind::Inclusive, part, parallel_scan, single_scan);
         assert(tree::same_runs(View<float const>{parallel_scan.view()}, View<float const>{single_scan.view()}));
-        ::fixy::concurrent::parallel_sum_scan<Coupling, Shards>(
-            ctx, tree::test_alloc(), ::foundation::core::ScanKind::Exclusive, part, parallel_scan.view());
-        assert(::foundation::core::exclusive_sum_scan(part, single_scan.view()).is_ok());
+        scan_both<Coupling, Shards>(ctx, ::foundation::core::ScanKind::Exclusive, part, parallel_scan, single_scan);
         assert(tree::same_runs(View<float const>{parallel_scan.view()}, View<float const>{single_scan.view()}));
     }
 }
@@ -73,12 +86,7 @@ void check_nan_scans(View<float const> all) noexcept {
         HeapArray<float> parallel_scan = ::foundation::core::mint_heap_array(tree::test_alloc(), count, 0.0f);
         HeapArray<float> single_scan = ::foundation::core::mint_heap_array(tree::test_alloc(), count, 0.0f);
         for (::foundation::core::ScanKind const kind : kinds) {
-            ::fixy::concurrent::parallel_sum_scan<Coupling, Shards>(ctx, tree::test_alloc(), kind, part,
-                                                                    parallel_scan.view());
-            bool const is_scanned = kind == ::foundation::core::ScanKind::Inclusive
-                                      ? ::foundation::core::inclusive_sum_scan(part, single_scan.view()).is_ok()
-                                      : ::foundation::core::exclusive_sum_scan(part, single_scan.view()).is_ok();
-            assert(is_scanned);
+            scan_both<Coupling, Shards>(ctx, kind, part, parallel_scan, single_scan);
             check_canonical_outputs(View<float const>{parallel_scan.view()}, View<float const>{single_scan.view()});
         }
     }

@@ -37,8 +37,12 @@ void check_segments(View<float const> all, ::crucible::test::PhiloxStream& strea
     HeapArray<float> parallel = ::foundation::core::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
     HeapArray<float> single = ::foundation::core::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
     View<std::size_t const> const checked{offset_view};
-    ::fixy::concurrent::parallel_segmented_tree_sum<Coupling, Shards>(ctx, part, checked, parallel.view());
-    assert(::foundation::core::segmented_tree_sum(part, checked, single.view()).is_ok());
+    parallel = ::foundation::core::with_mut(std::move(parallel), [&](auto out) noexcept {
+        ::fixy::concurrent::parallel_segmented_tree_sum<Coupling, Shards>(ctx, part, checked, std::move(out));
+    });
+    single = ::foundation::core::with_mut(std::move(single), [&](auto out) noexcept {
+        assert(::foundation::core::segmented_tree_sum(part, checked, std::move(out)).is_ok());
+    });
     assert(tree::same_runs(View<float const>{parallel.view()}, View<float const>{single.view()}));
 }
 

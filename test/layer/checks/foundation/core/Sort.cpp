@@ -55,7 +55,7 @@ template <std::size_t N>
             value = static_cast<std::uint8_t>((input >> wire) & 1u);
             ++wire;
         }
-        sort_network(wires.view());
+        wires = with_mut(std::move(wires), [](auto out) noexcept { sort_network(std::move(out)); });
         std::uint8_t last = 0;
         for (std::uint8_t const value : wires) {
             if (value < last) return false;
@@ -76,7 +76,13 @@ static_assert(networks_sort(std::make_index_sequence<9>{}));
     FixedArray<Record, 6> records{Record{3, 0}, Record{1, 1}, Record{3, 2}, Record{2, 3}, Record{1, 4}, Record{3, 5}};
     FixedArray<Record, 6> scratch{};
     auto const by_key = [](Record const& left, Record const& right) noexcept { return left.key < right.key; };
-    if (stable_sort(View<Record>{records.view()}, View<Record>{scratch.view()}, by_key).is_err()) return false;
+    bool is_sorted = false;
+    records = with_mut(std::move(records), [&](auto elements) noexcept {
+        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
+            is_sorted = stable_sort(std::move(elements), std::move(room), by_key).is_ok();
+        });
+    });
+    if (!is_sorted) return false;
     FixedArray<Record, 6> const expected{Record{1, 1}, Record{1, 4}, Record{2, 3},
                                          Record{3, 0}, Record{3, 2}, Record{3, 5}};
     for (Index<6> const position : records.indices()) {
@@ -92,7 +98,13 @@ static_assert(stable_sort_keeps_equal_keys_in_order());
 [[nodiscard]] consteval bool short_scratch_is_refused() noexcept {
     FixedArray<int, 4> values{4, 3, 2, 1};
     FixedArray<int, 3> scratch{};
-    return stable_sort(View<int>{values.view()}, View<int>{scratch.view()}).is_err();
+    bool is_refused = false;
+    values = with_mut(std::move(values), [&](auto elements) noexcept {
+        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
+            is_refused = stable_sort(std::move(elements), std::move(room)).is_err();
+        });
+    });
+    return is_refused;
 }
 static_assert(short_scratch_is_refused());
 

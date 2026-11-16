@@ -72,10 +72,12 @@ template <std::size_t N>
     auto const leaves = leaves_of<N>();
     auto const steps = tree_plan<N>();
     FixedArray<std::uint64_t, N - 1> scratch{};
-    std::uint64_t const from_plan =
-        evaluate_tree_plan(View<TreeStep const>{steps.view()}, View<std::uint64_t const>{leaves.view()},
-                           View<std::uint64_t>{scratch.view()}, Mix{})
+    auto [from_plan, back] = with_mut(std::move(scratch), [&](auto room) noexcept {
+        return evaluate_tree_plan(View<TreeStep const>{steps.view()}, View<std::uint64_t const>{leaves.view()},
+                                  std::move(room), Mix{})
             .expect("the plan of tree_plan is ready in step order");
+    });
+    static_cast<void>(back);
     std::uint64_t const from_reduce = tree_reduce(leaves.view(), Mix{}).expect("the run has leaves");
     return from_plan == from_reduce;
 }
@@ -99,9 +101,13 @@ constexpr FixedArray<TreeStep, 1> bad_plan{TreeStep{PlanNode{0}, PlanNode{2}}};
 [[nodiscard]] consteval bool bad_plan_is_refused() noexcept {
     FixedArray<std::uint64_t, 2> const two{leaves_of<2>()};
     FixedArray<std::uint64_t, 1> scratch{};
-    return evaluate_tree_plan(View<TreeStep const>{bad_plan.view()}, View<std::uint64_t const>{two.view()},
-                              View<std::uint64_t>{scratch.view()}, Mix{})
-        .is_err();
+    auto [is_refused, back] = with_mut(std::move(scratch), [&](auto room) noexcept {
+        return evaluate_tree_plan(View<TreeStep const>{bad_plan.view()}, View<std::uint64_t const>{two.view()},
+                                  std::move(room), Mix{})
+            .is_err();
+    });
+    static_cast<void>(back);
+    return is_refused;
 }
 static_assert(bad_plan_is_refused());
 
@@ -110,14 +116,15 @@ static_assert(bad_plan_is_refused());
     auto const leaves = leaves_of<6>();
     FixedArray<std::size_t, 4> const offsets{0, 2, 2, 6};
     FixedArray<std::uint64_t, 3> results{};
-    bool const is_written =
-        segmented_tree_reduce(View<std::uint64_t const>{leaves.view()}, View<std::size_t const>{offsets.view()},
-                              View<std::uint64_t>{results.view()}, std::uint64_t{99}, Mix{})
+    auto [is_written, written] = with_mut(std::move(results), [&](auto out) noexcept {
+        return segmented_tree_reduce(View<std::uint64_t const>{leaves.view()}, View<std::size_t const>{offsets.view()},
+                                     std::move(out), std::uint64_t{99}, Mix{})
             .is_ok();
+    });
     Mix mix{};
     std::uint64_t const tail = mix(mix(3, 4), mix(5, 6));
-    return is_written && results.at(index<0>()) == mix(1, 2) && results.at(index<1>()) == 99
-        && results.at(index<2>()) == tail;
+    return is_written && written.at(index<0>()) == mix(1, 2) && written.at(index<1>()) == 99
+        && written.at(index<2>()) == tail;
 }
 static_assert(segments_take_their_trees());
 
@@ -127,13 +134,19 @@ static_assert(segments_take_their_trees());
     FixedArray<std::size_t, 3> const decreasing{0, 4, 2};
     FixedArray<std::size_t, 3> const past_end{0, 4, 7};
     FixedArray<std::uint64_t, 2> results{};
-    auto const first =
-        segmented_tree_reduce(View<std::uint64_t const>{leaves.view()}, View<std::size_t const>{decreasing.view()},
-                              View<std::uint64_t>{results.view()}, std::uint64_t{0}, Mix{});
-    auto const second =
-        segmented_tree_reduce(View<std::uint64_t const>{leaves.view()}, View<std::size_t const>{past_end.view()},
-                              View<std::uint64_t>{results.view()}, std::uint64_t{0}, Mix{});
-    return first.is_err() && second.is_err();
+    auto [is_first_refused, once] = with_mut(std::move(results), [&](auto out) noexcept {
+        return segmented_tree_reduce(View<std::uint64_t const>{leaves.view()},
+                                     View<std::size_t const>{decreasing.view()}, std::move(out), std::uint64_t{0},
+                                     Mix{})
+            .is_err();
+    });
+    auto [is_second_refused, twice] = with_mut(std::move(once), [&](auto out) noexcept {
+        return segmented_tree_reduce(View<std::uint64_t const>{leaves.view()}, View<std::size_t const>{past_end.view()},
+                                     std::move(out), std::uint64_t{0}, Mix{})
+            .is_err();
+    });
+    static_cast<void>(twice);
+    return is_first_refused && is_second_refused;
 }
 static_assert(bad_segments_are_refused());
 

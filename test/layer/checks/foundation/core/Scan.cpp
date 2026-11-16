@@ -38,12 +38,60 @@ template <std::size_t N>
     return leaves;
 }
 
+// Runs write on the ViewMut of the count first elements of owner, through a
+// frame of the owner and a split of its ViewMut, and gives the bool of write.
+template <class Owner, class Write>
+[[nodiscard]] consteval bool write_first(Owner& owner, std::size_t count, Write write) noexcept {
+    bool is_done = false;
+    owner = with_mut(std::move(owner), [&](auto whole) noexcept {
+        auto [part, rest] = split_at(std::move(whole), count).expect("the part fits the owner");
+        static_cast<void>(rest.size());
+        is_done = write(std::move(part));
+    });
+    return is_done;
+}
+
+// Writes the plan of kind into the count first steps of steps and into
+// outputs, through a frame of each.
+template <class Steps, class Outputs>
+[[nodiscard]] consteval bool write_plan_into(ScanKind kind, Steps& steps, std::size_t count,
+                                             Outputs& outputs) noexcept {
+    bool is_written = false;
+    steps = with_mut(std::move(steps), [&](auto step_out) noexcept {
+        auto [part, rest] = split_at(std::move(step_out), count).expect("the steps fit");
+        static_cast<void>(rest.size());
+        outputs = with_mut(std::move(outputs), [&](auto output_out) noexcept {
+            is_written = write_scan_plan(kind, std::move(part), std::move(output_out)).is_ok();
+        });
+    });
+    return is_written;
+}
+
+// The outputs of a plan into out, with the count first slots of scratch,
+// through a frame of each.
+template <class Scratch, class Out>
+[[nodiscard]] consteval bool evaluate_plan_into(View<TreeStep const> steps, View<PlanNode const> outputs,
+                                                View<std::uint64_t const> leaves, Scratch& scratch, std::size_t count,
+                                                Out& out) noexcept {
+    bool is_done = false;
+    scratch = with_mut(std::move(scratch), [&](auto scratch_out) noexcept {
+        auto [part, rest] = split_at(std::move(scratch_out), count).expect("the scratch fits");
+        static_cast<void>(rest.size());
+        out = with_mut(std::move(out), [&](auto out_part) noexcept {
+            is_done =
+                evaluate_scan_plan(steps, outputs, leaves, std::move(part), std::move(out_part), empty_value, Mix{})
+                    .is_ok();
+        });
+    });
+    return is_done;
+}
+
 // The plan of an exclusive scan of four: out[0] is empty, out[1] is x0, out[2]
 // is the pair (x0, x1), and out[3] is that pair with x2.
 [[nodiscard]] consteval bool exclusive_plan_of_four_is_stated() noexcept {
     FixedArray<TreeStep, 2> steps{};
     FixedArray<PlanNode, 4> outputs{};
-    bool const is_written = write_scan_plan(ScanKind::Exclusive, steps.view(), outputs.view()).is_ok();
+    bool const is_written = write_plan_into(ScanKind::Exclusive, steps, 2, outputs);
     return is_written && steps.at(index<0>()) == TreeStep{PlanNode{0}, PlanNode{1}}
         && steps.at(index<1>()) == TreeStep{PlanNode{4}, PlanNode{2}} && outputs.at(index<0>()) == empty_plan_node
         && outputs.at(index<1>()) == PlanNode{0} && outputs.at(index<2>()) == PlanNode{4}
@@ -57,7 +105,7 @@ static_assert(exclusive_plan_of_four_is_stated());
 [[nodiscard]] consteval bool inclusive_plan_of_four_is_stated() noexcept {
     FixedArray<TreeStep, 3> steps{};
     FixedArray<PlanNode, 4> outputs{};
-    bool const is_written = write_scan_plan(ScanKind::Inclusive, steps.view(), outputs.view()).is_ok();
+    bool const is_written = write_plan_into(ScanKind::Inclusive, steps, 3, outputs);
     return is_written && steps.at(index<0>()) == TreeStep{PlanNode{0}, PlanNode{1}}
         && steps.at(index<1>()) == TreeStep{PlanNode{4}, PlanNode{2}}
         && steps.at(index<2>()) == TreeStep{PlanNode{5}, PlanNode{3}} && outputs.at(index<0>()) == PlanNode{0}
@@ -76,25 +124,24 @@ template <std::size_t N, ScanKind Kind>
     auto const leaves = leaves_of<N>();
     FixedArray<TreeStep, step_count + 1> step_storage{};
     FixedArray<std::uint64_t, step_count + 1> scratch_storage{};
-    View<TreeStep> const steps = step_storage.view().window(0, step_count).expect("the steps fit");
-    View<std::uint64_t> const scratch = scratch_storage.view().window(0, step_count).expect("the scratch fits");
     FixedArray<PlanNode, N> outputs{};
-    if (write_scan_plan(Kind, steps, outputs.view()).is_err()) return false;
+    if (!write_plan_into(Kind, step_storage, step_count, outputs)) return false;
+    View<TreeStep const> const steps =
+        View<TreeStep const>{step_storage.view()}.window(0, step_count).expect("the steps fit");
     FixedArray<std::uint64_t, N> from_plan{};
     FixedArray<std::uint64_t, N> from_scan{};
-    if (evaluate_scan_plan(View<TreeStep const>{steps}, View<PlanNode const>{outputs.view()},
-                           View<std::uint64_t const>{leaves.view()}, scratch, View<std::uint64_t>{from_plan.view()},
-                           empty_value, Mix{})
-            .is_err()) {
+    View<std::uint64_t const> const leaf_view{leaves.view()};
+    if (!evaluate_plan_into(steps, View<PlanNode const>{outputs.view()}, leaf_view, scratch_storage, step_count,
+                            from_plan)) {
         return false;
     }
-    bool const is_scanned =
-        Kind == ScanKind::Inclusive
-            ? inclusive_scan(View<std::uint64_t const>{leaves.view()}, View<std::uint64_t>{from_scan.view()}, Mix{})
-                  .is_ok()
-            : exclusive_scan(View<std::uint64_t const>{leaves.view()}, View<std::uint64_t>{from_scan.view()},
-                             empty_value, Mix{})
-                  .is_ok();
+    bool const is_scanned = write_first(from_scan, N, [&](auto out) noexcept {
+        if constexpr (Kind == ScanKind::Inclusive) {
+            return inclusive_scan(leaf_view, std::move(out), Mix{}).is_ok();
+        } else {
+            return exclusive_scan(leaf_view, std::move(out), empty_value, Mix{}).is_ok();
+        }
+    });
     if (!is_scanned || !equal(from_plan.view(), from_scan.view())) return false;
     // Each step has a reader: a later step or an output.
     FixedArray<bool, N + step_count> is_read{};
@@ -145,10 +192,13 @@ static_assert(plan_agrees_with_scan<65, ScanKind::Inclusive>() && plan_agrees_wi
     FixedArray<std::uint64_t, 6> longer{};
     FixedArray<std::uint64_t, 5> shorter{};
     View<std::uint64_t const> const all{leaves.view()};
-    bool const is_scanned = exclusive_scan(all, View<std::uint64_t>{longer.view()}, empty_value, Mix{}).is_ok()
-                         && exclusive_scan(all.window(0, 5).expect("five leaves fit"),
-                                           View<std::uint64_t>{shorter.view()}, empty_value, Mix{})
-                                .is_ok();
+    bool const is_scanned =
+        write_first(longer, 6,
+                    [&](auto out) noexcept { return exclusive_scan(all, std::move(out), empty_value, Mix{}).is_ok(); })
+        && write_first(shorter, 5, [&](auto out) noexcept {
+               return exclusive_scan(all.window(0, 5).expect("five leaves fit"), std::move(out), empty_value, Mix{})
+                   .is_ok();
+           });
     return is_scanned
         && equal(View<std::uint64_t const>{longer.view()}.window(0, 5).expect("five outputs fit"), shorter.view());
 }
@@ -158,7 +208,9 @@ static_assert(scan_is_stable_under_append());
 [[nodiscard]] consteval bool mismatched_scan_is_refused() noexcept {
     auto const leaves = leaves_of<4>();
     FixedArray<std::uint64_t, 3> out{};
-    return inclusive_scan(View<std::uint64_t const>{leaves.view()}, View<std::uint64_t>{out.view()}, Mix{}).is_err();
+    return write_first(out, 3, [&](auto part) noexcept {
+        return inclusive_scan(View<std::uint64_t const>{leaves.view()}, std::move(part), Mix{}).is_err();
+    });
 }
 static_assert(mismatched_scan_is_refused());
 

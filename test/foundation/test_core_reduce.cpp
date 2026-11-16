@@ -17,6 +17,7 @@ namespace {
 
 using ::foundation::core::HeapArray;
 using ::foundation::core::View;
+using ::foundation::core::with_mut;
 
 [[nodiscard]] ::foundation::effects::Alloc test_alloc() noexcept {
     return ::foundation::effects::testing::test().alloc;
@@ -181,6 +182,7 @@ void test_left_fold_differs_from_the_tree() {
 // The partials of a split into grains of Grain, computed by shards shards in
 // an order that the stream draws.  Each shard takes a proportional cut of the
 // grains, as a parallel loop does, and computes its grains in a drawn order.
+// Each grain writes its partial through a frame of its own.
 template <std::size_t Grain>
 [[nodiscard]] float sum_by_shards(View<float const> run, std::size_t shards,
                                   ::crucible::test::PhiloxStream& stream) noexcept {
@@ -193,8 +195,11 @@ template <std::size_t Grain>
         std::size_t const count = shard_start(grains, shards, shard + 1) - first;
         HeapArray<std::size_t> const grain_order = draw_order(count, stream);
         for (std::size_t const offset : grain_order) {
-            ::foundation::core::tree_sum_grains<Grain>(run, first + offset,
-                                                       slots.window(first + offset, 1).expect("the grain fits"));
+            ::fixy::FixedArray<float, 1> one{};
+            one = with_mut(std::move(one), [&](auto own) noexcept {
+                ::foundation::core::tree_sum_grains<Grain>(run, first + offset, std::move(own));
+            });
+            ::crucible::test::element_at(slots, first + offset) = ::crucible::test::element_at(one, 0);
         }
     }
     return ::foundation::core::tree_sum(View<float const>{slots});
@@ -240,7 +245,9 @@ void test_generic_grains_keep_the_order_of_operands() {
         std::uint64_t const whole = ::foundation::core::tree_reduce(part, mix).expect("the part has elements");
         std::size_t const grains = ::foundation::core::tree_grain_count<64>(count);
         HeapArray<std::uint64_t> partials = ::foundation::core::mint_heap_array(test_alloc(), grains, std::uint64_t{0});
-        ::foundation::core::tree_reduce_grains<64>(part, 0, partials.view(), mix);
+        partials = with_mut(std::move(partials), [&](auto out) noexcept {
+            ::foundation::core::tree_reduce_grains<64>(part, 0, std::move(out), mix);
+        });
         std::uint64_t const split =
             ::foundation::core::tree_reduce(View<std::uint64_t const>{partials.view()}, mix).expect("one grain");
         assert(whole == split);
@@ -293,7 +300,9 @@ void test_sum_of_runs_takes_the_tree_of_the_runs() {
     for (std::size_t const used : run_counts) {
         View<View<float const> const> const some_runs =
             View<View<float const> const>{runs.view()}.window(0, used).expect("the runs fit");
-        assert(::foundation::core::tree_sum_of_runs(some_runs, sums.view()).is_ok());
+        sums = with_mut(std::move(sums), [&](auto out) noexcept {
+            assert(::foundation::core::tree_sum_of_runs(some_runs, std::move(out)).is_ok());
+        });
         HeapArray<float> column = ::foundation::core::mint_heap_array(test_alloc(), used, 0.0f);
         View<float> const column_view = column.view();
         for (std::size_t offset = 0; offset < kCount; ++offset) {
@@ -308,7 +317,10 @@ void test_sum_of_runs_takes_the_tree_of_the_runs() {
     HeapArray<float> const short_run = draw_floats(kCount - 1, 0x7E570017u);
     ::fixy::FixedArray<View<float const>, 2> const uneven{View<float const>{first.view()},
                                                           View<float const>{short_run.view()}};
-    assert(::foundation::core::tree_sum_of_runs(View<View<float const> const>{uneven.view()}, sums.view()).is_err());
+    sums = with_mut(std::move(sums), [&](auto out) noexcept {
+        assert(::foundation::core::tree_sum_of_runs(View<View<float const> const>{uneven.view()}, std::move(out))
+                   .is_err());
+    });
 }
 
 // Each segment takes the tree sum of its window, and an empty one gives +0.
@@ -317,7 +329,10 @@ void test_segments_take_the_tree_of_their_window() {
     View<float const> const all{run.view()};
     ::fixy::FixedArray<std::size_t, 7> const offsets{3, 3, 20, 1044, 1045, 4096, 5000};
     HeapArray<float> sums = ::foundation::core::mint_heap_array(test_alloc(), std::size_t{6}, 1.0f);
-    assert(::foundation::core::segmented_tree_sum(all, View<std::size_t const>{offsets.view()}, sums.view()).is_ok());
+    sums = with_mut(std::move(sums), [&](auto out) noexcept {
+        assert(::foundation::core::segmented_tree_sum(all, View<std::size_t const>{offsets.view()}, std::move(out))
+                   .is_ok());
+    });
     for (std::size_t segment = 0; segment < 6; ++segment) {
         std::size_t const start = ::crucible::test::element_at(offsets, segment);
         std::size_t const end = ::crucible::test::element_at(offsets, segment + 1);
@@ -327,9 +342,12 @@ void test_segments_take_the_tree_of_their_window() {
     }
     assert(same_bits(::crucible::test::element_at(sums.view(), 0), 0.0f));
     ::fixy::FixedArray<std::size_t, 3> const past_end{0, 10, 5001};
-    assert(::foundation::core::segmented_tree_sum(all, View<std::size_t const>{past_end.view()},
-                                                  sums.view().window(0, 2).expect("two sums fit"))
-               .is_err());
+    sums = with_mut(std::move(sums), [&](auto out) noexcept {
+        auto [two, rest] = ::foundation::core::split_at(std::move(out), 2).expect("two sums fit");
+        assert(::foundation::core::segmented_tree_sum(all, View<std::size_t const>{past_end.view()}, std::move(two))
+                   .is_err());
+        static_cast<void>(rest.size());
+    });
 }
 
 // True when a sum of runs gave the error kind.
@@ -338,6 +356,21 @@ is_refused_with(::foundation::core::Result<::foundation::core::Unit, ::foundatio
                 ::foundation::core::RunsError kind) noexcept {
     return result.match([](::foundation::core::Unit const&) noexcept { return false; },
                         [kind](::foundation::core::RunsError const& error) noexcept { return error == kind; });
+}
+
+// The sum of runs into the count sums from offset of buffer, through a frame
+// of the buffer and two splits of its ViewMut.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::RunsError>
+sum_runs_into(HeapArray<float>& buffer, View<View<float const> const> runs, std::size_t offset,
+              std::size_t count) noexcept {
+    auto [result, back] = with_mut(std::move(buffer), [&](auto whole) noexcept {
+        auto [low, rest] = ::foundation::core::split_at(std::move(whole), offset).expect("the offset fits");
+        auto [window, high] = ::foundation::core::split_at(std::move(rest), count).expect("the window fits");
+        static_cast<void>(low.size() + high.size());
+        return ::foundation::core::tree_sum_of_runs(runs, std::move(window));
+    });
+    buffer = std::move(back);
+    return result;
 }
 
 // The sums can be the View of one run: each vector of sums is written after
@@ -353,16 +386,14 @@ void test_sum_of_runs_refuses_a_partial_overlap() {
     View<float> const run_view = buffer.view().window(1, kCount).expect("the run fits the buffer");
     ::fixy::FixedArray<View<float const>, 2> const runs{View<float const>{run_view}, View<float const>{other.view()}};
     View<View<float const> const> const both{runs.view()};
-    View<float> const shifted_up = buffer.view().window(2, kCount).expect("the shift fits the buffer");
-    View<float> const shifted_down = buffer.view().window(0, kCount).expect("the shift fits the buffer");
     using ::foundation::core::RunsError;
-    assert(is_refused_with(::foundation::core::tree_sum_of_runs(both, shifted_up), RunsError::PartialOverlap));
-    assert(is_refused_with(::foundation::core::tree_sum_of_runs(both, shifted_down), RunsError::PartialOverlap));
+    assert(is_refused_with(sum_runs_into(buffer, both, 2, kCount), RunsError::PartialOverlap));
+    assert(is_refused_with(sum_runs_into(buffer, both, 0, kCount), RunsError::PartialOverlap));
     for (std::size_t position = 0; position < kCount + 2; ++position) {
         assert(same_bits(::crucible::test::element_at(buffer.view(), position),
                          ::crucible::test::element_at(before.view(), position)));
     }
-    assert(::foundation::core::tree_sum_of_runs(both, run_view).is_ok());
+    assert(sum_runs_into(buffer, both, 1, kCount).is_ok());
     for (std::size_t offset = 0; offset < kCount; ++offset) {
         float const expected = ::crucible::test::element_at(before.view(), 1 + offset)
                              + ::crucible::test::element_at(other.view(), offset);
@@ -428,7 +459,10 @@ void test_nan_outputs_are_canonical() {
     }
     ::fixy::FixedArray<std::size_t, 8> const offsets{0, 1, 2, 17, 64, 300, 1100, 4099};
     HeapArray<float> sums = ::foundation::core::mint_heap_array(test_alloc(), std::size_t{7}, 0.0f);
-    assert(::foundation::core::segmented_tree_sum(all, View<std::size_t const>{offsets.view()}, sums.view()).is_ok());
+    sums = with_mut(std::move(sums), [&](auto out) noexcept {
+        assert(::foundation::core::segmented_tree_sum(all, View<std::size_t const>{offsets.view()}, std::move(out))
+                   .is_ok());
+    });
     for (std::size_t segment = 0; segment < 7; ++segment) {
         std::size_t const start = ::crucible::test::element_at(offsets, segment);
         std::size_t const end = ::crucible::test::element_at(offsets, segment + 1);
@@ -437,7 +471,8 @@ void test_nan_outputs_are_canonical() {
     }
     std::size_t const grains = ::foundation::core::tree_grain_count<16>(all.size());
     HeapArray<float> partials = ::foundation::core::mint_heap_array(test_alloc(), grains, 0.0f);
-    ::foundation::core::tree_sum_grains<16>(all, 0, partials.view());
+    partials = with_mut(std::move(partials),
+                        [&](auto out) noexcept { ::foundation::core::tree_sum_grains<16>(all, 0, std::move(out)); });
     for (std::size_t grain = 0; grain < grains; ++grain) {
         std::size_t const start = grain * 16;
         std::size_t const size = all.size() - start < 16 ? all.size() - start : 16;
@@ -448,7 +483,10 @@ void test_nan_outputs_are_canonical() {
                                                         all.window(1000, 1000).expect("a run fits"),
                                                         all.window(2000, 1000).expect("a run fits")};
     HeapArray<float> run_sums = ::foundation::core::mint_heap_array(test_alloc(), std::size_t{1000}, 0.0f);
-    assert(::foundation::core::tree_sum_of_runs(View<View<float const> const>{runs.view()}, run_sums.view()).is_ok());
+    run_sums = with_mut(std::move(run_sums), [&](auto out) noexcept {
+        assert(
+            ::foundation::core::tree_sum_of_runs(View<View<float const> const>{runs.view()}, std::move(out)).is_ok());
+    });
     for (std::size_t offset = 0; offset < 1000; ++offset) {
         float const pair = ::crucible::test::element_at(all, offset) + ::crucible::test::element_at(all, 1000 + offset);
         float const expected = pair + ::crucible::test::element_at(all, 2000 + offset);

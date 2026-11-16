@@ -6,18 +6,23 @@
 //                                 none: < for an integer and an enumeration,
 //                                 and the total order of IEEE 754 for a float
 //   sort_network<N>(view, less)   a sort of N elements with a fixed network of
-//                                 compare-exchange steps, for N from 2 to 256
+//                                 compare-exchange steps, for N from 2 to 256,
+//                                 in a ViewMut of the fixed extent N
 //   sort_network_plan<N>()        the comparators of that network, in order
 //   stable_sort(view, scratch, less)
-//                                 a stable merge sort of a View of any count,
-//                                 with scratch of the same count from the
-//                                 caller
+//                                 a stable merge sort of a ViewMut of any
+//                                 count, with a ViewMut of scratch of the same
+//                                 count from the caller
 //   lower_bound(view, value, less)
 //                                 the first position whose element is not
 //                                 below value, in a sorted View
 //   binary_search(view, value, less)
 //                                 the first position of an element equivalent
 //                                 to value, or no value
+//
+// A sort writes a ViewMut of a frame door (foundation/core/Region.h), which
+// it takes by value, so the run has one writer by its type.  A search reads
+// a View.
 //
 // THE ORDER
 //   A less function is a strict weak order on the elements: irreflexive,
@@ -187,12 +192,14 @@ CRUCIBLE_INLINE constexpr void compare_exchange_(T* elements, Comparator step, L
 
 }  // namespace detail
 
-// Sorts the N elements with the network of N, by less.  Complexity:
+// Sorts the N elements with the network of N, by less.  The ViewMut has the
+// fixed extent N, so the count is a fact of its type, as the frame door of a
+// FixedArray or a split at a constant offset gives it.  Complexity:
 // sort_network_size<N> compares, with no branch on the elements for an
 // arithmetic element.
-template <std::size_t N, class T, class Less = Ascending>
+template <std::size_t N, class T, class Brand, class Less = Ascending>
     requires NetworkCount<N> && SortElement<T> && StrictOrder<Less, T>
-constexpr void sort_network(View<T, N> elements, Less less = Less{}) noexcept {
+constexpr void sort_network(ViewMut<T, Brand, N> elements, Less less = Less{}) noexcept {
     T* const first = first_of_(detail::ViewDoor::key(), elements);
     for (Comparator const step : detail::network_of<N>) {
         detail::compare_exchange_(first, step, less);
@@ -249,13 +256,15 @@ constexpr void merge_runs_(T const* source, std::size_t middle, std::size_t coun
 }  // namespace detail
 
 // Sorts the elements by less, and keeps two equivalent elements in their
-// order in the input.  The scratch holds as many elements as the View, and
-// its values after the call have no meaning.  Two counts that differ give
-// LengthMismatch with no write.  The two Views must not overlap.
-// Complexity: O(n log n) compares and copies.
-template <class T, class Less = Ascending>
+// order in the input.  The scratch holds as many elements as the elements,
+// and its values after the call have no meaning.  Two counts that differ give
+// LengthMismatch with no write.  The two are unique borrows, so they share no
+// element.  Complexity: O(n log n) compares and copies.
+template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::size_t ScratchExtent,
+          class Less = Ascending>
     requires SortElement<T> && StrictOrder<Less, T>
-[[nodiscard]] constexpr Result<Unit, LengthMismatch> stable_sort(View<T> elements, View<T> scratch,
+[[nodiscard]] constexpr Result<Unit, LengthMismatch> stable_sort(ViewMut<T, Brand, Extent> elements,
+                                                                 ViewMut<T, ScratchBrand, ScratchExtent> scratch,
                                                                  Less less = Less{}) noexcept {
     std::size_t const count = elements.size();
     if (scratch.size() != count) return err(LengthMismatch{});

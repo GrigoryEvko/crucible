@@ -16,6 +16,10 @@
 
 namespace crucible::test {
 
+// The brand of the output of the probed scan.  The probe takes an address and
+// makes no frame, so a plain brand names the body.
+struct TargetProbeBrand final {};
+
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a body or an object tells which unit of the link holds it")
 
 // The addresses that one unit gives:
@@ -27,7 +31,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a body or an object tells w
 struct TargetUnitBodies {
     float (*tree_sum_body)(::foundation::core::View<float const>) noexcept = nullptr;
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::LengthMismatch> (*sum_scan_body)(
-        ::foundation::core::View<float const>, ::foundation::core::View<float>) noexcept = nullptr;
+        ::foundation::core::View<float const>, ::foundation::core::ViewMut<float, TargetProbeBrand>) noexcept = nullptr;
     void (*fixed_copy_body)(::foundation::core::View<std::uint8_t, 64>,
                             ::foundation::core::View<std::uint8_t const, 64>) noexcept = nullptr;
     std::size_t const* vector_bytes = nullptr;

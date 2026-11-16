@@ -124,7 +124,8 @@ void check_network_on_floats(::crucible::test::PhiloxStream& stream) noexcept {
         }
         ::fixy::FixedArray<float, N> expected{values};
         naive_sort(View<float>{expected.view()});
-        ::foundation::core::sort_network(values.view());
+        values = ::foundation::core::with_mut(
+            std::move(values), [](auto out) noexcept { ::foundation::core::sort_network(std::move(out)); });
         assert(same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
 }
@@ -143,6 +144,19 @@ void test_networks_agree_with_the_naive_sort() {
     check_network_on_floats<64>(stream);
     check_network_on_floats<100>(stream);
     check_network_on_floats<256>(stream);
+}
+
+// The stable sort of owner with the scratch of scratch, through a frame of
+// each.  True when the sort gave no error.
+template <class Owner, class... Less>
+[[nodiscard]] bool sort_stably(Owner& owner, Owner& scratch, Less... less) noexcept {
+    bool is_sorted = false;
+    owner = ::foundation::core::with_mut(std::move(owner), [&](auto elements) noexcept {
+        scratch = ::foundation::core::with_mut(std::move(scratch), [&](auto room) noexcept {
+            is_sorted = ::foundation::core::stable_sort(std::move(elements), std::move(room), less...).is_ok();
+        });
+    });
+    return is_sorted;
 }
 
 // A record with a key that many records share, and the position of the
@@ -168,7 +182,7 @@ void test_stable_sort_is_stable() {
             record = Keyed{static_cast<std::uint32_t>(stream.below(1 + count / 4)), position};
             ++position;
         }
-        assert(::foundation::core::stable_sort(records.view(), scratch.view(), by_key).is_ok());
+        assert(sort_stably(records, scratch, by_key));
         HeapArray<std::uint8_t> seen = ::foundation::core::mint_heap_array(test_alloc(), count, std::uint8_t{0});
         View<Keyed> const sorted = records.view();
         for (std::size_t index = 0; index < count; ++index) {
@@ -204,7 +218,7 @@ void test_stable_sort_agrees_with_the_naive_sort() {
             ::foundation::core::mint_heap_array_copy<float>(test_alloc(), View<float const>{values.view()});
         naive_sort(expected.view());
         HeapArray<float> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
-        assert(::foundation::core::stable_sort(values.view(), scratch.view()).is_ok());
+        assert(sort_stably(values, scratch));
         assert(same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
 }

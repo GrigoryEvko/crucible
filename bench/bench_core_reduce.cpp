@@ -6,7 +6,9 @@
 // floats reads the L3, and the row of 2^24 floats reads memory.  The left
 // fold is the order that the tree replaces: one chain of adds, which the
 // latency of an add bounds.  A sort row copies its input into the work
-// buffer first, so the time of each sort row holds one copy.
+// buffer first, so the time of each sort row holds one copy.  Each call that
+// writes takes its output through a frame door: a HeapArray moves in and out,
+// and the FixedArray of a network row copies its N elements in and out.
 //
 // Each line gives the percentiles of one call in nanoseconds, the
 // coefficient of variation in thousandths, and the rate in elements for each
@@ -27,6 +29,7 @@ namespace {
 
 using ::foundation::core::HeapArray;
 using ::foundation::core::View;
+using ::foundation::core::with_mut;
 
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
@@ -124,7 +127,9 @@ void bench_runs_and_segments(View<float const> all) {
     View<View<float const> const> const run_view{runs.view()};
     print_row("tree_sum_of_runs float, 8 runs of 65536", 8 * kCount,
               measure_row(bench::Run{"tree_sum_of_runs 8x65536"}, [&] {
-                  bench::do_not_optimize(::foundation::core::tree_sum_of_runs(run_view, sums.view()).is_ok());
+                  sums = with_mut(std::move(sums), [&](auto out) noexcept {
+                      bench::do_not_optimize(::foundation::core::tree_sum_of_runs(run_view, std::move(out)).is_ok());
+                  });
               }));
     HeapArray<std::size_t> offsets = ::foundation::core::mint_heap_array(kAlloc, std::size_t{257}, std::size_t{0});
     std::size_t start = 0;
@@ -137,8 +142,10 @@ void bench_runs_and_segments(View<float const> all) {
     View<std::size_t const> const offset_view{offsets.view()};
     print_row("segmented_tree_sum float, 256 segments of 256", kCount,
               measure_row(bench::Run{"segmented_tree_sum 256x256"}, [&] {
-                  bench::do_not_optimize(
-                      ::foundation::core::segmented_tree_sum(segmented, offset_view, segment_sums.view()).is_ok());
+                  segment_sums = with_mut(std::move(segment_sums), [&](auto out) noexcept {
+                      bench::do_not_optimize(
+                          ::foundation::core::segmented_tree_sum(segmented, offset_view, std::move(out)).is_ok());
+                  });
               }));
 }
 
@@ -146,15 +153,21 @@ void bench_scans(View<float const> all) {
     View<float const> const core = first(all, 65536);
     View<float const> const shared = first(all, std::size_t{1} << 20);
     HeapArray<float> out = ::foundation::core::mint_heap_array(kAlloc, shared.size(), 0.0f);
-    View<float> const core_out = out.view().window(0, core.size()).expect("the output fits");
+    HeapArray<float> core_out = ::foundation::core::mint_heap_array(kAlloc, core.size(), 0.0f);
     print_row("inclusive_sum_scan float, 65536", core.size(), measure_row(bench::Run{"inclusive scan 65536"}, [&] {
-                  bench::do_not_optimize(::foundation::core::inclusive_sum_scan(core, core_out).is_ok());
+                  core_out = with_mut(std::move(core_out), [&](auto part) noexcept {
+                      bench::do_not_optimize(::foundation::core::inclusive_sum_scan(core, std::move(part)).is_ok());
+                  });
               }));
     print_row("exclusive_sum_scan float, 65536", core.size(), measure_row(bench::Run{"exclusive scan 65536"}, [&] {
-                  bench::do_not_optimize(::foundation::core::exclusive_sum_scan(core, core_out).is_ok());
+                  core_out = with_mut(std::move(core_out), [&](auto part) noexcept {
+                      bench::do_not_optimize(::foundation::core::exclusive_sum_scan(core, std::move(part)).is_ok());
+                  });
               }));
     print_row("inclusive_sum_scan float, 1048576", shared.size(), measure_row(bench::Run{"inclusive scan 2^20"}, [&] {
-                  bench::do_not_optimize(::foundation::core::inclusive_sum_scan(shared, out.view()).is_ok());
+                  out = with_mut(std::move(out), [&](auto whole) noexcept {
+                      bench::do_not_optimize(::foundation::core::inclusive_sum_scan(shared, std::move(whole)).is_ok());
+                  });
               }));
 }
 
@@ -171,9 +184,21 @@ template <std::size_t N>
     ::fixy::FixedArray<float, N> work{};
     return measure_row(static_cast<bench::Run&&>(run), [&] {
         work = source;
-        ::foundation::core::sort_network(work.view());
+        work = with_mut(std::move(work), [](auto out) noexcept { ::foundation::core::sort_network(std::move(out)); });
         bench::do_not_optimize(work);
     });
+}
+
+// The stable sort of work with the scratch of scratch, through a frame of
+// each.  True when the sort gave no error.
+[[nodiscard]] bool sort_stably(HeapArray<float>& work, HeapArray<float>& scratch) noexcept {
+    bool is_sorted = false;
+    work = with_mut(std::move(work), [&](auto elements) noexcept {
+        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
+            is_sorted = ::foundation::core::stable_sort(std::move(elements), std::move(room)).is_ok();
+        });
+    });
+    return is_sorted;
 }
 
 // The report of one stable sort of a copy of part, in a work buffer of its
@@ -183,7 +208,7 @@ template <std::size_t N>
     HeapArray<float> scratch = ::foundation::core::mint_heap_array(kAlloc, part.size(), 0.0f);
     return measure_row(static_cast<bench::Run&&>(run), [&] {
         static_cast<void>(::fixy::copy(work.view(), part));
-        bench::do_not_optimize(::foundation::core::stable_sort(work.view(), scratch.view()).is_ok());
+        bench::do_not_optimize(sort_stably(work, scratch));
     });
 }
 
@@ -198,7 +223,7 @@ void bench_sorts(View<float const> all) {
     View<float const> const part = first(all, std::size_t{1} << 20);
     HeapArray<float> sorted = ::foundation::core::mint_heap_array_copy<float>(kAlloc, part);
     HeapArray<float> scratch = ::foundation::core::mint_heap_array(kAlloc, part.size(), 0.0f);
-    static_cast<void>(::foundation::core::stable_sort(sorted.view(), scratch.view()).is_ok());
+    static_cast<void>(sort_stably(sorted, scratch));
     View<float const> const sorted_view{sorted.view()};
     std::size_t probe = 0;
     print_row("lower_bound float, 1048576 sorted", 1, measure_row(bench::Run{"lower_bound 2^20"}, [&] {
