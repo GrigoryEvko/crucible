@@ -404,6 +404,11 @@ THE STACK
         round writes the entry with the commit of that run.  A red first run
         removes the entry, because the search then lands a different commit.
         An accepted run writes the final commit, with the mark accepted.
+      * A run on the stack names each built file to the gate (THE BUILT
+        FILES of assay.loop.gate).  A batch below can change a built file,
+        such as the mint inventory, and the commit that it tests holds the
+        file before its fold.  The gate then writes each built file from
+        the build of the run.
     A batch swaps only when the branch is at its base, with the same
     compare-and-swap.  Before the swap, it waits while its base is the top
     of a path of entries from the branch.  When a batch below lands a
@@ -1939,7 +1944,13 @@ class BatchLanding:
             raise LandError(f"the branch {self.branch} holds no commit")
         return commit
 
-    def gate_run(self, chain: Sequence[Link], focus: Sequence[gate.Focus] = (), is_alone: bool = False) -> gate.Verdict:
+    def gate_run(
+        self,
+        chain: Sequence[Link],
+        focus: Sequence[gate.Focus] = (),
+        is_alone: bool = False,
+        is_stacked: bool = False,
+    ) -> gate.Verdict:
         """Run the gate on the last commit of a chain, keep the run, and return the verdict.
 
         The first run of the batch runs each test, and each subsequent run runs the tests with an input that changed.
@@ -1947,22 +1958,24 @@ class BatchLanding:
         `is_alone` tells that the chain is the run alone of its one request (THE CONFIRMATION).  The title of the
         candidate names the kind of the run: the run alone of the request, or the run of the batch.  A chain with a
         count that THE MERGE summed runs each configuration.  The candidate names each file that THE MERGE leaves to the
-        gate.  An error of the check is a problem of the commit (THE ERROR OF A RUN).  The first run of a round on the
-        branch writes the entry of the batch with its commit, and a red first run removes it (THE STACK).
+        gate.  An error of the check is a problem of the commit (THE ERROR OF A RUN).  The first run of a round writes
+        the entry of the batch with its commit, and a red first run removes it.  `is_stacked` tells that the round
+        composed on the stack.  Its candidate names each built file, because a batch below can change one (THE STACK).
         """
         is_every = any(link.is_summed for link in chain)
         commit = chain[-1].commit
         kind = f"the run alone of {chain[-1].queued.name}" if is_alone else "the run of the batch"
+        built = tuple(sorted({*chain_built(chain), *gate.BUILT_FILES})) if is_stacked else chain_built(chain)
         candidate = gate.Candidate(
             self.base,
             commit,
             chain_changed(chain),
             focus=tuple(focus),
             is_every=is_every,
-            built=chain_built(chain),
+            built=built,
             title=f"{kind} at {commit[:SHORT_HASH]}",
         )
-        is_published = self.is_publishing and self.stack is not None and not focus and not is_alone
+        is_published = (self.is_publishing or is_stacked) and self.stack is not None and not focus and not is_alone
         if is_published and self.stack is not None:
             self.is_publishing = False
             self.stack.publish(self.branch, self.base, commit, False)
@@ -2419,11 +2432,9 @@ class BatchLanding:
             )
             return pending, [], -1, True
         pending, links = self.cut(pending, links)
-        stack.publish(self.branch, self.base, links[-1].commit, False)
-        verdict = self.gate_run(links)
+        verdict = self.gate_run(links, is_stacked=True)
         if verdict.is_accepted:
             return pending, links, len(self.runs) - 1, False
-        stack.withdraw()
         check_report.write_line(
             "loop land: the run on the stack is red, so the batch gives no verdict, and it waits until the branch is at "
             "its base or its base leaves the stack"

@@ -1856,6 +1856,7 @@ def stack_cases(expect: testing.Expect) -> None:
             and seen[0][0].head == second
             and git.parent(root, "HEAD") == second
             and git.parent(root, second) == first
+            and seen[0][0].built == tuple(sorted(gate.BUILT_FILES))
             and len(polls) == 2
             and f"composes on {second[: land.SHORT_HASH]} of the stack, above 00000001 00000002" in printed
             and "waits before its swap for the batches below it in the stack: 00000001 00000002" in printed
@@ -1942,6 +1943,7 @@ def stack_cases(expect: testing.Expect) -> None:
             "stack, the batch composes again on the branch, and lands",
             decisions[3].status == 0
             and [candidate.head for candidate, _ in seen] == [first, tip]
+            and [candidate.built for candidate, _ in seen] == [tuple(sorted(gate.BUILT_FILES)), ()]
             and "the run on the stack is red" in printed
             and git.parent(root, "HEAD") == tip,
         )
