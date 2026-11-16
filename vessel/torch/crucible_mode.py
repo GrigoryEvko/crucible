@@ -3,26 +3,24 @@
 WARNING: This is a throwaway prototype. It uses TorchDispatchMode (Python-level
 dispatch) instead of the real C++ DispatchKey::Crucible. Known problems:
 
-  - TorchDispatchMode sees backward ATen ops BUT the scope_hash is stale
-    (forward pre-hooks don't fire during autograd). Backward ops inherit
-    whatever scope was active when the last forward pre-hook fired.
+  - The C entry of this mode takes no module scope, so no op of this mode
+    has a scope hash.  The native vessel keeps the scope of each op.
   - No autograd hooks at all — we don't track which backward op corresponds
     to which forward op. The grad_fn_hash field exists but is never correlated.
   - In-place ops and views share data_ptr, producing wrong edges downstream.
   - Python dispatch overhead is ~10μs/op. Real Crucible is ~5ns/op via C++.
   - No compiled mode, no shadow handles, no replay — just recording.
   - Scalar extraction is best-effort and misses many kwargs.
-  - The .crtrace export format puts a 7-bit op-tag bitmap in the callsite
-    slot (hack). scope_hash has its own slot and is populated.
 
 The REAL implementation uses DispatchKey::Crucible in c10 (see patches/).
 This file exists ONLY for recording traces to feed the visualization pipeline.
+The .crtrace file comes from the C++ encoder of vessel_api.cpp, which is the
+one writer of the format.
 
 Usage:
     from crucible_mode import CrucibleMode
 
-    with CrucibleMode(record_trace=True) as mode:
-        mode.track_modules(model)
+    with CrucibleMode() as mode:
         train_step(model, x)
         mode.export_trace("trace.crtrace")
 """
@@ -133,6 +131,9 @@ class _VesselLib:
 
         lib.crucible_diverged_count.restype = ctypes.c_uint32
         lib.crucible_diverged_count.argtypes = [ctypes.c_void_p]
+
+        lib.crucible_export_crtrace.restype = ctypes.c_int
+        lib.crucible_export_crtrace.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 
     def __getattr__(self, name):
         return getattr(self._lib, name)
@@ -258,7 +259,7 @@ class CrucibleMode(TorchDispatchMode):
     this proof-of-concept — pre-allocated outputs require Tier 2).
     """
 
-    def __init__(self, lib_path=None, verbose=False, record_trace=False):
+    def __init__(self, lib_path=None, verbose=False):
         super().__init__()
         self._vessel = _VesselLib(lib_path)
         self._handle = self._vessel.crucible_create()
@@ -266,13 +267,6 @@ class CrucibleMode(TorchDispatchMode):
         self._op_count = 0
         self._schema_cache = {}
         self._prev_compiled = False
-        # Trace recording: capture per-op data for binary export.
-        self._record_trace = record_trace
-        self._trace_ops = []
-        self._trace_metas = bytearray()
-        # Module scope tracking: current module path (set by forward pre-hooks).
-        self._current_scope = ""
-        self._scope_cache = {}  # scope_string → scope_hash
 
     def __del__(self):
         if hasattr(self, "_handle") and self._handle:
@@ -293,113 +287,24 @@ class CrucibleMode(TorchDispatchMode):
     def flush(self):
         self._vessel.crucible_flush(self._handle)
 
-    def track_modules(self, model):
-        """Install forward pre-hooks on all submodules for scope tracking.
-        Call before entering CrucibleMode context or before training loop.
-        Each op will carry the scope_hash of the innermost active module."""
-        self._scope_hooks = []
-        for name, module in model.named_modules():
-            if not name:
-                continue  # skip root
-            h = self._scope_hooks  # prevent closure over self
-            scope = name
-
-            def _make_pre(s):
-                def _pre(mod, args):
-                    self._current_scope = s
-                return _pre
-
-            handle = module.register_forward_pre_hook(_make_pre(scope))
-            self._scope_hooks.append(handle)
-
     # ── Trace export ─────────────────────────────────────────────────
 
-    def clear_trace(self):
-        """Clear the recorded trace buffer (start fresh for next iteration)."""
-        self._trace_ops.clear()
-        self._trace_metas = bytearray()
+    def export_trace(self, path) -> bool:
+        """Write the active region of the Vigil to a .crtrace file.
 
-    def export_trace(self, path):
-        """Write recorded ops to a .crtrace binary file.
+        The C++ encoder of vessel_api.cpp (crucible_export_crtrace) writes the
+        file.  It is the one writer of the format, so the file of this mode
+        and the file of the native vessel hold the same fields, the guard word
+        of each op included.
 
-        File format (all little-endian):
-          Header (16B):
-            char[4]  magic    = "CRTR"
-            uint32   version  = 4
-            uint32   num_ops
-            uint32   num_metas (total across all ops)
+        Args:
+            path: The path of the file to write
 
-          Op records (num_ops × 88B each):
-            uint64   schema_hash
-            uint64   shape_hash
-            uint64   scope_hash     FNV-1a of the innermost active nn.Module
-                                    path, from the forward pre-hooks; 0 when
-                                    no module scope is active
-            uint64   callsite_hash  carries the op-tag bitmap, not a callsite:
-                                    bit 0 core, 1 pointwise, 2 reduction,
-                                    3 view_copy, 4 dynamic_output_shape,
-                                    5 data_dependent_output,
-                                    6 nondeterministic_seeded
-            int64[5] scalar_values
-            uint16   num_inputs
-            uint16   num_outputs
-            uint16   num_scalars
-            uint8    grad_enabled
-            uint8    inference_mode
-            uint16   depth          zero: a TorchDispatchMode sees no op
-                                    that another op runs
-            uint16   scalar_types   the tag of each scalar value, two bits
-                                    for each: 0 int, 1 float, 2 bool
-            uint8[4] pad, zero
-
-          Meta records (num_metas × 176B each):
-            Raw TensorMeta structs, same layout as CrucibleMeta.
+        Returns:
+            True when the Vigil has an active region and the encoder wrote the
+            file, False otherwise
         """
-        meta_size = ctypes.sizeof(_VesselLib.Meta)
-        num_ops = len(self._trace_ops)
-        num_metas = len(self._trace_metas) // meta_size
-        assert len(self._trace_metas) % meta_size == 0, \
-            f"meta buffer size {len(self._trace_metas)} not multiple of {meta_size}"
-
-        with open(path, "wb") as f:
-            # Header
-            f.write(b"CRTR")
-            f.write(struct.pack("<III", 4, num_ops, num_metas))
-
-            # Op records (88B each)
-            for entry in self._trace_ops:
-                (sh, hsh, sv, n_in, n_out, n_sc, grad, infer,
-                 mutable, scope_h, tags, scalar_types) = entry
-                f.write(struct.pack("<QQ", sh, hsh))
-                f.write(struct.pack("<QQ", scope_h, tags))  # scope_hash, op_tags (in callsite slot)
-                f.write(struct.pack("<5q", *sv))
-                f.write(struct.pack("<HHH", n_in, n_out, n_sc))
-                # Pack is_mutable into bit 1 of inference_mode byte
-                infer_packed = (infer & 1) | ((mutable & 1) << 1)
-                f.write(struct.pack("<BB", grad, infer_packed))
-                # The depth, the tags of the scalar values, and the pad.
-                f.write(struct.pack("<HH4x", 0, scalar_types))
-
-            # Meta records (raw bytes, already in CrucibleMeta layout)
-            f.write(self._trace_metas)
-
-            # Schema name table: (hash, name) pairs for visualization.
-            all_names = list(self._schema_cache.items())
-            # Also include scope names
-            for scope_str, scope_h in self._scope_cache.items():
-                if scope_str and scope_h:
-                    all_names.append((scope_str, scope_h))
-            names = [(h, name) for name, h in all_names]
-            f.write(struct.pack("<I", len(names)))
-            for h, name in names:
-                name_bytes = name.encode("ascii")
-                f.write(struct.pack("<QH", h, len(name_bytes)))
-                f.write(name_bytes)
-
-        total = 16 + num_ops * 88 + num_metas * meta_size
-        print(f"  [crucible] Exported {num_ops} ops, {num_metas} metas "
-              f"({meta_size}B each), {len(names)} names "
-              f"({total // 1024}KB) → {path}")
+        return bool(self._vessel.crucible_export_crtrace(self._handle, str(path).encode()))
 
     # ── Dispatch interception ───────────────────────────────────────
 
@@ -448,43 +353,6 @@ class CrucibleMode(TorchDispatchMode):
         # Grad/inference mode flags
         grad_on = 1 if torch.is_grad_enabled() else 0
         infer_on = 1 if torch.is_inference_mode_enabled() else 0
-
-        # Per-op metadata from schema
-        is_mutable = 1 if func._schema.is_mutable else 0
-
-        # Scope hash from module tracking hooks
-        scope = self._current_scope
-        scope_hash = self._scope_cache.get(scope)
-        if scope_hash is None:
-            scope_hash = _fnv1a(scope.encode("ascii")) if scope else 0
-            self._scope_cache[scope] = scope_hash
-
-        # Op tags from PyTorch dispatch
-        op_tags = 0
-        try:
-            for tag in func.tags:
-                name = tag.name
-                if name == "core":       op_tags |= 0x01
-                elif name == "pointwise":  op_tags |= 0x02
-                elif name == "reduction":  op_tags |= 0x04
-                elif name == "view_copy":  op_tags |= 0x08
-                elif name == "dynamic_output_shape": op_tags |= 0x10
-                elif name == "data_dependent_output": op_tags |= 0x20
-                elif name == "nondeterministic_seeded": op_tags |= 0x40
-        except Exception:
-            pass
-
-        # Record trace data before dispatch (captures real data_ptrs).
-        if self._record_trace:
-            sv = [scalar_buf[i] for i in range(5)]
-            self._trace_ops.append((
-                schema_hash, shape_hash, sv,
-                num_inputs, num_outputs, num_scalars,
-                grad_on, infer_on, is_mutable,
-                scope_hash, op_tags, scalar_types,
-            ))
-            if n_metas > 0:
-                self._trace_metas.extend(bytes(metas))
 
         # Dispatch to Vigil
         dr = self._vessel.crucible_dispatch_op_ex(
