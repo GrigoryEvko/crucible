@@ -2,6 +2,8 @@
 
 #include <foundation/core/Float.h>
 
+#include <foundation/core/Scalar.h>
+
 #include <cstdint>
 #include <type_traits>
 
@@ -33,6 +35,17 @@ static_assert(!fp::is_normal(0.0) && !fp::is_normal(min_subnormal_of<float>) && 
 static_assert(!fp::is_normal(quiet_nan_of<double>));
 static_assert(fp::sign_bit(-0.0) && !fp::sign_bit(0.0) && fp::sign_bit(-1.0f) && fp::sign_bit(-infinity_of<double>));
 static_assert(fp::sign_bit(-quiet_nan_of<double>) && !fp::sign_bit(quiet_nan_of<float>));
+
+// canonicalize_nan gives the canonical NaN for each NaN: a payload, a sign, a
+// signaling NaN.  Each other value keeps its bits, the infinities and -0 too.
+static_assert(same_bits(fp::canonicalize_nan(bit_cast<float>(0xFFC12345u)), quiet_nan_of<float>));
+static_assert(same_bits(fp::canonicalize_nan(signaling_nan_of<double>), quiet_nan_of<double>));
+static_assert(same_bits(fp::canonicalize_nan(bit_cast<float>(0x7F800001u)), quiet_nan_of<float>));
+static_assert(same_bits(fp::canonicalize_nan(-quiet_nan_of<double>), quiet_nan_of<double>));
+static_assert(same_bits(fp::canonicalize_nan(-infinity_of<float>), -infinity_of<float>));
+static_assert(same_bits(fp::canonicalize_nan(infinity_of<double>), infinity_of<double>));
+static_assert(same_bits(fp::canonicalize_nan(-0.0), -0.0)
+              && same_bits(fp::canonicalize_nan(max_of<float>), max_of<float>));
 
 // abs and copy_sign change only the sign bit, so a NaN keeps its payload.
 static_assert(same_bits(fp::abs(-0.0), 0.0) && same_bits(fp::abs(-2.5f), 2.5f));

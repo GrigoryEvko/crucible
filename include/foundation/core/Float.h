@@ -11,6 +11,8 @@
 //                                  and for a NaN with the sign bit
 //   fp::abs(v)                     v with the sign bit clear
 //   fp::copy_sign(v, sign)         v with the sign bit of sign
+//   fp::canonicalize_nan(v)        v, or the canonical NaN quiet_nan_of<T>
+//                                  when v is a NaN
 //   fp::sqrt(v)                    the square root, and the canonical quiet
 //                                  NaN for a negative value or a NaN
 //   fp::fma(a, b, c)               a * b + c with one rounding
@@ -22,6 +24,14 @@
 // errno, a locale or a global.  The classes, sign_bit, abs and copy_sign
 // read only the bits, so a NaN keeps its payload, as IEEE 754 states for
 // abs and copySign.
+//
+// The NaN that an arithmetic operation gives has bits that change with the
+// host and with the order of the operands.  x86 keeps the payload of one
+// operand and gives 0xFFC00000 for inf + -inf, aarch64 gives its default NaN
+// 0x7FC00000, and GCC can swap the operands of an add.  canonicalize_nan
+// gives one NaN on each host: 0x7FC00000 for a float, 0x7FF8000000000000 for
+// a double.  Its test reads the bits as an integer, so it raises no flag,
+// also for a signaling NaN.
 //
 // The hardware square root of a negative value or of a NaN gives a NaN
 // whose bits change with the target and with the input: x86_64 gives a NaN
@@ -93,6 +103,16 @@ template <Float T>
     } else {
         return __builtin_copysign(value, sign);
     }
+}
+
+// A NaN has its bits with no sign above the bits of an infinity.  One and,
+// one compare and one select.
+template <Float T>
+[[nodiscard]] constexpr T canonicalize_nan(T value) noexcept {
+    using Bits = detail::FloatBits<T>;
+    using Word = typename Bits::Word;
+    Word const magnitude = static_cast<Word>(__builtin_bit_cast(Word, value) & static_cast<Word>(~Word{0} >> 1));
+    return magnitude > Bits::infinity ? quiet_nan_of<T> : value;
 }
 
 // The quiet compare raises no flag for a quiet NaN, where v >= 0 raises the

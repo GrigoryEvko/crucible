@@ -324,6 +324,7 @@ using ::foundation::core::swap;
 // The operations of a floating value keep their namespace fp.
 namespace fp {
 using ::foundation::core::fp::abs;
+using ::foundation::core::fp::canonicalize_nan;
 using ::foundation::core::fp::copy_sign;
 using ::foundation::core::fp::fma;
 using ::foundation::core::fp::is_finite;

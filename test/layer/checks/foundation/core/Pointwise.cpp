@@ -3,6 +3,7 @@
 #include <foundation/core/Pointwise.h>
 
 #include <foundation/core/Array.h>
+#include <foundation/core/Scalar.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -44,6 +45,33 @@ static_assert(!LaneOpOf<Add, float, double, double>);
 using NativeFloats = ::foundation::simd::vec<float, ::foundation::simd::native_lanes<float>>;
 static_assert(std::is_same_v<std::invoke_result_t<Add const&, NativeFloats, NativeFloats>, NativeFloats>);
 
+// An op that keeps its bits, and an op with a call on elements only.
+struct Copy final {
+    static constexpr NanRule nan_rule = NanRule::KeepBits;
+
+    template <class X>
+    constexpr X operator()(X value) const noexcept {
+        return value;
+    }
+};
+struct ScalarOnly final {
+    constexpr float operator()(float left, float right) const noexcept { return left + right; }
+};
+
+// THE NAN RULE: the default is Canonical, and the op under the rule is a lane
+// op for the same elements as the op.
+static_assert(nan_rule_of_<Add>() == NanRule::Canonical && nan_rule_of_<Copy>() == NanRule::KeepBits);
+static_assert(std::is_same_v<decltype(ruled_op_<float>(Add{})), CanonicalNanOp<Add, float> const>
+              || std::is_same_v<decltype(ruled_op_<float>(Add{})), CanonicalNanOp<Add, float>>);
+static_assert(std::is_same_v<decltype(ruled_op_<float>(Copy{})), Copy>);
+static_assert(std::is_same_v<decltype(ruled_op_<std::int64_t>(Add{})), Add>);
+static_assert(LaneOpOf<CanonicalNanOp<Add, float>, float, float, float>);
+static_assert(LaneOpOf<CanonicalNanOp<Add, double>, double, double, double>);
+static_assert(!LaneOpOf<ScalarOnly, float, float, float>);
+static_assert(!LaneOpOf<CanonicalNanOp<ScalarOnly, float>, float, float, float>);
+static_assert(
+    std::is_nothrow_invocable_r_v<float, CanonicalNanOp<ScalarOnly, float> const&, float const&, float const&>);
+
 // The test of no overlap of an input with the output, the order of the axes
 // and the axis of the tile path.
 static_assert(lane_class_of_(0) == LaneClass::Splat && lane_class_of_(1) == LaneClass::Dense);
@@ -68,6 +96,44 @@ static_assert(lane_class_of_(2) == LaneClass::StepTwo && lane_class_of_(3) == La
     return is_written && kept == FixedArray<int, 6>{11, 32, 53, 24, 45, 66};
 }
 static_assert(walks_in_constant_evaluation());
+
+// The walk of floats in a constant evaluation: a NaN input with a payload
+// gives the canonical NaN, and the copy keeps the payload.
+[[nodiscard]] consteval bool gives_canonical_nan_in_constant_evaluation() noexcept {
+    FixedArray<float, 2> sums{};
+    FixedArray<float, 2> copies{};
+    FixedArray<float, 2> const values{bit_cast<float>(0x7FC12345u), 1.5f};
+    FixedArray<std::size_t, 1> const sizes{2};
+    FixedArray<std::size_t, 1> const strides{1};
+    StridedView<float const, 1> const source =
+        mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("the row fits");
+    auto [is_summed, summed] = with_mut(std::move(sums), [&](auto run) noexcept {
+        auto out = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("a dense row");
+        return write_pointwise(out, Add{}, source, source).is_ok();
+    });
+    auto [is_copied, copied] = with_mut(std::move(copies), [&](auto run) noexcept {
+        auto out = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("a dense row");
+        return write_pointwise(out, Copy{}, source).is_ok();
+    });
+    // The sum of the NaN is the canonical NaN, and 1.5 + 1.5 is 3.0.  The copy
+    // keeps the payload and the bits of 1.5.
+    FixedArray<std::uint32_t, 2> const expected_sums{0x7FC00000u, 0x40400000u};
+    FixedArray<std::uint32_t, 2> const expected_copies{0x7FC12345u, 0x3FC00000u};
+    FixedArray<std::uint32_t, 2> sum_bits{};
+    FixedArray<std::uint32_t, 2> copy_bits{};
+    auto sum_cursor = sum_bits.begin();
+    for (float const value : summed) {
+        *sum_cursor = bit_cast<std::uint32_t>(value);
+        ++sum_cursor;
+    }
+    auto copy_cursor = copy_bits.begin();
+    for (float const value : copied) {
+        *copy_cursor = bit_cast<std::uint32_t>(value);
+        ++copy_cursor;
+    }
+    return is_summed && is_copied && sum_bits == expected_sums && copy_bits == expected_copies;
+}
+static_assert(gives_canonical_nan_in_constant_evaluation());
 
 }  // namespace detail::pointwise_checks
 

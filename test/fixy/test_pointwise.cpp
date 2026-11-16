@@ -7,12 +7,18 @@
 // overlaps the output in a different place.  The run holds bit patterns with
 // NaN, infinity, zero of each sign and denormal numbers.  The oracle is walk()
 // of foundation/core/Strided.h with the op on scalars over a copy of the run,
-// in the stated row-major order.  The property compares the two runs bit for
-// bit.  The sizes include inner lengths below, at and above each lane count,
-// so the whole blocks, the masked blocks and each loop of a view get runs.
-// The run ends at the last element of its last region, so a read past a view
-// is a read past the allocation, which the address sanitizer of a Debug build
-// finds.
+// in the stated row-major order.  The oracle applies THE NAN RULE of
+// Pointwise.h in each step with a test of its own: the canonical NaN for each
+// NaN output of a float or a double, unless the op keeps its bits.  The
+// property compares the two runs bit for bit, each NaN too.  The sizes
+// include inner lengths below, at and above each lane count, so the whole
+// blocks, the masked blocks and each loop of a view get runs.  The run ends
+// at the last element of its last region, so a read past a view is a read
+// past the allocation, which the address sanitizer of a Debug build finds.
+//
+// The directed cases fill a run with NaNs of different payloads and signs,
+// signaling NaNs too, or with infinities of the two signs, and take each path
+// of the walk with layouts of their own.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -191,21 +197,26 @@ void draw_input_strides(Draw& draw, Layout& layout) noexcept {
 template <class E>
 using Bits = std::conditional_t<sizeof(E) == 4, std::uint32_t, std::uint64_t>;
 
+// The count of the special values of a floating element.
+constexpr std::size_t kSpecials = 12;
+
 // The special values of a floating element, as bits: zero of each sign,
 // infinity of each sign, a quiet NaN, a NaN with a payload, a negative NaN,
-// the smallest and the largest denormal, and the largest finite number.
+// a signaling NaN of each sign, the smallest and the largest denormal, and
+// the largest finite number.
 template <class E>
 [[nodiscard]] Bits<E> special_bits(std::size_t index) noexcept {
     if constexpr (sizeof(E) == 4) {
-        ::fixy::FixedArray<std::uint32_t, 10> const specials{0x00000000u, 0x80000000u, 0x7f800000u, 0xff800000u,
-                                                             0x7fc00000u, 0x7fc12345u, 0xffc00001u, 0x00000001u,
-                                                             0x007fffffu, 0x7f7fffffu};
-        return *specials.get(index).expect("ten specials");
+        ::fixy::FixedArray<std::uint32_t, kSpecials> const specials{0x00000000u, 0x80000000u, 0x7f800000u, 0xff800000u,
+                                                                    0x7fc00000u, 0x7fc12345u, 0xffc00001u, 0x7f800001u,
+                                                                    0xffa12345u, 0x00000001u, 0x007fffffu, 0x7f7fffffu};
+        return *specials.get(index).expect("an index below the count of the specials");
     } else {
-        ::fixy::FixedArray<std::uint64_t, 10> const specials{
-            0x0000000000000000u, 0x8000000000000000u, 0x7ff0000000000000u, 0xfff0000000000000u, 0x7ff8000000000000u,
-            0x7ff8000000012345u, 0xfff8000000000001u, 0x0000000000000001u, 0x000fffffffffffffu, 0x7fefffffffffffffu};
-        return *specials.get(index).expect("ten specials");
+        ::fixy::FixedArray<std::uint64_t, kSpecials> const specials{
+            0x0000000000000000u, 0x8000000000000000u, 0x7ff0000000000000u, 0xfff0000000000000u,
+            0x7ff8000000000000u, 0x7ff8000000012345u, 0xfff8000000000001u, 0x7ff0000000000001u,
+            0xfff4000000012345u, 0x0000000000000001u, 0x000fffffffffffffu, 0x7fefffffffffffffu};
+        return *specials.get(index).expect("an index below the count of the specials");
     }
 }
 
@@ -217,7 +228,7 @@ template <class E>
         using Word = Bits<E>;
         std::size_t const kind = draw.integer<std::size_t>(0, 3);
         if (kind == 0) return ::fixy::bit_cast<E>(draw.integer<Word>(0, ::fixy::max_of<Word>));
-        if (kind == 1) return ::fixy::bit_cast<E>(special_bits<E>(draw.integer<std::size_t>(0, 9)));
+        if (kind == 1) return ::fixy::bit_cast<E>(special_bits<E>(draw.integer<std::size_t>(0, kSpecials - 1)));
         return static_cast<E>(draw.integer<std::int32_t>(-4000, 4000)) * static_cast<E>(0.125);
     } else if constexpr (std::is_unsigned_v<E>) {
         return draw.integer<E>(0, ::fixy::max_of<E>);
@@ -238,27 +249,53 @@ template <class E>
     }
 }
 
-// True when the two runs hold the same bits at each position, or a NaN at
-// the same position.  IEEE 754 does not state which NaN of two inputs an
-// operation gives, and GCC can swap the operands of a floating add or
-// multiply, so the payload of a NaN of two NaN inputs depends on the
-// registers of each compiled loop, also in walk().  Each other value has the
-// same bits.
+// The bits of the canonical NaN of a floating element.
+template <class E>
+[[nodiscard]] constexpr Bits<E> canonical_nan_bits() noexcept {
+    if constexpr (sizeof(E) == 4) {
+        return 0x7fc00000u;
+    } else {
+        return 0x7ff8000000000000u;
+    }
+}
+
+// True when the two runs hold the same bits at each position.  A NaN
+// compares by its bits too.  O(n).
 template <class E>
 [[nodiscard]] bool same_bits(::fixy::View<E const> left, ::fixy::View<E const> right) noexcept {
     if (left.size() != right.size()) return false;
     auto right_cursor = right.begin();
     for (E const& element : left) {
         if constexpr (std::is_floating_point_v<E>) {
-            Bits<E> const left_bits = ::fixy::bit_cast<Bits<E>>(element);
-            Bits<E> const right_bits = ::fixy::bit_cast<Bits<E>>(*right_cursor);
-            if (left_bits != right_bits && !(is_nan_bits<E>(left_bits) && is_nan_bits<E>(right_bits))) return false;
+            if (::fixy::bit_cast<Bits<E>>(element) != ::fixy::bit_cast<Bits<E>>(*right_cursor)) return false;
         } else {
             if (element != *right_cursor) return false;
         }
         ++right_cursor;
     }
     return true;
+}
+
+// True when the op states that it keeps the bits of its outputs.
+template <class Op>
+[[nodiscard]] consteval bool keeps_nan_bits() noexcept {
+    if constexpr (requires { Op::nan_rule; }) {
+        return Op::nan_rule == ::foundation::core::NanRule::KeepBits;
+    } else {
+        return false;
+    }
+}
+
+// The output of the oracle for the value of the op: by THE NAN RULE, the
+// canonical NaN for each NaN of a floating element, unless the op keeps its
+// bits.  The test reads the bits with is_nan_bits, and not with the header.
+template <class E, class Op, class Value>
+[[nodiscard]] E oracle_output(Value const& value) noexcept {
+    E const converted = static_cast<E>(value);
+    if constexpr (std::is_floating_point_v<E> && !keeps_nan_bits<Op>()) {
+        if (is_nan_bits<E>(::fixy::bit_cast<Bits<E>>(converted))) return ::fixy::bit_cast<E>(canonical_nan_bits<E>());
+    }
+    return converted;
 }
 
 // The ops.  Each one is a generic call, so it is a lane op for the elements of
@@ -286,12 +323,41 @@ struct Divide final {
     }
 };
 static_assert(::foundation::core::LaneOpOf<Divide, float, float, float>, "the divide property runs the lane path");
+// The negate of a float or a double changes only the sign bit, but it takes
+// the rule of each op, so a NaN output is the canonical NaN.
 struct Negate final {
     template <class X>
     constexpr X operator()(X value) const noexcept {
         return -value;
     }
 };
+// The two ops that keep the bits of their outputs, also of a signaling NaN.
+struct Copy final {
+    static constexpr ::foundation::core::NanRule nan_rule = ::foundation::core::NanRule::KeepBits;
+
+    template <class X>
+    constexpr X operator()(X value) const noexcept {
+        return value;
+    }
+};
+struct KeptNegate final {
+    static constexpr ::foundation::core::NanRule nan_rule = ::foundation::core::NanRule::KeepBits;
+
+    template <class X>
+    constexpr X operator()(X value) const noexcept {
+        return -value;
+    }
+};
+// An op with a call on elements and no call on lanes: it takes the scalar
+// path.
+struct ScalarAdd final {
+    template <class X>
+        requires std::is_floating_point_v<X>
+    constexpr X operator()(X left, X right) const noexcept {
+        return left + right;
+    }
+};
+static_assert(!::foundation::core::LaneOpOf<ScalarAdd, float, float, float>, "ScalarAdd takes the scalar path");
 
 // The layouts of one run of a property: the output, then each input, in one
 // run of total elements.
@@ -360,19 +426,26 @@ template <std::size_t Inputs>
     return drawn;
 }
 
-// True when write_pointwise over the views of a drawn case writes the bits
-// of walk() with the op on scalars.
+// The run of write_pointwise and the run of the oracle for the views of one
+// case, from one run of values.
+template <class E>
+struct Written {
+    ::fixy::HeapArray<E> run;
+    ::fixy::HeapArray<E> expected;
+    bool is_written = false;
+};
+
+// Writes the views of a case with write_pointwise over run, and with walk()
+// and the op on scalars over a copy of run.
 template <class E, class Op, std::size_t... Is>
-[[nodiscard]] bool agrees_with_walk(Draw& draw, Op op, Outcomes& outcomes,
+[[nodiscard]] Written<E> write_case(Case<sizeof...(Is)> const& drawn, Op op, ::fixy::HeapArray<E> run,
                                     std::index_sequence<Is...> /*inputs*/) noexcept {
-    constexpr std::size_t inputs = sizeof...(Is);
     auto const test = ::foundation::effects::testing::test();
-    Case<inputs> const drawn = draw_case<inputs>(draw, outcomes);
-    ::fixy::HeapArray<E> run = ::fixy::mint_heap_array_with<E>(
-        test.alloc, drawn.total, [&draw](std::size_t) noexcept { return draw_value<E>(draw); });
     ::fixy::HeapArray<E> expected = ::fixy::mint_heap_array_copy<E>(test.alloc, ::fixy::View<E const>{run.view()});
 
-    // The oracle: walk() in the stated order, with the op on scalars.
+    // The oracle: walk() in the stated order, with the op on scalars and THE
+    // NAN RULE in each step, so a shared input reads the canonical NaN of an
+    // earlier step.
     ::fixy::View<E> const expected_run = expected.view();
     ::fixy::StridedView<E> const expected_out =
         ::fixy::mint_strided_view(expected_run, sizes_of(drawn.out), strides_of(drawn.out), drawn.out.offset)
@@ -382,9 +455,10 @@ template <class E, class Op, std::size_t... Is>
         return ::fixy::mint_strided_view(whole, sizes_of(layout), strides_of(layout), layout.offset)
             .expect("an input fits the run");
     };
-    bool const is_walked = ::fixy::walk([op](E& target, auto const&... values) noexcept { target = op(values...); },
-                                        expected_out, input_of(::fixy::View<E const>{expected_run}, Is)...)
-                               .is_ok();
+    bool const is_walked =
+        ::fixy::walk([op](E& target, auto const&... values) noexcept { target = oracle_output<E, Op>(op(values...)); },
+                     expected_out, input_of(::fixy::View<E const>{expected_run}, Is)...)
+            .is_ok();
 
     // The walk under test, in a frame of the run.  The inputs are plain views
     // that the test makes before it mints the unique view of the output.
@@ -395,8 +469,20 @@ template <class E, class Op, std::size_t... Is>
                        .expect("the output has no overlap");
         return ::foundation::core::write_pointwise(out, op, input_of(whole, Is)...).is_ok();
     });
-    return is_walked && is_written
-        && same_bits(::fixy::View<E const>{written.view()}, ::fixy::View<E const>{expected.view()});
+    return Written<E>{std::move(written), std::move(expected), is_walked && is_written};
+}
+
+// True when write_pointwise over the views of a drawn case writes the bits
+// of walk() with the op on scalars.
+template <class E, class Op, std::size_t... Is>
+[[nodiscard]] bool agrees_with_walk(Draw& draw, Op op, Outcomes& outcomes, std::index_sequence<Is...> inputs) noexcept {
+    auto const test = ::foundation::effects::testing::test();
+    Case<sizeof...(Is)> const drawn = draw_case<sizeof...(Is)>(draw, outcomes);
+    ::fixy::HeapArray<E> run = ::fixy::mint_heap_array_with<E>(
+        test.alloc, drawn.total, [&draw](std::size_t) noexcept { return draw_value<E>(draw); });
+    Written<E> const written = write_case<E>(drawn, op, std::move(run), inputs);
+    return written.is_written
+        && same_bits(::fixy::View<E const>{written.run.view()}, ::fixy::View<E const>{written.expected.view()});
 }
 
 // The property of one element type and one op of Inputs inputs.
@@ -411,6 +497,140 @@ void pointwise_agrees_with_walk(::fixy::TestRunnerCtx const& test, ::fixy::TextV
          outcomes.shared);
     CRUCIBLE_TEST_ASSERT(test, outcomes.apart >= kOutcomeFloor && outcomes.shared >= kOutcomeFloor);
     if (Inputs > 0) CRUCIBLE_TEST_ASSERT(test, outcomes.in_place >= kOutcomeFloor);
+}
+
+// ── The directed cases of THE NAN RULE ──────────────────────────────────
+
+// The layout of one axis of count elements with the stride, from offset.
+[[nodiscard]] Layout line_of(std::size_t count, std::size_t stride, std::size_t offset) noexcept {
+    Layout layout{};
+    layout.rank = 1;
+    lane(layout.sizes, 0) = count;
+    lane(layout.strides, 0) = stride;
+    layout.offset = offset;
+    return layout;
+}
+
+// The layout of rows x columns elements with the two strides, from offset.
+[[nodiscard]] Layout plane_of(std::size_t rows, std::size_t columns, std::size_t row_stride, std::size_t column_stride,
+                              std::size_t offset) noexcept {
+    Layout layout{};
+    layout.rank = 2;
+    lane(layout.sizes, 0) = rows;
+    lane(layout.sizes, 1) = columns;
+    lane(layout.strides, 0) = row_stride;
+    lane(layout.strides, 1) = column_stride;
+    layout.offset = offset;
+    return layout;
+}
+
+// The layout of rank zero: one element at offset.
+[[nodiscard]] Layout point_of(std::size_t offset) noexcept {
+    Layout layout{};
+    layout.offset = offset;
+    return layout;
+}
+
+// The count of the NaNs of a directed run.
+constexpr std::size_t kDirectedNans = 6;
+
+// The NaN at a position of a directed run: payloads and signs of each kind,
+// signaling NaNs too, and no canonical NaN.
+template <class E>
+[[nodiscard]] E nan_at(std::size_t position) noexcept {
+    std::size_t const index = position % kDirectedNans;
+    if constexpr (sizeof(E) == 4) {
+        ::fixy::FixedArray<std::uint32_t, kDirectedNans> const nans{0x7fc12345u, 0xffc00001u, 0x7f800001u,
+                                                                    0xffa12345u, 0x7fffffffu, 0xff800001u};
+        return ::fixy::bit_cast<E>(*nans.get(index).expect("an index below the count of the NaNs"));
+    } else {
+        ::fixy::FixedArray<std::uint64_t, kDirectedNans> const nans{0x7ff8000000012345u, 0xfff8000000000001u,
+                                                                    0x7ff0000000000001u, 0xfff4000000012345u,
+                                                                    0x7fffffffffffffffu, 0xfff0000000000001u};
+        return ::fixy::bit_cast<E>(*nans.get(index).expect("an index below the count of the NaNs"));
+    }
+}
+
+// The count of the elements of a run with the bits of the canonical NaN.
+// O(n).
+template <class E>
+[[nodiscard]] std::size_t canonical_count(::fixy::View<E const> run) noexcept {
+    std::size_t count = 0;
+    for (E const& element : run) {
+        if (::fixy::bit_cast<Bits<E>>(element) == canonical_nan_bits<E>()) ++count;
+    }
+    return count;
+}
+
+// True when write_pointwise writes the bits of the oracle for a directed
+// case over the run of fill, and the run then holds canonical elements with
+// the bits of the canonical NaN.
+template <class E, std::size_t Inputs, class Op, class Fill>
+[[nodiscard]] bool writes_directed(Case<Inputs> const& directed, Op op, Fill fill, std::size_t canonical) noexcept {
+    auto const test = ::foundation::effects::testing::test();
+    ::fixy::HeapArray<E> run = ::fixy::mint_heap_array_with<E>(test.alloc, directed.total, fill);
+    Written<E> const written = write_case<E>(directed, op, std::move(run), std::make_index_sequence<Inputs>{});
+    ::fixy::View<E const> const result{written.run.view()};
+    return written.is_written && same_bits(result, ::fixy::View<E const>{written.expected.view()})
+        && canonical_count(result) == canonical;
+}
+
+// Each path of the walk gives the canonical NaN for each NaN output of an
+// arithmetic op: the whole blocks and the masked block of a dense row, the
+// loops StepTwo, General and Splat, a General output, an input in place, a
+// shared input in the stated order, the tile path, rank zero, and the scalar
+// path.  An add of the two infinities gives a NaN with no NaN input.  An op
+// that keeps its bits keeps each NaN, also a signaling NaN, on each path.
+template <class E>
+void nan_rule_on_each_path(::fixy::TestRunnerCtx const& test, ::fixy::TextView name) noexcept {
+    auto const nans = [](std::size_t position) noexcept { return nan_at<E>(position); };
+    // A row of 37 elements has two or four whole blocks and a masked block.
+    constexpr std::size_t row = 37;
+    ::fixy::FixedArray<Case<2>, 9> const cases{
+        Case<2>{line_of(row, 1, 0), {line_of(row, 1, 37), line_of(row, 1, 74)}, 111},
+        Case<2>{line_of(row, 1, 0), {line_of(row, 2, 37), line_of(row, 1, 110)}, 147},
+        Case<2>{line_of(row, 1, 0), {line_of(row, 3, 37), line_of(row, 1, 146)}, 183},
+        Case<2>{line_of(row, 1, 0), {line_of(row, 1, 37), line_of(row, 0, 74)}, 75},
+        Case<2>{line_of(row, 2, 0), {line_of(row, 1, 73), line_of(row, 1, 110)}, 147},
+        Case<2>{line_of(row, 1, 0), {line_of(row, 1, 0), line_of(row, 1, 37)}, 74},
+        Case<2>{line_of(row, 1, 0), {line_of(row, 1, 1), line_of(row, 1, 38)}, 75},
+        Case<2>{plane_of(19, 23, 23, 1, 0), {plane_of(19, 23, 1, 19, 437), plane_of(19, 23, 23, 1, 874)}, 1311},
+        Case<2>{point_of(0), {point_of(1), point_of(2)}, 3},
+    };
+    for (Case<2> const& directed : cases) {
+        CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(directed, Add{}, nans, count_of(directed.out)));
+    }
+    // The scalar path: a dense row with restrict pointers, an input in
+    // place, a step of three, and a shared input.
+    for (std::size_t const index : ::fixy::FixedArray<std::size_t, 4>{0, 2, 5, 6}) {
+        Case<2> const& directed = *cases.get(index).expect("an index below the count of the cases");
+        CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(directed, ScalarAdd{}, nans, count_of(directed.out)));
+    }
+    // inf + -inf and -inf + inf.
+    Case<2> const& dense = *cases.get(0).expect("the first case");
+    auto const infinities = [](std::size_t position) noexcept {
+        return position < 37 ? E{0} : position < 74 ? ::fixy::infinity_of<E> : -::fixy::infinity_of<E>;
+    };
+    auto const reversed = [](std::size_t position) noexcept {
+        return position < 37 ? E{0} : position < 74 ? -::fixy::infinity_of<E> : ::fixy::infinity_of<E>;
+    };
+    CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(dense, Add{}, infinities, row));
+    CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(dense, Add{}, reversed, row));
+    // The ops that keep their bits: no canonical NaN appears.
+    using One = ::fixy::FixedArray<Layout, 1>;
+    ::fixy::FixedArray<Case<1>, 6> const copies{
+        Case<1>{line_of(row, 1, 0), One{line_of(row, 1, 37)}, 74},
+        Case<1>{line_of(row, 1, 0), One{line_of(row, 3, 37)}, 146},
+        Case<1>{line_of(row, 2, 0), One{line_of(row, 1, 73)}, 110},
+        Case<1>{line_of(row, 1, 0), One{line_of(row, 1, 1)}, 38},
+        Case<1>{plane_of(19, 23, 23, 1, 0), One{plane_of(19, 23, 1, 19, 437)}, 874},
+        Case<1>{point_of(0), One{point_of(1)}, 2},
+    };
+    for (Case<1> const& directed : copies) {
+        CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(directed, Copy{}, nans, 0));
+        CRUCIBLE_TEST_ASSERT(test, writes_directed<E>(directed, KeptNegate{}, nans, 0));
+    }
+    pass(test, "  nan_rule_on_each_path {}: PASSED\n", name);
 }
 
 // ── Unit tests ──────────────────────────────────────────────────────────
@@ -510,10 +730,15 @@ int main() {
     branded_inputs(test);
     shape_mismatch(test);
     fill_and_edges(test);
+    nan_rule_on_each_path<float>(test, "float");
+    nan_rule_on_each_path<double>(test, "double");
     pointwise_agrees_with_walk<float, 2>(test, "float add", kSeed, Add{});
     pointwise_agrees_with_walk<float, 3>(test, "float multiply-add", kSeed + 1, MultiplyAdd{});
     pointwise_agrees_with_walk<float, 2>(test, "float divide", kSeed + 2, Divide{});
     pointwise_agrees_with_walk<float, 1>(test, "float negate", kSeed + 3, Negate{});
+    pointwise_agrees_with_walk<float, 1>(test, "float copy that keeps its bits", kSeed + 10, Copy{});
+    pointwise_agrees_with_walk<double, 1>(test, "double negate that keeps its bits", kSeed + 11, KeptNegate{});
+    pointwise_agrees_with_walk<float, 2>(test, "float add on the scalar path", kSeed + 12, ScalarAdd{});
     pointwise_agrees_with_walk<double, 2>(test, "double add", kSeed + 4, Add{});
     pointwise_agrees_with_walk<double, 3>(test, "double multiply-add", kSeed + 5, MultiplyAdd{});
     pointwise_agrees_with_walk<std::uint32_t, 2>(test, "uint32 add", kSeed + 6, Add{});

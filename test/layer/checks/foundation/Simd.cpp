@@ -88,6 +88,20 @@ static_assert(collect_word_sign_bits(0xFF00FF00FF00FF00u) == 0xAAu);
     return is_ordered && half_even[0] == 0 && half_even[1] == 2 && half_odd[0] == 1 && half_odd[1] == 3;
 }
 static_assert(alternate_lanes_keep_their_order());
+
+// canonicalize_nans gives the canonical NaN in each lane of a NaN, a quiet,
+// a signaling and a negative one, and keeps the bits of each other lane.
+[[nodiscard]] consteval bool canonicalizes_each_nan_lane() noexcept {
+    using Floats = vec<float, 4>;
+    using Words = vec<std::uint32_t, 4>;
+    Words const input = Words{[](auto lane) noexcept {
+        constexpr int index = decltype(lane)::value;
+        return index == 0 ? 0x7FC12345u : index == 1 ? 0x7F800001u : index == 2 ? 0xFF800000u : 0xFFFFFFFFu;
+    }};
+    Words const output = bit_cast<Words>(canonicalize_nans(bit_cast<Floats>(input)));
+    return output[0] == 0x7FC00000u && output[1] == 0x7FC00000u && output[2] == 0xFF800000u && output[3] == 0x7FC00000u;
+}
+static_assert(canonicalizes_each_nan_lane());
 static_assert(std::is_same_v<decltype(pick_even_lanes(vec<float, 16>{})), vec<float, 8>>);
 static_assert(native_lanes<float> * sizeof(float) == native_vector_bytes);
 static_assert(native_lanes<double> * sizeof(double) == native_vector_bytes);

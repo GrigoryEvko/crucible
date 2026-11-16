@@ -3441,6 +3441,11 @@ foundation_neg_compile_test(neg_core_strided_view_mut_copies
   "use of deleted function"
   "a StridedViewMut is the one writer of its elements: a copy would be a second writer")
 
+# The member nan_rule of a pointwise op has the type NanRule.
+foundation_neg_compile_test(neg_core_pointwise_nan_rule_of_bool
+  "cannot convert .const bool. to .foundation::core::NanRule. in return"
+  "CanonicalNanOp<\\{anonymous\\}::Copy, float>")
+
 # A push into or a view of a temporary list is refused, and a list of a
 # linear element has no clear().
 foundation_neg_compile_test(neg_core_fixed_list_push_of_temporary

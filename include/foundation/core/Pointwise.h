@@ -79,9 +79,31 @@
 //
 // An op that is no lane op takes the scalar path: the same order with a call
 // of the op for each element, in loops that the optimizer can vectorize.
+//
+// THE NAN RULE
+// The NaN that an arithmetic operation gives has bits that change with the
+// host and with the order of the operands that GCC picks in each compiled
+// loop.  x86 keeps the payload of one operand and gives 0xFFC00000 for
+// inf + -inf, and aarch64 gives its default NaN 0x7FC00000.  So each output
+// of a float or a double that is a NaN is the canonical NaN quiet_nan_of<T>
+// of foundation/core/Number.h: 0x7FC00000 for a float, 0x7FF8000000000000
+// for a double.  Each other output keeps the bits of the op.  The walk
+// applies the rule to the value that it stores, after the conversion to T, on
+// each path: the whole blocks and the masked blocks of the lanes, the tile
+// path, the scalar path and the stated order.  The cost is one compare and
+// one blend for each register.
+//
+// An op that moves bits and computes no arithmetic result, such as a copy, a
+// select, or the sign operations negate, abs and copy_sign of IEEE 754, gives
+// the same bits on each host.  Such an op can state the member
+//   static constexpr NanRule nan_rule = NanRule::KeepBits;
+// and each output then keeps the bits of the op, also a signaling NaN.  An op
+// that states it and computes an arithmetic result for a NaN gives bits that
+// change with the host.
 
 #include <foundation/Simd.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Float.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Strided.h>
 #include <foundation/reflect/Instance.h>
@@ -111,6 +133,15 @@ using pointwise_element_t = std::remove_const_t<typename In::element_type>;
 template <class Op, class T, class... Inputs>
 concept PointwiseOp = std::is_empty_v<Op> && std::is_nothrow_copy_constructible_v<Op>
                    && std::is_nothrow_invocable_r_v<T, Op const&, pointwise_element_t<Inputs> const&...>;
+
+// The rule of the NaN outputs of a pointwise op: THE NAN RULE.
+enum class NanRule : std::uint8_t {
+    // Each output of a float or a double that is a NaN is the canonical NaN.
+    Canonical,
+    // Each output keeps the bits of the op.  Only for an op that moves bits
+    // and computes no arithmetic result.
+    KeepBits,
+};
 
 // The arguments of write_pointwise: inputs of the rank parameter of the
 // output and a pointwise op.
@@ -162,6 +193,17 @@ struct LaneClasses {};
 // The class General for each input of a General output.
 template <class E>
 inline constexpr LaneClass general_class_ = LaneClass::General;
+
+// The NanRule of an op: its member nan_rule, or Canonical when it has none.
+// A member of a type other than NanRule does not compile.
+template <class Op>
+[[nodiscard]] consteval NanRule nan_rule_of_() noexcept {
+    if constexpr (requires { Op::nan_rule; }) {
+        return Op::nan_rule;
+    } else {
+        return NanRule::Canonical;
+    }
+}
 
 // The plain view of an input or of the output.
 template <class T, std::size_t Rank>
@@ -462,6 +504,43 @@ template <class E, int W>
 [[nodiscard]] CRUCIBLE_INLINE ::foundation::simd::vec<E, W> fill_dead_lanes_(::foundation::simd::vec<E, W> value,
                                                                              std::size_t live) noexcept {
     return fill_dead_lanes_(value, live, ::foundation::simd::detail::lane_list_t<W>{});
+}
+
+// The op of a walk under THE NAN RULE: the value of op, converted to T, with
+// the canonical NaN in place of each NaN.  The call on elements and the call
+// on lanes each take the constraint of the same call of op, so the two ops
+// are lane ops for the same elements, and each path of the walk stores the
+// value of this op.  A call on lanes with no input has the native lanes.
+template <class Op, class T>
+struct CanonicalNanOp {
+    Op op;
+
+    template <class... Values>
+        requires std::is_nothrow_invocable_r_v<T, Op const&, Values const&...>
+    [[nodiscard]] constexpr T operator()(Values const&... values) const noexcept {
+        return ::foundation::core::fp::canonicalize_nan(static_cast<T>(op(values...)));
+    }
+
+    template <int W = ::foundation::simd::native_lanes<T>, class... Es>
+        requires std::is_nothrow_invocable_v<Op const&, ::foundation::simd::vec<Es, W>...>
+              && std::same_as<std::invoke_result_t<Op const&, ::foundation::simd::vec<Es, W>...>,
+                              ::foundation::simd::vec<T, W>>
+    [[nodiscard]] CRUCIBLE_INLINE constexpr ::foundation::simd::vec<T, W>
+    operator()(::foundation::simd::vec<Es, W>... lanes) const noexcept {
+        return ::foundation::simd::canonicalize_nans(op(lanes...));
+    }
+};
+
+// The op that the walk calls for the output element T: op under THE NAN
+// RULE for a float or a double, and op itself for each other element and
+// for an op that keeps its bits.
+template <class T, class Op>
+[[nodiscard]] constexpr auto ruled_op_(Op const& op) noexcept {
+    if constexpr (Float<T> && nan_rule_of_<Op>() == NanRule::Canonical) {
+        return CanonicalNanOp<Op, T>{op};
+    } else {
+        return op;
+    }
 }
 
 // The reads of one row of an input of the lane path: the element at the zero
@@ -929,17 +1008,17 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 
 // Writes op(input...) into the element of out at each index of the sizes, in
 // an order that the walk picks when no input shares an element with out:
-// THE WALK, THE ORDER and THE LANES above.  The walk gives ShapeMismatch, and
-// writes nothing, when the sizes of an input differ from the sizes of out.
-// O(count) calls of the op, O(rank^2 * views) for the plan, and O(rank) for
-// the alias check of each input.
+// THE WALK, THE ORDER, THE LANES and THE NAN RULE above.  The walk gives
+// ShapeMismatch, and writes nothing, when the sizes of an input differ from
+// the sizes of out.  O(count) calls of the op, O(rank^2 * views) for the
+// plan, and O(rank) for the alias check of each input.
 template <class T, std::size_t Rank, class Brand, class Op, class... Inputs>
     requires CanWritePointwise<Op, T, Rank, Inputs...>
 [[nodiscard]] constexpr Result<Unit, ShapeMismatch> write_pointwise(StridedViewMut<T, Rank, Brand>& out, Op op,
                                                                     Inputs const&... inputs) noexcept {
     bool const apart[1 + sizeof...(Inputs)] = {false, detail::is_branded_apart_<Inputs, Brand>()...};
-    return detail::write_pointwise_(op, std::index_sequence_for<Inputs...>{}, apart, detail::plain_view_of_(out),
-                                    detail::plain_view_of_(inputs)...);
+    return detail::write_pointwise_(detail::ruled_op_<T>(op), std::index_sequence_for<Inputs...>{}, apart,
+                                    detail::plain_view_of_(out), detail::plain_view_of_(inputs)...);
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET

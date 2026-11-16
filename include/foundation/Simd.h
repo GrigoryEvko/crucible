@@ -35,6 +35,7 @@
 //     template.
 
 #include <foundation/Platform.h>
+#include <foundation/core/Number.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
 
@@ -674,6 +675,27 @@ template <typename ElementType, int Lanes>
     using RawType = typename vec<ElementType, Lanes>::raw_type;
     const RawType bits = std::bit_cast<RawType>(selector.raw());
     return vec<ElementType, Lanes>{(on_true.raw() & bits) | (on_false.raw() & ~bits)};
+}
+
+// The lanes of value, with the canonical NaN quiet_nan_of<ElementType> of
+// foundation/core/Number.h in each lane that holds a NaN, as
+// fp::canonicalize_nan of foundation/core/Float.h gives it for one value.
+// Each other lane keeps its bits.  A lane holds a NaN when it is not equal to
+// itself.  The compare is quiet, so it raises the invalid flag only for a
+// signaling NaN, and no code of Crucible reads the flags.  One compare and
+// one blend for each register: vcmpeqps and vpblendmd with AVX-512.  After a
+// compare of the bits as integers, GCC 16 makes the blend into a second
+// masked add of the op, so this form does not test the bits.
+template <typename ElementType, int Lanes>
+    requires core::Float<ElementType>
+[[nodiscard]] CRUCIBLE_INLINE constexpr vec<ElementType, Lanes>
+canonicalize_nans(vec<ElementType, Lanes> value) noexcept {
+    using Bits = core::detail::FloatBits<ElementType>;
+    using Words = vec<typename Bits::Word, Lanes>;
+    typename vec<ElementType, Lanes>::raw_type const lanes = value.raw();
+    typename Words::raw_type const bits = __builtin_bit_cast(typename Words::raw_type, lanes);
+    typename Words::raw_type const canonical = lanes == lanes ? bits : Words{Bits::quiet_nan}.raw();
+    return vec<ElementType, Lanes>{__builtin_bit_cast(typename vec<ElementType, Lanes>::raw_type, canonical)};
 }
 
 namespace detail {
