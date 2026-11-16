@@ -10,7 +10,7 @@ spectrum of training ops:
   - dropout (no-op in eval, random in train)
   - in-place add (residual connections)
   - cross-entropy loss + autograd backward
-  - AdamW optimizer step
+  - AdamW optimizer step, with the fused kernel
 
 Usage:
     python test_train_transformer.py [--verbose]
@@ -160,10 +160,15 @@ def main():
     # ── Phase 2: Training through Crucible ───────────────────
     print("Phase 2: Training through Crucible...")
 
-    # Reset model for clean test
+    # Reset model for clean test.  AdamW with no fused kernel computes its step
+    # size in Python at each iteration and gives it to aten::div and
+    # aten::addcdiv_ as a scalar.  The guard word folds each scalar, so that
+    # loop has no period and never replays (test_guard_divergence.py).  The
+    # fused kernel takes constant scalars and reads the step from a tensor, so
+    # its loop replays.
     model = MiniGPT(VOCAB, D_MODEL, N_HEADS, N_LAYERS, D_FF, MAX_SEQ)
     model.train()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, fused=True)
     torch.manual_seed(42)
 
     losses = []
