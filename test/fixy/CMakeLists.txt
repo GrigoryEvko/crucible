@@ -4481,6 +4481,7 @@ fixy_neg_compile_test(neg_check_pass_without_test_context
 # The property tests of fixy/check/Property.h: a property that holds, the
 # determinism and the ranges of the draws, the shrink of a failure to its
 # least input, and an oracle that agrees and one that finds a difference.
+# Only a context that owns the Test capability runs a property or an oracle.
 fixy_test(test_check_property)
 fixy_neg_compile_test(neg_check_property_without_test_context
   "no matching function for call to .property"
@@ -4488,6 +4489,9 @@ fixy_neg_compile_test(neg_check_property_without_test_context
 fixy_neg_compile_test(neg_check_property_body_without_bool
   "no matching function for call to .property"
   "PropertyBody")
+fixy_neg_compile_test(neg_check_oracle_without_test_context
+  "no matching function for call to .oracle"
+  "TestContext")
 
 # The argument door of fixy/os/Args.h, run with no argument and with three
 # arguments, one of them empty.
