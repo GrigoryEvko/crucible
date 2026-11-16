@@ -8,21 +8,24 @@ THE SELECTION
     (THE PENDING ITEMS of that module).
 
 THE RUN
-    A run is one run of the program of a bench on the placement that
-    placement() of assay.loop.bench gives (THE RESERVED CPUS of that module).
-    The placement is taskset on a core of the reserved CPUs of the host.
-    When the host reserves its CPUs with a partition, the run also starts in
-    the slice of the partition.  The program gets the clean environment of a
-    test (assay.loop.teststep).  It also gets the variable
-    JSON_VARIABLE of assay.readers.bench, and it then prints its reports as a
-    JSON tail.  The runner reads the load of the host before and after the
-    run (assay.loop.history, others_share()).  Only one run occurs at a time,
-    because two runs at the same time change the times of the two.
-      * A run counts when its status is 0, the host was quiet, and the
-        coefficient of variation of each report is at most MAX_CV.  The host
-        is quiet at QUIET_OTHERS_PCT of assay.loop.history.  The run adds one
-        sample of the quantity 1.  A bench that does not use the reports of
-        the harness prints no JSON tail.  Its run counts on a quiet host.
+    A run is one run of the program of a bench on the core that claimed() of
+    assay.loop.bench holds for the call (THE CORE OF A RUN of that module).
+    The placement is taskset on a core of the reserved CPUs of the host that
+    no other bench holds.  When the host reserves its CPUs with a partition,
+    the run also starts in the slice of the partition.  The program gets the
+    clean environment of a test (assay.loop.teststep).  It also gets the
+    variable JSON_VARIABLE of assay.readers.bench, and it then prints its
+    reports as a JSON tail.  The runner reads the load of the host and the
+    steal time of the core before and after the run (assay.loop.history,
+    others_share(), and THE STEAL TIME of assay.loop.bench).  Only one run
+    occurs at a time, because two runs at the same time change the times of
+    the two.
+      * A run counts when its status is 0, the host was quiet, the core lost
+        no time to steal, and the coefficient of variation of each report is
+        at most MAX_CV.  The host is quiet at QUIET_OTHERS_PCT of
+        assay.loop.history.  The run adds one sample of the quantity 1.  A
+        bench that does not use the reports of the harness prints no JSON
+        tail.  Its run counts on a quiet host.
       * A run that does not count adds one sample of the quantity 0, with
         the reason in the fact `skip`.  Its wall time stays in the record.
         An entry then knows the time of a run of the bench on this host.
@@ -51,6 +54,7 @@ Complexity: one run of the program of a bench for each run, and one read of each
 `guard selftest tests.loop.evidence.test_measurement` does a test of the module.
 """
 
+import contextlib
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -106,12 +110,17 @@ class Measured:
 
 @dataclass(frozen=True, slots=True)
 class Ran:
-    """One run of a bench: its command, its result or None at its time limit, its wall time and the share of others."""
+    """One run of a bench: its command, its result or None at its time limit, its wall time, the share of others.
+
+    steal_ms is the steal time of the core during the run, or None when the run has no core or the statistics give
+    none.
+    """
 
     words: tuple[str, ...]
     completed: proc.Completed | None
     wall_s: float
     others_pct: float | None
+    steal_ms: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +154,8 @@ def run_once(path: Path, where: bench.Placement, cwd: Path, limit_s: float) -> R
     environment = dict(test_launcher.canonical_environment(proc.environment()))
     environment[bench_reader.JSON_VARIABLE] = "1"
     words = where.command((str(path),))
+    core = int(where.core) if where.core else None
+    steal_before = bench.read_steal_ticks(core) if core is not None else None
     before = loop_history.sample_host()
     started = time.monotonic()
     try:
@@ -161,13 +172,18 @@ def run_once(path: Path, where: bench.Placement, cwd: Path, limit_s: float) -> R
     except proc.TimedOut:
         completed = None
     wall_s = time.monotonic() - started
-    return Ran(words, completed, wall_s, loop_history.others_share(before, loop_history.sample_host(), wall_s))
+    steal_after = bench.read_steal_ticks(core) if core is not None else None
+    steal_ms = None if steal_before is None or steal_after is None else (steal_after - steal_before) * bench.tick_ms()
+    return Ran(
+        words, completed, wall_s, loop_history.others_share(before, loop_history.sample_host(), wall_s), steal_ms
+    )
 
 
 def judged(ran: Ran, core_facts: Sequence[tuple[str, str]]) -> Judged:
     """Return the judgment of one run: a run that counts, a run that does not count, or a failure (THE RUN)."""
     share = "" if ran.others_pct is None else f"{ran.others_pct:.1f}"
-    facts: tuple[tuple[str, str], ...] = (*core_facts, ("others_pct", share))
+    stolen = "" if ran.steal_ms is None else f"{ran.steal_ms:.0f}"
+    facts: tuple[tuple[str, str], ...] = (*core_facts, ("others_pct", share), ("steal_ms", stolen))
     if ran.completed is None:
         return Judged(0.0, facts, "the bench ran for more time than its limit")
     if ran.completed.exit != 0:
@@ -183,6 +199,8 @@ def judged(ran: Ran, core_facts: Sequence[tuple[str, str]]) -> Judged:
         reason = "the host gave no busy time"
     elif ran.others_pct > quiet_pct:
         reason = f"other processes used {ran.others_pct:.1f} % of the host, more than {quiet_pct:g} %"
+    elif ran.steal_ms is not None and ran.steal_ms > 0:
+        reason = f"the core lost {ran.steal_ms:.0f} ms to steal: the hypervisor ran other work on its host core"
     elif largest > MAX_CV:
         reason = f"the largest coefficient of variation is {largest:.4f}, more than {MAX_CV:g}"
     else:
@@ -289,17 +307,20 @@ def run(build_dir: Path, budget_s: float, is_release: bool, names: Sequence[str]
         return ExitCode.MISSING_INPUT
     store = evidence_store.EvidenceStore()
     chosen = selection(programs, store, target, names)
-    try:
-        where = bench.placement(bench.Settings.from_environment())
-    except bench.BenchError as problem:
-        check_report.write_line(f"{PROGRAM}: the reserved CPUs of the host cannot be read: {problem}", is_error=True)
-        return ExitCode.MISSING_INPUT
-    entry = "release" if is_release else "nightly"
-    check_report.write_line(
-        f"{PROGRAM}: {len(chosen)} benches of {build_dir} have less evidence than the {entry} target {target:g} runs.  "
-        f"The budget is {budget_s:g} s, and each run occurs on the core {where.core or 'of no pin'}"
-    )
-    outcome = run_benches(store, chosen, budget_s, where, build_dir)
+    with contextlib.ExitStack() as stack:
+        try:
+            where = stack.enter_context(bench.claimed(bench.Settings.from_environment()))
+        except bench.BenchError as problem:
+            check_report.write_line(
+                f"{PROGRAM}: the reserved CPUs of the host cannot be read: {problem}", is_error=True
+            )
+            return ExitCode.MISSING_INPUT
+        entry = "release" if is_release else "nightly"
+        check_report.write_line(
+            f"{PROGRAM}: {len(chosen)} benches of {build_dir} have less evidence than the {entry} target {target:g} "
+            f"runs.  The budget is {budget_s:g} s, and each run occurs on the core {where.core or 'of no pin'}"
+        )
+        outcome = run_benches(store, chosen, budget_s, where, build_dir)
     check_report.write_line(
         f"{PROGRAM}: {outcome.runs} runs, {outcome.counted} of them count, and {len(outcome.failures)} failures.  The "
         f"runs stopped because {outcome.reason}"

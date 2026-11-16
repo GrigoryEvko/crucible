@@ -32,7 +32,6 @@ utils/assay/guard/explain.py | format | 1 | main | An issue of ruff of today.  T
 utils/assay/guard/listing.py | format | 1 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/affected.py | F541 | 2 | SelfTest.write_tests | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/affected.py | format | 1 | read_trees | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/loop/bench.py | format | 1 | Settings.from_environment | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/aten_ops.py | PLR0402 | 1 | load_schema_model | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/aten_ops.py | RUF100 | 1 | load_schema_model | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/derive/aten_ops.py | RUF100 | 1 | yaml_funcs | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count

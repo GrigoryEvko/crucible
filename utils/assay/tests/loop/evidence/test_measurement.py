@@ -64,6 +64,15 @@ def judged_cases(expect: testing.Expect) -> None:
             f"a run on {name} does not count, and gives the reason",
             verdict.quantity == 0.0 and not verdict.failure and word in dict(verdict.facts).get("skip", ""),
         )
+    stolen = measurement.judged(measurement.Ran(("planted",), completed(0, tail(0.01)), 1.0, 2.0, 30.0), CORE_FACTS)
+    expect(
+        "a run on a core that lost time to steal does not count, and gives the steal time",
+        stolen.quantity == 0.0
+        and "steal" in dict(stolen.facts).get("skip", "")
+        and dict(stolen.facts).get("steal_ms") == "30",
+    )
+    unstolen = measurement.judged(measurement.Ran(("planted",), completed(0, tail(0.01)), 1.0, 2.0, 0.0), CORE_FACTS)
+    expect("a run with no steal time counts", unstolen.quantity == 1.0 and dict(unstolen.facts).get("steal_ms") == "0")
     plain = judge(completed(0, "plain text\n"), 2.0)
     expect(
         "a quiet run of a bench with no JSON tail counts",
