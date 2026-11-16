@@ -112,8 +112,10 @@ public:
     // A looked-up name is a C text in the storage of the table, and the
     // table is the interning owner that made it canonical for its hash.  It
     // claims neither provenance of the registration, because the table keeps
-    // one copy per hash whichever producer wrote it.  A registration of the
-    // same hash again ends the storage of the old copy.
+    // one copy per hash whichever producer wrote it.  A hash keeps its first
+    // copy until clear(), so a looked-up name lives as long as the table: a
+    // second registration of the same name writes nothing, and a different
+    // name of the same hash ends the process.
     using LookupName = ::fixy::Tagged<::fixy::CText, ::fixy::tags::source::Interned>;
 
     // The view's type is the proof that the table was not sealed when the
@@ -195,20 +197,23 @@ public:
 
 private:
     // Runs inside the write section, so no seal and no other writer runs
-    // at the same time.  One pass in the order of the hashes keeps that
+    // at the same time.  A hash that the table holds keeps its first copy:
+    // the same name again writes nothing, and a different name is a
+    // collision of two schemas, which ends the process with the two names.
+    // A new hash takes one pass in the order of the hashes, which keeps that
     // order: the carried entry changes place with each entry of a larger
     // hash, so each such entry moves one place up, and the last one goes to
-    // the end.  Complexity: O(n).
+    // the end.  Complexity: O(log n) for a held hash, O(n) for a new one.
     void write_name_(::foundation::effects::Alloc allocation, SchemaHash hash, ::fixy::TextView name) {
-        SchemaEntry carried{.hash = hash, .name = copy_name_(allocation, name)};
-        for (SchemaEntry& entry : entries_) {
-            // Before the first change of place, each entry has a smaller hash
-            // than the new one, so an equal hash is the entry of this hash.
-            if (entry.hash == carried.hash) {
-                ::fixy::swap(entry.name, carried.name);
-                CRUCIBLE_POST(0, is_registered_(hash));
+        const ::fixy::TextView characters = characters_of_(name);
+        for (const auto& held : entries_.get(position_of_(hash))) {
+            if (held->hash == hash) {
+                refuse_other_name_(hash, *held, characters);
                 return;
             }
+        }
+        SchemaEntry carried{.hash = hash, .name = copy_name_(allocation, characters)};
+        for (SchemaEntry& entry : entries_) {
             if (carried.hash < entry.hash) ::fixy::swap(entry, carried);
         }
         // A full table ends the process.  A quiet return leaves each later
@@ -221,16 +226,40 @@ private:
         CRUCIBLE_POST(0, is_registered_(hash));
     }
 
-    // The characters of name before its first zero, and one zero after them,
-    // frozen into a HeapText.  The copy allocates through the allocation
-    // capability of the caller.  Complexity: the length of the name.
-    [[nodiscard]] static ::fixy::HeapText copy_name_(::foundation::effects::Alloc allocation, ::fixy::TextView name) {
+    // The characters of name before its first zero.  Complexity: the length
+    // of the name.
+    [[nodiscard]] static ::fixy::TextView characters_of_(::fixy::TextView name) noexcept {
         const ::fixy::Option<std::size_t> zero = ::fixy::find(name, '\0');
-        const ::fixy::TextView characters = zero.match(
+        return zero.match(
             [name](std::size_t position) noexcept {
                 return name.window(0, position).expect("the zero is a character of the name");
             },
             [name] noexcept { return name; });
+    }
+
+    // Ends the process when held keeps a name other than characters: two
+    // schemas with one hash.  The stored name ends with its zero, which is no
+    // character of the name.  Complexity: the length of the name.
+    static void refuse_other_name_(SchemaHash hash, SchemaEntry const& held, ::fixy::TextView characters) noexcept {
+        const ::fixy::TextView stored = held.name.view();
+        const ::fixy::TextView stored_characters =
+            stored.window(0, stored.size() - 1).expect("the table keeps one zero after each name");
+        if (stored_characters == characters) return;
+        report_collision_(hash, stored_characters, characters);
+    }
+
+    [[noreturn, gnu::cold]] static void report_collision_(SchemaHash hash, ::fixy::TextView stored,
+                                                          ::fixy::TextView other) noexcept {
+        ::fixy::fatal("crucible: the schema hash {} names two schemas, {} and {}.  A second name of one hash is a "
+                      "collision of the schema hash",
+                      hash.raw(), stored, other);
+    }
+
+    // The characters of a name, and one zero after them, frozen into a
+    // HeapText.  The copy allocates through the allocation capability of the
+    // caller.  Complexity: the length of the name.
+    [[nodiscard]] static ::fixy::HeapText copy_name_(::foundation::effects::Alloc allocation,
+                                                     ::fixy::TextView characters) {
         if (characters.size() > SCHEMA_NAME_MAX) [[unlikely]] {
             ::fixy::fatal("crucible: a schema name is longer than SCHEMA_NAME_MAX characters.  Raise SCHEMA_NAME_MAX "
                           "in crucible/SchemaTable.h");

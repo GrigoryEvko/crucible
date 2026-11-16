@@ -1,4 +1,6 @@
 #include <crucible/SchemaTable.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 
 #include "padding_bytes.h"
 #include "test_assert.h"
@@ -91,15 +93,38 @@ static void test_short_name_strips_aten_prefix() {
     crucible::test::pass("  test_short_name:                PASSED\n");
 }
 
-static void test_idempotent_re_register() {
+// A second registration of one hash with the same name writes nothing.  The
+// table keeps its first copy, so a looked-up name that a caller holds stays
+// valid, and a lookup gives the same characters at the same address.
+static void test_same_name_registers_once() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     reg(t, mv, H(0x42), S("first"));
+    const SchemaTable::LookupName held = t.lookup(H(0x42)).expect("the hash is registered");
+    reg(t, mv, H(0x42), S("first"));
     assert(t.count() == 1);
-    reg(t, mv, H(0x42), S("updated"));  // same hash, new name
-    assert(t.count() == 1);  // no duplicate
-    assert(eq(t.lookup(H(0x42)), "updated"));
-    crucible::test::pass("  test_re_register:               PASSED\n");
+    assert(held.value().view() == ::fixy::TextView{"first"});
+    const SchemaTable::LookupName again = t.lookup(H(0x42)).expect("the hash is registered");
+    assert(::foundation::core::foreign_c_str(again.value()) == ::foundation::core::foreign_c_str(held.value()));
+    crucible::test::pass("  test_same_name_registers_once:  PASSED\n");
+}
+
+// Registers two names for one hash.
+static void register_two_names_of_one_hash() noexcept {
+    SchemaTable t;
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    reg(t, mv, H(0x42), S("first"));
+    reg(t, mv, H(0x42), S("second"));
+}
+
+// A different name of a held hash is a collision of two schemas, and the
+// registration ends the process with the two names, in a child process of
+// expect_dies.
+static void test_other_name_of_one_hash_is_a_collision() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
+    ::fixy::check::expect_dies(test, register_two_names_of_one_hash,
+                               ::fixy::TextView{"crucible: the schema hash 66 names two schemas, first and second"});
+    crucible::test::pass("  test_other_name_is_a_collision: PASSED\n");
 }
 
 // The name of operation i of the search test.
@@ -272,7 +297,8 @@ int main() {
     test_empty_lookup_returns_nullptr();
     test_register_and_lookup();
     test_short_name_strips_aten_prefix();
-    test_idempotent_re_register();
+    test_same_name_registers_once();
+    test_other_name_of_one_hash_is_a_collision();
     test_binary_search_across_many();
     test_global_table_convenience();
     test_empty_name_is_noop();
@@ -285,6 +311,6 @@ int main() {
     test_sanitized_boundary_name_registers();
     test_lookup_works_post_seal();
     test_entry_has_no_padding_byte();
-    crucible::test::pass("test_schema_table: 16 groups, all passed\n");
+    crucible::test::pass("test_schema_table: 17 groups, all passed\n");
     return 0;
 }
