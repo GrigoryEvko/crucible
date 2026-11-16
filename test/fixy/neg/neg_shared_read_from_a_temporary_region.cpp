@@ -32,8 +32,8 @@ int main() {
     BgCtx ctx{::foundation::effects::testing::bg()};
 
     auto shared = region_over(kept);
-    auto guard = shared.lend(ctx);
-    auto read = ::fixy::mint_shared_read(ctx, *guard, region_over(dropped));
+    auto guard = shared.lend(ctx).expect("an idle region lends a share");
+    auto read = ::fixy::mint_shared_read(ctx, guard, region_over(dropped));
     (void)read;
     return 0;
 }

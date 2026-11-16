@@ -254,10 +254,11 @@ public:
     // in flight.  Several producer handles coexisting is the point of
     // the fractional side.  A lent handle opens the channel.
     [[nodiscard]] std::optional<ProducerHandle> producer() noexcept {
-        auto guard = producer_pool_.lend();
-        if (!guard) return std::nullopt;
+        auto lent = producer_pool_.lend();
+        if (lent.is_none()) return std::nullopt;
         producers_.add_producer();
-        return ProducerHandle{*this, std::move(*guard)};
+        return ProducerHandle{*this,
+                              std::move(lent).expect("PermissionedMpscChannel::producer: the pool lent a share")};
     }
 
     // Takes the claim of the consumer role first, so a second live

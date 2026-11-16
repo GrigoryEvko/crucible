@@ -8,13 +8,13 @@
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/Text.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
 
 #include <memory>
-#include <optional>
 
 namespace {
 struct Region {
@@ -25,11 +25,10 @@ void end_pool_while_shared() {
     namespace fp = ::foundation::permissions;
     auto root = fp::mint_permission_root<Region>();
     using Brand = decltype(root)::brand_type;
-    std::optional<fp::SharedPermissionGuard<Region, Brand>> share;
-    {
-        auto pool = std::make_unique<fp::SharedPermissionPool<Region, Brand>>(std::move(root));
-        share.emplace(std::move(*pool->lend()));
-    }
+    auto pool = std::make_unique<fp::SharedPermissionPool<Region, Brand>>(std::move(root));
+    ::foundation::core::Option<fp::SharedPermissionGuard<Region, Brand>> const share = pool->lend();
+    // The pool ends here, while the share is out.
+    pool.reset();
 }
 
 }  // namespace

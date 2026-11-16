@@ -21,6 +21,6 @@ struct Region {
 int main() {
     namespace perm = ::foundation::permissions;
     perm::SharedPermissionPool pool{perm::mint_permission_root<Region>()};
-    [[maybe_unused]] auto token = (*pool.lend()).token();
+    [[maybe_unused]] auto token = pool.lend().expect("an idle pool lends a share").token();
     return 0;
 }

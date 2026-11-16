@@ -26,6 +26,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/FractionalLattice.h>
+#include <foundation/core/Choice.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Fwd.h>
@@ -170,8 +171,9 @@ public:
     // The guard is the lifetime of one share, and the pool refuses to end
     // while a share is out.  A guard on the heap has no scope that ends
     // it, so a leaked guard keeps its share out: try_upgrade never
-    // succeeds, and the pool aborts when it ends.  The std::optional that
-    // lend returns constructs the guard in place, so it stays admitted.
+    // succeeds, and the pool aborts when it ends.  The Option that lend
+    // returns builds the guard in its storage with the global placement
+    // new, which these deletions do not refuse.
     static void* operator new(std::size_t) =
         delete("a SharedPermissionGuard lives in the scope that holds its share, not on the heap");
     static void* operator new[](std::size_t) =
@@ -188,20 +190,20 @@ public:
     // The ref-qualifier pair is the enforcement, not a lifetime
     // annotation.  The token this returns is a proof that the guard's
     // share is outstanding, so it must not be minted from a guard that
-    // is about to die: `(*pool.lend()).token()` would hand back a proof
-    // of a share released at the end of the statement.  No annotation
-    // can be written on the implicit object parameter at all, so the
-    // qualifier carries the claim instead.
+    // is about to die: `pool.lend().expect(why).token()` would hand back a
+    // proof of a share released at the end of the statement.  No
+    // annotation can be written on the implicit object parameter at all,
+    // so the qualifier carries the claim instead.
     //
     // Measured: `const&` alone does NOT close this, because a const
     // lvalue reference binds an rvalue, so a const-ref-qualified member
     // is callable on a temporary.  Only the deleted `const&&` twin
     // refuses it, which is the same mechanism the borrow factories use.
     //
-    // One route stays open and is stated rather than hidden:
-    // `pool.lend()->token()` calls through optional's operator->, which
-    // yields a pointer, so the object expression is an lvalue and no
-    // qualifier on this member can see the temporary behind it.
+    // The Option that lend returns has no operator* and no operator->, so
+    // no pointer to the guard of a temporary Option reaches this member.
+    // A loop over the Option binds the Option to a name for the loop, so
+    // the guard lives as long as the body that reads it.
     [[nodiscard]] constexpr SharedPermission<Tag, Brand> token() const& noexcept {
         return SharedPermission<Tag, Brand>{};
     }
@@ -264,9 +266,10 @@ public:
         }
     }
 
+    // A share of the region, or no value while the exclusive is out.
     template <typename Ctx = detail::no_ctx>
         requires PoolCtx<Tag, Ctx>
-    [[nodiscard]] std::optional<SharedPermissionGuard<Tag, Brand>> lend(Ctx const& = {}) noexcept {
+    [[nodiscard]] ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>> lend(Ctx const& = {}) noexcept {
         static_assert(!std::same_as<Ctx, detail::no_ctx> || permission_row_empty(^^Tag),
                       "SharedPermissionPool<Tag>::lend() without ExecCtx is only valid "
                       "for permission_row<Tag> == Row<>.  Effectful permission tags "
@@ -324,11 +327,12 @@ public:
     }
 
 private:
-    [[nodiscard]] std::optional<SharedPermissionGuard<Tag, Brand>> lend_raw_() noexcept {
+    [[nodiscard]] ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>> lend_raw_() noexcept {
+        using Lent = ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>>;
         std::uint64_t observed = state_.load(std::memory_order_acquire);
         for (;;) {
             if (observed & EXCLUSIVE_OUT_BIT) [[unlikely]] {
-                return std::nullopt;
+                return Lent{::foundation::core::none};
             }
             if ((observed & COUNT_MASK) == COUNT_MASK) [[unlikely]] {
                 shared_permission_pool_saturated_abort_();
@@ -337,7 +341,7 @@ private:
             // Acquire-release, so this count update synchronizes with
             // the compare-exchange in try_upgrade.
             if (state_.compare_exchange_weak(observed, desired, std::memory_order_acq_rel, std::memory_order_acquire)) {
-                return SharedPermissionGuard<Tag, Brand>{*this};
+                return Lent::some(SharedPermissionGuard<Tag, Brand>{*this});
             }
         }
     }
@@ -458,20 +462,27 @@ namespace detail {
         auto forwarded = std::forward_as_tuple(std::forward<Args>(args)...);
         Pool& pool = std::get<sizeof...(Args) - 2>(forwarded);
         Body&& body = std::get<sizeof...(Args) - 1>(std::move(forwarded));
-        auto guard_opt = [&] {
+        auto lent = [&] {
             if constexpr (leading_ctx_count({^^Args...}) == 1) {
                 return pool.lend(std::get<0>(forwarded));
             } else {
                 return pool.lend();
             }
         }();
+        // The loop makes one turn when the pool lent a share, and the guard
+        // stays in the Option until the return.
+        for (SharedPermissionGuard<typename Pool::tag_type, typename Pool::brand_type> const& guard : lent) {
+            if constexpr (std::is_void_v<Result>) {
+                std::forward<Body>(body)(guard.token());
+                return true;
+            } else {
+                return std::optional<Result>{std::forward<Body>(body)(guard.token())};
+            }
+        }
         if constexpr (std::is_void_v<Result>) {
-            if (!guard_opt) return false;
-            std::forward<Body>(body)(guard_opt->token());
-            return true;
+            return false;
         } else {
-            if (!guard_opt) return std::optional<Result>{std::nullopt};
-            return std::optional<Result>{std::forward<Body>(body)(guard_opt->token())};
+            return std::optional<Result>{std::nullopt};
         }
     }
 

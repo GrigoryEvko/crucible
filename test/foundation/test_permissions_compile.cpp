@@ -201,7 +201,7 @@ void test_permission_row_compile() {
     perm::SharedPermissionPool pool{std::move(huge_for_pool)};
     {
         auto guard = pool.lend(bg_compile);
-        if (!guard) std::abort();
+        if (guard.is_none()) ::foundation::core::fatal("an idle pool refused a share");
     }
     using PoolBrand = decltype(pool)::brand_type;
     auto value = perm::with_shared_read(bg_compile, pool,

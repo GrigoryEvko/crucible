@@ -206,9 +206,8 @@ void test_fork_inline_inside_the_door(::fixy::TestRunnerCtx const& test) {
 void test_door_over_a_share_guard(::fixy::TestRunnerCtx const& test) {
     SharedPermissionPool pool{mint_permission_root<ConfigData>()};
     {
-        auto guard = pool.lend();
-        CRUCIBLE_TEST_ASSERT(test, guard.has_value());
-        auto [counted, held] = with_read_view(std::move(*guard), [&pool](auto const& view) noexcept {
+        auto guard = pool.lend().expect("an idle pool lends a share");
+        auto [counted, held] = with_read_view(std::move(guard), [&pool](auto const& view) noexcept {
             static_assert(std::is_same_v<typename std::remove_cvref_t<decltype(view)>::tag_type, ConfigData>);
             return pool.outstanding();
         });

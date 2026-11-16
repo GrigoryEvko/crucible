@@ -601,7 +601,7 @@ void readers_hold_past_an_upgrade_attempt() {
         for (int reader = 0; reader < kReaders; ++reader) {
             readers.emplace_back([&] {
                 auto guard = pool.lend();
-                require(guard.has_value(), "a reader gets a share while no writer holds the region");
+                require(guard.is_some(), "a reader gets a share while no writer holds the region");
                 holding.fetch_add(1, std::memory_order_acq_rel);
                 while (!release.load(std::memory_order_acquire))
                     std::this_thread::yield();
@@ -616,7 +616,7 @@ void readers_hold_past_an_upgrade_attempt() {
     }
     auto exclusive = pool.try_upgrade();
     require(exclusive.has_value(), "the upgrade succeeds once every share is back");
-    require(!pool.lend().has_value(), "a reader gets a share while the writer holds the region");
+    require(pool.lend().is_none(), "a reader gets a share while the writer holds the region");
     pool.deposit_exclusive(std::move(*exclusive));
 }
 
@@ -637,7 +637,7 @@ void readers_and_writer_race() {
             readers.emplace_back([&] {
                 while (!stop.load(std::memory_order_acquire)) {
                     auto guard = pool.lend();
-                    if (!guard) continue;
+                    if (guard.is_none()) continue;
                     readers_inside.fetch_add(1, std::memory_order_acq_rel);
                     if (writer_inside.load(std::memory_order_acquire)) overlaps.fetch_add(1);
                     readers_inside.fetch_sub(1, std::memory_order_acq_rel);
@@ -811,9 +811,8 @@ void read_proof_ends_with_the_loan() {
 void read_proof_ends_with_the_share() {
     fp::SharedPermissionPool pool{fp::mint_permission_root<X>()};
     {
-        auto guard = pool.lend();
-        require(guard.has_value(), "a reader gets a share of a free pool");
-        auto [upgraded_inside, held] = fp::with_read_view(std::move(*guard), [&pool](auto const&) noexcept {
+        auto guard = pool.lend().expect("a reader gets a share of a free pool");
+        auto [upgraded_inside, held] = fp::with_read_view(std::move(guard), [&pool](auto const&) noexcept {
             auto attempt = pool.try_upgrade();
             const bool upgraded = attempt.has_value();
             if (upgraded) pool.deposit_exclusive(std::move(*attempt));

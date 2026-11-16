@@ -56,7 +56,7 @@ struct SharedPermissionPoolSaturated : tag_base {
     static constexpr tag_text_literal correct_example =
         "{ auto guard = pool.lend(); use(guard); }  // RAII drop releases";
     static constexpr tag_text_literal violating_example =
-        "auto* leak = new std::optional<SharedPermissionGuard<Tag>>(pool.lend());  // never deleted";
+        "auto* leak = new Option<SharedPermissionGuard<Tag>>(pool.lend());  // never deleted";
 };
 
 struct HugePageAllocationFailed : tag_base {

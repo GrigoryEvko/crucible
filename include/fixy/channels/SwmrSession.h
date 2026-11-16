@@ -222,10 +222,14 @@ public:
         return WriterHandle{*this, std::move(perm)};
     }
 
-    [[nodiscard]] ::fixy::Option<ReaderHandle> reader() noexcept {
-        auto guard = reader_pool_.lend();
-        if (!guard) return ::fixy::none;
-        return ::fixy::some(ReaderHandle{*this, std::move(*guard)});
+    // The door is out of line.  Inline, the test of the lend and the end of
+    // the Option of the handle in a caller give a false maybe-uninitialized
+    // error of GCC 16 at -O1 with TSan, because the compiler does not see that
+    // the Option holds no handle on the path where the pool lent no share.
+    [[nodiscard, gnu::noinline]] ::fixy::Option<ReaderHandle> reader() noexcept {
+        auto lent = reader_pool_.lend();
+        if (lent.is_none()) return ::fixy::none;
+        return ::fixy::some(ReaderHandle{*this, std::move(lent).expect("SwmrSession::reader: the pool lent a share")});
     }
 
     // Runs the body with every reader out, and returns false when readers

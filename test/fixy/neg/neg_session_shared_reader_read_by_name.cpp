@@ -22,7 +22,7 @@ struct Region {
 
 int main() {
     fp::SharedPermissionPool pool{fp::mint_permission_root<Region>()};
-    sess::SharedReader reader{std::move(*pool.lend())};
+    sess::SharedReader reader{pool.lend().expect("an idle pool lends a share")};
     auto back = reader.read([](auto const&) noexcept {});
     (void)back;
     return 0;

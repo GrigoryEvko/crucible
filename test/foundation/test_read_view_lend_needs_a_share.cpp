@@ -4,10 +4,11 @@
 // took it, the body would read the region under no share, while the
 // guard that holds the share can end it.  The door checks that the guard
 // holds a share and aborts when it does not.  The attack moves the guard
-// out of an optional and then lends the optional's leftover guard, the
-// shape a real caller writes by mistake.  It runs in a child process
-// through expect_dies of the Check family, and the test passes only when
-// the child aborts on that check.
+// into a second guard and then lends the moved-from guard.  It reaches
+// the moved-from guard through a reference, which the rule use-after-move
+// does not read, the shape of a real caller that holds the guard in a
+// structure.  It runs in a child process through expect_dies of the Check
+// family, and the test passes only when the child aborts on that check.
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -17,7 +18,6 @@
 #include <foundation/permissions/ReadView.h>
 #include <foundation/permissions/SharedPermission.h>
 
-#include <optional>
 #include <utility>
 
 namespace test_read_view_lend_needs_a_share {
@@ -26,14 +26,20 @@ struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
 
+// The guard that a call gives back by reference.
+template <class Guard>
+[[nodiscard]] static Guard& through(Guard& guard) noexcept {
+    return guard;
+}
+
 static void lend_a_guard_that_gave_its_share_away() {
     namespace fp = ::foundation::permissions;
     auto root = fp::mint_permission_root<Region>();
     using Brand = decltype(root)::brand_type;
     fp::SharedPermissionPool<Region, Brand> pool{std::move(root)};
-    std::optional<fp::SharedPermissionGuard<Region, Brand>> lent = pool.lend();
-    fp::SharedPermissionGuard<Region, Brand> holder{std::move(*lent)};
-    auto back = fp::with_read_view(std::move(*lent), [](auto const&) noexcept {});
+    fp::SharedPermissionGuard<Region, Brand> lent = pool.lend().expect("an idle pool lends a share");
+    fp::SharedPermissionGuard<Region, Brand> holder{std::move(through(lent))};
+    auto back = fp::with_read_view(std::move(through(lent)), [](auto const&) noexcept {});
     (void)back;
     (void)holder;
 }
@@ -45,9 +51,9 @@ static void lend_a_guard_that_gave_its_share_away() {
     auto root = fp::mint_permission_root<Region>();
     using Brand = decltype(root)::brand_type;
     fp::SharedPermissionPool<Region, Brand> pool{std::move(root)};
-    std::optional<fp::SharedPermissionGuard<Region, Brand>> lent = pool.lend();
+    fp::SharedPermissionGuard<Region, Brand> lent = pool.lend().expect("an idle pool lends a share");
     bool read = false;
-    auto back = fp::with_read_view(std::move(*lent), [&read](auto const&) noexcept { read = true; });
+    auto back = fp::with_read_view(std::move(lent), [&read](auto const&) noexcept { read = true; });
     return read && back.holds_share();
 }
 

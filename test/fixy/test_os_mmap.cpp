@@ -237,7 +237,7 @@ inline constexpr std::size_t kPageBytes = 4096;
                   "the pool keeps the brand of the permission the mapping was minted with");
     {
         auto share = pool.lend();
-        if (!share) {
+        if (share.is_none()) {
             std::fprintf(stderr, "the pool refused a share with no exclusive out\n");
             return 1;
         }

@@ -26,7 +26,7 @@ int main() {
         ::fixy::mint_owned_region(storage, std::size_t{2}, ::foundation::permissions::mint_permission_root<Cache>());
     ::fixy::SharedRegion shared{std::move(region)};
 
-    auto read = ::fixy::mint_shared_read(ctx, *shared.lend(ctx), shared);
+    auto read = ::fixy::mint_shared_read(ctx, shared.lend(ctx).expect("an idle region lends a share"), shared);
     (void)read;
     return 0;
 }

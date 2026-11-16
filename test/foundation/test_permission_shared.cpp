@@ -47,14 +47,13 @@ void test_pool_lend_basic(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
 
     {
-        auto guard1 = pool.lend();
-        CRUCIBLE_TEST_ASSERT(test, guard1.has_value());
-        CRUCIBLE_TEST_ASSERT(test, guard1->holds_share());
+        auto guard1 = pool.lend().expect("an idle pool lends a share");
+        CRUCIBLE_TEST_ASSERT(test, guard1.holds_share());
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
         // The token is a copyable proof, so taking one does not change
         // the count.
-        auto token = guard1->token();
+        auto token = guard1.token();
         static_assert(::foundation::brand::SameBrand<decltype(token), decltype(pool)>,
                       "a share proof carries the brand of its pool");
         (void)token;
@@ -62,11 +61,18 @@ void test_pool_lend_basic(::fixy::TestRunnerCtx const& test) {
 
         auto guard2 = pool.lend();
         auto guard3 = pool.lend();
-        CRUCIBLE_TEST_ASSERT(test, guard2.has_value());
-        CRUCIBLE_TEST_ASSERT(test, guard3.has_value());
+        CRUCIBLE_TEST_ASSERT(test, guard2.is_some());
+        CRUCIBLE_TEST_ASSERT(test, guard3.is_some());
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 3);
     }
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
+}
+
+// The guard that a call gives back by reference.  The rule use-after-move
+// does not read through it, so the test reads a moved-from guard.
+template <class Guard>
+[[nodiscard]] Guard& through(Guard& guard) noexcept {
+    return guard;
 }
 
 void test_guard_move_semantics(::fixy::TestRunnerCtx const& test) {
@@ -74,13 +80,13 @@ void test_guard_move_semantics(::fixy::TestRunnerCtx const& test) {
     SharedPermissionPool pool{std::move(exc)};
 
     {
-        auto g1 = pool.lend();
+        auto g1 = pool.lend().expect("an idle pool lends a share");
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
-        auto g2{std::move(*g1)};
+        auto g2{std::move(through(g1))};
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
         CRUCIBLE_TEST_ASSERT(test, g2.holds_share());
-        CRUCIBLE_TEST_ASSERT(test, !g1->holds_share());
+        CRUCIBLE_TEST_ASSERT(test, !through(g1).holds_share());
         // The moved-from guard destructs without decrementing.
     }
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
@@ -95,25 +101,24 @@ void test_try_upgrade_succeeds_when_idle(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, pool.is_exclusive_out());
 
     auto fail_guard = pool.lend();
-    CRUCIBLE_TEST_ASSERT(test, !fail_guard.has_value());
+    CRUCIBLE_TEST_ASSERT(test, fail_guard.is_none());
 
     pool.deposit_exclusive(std::move(*recovered));
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
     auto post_guard = pool.lend();
-    CRUCIBLE_TEST_ASSERT(test, post_guard.has_value());
+    CRUCIBLE_TEST_ASSERT(test, post_guard.is_some());
 }
 
 void test_try_upgrade_fails_when_outstanding(::fixy::TestRunnerCtx const& test) {
     auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool pool{std::move(exc)};
 
-    auto guard = pool.lend();
-    CRUCIBLE_TEST_ASSERT(test, guard.has_value());
+    auto guard = pool.lend().expect("an idle pool lends a share");
 
     auto upgrade = pool.try_upgrade();
     CRUCIBLE_TEST_ASSERT(test, !upgrade.has_value());
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
-    CRUCIBLE_TEST_ASSERT(test, guard->holds_share());
+    CRUCIBLE_TEST_ASSERT(test, guard.holds_share());
 }
 
 // Eight threads alternate lend and upgrade.  The parallel counters
@@ -166,7 +171,7 @@ void test_lend_vs_upgrade_no_simultaneity(::fixy::TestRunnerCtx const& test) {
                         }
                     } else {
                         auto guard = pool.lend();
-                        if (guard) {
+                        if (guard.is_some()) {
                             const int now = in_shared_count.fetch_add(1, std::memory_order_acq_rel) + 1;
                             int seen = max_shared_seen.load(std::memory_order_relaxed);
                             while (now > seen
@@ -253,7 +258,7 @@ void test_swmr_sees_consistent_state(::fixy::TestRunnerCtx const& test) {
                 // True only if this iteration acquired a guard.
                 auto do_one_iter = [&]() noexcept {
                     auto guard = pool.lend();
-                    if (!guard) return false;
+                    if (guard.is_none()) return false;
                     const std::uint64_t lo = counter.lo;
                     const std::uint64_t hi = counter.hi;
                     if (lo != hi) {

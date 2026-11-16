@@ -202,7 +202,7 @@ public:
     // rather than a region beside a pool that happens to match it.
     template <typename Ctx = ::foundation::permissions::detail::no_ctx>
         requires ::foundation::permissions::PoolCtx<Tag, Ctx>
-    [[nodiscard]] std::optional<::foundation::permissions::SharedPermissionGuard<Tag, Brand>>
+    [[nodiscard]] ::foundation::core::Option<::foundation::permissions::SharedPermissionGuard<Tag, Brand>>
     lend(Ctx const& ctx = {}) noexcept {
         return pool_.lend(ctx);
     }

@@ -42,12 +42,11 @@ void test_stashed_token_does_not_unblock_upgrade(::fixy::TestRunnerCtx const& te
 
     std::optional<SharedPermission<Region, decltype(pool)::brand_type>> stashed_token;
     {
-        auto guard = pool.lend();
-        CRUCIBLE_TEST_ASSERT(test, guard.has_value());
+        auto guard = pool.lend().expect("an idle pool lends a share");
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
         // The attack step: copy the token out, past the guard's scope.
-        stashed_token = guard->token();
+        stashed_token = guard.token();
 
         auto blocked = pool.try_upgrade();
         CRUCIBLE_TEST_ASSERT(test, !blocked.has_value());
@@ -66,13 +65,13 @@ void test_stashed_token_does_not_unblock_upgrade(::fixy::TestRunnerCtx const& te
     // The other half of the invariant: while the exclusive permission is
     // out, lending must fail until it is deposited back.
     auto cannot_lend = pool.lend();
-    CRUCIBLE_TEST_ASSERT(test, !cannot_lend.has_value());
+    CRUCIBLE_TEST_ASSERT(test, cannot_lend.is_none());
 
     pool.deposit_exclusive(std::move(*upgraded));
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
 
     auto relent = pool.lend();
-    CRUCIBLE_TEST_ASSERT(test, relent.has_value());
+    CRUCIBLE_TEST_ASSERT(test, relent.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 }
 
@@ -82,25 +81,29 @@ void test_multiple_guards_block_upgrade(::fixy::TestRunnerCtx const& test) {
 
     auto g1 = pool.lend();
     auto g2 = pool.lend();
-    CRUCIBLE_TEST_ASSERT(test, g1.has_value() && g2.has_value());
+    CRUCIBLE_TEST_ASSERT(test, g1.is_some() && g2.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 2);
 
     // A token from each guard, to show that copying one out does not move
     // the carrier count.
-    [[maybe_unused]] auto t1 = g1->token();
-    [[maybe_unused]] auto t2 = g2->token();
+    for (auto const& guard : g1) {
+        [[maybe_unused]] auto t1 = guard.token();
+    }
+    for (auto const& guard : g2) {
+        [[maybe_unused]] auto t2 = guard.token();
+    }
 
     // Each refused upgrade gives an empty std::optional.  The answer has a
     // name, so the temporary ends in this file and not in the macro.
     bool const is_refused_under_two_guards = !pool.try_upgrade().has_value();
     CRUCIBLE_TEST_ASSERT(test, is_refused_under_two_guards);
 
-    g1.reset();
+    g1 = ::foundation::core::none;
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
     bool const is_refused_under_one_guard = !pool.try_upgrade().has_value();
     CRUCIBLE_TEST_ASSERT(test, is_refused_under_one_guard);
 
-    g2.reset();
+    g2 = ::foundation::core::none;
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
     auto up = pool.try_upgrade();

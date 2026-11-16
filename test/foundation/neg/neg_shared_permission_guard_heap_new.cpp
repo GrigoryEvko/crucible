@@ -19,9 +19,9 @@ struct Region {
 int main() {
     auto root = fp::mint_permission_root<Region>();
     fp::SharedPermissionPool pool{std::move(root)};
-    auto share = pool.lend();
-    using Guard = std::remove_cvref_t<decltype(*share)>;
-    auto* leaked = new Guard(std::move(*share));
+    auto share = pool.lend().expect("an idle pool lends a share");
+    using Guard = decltype(share);
+    auto* leaked = new Guard(std::move(share));
     (void)leaked;
     return 0;
 }

@@ -51,10 +51,9 @@ void test_a_read_sees_the_region(TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, shared.size() == 6);
     CRUCIBLE_TEST_ASSERT(test, !shared.empty());
 
-    auto guard = shared.lend(ctx);
-    CRUCIBLE_TEST_ASSERT(test, guard.has_value());
+    auto guard = shared.lend(ctx).expect("an idle region lends a share");
 
-    auto read = ::fixy::mint_shared_read(ctx, *guard, shared);
+    auto read = ::fixy::mint_shared_read(ctx, guard, shared);
     CRUCIBLE_TEST_ASSERT(test, read.size() == 6);
     CRUCIBLE_TEST_ASSERT(test, read[0] == 10);
     CRUCIBLE_TEST_ASSERT(test, read[5] == 15);
@@ -73,7 +72,7 @@ void test_a_read_sees_the_region(TestRunnerCtx const& test) {
 
     // The read names the instance it was taken against, and the share
     // it stands on is the guard's.
-    static_assert(::foundation::brand::SameBrand<decltype(read), decltype(*guard)>);
+    static_assert(::foundation::brand::SameBrand<decltype(read), decltype(guard)>);
 }
 
 void test_an_upgrade_waits_for_every_share(TestRunnerCtx const& test) {
@@ -85,7 +84,7 @@ void test_an_upgrade_waits_for_every_share(TestRunnerCtx const& test) {
 
     {
         auto guard = shared.lend(ctx);
-        CRUCIBLE_TEST_ASSERT(test, guard.has_value());
+        CRUCIBLE_TEST_ASSERT(test, guard.is_some());
         CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 1);
         CRUCIBLE_TEST_ASSERT(test, !shared.try_upgrade(ctx).has_value());
     }
@@ -104,13 +103,12 @@ void test_two_readers_hold_one_region(TestRunnerCtx const& test) {
     auto region = ::fixy::mint_owned_region(storage, std::size_t{3}, perm::mint_permission_root<Cache>());
     ::fixy::SharedRegion shared{std::move(region)};
 
-    auto first = shared.lend(ctx);
-    auto second = shared.lend(ctx);
-    CRUCIBLE_TEST_ASSERT(test, first.has_value() && second.has_value());
+    auto first = shared.lend(ctx).expect("an idle region lends a share");
+    auto second = shared.lend(ctx).expect("a region lends a second share");
     CRUCIBLE_TEST_ASSERT(test, shared.outstanding() == 2);
 
-    auto read_a = ::fixy::mint_shared_read(ctx, *first, shared);
-    auto read_b = ::fixy::mint_shared_read(ctx, *second, shared);
+    auto read_a = ::fixy::mint_shared_read(ctx, first, shared);
+    auto read_b = ::fixy::mint_shared_read(ctx, second, shared);
     CRUCIBLE_TEST_ASSERT(test, read_a.size() == 3 && read_b.size() == 3);
     CRUCIBLE_TEST_ASSERT(test, read_a[1] == 8 && read_b[1] == 8);
     CRUCIBLE_TEST_ASSERT(test, read_a.cspan().data() == read_b.cspan().data());
@@ -132,10 +130,9 @@ void test_a_share_of_another_region_does_not_read_this_one(TestRunnerCtx const& 
     ::fixy::SharedRegion shared_a{std::move(region_a)};
     ::fixy::SharedRegion shared_b{std::move(region_b)};
 
-    auto guard_a = shared_a.lend(ctx);
-    CRUCIBLE_TEST_ASSERT(test, guard_a.has_value());
+    auto guard_a = shared_a.lend(ctx).expect("an idle region lends a share");
 
-    using GuardA = std::remove_cvref_t<decltype(*guard_a)>;
+    using GuardA = decltype(guard_a);
     using SharedA = std::remove_cvref_t<decltype(shared_a)>;
     using SharedB = std::remove_cvref_t<decltype(shared_b)>;
 
@@ -145,7 +142,7 @@ void test_a_share_of_another_region_does_not_read_this_one(TestRunnerCtx const& 
     // The share and the row are both in order for the region it belongs
     // to, which is what makes the refusal the composition's and not one
     // axis's.
-    auto read = ::fixy::mint_shared_read(ctx, *guard_a, shared_a);
+    auto read = ::fixy::mint_shared_read(ctx, guard_a, shared_a);
     CRUCIBLE_TEST_ASSERT(test, read[1] == 2);
 }
 
@@ -175,10 +172,9 @@ void test_the_erased_brand_reads_nothing(TestRunnerCtx const& test) {
 
     ::fixy::SharedRegion<std::uint64_t, Cache> shared{::fixy::OwnedRegion<std::uint64_t, Cache>::wrap(
         storage, std::size_t{2}, perm::permission_erase_brand(perm::mint_permission_root<Cache>()))};
-    auto guard = shared.lend(ctx);
-    CRUCIBLE_TEST_ASSERT(test, guard.has_value());
+    auto guard = shared.lend(ctx).expect("an idle region lends a share");
 
-    using Guard = std::remove_cvref_t<decltype(*guard)>;
+    using Guard = decltype(guard);
     using Shared = std::remove_cvref_t<decltype(shared)>;
     static_assert(!CanRead<BgCtx, Guard, Shared>, "a share on the erased brand reads nothing");
     CRUCIBLE_TEST_ASSERT(test, true);
@@ -200,14 +196,13 @@ void test_a_share_of_a_region_of_the_same_site_aborts(TestRunnerCtx const& test)
     ::fixy::SharedRegion shared_b{region_at_one_site(storage_b)};
     static_assert(std::is_same_v<decltype(shared_a), decltype(shared_b)>, "one site is one brand");
 
-    auto guard_a = shared_a.lend(ctx);
-    CRUCIBLE_TEST_ASSERT(test, guard_a.has_value());
-    auto read = ::fixy::mint_shared_read(ctx, *guard_a, shared_a);
+    auto guard_a = shared_a.lend(ctx).expect("an idle region lends a share");
+    auto read = ::fixy::mint_shared_read(ctx, guard_a, shared_a);
     CRUCIBLE_TEST_ASSERT(test, read[0] == 7);
     // The read of the other region runs in a child through expect_dies of the
     // Check family.
     ::fixy::check::expect_dies(
-        test, [&] noexcept { (void)::fixy::mint_shared_read(ctx, *guard_a, shared_b); },
+        test, [&] noexcept { (void)::fixy::mint_shared_read(ctx, guard_a, shared_b); },
         ::fixy::TextView{"foundation: fatal invariant failed: guard.is_share_of(region.pool_)"});
 }
 

@@ -31,8 +31,8 @@ int main() {
     ::fixy::SharedRegion shared_a{std::move(region_a)};
     ::fixy::SharedRegion shared_b{std::move(region_b)};
 
-    auto guard_a = shared_a.lend(ctx);
-    auto read = ::fixy::mint_shared_read(ctx, *guard_a, shared_b);
+    auto guard_a = shared_a.lend(ctx).expect("an idle region lends a share");
+    auto read = ::fixy::mint_shared_read(ctx, guard_a, shared_b);
     (void)read;
     return 0;
 }
