@@ -5518,6 +5518,29 @@ fixy_neg_compile_test(neg_fp_scope_copy
   "use of deleted function"
   "a scope restores the register of one thread, one time")
 
+# The Kernel context: the brand of its thread, the FP mode of its register,
+# and the empty row.  A kernel reads no clock and allocates nothing.  The
+# context comes only from a live FP scope, so a temporary scope is refused,
+# and no code builds its source directly.  test_kernel_context runs a kernel
+# over a View, a mutable View and a strided view under each mode, and it
+# dies when a context reaches another thread or outlives its scope.
+fixy_test(test_kernel_context)
+fixy_neg_compile_test(neg_kernel_ctx_reads_a_clock
+  "no matching function for call to .mint_clock_reader<foundation::algebra::lattices::ClockSource::Monotonic>\\(const \\{anonymous\\}::KernelCtx&\\)"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>.")
+fixy_neg_compile_test(neg_kernel_ctx_allocates
+  "no matching function for call to .mint_from_ctx<foundation::effects::Effect::Alloc>\\(const \\{anonymous\\}::KernelCtx&\\)"
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, E>.")
+fixy_neg_compile_test(neg_kernel_ctx_from_temporary_scope
+  "use of deleted function"
+  "a temporary scope ends at the end of the full expression")
+fixy_neg_compile_test(neg_kernel_ctx_direct_construction
+  "is private within this context"
+  "KernelSource\\(uint64_t, uintptr_t\\)")
+fixy_neg_compile_test(neg_kernel_ctx_from_a_word
+  "no matching function for call to .mint_kernel_context<\\{anonymous\\}::KernelBrand>\\(const foundation::os::FpControlWord&\\)."
+  "is not derived from .const foundation::os::FpScope<")
+
 # test_os_spin_hint reads the arms of a core from its feature words, and it
 # waits on a word with each arm of the core of the run.  A store of a second
 # thread ends each wait before its deadline, and a deadline ends a wait on a

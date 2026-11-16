@@ -17,8 +17,10 @@
 
 #include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
+#include <foundation/core/FpMode.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/os/FpControl.h>
 #include <foundation/reflect/Hash.h>
 
 #include <array>
@@ -149,6 +151,44 @@ public:
     ~Fg() = default;
 };
 
+// The source of a kernel context.  A kernel runs on one thread, under the
+// FP mode Mode of the register of that thread, and the source permits the
+// empty row: no allocation, no IO, no block and no Nondet.  The source keeps
+// the epoch of the FP scope that it came from and the thread of the mint
+// (foundation/os/FpControl.h).  It has no copy and no move, as a branded
+// source has none.  Only the kernel context builds it, and only
+// mint_kernel_context builds a kernel context.
+template <class Brand, ::foundation::core::FpMode Mode>
+class[[= ::foundation::lifetime::no_start_over_bytes{}]] KernelSource {
+public:
+    using brand_type = Brand;
+    static constexpr ::foundation::core::FpMode fp_mode = Mode;
+
+    template <template <Effect...> class R>
+    using permitted_as = R<>;
+
+    KernelSource(const KernelSource&) = delete("a copy of a kernel source can go to a thread whose register holds "
+                                               "another mode");
+    KernelSource(KernelSource&&) = delete("a moved kernel source can go to a thread whose register holds another "
+                                          "mode");
+    KernelSource& operator=(const KernelSource&) = delete("a kernel source names one scope of one thread");
+    KernelSource& operator=(KernelSource&&) = delete("a kernel source names one scope of one thread");
+    constexpr ~KernelSource() noexcept {}
+
+    // The epoch of the FP scope of the mint, and the thread of the mint.
+    [[nodiscard]] constexpr std::uint64_t fp_scope_epoch() const noexcept { return fp_scope_epoch_; }
+    [[nodiscard]] constexpr std::uintptr_t thread() const noexcept { return thread_; }
+
+private:
+    constexpr KernelSource(std::uint64_t fp_scope_epoch, std::uintptr_t thread) noexcept
+        : fp_scope_epoch_{fp_scope_epoch}, thread_{thread} {}
+
+    friend class ::foundation::effects::ExecCtx<KernelSource, ::foundation::effects::Row<>>;
+
+    std::uint64_t fp_scope_epoch_ = 0;
+    std::uintptr_t thread_ = 0;
+};
+
 // These name the same three types the enclosing namespace declares.
 // Either spelling works; the aliases only give the axis a uniform look.
 using Bg = ::foundation::effects::Bg;
@@ -172,8 +212,24 @@ using Test = ::foundation::effects::Test;
 template <class T>
 concept IsBrandedForeground = is_branded_foreground(^^T);
 
+// A kernel source is recognized the same way.
+[[nodiscard]] consteval bool is_kernel_source(std::meta::info type) {
+    const std::meta::info dealiased = std::meta::dealias(type);
+    return std::meta::has_template_arguments(dealiased) && std::meta::template_of(dealiased) == ^^ctx_cap::KernelSource;
+}
+
 template <class T>
-concept IsCapType = std::same_as<T, ctx_cap::Fg> || IsBrandedForeground<T> || IsContext<T>;
+concept IsKernelSource = is_kernel_source(^^T);
+
+template <class T>
+concept IsCapType = std::same_as<T, ctx_cap::Fg> || IsBrandedForeground<T> || IsKernelSource<T> || IsContext<T>;
+
+// The one door of a kernel context, declared here so that the context can
+// name it as a friend.  The definition is below.
+template <class Brand, ::foundation::core::FpMode Mode>
+    requires ::foundation::os::EncodableFpMode<Mode>
+[[nodiscard]] auto mint_kernel_context(::foundation::os::FpScope<Mode> const& scope) noexcept
+    -> ExecCtx<ctx_cap::KernelSource<Brand, Mode>, Row<>>;
 template <class T>
 inline constexpr bool is_cap_type_v = IsCapType<T>;
 template <class T>
@@ -243,7 +299,7 @@ public:
     // specialization, and `ExecCtx<Init, Row<Init, Alloc, IO>>{}` then
     // built an init context without the init key.
     constexpr explicit ExecCtx(Cap cap) noexcept
-        requires(!IsBrandedForeground<Cap>)
+        requires(!IsBrandedForeground<Cap> && !IsKernelSource<Cap>)
         : cap_{cap} {}
 
 private:
@@ -254,9 +310,21 @@ private:
         requires IsBrandedForeground<Cap>
         : cap_{key} {}
 
+    // A kernel source has no copy either, so the context builds it in place
+    // from the epoch of a scope and a thread.  Only the mint of a kernel
+    // context calls this constructor.
+    constexpr ExecCtx(std::uint64_t fp_scope_epoch, std::uintptr_t thread) noexcept
+        requires IsKernelSource<Cap>
+        : cap_{fp_scope_epoch, thread} {}
+
     template <class Brand>
     friend class host::ProducerClaim;
     friend struct testing::ForegroundWitness;
+
+    template <class Brand, ::foundation::core::FpMode Mode>
+        requires ::foundation::os::EncodableFpMode<Mode>
+    friend auto mint_kernel_context(::foundation::os::FpScope<Mode> const& scope) noexcept
+        -> ExecCtx<ctx_cap::KernelSource<Brand, Mode>, ::foundation::effects::Row<>>;
 
 public:
     // The only way to reach the capability, and it borrows rather than
@@ -559,6 +627,64 @@ void require_brand_thread(ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> const&) noex
 }
 
 }  // namespace host
+
+// The context of a compute kernel: the brand of its thread, the FP mode of
+// the register of that thread, and the empty row.  Each door gate refuses
+// it, so a kernel allocates nothing, does no IO, does not block, and reads
+// no clock, no merge and no peer.  Two modes are two types.
+template <class Brand, ::foundation::core::FpMode Mode>
+using KernelCtx = ExecCtx<ctx_cap::KernelSource<Brand, Mode>, Row<>>;
+
+// The one door of a kernel context.  The context keeps the epoch of the
+// scope and the thread of the caller, so the mode in its type is the mode
+// of the register of that thread while the scope lives.
+template <class Brand, ::foundation::core::FpMode Mode>
+    requires ::foundation::os::EncodableFpMode<Mode>
+[[nodiscard]] auto mint_kernel_context(::foundation::os::FpScope<Mode> const& scope) noexcept
+    -> ExecCtx<ctx_cap::KernelSource<Brand, Mode>, Row<>> {
+    return ExecCtx<ctx_cap::KernelSource<Brand, Mode>, Row<>>{scope.epoch(),
+                                                              detail::producer_claim::calling_thread_identity()};
+}
+
+// A temporary scope ends at the end of the full expression of the mint, and
+// the register then no longer holds the mode of the type.
+template <class Brand, ::foundation::core::FpMode Mode>
+    requires ::foundation::os::EncodableFpMode<Mode>
+auto mint_kernel_context(::foundation::os::FpScope<Mode> const&&) noexcept
+    -> ExecCtx<ctx_cap::KernelSource<Brand, Mode>, Row<>> = delete("a temporary scope ends at the end of the full "
+                                                                   "expression, and the register then no longer "
+                                                                   "holds the mode of the type");
+
+namespace host {
+
+// The run-time half of a kernel context, in each build.  A function can
+// return a context by prvalue while its scope ends, and a body can take a
+// reference to a context to another thread.  So the check reads that the
+// calling thread is the thread of the mint, and that the scope of the
+// context is the innermost FP scope of that thread.  The epoch is unique in
+// the process, so the second check also proves that the scope lives and
+// that no inner scope of another mode is open.
+template <class Brand, ::foundation::core::FpMode Mode>
+void require_kernel_scope(KernelCtx<Brand, Mode> const& ctx) noexcept {
+    CRUCIBLE_FATAL_INVARIANT(ctx.cap().thread() == detail::producer_claim::calling_thread_identity());
+    CRUCIBLE_FATAL_INVARIANT(::foundation::os::is_innermost_fp_scope(ctx.cap().fp_scope_epoch()));
+}
+
+}  // namespace host
+
+// Runs one kernel under its context, after the check of the context
+// (host::require_kernel_scope).  The kernel takes the context first, and its
+// buffers after it.  It writes its results into its output buffers and
+// returns nothing.  The check is one read of the thread pointer, one read of
+// a thread-local slot and two compares for each kernel, not for each
+// element.
+template <class Brand, ::foundation::core::FpMode Mode, class Kernel, class... Args>
+    requires std::is_nothrow_invocable_r_v<void, Kernel&, KernelCtx<Brand, Mode> const&, Args&&...>
+          && std::is_void_v<std::invoke_result_t<Kernel&, KernelCtx<Brand, Mode> const&, Args&&...>>
+void run_kernel(KernelCtx<Brand, Mode> const& ctx, Kernel&& kernel, Args&&... args) noexcept {
+    host::require_kernel_scope(ctx);
+    kernel(ctx, static_cast<Args&&>(args)...);
+}
 
 // The test door of the foreground context.  The rule owners of
 // the quarantine plugin refuses a use of it in code that ships, as it does

@@ -53,4 +53,13 @@ using InitLoadCtx = ::foundation::effects::detail::ctx_witnesses::InitLoadCtx;
 // The context of a test fixture: Test, Alloc, IO, Block and Nondet.
 using TestRunnerCtx = ::foundation::effects::detail::ctx_witnesses::TestRunnerCtx;
 
+// The context of a compute kernel: the brand of its thread, the FP mode of
+// the register of that thread, and the empty row.  mint_kernel_context
+// makes one from a live FP scope, and run_kernel runs a kernel under it.
+template <class Brand, ::foundation::core::FpMode Mode>
+using Kernel = ::foundation::effects::KernelCtx<Brand, Mode>;
+
+using ::foundation::effects::mint_kernel_context;
+using ::foundation::effects::run_kernel;
+
 }  // namespace fixy
