@@ -2230,6 +2230,253 @@ def stack_thread_cases(expect: testing.Expect) -> None:
             print(printed)
 
 
+def branch_commit(root: Path, parent: str, files: Mapping[str, str], message: str) -> str:
+    """Write a commit on a commit that sets some files, with the message, as a commit of a branch, and return it."""
+    for name, text in files.items():
+        (root / name).write_text(text, encoding="utf-8")
+    composed = land.compose(root, request_of((message,), own=tuple(files)), parent)
+    return git.commit_tree(root, composed.tree, [parent], message)
+
+
+def planted_branch(root: Path, name: str, commits: Sequence[tuple[Mapping[str, str], str]]) -> list[str]:
+    """Write the commits of a branch on HEAD, one on the other, point the branch at the last, and return them."""
+    made: list[str] = []
+    parent = git.head(root)
+    for files, message in commits:
+        parent = branch_commit(root, parent, files, message)
+        made.append(parent)
+    git.run(root, "update-ref", f"refs/heads/{name}", parent)
+    return made
+
+
+def series_landing(
+    root: Path, scratch: Path, branch: str, check: land.Check
+) -> tuple[dict[int, land.Decision], land.BatchLanding]:
+    """Land the series of a branch as request 1 through a planted gate, and return its verdict and the landing."""
+    request = land.series_request(root, branch, scratch)
+    return batch_landing(root, [request], check)
+
+
+def series_cases(expect: testing.Expect) -> None:
+    """Hold THE SERIES: a series lands in order with its messages, a red tip, a commit that does not compose, a stack,
+    the merges of a branch, the words of --series, and the queue file of a series."""
+    with tempfile.TemporaryDirectory(prefix="land-series-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        scratch = work / "patches"
+        scratch.mkdir()
+        messages = (
+            "Add the first file\n\nThe first body.\n",
+            "Add the second file\n\nThe second body, with\ntwo lines.\n",
+            "Change the first file\n",
+        )
+        made = planted_branch(
+            root,
+            "three",
+            ((({"a.txt": "a\n"}), messages[0]), ({"b.txt": "b\n"}, messages[1]), ({"a.txt": "a again\n"}, messages[2])),
+        )
+        request = land.series_request(root, "three", scratch)
+        seen: list[tuple[gate.Candidate, bool]] = []
+        decisions, _ = batch_landing(root, [request], passing(seen))
+        second = git.parent(root, "HEAD")
+        expect(
+            "a series of three commits lands as three commits in sequence, each with its own message, after one run "
+            "of the gate on its tip",
+            decisions[1].status == 0
+            and [part.commit for part in request.parts] == made
+            and subjects_since(root, head) == ["Add the first file", "Add the second file", "Change the first file"]
+            and git.message_of(root, git.parent(root, second)) == messages[0]
+            and git.message_of(root, second) == messages[1]
+            and git.message_of(root, "HEAD") == messages[2]
+            and git.show(root, "HEAD", "a.txt") == b"a again\n"
+            and len(seen) == 1
+            and seen[0][0].commit == git.head(root)
+            and git.parent(root, git.parent(root, git.parent(root, "HEAD"))) == head
+            and "the series of 3 commits" in decisions[1].lines[0].content,
+        )
+        before = git.head(root)
+        planted_branch(root, "red", (({"c.txt": "c\n"}, "Add c\n"), ({"d.txt": RED}, "Add a red d\n")))
+        seen = []
+
+        def red_tip(candidate: gate.Candidate, is_retry: bool) -> gate.Verdict:
+            """Reject each commit that holds the red d.txt, and accept each other commit."""
+            seen.append((candidate, is_retry))
+            is_red = git.show(root, candidate.commit, "d.txt") == RED.encode()
+            return gate.Verdict(("debug",), ("debug: red alone too: test_d",) if is_red else (), 1.0)
+
+        decisions, _ = series_landing(root, scratch, "red", red_tip)
+        expect(
+            "a series whose tip is red is refused whole, and main gets no commit of it",
+            decisions[1].status == ExitCode.FINDINGS
+            and git.head(root) == before
+            and any("test_d" in line.content for line in decisions[1].lines),
+        )
+        planted_branch(
+            root,
+            "clash",
+            (
+                ({"shared.txt": "alpha\nbranch\n"}, "Change beta on the branch\n"),
+                ({"own.txt": "own on the branch\n"}, "Change own on the branch\n"),
+            ),
+        )
+        main_change = branch_commit(root, before, {"shared.txt": "alpha\nmain\n"}, "Change beta on main\n")
+        land.swap(root, land.branch_of(root), main_change, before, "Change beta on main")
+        decisions, _ = series_landing(root, scratch, "clash", passing([]))
+        said = " ".join(line.content for line in decisions[1].lines) if 1 in decisions else ""
+        expect(
+            f"a series whose first commit does not compose on main is refused with the number, the commit and the "
+            f"subject of that commit: {said[:200]}",
+            decisions[1].status == ExitCode.USAGE
+            and "the commit 1 of the 2 commits of the series" in said
+            and "'Change beta on the branch'" in said
+            and git.head(root) == main_change,
+        )
+        queue = work / "queue"
+        queue.mkdir()
+        tip = git.head(root)
+        lower = side_commit(root, tip, "lower.txt", "lower\n")
+        below = OtherEntry(queue, land.branch_of(root), 1, tip, lower)
+        planted_branch(root, "stacked", (({"e.txt": "e\n"}, "Add e\n"), ({"f.txt": "f\n"}, "Add f\n")))
+        request = land.series_request(root, "stacked", scratch)
+        batch = [land.Queued(3, root, request, options())]
+        stacked: dict[int, land.Decision] = {}
+        seen = []
+
+        def lower_lands(seconds: float) -> None:
+            """Land the batch below on the first poll of the wait before the swap."""
+            if seconds == land.POLL_S and below.is_live:
+                land.swap(root, land.branch_of(root), lower, tip, "Lower")
+                below.leave()
+
+        def decide_stacked(queued: land.Queued, decision: land.Decision) -> None:
+            stacked[queued.number] = decision
+
+        right = land.RightOfWay(queue, 3, lower_lands)
+        landing = land.BatchLanding(
+            batch, passing(seen), decide_stacked, lower_lands, right=right, stack=land.Stack(queue, 3)
+        )
+        testing.captured(lambda: landing.land(batch))
+        expect(
+            "a series on the stack composes on the commit of the batch below, and lands on it as one request",
+            stacked[3].status == 0
+            and len(seen) == 1
+            and seen[0][0].head == lower
+            and subjects_since(root, lower) == ["Add e", "Add f"],
+        )
+
+
+def series_words_cases(expect: testing.Expect) -> None:
+    """Hold the words of --series, the merges of a series, an empty series, and the queue file of a series."""
+    with tempfile.TemporaryDirectory(prefix="land-series-words-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        scratch = work / "patches"
+        scratch.mkdir()
+        refusals = []
+        for words in (
+            ["--series", "feature", "-m", "A message", "--"],
+            ["--series", "feature", "--", "own.txt"],
+            ["--series", "feature", "--patch", "x.patch", "--"],
+            ["--series", "one", "--series", "two", "--"],
+        ):
+            try:
+                land.parse(words, root)
+                refusals.append(False)
+            except land.LandError:
+                refusals.append(True)
+        _, options = land.parse(["--series", "feature", "--all-configurations", "--"], root)
+        expect(
+            "--series takes no -m, no own path, no patch and no second --series, and it keeps the other options",
+            refusals == [True, True, True, True] and options.series == "feature" and options.is_every,
+        )
+        feature = branch_commit(root, head, {"shared.txt": "alpha\nfeature\n"}, "Change beta on the feature\n")
+        on_main = branch_commit(root, head, {"shared.txt": "alpha\nmain\n"}, "Change beta on main\n")
+        land.swap(root, land.branch_of(root), on_main, head, "Change beta on main")
+        resolved = branch_commit(root, feature, {"shared.txt": "alpha\nresolved\n"}, "Resolve\n")
+        tree = git.run(root, "rev-parse", f"{resolved}^{{tree}}").decode().strip()
+        merge = git.commit_tree(root, tree, [feature, on_main], "Merge main into the feature\n")
+        git.run(root, "update-ref", "refs/heads/feature", merge)
+        try:
+            land.series_request(root, "feature", scratch)
+            said = ""
+        except land.LandError as problem:
+            said = str(problem)
+        expect(
+            f"a merge that resolves a conflict refuses the series, and the refusal tells how to rebase: {said[:160]}",
+            f"the merge {merge[: land.SHORT_HASH]} of the series holds a change of its own" in said
+            and "Rebase feature onto main (git rebase main), resolve each conflict in its own commit" in said,
+        )
+        clean = branch_commit(root, head, {"g.txt": "g\n"}, "Add g\n")
+        union = branch_commit(root, clean, {"shared.txt": "alpha\nmain\n"}, "Union\n")
+        tree = git.run(root, "rev-parse", f"{union}^{{tree}}").decode().strip()
+        clean_merge = git.commit_tree(root, tree, [clean, on_main], "Merge main into the clean branch\n")
+        git.run(root, "update-ref", "refs/heads/clean", clean_merge)
+        request = land.series_request(root, "clean", scratch)
+        expect(
+            "a merge of main with no change of its own gives no commit of the series",
+            [part.commit for part in request.parts] == [clean] and request.parts[0].subject == "Add g",
+        )
+        try:
+            land.series_request(root, "HEAD", scratch)
+            said = ""
+        except land.LandError as problem:
+            said = str(problem)
+        expect("a branch that main holds gives an empty series, which is refused", "the series is empty" in said)
+        status, printed = testing.captured(
+            lambda: land.preview(root, request, land.Options(True, False, series="clean"))
+        )
+        expect(
+            "--dry-run of a series prints each commit that it composes and the diff of the series, and lands nothing",
+            status == 0 and "the series composes" in printed and "+g" in printed and git.head(root) == on_main,
+        )
+        queue = work / "queue"
+        queue.mkdir()
+        with land.entered(queue, root, request, options) as queued:
+            files = sorted(path.name for path in queue.iterdir() if path.name.startswith(queued.name))
+            found = land.waiting_requests(queue, no_pause)
+        expect(
+            f"the queue holds a series in the file NUMBER.series and no file NUMBER.request, and a holder reads it with "
+            f"its commits: {files}",
+            f"{queued.name}{land.SERIES_SUFFIX}" in files
+            and f"{queued.name}{land.REQUEST_SUFFIX}" not in files
+            and [item.request.parts[0].commit for item in found] == [clean]
+            and found[0].request.parts[0].message == "Add g\n",
+        )
+
+
+def series_cost_cases(expect: testing.Expect) -> None:
+    """Hold the cost of a series: five commits run the gate one time, and five requests of one commit five times."""
+    with tempfile.TemporaryDirectory(prefix="land-series-cost-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        scratch = work / "patches"
+        scratch.mkdir()
+        planted_branch(root, "five", [({f"s{index}.txt": f"{index}\n"}, f"Add s{index}\n") for index in range(5)])
+        seen: list[tuple[gate.Candidate, bool]] = []
+        decisions, _ = series_landing(root, scratch, "five", passing(seen))
+        series_runs = len(seen)
+        series_subjects = subjects_since(root, head)
+        statuses = [decisions[1].status]
+        single_head = git.head(root)
+        seen = []
+        for index in range(5):
+            (root / f"t{index}.txt").write_text(f"{index}\n", encoding="utf-8")
+            landed_one, _ = batch_landing(root, [request_of((f"Add t{index}",), own=(f"t{index}.txt",))], passing(seen))
+            statuses.append(landed_one[1].status)
+        expect(
+            f"a series of five commits runs the gate {series_runs} time, and five requests of one commit, one after the "
+            f"other, run it {len(seen)} times",
+            series_runs == 1
+            and len(seen) == 5
+            and series_subjects == [f"Add s{index}" for index in range(5)]
+            and len(subjects_since(root, single_head)) == 5
+            and statuses == [0] * 6,
+        )
+
+
 @contextlib.contextmanager
 def waiting(queue: Path, root: Path, request: land.Request) -> Iterator[land.Queued]:
     """Write a request into the queue as a waiting process does, and hold its lock for the block."""
@@ -3043,6 +3290,9 @@ def main(argv: list[str]) -> int:
             right_cases,
             stack_cases,
             stack_thread_cases,
+            series_cases,
+            series_words_cases,
+            series_cost_cases,
             queue_cases,
             error_cases,
             defect_cases,

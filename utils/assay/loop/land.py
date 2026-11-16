@@ -7,6 +7,7 @@ THE REQUEST
       --patch FILE              A unified diff that git made against HEAD
       --replace FILE OLD NEW    In the shared FILE, the text of the file NEW replaces the text of the file OLD
       --block FILE AFTER BLOCK  In the shared FILE, the text of the file BLOCK goes after the text of the file AFTER
+      --series BRANCH           Each commit of BRANCH that HEAD does not hold, as one request (THE SERIES)
       --jobs N                 The slice of the lease of one configuration of the gate, with SLICE as the most
       --all-configurations      The gate runs each configuration (assay.loop.gate, THE SELECTION)
       --check                   Run the gate on the commit, and do not land it
@@ -74,6 +75,50 @@ THE MERGE
     the request.  The refusal names each such file.  A raise or an admit of
     a patch stays a change of its row in the commit.  The verdict names each
     merged file and each file that the gate writes.
+
+THE SERIES
+    `loop land --series BRANCH --` in the main work tree lands each commit
+    of BRANCH that HEAD does not hold, from the oldest, each with its own
+    message, as one request (series_request()).  The author of each commit
+    is the configured identity.  A series takes no -m, no patch, no edit and
+    no own path.  --all-configurations, --jobs, --check, --dry-run and
+    --tree apply to the whole series.
+      * The request holds the patch of each commit against its first parent,
+        and the message of the commit.  The process writes the request
+        into the file NUMBER.series of the queue.  An earlier copy of this
+        module reads only the files NUMBER.request, so it never lands a
+        series as one commit.
+      * A merge of the branch gives no commit, because its two sides are in
+        the series or in HEAD.  A merge that holds a change of its own, such
+        as the resolution of a conflict, refuses the series, because no
+        commit of the series holds that change.  The refusal tells the
+        agent to rebase the branch onto main and to resolve each conflict
+        in its own commit.
+      * The holder composes each commit on the commit before it, as a patch
+        does (THE MERGE).  The first commit starts from the commit of the
+        batch or from the top of the stack.  When the branch started from
+        an earlier commit of main, each patch thus applies to the main of
+        the run, as `git cherry-pick` does.  The first commit that does not
+        compose refuses the series, with its number, its commit and its
+        subject.  A commit whose change the commit before it holds gives no
+        commit.
+    A series is one request for the batch, THE SEARCH, THE CONFIRMATION, THE
+    RIGHT OF WAY and THE STACK.  The gate tests only the last commit, the
+    tip, in one run, so the slot cost does not grow with the number of
+    commits.  A red series is refused whole, and the search does not divide
+    it.  The swap moves the branch to the tip, so main gets each commit of
+    the series, in sequence.
+    THE BUILT FILES and THE REDUCE fold into the last commit of the batch,
+    which is the last commit of a series at the end of the batch.  The fold
+    gives that commit a new tree with the same parents, the same message
+    and a note.  Main then holds each commit of the series one time and no
+    other commit, and the gate tests the folded commit again.  A ledger or a
+    generated file can change in each commit of a series.  When it is in
+    the last commit only, a conflict of a rebase is only in that commit.
+    Main never holds a commit that the gate did not test as part of a
+    tested tip: each commit of a series is an ancestor of the tip that the
+    gate accepted, and the swap moves the branch only to that tip.  The gate
+    does not build or test a commit before the tip alone.
 
 THE QUEUE
     A landing writes its request into the queue of its repository before it
@@ -533,6 +578,7 @@ THE DRIVER
 Usage
     loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... [--block FILE AFTER BLOCK]...
               [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] -- [PATH]...
+    loop land --series BRANCH [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] --
 
     Exit 0 when the request landed, when the gate accepts the commit of
     --check, or when --dry-run or --tree printed.  Exit 1 when the gate
@@ -589,7 +635,7 @@ STACK_ATTEMPTS = 8
 INSERT = "insert"
 REPLACE = "replace"
 # The count of the values of each option, for the division of the words (split_words()).
-VALUE_COUNTS = {"-m": 1, "--patch": 1, "--replace": 3, "--block": 3, "--jobs": 1}
+VALUE_COUNTS = {"-m": 1, "--patch": 1, "--replace": 3, "--block": 3, "--jobs": 1, "--series": 1}
 FLAG_DRY_RUN = "--dry-run"
 FLAG_TREE = "--tree"
 FLAG_CHECK = "--check"
@@ -601,7 +647,8 @@ HELP_WORDS = (["-h"], ["--help"])
 USAGE = (
     "usage: loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... "
     "[--block FILE AFTER BLOCK]...\n"
-    "                 [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] -- [PATH]..."
+    "                 [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] -- [PATH]...\n"
+    "       loop land --series BRANCH [--jobs N] [--all-configurations] [--check [--here] | --dry-run | --tree] --"
 )
 # The subject of the commit of --check with no message.
 CHECK_SUBJECT = "Check a change in the gate"
@@ -621,6 +668,9 @@ RESERVE = ".reserve"
 NUMBER_WIDTH = 8
 LOCK_SUFFIX = ".lock"
 REQUEST_SUFFIX = ".request"
+# The request file of a series (THE SERIES).  An earlier copy of this module reads only REQUEST_SUFFIX, so it takes no
+# series, and it cannot land a series as one commit.
+SERIES_SUFFIX = ".series"
 VERDICT_SUFFIX = ".verdict"
 JOURNAL_SUFFIX = ".journal"
 CLAIM_SUFFIX = ".claim"
@@ -695,13 +745,33 @@ class Edit:
 
 
 @dataclass(frozen=True, slots=True)
+class Part:
+    """One commit of a series: its message, the patch of the commit against its first parent, and the commit (THE
+    SERIES)."""
+
+    message: str
+    patch: Path
+    commit: str
+
+    @property
+    def subject(self) -> str:
+        """The first line of the message."""
+        return self.message.partition("\n")[0]
+
+
+@dataclass(frozen=True, slots=True)
 class Request:
-    """The message, the patches, the edits and the own paths of one landing (THE REQUEST)."""
+    """The message, the patches, the edits and the own paths of one landing (THE REQUEST).
+
+    `parts` holds each commit of a series, from the oldest (THE SERIES).  A series has no message, patch, edit or own
+    path of its own.
+    """
 
     messages: tuple[str, ...]
     patches: tuple[Path, ...]
     edits: tuple[Edit, ...]
     paths: tuple[str, ...]
+    parts: tuple[Part, ...] = ()
 
     @property
     def message(self) -> str:
@@ -710,13 +780,16 @@ class Request:
 
     @property
     def subject(self) -> str:
-        """The first paragraph of the message."""
+        """The first paragraph of the message, or the subject of the first commit of a series and the count of the others."""
+        if self.parts:
+            more = f", and {len(self.parts) - 1} more commit(s) of the series" if len(self.parts) > 1 else ""
+            return f"{self.parts[0].subject}{more}"
         return self.messages[0] if self.messages else CHECK_SUBJECT
 
     @property
     def is_empty(self) -> bool:
-        """Tell if the request holds no patch, no edit and no own path."""
-        return not self.paths and not self.edits and not self.patches
+        """Tell if the request holds no patch, no edit, no own path and no commit of a series."""
+        return not self.paths and not self.edits and not self.patches and not self.parts
 
 
 @dataclass(frozen=True, slots=True)
@@ -729,6 +802,7 @@ class Options:
     is_here: bool = False
     is_every: bool = False
     jobs: int = proc.DEFAULT_JOBS
+    series: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -792,7 +866,8 @@ class Queued:
 class Link:
     """One request composed on the commit before it: the request, that commit, its own commit, and its paths.
 
-    `merged`, `is_summed` and `built` come from its composition (THE MERGE).
+    `merged`, `is_summed` and `built` come from its composition (THE MERGE).  `commits` holds each commit of a series
+    with its subject, from the oldest, and `commit` is the last one of them (THE SERIES).
     """
 
     queued: Queued
@@ -802,6 +877,7 @@ class Link:
     merged: tuple[str, ...] = ()
     is_summed: bool = False
     built: tuple[str, ...] = ()
+    commits: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -918,8 +994,13 @@ def read_text(path: Path) -> str:
         raise LandError(f"the file {path} of an edit cannot be read: {problem}") from None
 
 
-def checked_options(flags: dict[str, bool], jobs_values: list[list[str]], request: Request) -> Options:
-    """Return the options of the flags and of --jobs, and refuse a combination that does not apply.
+def checked_options(
+    flags: dict[str, bool], jobs_values: list[list[str]], request: Request, series_values: list[list[str]]
+) -> Options:
+    """Return the options of the flags, of --jobs and of --series, and refuse a combination that does not apply.
+
+    A series takes its messages and its changes from its commits, so it takes no -m, no patch, no edit and no own path
+    (THE SERIES).
 
     Raises:
         LandError: If the options do not apply together
@@ -933,12 +1014,24 @@ def checked_options(flags: dict[str, bool], jobs_values: list[list[str]], reques
         raise LandError("give one of --check, --dry-run and --tree")
     if flags[FLAG_HERE] and not flags[FLAG_CHECK]:
         raise LandError("--here applies only to --check.  A landing runs the copy of the main work tree")
-    if not request.messages and not flags[FLAG_TREE] and not flags[FLAG_CHECK]:
+    if len(series_values) > 1:
+        raise LandError("give --series one time")
+    series = series_values[0][0] if series_values else ""
+    if series and not request.is_empty:
+        raise LandError(
+            "--series takes the message and the change of each commit of the branch, so give it no -m, no --patch, "
+            "no --replace, no --block and no own path"
+        )
+    if series and request.messages:
+        raise LandError("--series takes the message of each commit of the branch, so give it no -m")
+    if not series and not request.messages and not flags[FLAG_TREE] and not flags[FLAG_CHECK]:
         raise LandError("give the message of the commit with -m")
-    if request.is_empty and not flags[FLAG_CHECK]:
+    if not series and request.is_empty and not flags[FLAG_CHECK]:
         raise LandError("the request holds nothing to commit")
     jobs = int(jobs_text) if jobs_text is not None else proc.DEFAULT_JOBS
-    return Options(flags[FLAG_DRY_RUN], flags[FLAG_TREE], flags[FLAG_CHECK], flags[FLAG_HERE], flags[FLAG_EVERY], jobs)
+    return Options(
+        flags[FLAG_DRY_RUN], flags[FLAG_TREE], flags[FLAG_CHECK], flags[FLAG_HERE], flags[FLAG_EVERY], jobs, series
+    )
 
 
 def parse(argv: Sequence[str], current: Path) -> tuple[Request, Options]:
@@ -981,7 +1074,40 @@ def parse(argv: Sequence[str], current: Path) -> tuple[Request, Options]:
         tuple(edits),
         tuple(own),
     )
-    return request, checked_options(flags, values["--jobs"], request)
+    return request, checked_options(flags, values["--jobs"], request, values["--series"])
+
+
+def series_request(root: Path, revision: str, directory: Path) -> Request:
+    """Return the request of a series: each commit of the revision that HEAD does not hold, from the oldest (THE SERIES).
+
+    The patch of each commit against its first parent goes into a file of the directory.  A merge in the series gives no
+    part, because its two sides are in the series or in HEAD.  Complexity: two runs of git for each commit.
+
+    Raises:
+        LandError: If the revision names no commit, HEAD holds each of its commits, or a merge of the series holds a change
+            of its own, such as the resolution of a conflict
+        git.GitError: If git fails
+    """
+    tip = git.resolve(root, revision)
+    if tip is None:
+        raise LandError(f"--series {revision} names no commit")
+    head = git.head(root)
+    for merge in git.run(root, "rev-list", "--merges", f"{head}..{tip}").decode("utf-8").split():
+        if git.run(root, "show", "--remerge-diff", "--format=", "--no-color", merge).strip():
+            raise LandError(
+                f"the merge {merge[:SHORT_HASH]} of the series holds a change of its own, such as the resolution of a "
+                f"conflict, and no commit of the series holds that change.  Rebase {revision} onto main (git rebase "
+                f"main), resolve each conflict in its own commit, and queue again"
+            )
+    commits = git.run(root, "rev-list", "--reverse", "--topo-order", "--no-merges", f"{head}..{tip}").decode().split()
+    if not commits:
+        raise LandError(f"HEAD {head[:SHORT_HASH]} holds each commit of {revision}, so the series is empty")
+    parts: list[Part] = []
+    for index, commit in enumerate(commits):
+        patch = directory / f"part-{index}.patch"
+        patch.write_bytes(git.run(root, "diff", "--binary", "--full-index", "-M", git.parent(root, commit), commit))
+        parts.append(Part(git.message_of(root, commit).rstrip("\n") + "\n", patch, commit))
+    return Request((), (), (), (), tuple(parts))
 
 
 # ── The edits ──────────────────────────────────────────────────────────────
@@ -1347,11 +1473,58 @@ def compose_link(queued: Queued, parent: str, since: str) -> Link:
         git.GitError: If a git command fails, such as a patch that does not apply
     """
     request = queued.request
+    if request.parts:
+        return series_link(queued, parent, since)
     composed = compose(queued.root, request, parent, since=since)
     if not composed.changed:
         raise LandError("the commit would change nothing")
     commit = commit_tree(queued.root, composed, request.message)
     return Link(queued, parent, commit, composed.changed, composed.merged, composed.is_summed, composed.built)
+
+
+def series_link(queued: Queued, parent: str, since: str) -> Link:
+    """Compose each commit of a series on the commit before it, with its own message, and return the link (THE SERIES).
+
+    A commit whose change the commit before it holds gives no commit.  Complexity: one composition for each commit.
+
+    Raises:
+        LandError: If a commit of the series does not compose.  The message names the first such commit.  Also if the
+            series changes nothing
+    """
+    parts = queued.request.parts
+    top = parent
+    commits: list[tuple[str, str]] = []
+    merged: list[str] = []
+    built: list[str] = []
+    is_summed = False
+    for index, part in enumerate(parts, start=1):
+        try:
+            composed = compose(queued.root, Request((), (part.patch,), (), ()), top, since=since)
+        except (LandError, git.GitError) as problem:
+            raise LandError(
+                f"the commit {index} of the {len(parts)} commits of the series, {part.commit[:SHORT_HASH]} "
+                f"'{part.subject}', does not compose on {top[:SHORT_HASH]}: {problem}"
+            ) from None
+        if not composed.changed:
+            continue
+        top = git.commit_tree(queued.root, composed.tree, [top], part.message)
+        commits.append((top, part.subject))
+        merged += composed.merged
+        built += composed.built
+        is_summed = is_summed or composed.is_summed
+    changed = git.tree_changes(queued.root, parent, top)
+    if not commits or not changed:
+        raise LandError("the series would change nothing")
+    return Link(
+        queued,
+        parent,
+        top,
+        changed,
+        tuple(dict.fromkeys(merged)),
+        is_summed,
+        tuple(dict.fromkeys(built)),
+        tuple(commits),
+    )
 
 
 # ── The index and the working tree ─────────────────────────────────────────
@@ -2276,6 +2449,16 @@ class BatchLanding:
             commit = final if index == last else link.commit
             changed = tuple(sorted({*link.changed, *(written if index == last else ())}))
             lines = [Line(f"loop land: committed {commit[:8]} on {link.parent[:8]}{folded if index == last else ''}:")]
+            if link.commits:
+                series = [*link.commits[:-1], (commit, link.commits[-1][1])]
+                lines = [
+                    Line(
+                        f"loop land: committed the series of {len(series)} commits on {link.parent[:8]}"
+                        f"{folded if index == last else ''}:"
+                    )
+                ]
+                lines += [Line(f"  {item[:8]} {subject}") for item, subject in series]
+                lines.append(Line("loop land: the series changes these files:"))
             lines += [Line(f"  {path}") for path in changed]
             lines += merge_lines(link)
             if len(accepted) > 1:
@@ -2673,8 +2856,11 @@ def reserve(queue: Path) -> tuple[int, int]:
     return number, descriptor
 
 
-def encoded_request(queued: Queued, patch_names: Sequence[str]) -> bytes:
-    """Return the bytes of the file NUMBER.request of a request (THE QUEUE)."""
+def encoded_request(queued: Queued, patch_names: Sequence[str], part_names: Sequence[str] = ()) -> bytes:
+    """Return the bytes of the file NUMBER.request or NUMBER.series of a request (THE QUEUE, THE SERIES).
+
+    `part_names` gives the name of the copy of the patch of each commit of a series in the queue.
+    """
     request = queued.request
     record = {
         "format": REQUEST_FORMAT,
@@ -2687,6 +2873,10 @@ def encoded_request(queued: Queued, patch_names: Sequence[str]) -> bytes:
         "patches": list(patch_names),
         "edits": [asdict(edit) for edit in request.edits],
         "paths": list(request.paths),
+        "parts": [
+            {"message": part.message, "patch": name, "commit": part.commit}
+            for part, name in zip(request.parts, part_names, strict=True)
+        ],
         "jobs": queued.options.jobs,
         "every": queued.options.is_every,
         "claims": True,
@@ -2746,11 +2936,16 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
         raise TypeError("the field jobs is not a number, or the field every is not a truth value")
     if jobs < 1:
         raise ValueError(f"the field jobs is {jobs}, and a request takes a number above 0")
+    parts = tuple(
+        Part(message, queue / name, commit)
+        for message, name, commit in records_of(record.get("parts", []), "parts", ("message", "patch", "commit"))
+    )
     request = Request(
         text_list(record.get("messages"), "messages"),
         tuple(queue / name for name in text_list(record.get("patches"), "patches")),
         edits,
         text_list(record.get("paths"), "paths"),
+        parts,
     )
     options = Options(False, False, is_every=every, jobs=jobs)
     return Queued(number, Path(root), request, options, branch, common, token, head, record.get("claims") is True)
@@ -2772,18 +2967,27 @@ def entered(queue: Path, root: Path, request: Request, options: Options) -> Iter
     number, descriptor = reserve(queue)
     try:
         queued = Queued(number, root, request, options, branch, common, secrets.token_hex(TOKEN_BYTES), head)
-        names = [f"{queued.name}{PATCH_MARK}{index}" for index in range(len(request.patches))]
-        for name, patch in zip(names, request.patches, strict=True):
+        sources = [*request.patches, *(part.patch for part in request.parts)]
+        names = [f"{queued.name}{PATCH_MARK}{index}" for index in range(len(sources))]
+        for name, patch in zip(names, sources, strict=True):
             try:
                 data = patch.read_bytes()
             except OSError as problem:
                 raise LandError(f"the patch {patch} cannot be read: {problem}") from None
             cache.write_atomic(queue / name, data)
-        cache.write_atomic(queue_file(queue, number, REQUEST_SUFFIX), encoded_request(queued, names))
+        patch_names, part_names = names[: len(request.patches)], names[len(request.patches) :]
+        suffix = SERIES_SUFFIX if request.parts else REQUEST_SUFFIX
+        cache.write_atomic(queue_file(queue, number, suffix), encoded_request(queued, patch_names, part_names))
         yield queued
     finally:
         remove_request(queue, number)
         os.close(descriptor)
+
+
+def request_file_of(queue: Path, number: int) -> Path:
+    """Return the request file of a number: the file NUMBER.series of a series, else the file NUMBER.request."""
+    series = queue_file(queue, number, SERIES_SUFFIX)
+    return series if series.is_file() else queue_file(queue, number, REQUEST_SUFFIX)
 
 
 def remove_request(queue: Path, number: int) -> None:
@@ -2791,7 +2995,7 @@ def remove_request(queue: Path, number: int) -> None:
 
     A holder then takes no request of a process that left the queue, and it finds no file of a request with no lock.
     """
-    for suffix in (REQUEST_SUFFIX, VERDICT_SUFFIX, JOURNAL_SUFFIX, CLAIM_SUFFIX, RIGHT_SUFFIX):
+    for suffix in (REQUEST_SUFFIX, SERIES_SUFFIX, VERDICT_SUFFIX, JOURNAL_SUFFIX, CLAIM_SUFFIX, RIGHT_SUFFIX):
         queue_file(queue, number, suffix).unlink(missing_ok=True)
     for path in paths.listing(queue, f"{number:0{NUMBER_WIDTH}d}{PATCH_MARK}*"):
         path.unlink(missing_ok=True)
@@ -2985,7 +3189,7 @@ def waiting_requests(queue: Path, pause: heavy.Pause = time.sleep) -> list[Queue
                 continue
             if is_claimed(queue, number):
                 continue
-            request_file = queue_file(queue, number, REQUEST_SUFFIX)
+            request_file = request_file_of(queue, number)
             try:
                 data = request_file.read_bytes()
             except FileNotFoundError:
@@ -3067,7 +3271,7 @@ def refused_queue(queue: Path, problem: Exception) -> bool:
             continue
         verdict_file = queue_file(queue, number, VERDICT_SUFFIX)
         try:
-            token = token_of(queue_file(queue, number, REQUEST_SUFFIX).read_bytes())
+            token = token_of(request_file_of(queue, number).read_bytes())
             if verdict_file.is_file() and token_of(verdict_file.read_bytes()) == token:
                 continue
             cache.write_atomic(verdict_file, encoded_decision(failure, token))
@@ -3270,7 +3474,17 @@ def preview(root: Path, request: Request, options: Options) -> int:
         LandError: If the request does not compose
         git.GitError: If a git command fails
     """
-    composed = compose(root, request, git.head(root), with_diff=options.is_dry_run)
+    head = git.head(root)
+    if request.parts:
+        link = series_link(Queued(0, root, request, options), head, "")
+        for commit, subject in link.commits:
+            check_report.write_line(f"loop land: the series composes {commit[:SHORT_HASH]} {subject}")
+        if options.is_dry_run:
+            check_report.write_line(git.run(root, "diff", "--binary", head, link.commit).decode("utf-8", "replace"))
+        else:
+            check_report.write_line(git.run(root, "rev-parse", f"{link.commit}^{{tree}}").decode().strip())
+        return ExitCode.OK
+    composed = compose(root, request, head, with_diff=options.is_dry_run)
     if options.is_dry_run:
         if not composed.changed:
             raise LandError("the commit would change nothing")
@@ -3304,6 +3518,31 @@ def run_driver(main_tree: Path, argv: Sequence[str]) -> int:
     return heavy.exit_of(completed)
 
 
+def landed_or_checked(root: Path, request: Request, options: Options, argv: Sequence[str]) -> int:
+    """Preview, check or land a request of the work tree of root, and return the exit.
+
+    Raises:
+        LandError: If the request does not compose, or this process holds the lock of the heavy steps
+        gate.GateError: If a step of the gate cannot start
+        git.GitError: If a git command fails
+    """
+    if options.is_dry_run or options.is_tree_only:
+        return preview(root, request, options)
+    held = held_heavy_lock(root)
+    if held is not None:
+        raise LandError(
+            f"this process holds the lock of the heavy steps: {held}.  The gate takes that lock for each of its "
+            f"steps, so the landing would wait for itself.  Run loop land with no heavy lock"
+        )
+    main_tree = driver_tree(root)
+    if main_tree is not None and not options.is_here:
+        return run_driver(main_tree, argv)
+    work = cache.work_root() / WORK_NAME
+    if options.is_check:
+        return checked(root, request, options, work)
+    return landing(work, root, request, options)
+
+
 def main(argv: list[str]) -> int:
     """Land a request, or run the gate on it.
 
@@ -3320,21 +3559,10 @@ def main(argv: list[str]) -> int:
     try:
         request, options = parse(argv, current)
         root = git.toplevel(current)
-        if options.is_dry_run or options.is_tree_only:
-            return preview(root, request, options)
-        held = held_heavy_lock(root)
-        if held is not None:
-            raise LandError(
-                f"this process holds the lock of the heavy steps: {held}.  The gate takes that lock for each of its "
-                f"steps, so the landing would wait for itself.  Run loop land with no heavy lock"
-            )
-        main_tree = driver_tree(root)
-        if main_tree is not None and not options.is_here:
-            return run_driver(main_tree, argv)
-        work = cache.work_root() / WORK_NAME
-        if options.is_check:
-            return checked(root, request, options, work)
-        return landing(work, root, request, options)
+        with tempfile.TemporaryDirectory(prefix="loop-land-series-") as scratch:
+            if options.series:
+                request = series_request(root, options.series, Path(scratch))
+            return landed_or_checked(root, request, options, argv)
     except LandError as problem:
         check_report.write_line(f"loop land: {problem}", is_error=True)
         return ExitCode.USAGE
