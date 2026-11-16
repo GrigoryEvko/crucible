@@ -533,6 +533,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::foundation::algebra::modality, kGradeVocabulary},
     {^^::foundation::algebra::lattices, kGradeVocabulary},
     {^^::foundation::algebra::lattices::counter_tags, kGradeVocabulary},
+    {^^::foundation::algebra::net, "interaction nets, rule tables and their verdicts, which the compiler checks.  "
+                                   "None of them is a value in a signature"},
     {^^::foundation::effects::cap, kGradeVocabulary},
     {^^::foundation::effects::ctx_cap, kGradeVocabulary},
     {^^::foundation::effects::host, "the owners a context is minted for, never passed as values"},
