@@ -258,6 +258,43 @@ void test_return_of_the_nest_keeps_the_slot() {
     crucible::test::pass("  test_return_of_the_nest_keeps_the_slot: PASSED\n");
 }
 
+// The ops of the first layer of the MLP of test_region_ops.py, in the order
+// of the record: copy_ of depth 2 writes the bias into the new result R in
+// place, addmm of depth 1 writes R, linear of depth 0 returns R, and relu
+// reads R.  copy_ meets R first, as an input, but addmm made R, so R is a
+// slot of the region and takes bytes of the pool.  A parameter W that a
+// nested op meets first and that its parent reads and returns stays external.
+void test_result_of_a_nest_is_internal() {
+    constexpr uint32_t kW = 3072;
+    Rig mlp;
+    const ::fixy::FixedArray<TensorMeta, 2> copy_inputs{vector_at(kY), vector_at(kZ)};
+    const ::fixy::FixedArray<TensorMeta, 2> addmm_inputs{vector_at(kZ), vector_at(kX)};
+    const ::fixy::FixedArray<TensorMeta, 2> linear_inputs{vector_at(kX), vector_at(kZ)};
+    const ::fixy::FixedArray<TensorMeta, 1> result{vector_at(kY)};
+    mlp.work.push_op(*mlp.log, 0, copy_inputs.view(), result.view(), crucible::OpDepth{2});
+    mlp.work.push_op(*mlp.log, 1, addmm_inputs.view(), result.view(), crucible::OpDepth{1});
+    mlp.work.push_op(*mlp.log, 2, linear_inputs.view(), result.view(), crucible::OpDepth{0});
+    mlp.work.push_unary(*mlp.log, 3, vector_at(kY), vector_at(kW));
+    const BackgroundThread::BuiltRegion layer = mlp.build();
+
+    const crucible::SlotId made = output_slot(layer, 2, 0);
+    assert(!slot_of(layer, made).is_external && "the result that addmm makes is a slot of the region");
+    assert(slot_of(layer, made).birth_op == crucible::OpIndex{0}
+           && slot_of(layer, made).death_op == crucible::OpIndex{3});
+    assert(input_slot(layer, 3, 0) == made && producer(layer, 3, 0) == crucible::OpIndex{2});
+    assert(slot_of(layer, input_slot(layer, 0, 1)).is_external && "the bias lives before the region");
+    assert(slot_of(layer, input_slot(layer, 1, 1)).is_external && "the input x lives before the region");
+
+    Rig param;
+    param.work.push_unary(*param.log, 0, vector_at(kX), vector_at(kX), crucible::OpDepth{1});
+    param.work.push_unary(*param.log, 1, vector_at(kX), vector_at(kX), crucible::OpDepth{0});
+    const BackgroundThread::BuiltRegion returned = param.build();
+    assert(slot_of(returned, output_slot(returned, 1, 0)).is_external
+           && "a storage that the parent reads lives before it");
+    assert(slot_of(returned, output_slot(returned, 1, 0)).birth_op == crucible::OpIndex{0});
+    crucible::test::pass("  test_result_of_a_nest_is_internal: PASSED\n");
+}
+
 // Two ops read the external storage X, the first one at the first element
 // and the second one at element 8.  The two reads have one external slot and
 // no producer.
@@ -286,6 +323,7 @@ int main() {
     test_reused_address_gets_a_new_slot();
     test_view_at_an_offset_reads_its_base();
     test_return_of_the_nest_keeps_the_slot();
+    test_result_of_a_nest_is_internal();
     test_reads_of_an_external_take_one_slot();
     crucible::test::pass("test_build_address_reuse: ALL PASSED\n");
     return 0;

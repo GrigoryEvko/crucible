@@ -1157,12 +1157,18 @@ private:
         }
     }
 
-    // Writes external_reads_: each input of an op of the region that has a
-    // slot and no producer op, in the order of the ops and of the inputs.
-    // Two passes, one to count and one to fill, so the list takes one
-    // allocation.
+    // Writes external_reads_: each input of an op of the region that has an
+    // external slot of the plan and no producer op, in the order of the ops
+    // and of the inputs.  An input with no producer can also read an internal
+    // slot, such as the new result that a nested copy_ writes in place before
+    // its parent returns it, and the pool owns the bytes of that slot.  A
+    // region with no plan lists no read.  Two passes, one to count and one to
+    // fill, so the list takes one allocation.
     [[gnu::cold]] void list_external_reads_(const RegionNode& region, uint32_t resume_op) {
-        const auto each_read = [&region](auto&& on_read) {
+        ::fixy::View<const TensorSlot> plan_slots{};
+        for (const ::fixy::Ref<MemoryPlan> plan : region.plan)
+            plan_slots = plan->slots;
+        const auto each_read = [&region, plan_slots](auto&& on_read) {
             for (uint32_t i = 0; i < region.num_ops(); i++) {
                 const TraceEntry& te = region.op_at(i);
                 const ::fixy::View<const OpIndex> producers = te.input_trace_indices();
@@ -1171,7 +1177,10 @@ private:
                     const SlotId slot = *slots.get(input).expect("the input arrays of an entry hold one count");
                     const bool has_producer =
                         producers.get(input).expect("the input arrays of an entry hold one count")->is_valid();
-                    if (slot.is_valid() && !has_producer) on_read(ExternalRead{OpIndex{i}, input, slot});
+                    const bool is_external = plan_slots.get(slot.raw())
+                                                 .match([](auto planned) noexcept { return planned->is_external; },
+                                                        [] noexcept { return false; });
+                    if (is_external && !has_producer) on_read(ExternalRead{OpIndex{i}, input, slot});
                 }
             }
         };

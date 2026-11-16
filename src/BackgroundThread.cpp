@@ -1334,11 +1334,14 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
                 }
             } else if (next_slot_raw < slot_cap) {
                 // First sight of an external storage, such as a parameter or
-                // a data-loader output.
+                // a data-loader output.  The birth holds the op of the first
+                // sight while the build runs, for the rule of a storage that
+                // a nest makes below, and the region gives an external slot
+                // the birth zero.
                 SlotId new_slot{next_slot_raw++};
                 input_slot = new_slot;
                 SlotInfo& slot_info = *local_slots.get(new_slot.raw()).expect("a new slot is below slot_cap");
-                slot_info.birth_op = OpIndex{0};
+                slot_info.birth_op = OpIndex{i};
                 slot_info.death_op = OpIndex{i};
                 slot_info.is_external = true;
                 slot_info.nbytes = input_span;
@@ -1388,6 +1391,16 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
                 for (auto slot_info : local_slots.get(entry->slot_id.raw())) {
                     if (slot_info->death_op < OpIndex{i}) slot_info->death_op = OpIndex{i};
                     slot_info->nbytes = ::fixy::max(slot_info->nbytes, output_span);
+                    // An op of the nest met the storage first, as an input,
+                    // and the op returns it with no read of its own.  A
+                    // storage that lived before the op reaches its nest only
+                    // through the inputs of the op, so the op made this
+                    // storage, as addmm makes the result that its nested
+                    // copy_ writes in place.  The storage is internal, and it
+                    // is born at its first sight.
+                    const bool is_made_in_the_nest = slot_info->is_external && entry->reader != OpIndex{i}
+                                                  && slot_info->birth_op.raw() >= nest_start;
+                    if (is_made_in_the_nest) slot_info->is_external = false;
                 }
                 if (entry->op_index.is_valid() && entry->op_index != OpIndex{i}) {
                     // The same bound as the data-flow edge above, with the
@@ -1440,7 +1453,8 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
     }
 
     // Each slot of the build becomes a TensorSlot of the region, in the
-    // order of the slot ids.  compute_memory_plan sets the offset later.
+    // order of the slot ids.  compute_memory_plan sets the offset later.  An
+    // external slot lives before the region, so its birth is op zero.
     uint32_t num_slots = ::fixy::min(next_slot_raw, slot_cap);
     const ::fixy::View<SlotInfo const> built_slots =
         local_slots.window(0, num_slots).expect("the slots of the build are below slot_cap");
@@ -1449,7 +1463,7 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
             SlotInfo const& info = *built_slots.get(slot_idx).expect("the slot of each position is built");
             return TensorSlot{.offset_bytes = 0,
                               .nbytes = info.nbytes,
-                              .birth_op = info.birth_op,
+                              .birth_op = info.is_external ? OpIndex{0} : info.birth_op,
                               .death_op = info.death_op,
                               .dtype = info.dtype,
                               .device_type = info.device_type,

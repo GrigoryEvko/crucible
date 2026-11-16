@@ -89,5 +89,6 @@ void test_op_nest_counts_the_open_records();
 // iteration (test_vigil_external.cpp).
 void test_external_follows_the_live_op();
 void test_views_of_an_external_bind_its_storage();
+void test_internal_slot_of_a_nest_keeps_its_pool_bytes();
 
 }  // namespace test_vigil

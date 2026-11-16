@@ -59,9 +59,12 @@ using divrig::NUM_OPS;
 }
 
 // The element of the batch that op 1 reads, when op 1 reads a view of the
-// batch, or zero when op 1 reads the output of op 0.
+// batch, or zero when op 1 reads the output of op 0.  kNestResult names the
+// shape of a nest: op 0, of depth 1, writes the new result R of op 1 in
+// place, as the copy_ of addmm, and op 1 reads the batch and returns R.
 constexpr uint32_t kOutputOfOp0 = 0;
 constexpr uint32_t kViewFirst = 4;
+constexpr uint32_t kNestResult = UINT32_MAX;
 
 // Op op_idx of iteration iter.  Op 0 reads the batch of the iteration, and
 // each other op reads the output of the op before it.  When op1_first is not
@@ -72,19 +75,28 @@ divrig::OpData op_reading_batch(uint32_t iter, uint32_t op_idx, uint32_t op1_fir
     made.entry.shape_hash = divrig::SHAPE[op_idx];
     made.entry.num_inputs = 1;
     made.entry.num_outputs = 1;
+    made.n_metas = 2;
+    if (op1_first == kNestResult && op_idx < 2) {
+        const crucible::TensorMeta result = meta_at(activation_offset(iter, 1));
+        made.metas.at(::fixy::index<0>()) = op_idx == 0 ? result : meta_at(batch_offset(iter));
+        made.metas.at(::fixy::index<1>()) = result;
+        return made;
+    }
     const bool is_view_read = op_idx == 1 && op1_first != kOutputOfOp0;
     made.metas.at(::fixy::index<0>()) = op_idx == 0  ? meta_at(batch_offset(iter))
                                       : is_view_read ? meta_at(batch_offset(iter), op1_first)
                                                      : meta_at(activation_offset(iter, op_idx - 1));
     made.metas.at(::fixy::index<1>()) = meta_at(activation_offset(iter, op_idx));
-    made.n_metas = 2;
     return made;
 }
 
 crucible::DispatchResult dispatch(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx,
                                   uint32_t op1_first = kOutputOfOp0) {
     const divrig::OpData made = op_reading_batch(iter, op_idx, op1_first);
-    return crucible::test::dispatch_synthetic(vigil, made.entry, made.metas, made.n_metas);
+    const crucible::OpDepth depth =
+        op1_first == kNestResult && op_idx == 0 ? crucible::OpDepth{1} : crucible::OpDepth{};
+    return vigil.dispatch_op(crucible::test::certify_synthetic_op(made.entry, made.metas, made.n_metas),
+                             crucible::ScopeHash{}, crucible::CallsiteHash{}, depth);
 }
 
 // Records two whole iterations and the head of a third, which publish a
@@ -147,6 +159,31 @@ void test_views_of_an_external_bind_its_storage() {
     }
 
     crucible::test::pass("  test_views_of_an_external_bind_its_storage: PASSED\n");
+}
+
+// Op 0 of depth 1 reads R before any op of the region writes it, and op 1
+// returns R.  R is a slot of the region, so the replay gives op 0 the bytes
+// of the pool for R, and the bind of the externals does not give the slot
+// the address of the live R.
+void test_internal_slot_of_a_nest_keeps_its_pool_bytes() {
+    using crucible::DispatchResult;
+    crucible::Vigil vigil;
+    const auto fg = vigil.mint_producer_context();
+    publish_and_align(vigil, kNestResult);
+
+    for (uint32_t iter = 4; iter < 7; ++iter) {
+        assert(dispatch(vigil, iter, 0, kNestResult).action == DispatchResult::Action::COMPILED);
+        const ::fixy::Option<::fixy::RunAddress> planned = vigil.input_ptr(fg, 0);
+        assert(planned.is_some() && "the pool holds the bytes of R");
+        assert(!(planned == ::fixy::mint_run_address(g_memory.view(), activation_offset(iter, 1)))
+               && "no bind gives the internal slot of R the address of the live R");
+        assert(dispatch(vigil, iter, 1, kNestResult).action == DispatchResult::Action::COMPILED);
+        assert(vigil.input_ptr(fg, 0) == batch_address(iter) && "the batch is still an external slot");
+        for (uint32_t op = 2; op < NUM_OPS; ++op)
+            assert(dispatch(vigil, iter, op, kNestResult).action == DispatchResult::Action::COMPILED);
+    }
+
+    crucible::test::pass("  test_internal_slot_of_a_nest_keeps_its_pool_bytes: PASSED\n");
 }
 
 }  // namespace test_vigil
