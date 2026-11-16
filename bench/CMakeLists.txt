@@ -158,3 +158,19 @@ if(_record_leaf_not_measured)
   message(STATUS "bench_record_leaf is disabled in this configuration, because ${_record_leaf_reasons}.")
   set_tests_properties(bench_record_leaf PROPERTIES DISABLED TRUE)
 endif()
+
+# The regression budget of the strided walks: the median time of each case
+# over the median time of its roof in the same run, against a budget for
+# each case.  A ratio does not change with the clock of the host.  The test
+# skips a case whose run drifts by more than 5%.  It measures the code of a
+# Release build, so each configuration that disables bench_record_leaf
+# disables it too.
+crucible_bench(bench_strided_budget)
+add_test(NAME bench_strided_budget COMMAND bench_strided_budget)
+set_tests_properties(bench_strided_budget PROPERTIES
+  TIMEOUT 300
+  ENVIRONMENT "CRUCIBLE_BENCH_JSON=0"
+  LABELS "bench;latency")
+if(_record_leaf_not_measured)
+  set_tests_properties(bench_strided_budget PROPERTIES DISABLED TRUE)
+endif()
