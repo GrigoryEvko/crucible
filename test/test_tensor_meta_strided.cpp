@@ -1,8 +1,8 @@
 // Tests of strided_view_of of crucible/TensorMeta.h: the strided view of a
 // tensor over the run of its slot in the memory plan.  The run starts at the
-// element at the zero index, so the view never reads storage_offset.  Each
-// refusal names one claim that the descriptor breaks.  The elements are
-// integers of 32 bits, so the test compares them with ==.
+// first element of the storage, so the view of a slice starts at its storage
+// offset.  Each refusal names one claim that the descriptor breaks.  The
+// elements are integers of 32 bits, so the test compares them with ==.
 
 #include <crucible/TensorMeta.h>
 #include <fixy/Core.h>
@@ -66,10 +66,7 @@ void views_of_descriptors(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<std::int64_t, 2> const turned_strides{1, 3};
     ::fixy::FixedArray<std::int64_t, 2> const row_strides{0, 1};
 
-    TensorMeta matrix = int_meta(sizes.view(), strides.view());
-    // The storage offset counts from the storage of PyTorch, which the plan
-    // does not hold, so the door does not read it.
-    matrix.storage_offset = 1000;
+    TensorMeta const matrix = int_meta(sizes.view(), strides.view());
     ::fixy::StridedView<std::int32_t> const dense =
         ::crucible::strided_view_of(matrix, storage).ok().expect("a dense matrix fits its slot");
     CRUCIBLE_TEST_ASSERT(test, dense.rank() == 2 && dense.count() == 6 && dense.is_dense());
@@ -93,6 +90,36 @@ void views_of_descriptors(::fixy::TestRunnerCtx const& test) noexcept {
         ::crucible::strided_view_of(int_meta(no_axes, no_axes), storage).ok().expect("a scalar fits its slot");
     CRUCIBLE_TEST_ASSERT(test, scalar.rank() == 0 && scalar.count() == 1);
     pass(test, "  views_of_descriptors: PASSED\n");
+}
+
+// Slices of the matrix {0, 1, 2}, {3, 4, 5} over the run of its storage.  A
+// slice keeps the slot of its base, so its view starts at its storage offset
+// and reads the elements of the base.
+void slices_at_an_offset(::fixy::TestRunnerCtx const& test) noexcept {
+    Elements values{0, 1, 2, 3, 4, 5};
+    ::fixy::View<std::int32_t> const storage{values.view()};
+    ::fixy::FixedArray<std::int64_t, 1> const row_sizes{3};
+    ::fixy::FixedArray<std::int64_t, 1> const row_strides{1};
+    ::fixy::FixedArray<std::int64_t, 1> const column_sizes{2};
+    ::fixy::FixedArray<std::int64_t, 1> const column_strides{3};
+
+    TensorMeta second_row = int_meta(row_sizes.view(), row_strides.view());
+    second_row.storage_offset = 3;
+    ::fixy::StridedView<std::int32_t> const row =
+        ::crucible::strided_view_of(second_row, storage).ok().expect("the second row fits the storage");
+    CRUCIBLE_TEST_ASSERT(test, walk_order(row) == (Elements{3, 4, 5, 0, 0, 0}));
+
+    TensorMeta second_column = int_meta(column_sizes.view(), column_strides.view());
+    second_column.storage_offset = 1;
+    ::fixy::StridedView<std::int32_t> const column =
+        ::crucible::strided_view_of(second_column, storage).ok().expect("the second column fits the storage");
+    CRUCIBLE_TEST_ASSERT(test, walk_order(column) == (Elements{1, 4, 0, 0, 0, 0}));
+
+    // A write through the view of the slice writes the storage of the base.
+    bool const is_walked = ::fixy::walk([](std::int32_t& cell) noexcept { cell = cell * 10; }, row).is_ok();
+    CRUCIBLE_TEST_ASSERT(test, is_walked);
+    CRUCIBLE_TEST_ASSERT(test, values == (Elements{0, 1, 2, 30, 40, 50}));
+    pass(test, "  slices_at_an_offset: PASSED\n");
 }
 
 // The refusal of the descriptor, or the value None when the door gives a
@@ -142,6 +169,14 @@ void refusals(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::View<std::int32_t> const short_storage = storage.window(0, 5).expect("five elements fit");
     CRUCIBLE_TEST_ASSERT(
         test, is_refused(int_meta(sizes.view(), strides.view()), short_storage, TensorViewRefusal::OutsideStorage));
+
+    // An offset that moves the last element past the storage, and a negative
+    // offset, refuse the view.
+    TensorMeta shifted = int_meta(sizes.view(), strides.view());
+    shifted.storage_offset = 1;
+    CRUCIBLE_TEST_ASSERT(test, is_refused(shifted, storage, TensorViewRefusal::OutsideStorage));
+    shifted.storage_offset = -1;
+    CRUCIBLE_TEST_ASSERT(test, is_refused(shifted, storage, TensorViewRefusal::OutsideStorage));
     CRUCIBLE_TEST_ASSERT(test, refusal_of(int_meta(sizes.view(), strides.view()), storage).is_none());
     pass(test, "  refusals: PASSED\n");
 }
@@ -170,6 +205,7 @@ void storage_formats(::fixy::TestRunnerCtx const& test) noexcept {
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     views_of_descriptors(test);
+    slices_at_an_offset(test);
     refusals(test);
     storage_formats(test);
     pass(test, "test_tensor_meta_strided: all tests passed\n");

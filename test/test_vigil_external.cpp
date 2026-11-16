@@ -10,7 +10,6 @@
 #include "vigil_rig.h"
 
 #include <crucible/Vigil.h>
-#include "tensor_data.h"
 #include "test_assert.h"
 #include "test_harness.h"
 
@@ -35,36 +34,76 @@ using divrig::NUM_OPS;
 // The offset of the output of op op of iteration iter.
 [[nodiscard]] uint32_t activation_offset(uint32_t iter, uint32_t op) noexcept { return 4096 + (iter * 16 + op) * 64; }
 
-[[nodiscard]] crucible::TensorMeta meta_at(uint32_t offset) {
+// A tensor of 16 floats less `first`, at element `first` of the storage at
+// the offset of g_memory.  A tensor past the first element of its storage is
+// a view.
+[[nodiscard]] crucible::TensorMeta meta_at(uint32_t offset, uint32_t first = 0) {
     crucible::TensorMeta meta{};
     meta.ndim = 1;
-    meta.sizes[0] = ::crucible::tensor_dim(16);
+    meta.sizes[0] = ::crucible::tensor_dim(16 - int64_t{first});
     meta.strides[0] = ::crucible::tensor_dim(1);
     meta.dtype = crucible::ScalarType::Float;
     meta.device_type = crucible::DeviceType::CPU;
     meta.device_idx = 0;
     meta.layout = crucible::Layout::Strided;
-    meta.data_ptr = crucible::external_data_ptr(&*g_memory.view().get(offset).expect("the offset is in the memory"));
+    meta.storage_offset = first;
+    if (first != 0) meta.flags = crucible::meta_flags::IS_VIEW;
+    meta.data_ptr = crucible::external_data_ptr(
+        &*g_memory.view().get(offset + first * sizeof(float)).expect("the offset is in the memory"));
     return meta;
 }
 
+// The address of the batch of iteration iter.
+[[nodiscard]] ::fixy::Option<::fixy::RunAddress> batch_address(uint32_t iter) {
+    return ::fixy::mint_run_address(g_memory.view(), batch_offset(iter));
+}
+
+// The element of the batch that op 1 reads, when op 1 reads a view of the
+// batch, or zero when op 1 reads the output of op 0.
+constexpr uint32_t kOutputOfOp0 = 0;
+constexpr uint32_t kViewFirst = 4;
+
 // Op op_idx of iteration iter.  Op 0 reads the batch of the iteration, and
-// each other op reads the output of the op before it.
-divrig::OpData op_reading_batch(uint32_t iter, uint32_t op_idx) {
+// each other op reads the output of the op before it.  When op1_first is not
+// zero, op 1 reads the view of the batch from element op1_first.
+divrig::OpData op_reading_batch(uint32_t iter, uint32_t op_idx, uint32_t op1_first) {
     divrig::OpData made;
     made.entry.schema_hash = divrig::SCHEMA[op_idx];
     made.entry.shape_hash = divrig::SHAPE[op_idx];
     made.entry.num_inputs = 1;
     made.entry.num_outputs = 1;
-    made.metas.at(::fixy::index<0>()) = meta_at(op_idx == 0 ? batch_offset(iter) : activation_offset(iter, op_idx - 1));
+    const bool is_view_read = op_idx == 1 && op1_first != kOutputOfOp0;
+    made.metas.at(::fixy::index<0>()) = op_idx == 0  ? meta_at(batch_offset(iter))
+                                      : is_view_read ? meta_at(batch_offset(iter), op1_first)
+                                                     : meta_at(activation_offset(iter, op_idx - 1));
     made.metas.at(::fixy::index<1>()) = meta_at(activation_offset(iter, op_idx));
     made.n_metas = 2;
     return made;
 }
 
-crucible::DispatchResult dispatch(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx) {
-    const divrig::OpData made = op_reading_batch(iter, op_idx);
+crucible::DispatchResult dispatch(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx,
+                                  uint32_t op1_first = kOutputOfOp0) {
+    const divrig::OpData made = op_reading_batch(iter, op_idx, op1_first);
     return crucible::test::dispatch_synthetic(vigil, made.entry, made.metas, made.n_metas);
+}
+
+// Records two whole iterations and the head of a third, which publish a
+// region, and aligns iteration 3 so that its op K replays.
+void publish_and_align(crucible::Vigil& vigil, uint32_t op1_first) {
+    using crucible::DispatchResult;
+    for (uint32_t iter = 0; iter < 2; ++iter) {
+        for (uint32_t op = 0; op < NUM_OPS; ++op)
+            assert(dispatch(vigil, iter, op, op1_first).action == DispatchResult::Action::RECORD);
+    }
+    for (uint32_t op = 0; op < K; ++op)
+        assert(dispatch(vigil, 2, op, op1_first).action == DispatchResult::Action::RECORD);
+    crucible::test::flush_and_wait_region_published(vigil);
+
+    for (uint32_t op = 0; op < K; ++op)
+        assert(dispatch(vigil, 3, op, op1_first).action == DispatchResult::Action::RECORD);
+    assert(vigil.context().is_compiled());
+    for (uint32_t op = K; op < NUM_OPS; ++op)
+        assert(dispatch(vigil, 3, op, op1_first).action == DispatchResult::Action::COMPILED);
 }
 
 }  // namespace
@@ -73,34 +112,41 @@ void test_external_follows_the_live_op() {
     using crucible::DispatchResult;
     crucible::Vigil vigil;
     const auto fg = vigil.mint_producer_context();
-
-    // Two whole iterations and the head of a third publish a region.
-    for (uint32_t iter = 0; iter < 2; ++iter) {
-        for (uint32_t op = 0; op < NUM_OPS; ++op)
-            assert(dispatch(vigil, iter, op).action == DispatchResult::Action::RECORD);
-    }
-    for (uint32_t op = 0; op < K; ++op)
-        assert(dispatch(vigil, 2, op).action == DispatchResult::Action::RECORD);
-    crucible::test::flush_and_wait_region_published(vigil);
-
-    // Iteration 3 aligns on its first K ops, and then replays.
-    for (uint32_t op = 0; op < K; ++op)
-        assert(dispatch(vigil, 3, op).action == DispatchResult::Action::RECORD);
-    assert(vigil.context().is_compiled());
-    for (uint32_t op = K; op < NUM_OPS; ++op)
-        assert(dispatch(vigil, 3, op).action == DispatchResult::Action::COMPILED);
+    publish_and_align(vigil, kOutputOfOp0);
 
     // Each later iteration reads a new batch, and the slot follows it.
     for (uint32_t iter = 4; iter < 7; ++iter) {
         assert(dispatch(vigil, iter, 0).action == DispatchResult::Action::COMPILED);
-        assert(crucible::test::host_ptr(vigil.input_ptr(fg, 0))
-                   == &*g_memory.view().get(batch_offset(iter)).expect("the offset is in the memory")
+        assert(vigil.input_ptr(fg, 0) == batch_address(iter)
                && "the external slot holds the address of the batch of the live op");
         for (uint32_t op = 1; op < NUM_OPS; ++op)
             assert(dispatch(vigil, iter, op).action == DispatchResult::Action::COMPILED);
     }
 
     crucible::test::pass("  test_external_follows_the_live_op: PASSED\n");
+}
+
+// Op 0 reads the batch, and op 1 reads the view of the batch from element 4.
+// The two reads have one external slot, the storage of the batch, so the
+// bind at each read gives the slot the address of the first byte of the
+// batch, and not the data pointer of the view.
+void test_views_of_an_external_bind_its_storage() {
+    using crucible::DispatchResult;
+    crucible::Vigil vigil;
+    const auto fg = vigil.mint_producer_context();
+    publish_and_align(vigil, kViewFirst);
+
+    for (uint32_t iter = 4; iter < 7; ++iter) {
+        assert(dispatch(vigil, iter, 0, kViewFirst).action == DispatchResult::Action::COMPILED);
+        assert(vigil.input_ptr(fg, 0) == batch_address(iter));
+        assert(dispatch(vigil, iter, 1, kViewFirst).action == DispatchResult::Action::COMPILED);
+        assert(vigil.input_ptr(fg, 0) == batch_address(iter)
+               && "the view binds the slot to the first byte of its storage");
+        for (uint32_t op = 2; op < NUM_OPS; ++op)
+            assert(dispatch(vigil, iter, op, kViewFirst).action == DispatchResult::Action::COMPILED);
+    }
+
+    crucible::test::pass("  test_views_of_an_external_bind_its_storage: PASSED\n");
 }
 
 }  // namespace test_vigil

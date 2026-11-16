@@ -932,28 +932,31 @@ private:
     // std::bit_ceil is undefined at 2^31, so the cap stops one power below.
     static constexpr uint32_t MAX_PTR_MAP_CAP = uint32_t{1} << 30;
 
-    // Open-addressing map from data_ptr to (op_index, output_port, slot_id).
-    // A slot counts as empty when slot.gen differs from map_gen_, so bumping
-    // map_gen_ clears the whole table in constant time and only the
-    // wrap-around every 255 calls needs a real memset.
+    // Open-addressing map from the storage of a tensor to the last op that
+    // wrote it, the output port of that op, the slot of the storage and the
+    // last op that read it.  A slot counts as empty when slot.gen differs
+    // from map_gen_, so bumping map_gen_ clears the whole table in constant
+    // time and only the wrap-around every 255 calls needs a real memset.
     //
-    // The key is an address observed from a foreign allocator, so the
-    // background thread treats it as an opaque cookie: hash and equality
-    // only, never an offset into an internal pool.
-    using PtrMapKey = ::fixy::Tagged<void*, ::fixy::tags::source::External>;
+    // The key is the storage_key of a tensor: the address of the first byte
+    // of its storage, which a foreign allocator gave.  The views of one
+    // storage at each offset give one key.  The map reads the key only for a
+    // hash and an equality, never as an offset into an internal pool.
+    using PtrMapKey = ::fixy::AddressKey;
 
     struct PtrSlot {
-        PtrMapKey key{};
+        PtrMapKey key = ::fixy::mint_address_key(static_cast<void const*>(nullptr));
         OpIndex op_index;
         SlotId slot_id;
+        // The last op that read the storage as an input.
+        OpIndex reader;
         uint8_t port = 0;
         uint8_t gen = 0;
-        ::fixy::FixedArray<uint8_t, 6> pad{};
+        ::fixy::FixedArray<uint8_t, 2> pad{};
     };
 
     static_assert(sizeof(PtrSlot) == 24, "PtrSlot should be 24 bytes");
-    static_assert(sizeof(PtrMapKey) == sizeof(void*), "Tagged<void*,External> must collapse to sizeof(void*) "
-                                                      "(regime-1 EBO) so PtrSlot stays at 24 bytes");
+    static_assert(sizeof(PtrMapKey) == sizeof(void*), "an AddressKey holds one word, so PtrSlot stays at 24 bytes");
 
     // The fields are the fields of TensorSlot from nbytes to is_external, in
     // the same order.  The slot build of build_trace_from copies each field
@@ -998,10 +1001,32 @@ private:
     // amortizes across iterations.
     void ensure_scratch_buffers(::foundation::effects::Alloc a, uint32_t total_inputs, uint32_t total_outputs);
 
+    // The bytes of the storage of a slot that the tensor reaches: from the
+    // first byte of the storage to the end of the extent of the tensor.  A
+    // slot holds the largest span of the tensors in it, so the view of each
+    // one fits the run of the slot.  The sum saturates.
+    [[nodiscard]] static uint64_t span_bytes_of_(const TensorMeta& meta) noexcept {
+        return ::fixy::saturating_add(storage_offset_bytes(meta),
+                                      compute_storage_nbytes_det(external_tensor_meta(meta)).peek().value());
+    }
+
     // The bucket of a key is the low half of the hash of its address key.
     // The address changes from run to run, so the map gives no order.
     [[nodiscard, gnu::const]] static uint32_t hash_ptr(PtrMapKey key) noexcept {
-        return static_cast<uint32_t>(::fixy::mint_address_key(key.value()).hash());
+        return static_cast<uint32_t>(key.hash());
+    }
+
+    // The entry of key in the map, or no entry when the map does not hold
+    // the key.  The probes stop at the first empty slot.
+    [[nodiscard]] static ::fixy::WeakRef<PtrSlot> ptr_map_find(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen,
+                                                               PtrMapKey key) noexcept {
+        const uint64_t bucket_idx = hash_ptr(key);
+        for (uint64_t probe = 0; probe < map.size(); probe++) {
+            PtrSlot& slot = map.at_masked(bucket_idx + probe);
+            if (slot.gen != gen) return {};
+            if (slot.key == key) return ::fixy::WeakRef<PtrSlot>{slot};
+        }
+        return {};
     }
 
     // The probes of the map start at the hash of the key, and the mask of
@@ -1017,6 +1042,7 @@ private:
                 slot.op_index = op_index;
                 slot.port = port;
                 slot.slot_id = slot_id;
+                slot.reader = OpIndex{};
                 slot.gen = gen;
                 return {.slot = ::fixy::WeakRef<PtrSlot>{slot},
                         .was_alias = false,
@@ -1024,7 +1050,7 @@ private:
                         .old_port = 0,
                         .old_slot = {}};
             }
-            if (slot.key.value() == key.value()) {
+            if (slot.key == key) {
                 InsertResult result{.slot = ::fixy::WeakRef<PtrSlot>{slot},
                                     .was_alias = (slot.op_index != op_index),
                                     .old_op = slot.op_index,
@@ -1047,11 +1073,12 @@ private:
     };
 
     [[nodiscard]] static PtrLookup ptr_map_lookup(::fixy::MaskedArray<PtrSlot> const& map, uint8_t gen, PtrMapKey key) {
-        if (key.value() == nullptr) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
+        if (key == ::fixy::mint_address_key(static_cast<void const*>(nullptr)))
+            return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
         const uint64_t bucket_idx = hash_ptr(key);
         for (uint64_t probe = 0; probe < map.size(); probe++) {
             auto& slot = map.at_masked(bucket_idx + probe);
-            if (slot.gen == gen && slot.key.value() == key.value())
+            if (slot.gen == gen && slot.key == key)
                 return {.op_index = slot.op_index, .slot_id = slot.slot_id, .port = slot.port};
             if (slot.gen != gen) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};  // empty → miss
         }

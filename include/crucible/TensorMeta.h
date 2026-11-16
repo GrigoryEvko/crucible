@@ -201,16 +201,58 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return TensorDevice{meta.device_type, meta.device_idx};
 }
 
-// The address of the bytes of the tensor on its device, or no address for a
-// tensor with no data pointer.  The front end gave the address, so the door
-// cannot prove that the bytes live.
-[[nodiscard]] inline ::fixy::Option<TensorData> data_address(const TensorMeta& meta) noexcept {
+// The count of bytes from the first byte of the storage of the tensor to its
+// element at the zero index: storage_offset elements of its dtype.  The data
+// pointer of a strided tensor of PyTorch is the first byte of its storage
+// plus this count.  A negative offset, which no tensor of PyTorch holds,
+// counts as zero, and the product saturates.
+[[nodiscard]] inline constexpr uint64_t storage_offset_bytes(const TensorMeta& meta) noexcept {
+    const uint64_t elements = meta.storage_offset < 0 ? uint64_t{0} : static_cast<uint64_t>(meta.storage_offset);
+    return ::fixy::saturating_mul(elements, uint64_t{element_size(meta.dtype).raw()});
+}
+
+// The key of the storage of the tensor: the key of the first byte of its
+// storage.  Two views of one storage give one key at each offset.  An address
+// of a storage can come back from the allocator for a new storage after a
+// free, so the key names a storage only while that storage lives.
+[[nodiscard]] inline ::fixy::AddressKey storage_key(const TensorMeta& meta) noexcept {
+    return ::fixy::mint_address_key(meta.data_ptr.value()).lower_by(storage_offset_bytes(meta));
+}
+
+namespace detail {
+
+// The address bytes below the data pointer of the tensor, on its device, or
+// no address for a tensor with no data pointer and for a count past the
+// largest offset of a pointer.  The front end gave the address, so the door
+// cannot prove that the bytes live.  The count is the offset of the element
+// at the zero index of a tensor of PyTorch from the first byte of its
+// storage, so the address below is in the same storage.
+[[nodiscard]] inline ::fixy::Option<TensorData> foreign_address_below(const TensorMeta& meta, uint64_t bytes) noexcept {
+    if (meta.data_ptr.value() == nullptr || bytes > uint64_t{PTRDIFF_MAX}) return ::fixy::none;
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the front end gave the data pointer of the tensor at the record of the op")
-    const ::fixy::Option<::fixy::RunAddress> address = ::fixy::mint_foreign_run_address(meta.data_ptr.value());
+    const ::fixy::Option<::fixy::RunAddress> address = ::fixy::mint_foreign_run_address(
+        static_cast<char*>(meta.data_ptr.value()) - static_cast<std::ptrdiff_t>(bytes));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return address.match(
         [&meta](::fixy::RunAddress found) noexcept { return ::fixy::some(TensorData{found, device_of(meta)}); },
         [] noexcept { return ::fixy::Option<TensorData>{::fixy::none}; });
+}
+
+}  // namespace detail
+
+// The address of the bytes of the tensor on its device, or no address for a
+// tensor with no data pointer.  The front end gave the address, so the door
+// cannot prove that the bytes live.
+[[nodiscard]] inline ::fixy::Option<TensorData> data_address(const TensorMeta& meta) noexcept {
+    return detail::foreign_address_below(meta, 0);
+}
+
+// The address of the first byte of the storage of the tensor on its device,
+// or no address for a tensor with no data pointer.  A slot of a memory plan
+// holds one storage, so the address of a slot is the address of its storage,
+// and a view at an offset starts storage_offset elements later.
+[[nodiscard]] inline ::fixy::Option<TensorData> storage_address(const TensorMeta& meta) noexcept {
+    return detail::foreign_address_below(meta, storage_offset_bytes(meta));
 }
 
 [[nodiscard]] inline constexpr GradFnHash grad_fn_hash(uint64_t hash) noexcept {
@@ -414,19 +456,18 @@ enum class TensorViewRefusal : uint8_t {
     // A stride below the rank is negative.  A strided view of the base holds
     // no negative stride.
     NegativeStride,
-    // An element of the tensor lies outside the storage, or a count of the
-    // sizes or of the span wraps.
+    // An element of the tensor lies outside the storage, the offset of the
+    // storage is negative, or a count of the sizes or of the span wraps.
     OutsideStorage,
 };
 
 // The strided view of the tensor of meta over storage, the run of its slot
-// in the memory plan, or the reason that the tensor has no view.  The run of
-// a slot starts at the data pointer of the tensor, the element at the zero
-// index, and the plan sizes it with compute_storage_nbytes, which reads the
-// sizes and the strides and not storage_offset.  So the element at the zero
-// index is the first element of storage, and the door does not read
-// storage_offset, which counts from the start of the storage of PyTorch.  The
-// view has the dynamic rank of the tensor.  O(ndim).
+// in the memory plan, or the reason that the tensor has no view.  A slot
+// holds one storage of PyTorch, and its run starts at the first byte of that
+// storage.  So the element at the zero index is element storage_offset of
+// storage, and a view of a slice at an offset reads the elements of its base.
+// The build of the slots sizes each slot to hold the offset and the extent of
+// each tensor in it.  The view has the dynamic rank of the tensor.  O(ndim).
 template <class T>
     requires TensorElement<T>
 [[nodiscard]] inline ::fixy::Result<::fixy::StridedView<T>, TensorViewRefusal>
@@ -448,7 +489,12 @@ strided_view_of(const TensorMeta& meta, ::fixy::View<T> storage) noexcept {
         sizes.view().window(0, meta.ndim).expect("the rank is at most kMaxTensorNDim");
     const ::fixy::View<const std::size_t> stride_lanes =
         strides.view().window(0, meta.ndim).expect("the rank is at most kMaxTensorNDim");
-    return ::fixy::mint_strided_view(storage, size_lanes, stride_lanes, 0).ok_or(TensorViewRefusal::OutsideStorage);
+    ::fixy::Option<std::size_t> offset = ::fixy::narrow<std::size_t>(meta.storage_offset);
+    if (offset.is_none()) return ::fixy::err(TensorViewRefusal::OutsideStorage);
+    return ::fixy::mint_strided_view(
+               storage, size_lanes, stride_lanes,
+               static_cast<::fixy::Option<std::size_t>&&>(offset).expect("the offset has a value"))
+        .ok_or(TensorViewRefusal::OutsideStorage);
 }
 
 }  // namespace crucible

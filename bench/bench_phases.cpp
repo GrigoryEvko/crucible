@@ -545,8 +545,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
                     if (m.data_ptr.value() != nullptr)
-                        (void)BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, m.data_ptr, OpIndex{i}, port,
-                                                               SlotId{0});
+                        (void)BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, crucible::storage_key(m),
+                                                               OpIndex{i}, port, SlotId{0});
                     ++port;
                 }
                 ++i;
@@ -557,7 +557,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             uint32_t dummy_edges = 0;
             for (const TraceEntry& te : ref_ops) {
                 for (const TensorMeta& m : te.input_metas()) {
-                    auto lookup = BackgroundThread::ptr_map_lookup(bg.scratch_map_, local_gen, m.data_ptr);
+                    auto lookup =
+                        BackgroundThread::ptr_map_lookup(bg.scratch_map_, local_gen, crucible::storage_key(m));
                     if (lookup.op_index.is_valid()) dummy_edges++;
                 }
             }
@@ -599,8 +600,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 for (const TensorMeta& m : te.output_metas()) {
                     const uint8_t this_port = port++;
                     if (m.data_ptr.value() == nullptr) continue;
-                    auto result = BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, m.data_ptr, OpIndex{i},
-                                                                   this_port, SlotId{0});
+                    auto result = BackgroundThread::ptr_map_insert(bg.scratch_map_, local_gen, crucible::storage_key(m),
+                                                                   OpIndex{i}, this_port, SlotId{0});
                     if (result.was_alias) aliases++;
                 }
                 ++i;

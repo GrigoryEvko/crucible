@@ -152,9 +152,10 @@ struct ReplayEngine {
         return ReplayStatus::MATCH;
     }
 
-    // The address of the data of one of the last matched operation's
-    // outputs.  It points into the pool, and the engine does not own the
-    // pool.  An output with no slot, or an external slot that its owner did
+    // The address of the slot of one of the last matched operation's
+    // outputs: the first byte of the storage of the output.  A view at an
+    // offset starts storage_offset elements later.  It points into the pool,
+    // and the engine does not own the pool.  An output with no slot, or an external slot that its owner did
     // not register, gives no address.  An op with no array of slot ids gives
     // the empty View, so the bound refuses each index of it.  The window
     // folds into the bound, so the read has no second check.  The member is

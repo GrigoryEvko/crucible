@@ -537,11 +537,14 @@ public:
             [] noexcept { return false; });
     }
 
-    // The pre-allocated data address of output j of the current op.  Valid
-    // only after dispatch_op returned COMPILED with a matching or complete
-    // status, which is what the minted view's precondition checks.  The
-    // context proves that the caller holds this Vigil's producer claim.  The
-    // pool gives the device of a slot (PoolAllocator::slot_data).
+    // The pre-allocated address of the slot of output j of the current op.
+    // A slot holds one storage, so the address is the first byte of the
+    // storage of the output, and a view at an offset starts storage_offset
+    // elements later (strided_view_of).  Valid only after dispatch_op
+    // returned COMPILED with a matching or complete status, which is what the
+    // minted view's precondition checks.  The context proves that the caller
+    // holds this Vigil's producer claim.  The pool gives the device of a slot
+    // (PoolAllocator::slot_data).  input_ptr gives the same for input j.
     //
     // Each address and each reference that the members that follow return
     // points into a member of this Vigil.  A temporary Vigil releases its
@@ -825,14 +828,17 @@ private:
         if (status == ReplayStatus::COMPLETE) next_external_read_ = 0;
     }
 
-    // Binds one external slot to the data of one input of the live op.  The
-    // guard matched the shape hash of the inputs, so the input is in the live
-    // op, and the test keeps each read in bounds when a hash collides.
+    // Binds one external slot to the storage of one input of the live op.  A
+    // slot holds one storage, so the slot takes the address of the first
+    // byte of the storage, and two views at different offsets of one storage
+    // bind the slot to one address.  The guard matched the shape hash of the
+    // inputs, so the input is in the live op, and the test keeps each read in
+    // bounds when a hash collides.
     [[gnu::noinline]] void bind_external_read_(const ValidatedOp& op, const ExternalRead& read,
                                                CrucibleContext::CompiledView const& compiled_view) {
         if (read.input >= op.entry().num_inputs) return;
         for (const TensorData data :
-             data_address(*op.metas().get(read.input).expect("the live op holds its inputs first")))
+             storage_address(*op.metas().get(read.input).expect("the live op holds its inputs first")))
             replay_.register_external(read.slot, data, compiled_view);
     }
 
@@ -1108,8 +1114,8 @@ private:
         return 0;
     }
 
-    // Walks the region's ops to recover each external slot's data address
-    // from the recorded tensor metadata, and lists each read of an external
+    // Walks the region's ops to recover the storage address of each external
+    // slot from the recorded tensor metadata, and lists each read of an external
     // for bind_external_inputs_.  The replay resumes at op resume_op, so the
     // cursor starts at the first read of that op or of a later op.  A read
     // of an earlier op of this iteration keeps the recorded address until
@@ -1135,7 +1141,7 @@ private:
                 for (auto const& pairs : ::fixy::zip(te.input_slot_ids(), te.input_metas()).ok()) {
                     for (auto [slot_id, meta] : pairs) {
                         if (*slot_id == target) {
-                            data = data_address(*meta);
+                            data = storage_address(*meta);
                             break;
                         }
                     }

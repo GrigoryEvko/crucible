@@ -267,7 +267,9 @@ CRUCIBLE_VESSEL_API uint32_t crucible_metalog_size(CrucibleHandle h) CRUCIBLE_VE
 
 // ── Compiled mode accessors ──────────────────────────────────────────
 
-// Pre-allocated output pointer for output j of the current op.
+// Pre-allocated output pointer for output j of the current op: the first
+// byte of the storage of the output.  A view at an offset starts
+// storage_offset elements later.
 // Valid only after dispatch returned COMPILED with MATCH/COMPLETE.
 CRUCIBLE_VESSEL_API void* crucible_output_ptr(CrucibleHandle h, uint16_t j) CRUCIBLE_VESSEL_NOEXCEPT;
 

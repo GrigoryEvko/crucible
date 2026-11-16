@@ -1144,6 +1144,15 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
     const ::fixy::View<Edge> local_edges = scratch_edges_.view();
     const uint8_t local_gen = map_gen_;
 
+    // The ops whose nest is open, for the rule of the same storage below.
+    // Each op pushes one mark, so the stack holds at most count marks.
+    struct NestMark {
+        uint32_t op = 0;
+        OpDepth depth{};
+    };
+    ::fixy::HeapArray<NestMark> nest_stack = ::fixy::mint_heap_array(a, count, NestMark{});
+    uint32_t nest_top = 0;
+
     // The fold object owns the seed, the per-op mix and the finalizer,
     // so this streaming producer cannot drift from the span producer in
     // MerkleDag.h.  Spelling the seed here instead is what used to make
@@ -1261,112 +1270,164 @@ BackgroundThread::build_trace_columns_(::foundation::effects::Alloc a, ::fixy::B
                         const TensorMeta& next_input =
                             *meta_run.get(next_off).expect("the copied run holds the metadata of each op");
                         ::fixy::prefetch<::fixy::PrefetchAccess::read, 1>(
-                            scratch_map_.at_masked(hash_ptr(next_input.data_ptr)));
+                            scratch_map_.at_masked(hash_ptr(storage_key(next_input))));
                     }
                     if (next_re.num_outputs > 0) {
                         const TensorMeta& next_output = *meta_run.get(next_off + next_re.num_inputs)
                                                              .expect("the copied run holds the metadata of each op");
                         ::fixy::prefetch<::fixy::PrefetchAccess::write, 1>(
-                            scratch_map_.at_masked(hash_ptr(next_output.data_ptr)));
+                            scratch_map_.at_masked(hash_ptr(storage_key(next_output))));
                     }
                 },
                 [] noexcept {});
+
+        // The first op of the nest of op i.  The record is in post-order, so
+        // the ops that op i called come just before it, each deeper than op
+        // i, and the op before them has the depth of op i or less.  The
+        // stack keeps the ops whose nest is open, with depths that do not
+        // decrease to its top.  O(1) amortized for each op.
+        while (nest_top > 0 && nest_stack.view().get(nest_top - 1).expect("the stack holds its top")->depth > te.depth)
+            --nest_top;
+        const uint32_t nest_start =
+            nest_top == 0 ? 0 : nest_stack.view().get(nest_top - 1).expect("the stack holds its top")->op + 1;
+        *nest_stack.view().get(nest_top).expect("the stack holds at most one mark for each op") =
+            NestMark{.op = i, .depth = te.depth};
+        ++nest_top;
 
         for (uint16_t j = 0; j < te.num_inputs(); j++) {
             const TensorMeta& input_meta = *input_metas.get(j).expect("the window holds each input of the op");
             OpIndex& producer = *producers.get(j).expect("the window holds each input of the op");
             SlotId& input_slot = *input_slot_ids.get(j).expect("the window holds each input of the op");
-            const PtrMapKey input_key = input_meta.data_ptr;
-            auto lookup = ptr_map_lookup(scratch_map_, local_gen, input_key);
-            producer = lookup.op_index;
-            if (lookup.op_index.is_valid()) {
-                input_slot = lookup.slot_id;
-                // The edge scratch holds an edge for each input and each
-                // output, and the check of the element ends the process in
-                // each build when the count reaches its end.  The check
-                // does not depend on the contract evaluation semantic,
-                // which is a per-target build option.
-                *local_edges.get(num_edges).expect("the edge scratch holds an edge for each input and each output") =
-                    Edge{.src = OpIndex{lookup.op_index.raw()},
-                         .dst = OpIndex{i},
-                         .src_port = lookup.port,
-                         .dst_port = static_cast<uint8_t>(j),
-                         .kind = EdgeKind::DATA_FLOW,
-                         .pad = 0};
-                ++num_edges;
-                // A slot id at or past slot_cap names no slot of this call.
-                for (auto slot_info : local_slots.get(lookup.slot_id.raw())) {
-                    if (slot_info->death_op < OpIndex{i}) slot_info->death_op = OpIndex{i};
+            producer = OpIndex{};
+            input_slot = SlotId{};
+            if (input_meta.data_ptr.value() == nullptr) continue;
+            const PtrMapKey input_key = storage_key(input_meta);
+            const uint64_t input_span = span_bytes_of_(input_meta);
+            const ::fixy::WeakRef<PtrSlot> entry = ptr_map_find(scratch_map_, local_gen, input_key);
+            if (entry) {
+                // A storage that an op of the region wrote, or an external
+                // storage that an op read before.  The op is a reader of the
+                // storage, so an output of the op on it is the same storage.
+                entry->reader = OpIndex{i};
+                producer = entry->op_index;
+                input_slot = entry->slot_id;
+                if (entry->op_index.is_valid()) {
+                    // The edge scratch holds an edge for each input and each
+                    // output, and the check of the element ends the process
+                    // in each build when the count reaches its end.  The
+                    // check does not depend on the contract evaluation
+                    // semantic, which is a per-target build option.
+                    *local_edges.get(num_edges).expect(
+                        "the edge scratch holds an edge for each input and each output") =
+                        Edge{.src = OpIndex{entry->op_index.raw()},
+                             .dst = OpIndex{i},
+                             .src_port = entry->port,
+                             .dst_port = static_cast<uint8_t>(j),
+                             .kind = EdgeKind::DATA_FLOW,
+                             .pad = 0};
+                    ++num_edges;
                 }
-            } else if (input_key.value() != nullptr && next_slot_raw < slot_cap) {
-                // First sight of an external tensor, such as a parameter
-                // or a data-loader output.
+                // A slot id at or past slot_cap names no slot of this call.
+                for (auto slot_info : local_slots.get(entry->slot_id.raw())) {
+                    if (slot_info->death_op < OpIndex{i}) slot_info->death_op = OpIndex{i};
+                    slot_info->nbytes = ::fixy::max(slot_info->nbytes, input_span);
+                }
+            } else if (next_slot_raw < slot_cap) {
+                // First sight of an external storage, such as a parameter or
+                // a data-loader output.
                 SlotId new_slot{next_slot_raw++};
                 input_slot = new_slot;
                 SlotInfo& slot_info = *local_slots.get(new_slot.raw()).expect("a new slot is below slot_cap");
                 slot_info.birth_op = OpIndex{0};
                 slot_info.death_op = OpIndex{i};
                 slot_info.is_external = true;
-                slot_info.nbytes = compute_storage_nbytes_det(external_tensor_meta(input_meta)).peek().value();
+                slot_info.nbytes = input_span;
                 slot_info.dtype = input_meta.dtype;
                 slot_info.device_type = input_meta.device_type;
                 slot_info.device_idx = input_meta.device_idx;
                 slot_info.layout = input_meta.layout;
-                (void)ptr_map_insert(scratch_map_, local_gen, input_key, OpIndex{}, 0, new_slot);
-            } else {
-                input_slot = SlotId{};
+                const InsertResult inserted =
+                    ptr_map_insert(scratch_map_, local_gen, input_key, OpIndex{}, 0, new_slot);
+                if (inserted.slot) inserted.slot->reader = OpIndex{i};
             }
         }
 
         for (uint16_t j = 0; j < te.num_outputs(); j++) {
             const TensorMeta& output_meta = *output_metas.get(j).expect("the window holds each output of the op");
             SlotId& output_slot = *output_slot_ids.get(j).expect("the window holds each output of the op");
-            const PtrMapKey output_key = output_meta.data_ptr;
-            if (output_key.value() == nullptr) {
-                output_slot = SlotId{};
-                continue;
-            }
+            output_slot = SlotId{};
+            if (output_meta.data_ptr.value() == nullptr) continue;
+            const PtrMapKey output_key = storage_key(output_meta);
+            const uint64_t output_span = span_bytes_of_(output_meta);
+            const ::fixy::WeakRef<PtrSlot> entry = ptr_map_find(scratch_map_, local_gen, output_key);
 
-            auto result =
-                ptr_map_insert(scratch_map_, local_gen, output_key, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
-
-            if (result.was_alias) {
-                output_slot = result.old_slot;
+            // The key of a storage is the address of its first byte, and the
+            // allocator can give that address to a new storage after a free.
+            // So a key in the map names the same storage only when the op
+            // shows that the storage lives across it: the op reads the
+            // storage, which keeps it alive during the op (an in-place op,
+            // an out= op, a view or an alias of an input); the output is a
+            // view, which never owns a new storage; or an op in the nest of
+            // the op, or the op itself, wrote it, as addmm writes the result
+            // that linear returns.  Each other output at a known key is a new
+            // storage at the address of a dead one, and takes a slot of its
+            // own.  The mutable flag of the op tells nothing more: an in-place
+            // or out= op reads the tensor that it writes, and an op such as
+            // batch norm writes its running statistics in place and returns
+            // new tensors.  An input at the address of a dead storage still
+            // reads the slot of the dead storage, because a read shows no
+            // allocation.
+            const bool is_written_in_the_nest =
+                entry && entry->op_index.is_valid() && entry->op_index.raw() >= nest_start;
+            const bool is_same_storage = entry && entry->slot_id.is_valid()
+                                      && (entry->reader == OpIndex{i} || (output_meta.flags & meta_flags::IS_VIEW) != 0
+                                          || is_written_in_the_nest);
+            if (is_same_storage) {
+                output_slot = entry->slot_id;
                 // A slot id at or past slot_cap names no slot of this call.
-                for (auto slot_info : local_slots.get(result.old_slot.raw())) {
+                for (auto slot_info : local_slots.get(entry->slot_id.raw())) {
                     if (slot_info->death_op < OpIndex{i}) slot_info->death_op = OpIndex{i};
-                    const uint64_t output_nbytes =
-                        compute_storage_nbytes_det(external_tensor_meta(output_meta)).peek().value();
-                    slot_info->nbytes = ::fixy::max(slot_info->nbytes, output_nbytes);
+                    slot_info->nbytes = ::fixy::max(slot_info->nbytes, output_span);
                 }
-                if (result.old_op.is_valid()) {
+                if (entry->op_index.is_valid() && entry->op_index != OpIndex{i}) {
                     // The same bound as the data-flow edge above, with the
                     // same check of the element.
                     *local_edges.get(num_edges).expect(
                         "the edge scratch holds an edge for each input and each output") =
-                        Edge{.src = OpIndex{result.old_op.raw()},
+                        Edge{.src = OpIndex{entry->op_index.raw()},
                              .dst = OpIndex{i},
-                             .src_port = result.old_port,
+                             .src_port = entry->port,
                              .dst_port = static_cast<uint8_t>(j),
                              .kind = EdgeKind::ALIAS,
                              .pad = 0};
                     ++num_edges;
                 }
-            } else if (next_slot_raw < slot_cap) {
-                SlotId new_slot{next_slot_raw++};
+                entry->op_index = OpIndex{i};
+                entry->port = static_cast<uint8_t>(j);
+                continue;
+            }
+
+            if (next_slot_raw < slot_cap) {
+                const SlotId new_slot{next_slot_raw++};
                 SlotInfo& slot_info = *local_slots.get(new_slot.raw()).expect("a new slot is below slot_cap");
                 slot_info.birth_op = OpIndex{i};
                 slot_info.death_op = OpIndex{i};
                 slot_info.is_external = false;
-                slot_info.nbytes = compute_storage_nbytes_det(external_tensor_meta(output_meta)).peek().value();
+                slot_info.nbytes = output_span;
                 slot_info.dtype = output_meta.dtype;
                 slot_info.device_type = output_meta.device_type;
                 slot_info.device_idx = output_meta.device_idx;
                 slot_info.layout = output_meta.layout;
                 output_slot = new_slot;
-                if (result.slot) result.slot->slot_id = new_slot;
+            }
+            if (entry) {
+                entry->op_index = OpIndex{i};
+                entry->port = static_cast<uint8_t>(j);
+                entry->slot_id = output_slot;
+                entry->reader = OpIndex{};
             } else {
-                output_slot = SlotId{};
+                (void)ptr_map_insert(scratch_map_, local_gen, output_key, OpIndex{i}, static_cast<uint8_t>(j),
+                                     output_slot);
             }
         }
 

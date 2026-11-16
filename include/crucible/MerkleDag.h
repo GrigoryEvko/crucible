@@ -710,12 +710,11 @@ private:
     // output folds its metadata, so the shape of an output that no later op
     // reads is part of the hash too.
     //
-    // No slot id folds.  The build gives a slot to each address that it sees,
-    // and an allocator that gives a new tensor the address of a dead one
-    // gives the new tensor the slot of the dead one.  So a slot id depends on
-    // the allocator, and the hash must not.  The producer of an input is the
-    // last op that wrote its address, which is the same op for each
-    // allocator.
+    // No slot id folds.  The producer of each input gives the wiring, and a
+    // slot id adds only the number that the build gave a storage.  The build
+    // keys a storage on the address of its first byte, which the allocator
+    // gives, so the hash keeps out each value that the build derives from an
+    // address.
     //
     // The arrays of the inputs hold one count (TraceEntry::set_inputs), so
     // one index reads the two.
