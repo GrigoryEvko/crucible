@@ -374,4 +374,81 @@ struct UncheckedTensorMeta {
     return ::fixy::Option<TensorMeta>::some(meta);
 }
 
+// The element type of a dtype, for each dtype that has a C++ type of the same
+// bits: the dtype of T, or Undefined.  A storage format of the base has the
+// dtype of storage_scalar_type (crucible/Types.h).  A bool is no element of a
+// view of a plan, because a byte of the plan can hold a value other than 0
+// and 1.  A dtype with no C++ type of its own, such as ComplexFloat, has no
+// element type here.
+template <class T>
+inline constexpr ScalarType scalar_type_of = ScalarType::Undefined;
+template <::fixy::StorageFloat T>
+inline constexpr ScalarType scalar_type_of<T> = storage_scalar_type<T>;
+template <>
+inline constexpr ScalarType scalar_type_of<uint8_t> = ScalarType::Byte;
+template <>
+inline constexpr ScalarType scalar_type_of<int8_t> = ScalarType::Char;
+template <>
+inline constexpr ScalarType scalar_type_of<int16_t> = ScalarType::Short;
+template <>
+inline constexpr ScalarType scalar_type_of<int32_t> = ScalarType::Int;
+template <>
+inline constexpr ScalarType scalar_type_of<int64_t> = ScalarType::Long;
+template <>
+inline constexpr ScalarType scalar_type_of<float> = ScalarType::Float;
+template <>
+inline constexpr ScalarType scalar_type_of<double> = ScalarType::Double;
+
+// An element type of a strided view of a tensor: a type with a dtype.
+template <class T>
+concept TensorElement = scalar_type_of<T> != ScalarType::Undefined;
+
+// The reason that strided_view_of gives no view.
+enum class TensorViewRefusal : uint8_t {
+    // The layout of the tensor is not Strided.
+    NotStrided,
+    // The dtype of the tensor is not the dtype of the element type.
+    ElementType,
+    // A size below the rank is negative.
+    NegativeSize,
+    // A stride below the rank is negative.  A strided view of the base holds
+    // no negative stride.
+    NegativeStride,
+    // An element of the tensor lies outside the storage, or a count of the
+    // sizes or of the span wraps.
+    OutsideStorage,
+};
+
+// The strided view of the tensor of meta over storage, the run of its slot
+// in the memory plan, or the reason that the tensor has no view.  The run of
+// a slot starts at the data pointer of the tensor, the element at the zero
+// index, and the plan sizes it with compute_storage_nbytes, which reads the
+// sizes and the strides and not storage_offset.  So the element at the zero
+// index is the first element of storage, and the door does not read
+// storage_offset, which counts from the start of the storage of PyTorch.  The
+// view has the dynamic rank of the tensor.  O(ndim).
+template <class T>
+    requires TensorElement<T>
+[[nodiscard]] inline ::fixy::Result<::fixy::StridedView<T>, TensorViewRefusal>
+strided_view_of(const TensorMeta& meta, ::fixy::View<T> storage) noexcept {
+    if (meta.layout != Layout::Strided) return ::fixy::err(TensorViewRefusal::NotStrided);
+    if (meta.dtype != scalar_type_of<T>) return ::fixy::err(TensorViewRefusal::ElementType);
+    ::fixy::FixedArray<std::size_t, kMaxTensorNDim> sizes{};
+    ::fixy::FixedArray<std::size_t, kMaxTensorNDim> strides{};
+    for (const TensorDimArray::LaneIndex lane : sizes.indices()) {
+        if (lane.raw() >= meta.ndim) break;
+        ::fixy::Option<std::size_t> size = ::fixy::narrow<std::size_t>(raw_tensor_dim(meta.sizes[lane.raw()]));
+        ::fixy::Option<std::size_t> stride = ::fixy::narrow<std::size_t>(raw_tensor_dim(meta.strides[lane.raw()]));
+        if (size.is_none()) return ::fixy::err(TensorViewRefusal::NegativeSize);
+        if (stride.is_none()) return ::fixy::err(TensorViewRefusal::NegativeStride);
+        sizes.at(lane) = static_cast<::fixy::Option<std::size_t>&&>(size).expect("the size has a value");
+        strides.at(lane) = static_cast<::fixy::Option<std::size_t>&&>(stride).expect("the stride has a value");
+    }
+    const ::fixy::View<const std::size_t> size_lanes =
+        sizes.view().window(0, meta.ndim).expect("the rank is at most kMaxTensorNDim");
+    const ::fixy::View<const std::size_t> stride_lanes =
+        strides.view().window(0, meta.ndim).expect("the rank is at most kMaxTensorNDim");
+    return ::fixy::mint_strided_view(storage, size_lanes, stride_lanes, 0).ok_or(TensorViewRefusal::OutsideStorage);
+}
+
 }  // namespace crucible

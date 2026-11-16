@@ -578,6 +578,9 @@ crucible_test(test_computation_cache_federation)
 crucible_test(test_vessel_api_typed)
 crucible_test(test_vessel_entry_slots)
 crucible_test(test_storage_nbytes_simd)
+# The strided view of a tensor over the run of its slot: a dense matrix, a
+# transpose, a broadcast row and a scalar, and each refusal of the door.
+crucible_test(test_tensor_meta_strided)
 crucible_test(test_trace_ring_pop_batch)
 # Each group of tests that drives a Vigil is a source file of its own, so
 # that no translation unit compiles all of them.
@@ -2103,6 +2106,16 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_above_max
 crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<8>\\(\\), unsigned char>\\(255\\)")
+
+# The strided view of a tensor takes only an element type with a dtype: a
+# bool of the plan can hold a byte other than 0 and 1, and a struct of the
+# bits of a dtype is no element of it.
+crucible_neg_compile_test(neg_tensor_meta_strided_bool_element
+  "no matching function for call to .strided_view_of\\(const crucible::TensorMeta&, foundation::core::View<bool>\\)."
+  "required for the satisfaction of .TensorElement<T>. \\[with T = bool\\]")
+crucible_neg_compile_test(neg_tensor_meta_strided_dtype_without_type
+  "no matching function for call to .strided_view_of\\(const crucible::TensorMeta&, foundation::core::View<.anonymous.::FloatPair>\\)."
+  "required for the satisfaction of .TensorElement<T>. \\[with T = <unnamed>::FloatPair\\]")
 
 # read_meta dtype gate (sibling of the ndim and kernel_id gates) — ScalarType
 # dtype byte typed gate at the read_meta()
