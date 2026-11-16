@@ -5413,6 +5413,12 @@ fixy_neg_compile_test(neg_thread_name_holds_a_zero_byte
 # deadline comes only from a reader of CLOCK_MONOTONIC.
 fixy_test(test_os_futex)
 
+# test_os_spin_hint reads the arms of a core from its feature words, and it
+# waits on a word with each arm of the core of the run.  A store of a second
+# thread ends each wait before its deadline, and a deadline ends a wait on a
+# word that does not change.
+fixy_test(test_os_spin_hint)
+
 # test_os_sanitizer_routes closes a descriptor through the door in one
 # thread, and closes the next descriptor with the same number through the C
 # library in a second thread.  It also unmaps a region through the door in

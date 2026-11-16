@@ -28,6 +28,8 @@ constexpr std::size_t kAuxvCapacity = 4096;
             return AT_PAGESZ;
         case AuxiliaryEntry::minimum_signal_stack:
             return AT_MINSIGSTKSZ;
+        case AuxiliaryEntry::hardware_caps2:
+            return AT_HWCAP2;
         default:
             return AT_NULL;
     }

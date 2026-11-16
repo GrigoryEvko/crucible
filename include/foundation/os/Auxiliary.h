@@ -29,6 +29,10 @@ enum class AuxiliaryEntry : std::uint8_t {
     // The smallest stack in bytes on which the kernel can deliver a signal
     // (AT_MINSIGSTKSZ).  An older kernel does not give this entry.
     minimum_signal_stack,
+    // The second word of the features of the core (AT_HWCAP2).  The bits
+    // are different for each architecture.  The spin-hint door reads the bit
+    // of FEAT_WFxT of aarch64 in it.
+    hardware_caps2,
 };
 
 // The value of ENTRY.  The Option is empty when the file cannot be read, and
