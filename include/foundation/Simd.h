@@ -17,6 +17,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/Report.h>
 
 #include <bit>
 #include <concepts>
@@ -101,8 +102,16 @@ public:
     // the builtins of a SIMD arm.
     [[nodiscard]] constexpr raw_type raw() const noexcept { return m_; }
     // The index is int, matching the raw builtin's own subscript type, so
-    // no conversion appears on the access.
-    [[nodiscard]] constexpr bool operator[](int lane) const noexcept { return m_[lane] != 0; }
+    // no conversion appears on the access.  A lane outside the mask ends the
+    // process in each build, because the builtin subscript reads past the
+    // vector.  The optimizer folds the test for a constant lane and for the
+    // lane of a loop below the count.
+    [[nodiscard]] constexpr bool operator[](int lane) const noexcept {
+        if (lane < 0 || lane >= Lanes) [[unlikely]] {
+            ::foundation::core::fatal("a read of lane {} of a mask of {} lanes", lane, Lanes);
+        }
+        return m_[lane] != 0;
+    }
 
     // The logical forms below do not short-circuit.  Both operands are
     // masks that have already been evaluated.
@@ -181,7 +190,14 @@ public:
               return raw_type{static_cast<ElementType>(other.v_[Lane])...};
           }(std::make_integer_sequence<int, Lanes>{})) {}
 
-    [[nodiscard]] constexpr ElementType operator[](int lane) const noexcept { return v_[lane]; }
+    // A lane outside the vector ends the process in each build, as the
+    // subscript of a mask does.
+    [[nodiscard]] constexpr ElementType operator[](int lane) const noexcept {
+        if (lane < 0 || lane >= Lanes) [[unlikely]] {
+            ::foundation::core::fatal("a read of lane {} of a vector of {} lanes", lane, Lanes);
+        }
+        return v_[lane];
+    }
 
     // On signed integer lanes, the add, the subtract, the multiply and the
     // negate wrap modulo two to the width of the lane, with no overflow

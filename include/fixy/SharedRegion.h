@@ -69,6 +69,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
@@ -256,7 +257,12 @@ public:
     [[nodiscard]] constexpr span_type cspan() const noexcept { return span_; }
     [[nodiscard]] constexpr std::size_t size() const noexcept { return span_.size(); }
     [[nodiscard]] constexpr bool empty() const noexcept { return span_.empty(); }
-    [[nodiscard]] constexpr T const& operator[](std::size_t index) const noexcept { return span_[index]; }
+    // The index is checked in each build.  The bounds check of the standard
+    // library is on only in Debug.
+    [[nodiscard]] constexpr T const& operator[](std::size_t index) const noexcept {
+        CRUCIBLE_PRE(index < size());
+        return span_[index];
+    }
     [[nodiscard]] constexpr T const* begin() const noexcept { return span_.data(); }
     [[nodiscard]] constexpr T const* end() const noexcept { return span_.data() + span_.size(); }
 };

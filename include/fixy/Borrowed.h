@@ -371,24 +371,32 @@ public:
     [[nodiscard]] constexpr bool empty() const noexcept { return span_.empty(); }
     [[nodiscard]] constexpr T* begin() const noexcept { return span_.data(); }
     [[nodiscard]] constexpr T* end() const noexcept { return span_.data() + span_.size(); }
-    // These carry no contract clause.  A precondition on a constexpr
-    // member forces its predicate to be a constant expression when the
-    // member is called during constant evaluation, which the check file
-    // of this header does, and the compiler rejects that.  The index invariant
-    // stands unchecked, guarded only by the standard library's own
-    // debug-mode bounds overlay.
-    [[nodiscard]] constexpr T& front() const noexcept { return span_.front(); }
-    [[nodiscard]] constexpr T& back() const noexcept { return span_.back(); }
-    [[nodiscard]] constexpr T& operator[](std::size_t i) const noexcept { return span_[i]; }
+    // Each access checks its index in each build.  CRUCIBLE_PRE checks in a
+    // constant evaluation too, so the check file of this header calls these
+    // members there.  The bounds check of the standard library is on only in
+    // Debug, so it is no check of a Release build.
+    [[nodiscard]] constexpr T& front() const noexcept {
+        CRUCIBLE_PRE(!empty());
+        return span_.front();
+    }
+    [[nodiscard]] constexpr T& back() const noexcept {
+        CRUCIBLE_PRE(!empty());
+        return span_.back();
+    }
+    [[nodiscard]] constexpr T& operator[](std::size_t i) const noexcept {
+        CRUCIBLE_PRE(i < size());
+        return span_[i];
+    }
 
     [[nodiscard]] constexpr span_type as_span() const noexcept { return span_; }
 
     // Slicing carries the owner tag and the brand through.  Reaching
     // for the bare span and slicing that instead would drop both and
-    // produce an untagged view of the same bytes.  The caller owes the
-    // invariant that offset plus count stays within size, unchecked
-    // here for the reason given above the element accessors.
+    // produce an untagged view of the same bytes.  The window must lie in
+    // the borrow, and the check holds in each build, as the check of the
+    // element accessors does.  The form of the check cannot overflow.
     [[nodiscard]] constexpr Borrowed subview(std::size_t offset, std::size_t count) const noexcept {
+        CRUCIBLE_PRE(offset <= size() && count <= size() - offset);
         return Borrowed{detail::borrow_mint_t{}, span_.subspan(offset, count)};
     }
 

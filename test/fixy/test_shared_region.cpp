@@ -88,6 +88,11 @@ void test_a_read_sees_the_region() {
         sum += value;
     CRUCIBLE_TEST_REQUIRE(sum == 75);
 
+    // The subscript checks its index in each build, the release build too,
+    // so a read past the end ends the process.  The probe runs the read in a
+    // child process.
+    CRUCIBLE_TEST_REQUIRE(::crucible::test::aborts([&read] { (void)read[read.size()]; }));
+
     // The read names the instance it was taken against, and the share
     // it stands on is the guard's.
     static_assert(::foundation::brand::SameBrand<decltype(read), decltype(*guard)>);

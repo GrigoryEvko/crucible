@@ -118,6 +118,16 @@ int check_views_over_a_vector() {
     if (!weak || *weak != 5) return 14;
     weak.reset();
     if (weak.has_value()) return 15;
+
+    // Each accessor checks its index or its window in each build, the release
+    // build too, so a read past the borrow ends the process.  The bounds check
+    // of the standard library is on only in Debug.  The probe runs each read
+    // in a child process.
+    auto const nothing = whole.subview(5, 0);
+    if (!aborts([&] { (void)whole[whole.size()]; })) return 16;
+    if (!aborts([&] { (void)nothing.front(); })) return 17;
+    if (!aborts([&] { (void)nothing.back(); })) return 18;
+    if (!aborts([&] { (void)whole.subview(4, 2); })) return 19;
     return 0;
 }
 

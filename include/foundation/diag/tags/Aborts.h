@@ -206,42 +206,32 @@ struct BitsInvariantViolation : tag_base {
 struct BorrowedBoundsViolation : tag_base {
     static constexpr tag_text_literal name = "BorrowedBoundsViolation";
     static constexpr tag_text_literal description = "fixy::Borrowed<T, Source> (include/fixy/Borrowed.h) received "
-                                                    "an accessor call outside its bounds.  Its accessors carry no "
-                                                    "contract clause and forward to std::span, whose behavior is "
-                                                    "undefined outside the bounds.  Concrete failure modes: (a) "
-                                                    "operator[](i) where i >= size(); (b) subview(offset, count) "
-                                                    "where offset + count > size(); (c) front() or back() on an "
-                                                    "empty Borrowed.  In "
-                                                    "every case the consumer reads memory belonging to whatever "
-                                                    "follows the source object — common consequences are torn "
-                                                    "reads against a sibling field or a SIGBUS at the end of the "
-                                                    "Source's mapped region.  The lifetime tag prevents use-after-"
-                                                    "destruction of the source; this diagnostic covers the bounds "
-                                                    "axis the lifetime gate is silent on.";
+                                                    "an accessor call outside its bounds.  Each accessor checks its "
+                                                    "bounds with CRUCIBLE_PRE in each build, so the call ends the "
+                                                    "process at the contract.  The failure modes: (a) operator[](i) "
+                                                    "where i >= size(), (b) subview(offset, count) where offset + "
+                                                    "count > size(), and (c) front() or back() on an empty Borrowed.  "
+                                                    "The lifetime tag prevents a use after the end of the source, "
+                                                    "and this diagnostic covers the bounds, which the lifetime gate "
+                                                    "does not check.";
     static constexpr tag_text_literal remediation = "Audit the indexing site for missing size()-comparisons.  The "
                                                     "canonical Borrowed iteration idiom uses the range-based for "
                                                     "or std::ranges algorithms which derive bounds from "
                                                     "begin() / end() — operator[] and subview() are escape hatches "
                                                     "for index-arithmetic call sites that already proved the "
                                                     "in-range invariant by other means.  Permanent fix: rewrite "
-                                                    "the indexing site through size()-aware iteration, or add a "
-                                                    "CRUCIBLE_PRE(i < size()) ahead of the operator[] call (the "
-                                                    "pre catches at consteval AND under enforce semantic at "
-                                                    "runtime — see foundation/contracts/Pre.h).  For subview: "
-                                                    "compare offset + count with size() before the call.";
+                                                    "the indexing site through size()-aware iteration, or compare "
+                                                    "the index with size() before the operator[] call.  For "
+                                                    "subview: compare offset + count with size() before the call.";
 
     static constexpr Severity severity = Severity::Fatal;
     static constexpr tag_text_literal why_this_matters =
-        "fixy::Borrowed<T, Source> forwards operator[], subview(), front() "
-        "and back() to std::span with no contract clause "
-        "(include/fixy/Borrowed.h).  The lifetime tag prevents "
-        "use-after-destruction of the source; this diagnostic covers "
-        "the bounds axis the lifetime gate is silent on.  An out-of-"
-        "bounds operator[] reads memory belonging to whatever follows "
-        "the source — typical consequences: torn read against a sibling "
-        "field, SIGBUS at the end of the Source's mapped region, or "
-        "(under ASAN) a heap-buffer-overflow report rooted at the "
-        "indexing site rather than the missing size() guard.";
+        "Without the check, an operator[] of fixy::Borrowed<T, Source> "
+        "outside its bounds reads the memory that follows the source: a "
+        "torn read of a sibling field, or a SIGBUS at the end of the mapped "
+        "region of the Source.  The bounds check of std::span is on only "
+        "in Debug, so each accessor checks its bounds with CRUCIBLE_PRE in "
+        "each build (include/fixy/Borrowed.h).";
     static constexpr tag_text_literal symptom_pattern = "Index-arithmetic call sites using operator[] / subview that "
                                                         "rely on caller-side size() comparison — refactoring breaks "
                                                         "the comparison without breaking the indexing.  A subview with "

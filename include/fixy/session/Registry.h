@@ -141,6 +141,7 @@
 //                that choice.  Null: that choice has no note.
 
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -247,7 +248,11 @@ struct static_run {
     const T* data = nullptr;
     std::size_t length = 0;
 
-    [[nodiscard]] constexpr const T& operator[](std::size_t index) const noexcept { return data[index]; }
+    // The index is checked in each build and in a constant evaluation.
+    [[nodiscard]] constexpr const T& operator[](std::size_t index) const noexcept {
+        CRUCIBLE_PRE(index < length);
+        return data[index];
+    }
     [[nodiscard]] constexpr std::size_t size() const noexcept { return length; }
     [[nodiscard]] constexpr bool empty() const noexcept { return length == 0; }
     [[nodiscard]] constexpr const T* begin() const noexcept { return data; }

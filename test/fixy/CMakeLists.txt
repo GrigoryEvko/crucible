@@ -1445,6 +1445,10 @@ fixy_test(test_splice_access_attacks)
 fixy_test(test_owned_region test_owned_region.cpp test_owned_region_split.cpp test_owned_region_every_total_0.cpp
   test_owned_region_every_total_1.cpp test_owned_region_every_total_2.cpp)
 fixy_test(test_borrowed)
+# Each subscript of the base checks its index in each build, and each check
+# ends the process in a child process of expect_dies, in the release preset
+# too.
+fixy_test(test_base_subscript_checks)
 fixy_test(test_scoped_view)
 fixy_test(test_machine)
 # A machine that a move or a transition emptied refuses each read, each
