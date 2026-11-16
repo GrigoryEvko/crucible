@@ -3254,8 +3254,16 @@ foundation_test(test_core_frame)
 # copy, a frame door takes an owner only by move, and a second frame of one
 # sum in an arm is a write of the sum, which the rule borrow-match refuses.
 foundation_neg_compile_test(neg_core_view_mut_copied
-  "use of deleted function .foundation::core::ViewMut<T, Brand>::ViewMut\\(const foundation::core::ViewMut<T, Brand>&\\)"
+  "use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\)"
   "a ViewMut is the one writer of its run: a copy would be a second writer")
+# A split takes its ViewMut by move, so its parts are the only writers of the
+# run.  A split of a named ViewMut and of a const one do not compile.
+foundation_neg_compile_test(neg_core_view_mut_split_of_named
+  "use of deleted function .void foundation::core::split_at\\(ViewMut<T, Brand, Extent>&, std::size_t\\)"
+  "a split takes the ViewMut by move: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_view_mut_split_of_const
+  "use of deleted function .void foundation::core::split_chunks\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
+  "a const ViewMut writes nothing, so it gives no writer of a part")
 foundation_neg_compile_test(neg_core_with_mut_named_owner
   "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Owner = FixedArray<int, 4>&"
   "with_mut takes the owner into its frame and gives it back: pass std::move\\(owner\\)")
@@ -3411,7 +3419,7 @@ foundation_neg_compile_test(neg_core_strided_dynamic_to_static
 # unique view does not copy.
 foundation_neg_compile_test(neg_core_strided_view_mut_of_view
   "no matching function for call to .mint_strided_view_mut\\(foundation::core::View<int, 6>"
-  ".foundation::core::View<int, 6>. is not derived from .foundation::core::ViewMut<T, Brand>.")
+  ".foundation::core::View<int, 6>. is not derived from .foundation::core::ViewMut<T, Brand, Extent>.")
 foundation_neg_compile_test(neg_core_strided_view_mut_copies
   "use of deleted function"
   "a StridedViewMut is the one writer of its elements: a copy would be a second writer")

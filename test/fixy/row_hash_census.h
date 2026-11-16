@@ -1020,6 +1020,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::ViewMut,
      "the unique borrow of the run of an owner in a frame door: it owns nothing, it lives inside the body of the "
      "frame, and it makes no claim about what the elements hold"},
+    {^^::foundation::core::ViewMutChunks,
+     "the chunks of a split of a unique borrow: it owns nothing, it lives inside the body of the frame, and it makes "
+     "no claim about what the elements hold"},
     {^^::foundation::core::StridedViewMut,
      "the unique borrow of the elements of the run of a frame at their strides: it owns nothing, it lives inside the "
      "body of the frame, and it makes no claim about what the elements hold"},

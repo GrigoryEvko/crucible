@@ -490,35 +490,77 @@ template <std::size_t Extent, class T>
 // ViewMut does not copy, so a body cannot hold two ViewMuts of one frame.  A
 // move leaves the source with its run, and the rule use-after-move refuses a
 // later use of the source.  The move constructor and the destructor are
-// trivial, so the ABI passes a ViewMut in two registers.  The seal makes the
-// move assignment user-provided, so std::bit_cast builds no ViewMut.
+// trivial, so the ABI passes a ViewMut in two registers, and a ViewMut of a
+// fixed extent in one.  The seal makes the move assignment user-provided, so
+// std::bit_cast builds no ViewMut.
 //
 //   size(), for (x : view)   as a View gives them
 //   get(position)            the element as an Option<Ref<T, Brand>>, with the
 //                            brand of the frame, or no value at or past the
 //                            count: one compare
 //   view()                   the plain View of the run, with no brand
+//   split_at(std::move(view), offset)
+//                            the parts [0, offset) and [offset, size()), each a
+//                            ViewMut of a dynamic extent, or no value when the
+//                            offset is past the count
+//   split_at<Offset>(std::move(view))
+//                            the same two parts of a ViewMut of a fixed
+//                            extent, each of a fixed extent, with no check
+//   split_chunks(std::move(view), width)
+//                            the range of the parts of width elements, and a
+//                            last part of the rest
+//
+// The splits are free functions.  A member function whose return type names
+// ViewMut would be part of the members that the walk of a linear payload
+// reads (foundation/Linear.h), and its type depends on that walk.
+//
+// A ViewMut<T, Brand, N> holds exactly N elements, as a View<T, N> does, and
+// it converts to the ViewMut<T, Brand> of the same run.  The frame door of a
+// FixedArray gives the fixed extent.
+//
+// THE SPLIT
+//   A split takes the parent by move, so the parts are the only writers of
+//   the run, and no two parts share an element.  Each part keeps the brand of
+//   its parent.  So two parts of one split prove no difference to a door of
+//   a kernel: a copy between them takes the memmove, and write_each takes the
+//   loop that the compiler guards with an alias check.  Each path is correct
+//   for two runs that do not overlap.  A fresh brand for each part would let
+//   the doors take the restrict path, and it is a later step.  The split of
+//   a named ViewMut and of a const one do not compile.
 //
 // A const reference to a ViewMut is a shared borrow that keeps the brand of
 // the frame.  It reads the run, and it does not write it.  A door of a kernel
 // reads its inputs through such a reference, so the brands tell it that two
 // runs do not overlap (THE ALIAS PROOF of Frame.h).
-template <class T, ::foundation::brand::IsBrand Brand>
-    requires ViewElement<T> && (!std::is_const_v<T>)
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent = dynamic_extent>
+    requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
 class [[nodiscard]] ViewMut final {
     T* first_ = nullptr;
-    std::size_t count_ = 0;
+    [[no_unique_address]] detail::ViewCount<Extent> count_{};
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    template <class U, ::foundation::brand::IsBrand OtherBrand, std::size_t OtherExtent>
+        requires ViewElement<U> && (!std::is_const_v<U>) && ViewExtent<U, OtherExtent>
+    friend class ViewMut;
 
 public:
     using element_type = T;
     using brand_type = Brand;
+    static constexpr std::size_t extent = Extent;
 
     // The run of an owner that a frame door holds, with the key that only
     // FrameDoor builds.  The owner gave the View, so the View bounds the
     // count and holds a pointer that is not null for each count above zero.
-    constexpr ViewMut(detail::FrameKey const& /*key*/, View<T> run) noexcept
-        : first_{first_of_(detail::ViewDoor::key(), run)}, count_{run.size()} {}
+    constexpr ViewMut(detail::FrameKey const& /*key*/, View<T, Extent> run) noexcept
+        : first_{first_of_(detail::ViewDoor::key(), run)} {
+        if constexpr (Extent == dynamic_extent) count_.count = run.size();
+    }
+
+    // The ViewMut of the same run with a dynamic extent.  The source moves
+    // in, so the run keeps one writer.
+    template <std::size_t OtherExtent>
+        requires(Extent == dynamic_extent && OtherExtent != dynamic_extent)
+    constexpr ViewMut(ViewMut<T, Brand, OtherExtent>&& other) noexcept : first_{other.first_}, count_{OtherExtent} {}
 
     ViewMut(ViewMut const&) = delete("a ViewMut is the one writer of its run: a copy would be a second writer");
     ViewMut& operator=(ViewMut const&) = delete("a ViewMut is the one writer of its run: a copy would be a second "
@@ -537,7 +579,7 @@ public:
     // The View of the run bounds the count, so the optimizer reads that
     // bound in each build, as size() of a View does.
     [[nodiscard]] constexpr std::size_t size() const noexcept {
-        std::size_t const count = count_;
+        std::size_t const count = count_.value();
         [[assume(count <= max_view_count(sizeof(T)))]];
         return count;
     }
@@ -566,29 +608,147 @@ public:
 
     // The plain View of the run, for an operation that takes a View, such as
     // fill().  The View has no brand, so it proves no difference of two runs.
-    [[nodiscard]] constexpr View<T> view() & noexcept { return View<T>{detail::ViewDoor::key(), first_, size()}; }
-    [[nodiscard]] constexpr View<T const> view() const& noexcept {
-        return View<T const>{detail::ViewDoor::key(), first_, size()};
+    // It has the extent of the ViewMut.
+    [[nodiscard]] constexpr View<T, Extent> view() & noexcept {
+        if constexpr (Extent == dynamic_extent) {
+            return View<T>{detail::ViewDoor::key(), first_, size()};
+        } else {
+            return View<T, Extent>{detail::ViewDoor::key(), first_};
+        }
+    }
+    [[nodiscard]] constexpr View<T const, Extent> view() const& noexcept {
+        if constexpr (Extent == dynamic_extent) {
+            return View<T const>{detail::ViewDoor::key(), first_, size()};
+        } else {
+            return View<T const, Extent>{detail::ViewDoor::key(), first_};
+        }
     }
 };
+
+// The range of the parts of a split into chunks (THE SPLIT): next() gives the
+// next part, from the first element, and no value after the last part.  Each
+// call gives each part one time, so the range gives no second writer of a
+// part.  The range does not copy, and it holds the borrow of the run that is
+// left.
+template <class T, ::foundation::brand::IsBrand Brand>
+class [[nodiscard]] ViewMutChunks final {
+    T* next_ = nullptr;
+    std::size_t rest_ = 0;
+    std::size_t width_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+public:
+    // The chunks of width elements of run, with the key that only FrameDoor
+    // builds.  The width is above zero.
+    constexpr ViewMutChunks(detail::FrameKey const& /*key*/, View<T> run, std::size_t width) noexcept
+        : next_{first_of_(detail::ViewDoor::key(), run)}, rest_{run.size()}, width_{width} {}
+
+    ViewMutChunks(ViewMutChunks const&) = delete("a copy of the range would give each part a second time");
+    ViewMutChunks& operator=(ViewMutChunks const&) = delete("a copy of the range would give each part a second time");
+    constexpr ViewMutChunks(ViewMutChunks&&) noexcept = default;
+    constexpr ViewMutChunks& operator=(ViewMutChunks&&) noexcept = default;
+    ~ViewMutChunks() = default;
+
+    // The count of the parts that next() still gives.
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return rest_ / width_ + (rest_ % width_ != 0 ? 1 : 0); }
+
+    // The next part, of width elements, or of the rest when fewer are left,
+    // or no value after the last part.  Complexity: O(1).
+    [[nodiscard]] constexpr Option<ViewMut<T, Brand>> next() & noexcept {
+        if (rest_ == 0) return Option<ViewMut<T, Brand>>{none};
+        std::size_t const count = rest_ < width_ ? rest_ : width_;
+        T* const first = next_;
+        next_ += count;
+        rest_ -= count;
+        return Option<ViewMut<T, Brand>>::some(
+            ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{detail::ViewDoor::key(), first, count}});
+    }
+};
+
+// The parts [0, offset) and [offset, size()) of the run of whole, by THE
+// SPLIT, or no value when the offset is past the count.  Each part has a
+// dynamic extent and the brand of whole.  Complexity: O(1).
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr Option<Record<ViewMut<T, Brand>, ViewMut<T, Brand>>> split_at(ViewMut<T, Brand, Extent>&& whole,
+                                                                                      std::size_t offset) noexcept {
+    using Parts = Record<ViewMut<T, Brand>, ViewMut<T, Brand>>;
+    std::size_t const count = whole.size();
+    if (offset > count) [[unlikely]] {
+        return Option<Parts>{none};
+    }
+    T* const first = first_of_(detail::ViewDoor::key(), whole);
+    return Option<Parts>::some(Parts{
+        ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{detail::ViewDoor::key(), first, offset}},
+        ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{detail::ViewDoor::key(), first + offset, count - offset}}});
+}
+
+// The parts [0, Offset) and [Offset, Extent) of the run of a fixed extent of
+// whole, by THE SPLIT.  The type proves the offset inside the run, so the
+// split has no check, and each part has a fixed extent and the brand of
+// whole.  Complexity: O(1).
+template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    requires(Extent != dynamic_extent && Offset > 0 && Offset < Extent)
+[[nodiscard]] constexpr Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>
+split_at(ViewMut<T, Brand, Extent>&& whole) noexcept {
+    T* const first = first_of_(detail::ViewDoor::key(), whole);
+    return Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>{
+        ViewMut<T, Brand, Offset>{detail::FrameDoor::key(), View<T, Offset>{detail::ViewDoor::key(), first}},
+        ViewMut<T, Brand, Extent - Offset>{detail::FrameDoor::key(),
+                                           View<T, Extent - Offset>{detail::ViewDoor::key(), first + Offset}}};
+}
+
+// The range of the parts of width elements of the run of whole, from the
+// first element, and a last part of the size() % width elements when that
+// count is not zero, by THE SPLIT.  Each part has a dynamic extent and the
+// brand of whole.  A width of zero ends the process.  Complexity: O(1), and
+// O(1) for each part.
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr ViewMutChunks<T, Brand> split_chunks(ViewMut<T, Brand, Extent>&& whole,
+                                                             std::size_t width) noexcept {
+    if (width == 0) [[unlikely]] {
+        fatal("a split of a ViewMut into chunks of zero elements");
+    }
+    return ViewMutChunks<T, Brand>{detail::FrameDoor::key(), View<T>{whole.view()}, width};
+}
+
+// A named ViewMut stays with the caller, so the parts of its split would be
+// second writers of its run.  A const ViewMut writes nothing, so it gives no
+// writer of a part.
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+void split_at(ViewMut<T, Brand, Extent>&,
+              std::size_t) = delete("a split takes the ViewMut by move: pass std::move(view)");
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+void split_at(ViewMut<T, Brand, Extent> const&,
+              std::size_t) = delete("a const ViewMut writes nothing, so it gives no writer of a part");
+template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+void split_at(ViewMut<T, Brand, Extent>&) = delete("a split takes the ViewMut by move: pass std::move(view)");
+template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+void split_at(ViewMut<T, Brand, Extent> const&) =
+    delete("a const ViewMut writes nothing, so it gives no writer of a part");
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+void split_chunks(ViewMut<T, Brand, Extent>&,
+                  std::size_t) = delete("a split takes the ViewMut by move: pass std::move(view)");
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+void split_chunks(ViewMut<T, Brand, Extent> const&,
+                  std::size_t) = delete("a const ViewMut writes nothing, so it gives no writer of a part");
 
 namespace detail {
 
 // The body of each frame door of an owner of the Region family.  body gets
-// the ViewMut of run with the brand of the frame, and the door gives held
-// back: alone for a body that gives void, and after the result in a Record
-// for each other body.  held lives in the frame of the door, and run is the
-// run of held.  The body runs before the Record moves held, because a braced
-// list runs its parts in order.
-template <class Brand, class Owner, class T, class Body>
-[[nodiscard]] constexpr frame_return_t<std::invoke_result_t<Body&&, ViewMut<T, Brand>>, Owner>
-give_run_back_(Owner& held, View<T> run, Body&& body) noexcept {
-    using Given = std::invoke_result_t<Body&&, ViewMut<T, Brand>>;
+// the ViewMut of run with the brand of the frame and the extent of run, and
+// the door gives held back: alone for a body that gives void, and after the
+// result in a Record for each other body.  held lives in the frame of the
+// door, and run is the run of held.  The body runs before the Record moves
+// held, because a braced list runs its parts in order.
+template <class Brand, class Owner, class T, std::size_t Extent, class Body>
+[[nodiscard]] constexpr frame_return_t<std::invoke_result_t<Body&&, ViewMut<T, Brand, Extent>>, Owner>
+give_run_back_(Owner& held, View<T, Extent> run, Body&& body) noexcept {
+    using Given = std::invoke_result_t<Body&&, ViewMut<T, Brand, Extent>>;
     if constexpr (std::is_void_v<Given>) {
-        static_cast<Body&&>(body)(ViewMut<T, Brand>{FrameDoor::key(), run});
+        static_cast<Body&&>(body)(ViewMut<T, Brand, Extent>{FrameDoor::key(), run});
         return static_cast<Owner&&>(held);
     } else {
-        return frame_return_t<Given, Owner>{static_cast<Body&&>(body)(ViewMut<T, Brand>{FrameDoor::key(), run}),
+        return frame_return_t<Given, Owner>{static_cast<Body&&>(body)(ViewMut<T, Brand, Extent>{FrameDoor::key(), run}),
                                             static_cast<Owner&&>(held)};
     }
 }
@@ -597,16 +757,17 @@ give_run_back_(Owner& held, View<T> run, Body&& body) noexcept {
 
 // The body of a frame door of an owner whose elements are T: it takes the
 // ViewMut of the brand of the frame with no throw, and its result leaves the
-// frame (FrameResult of Choice.h).
-template <class Body, class T, class Brand>
-concept FrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand>>
-                 && FrameResult<std::invoke_result_t<Body&&, ViewMut<T, Brand>>, Brand>;
+// frame (FrameResult of Choice.h).  Extent is the extent of the run of the
+// owner.
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept FrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
+                 && FrameResult<std::invoke_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>;
 
 // A body whose result does not leave the frame: the refused twin of each
 // door binds to it.
-template <class Body, class T, class Brand>
-concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand>>
-                        && (!FrameResult<std::invoke_result_t<Body&&, ViewMut<T, Brand>>, Brand>);
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
+                        && (!FrameResult<std::invoke_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>);
 
 // ── The position of a run inside a run ─────────────────────────────────
 
@@ -1322,9 +1483,10 @@ template <class T, class Op, class... Elements>
 // One brand proves no difference, so the copy is the memmove of
 // copy(View, View).  The counts can differ, so the copy gives a Result, with
 // LengthMismatch when they differ, and the copy then writes nothing.
-template <class T, class Brand, class SourceBrand>
+template <class T, class Brand, std::size_t Extent, class SourceBrand, std::size_t SourceExtent>
     requires RegionCopyElement<T>
-[[nodiscard]] Result<Unit, LengthMismatch> copy(ViewMut<T, Brand> dst, ViewMut<T, SourceBrand> const& src) noexcept {
+[[nodiscard]] Result<Unit, LengthMismatch> copy(ViewMut<T, Brand, Extent> dst,
+                                                ViewMut<T, SourceBrand, SourceExtent> const& src) noexcept {
     if (dst.size() != src.size()) return err(LengthMismatch{});
     void* const target = first_of_(detail::ViewDoor::key(), dst);
     void const* const source = first_of_(detail::ViewDoor::key(), src);
@@ -1338,9 +1500,9 @@ template <class T, class Brand, class SourceBrand>
 
 // Copies the elements of a View into a ViewMut.  A View has no brand, so the
 // copy is one memmove.
-template <class T, class Brand>
+template <class T, class Brand, std::size_t Extent>
     requires RegionCopyElement<T>
-[[nodiscard]] Result<Unit, LengthMismatch> copy(ViewMut<T, Brand> dst,
+[[nodiscard]] Result<Unit, LengthMismatch> copy(ViewMut<T, Brand, Extent> dst,
                                                 std::type_identity_t<View<T const>> src) noexcept {
     if (dst.size() != src.size()) return err(LengthMismatch{});
     __builtin_memmove(first_of_(detail::ViewDoor::key(), dst), first_of_(detail::ViewDoor::key(), src),
@@ -1356,9 +1518,10 @@ template <class T, class Brand>
 // two loops give the same values, because the
 // loop of plain pointers reads each input at a position before it writes out
 // at that position.  Complexity: O(out.size()).
-template <class T, class Brand, class Op, class... Inputs>
+template <class T, class Brand, std::size_t Extent, class Op, class... Inputs>
     requires KernelOp<Op, T, Inputs...>
-[[nodiscard]] Result<Unit, LengthMismatch> write_each(ViewMut<T, Brand> out, Op op, Inputs const&... inputs) noexcept {
+[[nodiscard]] Result<Unit, LengthMismatch> write_each(ViewMut<T, Brand, Extent> out, Op op,
+                                                      Inputs const&... inputs) noexcept {
     std::size_t const count = out.size();
     if (((inputs.size() != count) || ...)) return err(LengthMismatch{});
     T* const target = first_of_(detail::ViewDoor::key(), out);

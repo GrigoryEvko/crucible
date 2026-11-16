@@ -951,22 +951,34 @@ template <class T, std::size_t Align = alignof(T), class Marker>
 template <class Owner>
 concept ArrayFrameOwner = ::foundation::reflect::IsInstanceOfAny<Owner, ^^FixedArray, ^^HeapArray, ^^MaskedArray>;
 
+namespace detail {
+
+// The extent of the run of an array in a frame door: the extent of its
+// view().  A FixedArray of N elements gives N, and each other array gives the
+// dynamic extent.
+template <class Owner>
+inline constexpr std::size_t frame_extent_v = decltype(std::declval<Owner&>().view())::extent;
+
+}  // namespace detail
+
 // The frame door of an array.  The array moves into the frame, body gets the
 // ViewMut of its elements, and the door gives the array back: alone for a
 // body that gives void, and after the result in a Record for each other body.
-// The pack refuses each explicit argument, so no caller names the brand of
-// the frame.  A HeapArray and a MaskedArray move a pointer and a count in and
-// out.  A FixedArray copies its N elements in and out, and the optimizer
-// removes the two copies only for a small array.  Complexity: O(1) for a heap
-// array, O(N) for a FixedArray, and the cost of the body.
+// The ViewMut of a FixedArray has the fixed extent N.  The pack refuses each
+// explicit argument, so no caller names the brand of the frame.  A HeapArray
+// and a MaskedArray move a pointer and a count in and out.  A FixedArray
+// copies its N elements in and out, and the optimizer removes the two copies
+// only for a small array.  Complexity: O(1) for a heap array, O(N) for a
+// FixedArray, and the cost of the body.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-         && ArrayFrameOwner<Owner> && FrameBody<Body, typename Owner::element_type, Fresh>
+         && ArrayFrameOwner<Owner>
+         && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
 [[nodiscard]] constexpr detail::frame_return_t<
-    std::invoke_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
+    std::invoke_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
-    View<typename Owner::element_type> const run = held.view();
+    View<typename Owner::element_type, detail::frame_extent_v<Owner>> const run = held.view();
     return detail::give_run_back_<Fresh>(held, run, static_cast<Body&&>(body));
 }
 
@@ -974,7 +986,8 @@ with_mut(Owner&& owner, Body&& body) noexcept {
 // to this overload, so the refusal gives its reason.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-             && ArrayFrameOwner<Owner> && RefusedFrameBody<Body, typename Owner::element_type, Fresh>
+             && ArrayFrameOwner<Owner>
+             && RefusedFrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
 void with_mut(Owner&& owner, Body&& body) = delete(
     "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
     "the frame: give a plain value");

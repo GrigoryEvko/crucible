@@ -34,6 +34,9 @@ using ::foundation::core::OneOf;
 using ::foundation::core::Option;
 using ::foundation::core::Result;
 using ::foundation::core::View;
+using ::foundation::core::split_at;
+using ::foundation::core::split_chunks;
+using ::foundation::core::ViewMut;
 using ::foundation::core::with_mut;
 
 [[nodiscard]] ::foundation::effects::Alloc allocation() noexcept {
@@ -213,37 +216,6 @@ void test_one_of() {
     assert(index == 1 && other.is<LengthMismatch>());
 }
 
-// The frames of two call sites have two brands, and each unique borrow of a
-// frame has the brand of that frame.  A ViewMut does not copy, its move and
-// its end are trivial, and its assignment is not, so the ABI passes it in two
-// registers and std::bit_cast builds none.
-void test_brands_and_shape() {
-    FixedArray<int, 2> outer{1, 2};
-    FixedArray<int, 2> inner{3, 4};
-    outer = with_mut(std::move(outer), [&inner](auto outer_view) noexcept {
-        inner = with_mut(std::move(inner), [&outer_view](auto inner_view) noexcept {
-            using Outer = std::remove_cvref_t<decltype(outer_view)>;
-            using Inner = std::remove_cvref_t<decltype(inner_view)>;
-            static_assert(!std::is_same_v<typename Outer::brand_type, typename Inner::brand_type>);
-            static_assert(!std::is_copy_constructible_v<Inner> && std::is_trivially_move_constructible_v<Inner>);
-            static_assert(std::is_trivially_destructible_v<Inner> && !std::is_trivially_copyable_v<Inner>);
-            static_assert(sizeof(Inner) == 2 * sizeof(void*));
-            for (int& element : inner_view) {
-                element += sum_of(outer_view);
-            }
-        });
-    });
-    assert(sum_of(inner) == 3 + 4 + 2 * 3);
-}
-
-// The ops of the doors of a kernel.  Each holds no state.
-struct AddOp final {
-    int operator()(int const& left, int const& right) const noexcept { return left + right; }
-};
-struct TwiceOp final {
-    int operator()(int const& value) const noexcept { return 2 * value; }
-};
-
 // True when each element of a run holds the value that expected gives for its
 // position.
 template <class Run, class Expected>
@@ -255,6 +227,100 @@ template <class Run, class Expected>
     }
     return position == run.size();
 }
+
+// The frames of two call sites have two brands, and each unique borrow of a
+// frame has the brand of that frame.  A ViewMut does not copy, its move and
+// its end are trivial, and its assignment is not, so the ABI passes it in two
+// registers and std::bit_cast builds none.  The ViewMut of a FixedArray has
+// the fixed extent of the array, and the ABI passes it in one register.
+void test_brands_and_shape() {
+    FixedArray<int, 2> outer{1, 2};
+    HeapArray<int> inner = ::foundation::core::mint_heap_array(allocation(), 2, 3);
+    outer = with_mut(std::move(outer), [&inner](auto outer_view) noexcept {
+        inner = with_mut(std::move(inner), [&outer_view](auto inner_view) noexcept {
+            using Outer = std::remove_cvref_t<decltype(outer_view)>;
+            using Inner = std::remove_cvref_t<decltype(inner_view)>;
+            static_assert(!std::is_same_v<typename Outer::brand_type, typename Inner::brand_type>);
+            static_assert(!std::is_copy_constructible_v<Inner> && std::is_trivially_move_constructible_v<Inner>);
+            static_assert(std::is_trivially_destructible_v<Inner> && !std::is_trivially_copyable_v<Inner>);
+            static_assert(sizeof(Inner) == 2 * sizeof(void*));
+            static_assert(Outer::extent == 2 && sizeof(Outer) == sizeof(void*));
+            static_assert(!std::is_copy_constructible_v<Outer> && std::is_trivially_move_constructible_v<Outer>);
+            for (int& element : inner_view) {
+                element += sum_of(outer_view);
+            }
+        });
+    });
+    assert(sum_of(inner) == 3 + 3 + 2 * 3);
+}
+
+// A split at an offset gives the two parts of the run, each with the brand of
+// the frame, and a write through each part lands in its own elements of the
+// owner.  An offset past the count gives no value, and the offsets zero and
+// the count give an empty part.  The split of a ViewMut of a fixed extent at
+// a constant offset gives two parts of fixed extents, and a fixed part
+// converts to the ViewMut of a dynamic extent.  A split into chunks gives
+// each chunk one time, and a last chunk of the rest.
+void test_splits() {
+    HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), 10, 0);
+    run = with_mut(std::move(run), [](auto whole) noexcept {
+        using Whole = std::remove_cvref_t<decltype(whole)>;
+        auto [low, high] = split_at(std::move(whole), 4).expect("the offset is inside the run");
+        static_assert(std::is_same_v<typename decltype(low)::brand_type, typename Whole::brand_type>);
+        static_assert(std::is_same_v<decltype(high), Whole>);
+        assert(low.size() == 4 && high.size() == 6);
+        for (int& element : low) {
+            element = 1;
+        }
+        auto [empty, rest] = split_at(std::move(high), 0).expect("the offset zero is inside each run");
+        assert(empty.size() == 0 && rest.size() == 6);
+        for (int& element : rest) {
+            element = 2;
+        }
+        auto [all, nothing] = split_at(std::move(rest), 6).expect("the count is inside the run");
+        assert(all.size() == 6 && nothing.size() == 0);
+        bool const is_refused = split_at(std::move(low), 5).is_none();
+        assert(is_refused);
+    });
+    assert(holds_each(run, [](std::size_t position) noexcept { return position < 4 ? 1 : 2; }));
+
+    FixedArray<int, 6> fixed{};
+    fixed = with_mut(std::move(fixed), [](auto whole) noexcept {
+        using Whole = std::remove_cvref_t<decltype(whole)>;
+        auto [low, high] = split_at<2>(std::move(whole));
+        static_assert(decltype(low)::extent == 2 && decltype(high)::extent == 4);
+        static_assert(std::is_same_v<typename decltype(high)::brand_type, typename Whole::brand_type>);
+        for (int& element : low) {
+            element = 5;
+        }
+        ViewMut<int, typename Whole::brand_type> const dynamic{std::move(high)};
+        assert(dynamic.size() == 4);
+    });
+    assert(holds_each(fixed, [](std::size_t position) noexcept { return position < 2 ? 5 : 0; }));
+
+    HeapArray<int> chunked = ::foundation::core::mint_heap_array(allocation(), 10, 0);
+    chunked = with_mut(std::move(chunked), [](auto whole) noexcept {
+        auto chunks = split_chunks(std::move(whole), 4);
+        assert(chunks.size() == 3);
+        for (int mark = 1; mark <= 3; ++mark) {
+            auto part = chunks.next().expect("the run holds three chunks");
+            assert(part.size() == (mark == 3 ? 2u : 4u));
+            for (int& element : part) {
+                element = mark;
+            }
+        }
+        assert(chunks.size() == 0 && chunks.next().is_none());
+    });
+    assert(holds_each(chunked, [](std::size_t position) noexcept { return 1 + static_cast<int>(position / 4); }));
+}
+
+// The ops of the doors of a kernel.  Each holds no state.
+struct AddOp final {
+    int operator()(int const& left, int const& right) const noexcept { return left + right; }
+};
+struct TwiceOp final {
+    int operator()(int const& value) const noexcept { return 2 * value; }
+};
 
 // The door write_each over inputs of two other frames takes the loop of
 // restrict pointers, and over a View or an input of the frame of the output
@@ -345,6 +411,7 @@ int main() {
     test_result();
     test_one_of();
     test_brands_and_shape();
+    test_splits();
     test_write_each();
     test_copy_between_frames();
     return 0;

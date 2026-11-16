@@ -386,6 +386,31 @@ static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> con
 static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand>&>().view()), View<int>>);
 static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> const&>().view()), View<int const>>);
 
+// A ViewMut of a fixed extent holds a pointer alone, so the ABI passes it in
+// one register, and its View has the fixed extent.  It converts to the
+// ViewMut of a dynamic extent when it moves in, and no conversion gives a
+// fixed extent.  A split takes its ViewMut by move and gives parts of the
+// brand of the parent: two parts of a dynamic extent in an Option, two parts
+// of fixed extents, or a range of chunks that does not copy.  The fixtures
+// neg_core_view_mut_split_of_named and neg_core_view_mut_split_of_const show
+// the refusals of a named and of a const ViewMut.
+static_assert(sizeof(ViewMut<int, UniqueBrand, 4>) == sizeof(void*));
+static_assert(!std::is_copy_constructible_v<ViewMut<int, UniqueBrand, 4>>);
+static_assert(std::is_trivially_move_constructible_v<ViewMut<int, UniqueBrand, 4>>);
+static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand, 4>&>().view()), View<int, 4>>);
+static_assert(std::is_convertible_v<ViewMut<int, UniqueBrand, 4>&&, ViewMut<int, UniqueBrand>>);
+static_assert(!std::is_constructible_v<ViewMut<int, UniqueBrand>, ViewMut<int, UniqueBrand, 4>&>);
+static_assert(!std::is_constructible_v<ViewMut<int, UniqueBrand, 4>, ViewMut<int, UniqueBrand>&&>);
+static_assert(std::is_same_v<decltype(split_at(std::declval<ViewMut<int, UniqueBrand, 4>>(), 1)),
+                             Option<::foundation::core::Record<ViewMut<int, UniqueBrand>, ViewMut<int, UniqueBrand>>>>);
+static_assert(std::is_same_v<decltype(split_at<1>(std::declval<ViewMut<int, UniqueBrand, 4>>())),
+                             ::foundation::core::Record<ViewMut<int, UniqueBrand, 1>, ViewMut<int, UniqueBrand, 3>>>);
+static_assert(std::is_same_v<decltype(split_chunks(std::declval<ViewMut<int, UniqueBrand>>(), 2)),
+                             ViewMutChunks<int, UniqueBrand>>);
+static_assert(std::is_same_v<decltype(std::declval<ViewMutChunks<int, UniqueBrand>&>().next()),
+                             Option<ViewMut<int, UniqueBrand>>>);
+static_assert(!std::is_copy_constructible_v<ViewMutChunks<int, UniqueBrand>>);
+
 // The doors of a kernel.  A ViewMut and a View are inputs, and only a ViewMut
 // of a different brand proves that its run does not overlap the output.  An
 // op holds no state.  A copy and write_each give a Result of the counts.

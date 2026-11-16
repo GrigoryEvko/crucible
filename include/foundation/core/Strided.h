@@ -963,11 +963,13 @@ public:
 // or no value.  The mint consumes run, so the view is the one writer of the
 // run.  It gives no value in each case where mint_strided_view gives none,
 // and for a view that holds an element, when two indexes can name one element
-// by the test of detail::has_no_overlap_.  O(rank^2).
-template <class T, class Brand, class S, std::size_t SizesExtent, class D, std::size_t StridesExtent>
+// by the test of detail::has_no_overlap_.  The run can have a fixed extent,
+// as the frame door of a FixedArray gives it.  O(rank^2).
+template <class T, class Brand, std::size_t RunExtent, class S, std::size_t SizesExtent, class D,
+          std::size_t StridesExtent>
     requires CanMintStridedView<S, SizesExtent, D, StridesExtent>
 [[nodiscard]] constexpr Option<StridedViewMut<T, detail::minted_rank<SizesExtent, StridesExtent>, Brand>>
-mint_strided_view_mut(ViewMut<T, Brand> run, View<S, SizesExtent> sizes, View<D, StridesExtent> strides,
+mint_strided_view_mut(ViewMut<T, Brand, RunExtent> run, View<S, SizesExtent> sizes, View<D, StridesExtent> strides,
                       std::size_t offset) noexcept {
     constexpr std::size_t rank = detail::minted_rank<SizesExtent, StridesExtent>;
     using Minted = Option<StridedViewMut<T, rank, Brand>>;

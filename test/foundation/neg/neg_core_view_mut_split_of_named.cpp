@@ -1,0 +1,16 @@
+// A body of a frame door splits a named ViewMut.  The name stays with the
+// body, so the parts would be second writers of the run beside it.  A split
+// takes its ViewMut by move.
+
+#include <foundation/core/Array.h>
+
+#include <utility>
+
+int main() {
+    ::foundation::core::FixedArray<int, 4> array{1, 2, 3, 4};
+    array = ::foundation::core::with_mut(std::move(array), [](auto out) noexcept {
+        auto parts = ::foundation::core::split_at(out, 2);
+        static_cast<void>(parts);
+    });
+    return 0;
+}
