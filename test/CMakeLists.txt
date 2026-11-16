@@ -1588,6 +1588,10 @@ crucible_neg_compile_test(neg_perf_sense_hub_load_wrong_cap
 crucible_neg_compile_test(neg_perf_sense_hub_load_no_cap
     "too few arguments to function"
     ".foundation::core::Option<crucible::perf::SenseHub> crucible::perf::load_sense_hub\\(const fixy::InitLoadCtx&\\).")
+# A read of the live counters of the hub takes the tag of Nondet.
+crucible_neg_compile_test(neg_perf_sense_hub_read_without_nondet_tag
+    "no matching function for call to .crucible::perf::SenseHub::read\\(\\) const."
+    "candidate expects 1 argument, 0 provided")
 
 crucible_neg_compile_test(neg_perf_sched_switch_load_wrong_cap
     "invalid initialization of reference of type .const fixy::InitLoadCtx&.*from expression of type .const fixy::BgLoadCtx."

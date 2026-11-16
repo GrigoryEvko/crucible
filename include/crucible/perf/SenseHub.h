@@ -142,9 +142,13 @@ struct Snapshot {
 
 class SenseHub {
 public:
-    [[nodiscard]] Snapshot read() const noexcept;
+    // The kernel bumps the counters at times that the schedule decides, so two
+    // runs with the same inputs read two snapshots.  The read and the view of
+    // the live counters each take the bare tag of Nondet.
+    [[nodiscard]] Snapshot read(::foundation::effects::cap::Nondet nondet) const noexcept;
 
-    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHub> counters_view() const noexcept;
+    [[nodiscard]] ::fixy::Borrowed<const volatile uint64_t, SenseHub>
+    counters_view(::foundation::effects::cap::Nondet nondet) const noexcept;
 
     // An unattachable tracepoint drops one program silently, so these
     // two counts report how much of the map is live.

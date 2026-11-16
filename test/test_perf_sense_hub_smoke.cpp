@@ -153,7 +153,7 @@ int main() {
         }
         // A successful load leaves the mapping live, so the view
         // borrows the whole counter array.
-        const auto view = hub.counters_view();
+        const auto view = hub.counters_view(::foundation::effects::testing::test().nondet);
         static_assert(std::is_same_v<decltype(view),
                                      const ::fixy::Borrowed<const volatile std::uint64_t, crucible::perf::SenseHub>>);
         // The view must span exactly the whole counter array.  A
@@ -180,8 +180,8 @@ int main() {
         // rather than dereferencing null in production.
         crucible::perf::SenseHub moved_into = std::move(hub);
         // The source now holds the moved-from state.
-        const auto zeroed_snapshot = hub.read();
-        const auto empty_view = hub.counters_view();
+        const auto zeroed_snapshot = hub.read(::foundation::effects::testing::test().nondet);
+        const auto empty_view = hub.counters_view(::foundation::effects::testing::test().nondet);
         const auto attached_after = hub.attached_programs();
         const auto failures_after = hub.attach_failures();
 

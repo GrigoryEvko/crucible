@@ -20,6 +20,9 @@ using fixy::concurrent::ParallelismDecision;
 using fixy::concurrent::ParallelismRule;
 using fixy::concurrent::WorkBudget;
 
+// The tag of a read of the hub.  The test context holds Nondet.
+constexpr ::foundation::effects::cap::Nondet kRead = ::foundation::effects::testing::test().nondet;
+
 // Every profiler in this test comes from the mint, under a cold init
 // context.
 [[nodiscard]] WorkloadProfiler make_profiler(crucible::perf::ProfiledSenses senses) noexcept {
@@ -70,7 +73,7 @@ int main() {
         };
         const auto bare = ParallelismRule::recommend(budget);
         for (int i = 0; i < 5; ++i) {
-            const auto dec = profiler.recommend_bare(budget);
+            const auto dec = profiler.recommend_bare(kRead, budget);
             if (dec.kind != bare.kind || dec.factor != bare.factor) {
                 std::fprintf(stderr,
                              "nullptr-Senses pass-through diverged: kind=%d/%d "
@@ -98,7 +101,7 @@ int main() {
             .write_bytes = 1024,
             .item_count = 256,
         };
-        const auto dec = profiler.recommend_bare(tiny_budget);
+        const auto dec = profiler.recommend_bare(kRead, tiny_budget);
         if (dec.kind != ParallelismDecision::Kind::Sequential) {
             std::fprintf(stderr, "L1-resident must be Sequential; got kind=%d factor=%zu\n", static_cast<int>(dec.kind),
                          dec.factor);
@@ -133,7 +136,7 @@ int main() {
 
         // With no baseline yet, the first call can only return the
         // structural decision.
-        const auto first = profiler.recommend_bare(l3_budget);
+        const auto first = profiler.recommend_bare(kRead, l3_budget);
         if (profiler.last_was_demoted()) {
             std::fprintf(stderr, "first call cannot demote (no baseline) but did\n");
             ++failures;
@@ -142,7 +145,7 @@ int main() {
         // The second call has a baseline, so the deltas fill in when the
         // sense hub is attached.  Without the capability to attach it,
         // both stay at zero.
-        const auto second = profiler.recommend_bare(l3_budget);
+        const auto second = profiler.recommend_bare(kRead, l3_budget);
         const bool senses_attached = senses.coverage().sense_hub_attached;
         // A process with the BPF capabilities must attach the hub.  A
         // process without them runs the checks of an unattached hub below,
@@ -196,8 +199,8 @@ int main() {
             .write_bytes = 8 * 1024 * 1024,
             .item_count = 1u << 20,
         };
-        (void)profiler.recommend_bare(budget);
-        (void)profiler.recommend_bare(budget);
+        (void)profiler.recommend_bare(kRead, budget);
+        (void)profiler.recommend_bare(kRead, budget);
         profiler.reset();
         if (profiler.last_was_demoted() || profiler.last_futex_wait_delta() != 0
             || profiler.last_ctx_vol_delta() != 0) {
@@ -214,7 +217,7 @@ int main() {
             .write_bytes = 1024,
             .item_count = 256,
         };
-        const auto dec = profiler_sink.recommend_bare(budget);
+        const auto dec = profiler_sink.recommend_bare(kRead, budget);
         if (dec.kind != ParallelismDecision::Kind::Sequential) {
             std::fprintf(stderr,
                          "moved-into profiler should still recommend Sequential "
@@ -236,7 +239,7 @@ int main() {
             .item_count = 256,
         };
 
-        const ProfiledDecision profiled = profiler.recommend(tiny_budget);
+        const ProfiledDecision profiled = profiler.recommend(kRead, tiny_budget);
         if (profiled.value().kind != ParallelismDecision::Kind::Sequential) {
             std::fprintf(stderr,
                          "recommend() on an L1-resident budget must yield a profiled "
@@ -248,7 +251,7 @@ int main() {
         // The reset clears the baseline, so the bare call sees the same
         // structural state the profiled one did.
         profiler.reset();
-        const auto bare = profiler.recommend_bare(tiny_budget);
+        const auto bare = profiler.recommend_bare(kRead, tiny_budget);
         if (bare.kind != profiled.value().kind || bare.factor != profiled.value().factor) {
             std::fprintf(stderr,
                          "recommend() and recommend_bare() must agree on "
@@ -266,7 +269,7 @@ int main() {
         const ::fixy::BgDrainCtx bg_ctx{::foundation::effects::testing::bg()};
         // A fresh decision keeps this check independent of the one
         // above.
-        const ProfiledDecision profiled2 = profiler.recommend(tiny_budget);
+        const ProfiledDecision profiled2 = profiler.recommend(kRead, tiny_budget);
         dispatch_workload_decision(
             bg_ctx, profiled2,
             /*seq_body=*/

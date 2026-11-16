@@ -1438,7 +1438,7 @@ private:
         window.hub = senses->sense_hub();
         window.sw = senses->sched_switch();
         for (auto const hub : window.hub)
-            window.bpf_pre = hub->read();
+            window.bpf_pre = hub->read(::foundation::effects::testing::test().nondet);
         for (auto const sw : window.sw)
             window.sched_pre_idx = sw->timeline_write_index();
 #endif
@@ -1461,7 +1461,7 @@ private:
         ::crucible::perf::Snapshot bpf_post{};
         uint64_t sched_post_idx = 0;
         for (auto const hub : window.hub)
-            bpf_post = hub->read();
+            bpf_post = hub->read(::foundation::effects::testing::test().nondet);
         for (auto const sw : window.sw)
             sched_post_idx = sw->timeline_write_index();
 #endif

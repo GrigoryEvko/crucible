@@ -169,7 +169,7 @@ int main() {
     // anyway so this is moot in that branch.
     crucible::perf::Snapshot baseline{};
     for (auto const h : s.sense_hub()) {
-        baseline = h->read();
+        baseline = h->read(::foundation::effects::testing::test().nondet);
     }
 
     bench::Report reports[] = {
@@ -239,7 +239,7 @@ int main() {
         [&] {
             return bench::run("sense_hub->read() [12 cache lines]", [&] {
                 for (auto const h : s.sense_hub()) {
-                    const auto snap = h->read();
+                    const auto snap = h->read(::foundation::effects::testing::test().nondet);
                     bench::do_not_optimize(snap);
                 }
             });
@@ -250,7 +250,7 @@ int main() {
         [&] {
             return bench::run("snapshot - snapshot [96 sub_sat]", [&] {
                 for (auto const h : s.sense_hub()) {
-                    const auto current = h->read();
+                    const auto current = h->read(::foundation::effects::testing::test().nondet);
                     const auto delta = current - baseline;
                     bench::do_not_optimize(delta);
                 }
@@ -619,7 +619,7 @@ int main() {
     crucible::perf::SchedTpBtf::Snapshot stp_pre{};
     crucible::perf::SyscallTpBtf::Snapshot syt_pre{};
     for (auto const h : s.sense_hub())
-        sh_pre = h->read();
+        sh_pre = h->read(::foundation::effects::testing::test().nondet);
     for (auto const h : s.sched_switch())
         ss_pre = h->snapshot();
     for (auto const h : s.pmu_sample())
@@ -673,7 +673,7 @@ int main() {
     crucible::perf::SchedTpBtf::Snapshot stp_post{};
     crucible::perf::SyscallTpBtf::Snapshot syt_post{};
     for (auto const h : s.sense_hub())
-        sh_post = h->read();
+        sh_post = h->read(::foundation::effects::testing::test().nondet);
     for (auto const h : s.sched_switch())
         ss_post = h->snapshot();
     for (auto const h : s.pmu_sample())

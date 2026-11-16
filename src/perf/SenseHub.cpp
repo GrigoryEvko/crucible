@@ -45,7 +45,7 @@ SenseHub::~SenseHub() = default;
     });
 }
 
-Snapshot SenseHub::read() const noexcept {
+Snapshot SenseHub::read(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
     Snapshot snapshot{};
     for (::fixy::Box<State> const& state : state_) {
         for (detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped : state->counters) {
@@ -65,7 +65,8 @@ Snapshot SenseHub::read() const noexcept {
     return snapshot;
 }
 
-::fixy::Borrowed<const volatile uint64_t, SenseHub> SenseHub::counters_view() const noexcept {
+::fixy::Borrowed<const volatile uint64_t, SenseHub>
+SenseHub::counters_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
     for (::fixy::Box<State> const& state : state_) {
         for (detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped : state->counters) {
             for (::fixy::View<const uint64_t, NUM_COUNTERS> const counters :

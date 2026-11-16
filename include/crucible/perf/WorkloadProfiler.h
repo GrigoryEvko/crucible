@@ -108,16 +108,19 @@ class WorkloadProfiler {
 public:
     // The result never exceeds the structural recommendation.
     // Sequential stays sequential, and parallel either stays parallel
-    // or falls back to sequential.
-    [[nodiscard]] ProfiledDecision recommend(::fixy::concurrent::WorkBudget budget) noexcept {
-        return ProfiledDecision{recommend_bare(budget)};
+    // or falls back to sequential.  A demotion reads the live counters of
+    // the hub, so each recommendation takes the bare tag of Nondet.
+    [[nodiscard]] ProfiledDecision recommend(::foundation::effects::cap::Nondet nondet,
+                                             ::fixy::concurrent::WorkBudget budget) noexcept {
+        return ProfiledDecision{recommend_bare(nondet, budget)};
     }
 
     // The bare form is for a caller that wants to read the decision
     // without acting on it.  Code that acts on a decision goes through
     // recommend, whose result is the only one the dispatch below takes.
     [[nodiscard]] ::fixy::concurrent::ParallelismDecision
-    recommend_bare(::fixy::concurrent::WorkBudget budget) noexcept {
+    recommend_bare([[maybe_unused]] ::foundation::effects::cap::Nondet nondet,
+                   ::fixy::concurrent::WorkBudget budget) noexcept {
         const auto decision = ::fixy::concurrent::ParallelismRule::recommend(budget);
         if (!decision.is_parallel() || senses_.is_none()) return pass_through_(decision);
         const ::fixy::Ref<const Senses> senses = ProfiledSenses{senses_}.expect("the test above found the Senses");
@@ -128,7 +131,7 @@ public:
         if (hub.is_none()) return pass_through_(decision);
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const auto current = std::move(hub).expect("the test above found the hub")->read();
+        const auto current = std::move(hub).expect("the test above found the hub")->read(nondet);
         if (first_call_) {
             last_ = current;
             first_call_ = false;
