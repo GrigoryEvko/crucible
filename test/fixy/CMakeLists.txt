@@ -831,6 +831,16 @@ fixy_neg_compile_test(neg_fn_tier4_duplicate_axis
   "The axis graded twice here is Usage"
   "fixy::atom::copy, fixy::atom::affine>::tier4_unique_ok_.+ evaluates to false")
 
+# The Usage grade decides the copies of a binding.  The strict pole is the
+# linear grade, so a binding with no Usage atom has no copy, and a binding
+# at the affine grade has no copy assignment.
+fixy_neg_compile_test(neg_fn_linear_copied
+  "use of deleted function .fixy::fn<Type, Atoms>::fn\\(const fixy::fn<Type, Atoms>&\\) requires ! fixy::fn<Type, Atoms ...>::admits_copy \\[with Type = int; Atoms = \\{\\}\\]."
+  "the Usage grade of this binding uses its value at most one time, so the binding has no copy")
+fixy_neg_compile_test(neg_fn_affine_copy_assigned
+  "use of deleted function .fixy::fn<Type, Atoms>& fixy::fn<Type, Atoms>::operator=\\(const fixy::fn<Type, Atoms>&\\) requires ! fixy::fn<Type, Atoms ...>::admits_copy \\[with Type = int; Atoms = \\{fixy::atom::affine\\}\\]."
+  "the Usage grade of this binding uses its value at most one time, so the binding has no copy")
+
 # ── The gate fixtures and the generated TU ────────────────────────────
 #
 # The hand corpus stands a fixture on each rule and each corpus entry,

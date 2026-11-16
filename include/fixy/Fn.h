@@ -105,6 +105,19 @@ template <Axis A, class T, class... Atoms>
 
 }  // namespace detail::resolve
 
+namespace detail::usage {
+
+// True when a Usage grade lets a binding copy: the unrestricted grade copy,
+// the erased grade ghost and the grade borrow of a view.  The linear grade
+// of the strict pole, the affine grade and the grade of a capability use a
+// binding at most once, so they give it no copy.
+template <class Grade>
+inline constexpr bool admits_copy_v =
+    std::is_same_v<Grade, ::fixy::atom::copy> || std::is_same_v<Grade, ::fixy::atom::ghost>
+    || std::is_same_v<Grade, ::fixy::atom::borrow>;
+
+}  // namespace detail::usage
+
 template <class Type, class... Atoms>
 class fn {
     // Tier 0 comes first because the compiler processes the class body
@@ -179,20 +192,55 @@ public:
 
     static constexpr std::size_t atom_count = sizeof...(Atoms);
 
-    // The wrapper does not override Type's copy and move semantics,
-    // even at a linear usage grade.  The grade records how the binding
-    // is meant to be consumed, not how its storage behaves, so a
-    // fn<int> stays copyable because int is.  Code that wants the
-    // runtime guarantee wraps a move-only payload, and the defaulted
-    // copy then disappears on its own.  Deriving the wrapper's copy
-    // semantics from the grade instead would tie one axis of the
-    // discipline to the structural shape of the value.
-    //
+private:
+    // A pack that a tier refuses stops at the assertion of that tier, so
+    // its binding keeps the copies of its payload, and no second error
+    // buries the message of the tier.
+    [[nodiscard]] static consteval bool admits_copy_() noexcept {
+        if constexpr (refused_at_ != detail::reject::Tier::Ok) {
+            return true;
+        } else {
+            return detail::usage::admits_copy_v<grade_on<Axis::Usage>>;
+        }
+    }
+
+public:
+    // The Usage grade decides the copies of the binding.  The strict pole
+    // of the axis is the linear grade, so fn<int> uses its value exactly
+    // one time and has no copy, although int copies.  The affine grade and
+    // the grade of a capability give no copy either.  The grades copy,
+    // ghost and borrow keep the copies of the payload.  A move stays, and
+    // a payload that does not copy gives a binding that does not copy.
+    static constexpr bool admits_copy = admits_copy_();
+
     // The default constructor stays public so an fn can be a member of
     // an aggregate that default-initializes.  It carries no authority
     // only because the accessors below cannot write: a default binding
     // holds Type{} and can never hold anything else.
     constexpr fn() = default;
+
+    // Each special member follows the payload too, so a defaulted member
+    // never stands for a member that the payload does not have.
+    constexpr fn(fn const&)
+        requires(admits_copy && std::is_copy_constructible_v<held_>)
+    = default;
+    fn(fn const&)
+        requires(!admits_copy)
+    = delete("the Usage grade of this binding uses its value at most one time, so the binding has no copy: move "
+             "it, or state the grade atom::copy");
+    constexpr fn& operator=(fn const&)
+        requires(admits_copy && std::is_copy_assignable_v<held_>)
+    = default;
+    fn& operator=(fn const&)
+        requires(!admits_copy)
+    = delete("the Usage grade of this binding uses its value at most one time, so the binding has no copy: move "
+             "it, or state the grade atom::copy");
+    constexpr fn(fn&&)
+        requires std::is_move_constructible_v<held_>
+    = default;
+    constexpr fn& operator=(fn&&)
+        requires std::is_move_assignable_v<held_>
+    = default;
 
     // The accessors read and consume; none of them hands out a mutable
     // lvalue reference.  An accessor that returns Type& for a non-const

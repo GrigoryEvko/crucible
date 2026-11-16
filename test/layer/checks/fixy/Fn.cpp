@@ -1,6 +1,7 @@
 // The compile-time checks of fixy/Fn.h.
 
 #include <fixy/Fn.h>
+#include <fixy/Qtt.h>
 
 namespace fixy {
 
@@ -12,6 +13,32 @@ static_assert(sizeof(fn<int>) == sizeof(int), "the wrapper adds no storage");
 static_assert(alignof(fn<int>) == alignof(int));
 static_assert(std::is_trivially_copyable_v<fn<int>>);
 static_assert(fn<int>::atom_count == 0);
+
+// The Usage grade decides the copies of a binding.  Each grade that uses a
+// binding at most one time gives it no copy constructor and no copy
+// assignment: the linear grade of the strict pole, the affine grade and the
+// grade of a capability.  Linear<T> and Affine<T> of fixy/Qtt.h are
+// move-only too.  The moves of a binding stay trivial, so a path that moves
+// a binding keeps its code.
+template <class Binding>
+inline constexpr bool is_move_only_binding =
+    !std::is_copy_constructible_v<Binding> && !std::is_copy_assignable_v<Binding>
+    && std::is_trivially_move_constructible_v<Binding> && std::is_trivially_move_assignable_v<Binding>;
+
+static_assert(is_move_only_binding<fn<int>>, "the strict pole of the Usage axis is the linear grade");
+static_assert(is_move_only_binding<fn<int, atom::affine>>);
+static_assert(is_move_only_binding<fn<int, atom::capability_usage, atom::trust_verified>>);
+static_assert(!fn<int>::admits_copy && !fn<int, atom::affine>::admits_copy);
+static_assert(!std::is_copy_constructible_v<Linear<int>> && !std::is_copy_constructible_v<Affine<int>>);
+
+// The grades copy, ghost and borrow keep the copies of the payload, and a
+// payload that does not copy gives a binding that does not copy.
+static_assert(std::is_trivially_copy_constructible_v<fn<int, atom::copy>>
+              && std::is_trivially_copy_assignable_v<fn<int, atom::copy>>);
+static_assert(std::is_copy_constructible_v<fn<int, atom::ghost>>
+              && std::is_copy_constructible_v<fn<int, atom::borrow>>);
+static_assert(fn<int, atom::copy>::admits_copy && fn<int, atom::ghost>::admits_copy
+              && fn<int, atom::borrow>::admits_copy);
 
 // The payload is its own grade on the Type axis, because no default
 // function type exists.
