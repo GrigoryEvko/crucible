@@ -705,14 +705,20 @@ private:
     // "B, then A" are one list, and the depth of B tells them apart.  The
     // counts keep the inputs and the outputs of an op apart.
     //
-    // Each input folds its metadata, and then its producer op and its slot in
-    // one step.  So two regions that read the same tensors in a different
-    // order hash apart, and so do two regions that read a different output of
-    // one producer.  Each output folds its metadata and its slot, so the
-    // shape of an output that no later op reads is part of the hash too.
+    // Each input folds its metadata, and then its producer op.  So two regions
+    // that read the same tensors in a different order hash apart.  Each
+    // output folds its metadata, so the shape of an output that no later op
+    // reads is part of the hash too.
+    //
+    // No slot id folds.  The build gives a slot to each address that it sees,
+    // and an allocator that gives a new tensor the address of a dead one
+    // gives the new tensor the slot of the dead one.  So a slot id depends on
+    // the allocator, and the hash must not.  The producer of an input is the
+    // last op that wrote its address, which is the same op for each
+    // allocator.
     //
     // The arrays of the inputs hold one count (TraceEntry::set_inputs), so
-    // one index reads the three.
+    // one index reads the two.
     [[gnu::always_inline]] static void fold_entry_(uint64_t& content_hash_state, const TraceEntry& op_record) noexcept {
         content_hash_state = detail::combine_ids(content_hash_state, op_record.schema_hash.raw());
         content_hash_state = detail::combine_ids(content_hash_state, (uint64_t{op_record.depth.raw()} << 32)
@@ -721,25 +727,17 @@ private:
 
         const ::fixy::View<const TensorMeta> input_metas = op_record.input_metas();
         const ::fixy::View<const OpIndex> producers = op_record.input_trace_indices();
-        const ::fixy::View<const SlotId> input_slots = op_record.input_slot_ids();
         for (std::size_t input = 0; input < input_metas.size(); ++input) {
             content_hash_state = detail::combine_ids(
                 content_hash_state,
                 packed_meta_(*input_metas.get(input).expect("the input arrays of an entry hold one count")));
-            const uint64_t producer = producers.get(input).expect("the input arrays of an entry hold one count")->raw();
-            const uint64_t slot = input_slots.get(input).expect("the input arrays of an entry hold one count")->raw();
-            content_hash_state = detail::combine_ids(content_hash_state, (producer << 32) | slot);
+            content_hash_state = detail::combine_ids(
+                content_hash_state,
+                uint64_t{producers.get(input).expect("the input arrays of an entry hold one count")->raw()});
         }
 
-        const ::fixy::View<const SlotId> output_slots = op_record.output_slot_ids();
-        const ::fixy::View<const TensorMeta> output_metas = op_record.output_metas();
-        for (std::size_t output = 0; output < output_metas.size(); ++output) {
-            content_hash_state = detail::combine_ids(
-                content_hash_state,
-                packed_meta_(*output_metas.get(output).expect("the output arrays of an entry hold one count")));
-            content_hash_state = detail::combine_ids(
-                content_hash_state,
-                uint64_t{output_slots.get(output).expect("the output arrays of an entry hold one count")->raw()});
+        for (const TensorMeta& output_meta : op_record.output_metas()) {
+            content_hash_state = detail::combine_ids(content_hash_state, packed_meta_(output_meta));
         }
 
         content_hash_state =
