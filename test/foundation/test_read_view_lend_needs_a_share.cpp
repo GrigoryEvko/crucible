@@ -5,59 +5,26 @@
 // guard that holds the share can end it.  The door checks that the guard
 // holds a share and aborts when it does not.  The attack moves the guard
 // out of an optional and then lends the optional's leftover guard, the
-// shape a real caller writes by mistake.  It runs in a child process, and
-// the test passes only when the child aborts on that check.
+// shape a real caller writes by mistake.  It runs in a child process
+// through expect_dies of the Check family, and the test passes only when
+// the child aborts on that check.
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/core/Text.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 #include <foundation/permissions/SharedPermission.h>
 
-#include <csignal>
-#include <cstddef>
-#include <cstdio>
 #include <optional>
-#include <string>
 #include <utility>
-
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace test_read_view_lend_needs_a_share {
 
 struct Region {
     using permission_row = ::foundation::effects::Row<>;
 };
-
-// Runs the attack in a child process.  The test passes only when the
-// child ends by SIGABRT and its standard error names the check, so a
-// different crash, or no crash, fails it.
-[[nodiscard]] static bool attack_aborts_with(void (*attack)(), const char* expected) {
-    int channel[2];
-    if (::pipe(channel) != 0) return false;
-    // The child runs the attack, so that its abort is the result the test reads.
-    const ::pid_t child = ::fork();
-    if (child < 0) return false;
-    if (child == 0) {
-        ::dup2(channel[1], 2);
-        ::close(channel[0]);
-        attack();
-        ::_exit(0);
-    }
-    ::close(channel[1]);
-    std::string text;
-    char buffer[512];
-    for (::ssize_t got = ::read(channel[0], buffer, sizeof buffer); got > 0;
-         got = ::read(channel[0], buffer, sizeof buffer)) {
-        text.append(buffer, static_cast<std::size_t>(got));
-    }
-    ::close(channel[0]);
-    int status = 0;
-    ::waitpid(child, &status, 0);
-    const bool aborted = WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
-    const bool named = text.find(expected) != std::string::npos;
-    if (!aborted || !named) std::fprintf(stderr, "child output:\n%s\n", text.c_str());
-    return aborted && named;
-}
 
 static void lend_a_guard_that_gave_its_share_away() {
     namespace fp = ::foundation::permissions;
@@ -88,10 +55,10 @@ static void lend_a_guard_that_gave_its_share_away() {
 
 int main() {
     using namespace test_read_view_lend_needs_a_share;
-    const bool lends = a_guard_that_holds_its_share_lends();
-    const bool refused = attack_aborts_with(lend_a_guard_that_gave_its_share_away,
-                                            "foundation: contract violation: source.holds_share()");
-    std::printf("test_read_view_lend_needs_a_share: control %s, attack %s\n", lends ? "lends" : "DOES NOT LEND",
-                refused ? "refused" : "NOT REFUSED");
-    return lends && refused ? 0 : 1;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    CRUCIBLE_TEST_ASSERT(test, a_guard_that_holds_its_share_lends());
+    ::fixy::check::expect_dies(test, lend_a_guard_that_gave_its_share_away,
+                               ::foundation::core::TextView{"foundation: contract violation: source.holds_share()"});
+    ::fixy::check::pass(test, "test_read_view_lend_needs_a_share: control lends, attack refused\n");
+    return 0;
 }

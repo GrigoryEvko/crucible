@@ -694,8 +694,10 @@ foundation_test(test_pre_post)
 # The contract handler of src/foundation/ContractHandler.cpp, in child
 # processes.  A report names the condition, its position and the note of a
 # message form.  A second violation that interrupts a blocked report on the
-# same thread aborts at once.  The parent sleeps between two waits for the
-# child through the bounded sleeper of fixy/os/Time.h, so the test links fixy.
+# same thread aborts at once.  The first two cases start their child through
+# the child door of fixy/os/Process.h.  For the blocked report, the parent
+# sleeps between two waits for the child through the bounded sleeper of
+# fixy/os/Time.h.  So the test links fixy.
 foundation_test(test_contract_handler)
 target_link_libraries(test_contract_handler PRIVATE fixy)
 
@@ -1445,13 +1447,17 @@ foundation_neg_compile_test(neg_lifetime_start_as_capturing_closure
 foundation_test(test_lifetime_start)
 
 # A pool that ends while a share is out aborts.  The attack runs in a
-# child process, and the test passes only on that diagnostic.
+# child process through expect_dies of the Check family, so the test links
+# fixy, and the test passes only on that diagnostic.
 foundation_test(test_share_pool_outlived_aborts)
+target_link_libraries(test_share_pool_outlived_aborts PRIVATE fixy)
 
 # A share guard that gave its share away cannot lend a read view: the door
-# checks holds_share() and aborts.  The attack runs in a child process,
-# and a positive control lends from a guard that holds its share.
+# checks holds_share() and aborts.  The attack runs in a child process
+# through expect_dies, so the test links fixy.  A positive control lends
+# from a guard that holds its share.
 foundation_test(test_read_view_lend_needs_a_share)
+target_link_libraries(test_read_view_lend_needs_a_share PRIVATE fixy)
 
 # The children of two regions do not fold into one parent.
 foundation_neg_compile_test(neg_brand_combine_children_of_two_regions
@@ -1727,13 +1733,16 @@ foundation_neg_compile_test(neg_shared_read_of_a_temporary_pool_void_body
 
 # A pool that still parks its exclusive refuses a second deposit, and a pool
 # that lends a share refuses a deposit.  Each attack runs in a child
-# process, and the test passes only on the violated condition.
+# process through expect_dies of the Check family, so the test links fixy.
+# The test passes only on the violated condition.
 foundation_test(test_share_pool_double_deposit_aborts)
+target_link_libraries(test_share_pool_double_deposit_aborts PRIVATE fixy)
 
 # The same two refusals in a unit with the ignore semantic.  There a
 # precondition is only an assumption, so the checks of the pool are fatal
 # invariants.
 foundation_test(test_share_pool_deposit_under_ignore test_share_pool_double_deposit_aborts.cpp)
+target_link_libraries(test_share_pool_deposit_under_ignore PRIVATE fixy)
 crucible_contract_ignore_target(test_share_pool_deposit_under_ignore)
 
 # ── The row-mismatch message builder ──────────────────────────────────
