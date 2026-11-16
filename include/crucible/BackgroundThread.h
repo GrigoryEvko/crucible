@@ -993,15 +993,15 @@ private:
 
     // The bucket of a key is the low half of the hash of its address key.
     // The address changes from run to run, so the map gives no order.
-    [[nodiscard, gnu::const]] static uint32_t hash_ptr(void* ptr) noexcept {
-        return static_cast<uint32_t>(::fixy::mint_address_key(ptr).hash());
+    [[nodiscard, gnu::const]] static uint32_t hash_ptr(PtrMapKey key) noexcept {
+        return static_cast<uint32_t>(::fixy::mint_address_key(key.value()).hash());
     }
 
     // The probes of the map start at the hash of the key, and the mask of
     // the map wraps each probe.  A full round of probes visits each slot.
     [[nodiscard]] static InsertResult ptr_map_insert(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen, PtrMapKey key,
                                                      OpIndex op_index, uint8_t port, SlotId slot_id) {
-        const uint64_t bucket_idx = hash_ptr(key.value());
+        const uint64_t bucket_idx = hash_ptr(key);
         for (uint64_t probe = 0; probe < map.size(); probe++) {
             auto& slot = map.at_masked(bucket_idx + probe);
             if (slot.gen != gen) {
@@ -1041,7 +1041,7 @@ private:
 
     [[nodiscard]] static PtrLookup ptr_map_lookup(::fixy::MaskedArray<PtrSlot> const& map, uint8_t gen, PtrMapKey key) {
         if (key.value() == nullptr) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
-        const uint64_t bucket_idx = hash_ptr(key.value());
+        const uint64_t bucket_idx = hash_ptr(key);
         for (uint64_t probe = 0; probe < map.size(); probe++) {
             auto& slot = map.at_masked(bucket_idx + probe);
             if (slot.gen == gen && slot.key.value() == key.value())
