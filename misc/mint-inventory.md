@@ -236,7 +236,7 @@ that the axis does not apply to the row.
 | `OwnedMmap::mint_region` | `include/fixy/os/OwnedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_affinity` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
+| `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
@@ -253,6 +253,7 @@ that the axis does not apply to the row.
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_temporary_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_timing_sink` | `include/fixy/os/TimingSink.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_tsc_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 
 ## include/fixy/session/
@@ -363,4 +364,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 75 | 43 | 23 | 9 | 0 | 10 |
-| substrate (`include/foundation/`, `include/fixy/`) | 144 | 57 | 83 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 145 | 57 | 84 | 4 | 0 | 3 |

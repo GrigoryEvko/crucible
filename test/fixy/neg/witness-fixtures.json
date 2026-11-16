@@ -567,6 +567,11 @@
       "constructor": "\\bInit\\("
     },
     {
+      "name": "neg_witness_effects_kernelcall_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bKernelCall\\("
+    },
+    {
       "name": "neg_witness_effects_test_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bTest\\("
@@ -620,6 +625,16 @@
       "name": "neg_witness_numaplacement_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bNumaPlacement\\("
+    },
+    {
+      "name": "neg_witness_observe_timingsink_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bTimingSink\\("
+    },
+    {
+      "name": "neg_witness_observe_timingsink_span_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSpan\\("
     },
     {
       "name": "neg_witness_orderedappendonly_direct_construction",
@@ -1056,6 +1071,18 @@
     {
       "type": "foundation::effects::ctx_cap::KernelSource<forge::brand, foundation::core::kFpModeIeee>",
       "header": "foundation/effects/Ctx.h"
+    },
+    {
+      "type": "foundation::effects::KernelCall<forge::brand, foundation::core::kFpModeIeee>",
+      "header": "foundation/effects/Ctx.h"
+    },
+    {
+      "type": "fixy::observe::TimingSink<2>",
+      "header": "fixy/os/TimingSink.h"
+    },
+    {
+      "type": "fixy::observe::TimingSink<2>::Span",
+      "header": "fixy/os/TimingSink.h"
     },
     {
       "type": "foundation::os::FpScope<foundation::core::kFpModeIeee>",
