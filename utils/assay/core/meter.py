@@ -29,6 +29,19 @@ MEASURE
     measurement also holds the user instructions of the command (THE
     INSTRUCTION COUNT below).
 
+THE CPU LIMIT
+    RLIMIT_CPU stops a process on the CPU time that the kernel charges to it
+    at each tick (the process clock CPUCLOCK_PROF).  wait4 gives the exact
+    CPU time of the scheduler, and at a high load that time can be lower.  On
+    2026-11-17, at a load of 266 on the build host, a process under a limit
+    of 1 s died with 0.997 s on the clock of the limit and 0.874 s on the
+    exact clock.  A compile under a limit of 1 s ended at 0.844 s of exact
+    CPU time at a load of 210.  The process that the limit stops can be a
+    child of the command, such as the compiler that the GCC driver starts,
+    and the caller cannot read the clocks of that child.  So a run that
+    failed with at least LIMIT_CLOCK_PART of its CPU limit counts as a run
+    that the limit stopped (is_at_cpu_limit()).
+
 A TRACED RUN
     With a supervisor, measure() starts the command with supervisor.start(),
     and with no spawn.  It calls supervisor.serve() until the command ends,
@@ -218,7 +231,10 @@ KIND_FILE = "build-kind.txt"
 CONFIGURATION_FILE = "build-configuration.txt"
 KB_PER_GB = 1024 * 1024
 GITHUB_ACTIONS_ENV = "GITHUB_ACTIONS"
-CI_DEMOTION = ("The step demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the hard "
+# The part of its CPU limit that a failed run uses at least when the limit stopped it, as the exact CPU time of wait4
+# gives it (THE CPU LIMIT).  The lowest part that the build host gave was 0.844 at a load of 210.
+LIMIT_CLOCK_PART = 0.5
+CI_DEMOTION =("The step demoted this time error to a warning on a CI runner (GITHUB_ACTIONS is true): the hard "
                "stops apply to the build host, and a CI runner is slower")
 # The CPU time and the run-queue wait of this task since its fork, in nanoseconds (THE OWN RUN).
 SCHEDSTAT_FILE = "/proc/self/schedstat"
@@ -301,8 +317,8 @@ class Measurement:
 
     @property
     def reached_cpu_limit(self) -> bool:
-        """Whether the run failed after its CPU time reached the limit of its processes."""
-        return self.exit_code != 0 and self.cpu_limit_s is not None and self.cpu_s >= self.cpu_limit_s - 0.05
+        """Whether the run failed with the CPU time of a run that the limit of its processes stopped (THE CPU LIMIT)."""
+        return is_at_cpu_limit(self.exit_code, self.cpu_s, self.cpu_limit_s)
 
     @property
     def cpu_s(self) -> float:
@@ -313,6 +329,17 @@ class Measurement:
     def peak_gb(self) -> float:
         """The peak resident memory of the largest process, in GB of 2^30 bytes."""
         return self.peak_rss_kb / KB_PER_GB
+
+
+def is_at_cpu_limit(exit_code: int, cpu_s: float, cpu_limit_s: int | None) -> bool:
+    """Tell if a run failed with at least LIMIT_CLOCK_PART of the CPU limit of its processes (THE CPU LIMIT).
+
+    Args:
+        exit_code: The status of the run
+        cpu_s: The exact user and system CPU time of the run, from wait4
+        cpu_limit_s: The CPU limit of each process of the run, or None when the run had no limit
+    """
+    return exit_code != 0 and cpu_limit_s is not None and cpu_s >= cpu_limit_s * LIMIT_CLOCK_PART
 
 
 def is_github_actions() -> bool:

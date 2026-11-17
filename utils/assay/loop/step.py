@@ -31,9 +31,11 @@ THE MEASURED RULES
         a step, because it changes with the load of the host.  The kind
         compile of the rule step-cost judges the cost of a compile after the
         build.
-        A step that reaches its limit ends on SIGKILL, and the subcommand
-        prints an error line that says so.  The line names the check
-        loop-step, because no rule holds the limit.  The limit counts the
+        A process that reaches the limit ends on SIGKILL.  A step that fails
+        after at least LIMIT_CLOCK_PART of the limit, as the exact CPU time
+        of the step gives it, gets an error line that says that the limit
+        probably stopped it (utils/assay/core/meter.py, THE CPU LIMIT).  The
+        line names the check loop-step, because no rule holds the limit.  The limit counts the
         user time and the system time.  When the host is short of memory, a
         process can stay in the kernel for a long time, and that time is
         system time.  On 2026-10-12, a compile of 6.6 s of CPU time used
@@ -275,8 +277,11 @@ def judge(step: str, output: str, run: cost_meter.Measurement, budget: dict[str,
     if run.exit_code != 0:
         if run.reached_cpu_limit:
             return "failed", ("error", LIMIT_CHECK,
-                              f"{shown} used {run.cpu_s:.1f} s CPU and reached the hard limit of "
-                              f"{run.cpu_limit_s} s, {limit_words}, so the operating system stopped it")
+                              f"{shown} failed after {run.cpu_s:.1f} s CPU, at least "
+                              f"{cost_meter.LIMIT_CLOCK_PART:.0%} of the hard limit of {run.cpu_limit_s} s of each "
+                              f"of its processes, {limit_words}.  The operating system stops a process at that limit "
+                              f"on a clock that can run ahead of the measured CPU time, so the limit probably stopped "
+                              f"it")
         return "failed", None
     is_over = step in budget and cost_budget.verdict(run.peak_gb, budget[step], None) == cost_budget.ERROR
     if is_over and cost_budget.is_judged(build_item(output)):
