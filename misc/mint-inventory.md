@@ -252,9 +252,9 @@ that the axis does not apply to the row.
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_owned_thread` | `include/fixy/os/OwnedThread.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_perf_event` | `include/fixy/os/PerfEvent.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_priority` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_priority` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_temporary_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_thread_name` | `include/fixy/os/ThreadName.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
