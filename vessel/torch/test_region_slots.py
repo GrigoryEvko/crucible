@@ -87,7 +87,7 @@ def record_mlp(directory: Path) -> tuple[list[RegionOp], list[RegionSlot], int]:
 
 
 def nest_start(ops: list[RegionOp], index: int) -> int:
-    """Return the index of the first op of the nest of the op at index: the ops below its depth that come before it."""
+    """Return the index of the first op of the nest of the op at index: the ops of a larger depth just before it."""
     start = index
     while start > 0 and ops[start - 1].depth > ops[index].depth:
         start -= 1
