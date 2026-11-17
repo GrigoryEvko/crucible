@@ -862,6 +862,16 @@ fixy_neg_compile_test(neg_fn_affine_copy_assigned
   "use of deleted function .fixy::fn<Type, Atoms>& fixy::fn<Type, Atoms>::operator=\\(const fixy::fn<Type, Atoms>&\\) requires ! fixy::fn<Type, Atoms ...>::admits_copy \\[with Type = int; Atoms = \\{fixy::atom::affine\\}\\]."
   "the Usage grade of this binding uses its value at most one time, so the binding has no copy")
 
+# A default binding holds Type{}, which no mint admitted.  A pack that
+# names an atom states a fact about the value or grants a right over it, so
+# it has no default constructor: one fixture for a fact, one for a right.
+fixy_neg_compile_test(neg_fn_default_refined_binding
+  "use of deleted function .fixy::fn<Type, Atoms>::fn\\(\\) requires ! fixy::fn<Type, Atoms ...>::admits_default \\[with Type = int; Atoms = \\{fixy::atom::refined_with<fixy::IsPositive>\\}\\]."
+  "a default binding would hold Type\\{\\}, which no mint admitted")
+fixy_neg_compile_test(neg_fn_default_copy_binding
+  "use of deleted function .fixy::fn<Type, Atoms>::fn\\(\\) requires ! fixy::fn<Type, Atoms ...>::admits_default \\[with Type = int; Atoms = \\{fixy::atom::copy\\}\\]."
+  "a default binding would hold Type\\{\\}, which no mint admitted")
+
 # ── The gate fixtures and the generated TU ────────────────────────────
 #
 # The hand corpus stands a fixture on each rule and each corpus entry,

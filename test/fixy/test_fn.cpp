@@ -253,14 +253,28 @@ static_assert(!std::is_constructible_v<fn<int, ::fixy::atom::copy>, int>);
 
 // The private value constructor is only half the door.  The other half
 // is that no accessor hands out a mutable lvalue reference: with a
-// public default constructor and a mutable value(), `fn<T, atoms...>{}
-// .value() = x` would wrap any value under any pack without naming a
-// mint.  A non-const lvalue binding reads back as const.
+// mutable value(), `binding.value() = x` would put any value under the
+// pack of the binding without naming a mint.  A non-const lvalue binding
+// reads back as const.
 static_assert(std::is_same_v<decltype(std::declval<fn<int, ::fixy::atom::copy>&>().value()), const int&>);
 static_assert(std::is_same_v<decltype(std::declval<const fn<int, ::fixy::atom::copy>&>().value()), const int&>);
 static_assert(std::is_same_v<decltype(std::declval<fn<int, ::fixy::atom::copy>&&>().value()), int&&>);
 static_assert(!std::is_assignable_v<decltype(std::declval<fn<int, ::fixy::atom::copy>&>().value()), int>,
-              "a default-constructed binding cannot be written into after the fact");
+              "a minted binding cannot be written into after the fact");
+
+// A default binding holds Type{}, which no mint admitted.  The empty pack
+// states no fact and grants no right, so it keeps its default constructor,
+// and a binding can be a member of an aggregate.  A pack that names an atom
+// has no default constructor: a fact such as a refinement, and a right such
+// as a copy, each need the mint.
+struct holds_a_binding {
+    fn<int> binding{};
+};
+
+static_assert(std::is_default_constructible_v<fn<int>>);
+static_assert(std::is_default_constructible_v<holds_a_binding>);
+static_assert(!std::is_default_constructible_v<fn<int, ::fixy::atom::copy>>);
+static_assert(!std::is_default_constructible_v<fn<int, ::fixy::atom::refined_with<::fixy::IsPositive>>>);
 
 // ---------------------------------------------------------------------
 // The row a binding requires of its context.
@@ -325,9 +339,10 @@ static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, StderrBinding>, "t
     // rather than being copied back through a const reference.
     if (mint_fn<int, ::fixy::atom::affine>(static_cast<int>(seed) + 2).value() != 9) return 4;
 
-    // A defaulted binding carries the payload's own default.
-    const fn<int, ::fixy::atom::copy> defaulted{};
-    if (defaulted.value() != 0) return 5;
+    // A default binding of the empty pack carries the payload's own default,
+    // also as a member of an aggregate.
+    const holds_a_binding defaulted{};
+    if (defaulted.binding.value() != 0) return 5;
 
     if (sizeof(plain) != sizeof(int)) return 6;
     if (fn<int>::atom_count != 0) return 7;

@@ -214,11 +214,31 @@ public:
     // a payload that does not copy gives a binding that does not copy.
     static constexpr bool admits_copy = admits_copy_();
 
-    // The default constructor stays public so an fn can be a member of
-    // an aggregate that default-initializes.  It carries no authority
-    // only because the accessors below cannot write: a default binding
-    // holds Type{} and can never hold anything else.
-    constexpr fn() = default;
+private:
+    // A default binding holds Type{}, and no mint admitted that value.  A
+    // pack that names no atom takes the strict pole on each axis: it states
+    // no fact about the value and grants no right over it, so its default
+    // binding claims nothing.  Each atom states a fact, such as the
+    // predicate of refined_with, or grants a right, such as atom::copy, and
+    // Type{} need not hold that fact.  A pack that a tier refuses keeps the
+    // default constructor, as it keeps its copies, so no second error
+    // buries the message of the tier.
+    [[nodiscard]] static consteval bool admits_default_() noexcept {
+        return sizeof...(Atoms) == 0 || refused_at_ != detail::reject::Tier::Ok;
+    }
+
+public:
+    static constexpr bool admits_default = admits_default_();
+
+    // The default constructor of the empty pack stays public, so an fn can
+    // be a member of an aggregate that default-initializes.
+    constexpr fn()
+        requires admits_default
+    = default;
+    fn()
+        requires(!admits_default)
+    = delete("a binding that names an atom states a fact about its value or grants a right over it, and a default "
+             "binding would hold Type{}, which no mint admitted: mint the binding with fixy::mint_fn");
 
     // Each special member follows the payload too, so a defaulted member
     // never stands for a member that the payload does not have.
@@ -245,11 +265,11 @@ public:
 
     // The accessors read and consume; none of them hands out a mutable
     // lvalue reference.  An accessor that returns Type& for a non-const
-    // lvalue would reopen the door the private constructor closes: with
-    // a public default constructor, `fn<T, atoms...>{}.value() = x` would
-    // wrap any value under any pack without naming a mint.  Consuming
-    // through the rvalue overload still moves the payload out, which is
-    // the only mutation a binding's own discipline permits.
+    // lvalue would reopen the door the private constructor closes:
+    // `binding.value() = x` would put any value under the pack of the
+    // binding without naming a mint.  Consuming through the rvalue
+    // overload still moves the payload out, which is the only mutation a
+    // binding's own discipline permits.
     [[nodiscard]] constexpr const held_& value() const& noexcept { return value_; }
     [[nodiscard]] constexpr held_&& value() && noexcept { return std::move(value_); }
 

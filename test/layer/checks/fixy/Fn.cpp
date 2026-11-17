@@ -121,12 +121,14 @@ static_assert(std::is_same_v<duplicate_tag_or_void_t<atom::copy, atom::mut_appen
 static_assert(door_carries_the_value());
 static_assert(std::is_same_v<decltype(mint_fn<int, atom::copy>(0)), fn<int, atom::copy>>);
 
-// The value constructor is not a public door.  A caller can still
-// default-construct, which carries no authority, but cannot wrap a
-// value without naming a mint.
+// The value constructor is not a public door.  A caller cannot wrap a
+// value without naming a mint.  Only the empty pack, which claims nothing,
+// has a default constructor.
 static_assert(!std::is_constructible_v<fn<int, atom::copy>, int>,
               "the value constructor is private; mint_fn is the only door");
-static_assert(std::is_default_constructible_v<fn<int, atom::copy>>);
+static_assert(std::is_default_constructible_v<fn<int>>);
+static_assert(!std::is_default_constructible_v<fn<int, atom::copy>>,
+              "a default binding would grant the copy right over a value that no mint admitted");
 
 static_assert(is_fn_v<fn<int>>);
 static_assert(is_fn_v<const fn<int, atom::copy>&>);
