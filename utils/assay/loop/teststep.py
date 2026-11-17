@@ -315,7 +315,7 @@ def stop_core_dumps() -> None:
         _, hard = resource.getrlimit(resource.RLIMIT_CORE)
         if hard == resource.RLIM_INFINITY or hard >= NO_CORE_LIMIT_BYTES:
             resource.setrlimit(resource.RLIMIT_CORE, (NO_CORE_LIMIT_BYTES, hard))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         pass
 
 
@@ -328,8 +328,10 @@ def keeps_cores() -> bool:
     value = os.environ.get(CORES_ENV)
     if value is None or value == CORES_KEEP:
         return value == CORES_KEEP
-    print(f"loop test-step: {CORES_ENV} is {value!r}, and only {CORES_KEEP!r} keeps the core dumps of the test",
-          file=sys.stderr)
+    print(
+        f"loop test-step: {CORES_ENV} is {value!r}, and only {CORES_KEEP!r} keeps the core dumps of the test",
+        file=sys.stderr,
+    )
     return False
 
 
@@ -356,11 +358,7 @@ def canonical_environment(environment: Mapping[str, str]) -> tuple[tuple[str, st
     The result holds no CRUCIBLE_TEST_LAUNCHED, because the launcher sets it
     for each test.  Complexity: O(n log n) for n variables.
     """
-    kept = {
-        name: value
-        for name, value in environment.items()
-        if is_kept(name) and name not in PASSED_THROUGH
-    }
+    kept = {name: value for name, value in environment.items() if is_kept(name) and name not in PASSED_THROUGH}
     if SEARCH_PATH in kept:
         directories = search_path(kept[SEARCH_PATH])
         if directories:
@@ -406,8 +404,9 @@ def program_item(program: str, build_dir: str | None) -> str:
     return os.path.relpath(program, build_dir)
 
 
-def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str, float],
-          ledgers: str | None = None) -> list[tuple[str, str]]:
+def judge(
+    name: str, program: str, run: cost_meter.Measurement, budget: dict[str, float], ledgers: str | None = None
+) -> list[tuple[str, str]]:
     """Compare the measures of one test with the limits of the kind test of its measured rules (THE MEASURED RULES).
 
     The witness of step-memory and step-cost judges the planted record of a
@@ -442,12 +441,16 @@ def judge(name: str, program: str, run: cost_meter.Measurement, budget: dict[str
         noise = cost_budget.noise_of(unit)
         found = cost_budget.verdict(measure, limit, kept, noise)
         if admitted is not None and found == cost_budget.RISEN:
-            message = (f"{above}, and more than the row {admitted[0]} keeps: {admitted[2]:g} {unit} with the noise "
-                       f"{noise:.0%}.  Make the test smaller.  When the growth is wanted, write the measured value "
-                       f"into the row with a reason")
+            message = (
+                f"{above}, and more than the row {admitted[0]} keeps: {admitted[2]:g} {unit} with the noise "
+                f"{noise:.0%}.  Make the test smaller.  When the growth is wanted, write the measured value "
+                f"into the row with a reason"
+            )
         elif found == cost_budget.ERROR:
-            message = (f"{above}, and no row of the kind test of utils/ledgers/{row}.txt keeps it.  Make the test "
-                       f"smaller, or split it into tests over disjoint cases")
+            message = (
+                f"{above}, and no row of the kind test of utils/ledgers/{row}.txt keeps it.  Make the test "
+                f"smaller, or split it into tests over disjoint cases"
+            )
         else:
             continue
         findings.append((row, message))
@@ -507,7 +510,7 @@ def has_derived_inputs(command: Sequence[str]) -> bool:
         index += 1
     if index >= len(command) or not os.path.normpath(command[index]).endswith(GUARD_MASTER):
         return False
-    words = command[index + 1:]
+    words = command[index + 1 :]
     if words[:1] in (["check"], ["witness"]):
         return True
     if words[:1] != ["selftest"] or len(words) < 2 or "." in words[1]:
@@ -613,7 +616,7 @@ def launched(command: list[str]) -> list[str]:
     """
     for index, word in enumerate(command[:-1]):
         if word.endswith(MASTER) and command[index + 1] == SUBCOMMAND:
-            read = read_options(command[index + 2:])
+            read = read_options(command[index + 2 :])
             return read[1] if read is not None else command
     return command
 
@@ -646,7 +649,7 @@ def launched_program(command: list[str]) -> str | None:
     """
     for index, word in enumerate(command[:-1]):
         if word.endswith(MASTER) and command[index + 1] == SUBCOMMAND:
-            read = read_options(command[index + 2:])
+            read = read_options(command[index + 2 :])
             if read is None:
                 return None
             options, launched_command = read
@@ -659,7 +662,7 @@ def read_budget() -> dict[str, float]:
     """Read the limit of the kind test of each rule of the launcher from the registry, or none when it does not read."""
     try:
         limits = cost_meter.budget_rows(os.environ.get(REGISTRY_ENV) or REGISTRY_FILE, ROWS)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     return test_limits(limits)
 
@@ -681,8 +684,14 @@ def safely[T](action: Callable[[], T], fallback: T) -> T:
         return fallback
 
 
-def judge_and_record(name: str, program: str, finding_path: str, build_dir: str | None,
-                     run: cost_meter.Measurement, budget: dict[str, float] | None = None) -> int:
+def judge_and_record(
+    name: str,
+    program: str,
+    finding_path: str,
+    build_dir: str | None,
+    run: cost_meter.Measurement,
+    budget: dict[str, float] | None = None,
+) -> int:
     """Judge one test, report each finding, write its record, and return the status that the test ends with.
 
     `loop test-step` and `loop fixture` call this function.  The two then
@@ -717,8 +726,9 @@ def judge_and_record(name: str, program: str, finding_path: str, build_dir: str 
     return status
 
 
-def traced_run(build_dir: str, name: str, command: Sequence[str], version: str,
-               clean: Iterable[tuple[str, str]]) -> Plan | None:
+def traced_run(
+    build_dir: str, name: str, command: Sequence[str], version: str, clean: Iterable[tuple[str, str]]
+) -> Plan | None:
     """Return the plan of a traced run of a test, or None when its read set is current (THE READ SET).
 
     Args:
@@ -752,13 +762,17 @@ def main(argv: list[str]) -> int:
         if parsed is None:
             problem = ""
         elif program_at is None:
-            problem = (f"--emulator-words {parsed[0].emulator_words!r} is not a count of the words of the emulator "
-                       f"before the program.  ")
+            problem = (
+                f"--emulator-words {parsed[0].emulator_words!r} is not a count of the words of the emulator "
+                f"before the program.  "
+            )
         elif trace not in (None, TRACE_NEVER):
             problem = f"--trace takes the value {TRACE_NEVER}, and it got {trace!r}.  "
         else:
-            problem = (f"the test name {name!r} is not a word of letters, digits, '_', '.' and '-' that starts with a "
-                       f"letter, a digit or '_'.  ")
+            problem = (
+                f"the test name {name!r} is not a word of letters, digits, '_', '.' and '-' that starts with a "
+                f"letter, a digit or '_'.  "
+            )
         print(f"loop test-step: {problem}{USAGE}", file=sys.stderr)
         return 2
     options, command = parsed
