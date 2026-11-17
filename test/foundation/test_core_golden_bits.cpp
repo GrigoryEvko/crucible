@@ -148,6 +148,33 @@ template <class T>
     return digest;
 }
 
+// The digest of a form of the tree sum of each count of run.  Each form gives
+// the bits of sum_by_tree, so each one gives its golden digest.
+template <class T, class Sum>
+[[nodiscard]] std::uint64_t digest_tree_sums_by(View<T const> run, Sum sum) noexcept {
+    std::uint64_t digest = kFnvOffset;
+    for_each_count([&](std::size_t count) noexcept {
+        digest = fold_output(digest, sum(run.window(0, count).expect("the part fits")));
+    });
+    return digest;
+}
+
+// The grain of the split forms of the test: a power of two that splits each
+// count past 16 into some grains.
+inline constexpr std::size_t kGrain = 16;
+
+// The tree sum of a part by grains: the partial of each grain, then
+// sum_by_tree of the partials.
+template <class T>
+[[nodiscard]] T sum_by_grains(View<T const> part) noexcept {
+    HeapArray<T> partials =
+        ::fixy::mint_heap_array(test_alloc(), ::foundation::core::count_tree_grains<kGrain>(part.size()), T{});
+    partials = with_mut(std::move(partials), [&](auto out) noexcept {
+        ::foundation::core::sum_grains_by_tree<kGrain>(part, 0, std::move(out));
+    });
+    return ::foundation::core::sum_by_tree(View<T const>{partials.view()});
+}
+
 // The digest of the left fold of each count of run, for the check that the
 // digest sees the association of a sum.
 [[nodiscard]] std::uint64_t digest_left_folds(View<float const> run) noexcept {
@@ -169,6 +196,25 @@ template <class T>
         if (count == 0) return;
         View<std::uint64_t const> const part = words.window(0, count).expect("the part fits");
         digest = fold_output(digest, ::foundation::core::reduce_by_tree(part, Mix{}).expect("the part has elements"));
+    });
+    return digest;
+}
+
+// The digest of reduce_grains_by_tree with the combine Mix of each count of
+// words, then reduce_by_tree of the partials: the bits of reduce_by_tree.
+[[nodiscard]] std::uint64_t digest_grain_reduces(View<std::uint64_t const> words) noexcept {
+    std::uint64_t digest = kFnvOffset;
+    for_each_count([&](std::size_t count) noexcept {
+        if (count == 0) return;
+        View<std::uint64_t const> const part = words.window(0, count).expect("the part fits");
+        HeapArray<std::uint64_t> partials = ::fixy::mint_heap_array(
+            test_alloc(), ::foundation::core::count_tree_grains<kGrain>(count), std::uint64_t{0});
+        partials = with_mut(std::move(partials), [&](auto out) noexcept {
+            ::foundation::core::reduce_grains_by_tree<kGrain>(part, 0, std::move(out), Mix{});
+        });
+        digest =
+            fold_output(digest, ::foundation::core::reduce_by_tree(View<std::uint64_t const>{partials.view()}, Mix{})
+                                    .expect("the part has grains"));
     });
     return digest;
 }
@@ -250,6 +296,96 @@ template <class T>
     assert(is_inclusive && is_exclusive);
     std::uint64_t const digest = fold_outputs(kFnvOffset, View<std::uint64_t const>{inclusive_back.view()});
     return fold_outputs(digest, View<std::uint64_t const>{exclusive_back.view()});
+}
+
+// The digest of reduce_segments_by_tree with the add of floats on the
+// segments of digest_segment_sums.  The run holds no NaN, so the form gives
+// the bits of sum_segments_by_tree and its golden digest.
+struct AddFloats {
+    [[nodiscard]] constexpr float operator()(float const& left, float const& right) const noexcept {
+        return left + right;
+    }
+};
+
+[[nodiscard]] std::uint64_t digest_segment_reduces(std::uint64_t seed) noexcept {
+    HeapArray<std::size_t> offsets = ::fixy::mint_heap_array(test_alloc(), kSegments + 1, std::size_t{0});
+    PhiloxStream stream{seed};
+    std::size_t end = 0;
+    for (std::size_t segment = 1; segment <= kSegments; ++segment) {
+        end += stream.below(49);
+        element_at(offsets.view(), segment) = end;
+    }
+    HeapArray<float> const elements = draw_run<float>(end, seed + 1);
+    HeapArray<float> sums = ::fixy::mint_heap_array(test_alloc(), kSegments, 0.0f);
+    auto [is_reduced, written] = with_mut(std::move(sums), [&](auto out) noexcept {
+        return ::foundation::core::reduce_segments_by_tree(View<float const>{elements.view()},
+                                                           View<std::size_t const>{offsets.view()}, std::move(out),
+                                                           0.0f, AddFloats{})
+            .is_ok();
+    });
+    assert(is_reduced);
+    return fold_outputs(kFnvOffset, View<float const>{written.view()});
+}
+
+// The digest of the inclusive and then the exclusive scan of the sums of in,
+// with the two scan forms of the caller.  Each form gives the bits of the sum
+// scans, so each one gives their golden digest.
+template <class T, class Inclusive, class Exclusive>
+[[nodiscard]] std::uint64_t digest_sum_scans_by(View<T const> in, Inclusive inclusive, Exclusive exclusive) noexcept {
+    HeapArray<T> inclusive_out = ::fixy::mint_heap_array(test_alloc(), in.size(), T{});
+    HeapArray<T> exclusive_out = ::fixy::mint_heap_array(test_alloc(), in.size(), T{});
+    inclusive_out = with_mut(std::move(inclusive_out), [&](auto out) noexcept { inclusive(in, std::move(out)); });
+    exclusive_out = with_mut(std::move(exclusive_out), [&](auto out) noexcept { exclusive(in, std::move(out)); });
+    std::uint64_t const digest = fold_outputs(kFnvOffset, View<T const>{inclusive_out.view()});
+    return fold_outputs(digest, View<T const>{exclusive_out.view()});
+}
+
+// The carry of each grain of in: the exclusive sum scan of the tree sums of
+// the grains.  The carries read no sum of the last grain.
+template <class T>
+[[nodiscard]] HeapArray<T> sum_carries_of_grains(View<T const> in) noexcept {
+    std::size_t const grains = ::foundation::core::count_tree_grains<kGrain>(in.size());
+    HeapArray<T> sums = ::fixy::mint_heap_array(test_alloc(), grains, T{});
+    sums = with_mut(std::move(sums),
+                    [&](auto out) noexcept { ::foundation::core::sum_grains_by_tree<kGrain>(in, 0, std::move(out)); });
+    HeapArray<T> carries = ::fixy::mint_heap_array(test_alloc(), grains, T{});
+    bool is_scanned = false;
+    carries = with_mut(std::move(carries), [&](auto out) noexcept {
+        is_scanned = ::foundation::core::scan_exclusive_sums(View<T const>{sums.view()}, std::move(out)).is_ok();
+    });
+    assert(is_scanned);
+    return carries;
+}
+
+// The digest of the scans of words with the combine Mix by grains, with the
+// carries of the exclusive scan of the tree reduces of the grains: the bits of
+// the scans with Mix.
+[[nodiscard]] std::uint64_t digest_mix_grain_scans(View<std::uint64_t const> words) noexcept {
+    std::size_t const grains = ::foundation::core::count_tree_grains<kGrain>(words.size());
+    HeapArray<std::uint64_t> reduces = ::fixy::mint_heap_array(test_alloc(), grains, std::uint64_t{0});
+    reduces = with_mut(std::move(reduces), [&](auto out) noexcept {
+        ::foundation::core::reduce_grains_by_tree<kGrain>(words, 0, std::move(out), Mix{});
+    });
+    HeapArray<std::uint64_t> carries = ::fixy::mint_heap_array(test_alloc(), grains, std::uint64_t{0});
+    bool is_scanned = false;
+    carries = with_mut(std::move(carries), [&](auto out) noexcept {
+        is_scanned = ::foundation::core::scan_exclusive(View<std::uint64_t const>{reduces.view()}, std::move(out),
+                                                        std::uint64_t{0x5CA9u}, Mix{})
+                         .is_ok();
+    });
+    assert(is_scanned);
+    View<std::uint64_t const> const carried{carries.view()};
+    HeapArray<std::uint64_t> inclusive = ::fixy::mint_heap_array(test_alloc(), words.size(), std::uint64_t{0});
+    HeapArray<std::uint64_t> exclusive = ::fixy::mint_heap_array(test_alloc(), words.size(), std::uint64_t{0});
+    inclusive = with_mut(std::move(inclusive), [&](auto out) noexcept {
+        ::foundation::core::scan_inclusive_grains<kGrain>(words, 0, carried, std::move(out), Mix{});
+    });
+    exclusive = with_mut(std::move(exclusive), [&](auto out) noexcept {
+        ::foundation::core::scan_exclusive_grains<kGrain>(words, 0, carried, std::move(out), std::uint64_t{0x5CA9u},
+                                                          Mix{});
+    });
+    std::uint64_t const digest = fold_outputs(kFnvOffset, View<std::uint64_t const>{inclusive.view()});
+    return fold_outputs(digest, View<std::uint64_t const>{exclusive.view()});
 }
 
 // sort_stably of a copy of elements, and the digest of the sorted run.
@@ -355,18 +491,92 @@ void test_golden_bits() {
     auto const compare = [&](TextView form, std::uint64_t digest, std::uint64_t golden) noexcept {
         if (!is_golden(form, digest, golden)) ++differences;
     };
-    compare("sum_by_tree of float", digest_tree_sums(float_view), 0x6BAC76EA698CE629u);
-    compare("sum_by_tree of double", digest_tree_sums(View<double const>{doubles.view()}), 0x879105B969D69A92u);
-    compare("sum_by_tree of float with NaNs", digest_tree_sums(special_float_view), 0xB5F2534EF8243125u);
-    compare("sum_by_tree of double with NaNs", digest_tree_sums(special_double_view), 0x790612CBE499BEF2u);
-    compare("reduce_by_tree with a mix", digest_tree_reduces(word_view), 0xD4264F25E1C73CE7u);
+    View<double const> const double_view{doubles.view()};
+    View<float const> const special_scan_floats = special_float_view.window(0, 1000).expect("the scan run fits");
+    constexpr std::uint64_t golden_float_sums = 0x6BAC76EA698CE629u;
+    constexpr std::uint64_t golden_double_sums = 0x879105B969D69A92u;
+    constexpr std::uint64_t golden_special_float_sums = 0xB5F2534EF8243125u;
+    constexpr std::uint64_t golden_special_double_sums = 0x790612CBE499BEF2u;
+    constexpr std::uint64_t golden_reduces = 0xD4264F25E1C73CE7u;
+    constexpr std::uint64_t golden_segment_sums = 0xB97DD88541040B89u;
+    constexpr std::uint64_t golden_float_scans = 0xFFDC5DA43D51C2F3u;
+    constexpr std::uint64_t golden_double_scans = 0x0FD4EF291E8301FAu;
+    constexpr std::uint64_t golden_special_float_scans = 0x8632DFF569B8D39Cu;
+    constexpr std::uint64_t golden_mix_scans = 0x20CCA23B780FD991u;
+    compare("sum_by_tree of float", digest_tree_sums(float_view), golden_float_sums);
+    compare("sum_by_tree of double", digest_tree_sums(double_view), golden_double_sums);
+    compare("sum_by_tree of float with NaNs", digest_tree_sums(special_float_view), golden_special_float_sums);
+    compare("sum_by_tree of double with NaNs", digest_tree_sums(special_double_view), golden_special_double_sums);
+    compare("reduce_by_tree with a mix", digest_tree_reduces(word_view), golden_reduces);
     compare("sum_runs_by_tree", digest_run_sums(View<float const>{run_elements.view()}), 0xF2B81C6AA6EC7507u);
-    compare("sum_segments_by_tree", digest_segment_sums(0x601D0009u), 0xB97DD88541040B89u);
-    compare("the sum scans of float", digest_sum_scans(scan_floats), 0xFFDC5DA43D51C2F3u);
-    compare("the sum scans of double", digest_sum_scans(scan_doubles), 0x0FD4EF291E8301FAu);
-    compare("the sum scans of float with NaNs",
-            digest_sum_scans(special_float_view.window(0, 1000).expect("the scan run fits")), 0x8632DFF569B8D39Cu);
-    compare("the scans with a mix", digest_mix_scans(scan_words), 0x20CCA23B780FD991u);
+    compare("sum_segments_by_tree", digest_segment_sums(0x601D0009u), golden_segment_sums);
+    compare("the sum scans of float", digest_sum_scans(scan_floats), golden_float_scans);
+    compare("the sum scans of double", digest_sum_scans(scan_doubles), golden_double_scans);
+    compare("the sum scans of float with NaNs", digest_sum_scans(special_scan_floats), golden_special_float_scans);
+    compare("the scans with a mix", digest_mix_scans(scan_words), golden_mix_scans);
+
+    // The lane forms, the grain forms and the forms with the combine of a
+    // caller state the bits of a form above, so each one gives its golden
+    // digest.
+    auto const in_four_lanes = [](auto part) noexcept { return ::foundation::core::sum_by_tree_in_lanes<4>(part); };
+    auto const in_eight_lanes = [](auto part) noexcept { return ::foundation::core::sum_by_tree_in_lanes<8>(part); };
+    auto const in_sixteen_lanes = [](auto part) noexcept { return ::foundation::core::sum_by_tree_in_lanes<16>(part); };
+    auto const by_grains = [](auto part) noexcept { return sum_by_grains(part); };
+    compare("sum_by_tree_in_lanes<4> of float", digest_tree_sums_by(float_view, in_four_lanes), golden_float_sums);
+    compare("sum_by_tree_in_lanes<8> of float", digest_tree_sums_by(float_view, in_eight_lanes), golden_float_sums);
+    compare("sum_by_tree_in_lanes<16> of float", digest_tree_sums_by(float_view, in_sixteen_lanes), golden_float_sums);
+    compare("sum_by_tree_in_lanes<8> of double", digest_tree_sums_by(double_view, in_eight_lanes), golden_double_sums);
+    compare("sum_by_tree_in_lanes<16> of float with NaNs", digest_tree_sums_by(special_float_view, in_sixteen_lanes),
+            golden_special_float_sums);
+    compare("sum_grains_by_tree of float", digest_tree_sums_by(float_view, by_grains), golden_float_sums);
+    compare("sum_grains_by_tree of double", digest_tree_sums_by(double_view, by_grains), golden_double_sums);
+    compare("sum_grains_by_tree of float with NaNs", digest_tree_sums_by(special_float_view, by_grains),
+            golden_special_float_sums);
+    compare("sum_grains_by_tree of double with NaNs", digest_tree_sums_by(special_double_view, by_grains),
+            golden_special_double_sums);
+    compare("reduce_grains_by_tree with a mix", digest_grain_reduces(word_view), golden_reduces);
+    compare("reduce_segments_by_tree with an add", digest_segment_reduces(0x601D0009u), golden_segment_sums);
+
+    auto const inclusive_in_four_lanes = [](auto in, auto out) noexcept {
+        bool const is_scanned = ::foundation::core::scan_inclusive_sums_in_lanes<4>(in, std::move(out)).is_ok();
+        assert(is_scanned);
+    };
+    auto const exclusive_in_four_lanes = [](auto in, auto out) noexcept {
+        bool const is_scanned = ::foundation::core::scan_exclusive_sums_in_lanes<4>(in, std::move(out)).is_ok();
+        assert(is_scanned);
+    };
+    auto const inclusive_in_sixteen_lanes = [](auto in, auto out) noexcept {
+        bool const is_scanned = ::foundation::core::scan_inclusive_sums_in_lanes<16>(in, std::move(out)).is_ok();
+        assert(is_scanned);
+    };
+    auto const exclusive_in_sixteen_lanes = [](auto in, auto out) noexcept {
+        bool const is_scanned = ::foundation::core::scan_exclusive_sums_in_lanes<16>(in, std::move(out)).is_ok();
+        assert(is_scanned);
+    };
+    auto const inclusive_by_grains = [](auto in, auto out) noexcept {
+        auto const carries = sum_carries_of_grains(in);
+        ::foundation::core::scan_inclusive_sum_grains<kGrain>(in, 0, carries.view(), std::move(out));
+    };
+    auto const exclusive_by_grains = [](auto in, auto out) noexcept {
+        auto const carries = sum_carries_of_grains(in);
+        ::foundation::core::scan_exclusive_sum_grains<kGrain>(in, 0, carries.view(), std::move(out));
+    };
+    compare("the sum scans in 4 lanes of float",
+            digest_sum_scans_by(scan_floats, inclusive_in_four_lanes, exclusive_in_four_lanes), golden_float_scans);
+    compare("the sum scans in 16 lanes of double",
+            digest_sum_scans_by(scan_doubles, inclusive_in_sixteen_lanes, exclusive_in_sixteen_lanes),
+            golden_double_scans);
+    compare("the sum scans in 16 lanes of float with NaNs",
+            digest_sum_scans_by(special_scan_floats, inclusive_in_sixteen_lanes, exclusive_in_sixteen_lanes),
+            golden_special_float_scans);
+    compare("the sum scans by grains of float",
+            digest_sum_scans_by(scan_floats, inclusive_by_grains, exclusive_by_grains), golden_float_scans);
+    compare("the sum scans by grains of double",
+            digest_sum_scans_by(scan_doubles, inclusive_by_grains, exclusive_by_grains), golden_double_scans);
+    compare("the sum scans by grains of float with NaNs",
+            digest_sum_scans_by(special_scan_floats, inclusive_by_grains, exclusive_by_grains),
+            golden_special_float_scans);
+    compare("the scans with a mix by grains", digest_mix_grain_scans(scan_words), golden_mix_scans);
     compare("sort_stably by a key", digest_stable_sort(View<std::uint64_t const>{keyed.view()}, KeyLess{}),
             0x85C650B5059457A4u);
     compare("sort_stably of float", digest_stable_sort(View<float const>{sort_floats.view()}), 0xE43981347DE9CFCBu);
