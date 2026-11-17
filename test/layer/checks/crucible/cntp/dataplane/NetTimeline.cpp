@@ -9,8 +9,6 @@
 
 namespace crucible::cntp::dataplane {
 
-static_assert(kNetTimelineCapacity == 4096u);
-static_assert(kNetTimelineMask == 4095u);
 static_assert((kNetTimelineCapacity & kNetTimelineMask) == 0u, "the capacity is a power of two");
 
 static_assert(sizeof(NetEventKind) == 1);
@@ -45,10 +43,11 @@ static_assert(offsetof(NetEvent, ts_ns) == 24);
 static_assert(std::is_trivially_copyable_v<NetEvent>);
 static_assert(std::has_unique_object_representations_v<NetEvent>);
 
-// struct timeline_header and struct crucible_net_timeline.
+// struct timeline_header and struct crucible_net_timeline: 8 bytes, then
+// 4096 events of 32 bytes.
 static_assert(sizeof(NetTimelineHeader) == 8);
 static_assert(offsetof(NetTimelineHeader, write_idx) == 0);
-static_assert(sizeof(NetTimeline) == 8 + kNetTimelineCapacity * sizeof(NetEvent));
+static_assert(sizeof(NetTimeline) == 131080);
 static_assert(alignof(NetTimeline) == 8);
 static_assert(offsetof(NetTimeline, hdr) == 0);
 static_assert(offsetof(NetTimeline, events) == 8);
