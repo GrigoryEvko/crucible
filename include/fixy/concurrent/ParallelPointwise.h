@@ -9,6 +9,11 @@
 //                       index, as write_pointwise does, or gives ShapeMismatch
 //                       and writes nothing.  out is a StridedViewMut of a
 //                       static rank, which the form borrows for the call
+//   write_pointwise_in_parallel_with_thread_options<Coupling, Shards>(
+//       ctx, test, options, out, op, inputs...)
+//                       the same walk with the options of the threads of the
+//                       shards, for a test or a bench, such as the placement
+//                       OneCpuEach that gives each shard its own core
 //
 // THE SPLIT
 //   Shard s writes the positions [start(s), start(s + 1)) of the first axis
@@ -48,6 +53,7 @@
 #include <fixy/OwnedRegion.h>
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/concurrent/Spawn.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Arithmetic.h>
@@ -97,22 +103,17 @@ template <class... Inputs, class T, std::size_t Rank>
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
-// Writes op(input...) into the element of out at each index, by THE SPLIT,
-// with the bits of write_pointwise.  It gives ShapeMismatch, and writes
-// nothing, when the sizes of an input differ from the sizes of out.
-// Complexity: O(count) calls of the op in Shards shards, O(rank^2 * views)
-// for the plan on the calling thread and in each shard, and O(Shards) for the
-// region of the shards.
-template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, class T, std::size_t Rank, class Brand,
+// The body of the two forms below.  launch runs the shards: it takes the
+// budget, the region of the shards and the body of a shard, and it calls
+// mint_parallel_for, or the door of a test with the options of the threads.
+template <spawn::BodyCoupling Coupling, std::size_t Shards, class Launch, class T, std::size_t Rank, class Brand,
           class Op, class... Inputs>
-    requires(Shards > 0) && (Rank != ::foundation::core::dynamic_rank)
-         && detail::CtxFitsParallelPointwise<Ctx> && ::foundation::core::CanWritePointwise<Op, T, Rank, Inputs...>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::ShapeMismatch>
-write_pointwise_in_parallel(Ctx const& ctx, ::foundation::core::StridedViewMut<T, Rank, Brand>& out, Op op,
-                            Inputs const&... inputs) noexcept {
+write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::StridedViewMut<T, Rank, Brand>& out, Op op,
+                                  Inputs const&... inputs) noexcept {
     namespace core = ::foundation::core;
     if constexpr (Rank == 0) {
-        static_cast<void>(ctx);
+        static_cast<void>(launch);
         return core::write_pointwise(out, op, inputs...);
     } else {
         using Sequence = std::index_sequence_for<Inputs...>;
@@ -143,8 +144,8 @@ write_pointwise_in_parallel(Ctx const& ctx, ::foundation::core::StridedViewMut<T
             *starts.get(shard).expect("each shard has a slot") = ::fixy::detail::shard_start(positions, Shards, shard);
         }
         auto const ruled = core::detail::ruled_op_<T>(op);
-        ::foundation::linear::drop(spawn::mint_parallel_for<Coupling, Shards>(
-            ctx, budget,
+        ::foundation::linear::drop(launch(
+            budget,
             ::fixy::mint_owned_region(
                 first_of_(core::detail::ViewDoor::key(), starts.view()), Shards,
                 ::foundation::permissions::mint_permission_root<detail::ParallelPointwiseShards>()),
@@ -168,6 +169,49 @@ write_pointwise_in_parallel(Ctx const& ctx, ::foundation::core::StridedViewMut<T
             }));
         return core::Unit{};
     }
+}
+
+// Writes op(input...) into the element of out at each index, by THE SPLIT,
+// with the bits of write_pointwise.  It gives ShapeMismatch, and writes
+// nothing, when the sizes of an input differ from the sizes of out.
+// Complexity: O(count) calls of the op in Shards shards, O(rank^2 * views)
+// for the plan on the calling thread and in each shard, and O(Shards) for the
+// region of the shards.
+template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, class T, std::size_t Rank, class Brand,
+          class Op, class... Inputs>
+    requires(Shards > 0) && (Rank != ::foundation::core::dynamic_rank)
+         && detail::CtxFitsParallelPointwise<Ctx> && ::foundation::core::CanWritePointwise<Op, T, Rank, Inputs...>
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::ShapeMismatch>
+write_pointwise_in_parallel(Ctx const& ctx, ::foundation::core::StridedViewMut<T, Rank, Brand>& out, Op op,
+                            Inputs const&... inputs) noexcept {
+    auto const launch = [&ctx](WorkBudget budget, auto&& region, auto body) noexcept {
+        return spawn::mint_parallel_for<Coupling, Shards>(ctx, budget, std::move(region), std::move(body));
+    };
+    return write_pointwise_in_parallel_body_<Coupling, Shards>(launch, out, op, inputs...);
+}
+
+// write_pointwise_in_parallel with the options of the threads of the shards,
+// for a test or a bench.  The placement OneCpuEach of fixy/os/ThreadTasks.h
+// gives each shard its own CPU of the mask of the options, so the shards of a
+// bench on isolated cores run on one core each.  The test context is the
+// authority of the options, as for mint_parallel_for_with_thread_options of
+// fixy/concurrent/Spawn.h, so code that ships cannot give them.  The bits of
+// out are the bits of write_pointwise for each option.
+template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename TestCtx, class T, std::size_t Rank,
+          class Brand, class Op, class... Inputs>
+    requires(Shards > 0) && (Rank != ::foundation::core::dynamic_rank) && detail::CtxFitsParallelPointwise<Ctx>
+         && ::foundation::effects::CtxOwnsCapability<TestCtx, ::foundation::effects::Effect::Test>
+         && ::foundation::core::CanWritePointwise<Op, T, Rank, Inputs...>
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::ShapeMismatch>
+write_pointwise_in_parallel_with_thread_options(Ctx const& ctx, TestCtx const& test,
+                                                ::fixy::thread::ThreadOptions const& options,
+                                                ::foundation::core::StridedViewMut<T, Rank, Brand>& out, Op op,
+                                                Inputs const&... inputs) noexcept {
+    auto const launch = [&ctx, &test, &options](WorkBudget budget, auto&& region, auto body) noexcept {
+        return spawn::mint_parallel_for_with_thread_options<Coupling, Shards>(ctx, test, budget, std::move(region),
+                                                                              std::move(body), options);
+    };
+    return write_pointwise_in_parallel_body_<Coupling, Shards>(launch, out, op, inputs...);
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET

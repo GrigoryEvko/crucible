@@ -21,6 +21,8 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/concurrent/ParallelPointwise.h>
+#include <fixy/os/Sched.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/core/Pointwise.h>
 #include <foundation/effects/Effect.h>
 
@@ -316,6 +318,44 @@ void shape_mismatch(::fixy::TestRunnerCtx const& test, BgCtx const& ctx) noexcep
     pass(test, "  shape_mismatch: PASSED\n");
 }
 
+// The form with the options of the threads: four shards that wait on each
+// other, each on its own CPU of the affinity of the test under the placement
+// OneCpuEach, write the bits of write_pointwise on the calling thread.
+void placed_shards(::fixy::TestRunnerCtx const& test, BgCtx const& ctx) noexcept {
+    auto const alloc = eff::testing::test().alloc;
+    auto const fill = [](std::size_t position) noexcept { return value_at<float>(position); };
+    Case<2, 2> const dense{Plane{.sizes = {64, 96}, .strides = {96, 1}, .offset = 0},
+                           {Plane{.sizes = {64, 96}, .strides = {1, 64}, .offset = 6144},
+                            Plane{.sizes = {64, 96}, .strides = {96, 1}, .offset = 12288}},
+                           18432};
+    Written<float> const expected = write_case<Form::OneThread, BodyCoupling::WaitOnEachOther, 4>(
+        ctx, dense, Add{}, ::fixy::mint_heap_array_with<float>(alloc, dense.total, fill),
+        std::make_index_sequence<2>{});
+    ::fixy::thread::ThreadOptions const options{
+        .affinity = ::fixy::sched::read_affinity(ctx).value_or(::fixy::sched::AffinityMask{}),
+        .placement = ::fixy::thread::ThreadPlacement::OneCpuEach};
+    auto [is_written, placed] =
+        ::fixy::with_mut(::fixy::mint_heap_array_with<float>(alloc, dense.total, fill), [&](auto frame_run) noexcept {
+            ::fixy::View<float const> const whole{frame_run.view()};
+            auto const input_of = [&dense, whole](std::size_t input) noexcept {
+                Layout<2> const& layout = *dense.inputs.get(input).expect("an input is below the count");
+                return ::fixy::mint_strided_view(whole, layout.sizes.view(), layout.strides.view(), layout.offset)
+                    .expect("an input fits the run");
+            };
+            auto out = ::fixy::mint_strided_view_mut(std::move(frame_run), dense.out.sizes.view(),
+                                                     dense.out.strides.view(), dense.out.offset)
+                           .expect("the output has no overlap");
+            return ::fixy::concurrent::write_pointwise_in_parallel_with_thread_options<BodyCoupling::WaitOnEachOther,
+                                                                                       4>(
+                       ctx, test, options, out, Add{}, input_of(0), input_of(1))
+                .is_ok();
+        });
+    CRUCIBLE_TEST_ASSERT(test, expected.is_written && is_written);
+    CRUCIBLE_TEST_ASSERT(
+        test, same_bits(::fixy::View<float const>{placed.view()}, ::fixy::View<float const>{expected.run.view()}));
+    pass(test, "  placed_shards: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -326,6 +366,7 @@ int main() {
     other_shapes(test, ctx);
     past_private_cache(test, ctx);
     shape_mismatch(test, ctx);
+    placed_shards(test, ctx);
     ::fixy::report(::fixy::Sink::Out, "test_concurrent_parallel_pointwise: all tests passed\n");
     return 0;
 }
