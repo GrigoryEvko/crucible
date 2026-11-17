@@ -8,6 +8,7 @@
 
 #include <fixy/os/Signal.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
+#include <foundation/core/Id.h>
 #include <foundation/core/Report.h>
 #include <foundation/os/Errno.h>
 
@@ -43,6 +44,35 @@ static_assert(std::is_trivially_copyable_v<::foundation::algebra::lattices::Affi
 // OF CPUS).
 void fill_cpu_set(::foundation::algebra::lattices::AffinityMask const& mask, ::cpu_set_t& set) noexcept {
     __builtin_memcpy(&set, &mask, sizeof(set));
+}
+
+struct TaskPositionTag final {};
+
+// The position of a task in the list of one call, from 0.
+using TaskPosition = ::foundation::core::Id<TaskPositionTag, std::uint64_t>;
+
+// The set of the one CPU of the task at a position under OneCpuEach: the CPU
+// at that position in the ascending CPUs of the mask, modulo their count.  An
+// empty mask gives the empty set.  The walk reads the set of the C library
+// with its macros, so it runs no contract check of the mask.  Complexity:
+// linear in the CPUs of a set.
+[[nodiscard]] ::cpu_set_t cpu_set_of_task(::foundation::algebra::lattices::AffinityMask const& mask,
+                                          TaskPosition position) noexcept {
+    ::cpu_set_t one{};
+    std::uint64_t const count = mask.popcount();
+    if (count == 0) return one;
+    ::cpu_set_t all{};
+    fill_cpu_set(mask, all);
+    std::uint64_t remaining = position.raw() % count;
+    for (std::size_t cpu = 0; cpu < std::size_t{CPU_SETSIZE}; ++cpu) {
+        if (!CPU_ISSET(cpu, &all)) continue;
+        if (remaining == 0) {
+            CPU_SET(cpu, &one);
+            return one;
+        }
+        --remaining;
+    }
+    return one;
 }
 
 // The function of each new thread.  The thread sets its alternate signal
@@ -87,6 +117,16 @@ public:
     [[nodiscard]] int code() const noexcept { return code_; }
     [[nodiscard]] ::pthread_attr_t const* attributes() const noexcept { return &attributes_; }
 
+    // Gives the next thread of the call the CPU of its task under
+    // OneCpuEach, and gives the code of the C library.  The attributes keep
+    // the mask of the options under SharedMask, and for an empty mask.
+    [[nodiscard]] int place_task(ThreadOptions const& options, TaskPosition position) noexcept {
+        if (options.placement != ThreadPlacement::OneCpuEach) return 0;
+        if (options.affinity == ::foundation::algebra::lattices::AffinityMask{}) return 0;
+        ::cpu_set_t const one = cpu_set_of_task(options.affinity, position);
+        return ::pthread_attr_setaffinity_np(&attributes_, sizeof(one), &one);
+    }
+
 private:
     ::pthread_attr_t attributes_{};
     int code_ = 0;
@@ -103,13 +143,14 @@ void name_calling_thread(ThreadName const& name) noexcept {
 run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions const& options) noexcept {
     if (options.guard_bytes == 0) return ::foundation::core::err(::foundation::os::Errno::einval);
     {
-        StartAttributes const attributes{options};
+        StartAttributes attributes{options};
         if (attributes.code() != 0) return ::foundation::core::err(error_of(attributes.code()));
         std::size_t started = 0;
         for (thread_task& task : tasks) {
             task.name = &options.name;
             ::pthread_t handle{};
-            int const code = ::pthread_create(&handle, attributes.attributes(), &start_task, &task);
+            int code = attributes.place_task(options, TaskPosition{started});
+            if (code == 0) code = ::pthread_create(&handle, attributes.attributes(), &start_task, &task);
             if (code != 0) [[unlikely]] {
                 if (started == 0) return ::foundation::core::err(error_of(code));
                 ::foundation::core::fatal(
@@ -132,10 +173,11 @@ run_thread_tasks(::foundation::core::View<thread_task> tasks, ThreadOptions cons
 ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
 start_thread_task(thread_task& task, ThreadOptions const& options) noexcept {
     if (options.guard_bytes == 0) return ::foundation::core::err(::foundation::os::Errno::einval);
-    StartAttributes const attributes{options};
+    StartAttributes attributes{options};
     if (attributes.code() != 0) return ::foundation::core::err(error_of(attributes.code()));
     ::pthread_t handle{};
-    int const code = ::pthread_create(&handle, attributes.attributes(), &start_task, &task);
+    int code = attributes.place_task(options, TaskPosition{0});
+    if (code == 0) code = ::pthread_create(&handle, attributes.attributes(), &start_task, &task);
     if (code != 0) return ::foundation::core::err(error_of(code));
     return handle;
 }

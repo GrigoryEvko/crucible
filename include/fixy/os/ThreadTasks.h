@@ -26,6 +26,17 @@
 //     fixy/os/CpuPinned.h is in force on the thread until it pins through
 //     fixy/os/Sched.h.
 //
+//     The placement tells how the threads share the mask.  SharedMask gives
+//     each thread each CPU of the mask, and the scheduler places them.
+//     OneCpuEach gives the thread of the task k only the CPU k of the mask,
+//     in ascending order of the CPUs, modulo the count of the CPUs.  So no
+//     two of the first tasks, up to that count, share a CPU.  On isolated
+//     CPUs, such as the cores of a bench, no load balancer moves a thread, and
+//     a thread with a mask of several CPUs stays on the CPU of the thread that
+//     starts it.  There, OneCpuEach is the only way to run the threads of one
+//     call on more than one CPU.  The placement of an empty mask changes
+//     nothing.
+//
 // THE ERRORS
 //     A start that fails before the first thread runs is the error of the
 //     Result, with the error number of the call that failed: eagain when the
@@ -153,12 +164,23 @@ private:
     static void name_holds_a_zero_byte_() noexcept;
 };
 
+// How the threads of one call share the CPUs of the mask of the options (THE
+// OPTIONS).
+enum class ThreadPlacement : std::uint8_t {
+    // Each thread takes each CPU of the mask.
+    SharedMask,
+    // The thread of the task k takes the CPU k of the mask, modulo the count
+    // of the CPUs of the mask.
+    OneCpuEach,
+};
+
 // The options of each thread of one call (THE OPTIONS).
 struct ThreadOptions {
     std::size_t stack_bytes = default_stack_bytes;
     std::size_t guard_bytes = default_guard_bytes;
     ThreadName name{};
     ::foundation::algebra::lattices::AffinityMask affinity{};
+    ThreadPlacement placement = ThreadPlacement::SharedMask;
 };
 
 // A context that may start threads: one that owns Bg or Init.

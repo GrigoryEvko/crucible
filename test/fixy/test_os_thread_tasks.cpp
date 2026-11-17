@@ -26,6 +26,8 @@ struct ThreadFacts {
     std::uint64_t name_high = 0;
     std::uint64_t cpu_count = 0;
     std::uint64_t first_cpu = 0;
+    // The second CPU of the mask, or the first one when the mask holds one.
+    std::uint64_t second_cpu = 0;
 };
 
 }  // namespace
@@ -50,11 +52,12 @@ ThreadFacts read_calling_thread_facts() noexcept {
     ::cpu_set_t set{};
     if (::pthread_getaffinity_np(::pthread_self(), sizeof(set), &set) == 0) {
         facts.cpu_count = static_cast<std::uint64_t>(CPU_COUNT(&set));
-        for (std::size_t cpu = 0; cpu < std::size_t{CPU_SETSIZE}; ++cpu) {
-            if (CPU_ISSET(cpu, &set)) {
-                facts.first_cpu = cpu;
-                break;
-            }
+        std::size_t found = 0;
+        for (std::size_t cpu = 0; cpu < std::size_t{CPU_SETSIZE} && found < 2; ++cpu) {
+            if (!CPU_ISSET(cpu, &set)) continue;
+            if (found == 0) facts.first_cpu = cpu;
+            facts.second_cpu = cpu;
+            ++found;
         }
     }
     return facts;
@@ -150,6 +153,44 @@ void test_each_option_reaches_each_thread() {
     expect_probe_options(second_facts, options, main_facts);
 }
 
+// Under OneCpuEach the thread of the task k takes only the CPU k of the mask,
+// modulo the count of its CPUs.  Three tasks on a mask of two CPUs take the
+// first CPU, the second CPU and the first CPU again, each as a mask of one CPU.
+// On isolated CPUs, threads with a mask of several CPUs all stay on the CPU of
+// the thread that starts them, so this placement is the way to run them on
+// more than one CPU.
+void test_one_cpu_each() {
+    ThreadFacts const main_facts = read_calling_thread_facts();
+    if (main_facts.cpu_count < 2) return;
+    auto const first = static_cast<std::uint16_t>(main_facts.first_cpu);
+    auto const second = static_cast<std::uint16_t>(main_facts.second_cpu);
+    ThreadOptions const options{
+        .affinity = ::foundation::algebra::lattices::AffinityLattice::join(AffinityMask::single(first),
+                                                                           AffinityMask::single(second)),
+        .placement = ::fixy::thread::ThreadPlacement::OneCpuEach,
+    };
+    ThreadFacts first_facts{};
+    ThreadFacts second_facts{};
+    ThreadFacts third_facts{};
+    auto first_task = [&]() noexcept { first_facts = read_calling_thread_facts(); };
+    auto second_task = [&]() noexcept { second_facts = read_calling_thread_facts(); };
+    auto third_task = [&]() noexcept { third_facts = read_calling_thread_facts(); };
+    auto const started =
+        ::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, options, first_task, second_task, third_task);
+    CRUCIBLE_FATAL_INVARIANT(started.is_ok());
+    CRUCIBLE_FATAL_INVARIANT(first_facts.cpu_count == 1 && second_facts.cpu_count == 1 && third_facts.cpu_count == 1);
+    CRUCIBLE_FATAL_INVARIANT(first_facts.first_cpu == first);
+    CRUCIBLE_FATAL_INVARIANT(second_facts.first_cpu == second);
+    CRUCIBLE_FATAL_INVARIANT(third_facts.first_cpu == first);
+
+    // SharedMask gives each thread both CPUs.
+    ThreadOptions const shared{.affinity = options.affinity};
+    ThreadFacts shared_facts{};
+    auto shared_task = [&]() noexcept { shared_facts = read_calling_thread_facts(); };
+    CRUCIBLE_FATAL_INVARIANT(::fixy::thread::run_joined(WorkerCtx{eff::testing::bg()}, shared, shared_task).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(shared_facts.cpu_count == 2);
+}
+
 // An option that is not valid is the error of the call, and no thread of
 // the call runs.
 void test_refused_option_runs_no_thread() {
@@ -181,6 +222,7 @@ int main() {
     test_each_body_runs_on_a_thread_of_its_own();
     test_default_options();
     test_each_option_reaches_each_thread();
+    test_one_cpu_each();
     test_refused_option_runs_no_thread();
     return 0;
 }
