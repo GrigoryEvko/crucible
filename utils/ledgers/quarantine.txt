@@ -292,12 +292,14 @@ test/ | door-header | 11 | - | -
 test/ | foreign-symbol | 12 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | opted-out | 47 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
+test/ | opted-out | 2 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
 test/ | opted-out | 4 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | opted-out | 22 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | raw-function-pointer | 13 | - | -
 test/ | raw-new-delete | 39 | - | -
 test/ | raw-pointer-object | 327 | - | -
 test/ | region | 1 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
+test/ | region | 4 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | replace-pending:<limits> | 12 | - | -
