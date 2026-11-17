@@ -20,6 +20,11 @@ The checks:
               a library of a root of a different level, a library of the kind
               host in a root, a library of a build above the picked level, a
               library with no note, and a pair of two notes
+    loaded    with CRUCIBLE_LEVEL_ROOT in the environment, as `loop levels`
+              runs the vessel tests of each level, the loader loads the two
+              vessel libraries from the directory of the picked level of that
+              root, and the pick is the level of CRUCIBLE_ISA_LEVEL.  So a pass
+              at each level comes from the libraries of that level
 
 A planted library is a copy of the probe with a different descriptor.  Each
 planted file is in a temporary directory of the test.  A refused library never
@@ -246,6 +251,29 @@ def check_refused(run: Run, build: Path, folder: Path) -> None:
     run.expect(not opened, f"the loader opened a refused library: {opened}")
 
 
+def check_loaded(run: Run) -> None:
+    """With a level root in the environment, the loader loads the pair of the picked level of the root."""
+    root_text = os.environ.get(crucible_native.LEVEL_ROOT_VARIABLE, "")
+    if not root_text:
+        return
+    root = Path(root_text)
+    picked = crucible_native.picked_level(root / PROBE)
+    request = os.environ.get(crucible_native.LEVEL_REQUEST_VARIABLE, "")
+    run.expect(not request or request == f"v{picked}", f"the request {request} picks v{picked}")
+    crucible_native.load_vessel_library()
+    crucible_native.load_dispatch_library()
+    names = (VESSEL, DISPATCH)
+    loaded = {
+        Path(words[-1])
+        for words in (line.split() for line in Path("/proc/self/maps").read_text().splitlines())
+        if words and words[-1].endswith(names)
+    }
+    folder = root / f"x86-64-v{picked}"
+    run.expect(loaded == {folder / name for name in names},
+               f"the root {root} with the pick v{picked} loads {sorted(str(path) for path in loaded)}, not the pair "
+               f"of {folder}")
+
+
 def main() -> int:
     """Run each check and report."""
     if not crucible_native._is_x86_64():
@@ -265,6 +293,7 @@ def main() -> int:
         folder = Path(temporary)
         check_root(run, build, host, folder)
         check_refused(run, build, folder)
+    check_loaded(run)
     for line in run.problems:
         print(f"  FAIL: {line}")
     if run.problems:
