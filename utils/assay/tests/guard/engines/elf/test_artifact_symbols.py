@@ -10,7 +10,9 @@ THE CASES
       * The hidden imports of planted objects.  Each unit plants the section
         of the quarantine plugin with an asm statement (HIDDEN_FIXTURES)
       * The run and the write of the rule on a planted build directory, also
-        for two build kinds that one set of rows judges.
+        for two build kinds that one set of rows judges
+      * The calls that GCC emits itself, which give no row, and a different
+        new import of the C library, which still fails.
     The compile cases use the compiler that ASSAY_TEST_CXX names.  The
     registration of the test in test/CMakeLists.txt gives the compiler of the
     build.
@@ -156,6 +158,15 @@ UNITS = {
     "void copy_entry(char* to, const char* from, unsigned long size) { std::memcpy(to, from, size); }\n"
     "int exit_entry() { return std::atexit(crucible_symbols_at_exit); }\n",
     "thrower": "int thrower_entry(int input) {\n    if (input < 0) { throw input; }\n    return input;\n}\n",
+    # Calls that GCC emits itself on x86_64 and on aarch64: the division and the conversion of a 128-bit integer through
+    # __udivti3 and __floatuntidf of the support library, and a compare of memory through memcmp.
+    "emitted": "unsigned __int128 divide_entry(unsigned __int128 dividend, unsigned __int128 divisor) {\n"
+    "    return dividend / divisor;\n}\n"
+    "double convert_entry(unsigned __int128 value) { return static_cast<double>(value); }\n"
+    "int compare_entry(const void* left, const void* right, unsigned long size) {\n"
+    "    return __builtin_memcmp(left, right, size);\n}\n",
+    # A call of strlen of glibc, which the list of the calls of the compiler does not hold.
+    "strings": "#include <cstring>\nunsigned long length_entry(const char* text) { return std::strlen(text); }\n",
     # The definitions of the names that the other units reference.  The library planted_tree of the root holds them.
     "externs": 'extern "C" int crucible_symbols_extern(int value) { return value; }\n'
     'extern "C" int crucible_symbols_seed() { return 7; }\nextern "C" void crucible_symbols_at_exit() {}\n',
@@ -260,11 +271,23 @@ def class_cases(expect: testing.Expect) -> None:
         ]
         == [artifact_symbols.ALLOW, artifact_symbols.ALLOW, artifact_symbols.RATCHET, artifact_symbols.RATCHET],
     )
-    support = frozenset({"__udivti3"})
+    support = frozenset({"__udivti3", "__popcountdi2", "__floatuntidf", "_Unwind_Resume", "__cpu_indicator_init"})
     module = artifact_symbols
     for library, symbol, family, wanted in (
-        ("foundation", "memcpy", module.RUNTIME, module.LIBC_ALLOW),
-        ("foundation", "__udivti3", module.RUNTIME, module.LIBC_ALLOW),
+        ("foundation", "memcpy", module.RUNTIME, module.NO_ROW),
+        ("fixy", "memmove", module.RUNTIME, module.NO_ROW),
+        ("crucible", "memset", module.RUNTIME, module.NO_ROW),
+        ("crucible_vigil", "memcmp", module.RUNTIME, module.NO_ROW),
+        ("foundation", "__udivti3", module.RUNTIME, module.NO_ROW),
+        ("crucible_vigil", "__popcountdi2", module.RUNTIME, module.NO_ROW),
+        ("crucible", "__floatuntidf", module.RUNTIME, module.NO_ROW),
+        ("crucible", "_Unwind_Resume", module.RUNTIME, module.LIBC_ALLOW),
+        ("crucible", "__cpu_indicator_init", module.RUNTIME, module.LIBC_ALLOW),
+        ("crucible", "__stack_chk_fail", module.RUNTIME, module.LIBC_ALLOW),
+        ("crucible", "__tls_get_addr", module.RUNTIME, module.LIBC_ALLOW),
+        ("crucible", "__float_planted", module.RUNTIME, module.LIBC_RATCHET),
+        ("crucible", "memchr", module.RUNTIME, module.LIBC_RATCHET),
+        ("crucible", "memcpy", module.STATIC, module.STATIC_RATCHET),
         ("foundation", "setenv", module.RUNTIME, module.LIBC_RATCHET),
         ("foundation", "getenv", module.RUNTIME, module.DOOR_RATCHET),
         ("foundation", "pthread_create", module.RUNTIME, module.DOOR_RATCHET),
@@ -743,10 +766,9 @@ def first_write_cases(expect: testing.Expect, scratch: Scratch) -> None:
     )
     crucible_rows = {key.entity: key.kind for key in written.expected() if key.path == "@build/libcrucible.a"}
     expect(
-        "memcpy of glibc gets the mark libc-allow and atexit of libc_nonshared.a, a door call outside its door, the "
-        "mark door-ratchet, each with no version, and the row of the person keeps its reason",
-        crucible_rows == {"memcpy": artifact_symbols.LIBC_ALLOW, "atexit": artifact_symbols.DOOR_RATCHET}
-        and DOOR_ROW in scratch.ledger_text(),
+        "memcpy of glibc, a call that GCC emits itself, gets no row, and atexit of libc_nonshared.a, a door call "
+        "outside its door, gets the mark door-ratchet with no version, and the row of the person keeps its reason",
+        crucible_rows == {"atexit": artifact_symbols.DOOR_RATCHET} and DOOR_ROW in scratch.ledger_text(),
     )
     expect(
         "a reference to a name that a different library of the root defines gives no row",
@@ -999,6 +1021,36 @@ def door_cases(expect: testing.Expect, scratch: Scratch) -> None:
     scratch.ledger.write_text(good, encoding="utf-8")
 
 
+def emitted_cases(expect: testing.Expect, scratch: Scratch) -> None:
+    """Hold the calls that GCC emits itself, which give no row, and a different new import, which still fails."""
+    good = scratch.ledger_text()
+    emitted = ("__udivti3", "__floatuntidf", "memcmp")
+    scratch.archive("crucible", ["glibc", "base", "emitted"])
+    imported = artifact_symbols.read_artifact(scratch.build / "libcrucible.a").undefined
+    expect(
+        "the planted unit imports the two helpers of the support library and memcmp, so the next cases see them",
+        all(name in imported for name in emitted),
+    )
+    status, found, _ = scratch.run()
+    expect("a call that GCC emits itself gives no finding", status == 0 and errors_of(found) == [])
+    status, _ = scratch.write()
+    expect(
+        "a write gives no row to a call that GCC emits itself",
+        status == 0 and not any(f"| {name} |" in scratch.ledger_text() for name in (*emitted, "memcpy")),
+    )
+    scratch.archive("crucible", ["glibc", "base", "emitted", "strings"])
+    status, found, _ = scratch.run()
+    strlen_errors = [message for message in errors_of(found) if "strlen" in message]
+    expect(
+        "a new import of the C library that the list does not hold still fails: strlen in crucible",
+        status == 1 and strlen_errors != [] and errors_of(found) == strlen_errors,
+    )
+    status, text = scratch.write()
+    expect("a write refuses strlen without --raise", status == 1 and "not written" in text)
+    scratch.ledger.write_text(good, encoding="utf-8")
+    scratch.archive("crucible", ["glibc", "base"])
+
+
 def build_cases(expect: testing.Expect) -> None:
     """Run each case of the planted build directory, in sequence."""
     compiler = runner.plant_compiler()
@@ -1014,6 +1066,7 @@ def build_cases(expect: testing.Expect) -> None:
         admit_cases(expect, scratch)
         link_line_cases(expect, scratch)
         door_cases(expect, scratch)
+        emitted_cases(expect, scratch)
 
 
 def main(argv: list[str]) -> int:

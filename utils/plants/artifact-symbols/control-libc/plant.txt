@@ -1,6 +1,7 @@
-# The ledger holds each C runtime import of the planted configuration: clock_gettime, a door call of the library
-# fixy from the member of its door, the helper __udivti3 of the support library of GCC in the library crucible, and
-# getrandom as a ratchet row of the library foundation.
+# The ledger holds each C runtime import of the planted configuration that takes a row: clock_gettime, a door call
+# of the library fixy from the member of its door, and getrandom as a ratchet row of the library foundation.  The
+# helper __udivti3 of the support library of GCC in the library crucible is a call that GCC emits itself, and it
+# takes no row.
 library planted_tree externs.cpp
 library foundation base.cpp random.cpp
 library fixy base.cpp MonotonicClock.cpp

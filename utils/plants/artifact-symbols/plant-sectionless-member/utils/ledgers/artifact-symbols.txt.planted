@@ -1,7 +1,5 @@
-# A planted ledger: each C runtime import of the planted configuration.
+# A planted ledger: each C runtime import of the planted configuration that takes a row.
 format 1
 rule artifact-symbols
-@build/libcrucible.a | libc-allow | 1 | memcpy | -
 @build/libcrucible.a | libc-ratchet | 1 | getrandom | -
-@build/libfoundation.a | libc-allow | 1 | memcpy | -
 @build/libfoundation.a | libc-ratchet | 1 | getrandom | -

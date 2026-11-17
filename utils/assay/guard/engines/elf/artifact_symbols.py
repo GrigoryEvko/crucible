@@ -129,17 +129,42 @@ THE MARKS
       `host-ratchet`                host
     A static object with a destructor gives __dso_handle to __cxa_atexit.
     An import of a sanitizer runtime gives no row, because only a build with
-    that sanitizer has it.
+    that sanitizer has it.  An import of THE CALLS OF THE COMPILER gives no
+    row either (NO_ROW).
 
 THE ALLOWLISTS
     The C runtime allowlist of a library (LIBC_ALLOWLISTS) holds these
     symbols:
       * The calls that GCC makes itself (COMPILER_CALLS), and each function
-        of the support library of GCC (SUPPORT_ARCHIVES), such as __udivti3
-        and _Unwind_Resume.
+        of the support library of GCC (SUPPORT_ARCHIVES), such as
+        _Unwind_Resume.  A call of THE CALLS OF THE COMPILER gets no mark, so
+        the allowlist gives the mark `libc-allow` only to __stack_chk_fail,
+        __tls_get_addr and each other function of the support library.
       * For crucible and each other library of the root, __cxa_atexit, which
         plan section 13.4 admits.
     At the S4 gate, libfixy.a holds no `libc-ratchet` row.
+
+THE CALLS OF THE COMPILER
+    GCC emits some calls itself, and the flags of a build decide them, not
+    the source.  At x86-64 and x86-64-v2, GCC emits a call of __popcountdi2
+    for a count of bits, and at x86-64-v3 it emits the instruction popcnt.
+    The inline expansion of a compare of memory changes with the level too.
+    A row of such an import then holds in the builds of some levels only.
+    The reduce of the landing gate removes a row that no build of the gate
+    gives, and a build of a different level then fails.  Thus an import of
+    this fixed list gives no row, as an import of a sanitizer runtime gives
+    none (is_emitted_call()):
+      * memcpy, memmove, memset and memcmp of the C library (EMITTED_CALLS)
+      * each function of the support library of GCC with a name that starts
+        with a family of EMITTED_HELPER_FAMILIES: the counts of bits
+        (__popcount, __clz, __ctz, __ffs, __parity), the swap of bytes
+        (__bswap), the integer arithmetic that the target has no
+        instruction for (__mul, __div, __mod, __udiv), and the float
+        conversions (__float, __fix, __extend, __trunc).
+    The import comes from the runtime (THE PROVIDERS).  The rule
+    c-library-call of the quarantine plugin judges a call of one of the
+    four functions of the C library that the source spells.  Each other
+    function of the support library, such as _Unwind_Resume, keeps its row.
 
 THE DOORS
     Decision D12 of the plan keeps some calls of the C library in the base,
@@ -398,8 +423,32 @@ SUPPORT_ARCHIVES = ("libgcc.a", "libgcc_eh.a")
 # The registration of the destructor of a static object.  __dso_handle of the start files goes with it (THE MARKS).
 ATEXIT = "__cxa_atexit"
 CRT_ALLOWLIST = frozenset({"__dso_handle"})
+# The calls of the C library that GCC emits itself for a copy, a move, a fill and a compare of memory.  An import of one
+# of them gives no row (THE CALLS OF THE COMPILER).
+EMITTED_CALLS = frozenset({"memcpy", "memmove", "memset", "memcmp"})
+# The families of the helpers of the support library of GCC that GCC emits itself.  A family is the start of the name of
+# each of its helpers, such as __popcountdi2 and __udivti3.  An import of such a helper gives no row (THE CALLS OF THE
+# COMPILER).
+EMITTED_HELPER_FAMILIES = (
+    "__popcount",
+    "__clz",
+    "__ctz",
+    "__ffs",
+    "__parity",
+    "__bswap",
+    "__mul",
+    "__div",
+    "__mod",
+    "__udiv",
+    "__float",
+    "__fix",
+    "__extend",
+    "__trunc",
+)
 # The calls of the C library that GCC makes itself, which each library can reference (rule R5).
-COMPILER_CALLS = frozenset({"memcpy", "memmove", "memset", "memcmp", "__stack_chk_fail", "__tls_get_addr"})
+COMPILER_CALLS = EMITTED_CALLS | {"__stack_chk_fail", "__tls_get_addr"}
+# The mark of an import that gives no row: an import of a sanitizer runtime, and a call of THE CALLS OF THE COMPILER.
+NO_ROW = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -623,6 +672,15 @@ def is_door_call(library: str, symbol: str, members: frozenset[str], kind: str) 
     )
 
 
+def is_emitted_call(symbol: str, support: frozenset[str]) -> bool:
+    """Return True for a name of THE CALLS OF THE COMPILER, which GCC emits itself.
+
+    `support` holds the functions of the support library of GCC.  A name of a family of EMITTED_HELPER_FAMILIES is such
+    a call only when the support library holds it.
+    """
+    return symbol in EMITTED_CALLS or (symbol in support and symbol.startswith(EMITTED_HELPER_FAMILIES))
+
+
 def mark_for(
     library: str,
     symbol: str,
@@ -635,11 +693,14 @@ def mark_for(
 
     `library` is the target name of the library, and `support` holds the functions of the support library of GCC.
     `members` names the members that import the symbol, and `kind` is the build kind, for the door calls (THE DOORS).
-    The family is not sanitizer, because such an import has no row.
+    The family is not sanitizer, because such an import has no row.  An import of the runtime of THE CALLS OF THE
+    COMPILER gets NO_ROW.
     """
     if family == LIBSTDCXX:
         return RATCHET if library == FOUNDATION else mark_of(symbol)
     if family == RUNTIME:
+        if is_emitted_call(symbol, support):
+            return NO_ROW
         if symbol in DOORS:
             return LIBC_ALLOW if is_door_call(library, symbol, members, kind) else DOOR_RATCHET
         allowed = symbol in libc_allowlist(library) or symbol in support
@@ -1188,8 +1249,8 @@ def import_message(
 class Import:
     """One import of a static library: the archive, the name, the members that reference it, its owner and its mark.
 
-    `provider` is None for a name that no provider gives.  `mark` is empty for such a name and for a name of a
-    sanitizer runtime, which has no row (THE MARKS).
+    `provider` is None for a name that no provider gives.  `mark` is NO_ROW for such a name, for a name of a sanitizer
+    runtime and for a call of THE CALLS OF THE COMPILER, which have no row (THE MARKS).
     """
 
     archive: str
@@ -1215,7 +1276,7 @@ def imports_of(
                 continue
             provider = providers.owners.get(symbol)
             if provider is None or provider.family == SANITIZER:
-                found.append(Import(archive, symbol, members, provider, ""))
+                found.append(Import(archive, symbol, members, provider, NO_ROW))
                 continue
             mark = mark_for(targets[archive], symbol, provider.family, providers.support, members, kind)
             found.append(Import(archive, symbol, members, provider, mark))

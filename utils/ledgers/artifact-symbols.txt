@@ -12,9 +12,12 @@
 #   provider defines.  IMPORT has no version, because a version changes with the C library of the host.  MARK
 #   gives the family of the provider:
 #     allow, ratchet            libstdc++.so of the compiler.  allow marks the allowlist of plan section 13.4
-#     libc-allow, libc-ratchet  a file of the runtime of the compiler.  libc-allow marks a call that GCC
-#                               makes itself, a function of the support library of GCC, and a call of glibc
-#                               that a door of the base keeps, from the member of its door (rule R5)
+#     libc-allow, libc-ratchet  a file of the runtime of the compiler.  libc-allow marks __stack_chk_fail and
+#                               __tls_get_addr, which GCC calls itself, a function of the support library of
+#                               GCC, and a call of glibc that a door of the base keeps, from the member of its
+#                               door (rule R5)
+#   A call of the fixed list of THE CALLS OF THE COMPILER of the rule, such as memcpy and __popcountdi2, has no
+#   row, because the flags of a build decide it.
 #     door-ratchet              a file of the runtime of the compiler: a call of glibc that a door of the base
 #                               keeps, from a member that is not its door.  A person writes the row, with the
 #                               code of the call and the slice of the plan that moves it as its reason
