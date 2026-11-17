@@ -1435,10 +1435,13 @@ struct CI {
 // Each window takes its part of the samples and its part of the time that
 // the wall cap leaves after the warmup, so the samples and the time of a run
 // do not grow.  A window ends after its part of the samples, or at the first
-// sample past the end of its part of the time.  So each window takes at least
-// one sample, and a window of a run under the cap can take fewer samples than
-// its part.  A run of fewer than kWindows samples has one window for each
-// sample.
+// sample past the end of its part of the time after its first
+// kMinWindowSamples samples.  So a run under the cap takes at least
+// kWindows * kMinWindowSamples samples, and a run that asks for at most that
+// count takes each sample that it asks for.  A heavy body, such as a walk of
+// threads, keeps the samples of its run, and a body of nanoseconds never
+// meets the cap.  A run of fewer than kWindows samples has one window for
+// each sample.
 //
 // Each window has its own pause check: the time that the measuring thread
 // lost in the window, its wall time minus its CPU time, against kPauseBoundNs
@@ -1456,8 +1459,10 @@ struct CI {
 // moves between the windows of one run shows a large spread, as a row that
 // moves between two runs does.
 
-// The windows of a sampled loop.
+// The windows of a sampled loop, and the samples that a window takes before
+// the end of its time can end it: five windows take at least 65 samples.
 inline constexpr std::size_t kWindows = 5;
+inline constexpr std::size_t kMinWindowSamples = 13;
 
 // The values of the windows of one run, summed up (THE WINDOWS).  The values
 // of a Report are the p50 of its windows in nanoseconds.  A bench can sum up
@@ -2402,7 +2407,7 @@ public:
                 ++filled;
                 // The reading of the end of the sample is the clock of the
                 // part of the time of the window, so the check costs no read.
-                if (t1 > bound.deadline_tsc) break;
+                if (taken + 1 >= kMinWindowSamples && t1 > bound.deadline_tsc) break;
             }
             static_cast<void>(window.ends.push(filled));
             close_window_(window);

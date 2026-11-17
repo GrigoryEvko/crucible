@@ -934,8 +934,10 @@ void test_spread_of_planted_windows() {
 // A Run splits its sampled loop into five windows (THE WINDOWS of
 // bench/bench_harness.h).  Ten samples give five windows and keep the ten
 // samples.  Three samples give one window for each sample.  A body of about
-// a millisecond with a cap of 50 ms ends each window at its part of the time:
-// the run keeps five windows and takes far fewer than its 1000 samples.
+// a millisecond with a cap of 50 ms ends each window at its part of the time
+// after its first 13 samples: the run keeps five windows and takes at least
+// 65 and far fewer than its 1000 samples.  A run of 12 samples under a cap of
+// 1 ms keeps each of its 12 samples.
 void test_run_measures_in_windows() {
     const bench::Report ten = bench::Run("ten samples").samples(10).warmup(1).batch(1).measure([]() noexcept {});
     CHECK(ten.pct.n == 10u && ten.windows.windows == bench::kWindows);
@@ -943,15 +945,19 @@ void test_run_measures_in_windows() {
     CHECK(three.pct.n == 3u && three.windows.windows == 3u);
 
     constexpr std::uint64_t kSpinSteps = 2000000;
-    const bench::Report capped =
-        bench::Run("capped").samples(1000).warmup(1).batch(1).max_wall_ms(50).measure([]() noexcept {
-            std::uint64_t sum = 0;
-            for (std::uint64_t step = 0; step < kSpinSteps; ++step) {
-                sum += step;
-                bench::do_not_optimize(sum);
-            }
-        });
-    CHECK(capped.windows.windows == bench::kWindows && capped.pct.n >= bench::kWindows && capped.pct.n < 1000u);
+    const auto spin = []() noexcept {
+        std::uint64_t sum = 0;
+        for (std::uint64_t step = 0; step < kSpinSteps; ++step) {
+            sum += step;
+            bench::do_not_optimize(sum);
+        }
+    };
+    const bench::Report capped = bench::Run("capped").samples(1000).warmup(1).batch(1).max_wall_ms(50).measure(spin);
+    CHECK(capped.windows.windows == bench::kWindows);
+    CHECK(capped.pct.n >= bench::kWindows * bench::kMinWindowSamples && capped.pct.n < 1000u);
+    const bench::Report short_run =
+        bench::Run("short capped").samples(12).warmup(1).batch(1).max_wall_ms(1).measure(spin);
+    CHECK(short_run.pct.n == 12u && short_run.windows.windows == bench::kWindows);
 }
 
 // The thread 100 of the planted readings is the measuring thread, and the
