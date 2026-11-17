@@ -101,6 +101,7 @@
 #include <fixy/session/Wire.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -111,13 +112,6 @@
 #include <vector>
 
 namespace fixy::session {
-
-namespace detail::network {
-
-template <typename...>
-inline constexpr bool dependent_false_v = false;
-
-}  // namespace detail::network
 
 // ── The reasons of a refusal ─────────────────────────────────────────
 
@@ -150,19 +144,6 @@ struct SenderReceiver {
 template <typename... Pairs>
 struct PairList {};
 
-template <typename... Lists>
-struct pair_concat;
-template <>
-struct pair_concat<> {
-    using type = PairList<>;
-};
-template <typename... A>
-struct pair_concat<PairList<A...>> {
-    using type = PairList<A...>;
-};
-template <typename... A, typename... B, typename... Rest>
-struct pair_concat<PairList<A...>, PairList<B...>, Rest...> : pair_concat<PairList<A..., B...>, Rest...> {};
-
 // The sender and the receiver of each transmission of G.  The primary is
 // declared only, so a node that the walk does not know stops the build.
 // The gate refuses a runtime construct before it runs the walk, so the
@@ -181,8 +162,8 @@ template <typename Body>
 struct transmission_walk<g::Rec<Body>> : transmission_walk<Body> {};
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs>
 struct transmission_walk<g::Comm<From, To, g::Branch<Ls, Ps, Cs>...>> {
-    using type =
-        typename pair_concat<PairList<SenderReceiver<From, To>>, typename transmission_walk<Cs>::type...>::type;
+    using type = ::foundation::reflect::list_concat_t<PairList, PairList<SenderReceiver<From, To>>,
+                                                      typename transmission_walk<Cs>::type...>;
 };
 
 // ── The run of a protocol on a bag ───────────────────────────────────
@@ -438,43 +419,43 @@ template <typename G, Network N, typename Reliable = EveryRoleReliable>
 consteval void ensure_implementable_on() noexcept {
     constexpr NetworkRefusal refusal = detail::network::refusal_of<G, N, Reliable>();
     if constexpr (refusal == NetworkRefusal::NotAReliableSet) {
-        static_assert(detail::network::dependent_false_v<G, Reliable>,
+        static_assert(false,
                       "fixy::session::diagnostic [Network_Reliable_Set_Malformed]: the set of reliable roles must be "
                       "EveryRoleReliable or a ReliableSet<Roles...>.");
     } else if constexpr (refusal == NetworkRefusal::NotWellFormed) {
         global::ensure_global_well_formed<G>();
     } else if constexpr (refusal == NetworkRefusal::RuntimeConstruct) {
-        static_assert(detail::network::dependent_false_v<G, Reliable>,
+        static_assert(false,
                       "fixy::session::diagnostic [Network_Runtime_Construct]: the global type holds an EnRoute node or "
                       "a crash annotation.  A carrier binds a protocol at its start.  Check the protocol, not a "
                       "state that it reaches.");
     } else if constexpr (refusal == NetworkRefusal::NotBalancedPlus) {
         global::ensure_balanced_plus<G>();
     } else if constexpr (refusal == NetworkRefusal::RoleNotProjectable) {
-        static_assert(detail::network::dependent_false_v<G, Reliable>,
+        static_assert(false,
                       "fixy::session::diagnostic [Network_Role_Not_Projectable]: the global type has no projection "
                       "onto one of its roles.  Call ensure_crash_projectable<G, Role, Reliable>() or "
                       "ensure_projectable<G, Role>() to see why.");
     } else if constexpr (refusal == NetworkRefusal::CrashStopOffPerPairFifo) {
-        static_assert(detail::network::dependent_false_v<G, Reliable>,
+        static_assert(false,
                       "fixy::session::diagnostic [Network_Crash_Stop_Needs_Per_Pair_Fifo]: a crash-stop protocol binds "
                       "only to a per-pair FIFO carrier.  The theorem of Barwell, Hou, Yoshida and Zhou holds there, "
                       "and Li and Wies model no crash on a mailbox or a bag.");
     } else if constexpr (refusal == NetworkRefusal::ReceiverHasTwoSenders) {
-        static_assert(detail::network::dependent_false_v<G, Reliable>,
+        static_assert(false,
                       "fixy::session::diagnostic [Network_Mailbox_Receiver_Has_Two_Senders]: on a mailbox the "
                       "senders of one receiver share one FIFO queue.  A message from one sender can reach the head "
                       "while the receiver waits for the other sender, and the receiver then waits for ever.  Give "
                       "each receiver one sender, or bind to a per-pair FIFO carrier.");
     } else if constexpr (refusal == NetworkRefusal::ChoiceOnBag) {
-        static_assert(detail::network::dependent_false_v<G, Reliable>,
+        static_assert(false,
                       "fixy::session::diagnostic [Network_Bag_Choice]: on a bag a later label of a choice can overtake "
                       "an earlier one, so the receiver can take the wrong branch.  Bind a protocol with choices to a "
                       "per-pair FIFO carrier.");
     } else if constexpr (refusal == NetworkRefusal::RepeatedWordOnBag) {
-        static_assert(detail::network::dependent_false_v<G, Reliable>, detail::network::repeated_word_message<G>());
+        static_assert(false, detail::network::repeated_word_message<G>());
     } else if constexpr (refusal == NetworkRefusal::PeerOnLocal) {
-        static_assert(detail::network::dependent_false_v<G, Reliable>,
+        static_assert(false,
                       "fixy::session::diagnostic [Network_Local_Has_A_Peer]: the carrier states the Local network, "
                       "so it has no peer, and the global type exchanges messages between two roles.  A local "
                       "carrier makes each choice alone and puts no label on a wire.  Bind the protocol to a "
@@ -485,13 +466,13 @@ consteval void ensure_implementable_on() noexcept {
 template <typename G, typename Resource, typename Reliable = EveryRoleReliable>
 consteval void ensure_carrier_implements() noexcept {
     if constexpr (states_a_network_member(^^Resource) && !has_session_network(^^Resource)) {
-        static_assert(detail::network::dependent_false_v<G, Resource>,
+        static_assert(false,
                       "fixy::session::diagnostic [Session_Network_Type]: the carrier declares session_network with "
                       "a type other than fixy::session::Network.  Declare it as static constexpr "
                       "fixy::session::Network session_network = fixy::session::Network::PerPairFifo; or with the "
                       "value that states its semantics.");
     } else if constexpr (!has_session_network(^^Resource)) {
-        static_assert(detail::network::dependent_false_v<G, Resource>,
+        static_assert(false,
                       "fixy::session::diagnostic [Carrier_Network_Undeclared]: the carrier states no network model, "
                       "so no check can say that the protocol is implementable on it.  Give the carrier a static "
                       "constexpr fixy::session::Network session_network member.");

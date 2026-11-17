@@ -99,6 +99,7 @@
 #include <fixy/session/Fold.h>
 #include <fixy/session/Registry.h>
 #include <foundation/contracts/Armed.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -269,19 +270,16 @@ struct Roles {
 
 namespace detail {
 
-template <typename...>
-inline constexpr bool dependent_false_v = false;
-
 template <typename R, typename RL>
 struct is_role_in;
 template <typename R, typename... Rs>
-struct is_role_in<R, Roles<Rs...>> : std::bool_constant<(std::is_same_v<R, Rs> || ...)> {};
+struct is_role_in<R, Roles<Rs...>> : std::bool_constant<::foundation::reflect::OccursIn<R, Rs...>> {};
 
 template <typename RL, typename R>
 struct role_insert;
 template <typename... Rs, typename R>
 struct role_insert<Roles<Rs...>, R> {
-    using type = std::conditional_t<(std::is_same_v<R, Rs> || ...), Roles<Rs...>, Roles<Rs..., R>>;
+    using type = std::conditional_t<::foundation::reflect::OccursIn<R, Rs...>, Roles<Rs...>, Roles<Rs..., R>>;
 };
 
 template <typename RL, typename RL2>
@@ -1165,50 +1163,48 @@ using remove_role_t = typename detail::removal_walk<G, R>::type;
 template <typename G>
 consteval void ensure_global_well_formed() noexcept {
     if constexpr (!is_global_type_v<G>) {
-        static_assert(detail::dependent_false_v<G>,
+        static_assert(false,
                       "fixy::session::diagnostic [Global_Not_A_Global_Type]: the type is not built from "
                       "fixy::session::global combinators (End, Var, Rec, Comm and EnRouteChoice with Branch).  A local "
                       "type such as fixy::session::Send is not a global type.");
     } else if constexpr (global_fault_v<G> == GlobalFault::EmptyChoice) {
-        static_assert(detail::dependent_false_v<G>,
-                      "fixy::session::diagnostic [Global_Empty_Choice]: a Comm has no branch.  A transmission "
-                      "must carry at least one Branch<Label, Payload, Cont>.");
+        static_assert(false, "fixy::session::diagnostic [Global_Empty_Choice]: a Comm has no branch.  A transmission "
+                             "must carry at least one Branch<Label, Payload, Cont>.");
     } else if constexpr (global_fault_v<G> == GlobalFault::SelfCommunication) {
-        static_assert(detail::dependent_false_v<G>,
-                      "fixy::session::diagnostic [Global_Self_Communication]: a Comm or an EnRoute has the same "
-                      "role as sender and receiver.  A role cannot send a message to itself.  Make From and To "
-                      "two different role types.");
+        static_assert(false, "fixy::session::diagnostic [Global_Self_Communication]: a Comm or an EnRoute has the same "
+                             "role as sender and receiver.  A role cannot send a message to itself.  Make From and To "
+                             "two different role types.");
     } else if constexpr (global_fault_v<G> == GlobalFault::DuplicateLabel) {
-        static_assert(detail::dependent_false_v<G>,
+        static_assert(false,
                       "fixy::session::diagnostic [Global_Duplicate_Label]: two branches of one Comm have the same "
                       "label.  The receiver identifies the branch by its label, so the labels of one transmission "
                       "must be pairwise distinct.");
     } else if constexpr (global_fault_v<G> == GlobalFault::UnboundVariable) {
-        static_assert(detail::dependent_false_v<G>,
+        static_assert(false,
                       "fixy::session::diagnostic [Global_Unbound_Variable]: a Var has no enclosing Rec.  Put the "
                       "loop body inside Rec<...>, or replace the Var with End.");
     } else if constexpr (global_fault_v<G> == GlobalFault::UnguardedRecursion) {
-        static_assert(detail::dependent_false_v<G>,
+        static_assert(false,
                       "fixy::session::diagnostic [Global_Unguarded_Recursion]: a Rec body starts with Var.  A loop "
                       "must communicate before it loops back.");
     } else if constexpr (global_fault_v<G> == GlobalFault::CrashOnlyChoice) {
-        static_assert(detail::dependent_false_v<G>,
+        static_assert(false,
                       "fixy::session::diagnostic [Global_Crash_Only_Choice]: a Comm has the crash branch as its "
                       "only branch.  No role sends the crash label, so the receiver could only wait for a crash.  "
                       "Add a message branch.");
     } else if constexpr (global_fault_v<G> == GlobalFault::CrashLabelPayload) {
-        static_assert(detail::dependent_false_v<G>,
+        static_assert(false,
                       "fixy::session::diagnostic [Global_Crash_Label_Payload]: a branch with the label CrashLabel "
                       "carries a payload.  No role sends that branch, so no value can arrive.  Write "
                       "Branch<CrashLabel, void, Cont>.");
     } else if constexpr (global_fault_v<G> == GlobalFault::MisplacedCrashAnnotation) {
-        static_assert(detail::dependent_false_v<G>,
+        static_assert(false,
                       "fixy::session::diagnostic [Global_Misplaced_Crash_Annotation]: Crashed<Role> occurs at a "
                       "position the crash-stop semantics does not reach, or a live role sends CrashLabel.  "
                       "Crashed marks only the receiver of a Comm or the sender of an EnRouteChoice, it does not nest, "
                       "and only a crashed sender has the crash label en route.  remove_role_t writes these nodes.");
     } else if constexpr (global_fault_v<G> == GlobalFault::UnknownChosenLabel) {
-        static_assert(detail::dependent_false_v<G>,
+        static_assert(false,
                       "fixy::session::diagnostic [Global_Unknown_Chosen_Label]: the chosen label of an "
                       "EnRouteChoice names no branch of it.  The chosen label is the branch that the sender sent, "
                       "so it must be the label of exactly one Branch of the node.");
@@ -1220,13 +1216,13 @@ consteval void ensure_balanced_plus() noexcept {
     ensure_global_well_formed<G>();
     if constexpr (is_global_well_formed_v<G>) {
         if constexpr (!is_balanced_v<G>) {
-            static_assert(detail::dependent_false_v<G>,
+            static_assert(false,
                           "fixy::session::diagnostic [Global_Not_Balanced]: a loop has a path back to its Var that "
                           "avoids a role of the loop.  That path can repeat for ever while the role waits, so the "
                           "role has no bounded depth (Pischke, Masters, Yoshida, Definitions 13 and 14).  Make each "
                           "role of the loop act on each path of each iteration, or move the role out of the loop.");
         } else if constexpr (!is_balanced_plus_v<G>) {
-            static_assert(detail::dependent_false_v<G>,
+            static_assert(false,
                           "fixy::session::diagnostic [Global_EnRoute_Count_Undefined]: the count of en-route "
                           "messages for a pair of roles differs across the branches of a Comm, or an EnRoute sits "
                           "below a Rec that loops (Definitions 16 and 17).  The queue for that pair then has no "

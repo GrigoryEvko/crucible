@@ -81,9 +81,6 @@ namespace detail::crash_assoc {
 namespace g = ::fixy::session::global;
 namespace proj = ::fixy::session::detail::proj;
 
-template <typename...>
-inline constexpr bool dependent_false_v = false;
-
 // The reliable roles as a role list, for is_well_annotated_v.
 template <typename Reliable, typename G>
 struct reliable_roles;
@@ -314,39 +311,37 @@ using crash_projected_context_t =
 template <typename Ctx, typename S, typename Reliable>
 consteval void ensure_crash_associated() noexcept {
     if constexpr (!is_configuration_v<Ctx> || !global::is_global_state_v<S> || !global::is_reliability_v<Reliable>) {
-        static_assert(detail::crash_assoc::dependent_false_v<Ctx, S, Reliable>,
-                      "fixy::session::diagnostic [Crash_Association_Malformed]: the arguments must be a "
-                      "configuration (is_configuration_v), a state State<Roles<Crashed...>, G> with a "
-                      "well-formed G (is_global_state_v), and a ReliableSet or EveryRoleReliable.");
+        static_assert(false, "fixy::session::diagnostic [Crash_Association_Malformed]: the arguments must be a "
+                             "configuration (is_configuration_v), a state State<Roles<Crashed...>, G> with a "
+                             "well-formed G (is_global_state_v), and a ReliableSet or EveryRoleReliable.");
     } else {
         using F = CrashAssociationFault;
         constexpr F fault = crash_association_fault_v<Ctx, S, Reliable>;
         if constexpr (fault == F::NotWellAnnotated) {
-            static_assert(detail::crash_assoc::dependent_false_v<Ctx, S, Reliable>,
+            static_assert(false,
                           "fixy::session::diagnostic [Crash_Association_Not_Well_Annotated]: the state is not "
                           "well-annotated (Definition 4.15).  No reliable role may crash, each role that carries "
                           "the crash annotation must be in the crashed set, and no crashed role may still act in G.");
         } else if constexpr (fault == F::NotBalancedPlus) {
-            static_assert(detail::crash_assoc::dependent_false_v<Ctx, S, Reliable>,
+            static_assert(false,
                           "fixy::session::diagnostic [Crash_Association_Not_Balanced_Plus]: the global type is not "
                           "balanced+ (Pischke, Masters, Yoshida, Definition 17).  A context can match each projection "
                           "of such a type and still be unsafe.");
         } else if constexpr (fault == F::CrashedRoleMismatch) {
-            static_assert(detail::crash_assoc::dependent_false_v<Ctx, S, Reliable>,
-                          "fixy::session::diagnostic [Crash_Association_Crashed_Role_Mismatch]: clause A2 of "
-                          "Definition 4.19 fails.  The entries at Stop must be exactly the crashed roles of the "
-                          "state.");
+            static_assert(false, "fixy::session::diagnostic [Crash_Association_Crashed_Role_Mismatch]: clause A2 of "
+                                 "Definition 4.19 fails.  The entries at Stop must be exactly the crashed roles of the "
+                                 "state.");
         } else if constexpr (fault == F::LiveRoleMismatch) {
-            static_assert(detail::crash_assoc::dependent_false_v<Ctx, S, Reliable>,
+            static_assert(false,
                           "fixy::session::diagnostic [Crash_Association_Live_Role_Mismatch]: clause A1 of "
                           "Definition 4.19 fails.  A live role of G has no entry, or its local type does not refine "
                           "the crash-stop projection of G onto it (is_subtype_sync_v).");
         } else if constexpr (fault == F::UnfinishedRole) {
-            static_assert(detail::crash_assoc::dependent_false_v<Ctx, S, Reliable>,
+            static_assert(false,
                           "fixy::session::diagnostic [Crash_Association_Unfinished_Role]: clause A3 of Definition "
                           "4.19 fails.  A role that is neither live in G nor crashed must be at End.");
         } else if constexpr (fault == F::QueueMismatch) {
-            static_assert(detail::crash_assoc::dependent_false_v<Ctx, S, Reliable>,
+            static_assert(false,
                           "fixy::session::diagnostic [Crash_Association_Queue_Mismatch]: clause A4 of Definition "
                           "4.19 fails.  A queue holds a message that G does not have en route, misses one that G "
                           "has, or holds a message to a crashed role.");

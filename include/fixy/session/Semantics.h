@@ -87,6 +87,7 @@
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Subtype.h>
 #include <foundation/contracts/Armed.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <cstddef>
 #include <type_traits>
@@ -163,23 +164,10 @@ inline constexpr bool is_crash_action_v<CrashAction<P>> = true;
 
 // ── Lists of labels ──────────────────────────────────────────────────
 
-template <typename... Lists>
-struct concat;
-template <>
-struct concat<> {
-    using type = Actions<>;
-};
-template <typename... As>
-struct concat<Actions<As...>> {
-    using type = Actions<As...>;
-};
-template <typename... As, typename... Bs, typename... Rest>
-struct concat<Actions<As...>, Actions<Bs...>, Rest...> : concat<Actions<As..., Bs...>, Rest...> {};
-
 template <typename List, typename A>
 inline constexpr bool holds_v = false;
 template <typename... As, typename A>
-inline constexpr bool holds_v<Actions<As...>, A> = (std::is_same_v<As, A> || ...);
+inline constexpr bool holds_v<Actions<As...>, A> = ::foundation::reflect::OccursIn<A, As...>;
 
 // Each label of List once, in the order of first occurrence.
 template <typename Seen, typename List>
@@ -195,7 +183,7 @@ struct unique<Actions<Seen...>, Actions<A, Rest...>>
 
 // True when the subject of A is one of Roles.
 template <typename A, typename... Roles>
-inline constexpr bool subject_among_v = (std::is_same_v<subject_t<A>, Roles> || ...);
+inline constexpr bool subject_among_v = ::foundation::reflect::OccursIn<subject_t<A>, Roles...>;
 
 // The labels of List whose subject is none of Excluded, and that are no
 // crash label.
@@ -203,8 +191,9 @@ template <typename List, typename... Excluded>
 struct not_about;
 template <typename... As, typename... Excluded>
 struct not_about<Actions<As...>, Excluded...> {
-    using type = typename concat<std::conditional_t<!is_crash_action_v<As> && !subject_among_v<As, Excluded...>,
-                                                    Actions<As>, Actions<>>...>::type;
+    using type = ::foundation::reflect::list_concat_t<
+        Actions,
+        std::conditional_t<!is_crash_action_v<As> && !subject_among_v<As, Excluded...>, Actions<As>, Actions<>>...>;
 };
 
 // ── Unfolding (rule GR-µ) ────────────────────────────────────────────
@@ -261,7 +250,7 @@ struct Unfolding {};
 template <typename U, typename G>
 inline constexpr bool is_unfolding_v = false;
 template <typename... Recs, typename G>
-inline constexpr bool is_unfolding_v<Unfolding<Recs...>, G> = (std::is_same_v<Recs, G> || ...);
+inline constexpr bool is_unfolding_v<Unfolding<Recs...>, G> = ::foundation::reflect::OccursIn<G, Recs...>;
 
 template <typename U, typename G>
 struct push_unfolding;
@@ -412,16 +401,17 @@ struct candidates<Rec<B>, U> {
 };
 template <typename From, typename To, typename... Ls, typename... Ps, typename... Cs, typename U>
 struct candidates<Comm<From, To, Branch<Ls, Ps, Cs>...>, U> {
-    using type = typename concat<
+    using type = ::foundation::reflect::list_concat_t<
+        Actions,
         std::conditional_t<is_crash_label_v<Ls>, Actions<>, Actions<SendAction<From, bare_role_t<To>, Ls, Ps>>>...,
-        typename not_about<typename candidates<Cs...[0], U>::type, From, bare_role_t<To>>::type>::type;
+        typename not_about<typename candidates<Cs...[0], U>::type, From, bare_role_t<To>>::type>;
 };
 template <typename From, typename To, typename Chosen, typename... Ls, typename... Ps, typename... Cs, typename U>
 struct candidates<EnRouteChoice<From, To, Chosen, Branch<Ls, Ps, Cs>...>, U> {
-    using type = typename concat<
-        typename en_route_actions<From, To, Chosen, Branch<Ls, Ps, Cs>...>::type,
+    using type = ::foundation::reflect::list_concat_t<
+        Actions, typename en_route_actions<From, To, Chosen, Branch<Ls, Ps, Cs>...>::type,
         typename not_about<typename candidates<typename continuation_of<Chosen, Branch<Ls, Ps, Cs>...>::type, U>::type,
-                           To>::type>::type;
+                           To>::type>;
 };
 
 // ── States ───────────────────────────────────────────────────────────
@@ -462,9 +452,9 @@ template <typename List, typename S, typename Reliable>
 struct keep_enabled;
 template <typename... As, typename S, typename Reliable>
 struct keep_enabled<Actions<As...>, S, Reliable> {
-    using type =
-        typename concat<std::conditional_t<std::is_same_v<typename state_step<S, As, Reliable>::type, NoTransition>,
-                                           Actions<>, Actions<As>>...>::type;
+    using type = ::foundation::reflect::list_concat_t<
+        Actions, std::conditional_t<std::is_same_v<typename state_step<S, As, Reliable>::type, NoTransition>, Actions<>,
+                                    Actions<As>>...>;
 };
 
 template <typename RL>
@@ -523,9 +513,9 @@ template <typename S, typename Reliable>
     requires is_global_state_v<S> && is_reliability_v<Reliable>
 using state_enabled_t = typename detail::lts::unique<
     Actions<>, typename detail::lts::keep_enabled<
-                   typename detail::lts::concat<
-                       typename detail::lts::candidates<typename S::type>::type,
-                       typename detail::lts::crash_candidates<active_roles_t<typename S::type>>::type>::type,
+                   ::foundation::reflect::list_concat_t<
+                       Actions, typename detail::lts::candidates<typename S::type>::type,
+                       typename detail::lts::crash_candidates<active_roles_t<typename S::type>>::type>,
                    S, Reliable>::type>::type;
 
 }  // namespace fixy::session::global
@@ -586,8 +576,8 @@ template <typename Q, typename D>
 struct drop_all_for;
 template <typename... Ms, typename D>
 struct drop_all_for<OutQueue<Ms...>, D> {
-    using type = typename ::fixy::session::detail::proj::queue_concat<
-        std::conditional_t<std::is_same_v<typename Ms::to, D>, OutQueue<>, OutQueue<Ms>>...>::type;
+    using type = ::foundation::reflect::list_concat_t<
+        OutQueue, std::conditional_t<std::is_same_v<typename Ms::to, D>, OutQueue<>, OutQueue<Ms>>...>;
 };
 
 // ── Local types ──────────────────────────────────────────────────────
@@ -688,15 +678,15 @@ struct detection<Ctx, R, Q, Recv<PeerMsg<Q, Ls, Bs>, Ks>...> {
 
 template <typename Ctx, typename R, typename Q, typename L, typename B, typename K>
 struct role_actions<Ctx, R, Recv<PeerMsg<Q, L, B>, K>> {
-    using type = typename g::detail::lts::concat<
-        typename receipt<R, Q, typename message_from<Ctx, R, Q>::type, Recv<PeerMsg<Q, L, B>, K>>::type,
-        typename detection<Ctx, R, Q, Recv<PeerMsg<Q, L, B>, K>>::type>::type;
+    using type = ::foundation::reflect::list_concat_t<
+        Actions, typename receipt<R, Q, typename message_from<Ctx, R, Q>::type, Recv<PeerMsg<Q, L, B>, K>>::type,
+        typename detection<Ctx, R, Q, Recv<PeerMsg<Q, L, B>, K>>::type>;
 };
 template <typename Ctx, typename R, typename Q, typename... Branches>
 struct role_actions<Ctx, R, Offer<Sender<Q>, Branches...>> {
-    using type = typename g::detail::lts::concat<
-        typename receipt<R, Q, typename message_from<Ctx, R, Q>::type, Branches...>::type,
-        typename detection<Ctx, R, Q, Branches...>::type>::type;
+    using type = ::foundation::reflect::list_concat_t<
+        Actions, typename receipt<R, Q, typename message_from<Ctx, R, Q>::type, Branches...>::type,
+        typename detection<Ctx, R, Q, Branches...>::type>;
 };
 
 template <typename Ctx, typename Reliable, typename E>
@@ -704,9 +694,9 @@ struct entry_actions {
     using local = unfold_local_t<typename E::local>;
     static constexpr bool may_crash = !g::detail::lts::is_reliable_v<Reliable, typename E::role>
                                    && !std::is_same_v<local, End> && !std::is_same_v<local, Stop>;
-    using type = typename g::detail::lts::concat<
-        typename role_actions<Ctx, typename E::role, local>::type,
-        std::conditional_t<may_crash, Actions<CrashAction<typename E::role>>, Actions<>>>::type;
+    using type = ::foundation::reflect::list_concat_t<
+        Actions, typename role_actions<Ctx, typename E::role, local>::type,
+        std::conditional_t<may_crash, Actions<CrashAction<typename E::role>>, Actions<>>>;
 };
 
 template <typename Ctx, typename Reliable>
@@ -714,7 +704,8 @@ struct actions_of;
 template <typename... Es, typename Reliable>
 struct actions_of<TypingContext<Es...>, Reliable> {
     using type =
-        typename g::detail::lts::concat<typename entry_actions<TypingContext<Es...>, Reliable, Es>::type...>::type;
+        ::foundation::reflect::list_concat_t<Actions,
+                                             typename entry_actions<TypingContext<Es...>, Reliable, Es>::type...>;
 };
 
 // ── One step of a configuration ──────────────────────────────────────

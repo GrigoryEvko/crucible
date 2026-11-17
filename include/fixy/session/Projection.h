@@ -125,6 +125,7 @@
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Subtype.h>
 #include <foundation/contracts/Armed.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -207,15 +208,12 @@ namespace detail::proj {
 
 namespace g = ::fixy::session::global;
 
-template <typename...>
-inline constexpr bool dependent_false_v = false;
-
 template <typename Reliable, typename Role>
 inline constexpr bool is_reliable_role_v = false;
 template <typename Role>
 inline constexpr bool is_reliable_role_v<EveryRoleReliable, Role> = true;
 template <typename... Rs, typename Role>
-inline constexpr bool is_reliable_role_v<ReliableSet<Rs...>, Role> = (std::is_same_v<Rs, Role> || ...);
+inline constexpr bool is_reliable_role_v<ReliableSet<Rs...>, Role> = ::foundation::reflect::OccursIn<Role, Rs...>;
 
 // How many times one merge path can unfold a Loop: projection_unfold_limit
 // for a crash-free projection.  The crash-stop merge unfolds none, which
@@ -224,19 +222,6 @@ template <typename Reliable>
 inline constexpr int merge_fuel_v = std::is_same_v<Reliable, EveryRoleReliable> ? projection_unfold_limit : 0;
 
 // ── Queues ───────────────────────────────────────────────────────────
-
-template <typename... Qs>
-struct queue_concat;
-template <>
-struct queue_concat<> {
-    using type = OutQueue<>;
-};
-template <typename... A>
-struct queue_concat<OutQueue<A...>> {
-    using type = OutQueue<A...>;
-};
-template <typename... A, typename... B, typename... Rest>
-struct queue_concat<OutQueue<A...>, OutQueue<B...>, Rest...> : queue_concat<OutQueue<A..., B...>, Rest...> {};
 
 template <typename Q, typename M>
 struct queue_prepend;
@@ -250,8 +235,8 @@ template <typename Q, typename D>
 struct queue_for;
 template <typename... Ms, typename D>
 struct queue_for<OutQueue<Ms...>, D> {
-    using type = typename queue_concat<
-        std::conditional_t<std::is_same_v<typename Ms::to, D>, OutQueue<Ms>, OutQueue<>>...>::type;
+    using type = ::foundation::reflect::list_concat_t<
+        OutQueue, std::conditional_t<std::is_same_v<typename Ms::to, D>, OutQueue<Ms>, OutQueue<>>...>;
 };
 
 template <typename Q>
@@ -355,19 +340,6 @@ template <typename Peer, typename L, typename P, typename K>
 struct rebuild<Side::External, Peer, BL<Br<L, P, K>>> {
     using type = Recv<PeerMsg<Peer, L, P>, K>;
 };
-template <typename... Lists>
-struct bl_concat;
-template <>
-struct bl_concat<> {
-    using type = BL<>;
-};
-template <typename... A>
-struct bl_concat<BL<A...>> {
-    using type = BL<A...>;
-};
-template <typename... A, typename... B, typename... Rest>
-struct bl_concat<BL<A...>, BL<B...>, Rest...> : bl_concat<BL<A..., B...>, Rest...> {};
-
 template <typename B>
 inline constexpr bool is_crash_br_v = std::is_same_v<typename B::label, g::CrashLabel>;
 
@@ -376,15 +348,15 @@ template <typename List>
 struct crash_last;
 template <typename... Brs>
 struct crash_last<BL<Brs...>> {
-    using type = typename bl_concat<std::conditional_t<is_crash_br_v<Brs>, BL<>, BL<Brs>>...,
-                                    std::conditional_t<is_crash_br_v<Brs>, BL<Brs>, BL<>>...>::type;
+    using type = ::foundation::reflect::list_concat_t<BL, std::conditional_t<is_crash_br_v<Brs>, BL<>, BL<Brs>>...,
+                                                      std::conditional_t<is_crash_br_v<Brs>, BL<Brs>, BL<>>...>;
 };
 
 template <typename List>
 struct without_crash;
 template <typename... Brs>
 struct without_crash<BL<Brs...>> {
-    using type = typename bl_concat<std::conditional_t<is_crash_br_v<Brs>, BL<>, BL<Brs>>...>::type;
+    using type = ::foundation::reflect::list_concat_t<BL, std::conditional_t<is_crash_br_v<Brs>, BL<>, BL<Brs>>...>;
 };
 
 template <typename Peer, typename List>
@@ -546,10 +518,11 @@ consteval auto merge_external(BL<As...>, BL<Bs...>) {
         return std::type_identity<failure>{};
     } else {
         using merged = BL<typename decltype(merge_external_branch<As, BL<Bs...>, Fuel>())::type...>;
-        using extra = typename bl_concat<std::conditional_t<
-            std::is_void_v<typename find_label<typename Bs::label, BL<As...>>::type>, BL<Bs>, BL<>>...>::type;
+        using extra = ::foundation::reflect::list_concat_t<
+            BL, std::conditional_t<std::is_void_v<typename find_label<typename Bs::label, BL<As...>>::type>, BL<Bs>,
+                                   BL<>>...>;
         return std::type_identity<
-            typename rebuild<Side::External, Peer, typename bl_concat<merged, extra>::type>::type>{};
+            typename rebuild<Side::External, Peer, ::foundation::reflect::list_concat_t<BL, merged, extra>>::type>{};
     }
 }
 
@@ -812,66 +785,66 @@ consteval void ensure_projectable() noexcept {
         if constexpr (is_projection_failure_v<P>) {
             using reason = typename P::reason;
             if constexpr (std::is_same_v<reason, projection_failure::MergeShapeMismatch>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Merge_Shape_Mismatch]: a role that does not "
                               "take part in a choice sees continuations of different shape in the branches (for "
                               "example a send in one branch and End in another, or two different peers).  The role "
                               "cannot tell the branches apart, so no single local type fits.  Tell the role which "
                               "branch was taken with a message in each branch.");
             } else if constexpr (std::is_same_v<reason, projection_failure::MergeLabelSetMismatch>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Merge_Label_Set_Mismatch]: a role that does "
                               "not take part in a choice must send different labels in different branches.  A "
                               "sender cannot select on a choice it did not see.  Tell the role which branch was "
                               "taken before it sends.");
             } else if constexpr (std::is_same_v<reason, projection_failure::MergePayloadMismatch>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Merge_Payload_Mismatch]: two branches carry "
                               "the same label with different payload types to a role that does not see the choice.  "
                               "Use one payload type for one label, or use two labels.");
             } else if constexpr (std::is_same_v<reason, projection_failure::MergeUnfoldLimit>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Merge_Unfold_Limit]: the merge unfolded a loop "
                               "projection_unfold_limit times without a match.  The coinductive projection can "
                               "accept such a protocol, but this inductive merge does not.  Restructure the loop so "
                               "that the branches meet sooner.");
             } else if constexpr (std::is_same_v<reason, projection_failure::QueueDiffersAcrossBranches>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Queue_Differs_Across_Branches]: the role has "
                               "different messages en route in different branches of one choice.  Its queue must be "
                               "the same whichever branch was taken.");
             } else if constexpr (std::is_same_v<reason, projection_failure::EnRouteUnderRecursion>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_EnRoute_Under_Recursion]: an EnRoute node sits "
                               "inside a Rec that loops.  Each iteration would add a message, so the queue has no "
                               "fixed contents.");
             } else if constexpr (std::is_same_v<reason, projection_failure::LoopWithoutAction>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Loop_Without_Action]: the projection of a loop "
                               "body is only a loop-back, so the role would loop for ever without an action.");
             } else if constexpr (std::is_same_v<reason, projection_failure::MissingCrashBranch>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Missing_Crash_Branch]: the role receives from a "
                               "sender that is not reliable, and the transmission has no crash branch.  If the sender "
                               "crashes, the role waits for ever (Definition 4.3 of the crash-stop paper).  Add "
                               "Branch<global::CrashLabel, void, Cont>, or name the sender in the reliable set.");
             } else if constexpr (std::is_same_v<reason, projection_failure::CrashBranchFromReliableSender>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Crash_Branch_From_Reliable_Sender]: the "
                               "transmission has a crash branch, and its sender is reliable.  The branch can never run, "
                               "and rule Sub-& lets no implementation omit it.  Remove the branch, or remove the sender "
                               "from the reliable set.  project_t counts every role as reliable.");
             } else if constexpr (std::is_same_v<reason, projection_failure::ProjectionOntoCrashedRole>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Onto_Crashed_Role]: the role carries the crash "
                               "annotation.  A crashed role has the type stop, not a projection.");
             } else if constexpr (std::is_same_v<reason, projection_failure::EnRouteFromUnreliableSender>) {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_EnRoute_From_Unreliable_Sender]: the role is the "
                               "receiver of an en-route message from a role that is not reliable.  Its type is the "
                               "whole choice with the crash branch, and an EnRoute node keeps only the chosen branch.");
             } else {
-                static_assert(detail::proj::dependent_false_v<G, R>,
+                static_assert(false,
                               "fixy::session::diagnostic [Projection_Refused]: the projection refused for a reason "
                               "this gate does not name.");
             }
@@ -882,9 +855,8 @@ consteval void ensure_projectable() noexcept {
 template <typename G, typename R, typename Reliable>
 consteval void ensure_crash_projectable() noexcept {
     if constexpr (!is_reliable_set<Reliable>::value) {
-        static_assert(detail::proj::dependent_false_v<G, Reliable>,
-                      "fixy::session::diagnostic [Projection_Reliable_Set_Malformed]: the set of reliable roles "
-                      "must be a ReliableSet<Roles...>.");
+        static_assert(false, "fixy::session::diagnostic [Projection_Reliable_Set_Malformed]: the set of reliable roles "
+                             "must be a ReliableSet<Roles...>.");
     } else {
         ensure_projectable<G, R, Reliable>();
     }
@@ -1019,37 +991,36 @@ consteval void ensure_associated() noexcept {
         using F = detail::proj::AssociationFault;
         constexpr F fault = detail::proj::association_walk<Ctx, G>::value;
         if constexpr (fault == F::NotBalancedPlus) {
-            static_assert(detail::proj::dependent_false_v<Ctx, G>,
+            static_assert(false,
                           "fixy::session::diagnostic [Association_Global_Not_Balanced_Plus]: the global type is not "
                           "balanced+ (Pischke, Masters, Yoshida, Definition 17).  A context can match each projection "
                           "of such a type and still be unsafe.  Call ensure_balanced_plus<G>() to see why.");
         } else if constexpr (fault == F::NotAContext) {
-            static_assert(detail::proj::dependent_false_v<Ctx, G>,
-                          "fixy::session::diagnostic [Association_Not_A_Context]: the context is not a "
-                          "TypingContext<RoleState<Role, Queue, Local>...>.");
+            static_assert(false, "fixy::session::diagnostic [Association_Not_A_Context]: the context is not a "
+                                 "TypingContext<RoleState<Role, Queue, Local>...>.");
         } else if constexpr (fault == F::DuplicateRole) {
-            static_assert(detail::proj::dependent_false_v<Ctx, G>,
+            static_assert(false,
                           "fixy::session::diagnostic [Association_Duplicate_Role]: a role has two RoleState entries "
                           "in the context.  Give each role exactly one entry.");
         } else if constexpr (fault == F::MissingRole) {
-            static_assert(detail::proj::dependent_false_v<Ctx, G>,
+            static_assert(false,
                           "fixy::session::diagnostic [Association_Missing_Role]: a role of the global type has no "
                           "RoleState in the context.  Give each role of G an entry.");
         } else if constexpr (fault == F::ExtraRoleNotTerminated) {
-            static_assert(detail::proj::dependent_false_v<Ctx, G>,
+            static_assert(false,
                           "fixy::session::diagnostic [Association_Extra_Role_Not_Terminated]: the context holds a "
                           "role that the global type does not name, and that role has not finished.  Its queue must "
                           "be OutQueue<> and its local type End.");
         } else if constexpr (fault == F::RoleNotProjectable) {
-            static_assert(detail::proj::dependent_false_v<Ctx, G>,
+            static_assert(false,
                           "fixy::session::diagnostic [Association_Role_Not_Projectable]: the global type has no "
                           "projection onto a role of the context.  Call ensure_projectable<G, Role>() to see why.");
         } else if constexpr (fault == F::QueueMismatch) {
-            static_assert(detail::proj::dependent_false_v<Ctx, G>,
+            static_assert(false,
                           "fixy::session::diagnostic [Association_Queue_Mismatch]: the queue of a role does not "
                           "hold, for some receiver, the messages that the global type has en route from that role.");
         } else if constexpr (fault == F::LocalMismatch) {
-            static_assert(detail::proj::dependent_false_v<Ctx, G>,
+            static_assert(false,
                           "fixy::session::diagnostic [Association_Local_Mismatch]: the local type of a role does not "
                           "refine its projection (is_subtype_sync_v).  Branches match by label: a Select can drop "
                           "labels of the projection and an Offer can add labels, in any order.  A Select keeps "
@@ -1254,7 +1225,7 @@ consteval void ensure_crash_live_by_construction() noexcept {
     global::ensure_balanced_plus<G>();
     if constexpr (global::is_balanced_plus_v<G>) {
         if constexpr (detail::proj::holds_runtime_construct_v<G>) {
-            static_assert(detail::proj::dependent_false_v<G, Reliable>,
+            static_assert(false,
                           "fixy::session::diagnostic [Crash_Liveness_Runtime_Construct]: the global type holds an "
                           "EnRoute node or a crash annotation.  Theorem 4.31 of the crash-stop paper covers a global "
                           "type written at design time.  Check the protocol, not a state it reaches.");

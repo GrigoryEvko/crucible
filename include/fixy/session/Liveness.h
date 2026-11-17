@@ -97,9 +97,6 @@ namespace fixy::session {
 
 namespace detail::live {
 
-template <typename...>
-inline constexpr bool dependent_false_v = false;
-
 template <typename G, typename RL>
 struct each_role_projects;
 template <typename G, typename... Rs>
