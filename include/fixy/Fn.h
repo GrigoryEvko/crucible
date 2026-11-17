@@ -28,6 +28,7 @@
 #include <fixy/Tags.h>
 #include <fixy/atoms/Syscall.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Anchor.h>
@@ -257,7 +258,20 @@ private:
     // that this value belongs under this pack.  Keeping the value
     // constructor private and befriending only the mint factories
     // leaves one name to grep for to find every such event.
-    explicit constexpr fn(held_ v) noexcept(std::is_nothrow_move_constructible_v<held_>) : value_{std::move(v)} {}
+    //
+    // The Refinement grade is a fact about the value, and fixy/Axis.h says
+    // that a contract discharges it.  So the door runs the predicate of
+    // refined_with on the value, as the checked mint of fixy/Refined.h
+    // does, and a value that fails it ends the process.  Tier 5 of
+    // fixy/Reject.h makes sure that the call can run on the payload.  A
+    // pack with no refinement has no check, so its code does not change.
+    explicit constexpr fn(held_ v) noexcept(std::is_nothrow_move_constructible_v<held_>) : value_{std::move(v)} {
+        constexpr std::meta::info predicate = atom::refinement_predicate_of(^^grade_on<Axis::Refinement>);
+        if constexpr (predicate != ^^void) {
+            using Predicate = [:predicate:];
+            CRUCIBLE_PRE(Predicate{}(value_));
+        }
+    }
 
     template <class T, class... G>
         requires IsAccepted<T, G...>

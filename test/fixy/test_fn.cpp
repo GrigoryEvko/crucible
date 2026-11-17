@@ -12,12 +12,15 @@
 // refuses the two atoms together.
 
 #include <fixy/Collision.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
+#include <fixy/Predicates.h>
 #include <fixy/Reject.h>
 #include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
 #include <fixy/atoms/Syscall.h>
+#include <fixy/check/Check.h>
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -341,9 +344,40 @@ static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, StderrBinding>, "t
     return 0;
 }
 
+// ---------------------------------------------------------------------
+// The door checks the claim of the Refinement grade.
+//
+// refined_with<Pred> states a fact about the value, and the Refinement
+// axis says that a contract discharges it.  So each mint runs the
+// predicate on the value, and a value that fails it ends the process.  The
+// role form goes through the same door.  A refused mint runs in a child
+// through expect_dies of the Check family.
+
+template <class T>
+using positive_count = fn<T, ::fixy::atom::refined_with<::fixy::IsPositive>>;
+
+[[nodiscard]] int check_refinement_doors() {
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    int volatile seed = -1;
+    int const refused = seed;
+
+    ::fixy::check::expect_dies(
+        test, [refused] noexcept { (void)mint_fn<int, ::fixy::atom::refined_with<::fixy::IsPositive>>(refused); },
+        ::fixy::TextView{"foundation: contract violation: Predicate{}(value_)"});
+    ::fixy::check::expect_dies(
+        test, [refused] noexcept { (void)::fixy::mint_fn_for<positive_count>(refused); },
+        ::fixy::TextView{"foundation: contract violation: Predicate{}(value_)"});
+
+    int const admitted = -refused;
+    if (mint_fn<int, ::fixy::atom::refined_with<::fixy::IsPositive>>(admitted).value() != 1) return 20;
+    if (::fixy::mint_fn_for<positive_count>(admitted).value() != 1) return 21;
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     if (int rc = check_runtime_paths(); rc != 0) return rc;
+    if (int rc = check_refinement_doors(); rc != 0) return rc;
     return 0;
 }
