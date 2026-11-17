@@ -226,9 +226,12 @@ def check_cases(expect: Expect, work: Path) -> None:
                                                           mold_pin.version), 2)
            and refused(lambda: install.check_mold_version(f"GNU ld (GNU Binutils) {mold_pin.version}",
                                                           mold_pin.version), 2))
-    expect("each tool resolves linux-x86_64, and the kit and clang-format resolve darwin-aarch64",
-           all(install.pin_of(install.TOOLS[name], table, "linux-x86_64").platform == "linux-x86_64"
+    expect("each tool resolves linux-x86_64 with a row of that platform or a source row of each host, and the kit "
+           "and clang-format resolve darwin-aarch64",
+           all(install.pin_of(install.TOOLS[name], table, "linux-x86_64").platform in ("linux-x86_64", "")
                for name in install.TOOLS)
+           and all(install.pin_of(install.TOOLS[name], table, "linux-x86_64").platform == "linux-x86_64"
+                   for name in install.TOOLS if name not in install.SOURCE_FILES)
            and all(install.pin_of(install.TOOLS[name], table, "darwin-aarch64").platform == "darwin-aarch64"
                    for name in ("tree-sitter", "clang-format")))
     expect("a platform with no pin is rejected with the status 4",
@@ -417,6 +420,67 @@ def tarball_cases(expect: Expect, work: Path) -> None:
     )
 
 
+# ── A source of the bench with no network ──────────────────────────
+
+
+def planted_source_archive(directory: Path, files: tuple[str, ...], tops: tuple[str, ...]) -> Path:
+    """Write the archive of a stand-in source, and return its path.
+
+    Each top directory of tops holds each file of files, as the archive of a
+    commit of GitHub holds the files of the tree under one top directory.
+    """
+    tree = directory / "tree"
+    for top in tops:
+        for name in files:
+            (tree / top / name).parent.mkdir(parents=True, exist_ok=True)
+            (tree / top / name).write_text(f"// {name}\n", encoding="utf-8")
+    path = directory / "0123456789abcdef.tar.gz"
+    with tarfile.open(path, "w:gz") as archive:
+        for top in tops:
+            archive.add(tree / top, arcname=top)
+    return path
+
+
+def planted_source_table(source: Path) -> install.Pins:
+    """Return a pin table with one fluxsort row of each host, with the source and its SHA-256."""
+    return pin_table.parse(f"# a planted pin table\nformat 1\npin fluxsort via=archive version=2024-07-27 "
+                           f"source=file://{source} sha256={install.sha256_of(source)} | a stand-in\n", "planted")
+
+
+def source_cases(expect: Expect, work: Path) -> None:
+    """Install a planted source of fluxsort, and refuse a source with no license and an archive of two tops."""
+    files = install.SOURCE_FILES["fluxsort"]
+    good = planted_source_archive(work / "good", files, ("fluxsort-0123456789abcdef",))
+    table = planted_source_table(good)
+    root = work / "install"
+    directory = install.install("fluxsort", root, copy_fetch, table)
+    expect(
+        "an install of a planted source unpacks its one top directory, checks its files and stamps it, and the "
+        "name of its directory holds the word source",
+        all((directory / name).is_file() for name in files)
+        and (directory / install.STAMP).read_text() == f"2024-07-27 {install.sha256_of(good)}\n"
+        and directory.name == f"fluxsort-2024-07-27-source-{install.sha256_of(good)[:16]}"
+        and leftovers(root) == [],
+    )
+    expect("--print-bin prints the directory src of the source",
+           install.program("fluxsort", root, table) == directory / "src")
+    unlicensed = planted_source_archive(work / "unlicensed", files[:-1], ("fluxsort-0123456789abcdef",))
+    unlicensed_root = work / "no-license"
+    expect(
+        "an install refuses a source with no license file, with the status 2, and adds nothing",
+        refused(lambda: install.install("fluxsort", unlicensed_root, copy_fetch, planted_source_table(unlicensed)),
+                2)
+        and sorted(child.name for child in unlicensed_root.iterdir()) == [],
+    )
+    doubled = planted_source_archive(work / "doubled", files, ("fluxsort-0123", "fluxsort-4567"))
+    doubled_root = work / "two-tops"
+    expect(
+        "an install refuses an archive with two top directories, with the status 2, and adds nothing",
+        refused(lambda: install.install("fluxsort", doubled_root, copy_fetch, planted_source_table(doubled)), 2)
+        and sorted(child.name for child in doubled_root.iterdir()) == [],
+    )
+
+
 # ── A tool of via=pip with no network ──────────────────────────────
 
 
@@ -506,7 +570,7 @@ def main(argv: list[str]) -> int:
     with tempfile.TemporaryDirectory(prefix="test-install-") as scratch:
         work = Path(scratch)
         for group, cases in (("directories", directory_cases), ("checks", check_cases), ("wheels", wheel_cases),
-                             ("tarballs", tarball_cases), ("pip", pip_cases)):
+                             ("tarballs", tarball_cases), ("sources", source_cases), ("pip", pip_cases)):
             (work / group).mkdir()
             cases(expect, work / group)
     if failures:

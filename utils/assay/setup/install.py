@@ -37,8 +37,23 @@ THE TOOLS
                  clang-format): the binary of the wheel of clang-format on
                  PyPI.  The install unpacks the zip file of the wheel with no
                  pip.  --print-bin prints the binary.
+    fluxsort     The source of fluxsort and quadsort of scandum (the pin
+                 fluxsort): the stable comparator sorts of the state of the
+                 art, which the reference rows of bench_core_sort measure.
+                 --print-bin prints the directory src of the source.
+    x86-simd-sort
+                 The source of x86-simd-sort of numpy (the pin
+                 x86-simd-sort): the vector sorts that bench_core_sort takes
+                 as the speed roof of a sort by a key.  --print-bin prints the
+                 directory src of the source.
     No tool comes from PATH, because a program of PATH is an input that no pin
     holds.
+
+THE SOURCES OF THE BENCH
+    fluxsort and x86-simd-sort are rows of via=archive with no platform: the
+    archive of GitHub of one commit, which serves each host.  Only the bench
+    presets compile their headers (bench/CMakeLists.txt), and the product
+    links none of their code.  The row of each source names its license.
 
 THE PIP TOOLS
     mypy and ruff are rows of via=pip.  The install writes the file
@@ -59,7 +74,9 @@ FAIL-CLOSED PINNING
     give their pinned version.  mold and its link ld.mold must give
     the pinned version.  mypy must give its pinned version
     and the word that its compiled wheel gives, and ruff and clang-format must
-    give their pinned version.  A failure at each step installs nothing.
+    give their pinned version.  A source of the bench must unpack to one top
+    directory that holds the headers of the bench and its license file.  A
+    failure at each step installs nothing.
 
 THE DIRECTORIES
     Each tool lives in the tools directory of assay.core.cache (tools_root()),
@@ -776,6 +793,47 @@ def pip_stamp_matches(requires: tuple[str, ...], directory: Path, pin: pin_table
     return None
 
 
+# The sources of the bench (THE SOURCES OF THE BENCH).
+
+# The files that the source of each tool must hold: the headers that the bench includes and the license.
+SOURCE_FILES = {
+    "fluxsort": ("src/fluxsort.h", "src/fluxsort.c", "src/quadsort.h", "src/quadsort.c", "LICENSE"),
+    "x86-simd-sort": ("src/x86simdsort-static-incl.h", "src/xss-common-qsort.h", "src/avx2-32bit-qsort.hpp",
+                      "src/avx512-32bit-qsort.hpp", "LICENSE.md"),
+}
+
+
+def unpack_source(download_path: Path, staging: Path, pin: pin_table.Pin) -> Path:
+    """Unpack the archive of a source into staging/unpacked, and return its one top directory.
+
+    The archive of a commit of GitHub holds one top directory, the name of the
+    repository and the commit.
+
+    Raises:
+        InstallError: If the archive holds a file at its top, or more than one top directory
+    """
+    import tarfile
+
+    unpacked = staging / "unpacked"
+    with tarfile.open(download_path, "r:gz") as archive:
+        archive.extractall(unpacked, filter="data")
+    tops = sorted(unpacked.iterdir())
+    if len(tops) != 1 or not tops[0].is_dir():
+        raise InstallError(f"the archive {download_path.name} does not unpack to one top directory.", NOT_PINNED)
+    return tops[0]
+
+
+def verify_source(files: tuple[str, ...], directory: Path, pin: pin_table.Pin, table: Pins) -> None:
+    """Make sure that the directory of a source holds each named file: the headers of the bench and the license.
+
+    Raises:
+        InstallError: If a file is missing
+    """
+    missing = [name for name in files if not (directory / name).is_file()]
+    if missing:
+        raise InstallError(f"{directory} holds no {', '.join(missing)}.", NOT_PINNED)
+
+
 TOOLS: dict[str, Tool] = {
     "tree-sitter": Tool(
         "tree-sitter", "tree-sitter-kit", "tree-sitter-cpp-fork-",
@@ -802,6 +860,13 @@ TOOLS: dict[str, Tool] = {
         {"linux-x86_64": "x86_64", "linux-aarch64": "aarch64", "darwin-aarch64": "macos-arm64"},
         verify_clang_format, functools.partial(unpack_wheel, "clang_format"), version_stamp, version_stamp_matches,
         lambda directory: directory / "bin" / "clang-format", False),
+    "fluxsort": Tool(
+        "fluxsort", "fluxsort", "fluxsort-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["fluxsort"]),
+        unpack_source, version_stamp, version_stamp_matches, lambda directory: directory / "src", False),
+    "x86-simd-sort": Tool(
+        "x86-simd-sort", "x86-simd-sort", "x86-simd-sort-", {"": "source"},
+        functools.partial(verify_source, SOURCE_FILES["x86-simd-sort"]), unpack_source, version_stamp,
+        version_stamp_matches, lambda directory: directory / "src", False),
 }
 
 
