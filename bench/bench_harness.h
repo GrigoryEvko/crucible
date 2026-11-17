@@ -524,6 +524,124 @@ template <class GroupOf>
     return ::fixy::some(apart);
 }
 
+// ── THE SPREAD OF A RUN ────────────────────────────────────────────
+//
+// A run of many threads gives slot k the CPU k of a list.  With a claim of
+// loop bench, the list is the cores of the claim in ascending order, as
+// Cores::of_slot gives them.  With no claim, such as a row of more threads
+// than the reserved cores, the list is the CPUs of the affinity of the process
+// in the order of the topology: the first allowed CPU of each core in
+// ascending order, then the second allowed CPU of each core, and so on.  A run
+// of as many threads as the host has cores then puts no two threads on one
+// core, and the SMT siblings come last.  Linux gives adjacent numbers to the
+// cores of one L3 group and of one socket, so the first slots fill one group
+// and one socket before the next.  The CPUs of the core of cpu0 come last in
+// their rank, because cpu0 takes the timer interrupts on most hosts, and slot
+// 0 is the measuring thread.
+//
+// A spread holds at most kSpreadCpus CPUs: the CPUs that an affinity mask of
+// the thread door can name.
+
+inline constexpr std::size_t kSpreadCpus = ::fixy::AffinityMask::kBits;
+
+// Where the CPUs of a spread come from.
+enum class SpreadSource : std::uint8_t {
+    Claim,
+    Topology,
+};
+
+class Spread {
+public:
+    // The cores of a claim, in ascending order.  Complexity: linear in the
+    // cores.
+    [[nodiscard]] static Spread of_claim(Cores const& cores) noexcept {
+        Spread spread{};
+        spread.source_ = SpreadSource::Claim;
+        for (int const cpu : cores.set()) {
+            if (spread.order_.push(CpuId{cpu}).is_err()) break;
+        }
+        return spread;
+    }
+
+    // The CPUs of allowed in the order of the topology.  siblings_of gives
+    // the SMT group of a CpuId: the CPU and its siblings.  A CPU that an
+    // affinity mask cannot name is left out.  Complexity: linear in the CPUs
+    // of allowed times the CPUs of a group, plus one pass of the CPUs for each
+    // rank in a group.
+    template <class SiblingsOf>
+    [[nodiscard]] static Spread of_topology(crucible::warden::CpuSet const& allowed,
+                                            SiblingsOf const& siblings_of) noexcept {
+        // Where a CPU goes in its rank: the CPUs of the core of cpu0 go last.
+        enum class Turn : std::uint8_t {
+            First,
+            Last,
+        };
+        // The rank of a CPU in its core: the count of the allowed CPUs of its
+        // group with a lower number.
+        struct RankedCpu {
+            CpuId cpu{};
+            std::size_t rank = 0;
+            Turn turn = Turn::First;
+        };
+        ::fixy::FixedList<RankedCpu, kSpreadCpus> ranked{};
+        std::size_t deepest = 0;
+        for (int const cpu : allowed) {
+            if (cpu > ::fixy::AffinityMask::kMaxCore) break;
+            crucible::warden::CpuSet const group = siblings_of(CpuId{cpu});
+            std::size_t rank = 0;
+            for (int const sibling : group) {
+                if (sibling < cpu && allowed.contains(sibling)) ++rank;
+            }
+            deepest = rank > deepest ? rank : deepest;
+            Turn const turn = cpu == 0 || group.contains(0) ? Turn::Last : Turn::First;
+            if (ranked.push(RankedCpu{.cpu = CpuId{cpu}, .rank = rank, .turn = turn}).is_err()) break;
+        }
+        Spread spread{};
+        spread.source_ = SpreadSource::Topology;
+        for (std::size_t rank = 0; rank <= deepest; ++rank) {
+            for (RankedCpu const& each : ranked) {
+                if (each.rank == rank && each.turn == Turn::First) static_cast<void>(spread.order_.push(each.cpu));
+            }
+            for (RankedCpu const& each : ranked) {
+                if (each.rank == rank && each.turn == Turn::Last) static_cast<void>(spread.order_.push(each.cpu));
+            }
+        }
+        return spread;
+    }
+
+    // The spread of the calling thread: the claim when its affinity holds an
+    // isolated CPU, else the topology of its affinity from sysfs.
+    // Complexity: one read of procfs, and one read of sysfs for each CPU.
+    [[nodiscard]] static Spread of_calling_thread() noexcept {
+        Cores const cores = Cores::of_calling_thread();
+        if (cores.count() > 0) return of_claim(cores);
+        const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+        return of_topology(crucible::warden::allowed_cpus(startup), [&startup](CpuId cpu) noexcept {
+            return crucible::warden::smt_siblings(startup, cpu.raw());
+        });
+    }
+
+    // The count of the slots.
+    [[nodiscard]] std::size_t count() const noexcept { return order_.size(); }
+
+    [[nodiscard]] SpreadSource source() const noexcept { return source_; }
+
+    // The CPU of a slot, or none past the last slot.  Complexity: linear in
+    // the slots up to the slot.
+    [[nodiscard]] ::fixy::Option<CpuId> of_slot(ThreadSlot slot) const noexcept {
+        std::uint32_t position = 0;
+        for (CpuId const cpu : order_) {
+            if (position == slot.raw()) return ::fixy::some(cpu);
+            ++position;
+        }
+        return ::fixy::none;
+    }
+
+private:
+    ::fixy::FixedList<CpuId, kSpreadCpus> order_{};
+    SpreadSource source_ = SpreadSource::Topology;
+};
+
 namespace detail {
 
 // The core of a run in the affinity allowed of the process: the asked core

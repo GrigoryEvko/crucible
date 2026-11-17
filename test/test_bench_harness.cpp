@@ -689,6 +689,72 @@ void test_slots_take_distinct_cores() {
     CHECK(none.of_slot(bench::kMeasuringSlot).is_none());
 }
 
+// The CPU of a slot of a spread, or -1 past the last slot.
+[[nodiscard]] int cpu_at(bench::Spread const& spread, bench::ThreadSlot slot) noexcept {
+    return spread.of_slot(slot).value_or(bench::CpuId::none()).raw();
+}
+
+// The spread of a run with no claim takes one CPU of each core first, then
+// the SMT siblings, and the core of cpu0 last in each rank.  The shared CPUs
+// of luks-a are 0 to 223, with the siblings 2k and 2k + 1: a run of 32
+// threads takes the even CPUs 2 to 64, a run of 112 threads takes each core
+// with cpu0 last, and slot 112 takes cpu3.  The bench host has 384 CPUs, with
+// the sibling of CPU c at c + 192: slots 0 to 191 take the cores of the two
+// sockets, and a run of 224 threads takes 32 siblings last.  A CPU whose
+// lower sibling is not in the affinity is the first CPU of its core.  A host
+// whose sysfs gives no group spreads in ascending order.  A claim gives its
+// cores in ascending order.
+void test_spread_of_a_run() {
+    using Slot = bench::ThreadSlot;
+    const auto pairs = [](bench::CpuId cpu) noexcept {
+        crucible::warden::CpuSet group{};
+        group.insert_range(static_cast<std::size_t>(cpu.raw() & ~1), static_cast<std::size_t>(cpu.raw() | 1));
+        return group;
+    };
+    crucible::warden::CpuSet shared{};
+    shared.insert_range(0, 223);
+    const bench::Spread luks = bench::Spread::of_topology(shared, pairs);
+    CHECK(luks.count() == 224u && luks.source() == bench::SpreadSource::Topology);
+    CHECK(cpu_at(luks, Slot{0}) == 2 && cpu_at(luks, Slot{1}) == 4 && cpu_at(luks, Slot{31}) == 64);
+    CHECK(cpu_at(luks, Slot{110}) == 222 && cpu_at(luks, Slot{111}) == 0 && cpu_at(luks, Slot{112}) == 3);
+    CHECK(cpu_at(luks, Slot{222}) == 223 && cpu_at(luks, Slot{223}) == 1 && cpu_at(luks, Slot{224}) == -1);
+
+    const auto sockets = [](bench::CpuId cpu) noexcept {
+        crucible::warden::CpuSet group{};
+        const auto core = static_cast<std::size_t>(cpu.raw() % 192);
+        group.insert(core);
+        group.insert(core + 192);
+        return group;
+    };
+    crucible::warden::CpuSet host{};
+    host.insert_range(0, 383);
+    const bench::Spread bench_host = bench::Spread::of_topology(host, sockets);
+    CHECK(bench_host.count() == 384u);
+    CHECK(cpu_at(bench_host, Slot{0}) == 1 && cpu_at(bench_host, Slot{63}) == 64);
+    CHECK(cpu_at(bench_host, Slot{190}) == 191 && cpu_at(bench_host, Slot{191}) == 0);
+    CHECK(cpu_at(bench_host, Slot{192}) == 193 && cpu_at(bench_host, Slot{223}) == 224);
+    CHECK(cpu_at(bench_host, Slot{383}) == 192);
+
+    crucible::warden::CpuSet odd{};
+    odd.insert(1);
+    odd.insert(3);
+    odd.insert(4);
+    const bench::Spread partial = bench::Spread::of_topology(odd, pairs);
+    CHECK(partial.count() == 3u && cpu_at(partial, Slot{0}) == 3 && cpu_at(partial, Slot{1}) == 4
+          && cpu_at(partial, Slot{2}) == 1);
+
+    const bench::Spread flat =
+        bench::Spread::of_topology(odd, [](bench::CpuId) noexcept { return crucible::warden::CpuSet{}; });
+    CHECK(cpu_at(flat, Slot{0}) == 1 && cpu_at(flat, Slot{2}) == 4);
+
+    crucible::warden::CpuSet claim{};
+    for (std::size_t cpu = 240; cpu <= 246; cpu += 2)
+        claim.insert(cpu);
+    const bench::Spread claimed = bench::Spread::of_claim(planted_cores(claim, planted_isolated()));
+    CHECK(claimed.count() == 4u && claimed.source() == bench::SpreadSource::Claim);
+    CHECK(cpu_at(claimed, Slot{0}) == 240 && cpu_at(claimed, Slot{3}) == 246 && cpu_at(claimed, Slot{4}) == -1);
+}
+
 // A claim of nine cores of the bench VM spans its two L3 groups, the even CPUs
 // 224 to 238 and 240 to 254.  The core apart is the one core of the claim in
 // its group, in either order of the groups.  A claim in one group gives its
@@ -960,6 +1026,7 @@ int main() {
     test_fan_out_keeps_the_worker_affinity();
     test_core_of_run_stays_in_the_affinity();
     test_slots_take_distinct_cores();
+    test_spread_of_a_run();
     test_apart_core_of_a_claim();
     test_pins_of_the_threads_of_a_run();
     test_pause_between_planted_readings();

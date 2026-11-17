@@ -91,6 +91,8 @@ endif()
 crucible_bench(bench_core_strided)
 # Nine threads: eight shards, each on its own core, and the measuring thread.
 crucible_bench(bench_parallel_pointwise CORES 9)
+# Rows of 1 to 8 threads, one on each core of one L3 group.  --cores 16 adds the row of 16 threads.
+crucible_bench(bench_thread_scaling CORES 8)
 crucible_bench(bench_decide_compile_time)
 crucible_bench(bench_dispatch)
 crucible_bench(bench_fp_control)
