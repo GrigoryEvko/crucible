@@ -1217,6 +1217,22 @@ lost_between(::fixy::Side<side::ReadingBefore, WindowClock> const& before,
     return wall_ns > cpu_ns ? wall_ns - cpu_ns : 0;
 }
 
+// The windows whose lost time is over kPauseBoundNs, when the check of the
+// whole loop judged the measuring thread by its lost time, or no window for
+// each other basis (THE WINDOWS).  A thread that made no voluntary switch in
+// the loop slept in no window, so the lost time of each window is a pause.  A
+// thread that slept lost the time of its sleep too, and the clocks of a window
+// cannot tell the two apart.  Complexity: linear in the windows.
+[[nodiscard]] constexpr std::size_t paused_windows_of(::fixy::View<std::uint64_t const> lost_ns,
+                                                      PauseBasis whole_loop) noexcept {
+    if (whole_loop != PauseBasis::LostTime) return 0;
+    std::size_t paused = 0;
+    for (std::uint64_t const window_lost_ns : lost_ns) {
+        paused += window_lost_ns > kPauseBoundNs ? std::size_t{1} : std::size_t{0};
+    }
+    return paused;
+}
+
 // The field processor of a stat file of procfs: the CPU on which the thread
 // ran last, or none.  The name of a thread can hold a parenthesis and blanks,
 // so the fields start after the last closing parenthesis.  Field 3, the
@@ -1449,8 +1465,12 @@ struct CI {
 // check reads two clocks at each end of a window and no file of procfs.  A
 // read of procfs inside the loop can sleep, and a sleep makes the check of the
 // whole loop judge the measuring thread by its run delay, which can miss a
-// pause.  The pause of a report is the check of the whole loop, with the run
-// delays of the threads.
+// pause.  A measuring thread that slept in the loop, such as a thread that
+// joins the threads of its body, lost the time of its sleep too, and two clocks
+// cannot tell a sleep from a pause.  So the windows judge only a loop that the
+// check of the whole loop judges by its lost time, and window_basis says so.
+// The pause of a report is the check of the whole loop, with the run delays of
+// the threads.
 //
 // The fields of a report before the windows keep their meaning: each
 // percentile is over all the samples of the run.  The report adds the count
@@ -1542,9 +1562,12 @@ struct Report {
     // PAUSE CHECK).  A pause over kPauseBoundNs makes the run not valid.
     Pause pause{};
 
-    // The medians of the windows of the sampled loop, and the count of the
-    // windows whose own pause is over kPauseBoundNs (THE WINDOWS).
+    // The medians of the windows of the sampled loop, how the windows were
+    // judged, and the count of the windows whose own pause is over
+    // kPauseBoundNs (THE WINDOWS).  window_basis is LostTime when the windows
+    // were judged, and NotMeasured when the measuring thread slept in the loop.
     WindowSpread windows{};
+    PauseBasis window_basis = PauseBasis::NotMeasured;
     std::size_t paused_windows = 0;
 
     // Kernel-side context via eBPF sense hub. All zero when BPF is
@@ -1773,12 +1796,14 @@ struct Report {
                      "\"cycles_per_op\":%.3f,"
                      "\"freq_start_hz\":%lu,\"freq_end_hz\":%lu,"
                      "\"pause_ns\":%lu,\"thread_delay_ns\":%lu,\"thread_arrivals\":%lu,\"paused\":%d,"
-                     "\"windows\":%zu,\"window_p50_median\":%.3f,\"window_spread\":%.5f,\"paused_windows\":%zu",
+                     "\"windows\":%zu,\"window_p50_median\":%.3f,\"window_spread\":%.5f,\"windows_judged\":%d,"
+                     "\"paused_windows\":%zu",
                      batch, pct.n, pinned_cpu.raw(), pinned_cpu_count, pct.p50, pct.p75, pct.p90, pct.p95, pct.p99,
                      pct.p99_9, pct.p99_99, pct.min, pct.max, pct.mean, pct.stddev, pct.cv, wall_ns, drift_pct,
                      cycles_per_op, static_cast<unsigned long>(freq_start_hz), static_cast<unsigned long>(freq_end_hz),
                      pause.own_ns(), pause.other.run_delay_ns, pause.other.arrivals, pause.is_over_bound() ? 1 : 0,
-                     windows.windows, windows.median, windows.spread, paused_windows);
+                     windows.windows, windows.median, windows.spread, window_basis == PauseBasis::LostTime ? 1 : 0,
+                     paused_windows);
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         print_bpf_json_(out);
 #endif
@@ -2615,14 +2640,8 @@ private:
             }
             window_begin = window_end;
         }
-        std::size_t paused_windows = 0;
-        for (std::uint64_t const window_lost_ns : window.lost_ns) {
-            paused_windows += window_lost_ns > kPauseBoundNs ? std::size_t{1} : std::size_t{0};
-        }
-
         Report r;
         r.windows = spread_of_windows(window_medians.view());
-        r.paused_windows = paused_windows;
         r.name = name_;
         r.batch = batch;
         r.pinned_cpu = pinned_cpu;
@@ -2634,6 +2653,8 @@ private:
         r.samples = std::move(ns_samples);
         r.pause = detail::pause_between(::fixy::side_as<side::ReadingBefore>(window.pause_before),
                                         ::fixy::side_as<side::ReadingAfter>(pause_after));
+        r.window_basis = r.pause.basis == PauseBasis::LostTime ? PauseBasis::LostTime : PauseBasis::NotMeasured;
+        r.paused_windows = detail::paused_windows_of(window.lost_ns.view(), r.pause.basis);
 
         // Sysfs-based freq drift check.
         r.freq_start_hz = freq_start;

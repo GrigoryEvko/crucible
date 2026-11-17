@@ -347,7 +347,6 @@ template <OpKind Kind>
 
     std::uint64_t all_ops = 0;
     std::uint64_t all_wall_ns = 0;
-    std::size_t paused_windows = 0;
     ::fixy::FixedArray<double, bench::kWindows> window_mops{};
     for (WindowIndex const index : ops.indices()) {
         std::uint64_t const wall_ns = window.wall_ns.at(index);
@@ -355,13 +354,12 @@ template <OpKind Kind>
         all_wall_ns += wall_ns;
         window_mops.at(index) =
             wall_ns == 0 ? 0.0 : static_cast<double>(ops.at(index)) * 1000.0 / static_cast<double>(wall_ns);
-        paused_windows += window.lost_ns.at(index) > bench::kPauseBoundNs ? std::size_t{1} : std::size_t{0};
     }
 
     RowResult result{.threads = threads,
                      .centi_mops = all_wall_ns == 0 ? 0 : all_ops * 100000 / all_wall_ns,
                      .windows = bench::spread_of_windows(window_mops.view()),
-                     .paused_windows = paused_windows,
+                     .paused_windows = bench::detail::paused_windows_of(window.lost_ns.view(), window.pause.basis),
                      .window_pause = window.pause};
     result.latency = run_of<Kind>()
                          .core(main_cpu.raw())

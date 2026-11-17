@@ -960,6 +960,28 @@ void test_run_measures_in_windows() {
     CHECK(short_run.pct.n == 12u && short_run.windows.windows == bench::kWindows);
 }
 
+// The windows judge their lost time only when the check of the whole loop
+// judged the lost time of the measuring thread.  On planted lost times, the
+// windows over the bound of 1 ms count under that basis, and none counts
+// under each other basis.  A body that sleeps 2 ms in each sample loses that
+// time in each window, but the measuring thread slept, so the check of the
+// whole loop judges its run delay, and the windows judge nothing.
+void test_windows_judge_no_sleep() {
+    namespace eff = ::foundation::effects;
+    const ::fixy::FixedArray<std::uint64_t, 3> lost{0, 2000000, 500000};
+    CHECK(bench::detail::paused_windows_of(lost.view(), bench::PauseBasis::LostTime) == 1u);
+    CHECK(bench::detail::paused_windows_of(lost.view(), bench::PauseBasis::RunDelay) == 0u);
+    CHECK(bench::detail::paused_windows_of(lost.view(), bench::PauseBasis::NotMeasured) == 0u);
+
+    constexpr std::uint64_t kSleepNs = 2000000;
+    const ::fixy::InitLoadCtx startup{eff::testing::init()};
+    const auto sleeper = ::fixy::time::mint_bounded_sleep<kSleepNs>(startup);
+    const bench::Report slept = bench::Run("sleeps").samples(5).warmup(1).batch(1).measure(
+        [&sleeper]() noexcept { static_cast<void>(sleeper.sleep_for(kSleepNs)); });
+    CHECK(slept.pause.basis == bench::PauseBasis::RunDelay);
+    CHECK(slept.window_basis == bench::PauseBasis::NotMeasured && slept.paused_windows == 0u);
+}
+
 // The thread 100 of the planted readings is the measuring thread, and the
 // thread 7 is the other thread of the run.
 constexpr ::fixy::process::ThreadId kMeasuringTid{100};
@@ -1124,8 +1146,9 @@ void test_planted_pause_is_caught() {
     CHECK(paused.pause.own_ns() >= 1900000u);
     CHECK(paused.pause.is_over_bound());
     // The window of the planted pause has its own check, and it marks that
-    // window (THE WINDOWS of bench/bench_harness.h).
-    CHECK(paused.paused_windows >= 1u);
+    // window when the check of the whole loop judged the lost time (THE
+    // WINDOWS of bench/bench_harness.h).
+    if (paused.pause.basis == bench::PauseBasis::LostTime) CHECK(paused.paused_windows >= 1u);
     const ::fixy::TextView basis = paused.pause.basis == bench::PauseBasis::LostTime ? ::fixy::TextView{"lost time"}
                                                                                      : ::fixy::TextView{"run delay"};
     ::fixy::report(::fixy::Sink::Err,
@@ -1163,8 +1186,9 @@ int main() {
     test_processor_of_stat();
     test_spread_of_planted_windows();
     test_run_measures_in_windows();
+    test_windows_judge_no_sleep();
 
-    constexpr int kNumGroups = 23;
+    constexpr int kNumGroups = 24;
     if (g_failures == 0) {
         crucible::test::pass("test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;
