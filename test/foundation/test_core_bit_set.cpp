@@ -178,6 +178,21 @@ struct Model {
     void put(std::size_t raw, bool value) noexcept {
         held.at(Index<kModelCapacity>::check(raw).expect("the model holds the index")) = value;
     }
+
+    // The relations of this model and other: subset and disjoint.
+    [[nodiscard]] bool is_subset_of(Model const& other) const noexcept {
+        for (std::size_t raw = 0; raw != count; ++raw) {
+            if (at(raw) && !other.at(raw)) return false;
+        }
+        return true;
+    }
+
+    [[nodiscard]] bool is_disjoint_from(Model const& other) const noexcept {
+        for (std::size_t raw = 0; raw != count; ++raw) {
+            if (at(raw) && other.at(raw)) return false;
+        }
+        return true;
+    }
 };
 
 // The access of the property test to a fixed set of N indexes.
@@ -243,21 +258,6 @@ void expect_agrees(typename Side::Set const& set, Model const& model) {
     CRUCIBLE_FATAL_INVARIANT(walked == members);
 }
 
-// The relation of two models: subset, disjoint and equal.
-[[nodiscard]] bool model_subset(Model const& left, Model const& right) noexcept {
-    for (std::size_t raw = 0; raw != left.count; ++raw) {
-        if (left.at(raw) && !right.at(raw)) return false;
-    }
-    return true;
-}
-
-[[nodiscard]] bool model_disjoint(Model const& left, Model const& right) noexcept {
-    for (std::size_t raw = 0; raw != left.count; ++raw) {
-        if (left.at(raw) && right.at(raw)) return false;
-    }
-    return true;
-}
-
 // The property: random sets, resets, clears and changes of two sets keep each
 // set equal to its model, and the queries agree with the queries of the
 // models.  The stream has a fixed seed for each count.
@@ -320,11 +320,12 @@ void expect_property(std::uint64_t seed) {
         }
         expect_agrees<Side>(first, first_model);
         expect_agrees<Side>(second, second_model);
-        CRUCIBLE_FATAL_INVARIANT(first.is_subset_of(second) == model_subset(first_model, second_model));
-        CRUCIBLE_FATAL_INVARIANT(second.is_subset_of(first) == model_subset(second_model, first_model));
-        CRUCIBLE_FATAL_INVARIANT(first.is_disjoint_from(second) == model_disjoint(first_model, second_model));
-        CRUCIBLE_FATAL_INVARIANT(
-            (first == second) == (model_subset(first_model, second_model) && model_subset(second_model, first_model)));
+        bool const is_first_inside = first_model.is_subset_of(second_model);
+        bool const is_second_inside = second_model.is_subset_of(first_model);
+        CRUCIBLE_FATAL_INVARIANT(first.is_subset_of(second) == is_first_inside);
+        CRUCIBLE_FATAL_INVARIANT(second.is_subset_of(first) == is_second_inside);
+        CRUCIBLE_FATAL_INVARIANT(first.is_disjoint_from(second) == first_model.is_disjoint_from(second_model));
+        CRUCIBLE_FATAL_INVARIANT((first == second) == (is_first_inside && is_second_inside));
     }
 }
 
