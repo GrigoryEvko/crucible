@@ -221,10 +221,14 @@ class TestKeys:
 
 @dataclass(frozen=True, slots=True)
 class Program:
-    """One bench target of a build: its item, and the path of its program."""
+    """One bench target of a build: its item, the path of its program, and the count of the cores of a run of it.
+
+    The count is the count that the bench states (THE CORES OF A RUN of assay.loop.bench).
+    """
 
     item: Item
     path: Path
+    cores: bench.CoreCount = bench.ONE_CORE
 
 
 def host_tier(build_dir: Path) -> str:
@@ -258,6 +262,7 @@ def bench_programs(rule: str, build_dir: Path) -> list[Program]:
 
     Raises:
         cmake_reader.CmakeError: If the code model or the CMake cache of the build cannot be read
+        bench.BenchError: If a bench states a count of cores that does not read
     """
     model = cmake_reader.codemodel(build_dir)
     tier = host_tier(build_dir)
@@ -268,15 +273,16 @@ def bench_programs(rule: str, build_dir: Path) -> list[Program]:
         if target.name not in names or target.name in found:
             continue
         path = Path(target.artifacts[0]) if target.artifacts else build_dir / "bench" / target.name
+        cores = bench.cores_of_target(target)
         if not tier:
             reason = f"the compiler of the build gives no native tier on the processor {platform.machine()}"
-            found[target.name] = Program(Item(rule, target.name, build, "", reason), path)
+            found[target.name] = Program(Item(rule, target.name, build, "", reason), path, cores)
             continue
         try:
-            found[target.name] = Program(Item(rule, target.name, build, bench_key(tier, path)), path)
+            found[target.name] = Program(Item(rule, target.name, build, bench_key(tier, path)), path, cores)
         except OSError:
             reason = f"the bench has no program {path}.  Build the target {target.name}"
-            found[target.name] = Program(Item(rule, target.name, build, "", reason), path)
+            found[target.name] = Program(Item(rule, target.name, build, "", reason), path, cores)
     return sorted(found.values(), key=lambda program: program.item.name)
 
 

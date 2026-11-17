@@ -25,8 +25,24 @@
 # correctly for every bench target without re-declaring the macro
 # below.
 
+# crucible_bench(NAME [CORES COUNT]) makes the bench NAME from NAME.cpp.  A
+# bench whose threads run at the same time states their count with CORES.
+# The definition CRUCIBLE_BENCH_CORES=COUNT then tells `loop bench` to claim
+# that many isolated cores for each run, one for each thread, and the harness
+# pins each thread to one of them (THE CORES OF A RUN of
+# utils/assay/loop/bench.py).  A bench with no CORES gets one core.
 function(crucible_bench name)
+  cmake_parse_arguments(PARSE_ARGV 1 _bench "" "CORES" "")
+  if(_bench_UNPARSED_ARGUMENTS)
+    message(FATAL_ERROR "crucible_bench(${name}): the arguments '${_bench_UNPARSED_ARGUMENTS}' are not CORES COUNT")
+  endif()
   add_executable(${name} ${name}.cpp)
+  if(DEFINED _bench_CORES)
+    if(NOT _bench_CORES MATCHES "^[1-9][0-9]*$")
+      message(FATAL_ERROR "crucible_bench(${name}): CORES is '${_bench_CORES}', and it must be a count of at least one")
+    endif()
+    target_compile_definitions(${name} PRIVATE CRUCIBLE_BENCH_CORES=${_bench_CORES})
+  endif()
   target_link_libraries(${name} PRIVATE crucible)
   # Each loop starts a line of 64 bytes, so a change of other code does not
   # move a timed loop inside its line.  With loops at 16 bytes, the roof of

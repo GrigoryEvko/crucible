@@ -9,6 +9,7 @@ keeps its failure, and one has no room in the budget.  The planted benches are s
 shell and taskset from PATH.
 """
 
+import contextlib
 import dataclasses
 import json
 import os
@@ -23,7 +24,7 @@ from assay.loop.evidence import store as evidence_store
 from assay.readers import bench as bench_reader
 
 RULE = targets.MEASUREMENT.rule
-CORE_FACTS = (("core", "0"), ("reserved", "no"), ("slice", "none"))
+CORE_FACTS = (("cores", "0"), ("reserved", "no"), ("slice", "none"))
 REPORT = {"name": "try_push", "n": 100, "p50": 7.0, "p99": 9.0, "max": 20.0, "cv": 0.01, "wall_ns": 1e6, "drift_pct": 0}
 
 
@@ -52,7 +53,7 @@ def judged_cases(expect: testing.Expect) -> None:
         and not counted.failure
         and facts.get("cv") == "0.0100"
         and facts.get("others_pct") == "2.0"
-        and facts.get("core") == "0",
+        and facts.get("cores") == "0",
     )
     for name, result, share, word in (
         ("a busy host", completed(0, tail(0.01)), 50.0, "other processes"),
@@ -137,17 +138,27 @@ def run_cases(expect: testing.Expect) -> None:
             return dataclasses.replace(measurement.run_once(path, where, cwd, limit_s), others_pct=1.0, steal_ms=0.0)
 
         chosen = [
-            measurement.Measured("bench_quiet", quiet, "key-quiet", 0.0, 2.0, 0.1),
+            measurement.Measured("bench_quiet", quiet, "key-quiet", 0.0, 2.0, 0.1, bench.CoreCount(2)),
             measurement.Measured("bench_fail", failing, "key-fail", 0.0, 2.0, 0.1),
             measurement.Measured("bench_long", quiet, "key-long", 0.0, 2.0, 1000.0),
         ]
-        where = bench.Placement(core, bench.Reserved(), ("taskset", "-c", core))
-        outcome = measurement.run_benches(store, chosen, 60.0, where, root, quiet_run)
+        where = bench.Placement((int(core),), bench.Reserved(), ("taskset", "-c", core))
+        claims: list[tuple[str, int]] = []
+
+        def place(count: bench.CoreCount) -> contextlib.AbstractContextManager[bench.Placement]:
+            claims.append(("claim", count.value))
+            return contextlib.nullcontext(where)
+
+        outcome = measurement.run_benches(store, chosen, 60.0, place, root, quiet_run)
         passed = store.read(RULE, "key-quiet")
         failed = store.read(RULE, "key-fail")
         expect(
             f"a quiet bench gets its target in runs that count: {outcome}",
             passed is not None and passed.value == 2.0 and len(passed.samples) == 2 and outcome.counted == 2,
+        )
+        expect(
+            f"each run takes a claim of the cores of its bench, and a bench of two cores claims two: {claims}",
+            sorted(claims) == [("claim", 1), ("claim", 2), ("claim", 2)],
         )
         facts = {} if failed is None or failed.failure is None else dict(failed.failure.facts)
         expect(
