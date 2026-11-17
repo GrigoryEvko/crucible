@@ -12,6 +12,11 @@
 // any instruction set. The truncating product is unsigned wraparound, which
 // is defined. The high half comes from widening to sixty-four bits and
 // shifting, which is what the scalar routine's high-multiply does.
+//
+// The vectors of the batch are vectors of the target, so the batch and its
+// function are in the inline namespace CRUCIBLE_SIMD_TARGET (THE TARGET
+// NAMESPACE of foundation/Platform.h).  Two units of two targets keep their
+// own body.
 
 #include <fixy/Core.h>
 #include <foundation/Platform.h>
@@ -20,6 +25,7 @@
 #include <cstdint>
 
 namespace crucible::detail {
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 struct PhiloxBatch8 {
     ::foundation::simd::u32x8 r0;
@@ -69,4 +75,5 @@ philox_batch8(::foundation::simd::u32x8 ctr0, ::foundation::simd::u32x8 ctr1, ::
     return {ctr0, ctr1, ctr2, ctr3};
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
 }  // namespace crucible::detail

@@ -3,6 +3,11 @@
 // On the wire a shard set is K systematic data shards followed by M parity
 // shards, each of equal length and contiguous in index order.  A peer
 // decoder must assume the same ordering.
+//
+// The kernels that read the vector extensions of the target, and the codec
+// whose members call them, are in the inline namespace CRUCIBLE_SIMD_TARGET
+// (THE TARGET NAMESPACE of foundation/Platform.h).  Two units of two targets
+// keep their own bodies.
 
 #include <fixy/Core.h>
 #include <fixy/Qtt.h>
@@ -242,6 +247,8 @@ template <class Field = void>
     return tables;
 }
 
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 // One register of byte lanes: 32 lanes with AVX2, and 16 lanes with NEON.
 // A vector kernel steps one register per iteration, so its stride is the
 // size of the register.  The kernels use the operations of
@@ -301,6 +308,8 @@ CRUCIBLE_HOT void mul_xor_simd(::fixy::View<std::byte> dst, ::fixy::View<std::by
         *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
     }
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 #endif
 
 CRUCIBLE_HOT void xor_bytes_scalar(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
@@ -308,6 +317,8 @@ CRUCIBLE_HOT void xor_bytes_scalar(::fixy::View<std::byte> dst, ::fixy::View<std
         *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
     }
 }
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The product of each byte of src and coeff, added into the byte of dst at
 // the same position.  The two Views have one count.
@@ -329,6 +340,8 @@ CRUCIBLE_HOT void mul_xor(::fixy::View<std::byte> dst, ::fixy::View<std::byte co
 #endif
 }
 
+}  // namespace CRUCIBLE_SIMD_TARGET
+
 template <ByteContiguousBuffer Buffer>
 [[nodiscard]] constexpr ::fixy::View<std::byte const> bytes(Buffer const& buffer) noexcept {
     if constexpr (requires { buffer.view(); }) {
@@ -348,6 +361,11 @@ template <MutableByteContiguousBuffer Buffer>
 }
 
 }  // namespace detail
+
+// The members of the codec call the kernels of the target, so the codec is in
+// the inline namespace CRUCIBLE_SIMD_TARGET too, and each target has its own
+// codec type.
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 template <std::uint8_t K, std::uint8_t M>
     requires ReedSolomonShape<K, M>
@@ -503,6 +521,8 @@ private:
         return block.window(shard * shard_bytes, shard_bytes).expect("the shard lies inside the block");
     }
 };
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 template <std::uint8_t K, std::uint8_t M>
     requires ReedSolomonShape<K, M>

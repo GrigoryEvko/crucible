@@ -14,12 +14,20 @@
 #include <cstdint>
 #include <type_traits>
 
+// The width of a group, the mask of a group and the group read the vector
+// extensions of the target.  So they are in the inline namespace
+// CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of foundation/Platform.h), and
+// two units of two targets keep their own BitMask and CtrlGroup.  The names
+// that read no target stay outside it.
+
 namespace crucible {
 namespace detail {
 
 inline constexpr int8_t kEmpty = static_cast<int8_t>(0x80);
 
 using GroupWidth = ::fixy::PowerOfTwo<std::size_t>;
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 #if defined(__AVX512BW__)
 static constexpr GroupWidth kGroupWidth = ::fixy::mint_refined<::fixy::power_of_two>(std::size_t{64});
@@ -30,6 +38,8 @@ static constexpr GroupWidth kGroupWidth = ::fixy::mint_refined<::fixy::power_of_
 #endif
 
 [[nodiscard]] consteval std::size_t group_width() noexcept { return kGroupWidth.value(); }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 // The ISA the probe was emitted for and the instruction class it issues,
 // restated as fixy atoms of the arm the preprocessor selects above.
@@ -61,7 +71,11 @@ using InstructionTier = std::conditional_t<fas::is_trunk_pinned(ActiveSimdIsa::i
     return width == 64 ? ::fixy::max_of<uint64_t> : ((uint64_t{1} << width) - uint64_t{1});
 }
 
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 static constexpr uint64_t kGroupMaskCeiling = group_mask_ceiling(group_width());
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 // The shift by 57 leaves the result in [0, 127], so bit 7 of the int8_t is
 // always clear. That reserves 0x80 for kEmpty: a tag with bit 7 set would
@@ -72,6 +86,8 @@ static constexpr uint64_t kGroupMaskCeiling = group_mask_ceiling(group_width());
 // boundary static_asserts in the check file of this header carry the same
 // obligation.
 [[nodiscard, gnu::const]] constexpr int8_t h2_tag(uint64_t hash) noexcept { return static_cast<int8_t>(hash >> 57); }
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 // Each set bit is a slot offset in [0, kGroupWidth).
 struct BitMask {
@@ -138,6 +154,8 @@ struct CtrlGroup {
         return BitMask{::foundation::simd::collect_sign_bits(ctrl)};
     }
 };
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace detail
 }  // namespace crucible

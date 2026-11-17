@@ -92,6 +92,12 @@ struct FountainPacket {
 template <std::size_t SourceSymbols, std::size_t SymbolBytes>
 using LinearFountainPacket = ::fixy::Linear<FountainPacket<SourceSymbols, SymbolBytes>>;
 
+// The members of the two codecs call the kernels of the target of
+// crucible/cntp/Fec.h.  So the codecs and their mints are in the inline
+// namespace CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of
+// foundation/Platform.h), and each target has its own codec types.
+inline namespace CRUCIBLE_SIMD_TARGET {
+
 template <std::size_t SourceSymbols, std::size_t SymbolBytes, typename Algorithm>
     requires FountainShape<SourceSymbols, SymbolBytes, SourceSymbols> && FountainAlgorithm<Algorithm>
 class FountainEncoder;
@@ -114,6 +120,8 @@ template <std::size_t SourceSymbols, std::size_t SymbolBytes,
     requires CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, MaxEquations, Algorithm>
 [[nodiscard]] constexpr FountainDecoder<SourceSymbols, SymbolBytes, MaxEquations, Algorithm>
 mint_fountain_decoder(Ctx const&) noexcept;
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 namespace fountain_detail {
 
@@ -226,6 +234,8 @@ template <std::size_t SymbolBytes>
 }
 
 }  // namespace fountain_detail
+
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 template <std::size_t SourceSymbols, std::size_t SymbolBytes, typename Algorithm = LtFountain>
     requires FountainShape<SourceSymbols, SymbolBytes, SourceSymbols> && FountainAlgorithm<Algorithm>
@@ -569,5 +579,7 @@ template <std::size_t SourceSymbols, std::size_t SymbolBytes, std::size_t MaxEqu
 mint_fountain_decoder(Ctx const&) noexcept {
     return FountainDecoder<SourceSymbols, SymbolBytes, MaxEquations, Algorithm>{};
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace crucible::cntp

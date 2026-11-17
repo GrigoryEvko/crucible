@@ -206,6 +206,19 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   crucible_test(test_swiss_table_avx2 test_swiss_table.cpp)
   target_compile_options(test_swiss_table_avx2 PRIVATE -mavx2 -mno-avx512f)
 endif()
+# Two units of one program, built for the two shipped levels x86-64-v3 and
+# x86-64-v4, keep their own body of each function of SwissTable.h,
+# PhiloxSimd.h, cntp/Fec.h and cntp/Fountain.h whose source reads the vector
+# width (THE TARGET NAMESPACE of foundation/Platform.h).  The flags name x86
+# targets, so the test exists only on x86_64.  The unit of the baseline level
+# comes first on the link line, so the link keeps its copy of each other
+# shared body.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  crucible_test(test_crucible_target_units test_crucible_target_units.cpp crucible_target_unit_baseline.cpp
+                crucible_target_unit_wide.cpp)
+  set_source_files_properties(crucible_target_unit_baseline.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v3)
+  set_source_files_properties(crucible_target_unit_wide.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v4)
+endif()
 crucible_test(test_meta_log)
 crucible_test(test_cntp_backpressure)
 crucible_test(test_cntp_connection_pool)
@@ -2836,20 +2849,22 @@ crucible_neg_compile_test(neg_integrity_non_contiguous_wrap
 #   * neg_fec_mint_test_context: the mint is Init-only.
 #   * neg_fec_encode_non_contiguous_owned: owned FEC input must be a
 #     Linear byte-contiguous buffer.
+#   The codec is in the target namespace of foundation/Platform.h, so each
+#   text that names it accepts each target name.
 crucible_neg_compile_test(neg_fec_zero_k
-  "template constraint failure for .template<unsigned char K, unsigned char M>  requires  ReedSolomonShape<K, M> class crucible::cntp::ReedSolomon."
+  "template constraint failure for .template<unsigned char K, unsigned char M>  requires  ReedSolomonShape<K, M> class crucible::cntp::target_[a-z0-9]+::ReedSolomon."
   "the expression .K > 0 .with K = 0.. evaluated to .false.")
 crucible_neg_compile_test(neg_fec_zero_m
-  "template constraint failure for .template<unsigned char K, unsigned char M>  requires  ReedSolomonShape<K, M> class crucible::cntp::ReedSolomon."
+  "template constraint failure for .template<unsigned char K, unsigned char M>  requires  ReedSolomonShape<K, M> class crucible::cntp::target_[a-z0-9]+::ReedSolomon."
   "the expression .M > 0 .with M = 0.. evaluated to .false.")
 crucible_neg_compile_test(neg_fec_shape_over_256
-  "template constraint failure for .template<unsigned char K, unsigned char M>  requires  ReedSolomonShape<K, M> class crucible::cntp::ReedSolomon."
+  "template constraint failure for .template<unsigned char K, unsigned char M>  requires  ReedSolomonShape<K, M> class crucible::cntp::target_[a-z0-9]+::ReedSolomon."
   "the expression .static_cast<unsigned int>\\(K\\) \\+ static_cast<unsigned int>\\(M\\) <= 256 .with K = 255. M = 2.. evaluated to .false.")
 crucible_neg_compile_test(neg_fec_mint_test_context
   "could not convert|no matching function|cannot convert"
     "effects::Test|effects::Init")
 crucible_neg_compile_test(neg_fec_encode_non_contiguous_owned
-  "no matching function for call to .crucible::cntp::ReedSolomon<4, 2>::encode_owned"
+  "no matching function for call to .crucible::cntp::target_[a-z0-9]+::ReedSolomon<4, 2>::encode_owned"
   "required for the satisfaction of .ByteContiguousBuffer<Input>. .with Input = NotWireBytes.")
 
 # cntp/Fountain.h, the deterministic LT fountain codec.
@@ -2863,11 +2878,13 @@ crucible_neg_compile_test(neg_fec_encode_non_contiguous_owned
 #   * neg_fountain_raw_seed: a repair choice takes a DetSafe Philox key.
 #   * neg_fountain_encode_non_contiguous_owned: an owned payload is a
 #     Linear byte-contiguous buffer.
+#   The codecs are in the target namespace of foundation/Platform.h, so each
+#   text that names a codec accepts each target name.
 crucible_neg_compile_test(neg_fountain_zero_symbols
-  "template constraint failure for .template<long unsigned int SourceSymbols, long unsigned int SymbolBytes, class Algorithm>  requires \\(FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>\\) && \\(FountainAlgorithm<Algorithm>\\) class crucible::cntp::FountainEncoder."
+  "template constraint failure for .template<long unsigned int SourceSymbols, long unsigned int SymbolBytes, class Algorithm>  requires \\(FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>\\) && \\(FountainAlgorithm<Algorithm>\\) class crucible::cntp::target_[a-z0-9]+::FountainEncoder."
   "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>. .with SourceSymbols = 0. SymbolBytes = 16.")
 crucible_neg_compile_test(neg_fountain_zero_symbol_bytes
-  "template constraint failure for .template<long unsigned int SourceSymbols, long unsigned int SymbolBytes, class Algorithm>  requires \\(FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>\\) && \\(FountainAlgorithm<Algorithm>\\) class crucible::cntp::FountainEncoder."
+  "template constraint failure for .template<long unsigned int SourceSymbols, long unsigned int SymbolBytes, class Algorithm>  requires \\(FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>\\) && \\(FountainAlgorithm<Algorithm>\\) class crucible::cntp::target_[a-z0-9]+::FountainEncoder."
   "required for the satisfaction of .FountainShape<SourceSymbols, SymbolBytes, SourceSymbols>. .with SourceSymbols = 4. SymbolBytes = 0.")
 crucible_neg_compile_test(neg_fountain_mint_test_context
   "no matching function for call to .mint_fountain_encoder<4, 16>\\(fixy::TestRunnerCtx&\\)."
@@ -2887,9 +2904,9 @@ crucible_neg_compile_test(neg_fountain_decoder_mint_short_equations
   "required for the satisfaction of .CtxFitsFountainMint<Ctx, SourceSymbols, SymbolBytes, MaxEquations, Algorithm>. ")
 crucible_neg_compile_test(neg_fountain_raw_seed
   "cannot convert .long long unsigned int. to .crucible::cntp::FountainSeed."
-  "initializing argument 2 of .foundation::core::Result<foundation::core::Unit, crucible::cntp::FountainError> crucible::cntp::FountainEncoder<SourceSymbols, SymbolBytes, Algorithm>::start_encoding\\(foundation::core::View<const std::byte>, crucible::cntp::FountainSeed\\)")
+  "initializing argument 2 of .foundation::core::Result<foundation::core::Unit, crucible::cntp::FountainError> crucible::cntp::target_[a-z0-9]+::FountainEncoder<SourceSymbols, SymbolBytes, Algorithm>::start_encoding\\(foundation::core::View<const std::byte>, crucible::cntp::FountainSeed\\)")
 crucible_neg_compile_test(neg_fountain_encode_non_contiguous_owned
-  "no matching function for call to .crucible::cntp::FountainEncoder<4, 16, crucible::cntp::LtFountain>::encode_owned\\("
+  "no matching function for call to .crucible::cntp::target_[a-z0-9]+::FountainEncoder<4, 16, crucible::cntp::LtFountain>::encode_owned\\("
   "required for the satisfaction of .ByteContiguousBuffer<Input>. .with Input = NotWireBytes.")
 
 # compute_storage_nbytes* accepts
