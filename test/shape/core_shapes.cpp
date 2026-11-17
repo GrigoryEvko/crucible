@@ -459,6 +459,19 @@ struct ShapeHandleTag final {};
 
 [[gnu::used]] void bit_set_set(fixy::BitSet<256>& set, fixy::Index<256> index) noexcept { set.set(index); }
 
+// The lanes of a packed word of 16 bits: a domain key of a scoped enum.
+enum class ShapeLane : std::uint8_t {
+    first,
+    last = 15
+};
+
+// test of a BitSet of 16 positions with a key of a scoped enum: the compare
+// of the key with the count, and the shift and the mask of the word of 16
+// bits.
+[[gnu::used]] bool bit_set_lane_test(fixy::BitSet<16, ShapeLane> const& set, ShapeLane lane) noexcept {
+    return set.test(lane);
+}
+
 // test of a HeapBitSet with an id: the compare of the id with the count, and
 // the load of the word and the test of the bit.
 [[gnu::used]] bool heap_bit_set_test(fixy::HeapBitSet<ShapeSlotTag> const& set, fixy::BitId<ShapeSlotTag> id) noexcept {
@@ -1190,6 +1203,10 @@ struct RawColumn final {
 
 [[gnu::used]] void bit_set_set_raw(std::uint64_t* words, std::uint32_t position) noexcept {
     words[position / 64] |= std::uint64_t{1} << (position % 64);
+}
+
+[[gnu::used]] bool bit_set_lane_test_raw(std::uint16_t const& word, std::uint8_t lane) noexcept {
+    return ((std::uint32_t{word} >> lane) & 1u) != 0;
 }
 
 // A bitmap on the heap with its count of bits.

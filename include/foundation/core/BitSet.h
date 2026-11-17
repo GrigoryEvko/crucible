@@ -1,11 +1,13 @@
 #pragma once
 
-// The bit sets of the Region family: a set of indexes, with one bit for each
-// index.
+// The bit sets of the Region family: a set of keys, with one bit for each
+// key.
 //
-//   BitSet<N>           a set of the indexes Index<N>, in N bits in the object
-//                       itself.  The type of an index proves it below N, so no
-//                       verb checks it.  A copy copies the bits
+//   BitSet<N, Key>      a set of the keys of N positions, in the smallest
+//                       unsigned word that holds N bits in the object itself:
+//                       one byte up to 8 positions, two bytes up to 16, four
+//                       bytes up to 32 and eight bytes up to 64, and words of
+//                       64 bits past 64 positions.  A copy copies the bits
 //   HeapBitSet<Tag>     a set of the ids Id<Tag, std::uint32_t> below a count
 //                       that its mint fixes, in bits on the heap.  The tag names
 //                       the domain of the ids, such as the slots of a plan, so
@@ -14,49 +16,69 @@
 //                       id compares it with the count, and an id at or past
 //                       the count ends the process in each build
 //
-// THE MINT
+// THE KEYS OF A BitSet
+//   The key type is the index type of the domain of the set, so a set of the
+//   scalar slots of an op refuses an argument position.  Three kinds of key
+//   pass, and the key is Index<N> when the set names none:
+//   Index<N>            the type proves the key below N, so no verb checks it.
+//                       An Index<M> with M < N converts to an Index<N>, and an
+//                       Index<M> with M > N does not
+//   a scoped enum       each enumerator must lie below N, which the check
+//                       reads by reflection.  A value of the enum that no
+//                       enumerator names can still exist, so each verb compares
+//                       the key with N
+//   Id<Tag, Word>       N must not pass the largest Word, and each verb
+//                       compares the key with N
+//   A key past N ends the process in each build.  The walk gives the keys of
+//   the set in the type of the key.
+//
+// THE MINTS
 //   mint_heap_bit_set<Tag>(alloc, count)
 //                       the empty set of count ids, in new storage that holds
 //                       zero bits.  A count of zero allocates nothing
+//   mint_bit_set_from_bits<N, Key>(bits)
+//                       the BitSet of N positions of at most 64 that holds the
+//                       bits of a word of its own word type, such as a field
+//                       of a packed record, or no value when the word holds a
+//                       bit at or past N.  bits() of a set of at most 64
+//                       positions is the word back
 //
 // THE OPERATIONS
-//   set(index), reset(index)    put the index into the set, take it out
-//   test(index)                 true when the set holds the index
-//   size()                      the count of the indexes that the set holds:
-//                               the popcount of each word.  The verb table of
-//                               the base gives size() for each count, so the
+//   set(key), reset(key)        put the key into the set, take it out
+//   test(key)                   true when the set holds the key
+//   size()                      the count of the keys that the set holds: the
+//                               popcount of each word.  The verb table of the
+//                               base gives size() for each count, so the
 //                               popcount has no name of its own
-//   is_empty()                  true when the set holds no index
-//   clear()                     takes each index out
-//   for (index : set)           each index of the set, in the order of the
-//                               indexes.  The walk reads the words from the
+//   is_empty()                  true when the set holds no key
+//   clear()                     takes each key out
+//   for (key : set)             each key of the set, in the order of the
+//                               positions.  The walk reads the words from the
 //                               first, so no order comes from an address or a
 //                               hash
-//   unite(other)                each index of other joins this set
-//   intersect(other)            only the indexes that other holds stay
-//   subtract(other)             each index of other leaves this set
-//   flip(other)                 each index of other changes its state: the
+//   unite(other)                each key of other joins this set
+//   intersect(other)            only the keys that other holds stay
+//   subtract(other)             each key of other leaves this set
+//   flip(other)                 each key of other changes its state: the
 //                               symmetric difference
-//   is_subset_of(other)         true when other holds each index of this set
-//   is_disjoint_from(other)     true when no index is in the two sets
-//   ==                          true when the two sets hold the same indexes
+//   is_subset_of(other)         true when other holds each key of this set
+//   is_disjoint_from(other)     true when no key is in the two sets
+//   ==                          true when the two sets hold the same keys
 //   extent()                    of a HeapBitSet: the count of its mint
 //
 // Each operation of two sets takes the other set as its one parameter, so no
-// signature has two parameters of one type.  Two BitSets of one N share the
-// index type, because each Index<N> is below N in the two sets.  An Index<M>
-// with M < N converts to an Index<N>, and an Index<M> with M > N does not, so
-// an index of a larger set does not reach a smaller one.  The four changes of
-// two HeapBitSets need one count: two counts that differ give LengthMismatch,
-// and the change writes nothing.  The three queries read the two heap sets as
-// sets of ids, so two counts can differ.
+// signature has two parameters of one type.  Two BitSets of one N and one key
+// type are one type, because each key of that type is below N in the two
+// sets.  The four changes of two HeapBitSets need one count: two counts that
+// differ give LengthMismatch, and the change writes nothing.  The three
+// queries read the two heap sets as sets of ids, so two counts can differ.
 //
 // THE WORDS
-//   A set holds its bits in words of 64 bits: the index i is the bit i % 64 of
-//   the word i / 64.  The bits past the last index of the last word stay zero
-//   in each state, because no verb sets one and each operation of two sets
-//   keeps a zero bit zero.  So size(), ==, the queries and the walk read
-//   whole words with no mask.
+//   A set holds its bits in words: the position i is the bit i % W of the word
+//   i / W, for the W bits of a word.  The bits past the last position of the
+//   last word stay zero in each state, because no verb sets one, the mint from
+//   a word refuses one, and each operation of two sets keeps a zero bit zero.
+//   So size(), ==, the queries and the walk read whole words with no mask.
 //
 // A HeapBitSet owns its words alone, on the owner core of
 // foundation/core/Owner.h.  A move gives the words to the target and leaves
@@ -72,6 +94,7 @@
 #include <foundation/core/Heap.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/Number.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Region.h>
@@ -79,17 +102,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 
 namespace foundation::core {
-
-template <std::size_t N>
-    requires IndexCount<N>
-class BitSet;
-
-template <class Tag>
-    requires std::is_class_v<Tag>
-class HeapBitSet;
 
 // The id of a HeapBitSet of the domain Tag.
 template <class Tag>
@@ -97,22 +113,44 @@ using BitId = Id<Tag, std::uint32_t>;
 
 namespace detail {
 
-// The bits of a word.
+// The bits of a word of a HeapBitSet, and of a BitSet past 64 positions.
 inline constexpr std::size_t bits_of_word_ = 64;
 
-// The count of the words that hold count bits.  Complexity: O(1).
+// The count of the words of 64 bits that hold count bits.  Complexity: O(1).
 [[nodiscard]] constexpr std::size_t word_count_of_(std::size_t count) noexcept {
     return (count + bits_of_word_ - 1) / bits_of_word_;
 }
 
-// The word with the one bit of an index in its word.
-[[nodiscard]] constexpr std::uint64_t bit_of_(std::size_t index) noexcept {
-    return std::uint64_t{1} << (index % bits_of_word_);
+// The word of a BitSet of N positions: the smallest unsigned word that holds N
+// bits, and a word of 64 bits past 64 positions.
+template <std::size_t N>
+using BitWordOf = std::conditional_t<
+    (N <= 8), std::uint8_t,
+    std::conditional_t<(N <= 16), std::uint16_t, std::conditional_t<(N <= 32), std::uint32_t, std::uint64_t>>>;
+
+// The bits of a word.
+template <class Word>
+inline constexpr std::size_t bits_in_ = sizeof(Word) * 8;
+
+// A value of 64 bits as a word, which holds each bit of the value that the
+// caller keeps.  The word of 64 bits takes the value with no cast.
+template <class Word>
+[[nodiscard]] constexpr Word word_from_(std::uint64_t value) noexcept {
+    if constexpr (std::is_same_v<Word, std::uint64_t>) {
+        return value;
+    } else {
+        return static_cast<Word>(value);
+    }
 }
 
-// The place of the bit of an index in its word.
-[[nodiscard]] constexpr unsigned shift_of_(std::size_t index) noexcept {
-    return static_cast<unsigned>(index % bits_of_word_);
+// The bit of a position in a word of 64 bits.
+[[nodiscard]] constexpr std::uint64_t bit_of_(std::size_t position) noexcept {
+    return std::uint64_t{1} << (position % bits_of_word_);
+}
+
+// The place of the bit of a position in a word of 64 bits.
+[[nodiscard]] constexpr unsigned shift_of_(std::size_t position) noexcept {
+    return static_cast<unsigned>(position % bits_of_word_);
 }
 
 // The bit at a place of a word, as a bool.  The shift and the mask give the
@@ -122,27 +160,91 @@ inline constexpr std::size_t bits_of_word_ = 64;
     return static_cast<bool>((word >> shift) & 1u);
 }
 
-// The member of a set at a bit that the set proves below its count.
-template <class Member>
-struct BitMember;
+// A position as a value of Word, which holds it.
+template <class Word>
+[[nodiscard]] constexpr Word position_as_(std::size_t position) noexcept {
+    if constexpr (std::is_same_v<Word, std::size_t>) {
+        return position;
+    } else {
+        return static_cast<Word>(position);
+    }
+}
 
-template <std::size_t N>
-struct BitMember<Index<N>> {
-    [[nodiscard]] static constexpr Index<N> of_(std::size_t bit) noexcept { return Index<N>{IndexDoor::key(), bit}; }
+// True when each enumerator of the scoped enum E lies below count.  Linear in
+// the enumerators, at compile time only.
+template <class E>
+[[nodiscard]] consteval bool enumerators_below_(std::size_t count) {
+    using Raw = std::make_unsigned_t<std::underlying_type_t<E>>;
+    std::size_t const declared = std::meta::enumerators_of(^^E).size();
+    for (std::size_t index = 0; index < declared; ++index) {
+        Raw const value = static_cast<Raw>(std::meta::extract<E>(std::meta::enumerators_of(^^E)[index]));
+        if (std::size_t{value} >= count) return false;
+    }
+    return true;
+}
+
+// THE KEYS OF A BitSet: the position of each kind of key, the key at a
+// position below N, and the bound N that the kind admits.  A type of no kind
+// is no key.
+template <class Key>
+struct BitKey {
+    static constexpr bool is_key = false;
 };
 
-template <class Tag>
-struct BitMember<BitId<Tag>> {
-    [[nodiscard]] static constexpr BitId<Tag> of_(std::size_t bit) noexcept {
-        return BitId<Tag>{static_cast<std::uint32_t>(bit)};
+template <std::size_t M>
+struct BitKey<Index<M>> {
+    static constexpr bool is_key = true;
+    static constexpr bool is_proven = true;
+    template <std::size_t N>
+    static constexpr bool fits = M == N;
+
+    [[nodiscard]] static constexpr std::size_t position_of_(Index<M> key) noexcept { return key.raw(); }
+    [[nodiscard]] static constexpr Index<M> key_at_(std::size_t position) noexcept {
+        return Index<M>{IndexDoor::key(), position};
     }
 };
 
-// The fatal exits of a cursor at its end, and of an id at or past the count
-// of a HeapBitSet.  The calls take no argument, so each inlined check adds
-// only a compare and a branch to one call.
+template <class Tag, UnsignedInteger Word>
+struct BitKey<Id<Tag, Word>> {
+    static constexpr bool is_key = true;
+    static constexpr bool is_proven = false;
+    template <std::size_t N>
+    static constexpr bool fits = N <= std::size_t{max_of<Word>};
+
+    [[nodiscard]] static constexpr std::size_t position_of_(Id<Tag, Word> key) noexcept {
+        return std::size_t{key.raw()};
+    }
+    [[nodiscard]] static constexpr Id<Tag, Word> key_at_(std::size_t position) noexcept {
+        return Id<Tag, Word>{position_as_<Word>(position)};
+    }
+};
+
+template <class E>
+    requires std::is_scoped_enum_v<E>
+struct BitKey<E> {
+    using Raw = std::make_unsigned_t<std::underlying_type_t<E>>;
+
+    static constexpr bool is_key = true;
+    static constexpr bool is_proven = false;
+    template <std::size_t N>
+    static constexpr bool fits = N - 1 <= std::size_t{max_of<Raw>} && enumerators_below_<E>(N);
+
+    [[nodiscard]] static constexpr std::size_t position_of_(E key) noexcept {
+        return std::size_t{static_cast<Raw>(key)};
+    }
+    [[nodiscard]] static constexpr E key_at_(std::size_t position) noexcept { return static_cast<E>(position); }
+};
+
+// The fatal exits of a cursor at its end, of a key past the positions of a
+// BitSet, and of an id at or past the count of a HeapBitSet.  The calls take
+// no argument, so each inlined check adds only a compare and a branch to one
+// call.
 [[noreturn]] CRUCIBLE_COLD inline void report_bit_cursor_at_end_() noexcept {
     fatal("a read or a step through the end cursor of a walk of a bit set");
+}
+
+[[noreturn]] CRUCIBLE_COLD inline void report_bit_key_outside_() noexcept {
+    fatal("a BitSet got a key at or past its count of positions");
 }
 
 [[noreturn]] CRUCIBLE_COLD inline void report_bit_id_outside_() noexcept {
@@ -175,29 +277,51 @@ struct HeapBitSetState {
 
 }  // namespace detail
 
-// The position of a walk over the indexes of a bit set: the word of the next
-// index, and the bits of that word from that index on.  At the end the word
-// is the count of the words and the bits are zero.  Only the sets build a
+// A key of a BitSet of N positions (THE KEYS OF A BitSet).
+template <class Key, std::size_t N>
+concept BitSetKey = detail::BitKey<Key>::is_key && detail::BitKey<Key>::template fits<N>;
+
+template <std::size_t N, class Key = Index<N>>
+    requires IndexCount<N> && BitSetKey<Key, N>
+class BitSet;
+
+template <class Tag>
+    requires std::is_class_v<Tag>
+class HeapBitSet;
+
+// The arguments of mint_bit_set_from_bits: a set of at most 64 positions and
+// a word of the word type of that set.
+template <std::size_t N, class Key, class Word>
+concept CanMintBitSetFromBits =
+    IndexCount<N> && BitSetKey<Key, N> && (N <= 64) && std::is_same_v<Word, detail::BitWordOf<N>>;
+
+template <std::size_t N, class Key = Index<N>, class Word>
+    requires CanMintBitSetFromBits<N, Key, Word>
+[[nodiscard]] constexpr Option<BitSet<N, Key>> mint_bit_set_from_bits(Word bits) noexcept;
+
+// The position of a walk over the keys of a bit set: the word of the next
+// key, and the bits of that word from that key on.  At the end the word is
+// the count of the words and the bits are zero.  Only the sets build a
 // cursor, and a cursor borrows the words of its set.  A read or a step at the
-// end ends the process in each build, so a cursor never makes an index past
-// its set.
-template <class Member>
+// end ends the process in each build, so a cursor never makes a key past its
+// set.
+template <class Member, class Word>
 class BitCursor final {
-    std::uint64_t const* words_ = nullptr;
+    Word const* words_ = nullptr;
     std::size_t word_ = 0;
     std::size_t word_count_ = 0;
     std::uint64_t bits_ = 0;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    template <std::size_t N>
-        requires IndexCount<N>
+    template <std::size_t N, class Key>
+        requires IndexCount<N> && BitSetKey<Key, N>
     friend class BitSet;
     template <class Tag>
         requires std::is_class_v<Tag>
     friend class HeapBitSet;
 
-    // The cursor at the first index of the words, or at their end.
-    constexpr explicit BitCursor(View<std::uint64_t const> words) noexcept : word_count_{words.size()} {
+    // The cursor at the first key of the words, or at their end.
+    constexpr explicit BitCursor(View<Word const> words) noexcept : word_count_{words.size()} {
         if (word_count_ != 0) {
             words_ = first_of_(detail::ViewDoor::key(), words);
             bits_ = words_[0];
@@ -214,8 +338,8 @@ class BitCursor final {
     }
 
     // The end cursor of a run of words.
-    [[nodiscard]] static constexpr BitCursor end_of_(View<std::uint64_t const> words) noexcept {
-        BitCursor cursor{View<std::uint64_t const>{}};
+    [[nodiscard]] static constexpr BitCursor end_of_(View<Word const> words) noexcept {
+        BitCursor cursor{View<Word const>{}};
         cursor.word_ = words.size();
         cursor.word_count_ = words.size();
         return cursor;
@@ -226,8 +350,8 @@ public:
         if (bits_ == 0) [[unlikely]] {
             detail::report_bit_cursor_at_end_();
         }
-        return detail::BitMember<Member>::of_(word_ * detail::bits_of_word_
-                                              + static_cast<std::size_t>(countr_zero(bits_)));
+        return detail::BitKey<Member>::key_at_(word_ * detail::bits_in_<Word>
+                                               + static_cast<std::size_t>(countr_zero(bits_)));
     }
 
     constexpr BitCursor& operator++() noexcept {
@@ -244,47 +368,89 @@ public:
     }
 };
 
-template <std::size_t N>
-    requires IndexCount<N>
+template <std::size_t N, class Key>
+    requires IndexCount<N> && BitSetKey<Key, N>
 class BitSet final {
-    static constexpr std::size_t word_count_ = detail::word_count_of_(N);
+    using Word = detail::BitWordOf<N>;
+    using KeyKind = detail::BitKey<Key>;
+    static constexpr std::size_t word_bits_ = detail::bits_in_<Word>;
+    static constexpr std::size_t word_count_ = (N + word_bits_ - 1) / word_bits_;
     using WordIndex = Index<word_count_>;
 
-    FixedArray<std::uint64_t, word_count_> words_{};
+    FixedArray<Word, word_count_> words_{};
 
-    // The word of an index.  The index is below N, so its word is below the
-    // count of the words, and the door of the base layer makes the Index of
-    // the word with no check.
-    [[nodiscard]] static constexpr WordIndex word_of_(Index<N> index) noexcept {
-        return WordIndex{detail::IndexDoor::key(), index.raw() / detail::bits_of_word_};
+    template <std::size_t M, class OtherKey, class OtherWord>
+        requires CanMintBitSetFromBits<M, OtherKey, OtherWord>
+    friend constexpr Option<BitSet<M, OtherKey>> mint_bit_set_from_bits(OtherWord bits) noexcept;
+
+    // The position of a key, below N.  A key that no type proves below N is
+    // compared with N, and a key at or past N ends the process, so no verb
+    // reads a word past the words.
+    [[nodiscard]] static constexpr std::size_t position_of_(Key key) noexcept {
+        std::size_t const position = KeyKind::position_of_(key);
+        if constexpr (!KeyKind::is_proven) {
+            if (position >= N) [[unlikely]] {
+                detail::report_bit_key_outside_();
+            }
+        }
+        return position;
+    }
+
+    // The word of a position below N.  Its word is below the count of the
+    // words, so the door of the base layer makes the Index of the word with
+    // no check.
+    [[nodiscard]] static constexpr WordIndex word_of_(std::size_t position) noexcept {
+        return WordIndex{detail::IndexDoor::key(), position / word_bits_};
+    }
+
+    // The place of the bit of a position in its word.
+    [[nodiscard]] static constexpr unsigned shift_in_word_(std::size_t position) noexcept {
+        return static_cast<unsigned>(position % word_bits_);
     }
 
 public:
-    using index_type = Index<N>;
+    using index_type = Key;
 
     // The empty set.
     constexpr BitSet() noexcept = default;
 
-    constexpr void set(Index<N> index) & noexcept { words_.at(word_of_(index)) |= detail::bit_of_(index.raw()); }
-
-    constexpr void reset(Index<N> index) & noexcept { words_.at(word_of_(index)) &= ~detail::bit_of_(index.raw()); }
-
-    [[nodiscard]] constexpr bool test(Index<N> index) const noexcept {
-        return detail::holds_bit_(words_.at(word_of_(index)), detail::shift_of_(index.raw()));
+    constexpr void set(Key key) & noexcept {
+        std::size_t const position = position_of_(key);
+        Word& word = words_.at(word_of_(position));
+        word = detail::word_from_<Word>(std::uint64_t{word} | (std::uint64_t{1} << shift_in_word_(position)));
     }
 
-    // The count of the indexes of the set.  Complexity: O(N / 64).
+    constexpr void reset(Key key) & noexcept {
+        std::size_t const position = position_of_(key);
+        Word& word = words_.at(word_of_(position));
+        word = detail::word_from_<Word>(std::uint64_t{word} & ~(std::uint64_t{1} << shift_in_word_(position)));
+    }
+
+    [[nodiscard]] constexpr bool test(Key key) const noexcept {
+        std::size_t const position = position_of_(key);
+        return detail::holds_bit_(std::uint64_t{words_.at(word_of_(position))}, shift_in_word_(position));
+    }
+
+    // The word of a set of at most 64 positions: the field of a packed record.
+    // mint_bit_set_from_bits gives the set of a word back.
+    [[nodiscard]] constexpr Word bits() const noexcept
+        requires(N <= 64)
+    {
+        return words_.at(index<0>());
+    }
+
+    // The count of the keys of the set.  Complexity: O(N / W).
     [[nodiscard]] constexpr std::size_t size() const noexcept {
         std::size_t count = 0;
-        for (std::uint64_t const word : words_) {
+        for (Word const word : words_) {
             count += static_cast<std::size_t>(popcount(word));
         }
         return count;
     }
 
-    // Complexity: O(N / 64).
+    // Complexity: O(N / W).
     [[nodiscard]] constexpr bool is_empty() const noexcept {
-        for (std::uint64_t const word : words_) {
+        for (Word const word : words_) {
             if (word != 0) {
                 return false;
             }
@@ -292,52 +458,56 @@ public:
         return true;
     }
 
-    // Complexity: O(N / 64).
+    // Complexity: O(N / W).
     constexpr void clear() & noexcept {
-        for (std::uint64_t& word : words_) {
+        for (Word& word : words_) {
             word = 0;
         }
     }
 
-    // The walk `for (Index<N> index : set)`.  Complexity of a full walk:
-    // O(N / 64 + size()).
-    [[nodiscard]] constexpr BitCursor<Index<N>> begin() const& noexcept { return BitCursor<Index<N>>{words_.view()}; }
-    [[nodiscard]] constexpr BitCursor<Index<N>> end() const& noexcept {
-        return BitCursor<Index<N>>::end_of_(words_.view());
+    // The walk `for (Key key : set)`.  Complexity of a full walk:
+    // O(N / W + size()).
+    [[nodiscard]] constexpr BitCursor<Key, Word> begin() const& noexcept { return BitCursor<Key, Word>{words_.view()}; }
+    [[nodiscard]] constexpr BitCursor<Key, Word> end() const& noexcept {
+        return BitCursor<Key, Word>::end_of_(words_.view());
     }
     void begin() const&& = delete("a cursor of a temporary BitSet points into an object that the full expression ends");
     void end() const&& = delete("a cursor of a temporary BitSet points into an object that the full expression ends");
 
     // The four changes of THE OPERATIONS.  Each one keeps the zero bits past
-    // N zero.  Complexity: O(N / 64).
+    // N zero.  Complexity: O(N / W).
     constexpr void unite(BitSet const& other) & noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            words_.at(word) |= other.words_.at(word);
+            words_.at(word) =
+                detail::word_from_<Word>(std::uint64_t{words_.at(word)} | std::uint64_t{other.words_.at(word)});
         }
     }
 
     constexpr void intersect(BitSet const& other) & noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            words_.at(word) &= other.words_.at(word);
+            words_.at(word) =
+                detail::word_from_<Word>(std::uint64_t{words_.at(word)} & std::uint64_t{other.words_.at(word)});
         }
     }
 
     constexpr void subtract(BitSet const& other) & noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            words_.at(word) &= ~other.words_.at(word);
+            words_.at(word) =
+                detail::word_from_<Word>(std::uint64_t{words_.at(word)} & ~std::uint64_t{other.words_.at(word)});
         }
     }
 
     constexpr void flip(BitSet const& other) & noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            words_.at(word) ^= other.words_.at(word);
+            words_.at(word) =
+                detail::word_from_<Word>(std::uint64_t{words_.at(word)} ^ std::uint64_t{other.words_.at(word)});
         }
     }
 
-    // Complexity: O(N / 64).
+    // Complexity: O(N / W).
     [[nodiscard]] constexpr bool is_subset_of(BitSet const& other) const noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            if ((words_.at(word) & ~other.words_.at(word)) != 0) {
+            if ((std::uint64_t{words_.at(word)} & ~std::uint64_t{other.words_.at(word)}) != 0) {
                 return false;
             }
         }
@@ -346,7 +516,7 @@ public:
 
     [[nodiscard]] constexpr bool is_disjoint_from(BitSet const& other) const noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
-            if ((words_.at(word) & other.words_.at(word)) != 0) {
+            if ((std::uint64_t{words_.at(word)} & std::uint64_t{other.words_.at(word)}) != 0) {
                 return false;
             }
         }
@@ -355,7 +525,7 @@ public:
 
     // The compare reads each word.  It is written by hand, because GCC 16
     // gives a wrong defaulted == of a class with an array in a constant
-    // evaluation.  Complexity: O(N / 64).
+    // evaluation.  Complexity: O(N / W).
     [[nodiscard]] friend constexpr bool operator==(BitSet const& left, BitSet const& right) noexcept {
         for (WordIndex const word : IndexRange<word_count_>{}) {
             if (left.words_.at(word) != right.words_.at(word)) {
@@ -365,6 +535,20 @@ public:
         return true;
     }
 };
+
+// The set of the bits of a word, or no value when the word holds a bit at or
+// past N.  Complexity: O(1).
+template <std::size_t N, class Key, class Word>
+    requires CanMintBitSetFromBits<N, Key, Word>
+[[nodiscard]] constexpr Option<BitSet<N, Key>> mint_bit_set_from_bits(Word bits) noexcept {
+    std::uint64_t const past = std::uint64_t{bits} & ~low_mask<std::uint64_t>(static_cast<int>(N));
+    if (past != 0) {
+        return Option<BitSet<N, Key>>{none};
+    }
+    BitSet<N, Key> set{};
+    set.words_.at(index<0>()) = bits;
+    return Option<BitSet<N, Key>>::some(set);
+}
 
 // The arguments of mint_heap_bit_set: a class that names the domain of the
 // ids, and the allocation capability.
@@ -478,9 +662,11 @@ public:
 
     // The walk `for (BitId<Tag> id : set)`.  Complexity of a full walk:
     // O(extent() / 64 + size()).
-    [[nodiscard]] constexpr BitCursor<BitId<Tag>> begin() const& noexcept { return BitCursor<BitId<Tag>>{words_()}; }
-    [[nodiscard]] constexpr BitCursor<BitId<Tag>> end() const& noexcept {
-        return BitCursor<BitId<Tag>>::end_of_(words_());
+    [[nodiscard]] constexpr BitCursor<BitId<Tag>, std::uint64_t> begin() const& noexcept {
+        return BitCursor<BitId<Tag>, std::uint64_t>{words_()};
+    }
+    [[nodiscard]] constexpr BitCursor<BitId<Tag>, std::uint64_t> end() const& noexcept {
+        return BitCursor<BitId<Tag>, std::uint64_t>::end_of_(words_());
     }
     void begin() const&& = delete("a cursor of a temporary HeapBitSet points into storage that the full expression "
                                   "frees");

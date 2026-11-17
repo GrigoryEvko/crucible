@@ -184,6 +184,7 @@ using ::foundation::core::mint_heap_array_copy;
 using ::foundation::core::mint_heap_array_with;
 using ::foundation::core::mint_heap_array_written;
 using ::foundation::core::mint_heap_array_zeroed;
+using ::foundation::core::mint_bit_set_from_bits;
 using ::foundation::core::mint_heap_bit_set;
 using ::foundation::core::mint_masked_array;
 using ::foundation::core::mint_slot_map;

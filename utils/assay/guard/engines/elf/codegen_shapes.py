@@ -580,6 +580,13 @@ PROBES: tuple[Probe, ...] = (
         "set of a BitSet with an Index is the or of the bit into the word of a raw bitmap, with no bounds test",
     ),
     Probe(
+        "bit_set_lane_test",
+        "test of a BitSet of 16 positions with a key of a scoped enum adds one compare of the key with the count and "
+        "one branch to a call of the fatal exit to the shift and the mask of a raw word of 16 bits.  A value of the "
+        "enum that no enumerator names can exist, so no type proves the bound",
+        checks=("fatal",),
+    ),
+    Probe(
         "heap_bit_set_test",
         "test of a HeapBitSet adds one compare of the id with the count and one branch to a call of the fatal exit to "
         "the load and the test of a raw bitmap.  The count is a run-time value, so no type proves the bound",

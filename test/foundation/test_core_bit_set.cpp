@@ -24,13 +24,25 @@ using ::foundation::core::BitSet;
 using ::foundation::core::FixedArray;
 using ::foundation::core::HeapBitSet;
 using ::foundation::core::Index;
+using ::foundation::core::mint_bit_set_from_bits;
 using ::foundation::core::mint_heap_bit_set;
 using ::foundation::core::Quantity;
 namespace unit = ::foundation::core::unit;
 
 struct SlotTag final {};
+struct OpTag final {};
+
+// The scalar slots of an op: a domain of five keys.
+enum class ScalarSlot : std::uint8_t {
+    first,
+    second,
+    third,
+    fourth,
+    fifth
+};
 
 using SlotId = BitId<SlotTag>;
+using OpId = ::foundation::core::Id<OpTag, std::uint8_t>;
 using Count = Quantity<unit::Element, std::uint32_t>;
 
 // The largest count of a set in the property test.
@@ -163,6 +175,53 @@ void test_refusals(::fixy::TestRunnerCtx const& test) {
             "foundation: fatal: a read or a step through the end cursor of a walk of a bit set"});
     HeapBitSet<SlotTag> const control = heap_set_of(64);
     CRUCIBLE_FATAL_INVARIANT(!control.test(SlotId{63}));
+
+    // A key of an enum that no enumerator names, and an id past the positions
+    // of a fixed set, end the process too.
+    ::foundation::core::TextView const past{"foundation: fatal: a BitSet got a key at or past its count of positions"};
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            BitSet<5, ScalarSlot> slots{};
+            slots.set(static_cast<ScalarSlot>(5));
+        },
+        past);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            BitSet<16, OpId> const ops{};
+            static_cast<void>(ops.test(OpId{16}));
+        },
+        past);
+    BitSet<16, OpId> fixed_control{};
+    fixed_control.set(OpId{15});
+    CRUCIBLE_FATAL_INVARIANT(fixed_control.test(OpId{15}) && fixed_control.size() == 1);
+}
+
+// A set of the scalar slots of an op: its walk gives the slots in order, its
+// word goes out and comes back, and a word with a bit past the slots is
+// refused.
+void test_domain_keys_and_words() {
+    BitSet<5, ScalarSlot> slots{};
+    slots.set(ScalarSlot::fourth);
+    slots.set(ScalarSlot::first);
+    slots.set(ScalarSlot::fourth);
+    CRUCIBLE_FATAL_INVARIANT(slots.size() == 2 && slots.test(ScalarSlot::first) && !slots.test(ScalarSlot::fifth));
+    std::uint8_t expected = 0;
+    for (ScalarSlot const slot : slots) {
+        CRUCIBLE_FATAL_INVARIANT(static_cast<std::uint8_t>(slot) == expected);
+        expected = 3;
+    }
+    std::uint8_t const word = slots.bits();
+    CRUCIBLE_FATAL_INVARIANT(word == 0x09u);
+    BitSet<5, ScalarSlot> const back =
+        mint_bit_set_from_bits<5, ScalarSlot>(word).expect("the word holds no bit past 5");
+    bool const is_past_refused = mint_bit_set_from_bits<5, ScalarSlot>(std::uint8_t{0xE0}).is_none();
+    CRUCIBLE_FATAL_INVARIANT(back == slots && is_past_refused);
+    std::uint16_t const packed = mint_bit_set_from_bits<15>(std::uint16_t{0x7FFF}).expect("fifteen bits fit").bits();
+    CRUCIBLE_FATAL_INVARIANT(packed == 0x7FFFu && mint_bit_set_from_bits<15>(std::uint16_t{0x8000}).is_none());
+    slots.reset(ScalarSlot::first);
+    CRUCIBLE_FATAL_INVARIANT(slots.bits() == 0x08u);
 }
 
 // ── The property test ──────────────────────────────────────────────────────
@@ -331,6 +390,11 @@ void expect_property(std::uint64_t seed) {
 
 void test_sets_agree_with_the_model() {
     expect_property<FixedSide<1>>(0x1001u);
+    expect_property<FixedSide<5>>(0x1005u);
+    expect_property<FixedSide<8>>(0x1008u);
+    expect_property<FixedSide<15>>(0x1015u);
+    expect_property<FixedSide<16>>(0x1016u);
+    expect_property<FixedSide<33>>(0x1033u);
     expect_property<FixedSide<63>>(0x1063u);
     expect_property<FixedSide<64>>(0x1064u);
     expect_property<FixedSide<65>>(0x1065u);
@@ -352,6 +416,7 @@ int main() {
     test_heap_sets_of_two_counts();
     test_heap_set_moves();
     test_refusals(test);
+    test_domain_keys_and_words();
     test_sets_agree_with_the_model();
     return 0;
 }
