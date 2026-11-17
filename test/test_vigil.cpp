@@ -269,6 +269,8 @@ int main() {
     test_vigil::test_op_nest_counts_the_open_records();
     test_vigil::test_unrecorded_nest_gives_its_closing_entry();
     test_vigil::test_unrecorded_nest_keeps_the_loop_eager();
+    test_vigil::test_replay_diverges_at_the_close_of_a_nest();
+    test_vigil::test_raise_in_each_iteration_after_a_replay_keeps_the_loop_eager();
     test_vigil::test_external_follows_the_live_op();
     test_vigil::test_views_of_an_external_bind_its_storage();
     test_vigil::test_internal_slot_of_a_nest_keeps_its_pool_bytes();

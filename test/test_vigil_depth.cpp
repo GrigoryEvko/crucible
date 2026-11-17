@@ -270,4 +270,139 @@ void test_unrecorded_nest_keeps_the_loop_eager() {
     crucible::test::pass("  test_unrecorded_nest_keeps_the_loop_eager: PASSED\n");
 }
 
+namespace {
+
+// The most iterations that a loop gives before it replays.
+constexpr uint32_t kReplayBound = 16;
+
+// The op after the nest of op 3.  The replay diverges at the close of that
+// nest and records no entry for it, so op 4 is the first op that the loop
+// records after the divergence.
+constexpr uint32_t kFirstOpAfterTheClose = 4;
+
+// How op 3 of an iteration of NestedLoop ends.
+enum class NestEnd : uint8_t {
+    // Op 3 reaches the Vigil after op 2, as in each iteration of the rig.
+    RECORDED,
+    // Op 3 raises after op 2 reached the Vigil, so its nest gives the closing
+    // entry in its place.
+    RAISED,
+};
+
+// A loop of the ops of the rig: op 3 runs op 2 inside it, and the other ops
+// run at the top.  The ops of the rig have tensors, so a region of the loop
+// has a memory plan and replays.
+class NestedLoop {
+public:
+    // Gives one iteration.  after_close runs after the close of the nest of
+    // op 3 and before op 4.
+    template <class AfterClose>
+    void give_iteration(NestEnd end, AfterClose&& after_close) {
+        const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+        for (uint32_t op = 0; op < NUM_OPS; ++op) {
+            if (op == 2) continue;
+            if (op != 3) {
+                give_op(divrig::op_at(iteration_, op), crucible::OpDepth{0});
+                continue;
+            }
+            {
+                const crucible::VigilOpNest nest{vigil, fg};
+                give_op(divrig::op_at(iteration_, 2), crucible::OpDepth{1});
+                if (end == NestEnd::RECORDED) give_op(divrig::op_at(iteration_, 3), nest.depth());
+            }
+            after_close();
+        }
+        ++iteration_;
+    }
+
+    void give_iteration(NestEnd end) {
+        give_iteration(end, [] noexcept {});
+    }
+
+    // Gives recorded iterations until the loop replays, at most kReplayBound
+    // of them.  A flush after each recorded iteration makes the result
+    // independent of the speed of the background thread.
+    void give_iterations_until_replay() {
+        for (uint32_t step = 0; step < kReplayBound && !vigil.is_compiled(); ++step) {
+            give_iteration(NestEnd::RECORDED);
+            if (!vigil.is_compiled()) vigil.flush();
+        }
+    }
+
+    crucible::Vigil vigil;
+
+private:
+    void give_op(const divrig::OpData& made, crucible::OpDepth depth) {
+        (void)vigil.dispatch_op(crucible::test::certify_synthetic_op(made.entry, made.metas, made.n_metas),
+                                crucible::ScopeHash{}, crucible::CallsiteHash{}, depth);
+    }
+
+    uint32_t iteration_ = 0;
+};
+
+// Gives a replayed loop one iteration in which op 3 raises.  The replay
+// diverges at the closing entry of the nest, before op 4 arrives.  A replay
+// that took the close with no compare would stay compiled until op 4.
+void give_raise_to_a_replayed_loop(NestedLoop& loop) {
+    loop.give_iterations_until_replay();
+    assert(loop.vigil.is_compiled() && loop.vigil.diverged_count() == 0 && "the loop replays before the raise");
+    // The replay of the next iteration starts at op 0 of the region.
+    loop.give_iteration(NestEnd::RECORDED);
+    assert(loop.vigil.is_compiled() && loop.vigil.diverged_count() == 0);
+
+    bool is_close_checked = false;
+    loop.give_iteration(NestEnd::RAISED, [&loop, &is_close_checked] {
+        assert(!loop.vigil.is_compiled() && loop.vigil.diverged_count() == 1
+               && "the replay diverges at the close of the nest");
+        is_close_checked = true;
+    });
+    assert(is_close_checked);
+}
+
+}  // namespace
+
+// The raise of one iteration does not change the loop.  So after the
+// divergence at the close, the loop replays again with a region of the ops of
+// one iteration.  The region starts at the first op that the loop recorded
+// after the close, and it holds no closing entry.
+void test_replay_diverges_at_the_close_of_a_nest() {
+    NestedLoop loop;
+    give_raise_to_a_replayed_loop(loop);
+
+    loop.give_iterations_until_replay();
+    assert(loop.vigil.is_compiled() && "the loop replays again after the divergence");
+    const ::fixy::Ref<const crucible::RegionNode> region = loop.vigil.active_region().expect("a region replays");
+    assert(region->num_ops() == NUM_OPS && "the region holds the ops of one iteration");
+    for (uint32_t op = 0; op < NUM_OPS; ++op) {
+        assert(region->op_at(op).schema_hash == divrig::SCHEMA[(kFirstOpAfterTheClose + op) % NUM_OPS]
+               && "the region starts at the first op that the loop recorded after the close");
+    }
+
+    constexpr uint32_t kReplayed = 3;
+    loop.give_iteration(NestEnd::RECORDED);
+    const uint32_t replayed = loop.vigil.compiled_iterations();
+    for (uint32_t step = 0; step < kReplayed; ++step)
+        loop.give_iteration(NestEnd::RECORDED);
+    assert(loop.vigil.diverged_count() == 1 && loop.vigil.compiled_iterations() == replayed + kReplayed);
+
+    crucible::test::pass("  test_replay_diverges_at_the_close_of_a_nest: PASSED\n");
+}
+
+// A loop whose op 3 raises in each iteration after the divergence gives the
+// closing entry in each iteration.  The build refuses each region that holds
+// it, so the loop stays eager, and it diverges no more.
+void test_raise_in_each_iteration_after_a_replay_keeps_the_loop_eager() {
+    NestedLoop loop;
+    give_raise_to_a_replayed_loop(loop);
+
+    for (uint32_t step = 0; step < kReplayBound; ++step) {
+        loop.give_iteration(NestEnd::RAISED);
+        loop.vigil.flush();
+        assert(!loop.vigil.is_compiled() && "a loop that raises in each iteration stays eager");
+    }
+    assert(loop.vigil.diverged_count() == 1);
+
+    crucible::test::pass("  test_raise_in_each_iteration_after_a_replay_keeps_the_loop_eager: PASSED\n");
+}
+
 }  // namespace test_vigil

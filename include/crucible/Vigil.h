@@ -1012,8 +1012,17 @@ private:
 
         replay_.deactivate();
         // The reset applies at the point of the divergence: each op in the
-        // ring was recorded before it, and the next op comes after it.
-        bg_.request_restart(ring_total_produced());
+        // ring was recorded before it, and the next op comes after it.  A
+        // restart refutes the period of the region that diverged.  The
+        // closing entry of a nest whose op raised is no evidence against that
+        // period: the op did not finish, and the next iteration can repeat the
+        // period.  So that reset is a mark, which makes each region cut before
+        // the point stale and keeps the periods of the detector.
+        if (schema_hash == kUnrecordedNestSchema) {
+            bg_.request_mark(ring_total_produced());
+        } else {
+            bg_.request_restart(ring_total_produced());
+        }
         publish_held_regions_();
         // The divergent op is deliberately not recorded: it would poison the
         // background thread's iteration detector.
