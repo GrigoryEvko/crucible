@@ -10,7 +10,8 @@
 //                           right side has more agents than its pair
 //   RuleTable<T, K, R>      a signature and R rules
 //   check_rules(table)      the check of the table, with its class of growth
-//   RuleVerdict             the answer: admitted or a refusal, and the class
+//   RuleVerdict             the answer: admitted or a refusal, the class of
+//                           growth, and the forest property of the steps
 //
 // A RULE
 //   A rule fires where the principal ports of an agent of the left kind and
@@ -44,7 +45,36 @@
 //     agents change places.  The pair has no order, so such a rule gives two
 //     results for one net (an inference from the commutation of the steps)
 //   - a right side of more than 2 agents with no growth door, and a growth
-//     door on a rule that does not grow.
+//     door on a rule that does not grow
+//   - a dataflow rule whose step can make a deadlock (THE PRESERVATION).
+//
+// THE PRESERVATION
+//   A check of a net holds for each net that a reduction makes, when each
+//   step keeps it.  Lafont 1990 gives this form of proof: one test of each
+//   rule, and no test of each net.
+//
+//   A dataflow rule is a rule whose pair has only give and take ports.  Its
+//   step keeps a net that check_dataflow admits, so check_rules refuses:
+//   - a wire of the right side between two ports of no direction, because
+//     check_dataflow refuses a meet port
+//   - a cycle of waits among the new agents of the right side
+//   - a right side that lets an input of the pair reach an output that the
+//     pair does not reach from that input.  The pair lets an input reach
+//     each output of its own agent, and each output of the other agent when
+//     its own agent gives on its principal port.  A path of the net outside
+//     the pair can join that output to that input, so the new path closes a
+//     cycle of waits.
+//   Each path of a cycle through the right side then maps to a path through
+//   the pair, so the net before the step had the cycle too.
+//
+//   The forest of check_forest is a property of the table, and no refusal,
+//   because a correct dataflow rule can close a cycle with no direction: a
+//   split that gives two values to one join.  A step keeps a forest when no
+//   new agent has a par group and the right side has no cycle, with each port
+//   of the interface as a vertex of its own.  In a forest, each port of the
+//   interface of the pair leads to a tree of its own, so such a right side
+//   closes no cycle.  A user that reduces forests writes
+//   static_assert(verdict.keeps_forest()).
 //
 // THE CLASS OF GROWTH
 //   A rule that adds agents allocates: the commutation of a duplicator and a
@@ -66,10 +96,12 @@
 //   static_assert(verdict.allocates_nothing(), verdict).
 //
 // THE COSTS
-//   R rules and K kinds.  check_rules is O(K^2 + R * E) for E the ends of a
-//   right side, with a table of K * K pairs.  This header reads plain arrays.
+//   R rules and K kinds.  check_rules is O(K^2 + R * I * E) for I the ports
+//   of the interface of a pair and E the ends of a right side, with a table
+//   of K * K pairs.  This header reads plain arrays.
 //   The check of the value table and the combinator table of its check file
-//   costs about 88 M compile instructions together.  A table that reflection
+//   costs about 170 M compile instructions and 40 ms of wall time together.
+//   The checks of the preservation are about 30 M and 10 ms of it.  A table that reflection
 //   reads costs more, because of the constant arrays and strings of
 //   foundation/algebra/net/Reflect.h (THE COSTS there).
 
@@ -176,14 +208,30 @@ enum class NetGrowth : std::uint8_t {
     Grows = 2,
 };
 
+// The forest of a net under the steps of a table (THE PRESERVATION): each
+// step keeps a forest, or some step can close a cycle.
+enum class ForestKeeping : std::uint8_t {
+    CanCloseCycle = 0,
+    KeepsForest = 1,
+};
+
+// The count of the rules of a table that went through the growth door.
+enum class GrowingRules : std::uint32_t {
+};
+
+// The most agents that one step of a table adds to a net.
+enum class AddedAgents : std::uint32_t {
+};
+
 // The answer of check_rules.  data() and size() give the text of a refusal,
 // which static_assert prints as its message.
 class RuleVerdict {
     NetVerdict verdict_{};
     NetGrowth growth_ = NetGrowth::Shrinks;
-    std::uint8_t reserved_[3]{};
-    std::uint32_t growing_rules_ = 0;
-    std::uint32_t most_added_agents_ = 0;
+    ForestKeeping forest_ = ForestKeeping::KeepsForest;
+    std::uint8_t reserved_[2]{};
+    GrowingRules growing_rules_{};
+    AddedAgents most_added_agents_{};
 
 public:
     constexpr RuleVerdict() noexcept = default;
@@ -192,18 +240,27 @@ public:
     constexpr explicit RuleVerdict(NetVerdict const& refusal) noexcept : verdict_{refusal} {}
 
     // An admitted table of the class growth.
-    constexpr RuleVerdict(NetGrowth growth, std::uint32_t growing_rules, std::uint32_t most_added_agents) noexcept
-        : growth_{growth}, growing_rules_{growing_rules}, most_added_agents_{most_added_agents} {}
+    constexpr RuleVerdict(NetGrowth growth, GrowingRules growing_rules, AddedAgents most_added_agents,
+                          ForestKeeping forest) noexcept
+        : growth_{growth}, forest_{forest}, growing_rules_{growing_rules}, most_added_agents_{most_added_agents} {}
 
     [[nodiscard]] constexpr bool is_admitted() const noexcept { return verdict_.is_admitted(); }
     [[nodiscard]] constexpr NetGrowth growth() const noexcept { return growth_; }
     [[nodiscard]] constexpr bool allocates_nothing() const noexcept {
         return verdict_.is_admitted() && growth_ != NetGrowth::Grows;
     }
+    // Each step of the table keeps a net that check_forest admits.
+    [[nodiscard]] constexpr bool keeps_forest() const noexcept {
+        return verdict_.is_admitted() && forest_ == ForestKeeping::KeepsForest;
+    }
     // The count of the rules that went through the growth door.
-    [[nodiscard]] constexpr std::uint32_t growing_rule_count() const noexcept { return growing_rules_; }
+    [[nodiscard]] constexpr std::uint32_t growing_rule_count() const noexcept {
+        return static_cast<std::uint32_t>(growing_rules_);
+    }
     // The most agents that one step adds to a net.
-    [[nodiscard]] constexpr std::uint32_t most_added_agents() const noexcept { return most_added_agents_; }
+    [[nodiscard]] constexpr std::uint32_t most_added_agents() const noexcept {
+        return static_cast<std::uint32_t>(most_added_agents_);
+    }
 
     [[nodiscard]] constexpr char const* data() const noexcept { return verdict_.data(); }
     [[nodiscard]] constexpr std::size_t size() const noexcept { return verdict_.size(); }
@@ -350,6 +407,178 @@ template <std::size_t Types, std::size_t Kinds>
         is_taken[image[agent]] = true;
     }
     return true;
+}
+
+// Each port of the kind gives or takes.
+[[nodiscard]] constexpr bool is_directed(AgentKind const& kind) noexcept {
+    std::uint32_t const count = port_count_of(kind);
+    for (std::uint32_t port = 0; port < count; ++port) {
+        if (kind.port_types[port].polarity == Polarity::Meet) return false;
+    }
+    return true;
+}
+
+// The checks of a dataflow rule (THE PRESERVATION), on a right side whose
+// ports passed their checks: no wire of no direction between new agents, no
+// cycle of waits among the new agents, and no path from an input of the pair
+// to an output that the pair does not reach from it.  Complexity: O(I * E)
+// for I ports of the interface and E ends.
+template <std::size_t Types, std::size_t Kinds>
+[[nodiscard]] consteval NetVerdict check_dataflow_kept(NetSignature<Types, Kinds> const& signature, Rule const& rule,
+                                                       RuleInterface const& interface, RuleEnds const& ends) noexcept {
+    constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
+    AgentKind const& left = signature.kinds[index_of(rule.left())];
+    AgentKind const& right = signature.kinds[index_of(rule.right())];
+    RightSide const side = rule.side();
+    auto const kind_at = [&](std::uint32_t agent) constexpr noexcept -> AgentKind const& {
+        return signature.kinds[index_of(side.agents[agent])];
+    };
+
+    // The waits among the new agents: the giver and the taker of each wire
+    // between two new agents.
+    std::uint32_t giver_of[max_rule_wires]{};
+    std::uint32_t taker_of[max_rule_wires]{};
+    bool is_inner[max_rule_wires]{};
+    std::uint32_t indegree[max_rule_agents]{};
+    for (std::uint32_t wire = 0; wire < side.wire_count; ++wire) {
+        RuleEnd const one = side.wires[wire].left;
+        RuleEnd const other = side.wires[wire].right;
+        if (one.side != RuleEndSide::Agent || other.side != RuleEndSide::Agent) continue;
+        PortType const type = kind_at(one.agent).port_types[one.port];
+        if (type.polarity == Polarity::Meet) {
+            NetVerdict refusal = NetVerdict::refuse("rules: ");
+            put_rule(refusal, rule);
+            refusal.put(": wire ").put_number(wire).put(" of the right side joins ");
+            put_new_port(refusal, signature, side, one.agent, one.port);
+            refusal.put(" of the type ")
+                .put_name(signature.type_names[index_of(type.type)])
+                .put(", which has no direction.  The pair has only give and take ports, so the step keeps a "
+                     "dataflow net, which has no such port.");
+            return refusal;
+        }
+        bool const does_one_give = type.polarity == Polarity::Give;
+        giver_of[wire] = does_one_give ? one.agent : other.agent;
+        taker_of[wire] = does_one_give ? other.agent : one.agent;
+        is_inner[wire] = true;
+        ++indegree[taker_of[wire]];
+    }
+
+    // The sort of Kahn over the new agents.  An agent gives to the agent at
+    // the other end of each of its give ports.
+    std::uint32_t sorted[max_rule_agents]{};
+    std::uint32_t sorted_count = 0;
+    for (std::uint32_t agent = 0; agent < side.agent_count; ++agent) {
+        if (indegree[agent] != 0u) continue;
+        sorted[sorted_count] = agent;
+        ++sorted_count;
+    }
+    for (std::uint32_t read = 0; read < sorted_count; ++read) {
+        std::uint32_t const agent = sorted[read];
+        std::uint32_t const count = port_count_of(kind_at(agent));
+        for (std::uint32_t port = 0; port < count; ++port) {
+            if (kind_at(agent).port_types[port].polarity != Polarity::Give) continue;
+            std::uint32_t const end = ends.partner[interface.count + agent * ports + port];
+            if (end < interface.count) continue;
+            std::uint32_t const next = (end - interface.count) / ports;
+            --indegree[next];
+            if (indegree[next] != 0u) continue;
+            sorted[sorted_count] = next;
+            ++sorted_count;
+        }
+    }
+    if (sorted_count != side.agent_count) {
+        // Each agent that the sort left takes from another such agent, so a
+        // walk back along these inputs comes to an agent of a cycle.
+        std::uint32_t into[max_rule_agents]{};
+        std::uint32_t walk = no_index;
+        for (std::uint32_t wire = 0; wire < side.wire_count; ++wire) {
+            if (!is_inner[wire] || indegree[giver_of[wire]] == 0u || indegree[taker_of[wire]] == 0u) continue;
+            into[taker_of[wire]] = giver_of[wire];
+            if (walk == no_index) walk = taker_of[wire];
+        }
+        bool is_seen[max_rule_agents]{};
+        while (!is_seen[walk]) {
+            is_seen[walk] = true;
+            walk = into[walk];
+        }
+        NetVerdict refusal = NetVerdict::refuse("rules: ");
+        put_rule(refusal, rule);
+        refusal.put(": the new agent '")
+            .put_name(kind_at(walk).name)
+            .put("' (agent ")
+            .put_number(walk)
+            .put(" of the right side) waits on itself through the new agents.  A step makes no cycle of waits.");
+        return refusal;
+    }
+
+    // The outputs that each input of the pair reaches through the right
+    // side.  The end of a give port of a new agent at the interface is an
+    // output of the pair, because the port keeps the type of that port.
+    bool const does_left_give = left.port_types[left.principal].polarity == Polarity::Give;
+    for (std::uint32_t input = 0; input < interface.count; ++input) {
+        if (interface.types[input].polarity != Polarity::Take) continue;
+        bool const does_own_agent_give = interface.is_right[input] ? !does_left_give : does_left_give;
+        bool is_reached[max_rule_agents]{};
+        std::uint32_t queue[max_rule_agents]{};
+        std::uint32_t queue_count = 0;
+        std::uint32_t stray = no_index;
+        auto const follow = [&](std::uint32_t end) constexpr noexcept {
+            if (end < interface.count) {
+                bool const is_own_agent = interface.is_right[end] == interface.is_right[input];
+                if (!is_own_agent && !does_own_agent_give && stray == no_index) stray = end;
+                return;
+            }
+            std::uint32_t const agent = (end - interface.count) / ports;
+            if (is_reached[agent]) return;
+            is_reached[agent] = true;
+            queue[queue_count] = agent;
+            ++queue_count;
+        };
+        follow(ends.partner[input]);
+        for (std::uint32_t read = 0; read < queue_count; ++read) {
+            std::uint32_t const agent = queue[read];
+            std::uint32_t const count = port_count_of(kind_at(agent));
+            for (std::uint32_t port = 0; port < count; ++port) {
+                if (kind_at(agent).port_types[port].polarity != Polarity::Give) continue;
+                follow(ends.partner[interface.count + agent * ports + port]);
+            }
+        }
+        if (stray == no_index) continue;
+        NetVerdict refusal = NetVerdict::refuse("rules: ");
+        put_rule(refusal, rule);
+        refusal.put(": the right side lets ");
+        put_interface_port(refusal, left, right, interface, input);
+        refusal.put(" reach ");
+        put_interface_port(refusal, left, right, interface, stray);
+        refusal.put(".  The pair has no such path, so the step can close a cycle of waits.");
+        return refusal;
+    }
+    return NetVerdict{};
+}
+
+// The step of the rule keeps a forest (THE PRESERVATION): no new agent has a
+// par group, and the right side has no cycle with each port of the interface
+// as a vertex of its own.  Complexity: O(E a(E)).
+template <std::size_t Types, std::size_t Kinds>
+[[nodiscard]] consteval ForestKeeping forest_keeping_of(NetSignature<Types, Kinds> const& signature,
+                                                        Rule const& rule) noexcept {
+    RightSide const side = rule.side();
+    std::uint32_t const interface_count = port_count_of(signature.kinds[index_of(rule.left())])
+                                        + port_count_of(signature.kinds[index_of(rule.right())]) - 2u;
+    for (std::uint32_t agent = 0; agent < side.agent_count; ++agent) {
+        if (signature.kinds[index_of(side.agents[agent])].par_ports != 0u) return ForestKeeping::CanCloseCycle;
+    }
+    UnionFind<max_interface_ports + max_rule_agents> classes{};
+    auto const vertex_of = [&](RuleEnd end) constexpr noexcept {
+        return end.side == RuleEndSide::Interface ? end.port : interface_count + end.agent;
+    };
+    for (std::uint32_t wire = 0; wire < side.wire_count; ++wire) {
+        std::uint32_t const one = classes.find(vertex_of(side.wires[wire].left));
+        std::uint32_t const other = classes.find(vertex_of(side.wires[wire].right));
+        if (one == other) return ForestKeeping::CanCloseCycle;
+        static_cast<void>(classes.join_roots(one, other));
+    }
+    return ForestKeeping::KeepsForest;
 }
 
 // The checks of one rule, apart from the second rule of a pair and the
@@ -563,6 +792,11 @@ template <std::size_t Types, std::size_t Kinds>
         return refusal;
     }
 
+    if (is_directed(left) && is_directed(right)) {
+        NetVerdict const kept = check_dataflow_kept(signature, rule, interface, ends);
+        if (!kept.is_admitted()) return kept;
+    }
+
     // The growth door.
     if (side.agent_count > 2u && !rule.has_growth_door()) {
         NetVerdict refusal = NetVerdict::refuse("rules: ");
@@ -609,10 +843,14 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Rules>
         slot = none;
     std::uint32_t most_agents = 0;
     std::uint32_t growing_rules = 0;
+    ForestKeeping forest = ForestKeeping::KeepsForest;
     for (std::uint32_t index = 0; index < Rules; ++index) {
         Rule const& rule = table.rules[index];
         NetVerdict const one = detail::check_rule(table.signature, rule);
         if (!one.is_admitted()) return RuleVerdict{one};
+        if (detail::forest_keeping_of(table.signature, rule) == ForestKeeping::CanCloseCycle) {
+            forest = ForestKeeping::CanCloseCycle;
+        }
         std::uint32_t const left = index_of(rule.left());
         std::uint32_t const right = index_of(rule.right());
         std::uint32_t const earlier = rule_of_pair[left * Kinds + right];
@@ -652,7 +890,8 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Rules>
     NetGrowth growth = NetGrowth::Grows;
     if (most_agents <= 1u) growth = NetGrowth::Shrinks;
     if (most_agents == 2u) growth = NetGrowth::AllocatesNothing;
-    return RuleVerdict{growth, growing_rules, most_agents > 2u ? most_agents - 2u : 0u};
+    return RuleVerdict{growth, GrowingRules{growing_rules}, AddedAgents{most_agents > 2u ? most_agents - 2u : 0u},
+                       forest};
 }
 
 }  // namespace foundation::algebra::net

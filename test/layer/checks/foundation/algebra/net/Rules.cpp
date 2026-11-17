@@ -109,6 +109,7 @@ inline constexpr RuleVerdict value_verdict = check_rules(value_table);
 static_assert(value_verdict.is_admitted(), value_verdict);
 static_assert(value_verdict.growth() == NetGrowth::AllocatesNothing && value_verdict.allocates_nothing());
 static_assert(value_verdict.growing_rule_count() == 0 && value_verdict.most_added_agents() == 0);
+static_assert(value_verdict.keeps_forest());
 
 // The sum tree alone shrinks: each step removes an agent.
 inline constexpr NetSignature<1, 4> sum_kinds{
@@ -216,6 +217,7 @@ inline constexpr RuleVerdict door_verdict = check_rules(door_table);
 static_assert(door_verdict.is_admitted(), door_verdict);
 static_assert(door_verdict.growth() == NetGrowth::Grows && !door_verdict.allocates_nothing());
 static_assert(door_verdict.growing_rule_count() == 1 && door_verdict.most_added_agents() == 1);
+static_assert(door_verdict.keeps_forest());
 
 // A door on a rule that does not grow, and a door with no reason.
 inline constexpr RuleTable<1, 10, 8> idle_door_table{
@@ -264,6 +266,155 @@ inline constexpr Rule ping_pong_annihilate{"ping_pong_annihilate", KindId{0}, Ki
                                                      .wire_count = 1}};
 inline constexpr RuleTable<1, 2, 1> annihilate_table{.signature = ping_pong_kinds, .rules = {ping_pong_annihilate}};
 static_assert(check_rules(annihilate_table).growth() == NetGrowth::Shrinks);
+
+// ── The preservation of the dataflow ────────────────────────────────────
+//
+// maker gives to user on its principal port.  Through the pair, x reaches y
+// and v, and u reaches v.  The right side joins y to u, so u reaches y, a
+// path that the pair does not have.
+
+inline constexpr KindId maker_kind{0};
+inline constexpr KindId user_kind{1};
+inline constexpr KindId bridge_kind{2};
+inline constexpr KindId source_kind{3};
+inline constexpr KindId sink_kind{4};
+
+inline constexpr NetSignature<1, 5> crossing_kinds{
+    .type_names = {"Value"},
+    .kinds = {
+        {.name = "maker", .port_names = {"out", "x", "y"}, .port_types = {give(value), take(value), give(value)}},
+        {.name = "user", .port_names = {"in", "u", "v"}, .port_types = {take(value), take(value), give(value)}},
+        {.name = "bridge", .port_names = {"in", "out"}, .port_types = {take(value), give(value)}},
+        {.name = "source", .port_names = {"value"}, .port_types = {give(value)}},
+        {.name = "sink", .port_names = {"in"}, .port_types = {take(value)}, .is_boundary = true},
+    }};
+
+// The interface: maker.x (0), maker.y (1), user.u (2), user.v (3).
+inline constexpr Rule maker_meets_user{"maker_meets_user", maker_kind, user_kind,
+                                       RightSide{.agents = {},
+                                                 .wires = {join_ends(point_at_interface(0), point_at_interface(3)),
+                                                           join_ends(point_at_interface(1), point_at_interface(2))},
+                                                 .agent_count = 0,
+                                                 .wire_count = 2}};
+inline constexpr RuleTable<1, 2, 1> crossing_table{
+    .signature = {.type_names = {"Value"}, .kinds = {crossing_kinds.kinds[0], crossing_kinds.kinds[1]}},
+    .rules = {maker_meets_user}};
+static_assert(check_rules(crossing_table)
+                  .says("rules: rule 'maker_meets_user': the right side lets port 'u' of the right agent 'user' reach "
+                        "port 'y' of the left agent 'maker'.  The pair has no such path, so the step can close a "
+                        "cycle of waits."));
+
+// The test of the preservation.  A bridge takes y and gives u, so the net of
+// the pair has no cycle of waits.  One step of the rule joins the output of
+// the bridge to its own input.
+inline constexpr Net<1, 5, 5, 5> before_crossing{.signature = crossing_kinds,
+                                                 .agents = {maker_kind, user_kind, bridge_kind, source_kind, sink_kind},
+                                                 .wires = {Wire{PortRef{AgentId{0}, 0}, PortRef{AgentId{1}, 0}},
+                                                           Wire{PortRef{AgentId{0}, 2}, PortRef{AgentId{2}, 0}},
+                                                           Wire{PortRef{AgentId{2}, 1}, PortRef{AgentId{1}, 1}},
+                                                           Wire{PortRef{AgentId{3}, 0}, PortRef{AgentId{0}, 1}},
+                                                           Wire{PortRef{AgentId{1}, 2}, PortRef{AgentId{4}, 0}}}};
+inline constexpr NetVerdict before_crossing_verdict = check_dataflow(before_crossing);
+static_assert(before_crossing_verdict.is_admitted(), before_crossing_verdict);
+inline constexpr Net<1, 5, 3, 2> after_crossing{.signature = crossing_kinds,
+                                                .agents = {bridge_kind, source_kind, sink_kind},
+                                                .wires = {Wire{PortRef{AgentId{1}, 0}, PortRef{AgentId{2}, 0}},
+                                                          Wire{PortRef{AgentId{0}, 0}, PortRef{AgentId{0}, 1}}}};
+static_assert(check_dataflow(after_crossing)
+                  .says("net: a cycle of waits closes at port 'in' of agent 'bridge' (node 0): agent 'bridge' (node "
+                        "0).  Each agent waits on its inputs, so no agent of the cycle starts."));
+
+// A right side whose new agents wait on each other.  No input of the pair
+// takes part, so only the sort of the new agents finds the cycle.  The
+// interface of the pair of origin and taker: taker.result (0).
+inline constexpr NetSignature<1, 4> knot_kinds{
+    .type_names = {"Value"},
+    .kinds = {
+        {.name = "origin", .port_names = {"out"}, .port_types = {give(value)}},
+        {.name = "taker", .port_names = {"in", "result"}, .port_types = {take(value), give(value)}},
+        {.name = "first_knot",
+         .port_names = {"in", "loop", "out"},
+         .port_types = {take(value), give(value), give(value)}},
+        {.name = "second_knot", .port_names = {"in", "loop"}, .port_types = {take(value), give(value)}},
+    }};
+inline constexpr Rule origin_meets_taker{"origin_meets_taker", KindId{0}, KindId{1},
+                                         RightSide{.agents = {KindId{2}, KindId{3}},
+                                                   .wires = {join_ends(point_at_agent(0, 1), point_at_agent(1, 0)),
+                                                             join_ends(point_at_agent(1, 1), point_at_agent(0, 0)),
+                                                             join_ends(point_at_agent(0, 2), point_at_interface(0))},
+                                                   .agent_count = 2,
+                                                   .wire_count = 3}};
+inline constexpr RuleTable<1, 4, 1> knot_table{.signature = knot_kinds, .rules = {origin_meets_taker}};
+static_assert(check_rules(knot_table)
+                  .says("rules: rule 'origin_meets_taker': the new agent 'second_knot' (agent 1 of the right side) "
+                        "waits on itself through the new agents.  A step makes no cycle of waits."));
+
+// A right side with a wire of no direction between two new agents.
+inline constexpr NetSignature<1, 4> undirected_kinds{
+    .type_names = {"Value"},
+    .kinds = {
+        {.name = "origin", .port_names = {"out"}, .port_types = {give(value)}},
+        {.name = "taker", .port_names = {"in", "result"}, .port_types = {take(value), give(value)}},
+        {.name = "speaker", .port_names = {"out", "talk"}, .port_types = {give(value), meet(value)}},
+        {.name = "listener", .port_names = {"talk"}, .port_types = {meet(value)}},
+    }};
+inline constexpr Rule origin_meets_taker_by_talk{
+    "origin_meets_taker_by_talk", KindId{0}, KindId{1},
+    RightSide{.agents = {KindId{2}, KindId{3}},
+              .wires = {join_ends(point_at_agent(0, 0), point_at_interface(0)),
+                        join_ends(point_at_agent(0, 1), point_at_agent(1, 0))},
+              .agent_count = 2,
+              .wire_count = 2}};
+inline constexpr RuleTable<1, 4, 1> undirected_table{.signature = undirected_kinds,
+                                                     .rules = {origin_meets_taker_by_talk}};
+static_assert(check_rules(undirected_table)
+                  .says("rules: rule 'origin_meets_taker_by_talk': wire 1 of the right side joins port 'talk' of the "
+                        "new agent 'speaker' (agent 0 of the right side) of the type Value, which has no direction.  "
+                        "The pair has only give and take ports, so the step keeps a dataflow net, which has no such "
+                        "port."));
+
+// ── The preservation of the forest ──────────────────────────────────────
+//
+// twin >< num gives the value through a split and a join: two wires between
+// the two new agents.  The dataflow has no cycle, so the table is admitted,
+// but a step of it closes a cycle of a forest.  The interfaces: twin.out (0)
+// for twin >< num and twin >< split; split.second (0) and twin.out (1) for
+// twin >< split in the order of the pair; join.left (0), join.right (1) and
+// twin.out (2) for join >< twin.
+
+inline constexpr NetSignature<1, 4> diamond_kinds{
+    .type_names = {"Value"},
+    .kinds = {
+        {.name = "num", .port_names = {"value"}, .port_types = {give(value)}},
+        {.name = "twin", .port_names = {"in", "out"}, .port_types = {take(value), give(value)}},
+        {.name = "split", .port_names = {"first", "second"}, .port_types = {give(value), give(value)}},
+        {.name = "join", .port_names = {"sum", "left", "right"}, .port_types = {give(value), take(value), take(value)}},
+    }};
+inline constexpr Rule twin_meets_num{"twin_meets_num", KindId{1}, KindId{0},
+                                     RightSide{.agents = {KindId{2}, KindId{3}},
+                                               .wires = {join_ends(point_at_agent(1, 0), point_at_interface(0)),
+                                                         join_ends(point_at_agent(0, 0), point_at_agent(1, 1)),
+                                                         join_ends(point_at_agent(0, 1), point_at_agent(1, 2))},
+                                               .agent_count = 2,
+                                               .wire_count = 3}};
+inline constexpr Rule split_meets_twin{"split_meets_twin", KindId{2}, KindId{1},
+                                       RightSide{.agents = {KindId{0}, KindId{0}},
+                                                 .wires = {join_ends(point_at_agent(0, 0), point_at_interface(0)),
+                                                           join_ends(point_at_agent(1, 0), point_at_interface(1))},
+                                                 .agent_count = 2,
+                                                 .wire_count = 2}};
+inline constexpr Rule join_meets_twin{"join_meets_twin", KindId{3}, KindId{1},
+                                      RightSide{.agents = {KindId{3}},
+                                                .wires = {join_ends(point_at_agent(0, 1), point_at_interface(0)),
+                                                          join_ends(point_at_agent(0, 2), point_at_interface(1)),
+                                                          join_ends(point_at_agent(0, 0), point_at_interface(2))},
+                                                .agent_count = 1,
+                                                .wire_count = 3}};
+inline constexpr RuleTable<1, 4, 3> diamond_table{.signature = diamond_kinds,
+                                                  .rules = {twin_meets_num, split_meets_twin, join_meets_twin}};
+inline constexpr RuleVerdict diamond_verdict = check_rules(diamond_table);
+static_assert(diamond_verdict.is_admitted(), diamond_verdict);
+static_assert(!diamond_verdict.keeps_forest());
 
 // A rule that reads a boundary agent, and a rule whose pair is not dual.
 inline constexpr Rule result_meets_num{"result_meets_num", result_kind, num_kind, RightSide{}};
@@ -374,6 +525,9 @@ inline constexpr RuleVerdict combinator_verdict = check_rules(combinator_table);
 static_assert(combinator_verdict.is_admitted(), combinator_verdict);
 static_assert(combinator_verdict.growth() == NetGrowth::Grows && combinator_verdict.growing_rule_count() == 1);
 static_assert(combinator_verdict.most_added_agents() == 2);
+// The commutation crosses the auxiliary ports of four new agents, so a step
+// closes a cycle.  The ports have no direction, so no rule is a dataflow rule.
+static_assert(!combinator_verdict.keeps_forest());
 
 // A rule for a pair of one kind that changes when the two agents change
 // places: the free port of the left pivot goes into the principal port of a

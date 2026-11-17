@@ -3748,6 +3748,12 @@ foundation_neg_compile_test(neg_net_rules_active_pair
 foundation_neg_compile_test(neg_net_rules_asymmetric
   "static assertion failed: rules: rule 'pivots_twist' for the pair 'pivot', 'pivot'"
   "changes when the two agents change places\\.")
+foundation_neg_compile_test(neg_net_rules_new_dependency
+  "static assertion failed: rules: rule 'maker_meets_user': the right side lets port 'u' of the right agent 'user'"
+  "reach port 'y' of the left agent 'maker'\\.  The pair has no such path")
+foundation_neg_compile_test(neg_net_rules_waiting_knot
+  "static assertion failed: rules: rule 'origin_meets_taker': the new agent 'second_knot' \\(agent 1 of the right"
+  "waits on itself through the new agents\\.  A step makes no cycle of waits\\.")
 foundation_neg_compile_test(neg_net_reflect_stray_member
   "static assertion failed: net: member 'count' of agent 'num' is no port"
   "A port is a member of the type Give<T>, Take<T> or Meet<T>\\.")
