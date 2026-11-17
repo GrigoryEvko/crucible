@@ -69,6 +69,36 @@ struct ForeignBytes {
 [[nodiscard]] ForeignBytes syscall_tp_btf_bpf_object() noexcept;
 [[nodiscard]] ForeignBytes sense_hub_v2_bpf_object() noexcept;
 
+// The stubs of continuous monitoring, in the list of CMakeLists.txt.  A stub
+// has no facade, so no unit calls its function.
+[[nodiscard]] ForeignBytes cntp_dp_tc_ingress_classify_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_dp_tc_egress_classify_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_dp_pacing_budget_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_dp_queue_backlog_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_dp_fq_budget_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_xdp_flow_filter_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_tc_egress_mark_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_sk_msg_credit_gate_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_sock_ops_telemetry_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_ecn_ce_mark_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_wip_fq_pacing_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_wip_bbr_model_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_wip_ack_clock_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cntp_wip_loss_recovery_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes warden_socket_lifecycle_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes canopy_gossip_xdp_tx_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes canopy_peer_liveness_probe_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes canopy_gossip_fanout_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes topology_xdp_rx_timestamp_probe_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes topology_napi_pressure_probe_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes topology_qdisc_backlog_probe_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes topology_lldp_rx_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes observe_tcp_flow_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes observe_packet_loss_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes observe_ecn_sample_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cog_nic_cog_probe_bpf_object() noexcept;
+[[nodiscard]] ForeignBytes cog_offload_cap_probe_bpf_object() noexcept;
+
 #define CRUCIBLE_PERF_FOREIGN_NAME(literal) \
     (::crucible::perf::detail::ForeignName{.abi = (literal), .text = ::fixy::TextView{literal}})
 

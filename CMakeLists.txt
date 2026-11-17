@@ -610,6 +610,83 @@ crucible_bpf_program(syscall_latency  include/crucible/perf/bpf/syscall_latency.
 crucible_bpf_program(sched_tp_btf     include/crucible/perf/bpf/sched_tp_btf.bpf.c)
 crucible_bpf_program(syscall_tp_btf   include/crucible/perf/bpf/syscall_tp_btf.bpf.c)
 
+# ─── The BPF stubs of continuous monitoring ──────────────────────────
+#
+# Each program of this list is a stub that the verifier can load.  It returns
+# at once and reads no packet.  It keeps the section name, the map layout and
+# the embed name of one hook of continuous monitoring, and the policy of the
+# hook grows in that frame.  A program stays in the bpf/ directory of the
+# subsystem that owns the hook:
+#   - cntp/dataplane/bpf/ and cntp/bpf/: the TC, XDP, sk_msg and sockops
+#     hooks of the transport
+#   - cntp/_wip/bpf/: the samples of the congestion control of the transport
+#   - warden/bpf/: the socket life cycle of the warden
+#   - canopy/bpf/, topology/bpf/, observe/bpf/ and cog/bpf/: the samples of
+#     the mesh, the topology, the observation and the NIC.
+# A stub has no facade.  No unit calls the function of its embed unit, so a
+# link takes no byte of the object into a binary.
+crucible_bpf_program(cntp_dp_tc_ingress_classify
+  include/crucible/cntp/dataplane/bpf/dp_tc_ingress_classify.bpf.c)
+crucible_bpf_program(cntp_dp_tc_egress_classify
+  include/crucible/cntp/dataplane/bpf/dp_tc_egress_classify.bpf.c)
+crucible_bpf_program(cntp_dp_pacing_budget
+  include/crucible/cntp/dataplane/bpf/dp_pacing_budget.bpf.c)
+crucible_bpf_program(cntp_dp_queue_backlog
+  include/crucible/cntp/dataplane/bpf/dp_queue_backlog.bpf.c)
+crucible_bpf_program(cntp_dp_fq_budget
+  include/crucible/cntp/dataplane/bpf/dp_fq_budget.bpf.c)
+
+crucible_bpf_program(cntp_xdp_flow_filter
+  include/crucible/cntp/bpf/xdp_flow_filter.bpf.c)
+crucible_bpf_program(cntp_tc_egress_mark
+  include/crucible/cntp/bpf/tc_egress_mark.bpf.c)
+crucible_bpf_program(cntp_sk_msg_credit_gate
+  include/crucible/cntp/bpf/sk_msg_credit_gate.bpf.c)
+crucible_bpf_program(cntp_sock_ops_telemetry
+  include/crucible/cntp/bpf/sock_ops_telemetry.bpf.c)
+crucible_bpf_program(cntp_ecn_ce_mark_sample
+  include/crucible/cntp/bpf/ecn_ce_mark_sample.bpf.c)
+
+crucible_bpf_program(cntp_wip_fq_pacing_sample
+  include/crucible/cntp/_wip/bpf/fq_pacing_sample.bpf.c)
+crucible_bpf_program(cntp_wip_bbr_model_sample
+  include/crucible/cntp/_wip/bpf/bbr_model_sample.bpf.c)
+crucible_bpf_program(cntp_wip_ack_clock_sample
+  include/crucible/cntp/_wip/bpf/ack_clock_sample.bpf.c)
+crucible_bpf_program(cntp_wip_loss_recovery_sample
+  include/crucible/cntp/_wip/bpf/loss_recovery_sample.bpf.c)
+
+crucible_bpf_program(warden_socket_lifecycle
+  include/crucible/warden/bpf/wd_socket_lifecycle.bpf.c)
+
+crucible_bpf_program(canopy_gossip_xdp_tx
+  include/crucible/canopy/bpf/gossip_xdp_tx.bpf.c)
+crucible_bpf_program(canopy_peer_liveness_probe
+  include/crucible/canopy/bpf/peer_liveness_probe.bpf.c)
+crucible_bpf_program(canopy_gossip_fanout_sample
+  include/crucible/canopy/bpf/gossip_fanout_sample.bpf.c)
+
+crucible_bpf_program(topology_xdp_rx_timestamp_probe
+  include/crucible/topology/bpf/xdp_rx_timestamp_probe.bpf.c)
+crucible_bpf_program(topology_napi_pressure_probe
+  include/crucible/topology/bpf/napi_pressure_probe.bpf.c)
+crucible_bpf_program(topology_qdisc_backlog_probe
+  include/crucible/topology/bpf/qdisc_backlog_probe.bpf.c)
+crucible_bpf_program(topology_lldp_rx_sample
+  include/crucible/topology/bpf/lldp_rx_sample.bpf.c)
+
+crucible_bpf_program(observe_tcp_flow_sample
+  include/crucible/observe/bpf/tcp_flow_sample.bpf.c)
+crucible_bpf_program(observe_packet_loss_sample
+  include/crucible/observe/bpf/packet_loss_sample.bpf.c)
+crucible_bpf_program(observe_ecn_sample
+  include/crucible/observe/bpf/ecn_sample.bpf.c)
+
+crucible_bpf_program(cog_nic_cog_probe
+  include/crucible/cog/bpf/nic_cog_probe.bpf.c)
+crucible_bpf_program(cog_offload_cap_probe
+  include/crucible/cog/bpf/offload_cap_probe.bpf.c)
+
 # ─── SenseHub v2 — opt-in dual-tier hub (basic 128 + extended 256) ───
 #
 # v2 ships the architectural surface (counters/gauges segregation,
