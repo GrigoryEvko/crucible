@@ -104,15 +104,25 @@ CRUCIBLE_CLOSED_SURFACE(slot_map_names, SlotWalk<int const, std::uint32_t, SlotK
 CRUCIBLE_CLOSED_SURFACE(slot_map_names, SlotCursor<int, std::uint32_t, int&>, CursorProtocol);
 CRUCIBLE_CLOSED_SURFACE(slot_map_names, SlotCursor<int const, std::uint32_t, SlotKey<HandleTag>>, CursorProtocol);
 
+// A value of a line of the cache, whose map takes its storage from the
+// allocator of an alignment past 16.
+struct alignas(64) Line final {
+    std::uint64_t first = 0;
+};
+
 // The parts of a key, and the layout of the three runs of a map.  The
-// generations of a map of bytes start after the values and the stack.
+// generations of a map of bytes start after the values and the stack, and the
+// bytes round up to the alignment of the allocation.
 static_assert(slot_index_of_(0x0000000500000003ull) == 3 && slot_generation_of_(0x0000000500000003ull) == 5);
 static_assert(holds_value_(std::uint8_t{255}) && !holds_value_(std::uint8_t{0}) && !holds_value_(std::uint32_t{2}));
 static_assert(slot_map_layout_<std::uint8_t, std::uint8_t>(3).stack_offset == 4);
 static_assert(slot_map_layout_<std::uint8_t, std::uint8_t>(3).generation_offset == 4 + 12);
-static_assert(slot_map_layout_<std::uint8_t, std::uint8_t>(3).bytes == 4 + 12 + 3);
+static_assert(slot_map_layout_<std::uint8_t, std::uint8_t>(3).bytes == 20);
 static_assert(slot_map_layout_<std::uint64_t, std::uint32_t>(2).bytes == 16 + 8 + 8);
+static_assert(slot_map_layout_<Line, std::uint32_t>(3).generation_offset == 192 + 12);
+static_assert(slot_map_layout_<Line, std::uint32_t>(3).bytes == 256);
 static_assert(slot_map_alignment_<std::uint8_t> == 4 && slot_map_alignment_<std::uint64_t> == 8);
+static_assert(slot_map_alignment_<Line> == 64);
 
 }  // namespace detail::slot_map_checks
 

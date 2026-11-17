@@ -201,6 +201,26 @@ void test_ref_survives_inserts() {
     CRUCIBLE_FATAL_INVARIANT(*held == 77u && map.size() == 512);
 }
 
+// A value of a line of the cache.  Its map takes storage from the allocator
+// of an alignment past 16, which takes a count of bytes that is a multiple of
+// the alignment, so the ASan run refuses a count that is not.
+struct alignas(64) Line final {
+    std::uint64_t value = 0;
+};
+
+// Each slot of a map of an over-aligned value lies at the alignment of the
+// value, and the values keep their contents.
+void test_over_aligned_values() {
+    SlotMap<Line, HandleTag> map = map_of<Line>(3);
+    Key const first = map.insert(Line{11}).expect("the map has a free slot");
+    Key const second = map.insert(Line{22}).expect("the map has a free slot");
+    Key const third = map.insert(Line{33}).expect("the map has a free slot");
+    auto const held = map.get(second).expect("the key is live");
+    CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(held).is_aligned<64>());
+    CRUCIBLE_FATAL_INVARIANT((*held).value == 22 && map.remove(first).expect("the key is live").value == 11);
+    CRUCIBLE_FATAL_INVARIANT((*map.get(third).expect("the key is live")).value == 33 && map.size() == 2);
+}
+
 // A value that writes its label into a log at its end.  The brand of the Ref
 // of the log is a template argument, so no fresh brand leaves its scope.
 template <class LogRef>
@@ -391,6 +411,7 @@ int main() {
     test_generation_wrap_retires_the_slot();
     test_walk_in_slot_order();
     test_ref_survives_inserts();
+    test_over_aligned_values();
     test_each_value_ends_once_in_slot_order();
     test_moves();
     test_refusals(test);

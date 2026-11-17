@@ -159,8 +159,13 @@ template <class T, class Generation>
         align_up(value_bytes, alignof(std::uint32_t)).expect("the bytes of a SlotMap at its alignment fit in size_t");
     std::size_t const generation_offset = checked_add(stack_offset, slots * sizeof(std::uint32_t))
                                               .expect("the bytes of the free stack of a SlotMap fit in size_t");
-    std::size_t const bytes = checked_add(generation_offset, slots * sizeof(Generation))
-                                  .expect("the bytes of the generations of a SlotMap fit in size_t");
+    std::size_t const used_bytes = checked_add(generation_offset, slots * sizeof(Generation))
+                                       .expect("the bytes of the generations of a SlotMap fit in size_t");
+    // The allocator of an alignment past 16 takes a count of bytes that is a
+    // multiple of the alignment, so the bytes round up to it, as the bytes of
+    // a HeapArray do.
+    std::size_t const bytes = align_up(used_bytes, slot_map_alignment_<T>)
+                                  .expect("the bytes of a SlotMap at the alignment of its value fit in size_t");
     return SlotMapLayout{stack_offset, generation_offset, bytes};
 }
 
