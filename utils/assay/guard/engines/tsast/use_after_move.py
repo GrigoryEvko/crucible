@@ -192,6 +192,8 @@ PROBE_FILES: dict[str, str] = {
         "a moved-from descriptor, directory or PTP clock reader refuses each operation with ebadf, and reads no "
         "resource of another owner"
     ),
+    "test/fixy/test_os_numa_placement.cpp": "a NUMA placement that a move emptied claims no node and admits no request",
+    "test/fixy/test_os_sched.cpp": "an affinity pin that a move emptied is not in force on its thread",
     "test/fixy/test_os_temporary_file.cpp": (
         "a Dirfd that a move emptied gives ebadf to the temporary file door, which makes no system call for it"
     ),
