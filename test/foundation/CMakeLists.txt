@@ -3357,6 +3357,43 @@ foundation_neg_compile_test(neg_core_slot_map_throwing_move
   "no matching function for call to .mint_slot_map<ThrowingMove, HandleTag>\\(foundation::core::Alloc,"
   "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
 
+# A SmallList appends its first Inline elements with no allocation, spills to
+# the heap past them, doubles its storage up to its maximum, lends its
+# elements only through its frame doors, and agrees with a model of a
+# FixedArray and a count.  The target wraps the allocator of the C library,
+# as test_core_hole does, so the test counts each allocation of the door.
+foundation_test(test_core_small_list)
+target_link_options(test_core_small_list PRIVATE -Wl,--wrap=malloc,--wrap=aligned_alloc,--wrap=calloc,--wrap=free)
+
+# A SmallList takes the allocation capability at an append, does not copy,
+# and gives no borrow out of a frame door: an append or a move can move its
+# elements.  Its mint refuses an element that is not bytewise and an inline
+# count of zero.
+foundation_neg_compile_test(neg_core_small_list_append_without_allocation_marker
+  "no matching function for call to .foundation::core::SmallList<int, 4>::append\\(foundation::effects::cap::IO, int\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_small_list_copied
+  "use of deleted function .foundation::core::SmallList<T, Inline>::SmallList\\(const foundation::core::SmallList<T, Inline>&\\)"
+  "a copy of a SmallList past its inline slots allocates, and no allocation capability shows at a copy")
+foundation_neg_compile_test(neg_core_small_list_owner_element
+  "no matching function for call to .mint_small_list<foundation::core::Box<int>, 2>"
+  "the expression .is_trivially_copyable_v<T> \\[with T = foundation::core::Box<int>\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_small_list_no_inline_slot
+  "no matching function for call to .mint_small_list<int, 0>"
+  "required for the satisfaction of .SmallListInline<T, Inline>. \\[with T = int; Inline = 0\\]")
+foundation_neg_compile_test(neg_core_small_list_append_in_frame
+  "this arm of a borrow match writes the sum that the match reads .mutating-call list."
+  "the payload that the arm borrows can end while the arm holds its reference")
+foundation_neg_compile_test(neg_core_small_list_ref_across_append
+  "has no member named .get."
+  "foundation::core::SmallList<int, 2>")
+foundation_neg_compile_test(neg_core_small_list_view_across_move
+  "has no member named .view."
+  "foundation::core::SmallList<int, 4>")
+foundation_neg_compile_test(neg_core_small_list_frame_gives_view
+  "use of deleted function .void foundation::core::SmallList<T, Inline>::with_view\\(Body&&\\) &"
+  "the result of a frame door holds no borrow: the next append can move the elements of the list")
+
 # The frame doors of foundation/core/Frame.h write each owner of the Region
 # family and each sum of the Choice family.  The door of an owner gives the
 # owner back, and the name that the caller moved from holds no storage while
@@ -3833,7 +3870,7 @@ foreach(_death_test
     test_aligned_bytes test_core_array test_core_bit_set test_core_box test_core_branded test_core_bump_arena test_core_choice
     test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_masked_array
     test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
-    test_core_slot_map test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
+    test_core_slot_map test_core_small_list test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
     test_swiss_table_buffer test_swiss_table_buffer_ignore)
   target_link_libraries(${_death_test} PRIVATE fixy)
 endforeach()

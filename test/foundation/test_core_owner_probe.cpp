@@ -61,6 +61,7 @@
 #include <foundation/core/Owner.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/SlotMap.h>
+#include <foundation/core/SmallList.h>
 #include <foundation/effects/Effect.h>
 
 #include <fixy/Ctx.h>
@@ -740,6 +741,75 @@ struct AlignedBytesProbe {
     }
 };
 
+// A SmallList holds bytewise elements only, so no element owns a child list
+// and no element is linear.  The probe runs the self-move, the moved-from
+// source and the empty list, inline and on the heap.
+struct SmallListProbe {
+    using Owner = ::foundation::core::SmallList<std::uint64_t, 2>;
+    using Maximum = ::foundation::core::Quantity<::foundation::core::unit::Element, std::size_t>;
+
+    // A list of count elements from first: inline for a count of two or less,
+    // and on the heap past it.
+    static Owner make(std::uint64_t first, std::uint64_t count) {
+        Owner list = ::foundation::core::mint_small_list<std::uint64_t, 2>(Maximum{16});
+        for (std::uint64_t value = first; value != first + count; ++value) {
+            list.append(kAlloc, value).expect("the list of the probe has room below its maximum");
+        }
+        return list;
+    }
+
+    // The sum of the elements, through the frame door with_view.
+    static std::uint64_t sum_of(Owner const& list) {
+        return list.with_view([](View<std::uint64_t const> elements) noexcept {
+            std::uint64_t sum = 0;
+            for (std::uint64_t const element : elements) {
+                sum += element;
+            }
+            return sum;
+        });
+    }
+
+    static void self_move() {
+        Owner inline_held = make(1, 2);
+        Owner& inline_alias = inline_held;
+        inline_held = static_cast<Owner&&>(inline_alias);
+        CRUCIBLE_FATAL_INVARIANT(inline_held.size() == 2 && sum_of(inline_held) == 3);
+        Owner heap_held = make(1, 5);
+        Owner& heap_alias = heap_held;
+        heap_held = static_cast<Owner&&>(heap_alias);
+        CRUCIBLE_FATAL_INVARIANT(heap_held.size() == 5 && sum_of(heap_held) == 15);
+    }
+
+    static void child_move() {}
+
+    // MOVED-FROM: a new value in the source leaves the elements of the target
+    // in place, and the ASan run finds a read of freed storage or a second
+    // release if the source kept the heap storage.
+    static void moved_from() {
+        Owner target = make(1, 1);
+        Owner source = make(10, 5);
+        target = static_cast<Owner&&>(source);
+        source = make(100, 4);
+        CRUCIBLE_FATAL_INVARIANT(sum_of(target) == 60);
+        Owner taken{static_cast<Owner&&>(target)};
+        target = make(1, 2);
+        CRUCIBLE_FATAL_INVARIANT(sum_of(taken) == 60 && sum_of(source) == 406);
+    }
+
+    static void linear() {}
+
+    // EMPTY: a moved-from SmallList holds no element, and an append takes the
+    // inline slots again below the maximum that the list keeps.
+    static void empty() {
+        Owner source = make(1, 5);
+        Owner const target{static_cast<Owner&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(target.size() == 5);
+        CRUCIBLE_FATAL_INVARIANT(through(source).is_empty() && sum_of(through(source)) == 0);
+        through(source).append(kAlloc, 7).expect("a moved-from list keeps its maximum");
+        CRUCIBLE_FATAL_INVARIANT(sum_of(through(source)) == 7);
+    }
+};
+
 // The domain of the ids of the probe of a HeapBitSet.
 struct ProbeSlotTag final {};
 
@@ -907,7 +977,7 @@ struct ProbeList {
 
 using AllProbes =
     ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe, HeapTextProbe,
-              AlignedBytesProbe, HeapBitSetProbe, SlotMapProbe, SwissTableBufferProbe, OwnedMmapProbe>;
+              SmallListProbe, AlignedBytesProbe, HeapBitSetProbe, SlotMapProbe, SwissTableBufferProbe, OwnedMmapProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "

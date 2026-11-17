@@ -1015,6 +1015,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::BitCursor,
      "the position of a walk over the indexes of a bit set: it lives inside the loop, and it is never a value in a "
      "signature"},
+    {^^::foundation::core::SmallList,
+     "a list of elements inline and then on the heap: it holds storage and makes no claim about what the elements "
+     "hold"},
     {^^::foundation::core::SlotMap,
      "a table of values behind generational keys on the heap: it holds storage and makes no claim about what the "
      "values hold"},
