@@ -74,6 +74,7 @@ crucible_bench(bench_cipher)
 crucible_bench(bench_ckernel)
 crucible_bench(bench_content_hash)
 crucible_bench(bench_core_atomic)
+crucible_bench(bench_core_containers)
 crucible_bench(bench_core_region)
 crucible_bench(bench_core_reduce)
 # fp::fma at three levels in one program: two units at x86-64 and x86-64-v2
