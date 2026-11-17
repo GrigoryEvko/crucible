@@ -43,7 +43,6 @@
 #include <foundation/effects/Effect.h>
 #include <crucible/Vigil.h>
 #include <fixy/Ctx.h>
-#include <fixy/os/CpuPinned.h>
 #include <fixy/os/Sched.h>
 
 #include <bit>
@@ -116,48 +115,50 @@ static_assert(RECORD_BODIES < RING_CAPACITY,
               "A recording case must finish before the ring fills, or it measures the reject path "
               "instead of an append. Lower RECORD_SAMPLES or drain between samples.");
 
-// Confines the whole process to the isolated CPUs of its affinity and returns
-// the one to measure on, or -1 when its affinity holds no isolated CPU.  The
-// affinity only narrows.  loop bench gives each bench cores of its own, and a
-// wider mask would run the rows and the drain thread on the cores of another
-// bench.
+// The cores of the threads of a Vigil row (THE CORES OF A RUN of
+// bench/bench_harness.h).  A Vigil runs five background threads: the thread
+// of its pipeline and the four stages of the pipeline, which drain, detect,
+// build and publish.  The bench states six threads with CORES 6 in
+// bench/CMakeLists.txt, so loop bench gives it six isolated cores of one L3
+// group.  The measuring thread, the producer, takes the core of slot 0.  Each
+// Vigil starts in run_on_cores() with the cores of the slots 1 to 5 as the
+// mask of its pipeline thread, and the pipeline pins each stage to its own
+// core of that mask (fixy/concurrent/StageCpus.h).  The pipeline thread waits
+// in the join of the stages, so it can share a core with a stage.  A stage
+// that shares the core of the producer turns the producer into a thread that
+// waits on the consumer, and that shows as outliers of milliseconds.
 //
-// Two separate reasons, and skipping either one costs a factor of two.
+// The producer pins itself before it allocates the rings of a row, so the
+// pages of the rings come from the NUMA node of its core.  A row with the
+// buffers on another node measures the interconnect: 22.4 ns against 11.1 ns
+// for the same binary.  The cores of a claim share one node.
 //
-// Process-wide, because affinity has to precede the first allocation. Pinning
-// only the measuring thread leaves the buffers on whatever NUMA node the
-// process started on while the reads come from a core that may be on another,
-// and the record leaf then measures the interconnect: 22.4 ns against 11.1 ns
-// for the same binary launched under taskset. Setting it here, before
-// anything is allocated and before the Vigil starts its drain thread, makes
-// the binary give the same answer however it was launched. That matters more
-// for the committed test than for a person at a prompt, who would remember
-// the taskset; ctest does not.
-//
-// A named core within the set, rather than the harness's auto-pick, because a
-// Vigil's drain thread is free to land anywhere in the set. Sharing a core
-// with it turns the producer into something that waits on the consumer, which
-// arrives as millisecond outliers. The measuring thread takes the last
-// isolated CPU of the affinity and the drain thread gets the rest.  With one
-// core from loop bench, the drain thread shares that core.  Complexity: linear
-// in the CPUs of the affinity.
-[[nodiscard]] int confine_process_to_isolated_cpus() noexcept {
-    const ::fixy::InitLoadCtx query{::foundation::effects::testing::init()};
-    crucible::warden::CpuSet const allowed = crucible::warden::allowed_cpus(query);
-    crucible::warden::CpuSet const isolated = crucible::warden::isolated_cpus(query);
-    ::fixy::AffinityMask set{};
-    int last = -1;
-    for (int const cpu : allowed) {
-        if (!isolated.contains(cpu) || cpu > ::fixy::AffinityMask::kMaxCore) continue;
-        set = ::fixy::AffinityLattice::join(set, ::fixy::AffinityMask::single(static_cast<std::uint16_t>(cpu)));
-        last = cpu;
-    }
-    if (last < 0) return -1;
-    // The pin goes through the door that records the pin event.  The
-    // process keeps the pin, so the prior mask in the result is dropped.
-    const ::fixy::ColdInitCtx startup{::foundation::effects::testing::init()};
-    if (::fixy::sched::apply_affinity_to_mask(startup, set).is_err()) return -1;
-    return last;
+// A run with no isolated core in its affinity, such as the run of ctest, has
+// no core for a slot: the harness picks the core of the producer, and the
+// threads of the Vigil keep the affinity of the process.
+struct RowCores {
+    bench::CpuId record{};
+    crucible::warden::CpuSet vigil{};
+};
+
+// The background threads of a Vigil: the pipeline thread and its four stages.
+constexpr std::size_t kVigilThreads = 5;
+
+[[nodiscard]] RowCores row_cores() noexcept {
+    const bench::Cores cores = bench::Cores::of_calling_thread();
+    return RowCores{.record = cores.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none()),
+                    .vigil = cores.from_slot(bench::ThreadSlot{1})};
+}
+
+// A Vigil whose background threads run on the cores of the slots 1 to 5.
+[[nodiscard]] Vigil make_vigil(RowCores const& cores) {
+    return bench::run_on_cores(cores.vigil, [] { return Vigil{}; });
+}
+
+// The core of the producer: the core of slot 0, or the core of
+// CRUCIBLE_BENCH_CORE, or -1 for the pick of the harness.
+[[nodiscard]] int record_core_of(RowCores const& cores) noexcept {
+    return cores.record.is_valid() ? cores.record.raw() : bench::env_core();
 }
 
 void* fake_ptr(uint32_t iter, uint32_t op) noexcept {
@@ -254,6 +255,20 @@ void setup_compiled_vigil(Vigil& vigil) {
     align_and_activate(vigil, 3);
 }
 
+// Records one op and waits until the background processed it, so the stage
+// threads of the pipeline run on their cores before a row measures.  A stage
+// thread starts on the core of the pipeline thread and moves to its own core
+// when it runs, so a start inside the sampled loop waits behind the other
+// threads of that core.  The pause check saw such a start: a stage waited
+// 1.6 ms in 5 arrivals.  The schema hash of the op is not one of the hashes of
+// the rows.
+void start_pipeline(Vigil& vigil) {
+    OpData d = make_op(0, 1);
+    d.entry.schema_hash = SchemaHash{0x900};
+    static_cast<void>(vigil.record_op(certify_synthetic_op(d.entry, records_of(d))));
+    vigil.flush();
+}
+
 // ── The gate ───────────────────────────────────────────────────────
 //
 // A ceiling per case, in nanoseconds, read from a committed file, plus a
@@ -346,16 +361,25 @@ constexpr bool kGateOnP99 = false;
 
 int main() {
     // Before anything allocates and before the first Vigil starts its drain
-    // thread. -1 means the host isolates nothing, and every case then falls
-    // back to the harness's own pin; the numbers will be noisier and the
-    // gate will say so.
-    const int record_core = confine_process_to_isolated_cpus();
-
+    // thread.  With no isolated core, each case falls back to the pin of the
+    // harness, and the numbers are noisier.
+    const RowCores cores = row_cores();
     bench::print_system_info();
-    if (record_core < 0) {
-        std::printf("  NOTE: no isolated CPUs on this host; measuring unpinned and expecting noise.\n");
+    if (cores.record.is_valid()) {
+        bench::pin_calling_thread_to(cores.record).expect("the pin of the producer to the core of slot 0");
+    }
+    if (!cores.record.is_valid()) {
+        ::fixy::report(::fixy::Sink::Out,
+                       "  NOTE: no isolated core in the affinity: the harness picks the core, and the numbers are "
+                       "noisy.\n");
+    } else if (cores.vigil.size() < kVigilThreads) {
+        ::fixy::report(::fixy::Sink::Out,
+                       "  NOTE: {} isolated cores for the {} background threads of each Vigil, so some of them share "
+                       "a core.  Run the bench through loop bench, which claims its six cores.\n",
+                       cores.vigil.size(), kVigilThreads);
     } else {
-        std::printf("  measuring on cpu%d, process confined to the isolated cpus of its affinity\n", record_core);
+        ::fixy::report(::fixy::Sink::Out, "  producer on cpu{}, the background threads of each Vigil on {} cores\n",
+                       cores.record.raw(), cores.vigil.size());
     }
     bench::elevate_priority();
 
@@ -388,19 +412,17 @@ int main() {
         auto d = make_op(0, 1);
         const ::fixy::View<const TensorMeta> records = records_of(d);
         uint64_t tick = 0;
-        return bench::Run("record leaf [2 appends, no drainer]")
-            .core(record_core >= 0 ? record_core : bench::env_core())
-            .measure([&] {
-                d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
-                MetaIndex meta_start = log->try_append(records);
-                if (!meta_start.is_valid()) [[unlikely]] {
-                    log->reset();
-                    meta_start = log->try_append(records);
-                }
-                if (!ring->try_append(d.entry, meta_start, ScopeHash{}, CallsiteHash{})) [[unlikely]] {
-                    ring->reset();
-                }
-            });
+        return bench::Run("record leaf [2 appends, no drainer]").core(record_core_of(cores)).measure([&] {
+            d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
+            MetaIndex meta_start = log->try_append(records);
+            if (!meta_start.is_valid()) [[unlikely]] {
+                log->reset();
+                meta_start = log->try_append(records);
+            }
+            if (!ring->try_append(d.entry, meta_start, ScopeHash{}, CallsiteHash{})) [[unlikely]] {
+                ring->reset();
+            }
+        });
     }());
 
     // ── The recording leaf, ring guaranteed to have room ────────────
@@ -409,7 +431,8 @@ int main() {
     // besides the mode test, so the pair of cases below brackets the leaf
     // from underneath and from the caller's side.
     reports.push_back([&] {
-        Vigil vigil;
+        Vigil vigil = make_vigil(cores);
+        start_pipeline(vigil);
         auto d = make_op(0, 1);
         const ::fixy::View<const TensorMeta> records = records_of(d);
         uint64_t refused = 0;
@@ -418,7 +441,7 @@ int main() {
                           .warmup(RECORD_WARMUP)
                           .samples(RECORD_SAMPLES)
                           .batch(RECORD_BATCH)
-                          .core(record_core >= 0 ? record_core : bench::env_core())
+                          .core(record_core_of(cores))
                           .measure([&] {
                               // Same non-repeating stream as the dispatch_op case below, so the
                               // difference between the two reports is that case's mode test and
@@ -435,6 +458,7 @@ int main() {
                          static_cast<unsigned long long>(refused), RECORD_BODIES);
             std::abort();
         }
+        bench::print_thread_cpus("record_op [2 metas, ring has room]");
         return report;
     }());
 
@@ -449,7 +473,8 @@ int main() {
     // the detector that reads it runs on the background thread. The cost
     // this adds to the body is the one store below.
     reports.push_back([&] {
-        Vigil vigil;
+        Vigil vigil = make_vigil(cores);
+        start_pipeline(vigil);
         auto d = make_op(0, 1);
         const ::fixy::View<const TensorMeta> records = records_of(d);
         uint64_t tick = 0;
@@ -458,7 +483,7 @@ int main() {
                           .warmup(RECORD_WARMUP)
                           .samples(RECORD_SAMPLES)
                           .batch(RECORD_BATCH)
-                          .core(record_core >= 0 ? record_core : bench::env_core())
+                          .core(record_core_of(cores))
                           .measure([&] {
                               d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
                               const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records));
@@ -478,6 +503,7 @@ int main() {
                          100.0 * static_cast<double>(recorded) / static_cast<double>(bodies));
             std::abort();
         }
+        bench::print_thread_cpus("dispatch_op [RECORD leaf, ring has room]");
         return report;
     }());
 
@@ -487,18 +513,21 @@ int main() {
     // this one carries no capacity constraint and runs at the harness's
     // own defaults.
     reports.push_back([&] {
-        Vigil vigil;
+        Vigil vigil = make_vigil(cores);
         setup_compiled_vigil(vigil);
         OpData ops[NUM_OPS];
         for (uint32_t i = 0; i < NUM_OPS; i++)
             ops[i] = make_op(10, i);
 
         uint32_t op_idx = 0;
-        return bench::run("dispatch_op [COMPILED leaf, cyclic]", [&] {
-            auto& d = ops[op_idx];
-            bench::do_not_optimize(vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d))));
-            op_idx = (op_idx + 1) % NUM_OPS;
-        });
+        bench::Report report =
+            bench::Run("dispatch_op [COMPILED leaf, cyclic]").core(record_core_of(cores)).measure([&] {
+                auto& d = ops[op_idx];
+                bench::do_not_optimize(vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d))));
+                op_idx = (op_idx + 1) % NUM_OPS;
+            });
+        bench::print_thread_cpus("dispatch_op [COMPILED leaf, cyclic]");
+        return report;
     }());
 
     bench::emit_reports(reports, bench::env_json());

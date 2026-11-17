@@ -138,7 +138,9 @@ crucible_bench(bench_swmr_session)
 # the Release default, `observe`, and measures the armed shape.
 #
 # Keep it off that list.
-crucible_bench(bench_record_leaf)
+# Six threads: the producer, and the pipeline thread and the four stages of
+# each Vigil.
+crucible_bench(bench_record_leaf CORES 6)
 # The baseline of the hardware tier of this host (cmake/HostTier.cmake).  A
 # host of a tier with no baseline file measures, prints its numbers and passes.
 # A host with no tier gets an empty path, with the same result.
