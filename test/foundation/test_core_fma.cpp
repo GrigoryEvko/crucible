@@ -13,8 +13,8 @@
 // two signs, the infinities and the NaNs, and random values from a fixed
 // Philox seed.
 
-#include <foundation/Simd.h>
 #include <foundation/core/Float.h>
+#include <foundation/os/X86Level.h>
 
 #include "../exact_sum.h"
 #include "../test_assert.h"
@@ -61,7 +61,8 @@ struct Counts {
 // and each aarch64 host.
 [[nodiscard]] bool can_run_wide_unit() noexcept {
 #if defined(__x86_64__)
-    return ::foundation::simd::runtime_supports_x86_64_v3();
+    namespace os = ::foundation::os;
+    return os::x86_level_of(os::read_x86_feature_words()) >= os::X86Level::v3;
 #else
     return true;
 #endif

@@ -25,8 +25,8 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/ThreadTasks.h>
-#include <foundation/Simd.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/os/X86Level.h>
 
 #include "exact_sum.h"
 #include "foundation/philox_stream.h"
@@ -424,11 +424,13 @@ void test_the_digests_hold() {
     assert(agree_with_the_constants(::crucible::test::kernel_digests_of_this_unit()));
     std::size_t units = 1;
 #if defined(__x86_64__)
-    if (::foundation::simd::runtime_supports_x86_64_v3()) {
+    namespace os = ::foundation::os;
+    os::X86Level const host = os::x86_level_of(os::read_x86_feature_words());
+    if (host >= os::X86Level::v3) {
         assert(agree_with_the_constants(::crucible::test::kernel_digests_of_v3_unit()));
         ++units;
     }
-    if (::foundation::simd::runtime_supports_x86_64_v4()) {
+    if (host >= os::X86Level::v4) {
         assert(agree_with_the_constants(::crucible::test::kernel_digests_of_v4_unit()));
         ++units;
     }
