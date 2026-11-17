@@ -34,6 +34,10 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     target_compile_options(crucible_level PRIVATE -march=x86-64 -mtune=generic)
     set_target_properties(crucible_level PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
     install(TARGETS crucible_level LIBRARY DESTINATION lib/crucible COMPONENT vessel)
+    # The loader opens the probe before each vessel library, so a build of a
+    # vessel library builds the probe too, such as the vessel step of the
+    # gate, which builds only the two vessel libraries.
+    add_dependencies(crucible_vessel crucible_level)
 endif()
 
 # ── Stdlib ABI ───────────────────────────────────────────────────────
@@ -165,6 +169,9 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     if(CRUCIBLE_X86_LEVEL)
         install(TARGETS crucible_dispatch LIBRARY
             DESTINATION lib/crucible/x86-64-${CRUCIBLE_X86_LEVEL} COMPONENT vessel)
+    endif()
+    if(TARGET crucible_level)
+        add_dependencies(crucible_dispatch crucible_level)
     endif()
 
     message(STATUS "Crucible: building native dispatch library (TORCH_DIR=${TORCH_DIR})")
