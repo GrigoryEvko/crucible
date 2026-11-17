@@ -189,11 +189,14 @@ class Target:
     `source_dir` is the absolute directory of the CMake file that makes the
     target, and `origin` is the position of the command that makes it.
     `link_fragments` holds each (fragment, role) of the link line, and it is
-    empty for a target with no link step.
+    empty for a target with no link step.  `defines` holds each compile
+    definition of the compile groups of the target, as "NAME" or "NAME=VALUE",
+    one time each, in the order of the reply.
     """
 
     __slots__ = (
         "artifacts",
+        "defines",
         "folder",
         "json_file",
         "link_fragments",
@@ -218,11 +221,13 @@ class Target:
         link_fragments: tuple[tuple[str, str], ...] = (),
         origin: Origin | None = None,
         json_file: str = "",
+        defines: tuple[str, ...] = (),
     ) -> None:
         """Hold the parts of one target."""
         self.name = name
         self.type_name = type_name
         self.artifacts = artifacts
+        self.defines = defines
         self.folder = folder
         self.source_dir = source_dir
         self.sources = sources
@@ -673,7 +678,10 @@ def _target_of(found: dict[str, object], path: str, source: str, build: str) -> 
     graph = _dict_of(found.get("backtraceGraph"), path, "backtrace graph")
     paths = _dict_of(found.get("paths"), path, "paths")
     headers: list[PrecompileHeader] = []
+    defines: dict[str, None] = {}
     for group in _list_of(found.get("compileGroups"), path, "compile groups"):
+        for define in _list_of(_dict_of(group, path, "compile group").get("defines"), path, "defines"):
+            defines[_text_of(_dict_of(define, path, "define").get("define"), path, "define")] = None
         for header in _list_of(_dict_of(group, path, "compile group").get("precompileHeaders"), path, "headers"):
             fields = _dict_of(header, path, "precompiled header")
             headers.append(
@@ -705,6 +713,7 @@ def _target_of(found: dict[str, object], path: str, source: str, build: str) -> 
         link_fragments=fragments,
         origin=_origin_of(graph, found.get("backtrace"), source, path),
         json_file=os.path.basename(path),
+        defines=tuple(defines),
     )
 
 

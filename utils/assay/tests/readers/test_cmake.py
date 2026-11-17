@@ -42,7 +42,13 @@ PLANTED_TARGET = {
         {"path": "/b/CMakeFiles/planted.dir/cmake_pch.hxx", "isGenerated": True},
     ],
     "compileGroups": [
-        {"language": "CXX", "sourceIndexes": [0], "precompileHeaders": [{"header": "<vector>", "backtrace": 2}]}
+        {
+            "language": "CXX",
+            "sourceIndexes": [0],
+            "precompileHeaders": [{"header": "<vector>", "backtrace": 2}],
+            "defines": [{"define": "CRUCIBLE_BENCH"}, {"define": "CRUCIBLE_BENCH_CORES=2", "backtrace": 2}],
+        },
+        {"language": "CXX", "sourceIndexes": [], "defines": [{"define": "CRUCIBLE_BENCH"}, {"define": "LATE=1"}]},
     ],
     "link": {"commandFragments": [{"fragment": "-O1", "role": "flags"}, {"fragment": "-lm", "role": "libraries"}]},
 }
@@ -55,6 +61,7 @@ add_library(header_target STATIC c.cpp)
 target_precompile_headers(header_target PRIVATE <vector>)
 add_library(reuse_target STATIC d.cpp)
 target_precompile_headers(reuse_target REUSE_FROM header_target)
+target_compile_definitions(reuse_target PRIVATE PLANTED_CORES=2 PLANTED_FLAG)
 """
 
 
@@ -128,6 +135,10 @@ def planted_cases(expect: testing.Expect) -> None:
         expect(
             "a target gives each link fragment with its role",
             target.link_fragments == (("-O1", "flags"), ("-lm", "libraries")),
+        )
+        expect(
+            "a target gives each compile definition of its groups one time, in the order of the reply",
+            target.defines == ("CRUCIBLE_BENCH", "CRUCIBLE_BENCH_CORES=2", "LATE=1"),
         )
         cmake.plant(build, cache={"CMAKE_HOME_DIRECTORY": "/second"})
         expect(
@@ -411,6 +422,10 @@ def configured_cases(expect: testing.Expect) -> None:
             not reuse.precompile_headers
             and any(Path(item.path).name == "cmake_pch.hxx" for item in reuse.sources)
             and reuse.origin == cmake.Origin(str(source / "CMakeLists.txt"), 7),
+        )
+        expect(
+            "a target gives its compile definitions, and a target with none gives no definition",
+            {"PLANTED_CORES=2", "PLANTED_FLAG"} <= set(reuse.defines) and not targets["unity_target"].defines,
         )
 
 
