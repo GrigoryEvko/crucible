@@ -470,11 +470,11 @@ struct CommaSplit {
     return ::foundation::core::parse_hex<std::uint64_t>(field).ok();
 }
 
-// One line of the head log: "<step>,<16 hexadecimal digits>,<ts>".
+// One line of the head log: "<step>,<16 hexadecimal digits>,<order>".
 struct LogLine {
     std::uint64_t step = 0;
     std::uint64_t hash = 0;
-    std::uint64_t committed_at = 0;
+    std::uint64_t order = 0;
 };
 
 [[nodiscard]] ::fixy::Option<LogLine> parse_log_line_(::fixy::TextView line) noexcept {
@@ -482,8 +482,8 @@ struct LogLine {
     CRUCIBLE_TRY(hash_split, split_at_comma_(first_split.tail));
     CRUCIBLE_TRY(step, parse_decimal_(first_split.head));
     CRUCIBLE_TRY(hash, parse_hex_field_(hash_split.head));
-    CRUCIBLE_TRY(committed_at, parse_decimal_(hash_split.tail));
-    return ::fixy::some(LogLine{.step = step, .hash = hash, .committed_at = committed_at});
+    CRUCIBLE_TRY(order, parse_decimal_(hash_split.tail));
+    return ::fixy::some(LogLine{.step = step, .hash = hash, .order = order});
 }
 
 // One line of a session-event index:
@@ -974,28 +974,34 @@ ContentHash Cipher::latest_committed_head() const noexcept {
 }
 
 Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView const&, ContentHash content_hash,
-                                          uint64_t step_id, ::fixy::MonotonicClockBytes<std::uint64_t> committed_at) {
+                                          uint64_t step_id) {
     // Weakly increasing, not strictly: duplicate step ids are accepted
     // at this gate.  The strict consecutive-by-one check belongs to the
     // session-event batch invariant, not to the head log.
     if (!log_.empty()) {
         CRUCIBLE_PRE(log_.back().step_id().value <= step_id);
     }
-    const std::uint64_t committed_at_ns = committed_at.peek();
+    // The commit takes the next place before its append.  A write that
+    // passed before a failed flush can leave the record in the file, and a
+    // reopen then reads that commit.  So a failed append keeps its place,
+    // and the next commit gets a larger one.
+    if (commits_.get() == ::fixy::max_of<std::uint64_t>) {
+        return ::fixy::err(CommitError::order_exhausted);
+    }
+    commits_.bump();
+    const ::fixy::session::CipherEventOrder order{commits_.get()};
 
     // The log record is the commit, and it is durable before HEAD moves.
-    // A failed append changes no state in memory, so this store and a
-    // reopen agree.  A write that passed before a failed flush can leave
-    // the record in the file, and a reopen then reads that commit.
+    // A failed append moves no head, so this store and a reopen agree.
     //
-    // Record layout: "<step_id>,<16-hex content_hash>,<ts>\n".  The
+    // Record layout: "<step_id>,<16-hex content_hash>,<order>\n".  The
     // longest form is 20 decimal digits + 1 + 16 + 1 + 20 decimal digits
     // + 1 = 59 bytes, so 64 bytes suffices.  That is well under the
     // 4096-byte window in which POSIX makes a single O_APPEND write to a
     // regular file atomic.
     const ::fixy::FixedText<16> hash_digits = hex_digits_(content_hash.raw());
     ::fixy::FixedText<64> record{};
-    const ::fixy::TextView log_line = ::fixy::format(record, "{},{},{}\n", step_id, hash_digits.view(), committed_at_ns)
+    const ::fixy::TextView log_line = ::fixy::format(record, "{},{},{}\n", step_id, hash_digits.view(), order.raw())
                                           .expect("a log record fits 64 characters");
     const bool is_appended =
         with_file_ctx_(file_ctx, [&](auto const& ctx) { return append_entry_at_(ctx, root_dirfd_, "log", log_line); });
@@ -1003,7 +1009,7 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
         return ::fixy::err(CommitError::log_append);
     }
     log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{step_id},
-                                           ::fixy::session::StateHash{content_hash.raw()}, committed_at_ns));
+                                           ::fixy::session::StateHash{content_hash.raw()}, order));
     head_ = content_hash;
 
     // HEAD is a copy of the last commit of the log.  A failed write leaves
@@ -1194,10 +1200,15 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
         // order with a contract that aborts.  A line out of order is a
         // corrupt line, so it is skipped like the others.
         if (!log_.empty() && line.step < log_.back().step_id().value) continue;
+        // Each commit takes a larger place than the commit before it, also
+        // after a failed append, so a place that does not grow is a corrupt
+        // line.  The test keeps the count from going back.
+        if (line.order <= commits_.get()) continue;
 
-        log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
-                                               ::fixy::session::StepId{line.step},
-                                               ::fixy::session::StateHash{line.hash}, line.committed_at));
+        commits_.advance(line.order);
+        log_.append(SessionEvent::cipher_event(
+            ::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{line.step},
+            ::fixy::session::StateHash{line.hash}, ::fixy::session::CipherEventOrder{line.order}));
     }
 }
 

@@ -526,15 +526,14 @@ public:
 
     // Serializes the active region to the store and advances its head.
     // A no-op when no store path was configured.  The store writes and
-    // flushes files, and the head commit reads the monotonic clock, so the
-    // caller's context must fit a Cipher commit.  False when the store or
-    // the clock read of the commit failed.
+    // flushes files, so the caller's context must fit the store.  The head
+    // commit reads no clock.  False when the store or the commit failed.
     //
     // This header only declares the store.  A caller of persist or load
     // includes crucible/Cipher.h, as each caller of a member of the store
     // does (crucible/cipher/SessionPersistenceSurface.h).
     template <class Ctx>
-        requires ::crucible::cipher::CtxFitsCipherCommit<Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
         return cipher_.with_mut(
             [this, &ctx](auto cipher) noexcept {

@@ -3384,6 +3384,12 @@ fixy_neg_compile_test(neg_sess_event_forged_by_start_lifetime_as
   "static assertion failed"
   "fixy::session::SessionEvent. is not an implicit-lifetime type")
 
+# A persistence event takes the place of a count that its store keeps, and
+# a bare integer such as a clock reading is no place.
+fixy_neg_compile_test(neg_sess_cipher_event_order_bare_integer
+  "cannot convert .const uint64_t. \\{aka .const long unsigned int.\\} to .fixy::session::CipherEventOrder."
+  "foundation::core::Id<fixy::session::CipherEventOrderTag, long unsigned int>")
+
 # ── Crash and checkpoint attacks ──────────────────────────────────────
 
 # The crash reporter is the one author of a cell's report.  No byte route

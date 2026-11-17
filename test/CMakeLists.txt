@@ -3594,15 +3594,6 @@ crucible_neg_compile_test(neg_cipher_record_event_alloc_only
 crucible_neg_compile_test(neg_cipher_record_event_bg_only
   "no matching function for call to .crucible::Cipher::record_event."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >")
-# A commit also stamps the log with a reading of the monotonic clock, so
-# record_event and Vigil::persist refuse a row that fits the store and
-# owns none of Bg, Init and Test.
-crucible_neg_compile_test(neg_cipher_record_event_store_only_row
-  "no matching function for call to .crucible::Cipher::record_event."
-  "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >")
-crucible_neg_compile_test(neg_vigil_persist_store_only_row
-  "no matching function for call to .crucible::Vigil::persist."
-  "required for the satisfaction of .CtxFitsMonotonicClock<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >")
 crucible_neg_compile_test(neg_cipher_open_view_hot_fg_ctx
   "no matching function for call to .crucible::Cipher::mint_open_view.foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. const."
   "required for the satisfaction of .CtxFitsCipherPersistence<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >")

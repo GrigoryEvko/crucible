@@ -517,6 +517,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::os, "the arguments of main: a view of argv and its cursor, which carry no claim to fold"},
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
+    {^^::fixy::session::side, "the roles of the two tiers of a persistence event: empty tags that a Side names at "
+                              "compile time, and none of them is a value"},
     {^^::fixy::session::detach_reason, kGradeVocabulary},
     {^^::fixy::session::position, "protocol positions that a view names; a view carries no claim to fold"},
     {^^::fixy::session::watch, "the runtime watch over live sessions: its records are process state, not a claim"},
@@ -1323,6 +1325,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::InnerPermSetHash, kPayload},
     {^^::fixy::session::LabelWord, kPayload},
     {^^::fixy::session::StepId, kPayload},
+    {^^::fixy::session::CipherEventOrderTag,
+     "the tag of the place of a persistence event: an incomplete class that an Id names, and never a value"},
     {^^::fixy::session::SessionEvent,
      "one record of a session event log: it holds the fields of one step, and it makes no claim about a value"},
     {^^::fixy::session::SessionEventLog, kDescriptor},

@@ -79,7 +79,9 @@
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/Id.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/Side.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
 
@@ -213,6 +215,22 @@ enum class CheckpointRole : std::uint8_t {
 };
 
 using ::foundation::algebra::lattices::CipherTierTag;
+
+// The place of a persistence event in the order of the events of its store:
+// the next value of a count that the store keeps.  The store reads no clock
+// for it, so two runs of one computation give the same places.
+using CipherEventOrder = ::foundation::core::Id<struct CipherEventOrderTag, std::uint64_t>;
+
+// The two roles of a tier in a persistence event.
+namespace side {
+// The tier that the event takes the content from.
+struct SourceTier final {};
+// The tier that the event puts the content in.
+struct TargetTier final {};
+}  // namespace side
+
+using SourceTierOf = ::foundation::core::Side<side::SourceTier, CipherTierTag>;
+using TargetTierOf = ::foundation::core::Side<side::TargetTier, CipherTierTag>;
 
 namespace detail::event_log {
 
@@ -419,22 +437,23 @@ public:
         return SessionEvent{SessionOp::Accept, sender, recipient, accepted_proto.value, inner_perm_set.value};
     }
 
-    // A persistence event.  The lanes hold the timestamp and the content
-    // hash, and the two control bytes hold the source and target tiers.
-    [[nodiscard]] static constexpr SessionEvent cipher_event(SessionOp op, StepId step, StateHash content,
-                                                             std::uint64_t timestamp_ns,
-                                                             CipherTierTag from_tier = CipherTierTag::Cold,
-                                                             CipherTierTag to_tier = CipherTierTag::Cold) noexcept {
+    // A persistence event.  The lanes hold the place of the event in the
+    // order of the events of its store and the content hash, and the two
+    // control bytes hold the source and target tiers.
+    [[nodiscard]] static constexpr SessionEvent
+    cipher_event(SessionOp op, StepId step, StateHash content, CipherEventOrder order,
+                 SourceTierOf from_tier = SourceTierOf{CipherTierTag::Cold},
+                 TargetTierOf to_tier = TargetTierOf{CipherTierTag::Cold}) noexcept {
         CRUCIBLE_PRE(session_op_is_cipher(op));
-        CRUCIBLE_PRE(detail::event_log::names_enumerator<CipherTierTag>(static_cast<std::uint8_t>(from_tier)));
-        CRUCIBLE_PRE(detail::event_log::names_enumerator<CipherTierTag>(static_cast<std::uint8_t>(to_tier)));
+        CRUCIBLE_PRE(detail::event_log::names_enumerator<CipherTierTag>(static_cast<std::uint8_t>(from_tier.value())));
+        CRUCIBLE_PRE(detail::event_log::names_enumerator<CipherTierTag>(static_cast<std::uint8_t>(to_tier.value())));
         SessionEvent event{op,
                            RoleTagId{},
                            RoleTagId{},
-                           timestamp_ns,
+                           order.raw(),
                            content.value,
-                           static_cast<std::uint8_t>(from_tier),
-                           static_cast<std::uint8_t>(to_tier)};
+                           static_cast<std::uint8_t>(from_tier.value()),
+                           static_cast<std::uint8_t>(to_tier.value())};
         event.step_id_ = step;
         return event;
     }
@@ -483,7 +502,9 @@ public:
     [[nodiscard]] constexpr std::uint64_t min_epoch() const noexcept { return epoch_threshold_; }
     [[nodiscard]] constexpr std::uint64_t min_generation() const noexcept { return generation_threshold_; }
     [[nodiscard]] constexpr StateHash cipher_content() const noexcept { return StateHash{payload_hash_.value}; }
-    [[nodiscard]] constexpr std::uint64_t cipher_timestamp_ns() const noexcept { return payload_schema_.value; }
+    [[nodiscard]] constexpr CipherEventOrder cipher_event_order() const noexcept {
+        return CipherEventOrder{payload_schema_.value};
+    }
     [[nodiscard]] constexpr CipherTierTag cipher_from_tier() const noexcept {
         return static_cast<CipherTierTag>(branch_index_);
     }

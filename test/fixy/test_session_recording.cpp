@@ -66,8 +66,21 @@ static_assert(round_trips(s::SessionEvent::checkpoint_roll(kSelf, kPeer, s::Chec
 static_assert(round_trips(s::SessionEvent::checkpoint_abort(kSelf, kPeer, s::CheckpointRole::Active)));
 static_assert(round_trips(s::SessionEvent::delegate_handoff(kSelf, kPeer, {5}, {6})));
 static_assert(round_trips(s::SessionEvent::accept_handoff(kSelf, kPeer, {5}, {6})));
-static_assert(round_trips(s::SessionEvent::cipher_event(s::SessionOp::TierPromote, s::StepId{4}, {8}, 1000,
-                                                        s::CipherTierTag::Warm, s::CipherTierTag::Hot)));
+static_assert(round_trips(s::SessionEvent::cipher_event(s::SessionOp::TierPromote, s::StepId{4}, {8},
+                                                        s::CipherEventOrder{1000},
+                                                        s::SourceTierOf{s::CipherTierTag::Warm},
+                                                        s::TargetTierOf{s::CipherTierTag::Hot})));
+// A persistence event keeps its place and its two tiers, each in its role.
+static_assert(s::SessionEvent::cipher_event(s::SessionOp::TierPromote, s::StepId{4}, {8}, s::CipherEventOrder{7},
+                                            s::SourceTierOf{s::CipherTierTag::Warm},
+                                            s::TargetTierOf{s::CipherTierTag::Hot})
+                  .cipher_event_order()
+              == s::CipherEventOrder{7});
+static_assert(s::SessionEvent::cipher_event(s::SessionOp::TierPromote, s::StepId{4}, {8}, s::CipherEventOrder{7},
+                                            s::SourceTierOf{s::CipherTierTag::Warm},
+                                            s::TargetTierOf{s::CipherTierTag::Hot})
+                  .cipher_from_tier()
+              == s::CipherTierTag::Warm);
 
 static_assert(s::session_op_name(s::SessionOp::CheckpointRoll) == "CheckpointRoll");
 
@@ -110,7 +123,9 @@ static_assert(s::SessionEvent::recv(kSelf, kPeer, s::default_schema_hash<int>, s
               == s::PayloadHash{8});
 
 // The public step key reads the step of an event and orders two steps.
-static_assert(s::StepIdKeyFn{}(s::SessionEvent::cipher_event(s::SessionOp::StoreCommitted, s::StepId{9}, {1}, 0)).value
+static_assert(s::StepIdKeyFn{}(s::SessionEvent::cipher_event(s::SessionOp::StoreCommitted, s::StepId{9}, {1},
+                                                             s::CipherEventOrder{1}))
+                  .value
               == 9);
 static_assert(s::StepIdLess{}(s::StepId{1}, s::StepId{2}));
 static_assert(!s::StepIdLess{}(s::StepId{2}, s::StepId{2}));

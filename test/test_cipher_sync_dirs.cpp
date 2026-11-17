@@ -283,10 +283,11 @@ TraceLog g_trace_log{};
     ops.get(0).expect("the region holds one op")->schema_hash = crucible::SchemaHash{0x5EC0};
     const crucible::ContentHash stored = cipher.store(
         ctx, view, crucible::Cipher::content_addressed(crucible::make_region(ctx.cap().alloc, arena, ops)));
-    const fixy::HeapArray<crucible::Cipher::SessionEvent> events = fixy::mint_heap_array(
-        ctx.cap().alloc, 1,
-        crucible::Cipher::SessionEvent::cipher_event(fixy::session::SessionOp::StoreCommitted, fixy::session::StepId{1},
-                                                     fixy::session::StateHash{0x5E55}, 1));
+    const fixy::HeapArray<crucible::Cipher::SessionEvent> events =
+        fixy::mint_heap_array(ctx.cap().alloc, 1,
+                              crucible::Cipher::SessionEvent::cipher_event(
+                                  fixy::session::SessionOp::StoreCommitted, fixy::session::StepId{1},
+                                  fixy::session::StateHash{0x5E55}, fixy::session::CipherEventOrder{1}));
     const crucible::Cipher::PersistResult persisted =
         cipher.persist_session_events(ctx, view, ctx.cap().alloc, events.view());
     return static_cast<bool>(stored) && persisted.is_ok();

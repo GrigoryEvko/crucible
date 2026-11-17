@@ -1,14 +1,13 @@
-// Recording an event writes a file and blocks on a syscall, and it stamps
-// the log entry with a reading of the monotonic clock.  So the caller has
-// to hand in a context whose row admits IO and Block, and whose row owns
-// Bg, Init or Test.  A caller on the foreground path holds no such
-// context, and the call does not compile for it.  Everything here is the
-// accepting side of that fence.  The negative-compile fixtures hold the
-// rejecting side.
+// Recording an event writes a file and blocks on a syscall.  So the caller
+// has to hand in a context whose row admits IO and Block.  A caller on the
+// foreground path holds no such context, and the call does not compile for
+// it.  The commit stamps the log line with the next place of a count that
+// the store keeps, and it reads no clock.  Everything here is the accepting
+// side of that fence, and the stamps of the log.  The negative-compile
+// fixtures hold the rejecting side.
 
 #include <crucible/Cipher.h>
 #include <fixy/Ctx.h>
-#include <fixy/os/Time.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include "scratch_dir.h"
@@ -51,7 +50,7 @@ namespace eff = ::foundation::effects;
 template <typename Ctx>
 static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view, ContentHash hash, std::uint64_t step) {
     const auto recorded = cipher.record_event(ctx, view, hash, step);
-    assert(recorded.is_ok() && "record_event must commit when the clock read succeeds");
+    assert(recorded.is_ok() && "record_event must commit when the writes pass");
 }
 
 // The step of a commit that failed.
@@ -66,30 +65,47 @@ static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view,
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
-// The third field of each line of the log: the time of each commit, in
+// The third field of each line of the log: the place of each commit, in
 // the order of the commits.
-[[nodiscard]] static std::vector<std::uint64_t> log_timestamps(const std::string& dir) {
-    std::vector<std::uint64_t> timestamps;
+[[nodiscard]] static std::vector<std::uint64_t> log_orders(const std::string& dir) {
+    std::vector<std::uint64_t> orders;
     std::ifstream log(dir + "/log");
     std::string line;
     while (std::getline(log, line)) {
         const std::size_t second_comma = line.find(',', line.find(',') + 1);
         assert(second_comma != std::string::npos);
-        std::uint64_t timestamp = 0;
+        std::uint64_t order = 0;
         const char* const end = line.data() + line.size();
-        const auto [stop, error] = std::from_chars(line.data() + second_comma + 1, end, timestamp);
+        const auto [stop, error] = std::from_chars(line.data() + second_comma + 1, end, order);
         assert(error == std::errc{} && stop == end);
-        timestamps.push_back(timestamp);
+        orders.push_back(order);
     }
-    return timestamps;
+    return orders;
 }
 
-// A reading of CLOCK_MONOTONIC in nanoseconds.
-[[nodiscard]] static std::uint64_t monotonic_now_ns() {
-    const auto clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(store_ctx());
-    return clock.read(::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(store_ctx()))
-        .expect("the monotonic clock gives a reading")
-        .peek();
+// The directory of the root of cipher.
+[[nodiscard]] static ::fixy::fs::Dirfd root_dirfd_of(Cipher const& cipher) {
+    return ::fixy::fs::open_dirfd(
+               store_ctx(), ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(cipher.root()))
+                                .expect("the sanitizer passes the root of the test"))
+        .expect("the root of the test opens");
+}
+
+// The whole text of the log of cipher.
+[[nodiscard]] static ::fixy::HeapText log_text_of(Cipher const& cipher) {
+    ::fixy::GrowText text = ::fixy::mint_grow_text(Cipher::MAX_OBJECT_BYTES);
+    assert(::fixy::fs::read_whole_at(store_ctx(), store_ctx().cap().alloc, root_dirfd_of(cipher), "log", text).is_ok());
+    return ::fixy::freeze(std::move(text));
+}
+
+// Writes text as the whole log of cipher.  A store that opens the root after
+// the write reads the text.
+static void write_log_of(Cipher const& cipher, ::fixy::TextView text) {
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    const ::fixy::fs::OwnedFd file = ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root_dirfd_of(cipher), "log")
+                                         .expect("the test opens the log to write it")
+                                         .consume();
+    assert(::fixy::fs::write_full(store_ctx(), file, text).is_ok());
 }
 
 static void test_t01_required_row_pinned() {
@@ -130,11 +146,14 @@ static void test_t02_subrow_accepted_shapes() {
     static_assert(crucible::CtxFitsCipherPersistence<::fixy::BgLoadCtx>);
     static_assert(crucible::CtxFitsCipherPersistence<::fixy::InitLoadCtx>);
 
-    // The same three rows also own Test, Bg or Init, so each one also fits
-    // the clock reader and the commit.
-    static_assert(crucible::cipher::CtxFitsCipherCommit<::fixy::TestRunnerCtx>);
-    static_assert(crucible::cipher::CtxFitsCipherCommit<::fixy::BgLoadCtx>);
-    static_assert(crucible::cipher::CtxFitsCipherCommit<::fixy::InitLoadCtx>);
+    // The commit reads no clock, so a context narrowed to IO and Block fits
+    // the commit too: its row owns none of Bg, Init and Test, and it holds
+    // no Nondet.
+    using StoreOnly = decltype(store_ctx().in_row<Required>());
+    static_assert(crucible::CtxFitsCipherPersistence<StoreOnly>);
+    static_assert(requires(Cipher& cipher, StoreOnly const& ctx, Cipher::OpenView const& view) {
+        cipher.record_event(ctx, view, ContentHash{1u}, 1u);
+    });
 
     crucible::test::pass("  T02 subrow_accepted_shapes:              PASSED\n");
 }
@@ -165,15 +184,6 @@ static void test_t03_subrow_rejected_shapes() {
     static_assert(!crucible::CtxFitsCipherPersistence<::fixy::ColdInitCtx>);
     static_assert(!crucible::CtxFitsCipherPersistence<Required>);
     static_assert(!crucible::CtxFitsCipherPersistence<int>);
-
-    // A context narrowed to IO and Block fits the store and not the
-    // commit: its row owns none of Bg, Init and Test, so it cannot mint
-    // the clock reader that stamps the log entry.
-    using StoreOnly = decltype(store_ctx().in_row<Required>());
-    static_assert(crucible::CtxFitsCipherPersistence<StoreOnly>);
-    static_assert(!crucible::cipher::CtxFitsCipherCommit<StoreOnly>);
-    static_assert(!crucible::cipher::CtxFitsCipherCommit<::fixy::HotFgCtx>);
-    static_assert(!crucible::cipher::CtxFitsCipherCommit<::fixy::BgDrainCtx>);
 
     crucible::test::pass("  T03 subrow_rejected_shapes:              PASSED\n");
 }
@@ -340,11 +350,10 @@ static void test_t10_api_surface_pinned(const char* base_dir) {
     crucible::test::pass("  T10 api_surface_pinned:                  PASSED\n");
 }
 
-// Each log line holds a reading of CLOCK_MONOTONIC.  So every recorded
-// time lies between two readings taken before and after the records, and
-// the times do not decrease from one commit to the next.
+// Each log line holds the place of its commit: one for the first commit,
+// and one more for each commit after it.
 
-static void test_t11_log_holds_monotonic_readings(const char* base_dir) {
+static void test_t11_log_holds_the_places(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t11";
     std::filesystem::create_directories(dir);
     auto cipher = open_cipher(dir);
@@ -352,23 +361,114 @@ static void test_t11_log_holds_monotonic_readings(const char* base_dir) {
     const auto ctx = store_ctx();
 
     constexpr int N = 8;
-    const std::uint64_t before_ns = monotonic_now_ns();
     for (int i = 0; i < N; ++i) {
         record(cipher, ctx, view, ContentHash{std::uint64_t{0x2000u} + static_cast<std::uint64_t>(i)},
                static_cast<std::uint64_t>(i));
     }
-    const std::uint64_t after_ns = monotonic_now_ns();
 
-    const std::vector<std::uint64_t> timestamps = log_timestamps(dir);
-    assert(timestamps.size() == static_cast<std::size_t>(N));
-    for (std::size_t i = 0; i < timestamps.size(); ++i) {
-        assert(before_ns <= timestamps[i] && timestamps[i] <= after_ns);
-        if (i != 0) {
-            assert(timestamps[i - 1] <= timestamps[i]);
-        }
+    const std::vector<std::uint64_t> orders = log_orders(dir);
+    assert(orders.size() == static_cast<std::size_t>(N));
+    for (std::size_t i = 0; i < orders.size(); ++i) {
+        assert(orders[i] == i + 1);
     }
 
-    crucible::test::pass("  T11 log_holds_monotonic_readings:        PASSED\n");
+    crucible::test::pass("  T11 log_holds_the_places:                PASSED\n");
+}
+
+// Two runs of one computation write the same log, byte for byte.  On a log
+// that holds a clock time, the two logs hold two times.
+
+// Records the three commits of one computation: two of them at one step.
+static void record_one_computation(Cipher& cipher) {
+    const auto view = cipher.mint_open_view(store_ctx());
+    record(cipher, store_ctx(), view, ContentHash{0x3001u}, 1u);
+    record(cipher, store_ctx(), view, ContentHash{0x3002u}, 4u);
+    record(cipher, store_ctx(), view, ContentHash{0x3003u}, 4u);
+}
+
+static void test_t12_two_runs_write_one_log(const crucible::test::ScratchDir& scratch) {
+    auto first = open_cipher(scratch.file("t12_first"));
+    auto second = open_cipher(scratch.file("t12_second"));
+    record_one_computation(first);
+    record_one_computation(second);
+
+    const ::fixy::HeapText first_log = log_text_of(first);
+    const ::fixy::HeapText second_log = log_text_of(second);
+    assert(first_log.view() == second_log.view());
+    assert(first_log.view()
+           == ::fixy::TextView{"1,0000000000003001,1\n"
+                               "4,0000000000003002,2\n"
+                               "4,0000000000003003,3\n"});
+
+    crucible::test::pass("  T12 two_runs_write_one_log:              PASSED\n");
+}
+
+// A store that opens again continues the count from the place of the last
+// line of its log.
+
+static void test_t13_reopen_continues_the_places(const crucible::test::ScratchDir& scratch) {
+    {
+        auto cipher = open_cipher(scratch.file("t13"));
+        const auto view = cipher.mint_open_view(store_ctx());
+        record(cipher, store_ctx(), view, ContentHash{0x4001u}, 1u);
+        record(cipher, store_ctx(), view, ContentHash{0x4002u}, 2u);
+    }
+    auto cipher = open_cipher(scratch.file("t13"));
+    const auto view = cipher.mint_open_view(store_ctx());
+    record(cipher, store_ctx(), view, ContentHash{0x4003u}, 3u);
+
+    const ::fixy::HeapText log = log_text_of(cipher);
+    assert(log.view()
+           == ::fixy::TextView{"1,0000000000004001,1\n"
+                               "2,0000000000004002,2\n"
+                               "3,0000000000004003,3\n"});
+
+    crucible::test::pass("  T13 reopen_continues_the_places:         PASSED\n");
+}
+
+// A line whose place does not grow is a corrupt line, and the open skips
+// it.  The count continues from the last line that the open reads.
+
+static void test_t14_open_skips_a_place_that_does_not_grow(const crucible::test::ScratchDir& scratch) {
+    write_log_of(open_cipher(scratch.file("t14")), ::fixy::TextView{"1,0000000000005001,5\n"
+                                                                    "2,0000000000005002,5\n"
+                                                                    "3,0000000000005003,4\n"
+                                                                    "4,0000000000005004,6\n"});
+    auto cipher = open_cipher(scratch.file("t14"));
+    const auto view = cipher.mint_open_view(store_ctx());
+    assert(cipher.head() == ContentHash{0x5004u});
+    assert(cipher.hash_at_step(view, 2u) == ContentHash{0x5001u});
+    assert(cipher.hash_at_step(view, 3u) == ContentHash{0x5001u});
+
+    record(cipher, store_ctx(), view, ContentHash{0x5005u}, 5u);
+    const ::fixy::HeapText log = log_text_of(cipher);
+    assert(log.view()
+           == ::fixy::TextView{"1,0000000000005001,5\n"
+                               "2,0000000000005002,5\n"
+                               "3,0000000000005003,4\n"
+                               "4,0000000000005004,6\n"
+                               "5,0000000000005005,7\n"});
+
+    crucible::test::pass("  T14 open_skips_a_place_that_does_not_grow: PASSED\n");
+}
+
+// A log whose last place is the largest count leaves the next commit no
+// place.  The commit reports it, and the head does not move.
+
+static void test_t15_no_place_after_the_largest(const crucible::test::ScratchDir& scratch) {
+    constexpr ::fixy::TextView largest{"1,0000000000006001,18446744073709551615\n"};
+    write_log_of(open_cipher(scratch.file("t15")), largest);
+    auto cipher = open_cipher(scratch.file("t15"));
+    const auto view = cipher.mint_open_view(store_ctx());
+    assert(cipher.head() == ContentHash{0x6001u});
+
+    assert(failure_of(cipher.record_event(store_ctx(), view, ContentHash{0x6002u}, 2u))
+           == Cipher::CommitError::order_exhausted);
+    assert(cipher.head() == ContentHash{0x6001u});
+    const ::fixy::HeapText log = log_text_of(cipher);
+    assert(log.view() == largest);
+
+    crucible::test::pass("  T15 no_place_after_the_largest:          PASSED\n");
 }
 
 // The header asserts the content of the required row where it
@@ -415,7 +515,7 @@ static void test_multi_event_durability(const char* base_dir) {
     }
 
     assert(read_file(dir + "/HEAD") == "fedcba9876543211\n");
-    assert(log_timestamps(dir).size() == static_cast<std::size_t>(N));
+    assert(log_orders(dir).size() == static_cast<std::size_t>(N));
 
     auto reopened = open_cipher(dir);
     auto view = reopened.mint_open_view(store_ctx());
@@ -447,8 +547,7 @@ static void test_external_visibility() {
 }
 
 // Each context that fits the commit is interchangeable at a call site,
-// including a context narrowed to the two required atoms and the Test
-// atom that admits the clock reader.
+// including a context narrowed to the two required atoms.
 
 static void test_canonical_row_acceptance(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/canonical_row";
@@ -459,16 +558,14 @@ static void test_canonical_row_acceptance(const char* base_dir) {
     record(cipher, store_ctx(), view, ContentHash{0xAAAA}, 1u);
     assert(cipher.head() == ContentHash{0xAAAA});
 
-    // A commit reads the clock, so the narrowed row keeps Nondet.
-    const auto narrowed =
-        store_ctx().in_row<eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>();
+    // A commit reads no clock, so the narrowed row needs no Nondet.
+    const auto narrowed = store_ctx().in_row<eff::Row<eff::Effect::IO, eff::Effect::Block>>();
     record(cipher, narrowed, view, ContentHash{0xBBBB}, 2u);
     assert(cipher.head() == ContentHash{0xBBBB});
 
-    // The same four atoms in another order, which containment by
+    // The same two atoms in another order, which containment by
     // membership accepts.
-    const auto reordered =
-        store_ctx().in_row<eff::Row<eff::Effect::Nondet, eff::Effect::Block, eff::Effect::IO, eff::Effect::Test>>();
+    const auto reordered = store_ctx().in_row<eff::Row<eff::Effect::Block, eff::Effect::IO>>();
     record(cipher, reordered, view, ContentHash{0xCCCC}, 3u);
     assert(cipher.head() == ContentHash{0xCCCC});
 
@@ -595,7 +692,11 @@ int main() {
     test_t08_monotonic_steps(base.c_str());
     test_t09_multiple_events_monotonic(base.c_str());
     test_t10_api_surface_pinned(base.c_str());
-    test_t11_log_holds_monotonic_readings(base.c_str());
+    test_t11_log_holds_the_places(base.c_str());
+    test_t12_two_runs_write_one_log(scratch);
+    test_t13_reopen_continues_the_places(scratch);
+    test_t14_open_skips_a_place_that_does_not_grow(scratch);
+    test_t15_no_place_after_the_largest(scratch);
 
     test_required_row_header_fence();
     test_multi_event_durability(base.c_str());
@@ -606,6 +707,6 @@ int main() {
     test_failed_head_write_keeps_the_logged_commit(scratch);
     test_head_without_logged_commit(scratch);
 
-    crucible::test::pass("test_cipher_record_event: 19 groups, all passed\n");
+    crucible::test::pass("test_cipher_record_event: 23 groups, all passed\n");
     return 0;
 }

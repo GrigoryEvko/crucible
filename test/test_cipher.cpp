@@ -6,7 +6,6 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/Process.h>
-#include <fixy/os/Time.h>
 #include <fixy/session/Subtype.h>
 #include "test_assert.h"
 #include <charconv>
@@ -80,21 +79,12 @@ static std::string object_path(const char* dir, crucible::ContentHash hash) {
 static void commit_head(crucible::Cipher& cipher, crucible::Cipher::OpenView const& view, crucible::ContentHash hash,
                         std::uint64_t step) {
     const auto committed = cipher.record_event(store_ctx(), view, hash, step);
-    assert(committed.is_ok() && "record_event must commit when the clock read succeeds");
+    assert(committed.is_ok() && "record_event must commit when the writes pass");
 }
 
-// A reading of CLOCK_MONOTONIC in nanoseconds, from the reader that the
-// test context mints.
-static std::uint64_t monotonic_now_ns() {
-    const auto clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(store_ctx());
-    return clock.read(::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(store_ctx()))
-        .expect("the monotonic clock gives a reading")
-        .peek();
-}
-
-// The third field of the last line of the log, the time of the last
+// The third field of the last line of the log, the place of the last
 // commit.
-static std::uint64_t last_log_timestamp(const char* dir) {
+static std::uint64_t last_log_order(const char* dir) {
     std::ifstream log(std::string(dir) + "/log");
     std::string line;
     std::string last;
@@ -103,11 +93,11 @@ static std::uint64_t last_log_timestamp(const char* dir) {
     }
     const std::size_t second_comma = last.find(',', last.find(',') + 1);
     assert(second_comma != std::string::npos);
-    std::uint64_t timestamp = 0;
+    std::uint64_t order = 0;
     const char* const end = last.data() + last.size();
-    const auto [stop, error] = std::from_chars(last.data() + second_comma + 1, end, timestamp);
+    const auto [stop, error] = std::from_chars(last.data() + second_comma + 1, end, order);
     assert(error == std::errc{} && stop == end);
-    return timestamp;
+    return order;
 }
 
 // The events of one session, at steps first, first + 1, ..., first + count - 1.
@@ -117,9 +107,9 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
         crucible::Cipher::SessionEvent::close(::fixy::session::RoleTagId{}, ::fixy::session::RoleTagId{}));
     std::uint64_t step = first;
     for (crucible::Cipher::SessionEvent& event : events.view()) {
-        event = crucible::Cipher::SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
-                                                             ::fixy::session::StepId{step},
-                                                             ::fixy::session::StateHash{0x5E550000u + step}, step);
+        event = crucible::Cipher::SessionEvent::cipher_event(
+            ::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{step},
+            ::fixy::session::StateHash{0x5E550000u + step}, ::fixy::session::CipherEventOrder{step});
         ++step;
     }
     return events;
@@ -317,14 +307,11 @@ int main() {
         auto ov = cipher.mint_open_view(store_ctx());
         (void)cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(region)));
 
-        // The log line of the commit holds a reading of CLOCK_MONOTONIC,
-        // so it lies between two readings taken around the commit.
-        const std::uint64_t before_commit_ns = monotonic_now_ns();
+        // The log line of the first commit of the store holds the first
+        // place, one.
         commit_head(cipher, ov, expected_hash, 10);
-        const std::uint64_t after_commit_ns = monotonic_now_ns();
         assert(cipher.head() == expected_hash);
-        const std::uint64_t committed_at_ns = last_log_timestamp(dir);
-        assert(before_commit_ns <= committed_at_ns && committed_at_ns <= after_commit_ns);
+        assert(last_log_order(dir) == 1u);
 
         // The HEAD file holds the hash as sixteen lowercase hex digits
         // on one line, and that spelling is what another reader parses.
@@ -341,7 +328,7 @@ int main() {
         const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
         commit_head(cipher, ov, hash2, 50);
         assert(cipher.head() == hash2);
-        assert(last_log_timestamp(dir) >= committed_at_ns && "the second commit must not read an earlier time");
+        assert(last_log_order(dir) == 2u && "the second commit takes the next place");
     }
 
     {

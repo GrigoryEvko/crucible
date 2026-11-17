@@ -5,9 +5,12 @@
 // On-disk layout:
 //   $root/objects/<first2hex>/<remaining14hex>  — one file per node
 //   $root/HEAD                                  — hex string: current active hash + "\n"
-//   $root/log                                   — append-only: "step_id,hash_hex,ts_ns\n"
+//   $root/log                                   — append-only: "step_id,hash_hex,order\n"
 //
-// ts_ns is a reading of CLOCK_MONOTONIC in nanoseconds.
+// order is the place of the commit in the order of the commits of the store:
+// one for the first commit, and one more for each commit after it.  The store
+// keeps the count and reads no clock, so two runs of one computation write the
+// same bytes.  A time for a person goes to the sink of fixy/os/TimingSink.h.
 //
 // The log is the record of the commits, and HEAD is a copy of its last
 // commit.  A commit reaches the log before HEAD, so HEAD never names a
@@ -32,9 +35,7 @@
 #include <fixy/ScopedView.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
-#include <fixy/os/ClockSource.h>
 #include <fixy/os/Fs.h>
-#include <fixy/os/Time.h>
 #include <fixy/session/ContentAddressed.h>
 #include <fixy/session/EventLog.h>
 #include <foundation/Platform.h>
@@ -404,7 +405,6 @@ public:
     // writes HEAD and appends to the log, so it needs IO and Block.  A
     // hot-path context holds neither, and performing file I/O there would
     // break replay determinism.  The row names the effects of the commit.
-    // The clock read of the commit is a second gate, in CtxFitsCipherCommit.
     using record_event_required_row =
         ::foundation::effects::Row<::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
 
@@ -432,41 +432,39 @@ public:
 
     // The step of a commit that failed.
     enum class CommitError : std::uint8_t {
-        clock_read,
+        // The place of the last commit is the largest count, so the next
+        // commit has no place.  Only a log line from the disk gives that
+        // place.
+        order_exhausted,
         log_append,
         head_write,
     };
 
     using CommitResult = ::fixy::Result<::fixy::Unit, CommitError>;
 
-    // Appends the commit of content_hash at step_id to the log, with a
-    // reading of the monotonic clock, and then writes HEAD.  The reader
-    // comes from the context, so the reading keeps its clock type until the
-    // log entry encodes it.
+    // Appends the commit of content_hash at step_id to the log, with the
+    // next place of the count of the commits, and then writes HEAD.  The
+    // commit reads no clock, because a clock time in the log makes two runs
+    // of one computation write two logs.  So the gate asks only for the row
+    // of the store, and the context needs no Nondet.
     //
-    // The log append is the commit.  A failed clock read or log append
-    // changes nothing in memory, and HEAD does not move.  A log write that
-    // passed before a failed flush can leave the record in the file, and a
-    // reopen then reads that commit.  A failed HEAD write comes after a
-    // durable append, so the commit stands: the head moves, and only HEAD
-    // lags the log.  Each failure gives the step that failed.
+    // The log append is the commit.  A failed append moves no head, in
+    // memory or in HEAD, but it takes its place.  A log write that passed
+    // before a failed flush can leave the record in the file, and a reopen
+    // then reads that commit, so the next commit needs a place of its own.  A
+    // failed HEAD write comes after a durable append, so the commit stands:
+    // the head moves, and only HEAD lags the log.  Each failure gives the
+    // step that failed.
     //
     // content_hash must be non-zero.  Zero is the sentinel for "no content",
     // so a step recorded with hash zero is indistinguishable from "before
     // the first commit" and corrupts the binary search in hash_at_step.
     template <typename Ctx>
-        requires cipher::CtxFitsCipherCommit<Ctx>
+        requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard]] CommitResult record_event(Ctx const& ctx, OpenView const& view, ContentHash content_hash,
                                             uint64_t step_id) {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
-        const ::fixy::time::MonotonicClock clock =
-            ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
-        return clock.read(::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx))
-            .match(
-                [&](::fixy::MonotonicClockBytes<std::uint64_t> committed_at) -> CommitResult {
-                    return advance_head(file_ctx_(ctx), view, content_hash, step_id, committed_at);
-                },
-                [](::foundation::os::Errno) -> CommitResult { return ::fixy::err(CommitError::clock_read); });
+        return advance_head(file_ctx_(ctx), view, content_hash, step_id);
     }
 
     // Stores one batch of session events and indexes it, and gives the
@@ -569,6 +567,10 @@ private:
 
     ::fixy::OrderedAppendOnly<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess> log_ =
         ::fixy::mint_ordered_append_only<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess>();
+    // The place of the last commit that the store wrote or read: zero
+    // before the first commit.  Each commit takes the next place, and the
+    // open continues from the place of the last line of the log.
+    ::fixy::Monotonic<std::uint64_t> commits_ = ::fixy::mint_monotonic<std::uint64_t>(0);
     // The entries in the order of use, least recent first.  The capacity is
     // the entry limit, so the cache holds its slots in the Cipher and a
     // push never grows a buffer.
@@ -609,12 +611,11 @@ private:
                                                         ::fixy::session::SessionTagId session,
                                                         ::fixy::session::StepId from_step) const;
 
-    // The commit that record_event starts.  The reading is the time of the
-    // commit, and a clock reader is the only source of one.  The in-memory
-    // event and the log line are the two wire forms, and each takes the
-    // nanosecond count of the reading.
+    // The commit that record_event starts.  The commit takes the next place
+    // of commits_, and the in-memory event and the log line each hold that
+    // place.
     [[nodiscard]] CommitResult advance_head(FileCtx const& file_ctx, OpenView const&, ContentHash content_hash,
-                                            uint64_t step_id, ::fixy::MonotonicClockBytes<std::uint64_t> committed_at);
+                                            uint64_t step_id);
 
     [[nodiscard]] PersistResult persist_session_events_(FileCtx const& file_ctx, OpenView const&,
                                                         ::foundation::effects::Alloc allocation,
@@ -642,7 +643,9 @@ private:
 
     // Malformed lines are skipped rather than fatal.  A corrupt or
     // truncated log leaves the in-memory state as a proper prefix of what
-    // was on disk instead of killing the process.
+    // was on disk instead of killing the process.  The steps and the places
+    // of the commits only grow, so a line whose step goes back, or whose
+    // place does not grow, is a corrupt line too.
     void load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation);
 };
 
