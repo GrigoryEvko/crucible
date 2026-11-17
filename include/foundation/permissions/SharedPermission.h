@@ -253,12 +253,11 @@ namespace detail {
 // fixy/channels that take no context yet: producer, with_drained_access
 // and drain of the MPSC channel, and reader and with_drained_access of the
 // SWMR session.  Each of them asks for the share or the exclusive of a pool
-// that the channel itself owns, for a tag whose row is empty, and the
-// schedule decides its outcome as it decides the outcome of lend(ctx).  The
-// pop and the snapshots of each channel take the tag of Nondet, so the
-// entry of each read of the schedule there is gated.  These members move to
-// a form that takes the context, one channel at a time, and then the door
-// goes.  No other code calls the door.  The rule owners keeps each use of a
+// that the channel itself owns, for a tag whose row is empty.  The schedule
+// decides its outcome, as it decides the outcome of lend(ctx), and no
+// context gates these members yet.  They move to a form that takes the
+// context, one channel at a time, and then the door goes.  No other code
+// calls the door.  The rule owners keeps each use of a
 // detail namespace of the base out of the code outside the base, and the
 // fixtures neg_share_pool_*_without_ctx_* hold that a lend or an upgrade
 // with no context does not compile.
@@ -449,7 +448,7 @@ mint_permission_share(Args&&...) noexcept {
 // optional<void> to carry the lend-failed case: the bool says whether
 // the body ran, and that declaration carries no [[nodiscard]], as its
 // two predecessors did not.  The call leads with a context, the pool is
-// next, and the body is last; one shared body serves both.
+// next, and the body is last.  One shared body serves both.
 
 namespace detail {
     // True when the argument list is a context, a pool as an lvalue, and a
