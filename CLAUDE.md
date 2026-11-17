@@ -110,7 +110,7 @@ The gate of `loop land` is the check that counts. It builds the configurations t
 | `tsan` | `build-tsan` | ThreadSanitizer |
 | `ubsan-strict` | `build-ubsan-strict` | Full UBSan on each target |
 | `bench-fuzz` | `build-bench-fuzz` | The benches and the fuzz harnesses |
-| `syntax-x86-64-v3` | `build-syntax-x86-64-v3` | Parse only, for the AVX2 code arms |
+| `syntax-x86-64` | `build-syntax-x86-64` | Parse only, at `-march=x86-64`, for the SSE2 and SSE4.2 code arms |
 | `syntax-aarch64` | `build-syntax-aarch64` | Parse only, for the aarch64 code arms |
 
 Other entries:
@@ -211,7 +211,7 @@ The hot path is the record of one operation and the replay of one operation.
 - Move each unlikely branch of more than some lines into a `CRUCIBLE_COLD` function.
 - Put each atomic that two threads use on its own cache line with `alignas(64)`.
 - Use contiguous arrays and indexes, not linked nodes.
-- Measure before you change code for speed. Give p50, p99 and the maximum, not a mean. A variance above 5% makes the result invalid.
+- Measure before you change code for speed. Give p50, p99 and the maximum, not a mean. A variance above 5% means: run the bench again. State the spread with the result.
 
 ### Concurrency
 
