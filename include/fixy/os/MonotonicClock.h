@@ -6,9 +6,8 @@
 // The functions are in detail, because a clock read on the replay-bound
 // foreground path makes replay diverge across machines.  fixy/os/Time.h gives
 // the readers and the sleeper that code outside the base mints with a
-// context, and they call read_clock_ and sleep_monotonic_.  The watch of
-// fixy/session/Watch.h calls monotonic_nanos_.  It times a wait to find a
-// deadlock, and it gives no result that a replay reads.
+// context, and they call read_clock_ and sleep_monotonic_.  Each read of a
+// clock goes through a reader, so each read takes the tag of Nondet.
 //
 // This header is in the layer X3_os of utils/rule-table.txt.  The door file
 // is src/fixy/os/MonotonicClock.cpp, the one includer of <time.h>.
@@ -20,11 +19,6 @@
 #include <cstdint>
 
 namespace fixy::time::detail {
-
-// The nanoseconds of CLOCK_MONOTONIC, the clock that std::chrono::steady_clock
-// reads on Linux.  A read of this clock does not fail on Linux.  If one
-// fails, the result is zero.
-[[nodiscard]] std::uint64_t monotonic_nanos_() noexcept;
 
 // The reading of the clock with the id CLOCK, as the kernel gives it, or the
 // error of a failed read.  CLOCK is a clockid_t of the C library.  The door

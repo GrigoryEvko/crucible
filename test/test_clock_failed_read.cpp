@@ -1,6 +1,8 @@
 // A clock read that fails, or that gives a value that the stamp cannot
 // hold, gives an error and no reading.  The transaction log reads no clock,
-// so a clock that fails changes none of its stamps.
+// so a clock that fails changes none of its stamps.  The watch of a session
+// wait reads no clock either, so a clock that jumps or fails changes no point
+// at which a wait traces.
 //
 // A working clock does not fail, so this executable has its own
 // clock_gettime.  The linker connects each call of clock_gettime in this
@@ -23,6 +25,8 @@
 #include <fixy/Ctx.h>
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/Time.h>
+#include <fixy/session/Entry.h>
+#include <fixy/session/Watch.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Errno.h>
 
@@ -31,6 +35,7 @@
 #include <cstdio>
 #include <ctime>
 #include <limits>
+#include <utility>
 
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -365,6 +370,76 @@ void transaction_stamps_read_no_clock(Tally& tally) {
     use_the_kernel_clock();
 }
 
+// What the clock of this executable does while a session wait polls.
+enum class ClockDuringWait : std::uint8_t {
+    Kernel,  // the kernel answers each read
+    Jumps,  // each trace point moves the reading one hour on
+    Fails,  // each read fails
+};
+
+// The trace points at which a wait traced its chain, the first two at most.
+struct TracePoints {
+    std::uint64_t first = 0;
+    std::uint64_t second = 0;
+};
+
+// The resource of a session that only waits.
+struct WaitWire {
+    int value = 0;
+};
+
+// Opens a wait on the endpoint of a session, and polls it for twice the
+// trace points of its first trace, under the clock plan.  It notes each
+// trace point at which the wait traced.
+[[nodiscard]] TracePoints trace_points_of_one_wait(ClockDuringWait plan) {
+    namespace session = ::fixy::session;
+    const fixy::TestRunnerCtx ctx{eff::testing::test()};
+    auto end = session::mint_session<session::Recv<int, session::End>, session::check::Enforced>(ctx, WaitWire{});
+    TracePoints traced{};
+    {
+        session::watch::wait_scope wait{end.watch_endpoint()};
+        constexpr std::uint64_t kTracePoints =
+            session::watch::suspect_after_trace_points + session::watch::confirm_after_trace_points;
+        for (std::uint64_t point = 1; point <= kTracePoints; ++point) {
+            if (plan == ClockDuringWait::Jumps) give_each_read(static_cast<std::time_t>(point * 3600), 0);
+            if (plan == ClockDuringWait::Fails) fail_each_read(EINVAL);
+            for (std::uint32_t poll = 0; poll < session::watch::polls_per_trace_point; ++poll)
+                wait.poll();
+            if (wait.last_trace_point() != point) continue;
+            if (traced.first == 0) {
+                traced.first = point;
+            } else if (traced.second == 0) {
+                traced.second = point;
+            }
+        }
+    }
+    use_the_kernel_clock();
+    std::move(end).detach(session::detach_reason::TestInstrumentation{});
+    return traced;
+}
+
+// The watch of a session wait reads no clock.  The count of the polls of a
+// wait decides when it traces, so two waits with the same polls trace at the
+// same trace points, and a clock that jumps or fails changes none of them.
+void expect_traces_at_the_poll_count(Tally& tally, ClockDuringWait plan) {
+    constexpr std::uint64_t kFirst = ::fixy::session::watch::suspect_after_trace_points;
+    constexpr std::uint64_t kSecond = kFirst + ::fixy::session::watch::confirm_after_trace_points;
+    const TracePoints traced = trace_points_of_one_wait(plan);
+    if (traced.first == kFirst && traced.second == kSecond) return;
+    ::fixy::report(::fixy::Sink::Err,
+                   "the session watch, clock plan {}: the wait traced at the trace points {} and {}, and it must "
+                   "trace at {} and {}\n",
+                   static_cast<int>(plan), traced.first, traced.second, kFirst, kSecond);
+    tally.expect(false);
+}
+
+void session_watch_traces_at_its_poll_count(Tally& tally) {
+    expect_traces_at_the_poll_count(tally, ClockDuringWait::Kernel);
+    expect_traces_at_the_poll_count(tally, ClockDuringWait::Kernel);
+    expect_traces_at_the_poll_count(tally, ClockDuringWait::Jumps);
+    expect_traces_at_the_poll_count(tally, ClockDuringWait::Fails);
+}
+
 }  // namespace
 
 int main() {
@@ -374,6 +449,7 @@ int main() {
     sleeper_gives_the_error_of_a_failed_call(tally);
     read_of_a_clock_the_kernel_refuses_gives_its_error(tally);
     transaction_stamps_read_no_clock(tally);
+    session_watch_traces_at_its_poll_count(tally);
     if (tally.failures != 0) {
         std::fprintf(stderr, "test_clock_failed_read: %d check(s) failed\n", tally.failures);
         return 1;

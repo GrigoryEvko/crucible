@@ -104,8 +104,12 @@
 // endpoint, the thread that holds the peer, the endpoint that thread
 // waits on, and so on.  A chain that comes back to the waiting thread is
 // a cycle.  When the same cycle, with the same wait of each thread,
-// holds at two checks confirm_after apart, the scope prints the cycle
-// and aborts.  A step that does not wait never touches the watch.
+// holds at two traces confirm_after_trace_points apart, the scope prints
+// the cycle and aborts.  A step that does not wait never touches the watch.
+//
+// The watch reads no clock.  A count of the polls of a wait decides when it
+// traces, so two runs with the same polls trace at the same points, and a
+// verdict of the watch depends on no time.
 //
 // ── The holder of an endpoint ───────────────────────────────────────
 //
@@ -161,12 +165,17 @@ enum class priority : std::uint32_t {
 inline constexpr std::uint32_t endpoint_capacity = 4096;
 inline constexpr std::uint32_t thread_capacity = 1024;
 
-// A wait that lasts this many nanoseconds of the monotonic clock starts
-// to trace its chain.
-inline constexpr std::uint64_t suspect_after_ns = 50000000;
+// The polls of a wait from one trace point to the next.  A power of two.
+inline constexpr std::uint32_t polls_per_trace_point = 1024;
 
-// The same cycle must hold at two traces this many nanoseconds apart.
-inline constexpr std::uint64_t confirm_after_ns = 50000000;
+// A wait that passes this many trace points starts to trace its chain.  The
+// count is 2^20 polls.  A poll of one pause and one load takes 30 ns on an
+// EPYC 9754, so the count is 32 ms there, and about 50 ms on a core whose
+// pause takes 140 cycles at 3 GHz.
+inline constexpr std::uint64_t suspect_after_trace_points = 1024;
+
+// The same cycle must hold at two traces this many trace points apart.
+inline constexpr std::uint64_t confirm_after_trace_points = 1024;
 
 // The longest chain the detector follows.
 inline constexpr std::size_t max_chain = 64;
@@ -624,17 +633,6 @@ inline void check_wait_order(std::uint64_t self, std::uint32_t waited) noexcept 
     }
 }
 
-/// The nanoseconds of the monotonic clock, through the clock door of
-/// fixy/os/MonotonicClock.h.  A failed read gives zero, and poll() then
-/// traces no chain.  src/fixy/session/Watch.cpp holds the body.
-///
-/// The read takes no tag of Nondet, and it runs in the wait of each session,
-/// also in a context whose row holds no Nondet.  The reading decides only
-/// when a wait that did not end traces its chain of waits.  A trace changes
-/// the run only when it finds the same cycle two times.  The cycle is a
-/// deadlock, and the watch then reports it and ends the process.
-[[nodiscard]] std::uint64_t monotonic_ns() noexcept;
-
 /// Installs the hooks of the watch one time for the process, and gives the
 /// proof of them.  mint_watch_hooks holds its gate.
 /// src/fixy/session/Watch.cpp holds the body.
@@ -837,36 +835,34 @@ template <::foundation::effects::IsExecCtx Ctx>
 //
 // A scope of no endpoint, as under check::Off, does no work: the
 // constructor stores five zero words and returns, and poll() only pauses.
-// A tracked scope reads the clock first at its first trace point.  The
-// chain of its last trace lives in the suspect of its thread
+// A tracked scope counts its trace points, and the count decides when it
+// traces.  The chain of its last trace lives in the suspect of its thread
 // (detail::g_suspects), not in the scope, so no scope carries a chain to
 // clear.
 class wait_scope {
     std::uint32_t endpoint_ = 0;
     std::uint32_t spins_ = 0;
     std::uint64_t self_ = 0;
-    // Zero until the first trace point reads the clock.
-    std::uint64_t start_ns_ = 0;
-    std::uint64_t last_trace_ns_ = 0;
+    // The trace points that this wait passed, and the trace point of its
+    // last trace.  Each is zero before its first event.
+    std::uint64_t trace_points_ = 0;
+    std::uint64_t last_trace_point_ = 0;
     // The epoch of this wait on its thread, which names the suspect that
     // its traces write.  Zero for a scope of no endpoint.
     std::uint64_t wait_epoch_ = 0;
 
-    // Reads the clock at a trace point.  After suspect_after_ns, it traces
-    // the wait-for chain at most once for each confirm_after_ns.  The same
-    // cycle at two traces of this wait, link for link, is a deadlock: it
-    // prints the cycle and aborts.
+    // Counts a trace point.  From suspect_after_trace_points on, it traces
+    // the wait-for chain at most once for each confirm_after_trace_points.
+    // The same cycle at two traces of this wait, link for link, is a
+    // deadlock: it prints the cycle and aborts.  Only the count decides, so
+    // the polls of a wait give each decision.
     [[gnu::cold, gnu::noinline]] void trace_when_due_() noexcept {
-        const std::uint64_t now_ns = detail::monotonic_ns();
-        if (now_ns == 0) return;
-        if (start_ns_ == 0) {
-            start_ns_ = now_ns;
-            last_trace_ns_ = now_ns;
+        // A wait does not pass 2^64 trace points, so the count does not wrap.
+        ++trace_points_;
+        if (trace_points_ < suspect_after_trace_points
+            || trace_points_ - last_trace_point_ < confirm_after_trace_points)
             return;
-        }
-        // The clock counts from boot, so neither sum wraps.
-        if (now_ns < start_ns_ + suspect_after_ns || now_ns < last_trace_ns_ + confirm_after_ns) return;
-        last_trace_ns_ = now_ns;
+        last_trace_point_ = trace_points_;
         const detail::wait_chain chain = detail::trace_chain(self_, endpoint_);
         if (detail::repeats_suspect(detail::suspect_at_(detail::index_of(self_)), wait_epoch_, chain)) [[unlikely]]
             detail::report_deadlock(chain, self_);
@@ -898,19 +894,24 @@ public:
         detail::thread_at_(detail::index_of(self_)).blocked_on.store_release(0);
     }
 
-    /// Pauses once.  Each 1024th pause of a tracked scope is a trace point.
-    /// After suspect_after_ns, it traces the wait-for chain at most once for
-    /// each confirm_after_ns.  The same cycle at two traces of this wait is a
-    /// deadlock: it prints the cycle and aborts.
+    /// Pauses once.  Each polls_per_trace_point-th poll of a tracked scope is
+    /// a trace point.  From suspect_after_trace_points on, it traces the
+    /// wait-for chain at most once for each confirm_after_trace_points.  The
+    /// same cycle at two traces of this wait is a deadlock: it prints the
+    /// cycle and aborts.
     void poll() noexcept {
         CRUCIBLE_SPIN_PAUSE;
-        if (endpoint_ == 0 || (++spins_ & 1023u) != 0) return;
+        if (endpoint_ == 0 || (++spins_ & (polls_per_trace_point - 1u)) != 0) return;
         trace_when_due_();
     }
 
-    /// The clock time of the first trace point, or zero before it.  A scope
-    /// of no endpoint never reads the clock, so it answers zero.
-    [[nodiscard]] std::uint64_t started_at_ns() const noexcept { return start_ns_; }
+    /// The trace points that this wait passed.  A scope of no endpoint
+    /// counts none.
+    [[nodiscard]] std::uint64_t trace_points() const noexcept { return trace_points_; }
+
+    /// The trace point of the last trace of this wait, or zero before its
+    /// first trace.
+    [[nodiscard]] std::uint64_t last_trace_point() const noexcept { return last_trace_point_; }
 };
 
 }  // namespace fixy::session::watch

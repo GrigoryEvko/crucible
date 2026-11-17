@@ -81,12 +81,6 @@ constexpr long kInterrupted = -static_cast<long>(os::Errno::eintr);
 
 }  // namespace
 
-std::uint64_t monotonic_nanos_() noexcept {
-    ::timespec now{};
-    if (::clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0;
-    return static_cast<std::uint64_t>(now.tv_sec) * 1000000000U + static_cast<std::uint64_t>(now.tv_nsec);
-}
-
 Reading read_clock_(std::int32_t clock) noexcept {
     ::timespec reading{};
     if (::clock_gettime(clock, &reading) != 0) [[unlikely]] {

@@ -1,10 +1,10 @@
 // The cost of the watch of fixy/session/Watch.h on a declared read and a
 // declared write.  Under check::Off the handle keeps no record, so the
-// scope that it opens for a declared call has no endpoint: the scope reads
-// no clock, and its poll only pauses.  Under check::Enforced the scope is
-// tracked, and it reads the clock first at its first trace point, after
-// 1024 polls.  The check file of Watch.h holds the size of the scope, so a
-// scope holds no wait-for chain to clear.
+// scope that it opens for a declared call has no endpoint: the scope counts
+// no trace point, and its poll only pauses.  Under check::Enforced the scope
+// is tracked, and it counts its first trace point after 1024 polls.  The
+// check file of Watch.h holds the size of the scope, so a scope holds no
+// wait-for chain to clear.
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Entry.h>
@@ -25,12 +25,13 @@ struct Wire {
 };
 
 // The poll count of one trace point of a scope.
-constexpr int kPollsToTracePoint = 1024;
+constexpr std::uint32_t kPollsToTracePoint = s::watch::polls_per_trace_point;
 
-// What a declared call saw of the scope that the handle gave it.
+// What a declared call saw of the scope that the handle gave it: the count
+// of its trace points at the entry and after one trace point of polls.
 struct Seen {
-    std::uint64_t at_entry_ns = 0;
-    std::uint64_t after_polls_ns = 0;
+    std::uint64_t at_entry = 0;
+    std::uint64_t after_polls = 0;
 };
 
 // What the declared write and the declared read of one session saw.
@@ -39,13 +40,13 @@ struct SeenByCalls {
     Seen read{};
 };
 
-// Polls the scope to its first trace point, and records what the scope
-// says of its clock before and after.
+// Polls the scope to its first trace point, and records the count of its
+// trace points before and after.
 void note_scope(s::watch::wait_scope& wait, Seen& seen) noexcept {
-    seen.at_entry_ns = wait.started_at_ns();
-    for (int poll = 0; poll < kPollsToTracePoint; ++poll)
+    seen.at_entry = wait.trace_points();
+    for (std::uint32_t poll = 0; poll < kPollsToTracePoint; ++poll)
         wait.poll();
-    seen.after_polls_ns = wait.started_at_ns();
+    seen.after_polls = wait.trace_points();
 }
 
 template <typename Policy>
@@ -71,29 +72,29 @@ template <typename Policy>
     return seen;
 }
 
-void off_reads_no_clock() {
+void off_counts_no_trace_point() {
     const SeenByCalls seen = run_declared_calls<s::check::Off>();
-    assert(seen.write.at_entry_ns == 0);
-    assert(seen.write.after_polls_ns == 0);
-    assert(seen.read.at_entry_ns == 0);
-    assert(seen.read.after_polls_ns == 0);
+    assert(seen.write.at_entry == 0);
+    assert(seen.write.after_polls == 0);
+    assert(seen.read.at_entry == 0);
+    assert(seen.read.after_polls == 0);
 }
 
-// The positive control: the same calls under check::Enforced read the
-// clock at the first trace point, and not before it.
-void enforced_reads_the_clock_at_the_trace_point() {
+// The positive control: the same calls under check::Enforced count the
+// first trace point, and not before it.
+void enforced_counts_the_trace_point() {
     const SeenByCalls seen = run_declared_calls<s::check::Enforced>();
-    assert(seen.write.at_entry_ns == 0);
-    assert(seen.read.at_entry_ns == 0);
-    assert(seen.write.after_polls_ns != 0);
-    assert(seen.read.after_polls_ns != 0);
+    assert(seen.write.at_entry == 0);
+    assert(seen.read.at_entry == 0);
+    assert(seen.write.after_polls == 1);
+    assert(seen.read.after_polls == 1);
 }
 
 }  // namespace
 
 int main() {
-    off_reads_no_clock();
-    enforced_reads_the_clock_at_the_trace_point();
+    off_counts_no_trace_point();
+    enforced_counts_the_trace_point();
     crucible::test::pass("test_session_watch_cost: OK\n");
     return 0;
 }

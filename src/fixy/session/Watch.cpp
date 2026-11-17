@@ -14,7 +14,6 @@
 #include <fixy/session/Watch.h>
 
 #include <fixy/os/ExitHooks.h>
-#include <fixy/os/MonotonicClock.h>
 #include <fixy/os/Signal.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/core/Report.h>
@@ -124,11 +123,11 @@ void report_deadlock(wait_chain const& chain, std::uint64_t self) noexcept {
     core::report(core::Sink::Err,
                  "\n"
                  "fixy::session: DEADLOCK ACROSS SESSIONS\n"
-                 "  {} thread(s) wait in a cycle, and the cycle held for two checks {} ms apart.\n"
+                 "  {} thread(s) wait in a cycle, and the cycle held for two traces {} polls apart.\n"
                  "  Each thread waits on an endpoint whose peer the next thread holds.  An endpoint\n"
                  "  escaped the fork that made its channel, so threads and channels no longer form\n"
                  "  a forest.\n",
-                 chain.count, confirm_after_ns / 1000000);
+                 chain.count, confirm_after_trace_points * polls_per_trace_point);
     for (std::size_t index = 0; index < chain.count; ++index) {
         chain_link const& link = chain.links[index];
         std::uint64_t const waiter = index == 0 ? self : chain.links[index - 1].holder;
@@ -159,8 +158,6 @@ void refuse_wait(wait_refusal refusal, std::uint32_t waited, std::uint32_t held)
     core::report(core::Sink::Err, "  priority {}\n", record_at_(held).priority.load_acquire());
     core::fatal("fixy::session: a wait that could close a cycle of waits ends the process");
 }
-
-std::uint64_t monotonic_ns() noexcept { return ::fixy::time::detail::monotonic_nanos_(); }
 
 WatchHooks install_hooks_() noexcept {
     if (g_registry.hooks_installed.exchange_acq_rel(1) == 0) {

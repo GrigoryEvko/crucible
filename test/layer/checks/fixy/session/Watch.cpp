@@ -21,4 +21,12 @@ static_assert(sizeof(wait_scope) <= 6 * sizeof(std::uint64_t),
 static_assert(sizeof(detail::wait_chain) > 6 * sizeof(std::uint64_t),
               "the bound above is meaningful only while a chain is larger than it");
 
+// poll() finds a trace point with a mask of the low bits of its count.
+static_assert(polls_per_trace_point != 0 && (polls_per_trace_point & (polls_per_trace_point - 1u)) == 0,
+              "the polls of a trace point are a power of two");
+// A wait traces first at suspect_after_trace_points, and then each
+// confirm_after_trace_points.  A confirm of zero traces at each trace point.
+static_assert(suspect_after_trace_points != 0 && confirm_after_trace_points != 0,
+              "a wait traces only after it passed a trace point");
+
 }  // namespace fixy::session::watch

@@ -42,8 +42,9 @@ namespace wd = ::fixy::session::watch::detail;
 // The poll count of one trace point of a wait.
 constexpr int kPollsToTracePoint = 1024;
 
-// The bound of the trace points of one case.  A trace comes at most once for
-// each confirm_after_ns, so a case that passes needs some thousands.
+// The bound of the trace points of one case.  A wait traces first at
+// suspect_after_trace_points, and then once for each
+// confirm_after_trace_points, so a case that passes needs some thousands.
 constexpr std::uint32_t kMaxTracePoints = 1u << 20;
 
 // The one-based thread slot that no thread runs.
@@ -238,7 +239,7 @@ void one_cycle_at_two_traces_of_one_wait_is_a_deadlock(const Cycle& cycle) {
         w::wait_scope outer{cycle.waited};
         const std::uint64_t outer_epoch = me.wait_epoch.load_acquire();
         poll_to_trace_point(outer);
-        assert(outer.started_at_ns() != 0);
+        assert(outer.trace_points() == 1);
         {
             w::wait_scope inner{cycle.waited};
             const std::uint64_t inner_epoch = me.wait_epoch.load_acquire();
