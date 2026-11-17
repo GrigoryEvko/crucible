@@ -57,6 +57,21 @@ enum class PeerOrdinal : std::uint8_t {
     return take(dataplane::admit_xdp_ifindex(10u + std::to_underlying(ordinal)));
 }
 
+// The one-shot xxHash64 of the Count characters of name, read as one run of
+// bytes.  Complexity: one pass over the characters.
+template <std::size_t Count>
+[[nodiscard]] std::uint64_t hash_of_bytes(::fixy::TextView name) {
+    assert(name.size() == Count);
+    ::fixy::FixedArray<std::byte, Count> bytes{};
+    std::size_t position = 0;
+    for (char const character : name) {
+        crucible::test::element_at(bytes, position) = static_cast<std::byte>(static_cast<unsigned char>(character));
+        ++position;
+    }
+    ::fixy::View<std::byte const> const run = std::as_const(bytes).view();
+    return take(cntp::xxhash64(run)).value();
+}
+
 void test_admission() {
     assert(cntp::gossip_multicast_error_name(cntp::GossipMulticastError::DuplicateNeighbor) == "DuplicateNeighbor");
     assert(error_of(cntp::admit_gossip_topic("")) == cntp::GossipMulticastError::EmptyTopic);
@@ -66,15 +81,19 @@ void test_admission() {
     assert(cntp::admit_gossip_topic("canopy.delta").is_ok());
     assert(take(cntp::admit_gossip_topic_hash(0x172)).value().hash == 0x172u);
 
-    // The key of a topic is the hash of the whole name, also for a name of
-    // more than one block of 32 characters.
-    cntp::IntegrityHash const short_name = take(cntp::detail::hash_text("canopy.delta"));
-    assert(take(cntp::admit_gossip_topic("canopy.delta")).value().hash == short_name.value());
+    // The key of a topic is the xxHash64 of the whole run of the bytes of its
+    // name: for a name shorter than one block of 32 characters, for a name of
+    // exactly one block and for a name past one block.
+    ::fixy::TextView const short_name = "canopy.delta";
+    ::fixy::TextView const block_name = "canopy.delta.of.thirty-two.chars";
     ::fixy::TextView const long_name = "canopy.delta.of.a.topic.with.a.name.of.more.than.one.block";
-    assert(long_name.size() > 32u);
-    assert(take(cntp::admit_gossip_topic(long_name)).value().hash != short_name.value());
-    assert(take(cntp::admit_gossip_topic(long_name)).value().hash
-           == take(cntp::admit_gossip_topic(long_name)).value().hash);
+    std::uint64_t const short_hash = hash_of_bytes<12>(short_name);
+    std::uint64_t const block_hash = hash_of_bytes<32>(block_name);
+    std::uint64_t const long_hash = hash_of_bytes<58>(long_name);
+    assert(take(cntp::admit_gossip_topic(short_name)).value().hash == short_hash);
+    assert(take(cntp::admit_gossip_topic(block_name)).value().hash == block_hash);
+    assert(take(cntp::admit_gossip_topic(long_name)).value().hash == long_hash);
+    assert(short_hash != block_hash && block_hash != long_hash && short_hash != long_hash);
 
     cntp::GossipNeighborTarget const neighbor = target(PeerOrdinal{9}, ifindex_of(PeerOrdinal{11}));
     assert(neighbor.ifindex().value() == 21u);
