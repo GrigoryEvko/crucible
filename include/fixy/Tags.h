@@ -150,6 +150,18 @@ struct TcpInfo {};
 // statistics, qdisc backlog, sysctl snapshots, hwmon temperatures.
 // Raw text cannot drive capacity, health, or routing decisions.
 struct KernelTelemetry {};
+// Dataplane XDP programs and BPF maps.  A raw program descriptor or raw map
+// dimensions cannot attach an XDP program to a NIC or give the shape of a
+// map that userspace reads.
+struct Xdp {};
+struct BpfMap {};
+// XDP multicast plans of the transmit path.  A raw topic hash or a raw
+// neighbor list cannot drive the replication of a gossip packet.
+struct GossipMulticast {};
+// Traffic-control direct-action eBPF plans.  A raw action, a raw DSCP value
+// or a raw flow class cannot attach an egress or ingress program or fill a
+// flow map.
+struct TcEbpf {};
 // Result value that survived redundant execution comparison. Raw
 // results and externally tagged values cannot substitute for the
 // post-comparison evidence.

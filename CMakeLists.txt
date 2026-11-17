@@ -367,6 +367,7 @@ add_library(crucible STATIC
   src/cog/NicOffloadAudit.cpp
   src/cog/SrIov.cpp
   src/cntp/CongestionControl.cpp
+  src/cntp/dataplane/TcEbpf.cpp
   src/cntp/_wip/GpuDirect.cpp
   src/cntp/IncastControl.cpp
   src/cntp/MtlsTransport.cpp
