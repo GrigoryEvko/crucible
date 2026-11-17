@@ -3868,6 +3868,12 @@ foundation_neg_compile_test(neg_net_rules_token_ring
 foundation_neg_compile_test(neg_net_rules_growth_beyond_credit
   "static assertion failed: rules: rule 'relay_grows' replaces a pair of weight 2 with agents of weight 3"
   "An agent weighs 1 plus the step weight of its kind")
+foundation_neg_compile_test(neg_net_merge_without_reason
+  "call to non-.constexpr. function"
+  "foundation::algebra::net::detail::merge_door_has_no_reason")
+foundation_neg_compile_test(neg_net_merge_door_forged
+  "is private within this context"
+  "foundation::algebra::net::MergeDoor::reason_")
 foundation_neg_compile_test(neg_net_reflect_stray_member
   "static assertion failed: net: member 'count' of agent 'num' is no port"
   "A port is a member of the type Give<T>, Take<T> or Meet<T>\\.")

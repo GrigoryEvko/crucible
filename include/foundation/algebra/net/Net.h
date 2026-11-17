@@ -7,9 +7,11 @@
 //   NetName                 the name of a type, an agent kind or a port: a
 //                           string literal, or a static string of reflection
 //   PortType                a type and its polarity: give(t), take(t), meet(t)
+//   MergeDoor               the merge door of a kind: closed, or open through
+//                           allow_merge(reason) (THE DETERMINISM)
 //   AgentKind               the ports of an agent: a name and a type for each
-//                           port, the principal port, a par group, and the
-//                           boundary flag
+//                           port, the principal port, a par group, the
+//                           boundary flag, and the merge door
 //   NetSignature<T, K>      the T type names and the K agent kinds
 //   Net<T, K, A, W>         a signature, the kind of each of A agents, and W
 //                           wires.  Each wire joins two ports
@@ -36,6 +38,8 @@
 //                                the fault NoFault, at compile time or at run
 //                                time
 //   explain_fault(net, fault)    the text of the refusal of a fault
+//   determinism_of(net)          the determinism class of the net:
+//                                Deterministic, or MergesThroughDoor
 //
 // THE MODEL
 //   An agent has ports, and one of them is its principal port.  A rule fires
@@ -79,6 +83,27 @@
 //   the same net with two operands swapped pass the same checks.  A test that
 //   an implementation follows its net must also read the operand of each
 //   port.
+//
+// THE DETERMINISM
+//   A net whose rules give at most one rule for each pair gives one result
+//   in each schedule, because each step commutes with each other step
+//   (Lafont 1990).  Plain code that runs a net keeps this only when each
+//   agent computes a function of its inputs.  An agent whose result depends
+//   on the order in which its inputs come, such as the consumer of a channel
+//   with two producers, is a merge.  The kind of such an agent opens its
+//   merge door with allow_merge(reason), and the reason tells which order
+//   the schedule picks.  allow_merge is the only way to an open door, so a
+//   search for allow_merge finds each merge kind of the tree.
+//
+//   determinism_of(net) gives MergesThroughDoor for a net with an agent of a
+//   merge kind, and Deterministic for each other net.  A user that needs one
+//   result in each schedule writes
+//   static_assert(determinism_of(net) == NetDeterminism::Deterministic).  The
+//   effect row of a context already refuses the pop of a channel with two
+//   producers with no Nondet tag, so the door is for the nets that no row
+//   reads: the plans of the reductions and the nets of tasks.  A boundary
+//   agent stands for a free port, so check_signature refuses a boundary kind
+//   with an open door.
 //
 // THE VERDICT
 //   A check gives a NetVerdict.  An admitted verdict has no text.  A refusal
@@ -133,6 +158,7 @@
 //                       and a ready queue of the pars, as probe E4 measured
 //     check_vicious     O(A + W)
 //     check_dataflow    O(A + W), the topological sort of Kahn
+//     determinism_of    O(A)
 //   Each check reads arrays, because a read of an array costs less in constant
 //   evaluation than a read through a pointer.  The body of each check is a
 //   template on the capacity of its arrays, and it reads the first agents and
@@ -168,6 +194,11 @@ namespace detail {
 // has no terminating zero.  It has no definition, so the call is no constant
 // expression, and the error of the compiler names the rule.
 void net_name_has_no_terminating_zero() noexcept;
+
+// allow_merge calls this function for an empty reason.  It has no
+// definition, so the call is no constant expression, and the error of the
+// compiler names the rule.
+void merge_door_has_no_reason() noexcept;
 
 }  // namespace detail
 
@@ -254,6 +285,34 @@ struct PortType {
     return type;
 }
 
+// ── The merge door ──────────────────────────────────────────────────────
+
+// The merge door of an agent kind (THE DETERMINISM).  The default door is
+// closed.  allow_merge is the only way to an open door.
+class MergeDoor {
+    NetName reason_{};
+
+    friend consteval MergeDoor allow_merge(NetName reason) noexcept;
+
+public:
+    constexpr MergeDoor() noexcept = default;
+
+    [[nodiscard]] constexpr bool is_open() const noexcept { return !reason_.is_empty(); }
+
+    // The order that the schedule picks, or the empty name of a closed door.
+    [[nodiscard]] constexpr NetName reason() const noexcept { return reason_; }
+};
+
+// The open merge door of a kind whose result depends on the order in which
+// its inputs come.  The reason tells which order the schedule picks.  An
+// empty reason is no constant expression.
+[[nodiscard]] consteval MergeDoor allow_merge(NetName reason) noexcept {
+    if (reason.is_empty()) detail::merge_door_has_no_reason();
+    MergeDoor door{};
+    door.reason_ = reason;
+    return door;
+}
+
 // ── Agents and wires ────────────────────────────────────────────────────
 
 // The most ports of one agent.  A par group is a mask of 8 bits.
@@ -262,7 +321,8 @@ inline constexpr std::size_t max_agent_ports = 8;
 // The ports of an agent.  The ports are the names before the first empty
 // name, so a kind of two ports names two.  par_ports holds one bit for each
 // port of the par group: no port, or two or more auxiliary ports.  A
-// boundary kind has one port, and no rule reads it.
+// boundary kind has one port, and no rule reads it.  A merge kind opens its
+// merge door (THE DETERMINISM).
 struct AgentKind {
     NetName name{};
     NetName port_names[max_agent_ports]{};
@@ -271,6 +331,7 @@ struct AgentKind {
     std::uint8_t par_ports = 0;
     bool is_boundary = false;
     std::uint8_t reserved[5]{};
+    MergeDoor merge{};
 };
 
 // The index of a kind in the kinds of a signature.
@@ -445,6 +506,8 @@ enum class NetFaultCode : std::uint8_t {
     // check_dataflow.  A cycle of waits names its cycle in path.
     DataflowMeetPort = 24,
     DataflowCycle = 25,
+    // check_signature.  The fault names the kind.
+    BoundaryMerges = 26,
 };
 
 // The most agents of a cycle that a fault names.  A longer cycle sets
@@ -617,8 +680,8 @@ public:
 // kind has a name and at least one port, its ports are the names before the
 // first empty name, each port names a type of the signature, the principal
 // port is one of its ports, the par group holds no port or two or more
-// auxiliary ports, and a boundary kind has one port and no par group.
-// Complexity: O(T + K).
+// auxiliary ports, and a boundary kind has one port, no par group and a
+// closed merge door.  Complexity: O(T + K).
 template <std::size_t Types, std::size_t Kinds>
 [[nodiscard]] constexpr NetFault find_signature_fault(NetSignature<Types, Kinds> const& signature) noexcept {
     for (std::uint32_t type = 0; type < Types; ++type) {
@@ -652,6 +715,7 @@ template <std::size_t Types, std::size_t Kinds>
         if (kind.is_boundary && (count != 1u || group != 0u)) {
             return NetFault{.code = NetFaultCode::BoundaryOfManyPorts, .kind = id};
         }
+        if (kind.is_boundary && kind.merge.is_open()) return NetFault{.code = NetFaultCode::BoundaryMerges, .kind = id};
     }
     return NetFault{};
 }
@@ -726,6 +790,11 @@ template <std::size_t Types, std::size_t Kinds>
                 .put("' has ")
                 .put_number(count)
                 .put(" ports.  A boundary agent stands for one free port of the net, so it has one port.");
+        case NetFaultCode::BoundaryMerges:
+            return NetVerdict::refuse("net: the boundary kind '")
+                .put_name(kind.name)
+                .put("' opens the merge door.  A boundary agent stands for a free port of the net, so it merges "
+                     "nothing.");
         case NetFaultCode::KindPastSignature:
         case NetFaultCode::WireNodePastNet:
         case NetFaultCode::WirePortPastAgent:
@@ -832,6 +901,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
         case NetFaultCode::ParGroupHoldsPrincipal:
         case NetFaultCode::ParGroupOfOnePort:
         case NetFaultCode::BoundaryOfManyPorts:
+        case NetFaultCode::BoundaryMerges:
             return explain_signature_fault_(graph.signature, fault);
         case NetFaultCode::KindPastSignature:
             return NetVerdict::refuse("net: node ")
@@ -1512,6 +1582,30 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
 [[nodiscard]] consteval NetVerdict check_dataflow(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     return explain_fault(graph, find_dataflow_fault(graph));
+}
+
+// ── The determinism ─────────────────────────────────────────────────────
+
+// The determinism class of a net (THE DETERMINISM).
+enum class NetDeterminism : std::uint8_t {
+    // No agent of the net is a merge, so the net gives one result in each
+    // schedule.
+    Deterministic = 0,
+    // An agent of the net has a kind that opens the merge door, so the result
+    // can depend on the schedule.
+    MergesThroughDoor = 1,
+};
+
+// The determinism class of a net.  An agent whose kind is past the signature
+// is no merge, and check_wiring refuses it.  Complexity: O(A).
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetDeterminism determinism_of(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    for (KindId const kind : graph.agents) {
+        if (index_of(kind) < Kinds && graph.signature.kinds[index_of(kind)].merge.is_open()) {
+            return NetDeterminism::MergesThroughDoor;
+        }
+    }
+    return NetDeterminism::Deterministic;
 }
 
 }  // namespace foundation::algebra::net

@@ -708,6 +708,62 @@ static_assert(explain_signature_fault_(proofs, NetFault{.code = NetFaultCode::Wi
                   .says("net: the fault names a net, and the signature alone cannot name its places."));
 static_assert(explain_fault(identity, NetFault{}).is_admitted());
 
+// ── The determinism ─────────────────────────────────────────────────────
+//
+// Two producers give items to one consumer, and the consumer gives them to
+// a drain.  The consumer of merge_kinds opens the merge door, so the net
+// merges through the door.  The same net with a consumer of a closed door is
+// deterministic.
+
+inline constexpr TypeId item{0};
+
+inline constexpr AgentKind producer_kind{.name = "producer", .port_names = {"out"}, .port_types = {give(item)}};
+inline constexpr AgentKind drain_kind{
+    .name = "drain", .port_names = {"in"}, .port_types = {take(item)}, .is_boundary = true};
+
+inline constexpr NetSignature<1, 3> merge_kinds{.type_names = {"Item"},
+                                                .kinds = {producer_kind,
+                                                          {.name = "consumer",
+                                                           .port_names = {"first", "second", "out"},
+                                                           .port_types = {take(item), take(item), give(item)},
+                                                           .merge = allow_merge("the items come in their push order")},
+                                                          drain_kind}};
+inline constexpr NetSignature<1, 3> ordered_kinds{.type_names = {"Item"},
+                                                  .kinds = {producer_kind,
+                                                            {.name = "consumer",
+                                                             .port_names = {"first", "second", "out"},
+                                                             .port_types = {take(item), take(item), give(item)}},
+                                                            drain_kind}};
+
+inline constexpr Net<1, 3, 4, 3> merged_items{
+    .signature = merge_kinds,
+    .agents = {KindId{0}, KindId{0}, KindId{1}, KindId{2}},
+    .wires = {join_ports(0, 0, 2, 0), join_ports(1, 0, 2, 1), join_ports(2, 2, 3, 0)}};
+inline constexpr Net<1, 3, 4, 3> ordered_items{
+    .signature = ordered_kinds,
+    .agents = {KindId{0}, KindId{0}, KindId{1}, KindId{2}},
+    .wires = {join_ports(0, 0, 2, 0), join_ports(1, 0, 2, 1), join_ports(2, 2, 3, 0)}};
+
+inline constexpr NetVerdict merged_items_verdict = check_dataflow(merged_items);
+static_assert(merged_items_verdict.is_admitted(), merged_items_verdict);
+static_assert(determinism_of(merged_items) == NetDeterminism::MergesThroughDoor);
+static_assert(determinism_of(ordered_items) == NetDeterminism::Deterministic);
+static_assert(merge_kinds.kinds[1].merge.is_open() && !merge_kinds.kinds[0].merge.is_open());
+static_assert(merge_kinds.kinds[1].merge.reason() == NetName{"the items come in their push order"});
+static_assert(MergeDoor{}.reason().is_empty());
+
+// A boundary kind that opens the merge door.
+inline constexpr NetSignature<1, 1> merging_boundary{.type_names = {"Item"},
+                                                     .kinds = {{.name = "drain",
+                                                                .port_names = {"in"},
+                                                                .port_types = {take(item)},
+                                                                .is_boundary = true,
+                                                                .merge = allow_merge("the items of two pushes")}}};
+static_assert(check_signature(merging_boundary)
+                  .says("net: the boundary kind 'drain' opens the merge door.  A boundary agent stands for a free "
+                        "port of the net, so it merges nothing."));
+static_assert(find_signature_fault(merging_boundary).code == NetFaultCode::BoundaryMerges);
+
 }  // namespace detail::net_self_test
 
 }  // namespace foundation::algebra::net
