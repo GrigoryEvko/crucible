@@ -13,6 +13,8 @@
 //   The bits           sum_by_tree_in_parallel, scan_sums_in_parallel and
 //                      sum_segments_by_tree_in_parallel give the bits of the
 //                      evaluation of the plan with an add, on Philox draws
+//   The golden digests each parallel form gives the digest that this unit
+//                      holds, over runs of some grains
 //
 // The runs hold one grain and one element, four grains with a short last
 // grain, and nine grains with a short last grain.  The coupling
@@ -25,6 +27,7 @@
 #include <foundation/core/Reduce.h>
 #include <foundation/core/Scan.h>
 
+#include "../foundation/golden_digest.h"
 #include "../foundation/reductions_net.h"
 #include "../test_assert.h"
 #include "parallel_tree_test.h"
@@ -257,19 +260,27 @@ template <class T>
 
 // ── The bits of the parallel sums of segments ───────────────────────────
 
-// sum_segments_by_tree_in_parallel gives at each segment the bits of the tree
-// plan of the segment, and +0 for an empty segment, on each coupling.  The
-// segments have drawn counts: a quarter of them are empty, and some hold more
-// than one grain.
-[[nodiscard]] bool does_parallel_segment_sum_follow(PhiloxStream& stream) noexcept {
-    constexpr std::size_t kSegments = 40;
-    HeapArray<float> const draws = draw_run<float, kSegments * 2 * kGrain>(stream);
+inline constexpr std::size_t kSegments = 40;
+inline constexpr std::size_t kSegmentElements = kSegments * 2 * kGrain;
+
+// The offsets of kSegments segments with drawn counts: a quarter of them are
+// empty, and some hold more than one grain.  The segments fit a run of
+// kSegmentElements elements.
+[[nodiscard]] HeapArray<std::size_t> draw_segment_offsets(PhiloxStream& stream) noexcept {
     HeapArray<std::size_t> offsets = ::fixy::mint_heap_array(tree::test_alloc(), kSegments + 1, std::size_t{0});
     std::size_t end = 0;
     for (std::size_t& offset : offsets) {
         offset = end;
         end += stream.below(4) == 0 ? 0 : stream.below(2 * kGrain);
     }
+    return offsets;
+}
+
+// sum_segments_by_tree_in_parallel gives at each segment the bits of the tree
+// plan of the segment, and +0 for an empty segment, on each coupling.
+[[nodiscard]] bool does_parallel_segment_sum_follow(PhiloxStream& stream) noexcept {
+    HeapArray<float> const draws = draw_run<float, kSegmentElements>(stream);
+    HeapArray<std::size_t> const offsets = draw_segment_offsets(stream);
     View<std::size_t const> const checked{offsets.view()};
     View<float const> const elements =
         View<float const>{draws.view()}.window(0, element_at(checked, kSegments)).expect("the segments fit the draws");
@@ -291,6 +302,76 @@ template <class T>
     });
 }
 
+// ── The golden digests ──────────────────────────────────────────────────
+//
+// The golden bits test of foundation stays below one grain.  So this part
+// holds the golden digest of each parallel form over runs of some grains, by
+// the rule of golden_digest.h.  The matches above show that the plan of each
+// run gives the same bits, so each digest also holds the bits of the plans.
+// The forms run on 8 shards, each on its own thread.
+
+inline constexpr ::fixy::FixedArray<std::size_t, 5> kGoldenCounts{kGrain + 1, 2 * kGrain, 3 * kGrain + 37,
+                                                                  5 * kGrain + 1000, kLongest};
+inline constexpr spawn::BodyCoupling kGoldenCoupling = spawn::BodyCoupling::WaitOnEachOther;
+
+// Each parallel form gives its golden digest.  Each digest that differs
+// prints, so one run shows each of them.
+[[nodiscard]] bool are_parallel_digests_golden() noexcept {
+    using ::crucible::test::golden::fold_output;
+    using ::crucible::test::golden::fold_outputs;
+    using ::crucible::test::golden::is_golden;
+    using ::crucible::test::golden::kFnvOffset;
+    PhiloxStream stream{0x601D0101u};
+    HeapArray<float> const floats = draw_run<float, kSegmentElements>(stream);
+    HeapArray<std::uint64_t> words = ::fixy::mint_heap_array(tree::test_alloc(), kLongest, std::uint64_t{0});
+    for (std::uint64_t& word : words) {
+        word = stream.next_wide();
+    }
+    HeapArray<std::size_t> const offsets = draw_segment_offsets(stream);
+    View<float const> const float_view{floats.view()};
+    View<std::uint64_t const> const word_view{words.view()};
+    tree::BgCtx const ctx{tree::eff::testing::bg()};
+
+    std::uint64_t sums = kFnvOffset;
+    std::uint64_t reduces = kFnvOffset;
+    for (std::size_t const count : kGoldenCounts) {
+        sums = fold_output(sums, ::fixy::concurrent::sum_by_tree_in_parallel<kGoldenCoupling, 8>(
+                                     ctx, tree::test_alloc(), float_view.window(0, count).expect("the run fits")));
+        reduces = fold_output(reduces, ::fixy::concurrent::reduce_by_tree_in_parallel<kGoldenCoupling, 8>(
+                                           ctx, tree::test_alloc(), word_view.window(0, count).expect("the run fits"),
+                                           ::crucible::test::golden::Mix{})
+                                           .expect("the run has elements"));
+    }
+
+    std::uint64_t scans = kFnvOffset;
+    View<float const> const scan_run = float_view.window(0, 3 * kGrain + 37).expect("the run fits");
+    for (core::ScanKind const kind :
+         ::fixy::FixedArray<core::ScanKind, 2>{core::ScanKind::Inclusive, core::ScanKind::Exclusive}) {
+        HeapArray<float> scanned = ::fixy::mint_heap_array(tree::test_alloc(), scan_run.size(), 0.0f);
+        scanned = ::fixy::with_mut(std::move(scanned), [&](auto out) noexcept {
+            ::fixy::concurrent::scan_sums_in_parallel<kGoldenCoupling, 8>(ctx, tree::test_alloc(), kind, scan_run,
+                                                                          std::move(out));
+        });
+        scans = fold_outputs(scans, View<float const>{scanned.view()});
+    }
+
+    View<std::size_t const> const checked{offsets.view()};
+    HeapArray<float> segment_sums = ::fixy::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
+    segment_sums = ::fixy::with_mut(std::move(segment_sums), [&](auto out) noexcept {
+        ::fixy::concurrent::sum_segments_by_tree_in_parallel<kGoldenCoupling, 8>(
+            ctx, float_view.window(0, element_at(checked, kSegments)).expect("the segments fit the run"), checked,
+            std::move(out));
+    });
+    std::uint64_t const segments = fold_outputs(kFnvOffset, View<float const>{segment_sums.view()});
+
+    bool const is_sum_golden = is_golden("sum_by_tree_in_parallel of float", sums, 0xF9C1E83A119F9F4Eu);
+    bool const is_reduce_golden = is_golden("reduce_by_tree_in_parallel with a mix", reduces, 0x16332C815E486A72u);
+    bool const is_scan_golden = is_golden("scan_sums_in_parallel of float", scans, 0x33878626746F0EB7u);
+    bool const is_segment_golden =
+        is_golden("sum_segments_by_tree_in_parallel of float", segments, 0x2F64B99E0558E387u);
+    return is_sum_golden && is_reduce_golden && is_scan_golden && is_segment_golden;
+}
+
 }  // namespace
 
 int main() {
@@ -299,9 +380,11 @@ int main() {
     bool const is_float = does_each_parallel_sum_and_scan_follow<float>(stream);
     bool const is_double = does_each_parallel_sum_and_scan_follow<double>(stream);
     bool const is_segment = does_parallel_segment_sum_follow(stream);
+    bool const is_golden = are_parallel_digests_golden();
     assert(is_reduce);
     assert(is_float);
     assert(is_double);
     assert(is_segment);
+    assert(is_golden);
     return 0;
 }
