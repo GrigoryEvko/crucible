@@ -164,6 +164,18 @@
       "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-asan-syntax" } }
     },
     {
+      "name": "syntax-x86-64",
+      "inherits": "default",
+      "displayName": "GCC 16, -march=x86-64, parse only: the SSE2 and SSE4.2 arms for the quarantine ledgers (loop syntax)",
+      "binaryDir": "${sourceDir}/build-syntax-x86-64",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-march=x86-64",
+        "CRUCIBLE_X86_LEVEL": "v1",
+        "CRUCIBLE_SYNTAX_ONLY": "ON"
+      },
+      "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-asan-v1-syntax" } }
+    },
+    {
       "name": "syntax-aarch64",
       "inherits": "default",
       "displayName": "Cross GCC 16 for aarch64, parse only: the aarch64 arms for the quarantine ledgers (loop syntax)",

@@ -2373,6 +2373,7 @@ def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
 PARSE_PRESETS_TEXT = (
     '{"version": 6, "configurePresets": ['
     '{"name": "syntax-x86-64-v3", "binaryDir": "${sourceDir}/build-syntax-x86-64-v3"}, '
+    '{"name": "syntax-x86-64", "binaryDir": "${sourceDir}/build-syntax-x86-64"}, '
     '{"name": "syntax-aarch64", "binaryDir": "${sourceDir}/build-syntax-aarch64"}]}\n'
 )
 PLAIN_UNIT = "int lanes() { return 1; }\n"
@@ -2386,6 +2387,7 @@ def parse_cases(expect: Callable[[str, bool, str], None]) -> None:
     change of the tree, and the parse fails.
     """
     from assay.core import configuration as build_config
+    from assay.loop import syntax
     from assay.readers import cmake as cmake_reader
 
     with tempfile.TemporaryDirectory(prefix="affected-parse-") as directory:
@@ -2405,7 +2407,7 @@ def parse_cases(expect: Callable[[str, bool, str], None]) -> None:
             with contextlib.redirect_stdout(captured):
                 status = parse_configured(source_root, 4)
             output = captured.getvalue()
-            names = all(f"cmake --preset {preset}" in output for preset in ("syntax-x86-64-v3", "syntax-aarch64"))
+            names = all(f"cmake --preset {preset}" in output for preset in syntax.PARSE_PRESETS)
             expect(
                 f"parse_configured parses nothing for {label}, and names each parse build only for an arm",
                 status == 0 and names == should_name,
