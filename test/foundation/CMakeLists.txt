@@ -3754,6 +3754,12 @@ foundation_neg_compile_test(neg_net_rules_new_dependency
 foundation_neg_compile_test(neg_net_rules_waiting_knot
   "static assertion failed: rules: rule 'origin_meets_taker': the new agent 'second_knot' \\(agent 1 of the right"
   "waits on itself through the new agents\\.  A step makes no cycle of waits\\.")
+foundation_neg_compile_test(neg_net_rules_token_ring
+  "static assertion failed: rules: rule 'token_meets_node' replaces a pair of weight 2 with agents of weight 2"
+  "each step lowers the weight of the net, so each reduction ends\\.")
+foundation_neg_compile_test(neg_net_rules_growth_beyond_credit
+  "static assertion failed: rules: rule 'relay_grows' replaces a pair of weight 2 with agents of weight 3"
+  "An agent weighs 1 plus the step weight of its kind")
 foundation_neg_compile_test(neg_net_reflect_stray_member
   "static assertion failed: net: member 'count' of agent 'num' is no port"
   "A port is a member of the type Give<T>, Take<T> or Meet<T>\\.")

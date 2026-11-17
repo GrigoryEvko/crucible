@@ -11,6 +11,10 @@
 //                                the type of the port.  The class T names the
 //                                type
 //   [[= boundary{}]] on a class  the agent stands for a free port of a net
+//   [[= StepWeight{n}]] on a class
+//                                the step weight of the agent kind (THE
+//                                WEIGHTS of Rules.h).  With no such
+//                                annotation, the step weight is 0
 //   [[= principal{}]]            on the member of the principal port.  With no
 //                                such member, the first member is principal
 //   [[= par{}]]                  on each member of the par group
@@ -149,8 +153,10 @@ struct InfoRun {
 struct Notes {
     std::meta::info rule_type{};
     std::meta::info growth{};
+    std::meta::info weight{};
     std::uint32_t rule_count = 0;
     std::uint32_t growth_count = 0;
+    std::uint32_t weight_count = 0;
     bool is_agent = false;
     bool is_boundary = false;
     bool is_principal = false;
@@ -173,6 +179,9 @@ struct Notes {
         } else if (type == ^^grows) {
             if (notes.growth_count == 0) notes.growth = run.first[index];
             ++notes.growth_count;
+        } else if (type == ^^StepWeight) {
+            if (notes.weight_count == 0) notes.weight = run.first[index];
+            ++notes.weight_count;
         } else if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^rule) {
             if (notes.rule_count == 0) notes.rule_type = type;
             ++notes.rule_count;
@@ -211,9 +220,11 @@ struct PortFacts {
 struct AgentFacts {
     std::meta::info kind{};
     std::meta::info stray{};
+    std::meta::info weight{};
     PortFacts ports[max_agent_ports]{};
     std::uint32_t member_count = 0;
     std::uint32_t principal_count = 0;
+    std::uint32_t weight_count = 0;
     bool is_boundary = false;
 };
 
@@ -259,6 +270,8 @@ template <std::size_t Capacity>
         ++facts.agent_count;
         kind.kind = member;
         kind.is_boundary = notes.is_boundary;
+        kind.weight = notes.weight;
+        kind.weight_count = notes.weight_count;
         InfoRun const fields = fields_of(member);
         for (std::size_t field = 0; field < fields.count; ++field) {
             PortFacts const port = read_port(fields.first[field]);
@@ -330,8 +343,9 @@ template <std::size_t Capacity>
 
 // Each annotation that the adapter reads makes one row of a table: the
 // namespace holds an agent, each member of an agent is a port, an agent has
-// 1 to max_agent_ports ports and at most one principal member, and each rule
-// has one rule annotation, a pair of agents of the namespace, no parameter,
+// 1 to max_agent_ports ports, at most one principal member and at most one
+// step weight, and each rule has one rule annotation, a pair of agents of the
+// namespace, no parameter,
 // the result ReflectedSide, and at most one growth door.  Complexity:
 // O(A + R) over the facts of the namespace.
 template <std::meta::info Scope>
@@ -364,6 +378,13 @@ template <std::meta::info Scope>
                 .put("' has ")
                 .put_number(kind.principal_count)
                 .put(" members with the annotation principal.  An agent has one principal port.");
+        }
+        if (kind.weight_count > 1) {
+            return NetVerdict::refuse("net: agent '")
+                .put_name(detail::name_of(kind.kind))
+                .put("' has ")
+                .put_number(kind.weight_count)
+                .put(" step weights.  An agent kind has at most one step weight.");
         }
     }
     for (std::size_t index = 0; index < facts.rule_count; ++index) {
@@ -452,6 +473,13 @@ template <std::meta::info Scope>
     constexpr std::size_t rules = facts.rule_count == 0 ? 1 : facts.rule_count;
     RuleTable<types, kinds, rules> table{};
     table.signature = signature_of<Scope>();
+    std::size_t weighed = 0;
+    for (std::size_t kind = 0; kind < facts.agent_count; ++kind) {
+        if (facts.agents[kind].weight_count == 0) continue;
+        table.step_weights[weighed] = KindWeight{KindId{static_cast<std::uint32_t>(kind)},
+                                                 std::meta::extract<StepWeight>(facts.agents[kind].weight)};
+        ++weighed;
+    }
     std::size_t index = 0;
     template for (constexpr std::meta::info function : Namespace::rules.items) {
         if constexpr (detail::is_callable_rule(function)) {

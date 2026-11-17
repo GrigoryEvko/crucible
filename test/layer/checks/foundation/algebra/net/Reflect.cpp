@@ -84,12 +84,12 @@ static_assert(check_forest(tree_of_three).is_admitted() && check_dataflow(tree_o
 
 namespace combinators {
 
-struct[[= agent{}]] constructor {
+struct[[ = agent{}, = StepWeight{3} ]] constructor {
     Meet<Term> principal;
     Meet<Term> one;
     Meet<Term> two;
 };
-struct[[= agent{}]] duplicator {
+struct[[ = agent{}, = StepWeight{3} ]] duplicator {
     Meet<Term> principal;
     Meet<Term> one;
     Meet<Term> two;
@@ -144,11 +144,61 @@ struct[[= agent{}]] eraser {
 
 }  // namespace combinators
 
-inline constexpr RuleVerdict combinator_verdict = check_rules_of<^^combinators>();
-static_assert(combinator_verdict.is_admitted(), combinator_verdict);
-static_assert(combinator_verdict.growth() == NetGrowth::Grows && combinator_verdict.growing_rule_count() == 1);
+// The commutation makes 4 agents from 2 of the same kinds, so no step
+// weights pay for it, and a reduction of the combinators need not end.  The
+// step weights of the constructor and the duplicator pay for the steps of
+// the eraser.
+static_assert(check_rules_of<^^combinators>().says(
+    "rules: rule 'constructor_meets_duplicator' replaces a pair of weight 8 with agents of weight 16.  An agent "
+    "weighs 1 plus the step weight of its kind, and each step lowers the weight of the net, so each reduction "
+    "ends."));
 static_assert(rule_table_of<^^combinators>().rules[5].growth_reason()
               == NetName{"the duplicator copies the constructor"});
+static_assert(signature_of<^^combinators>().kinds[0].port_types[1] == meet(TypeId{0}));
+
+// ── A table that grows within its credit ────────────────────────────────
+
+// relay >< num gives the value as a join of two copies, so it makes 3 agents
+// from 2.  The relay holds the credit for the third agent.
+namespace relays {
+
+struct[[= agent{}]] num {
+    Give<Value> value;
+};
+struct[[ = agent{}, = StepWeight{2} ]] relay {
+    Take<Value> in;
+    Give<Value> out;
+};
+struct[[= agent{}]] join {
+    Give<Value> out;
+    Take<Value> left;
+    Take<Value> right;
+};
+[[ = rule<relay, num>{},
+   = grows{"a relay gives each value as a pair of two copies"} ]] consteval ReflectedSide relay_grows() {
+    return ReflectedSide{.agents = {^^join, ^^num, ^^num},
+                         .wires = {RuleWire{point_at_agent(0, 0), point_at_interface(0)},
+                                   RuleWire{point_at_agent(1, 0), point_at_agent(0, 1)},
+                                   RuleWire{point_at_agent(2, 0), point_at_agent(0, 2)}},
+                         .agent_count = 3,
+                         .wire_count = 3};
+}
+[[= rule<relay, join>{}]] consteval ReflectedSide relay_meets_join() {
+    return ReflectedSide{.agents = {^^join},
+                         .wires = {RuleWire{point_at_agent(0, 0), point_at_interface(0)},
+                                   RuleWire{point_at_agent(0, 1), point_at_interface(1)},
+                                   RuleWire{point_at_agent(0, 2), point_at_interface(2)}},
+                         .agent_count = 1,
+                         .wire_count = 3};
+}
+
+}  // namespace relays
+
+inline constexpr RuleVerdict relays_verdict = check_rules_of<^^relays>();
+static_assert(relays_verdict.is_admitted(), relays_verdict);
+static_assert(relays_verdict.growth() == NetGrowth::GrowsWithinCredit && relays_verdict.growing_rule_count() == 1);
+static_assert(rule_table_of<^^relays>().step_weights[0].kind == KindId{1}
+              && rule_table_of<^^relays>().step_weights[0].weight == StepWeight{2});
 
 // ── The refusals of the annotations ─────────────────────────────────────
 
@@ -169,6 +219,14 @@ struct[[= agent{}]] add {
 }  // namespace two_principals
 static_assert(check_annotations<^^two_principals>().says(
     "net: agent 'add' has 2 members with the annotation principal.  An agent has one principal port."));
+
+namespace two_weights {
+struct[[ = agent{}, = StepWeight{1}, = StepWeight{2} ]] num {
+    Give<Value> value;
+};
+}  // namespace two_weights
+static_assert(check_annotations<^^two_weights>().says(
+    "net: agent 'num' has 2 step weights.  An agent kind has at most one step weight."));
 
 namespace no_agent {
 struct plain {};

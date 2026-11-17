@@ -454,7 +454,11 @@ inline constexpr net::RuleTable<1, 8, 5> value_rules{
                                                  join_ends(net::point_at_agent(0, 2), net::point_at_interface(2))},
                                        .agent_count = 1,
                                        .wire_count = 3}},
-              net::Rule{"cmp_high_meets_num", cmp_high_kind, num_kind, two_nums}}};
+              net::Rule{"cmp_high_meets_num", cmp_high_kind, num_kind, two_nums}},
+    // dup >< num and cmp_high >< num make 2 agents from 2, so dup, cmp and
+    // cmp_high weigh more than num.
+    .step_weights = {net::KindWeight{dup_kind, net::StepWeight{1}}, net::KindWeight{cmp_kind, net::StepWeight{1}},
+                     net::KindWeight{cmp_high_kind, net::StepWeight{1}}}};
 
 inline constexpr net::RuleVerdict value_rules_verdict = net::check_rules(value_rules);
 static_assert(value_rules_verdict.is_admitted(), value_rules_verdict);

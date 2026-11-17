@@ -8,10 +8,14 @@
 //   allow_growth(rule, reason)
 //                           the growth door: the only way to a rule whose
 //                           right side has more agents than its pair
-//   RuleTable<T, K, R>      a signature and R rules
+//   StepWeight, KindWeight  the step weight of a kind (THE WEIGHTS)
+//   RuleTable<T, K, R>      a signature, R rules, and the step weights of the
+//                           kinds
 //   check_rules(table)      the check of the table, with its class of growth
 //   RuleVerdict             the answer: admitted or a refusal, the class of
 //                           growth, and the forest property of the steps
+//   weight_of(table, net)   the weight of a net: a bound of the steps and of
+//                           the agents of each reduction of the net
 //
 // A RULE
 //   A rule fires where the principal ports of an agent of the left kind and
@@ -46,7 +50,9 @@
 //     results for one net (an inference from the commutation of the steps)
 //   - a right side of more than 2 agents with no growth door, and a growth
 //     door on a rule that does not grow
-//   - a dataflow rule whose step can make a deadlock (THE PRESERVATION).
+//   - a dataflow rule whose step can make a deadlock (THE PRESERVATION)
+//   - a rule whose step does not lower the weight of the net, and a step
+//     weight that names no kind or a kind for the second time (THE WEIGHTS).
 //
 // THE PRESERVATION
 //   A check of a net holds for each net that a reduction makes, when each
@@ -76,32 +82,48 @@
 //   closes no cycle.  A user that reduces forests writes
 //   static_assert(verdict.keeps_forest()).
 //
+// THE WEIGHTS
+//   Each kind has a step weight, 0 when the table names no weight for it.  An
+//   agent weighs 1 plus the step weight of its kind, and the weight of a net
+//   is the sum of the weights of its agents.  check_rules asks that each step
+//   lower the weight of the net: the agents of the right side weigh less than
+//   the pair.  The weight is never negative, so a reduction of a net of
+//   weight W ends after at most W steps, and each net of the reduction holds
+//   at most W agents (the potentials of Gimenez and Moser 2016).
+//
+//   The step weight of an agent is its credit for the agents that a later
+//   step adds.  A rule that makes n agents from 2 passes only when the step
+//   weights of its pair are more than n - 2 plus the step weights of the new
+//   agents.  So a table in which each right side has at most 1 agent needs no
+//   step weight, and the table of a growing rule states the credit that pays
+//   for it.  A rule whose right side holds the kinds of its pair,
+//   such as a token that goes past a node, never passes: on a ring of nodes
+//   it never stops.  The commutation of the interaction combinators makes 4
+//   agents from 2 of the same kinds, so no step weights admit it either.
+//
 // THE CLASS OF GROWTH
 //   A rule that adds agents allocates: the commutation of a duplicator and a
 //   constructor makes 4 agents from 2 (Lafont 1997), and HVM2 asks for 4 new
 //   nodes in that rule.  The class of an admitted table:
 //     Shrinks           each right side has at most 1 agent.  Each step
-//                       removes an agent, so a reduction of a net of A agents
-//                       ends after at most A steps
+//                       removes an agent
 //     AllocatesNothing  each right side has at most 2 agents.  The count of
 //                       the agents of a net never increases, so a reduction
-//                       reuses the slots of each pair and allocates nothing.
-//                       This class bounds the agents, not the steps: a token
-//                       that goes past a node replaces 2 agents with 2, and
-//                       on a ring of nodes it never stops
-//     Grows             a rule went through the growth door.  The verdict
-//                       counts the growing rules and the most agents that one
-//                       of them adds
+//                       reuses the slots of each pair and allocates nothing
+//     GrowsWithinCredit a rule went through the growth door, and the step
+//                       weights of its pair pay for the added agents.  The
+//                       verdict counts the growing rules and the most agents
+//                       that one of them adds
 //   A user that must not allocate writes
 //   static_assert(verdict.allocates_nothing(), verdict).
 //
 // THE COSTS
 //   R rules and K kinds.  check_rules is O(K^2 + R * I * E) for I the ports
 //   of the interface of a pair and E the ends of a right side, with a table
-//   of K * K pairs.  This header reads plain arrays.
-//   The check of the value table and the combinator table of its check file
-//   costs about 170 M compile instructions and 40 ms of wall time together.
-//   The checks of the preservation are about 30 M and 10 ms of it.  A table that reflection
+//   of K * K pairs.  This header reads plain arrays.  The check of the value
+//   table and the combinator table of its check file costs about 170 M
+//   compile instructions and 40 ms of wall time together.  The checks of the
+//   preservation are about 30 M and 10 ms of it.  A table that reflection
 //   reads costs more, because of the constant arrays and strings of
 //   foundation/algebra/net/Reflect.h (THE COSTS there).
 
@@ -193,19 +215,33 @@ public:
     return rule;
 }
 
-// A signature and its rules.
+// The step weight of a kind (THE WEIGHTS).  An agent weighs 1 plus the step
+// weight of its kind.
+enum class StepWeight : std::uint32_t {
+};
+
+// One kind of a table and its step weight.  An entry of step weight 0 names
+// no kind, so the entries past the last one of a table keep their default.
+struct KindWeight {
+    KindId kind{};
+    StepWeight weight{};
+};
+
+// A signature, its rules, and the step weights of the kinds that weigh more
+// than 1, in any order.
 template <std::size_t Types, std::size_t Kinds, std::size_t Rules>
     requires(Types >= 1 && Kinds >= 1 && Rules >= 1 && Kinds < 0x10000u)
 struct RuleTable {
     NetSignature<Types, Kinds> signature{};
     Rule rules[Rules]{};
+    KindWeight step_weights[Kinds]{};
 };
 
 // The class of growth of an admitted table.
 enum class NetGrowth : std::uint8_t {
     Shrinks = 0,
     AllocatesNothing = 1,
-    Grows = 2,
+    GrowsWithinCredit = 2,
 };
 
 // The forest of a net under the steps of a table (THE PRESERVATION): each
@@ -247,7 +283,7 @@ public:
     [[nodiscard]] constexpr bool is_admitted() const noexcept { return verdict_.is_admitted(); }
     [[nodiscard]] constexpr NetGrowth growth() const noexcept { return growth_; }
     [[nodiscard]] constexpr bool allocates_nothing() const noexcept {
-        return verdict_.is_admitted() && growth_ != NetGrowth::Grows;
+        return verdict_.is_admitted() && growth_ != NetGrowth::GrowsWithinCredit;
     }
     // Each step of the table keeps a net that check_forest admits.
     [[nodiscard]] constexpr bool keeps_forest() const noexcept {
@@ -832,7 +868,8 @@ template <std::size_t Types, std::size_t Kinds>
 }  // namespace detail
 
 // The check of a rule table, with the class of growth of an admitted table.
-// Complexity: O(K^2 + R * E).
+// The step weights run last, so a table with another fault gives that fault.
+// Complexity: O(K^2 + R * I * E).
 template <std::size_t Types, std::size_t Kinds, std::size_t Rules>
 [[nodiscard]] consteval RuleVerdict check_rules(RuleTable<Types, Kinds, Rules> const& table) noexcept {
     NetVerdict const signature = check_signature(table.signature);
@@ -887,11 +924,80 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Rules>
             return RuleVerdict{refusal};
         }
     }
-    NetGrowth growth = NetGrowth::Grows;
+
+    // The step weights (THE WEIGHTS).
+    std::uint64_t weight[Kinds]{};
+    bool is_weighed[Kinds]{};
+    for (std::uint32_t entry = 0; entry < Kinds; ++entry) {
+        KindWeight const named = table.step_weights[entry];
+        if (named.weight == StepWeight{}) continue;
+        std::uint32_t const kind = index_of(named.kind);
+        if (kind >= Kinds) {
+            return RuleVerdict{NetVerdict::refuse("rules: step weight ")
+                                   .put_number(entry)
+                                   .put(" names the kind ")
+                                   .put_number(kind)
+                                   .put(", and the signature has ")
+                                   .put_number(Kinds)
+                                   .put(" kinds.")};
+        }
+        if (is_weighed[kind]) {
+            return RuleVerdict{NetVerdict::refuse("rules: step weight ")
+                                   .put_number(entry)
+                                   .put(" is a second step weight of the kind '")
+                                   .put_name(table.signature.kinds[kind].name)
+                                   .put("'.  A kind has one step weight.")};
+        }
+        is_weighed[kind] = true;
+        weight[kind] = static_cast<std::uint64_t>(named.weight);
+    }
+    for (std::uint32_t index = 0; index < Rules; ++index) {
+        Rule const& rule = table.rules[index];
+        RightSide const side = rule.side();
+        std::uint64_t const before = 2u + weight[index_of(rule.left())] + weight[index_of(rule.right())];
+        std::uint64_t after = side.agent_count;
+        for (std::uint32_t agent = 0; agent < side.agent_count; ++agent)
+            after += weight[index_of(side.agents[agent])];
+        if (after < before) continue;
+        NetVerdict refusal = NetVerdict::refuse("rules: ");
+        detail::put_rule(refusal, rule);
+        refusal.put(" replaces a pair of weight ")
+            .put_number(before)
+            .put(" with agents of weight ")
+            .put_number(after)
+            .put(".  An agent weighs 1 plus the step weight of its kind, and each step lowers the weight of the net, "
+                 "so each reduction ends.");
+        return RuleVerdict{refusal};
+    }
+
+    NetGrowth growth = NetGrowth::GrowsWithinCredit;
     if (most_agents <= 1u) growth = NetGrowth::Shrinks;
     if (most_agents == 2u) growth = NetGrowth::AllocatesNothing;
     return RuleVerdict{growth, GrowingRules{growing_rules}, AddedAgents{most_agents > 2u ? most_agents - 2u : 0u},
                        forest};
+}
+
+// The weight of a net under the step weights of a table (THE WEIGHTS).
+enum class NetWeight : std::uint64_t {
+};
+
+// The weight of a net of the signature of the table: the count of its agents
+// plus the step weights of their kinds.  A reduction of the net by a table
+// that check_rules admits ends after at most this count of steps, and each
+// net of the reduction holds at most this count of agents.  The function is
+// constexpr, so plain code that runs the rules can size its arrays at run
+// time.  Complexity: O(K * A) for K entries of step weights and A agents.
+template <std::size_t Types, std::size_t Kinds, std::size_t Rules, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr NetWeight weight_of(RuleTable<Types, Kinds, Rules> const& table,
+                                            Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    std::uint64_t total = Agents;
+    for (KindWeight const& named : table.step_weights) {
+        if (named.weight == StepWeight{}) continue;
+        for (KindId const kind : graph.agents) {
+            if (kind == named.kind) total += static_cast<std::uint64_t>(named.weight);
+        }
+    }
+    return NetWeight{total};
 }
 
 }  // namespace foundation::algebra::net

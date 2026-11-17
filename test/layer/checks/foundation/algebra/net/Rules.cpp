@@ -101,15 +101,63 @@ inline constexpr Rule negate_meets_num{"negate_meets_num", negate_kind, num_kind
 inline constexpr Rule probe_meets_num{"probe_meets_num", probe_kind, num_kind, one_value};
 inline constexpr Rule relay_meets_num{"relay_meets_num", relay_kind, num_kind, one_value};
 
+// dup >< num and cmp_high >< num replace 2 agents with 2, so dup and cmp_high
+// weigh more than num.  cmp >< num gives a cmp_high, so cmp weighs at least
+// as much as cmp_high.
+inline constexpr KindWeight dup_weight{dup_kind, StepWeight{1}};
+inline constexpr KindWeight cmp_weight{cmp_kind, StepWeight{1}};
+inline constexpr KindWeight cmp_high_weight{cmp_high_kind, StepWeight{1}};
 inline constexpr RuleTable<1, 10, 8> value_table{.signature = value_kinds,
                                                  .rules = {add_meets_num, add_left_meets_num, dup_meets_num,
                                                            cmp_meets_num, cmp_high_meets_num, negate_meets_num,
-                                                           probe_meets_num, relay_meets_num}};
+                                                           probe_meets_num, relay_meets_num},
+                                                 .step_weights = {dup_weight, cmp_weight, cmp_high_weight}};
 inline constexpr RuleVerdict value_verdict = check_rules(value_table);
 static_assert(value_verdict.is_admitted(), value_verdict);
 static_assert(value_verdict.growth() == NetGrowth::AllocatesNothing && value_verdict.allocates_nothing());
 static_assert(value_verdict.growing_rule_count() == 0 && value_verdict.most_added_agents() == 0);
 static_assert(value_verdict.keeps_forest());
+
+// The same table with no step weight for dup: dup >< num keeps the weight.
+inline constexpr RuleTable<1, 10, 8> light_dup_table{.signature = value_kinds,
+                                                     .rules = {add_meets_num, add_left_meets_num, dup_meets_num,
+                                                               cmp_meets_num, cmp_high_meets_num, negate_meets_num,
+                                                               probe_meets_num, relay_meets_num},
+                                                     .step_weights = {cmp_weight, cmp_high_weight}};
+static_assert(check_rules(light_dup_table)
+                  .says("rules: rule 'dup_meets_num' replaces a pair of weight 2 with agents of weight 2.  An agent "
+                        "weighs 1 plus the step weight of its kind, and each step lowers the weight of the net, so "
+                        "each reduction ends."));
+
+// A step weight past the signature, and a second step weight of one kind.
+inline constexpr RuleTable<1, 10, 8> stray_weight_table{
+    .signature = value_kinds,
+    .rules = {add_meets_num, add_left_meets_num, dup_meets_num, cmp_meets_num, cmp_high_meets_num, negate_meets_num,
+              probe_meets_num, relay_meets_num},
+    .step_weights = {dup_weight, cmp_weight, cmp_high_weight, KindWeight{KindId{12}, StepWeight{1}}}};
+static_assert(
+    check_rules(stray_weight_table).says("rules: step weight 3 names the kind 12, and the signature has 10 kinds."));
+inline constexpr RuleTable<1, 10, 8> twice_weighed_table{
+    .signature = value_kinds,
+    .rules = {add_meets_num, add_left_meets_num, dup_meets_num, cmp_meets_num, cmp_high_meets_num, negate_meets_num,
+              probe_meets_num, relay_meets_num},
+    .step_weights = {dup_weight, cmp_weight, cmp_high_weight, KindWeight{dup_kind, StepWeight{2}}}};
+static_assert(check_rules(twice_weighed_table)
+                  .says("rules: step weight 3 is a second step weight of the kind 'dup'.  A kind has one step "
+                        "weight."));
+
+// The weight of a net bounds its reduction.  Two nums meet an add, and a dup
+// gives the sum to two results: 6 agents, and dup weighs 1 more.  The
+// reduction takes 3 steps: add >< num, add_left >< num, and dup >< num.
+inline constexpr Net<1, 10, 6, 5> sum_and_copy{
+    .signature = value_kinds,
+    .agents = {num_kind, num_kind, add_kind, dup_kind, result_kind, result_kind},
+    .wires = {
+        Wire{PortRef{AgentId{0}, 0}, PortRef{AgentId{2}, 0}}, Wire{PortRef{AgentId{1}, 0}, PortRef{AgentId{2}, 1}},
+        Wire{PortRef{AgentId{2}, 2}, PortRef{AgentId{3}, 0}}, Wire{PortRef{AgentId{3}, 1}, PortRef{AgentId{4}, 0}},
+        Wire{PortRef{AgentId{3}, 2}, PortRef{AgentId{5}, 0}}}};
+static_assert(check_dataflow(sum_and_copy).is_admitted());
+static_assert(weight_of(value_table, sum_and_copy) == NetWeight{7});
 
 // The sum tree alone shrinks: each step removes an agent.
 inline constexpr NetSignature<1, 4> sum_kinds{
@@ -209,15 +257,27 @@ static_assert(check_rules(growth_table)
                   .says("rules: rule 'relay_grows' replaces 2 agents with 3, and only the door allow_growth admits a "
                         "rule that adds agents.  Such a step allocates."));
 
-// The same rule through the door: the table grows by one agent.
+// The same rule through the door: the table grows by one agent.  The relay
+// holds the credit for it: relay >< num weighs 2 + w(relay), and its right
+// side weighs 3, so the relay weighs 2.  A step weight of 1 pays for the
+// third agent but does not lower the weight.
 inline constexpr RuleTable<1, 3, 2> door_table{
     .signature = growth_kinds,
-    .rules = {allow_growth(relay_grows, "a relay gives each value as a pair of two copies"), relay_meets_join}};
+    .rules = {allow_growth(relay_grows, "a relay gives each value as a pair of two copies"), relay_meets_join},
+    .step_weights = {KindWeight{grown_relay_kind, StepWeight{2}}}};
 inline constexpr RuleVerdict door_verdict = check_rules(door_table);
 static_assert(door_verdict.is_admitted(), door_verdict);
-static_assert(door_verdict.growth() == NetGrowth::Grows && !door_verdict.allocates_nothing());
+static_assert(door_verdict.growth() == NetGrowth::GrowsWithinCredit && !door_verdict.allocates_nothing());
 static_assert(door_verdict.growing_rule_count() == 1 && door_verdict.most_added_agents() == 1);
 static_assert(door_verdict.keeps_forest());
+inline constexpr RuleTable<1, 3, 2> short_credit_table{
+    .signature = growth_kinds,
+    .rules = {allow_growth(relay_grows, "a relay gives each value as a pair of two copies"), relay_meets_join},
+    .step_weights = {KindWeight{grown_relay_kind, StepWeight{1}}}};
+static_assert(check_rules(short_credit_table)
+                  .says("rules: rule 'relay_grows' replaces a pair of weight 3 with agents of weight 3.  An agent "
+                        "weighs 1 plus the step weight of its kind, and each step lowers the weight of the net, so "
+                        "each reduction ends."));
 
 // A door on a rule that does not grow, and a door with no reason.
 inline constexpr RuleTable<1, 10, 8> idle_door_table{
@@ -266,6 +326,37 @@ inline constexpr Rule ping_pong_annihilate{"ping_pong_annihilate", KindId{0}, Ki
                                                      .wire_count = 1}};
 inline constexpr RuleTable<1, 2, 1> annihilate_table{.signature = ping_pong_kinds, .rules = {ping_pong_annihilate}};
 static_assert(check_rules(annihilate_table).growth() == NetGrowth::Shrinks);
+
+// ── A step that keeps the weight ────────────────────────────────────────
+//
+// A token that meets a node goes past it: the right side holds a new node
+// and a new token.  The right side holds no active pair, and the count of
+// the agents stays the same, but on a ring of nodes the token never stops.
+// The right side holds the kinds of the pair, so no step weights admit it.
+
+inline constexpr NetSignature<1, 2> token_kinds{
+    .type_names = {"Value"},
+    .kinds = {
+        {.name = "token", .port_names = {"front", "rear"}, .port_types = {give(value), take(value)}},
+        {.name = "node", .port_names = {"rear", "front"}, .port_types = {take(value), give(value)}},
+    }};
+
+// The interface: token.rear (0), node.front (1).
+inline constexpr Rule token_meets_node{"token_meets_node", KindId{0}, KindId{1},
+                                       RightSide{.agents = {KindId{1}, KindId{0}},
+                                                 .wires = {join_ends(point_at_agent(0, 0), point_at_interface(0)),
+                                                           join_ends(point_at_agent(0, 1), point_at_agent(1, 1)),
+                                                           join_ends(point_at_agent(1, 0), point_at_interface(1))},
+                                                 .agent_count = 2,
+                                                 .wire_count = 3}};
+inline constexpr RuleTable<1, 2, 1> token_table{
+    .signature = token_kinds,
+    .rules = {token_meets_node},
+    .step_weights = {KindWeight{KindId{0}, StepWeight{5}}, KindWeight{KindId{1}, StepWeight{1}}}};
+static_assert(check_rules(token_table)
+                  .says("rules: rule 'token_meets_node' replaces a pair of weight 8 with agents of weight 8.  An "
+                        "agent weighs 1 plus the step weight of its kind, and each step lowers the weight of the net, "
+                        "so each reduction ends."));
 
 // ── The preservation of the dataflow ────────────────────────────────────
 //
@@ -410,8 +501,10 @@ inline constexpr Rule join_meets_twin{"join_meets_twin", KindId{3}, KindId{1},
                                                           join_ends(point_at_agent(0, 0), point_at_interface(2))},
                                                 .agent_count = 1,
                                                 .wire_count = 3}};
+// twin >< num makes 2 agents from 2, so twin weighs more than split and join.
 inline constexpr RuleTable<1, 4, 3> diamond_table{.signature = diamond_kinds,
-                                                  .rules = {twin_meets_num, split_meets_twin, join_meets_twin}};
+                                                  .rules = {twin_meets_num, split_meets_twin, join_meets_twin},
+                                                  .step_weights = {KindWeight{KindId{1}, StepWeight{1}}}};
 inline constexpr RuleVerdict diamond_verdict = check_rules(diamond_table);
 static_assert(diamond_verdict.is_admitted(), diamond_verdict);
 static_assert(!diamond_verdict.keeps_forest());
@@ -515,19 +608,22 @@ inline constexpr Rule constructor_meets_duplicator{
               .agent_count = 4,
               .wire_count = 8}};
 
+// The commutation makes 2 agents of each kind of its pair, so for each step
+// weights its right side weighs more than its pair.  The combinators are a
+// universal model of computation, and a reduction of them need not end, so
+// check_rules refuses the table.  Each other check passes: the step weights
+// run last.
 inline constexpr RuleTable<1, 3, 6> combinator_table{
     .signature = combinator_kinds,
     .rules = {constructors_annihilate, duplicators_annihilate, erasers_vanish, eraser_meets_constructor,
               eraser_meets_duplicator,
               allow_growth(constructor_meets_duplicator,
-                           "the duplicator copies the constructor, one copy for each auxiliary port")}};
-inline constexpr RuleVerdict combinator_verdict = check_rules(combinator_table);
-static_assert(combinator_verdict.is_admitted(), combinator_verdict);
-static_assert(combinator_verdict.growth() == NetGrowth::Grows && combinator_verdict.growing_rule_count() == 1);
-static_assert(combinator_verdict.most_added_agents() == 2);
-// The commutation crosses the auxiliary ports of four new agents, so a step
-// closes a cycle.  The ports have no direction, so no rule is a dataflow rule.
-static_assert(!combinator_verdict.keeps_forest());
+                           "the duplicator copies the constructor, one copy for each auxiliary port")},
+    .step_weights = {KindWeight{constructor_kind, StepWeight{3}}, KindWeight{duplicator_kind, StepWeight{3}}}};
+static_assert(check_rules(combinator_table)
+                  .says("rules: rule 'constructor_meets_duplicator' replaces a pair of weight 8 with agents of weight "
+                        "16.  An agent weighs 1 plus the step weight of its kind, and each step lowers the weight of "
+                        "the net, so each reduction ends."));
 
 // A rule for a pair of one kind that changes when the two agents change
 // places: the free port of the left pivot goes into the principal port of a
