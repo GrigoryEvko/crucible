@@ -5547,6 +5547,10 @@ fixy_test(test_concurrent_parallel_tree_reduce)
 # parallel forms need the threads of fixy, so this part is a fixy test.
 fixy_test(test_net_reductions_match_parallel)
 
+# The parallel form of the pointwise walk against write_pointwise on the
+# calling thread, bit for bit, for 1, 2, 3, 4 and 8 shards.
+fixy_test(test_concurrent_parallel_pointwise)
+
 # test_os_thread_tasks starts threads through the door of
 # fixy/os/ThreadTasks.h with each option, and reads each option back from
 # the thread that it started.  test_concurrent_permission_fork runs the fork
