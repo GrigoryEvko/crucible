@@ -1,5 +1,40 @@
-add_library(crucible_vessel SHARED vessel_api.cpp)
+add_library(crucible_vessel SHARED vessel_api.cpp level_note.cpp)
 target_link_libraries(crucible_vessel PRIVATE crucible)
+
+# ── The x86-64 level of the vessel libraries ─────────────────────────
+#
+# Each vessel library compiles level_note.cpp, so it carries an ELF note
+# with the x86-64 level of its flags (THE NOTE of level_note.h).  A build at
+# a level gives that file CRUCIBLE_X86_LEVEL_EXACT, and the note then says
+# exact.  The loader of the vessel reads the note before it loads a library.
+#
+# The level probe libcrucible_level.so tells the loader the level of the
+# host.  It compiles at -march=x86-64 in each build, after the flags of the
+# build, so it runs on each x86_64 host.  It compiles the handler sources of
+# foundation itself, because libfoundation.a has the level of the build.
+#
+# THE LEVEL ROOT
+#   The install of a build at a level puts the two vessel libraries into
+#   lib/crucible/x86-64-LEVEL, and the install of each build puts the probe
+#   into lib/crucible.  Four builds at the four levels with one prefix give a
+#   level root, prefix/lib/crucible, from which the loader picks the level of
+#   the host (CRUCIBLE_LEVEL_ROOT of crucible_native.py):
+#     cmake --install BUILD --component vessel --prefix PREFIX
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    if(CRUCIBLE_X86_LEVEL)
+        string(SUBSTRING "${CRUCIBLE_X86_LEVEL}" 1 1 _crucible_level_number)
+        set_source_files_properties(level_note.cpp PROPERTIES
+            COMPILE_DEFINITIONS CRUCIBLE_X86_LEVEL_EXACT=${_crucible_level_number})
+        install(TARGETS crucible_vessel LIBRARY
+            DESTINATION lib/crucible/x86-64-${CRUCIBLE_X86_LEVEL} COMPONENT vessel)
+    endif()
+    add_library(crucible_level SHARED level_probe.cpp ${CRUCIBLE_HANDLER_SOURCES})
+    target_include_directories(crucible_level PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_link_libraries(crucible_level PRIVATE crucible_dialect)
+    target_compile_options(crucible_level PRIVATE -march=x86-64 -mtune=generic)
+    set_target_properties(crucible_level PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+    install(TARGETS crucible_level LIBRARY DESTINATION lib/crucible COMPONENT vessel)
+endif()
 
 # ── Stdlib ABI ───────────────────────────────────────────────────────
 #
@@ -35,7 +70,7 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     # backward-window thread_local, and the metadata bridge in record_kernel.h.
     # Splitting them would give each .so its own copy of the header-only
     # Crucible and its own backward-window counter.
-    add_library(crucible_dispatch SHARED crucible_fallback.cpp storage_generation.cpp)
+    add_library(crucible_dispatch SHARED crucible_fallback.cpp storage_generation.cpp level_note.cpp)
 
     # PyTorch headers from the built fork.
     #
@@ -122,6 +157,15 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     set_target_properties(crucible_dispatch PROPERTIES
         BUILD_RPATH "${TORCH_DIR}/torch/lib"
     )
+
+    # The dispatch library of a level goes beside the vessel library of the
+    # same level (THE LEVEL ROOT).  The loader imports torch._C before it
+    # loads the library, so libtorch and libc10 are in the process, and the
+    # installed library needs no rpath.
+    if(CRUCIBLE_X86_LEVEL)
+        install(TARGETS crucible_dispatch LIBRARY
+            DESTINATION lib/crucible/x86-64-${CRUCIBLE_X86_LEVEL} COMPONENT vessel)
+    endif()
 
     message(STATUS "Crucible: building native dispatch library (TORCH_DIR=${TORCH_DIR})")
 elseif(TORCH_DIR)

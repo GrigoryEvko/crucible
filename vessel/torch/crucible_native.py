@@ -9,6 +9,8 @@ Requires:
     (built from patches/pytorch-crucible-integration.patch)
   - libcrucible_vessel.so  (C API to Vigil lifecycle)
   - libcrucible_dispatch.so (C++ fallback + TLS accessors)
+  - libcrucible_level.so   (on x86_64: the level probe, which picks the
+    x86-64 level of the two libraries; THE LEVEL OF A LIBRARY below)
 
 Usage:
     from crucible_native import attach
@@ -44,6 +46,7 @@ import ctypes
 import enum
 import logging
 import os
+import platform
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -296,10 +299,34 @@ def checked_lib_path(name: str, lib_path: str | None, missing: str) -> str:
     is already in the process, which a preload does.  Without the runtime,
     dlopen of such a library ends the process, so the library is refused
     before it is loaded.
+
+    On x86_64 the level of the library must suit the host (THE LEVEL OF A
+    LIBRARY).  With no LIB_PATH and with CRUCIBLE_LEVEL_ROOT, the library
+    comes from the directory of the picked level of that root.
+
+    Raises:
+        RuntimeError: If no library is found, or if it needs a sanitizer
+            runtime that the process does not hold
+        CrucibleLevelError: If the level of the library does not suit the
+            host or the picked level (check_level)
     """
-    path = lib_path or _find_lib(name)
+    root = os.environ.get(LEVEL_ROOT_VARIABLE, "") if lib_path is None else ""
+    source = LevelSource.ROOT if root and _is_x86_64() else LevelSource.BUILD
+    if source is LevelSource.ROOT:
+        path: str | None = level_root_path(name, Path(root))
+    else:
+        path = lib_path or _find_lib(name)
     if path is None:
         raise RuntimeError(f"Cannot find {name}. Build it with:\n{missing}")
+    _refuse_missing_runtime(path)
+    if _is_x86_64():
+        probe = Path(root) / PROBE_STAMP.library if source is LevelSource.ROOT else Path(path).parent / PROBE_STAMP.library
+        check_level(path, probe, source)
+    return path
+
+
+def _refuse_missing_runtime(path: str) -> None:
+    """Refuse the library at PATH when it needs a sanitizer runtime that the process does not hold."""
     runtime = sanitizer_runtime(path)
     if runtime is not None and not _is_runtime_loaded(runtime):
         raise RuntimeError(
@@ -309,7 +336,259 @@ def checked_lib_path(name: str, lib_path: str | None, missing: str) -> str:
             f"{RELEASE_BUILD}\n"
             f"or preload the runtime of the same compiler:\n"
             f"  {runtime.option} LD_PRELOAD=$(g++-16p -print-file-name={runtime.library}) python ...")
-    return path
+
+
+# =====================================================================
+# The level of a library
+# =====================================================================
+#
+# THE LEVEL OF A LIBRARY.  The engine builds one time for each x86-64 level,
+# v1 to v4 (THE X86 LEVELS of include/foundation/os/X86Level.h).  Each
+# vessel library carries an ELF note with the level of its flags (THE NOTE of
+# vessel/torch/level_note.h).  The loader reads the note from the file before
+# dlopen, because the global constructors of a library of a level above the
+# host can fault before any check after the load.  The level probe
+# libcrucible_level.so compiles at x86-64 (v1), so it runs on each host, and
+# it gives the level of the host.
+#
+# A level root (CRUCIBLE_LEVEL_ROOT) holds the probe and one directory of the
+# two vessel libraries for each level, x86-64-v1 to x86-64-v4 (THE LEVEL ROOT
+# of vessel/torch/CMakeLists.txt).  The loader picks the highest level of the
+# host, and takes only exact libraries of that level.  CRUCIBLE_ISA_LEVEL (v1
+# to v4) asks for a level at or below the level of the host, so a test runs
+# each level on one host.  The probe ends the process for a level above the
+# host and for a text that is no level, and its message names the missing
+# feature or the text.
+#
+# With no level root, the loader takes the libraries of one build directory
+# (_find_lib), with the probe of that directory.  The level of each library
+# must be at or below the picked level, so a build for -march=native loads on
+# its own host.  The two vessel libraries of one directory must have the same
+# note, because they share live objects and inline code.
+
+LEVEL_ROOT_VARIABLE = "CRUCIBLE_LEVEL_ROOT"
+LEVEL_REQUEST_VARIABLE = "CRUCIBLE_ISA_LEVEL"
+
+# Mirrors kLevelProbeAbiVersion of vessel/torch/level_probe.cpp.
+EXPECTED_LEVEL_ABI_VERSION = 1
+PROBE_STAMP = AbiStamp("libcrucible_level.so", "crucible_level_abi_version", EXPECTED_LEVEL_ABI_VERSION,
+                       RELEASE_BUILD)
+
+_NOTE_OWNER = b"Crucible\0"
+_NOTE_TYPE_LEVEL = 1
+_NOTE_DESCRIPTOR_SIZE = 4
+_SHT_NOTE = 7
+_ELF64_HEADER = 64
+_LEVELS = (1, 2, 3, 4)
+_PAIR = ("libcrucible_vessel.so", "libcrucible_dispatch.so")
+
+
+class LevelKind(enum.IntEnum):
+    """The kind of the level of a library (THE NOTE of vessel/torch/level_note.h)."""
+
+    # The flags give each feature of the level and no feature above it.
+    EXACT = 1
+    # The flags can give features above the level, as -march=native does.
+    HOST = 2
+
+
+_KINDS = tuple(item.value for item in LevelKind)
+
+
+class LevelSource(enum.Enum):
+    """The place that a library comes from, which sets the rule for its level."""
+
+    # A directory of a level root: an exact library of the picked level.
+    ROOT = "root"
+    # A build directory or a given path: a library at or below the picked level.
+    BUILD = "build"
+
+
+class LevelNote(NamedTuple):
+    """The level note of one library, and the offset of its descriptor in the file."""
+
+    level: int  # 1 to 4
+    kind: LevelKind
+    offset: int
+
+
+class CrucibleLevelError(RuntimeError):
+    """Raised before the load of a Crucible library whose level does not suit the host or the picked level.
+
+    The message names the library, its level and kind, and the picked level.
+    """
+
+
+def _is_x86_64() -> bool:
+    """Say whether this host is x86_64, the one architecture whose libraries carry a level note."""
+    return platform.machine() in ("x86_64", "AMD64")
+
+
+def level_note(path: str) -> LevelNote | None:
+    """Read the level note of the ELF library at PATH, or give None for a library with no note.
+
+    The read takes the ELF header, the section headers and each note
+    section, and no other byte of the file.  Complexity: O(sections + bytes
+    of the note sections).
+
+    Raises:
+        RuntimeError: If the file is not a 64-bit little-endian ELF object,
+            or if it holds a malformed level note
+    """
+    with open(path, "rb") as image:
+        header = image.read(_ELF64_HEADER)
+        if header[:4] != b"\x7fELF" or header[4] != 2 or header[5] != 1:
+            raise RuntimeError(f"{path} is not a 64-bit little-endian ELF library")
+        table = int.from_bytes(header[0x28:0x30], "little")
+        entry_size = int.from_bytes(header[0x3A:0x3C], "little")
+        count = int.from_bytes(header[0x3C:0x3E], "little")
+        image.seek(table)
+        sections = image.read(entry_size * count)
+        for index in range(count):
+            at = index * entry_size
+            if int.from_bytes(sections[at + 4:at + 8], "little") != _SHT_NOTE:
+                continue
+            offset = int.from_bytes(sections[at + 24:at + 32], "little")
+            size = int.from_bytes(sections[at + 32:at + 40], "little")
+            alignment = max(4, int.from_bytes(sections[at + 48:at + 56], "little"))
+            image.seek(offset)
+            found = _level_in_notes(image.read(size), offset, alignment, path)
+            if found is not None:
+                return found
+    return None
+
+
+def _level_in_notes(notes: bytes, base: int, alignment: int, path: str) -> LevelNote | None:
+    """Give the level note among the notes of one section, or None when the section holds none.
+
+    BASE is the offset of the section in the file, and ALIGNMENT is the
+    alignment of its notes, 4 or 8.
+
+    Raises:
+        RuntimeError: If a note runs past the end of the section, or if the
+            level note holds a size, a level or a kind that THE NOTE does not
+            give
+    """
+    def aligned(offset: int) -> int:
+        """Round the OFFSET in the section up to the alignment of the notes.
+
+        The header of a note has 12 bytes, so a note of the alignment 8 has
+        padding after the name also when the name has 4 bytes.
+        """
+        return (offset + alignment - 1) // alignment * alignment
+
+    at = 0
+    while at + 12 <= len(notes):
+        name_size = int.from_bytes(notes[at:at + 4], "little")
+        descriptor_size = int.from_bytes(notes[at + 4:at + 8], "little")
+        note_type = int.from_bytes(notes[at + 8:at + 12], "little")
+        descriptor_at = aligned(at + 12 + name_size)
+        end = aligned(descriptor_at + descriptor_size)
+        if end > len(notes):
+            raise RuntimeError(f"{path} holds a note that runs past the end of its section")
+        if note_type == _NOTE_TYPE_LEVEL and notes[at + 12:at + 12 + name_size] == _NOTE_OWNER:
+            level, kind = notes[descriptor_at], notes[descriptor_at + 1]
+            if descriptor_size != _NOTE_DESCRIPTOR_SIZE or level not in _LEVELS or kind not in _KINDS:
+                raise RuntimeError(f"{path} holds a level note with the size {descriptor_size}, the level {level} "
+                                   f"and the kind {kind}, and THE NOTE of vessel/torch/level_note.h gives none of "
+                                   f"them")
+            return LevelNote(level, LevelKind(kind), base + descriptor_at)
+        at = end
+    return None
+
+
+# The picked level of each probe and request of the process.  The host and
+# the request do not change while the process runs.
+_PICKS: dict[tuple[str, bytes], int] = {}
+
+
+def picked_level(probe: Path) -> int:
+    """Give the level that the probe at PROBE picks: the level of the host, or the level of CRUCIBLE_ISA_LEVEL.
+
+    One load and one call for each probe and request of the process.  The
+    probe ends the process when CRUCIBLE_ISA_LEVEL names a level above the
+    host or is no level.
+
+    Raises:
+        CrucibleLevelError: If no probe is at PROBE, or if its note does not
+            say exact v1
+        RuntimeError: If the probe needs a sanitizer runtime that the process
+            does not hold
+        CrucibleAbiMismatchError: If the ABI stamp of the probe is not
+            EXPECTED_LEVEL_ABI_VERSION
+    """
+    request = os.environ.get(LEVEL_REQUEST_VARIABLE, "").encode()
+    key = (str(probe), request)
+    if key in _PICKS:
+        return _PICKS[key]
+    if not probe.exists():
+        raise CrucibleLevelError(f"{probe} does not exist, and the loader needs the level probe to pick the level of "
+                                 f"the host.  Build it with:\n{RELEASE_BUILD}")
+    note = level_note(str(probe))
+    if note is None or note.level != 1 or note.kind is not LevelKind.EXACT:
+        raise CrucibleLevelError(f"{probe} is no level probe: its note is {note}, and a probe is exact v1")
+    _refuse_missing_runtime(str(probe))
+    library = ctypes.CDLL(str(probe))
+    check_abi_stamp(library, str(probe), PROBE_STAMP)
+    pick = library.crucible_level_pick
+    pick.restype = ctypes.c_uint32
+    pick.argtypes = [ctypes.c_char_p, ctypes.c_uint64]
+    level = int(pick(request, len(request)))
+    _PICKS[key] = level
+    return level
+
+
+def level_root_path(name: str, root: Path) -> str:
+    """Give the path of the library NAME in the directory of the picked level of the level root ROOT.
+
+    Raises:
+        CrucibleLevelError: If ROOT holds no probe, or no library NAME at the
+            picked level
+    """
+    level = picked_level(root / PROBE_STAMP.library)
+    path = root / f"x86-64-v{level}" / name
+    if not path.exists():
+        raise CrucibleLevelError(f"the level root {root} has no {name} at the picked level v{level}: {path} does not "
+                                 f"exist.  Install a build of the level into the root:\n"
+                                 f"  cmake --install BUILD --component vessel --prefix PREFIX")
+    return str(path)
+
+
+def check_level(path: str, probe: Path, source: LevelSource) -> None:
+    """Refuse the library at PATH before its load when its level note does not suit the picked level.
+
+    PROBE is the level probe that picks the level, and SOURCE gives the rule:
+    a library of a level root is exact and of the picked level, and each
+    other library is at or below the picked level.  The two vessel libraries
+    of one directory must hold the same note.
+
+    Raises:
+        CrucibleLevelError: If the library has no note, or a note that breaks
+            the rule of SOURCE, or a note that differs from the note of the
+            other vessel library of its directory
+    """
+    note = level_note(path)
+    if note is None:
+        raise CrucibleLevelError(f"{path} has no level note (THE NOTE of vessel/torch/level_note.h).  Rebuild it:\n"
+                                 f"{RELEASE_BUILD}")
+    picked = picked_level(probe)
+    where = f"{path} has the level v{note.level} of the kind {note.kind.name.lower()}"
+    if source is LevelSource.ROOT and (note.kind is not LevelKind.EXACT or note.level != picked):
+        raise CrucibleLevelError(f"{where}, and a level root takes only an exact library of the picked level "
+                                 f"v{picked}")
+    if source is LevelSource.BUILD and note.level > picked:
+        raise CrucibleLevelError(f"{where}, and the picked level is v{picked}: the host or {LEVEL_REQUEST_VARIABLE} "
+                                 f"gives no level above v{picked}.  Load a library of a level root with "
+                                 f"{LEVEL_ROOT_VARIABLE}")
+    folder = Path(path).parent
+    for other in _PAIR:
+        sibling = folder / other
+        if other == Path(path).name or not sibling.exists():
+            continue
+        sibling_note = level_note(str(sibling))
+        if sibling_note is None or (sibling_note.level, sibling_note.kind) != (note.level, note.kind):
+            raise CrucibleLevelError(f"{where}, and {sibling} beside it has the note {sibling_note}.  The two vessel "
+                                     f"libraries of one directory share live objects, so they must have one level")
 
 
 def _is_runtime_loaded(runtime: SanitizerRuntime) -> bool:

@@ -28,21 +28,8 @@
 #
 # The observe semantic keeps the checks of CRUCIBLE_PRE, as in a Release
 # library, and a check references the violation handler.  Because of this,
-# each binary compiles the handler source of foundation with its own flags,
-# the formatter that the handler writes with, the tracer probe that the
-# handler calls with its file door, the sink write of the Report family, the
-# abort door and the raw system call primitive under them.  These sources
-# call only functions of the C library and the primitive.  For that reason,
-# they need no archive of the toolchain.
-set(CRUCIBLE_CT_HANDLER_SOURCES
-  ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp
-  ${CMAKE_SOURCE_DIR}/src/foundation/Platform.cpp
-  ${CMAKE_SOURCE_DIR}/src/foundation/core/Report.cpp
-  ${CMAKE_SOURCE_DIR}/src/foundation/os/Abort.cpp
-  ${CMAKE_SOURCE_DIR}/src/foundation/os/File.cpp
-  ${CMAKE_SOURCE_DIR}/src/foundation/os/ReportSink.cpp
-  ${CMAKE_SOURCE_DIR}/src/foundation/os/Syscall.cpp
-  ${CMAKE_SOURCE_DIR}/src/foundation/os/Intercepted.cpp)
+# each binary compiles the handler sources of foundation with its own flags
+# (CRUCIBLE_HANDLER_SOURCES of CMakeLists.txt).
 
 find_program(CRUCIBLE_VALGRIND valgrind)
 find_path(CRUCIBLE_VALGRIND_INCLUDE valgrind/memcheck.h HINTS $ENV{HOME}/.local/include)
@@ -66,7 +53,7 @@ endif()
 # depends on the host and its load.  Build it on request with
 # `cmake --build <dir> --target ct_dudect` and run it on an isolated core.
 # It builds with the Release optimization for this host.
-add_executable(ct_dudect EXCLUDE_FROM_ALL dudect.cpp ${CRUCIBLE_CT_HANDLER_SOURCES})
+add_executable(ct_dudect EXCLUDE_FROM_ALL dudect.cpp ${CRUCIBLE_HANDLER_SOURCES})
 target_include_directories(ct_dudect PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_options(ct_dudect PRIVATE
   -O3 -march=native -DNDEBUG -fno-sanitize=all
@@ -117,7 +104,7 @@ set(CRUCIBLE_CT_TAINT_FLAGS
 # runs with no DEBUGINFOD_URLS, and the harness refuses a run that has one.
 function(ct_taint_test source opt)
   set(name ${source}_${opt})
-  add_executable(${name} ${source}.cpp ${CRUCIBLE_CT_HANDLER_SOURCES})
+  add_executable(${name} ${source}.cpp ${CRUCIBLE_HANDLER_SOURCES})
   target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/include ${CRUCIBLE_VALGRIND_INCLUDE})
   target_compile_options(${name} PRIVATE -${opt} ${CRUCIBLE_CT_TAINT_FLAGS})
   crucible_release_code_target(${name})

@@ -434,6 +434,24 @@ add_library(foundation STATIC
 target_include_directories(foundation PUBLIC include/)
 target_link_libraries(foundation PUBLIC crucible_dialect)
 
+# The handler sources of foundation: the contract handler, the formatter that
+# the handler writes with, the tracer probe that the handler calls with its
+# file door, the sink write of the Report family, the abort door and the raw
+# system call primitive under them.  These sources call only functions of the
+# C library and the primitive, so they need no archive of the toolchain.  A
+# target that compiles the base code with its own flags, and links no
+# libfoundation.a of the flags of the build, compiles this list: the timing
+# harness and the taint tests of test/ct, and the level probe of the vessel.
+set(CRUCIBLE_HANDLER_SOURCES
+  ${CMAKE_SOURCE_DIR}/src/foundation/ContractHandler.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/Platform.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/core/Report.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/Abort.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/File.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/ReportSink.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/Syscall.cpp
+  ${CMAKE_SOURCE_DIR}/src/foundation/os/Intercepted.cpp)
+
 # crucible owns no contract handler of its own.  Every crucible header that
 # uses CRUCIBLE_PRE expands to the foundation failure arm, so crucible links
 # foundation for it and for `handle_contract_violation`.  crucible_perf links
