@@ -88,12 +88,13 @@ static_assert(!GetsFromTemporary<SlotMap<int, HandleTag>> && !GetsFromTemporary<
 static_assert(!InsertsIntoTemporary<SlotMap<int, HandleTag>> && !WalksTemporary<SlotMap<int, HandleTag>>);
 static_assert(!WalksKeysOfTemporary<SlotMap<int, HandleTag>> && !WalksKeysOfTemporary<SlotMap<int, HandleTag> const>);
 
-// The mint takes the allocation capability and a count of elements.
-template <class Marker>
-concept Mints =
-    requires(Marker marker) { mint_slot_map<int, HandleTag>(marker, Quantity<unit::Element, std::uint32_t>{1}); };
+// The constraint of the mint: a value, a class that names a domain, a word of
+// a generation and the allocation capability.
 struct OtherMarker final {};
-static_assert(Mints<Alloc> && !Mints<OtherMarker>);
+static_assert(CanMintSlotMap<int, HandleTag, std::uint32_t, Alloc>
+              && !CanMintSlotMap<int, HandleTag, std::uint32_t, OtherMarker>);
+static_assert(!CanMintSlotMap<int, HandleTag, std::uint64_t, Alloc>
+              && !CanMintSlotMap<ThrowingMove, HandleTag, std::uint8_t, Alloc>);
 
 // The surface of the map and its walk is closed over the shared verbs and
 // the names of the family.

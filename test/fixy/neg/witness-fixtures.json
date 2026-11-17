@@ -187,6 +187,16 @@
       "constructor": "\\batomic_word_key\\("
     },
     {
+      "name": "neg_witness_core_bitcursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bBitCursor\\("
+    },
+    {
+      "name": "neg_witness_core_bitset_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bBitSet\\("
+    },
+    {
       "name": "neg_witness_core_box_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bBox\\("
@@ -357,6 +367,11 @@
       "constructor": "\\bHeapArray\\("
     },
     {
+      "name": "neg_witness_core_heapbitset_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bHeapBitSet\\("
+    },
+    {
       "name": "neg_witness_core_heaptext_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bHeapText\\("
@@ -445,6 +460,26 @@
       "name": "neg_witness_core_runaddress_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bRunAddress\\("
+    },
+    {
+      "name": "neg_witness_core_slotcursor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSlotCursor\\("
+    },
+    {
+      "name": "neg_witness_core_slotmap_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bSlotMap\\("
+    },
+    {
+      "name": "neg_witness_core_slotwalk_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSlotWalk\\("
+    },
+    {
+      "name": "neg_witness_core_smalllist_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "\\bSmallList\\("
     },
     {
       "name": "neg_witness_core_sole_writer_key_direct_construction",
@@ -1553,6 +1588,34 @@
     {
       "type": "foundation::core::HeapText",
       "header": "foundation/core/Grow.h"
+    },
+    {
+      "type": "foundation::core::BitSet<8>",
+      "header": "foundation/core/BitSet.h"
+    },
+    {
+      "type": "foundation::core::BitCursor<foundation::core::Index<8>, unsigned char>",
+      "header": "foundation/core/BitSet.h"
+    },
+    {
+      "type": "foundation::core::HeapBitSet<forge::brand>",
+      "header": "foundation/core/BitSet.h"
+    },
+    {
+      "type": "foundation::core::SlotMap<int, forge::brand>",
+      "header": "foundation/core/SlotMap.h"
+    },
+    {
+      "type": "foundation::core::SmallList<int, 4>",
+      "header": "foundation/core/SmallList.h"
+    },
+    {
+      "type": "foundation::core::SlotWalk<int const, unsigned int, int const&>",
+      "header": "foundation/core/SlotMap.h"
+    },
+    {
+      "type": "foundation::core::SlotCursor<int, unsigned int, int&>",
+      "header": "foundation/core/SlotMap.h"
     },
     {
       "type": "foundation::core::detail::EnumerateCursor<int, 4, forge::brand>",

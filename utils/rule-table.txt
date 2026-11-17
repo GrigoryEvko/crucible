@@ -797,6 +797,24 @@ witness <foundation/core/Grow.h> no-match | foundation::core::GrowText | foundat
 # is private, and freeze is its friend, so each HeapText comes from the
 # freeze of a GrowText.
 witness <foundation/core/Grow.h> no-match | foundation::core::HeapText | foundation::core::HeapText{forge::rvalue<char*>(), forge::rvalue<unsigned long>()}
+# A BitSet has no constructor from a word, and its seal refuses a byte image:
+# mint_bit_set_from_bits is the one road from a word, and it refuses a bit
+# past the positions of the set.  A cursor of a walk comes only from its set,
+# and it makes the key at each position itself, so no word that a caller holds
+# becomes a key of a set.
+witness <foundation/core/BitSet.h> no-match | foundation::core::BitSet<8> | foundation::core::BitSet<8>{forge::rvalue<unsigned char>()}
+witness <foundation/core/BitSet.h> private | foundation::core::BitCursor<foundation::core::Index<8>, unsigned char> | foundation::core::BitCursor<foundation::core::Index<8>, unsigned char>{forge::rvalue<foundation::core::View<unsigned char const>>()}
+# A HeapBitSet, a SlotMap and a SmallList have no constructor from a pointer,
+# so the destructor frees only storage that a mint or an append allocated.
+# The one constructor of each is private, and its mint is its friend, so each
+# one comes through its mint.
+witness <foundation/core/BitSet.h> no-match | foundation::core::HeapBitSet<forge::brand> | foundation::core::HeapBitSet<forge::brand>{forge::rvalue<unsigned long*>(), forge::rvalue<unsigned int>()}
+witness <foundation/core/SlotMap.h> no-match | foundation::core::SlotMap<int, forge::brand> | foundation::core::SlotMap<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned int>()}
+witness <foundation/core/SmallList.h> no-match | foundation::core::SmallList<int, 4> | foundation::core::SmallList<int, 4>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+# A walk of a SlotMap and its cursor come only from the map, so no state that
+# a caller holds becomes a walk over slots that it did not fill.
+witness <foundation/core/SlotMap.h> private | foundation::core::SlotWalk<int const, unsigned int, int const&> | foundation::core::SlotWalk<int const, unsigned int, int const&>{forge::lvalue<foundation::core::detail::owner::SlotMapState<int, unsigned int> const>()}
+witness <foundation/core/SlotMap.h> private | foundation::core::SlotCursor<int, unsigned int, int&> | foundation::core::SlotCursor<int, unsigned int, int&>{forge::lvalue<foundation::core::detail::owner::SlotMapState<int, unsigned int> const>()}
 # A cursor of enumerate() or zip comes only from its range, so no position
 # that a caller holds becomes an index, and no pointer becomes a pair.
 witness <foundation/core/Region.h> private | foundation::core::detail::EnumerateCursor<int, 4, forge::brand> | foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}

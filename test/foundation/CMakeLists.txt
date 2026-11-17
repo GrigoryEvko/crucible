@@ -3323,8 +3323,8 @@ foundation_neg_compile_test(neg_core_bit_set_key_of_other_domain
   "cannot convert .ArgumentPosition. to .ScalarSlot."
   "initializing argument 1 of .constexpr void foundation::core::BitSet<N, Key>::set\\(Key\\) & \\[with long unsigned int N = 5; Key = ScalarSlot\\]")
 foundation_neg_compile_test(neg_core_bit_set_enumerator_past_count
-  "required for the satisfaction of .BitSetKey<Key, N>. \\[with Key = ScalarSlot; N = 4\\]"
-  "the expression .foundation::core::detail::BitKey<Key>::fits<N> \\[with Key = ScalarSlot; N = 4\\]. evaluated to .false.")
+  "static assertion failed: each enumerator of the key of a BitSet lies below the count of its positions"
+  "neg_core_bit_set_enumerator_past_count.cpp:17:.*required from here")
 foundation_neg_compile_test(neg_core_bit_set_from_bits_wide_word
   "no matching function for call to .mint_bit_set_from_bits<5>\\(uint16_t\\)."
   "required for the satisfaction of .CanMintBitSetFromBits<N, Key, Word>. \\[with N = 5; Key = foundation::core::Index<5>; Word = short unsigned int\\]")

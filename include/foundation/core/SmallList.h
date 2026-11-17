@@ -108,10 +108,19 @@ inline constexpr std::size_t small_slot_bytes_ = (Inline * sizeof(T) + 7) / 8 * 
 // state.
 template <class T, std::size_t Inline>
 union SmallSlots {
-    T elements[Inline];
-    unsigned char bytes[small_slot_bytes_<T, Inline>];
+private:
+    T elements_[Inline];
+    unsigned char bytes_[small_slot_bytes_<T, Inline>];
 
-    constexpr SmallSlots() noexcept : bytes{} {}
+    // Only the list of the same element and count reaches a slot.
+    friend class ::foundation::core::SmallList<T, Inline>;
+
+    // The first slot.
+    [[nodiscard]] constexpr T* first() noexcept { return elements_; }
+    [[nodiscard]] constexpr T const* first() const noexcept { return elements_; }
+
+public:
+    constexpr SmallSlots() noexcept : bytes_{} {}
 };
 
 namespace owner {
@@ -170,10 +179,10 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] SmallList
 
     // The first element: the heap storage, or the inline slots.
     [[nodiscard]] constexpr T* first_() noexcept {
-        return this->state_.heap != nullptr ? this->state_.heap : this->state_.slots.elements;
+        return this->state_.heap != nullptr ? this->state_.heap : this->state_.slots.first();
     }
     [[nodiscard]] constexpr T const* first_() const noexcept {
-        return this->state_.heap != nullptr ? this->state_.heap : this->state_.slots.elements;
+        return this->state_.heap != nullptr ? this->state_.heap : this->state_.slots.first();
     }
 
     // Moves each element into heap storage of the next capacity, and gives

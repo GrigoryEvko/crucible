@@ -35,32 +35,42 @@ enum class Signed : std::int8_t {
     below = -1,
     zero = 0
 };
+// An unscoped enum.
+enum Plain : std::uint8_t {
+    plain_first
+};
 
 // A fixed set holds its bits in the smallest word that holds N bits, and in
-// words of 64 bits past 64 positions.  It is trivially copyable.  A heap set
-// holds a pointer and the count, moves and does not copy, and its state is an
-// owner state of the core.
+// words of 64 bits past 64 positions.  The seal takes no byte.  A set copies
+// and is trivially destructible, and the seal makes it not trivially
+// copyable, so std::bit_cast builds no set.  A heap set holds a pointer and
+// the count, moves and does not copy, and its state is an owner state of the
+// core.
 static_assert(sizeof(BitSet<1>) == 1 && sizeof(BitSet<5>) == 1 && sizeof(BitSet<8>) == 1);
 static_assert(sizeof(BitSet<15>) == 2 && sizeof(BitSet<16>) == 2 && sizeof(BitSet<17>) == 4);
 static_assert(sizeof(BitSet<33>) == 8 && sizeof(BitSet<64>) == 8 && sizeof(BitSet<65>) == 16);
 static_assert(sizeof(BitSet<130>) == 3 * sizeof(std::uint64_t) && sizeof(BitSet<5, ScalarSlot>) == 1);
-static_assert(std::is_trivially_copyable_v<BitSet<130>> && std::is_trivially_destructible_v<BitSet<130>>);
-static_assert(std::is_trivially_copyable_v<BitSet<5, ScalarSlot>>);
+static_assert(std::is_nothrow_copy_constructible_v<BitSet<130>> && std::is_trivially_destructible_v<BitSet<130>>);
+static_assert(!std::is_trivially_copyable_v<BitSet<130>> && !std::is_trivially_copyable_v<BitSet<5, ScalarSlot>>);
 static_assert(sizeof(HeapBitSet<SlotTag>) == 2 * sizeof(std::size_t));
 static_assert(std::is_nothrow_move_constructible_v<HeapBitSet<SlotTag>>
               && std::is_nothrow_move_assignable_v<HeapBitSet<SlotTag>>);
 static_assert(!std::is_copy_constructible_v<HeapBitSet<SlotTag>> && !std::is_copy_assignable_v<HeapBitSet<SlotTag>>);
 static_assert(OwnerState<owner::HeapBitSetState>);
 
-// The keys: Index<N> of the same N, a scoped enum whose enumerators lie
-// below N, and an Id whose word holds N.  An unscoped enum, a number, an
-// Index of a different N and an enum of an enumerator past N or below zero
-// are no keys.
+// The keys: Index<N> of the same N, a scoped enum whose word holds each
+// position below N, and an Id whose word holds each position below N.  An
+// unscoped enum, a number, an Index of a different N, an enum of a narrow
+// word and an Id of a narrow word are no keys.  The gate reads no enumerator:
+// the class of the set refuses an enumerator at or past N, also one below
+// zero (the fixture neg_core_bit_set_enumerator_past_count).
 static_assert(BitSetKey<Index<64>, 64> && !BitSetKey<Index<65>, 64> && !BitSetKey<Index<63>, 64>);
-static_assert(BitSetKey<ScalarSlot, 5> && BitSetKey<ScalarSlot, 8> && !BitSetKey<ScalarSlot, 4>);
-static_assert(!BitSetKey<Signed, 4> && !BitSetKey<std::size_t, 64> && !BitSetKey<int, 8>);
+static_assert(BitSetKey<ScalarSlot, 5> && BitSetKey<ScalarSlot, 256> && !BitSetKey<ScalarSlot, 257>);
+static_assert(!BitSetKey<Plain, 4> && !BitSetKey<std::size_t, 64> && !BitSetKey<int, 8>);
 static_assert(BitSetKey<Id<OpTag, std::uint8_t>, 255> && !BitSetKey<Id<OpTag, std::uint8_t>, 256>);
-static_assert(BitSetKey<Id<OpTag, std::uint64_t>, 1000>);
+static_assert(BitSetKey<Id<OpTag, std::uint64_t>, 1000> && BitSetKey<Signed, 4>);
+static_assert(enumerators_below_<ScalarSlot>(5) && !enumerators_below_<ScalarSlot>(4));
+static_assert(!enumerators_below_<Signed>(4) && enumerators_below_<Index<8>>(8));
 
 // A fixed set takes its key, an Index of a smaller count, and no number.  An
 // index of a larger set and a key of a different domain do not convert.
@@ -104,16 +114,15 @@ static_assert(std::is_same_v<decltype(std::declval<BitSet<16> const&>().bits()),
 static_assert(std::is_same_v<decltype(std::declval<BitSet<64> const&>().bits()), std::uint64_t>);
 static_assert(HasBits<BitSet<64>> && !HasBits<BitSet<65>>);
 
-// The mints take the word type of the set, the allocation capability and a
-// count of elements.
-template <std::size_t N, class Word>
-concept MintsFromBits = requires(Word word) { mint_bit_set_from_bits<N>(word); };
-static_assert(MintsFromBits<5, std::uint8_t> && MintsFromBits<15, std::uint16_t> && MintsFromBits<64, std::uint64_t>);
-static_assert(!MintsFromBits<5, std::uint16_t> && !MintsFromBits<5, int> && !MintsFromBits<65, std::uint64_t>);
-template <class Tag, class Marker>
-concept Mints = requires(Marker marker) { mint_heap_bit_set<Tag>(marker, Quantity<unit::Element, std::uint32_t>{1}); };
+// The constraints of the mints: the word type of the set, the allocation
+// capability, and a class that names a domain.
+static_assert(CanMintBitSetFromBits<5, Index<5>, std::uint8_t> && CanMintBitSetFromBits<64, Index<64>, std::uint64_t>);
+static_assert(CanMintBitSetFromBits<15, ScalarSlot, std::uint16_t>);
+static_assert(!CanMintBitSetFromBits<5, Index<5>, std::uint16_t> && !CanMintBitSetFromBits<5, Index<5>, int>);
+static_assert(!CanMintBitSetFromBits<65, Index<65>, std::uint64_t>);
 struct OtherMarker final {};
-static_assert(Mints<SlotTag, Alloc> && !Mints<SlotTag, OtherMarker>);
+static_assert(CanMintHeapBitSet<SlotTag, Alloc> && !CanMintHeapBitSet<SlotTag, OtherMarker>);
+static_assert(!CanMintHeapBitSet<int, Alloc>);
 
 // The surface of each set is closed over the shared verbs and the names of
 // the family.

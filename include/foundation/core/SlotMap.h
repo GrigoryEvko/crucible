@@ -454,8 +454,8 @@ public:
         }
         State& state = this->state_;
         std::uint32_t const index = detail::slot_index_of_(key.raw());
-        Option<T> result = Option<T>::some(static_cast<T&&>(state.values[index]));
-        State::end_slot_(state.values[index]);
+        Option<T> result = Option<T>::some(static_cast<T&&>(*slot_of_(key.raw())));
+        State::end_slot_(*slot_of_(key.raw()));
         Generation const generation = state.generations[index];
         if (generation == max_of<Generation>) [[unlikely]] {
             state.generations[index] = 0;
@@ -510,11 +510,12 @@ template <class T, class Tag, class Generation, class Marker>
     detail::SlotMapLayout const layout = detail::slot_map_layout_<T, Generation>(slots);
     unsigned char* const storage =
         static_cast<unsigned char*>(detail::heap_allocate_(layout.bytes, detail::slot_map_alignment_<T>));
-    State state{};
-    state.values = static_cast<T*>(static_cast<void*>(storage));
-    state.free_stack = static_cast<std::uint32_t*>(static_cast<void*>(storage + layout.stack_offset));
-    state.generations = static_cast<Generation*>(static_cast<void*>(storage + layout.generation_offset));
-    state.capacity = slots;
+    State const state{
+        .values = static_cast<T*>(static_cast<void*>(storage)),
+        .free_stack = static_cast<std::uint32_t*>(static_cast<void*>(storage + layout.stack_offset)),
+        .generations = static_cast<Generation*>(static_cast<void*>(storage + layout.generation_offset)),
+        .capacity = slots,
+    };
     return SlotMap<T, Tag, Generation>{state};
 }
 

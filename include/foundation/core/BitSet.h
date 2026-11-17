@@ -7,7 +7,9 @@
 //                       unsigned word that holds N bits in the object itself:
 //                       one byte up to 8 positions, two bytes up to 16, four
 //                       bytes up to 32 and eight bytes up to 64, and words of
-//                       64 bits past 64 positions.  A copy copies the bits
+//                       64 bits past 64 positions.  A copy copies the bits.
+//                       A seal refuses a byte image, so the mint from a word
+//                       is the one road from bits (A PACKED RECORD)
 //   HeapBitSet<Tag>     a set of the ids Id<Tag, std::uint32_t> below a count
 //                       that its mint fixes, in bits on the heap.  The tag names
 //                       the domain of the ids, such as the slots of a plan, so
@@ -42,6 +44,14 @@
 //                       of a packed record, or no value when the word holds a
 //                       bit at or past N.  bits() of a set of at most 64
 //                       positions is the word back
+//
+// A PACKED RECORD
+//   The seal makes a BitSet not trivially copyable, so a record that the code
+//   copies by its bytes, such as an entry of a trace, holds no BitSet.  Such a
+//   record stores the raw word of the set: bits() gives the word out, and
+//   mint_bit_set_from_bits gives the set back as an Option, with no value for
+//   a word that holds a bit at or past N.  So no set with a bit past N exists,
+//   and two byte images of one set hold one word and give one digest.
 //
 // THE OPERATIONS
 //   set(key), reset(key)        put the key into the set, take it out
@@ -104,12 +114,16 @@
 #include <cstdint>
 #include <meta>
 #include <type_traits>
+#include <utility>
 
 namespace foundation::core {
 
 // The id of a HeapBitSet of the domain Tag.
 template <class Tag>
 using BitId = Id<Tag, std::uint32_t>;
+
+template <class Member, class Word>
+class BitCursor;
 
 namespace detail {
 
@@ -170,52 +184,57 @@ template <class Word>
     }
 }
 
-// True when each enumerator of the scoped enum E lies below count.  Linear in
-// the enumerators, at compile time only.
-template <class E>
+// True when an unsigned word of the bytes of type holds each position below
+// count.  A word of 8 bytes holds each count of a BitSet.
+[[nodiscard]] consteval bool word_holds_positions_(std::meta::info type, std::size_t count) {
+    std::size_t const bytes = std::meta::size_of(type);
+    return bytes >= sizeof(std::size_t) || count - 1 <= (std::size_t{1} << (8 * bytes)) - 1;
+}
+
+// True when type is an Id whose word holds each position below count.  The
+// largest word of an Id is the empty value of its niche, so it holds no
+// position.
+[[nodiscard]] consteval bool is_id_of_positions_(std::meta::info type, std::size_t count) {
+    std::meta::info const bare = std::meta::dealias(type);
+    if (!std::meta::has_template_arguments(bare) || std::meta::template_of(bare) != ^^Id) return false;
+    std::size_t const bytes = std::meta::size_of(std::meta::template_arguments_of(bare)[1]);
+    return bytes >= sizeof(std::size_t) || count <= (std::size_t{1} << (8 * bytes)) - 1;
+}
+
+// True when the key is no scoped enum, or when each enumerator of the enum
+// lies below count.  Linear in the enumerators, at compile time only.
+template <class Key>
 [[nodiscard]] consteval bool enumerators_below_(std::size_t count) {
-    using Raw = std::make_unsigned_t<std::underlying_type_t<E>>;
-    std::size_t const declared = std::meta::enumerators_of(^^E).size();
-    for (std::size_t index = 0; index < declared; ++index) {
-        Raw const value = static_cast<Raw>(std::meta::extract<E>(std::meta::enumerators_of(^^E)[index]));
-        if (std::size_t{value} >= count) return false;
+    if constexpr (std::is_scoped_enum_v<Key>) {
+        using Raw = std::make_unsigned_t<std::underlying_type_t<Key>>;
+        std::size_t const declared = std::meta::enumerators_of(^^Key).size();
+        for (std::size_t index = 0; index < declared; ++index) {
+            Raw const value = static_cast<Raw>(std::meta::extract<Key>(std::meta::enumerators_of(^^Key)[index]));
+            if (std::size_t{value} >= count) return false;
+        }
     }
     return true;
 }
 
-// THE KEYS OF A BitSet: the position of each kind of key, the key at a
-// position below N, and the bound N that the kind admits.  A type of no kind
-// is no key.
+// THE KEYS OF A BitSet: the position of each kind of key.  The walk of a set
+// makes the key at a position itself, from the positions of its own bits, so
+// no function of the base makes a key from a number with no check.
 template <class Key>
-struct BitKey {
-    static constexpr bool is_key = false;
-};
+struct BitKey;
 
 template <std::size_t M>
 struct BitKey<Index<M>> {
-    static constexpr bool is_key = true;
     static constexpr bool is_proven = true;
-    template <std::size_t N>
-    static constexpr bool fits = M == N;
 
     [[nodiscard]] static constexpr std::size_t position_of_(Index<M> key) noexcept { return key.raw(); }
-    [[nodiscard]] static constexpr Index<M> key_at_(std::size_t position) noexcept {
-        return Index<M>{IndexDoor::key(), position};
-    }
 };
 
 template <class Tag, UnsignedInteger Word>
 struct BitKey<Id<Tag, Word>> {
-    static constexpr bool is_key = true;
     static constexpr bool is_proven = false;
-    template <std::size_t N>
-    static constexpr bool fits = N <= std::size_t{max_of<Word>};
 
     [[nodiscard]] static constexpr std::size_t position_of_(Id<Tag, Word> key) noexcept {
         return std::size_t{key.raw()};
-    }
-    [[nodiscard]] static constexpr Id<Tag, Word> key_at_(std::size_t position) noexcept {
-        return Id<Tag, Word>{position_as_<Word>(position)};
     }
 };
 
@@ -224,15 +243,11 @@ template <class E>
 struct BitKey<E> {
     using Raw = std::make_unsigned_t<std::underlying_type_t<E>>;
 
-    static constexpr bool is_key = true;
     static constexpr bool is_proven = false;
-    template <std::size_t N>
-    static constexpr bool fits = N - 1 <= std::size_t{max_of<Raw>} && enumerators_below_<E>(N);
 
     [[nodiscard]] static constexpr std::size_t position_of_(E key) noexcept {
         return std::size_t{static_cast<Raw>(key)};
     }
-    [[nodiscard]] static constexpr E key_at_(std::size_t position) noexcept { return static_cast<E>(position); }
 };
 
 // The fatal exits of a cursor at its end, of a key past the positions of a
@@ -277,9 +292,14 @@ struct HeapBitSetState {
 
 }  // namespace detail
 
-// A key of a BitSet of N positions (THE KEYS OF A BitSet).
+// A key of a BitSet of N positions (THE KEYS OF A BitSet): Index<N>, a scoped
+// enum whose word holds each position below N, or an Id whose word holds each
+// position below N.  The gate reads no template that a unit can specialize.
+// The class of the set reads the enumerators of an enum key.
 template <class Key, std::size_t N>
-concept BitSetKey = detail::BitKey<Key>::is_key && detail::BitKey<Key>::template fits<N>;
+concept BitSetKey =
+    std::is_same_v<Key, Index<N>> || (std::is_scoped_enum_v<Key> && detail::word_holds_positions_(^^Key, N))
+    || detail::is_id_of_positions_(^^Key, N);
 
 template <std::size_t N, class Key = Index<N>>
     requires IndexCount<N> && BitSetKey<Key, N>
@@ -350,8 +370,17 @@ public:
         if (bits_ == 0) [[unlikely]] {
             detail::report_bit_cursor_at_end_();
         }
-        return detail::BitKey<Member>::key_at_(word_ * detail::bits_in_<Word>
-                                               + static_cast<std::size_t>(countr_zero(bits_)));
+        // The position comes from a bit of the set, so it is below the count
+        // of the set, and the key of each kind holds it.
+        std::size_t const position = word_ * detail::bits_in_<Word> + static_cast<std::size_t>(countr_zero(bits_));
+        if constexpr (std::is_scoped_enum_v<Member>) {
+            return static_cast<Member>(position);
+        } else if constexpr (detail::BitKey<Member>::is_proven) {
+            return Member{detail::IndexDoor::key(), position};
+        } else {
+            using IdWord = std::remove_cvref_t<decltype(std::declval<Member const&>().raw())>;
+            return Member{detail::position_as_<IdWord>(position)};
+        }
     }
 
     constexpr BitCursor& operator++() noexcept {
@@ -373,11 +402,21 @@ template <std::size_t N, class Key>
 class BitSet final {
     using Word = detail::BitWordOf<N>;
     using KeyKind = detail::BitKey<Key>;
+
+    // The enumerators of an enum key lie below N, so each enumerator is a
+    // position of the set.  A value that no enumerator names gets the compare
+    // of each verb.
+    static_assert(detail::enumerators_below_<Key>(N), "each enumerator of the key of a BitSet lies below the count "
+                                                      "of its positions");
     static constexpr std::size_t word_bits_ = detail::bits_in_<Word>;
     static constexpr std::size_t word_count_ = (N + word_bits_ - 1) / word_bits_;
     using WordIndex = Index<word_count_>;
 
     FixedArray<Word, word_count_> words_{};
+    // The seal refuses std::bit_cast and a lifetime start over bytes, so no
+    // byte image becomes a set with a bit past N, whose walk would make a key
+    // past N.  mint_bit_set_from_bits is the road from a word.
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     template <std::size_t M, class OtherKey, class OtherWord>
         requires CanMintBitSetFromBits<M, OtherKey, OtherWord>
