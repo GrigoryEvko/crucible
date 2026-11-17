@@ -571,6 +571,30 @@ PROBES: tuple[Probe, ...] = (
         "view_enumerate_sum", "a loop over enumerate() of a View of a fixed extent is the counted loop of a raw pointer"
     ),
     Probe(
+        "bit_set_test",
+        "test of a BitSet with an Index is the load of the word and the test of the bit of a raw bitmap, with no "
+        "bounds test: the type of the index proves the bound",
+    ),
+    Probe(
+        "bit_set_set",
+        "set of a BitSet with an Index is the or of the bit into the word of a raw bitmap, with no bounds test",
+    ),
+    Probe(
+        "heap_bit_set_test",
+        "test of a HeapBitSet adds one compare of the id with the count and one branch to a call of the fatal exit to "
+        "the load and the test of a raw bitmap.  The count is a run-time value, so no type proves the bound",
+        checks=("fatal",),
+    ),
+    Probe(
+        "slot_map_get",
+        "get of a SlotMap is the compare of the index with the used slots, the load of the generation, its compare "
+        "with the key and the test of its low bit, and the load of the value, as the lookup of a raw generational "
+        "table, with the same count of instructions.  The loop over the Option puts the path of a found value after "
+        "the compare of the generation, and the raw form puts the path of no value there, so the targets of the "
+        "branches are different",
+        branches=True,
+    ),
+    Probe(
         "view_zip_fixed_sum", "a zip loop over two Views of one fixed extent is the counted loop of two raw pointers"
     ),
     Probe(

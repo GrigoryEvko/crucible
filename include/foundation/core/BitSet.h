@@ -110,6 +110,18 @@ inline constexpr std::size_t bits_of_word_ = 64;
     return std::uint64_t{1} << (index % bits_of_word_);
 }
 
+// The place of the bit of an index in its word.
+[[nodiscard]] constexpr unsigned shift_of_(std::size_t index) noexcept {
+    return static_cast<unsigned>(index % bits_of_word_);
+}
+
+// The bit at a place of a word, as a bool.  The shift and the mask give the
+// bool with no compare, so -fharden-compares adds no second compare, and the
+// test has the instructions of the test of a raw bitmap.
+[[nodiscard]] constexpr bool holds_bit_(std::uint64_t word, unsigned shift) noexcept {
+    return static_cast<bool>((word >> shift) & 1u);
+}
+
 // The member of a set at a bit that the set proves below its count.
 template <class Member>
 struct BitMember;
@@ -258,7 +270,7 @@ public:
     constexpr void reset(Index<N> index) & noexcept { words_.at(word_of_(index)) &= ~detail::bit_of_(index.raw()); }
 
     [[nodiscard]] constexpr bool test(Index<N> index) const noexcept {
-        return (words_.at(word_of_(index)) & detail::bit_of_(index.raw())) != 0;
+        return detail::holds_bit_(words_.at(word_of_(index)), detail::shift_of_(index.raw()));
     }
 
     // The count of the indexes of the set.  Complexity: O(N / 64).
@@ -389,12 +401,18 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] HeapBitSe
 
     // The bit of an id, after the compare with the count.  An id at or past
     // the count ends the process, so no verb reads a word past the words.
-    [[nodiscard]] constexpr std::size_t bit_of_(BitId<Tag> id) const noexcept {
+    [[nodiscard]] constexpr std::uint32_t bit_of_(BitId<Tag> id) const noexcept {
         std::uint32_t const bit = id.raw();
         if (bit >= state_.count) [[unlikely]] {
             detail::report_bit_id_outside_();
         }
         return bit;
+    }
+
+    // The word of a bit below the count.  The division is a shift of 32 bits,
+    // as in the code of a raw bitmap of 32-bit positions.
+    [[nodiscard]] constexpr std::uint64_t& word_of_(std::uint32_t bit) const noexcept {
+        return state_.words[bit / 64u];
     }
 
 public:
@@ -420,18 +438,18 @@ public:
 
     // One compare of the id with the count, then the write of its bit.
     constexpr void set(BitId<Tag> id) & noexcept {
-        std::size_t const bit = bit_of_(id);
-        state_.words[bit / detail::bits_of_word_] |= detail::bit_of_(bit);
+        std::uint32_t const bit = bit_of_(id);
+        word_of_(bit) |= detail::bit_of_(bit);
     }
 
     constexpr void reset(BitId<Tag> id) & noexcept {
-        std::size_t const bit = bit_of_(id);
-        state_.words[bit / detail::bits_of_word_] &= ~detail::bit_of_(bit);
+        std::uint32_t const bit = bit_of_(id);
+        word_of_(bit) &= ~detail::bit_of_(bit);
     }
 
     [[nodiscard]] constexpr bool test(BitId<Tag> id) const noexcept {
-        std::size_t const bit = bit_of_(id);
-        return (state_.words[bit / detail::bits_of_word_] & detail::bit_of_(bit)) != 0;
+        std::uint32_t const bit = bit_of_(id);
+        return detail::holds_bit_(word_of_(bit), detail::shift_of_(bit));
     }
 
     // Complexity: O(extent() / 64).

@@ -445,6 +445,38 @@ using BrandedColumn = fixy::BrandedView<std::uint32_t const, BrandedProbeBrand>;
     return sum;
 }
 
+// ── The bit sets and the slot map ──────────────────────────────────────────
+
+// The domains of the ids of a heap set and of the keys of a slot map.
+struct ShapeSlotTag final {};
+struct ShapeHandleTag final {};
+
+// test and set of a BitSet with an Index: the load of the word and the test
+// or the write of the bit, with no bounds test.
+[[gnu::used]] bool bit_set_test(fixy::BitSet<256> const& set, fixy::Index<256> index) noexcept {
+    return set.test(index);
+}
+
+[[gnu::used]] void bit_set_set(fixy::BitSet<256>& set, fixy::Index<256> index) noexcept { set.set(index); }
+
+// test of a HeapBitSet with an id: the compare of the id with the count, and
+// the load of the word and the test of the bit.
+[[gnu::used]] bool heap_bit_set_test(fixy::HeapBitSet<ShapeSlotTag> const& set, fixy::BitId<ShapeSlotTag> id) noexcept {
+    return set.test(id);
+}
+
+// get of a SlotMap: the compare of the index with the used slots, the load of
+// the generation, its compare with the key and the test of its low bit, and
+// the load of the value.
+[[gnu::used]] std::uint32_t slot_map_get(fixy::SlotMap<std::uint32_t, ShapeHandleTag> const& map,
+                                         fixy::SlotKey<ShapeHandleTag> key) noexcept {
+    std::uint32_t value = 0;
+    for (auto const found : map.get(key)) {
+        value = *found;
+    }
+    return value;
+}
+
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
 
 [[gnu::used]] std::uint32_t box_read(fixy::Box<Payload>& box) noexcept { return box->value; }
@@ -1150,6 +1182,48 @@ struct RawColumn final {
         sum += *cursor;
     }
     return sum;
+}
+
+[[gnu::used]] bool bit_set_test_raw(std::uint64_t const* words, std::uint32_t position) noexcept {
+    return ((words[position / 64] >> (position % 64)) & 1u) != 0;
+}
+
+[[gnu::used]] void bit_set_set_raw(std::uint64_t* words, std::uint32_t position) noexcept {
+    words[position / 64] |= std::uint64_t{1} << (position % 64);
+}
+
+// A bitmap on the heap with its count of bits.
+struct RawBits final {
+    std::uint64_t* words = nullptr;
+    std::uint32_t count = 0;
+};
+
+[[gnu::used]] bool heap_bit_set_test_raw(RawBits const& set, std::uint32_t position) noexcept {
+    return ((set.words[position / 64] >> (position % 64)) & 1u) != 0;
+}
+
+// A generational table: the values, the free indexes, the generations, and
+// the counts of the slots.
+struct RawSlots final {
+    std::uint32_t* values = nullptr;
+    std::uint32_t* free_stack = nullptr;
+    std::uint32_t* generations = nullptr;
+    std::uint32_t capacity = 0;
+    std::uint32_t used = 0;
+    std::uint32_t free_count = 0;
+    std::uint32_t live = 0;
+};
+
+[[gnu::used]] std::uint32_t slot_map_get_raw(RawSlots const& map, std::uint64_t key) noexcept {
+    std::uint32_t const index = static_cast<std::uint32_t>(key);
+    if (index >= map.used) {
+        return 0;
+    }
+    std::uint32_t const generation = map.generations[index];
+    if ((key >> 32) != generation || (generation & 1u) == 0) {
+        return 0;
+    }
+    return map.values[index];
 }
 
 [[gnu::used]] std::uint32_t fixed_list_sum_raw(RawList const& list) noexcept {

@@ -329,14 +329,28 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
 
     // True when the slot of key holds the value of key: the index is below
     // the used slots, and the generation of the key is the odd generation of
-    // the slot.  Two compares and one test of a bit.
+    // the slot.  Two compares and one test of a bit.  Each test is its own
+    // branch, so -fharden-compares adds no second compare of a value.
     [[nodiscard]] constexpr bool holds_(std::uint64_t key) const noexcept {
         std::uint32_t const index = detail::slot_index_of_(key);
         if (index >= this->state_.used) {
             return false;
         }
         Generation const generation = this->state_.generations[index];
-        return detail::slot_generation_of_(key) == std::uint64_t{generation} && detail::holds_value_(generation);
+        if (detail::slot_generation_of_(key) != std::uint64_t{generation}) {
+            return false;
+        }
+        return detail::holds_value_(generation);
+    }
+
+    // The value of a slot that holds_ admitted.  The used slots are above
+    // zero, so the mint gave the values a pointer that is not null.  The
+    // assume reads a local pointer, so the Option of a Ref needs no test of
+    // its niche, as window() of a View does.
+    [[nodiscard]] constexpr T* slot_of_(std::uint64_t key) const noexcept {
+        T* const value = this->state_.values + detail::slot_index_of_(key);
+        [[assume(value != nullptr)]];
+        return value;
     }
 
 public:
@@ -410,8 +424,7 @@ public:
         if (!holds_(key.raw())) {
             return Option<Ref<T, Fresh>>{none};
         }
-        return Option<Ref<T, Fresh>>::some(
-            detail::RefDoor::lend<Fresh>(this->state_.values[detail::slot_index_of_(key.raw())]));
+        return Option<Ref<T, Fresh>>::some(detail::RefDoor::lend<Fresh>(*slot_of_(key.raw())));
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
@@ -420,7 +433,7 @@ public:
         if (!holds_(key.raw())) {
             return Option<Ref<T const, Fresh>>{none};
         }
-        T const& value = this->state_.values[detail::slot_index_of_(key.raw())];
+        T const& value = *slot_of_(key.raw());
         return Option<Ref<T const, Fresh>>::some(detail::RefDoor::lend<Fresh>(value));
     }
     void get(SlotKey<Tag>) && = delete("a value of a temporary SlotMap dangles at the end of the full expression");
