@@ -89,6 +89,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   set_source_files_properties(fma_bench_v2.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v2)
 endif()
 crucible_bench(bench_core_strided)
+# Nine threads: eight shards, each on its own core, and the measuring thread.
+crucible_bench(bench_parallel_pointwise CORES 9)
 crucible_bench(bench_decide_compile_time)
 crucible_bench(bench_dispatch)
 crucible_bench(bench_fp_control)

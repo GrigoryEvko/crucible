@@ -471,6 +471,59 @@ private:
     crucible::warden::CpuSet set_{};
 };
 
+// The CPUs that share the L3 cache of a CPU: the shared_cpu_list of the cache
+// of level 3 of the CPU in sysfs, or the empty set when sysfs gives no such
+// cache.  Complexity: at most two reads of sysfs for each of the first eight
+// caches of the CPU.
+[[nodiscard]] inline crucible::warden::CpuSet read_l3_group(CpuId cpu) noexcept {
+    namespace topology = crucible::warden::detail;
+    constexpr std::uint64_t kCacheIndexes = 8;
+    if (!cpu.is_valid()) return crucible::warden::CpuSet{};
+    for (std::uint64_t index = 0; index < kCacheIndexes; ++index) {
+        const auto read = [&cpu, index](::fixy::TextView leaf, auto& text) noexcept {
+            ::foundation::os::PathText<96> path{};
+            const bool is_built = path.append(::fixy::TextView{"/sys/devices/system/cpu/cpu"}).is_ok()
+                               && path.append_decimal(static_cast<std::uint64_t>(cpu.raw())).is_ok()
+                               && path.append(::fixy::TextView{"/cache/index"}).is_ok()
+                               && path.append_decimal(index).is_ok() && path.append(leaf).is_ok();
+            return is_built && ::foundation::os::read_file(path.c_text(), text).is_ok();
+        };
+        ::fixy::FixedText<16> level{};
+        if (!read("/level", level)) return crucible::warden::CpuSet{};
+        if (!::fixy::starts_with(level.view(), ::fixy::TextView{"3"})) continue;
+        ::fixy::FixedText<4096> listed{};
+        if (!read("/shared_cpu_list", listed)) return crucible::warden::CpuSet{};
+        const std::size_t line_end = ::fixy::find(listed.view(), '\n').value_or(listed.size());
+        return topology::parse_cpulist(topology::text_prefix(listed.view(), line_end));
+    }
+    return crucible::warden::CpuSet{};
+}
+
+// The core of a claim apart from the others: the core whose L3 group holds
+// the fewest cores of the claim, and the highest such core.  group_of gives
+// the L3 group of a CpuId, as read_l3_group() does.  A thread that only
+// starts and joins the threads of a run takes it, and the threads of the run
+// keep the cores of one group.  None for an empty claim.  Complexity:
+// quadratic in the cores of the claim.
+template <class GroupOf>
+[[nodiscard]] ::fixy::Option<CpuId> apart_core(Cores const& cores, GroupOf const& group_of) noexcept {
+    CpuId apart = CpuId::none();
+    std::size_t fewest = cores.count() + 1;
+    for (int const cpu : cores.set()) {
+        const crucible::warden::CpuSet group = group_of(CpuId{cpu});
+        std::size_t sharing = 0;
+        for (int const other : cores.set()) {
+            if (other == cpu || group.contains(other)) ++sharing;
+        }
+        if (sharing <= fewest) {
+            fewest = sharing;
+            apart = CpuId{cpu};
+        }
+    }
+    if (!apart.is_valid()) return ::fixy::none;
+    return ::fixy::some(apart);
+}
+
 namespace detail {
 
 // The core of a run in the affinity allowed of the process: the asked core

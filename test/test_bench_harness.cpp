@@ -689,6 +689,43 @@ void test_slots_take_distinct_cores() {
     CHECK(none.of_slot(bench::kMeasuringSlot).is_none());
 }
 
+// A claim of nine cores of the bench VM spans its two L3 groups, the even CPUs
+// 224 to 238 and 240 to 254.  The core apart is the one core of the claim in
+// its group, in either order of the groups.  A claim in one group gives its
+// highest core.  An empty claim gives none.
+void test_apart_core_of_a_claim() {
+    const auto groups = [](bench::CpuId cpu) noexcept {
+        crucible::warden::CpuSet group{};
+        const std::size_t first = cpu.raw() < 240 ? 224 : 240;
+        for (std::size_t member = first; member < first + 16; member += 2)
+            group.insert(member);
+        return group;
+    };
+    const auto apart_of = [&groups](crucible::warden::CpuSet const& claim) noexcept {
+        return bench::apart_core(planted_cores(claim, planted_isolated()), groups).value_or(bench::CpuId::none()).raw();
+    };
+    crucible::warden::CpuSet low_apart{};
+    low_apart.insert(224);
+    for (std::size_t cpu = 240; cpu <= 254; cpu += 2)
+        low_apart.insert(cpu);
+    CHECK(apart_of(low_apart) == 224);
+    crucible::warden::CpuSet high_apart{};
+    for (std::size_t cpu = 224; cpu <= 238; cpu += 2)
+        high_apart.insert(cpu);
+    high_apart.insert(240);
+    CHECK(apart_of(high_apart) == 240);
+    crucible::warden::CpuSet one_group{};
+    for (std::size_t cpu = 240; cpu <= 246; cpu += 2)
+        one_group.insert(cpu);
+    CHECK(apart_of(one_group) == 246);
+    CHECK(apart_of(crucible::warden::CpuSet{}) == -1);
+
+    // The L3 group of cpu0 on the host holds cpu0, or sysfs gives no L3.
+    const crucible::warden::CpuSet host_group = bench::read_l3_group(bench::CpuId{0});
+    CHECK(host_group.is_empty() || host_group.contains(0));
+    CHECK(bench::read_l3_group(bench::CpuId::none()).is_empty());
+}
+
 // The CPU of a thread is field 39 of its stat file, and the fields start after
 // the last closing parenthesis, because the name of a thread can hold one.
 void test_processor_of_stat() {
@@ -923,6 +960,7 @@ int main() {
     test_fan_out_keeps_the_worker_affinity();
     test_core_of_run_stays_in_the_affinity();
     test_slots_take_distinct_cores();
+    test_apart_core_of_a_claim();
     test_pins_of_the_threads_of_a_run();
     test_pause_between_planted_readings();
     test_planted_pause_is_caught();
