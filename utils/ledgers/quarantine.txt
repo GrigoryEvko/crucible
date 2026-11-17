@@ -95,10 +95,12 @@ bench/ | c-library-object | 13 | - | -
 bench/ | compiler-builtin | 12 | - | -
 bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
+bench/ | opted-out | 25 | MEASURE: the raw forms of the state of the art are the references of the containers | the raw forms of the state of the art are the reference rows of bench_core_containers: a raw bitmap, a raw heap bitmap, the generational table of the slotmap crate of Rust and the push_back of llvm::SmallVector, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 3 | MEASURE: the raw loop over two strides is the baseline of the strided walk | a raw loop over two strides that it reads at run time is the baseline of the strided walk in bench_core_strided, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 92 | - | -
+bench/ | region | 1 | MEASURE: the raw forms of the state of the art are the references of the containers | the raw forms of the state of the art are the reference rows of bench_core_containers: a raw bitmap, a raw heap bitmap, the generational table of the slotmap crate of Rust and the push_back of llvm::SmallVector, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the raw loop over two strides is the baseline of the strided walk | a raw loop over two strides that it reads at run time is the baseline of the strided walk in bench_core_strided, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
@@ -388,7 +390,7 @@ test/fixy/ | std-entity | 2668 | - | -
 test/fixy/ | std-object | 959 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
-test/fixy/neg/ | detail-use | 286 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 288 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -443,7 +445,7 @@ test/foundation/ | c-array-object | 24 | - | -
 test/foundation/ | c-library-call | 256 | - | -
 test/foundation/ | door-header | 1 | - | -
 test/foundation/ | foreign-symbol | 4 | - | -
-test/foundation/ | opted-out | 16 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
+test/foundation/ | opted-out | 32 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | opted-out | 27 | ORACLE: GCC <cpuid.h> and __builtin_cpu_supports give the x86-64 features | test_os_x86_level takes the bits of each x86-64 feature from GCC <cpuid.h> and the features of this host from __builtin_cpu_supports, as an oracle outside the level door.  test_target_units takes the address of the exact form of fp::fma in each of its units.  The level probe of the vessel gives Python the level of the host through a C entry
 test/foundation/ | opted-out | 2 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | opted-out | 4 | ORACLE: std::array is the model of the writes of a FixedArray | -
@@ -467,7 +469,7 @@ test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis,
 test/foundation/ | raw-function-pointer | 13 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
 test/foundation/ | raw-pointer-object | 32 | - | -
-test/foundation/ | region | 1 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
+test/foundation/ | region | 2 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | region | 1 | ORACLE: GCC <cpuid.h> and __builtin_cpu_supports give the x86-64 features | test_os_x86_level takes the bits of each x86-64 feature from GCC <cpuid.h> and the features of this host from __builtin_cpu_supports, as an oracle outside the level door.  test_target_units takes the address of the exact form of fp::fma in each of its units.  The level probe of the vessel gives Python the level of the host through a C entry
 test/foundation/ | region | 1 | ORACLE: memcpy is the model of the bytes of an object | -
 test/foundation/ | region | 1 | ORACLE: std::array is the model of the writes of a FixedArray | -
@@ -632,7 +634,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 8 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
-test/shape/ | opted-out | 207 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 213 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -
 test/tensor_neg/ | raw-pointer-object | 1 | - | -
