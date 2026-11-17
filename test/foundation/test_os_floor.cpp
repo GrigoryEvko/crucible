@@ -14,9 +14,10 @@
 
 #include <foundation/Platform.h>
 
+#include <foundation/reflect/EnumName.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <meta>
 
 namespace {
 
@@ -205,8 +206,7 @@ void test_derives_the_floor() {
 // does not admit.
 consteval std::size_t count_rows_that_break_a_rule() {
     std::size_t broken = 0;
-    for (std::meta::info const enumerator : std::meta::enumerators_of(^^os::KernelFlag)) {
-        os::KernelFlag const flag = std::meta::extract<os::KernelFlag>(enumerator);
+    ::foundation::reflect::for_each_enumerator<os::KernelFlag>([&broken](os::KernelFlag flag, auto) {
         os::FlagFloor const row = os::flag_floor(flag);
         bool const has_fallback_text = row.fallback[0] != '\0';
         bool const is_fallback_row = row.need == os::FlagNeed::fallback;
@@ -214,7 +214,7 @@ consteval std::size_t count_rows_that_break_a_rule() {
                             || !(os::KernelVersion{2, 6, 0} < row.release)
                             || os::judge_flag(flag, os::KernelVersion{999, 0, 0}) != os::FlagVerdict::admitted;
         broken += is_broken ? 1 : 0;
-    }
+    });
     return broken;
 }
 

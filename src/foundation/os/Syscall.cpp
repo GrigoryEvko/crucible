@@ -22,6 +22,7 @@
 #include <foundation/os/PipeSignal.h>
 #include <foundation/os/SchedWords.h>
 #include <foundation/os/Syscall.h>
+#include <foundation/reflect/EnumName.h>
 
 #include <asm-generic/errno-base.h>
 #include <asm/unistd.h>
@@ -575,12 +576,12 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             largest = needed;
         }
     }
-    for (std::meta::info const enumerator : std::meta::enumerators_of(^^KernelFlag)) {
-        FlagFloor const row = flag_floor(std::meta::extract<KernelFlag>(enumerator));
+    ::foundation::reflect::for_each_enumerator<KernelFlag>([&largest](KernelFlag flag, auto) {
+        FlagFloor const row = flag_floor(flag);
         if (row.need == FlagNeed::each_call && row.release > largest) {
             largest = row.release;
         }
-    }
+    });
     return largest;
 }
 
