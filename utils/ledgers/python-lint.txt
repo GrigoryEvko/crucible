@@ -56,7 +56,6 @@ utils/assay/loop/stamps.py | format | 1 | <module> | An issue of ruff of today. 
 utils/assay/loop/step.py | ISC004 | 2 | judge | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/step.py | S110 | 3 | main | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/loop/step.py | format | 1 | admission | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
-utils/assay/loop/teststep.py | format | 1 | stop_core_dumps | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/mutation/gates.py | format | 1 | Gate | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/mutation/run.py | format | 1 | Candidate | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
 utils/assay/oracle/emit.py | FURB192 | 2 | emit_subtype | An issue of ruff of today.  The change that corrects the code or formats the file lowers the count
