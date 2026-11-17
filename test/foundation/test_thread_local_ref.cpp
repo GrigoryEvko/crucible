@@ -4,28 +4,43 @@
 
 #include <foundation/ThreadLocalRef.h>
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include <bit>
 #include <cstdint>
 #include <thread>
 
-namespace {
-
-namespace fnd = ::foundation;
+// A tag needs a stable identity, so the tags stand in a named namespace.
+namespace thread_local_ref_test {
 
 struct CounterTag {};
 struct AccumulatorTag {};
 struct OtherTag {};
 
-using IntCounter = fnd::ThreadLocalRef<CounterTag, int>;
-using IntAccumulator = fnd::ThreadLocalRef<AccumulatorTag, int>;
-using DoubleOther = fnd::ThreadLocalRef<OtherTag, double>;
+// A family of tags, one for each cell of a thread and one more.
+template <int Index>
+struct ManyTag {};
+
+}  // namespace thread_local_ref_test
+
+namespace {
+
+namespace fnd = ::foundation;
+
+using IntCounter = fnd::ThreadLocalRef<thread_local_ref_test::CounterTag, int>;
+using IntAccumulator = fnd::ThreadLocalRef<thread_local_ref_test::AccumulatorTag, int>;
+using DoubleOther = fnd::ThreadLocalRef<thread_local_ref_test::OtherTag, double>;
 
 [[nodiscard]] int cell_round_trips() {
     const IntCounter counter{};
     if (counter.peek() != 0) return 1;
     counter.store(34);
     if (counter.peek() != 34) return 2;
-    counter.peek_mut() = 51;
+    const IntCounter writer{};
+    writer.store(51);
     if (counter.peek() != 51) return 3;
     counter.reset();
     if (counter.peek() != 0) return 4;
@@ -78,9 +93,29 @@ using DoubleOther = fnd::ThreadLocalRef<OtherTag, double>;
     return isolated ? 0 : 1;
 }
 
+// Reads the cell of each tag of the family from Index to the end of the family.
+template <int Index>
+void read_tags_from() noexcept {
+    static_cast<void>(fnd::ThreadLocalRef<thread_local_ref_test::ManyTag<Index>, int>{}.peek());
+    if constexpr (Index + 1 <= static_cast<int>(fnd::thread_local_cell_count)) read_tags_from<Index + 1>();
+}
+
+// The process has thread_local_cell_count cells for each thread, so the key
+// after the last cell ends the process with the text that names the count.
+// The claims run in a child through expect_dies of the Check family.
+void the_key_after_the_last_cell_ends_the_process(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test, [] noexcept { read_tags_from<0>(); },
+        ::fixy::TextView{"finds no free cell: the process already has thread_local_cell_count "
+                         "cells.  Raise thread_local_cell_count"});
+}
+
 }  // namespace
 
 int main() {
+    // The death test forks, so it runs before a test starts a thread.
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
+    the_key_after_the_last_cell_ends_the_process(test);
     if (const int failed = cell_round_trips(); failed != 0) return 10 + failed;
     if (const int failed = tags_select_cells(); failed != 0) return 20 + failed;
     if (const int failed = floating_cell_round_trips(); failed != 0) return 30 + failed;

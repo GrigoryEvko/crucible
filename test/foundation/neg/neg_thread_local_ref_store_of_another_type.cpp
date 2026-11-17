@@ -3,18 +3,16 @@
 
 #include <foundation/ThreadLocalRef.h>
 
-namespace {
-struct Counter {
-    int value = 0;
-};
+namespace thread_local_ref_store_fixture {
 struct Label {
     const char* text = "not a counter";
 };
 struct CounterTag {};
-}  // namespace
+}  // namespace thread_local_ref_store_fixture
 
 int main() {
-    const ::foundation::ThreadLocalRef<CounterTag, Counter> cell{};
+    using namespace thread_local_ref_store_fixture;
+    const ::foundation::ThreadLocalRef<CounterTag, int> cell{};
     cell.store(Label{});
-    return cell.peek().value;
+    return cell.peek();
 }

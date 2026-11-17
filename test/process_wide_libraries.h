@@ -10,6 +10,7 @@
 
 #include <fixy/Core.h>
 #include <foundation/Platform.h>
+#include <foundation/ThreadLocalRef.h>
 #include <foundation/effects/Ctx.h>
 
 #include <cstdint>
@@ -34,6 +35,12 @@ CRUCIBLE_PROCESS_WIDE inline std::uint64_t& per_thread_local() noexcept {
 struct PerThreadHolder {
     CRUCIBLE_PROCESS_WIDE static inline constinit thread_local const std::uint64_t* held = nullptr;
 };
+
+// The cell of a ThreadLocalRef.  The two libraries name one tag and one value
+// type, so a thread reads one cell, whatever library reads it.  The tag has
+// the visibility of each class of the tree, as the tag of a product user has.
+struct ThreadCellTag {};
+using ThreadCell = ::foundation::ThreadLocalRef<ThreadCellTag, unsigned long long>;
 
 // The controls carry no marker, so each library holds its own copy.  They
 // show that the test loads two separate copies, so a shared address above is
@@ -70,7 +77,9 @@ extern "C" {
 [[gnu::visibility("default")]] const void* process_wide_object_address(unsigned index) noexcept;
 
 // Defined in the two libraries, for the objects of the calling thread.  The
-// address is null past the last object.  The set writes each object.
+// address is null past the last object.  The set writes each object and the
+// ThreadLocalRef cell, and the value of index 3 is the value of that cell,
+// which has no address.
 [[gnu::visibility("default")]] const void* process_wide_thread_object_address(unsigned index) noexcept;
 [[gnu::visibility("default")]] void process_wide_set_thread_objects(std::uint64_t value) noexcept;
 [[gnu::visibility("default")]] std::uint64_t process_wide_thread_object_value(unsigned index) noexcept;

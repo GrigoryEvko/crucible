@@ -2024,11 +2024,19 @@ foundation_neg_compile_test(neg_aligned_bytes_view_of_temporary
 foundation_test(test_thread_local_ref)
 
 foundation_neg_compile_test(neg_thread_local_ref_needs_a_default
-  "template constraint failure for .template<class Tag, class T>  requires  is_default_constructible_v<T> class foundation::ThreadLocalRef."
-  "the expression .is_default_constructible_v<T> \\[with T = <unnamed>::NeedsSeed\\]. evaluated to .false.")
+  "template constraint failure for .template<class Tag, class T>  requires"
+  "is_trivially_default_constructible_v<T> \\[with T = thread_local_ref_default_fixture::NeedsSeed\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_thread_local_ref_store_of_another_type
-  "no matching function for call to .foundation::ThreadLocalRef<\\{anonymous\\}::CounterTag, \\{anonymous\\}::Counter>::store\\(\\{anonymous\\}::Label\\) const."
-  "the expression .is_assignable_v<T&, U&&> \\[with T = <unnamed>::Counter; U = <unnamed>::Label\\]. evaluated to .false.")
+  "no matching function for call to .foundation::ThreadLocalRef<thread_local_ref_store_fixture::CounterTag, int>::store\\(thread_local_ref_store_fixture::Label\\) const."
+  "the expression .is_assignable_v<T&, U&&> \\[with T = int; U = thread_local_ref_store_fixture::Label\\]. evaluated to .false.")
+# A cell holds thread_local_cell_bytes bytes, and peek() and store() copy them,
+# so the handle refuses a value of more bytes and a value whose copy runs code.
+foundation_neg_compile_test(neg_thread_local_ref_value_of_sixteen_bytes
+  "template constraint failure for .template<class Tag, class T>  requires"
+  "sizeof \\(T\\) <= foundation::thread_local_cell_bytes \\[with T = thread_local_ref_size_fixture::SixteenBytes\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_thread_local_ref_value_not_trivially_copyable
+  "template constraint failure for .template<class Tag, class T>  requires"
+  "is_trivially_copyable_v<T> \\[with T = thread_local_ref_copy_fixture::CountsCopies\\]. evaluated to .false.")
 
 # ── The Report family: texts, reports and the fatal exit ─────────────
 #
@@ -3892,6 +3900,6 @@ foreach(_death_test
     test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_masked_array
     test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
     test_core_slot_map test_core_small_list test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
-    test_swiss_table_buffer test_swiss_table_buffer_ignore)
+    test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref)
   target_link_libraries(${_death_test} PRIVATE fixy)
 endforeach()

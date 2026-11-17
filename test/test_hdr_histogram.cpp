@@ -7,6 +7,15 @@
 #include <thread>
 #include <utility>
 
+// The tag of a concurrent histogram keys the cell of each thread, which needs
+// a stable identity, so the tags stand in a named namespace.
+namespace hdr_histogram_test {
+
+struct LatencyHistogramTag {};
+struct DrainHistogramTag {};
+
+}  // namespace hdr_histogram_test
+
 namespace {
 struct HistStreamTag {};
 
@@ -278,11 +287,10 @@ int main() {
     // shard of the other, which is exactly the collision the sharding
     // exists to avoid.
     {
-        struct LatencyHistogramTag {};
-        struct DrainHistogramTag {};
-
-        using LatencyHist = crucible::observe::ConcurrentHdrHistogram<2, 1000000, 4, LatencyHistogramTag>;
-        using DrainHist = crucible::observe::ConcurrentHdrHistogram<2, 1000000, 4, DrainHistogramTag>;
+        using LatencyHist =
+            crucible::observe::ConcurrentHdrHistogram<2, 1000000, 4, hdr_histogram_test::LatencyHistogramTag>;
+        using DrainHist =
+            crucible::observe::ConcurrentHdrHistogram<2, 1000000, 4, hdr_histogram_test::DrainHistogramTag>;
 
         // The tag also makes the two histograms different types, so a
         // call site cannot pass one where the other belongs.

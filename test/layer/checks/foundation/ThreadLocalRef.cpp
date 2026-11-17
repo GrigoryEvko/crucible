@@ -36,6 +36,28 @@ static_assert(std::is_move_constructible_v<IntCounter> && std::is_move_assignabl
 static_assert(IntCounter::value_type_name() == "int");
 static_assert(DoubleOther::value_type_name() == "double");
 
+// A value fits a cell of thread_local_cell_bytes bytes, and it is trivially
+// copyable, trivially destructible and trivially default constructible.
+template <typename T>
+concept NamesACell = requires { typename ThreadLocalRef<CounterTag, T>; };
+struct EightBytes {
+    unsigned int low;
+    unsigned int high;
+};
+struct SixteenBytes {
+    unsigned long long low;
+    unsigned long long high;
+};
+struct CountsCopies {
+    int value = 0;
+    CountsCopies() = default;
+    CountsCopies(CountsCopies const& other) noexcept : value{other.value + 1} {}
+};
+static_assert(NamesACell<int> && NamesACell<double> && NamesACell<unsigned long long> && NamesACell<EightBytes>);
+static_assert(!NamesACell<SixteenBytes>);
+static_assert(!NamesACell<CountsCopies>);
+static_assert(sizeof(detail::ThreadLocalTable) == thread_local_cell_count * thread_local_cell_bytes);
+
 }  // namespace detail::thread_local_ref_self_test
 
 }  // namespace foundation

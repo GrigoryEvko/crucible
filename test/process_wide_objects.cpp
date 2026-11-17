@@ -35,6 +35,7 @@ void process_wide_set_thread_objects(std::uint64_t value) noexcept {
     per_thread_value = value;
     per_thread_local() = value;
     PerThreadHolder::held = &per_thread_value;
+    ThreadCell{}.store(value);
 }
 
 const void* process_wide_control_address(unsigned index) noexcept {
@@ -45,9 +46,11 @@ const void* process_wide_control_address(unsigned index) noexcept {
 
 // The member holds an address, so its value is read as a comparison with
 // the address of the first object on this thread: 1 when it points there.
+// Index 3 is the ThreadLocalRef cell.
 std::uint64_t process_wide_thread_object_value(unsigned index) noexcept {
     using namespace process_wide_libraries;
     if (index == 0) return per_thread_value;
     if (index == 1) return per_thread_local();
+    if (index == 3) return ThreadCell{}.peek();
     return PerThreadHolder::held == &per_thread_value ? 1u : 0u;
 }

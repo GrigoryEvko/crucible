@@ -401,9 +401,10 @@ private:
     // optimizer prove the bound, so the check of the Index costs no branch.
     [[nodiscard]] CRUCIBLE_HOT ShardIndex thread_shard_() noexcept {
         const ::foundation::ThreadLocalRef<UniqueTag, std::size_t> cell{};
-        std::size_t& cached_plus_one = cell.peek_mut();
+        std::size_t cached_plus_one = cell.peek();
         if (cached_plus_one == 0) [[unlikely]] {
             cached_plus_one = (next_thread_shard_.fetch_add_acq_rel(1) % ShardCount) + 1;
+            cell.store(cached_plus_one);
         }
         return ShardIndex::check(::fixy::min(cached_plus_one - 1, ShardCount - 1))
             .expect("a clamped shard is below ShardCount");

@@ -114,6 +114,8 @@ void test_each_thread_object_is_one_for_the_thread(const Library& writer, const 
     require(count == 3, "three thread objects are listed");
     require(reader_value(0) == 7 && reader_value(1) == 7 && reader_value(2) == 1,
             "the reader reads the values that the writer wrote on the main thread");
+    require(reader_value(3) == 7,
+            "the reader library reads the ThreadLocalRef cell that the writer library wrote on this thread");
 
     const void* const main_address = writer_address(0);
     const bool is_other_thread_right = on_other_thread([&] {
@@ -122,8 +124,9 @@ void test_each_thread_object_is_one_for_the_thread(const Library& writer, const 
             is_right = is_right && writer_address(index) == reader_address(index);
             is_right = is_right && reader_value(index) == 0;
         }
+        is_right = is_right && reader_value(3) == 0;
         writer_set(9);
-        return is_right && reader_value(0) == 9 && reader_value(1) == 9 && reader_value(2) == 1;
+        return is_right && reader_value(0) == 9 && reader_value(1) == 9 && reader_value(2) == 1 && reader_value(3) == 9;
     });
     require(is_other_thread_right,
             "a second thread has objects of its own, one address in the two libraries, and sees its own writes");
