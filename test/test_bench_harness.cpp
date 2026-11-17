@@ -898,6 +898,62 @@ void test_pins_of_the_threads_of_a_run() {
     CHECK(free_count == unpinned_count);
 }
 
+// The median and the spread of the medians of the windows of a run, on
+// planted medians.  An odd count gives the middle value, and an even count
+// the mean of the two middle values, as percentile_interp does.  The spread
+// is the largest median minus the smallest, as a part of the median.  Equal
+// medians give no spread, and a median of zero gives no spread and no
+// division.  The order of the medians changes nothing.
+void test_spread_of_planted_windows() {
+    const auto spread_of = [](auto const& medians) noexcept { return bench::spread_of_windows(medians.view()); };
+    const bench::WindowSpread none = bench::spread_of_windows(::fixy::View<double const>{});
+    CHECK(none.windows == 0u && approx(none.median, 0.0) && approx(none.spread, 0.0));
+
+    const bench::WindowSpread one = spread_of(::fixy::FixedArray<double, 1>{10.0});
+    CHECK(one.windows == 1u && approx(one.median, 10.0) && approx(one.spread, 0.0));
+
+    const bench::WindowSpread five = spread_of(::fixy::FixedArray<double, 5>{12.0, 10.0, 11.0, 13.0, 14.0});
+    CHECK(five.windows == 5u && approx(five.median, 12.0) && approx(five.spread, 4.0 / 12.0));
+
+    const bench::WindowSpread even = spread_of(::fixy::FixedArray<double, 4>{4.0, 2.0, 8.0, 6.0});
+    CHECK(even.windows == 4u && approx(even.median, 5.0) && approx(even.spread, 6.0 / 5.0));
+
+    const bench::WindowSpread ties = spread_of(::fixy::FixedArray<double, 5>{3.0, 1.0, 3.0, 2.0, 3.0});
+    CHECK(approx(ties.median, 3.0) && approx(ties.spread, 2.0 / 3.0));
+
+    const bench::WindowSpread flat = spread_of(::fixy::FixedArray<double, 3>{5.0, 5.0, 5.0});
+    CHECK(approx(flat.median, 5.0) && approx(flat.spread, 0.0));
+
+    const bench::WindowSpread zero = spread_of(::fixy::FixedArray<double, 2>{0.0, 0.0});
+    CHECK(zero.windows == 2u && approx(zero.median, 0.0) && approx(zero.spread, 0.0));
+
+    const bench::WindowSpread reversed = spread_of(::fixy::FixedArray<double, 5>{14.0, 13.0, 12.0, 11.0, 10.0});
+    CHECK(approx(reversed.median, five.median) && approx(reversed.spread, five.spread));
+}
+
+// A Run splits its sampled loop into five windows (THE WINDOWS of
+// bench/bench_harness.h).  Ten samples give five windows and keep the ten
+// samples.  Three samples give one window for each sample.  A body of about
+// a millisecond with a cap of 50 ms ends each window at its part of the time:
+// the run keeps five windows and takes far fewer than its 1000 samples.
+void test_run_measures_in_windows() {
+    const bench::Report ten = bench::Run("ten samples").samples(10).warmup(1).batch(1).measure([]() noexcept {});
+    CHECK(ten.pct.n == 10u && ten.windows.windows == bench::kWindows);
+    const bench::Report three = bench::Run("three samples").samples(3).warmup(1).batch(1).measure([]() noexcept {});
+    CHECK(three.pct.n == 3u && three.windows.windows == 3u);
+
+    constexpr std::uint64_t kSpinSteps = 2000000;
+    const bench::Report capped =
+        bench::Run("capped").samples(1000).warmup(1).batch(1).max_wall_ms(50).measure([]() noexcept {
+            std::uint64_t sum = 0;
+            for (std::uint64_t step = 0; step < kSpinSteps; ++step) {
+                sum += step;
+                bench::do_not_optimize(sum);
+            }
+        });
+    CHECK(capped.windows.windows == bench::kWindows && capped.pct.n >= bench::kWindows && capped.pct.n < 1000u);
+}
+
 // The thread 100 of the planted readings is the measuring thread, and the
 // thread 7 is the other thread of the run.
 constexpr ::fixy::process::ThreadId kMeasuringTid{100};
@@ -1061,6 +1117,9 @@ void test_planted_pause_is_caught() {
     CHECK(paused.pause.lost_ns >= 1900000u);
     CHECK(paused.pause.own_ns() >= 1900000u);
     CHECK(paused.pause.is_over_bound());
+    // The window of the planted pause has its own check, and it marks that
+    // window (THE WINDOWS of bench/bench_harness.h).
+    CHECK(paused.paused_windows >= 1u);
     const ::fixy::TextView basis = paused.pause.basis == bench::PauseBasis::LostTime ? ::fixy::TextView{"lost time"}
                                                                                      : ::fixy::TextView{"run delay"};
     ::fixy::report(::fixy::Sink::Err,
@@ -1096,8 +1155,10 @@ int main() {
     test_pause_between_planted_readings();
     test_planted_pause_is_caught();
     test_processor_of_stat();
+    test_spread_of_planted_windows();
+    test_run_measures_in_windows();
 
-    constexpr int kNumGroups = 18;
+    constexpr int kNumGroups = 23;
     if (g_failures == 0) {
         crucible::test::pass("test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;

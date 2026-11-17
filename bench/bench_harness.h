@@ -1011,6 +1011,16 @@ struct ReadingAfter final {};
 
 }  // namespace side
 
+// The clocks of the measuring thread at one end of a window of the sampled
+// loop, in nanoseconds (THE WINDOWS).  is_read is false when a clock did not
+// read.
+struct WindowClock {
+    std::uint64_t wall_ns = 0;
+    std::uint64_t cpu_ns = 0;
+    bool is_read = false;
+    ::fixy::FixedArray<std::uint8_t, 7> pad_after_flag{};
+};
+
 namespace detail {
 
 // Writes the text that stdio holds for standard output, so a report of the
@@ -1174,6 +1184,37 @@ inline void read_thread_delays(::fixy::FixedList<ThreadDelay, kPauseThreads>& de
     read_thread_delays(reading.others);
     reading.basis = PauseBasis::LostTime;
     return reading;
+}
+
+// Reads the two clocks of the calling thread for the check of a window (THE
+// WINDOWS): two reads of a clock and no read of procfs, so the check makes no
+// call that can sleep inside the sampled loop.  A clock that does not read
+// gives a reading that is not read.
+[[nodiscard, gnu::noinline]] inline WindowClock read_window_clock() noexcept {
+    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    const ::foundation::effects::cap::Nondet nondet = ::foundation::effects::testing::test().nondet;
+    const auto wall = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(startup);
+    const auto cpu = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::ThreadCpu>(startup);
+    auto cpu_read = cpu.read(nondet);
+    auto wall_read = wall.read(nondet);
+    if (cpu_read.is_err() || wall_read.is_err()) return WindowClock{};
+    return WindowClock{.wall_ns = std::move(wall_read).expect("the test above found the reading").peek(),
+                       .cpu_ns = std::move(cpu_read).expect("the test above found the reading").peek(),
+                       .is_read = true};
+}
+
+// The time that the measuring thread did not run between two readings of its
+// clocks: the growth of the wall time minus the growth of the CPU time, or
+// zero when a reading is not read.
+[[nodiscard]] constexpr std::uint64_t
+lost_between(::fixy::Side<side::ReadingBefore, WindowClock> const& before,
+             ::fixy::Side<side::ReadingAfter, WindowClock> const& after) noexcept {
+    if (!before.value().is_read || !after.value().is_read) return 0;
+    const std::uint64_t wall_ns = grown(::fixy::side_as<side::ReadingBefore>(before.value().wall_ns),
+                                        ::fixy::side_as<side::ReadingAfter>(after.value().wall_ns));
+    const std::uint64_t cpu_ns = grown(::fixy::side_as<side::ReadingBefore>(before.value().cpu_ns),
+                                       ::fixy::side_as<side::ReadingAfter>(after.value().cpu_ns));
+    return wall_ns > cpu_ns ? wall_ns - cpu_ns : 0;
 }
 
 // The field processor of a stat file of procfs: the CPU on which the thread
@@ -1388,6 +1429,84 @@ struct CI {
     };
 }
 
+// ── THE WINDOWS ────────────────────────────────────────────────────
+//
+// Run::measure splits its sampled loop into kWindows consecutive windows.
+// Each window takes its part of the samples and its part of the time that
+// the wall cap leaves after the warmup, so the samples and the time of a run
+// do not grow.  A window ends after its part of the samples, or at the first
+// sample past the end of its part of the time.  So each window takes at least
+// one sample, and a window of a run under the cap can take fewer samples than
+// its part.  A run of fewer than kWindows samples has one window for each
+// sample.
+//
+// Each window has its own pause check: the time that the measuring thread
+// lost in the window, its wall time minus its CPU time, against kPauseBoundNs
+// (THE PAUSE CHECK).  paused_windows counts the windows over the bound.  The
+// check reads two clocks at each end of a window and no file of procfs.  A
+// read of procfs inside the loop can sleep, and a sleep makes the check of the
+// whole loop judge the measuring thread by its run delay, which can miss a
+// pause.  The pause of a report is the check of the whole loop, with the run
+// delays of the threads.
+//
+// The fields of a report before the windows keep their meaning: each
+// percentile is over all the samples of the run.  The report adds the count
+// of the windows, the median of the p50 of the windows, and their spread: the
+// largest p50 minus the smallest, as a part of that median.  A row whose time
+// moves between the windows of one run shows a large spread, as a row that
+// moves between two runs does.
+
+// The windows of a sampled loop.
+inline constexpr std::size_t kWindows = 5;
+
+// The values of the windows of one run, summed up (THE WINDOWS).  The values
+// of a Report are the p50 of its windows in nanoseconds.  A bench can sum up
+// other values of its windows, such as a throughput.
+struct WindowSpread {
+    // The windows with a value.
+    std::size_t windows = 0;
+    // The median of the values, by R type 7, in the unit of the values.
+    double median = 0.0;
+    // The largest value minus the smallest, as a part of the median.  Zero
+    // for fewer than two windows, and for a median of zero.
+    double spread = 0.0;
+};
+
+// The median and the spread of the medians of the windows of one run (THE
+// WINDOWS).  The median is the R type 7 median of percentile_interp: the
+// middle value of an odd count, and the mean of the two middle values of an
+// even count.  A value takes its rank from the values below it and the equal
+// values before it, so no sort and no compare of two floats for equality is
+// necessary.  Complexity: quadratic in the count of the medians.
+[[nodiscard]] inline WindowSpread spread_of_windows(::fixy::View<double const> medians) noexcept {
+    std::size_t const count = medians.size();
+    if (count == 0) return WindowSpread{};
+    std::size_t const low_rank = (count - 1) / 2;
+    std::size_t const high_rank = count / 2;
+    double low = 0.0;
+    double high = 0.0;
+    double smallest = 0.0;
+    double largest = 0.0;
+    std::size_t position = 0;
+    for (double const value : medians) {
+        std::size_t rank = 0;
+        std::size_t other = 0;
+        for (double const compared : medians) {
+            bool const is_before = compared < value || (other < position && !(value < compared));
+            rank += is_before ? std::size_t{1} : std::size_t{0};
+            ++other;
+        }
+        low = rank == low_rank ? value : low;
+        high = rank == high_rank ? value : high;
+        smallest = rank == 0 ? value : smallest;
+        largest = rank + 1 == count ? value : largest;
+        ++position;
+    }
+    double const median = low * 0.5 + high * 0.5;
+    double const spread = count >= 2 && median > 0.0 ? (largest - smallest) / median : 0.0;
+    return WindowSpread{.windows = count, .median = median, .spread = spread};
+}
+
 // ── Report ────────────────────────────────────────────────────────
 
 struct Report {
@@ -1417,6 +1536,11 @@ struct Report {
     // The time that the threads of the run lost over the sampled loop (THE
     // PAUSE CHECK).  A pause over kPauseBoundNs makes the run not valid.
     Pause pause{};
+
+    // The medians of the windows of the sampled loop, and the count of the
+    // windows whose own pause is over kPauseBoundNs (THE WINDOWS).
+    WindowSpread windows{};
+    std::size_t paused_windows = 0;
 
     // Kernel-side context via eBPF sense hub. All zero when BPF is
     // unavailable. Deltas over the measured run (monotonic counters).
@@ -1552,6 +1676,7 @@ struct Report {
                      "  %-38s  p50=%9s  p90=%9s  p99=%9s  p99.9=%9s  "
                      "max=%10s  μ=%9s  σ=%9s  cv=%4.1f%%",
                      name.c_str(), p50_b, p90_b, p99_b, p999_b, max_b, mean_b, sigma_b, pct.cv * 100.0);
+        if (windows.windows > 0) print_windows_();
 
         if (cycles_per_op > 0.0) {
             std::fprintf(out, "  cyc=%7.1f", cycles_per_op);
@@ -1638,11 +1763,13 @@ struct Report {
                      "\"cv\":%.5f,\"wall_ns\":%.0f,\"drift_pct\":%.3f,"
                      "\"cycles_per_op\":%.3f,"
                      "\"freq_start_hz\":%lu,\"freq_end_hz\":%lu,"
-                     "\"pause_ns\":%lu,\"thread_delay_ns\":%lu,\"thread_arrivals\":%lu,\"paused\":%d",
+                     "\"pause_ns\":%lu,\"thread_delay_ns\":%lu,\"thread_arrivals\":%lu,\"paused\":%d,"
+                     "\"windows\":%zu,\"window_p50_median\":%.3f,\"window_spread\":%.5f,\"paused_windows\":%zu",
                      batch, pct.n, pinned_cpu.raw(), pinned_cpu_count, pct.p50, pct.p75, pct.p90, pct.p95, pct.p99,
                      pct.p99_9, pct.p99_99, pct.min, pct.max, pct.mean, pct.stddev, pct.cv, wall_ns, drift_pct,
                      cycles_per_op, static_cast<unsigned long>(freq_start_hz), static_cast<unsigned long>(freq_end_hz),
-                     pause.own_ns(), pause.other.run_delay_ns, pause.other.arrivals, pause.is_over_bound() ? 1 : 0);
+                     pause.own_ns(), pause.other.run_delay_ns, pause.other.arrivals, pause.is_over_bound() ? 1 : 0,
+                     windows.windows, windows.median, windows.spread, paused_windows);
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         print_bpf_json_(out);
 #endif
@@ -1650,6 +1777,34 @@ struct Report {
     }
 
 private:
+    // Prints the windows of the run inside its line, to standard output, which
+    // each caller of print_text gives (THE WINDOWS): their count, the median of
+    // their p50 with two decimals in the unit of the other columns, their
+    // spread in percent with one decimal, and the count of the windows over the
+    // bound of the pause check.  The text before it goes through stdio, so a
+    // flush comes first.
+    void print_windows_() const noexcept {
+        using ::fixy::Sink;
+        double scaled = windows.median;
+        ::fixy::TextView unit{"ns"};
+        if (scaled >= 1e9) {
+            scaled /= 1e9;
+            unit = ::fixy::TextView{"s"};
+        } else if (scaled >= 1e6) {
+            scaled /= 1e6;
+            unit = ::fixy::TextView{"ms"};
+        } else if (scaled >= 1e3) {
+            scaled /= 1e3;
+            unit = ::fixy::TextView{"µs"};
+        }
+        auto const hundredths = static_cast<std::uint64_t>(scaled * 100.0 + 0.5);
+        auto const tenths = static_cast<std::uint64_t>(windows.spread * 1000.0 + 0.5);
+        detail::flush_standard_output();
+        ::fixy::report(Sink::Out, "  win={} w50={}.{}{}{} spread={}.{}%", windows.windows, hundredths / 100,
+                       hundredths % 100 / 10, hundredths % 10, unit, tenths / 10, tenths % 10);
+        if (paused_windows > 0) ::fixy::report(Sink::Out, "  [paused windows {}]", paused_windows);
+    }
+
     // Prints the pause of a run over kPauseBoundNs on a line of its own after
     // the row, to standard output, which each caller of print_text gives (THE
     // PAUSE CHECK).  The times are in microseconds.
@@ -2206,45 +2361,43 @@ public:
         std::vector<double> ns_samples(S);
         size_t filled = 0;
 
-        const SampleWindow window = start_window_(pinned_cpu);
+        SampleWindow window = start_window_(pinned_cpu);
         const auto wall0 = std::chrono::steady_clock::now();
+        // The windows share the samples and the time that the cap leaves
+        // after the warmup (THE WINDOWS).
+        const WindowPlan plan = plan_windows_(WindowRequest{
+            .samples = S,
+            .cap = wall_cap_ms > 0 ? WallCap::On : WallCap::Off,
+            .remaining = std::chrono::duration_cast<std::chrono::nanoseconds>(wall_budget - (wall0 - start_all)),
+        });
 
-        for (size_t i = 0; i < S; ++i) {
-            if constexpr (requires { body.before_sample(); }) {
-                body.before_sample();
-            }
-            // The pinned-overload form — the witness's existence
-            // proves a sched_setaffinity (or hardening apply) ran above
-            // and the thread has not migrated since.
-            const uint64_t t0 = rdtsc_start(pin_witness);
-            for (size_t j = 0; j < batch; ++j)
-                body();
-            const uint64_t t1 = rdtsc_end(pin_witness);
-            // RDTSCP+LFENCE guarantees t1 >= t0 (each RDTSC pair is
-            // monotone on a single core); modular unsigned subtraction
-            // is therefore safe. The older form `(t1 > t0 + ovh)`
-            // wraps to false when t0 + ovh overflows UINT64_MAX, which
-            // can happen after a long runtime on a 4+ GHz core.
-            const uint64_t raw = t1 - t0;
-            const uint64_t d = (raw > ovh) ? (raw - ovh) : 0;
-            ns_samples[i] = (static_cast<double>(d) * nspc) / static_cast<double>(batch);
-            ++filled;
-            // Wall-budget cut-off. Checked every 64 samples to keep
-            // clock overhead negligible on fast bodies; heavy bodies
-            // hit the check often enough because each iteration is
-            // already long relative to steady_clock::now() (~20 ns).
-            if (wall_cap_ms > 0 && (i & 63) == 63) {
-                const auto elapsed = std::chrono::steady_clock::now() - start_all;
-                // Durations, not counts — the same unit mismatch the warmup
-                // loop carried. This one ended the sample loop at the first
-                // check past 10 us, so a run asking for 100,000 samples
-                // collected 64 of them and every percentile above p95 came
-                // out of a handful of observations. The drift check below,
-                // which needs 200 samples, could never fire.
-                if (elapsed > wall_budget) {
-                    break;
+        for (WindowBound const& bound : plan.bounds) {
+            for (size_t taken = 0; taken < bound.samples; ++taken) {
+                if constexpr (requires { body.before_sample(); }) {
+                    body.before_sample();
                 }
+                // The pinned-overload form — the witness's existence
+                // proves a sched_setaffinity (or hardening apply) ran above
+                // and the thread has not migrated since.
+                const uint64_t t0 = rdtsc_start(pin_witness);
+                for (size_t j = 0; j < batch; ++j)
+                    body();
+                const uint64_t t1 = rdtsc_end(pin_witness);
+                // RDTSCP+LFENCE guarantees t1 >= t0 (each RDTSC pair is
+                // monotone on a single core); modular unsigned subtraction
+                // is therefore safe. The older form `(t1 > t0 + ovh)`
+                // wraps to false when t0 + ovh overflows UINT64_MAX, which
+                // can happen after a long runtime on a 4+ GHz core.
+                const uint64_t raw = t1 - t0;
+                const uint64_t d = (raw > ovh) ? (raw - ovh) : 0;
+                ns_samples[filled] = (static_cast<double>(d) * nspc) / static_cast<double>(batch);
+                ++filled;
+                // The reading of the end of the sample is the clock of the
+                // part of the time of the window, so the check costs no read.
+                if (t1 > bound.deadline_tsc) break;
             }
+            static_cast<void>(window.ends.push(filled));
+            close_window_(window);
         }
         return close_(std::move(opening), window, std::move(ns_samples), filled, batch, wall0);
     }
@@ -2257,12 +2410,46 @@ private:
         PinResult pin{};
     };
 
+    // Whether the wall cap bounds the time of the sampled loop.
+    enum class WallCap : std::uint8_t {
+        Off,
+        On,
+    };
+
+    // What plan_windows_ splits: the samples of the run, and the time that
+    // the cap leaves after the warmup, which can be zero or less.
+    struct WindowRequest {
+        std::size_t samples = 0;
+        WallCap cap = WallCap::Off;
+        std::chrono::nanoseconds remaining{0};
+    };
+
+    // One window of the sampled loop: its part of the samples, and the
+    // reading of the TSC after which it takes no more sample (THE WINDOWS).
+    struct WindowBound {
+        std::size_t samples = 0;
+        std::uint64_t deadline_tsc = 0;
+    };
+
+    // The windows of the sampled loop, in order.
+    struct WindowPlan {
+        ::fixy::FixedList<WindowBound, kWindows> bounds{};
+    };
+
     // What start_window_ reads just before the sampled loop: the clock of
-    // the pinned CPU and, with BPF, the counters that close_ subtracts.
+    // the pinned CPU and, with BPF, the counters that close_ subtracts.  The
+    // loop adds the end of each window, and close_window_ adds the time that
+    // the measuring thread lost in it.
     struct SampleWindow {
         uint64_t freq_start = 0;
         // The first reading of the pause check (THE PAUSE CHECK).
         PauseReading pause_before{};
+        // The clocks at the end of the last window, and the count of the
+        // samples at the end of each window with the time that the measuring
+        // thread lost in it (THE WINDOWS).
+        WindowClock clock_last{};
+        ::fixy::FixedList<std::size_t, kWindows> ends{};
+        ::fixy::FixedList<std::uint64_t, kWindows> lost_ns{};
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         ::fixy::Option<::fixy::Ref<::crucible::perf::SenseHub const>> hub{};
         // SchedSwitch — see detail::senses_instance() docblock for cost
@@ -2308,7 +2495,45 @@ private:
             window.sched_pre_idx = sw->timeline_write_index();
 #endif
         window.pause_before = detail::read_pause();
+        window.clock_last = detail::read_window_clock();
         return window;
+    }
+
+    // The windows of the sampled loop (THE WINDOWS): min(samples, kWindows)
+    // windows, the first samples % count of them with one more sample, and
+    // each window with the end of its part of the time, from the TSC of now.
+    // With no cap, or with no calibration of the TSC, a window has no end of
+    // its time.
+    [[nodiscard, gnu::noinline]] static WindowPlan plan_windows_(WindowRequest const& request) noexcept {
+        WindowPlan plan{};
+        std::size_t const count = request.samples < kWindows ? request.samples : kWindows;
+        if (count == 0) return plan;
+        double const nspc = Timer::ns_per_cycle();
+        bool const is_timed = request.cap == WallCap::On && nspc > 0.0;
+        double const remaining_ns =
+            request.remaining.count() > 0 ? static_cast<double>(request.remaining.count()) : 0.0;
+        std::uint64_t const span_tsc =
+            is_timed ? static_cast<std::uint64_t>(remaining_ns / nspc / static_cast<double>(count)) : 0;
+        std::size_t const base = request.samples / count;
+        std::size_t const extra = request.samples % count;
+        std::uint64_t const start_tsc = rdtsc_start();
+        for (std::size_t done = 0; done < count; ++done) {
+            std::size_t const share = base + (done < extra ? std::size_t{1} : std::size_t{0});
+            std::uint64_t const deadline = is_timed ? start_tsc + span_tsc * (done + 1) : UINT64_MAX;
+            static_cast<void>(plan.bounds.push(WindowBound{.samples = share, .deadline_tsc = deadline}));
+        }
+        return plan;
+    }
+
+    // Reads the clocks at the end of the last window that the loop ended, and
+    // keeps the time that the measuring thread lost in that window (THE
+    // WINDOWS).  The two reads come between two samples, outside the timed
+    // regions.
+    [[gnu::noinline]] static void close_window_(SampleWindow& window) noexcept {
+        WindowClock const clock = detail::read_window_clock();
+        static_cast<void>(window.lost_ns.push(detail::lost_between(
+            ::fixy::side_as<side::ReadingBefore>(window.clock_last), ::fixy::side_as<side::ReadingAfter>(clock))));
+        window.clock_last = clock;
     }
 
     // Ends the measurement and builds its report from the samples that the
@@ -2364,7 +2589,27 @@ private:
             drift_flag = drift > 10.0;
         }
 
+        // The median of each window, from its samples in the order of the
+        // loop, before the sort of all the samples (THE WINDOWS).
+        ::fixy::FixedList<double, kWindows> window_medians{};
+        std::size_t window_begin = 0;
+        for (std::size_t const window_end : window.ends) {
+            if (window_end > window_begin) {
+                std::vector<double> part(ns_samples.begin() + static_cast<std::ptrdiff_t>(window_begin),
+                                         ns_samples.begin() + static_cast<std::ptrdiff_t>(window_end));
+                std::sort(part.begin(), part.end());
+                static_cast<void>(window_medians.push(percentile_interp(part, 0.5)));
+            }
+            window_begin = window_end;
+        }
+        std::size_t paused_windows = 0;
+        for (std::uint64_t const window_lost_ns : window.lost_ns) {
+            paused_windows += window_lost_ns > kPauseBoundNs ? std::size_t{1} : std::size_t{0};
+        }
+
         Report r;
+        r.windows = spread_of_windows(window_medians.view());
+        r.paused_windows = paused_windows;
         r.name = name_;
         r.batch = batch;
         r.pinned_cpu = pinned_cpu;
