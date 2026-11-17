@@ -45,9 +45,10 @@ static_assert(ClockSourceLattice::get<2>(ClockSourceLattice::top()) == PinningRe
         && ClockSourceLattice::get<2>(point) == pin;
 }
 
-static_assert(projects_to(ClockSource::Realtime, DetSafeTier::WallClockRead, SuspendBehavior::PausesOnSuspend,
+static_assert(projects_to(ClockSource::Realtime, DetSafeTier::WallClockRead, SuspendBehavior::KeepsTicking,
                           PinningRequirement::NotRequired),
-              "Realtime must project to (WallClockRead, PausesOnSuspend, NotRequired).");
+              "Realtime must project to (WallClockRead, KeepsTicking, NotRequired).  CLOCK_REALTIME gives the "
+              "wall time after a resume, so its reading holds the time of a suspend.");
 static_assert(projects_to(ClockSource::Monotonic, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
                           PinningRequirement::NotRequired));
 static_assert(projects_to(ClockSource::MonotonicRaw, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,

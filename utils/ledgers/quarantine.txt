@@ -339,7 +339,7 @@ test/ct/ | std-entity | 18 | - | -
 test/ct/ | std-object | 12 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 87 | - | -
-test/fixy/ | c-library-call | 1050 | - | -
+test/fixy/ | c-library-call | 1048 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 12 | - | -
 test/fixy/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main

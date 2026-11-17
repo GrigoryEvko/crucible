@@ -73,7 +73,9 @@ struct ClockSourceLattice : ProductLattice<DetSafeLattice, SuspendBehaviorLattic
     switch (source) {
         case ClockSource::Realtime:
             // An administrator or a time daemon can step this clock backwards.
-            return ClockSourceLattice::make_point(DetSafeTier::WallClockRead, SuspendBehavior::PausesOnSuspend,
+            // The clock gives the wall time after a resume, so a reading
+            // after a suspend holds the time of the suspend.
+            return ClockSourceLattice::make_point(DetSafeTier::WallClockRead, SuspendBehavior::KeepsTicking,
                                                   PinningRequirement::NotRequired);
         case ClockSource::Monotonic:
         case ClockSource::MonotonicRaw:
