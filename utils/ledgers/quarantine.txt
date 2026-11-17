@@ -95,14 +95,18 @@ bench/ | c-library-object | 13 | - | -
 bench/ | compiler-builtin | 12 | - | -
 bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
+bench/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | opted-out | 9 | MEASURE: the plain sort of Kahn and the plain union-find are the references | the plain sort of Kahn and the plain union-find in bench_net_checks are the references of the run-time net checks, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 25 | MEASURE: the raw forms of the state of the art are the references of the containers | the raw forms of the state of the art are the reference rows of bench_core_containers: a raw bitmap, a raw heap bitmap, the generational table of the slotmap crate of Rust and the push_back of llvm::SmallVector, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | opted-out | 3 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
 bench/ | opted-out | 3 | MEASURE: the raw loop over two strides is the baseline of the strided walk | a raw loop over two strides that it reads at run time is the baseline of the strided walk in bench_core_strided, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 92 | - | -
+bench/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | region | 1 | MEASURE: the plain sort of Kahn and the plain union-find are the references | the plain sort of Kahn and the plain union-find in bench_net_checks are the references of the run-time net checks, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the raw forms of the state of the art are the references of the containers | the raw forms of the state of the art are the reference rows of bench_core_containers: a raw bitmap, a raw heap bitmap, the generational table of the slotmap crate of Rust and the push_back of llvm::SmallVector, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | region | 1 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
 bench/ | region | 1 | MEASURE: the raw loop over two strides is the baseline of the strided walk | a raw loop over two strides that it reads at run time is the baseline of the strided walk in bench_core_strided, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
