@@ -25,6 +25,8 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a body or an object tells w
 // The addresses that one unit gives:
 //   - sum_by_tree_body, sum_scan_body, fixed_copy_body: three bodies whose source
 //     reads the vector width of the target
+//   - fma_exact_body: the exact form of fp::fma for a double, an out-of-line
+//     body whose instructions change with the level of the target
 //   - vector_bytes: the object of the vector width that the target sets
 //   - sum_bits_body: the bits of the tree sum of the run of the test, by the
 //     body of the unit.  The unit of x86-64-v4 runs only on such a processor.
@@ -34,6 +36,7 @@ struct TargetUnitBodies {
         ::foundation::core::View<float const>, ::foundation::core::ViewMut<float, TargetProbeBrand>) noexcept = nullptr;
     void (*fixed_copy_body)(::foundation::core::View<std::uint8_t, 64>,
                             ::foundation::core::View<std::uint8_t const, 64>) noexcept = nullptr;
+    double (*fma_exact_body)(double, double, double) noexcept = nullptr;
     std::size_t const* vector_bytes = nullptr;
     std::uint32_t (*sum_bits_body)() noexcept = nullptr;
 };

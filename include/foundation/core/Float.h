@@ -57,7 +57,12 @@
 //
 //   The body reads the target, so fma is in the inline namespace
 //   CRUCIBLE_SIMD_TARGET (THE TARGET NAMESPACE of foundation/Platform.h).  A
-//   constant evaluation runs the exact form.
+//   constant evaluation runs the exact form.  The exact form is an
+//   out-of-line function, and its parts compile to different instructions
+//   at each level, such as LZCNT for __builtin_clzll at x86-64-v3.  So the
+//   exact form and its parts are in the same inline namespace of detail.  A
+//   unit of one level then calls only the body of its own level, also in a
+//   binary that links units of two levels, as the tests of the products do.
 //
 // Each operation is constexpr.  A constant evaluation of GCC 16 gives no
 // result that is an infinity for sqrt: sqrt(+inf) is not a constant
@@ -145,6 +150,9 @@ template <Float T>
 }  // namespace foundation::core::fp
 
 namespace foundation::core::detail {
+
+// The exact form of THE FMA and its parts, in the namespace of the target.
+inline namespace CRUCIBLE_SIMD_TARGET {
 
 __extension__ using FmaWord = unsigned __int128;
 
@@ -291,6 +299,8 @@ template <Float T>
     }
     return fma_value_<T>(kept, exponent, is_negative);
 }
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace foundation::core::detail
 

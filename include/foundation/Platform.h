@@ -90,11 +90,12 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 //   other set.  An arm on a macro outside the ladder needs a step of its own
 //   first.
 //
-//   The namespace holds only a function whose source reads the target.  GCC
-//   also picks the instructions of each other inline function from the
-//   flags, and no name holds that choice.  So a binary compiles each of its
-//   units for one target, and a test links two targets only to probe the
-//   namespace.
+//   The namespace holds only a function whose source reads the target, and
+//   an out-of-line function that such a function calls, such as the exact
+//   form of fp::fma (foundation/core/Float.h).  GCC also picks the
+//   instructions of each other inline function from the flags, and no name
+//   holds that choice.  So a binary compiles each of its units for one
+//   target, and a test links two targets only to probe the namespace.
 #if defined(__x86_64__)
 #if (defined(__AVX512BW__) && !defined(__AVX512F__)) || (defined(__AVX512F__) && !defined(__AVX2__)) \
     || (defined(__AVX2__) && !defined(__AVX__)) || (defined(__AVX__) && !defined(__SSE4_2__))        \

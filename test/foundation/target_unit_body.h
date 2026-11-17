@@ -12,6 +12,7 @@
 #include <foundation/Quarantine.h>
 #include <foundation/Simd.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Float.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Scalar.h>
@@ -53,6 +54,7 @@ inline constexpr std::size_t target_unit_run = 1000;
         .sum_scan_body =
             &::foundation::core::scan_inclusive_sums<float, TargetProbeBrand, ::foundation::core::dynamic_extent>,
         .fixed_copy_body = &::foundation::core::copy<std::uint8_t, 64>,
+        .fma_exact_body = &::foundation::core::detail::fma_by_integers_<double>,
         .vector_bytes = &::foundation::simd::native_vector_bytes,
         .sum_bits_body = &sum_bits_of_this_unit,
     };
