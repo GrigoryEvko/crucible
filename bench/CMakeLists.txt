@@ -56,6 +56,17 @@ crucible_bench(bench_content_hash)
 crucible_bench(bench_core_atomic)
 crucible_bench(bench_core_region)
 crucible_bench(bench_core_reduce)
+# fp::fma at three levels in one program: two units at x86-64 and x86-64-v2
+# run the exact form, and the main unit at the host runs the instruction.
+# The flags of a source come after the flags of the target, so the last
+# -march word of each unit is its own.  On aarch64 the three units compile
+# for the host.
+crucible_bench(bench_core_fma)
+target_sources(bench_core_fma PRIVATE fma_bench_v1.cpp fma_bench_v2.cpp)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  set_source_files_properties(fma_bench_v1.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64)
+  set_source_files_properties(fma_bench_v2.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v2)
+endif()
 crucible_bench(bench_core_strided)
 crucible_bench(bench_decide_compile_time)
 crucible_bench(bench_dispatch)
