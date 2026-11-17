@@ -237,37 +237,73 @@ constexpr void insertion_sort_(T* first, std::size_t count, Less& less) noexcept
     }
 }
 
+// Copies the count elements from source into target, two runs that do not
+// overlap.  At run time an element that the copy of Region.h takes moves as
+// one copy of its bytes, so a long run takes no loop of single elements.  A
+// constant evaluation, and each other element, take a loop.
+template <class T>
+constexpr void copy_run_(T const* source, std::size_t count, T* target) noexcept {
+    if constexpr (RegionCopyElement<T>) {
+        if !consteval {
+            static_cast<void>(::foundation::core::copy(view_over_(target, count), view_over_(source, count)));
+            return;
+        }
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        target[index] = source[index];
+    }
+}
+
 // The merge of the sorted runs [0, middle) and [middle, count) of source
 // into target.  An element of the second run goes first only when it is
 // below the element of the first run, so the merge is stable.
+//
+// The stable merge of two runs is one permutation, so the merge takes it from
+// the two ends at the same time.  The front takes the smaller of the first
+// elements of the two runs, and the element of the first run on a tie.  The
+// back takes the larger of the last elements, and the element of the second
+// run on a tie.  So the front writes the first elements of the permutation,
+// the back writes the last ones, and the bits are the bits of a merge from
+// the front alone.  The two ends do not read the results of each other, so
+// the processor runs their two chains of compares at the same time.  Each
+// end takes as many elements as the shorter run holds, so no end reads past
+// a run, and no element goes out two times.  A merge from the front then
+// takes the elements between the two ends.
 template <class T, class Less>
 constexpr void merge_runs_(T const* source, std::size_t middle, std::size_t count, T* target, Less& less) noexcept {
-    std::size_t left = 0;
-    std::size_t right = middle;
-    std::size_t out = 0;
     // Two runs are in order when the first element of the second run is not
     // below the last element of the first run.  Then the merge is a copy,
     // with one compare for the two runs.
     if (middle == 0 || middle == count || !less(source[middle], source[middle - 1])) {
-        for (; out < count; ++out) {
-            target[out] = source[out];
-        }
+        copy_run_(source, count, target);
         return;
     }
-    // One compare selects the element and moves the two positions, with no
-    // branch on the elements, so random input costs no mispredicted branch.
-    while (left < middle && right < count) {
+    std::size_t left = 0;
+    std::size_t right = middle;
+    std::size_t left_end = middle;
+    std::size_t right_end = count;
+    std::size_t out = 0;
+    std::size_t out_end = count;
+    std::size_t const shorter = middle < count - middle ? middle : count - middle;
+    // One compare at each end selects the element and moves the positions.
+    for (std::size_t step = 0; step < shorter; ++step) {
         bool const is_right_first = less(source[right], source[left]);
-        target[out++] = is_right_first ? source[right] : source[left];
+        target[out++] = source[is_right_first ? right : left];
+        right += is_right_first ? 1 : 0;
+        left += is_right_first ? 0 : 1;
+        bool const is_left_last = less(source[right_end - 1], source[left_end - 1]);
+        target[--out_end] = source[is_left_last ? left_end - 1 : right_end - 1];
+        left_end -= is_left_last ? 1 : 0;
+        right_end -= is_left_last ? 0 : 1;
+    }
+    while (left < left_end && right < right_end) {
+        bool const is_right_first = less(source[right], source[left]);
+        target[out++] = source[is_right_first ? right : left];
         right += is_right_first ? 1 : 0;
         left += is_right_first ? 0 : 1;
     }
-    while (left < middle) {
-        target[out++] = source[left++];
-    }
-    while (right < count) {
-        target[out++] = source[right++];
-    }
+    copy_run_(source + left, left_end - left, target + out);
+    copy_run_(source + right, right_end - right, target + out + (left_end - left));
 }
 
 }  // namespace detail
@@ -419,11 +455,7 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
         source = merged;
         is_in_scratch = !is_in_scratch;
     }
-    if (is_in_scratch) {
-        for (std::size_t index = 0; index < count; ++index) {
-            target[index] = source[index];
-        }
-    }
+    if (is_in_scratch) detail::copy_run_(source, count, target);
     return Unit{};
 }
 
