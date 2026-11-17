@@ -1,7 +1,7 @@
 # No compile has an instruction count: the host gives no exact counter.  The sum is not
 # known, and the rule does not apply.
 format 1
-kind x86_64-debug-asan
+kind x86_64-debug-asan-v3
 file include/Base.h size=1000
 file src/a.cpp size=100
 file src/b.cpp size=100

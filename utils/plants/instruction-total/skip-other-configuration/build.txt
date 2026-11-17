@@ -1,5 +1,5 @@
-# A build of the configuration x86_64-release has 14 G instructions, and the baseline of x86_64-debug-asan is 7 G.
-# The rule judges only the configuration x86_64-debug-asan, so it does not apply to the build and gives no growth.
+# A build of the configuration x86_64-release has 14 G instructions, and the baseline of x86_64-debug-asan-v3 is 7 G.
+# The rule judges only the configuration x86_64-debug-asan-v3, so it does not apply to the build and gives no growth.
 format 1
 kind x86_64-release
 file include/Base.h size=1000

@@ -1,5 +1,5 @@
 # The ledger of a plant of the rule instruction-total.
 format 1
 rule instruction-total
-- | x86_64-debug-asan | 1/2 | objects | a reason
-- | x86_64-debug-asan | 2 | fixtures | a reason
+- | x86_64-debug-asan-v3 | 1/2 | objects | a reason
+- | x86_64-debug-asan-v3 | 2 | fixtures | a reason

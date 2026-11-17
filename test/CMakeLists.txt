@@ -199,9 +199,11 @@ crucible_test(test_kernel_cache_key)
 crucible_test(test_cost_model)
 crucible_test(test_call_site_table)
 crucible_test(test_swiss_table)
-# The AVX2 arm of crucible/SwissTable.h.  The default build selects the SSE2
-# arm, and -march=native on an AVX-512 host selects the AVX-512 arm.  The x86
-# floor of the tree is AVX2, so each x86 test host can run this binary.
+# The AVX2 arm of crucible/SwissTable.h.  The default build is x86-64-v3, so
+# test_swiss_table runs the AVX2 arm there too.  The shipped levels are v1 to
+# v4: a build at v1 or v2 selects the SSE2 arm, and -march=native on an
+# AVX-512 host selects the AVX-512 arm.  This binary needs a host of
+# x86-64-v3 or higher.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
   crucible_test(test_swiss_table_avx2 test_swiss_table.cpp)
   target_compile_options(test_swiss_table_avx2 PRIVATE -mavx2 -mno-avx512f)

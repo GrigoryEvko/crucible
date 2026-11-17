@@ -1,5 +1,5 @@
 # A parse compile with -march=x86-64-v3 compiles the arm, as `loop syntax`
-# does in the build of the preset syntax-x86-64-v3.  The row of the ledger
+# does in a parse build at that level.  The row of the ledger
 # counts the call of close, so the build has no error.  The compile with no
 # -march flag does not compile the arm, and it gives no finding.
 

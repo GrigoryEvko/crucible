@@ -846,13 +846,33 @@ endif()
 #
 # The build kind ends with the word of the level (cmake/BuildLauncher.cmake),
 # such as x86_64-release-v3.  Thus a build at a level gets a configuration of
-# its own in the gate and in the ledger rows.  An empty value names no level,
-# and the flags give the target: no -march (x86-64, level v1, as the preset
-# default), or -march=native.  Such a build has no word in its kind, so the
-# names of its configurations do not change.
+# its own in the gate and in the ledger rows.
+#
+# THE FLOOR
+#   The floor of an x86_64 build is x86-64-v3.  An x86_64 build with an
+#   empty CRUCIBLE_X86_LEVEL and with no -march word in CMAKE_CXX_FLAGS
+#   gets the level v3, and the configure puts -march=x86-64-v3 at the end of
+#   CMAKE_CXX_FLAGS.  The preset default and each preset that inherits it
+#   build at the floor, such as tsan, ubsan-strict and bench-fuzz.  Their
+#   kinds then end with -v3, such as x86_64-debug-asan-v3.  The floor is no
+#   value of the cache.  A preset puts its values into the cache only at
+#   the first configure of its build directory.  So a build directory of an
+#   earlier configure also moves to the floor, such as a build of the gate.
+#   The floor is a rule of this file and not a value of the preset default,
+#   because that preset also configures an aarch64 host.
+#   An empty value with a -march word, such as -march=native, gives no level,
+#   and such a build has no word in its kind.  A build for a processor other
+#   than x86_64 has no level.  The shipped levels are v1 to v4, the presets
+#   release-v1 to release-v4.
 set(CRUCIBLE_X86_LEVEL "" CACHE STRING
-  "The x86-64 level that the last -march word of CMAKE_CXX_FLAGS gives: empty, v1, v2, v3 or v4")
+  "The x86-64 level that the last -march word of CMAKE_CXX_FLAGS gives: v1, v2, v3 or v4.  Empty gives the floor v3 to an x86_64 build with no -march word")
 set_property(CACHE CRUCIBLE_X86_LEVEL PROPERTY STRINGS "" v1 v2 v3 v4)
+string(REGEX MATCH "(^| )-march=" _crucible_has_march "${CMAKE_CXX_FLAGS}")
+if(CRUCIBLE_X86_LEVEL STREQUAL "" AND NOT _crucible_has_march AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  set(CRUCIBLE_X86_LEVEL v3)
+  string(STRIP "${CMAKE_CXX_FLAGS} -march=x86-64-v3" CMAKE_CXX_FLAGS)
+  message(STATUS "x86-64 level: v3, the floor of the tree, so CMAKE_CXX_FLAGS ends with -march=x86-64-v3")
+endif()
 if(NOT CRUCIBLE_X86_LEVEL STREQUAL "")
   if(NOT CRUCIBLE_X86_LEVEL MATCHES "^v[1234]$")
     message(FATAL_ERROR "CRUCIBLE_X86_LEVEL is '${CRUCIBLE_X86_LEVEL}'. The values are empty, v1, v2, v3 and v4.")

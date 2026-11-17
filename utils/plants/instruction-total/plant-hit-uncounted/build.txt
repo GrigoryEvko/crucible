@@ -2,7 +2,7 @@
 # its record keeps no last cost.  The other compiles have a count, and the rule gives an
 # error of the kind no-count.
 format 1
-kind x86_64-debug-asan
+kind x86_64-debug-asan-v3
 file include/Base.h size=1000
 file src/a.cpp size=100
 file src/b.cpp size=100

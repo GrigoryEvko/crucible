@@ -2372,7 +2372,6 @@ def traced_cases(ctest: str, expect: Callable[[str, bool, str], None]) -> None:
 # The presets of the fake tree of the parse cases: one binaryDir for each parse build, and no build is configured.
 PARSE_PRESETS_TEXT = (
     '{"version": 6, "configurePresets": ['
-    '{"name": "syntax-x86-64-v3", "binaryDir": "${sourceDir}/build-syntax-x86-64-v3"}, '
     '{"name": "syntax-x86-64", "binaryDir": "${sourceDir}/build-syntax-x86-64"}, '
     '{"name": "syntax-aarch64", "binaryDir": "${sourceDir}/build-syntax-aarch64"}]}\n'
 )
@@ -2414,7 +2413,7 @@ def parse_cases(expect: Callable[[str, bool, str], None]) -> None:
                 output,
             )
         unit.write_text(PLAIN_UNIT)
-        parse_build = source_root / "build-syntax-x86-64-v3"
+        parse_build = source_root / "build-syntax-x86-64"
         parse_build.mkdir()
         cmake_reader.plant(parse_build, cache={build_config.SYNTAX_OPTION: ("BOOL", "ON")})
         captured = io.StringIO()

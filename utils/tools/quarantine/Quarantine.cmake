@@ -106,7 +106,7 @@ if(NOT CRUCIBLE_QUARANTINE_MODE MATCHES "^(REPORT|ERROR)$")
 endif()
 
 # The build directory of a configuration that only parses (CLAUDE.md section
-# XXII, The ratchet), such as a build of the presets syntax-x86-64-v3 and
+# XXII, The ratchet), such as a build of the presets syntax-x86-64 and
 # syntax-aarch64.  `loop syntax BUILD_DIR` parses each unit of the target all
 # with -fsyntax-only and the plugin.  The rules of the engine plugin then read
 # the report file of each unit, and not the section of its object.  The option

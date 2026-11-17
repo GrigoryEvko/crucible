@@ -1,7 +1,7 @@
-# The ledger holds the two rows of x86_64-debug-asan and two rows of x86_64-release.  The rule judges only the
-# configuration x86_64-debug-asan, so a row of a different configuration is an error at the line of the row.
+# The ledger holds the two rows of x86_64-debug-asan-v3 and two rows of x86_64-release.  The rule judges only the
+# configuration x86_64-debug-asan-v3, so a row of a different configuration is an error at the line of the row.
 format 1
-kind x86_64-debug-asan
+kind x86_64-debug-asan-v3
 file include/Base.h size=1000
 file src/a.cpp size=100
 file src/b.cpp size=100

@@ -1710,7 +1710,7 @@ def kind_cases(expect: testing.Expect) -> None:
         "bench-fuzz": gate.gb_per_job_of("bench-fuzz"),
         "vessel build": gate.gb_per_job_of(gate.VESSEL, gate.BUILD_KINDS),
         "vessel tests": gate.gb_per_job_of(gate.VESSEL, gate.TEST_KINDS),
-        "parse": gate.gb_per_job_of("syntax-x86-64-v3"),
+        "parse": gate.gb_per_job_of("syntax-x86-64"),
     }
     expect(
         f"a lease of `loop test` reserves the largest kind of its configuration, the vessel reserves a shard to build "

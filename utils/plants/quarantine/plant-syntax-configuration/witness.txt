@@ -1,5 +1,5 @@
 # A parse compile with -march=x86-64-v3 compiles the arm, as `loop syntax`
-# does in the build of the preset syntax-x86-64-v3.  The rows of the ledger
+# does in a parse build at that level.  The rows of the ledger
 # judge the build.  No row counts the call of close, so the call is an error.
 
 compile raw src/raw.cpp rules=utils/rule-table.txt stage=syntax

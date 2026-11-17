@@ -1,7 +1,7 @@
 # The fixture neg_two has no record and the fixture neg_one has one, so the census is not whole: an error that names
 # neg_two.  The rule reads no file list, and the census refuses the build all the same.
 format 1
-kind x86_64-debug-asan
+kind x86_64-debug-asan-v3
 file include/Base.h size=1000
 file src/a.cpp size=100
 file src/b.cpp size=100

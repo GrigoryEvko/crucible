@@ -1,7 +1,7 @@
 # The object a.o ran 2.42 G instructions, and the total is 3 % more than its baseline.  That growth is not more than the
 # limit 5 %, and the rule gives no finding.
 format 1
-kind x86_64-debug-asan
+kind x86_64-debug-asan-v3
 file include/Base.h size=1000
 file src/a.cpp size=100
 file src/b.cpp size=100

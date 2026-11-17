@@ -15,8 +15,8 @@
 //     of one call
 //   - the shape and the overlap errors write nothing
 //   - a digest of the outputs of fixed draws holds for each build: the
-//     preset default (x86-64 with no -march) and the release preset (the
-//     native target) give one digest
+//     preset default (x86-64-v3), the presets release-v1 to release-v4 and
+//     the release preset (the native target) give one digest
 
 #include <fixy/Core.h>
 #include <fixy/Reductions.h>

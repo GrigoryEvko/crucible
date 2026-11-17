@@ -101,7 +101,7 @@ from assay.readers import compdb
 
 INSTRUCTION_RULE = "instruction-total"
 # The one configuration that the rule judges: the build of the preset default (THE CONFIGURATION).
-BASE_CONFIGURATION = "x86_64-debug-asan"
+BASE_CONFIGURATION = "x86_64-debug-asan-v3"
 # The entity of each of the two total rows of the ledger.
 CENSUS_PARTS = ("objects", "fixtures")
 # The number of compiles that a finding of growth names.

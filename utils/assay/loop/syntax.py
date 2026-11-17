@@ -6,8 +6,10 @@ usage: loop syntax BUILD_DIR [-j JOBS]
 THE PARSE BUILD
     A parse build is a configured build directory with CRUCIBLE_SYNTAX_ONLY
     (assay.core.configuration.is_parse_build), such as a build of the presets
-    syntax-x86-64-v3, syntax-x86-64 and syntax-aarch64.  It compiles the preprocessor arms of
-    its target, and no build of an object compiles them.  The ledgers of the
+    syntax-x86-64 and syntax-aarch64.  It compiles the preprocessor arms of
+    its target, and no build of an object compiles them: the build of the
+    preset default compiles at x86-64-v3, and a parse at x86-64 compiles the
+    arms of x86-64 and x86-64-v2.  The ledgers of the
     rules quarantine, heavy-include and syscalls count its
     findings in a configuration of their own (CLAUDE.md section XXII, The
     ratchet).
@@ -180,7 +182,7 @@ JOBS = proc.DEFAULT_JOBS
 # The lock of the runs and the checks of one parse build, below the build directory (THE RUN).
 LOCK_FILE = Path("quarantine") / "syntax.lock"
 # The presets of the parse builds, which a change of an arm makes necessary (THE CHANGE OF AN ARM).
-PARSE_PRESETS = ("syntax-x86-64-v3", "syntax-x86-64", "syntax-aarch64")
+PARSE_PRESETS = ("syntax-x86-64", "syntax-aarch64")
 # The architectures of the macros __NAME__ and __NAME that the compiler gives (is_arm_macro()).
 ARCHITECTURES = frozenset(
     {
@@ -399,8 +401,7 @@ def require_parse_build(build_dir: Path) -> None:
     if not build_config.is_parse_build(build_dir):
         raise ParseError(
             f"{build_dir} is no parse build: its CMake cache does not set "
-            f"{build_config.SYNTAX_OPTION}=ON.  Configure it with the preset syntax-x86-64-v3 or "
-            f"syntax-aarch64"
+            f"{build_config.SYNTAX_OPTION}=ON.  Configure it with the preset {' or '.join(PARSE_PRESETS)}"
         )
 
 

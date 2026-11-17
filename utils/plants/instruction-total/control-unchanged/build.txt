@@ -1,6 +1,6 @@
 # Two objects of 2 G instructions and two fixtures of 5 G, the 14 G of the baseline: the rule gives no finding.
 format 1
-kind x86_64-debug-asan
+kind x86_64-debug-asan-v3
 file include/Base.h size=1000
 file src/a.cpp size=100
 file src/b.cpp size=100
