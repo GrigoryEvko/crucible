@@ -4183,6 +4183,16 @@ fixy_neg_compile_test(neg_substrate_session_lvalue_handle
 fixy_neg_compile_test(neg_substrate_session_not_bridgeable
   "no matching function for call to .mint_substrate_session<substrate_table_fixture::FakeChannel"
   "incomplete type .struct fixy::channels::handle_for<substrate_table_fixture::FakeChannel")
+# The consumer end of a channel runs the dual of the producer end, and the
+# protocol of each end is an alias, so no unit gives one end a protocol of its
+# own: not through a specialization in a probe region, and not through a
+# specialization of the alias.
+fixy_neg_compile_test(neg_substrate_session_probe_gives_one_end_a_protocol
+  ".default_proto_for. is not a class template"
+  "explicit specialization of non-template .fixy::channels::default_proto_for.")
+fixy_neg_compile_test(neg_substrate_session_one_end_protocol
+  "invalid class name in declaration of .using fixy::channels::default_proto_for_t = "
+  "fixy::session::Loop<fixy::session::Send<int, fixy::session::Continue> >")
 
 # An endpoint binds a handle to an execution context, and its gate is the
 # gate of the session that the endpoint can start.

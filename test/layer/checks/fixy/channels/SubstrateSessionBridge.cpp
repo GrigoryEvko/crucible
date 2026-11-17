@@ -28,6 +28,16 @@ static_assert(
 static_assert(
     std::is_same_v<default_proto_for_t<Mpsc, Direction::Consumer>, proto::Loop<proto::Recv<int, proto::Continue>>>);
 
+// The consumer end of each channel runs the dual of its producer end.
+static_assert(std::is_same_v<default_proto_for_t<Spsc, Direction::Consumer>,
+                             proto::dual_of_t<default_proto_for_t<Spsc, Direction::Producer>>>);
+static_assert(std::is_same_v<default_proto_for_t<Mpsc, Direction::Consumer>,
+                             proto::dual_of_t<default_proto_for_t<Mpsc, Direction::Producer>>>);
+static_assert(
+    proto::is_dual_v<default_proto_for_t<Spsc, Direction::Producer>, default_proto_for_t<Spsc, Direction::Consumer>>);
+static_assert(
+    proto::is_dual_v<default_proto_for_t<Mpsc, Direction::Producer>, default_proto_for_t<Mpsc, Direction::Consumer>>);
+
 static_assert(IsBridgeableDirection<Spsc, Direction::Producer>);
 static_assert(IsBridgeableDirection<Spsc, Direction::Consumer>);
 static_assert(IsBridgeableDirection<Mpsc, Direction::Producer>);

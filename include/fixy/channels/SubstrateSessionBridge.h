@@ -1,7 +1,7 @@
 #pragma once
 
 // The session that a channel handle runs.  handle_for names the handle of
-// each role of a channel, and default_proto_for names the protocol of that
+// each role of a channel, and default_proto_for_t names the protocol of that
 // role.  mint_substrate_session takes the handle by move and gives the
 // first session handle, so the session owns the channel handle for its
 // whole life.
@@ -68,21 +68,22 @@ using handle_for_t = typename handle_for<Substr, Dir>::type;
 // runs until it is torn down.  Shutdown is a detach carrying a typed
 // reason, detach_reason::InfiniteLoopProtocol, not a branch the protocol
 // offers.  The detach releases the channel handle that the session owns.
+//
+// The protocol of a channel is one value for the channel: the producer end
+// sends each value, and the consumer end runs the dual of the producer end.
+// So the two ends of one channel run dual protocols, although each mint
+// gives one end.  The protocols are aliases, and no unit can specialize an
+// alias, so no unit can give one end a protocol of its own.
 
-template <class Substr, Direction Dir>
-struct default_proto_for;
+template <class Substr>
+    requires detail::IsBridgedChannel<Substr>
+using producer_proto_t =
+    ::fixy::session::Loop<::fixy::session::Send<typename Substr::value_type, ::fixy::session::Continue>>;
 
 template <class Substr, Direction Dir>
     requires detail::IsBridgedChannel<Substr>
-struct default_proto_for<Substr, Dir> {
-    using type = std::conditional_t<
-        Dir == Direction::Producer,
-        ::fixy::session::Loop<::fixy::session::Send<typename Substr::value_type, ::fixy::session::Continue>>,
-        ::fixy::session::Loop<::fixy::session::Recv<typename Substr::value_type, ::fixy::session::Continue>>>;
-};
-
-template <class Substr, Direction Dir>
-using default_proto_for_t = typename default_proto_for<Substr, Dir>::type;
+using default_proto_for_t = std::conditional_t<Dir == Direction::Producer, producer_proto_t<Substr>,
+                                               ::fixy::session::dual_of_t<producer_proto_t<Substr>>>;
 
 namespace detail {
 
@@ -90,7 +91,7 @@ template <class Substr, Direction Dir>
 concept HasHandleFor = requires { typename handle_for<Substr, Dir>::type; };
 
 template <class Substr, Direction Dir>
-concept HasDefaultProtoFor = requires { typename default_proto_for<Substr, Dir>::type; };
+concept HasDefaultProtoFor = requires { typename default_proto_for_t<Substr, Dir>; };
 
 // The handle of a direction has the pole shape of that direction, so a
 // stage can take it.  fixy/concurrent/StageShape.h reads the same shape.
