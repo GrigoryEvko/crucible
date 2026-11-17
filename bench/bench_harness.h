@@ -1443,10 +1443,14 @@ struct Report {
         if (len != 0) buf[first + second] = '\0';
     }
 
+    // Writes the summary line to standard output.  The one reference to the
+    // stream is here, so a call of a bench names no C stream.
+    void print_text() const noexcept { print_text(stdout); }
+
     // Writes a single summary line (optionally followed by the BPF
     // sensory line) to `out`. Every underlying call is C stdio and
     // std::string::c_str() — no throwing paths, so noexcept.
-    void print_text(FILE* out = stdout) const noexcept {
+    void print_text(FILE* out) const noexcept {
         char p50_b[32], p90_b[32], p99_b[32], p999_b[32], max_b[32], mean_b[32], sigma_b[32];
         fmt_ns_(p50_b, sizeof(p50_b), pct.p50);
         fmt_ns_(p90_b, sizeof(p90_b), pct.p90);
