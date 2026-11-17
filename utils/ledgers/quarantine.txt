@@ -102,7 +102,7 @@ bench/ | raw-pointer-object | 92 | - | -
 bench/ | region | 1 | MEASURE: the raw loop over two strides is the baseline of the strided walk | a raw loop over two strides that it reads at run time is the baseline of the strided walk in bench_core_strided, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 733 | - | -
+bench/ | std-entity | 730 | - | -
 bench/ | std-object | 217 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
@@ -652,9 +652,9 @@ utils/tools/ | std-entity | 15 | - | -
 utils/tools/ | std-object | 1 | - | -
 utils/tools/lsp_code_action_plugin/ | std-entity | 97 | - | -
 utils/tools/lsp_code_action_plugin/ | std-object | 27 | - | -
-vessel/torch/ | opted-out | 40 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
+vessel/torch/ | opted-out | 43 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | opted-out | 9 | ABI: the helpers give a type to the handle and the meta array of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
-vessel/torch/ | opted-out | 56 | C-HEADER: a C caller and ctypes read these declarations, so they hold only C types | vessel_api.h is a header that a C compiler and ctypes read, so its declarations hold only C types
+vessel/torch/ | opted-out | 60 | C-HEADER: a C caller and ctypes read these declarations, so they hold only C types | vessel_api.h is a header that a C compiler and ctypes read, so its declarations hold only C types
 vessel/torch/ | region | 10 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | region | 1 | ABI: ctypes reads the name as a C text up to its zero | -
 vessel/torch/ | region | 1 | ABI: the C caller gives the name as a pointer, and strnlen gave its length | -
