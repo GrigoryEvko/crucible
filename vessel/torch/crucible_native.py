@@ -326,7 +326,8 @@ def checked_lib_path(name: str, lib_path: str | None, missing: str) -> str:
 
     On x86_64 the level of the library must suit the host (THE LEVEL OF A
     LIBRARY).  With no LIB_PATH and with CRUCIBLE_LEVEL_ROOT, the library
-    comes from the directory of the picked level of that root.
+    comes from the directory of the picked level of that root.  A library of
+    LIB_PATH gets the level probe of named_probe().
 
     Raises:
         RuntimeError: If no library is found, or if it needs a sanitizer
@@ -344,7 +345,7 @@ def checked_lib_path(name: str, lib_path: str | None, missing: str) -> str:
         raise RuntimeError(f"Cannot find {name}. Build it with:\n{missing}")
     _refuse_missing_runtime(path)
     if _is_x86_64():
-        probe = Path(root) / PROBE_STAMP.library if source is LevelSource.ROOT else Path(path).parent / PROBE_STAMP.library
+        probe = Path(root) / PROBE_STAMP.library if source is LevelSource.ROOT else named_probe(Path(path))
         check_level(path, probe, source)
     return path
 
@@ -385,7 +386,9 @@ def _refuse_missing_runtime(path: str) -> None:
 # feature or the text.
 #
 # With no level root, the loader takes the libraries of one build directory
-# (_find_lib), with the probe of that directory.  The level of each library
+# (_find_lib), with the probe of that directory.  A library that a caller
+# names gets the probe beside it, or the probe of the root for a library of a
+# level directory of a root (named_probe).  The level of each such library
 # must be at or below the picked level, so a build for -march=native loads on
 # its own host.  The two vessel libraries of one directory must have the same
 # note, because they share live objects and inline code.
@@ -404,6 +407,7 @@ _NOTE_DESCRIPTOR_SIZE = 4
 _SHT_NOTE = 7
 _ELF64_HEADER = 64
 _LEVELS = (1, 2, 3, 4)
+_LEVEL_DIRECTORIES = frozenset(f"x86-64-v{level}" for level in _LEVELS)
 _PAIR = ("libcrucible_vessel.so", "libcrucible_dispatch.so")
 
 
@@ -576,6 +580,23 @@ def level_root_path(name: str, root: Path) -> str:
                                  f"exist.  Install a build of the level into the root:\n"
                                  f"  cmake --install BUILD --component vessel --prefix PREFIX")
     return str(path)
+
+
+def named_probe(path: Path) -> Path:
+    """Give the level probe of the library at PATH that a caller names.
+
+    The probe of a build directory is beside its libraries.  A level
+    directory x86-64-vN of a level root holds no probe, and the probe of the
+    root is in its parent (THE LEVEL ROOT of vessel/torch/CMakeLists.txt).
+    So a path that came from a root, such as a path of checked_lib_path()
+    under CRUCIBLE_LEVEL_ROOT, loads again.  Only a level directory sends
+    the read to its parent, and the rule of the level stays the rule of a
+    build: the library is at or below the picked level.
+    """
+    beside = path.parent / PROBE_STAMP.library
+    if beside.exists() or path.parent.name not in _LEVEL_DIRECTORIES:
+        return beside
+    return path.parent.parent / PROBE_STAMP.library
 
 
 def check_level(path: str, probe: Path, source: LevelSource) -> None:

@@ -15,11 +15,15 @@ The checks:
     fatal     a request that is no level ends the process, and the message
               names the text
     root      a level root gives the library of the picked level, with and
-              with no request
+              with no request, and the loader takes the path that the root
+              gave again when a caller names it, with the probe of the root
     refused   the loader refuses each of these before it loads the library:
               a library of a root of a different level, a library of the kind
               host in a root, a library of a build above the picked level, a
-              library with no note, and a pair of two notes
+              named library of a level directory above the picked level, a
+              named library of a directory that is no level directory and
+              has no probe beside it, a library with no note, and a pair of
+              two notes
     loaded    with CRUCIBLE_LEVEL_ROOT in the environment, as `loop levels`
               runs the vessel tests of each level, the loader loads the two
               vessel libraries from the directory of the picked level of that
@@ -192,10 +196,21 @@ def check_root(run: Run, build: Path, host: int, folder: Path) -> None:
         values = {crucible_native.LEVEL_ROOT_VARIABLE: str(root), crucible_native.LEVEL_REQUEST_VARIABLE: request}
         return str(with_environment(values, lambda: crucible_native.checked_lib_path(VESSEL, None, "")))
 
+    def named(path: Path, request: str) -> str:
+        """The path that the loader gives back for the named library PATH, with the request REQUEST and no root."""
+        values = {crucible_native.LEVEL_REQUEST_VARIABLE: request}
+        return str(with_environment(values, lambda: crucible_native.checked_lib_path(VESSEL, str(path), "")))
+
     run.expect(path_of("") == str(root / f"x86-64-v{host}" / VESSEL), f"the root with no request gives {path_of('')}")
     for level in range(1, host + 1):
         got = path_of(f"v{level}")
         run.expect(got == str(root / f"x86-64-v{level}" / VESSEL), f"the root with the request v{level} gives {got}")
+        # A caller can name a path that the root gave, and the probe of the root then reads the level.
+        try:
+            again = named(Path(got), f"v{level}")
+        except crucible_native.CrucibleLevelError as refusal:
+            again = f"a refusal: {refusal}"
+        run.expect(again == got, f"the named library {got} of the root with the request v{level} gives {again}")
 
 
 def check_refused(run: Run, build: Path, folder: Path) -> None:
@@ -225,6 +240,18 @@ def check_refused(run: Run, build: Path, folder: Path) -> None:
         run.refused(lambda: load_from_root("v1"), "of the kind host", "a library of the kind host in a root")
         run.refused(lambda: load_from_root("v3"), "has no libcrucible_vessel.so at the picked level v3",
                     "a root with no library of the picked level")
+
+        def load_named(path: Path, request: str) -> object:
+            """Load the named vessel library PATH with the request REQUEST and no root."""
+            values = {crucible_native.LEVEL_REQUEST_VARIABLE: request}
+            return with_environment(values, lambda: crucible_native.load_vessel_library(str(path)))
+
+        run.refused(lambda: load_named(root / "x86-64-v2" / VESSEL, "v3"), "the picked level is v3",
+                    "a named library of v4 in a level directory of a root, with the request v3")
+        plant(probe, root / "x86-64-v5" / VESSEL, 1, LevelKind.EXACT)
+        run.refused(lambda: load_named(root / "x86-64-v5" / VESSEL, ""),
+                    f"{root / 'x86-64-v5' / PROBE} does not exist",
+                    "a named library of a directory that is no level directory, with no probe beside it")
 
         flat = folder / "flat"
         plant(probe, flat / VESSEL, 4, LevelKind.HOST)
