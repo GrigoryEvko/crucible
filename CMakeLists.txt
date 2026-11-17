@@ -817,34 +817,56 @@ endif()
 
 # ── The x86-64 level of a build ────────────────────────────────────
 #
-# CRUCIBLE_X86_LEVEL names the x86-64 level that the flag
-# -march=x86-64-LEVEL of CMAKE_CXX_FLAGS gives, such as v3 for the preset
-# release-v3.  The build kind ends with that word (cmake/BuildLauncher.cmake).
-# Thus a build at a level gets a configuration of its own in the gate and in
-# the ledger rows.  An empty value names no level, and the flags give the
-# target: no -march (x86-64), or -march=native.  GCC uses the last -march
-# word, so that word must give the level, or the configure stops.
+# CRUCIBLE_X86_LEVEL names the x86-64 level of a build: v1, v2, v3 or v4
+# (THE X86 LEVELS of foundation/os/X86Level.h).  The last -march word of
+# CMAKE_CXX_FLAGS gives the level: -march=x86-64 for v1, because GCC refuses
+# the word x86-64-v1, and -march=x86-64-v2, -v3 and -v4 for the others.  GCC
+# uses the last -march word, so that word must give the level, or the
+# configure stops.  CMAKE_CXX_FLAGS of a level build holds no other -m word
+# than -march and -mtune.  Thus the flags give each feature of the level and
+# no feature above it, and the build is exact.
+#
+# The build kind ends with the word of the level (cmake/BuildLauncher.cmake),
+# such as x86_64-release-v3.  Thus a build at a level gets a configuration of
+# its own in the gate and in the ledger rows.  An empty value names no level,
+# and the flags give the target: no -march (x86-64, level v1, as the preset
+# default), or -march=native.  Such a build has no word in its kind, so the
+# names of its configurations do not change.
 set(CRUCIBLE_X86_LEVEL "" CACHE STRING
-  "The x86-64 level that -march=x86-64-LEVEL of CMAKE_CXX_FLAGS gives: empty, v2, v3 or v4")
-set_property(CACHE CRUCIBLE_X86_LEVEL PROPERTY STRINGS "" v2 v3 v4)
+  "The x86-64 level that the last -march word of CMAKE_CXX_FLAGS gives: empty, v1, v2, v3 or v4")
+set_property(CACHE CRUCIBLE_X86_LEVEL PROPERTY STRINGS "" v1 v2 v3 v4)
 if(NOT CRUCIBLE_X86_LEVEL STREQUAL "")
-  if(NOT CRUCIBLE_X86_LEVEL MATCHES "^v[234]$")
-    message(FATAL_ERROR "CRUCIBLE_X86_LEVEL is '${CRUCIBLE_X86_LEVEL}'. The values are empty, v2, v3 and v4.")
+  if(NOT CRUCIBLE_X86_LEVEL MATCHES "^v[1234]$")
+    message(FATAL_ERROR "CRUCIBLE_X86_LEVEL is '${CRUCIBLE_X86_LEVEL}'. The values are empty, v1, v2, v3 and v4.")
   endif()
   if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     message(FATAL_ERROR "CRUCIBLE_X86_LEVEL is '${CRUCIBLE_X86_LEVEL}', and the target processor is "
                         "'${CMAKE_SYSTEM_PROCESSOR}'. Give a level only to an x86_64 build.")
+  endif()
+  if(CRUCIBLE_X86_LEVEL STREQUAL "v1")
+    set(_crucible_level_march "-march=x86-64")
+  else()
+    set(_crucible_level_march "-march=x86-64-${CRUCIBLE_X86_LEVEL}")
   endif()
   string(REGEX MATCHALL "-march=[^ ]+" _crucible_march_words "${CMAKE_CXX_FLAGS}")
   set(_crucible_last_march "")
   if(_crucible_march_words)
     list(GET _crucible_march_words -1 _crucible_last_march)
   endif()
-  if(NOT _crucible_last_march STREQUAL "-march=x86-64-${CRUCIBLE_X86_LEVEL}")
+  if(NOT _crucible_last_march STREQUAL _crucible_level_march)
     message(FATAL_ERROR "CRUCIBLE_X86_LEVEL is '${CRUCIBLE_X86_LEVEL}', and the last -march word of CMAKE_CXX_FLAGS "
-                        "('${CMAKE_CXX_FLAGS}') is '${_crucible_last_march}'. Put -march=x86-64-${CRUCIBLE_X86_LEVEL} "
+                        "('${CMAKE_CXX_FLAGS}') is '${_crucible_last_march}'. Put ${_crucible_level_march} "
                         "last in CMAKE_CXX_FLAGS, or give the level that the flags give.")
   endif()
+  string(REGEX MATCHALL "(^| )-m[^ ]+" _crucible_m_words "${CMAKE_CXX_FLAGS}")
+  foreach(_crucible_m_word IN LISTS _crucible_m_words)
+    string(STRIP "${_crucible_m_word}" _crucible_m_word)
+    if(NOT _crucible_m_word MATCHES "^-m(arch|tune)=")
+      message(FATAL_ERROR "CRUCIBLE_X86_LEVEL is '${CRUCIBLE_X86_LEVEL}', and CMAKE_CXX_FLAGS ('${CMAKE_CXX_FLAGS}') "
+                          "holds the word '${_crucible_m_word}'. A level build takes the features of its -march word "
+                          "only, so remove the word, or give the build no level.")
+    endif()
+  endforeach()
 endif()
 
 # ── Asm dump (gitignored, opt-in) ──────────────────────────────────

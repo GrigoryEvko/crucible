@@ -42,6 +42,28 @@
       "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-release" } }
     },
     {
+      "name": "release-v1",
+      "inherits": "release",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Release) at x86-64: the SSE2 arms and the 128-bit width",
+      "binaryDir": "${sourceDir}/build-release-v1",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-O1 -march=x86-64 -DNDEBUG -g",
+        "CRUCIBLE_X86_LEVEL": "v1"
+      },
+      "vendor": { "crucible": { "tier": "release", "configuration": "x86_64-release-v1" } }
+    },
+    {
+      "name": "release-v2",
+      "inherits": "release",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Release) at x86-64-v2: the SSE4.2 arms and the 128-bit width",
+      "binaryDir": "${sourceDir}/build-release-v2",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-O1 -march=x86-64-v2 -DNDEBUG -g",
+        "CRUCIBLE_X86_LEVEL": "v2"
+      },
+      "vendor": { "crucible": { "tier": "nightly", "configuration": "x86_64-release-v2" } }
+    },
+    {
       "name": "release-v3",
       "inherits": "release",
       "displayName": "GCC 16 + libstdc++ 16 (C++26, Release) at x86-64-v3: the AVX2 arms and the 256-bit width",
@@ -51,6 +73,17 @@
         "CRUCIBLE_X86_LEVEL": "v3"
       },
       "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-release-v3" } }
+    },
+    {
+      "name": "release-v4",
+      "inherits": "release",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Release) at exactly x86-64-v4: the AVX-512 arms and the 512-bit width, with no feature of the host above v4",
+      "binaryDir": "${sourceDir}/build-release-v4",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-O1 -march=x86-64-v4 -DNDEBUG -g",
+        "CRUCIBLE_X86_LEVEL": "v4"
+      },
+      "vendor": { "crucible": { "tier": "nightly", "configuration": "x86_64-release-v4" } }
     },
     {
       "name": "bench",
@@ -209,7 +242,10 @@
     { "name": "default", "configurePreset": "default" },
     { "name": "analyzer", "configurePreset": "analyzer" },
     { "name": "release", "configurePreset": "release" },
+    { "name": "release-v1", "configurePreset": "release-v1" },
+    { "name": "release-v2", "configurePreset": "release-v2" },
     { "name": "release-v3", "configurePreset": "release-v3" },
+    { "name": "release-v4", "configurePreset": "release-v4" },
     { "name": "bench",   "configurePreset": "bench" },
     { "name": "vessel",  "configurePreset": "vessel" },
     { "name": "pgo-generate", "configurePreset": "pgo-generate" },
@@ -235,8 +271,26 @@
       "execution": { "jobs": "", "timeout": 300 }
     },
     {
+      "name": "release-v1",
+      "configurePreset": "release-v1",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": "", "timeout": 300 }
+    },
+    {
+      "name": "release-v2",
+      "configurePreset": "release-v2",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": "", "timeout": 300 }
+    },
+    {
       "name": "release-v3",
       "configurePreset": "release-v3",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": "", "timeout": 300 }
+    },
+    {
+      "name": "release-v4",
+      "configurePreset": "release-v4",
       "output": { "outputOnFailure": true },
       "execution": { "jobs": "", "timeout": 300 }
     },
