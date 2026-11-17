@@ -89,14 +89,14 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== iteration_detector ===\n");
     std::printf("  sizeof(IterationDetector): %zu bytes\n\n", sizeof(IterationDetector));
 
     init_random_hashes();
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 6> reports{
         // 1. Steady state — no boundary, ~99.5% of real calls. Hot path
         // is one cmp + one inc, everything in the same cache line.
         [&] {
@@ -191,6 +191,6 @@ int main() {
         }(),
     };
 
-    bench::emit_reports(reports, json);
+    bench::emit_reports(reports.view(), json);
     return 0;
 }

@@ -97,14 +97,14 @@ template <typename Handle>
 }  // namespace
 
 int main() {
-    std::array reports{empty_set_send(), permitted_send()};
-    bench::emit_reports_text(reports);
+    ::fixy::FixedArray<bench::Report, 2> reports{empty_set_send(), permitted_send()};
+    bench::emit_reports_text(reports.view());
 
     std::printf("\n=== permission set: pair delta ===\n");
-    const std::array compares{bench::compare(reports[0], reports[1])};
+    const std::array compares{bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>()))};
     bench::emit_compares(compares);
 
     std::printf("\n  The static_assert carries the claim.  The timed pair is for inspection only.\n");
-    bench::emit_reports_json(reports, bench::env_json());
+    bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
 }

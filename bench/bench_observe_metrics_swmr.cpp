@@ -44,21 +44,21 @@ int main() {
 
     auto sample = observe::fresh_metrics_sample(metrics, steps);
     std::uint64_t seq = 0;
-    auto report =
+    ::fixy::FixedArray<bench::Report, 1> const reports{
         bench::Run{"RuntimeMetrics SWMR publish"}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
             metrics.meb_lambda_max = static_cast<double>(seq++);
             sample = observe::fresh_metrics_sample(metrics, steps);
             writer.publish(sample);
             bench::do_not_optimize(seq);
-        });
+        })};
 
     auto observed = reader.load();
 
-    bench::emit_reports_text(std::span{&report, 1});
+    bench::emit_reports_text(reports.view());
     std::printf("\nbench_observe_metrics_swmr:\n");
-    std::printf("  target_p99_lt_100ns: %s\n", report.pct.p99 < 100.0 ? "yes" : "no");
+    std::printf("  target_p99_lt_100ns: %s\n", reports.at(::fixy::index<0>()).pct.p99 < 100.0 ? "yes" : "no");
     std::printf("  final_lambda_max:    %.0f\n", observed.peek().meb_lambda_max);
-    bench::emit_reports_json(std::span{&report, 1}, bench::env_json());
+    bench::emit_reports_json(reports.view(), bench::env_json());
 
     return EXIT_SUCCESS;
 }

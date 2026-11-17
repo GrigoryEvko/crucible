@@ -383,7 +383,8 @@ int main() {
     }
     bench::elevate_priority();
 
-    std::vector<bench::Report> reports;
+    // The four recording cases below.
+    ::fixy::FixedList<bench::Report, 4> reports{};
 
     // ── The recording leaf with no drainer behind it ────────────────
     //
@@ -403,7 +404,7 @@ int main() {
     // Reset on full rather than a bounded run, so the sample count is free.
     // The ring takes 65,536 entries and the log 1,048,576, so a reset lands
     // roughly once in 65,536 bodies and rounds to nothing per op.
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         auto ring = std::make_unique<TraceRing>();
         auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
         ring->reset();
@@ -430,7 +431,7 @@ int main() {
     // record_op is the whole of what dispatch_op does in RECORD mode
     // besides the mode test, so the pair of cases below brackets the leaf
     // from underneath and from the caller's side.
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil = make_vigil(cores);
         start_pipeline(vigil);
         auto d = make_op(0, 1);
@@ -472,7 +473,7 @@ int main() {
     // The hash only travels: nothing on the recording path looks it up, and
     // the detector that reads it runs on the background thread. The cost
     // this adds to the body is the one store below.
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil = make_vigil(cores);
         start_pipeline(vigil);
         auto d = make_op(0, 1);
@@ -512,7 +513,7 @@ int main() {
     // COMPILED mode returns a shadow handle without touching the ring, so
     // this one carries no capacity constraint and runs at the harness's
     // own defaults.
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil = make_vigil(cores);
         setup_compiled_vigil(vigil);
         OpData ops[NUM_OPS];
@@ -530,7 +531,10 @@ int main() {
         return report;
     }());
 
-    bench::emit_reports(reports, bench::env_json());
+    bench::emit_reports_text(reports.view());
+    // The JSON tail comes last on each path, because the reader reads each
+    // line after its marker.
+    const bench::JsonTail json = bench::env_json();
 
     // ── Gate ────────────────────────────────────────────────────────
 
@@ -544,6 +548,7 @@ int main() {
                      "judges nothing, and the run %s.\n",
                      has_baseline_file ? "no row in" : "no file at", CRUCIBLE_RECORD_LEAF_BASELINE,
                      CRUCIBLE_RECORD_LEAF_TIER, has_baseline_file ? "fails" : "passes");
+        bench::emit_reports_json(reports.view(), json);
         return has_baseline_file ? 1 : 0;
     }
 
@@ -581,5 +586,6 @@ int main() {
 
     std::printf("=== verdict: %s (%d failed, %d skipped for drift) ===\n", failures == 0 ? "PASS" : "FAIL", failures,
                 skipped);
+    bench::emit_reports_json(reports.view(), json);
     return failures == 0 ? 0 : 1;
 }

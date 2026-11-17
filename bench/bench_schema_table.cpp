@@ -18,7 +18,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     constexpr uint32_t N = 250;
     SchemaTable table{};
@@ -44,7 +44,7 @@ int main() {
     std::printf("=== schema_table ===\n");
     std::printf("  table entries: %u (log2 = ~8 probes)\n\n", N);
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 3> reports{
         [&] {
             uint32_t idx = 0;
             return bench::run("lookup hit  (250-entry table)", [&] {
@@ -71,6 +71,6 @@ int main() {
         }(),
     };
 
-    bench::emit_reports(reports, json);
+    bench::emit_reports(reports.view(), json);
     return 0;
 }

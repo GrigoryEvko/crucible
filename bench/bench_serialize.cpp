@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <vector>
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
@@ -60,11 +59,12 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== serialize ===\n\n");
 
-    std::vector<bench::Report> reports;
+    // Two rows for each of the three sizes.
+    ::fixy::FixedList<bench::Report, 6> reports{};
 
     for (uint32_t num_ops : {16u, 128u, 1024u}) {
         // Per-size fixture: one arena, one region, one wire buffer sized
@@ -81,10 +81,10 @@ int main() {
         std::snprintf(label_ser, sizeof(label_ser), "serialize_region   (%4u ops)", num_ops);
         std::snprintf(label_des, sizeof(label_des), "deserialize_region (%4u ops)", num_ops);
 
-        reports.push_back(bench::run(label_ser, [&] {
-            size_t n = serialize_region(SerializedRegion{*region}, buf.view());
-            bench::do_not_optimize(n);
-        }));
+        bench::add_report(reports, bench::run(label_ser, [&] {
+                              size_t n = serialize_region(SerializedRegion{*region}, buf.view());
+                              bench::do_not_optimize(n);
+                          }));
 
         // Prime the buffer once — deserialize consumes stable bytes.
         const size_t serial_len = serialize_region(SerializedRegion{*region}, buf.view());
@@ -95,18 +95,19 @@ int main() {
         const ::fixy::View<const std::byte> image =
             buf.view().window(0, serial_len).expect("the writer writes inside its buffer");
 
-        reports.push_back(bench::run(label_des, [&, image] {
-            ::fixy::BumpArena read_arena{1 << 20};
-            const ::fixy::Result<LoadedRegionNode, LoadError> loaded_region = deserialize_region(A, image, read_arena);
-            const bool is_loaded = loaded_region.is_ok();
-            bench::do_not_optimize(is_loaded);
-        }));
+        bench::add_report(reports, bench::run(label_des, [&, image] {
+                              ::fixy::BumpArena read_arena{1 << 20};
+                              const ::fixy::Result<LoadedRegionNode, LoadError> loaded_region =
+                                  deserialize_region(A, image, read_arena);
+                              const bool is_loaded = loaded_region.is_ok();
+                              bench::do_not_optimize(is_loaded);
+                          }));
 
         std::printf("  [%u ops] wire = %zu bytes (%.1f B/op)\n", num_ops, serial_len,
                     static_cast<double>(serial_len) / num_ops);
     }
 
     std::printf("\n");
-    bench::emit_reports(reports, json);
+    bench::emit_reports(reports.view(), json);
     return 0;
 }

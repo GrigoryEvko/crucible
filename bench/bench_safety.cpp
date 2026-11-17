@@ -99,7 +99,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     // All volatile seeds live in outer scope so lambdas capture the same
     // memory locations the compiler can't constant-fold through.
@@ -116,7 +116,7 @@ int main() {
 
     // Layout: pairs of (bare, wrapped) at indices (0,1), (2,3), … for
     // trivial compare() at the end.
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 16> reports{
         // Pair 0: Linear<Resource>
         bench::run("raw Resource round-trip",
                    [&] {
@@ -232,7 +232,7 @@ int main() {
         }(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // One compare() per (bare, wrapped) pair. Zero-cost wrappers show
     // [indistinguishable]; any [REGRESS] flag is a real finding.
@@ -242,9 +242,11 @@ int main() {
     };
     for (size_t p = 0; p < std::size(pair_labels); ++p) {
         std::printf("  [%s]\n  ", pair_labels[p]);
-        bench::compare(reports[2 * p], reports[2 * p + 1]).print_text(stdout);
+        bench::compare(*reports.get(2 * p).expect("the bare row of a pair"),
+                       *reports.get(2 * p + 1).expect("the wrapped row of a pair"))
+            .print_text();
     }
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

@@ -169,17 +169,18 @@ struct Rig {
 }  // namespace
 
 int main() {
-    std::array reports{bare_push_bare_pop(), typed_send_bare_pop(), bare_push_typed_recv(), typed_send_typed_recv()};
-    bench::emit_reports_text(reports);
+    ::fixy::FixedArray<bench::Report, 4> reports{bare_push_bare_pop(), typed_send_bare_pop(), bare_push_typed_recv(),
+                                                 typed_send_typed_recv()};
+    bench::emit_reports_text(reports.view());
 
     std::printf("\n=== SPSC session: cost of each side against the bare round trip ===\n");
     const std::array compares{
-        bench::compare(reports[0], reports[1]),  // the typed send
-        bench::compare(reports[0], reports[2]),  // the typed receive
-        bench::compare(reports[0], reports[3]),  // both
+        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),  // the typed send
+        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),  // the typed receive
+        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<3>())),  // both
     };
     bench::emit_compares(compares);
 
-    bench::emit_reports_json(reports, bench::env_json());
+    bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
 }

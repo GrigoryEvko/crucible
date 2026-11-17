@@ -15,8 +15,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
-#include <span>
-#include <vector>
 
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
@@ -72,7 +70,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     // Isolated tmp dir per run.
     char tmpl[] = "/tmp/crucible_bench_cipher_XXXXXX";
@@ -83,9 +81,9 @@ int main() {
     }
     std::printf("=== cipher ===\n  tmpdir: %s\n\n", dir);
 
-    // 5 Runs × 2 region sizes = 10 Reports. Each (num_ops) scope holds
+    // 6 Runs × 2 region sizes = 12 Reports. Each (num_ops) scope holds
     // its Cipher + warm-region fixture across the per-size lambdas.
-    std::vector<bench::Report> reports;
+    ::fixy::FixedList<bench::Report, 12> reports{};
     std::size_t idx_256_cold = 0;
     std::size_t idx_256_warm = 0;
     std::size_t idx_256_ca_warm = 0;
@@ -129,7 +127,7 @@ int main() {
         const std::size_t base_idx = reports.size();
         uint64_t record_step = static_cast<uint64_t>(num_ops) << 32;
 
-        reports.push_back([&] {
+        bench::add_report(reports, [&] {
             uint64_t salt = static_cast<uint64_t>(num_ops) << 32;
             return bench::run(label_cold, [&] {
                 ::fixy::BumpArena region_dag_arena{1 << 18};
@@ -139,38 +137,39 @@ int main() {
             });
         }());
 
-        reports.push_back(bench::run(label_warm, [&] {
-            auto h = cipher.store(ctx, open_view, warm_payload);
-            bench::do_not_optimize(h);
-        }));
+        bench::add_report(reports, bench::run(label_warm, [&] {
+                              auto h = cipher.store(ctx, open_view, warm_payload);
+                              bench::do_not_optimize(h);
+                          }));
 
-        reports.push_back(bench::run(label_ca_warm, [&] {
-            auto h = cipher.store(ctx, open_view, warm_payload);
-            bench::do_not_optimize(h);
-        }));
+        bench::add_report(reports, bench::run(label_ca_warm, [&] {
+                              auto h = cipher.store(ctx, open_view, warm_payload);
+                              bench::do_not_optimize(h);
+                          }));
 
-        reports.push_back(bench::run(label_read, [&] {
-            ::fixy::BumpArena read_arena{1 << 18};
-            auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
-            const bool is_loaded = r.is_ok();
-            bench::do_not_optimize(is_loaded);
-        }));
+        bench::add_report(reports, bench::run(label_read, [&] {
+                              ::fixy::BumpArena read_arena{1 << 18};
+                              auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
+                              const bool is_loaded = r.is_ok();
+                              bench::do_not_optimize(is_loaded);
+                          }));
 
-        reports.push_back(bench::run(label_ca_read, [&] {
-            ::fixy::BumpArena read_arena{1 << 18};
-            auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
-            const bool is_cache_hit = r.match([](auto const& loaded) noexcept { return loaded.cache_hit(); },
-                                              [](LoadError) noexcept { return false; });
-            bench::do_not_optimize(r.is_ok());
-            bench::do_not_optimize(is_cache_hit);
-        }));
+        bench::add_report(reports, bench::run(label_ca_read, [&] {
+                              ::fixy::BumpArena read_arena{1 << 18};
+                              auto r = cipher.load_content_addressed(ctx, open_view, A, warm_h, read_arena);
+                              const bool is_cache_hit =
+                                  r.match([](auto const& loaded) noexcept { return loaded.cache_hit(); },
+                                          [](LoadError) noexcept { return false; });
+                              bench::do_not_optimize(r.is_ok());
+                              bench::do_not_optimize(is_cache_hit);
+                          }));
 
-        reports.push_back(bench::run(label_record_event, [&] {
-            const uint64_t step = ++record_step;
-            const ContentHash event_hash{warm_h.raw() ^ step};
-            const bool recorded = cipher.record_event(ctx, open_view, event_hash, step).is_ok();
-            bench::do_not_optimize(recorded);
-        }));
+        bench::add_report(reports, bench::run(label_record_event, [&] {
+                              const uint64_t step = ++record_step;
+                              const ContentHash event_hash{warm_h.raw() ^ step};
+                              const bool recorded = cipher.record_event(ctx, open_view, event_hash, step).is_ok();
+                              bench::do_not_optimize(recorded);
+                          }));
 
         if (num_ops == 256u) {
             idx_256_cold = base_idx;
@@ -180,23 +179,25 @@ int main() {
         }
     }
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // warm vs. cold store at 256 ops — the dedup-skip path should be
     // orders of magnitude faster; filesystem::exists + compare vs. a
     // full write.
+    const bench::Report& cold_256 = *reports.get(idx_256_cold).expect("the cold store row of 256 ops");
+    const bench::Report& warm_256 = *reports.get(idx_256_warm).expect("the warm store row of 256 ops");
     std::printf("\n=== compare — store dedup win (256 ops) ===\n  ");
-    bench::compare(reports[idx_256_cold], reports[idx_256_warm]).print_text(stdout);
+    bench::compare(cold_256, warm_256).print_text();
 
     std::printf("\n=== compare — ContentAddressed wrapper overhead (256 ops) ===\n  ");
-    bench::compare(reports[idx_256_warm], reports[idx_256_ca_warm]).print_text(stdout);
+    bench::compare(warm_256, *reports.get(idx_256_ca_warm).expect("the CA store row of 256 ops")).print_text();
 
     std::printf("\n=== compare — unified log write vs warm store (256 ops) ===\n  ");
-    bench::compare(reports[idx_256_warm], reports[idx_256_record_event]).print_text(stdout);
+    bench::compare(warm_256, *reports.get(idx_256_record_event).expect("the record row of 256 ops")).print_text();
 
     std::filesystem::remove_all(dir);
     std::printf("\n%s: cleaned\n", dir);
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

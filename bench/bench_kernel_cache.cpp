@@ -228,7 +228,7 @@ int main() {
     seed_row_siblings(raw, raw_rows);
     seed_row_siblings(typed, typed_rows);
 
-    std::array reports{
+    ::fixy::FixedArray<bench::Report, 6> reports{
         bench_hot_hit("raw triple KernelCache.lookup hit", raw),
         bench_hot_hit("typed KernelCacheSlot.lookup hit", typed),
         bench_row_sibling_hit("raw triple KernelCache row-sibling hit", raw),
@@ -237,13 +237,13 @@ int main() {
         bench_clean_miss("typed KernelCacheSlot clean miss", typed),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     std::puts("\n=== comparisons ===");
-    bench::compare(reports[0], reports[1]).print_text();
-    bench::compare(reports[2], reports[3]).print_text();
-    bench::compare(reports[4], reports[5]).print_text();
-    bench::emit_reports_json(reports, bench::env_json());
+    bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())).print_text();
+    bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>())).print_text();
+    bench::compare(reports.at(::fixy::index<4>()), reports.at(::fixy::index<5>())).print_text();
+    bench::emit_reports_json(reports.view(), bench::env_json());
 
     return EXIT_SUCCESS;
 }

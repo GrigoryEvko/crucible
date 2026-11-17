@@ -28,7 +28,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     // All volatile so the compiler can't constant-fold. Declared in outer
     // scope so every IIFE-lambda body captures the same memory location.
@@ -58,7 +58,7 @@ int main() {
 
     std::printf("=== saturate ===\n\n");
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 18> reports{
         bench::run("add_sat<u32>   common",
                    [&] {
                        auto r = saturating_add(u_a, u_b);
@@ -156,13 +156,13 @@ int main() {
                    }),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // Overflow vs. common path for u64 add — should be distinguishable
     // (the rare branch fires in every sample), but typically within 10%.
     std::printf("\n=== compare ===\n");
-    bench::compare(reports[6], reports[9]).print_text(stdout);
+    bench::compare(reports.at(::fixy::index<6>()), reports.at(::fixy::index<9>())).print_text();
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

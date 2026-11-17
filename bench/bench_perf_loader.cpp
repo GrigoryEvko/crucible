@@ -119,7 +119,7 @@ void print_coverage(const crucible::perf::CoverageReport& cov) {
 int main() {
     bench::print_system_info();
     bench::elevate_priority();
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== senses ===\n");
 
@@ -172,7 +172,7 @@ int main() {
         baseline = h->read(::foundation::effects::testing::test().nondet);
     }
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 35> reports{
         // (B) Per-facade accessor — sub-ns single optional-bit load.
         [&] {
             return bench::run("senses.sense_hub()", [&] {
@@ -581,7 +581,7 @@ int main() {
         }(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // Diagnostic banner for the read-skipped case so a user staring at
     // "1.5 ns" for sense_hub->read() knows it didn't actually attach.
@@ -805,6 +805,6 @@ int main() {
         }
     }
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

@@ -118,7 +118,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== swiss_table ===\n  backend: ");
 #if defined(__AVX512BW__)
@@ -134,19 +134,21 @@ int main() {
 #endif
     std::printf("  kGroupWidth: %zu\n\n", kGroupWidth);
 
-    std::vector<bench::Report> reports;
+    // h2_tag(1) + load(2) + match(3) + match_empty(3) + BitMask(4) +
+    // probe-step(2) + the hit and miss rows of four load factors (8).
+    ::fixy::FixedList<bench::Report, 23> reports{};
 
     // ── h2_tag ───────────────────────────────────────────────────────
     {
         volatile uint64_t hash = 0x123456789ABCDEF0ULL;
-        reports.push_back(bench::run("h2_tag(hash)", [&] {
-            auto tag = h2_tag(hash);
-            bench::do_not_optimize(tag);
-        }));
+        bench::add_report(reports, bench::run("h2_tag(hash)", [&] {
+                              auto tag = h2_tag(hash);
+                              bench::do_not_optimize(tag);
+                          }));
     }
 
     // ── load() aligned vs unaligned ──────────────────────────────────
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> ctrl{};
         fill_ctrl(ctrl.view(), 0.5, 99);
         const CtrlGroup::GroupBytes aligned = ctrl.view().template window<kGroupWidth>(0).expect("the first group");
@@ -155,7 +157,7 @@ int main() {
             bench::do_not_optimize(g);
         });
     }());
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> ctrl{};
         fill_ctrl(ctrl.view(), 0.5, 99);
         const CtrlGroup::GroupBytes unaligned = ctrl.view().template window<kGroupWidth>(3).expect("a group from 3");
@@ -166,7 +168,7 @@ int main() {
     }());
 
     // ── match(h2) ─────────────────────────────────────────────────────
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t target = 0x37;
@@ -178,7 +180,7 @@ int main() {
         });
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t miss = 0x7F;
@@ -191,7 +193,7 @@ int main() {
         });
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t target = 0x37;
@@ -205,7 +207,7 @@ int main() {
     }());
 
     // ── match_empty() ─────────────────────────────────────────────────
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         fill_ctrl(ctrl.view(), 0.75, 123);
         auto group = CtrlGroup::load(ctrl.view());
@@ -214,7 +216,7 @@ int main() {
             bench::do_not_optimize(m);
         });
     }());
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         ::fixy::fill(ctrl.view(), int8_t{0x42});  // all occupied
         auto group = CtrlGroup::load(ctrl.view());
@@ -223,7 +225,7 @@ int main() {
             bench::do_not_optimize(m);
         });
     }());
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         ::fixy::fill(ctrl.view(), kEmpty);  // all empty
         auto group = CtrlGroup::load(ctrl.view());
@@ -247,7 +249,7 @@ int main() {
                                                                  {0x1248, "BitMask iterate — 4 bits"},
                                                                  {0x5555, "BitMask iterate — 8 bits"},
                                                                  {0xFFFF, "BitMask iterate — 16 bits"}}) {
-        reports.push_back([&, bits, label] {
+        bench::add_report(reports, [&, bits, label] {
             const BitMask m{bits};
             return bench::run(label, [&] {
                 auto r = iterate_mask(m);
@@ -257,7 +259,7 @@ int main() {
     }
 
     // ── Combined probe step (match + empty check) ────────────────────
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t target = 0x37;
@@ -276,7 +278,7 @@ int main() {
         });
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         fill_ctrl(ctrl.view(), 0.75, 42);
         const int8_t miss = 0x7E;
@@ -325,17 +327,17 @@ int main() {
         std::snprintf(name_miss, sizeof(name_miss), "probe MISS — %s", label);
 
         uint32_t hit_idx = 0;
-        reports.push_back(bench::run(name_hit, [&, t = table.view()] {
-            bool found = t->find(inserted_hashes[hit_idx & 1023]);
-            bench::do_not_optimize(found);
-            ++hit_idx;
-        }));
+        bench::add_report(reports, bench::run(name_hit, [&, t = table.view()] {
+                              bool found = t->find(inserted_hashes[hit_idx & 1023]);
+                              bench::do_not_optimize(found);
+                              ++hit_idx;
+                          }));
         uint32_t miss_idx = 0;
-        reports.push_back(bench::run(name_miss, [&, t = table.view()] {
-            bool found = t->find(absent_hashes[miss_idx & 1023]);
-            bench::do_not_optimize(found);
-            ++miss_idx;
-        }));
+        bench::add_report(reports, bench::run(name_miss, [&, t = table.view()] {
+                              bool found = t->find(absent_hashes[miss_idx & 1023]);
+                              bench::do_not_optimize(found);
+                              ++miss_idx;
+                          }));
     };
 
     bench_probe_at("25% load", 0.25);
@@ -343,7 +345,7 @@ int main() {
     bench_probe_at("75% load", 0.75);
     bench_probe_at("87.5% load max", 0.875);
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // Probe scaling: 25% vs 87.5% load MISS should grow with probe
     // distance. Non-trivial delta is the expected signal.
@@ -352,8 +354,10 @@ int main() {
     //               + BitMask(4) + probe-step(2) = 15 before probe-at.
     // bench_probe_at appends 2 per call; 25/50/75/87.5 → indices
     // 15..22 (16 new). MISS at 25% = reports[16], MISS at 87.5% = reports[22].
-    bench::compare(reports[16], reports[22]).print_text(stdout);
+    bench::compare(*reports.get(16).expect("the miss row at 25% load"),
+                   *reports.get(22).expect("the miss row at 87.5% load"))
+        .print_text();
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

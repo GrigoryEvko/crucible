@@ -194,7 +194,7 @@ int main() {
 
     using Small = std::type_identity<SmallStages>;
     using Large = std::type_identity<LargeStages>;
-    std::array reports{
+    ::fixy::FixedArray<bench::Report, 4> reports{
         bench::Run{"pipeline.small.direct"}.samples(2000).warmup(200).no_pin().max_wall_ms(1000).measure(
             [] { run_in_order(Small{}); }),
         bench::Run{"pipeline.small.router"}.samples(2000).warmup(200).no_pin().max_wall_ms(1000).measure(
@@ -204,10 +204,13 @@ int main() {
         bench::Run{"pipeline.large.router"}.samples(12).warmup(1).no_pin().max_wall_ms(3000).measure(
             [] { run_through_router(Large{}); }),
     };
-    bench::emit_reports(reports, bench::env_json());
+    bench::emit_reports_text(reports.view());
 
-    const double small_ratio = reports[1].pct.p50 / reports[0].pct.p50;
-    const double large_speedup = reports[2].pct.p50 / reports[3].pct.p50;
+    const double small_ratio = reports.at(::fixy::index<1>()).pct.p50 / reports.at(::fixy::index<0>()).pct.p50;
+    const double large_speedup = reports.at(::fixy::index<2>()).pct.p50 / reports.at(::fixy::index<3>()).pct.p50;
     std::printf("\nchecks: small_router/direct=%.3fx large_direct/router=%.3fx\n", small_ratio, large_speedup);
+    // The JSON tail comes last, because the reader reads each line after its
+    // marker.
+    bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
 }

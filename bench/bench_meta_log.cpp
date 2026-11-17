@@ -70,7 +70,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== meta_log ===\n");
     std::printf("  TensorMeta size: %zu bytes (expect 168)\n", sizeof(TensorMeta));
@@ -100,7 +100,7 @@ int main() {
     //
     // All four buffers live heap-side; MetaLog's 168 MB allocation
     // would blow the stack.
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 10> reports{
         [&] {
             auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
             return bench::run("try_append(1 meta  = 168B)", [&] {
@@ -223,7 +223,7 @@ int main() {
         }(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // A/B compare — head.load vs head.store: one relaxed load vs one
     // release store. On x86 both compile to a single MOV after CPU
@@ -232,13 +232,14 @@ int main() {
     // when the consumer is reading. Statistically indistinguishable
     // on a single-threaded bench.
     std::printf("\n=== compare ===\n");
-    bench::compare(reports[5], reports[6]).print_text(stdout);
+    bench::compare(reports.at(::fixy::index<5>()), reports.at(::fixy::index<6>())).print_text();
 
     // 95% bootstrap CI on the n=3 producer-side p99 — the most common
     // workload shape (2 inputs + 1 output → 3 meta slots per op).
-    const auto ci99 = reports[2].ci(0.99);
-    std::printf("  %s  p99 95%% CI: [%.2f, %.2f] ns\n", reports[2].name.c_str(), ci99.lo, ci99.hi);
+    const bench::Report& producer_three = reports.at(::fixy::index<2>());
+    const auto ci99 = producer_three.ci(0.99);
+    std::printf("  %s  p99 95%% CI: [%.2f, %.2f] ns\n", producer_three.name.c_str(), ci99.lo, ci99.hi);
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

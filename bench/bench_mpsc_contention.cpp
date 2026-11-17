@@ -171,11 +171,11 @@ template <typename Worker>
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = (argc > 1 && std::string_view{argv[1]} == "--json");
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== mpsc_contention ===\n");
     std::printf("  Item:              uint64_t\n");
@@ -185,19 +185,17 @@ int main(int argc, char** argv) {
     std::printf("  Body:              spawn P producers + drain consumer + join\n");
     std::printf("\n");
 
-    std::vector<bench::Report> reports;
-    reports.reserve(12);
-
     // 4 producer counts × 3 API kinds = 12 cells.
+    ::fixy::FixedList<bench::Report, 12> reports{};
     for (std::size_t P : {std::size_t{1}, std::size_t{2}, std::size_t{4}, std::size_t{8}}) {
-        reports.push_back(run_one<SinglePushWorker>("single", P));
-        reports.push_back(run_one<BatchedPushWorker<16>>("batched<16>", P));
-        reports.push_back(run_one<BatchedPushWorker<64>>("batched<64>", P));
+        bench::add_report(reports, run_one<SinglePushWorker>("single", P));
+        bench::add_report(reports, run_one<BatchedPushWorker<16>>("batched<16>", P));
+        bench::add_report(reports, run_one<BatchedPushWorker<64>>("batched<64>", P));
     }
 
     // Standard text + JSON emission.  Each Report's pct.p50 is the
     // wall-time of one workload cycle (P producers × kPerProducer items).
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // ── Headline analysis: per-producer-count items/sec ─────────────
     //
@@ -208,8 +206,8 @@ int main(int argc, char** argv) {
     std::printf("  --   ------------------  ------------------------  -------\n");
     for (std::size_t pi = 0; pi < 4; ++pi) {
         const std::size_t P = std::size_t{1} << pi;  // 1, 2, 4, 8
-        const auto& s = reports[pi * 3 + 0];  // single
-        const auto& b64 = reports[pi * 3 + 2];  // batched<64>
+        const bench::Report& s = *reports.get(pi * 3 + 0).expect("the single row of a producer count");
+        const bench::Report& b64 = *reports.get(pi * 3 + 2).expect("the batched<64> row of a producer count");
         const double items = static_cast<double>(P * kPerProducer);
         const double s_rate = items / (s.pct.p50 * 1e-9);
         const double b_rate = items / (b64.pct.p50 * 1e-9);
@@ -224,8 +222,8 @@ int main(int argc, char** argv) {
     // batched<64> to IMPROVE over single at every contention level.
     std::printf("\n=== significance (single vs batched<64>) ===\n");
     for (std::size_t pi = 0; pi < 4; ++pi) {
-        const auto& s = reports[pi * 3 + 0];
-        const auto& b64 = reports[pi * 3 + 2];
+        const bench::Report& s = *reports.get(pi * 3 + 0).expect("the single row of a producer count");
+        const bench::Report& b64 = *reports.get(pi * 3 + 2).expect("the batched<64> row of a producer count");
         bench::compare(s, b64).print_text();
     }
 
@@ -238,6 +236,6 @@ int main(int argc, char** argv) {
     std::printf("  • CV >5%% on any cell indicates throttling — re-run on a\n");
     std::printf("    quiet machine and check `dmesg | grep thermal`.\n");
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

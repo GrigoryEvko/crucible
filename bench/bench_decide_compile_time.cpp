@@ -74,7 +74,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     // ── Volatile seeds — defeat constant-folding ───────────────────
     //
@@ -115,7 +115,7 @@ int main() {
     // averages the lambda over 2^k calls until the timed region
     // exceeds 1000 cycles; reports are labeled "[batch-avg]" for
     // sub-cycle predicates (positive, non_negative, in_range).
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 10> reports{
         // ── Scalar predicates (sub-nanosecond expected) ───────────
         bench::run("decide::positive<int32>",
                    [&] {
@@ -183,7 +183,7 @@ int main() {
                    }),
     };
 
-    bench::emit_reports_text(reports);
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_text(reports.view());
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

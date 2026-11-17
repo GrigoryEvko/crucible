@@ -62,12 +62,12 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     TestFixture fix{};
     std::printf("=== region_cache ===\n  %u regions × %u ops, CAP=%u\n\n", NUM_REGIONS, NUM_OPS, RegionCache::CAP);
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 10> reports{
         // ── insert ────────────────────────────────────────────────────
         // Cold: every body call starts from an empty cache. Auto-batch
         // runs the body many times per timed region; each invocation
@@ -196,13 +196,13 @@ int main() {
         }(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // Scan-depth compare: 2-entry vs 8-entry miss. 2-entry should be
     // ~4× faster if the scan is linear.
     std::printf("\n=== compare — scan depth ===\n  ");
-    bench::compare(reports[6], reports[5]).print_text(stdout);
+    bench::compare(reports.at(::fixy::index<6>()), reports.at(::fixy::index<5>())).print_text();
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

@@ -141,19 +141,19 @@ template <typename Body>
 }  // namespace
 
 int main() {
-    std::array reports{
+    ::fixy::FixedArray<bench::Report, 7> reports{
         raw_publish(), handle_publish(), session_send(), raw_load(), handle_load(), raw_try_load(), session_recv(),
     };
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     std::puts("\n=== comparisons ===");
     const std::array compares{
-        bench::compare(reports[0], reports[1]),  // the writer handle
-        bench::compare(reports[0], reports[2]),  // the writer session
-        bench::compare(reports[3], reports[4]),  // the reader handle
-        bench::compare(reports[5], reports[6]),  // the reader session
+        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),  // the writer handle
+        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),  // the writer session
+        bench::compare(reports.at(::fixy::index<3>()), reports.at(::fixy::index<4>())),  // the reader handle
+        bench::compare(reports.at(::fixy::index<5>()), reports.at(::fixy::index<6>())),  // the reader session
     };
     bench::emit_compares(compares);
-    bench::emit_reports_json(reports, bench::env_json());
+    bench::emit_reports_json(reports.view(), bench::env_json());
     return EXIT_SUCCESS;
 }

@@ -59,14 +59,14 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== concurrent_queues ===\n");
     std::printf("  SpscRing<uint64,1M> sizeof: %zu bytes\n", sizeof(HugeSpsc));
     std::printf("  AtomicSnapshot<uint64> sizeof: %zu bytes\n", sizeof(Snap));
     std::printf("\n");
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 10> reports{
         // ── HARNESS BASELINE: pure do_not_optimize cost ───────────────
         // Measures the bench-loop overhead: ++i + a single noipa call
         // to do_not_optimize.  Subtract this from any single-call ring
@@ -195,7 +195,7 @@ int main() {
         }(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // ── Comparisons (the headline result) ─────────────────────────────
     std::printf("\n=== compare ===\n");
@@ -216,49 +216,49 @@ int main() {
     // (do_not_optimize is a [[gnu::noipa]] real CALL+RET ≈ 3-4 cycles ≈
     // 0.7-1ns at 4.6GHz on Zen 3.)
     std::printf("\n[spsc_ring.try_push] vs [HARNESS BASELINE do_not_optimize]:\n");
-    bench::compare(reports[2], reports[0]).print_text(stdout);
+    bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<0>())).print_text();
 
     // Headline #2: SpscRing vs TraceRing — SpscRing is FASTER (no
     // parallel-array writes, no prefetches, no slot-mask compute).
     std::printf("\n[spsc_ring.try_push] vs [trace_ring.try_append]:\n");
-    bench::compare(reports[2], reports[9]).print_text(stdout);
+    bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<9>())).print_text();
 
     // Headline #3: per-item batched cost vs per-item single-call cost.
     // batch[3] reports WHOLE-BATCH-PUSH-AND-POP time for 64 items each
     // way; per-item-push ≈ batch_p50 / (2 × 64).
     std::printf("\n[spsc_ring batch<64> push+pop round-trip] vs [single try_push]:\n");
-    bench::compare(reports[3], reports[2]).print_text(stdout);
+    bench::compare(reports.at(::fixy::index<3>()), reports.at(::fixy::index<2>())).print_text();
 
     // Headline #4: AtomicSnapshot.load vs publish.
     std::printf("\n[atomic_snapshot.load] vs [atomic_snapshot.publish]:\n");
-    bench::compare(reports[7], reports[6]).print_text(stdout);
+    bench::compare(reports.at(::fixy::index<7>()), reports.at(::fixy::index<6>())).print_text();
 
     // Bootstrap CIs on the headline percentiles + batched per-item.
     std::printf("\n=== confidence intervals (95%%) ===\n");
     {
-        const auto ci = reports[0].ci(0.50);
+        const auto ci = reports.at(::fixy::index<0>()).ci(0.50);
         std::printf("  HARNESS BASELINE p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
     }
     {
-        const auto ci = reports[2].ci(0.50);
+        const auto ci = reports.at(::fixy::index<2>()).ci(0.50);
         std::printf("  spsc_ring.try_push p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
     }
     {
-        const auto ci = reports[2].ci(0.99);
+        const auto ci = reports.at(::fixy::index<2>()).ci(0.99);
         std::printf("  spsc_ring.try_push p99: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
     }
     {
-        const auto ci = reports[3].ci(0.50);
+        const auto ci = reports.at(::fixy::index<3>()).ci(0.50);
         // round-trip = push 64 + pop 64.  Per-item-push ≈ ci / (2×64).
         std::printf("  spsc_ring batch<64> push+pop round-trip p50: [%.2f, %.2f] ns "
                     "(per-item ≈ %.3f ns)\n",
                     ci.lo, ci.hi, ci.lo / 128.0);
     }
     {
-        const auto ci = reports[9].ci(0.50);
+        const auto ci = reports.at(::fixy::index<9>()).ci(0.50);
         std::printf("  trace_ring.try_append p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
     }
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

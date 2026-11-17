@@ -119,7 +119,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== reflect ===\n\n");
 
@@ -141,7 +141,7 @@ int main() {
         return s;
     };
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 3> reports{
         bench::run("reflect_hash<Small>  (4 fields)",
                    [&] {
                        Small s = make_small();
@@ -171,16 +171,14 @@ int main() {
                    }),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // The core claim: reflect_hash<Small> and manual_hash_small produce
     // statistically indistinguishable timings on a clean machine. If
     // this goes [REGRESS], reflection's emitted code has drifted from
     // the hand-rolled form.
     std::printf("\n=== compare ===\n");
-    bench::compare(reports[0], reports[1]).print_text(stdout);
-
-    bench::emit_reports_json(reports, json);
+    bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())).print_text();
 
     // ═══════════════════════════════════════════════════════════════
     // Post-REFL refactor comparisons.  Each pair measures the actual
@@ -201,7 +199,7 @@ int main() {
                                                                         {4, 5}, {5, 6}, {6, 7}, {7, 0}};
     volatile uint16_t bump = 0;  // prevents constant-fold
 
-    bench::Report refactor_reports[] = {
+    ::fixy::FixedArray<bench::Report, 6> refactor_reports{
         bench::run("feedback_signature  (reflection, 8 edges)",
                    [&] {
                        edges_buf.at(::fixy::index<0>()).output_idx = bump;  // perturb each iter
@@ -263,16 +261,23 @@ int main() {
                    }),
     };
 
-    bench::emit_reports_text(refactor_reports);
+    bench::emit_reports_text(refactor_reports.view());
 
     std::printf("\n=== refactor compares ===\n");
     std::printf("\nfeedback_signature: reflection vs packed\n");
-    bench::compare(refactor_reports[0], refactor_reports[1]).print_text(stdout);
+    bench::compare(refactor_reports.at(::fixy::index<0>()), refactor_reports.at(::fixy::index<1>())).print_text();
     std::printf("\nloopterm_hash: reflection vs packed\n");
-    bench::compare(refactor_reports[2], refactor_reports[3]).print_text(stdout);
+    bench::compare(refactor_reports.at(::fixy::index<2>()), refactor_reports.at(::fixy::index<3>())).print_text();
     std::printf("\ncompute_recipe_hash: packed-actual vs reflection-hypothetical\n");
-    bench::compare(refactor_reports[4], refactor_reports[5]).print_text(stdout);
+    bench::compare(refactor_reports.at(::fixy::index<4>()), refactor_reports.at(::fixy::index<5>())).print_text();
 
-    bench::emit_reports_json(refactor_reports, json);
+    // One JSON tail holds the rows of the two groups, because the reader
+    // reads only the last tail of the output.
+    ::fixy::FixedList<bench::Report, 9> all_reports{};
+    for (bench::Report& report : reports)
+        bench::add_report(all_reports, std::move(report));
+    for (bench::Report& report : refactor_reports)
+        bench::add_report(all_reports, std::move(report));
+    bench::emit_reports_json(all_reports.view(), json);
     return 0;
 }

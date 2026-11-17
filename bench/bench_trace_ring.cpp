@@ -11,7 +11,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== trace_ring ===\n");
     std::printf("  Entry size: %zu bytes (expect 64)\n", sizeof(crucible::TraceRing::Entry));
@@ -21,7 +21,7 @@ int main() {
     // A TraceRing is 6 MiB and the stack is 8 MiB.  Each ring lives on
     // the heap, as it does in Vigil.  The address of the ring has no
     // effect on the timed loop.
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 5> reports{
         [&] {
             auto ring = std::make_unique<crucible::TraceRing>();
             crucible::TraceRing::Entry e{};
@@ -69,17 +69,17 @@ int main() {
         }(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // A/B compare — size() vs total_produced() are both a single atomic
     // load; should be statistically indistinguishable.
     std::printf("\n=== compare ===\n");
-    bench::compare(reports[2], reports[3]).print_text(stdout);
+    bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>())).print_text();
 
     // Bootstrap CI on a tail percentile, on demand.
-    const auto ci99 = reports[0].ci(0.99);
+    const auto ci99 = reports.at(::fixy::index<0>()).ci(0.99);
     std::printf("  ring.try_append p99 95%% CI: [%.2f, %.2f] ns\n", ci99.lo, ci99.hi);
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

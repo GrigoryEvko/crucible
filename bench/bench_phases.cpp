@@ -704,7 +704,7 @@ int main(int argc, char* argv[]) {
 
     bench::print_system_info();
     bench::elevate_priority();
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("TSC ratio: %.4f ns/cycle\n", bench::Timer::ns_per_cycle());
 
@@ -733,15 +733,15 @@ int main(int argc, char* argv[]) {
     bg.meta_log.set(&meta_log);
 
     std::printf("\n=== full pipeline (bench::run with BPF sensing) ===\n");
-    std::vector<bench::Report> reports;
-    reports.push_back(run_fullpipeline(bg, meta_log, trace));
-    bench::emit_reports_text(reports);
+    ::fixy::FixedArray<bench::Report, 1> const reports{run_fullpipeline(bg, meta_log, trace)};
+    bench::emit_reports_text(reports.view());
 
     bench_phases_toplevel(bg, meta_log, trace, iters);
     bench_phase2_subparts(bg, meta_log, trace, iters);
 
-    bench::emit_reports_json(reports, json);
-
     std::printf("\nDone.\n");
+    // The JSON tail comes last, because the reader reads each line after its
+    // marker.
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

@@ -1749,6 +1749,10 @@ struct Report {
         std::fputc('"', out);
     }
 
+    // Writes the JSON object to standard output.  The one reference to the
+    // stream is here, so a call of emit_reports_json names no C stream.
+    void print_json() const noexcept { print_json(stdout); }
+
     // JSON emitter — same argument as print_text(): C stdio + noexcept
     // accessors only, no throwing paths.
     void print_json(FILE* out) const noexcept {
@@ -2050,11 +2054,15 @@ struct Compare {
     [[nodiscard]] bool is_regression() const noexcept { return distinguishable && delta_p99_pct > kFlagDeltaP99Pct; }
     [[nodiscard]] bool is_improvement() const noexcept { return distinguishable && delta_p99_pct < -kFlagDeltaP99Pct; }
 
+    // Writes the summary line to standard output.  The one reference to the
+    // stream is here, so a call of a bench names no C stream.
+    void print_text() const noexcept { print_text(stdout); }
+
     // One-line summary — C stdio + std::string::c_str() only, noexcept
     // for the same reasons as Report::print_text.
     // A pair that the test tells apart but whose p99 moves less than the
     // threshold says so, and does not claim to be indistinguishable.
-    void print_text(FILE* out = stdout) const noexcept {
+    void print_text(FILE* out) const noexcept {
         std::fprintf(out, "  Δ %s → %s:  Δp50=%+6.2f%%  Δp99=%+6.2f%%  Δμ=%+6.2f%%  z=%+5.2f", a_name.c_str(),
                      b_name.c_str(), delta_p50_pct, delta_p99_pct, delta_mean_pct, z);
         if (is_regression()) {
@@ -3141,10 +3149,16 @@ inline CoreOrder read_core_order() noexcept {
     return -1;
 }
 
-// CRUCIBLE_BENCH_JSON=1 (or anything not "0") → emit JSON tail.
-[[nodiscard]] inline bool env_json() noexcept {
+// Whether a bench prints the JSON tail of its reports after their text.
+enum class JsonTail : std::uint8_t {
+    Off,
+    On,
+};
+
+// CRUCIBLE_BENCH_JSON set to a value other than "0" asks for the JSON tail.
+[[nodiscard]] inline JsonTail env_json() noexcept {
     const char* s = env("CRUCIBLE_BENCH_JSON");
-    return s != nullptr && std::strcmp(s, "0") != 0;
+    return s != nullptr && std::strcmp(s, "0") != 0 ? JsonTail::On : JsonTail::Off;
 }
 
 // One-shot: build a Run with env-driven core pinning and measure body.
@@ -3157,11 +3171,11 @@ template <typename Body>
     return r.measure(std::forward<Body>(body));
 }
 
-// Emit the text block for every Report. Always done — the JSON path is
-// additive. Taken as std::span so aggregate-init C arrays pass directly.
-inline void emit_reports_text(std::span<const Report> reports, FILE* out = stdout) noexcept {
-    for (const auto& r : reports)
-        r.print_text(out);
+// Writes the text line of each report to standard output, in order.  A bench
+// holds its reports in an owner of the base and passes its view().
+inline void emit_reports_text(::fixy::View<const Report> reports) noexcept {
+    for (Report const& report : reports)
+        report.print_text();
 }
 
 // Emit the one-line summary of every Compare, in the order given.
@@ -3170,26 +3184,43 @@ inline void emit_compares(std::span<const Compare> compares, FILE* out = stdout)
         c.print_text(out);
 }
 
-// Emit the JSON array tail for every Report, iff `json`. No-op otherwise.
-// Benches that want extra output between text and JSON (e.g., a bench::compare
-// block) call emit_reports_text → extra prints → emit_reports_json.
-inline void emit_reports_json(std::span<const Report> reports, bool json, FILE* out = stdout) noexcept {
-    if (!json) return;
-    std::fputs("\n=== json ===\n[\n", out);
-    for (size_t i = 0; i < reports.size(); ++i) {
-        std::fputs("  ", out);
-        reports[i].print_json(out);
-        std::fputs((i + 1 < reports.size()) ? ",\n" : "\n", out);
+// Writes the line "=== json ===" and the JSON array of the reports to
+// standard output when tail is On, and nothing when it is Off.  The reader of
+// utils/assay/readers/bench.py reads the text after the last such line, so a
+// bench calls this last.  A bench that prints more between the text and the
+// JSON, such as a bench::compare block, calls emit_reports_text, then its
+// prints, then this.  The frame of the array goes through fixy::report, which
+// writes at once, and each object through stdio, so a flush comes after each
+// object.
+inline void emit_reports_json(::fixy::View<const Report> reports, JsonTail tail) noexcept {
+    using ::fixy::Sink;
+    if (tail == JsonTail::Off) return;
+    detail::flush_standard_output();
+    ::fixy::report(Sink::Out, "\n=== json ===\n[\n");
+    std::size_t written = 0;
+    for (Report const& report : reports) {
+        ++written;
+        ::fixy::report(Sink::Out, "  ");
+        report.print_json();
+        detail::flush_standard_output();
+        ::fixy::report(Sink::Out, "{}\n", written < reports.size() ? ::fixy::TextView{","} : ::fixy::TextView{});
     }
-    std::fputs("]\n", out);
+    ::fixy::report(Sink::Out, "]\n");
 }
 
-// Standard main() epilogue: text block + JSON tail, in that order. For
-// benches that need anything between the two (compare/CI prints), call
-// emit_reports_text + emit_reports_json directly.
-inline void emit_reports(std::span<const Report> reports, bool json, FILE* out = stdout) noexcept {
-    emit_reports_text(reports, out);
-    emit_reports_json(reports, json, out);
+// The usual end of main: the text of the reports, then their JSON tail.
+inline void emit_reports(::fixy::View<const Report> reports, JsonTail tail) noexcept {
+    emit_reports_text(reports);
+    emit_reports_json(reports, tail);
+}
+
+// Puts a report after the last report of the list of a bench.  The bench
+// states the capacity of its list, so a push into a full list ends the
+// process.
+template <std::size_t Capacity>
+void add_report(::fixy::FixedList<Report, Capacity>& reports, Report report) noexcept {
+    static_cast<void>(
+        reports.push(std::move(report)).expect("the list of the reports of a bench has room for each row"));
 }
 
 // ── Setup checks ───────────────────────────────────────────────────

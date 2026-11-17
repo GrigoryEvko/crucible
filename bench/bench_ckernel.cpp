@@ -19,7 +19,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     // Populate a realistic table: 200 entries spread over the hash space.
     // Shared across all three Runs; holds stable for their lifetime.
@@ -41,7 +41,7 @@ int main() {
     std::printf("=== ckernel ===\n");
     std::printf("  table entries: %u (log2 = ~8 probes)\n\n", N);
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 3> reports{
         // Rotating hit — indices march forward, pointer-chasing into the
         // table alternates between cache lines the same way build_trace
         // would as it walks op by op.
@@ -78,14 +78,14 @@ int main() {
         }(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // Hit vs. hot: same classify() path, same table; the only difference
     // is branch predictability of the recurrent-vs-rotating access. The
     // delta is a clean measurement of the branch-predictor win.
     std::printf("\n=== compare ===\n");
-    bench::compare(reports[0], reports[2]).print_text(stdout);
+    bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())).print_text();
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

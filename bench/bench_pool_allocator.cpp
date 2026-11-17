@@ -106,7 +106,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
     auto test = ::foundation::effects::testing::test();
 
     std::printf("=== pool_allocator ===\n");
@@ -115,10 +115,11 @@ int main() {
     std::printf("  sizeof(MemoryPlan)                  = %zu\n", sizeof(MemoryPlan));
     std::printf("  sizeof(SlotId)                      = %zu\n\n", sizeof(SlotId));
 
-    std::vector<bench::Report> reports;
+    // The 18 rows below, three of them in each of the four loops.
+    ::fixy::FixedList<bench::Report, 18> reports{};
 
     // ── slot_ptr sequential access ────────────────────────────────────
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         ::foundation::core::FixedArray<TensorSlot, 1> slots{};
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
         PoolAllocator pool;
@@ -131,7 +132,7 @@ int main() {
     }());
 
     for (uint32_t N : {10u, 100u, 1000u}) {
-        reports.push_back([&, N] {
+        bench::add_report(reports, [&, N] {
             ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
             MemoryPlan plan = make_uniform_plan(slots.view(), 256);
             PoolAllocator pool;
@@ -153,7 +154,7 @@ int main() {
     constexpr uint32_t ACCESS_COUNT = 10000;
 
     for (uint32_t N : {10u, 100u, 1000u}) {
-        reports.push_back([&, N] {
+        bench::add_report(reports, [&, N] {
             ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
             MemoryPlan plan = make_uniform_plan(slots.view(), 256);
             PoolAllocator pool;
@@ -180,7 +181,7 @@ int main() {
     // Three siblings that look alike on paper but exercise different
     // indirection forms. Each gets its own fresh PoolAllocator in its
     // own IIFE scope so the measurements don't interact.
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
@@ -195,7 +196,7 @@ int main() {
         return r;
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
@@ -212,7 +213,7 @@ int main() {
         return r;
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
@@ -231,7 +232,7 @@ int main() {
 
     // ── init cold path ────────────────────────────────────────────────
     for (uint32_t N : {10u, 100u, 1000u}) {
-        reports.push_back([&, N] {
+        bench::add_report(reports, [&, N] {
             ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
             MemoryPlan plan = make_uniform_plan(slots.view(), 256);
             char label[64];
@@ -246,13 +247,13 @@ int main() {
     }
 
     // ── destroy/no-op and init+destroy pair ───────────────────────────
-    reports.push_back(bench::run("destroy() (no-op, never init'd)", [&] {
-        PoolAllocator pool;
-        pool.destroy();
-        bench::do_not_optimize(&pool);
-    }));
+    bench::add_report(reports, bench::run("destroy() (no-op, never init'd)", [&] {
+                          PoolAllocator pool;
+                          pool.destroy();
+                          bench::do_not_optimize(&pool);
+                      }));
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
         MemoryPlan plan = make_uniform_plan(slots.view(), 256);
@@ -265,7 +266,7 @@ int main() {
     }());
 
     // ── detach+reinit (region switch) ─────────────────────────────────
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::HeapArray<TensorSlot> slots_a = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
         ::fixy::HeapArray<TensorSlot> slots_b = ::fixy::mint_heap_array(test.alloc, N, TensorSlot{});
@@ -287,7 +288,7 @@ int main() {
     }());
 
     // ── register_external ─────────────────────────────────────────────
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         constexpr uint32_t N_INT = 80;
         constexpr uint32_t N_EXT = 20;
         constexpr uint32_t TOTAL = N_INT + N_EXT;
@@ -316,7 +317,7 @@ int main() {
     }());
 
     // ── Realistic replay pattern ──────────────────────────────────────
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         constexpr uint32_t NUM_OPS = 200;
         constexpr uint32_t NUM_SLOTS = 100;
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, NUM_SLOTS, TensorSlot{});
@@ -348,7 +349,7 @@ int main() {
         return r;
     }());
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // Via-pointer vs. direct-ref (inside the one block that has both)
     // should be statistically indistinguishable: same assembly after
@@ -356,8 +357,10 @@ int main() {
     // a cycle per lookup.
     std::printf("\n=== compare — via-pointer overhead ===\n  ");
     // reports[7] = "slot_ptr(100, direct ref)", reports[8] = "slot_ptr(100, via pointer)"
-    bench::compare(reports[7], reports[8]).print_text(stdout);
+    bench::compare(*reports.get(7).expect("the row of slot_ptr(100, direct ref)"),
+                   *reports.get(8).expect("the row of slot_ptr(100, via pointer)"))
+        .print_text();
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

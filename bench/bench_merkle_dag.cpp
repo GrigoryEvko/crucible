@@ -18,8 +18,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <span>
-#include <vector>
 
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
@@ -107,14 +105,17 @@ int main(int argc, char* argv[]) {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== merkle_dag ===\n\n");
 
-    std::vector<bench::Report> reports;
+    // The eight fixed rows, then one row for each trace file of argv.
+    constexpr int kMaxTraceFiles = 56;
+    if (argc - 1 > kMaxTraceFiles) ::fixy::fatal("bench_merkle_dag takes at most {} trace files", kMaxTraceFiles);
+    ::fixy::FixedList<bench::Report, 8 + kMaxTraceFiles> reports{};
 
     // ── compute_content_hash at three region sizes ───────────────────
-    reports.push_back([] {
+    bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena arena{1 << 16};
         constexpr uint32_t N = 8;
@@ -128,7 +129,7 @@ int main(int argc, char* argv[]) {
         });
     }());
 
-    reports.push_back([] {
+    bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena arena{1 << 20};
         ::fixy::BumpArena ops_arena{1 << 20};
@@ -146,7 +147,7 @@ int main(int argc, char* argv[]) {
         });
     }());
 
-    reports.push_back([] {
+    bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena arena{1 << 20};
         ::fixy::BumpArena ops_arena{1 << 20};
@@ -165,7 +166,7 @@ int main(int argc, char* argv[]) {
     }());
 
     // ── make_region (481 ops) ────────────────────────────────────────
-    reports.push_back([] {
+    bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena data_arena{1 << 20};
         ::fixy::BumpArena ops_arena{1 << 20};
@@ -182,7 +183,7 @@ int main(int argc, char* argv[]) {
     }());
 
     // ── compute_merkle_hash ──────────────────────────────────────────
-    reports.push_back([] {
+    bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena arena{1 << 20};
         ::fixy::BumpArena dag_arena{1 << 20};
@@ -199,7 +200,7 @@ int main(int argc, char* argv[]) {
     }());
 
     // ── build_csr (481 ops, 900 edges) ────────────────────────────────
-    reports.push_back([] {
+    bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena arena{1 << 20};
         constexpr uint32_t NUM_OPS = 481;
@@ -225,7 +226,7 @@ int main(int argc, char* argv[]) {
     }());
 
     // ── compute_memory_plan (300 slots) ──────────────────────────────
-    reports.push_back([] {
+    bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
         constexpr uint32_t NUM_SLOTS = 300;
         ::fixy::HeapArray<TensorSlot> slots = ::fixy::mint_heap_array(test.alloc, NUM_SLOTS, TensorSlot{});
@@ -267,7 +268,7 @@ int main(int argc, char* argv[]) {
     }());
 
     // ── build_trace full pipeline (481 synthetic ops) ────────────────
-    reports.push_back([] {
+    bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
 
         // A TraceRing is 6 MiB and the stack is 8 MiB, so the ring lives
@@ -375,7 +376,7 @@ int main(int argc, char* argv[]) {
 
     // ── Optional: build_trace from real .crtrace argv paths ──────────
     for (int i = 1; i < argc; i++) {
-        reports.push_back([path = argv[i]] {
+        bench::add_report(reports, [path = argv[i]] {
             auto test = ::foundation::effects::testing::test();
             // A path that fails the path check counts as a file that does not open.
             const std::string_view path_text{path};
@@ -417,16 +418,18 @@ int main(int argc, char* argv[]) {
         }());
     }
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // Scaling check: content_hash goes 8 → 481 → 1110 ops.
     // Expected roughly linear since every op does the same work.
+    const bench::Report& hash_8 = *reports.get(0).expect("the content_hash row of 8 ops");
+    const bench::Report& hash_481 = *reports.get(1).expect("the content_hash row of 481 ops");
     std::printf("\n=== compare — content_hash scaling ===\n");
     std::printf("  481 / 8   (expect ~60×):\n  ");
-    bench::compare(reports[0], reports[1]).print_text(stdout);
+    bench::compare(hash_8, hash_481).print_text();
     std::printf("  1110 / 481 (expect ~2.3×):\n  ");
-    bench::compare(reports[1], reports[2]).print_text(stdout);
+    bench::compare(hash_481, *reports.get(2).expect("the content_hash row of 1110 ops")).print_text();
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

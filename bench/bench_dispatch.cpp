@@ -25,7 +25,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
-#include <vector>
 
 using namespace crucible;
 
@@ -267,7 +266,7 @@ struct BenchRegion {
 int main() {
     bench::print_system_info();
     bench::elevate_priority();
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== dispatch ===\n");
     std::printf("  sizeof(Vigil)            : %zu B\n", sizeof(Vigil));
@@ -276,12 +275,13 @@ int main() {
     std::printf("  sizeof(TraceRing::Entry) : %zu B\n", sizeof(TraceRing::Entry));
     std::printf("  sizeof(TensorMeta)       : %zu B\n\n", sizeof(TensorMeta));
 
-    std::vector<bench::Report> reports;
+    // The 16 rows below.
+    ::fixy::FixedList<bench::Report, 16> reports{};
 
     // ── Sub-component baselines ────────────────────────────────────
     std::printf("--- sub-component baselines ---\n");
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         // Heap-allocate: sizeof(TraceRing) ≈ 5.3 MB (inline Entry[65536] +
         // three parallel arrays). On an 8 MB default stack, a second large
         // local in a sibling IIFE — or GCC's worst-case frame-sum at -O3
@@ -305,7 +305,7 @@ int main() {
         return r;
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         MetaLog meta_log{::foundation::effects::testing::test().alloc};
         meta_log.reset();
         ::fixy::FixedArray<TensorMeta, 2> metas{
@@ -318,7 +318,7 @@ int main() {
         });
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena arena{1 << 16};
         ::fixy::BumpArena slot_arena{1 << 16};
@@ -355,7 +355,7 @@ int main() {
         return r;
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         return bench::run("Vigil::is_compiled() [true]", [&] {
@@ -367,7 +367,7 @@ int main() {
     // ── Isolated engine / context ──────────────────────────────────
     std::printf("\n--- isolated engine/context ---\n");
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         BenchRegion br;
         br.build(NUM_OPS, SCHEMA, SHAPE);
         PoolAllocator pool;
@@ -391,7 +391,7 @@ int main() {
         return r;
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         BenchRegion br;
         br.build(NUM_OPS, SCHEMA, SHAPE);
         CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -409,7 +409,7 @@ int main() {
         return r;
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         constexpr uint32_t BIG = 32;
         SchemaHash big_sch[BIG];
         ShapeHash big_shp[BIG];
@@ -443,7 +443,7 @@ int main() {
     // Each body gives the op a schema hash that no other body gives, so the
     // detector finds no iteration and the Vigil stays in the RECORD mode.
     // The store of the hash is the one cost that this adds.
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil;
         TraceRing::Entry e{};
         e.shape_hash = ShapeHash{0xAAA};
@@ -467,7 +467,7 @@ int main() {
         return report;
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil;
         auto d = make_op(0, 1);
         const ::fixy::View<const TensorMeta> records = records_of(d);
@@ -494,7 +494,7 @@ int main() {
     // The answer of dispatch_op does not tell a refusal of the ring.  The run
     // stays below the room of the ring, so no body meets a full ring.  The
     // count of RECORD answers shows that the Vigil stayed in the RECORD mode.
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil;
         auto d = make_op(0, 1);
         const ::fixy::View<const TensorMeta> records = records_of(d);
@@ -518,7 +518,7 @@ int main() {
     // ── dispatch_op COMPILED ───────────────────────────────────────
     std::printf("\n--- dispatch_op COMPILED ---\n");
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         OpData ops[NUM_OPS];
@@ -534,7 +534,7 @@ int main() {
         });
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         OpData ops[NUM_OPS];
@@ -554,7 +554,7 @@ int main() {
         });
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         OpData ops[NUM_OPS];
@@ -576,7 +576,7 @@ int main() {
         });
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         OpData ops[NUM_OPS];
@@ -604,7 +604,7 @@ int main() {
     // The body counts the results that are not the expected ones, and the
     // check after the measurement reads the count, so no check runs in the
     // timed body.
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         bench::Run r{"divergence [end-to-end: setup + dispatch]"};
         if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
         uint32_t unexpected_results = 0;
@@ -634,7 +634,7 @@ int main() {
         return report;
     }());
 
-    reports.push_back([&] {
+    bench::add_report(reports, [&] {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena arena{1 << 16};
         constexpr uint32_t NR = 4;
@@ -667,7 +667,7 @@ int main() {
         });
     }());
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // ── compare: dispatch_op RECORDING vs record_op (overhead) ─────
     //
@@ -679,13 +679,17 @@ int main() {
     const size_t ri_rec = 8;  // Vigil::record_op (2 metas)
     const size_t ri_dis = 9;  // dispatch_op [RECORDING, no pending]
     std::printf("\n=== compare — dispatch_op vs record_op (RECORDING) ===\n  ");
-    bench::compare(reports[ri_rec], reports[ri_dis]).print_text(stdout);
+    bench::compare(*reports.get(ri_rec).expect("the row of Vigil::record_op"),
+                   *reports.get(ri_dis).expect("the row of dispatch_op in RECORDING mode"))
+        .print_text();
 
     // COMPILED cyclic vs full-iteration (per-op amortized):
     // the full-iteration Report divides its total by 8 (roughly).
     std::printf("\n=== compare — COMPILED cyclic vs full-iteration ===\n  ");
-    bench::compare(reports[10], reports[13]).print_text(stdout);
+    bench::compare(*reports.get(10).expect("the row of the COMPILED cyclic dispatch"),
+                   *reports.get(13).expect("the row of the full iteration"))
+        .print_text();
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

@@ -457,25 +457,29 @@ int main() {
                      ::foundation::os::error_number(error));
     }
 
-    std::vector<bench::Report> reports(workloads.size() * 3);
+    // Three rows for each workload: the sequential arm, the rule arm and the
+    // forced arm.
+    ::fixy::HeapArray<bench::Report> reports =
+        ::fixy::mint_heap_array_with<bench::Report>(::foundation::effects::testing::test().alloc, workloads.size() * 3,
+                                                    [](std::size_t) noexcept { return bench::Report{}; });
 
     int failures = 0;
     std::printf("=== measuring ===\n");
     for (std::size_t i = 0; i < workloads.size(); ++i) {
         Workload& w = workloads[i];
         Trio trio = run_workload(w, pieces, samples);
-        reports[i * 3 + 0] = std::move(trio.sequential);
-        reports[i * 3 + 1] = std::move(trio.rule);
-        reports[i * 3 + 2] = std::move(trio.forced);
+        *reports.get(i * 3 + 0).expect("the sequential row of a workload") = std::move(trio.sequential);
+        *reports.get(i * 3 + 1).expect("the rule row of a workload") = std::move(trio.rule);
+        *reports.get(i * 3 + 2).expect("the forced row of a workload") = std::move(trio.forced);
     }
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     std::printf("\n=== no-regression gates ===\n");
     for (std::size_t i = 0; i < workloads.size(); ++i) {
-        const bench::Report& seq = reports[i * 3 + 0];
-        const bench::Report& rul = reports[i * 3 + 1];
-        const bench::Report& frc = reports[i * 3 + 2];
+        const bench::Report& seq = *reports.get(i * 3 + 0).expect("the sequential row of a workload");
+        const bench::Report& rul = *reports.get(i * 3 + 1).expect("the rule row of a workload");
+        const bench::Report& frc = *reports.get(i * 3 + 2).expect("the forced row of a workload");
         const Workload& w = workloads[i];
         const double seq_p50 = seq.pct.p50;
         const double rul_p50 = rul.pct.p50;
@@ -551,6 +555,6 @@ int main() {
         std::printf("  FAIL - %d no-regression gate(s) failed.\n", failures);
     }
 
-    bench::emit_reports_json(reports, bench::env_json());
+    bench::emit_reports_json(reports.view(), bench::env_json());
     return failures == 0 ? 0 : 1;
 }

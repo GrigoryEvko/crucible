@@ -3,7 +3,6 @@
 
 #include <atomic>
 #include <cstdio>
-#include <cstdlib>
 
 #include "bench_harness.h"
 
@@ -11,30 +10,10 @@ namespace {
 
 // ── Tunables ───────────────────────────────────────────────────────────
 // Magic numbers get named constants so they're documented + greppable.
-constexpr int kDefaultCore = -1;  // -1 = let harness auto-pick
-constexpr int kEnvBase10 = 10;  // base for strtol(CRUCIBLE_BENCH_CORE)
 constexpr uint64_t kXorMixConstant = 0x9E3779B97F4A7C15ULL;  // golden ratio (Knuth)
 constexpr uint64_t kAddInitialSink = 0;  // seed for integer-increment body
 constexpr uint64_t kXorInitialSink = 1;  // seed for xor body
 constexpr uint64_t kAtomicInitialValue = 0;  // seed for relaxed-load body
-
-// ── Environment probes (called outside timed regions) ──────────────────
-// Deterministic w.r.t. the process environment at launch — no syscalls or
-// wall-clock reads sneak into any bench body below.
-
-[[nodiscard]] int env_core() noexcept {
-    const char* s = std::getenv("CRUCIBLE_BENCH_CORE");
-    if (s == nullptr) return kDefaultCore;
-    return static_cast<int>(std::strtol(s, nullptr, kEnvBase10));
-}
-
-[[nodiscard]] bool env_json() noexcept {
-    const char* s = std::getenv("CRUCIBLE_BENCH_JSON");
-    if (s == nullptr || s[0] == '\0') return false;
-    // Treat literal "0" as false; any other non-empty value as true. No
-    // std::string dependency — a smoke test shouldn't drag <string> in.
-    return !(s[0] == '0' && s[1] == '\0');
-}
 
 }  // namespace
 
@@ -42,14 +21,16 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const int core = env_core();
-    const bool json = env_json();
+    // The harness reads CRUCIBLE_BENCH_CORE and CRUCIBLE_BENCH_JSON outside
+    // the timed regions.
+    const int core = bench::env_core();
+    const bench::JsonTail json = bench::env_json();
 
     auto run = [&](const char* name, auto&& body) { return bench::Run(name).core(core).measure(body); };
 
     std::printf("=== smoke ===\n");
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 3> reports{
         // (1) Integer increment + do_not_optimize. One ALU add + register
         //     clobber per iteration; auto-batch lands near ~0.3-0.5 ns/op.
         [&] {
@@ -84,34 +65,24 @@ int main() {
         }(),
     };
 
-    for (const auto& r : reports)
-        r.print_text(stdout);
+    bench::emit_reports_text(reports.view());
 
     // A/B compare: ADD vs XOR. Both are one-cycle ALU ops on every x86
     // microarchitecture since Haswell; Mann-Whitney U should return
     // |z| < 2.576 → "[indistinguishable]". If this ever reports
     // distinguishable with non-trivial Δp99, one of: (a) compiler folded
     // one side to a constant, (b) core migration mid-run, (c) harness bug.
-    const auto& r_add = reports[0];
-    const auto& r_xor = reports[1];
+    const bench::Report& r_add = reports.at(::fixy::index<0>());
+    const bench::Report& r_xor = reports.at(::fixy::index<1>());
     const auto cmp = bench::compare(r_add, r_xor);
     std::printf("\n=== compare ===\n");
-    cmp.print_text(stdout);
+    cmp.print_text();
 
     // Bootstrap CI on a tail percentile — exercises the Efron path in
     // Report::ci() so a regression there doesn't sneak through silently.
-    const auto ci99 = reports[0].ci(0.99);
+    const auto ci99 = r_add.ci(0.99);
     std::printf("  add.u64 p99 95%% CI: [%.2f, %.2f] ns\n", ci99.lo, ci99.hi);
 
-    if (json) {
-        std::printf("\n=== json ===\n[\n");
-        const size_t n = sizeof(reports) / sizeof(reports[0]);
-        for (size_t i = 0; i < n; ++i) {
-            std::printf("  ");
-            reports[i].print_json(stdout);
-            std::printf("%s\n", (i + 1 < n) ? "," : "");
-        }
-        std::printf("]\n");
-    }
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

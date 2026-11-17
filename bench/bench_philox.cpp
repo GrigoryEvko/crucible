@@ -27,7 +27,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     // volatile seeds so the compiler can't constant-fold the generate()
     // call out of existence. Live in outer scope so every lambda sees them.
@@ -51,7 +51,7 @@ int main() {
 
     std::printf("=== philox ===\n\n");
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 9> reports{
         bench::run("generate(offset, key)           [4×u32 = 16B]",
                    [&] {
                        auto ctr = Philox4x32::generate(offset, key);
@@ -162,7 +162,7 @@ int main() {
         }(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // Determinism sanity check — same inputs, same bits. Philox is
     // stateless, so this must never fail; any drift means the algorithm
@@ -175,6 +175,6 @@ int main() {
     }
     std::printf("\nphilox: deterministic, ok\n");
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

@@ -119,14 +119,14 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== concurrent_saturation ===\n");
     std::printf("  Item: uint64_t (8 bytes)\n");
     std::printf("  Ring: SpscRing<uint64_t, 1M>\n");
     std::printf("\n");
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 15> reports{
         // Single-call SPSC — N=1 baseline.
         [&] {
             auto ring = std::make_unique<SpscRing<Item, (1U << 20)>>();
@@ -157,7 +157,7 @@ int main() {
         raw_memcpy_roundtrip<1024>(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // ── Per-item cost table (the headline) ────────────────────────────
     std::printf("\n=== saturation table (per-item cost) ===\n");
@@ -172,23 +172,23 @@ int main() {
     };
 
     // Single-call: N=1
-    print_row(reports[0], 1);
+    print_row(reports.at(::fixy::index<0>()), 1);
     // Sweep: indices 1..12 = N = 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024
-    print_row(reports[1], 1);
-    print_row(reports[2], 2);
-    print_row(reports[3], 4);
-    print_row(reports[4], 8);
-    print_row(reports[5], 16);
-    print_row(reports[6], 32);
-    print_row(reports[7], 64);
-    print_row(reports[8], 128);
-    print_row(reports[9], 256);
-    print_row(reports[10], 512);
-    print_row(reports[11], 1024);
+    print_row(reports.at(::fixy::index<1>()), 1);
+    print_row(reports.at(::fixy::index<2>()), 2);
+    print_row(reports.at(::fixy::index<3>()), 4);
+    print_row(reports.at(::fixy::index<4>()), 8);
+    print_row(reports.at(::fixy::index<5>()), 16);
+    print_row(reports.at(::fixy::index<6>()), 32);
+    print_row(reports.at(::fixy::index<7>()), 64);
+    print_row(reports.at(::fixy::index<8>()), 128);
+    print_row(reports.at(::fixy::index<9>()), 256);
+    print_row(reports.at(::fixy::index<10>()), 512);
+    print_row(reports.at(::fixy::index<11>()), 1024);
     // Raw memcpy reference: matched N
-    print_row(reports[12], 64);
-    print_row(reports[13], 256);
-    print_row(reports[14], 1024);
+    print_row(reports.at(::fixy::index<12>()), 64);
+    print_row(reports.at(::fixy::index<13>()), 256);
+    print_row(reports.at(::fixy::index<14>()), 1024);
 
     // ── L1d-port ceiling theory vs observed ───────────────────────────
     std::printf("\n=== Zen 3 L1d-port ceiling analysis ===\n");
@@ -207,13 +207,13 @@ int main() {
         std::printf("  Theoretical L1d-port floor (Zen 3 @ 4.6 GHz):\n");
         std::printf("    1 item per cycle × 0.217 ns/cycle = %.3f ns/item\n", ns_floor_per_item);
         std::printf("  Largest observed (N=1024 batch round-trip):\n");
-        const double obs = per_item_ns(reports[11].pct.p50, 1024);
+        const double obs = per_item_ns(reports.at(::fixy::index<11>()).pct.p50, 1024);
         std::printf("    %.3f ns/item — gap to ceiling = %.2f×\n", obs, obs / ns_floor_per_item);
         std::printf("  Raw memcpy reference (N=1024, no atomics):\n");
-        const double mref = per_item_ns(reports[14].pct.p50, 1024);
+        const double mref = per_item_ns(reports.at(::fixy::index<14>()).pct.p50, 1024);
         std::printf("    %.3f ns/item — pure-bandwidth floor\n", mref);
     }
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

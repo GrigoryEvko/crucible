@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <vector>
 
 #include <crucible/CrucibleContext.h>
 #include <crucible/ReplayEngine.h>
@@ -155,14 +154,15 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== replay_engine ===\n");
     std::printf("  sizeof(ReplayEngine)    : %zu B\n", sizeof(ReplayEngine));
     std::printf("  sizeof(CrucibleContext) : %zu B\n", sizeof(CrucibleContext));
     std::printf("  sizeof(TraceEntry)      : %zu B\n\n", sizeof(TraceEntry));
 
-    std::vector<bench::Report> reports;
+    // Four rows for each of the three sizes.
+    ::fixy::FixedList<bench::Report, 12> reports{};
 
     for (uint32_t n : {8u, 100u, 1000u}) {
         // Each size scope owns a BenchRegion, a PoolAllocator, the
@@ -184,34 +184,36 @@ int main() {
         std::snprintf(label3, sizeof(label3), "advance + out + in     [%4u ops]", n);
         std::snprintf(label4, sizeof(label4), "CrucibleContext        [%4u ops]", n);
 
-        reports.push_back(bench::run(label1, [&] {
-            auto s = walk_advance_only(engine, br.region.ops);
-            bench::do_not_optimize(s);
-        }));
-        reports.push_back(bench::run(label2, [&] {
-            auto p = walk_advance_output(engine, br.region.ops);
-            bench::do_not_optimize(p);
-        }));
-        reports.push_back(bench::run(label3, [&] {
-            auto p = walk_advance_both(engine, br.region.ops);
-            bench::do_not_optimize(p);
-        }));
-        reports.push_back(bench::run(label4, [&] {
-            auto p = walk_context(ctx, br.region.ops);
-            bench::do_not_optimize(p);
-        }));
+        bench::add_report(reports, bench::run(label1, [&] {
+                              auto s = walk_advance_only(engine, br.region.ops);
+                              bench::do_not_optimize(s);
+                          }));
+        bench::add_report(reports, bench::run(label2, [&] {
+                              auto p = walk_advance_output(engine, br.region.ops);
+                              bench::do_not_optimize(p);
+                          }));
+        bench::add_report(reports, bench::run(label3, [&] {
+                              auto p = walk_advance_both(engine, br.region.ops);
+                              bench::do_not_optimize(p);
+                          }));
+        bench::add_report(reports, bench::run(label4, [&] {
+                              auto p = walk_context(ctx, br.region.ops);
+                              bench::do_not_optimize(p);
+                          }));
 
         pool.destroy();
     }
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // Per-op amortized cost at N=1000 ops: report p50 / 1000 ns per op.
     // advance-only at 1000 ops vs. 100 ops should reveal whether the
     // walk is purely linear (ratio ≈ 10) or has startup overhead.
     std::printf("\n=== compare — per-op scaling (advance-only) ===\n  ");
-    bench::compare(reports[4], reports[8]).print_text(stdout);
+    bench::compare(*reports.get(4).expect("the advance row of 100 ops"),
+                   *reports.get(8).expect("the advance row of 1000 ops"))
+        .print_text();
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

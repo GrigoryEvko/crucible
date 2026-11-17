@@ -58,7 +58,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     // ── Architecture summary ──────────────────────────────────────
     //
@@ -98,7 +98,7 @@ int main() {
 
     std::printf("=== simd ===\n\n");
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 23> reports{
         // ─── Facade primitives ──────────────────────────────────────
         bench::run("iota_v<i64x8>()                    [const constructor]",
                    [&] {
@@ -257,7 +257,7 @@ int main() {
         }(),
     };
 
-    bench::emit_reports_text(reports);
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_text(reports.view());
+    bench::emit_reports_json(reports.view(), json);
     return 0;
 }

@@ -197,7 +197,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     std::printf("=== permissioned_zero_cost ===\n");
     std::printf("  Item:    uint64_t (8 bytes)\n");
@@ -207,7 +207,7 @@ int main() {
     std::printf("  PASS:    no pair flagged [REGRESS] (Δp99 > %.0f%% with p < 0.01)\n\n",
                 bench::Compare::kFlagDeltaP99Pct);
 
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 6> reports{
         // 0..1   MPSC push
         bare_mpsc_push(),
         wrapped_mpsc_push(),
@@ -219,14 +219,14 @@ int main() {
         endpoint_mpsc_round_trip(),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     // ── Pair-by-pair comparison ───────────────────────────────────────
     std::printf("\n=== zero-cost claim — pair deltas ===\n");
     bench::Compare cmps[] = {
-        bench::compare(reports[0], reports[1]),
-        bench::compare(reports[2], reports[3]),
-        bench::compare(reports[4], reports[5]),
+        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),
+        bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>())),
+        bench::compare(reports.at(::fixy::index<4>()), reports.at(::fixy::index<5>())),
     };
     bench::emit_compares(cmps);
 
@@ -247,6 +247,6 @@ int main() {
                     bench::Compare::kFlagDeltaP99Pct);
     }
 
-    bench::emit_reports_json(reports, json);
+    bench::emit_reports_json(reports.view(), json);
     return regressions;  // exit code = number of regressions
 }

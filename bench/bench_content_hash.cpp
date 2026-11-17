@@ -6,8 +6,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <span>
-#include <vector>
 
 #include <crucible/MerkleDag.h>
 #include <foundation/effects/Effect.h>
@@ -44,7 +42,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const bool json = bench::env_json();
+    const bench::JsonTail json = bench::env_json();
 
     struct Config {
         uint32_t n;
@@ -61,19 +59,20 @@ int main() {
 
     // One arena + ops vector per config; kept alive in outer scope so
     // the body can reference the span by value-into-reference.
-    std::vector<bench::Report> reports;
+    // One row for each of the five configs.
+    ::fixy::FixedList<bench::Report, 5> reports{};
 
     for (const auto& c : cfgs) {
         ::fixy::BumpArena arena{1 << 20};
         auto ops = make_ops(arena, c.n, c.ndim, c.ins);
         const ::fixy::View<const TraceEntry> span = ops.view();
 
-        reports.push_back(bench::run(c.label, [&] {
-            auto h = compute_content_hash(span);
-            bench::do_not_optimize(h);
-        }));
+        bench::add_report(reports, bench::run(c.label, [&] {
+                              auto h = compute_content_hash(span);
+                              bench::do_not_optimize(h);
+                          }));
     }
 
-    bench::emit_reports(reports, json);
+    bench::emit_reports(reports.view(), json);
     return 0;
 }

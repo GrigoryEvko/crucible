@@ -127,18 +127,18 @@ int main() {
 
     // A braced list runs its initializers in order, so the typed run takes
     // the handles only after the permissioned run is done with them.
-    bench::Report reports[] = {
+    ::fixy::FixedArray<bench::Report, 3> reports{
         bench_raw_append_raw_drain(raw),
         bench_permissioned_append_drain(producer, consumer, raw),
         bench_typed_send_recv(std::move(producer), std::move(consumer), raw),
     };
 
-    bench::emit_reports_text(reports);
+    bench::emit_reports_text(reports.view());
 
     std::printf("\n=== MetaLogSession deltas ===\n");
     const bench::Compare cmps[] = {
-        bench::compare(reports[0], reports[1]),
-        bench::compare(reports[0], reports[2]),
+        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),
+        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),
     };
     bench::emit_compares(cmps);
 
@@ -147,6 +147,6 @@ int main() {
     std::printf("  Timed MetaLog deltas above are informational; the bodies copy a\n");
     std::printf("  168-byte TensorMeta and are sensitive to harness layout.\n");
 
-    bench::emit_reports_json(reports, bench::env_json());
+    bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
 }
