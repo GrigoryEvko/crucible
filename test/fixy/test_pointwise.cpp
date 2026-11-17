@@ -791,6 +791,40 @@ void fill_and_edges(::fixy::TestRunnerCtx const& test) noexcept {
     pass(test, "  fill_and_edges: PASSED\n");
 }
 
+// A walk of inputs over views of a static rank of one: the plan has room for
+// one axis, so it takes the lanes and no tile.  A dense input and a step-two
+// input give out[i] = (0.5 + i) + (20.5 + 2i).
+void static_rank_one(::fixy::TestRunnerCtx const& test) noexcept {
+    ::fixy::FixedArray<float, 20> values{};
+    ::fixy::FixedArray<float, 60> sources{};
+    ::fixy::FixedArray<float, 20> expected{};
+    float next = 0.5f;
+    for (float& source : sources) {
+        source = next;
+        next += 1.0f;
+    }
+    float sum = 21.0f;
+    for (float& element : expected) {
+        element = sum;
+        sum += 3.0f;
+    }
+    ::fixy::FixedArray<std::size_t, 1> const sizes{20};
+    ::fixy::FixedArray<std::size_t, 1> const dense{1};
+    ::fixy::FixedArray<std::size_t, 1> const step_two{2};
+    ::fixy::StridedView<float const, 1> const first =
+        ::fixy::mint_strided_view(sources.view(), sizes.view(), dense.view(), 0).expect("the input fits");
+    ::fixy::StridedView<float const, 1> const second =
+        ::fixy::mint_strided_view(sources.view(), sizes.view(), step_two.view(), 20).expect("the input fits");
+    auto [is_written, kept] = ::fixy::with_mut(std::move(values), [&](auto run) noexcept {
+        auto out = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), dense.view(), 0).expect("dense");
+        return ::foundation::core::write_pointwise(out, Add{}, first, second).is_ok();
+    });
+    CRUCIBLE_TEST_ASSERT(
+        test,
+        is_written && same_bits(::fixy::View<float const>{kept.view()}, ::fixy::View<float const>{expected.view()}));
+    pass(test, "  static_rank_one: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -798,6 +832,7 @@ int main() {
     branded_inputs(test);
     shape_mismatch(test);
     fill_and_edges(test);
+    static_rank_one(test);
     nan_rule_on_each_path<float>(test, "float");
     nan_rule_on_each_path<double>(test, "double");
     tile_classes<float>(test, "float");

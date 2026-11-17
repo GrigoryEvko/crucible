@@ -1319,7 +1319,10 @@ void run_lanes_(Op const& op, WalkPlan<1 + sizeof...(Es), Capacity> const& plan,
                                                   inputs...);
         return;
     }
-    if constexpr (input_count > 0) {
+    // A plan of a capacity of one axis has no second axis to tile.  Its
+    // capacity bounds its rank, so the tile path compiles only for two axes
+    // or more, and no read of the second axis of such a plan compiles.
+    if constexpr (input_count > 0 && Capacity >= 2) {
         std::size_t const tile_axis = tile_axis_of_<lanes>(plan);
         if (tile_axis != inner) {
             run_tiles_<lanes>(op, Sequence{}, plan, tile_axis, out, inputs...);
