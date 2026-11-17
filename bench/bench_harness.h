@@ -3071,12 +3071,13 @@ inline void print_system_info() {
     std::fprintf(stdout, "\n");
 }
 
-// The bench raises its nice value through the typed mint
-// `mint_priority<-10>(ctx)`, not through a raw setpriority(2).  On Linux,
-// `setpriority(PRIO_PROCESS, 0, nice)` sets the nice value of the calling
-// thread.  The mint also returns a `SchedPriority<-10>` proof, which shows
-// that the change ran in a context whose row owns Init.  The bench does
-// not pass the proof on, so it discards it.
+// The bench raises its nice value through the scheduling frame
+// `mint_priority<-10>(ctx, body)`, not through a raw setpriority(2).  On
+// Linux, `setpriority(PRIO_PROCESS, 0, nice)` sets the nice value of the
+// calling thread.  The frame lends a `SchedPriority<-10>` proof to its body,
+// which shows that the change ran in a context whose row owns Init.  The
+// bench needs no proof after the call, so its body gives nothing.  The nice
+// value stays in force after the frame ends.
 //
 // A failed call (EPERM, EACCES or EINVAL) is ignored.  A bench that runs
 // without the permission keeps the default nice value.  The measurement
@@ -3086,19 +3087,11 @@ inline void elevate_priority() noexcept {
     // ColdInitCtx owns Init, Alloc and IO, and it satisfies
     // CtxFitsPriorityMint.  A context over Init is built only from an Init
     // source, and the bench takes that source from the test witness.
-    auto p = ::fixy::sched::mint_priority<-10>(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
-    (void)p;
+    ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> const raised = ::fixy::sched::mint_priority<-10>(
+        ::fixy::ColdInitCtx{::foundation::effects::testing::init()}, [](auto) noexcept {});
+    static_cast<void>(raised.is_ok());
 #endif
 }
-
-// The mint returns `expected<SchedPriority<-10>, int>`.  A change to the
-// nice value or to the return type stops every bench TU that includes
-// this header.
-static_assert(std::is_same_v<decltype(::fixy::sched::mint_priority<-10>(::fixy::ColdInitCtx{
-                                 ::foundation::effects::testing::init()})),
-                             std::expected<::fixy::sched::SchedPriority<-10>, int>>,
-              "elevate_priority must mint a SchedPriority<-10> proof through "
-              "fixy::sched::mint_priority<-10>(ColdInitCtx).");
 
 // ── Per-bench boilerplate helpers ──────────────────────────────────
 //

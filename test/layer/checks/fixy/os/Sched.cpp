@@ -36,8 +36,24 @@ static_assert(!std::is_default_constructible_v<SchedProofDoor> && !std::is_copy_
                   && !std::is_move_constructible_v<SchedProofDoor>,
               "No object of the scheduling proof door exists.  Only its members build the proof key.");
 
-static_assert(
-    std::is_same_v<decltype(mint_priority<5>(std::declval<BgWitness const&>())), std::expected<SchedPriority<5>, int>>);
+// A frame gives the result of its body, or Unit for a body that gives
+// nothing, with the error of the kernel.
+static_assert(std::is_same_v<decltype(mint_priority<5>(std::declval<BgWitness const&>(), [](auto) noexcept {})),
+                             ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>>);
+static_assert(std::is_same_v<decltype(mint_scheduler_policy<SchedulerPolicy_v::Other>(
+                                 std::declval<BgWitness const&>(), [](auto proof) noexcept { return proof->peek(); })),
+                             ::foundation::core::Result<int, ::foundation::os::Errno>>);
+
+// The real-time priority of a policy, both arms.  A priority that the policy
+// does not take is a compile error, and not the EINVAL of the kernel.
+static_assert(RealTimePriorityFits<SchedulerPolicy_v::Fifo, 1> && RealTimePriorityFits<SchedulerPolicy_v::Fifo, 99>);
+static_assert(!RealTimePriorityFits<SchedulerPolicy_v::Fifo, 0> && !RealTimePriorityFits<SchedulerPolicy_v::Fifo, 100>,
+              "SCHED_FIFO takes a priority from 1 to 99");
+static_assert(RealTimePriorityFits<SchedulerPolicy_v::Other, 0> && !RealTimePriorityFits<SchedulerPolicy_v::Other, 1>,
+              "SCHED_OTHER takes the priority zero");
+static_assert(RealTimePriorityFits<SchedulerPolicy_v::Deadline, 0>
+                  && !RealTimePriorityFits<SchedulerPolicy_v::Deadline, 5>,
+              "SCHED_DEADLINE takes the priority zero");
 
 // The kept nice bound, both arms.  Deleting it makes an out-of-range
 // nice a hard error at the call site rather than a rejected candidate.

@@ -50,6 +50,14 @@ void require(bool condition, char const* what) noexcept {
     }
 }
 
+// True when minted holds a pin proof that is in force on the calling
+// thread.  The borrow match reads the proof in place.
+template <class Pin>
+[[nodiscard]] bool is_in_force(fixy::Result<Pin, foundation::os::Errno> const& minted) noexcept {
+    return minted.match([](Pin const& pin) noexcept { return pin.is_in_force(); },
+                        [](foundation::os::Errno const&) noexcept { return false; });
+}
+
 }  // namespace
 
 int main() {
@@ -57,23 +65,24 @@ int main() {
     const fixy::InitLoadCtx startup{eff::testing::init()};
 
     auto first = fixy::sched::mint_affinity<kCore0>(background);
-    if (!first) {
-        std::fprintf(stderr, "[skipped] no pin to CPU 0 available in this cpuset (errno %d)\n", first.error());
+    if (first.is_err()) {
+        std::fprintf(stderr, "[skipped] no pin to CPU 0 available in this cpuset (errno %d)\n",
+                     foundation::os::error_number_of(first));
         return 0;
     }
-    require(first->is_in_force(), "an earned pin is in force on its thread");
+    require(is_in_force(first), "an earned pin is in force on its thread");
 
     // The pin of the hardening policy.
     auto applied = crucible::warden::mint_hardening(startup, pin_only_policy());
     require(applied.affinity_applied() && applied.pinned_cpu() == 0, "the policy pins the thread to CPU 0");
-    require(!first->is_in_force(), "a pin proof stayed in force after Hardening::apply pinned the thread");
+    require(!is_in_force(first), "a pin proof stayed in force after Hardening::apply pinned the thread");
 
     // The restore of the hardening policy.
     auto second = fixy::sched::mint_affinity<kCore0>(background);
-    require(second.has_value() && second->is_in_force(), "a second earned pin is in force");
+    require(is_in_force(second), "a second earned pin is in force");
     applied.revert();
     require(!applied.affinity_applied(), "revert gives the prior mask back");
-    require(second.has_value() && !second->is_in_force(),
+    require(second.is_ok() && !is_in_force(second),
             "a pin proof stayed in force after AppliedPolicy::revert restored the mask");
 
     // A restore on another thread changes nothing and says so.

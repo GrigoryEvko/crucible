@@ -551,11 +551,11 @@ void test_run_pins_through_the_door_and_restores() {
     std::jthread proof_thread{[&was_proof_checked, &is_proof_in_force]() noexcept {
         const ::fixy::BgLoadCtx background{::foundation::effects::testing::bg()};
         auto proof = ::fixy::sched::mint_affinity<::foundation::algebra::lattices::AffinityMask::single(0)>(background);
-        if (!proof.has_value()) return;
+        if (proof.is_err()) return;
         const bench::Report report = bench::Run("pin event").samples(8).warmup(1).measure([]() noexcept {});
         if (!report.pinned_cpu.is_valid()) return;
         was_proof_checked = true;
-        is_proof_in_force = proof->is_in_force();
+        is_proof_in_force = std::move(proof).expect("the test above found the pin").is_in_force();
     }};
     proof_thread.join();
     if (was_proof_checked) CHECK(!is_proof_in_force);

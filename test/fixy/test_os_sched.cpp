@@ -184,28 +184,30 @@ holds_prior_mask(foundation::core::Result<fixy::sched::PriorAffinity, foundation
 [[nodiscard]] int pin_proof_round_trips_through_an_earned_pin() {
     BgWitness bg{eff::testing::bg()};
 
-    auto pin = fixy::sched::mint_affinity<kCore0>(bg);
-    if (!pin) {
+    auto minted = fixy::sched::mint_affinity<kCore0>(bg);
+    if (minted.is_err()) {
         // A restricted cpuset returns EINVAL and CPU 0 may be outside
         // it.  That is the environment, not a defect.
-        std::fprintf(stderr, "[skipped] no pin to CPU 0 available in this cpuset (errno %d)\n", pin.error());
+        std::fprintf(stderr, "[skipped] no pin to CPU 0 available in this cpuset (errno %d)\n",
+                     foundation::os::error_number_of(minted));
         return 0;
     }
+    PinnedC0 pin = std::move(minted).expect("the pin succeeded");
 
     // The proof's payload is a unit: mint_affinity seeds it with zero
     // and the authority lives in the type, not the value.
-    if (pin->peek() != 0) {
+    if (pin.peek() != 0) {
         std::fprintf(stderr, "an earned pin did not carry its unit payload\n");
         return 1;
     }
-    pin->peek_mut() = 9;
-    if (pin->peek() != 9) {
+    pin.peek_mut() = 9;
+    if (pin.peek() != 9) {
         std::fprintf(stderr, "peek_mut did not write through\n");
         return 1;
     }
 
     // The pin is in force on the thread that earned it.
-    if (!pin->is_in_force()) {
+    if (!pin.is_in_force()) {
         std::fprintf(stderr, "an earned pin was not in force on the thread that earned it\n");
         return 1;
     }
@@ -213,8 +215,8 @@ holds_prior_mask(foundation::core::Result<fixy::sched::PriorAffinity, foundation
     // Moving transfers the claim rather than copying it: the moved-to
     // proof is in force and the source is not.  The copy operations are
     // deleted, so this cannot be anything else.
-    PinnedC0 moved{std::move(*pin)};
-    if (!moved.is_in_force() || pin->is_in_force()) {
+    PinnedC0 moved{std::move(pin)};
+    if (!moved.is_in_force() || pin.is_in_force()) {
         std::fprintf(stderr, "a move did not take the pin event from its source\n");
         return 1;
     }
@@ -226,12 +228,13 @@ holds_prior_mask(foundation::core::Result<fixy::sched::PriorAffinity, foundation
     // The posture is a parameter of the mint, and asking for the weaker
     // one under-claims rather than over-claims.
     auto auto_pin = fixy::sched::mint_affinity<kCore0, fixy::PinningPosture::PinnedAuto>(bg);
-    if (!auto_pin) {
+    if (auto_pin.is_err()) {
         std::fprintf(stderr, "an auto-posture pin failed where the explicit one succeeded (errno %d)\n",
-                     auto_pin.error());
+                     foundation::os::error_number_of(auto_pin));
         return 1;
     }
-    if (decltype(auto_pin)::value_type::posture != fixy::PinningPosture::PinnedAuto) {
+    auto const auto_pin_proof = std::move(auto_pin).expect("the auto-posture pin succeeded");
+    if (std::remove_cvref_t<decltype(auto_pin_proof)>::posture != fixy::PinningPosture::PinnedAuto) {
         std::fprintf(stderr, "the minted pin named a posture the caller did not ask for\n");
         return 1;
     }
@@ -297,24 +300,43 @@ holds_prior_mask(foundation::core::Result<fixy::sched::PriorAffinity, foundation
     BgWitness bg{eff::testing::bg()};
 
     // SCHED_OTHER and a nice value of 5 need no privilege: a thread may
-    // always lower its own priority.
-    auto policy = fixy::sched::mint_scheduler_policy<fixy::SchedulerPolicy_v::Other>(bg);
-    if (!policy) {
-        std::fprintf(stderr, "setting SCHED_OTHER failed (errno %d)\n", policy.error());
+    // always lower its own priority.  Each frame lends its proof to the
+    // body, and the body reads the proof.
+    auto policy = fixy::sched::mint_scheduler_policy<fixy::SchedulerPolicy_v::Other>(
+        bg, [](auto proof) noexcept { return proof->policy == fixy::SchedulerPolicy_v::Other && proof->peek() == 0; });
+    if (policy.is_err()) {
+        std::fprintf(stderr, "setting SCHED_OTHER failed (errno %d)\n", foundation::os::error_number_of(policy));
         return 1;
     }
-    if (policy->policy != fixy::SchedulerPolicy_v::Other || policy->peek() != 0) {
+    if (!std::move(policy).expect("SCHED_OTHER was set")) {
         std::fprintf(stderr, "the minted class named a policy or a priority the call did not set\n");
         return 1;
     }
 
-    auto priority = fixy::sched::mint_priority<5>(bg);
-    if (!priority) {
-        std::fprintf(stderr, "lowering nice to 5 failed (errno %d)\n", priority.error());
+    auto priority = fixy::sched::mint_priority<5>(bg, [](auto proof) noexcept { return proof->nice == 5; });
+    if (priority.is_err()) {
+        std::fprintf(stderr, "lowering nice to 5 failed (errno %d)\n", foundation::os::error_number_of(priority));
         return 1;
     }
-    if (priority->nice != 5) {
+    if (!std::move(priority).expect("the nice value was set")) {
         std::fprintf(stderr, "the minted priority named a nice the call did not set\n");
+        return 1;
+    }
+
+    // The proof ends with its frame, and the setting of the thread stays:
+    // the kernel gives the nice value 5 after the frame.
+    std::int32_t const nice_after_frame = fixy::sched::read_sched_attributes(bg).match(
+        [](foundation::os::KernelSchedAttr attributes) noexcept { return attributes.nice; },
+        [](foundation::os::Errno) noexcept { return std::int32_t{5}; });
+    if (nice_after_frame != 5) {
+        std::fprintf(stderr, "the nice value did not stay after the frame ended (nice %d)\n", nice_after_frame);
+        return 1;
+    }
+
+    // A negative index asks for no pin: the call changes nothing, and it
+    // succeeds.
+    if (fixy::sched::apply_affinity_to_cpu(bg, -1).is_err()) {
+        std::fprintf(stderr, "a runtime affinity call that asks for no pin failed\n");
         return 1;
     }
 
@@ -322,19 +344,18 @@ holds_prior_mask(foundation::core::Result<fixy::sched::PriorAffinity, foundation
     // A restricted one returns EINVAL, so success is not asserted —
     // only that a pin handed back really is the singleton it claims.
     auto pin = fixy::sched::mint_affinity<kCore0>(bg);
-    if (pin && !pin->is_singleton_pin) {
+    if (pin.is_err()) {
+        return 0;
+    }
+    PinnedC0 const earned = std::move(pin).expect("the pin succeeded");
+    if (!earned.is_singleton_pin) {
         std::fprintf(stderr, "a single-core pin did not report itself a singleton\n");
         return 1;
     }
 
-    // A negative index asks for no pin: the call changes nothing, and it
-    // succeeds.  A pin through the runtime door records a new pin event,
-    // so the proof above stops being in force.
-    if (fixy::sched::apply_affinity_to_cpu(bg, -1).is_err()) {
-        std::fprintf(stderr, "a runtime affinity call that asks for no pin failed\n");
-        return 1;
-    }
-    if (pin && fixy::sched::apply_affinity_to_cpu(bg, 0).is_ok() && pin->is_in_force()) {
+    // A pin through the runtime door records a new pin event, so the proof
+    // above stops being in force.
+    if (fixy::sched::apply_affinity_to_cpu(bg, 0).is_ok() && earned.is_in_force()) {
         std::fprintf(stderr, "a pin proof stayed in force after its thread pinned again\n");
         return 1;
     }

@@ -14,7 +14,7 @@ using TestCtx = eff::ExecCtx<eff::ctx_cap::Test,
                              eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
 [[maybe_unused]] void attempt(TestCtx const& ctx) {
-    [[maybe_unused]] auto refused = fixy::sched::mint_priority<5>(ctx);
+    [[maybe_unused]] auto refused = fixy::sched::mint_priority<5>(ctx, [](auto) noexcept {});
 }
 
 }  // namespace

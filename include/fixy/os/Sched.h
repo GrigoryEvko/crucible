@@ -3,25 +3,38 @@
 // Setting a real-time policy, a deadline budget, or a lower nice value needs
 // CAP_SYS_NICE and fails for an unprivileged thread. A proof that claims the
 // thread is pinned, real-time or niced must not exist when the syscall failed,
-// so every mint here returns the error number of the kernel and lets the
+// so every mint here returns the error of the kernel in a Result and lets the
 // caller decide.
+//
+// THE SCHEDULING FRAMES
+//   A scheduling proof cannot copy and cannot move, because the policy or
+//   the nice value belongs to the thread that set it.  So
+//   mint_scheduler_policy and mint_priority build the proof in their own
+//   frame after the system call, and they lend it to a body as a Ref with
+//   the brand of the frame.  The proof exists only inside the frame.  The
+//   mint gives the result of the body, or Unit for a body that gives
+//   nothing.  That result leaves the frame, so it holds no borrow and names
+//   no brand of the frame (FrameResult of foundation/core/Choice.h).  The
+//   kernel keeps the policy or the nice value after the frame ends: the end
+//   of the proof changes no setting of the thread.
 
 #include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/ThreadName.h>
+#include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/SchedWords.h>
 
 #include <cstdint>
-#include <expected>
 #include <type_traits>
 #include <utility>
 
@@ -151,6 +164,45 @@ apply_scheduler_policy(int rt_priority, std::uint64_t runtime_ns, std::uint64_t 
     }
 }
 
+// The borrow of a proof that the body of a scheduling frame takes (THE
+// SCHEDULING FRAMES).  The brand is the brand of the frame.
+template <class Proof, class Brand>
+using ProofRef = ::foundation::core::Ref<Proof const, Brand>;
+
+// The result of a body for the borrow of a proof.
+template <class Body, class Proof, class Brand>
+using frame_result_t = std::invoke_result_t<Body&&, ProofRef<Proof, Brand>>;
+
+// The value that a frame gives: the result of the body, or Unit for a body
+// that gives void.
+template <class Given>
+using frame_value_t = std::conditional_t<std::is_void_v<Given>, ::foundation::core::Unit, std::remove_cv_t<Given>>;
+
+// A body of a frame: it takes the borrow of the proof, and it does not
+// throw.
+template <class Body, class Proof, class Brand>
+concept SchedFrameBody = std::is_nothrow_invocable_v<Body&&, ProofRef<Proof, Brand>>;
+
+// A body whose result leaves the frame: void, or a value that holds no
+// borrow, names no brand of the frame, and a Result holds.
+template <class Body, class Proof, class Brand>
+concept SchedFrameLeaves =
+    SchedFrameBody<Body, Proof, Brand> && ::foundation::core::FrameResult<frame_result_t<Body, Proof, Brand>, Brand>
+    && ::foundation::core::ChoicePayload<frame_value_t<frame_result_t<Body, Proof, Brand>>>;
+
+// Lends PROOF to BODY with the brand of the frame, and gives the value of
+// the frame.
+template <class Brand, class Proof, class Body>
+[[nodiscard]] frame_value_t<frame_result_t<Body, Proof, Brand>> run_frame_(Proof const& proof, Body&& body) noexcept {
+    ProofRef<Proof, Brand> const lent = ::foundation::core::detail::RefDoor::lend<Brand>(proof);
+    if constexpr (std::is_void_v<frame_result_t<Body, Proof, Brand>>) {
+        static_cast<Body&&>(body)(lent);
+        return ::foundation::core::Unit{};
+    } else {
+        return static_cast<Body&&>(body)(lent);
+    }
+}
+
 }  // namespace detail
 
 // CtxFitsAffinityMint is in fixy/os/CpuPinned.h with mint_affinity's
@@ -189,6 +241,16 @@ concept CtxFitsSchedPolicyMint = CtxFitsRuntimeAffinity<Ctx> && (detail::sched_p
 template <typename Ctx, int Nice>
 concept CtxFitsPriorityMint = CtxFitsRuntimeAffinity<Ctx> && (Nice >= -20 && Nice <= 19);
 
+// The real-time priority that a policy takes.  SCHED_FIFO and SCHED_RR take
+// a priority from 1 to 99, the bounds that sched_get_priority_min and
+// sched_get_priority_max give on Linux.  Each other policy takes zero.  So a
+// priority that the policy does not take is a compile error, and not the
+// EINVAL of the kernel.
+template <SchedulerPolicy_v Policy, std::uint8_t RtPriority>
+concept RealTimePriorityFits = ((Policy == SchedulerPolicy_v::Fifo || Policy == SchedulerPolicy_v::RoundRobin)
+                                    ? (RtPriority >= 1 && RtPriority <= 99)
+                                    : RtPriority == 0);
+
 // The definition of the mint declared in fixy/os/CpuPinned.h.  It lives
 // here, beside the other scheduling mints, and it is the sole friend of
 // CpuPinned's only constructor.  The default template argument belongs
@@ -200,92 +262,143 @@ concept CtxFitsPriorityMint = CtxFitsRuntimeAffinity<Ctx> && (Nice >= -20 && Nic
 // other path to one exists.
 template <AffinityMask Mask, PinningPosture Posture, eff::IsExecCtx Ctx>
     requires ::fixy::CtxFitsAffinityMint<Ctx, Posture>
-[[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, sf::PinProofUnit>, int> mint_affinity(Ctx const&) noexcept {
+[[nodiscard]] ::foundation::core::Result<sf::CpuPinned<Mask, Posture, sf::PinProofUnit>, ::foundation::os::Errno>
+mint_affinity(Ctx const&) noexcept {
     ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> pin_event =
         sf::detail::sched_setaffinity_sys(Mask);
     for (::foundation::os::Errno const error : pin_event.err()) {
-        return std::unexpected(::foundation::os::error_number(error));
+        return ::foundation::core::err(error);
     }
     return sf::CpuPinned<Mask, Posture, sf::PinProofUnit>{0, std::move(pin_event).expect("the pin succeeded above")};
 }
 
-// Deadline admission requires runtime < deadline <= period. The SchedClass
-// return type asserts that ordering, so a budget that violates it is a
-// compile error inside the mint and needs no separate concept.
-//
-// The two mints below are declared here and defined after SchedProofDoor,
-// which names each one as a friend.  The default arguments belong to this
-// declaration.
-template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs = 0, std::uint64_t DeadlineNs = 0,
-          std::uint64_t PeriodNs = 0, eff::IsExecCtx Ctx>
-    requires CtxFitsSchedPolicyMint<Ctx, Policy>
-[[nodiscard]] std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
-mint_scheduler_policy(Ctx const&, int rt_priority = 0) noexcept;
+// The proof of a policy.  The proof holds the real-time priority as its
+// value, which peek() gives.
+template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs>
+using PolicyProof = sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>;
 
-template <int Nice, eff::IsExecCtx Ctx>
-    requires CtxFitsPriorityMint<Ctx, Nice>
-[[nodiscard]] std::expected<SchedPriority<Nice>, int> mint_priority(Ctx const&) noexcept;
+// The value of a frame whose body takes the borrow of Proof.
+template <class Body, class Proof, class Brand>
+using frame_value_of_t = detail::frame_value_t<detail::frame_result_t<Body, Proof, Brand>>;
+
+// Deadline admission requires runtime < deadline <= period. The SchedClass
+// proof asserts that ordering, so a budget that violates it is a compile
+// error inside the mint and needs no separate concept.
+//
+// The two frame mints below set the policy or the nice value of the calling
+// thread, and lend the proof to body (THE SCHEDULING FRAMES).  The proof
+// exists only inside the frame.  The policy and the nice value stay in force
+// after the frame ends.  The pack Refused takes each explicit template
+// argument after the named ones and refuses it, so no caller names the brand
+// of the frame.
+//
+// They are declared here and defined after SchedProofDoor, which names each
+// one as a friend.  The default arguments belong to this declaration.
+template <SchedulerPolicy_v Policy, std::uint8_t RtPriority = 0, std::uint64_t RuntimeNs = 0,
+          std::uint64_t DeadlineNs = 0, std::uint64_t PeriodNs = 0, class... Refused, eff::IsExecCtx Ctx, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires CtxFitsSchedPolicyMint<Ctx, Policy> && (sizeof...(Refused) == 0)
+          && RealTimePriorityFits<Policy, RtPriority>
+          && detail::SchedFrameLeaves<Body, PolicyProof<Policy, RuntimeNs, DeadlineNs, PeriodNs>, Fresh>
+[[nodiscard]] ::foundation::core::Result<
+    frame_value_of_t<Body, PolicyProof<Policy, RuntimeNs, DeadlineNs, PeriodNs>, Fresh>, ::foundation::os::Errno>
+mint_scheduler_policy(Ctx const&, Body&& body) noexcept;
+
+template <int Nice, class... Refused, eff::IsExecCtx Ctx, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires CtxFitsPriorityMint<Ctx, Nice> && (sizeof...(Refused) == 0)
+          && detail::SchedFrameLeaves<Body, SchedPriority<Nice>, Fresh>
+[[nodiscard]] ::foundation::core::Result<frame_value_of_t<Body, SchedPriority<Nice>, Fresh>, ::foundation::os::Errno>
+mint_priority(Ctx const&, Body&& body) noexcept;
+
+// A body whose result holds a borrow, an address or the brand of the frame
+// binds to these two overloads, so the refusal gives its reason.  The proof
+// ends with the frame, so such a result names an object that no longer
+// exists.
+template <SchedulerPolicy_v Policy, std::uint8_t RtPriority = 0, std::uint64_t RuntimeNs = 0,
+          std::uint64_t DeadlineNs = 0, std::uint64_t PeriodNs = 0, class... Refused, eff::IsExecCtx Ctx, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires CtxFitsSchedPolicyMint<Ctx, Policy> && (sizeof...(Refused) == 0)
+              && RealTimePriorityFits<Policy, RtPriority>
+              && detail::SchedFrameBody<Body, PolicyProof<Policy, RuntimeNs, DeadlineNs, PeriodNs>, Fresh>
+              && (!detail::SchedFrameLeaves<Body, PolicyProof<Policy, RuntimeNs, DeadlineNs, PeriodNs>, Fresh>)
+void mint_scheduler_policy(Ctx const&, Body&& body) = delete(
+    "the result of a scheduling frame leaves the frame, so it holds no reference and no address, and it names no "
+    "brand of the frame: the proof ends with the frame, so give a plain value");
+
+template <int Nice, class... Refused, eff::IsExecCtx Ctx, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires CtxFitsPriorityMint<Ctx, Nice> && (sizeof...(Refused) == 0)
+              && detail::SchedFrameBody<Body, SchedPriority<Nice>, Fresh>
+              && (!detail::SchedFrameLeaves<Body, SchedPriority<Nice>, Fresh>)
+void mint_priority(Ctx const&, Body&& body) = delete(
+    "the result of a scheduling frame leaves the frame, so it holds no reference and no address, and it names no "
+    "brand of the frame: the proof ends with the frame, so give a plain value");
 
 // The door to the two scheduling proofs.  No object of it exists.  It is
 // the authority of the key that the constructor of SchedClass and of
 // SchedPriority takes, so only its members build that key.  Its members
-// are private, and its two friends are the mints above, which call a
+// are private, and its two friends are the frame mints above, which call a
 // member only after their syscall returned.  Each member builds its proof
-// in place inside the result, because a proof neither copies nor moves.
+// in its own frame and lends it to the body, because a proof neither copies
+// nor moves.
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
 class SchedProofDoor final : ::foundation::NoObject<SchedProofDoor> {
-    template <SchedulerPolicy_v FriendPolicy, std::uint64_t FriendRuntimeNs, std::uint64_t FriendDeadlineNs,
-              std::uint64_t FriendPeriodNs, eff::IsExecCtx FriendCtx>
-        requires CtxFitsSchedPolicyMint<FriendCtx, FriendPolicy>
-    friend auto mint_scheduler_policy(FriendCtx const&, int) noexcept
-        -> std::expected<sf::SchedClass<FriendPolicy, ProofUnit, FriendRuntimeNs, FriendDeadlineNs, FriendPeriodNs>,
-                         int>;
+    template <SchedulerPolicy_v FriendPolicy, std::uint8_t FriendRtPriority, std::uint64_t FriendRuntimeNs,
+              std::uint64_t FriendDeadlineNs, std::uint64_t FriendPeriodNs, class... FriendRefused,
+              eff::IsExecCtx FriendCtx, class FriendBody, ::foundation::brand::IsBrand FriendFresh>
+        requires CtxFitsSchedPolicyMint<FriendCtx, FriendPolicy> && (sizeof...(FriendRefused) == 0)
+              && RealTimePriorityFits<FriendPolicy, FriendRtPriority>
+              && detail::SchedFrameLeaves<FriendBody,
+                                          PolicyProof<FriendPolicy, FriendRuntimeNs, FriendDeadlineNs, FriendPeriodNs>,
+                                          FriendFresh>
+    friend auto mint_scheduler_policy(FriendCtx const&, FriendBody&&) noexcept -> ::foundation::core::Result<
+        frame_value_of_t<FriendBody, PolicyProof<FriendPolicy, FriendRuntimeNs, FriendDeadlineNs, FriendPeriodNs>,
+                         FriendFresh>,
+        ::foundation::os::Errno>;
 
-    template <int FriendNice, eff::IsExecCtx FriendCtx>
-        requires CtxFitsPriorityMint<FriendCtx, FriendNice>
-    friend auto mint_priority(FriendCtx const&) noexcept -> std::expected<SchedPriority<FriendNice>, int>;
+    template <int FriendNice, class... FriendRefused, eff::IsExecCtx FriendCtx, class FriendBody,
+              ::foundation::brand::IsBrand FriendFresh>
+        requires CtxFitsPriorityMint<FriendCtx, FriendNice> && (sizeof...(FriendRefused) == 0)
+              && detail::SchedFrameLeaves<FriendBody, SchedPriority<FriendNice>, FriendFresh>
+    friend auto mint_priority(FriendCtx const&, FriendBody&&) noexcept
+        -> ::foundation::core::Result<frame_value_of_t<FriendBody, SchedPriority<FriendNice>, FriendFresh>,
+                                      ::foundation::os::Errno>;
 
     using key_ = ::foundation::algebra::grade_key<SchedProofDoor>;
 
-    template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs>
-    [[nodiscard]] static std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
-    policy_proof_(int rt_priority) noexcept {
+    template <class Proof, class Brand, class Body, class... Arguments>
+    [[nodiscard]] static frame_value_of_t<Body, Proof, Brand> frame_(Body&& body, Arguments... arguments) noexcept {
         const key_ key{};
-        return std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>{std::in_place,
-                                                                                                      key, rt_priority};
-    }
-
-    template <int Nice>
-    [[nodiscard]] static std::expected<SchedPriority<Nice>, int> priority_proof_() noexcept {
-        const key_ key{};
-        return std::expected<SchedPriority<Nice>, int>{std::in_place, key};
+        Proof const proof{key, arguments...};
+        return detail::run_frame_<Brand>(proof, static_cast<Body&&>(body));
     }
 };
 
-template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs,
-          eff::IsExecCtx Ctx>
-    requires CtxFitsSchedPolicyMint<Ctx, Policy>
-[[nodiscard]] std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
-mint_scheduler_policy(Ctx const&, int rt_priority) noexcept {
-    if (int const error = ::foundation::os::error_number_of(
-            detail::apply_scheduler_policy<Policy>(rt_priority, RuntimeNs, DeadlineNs, PeriodNs));
-        error != 0) {
-        return std::unexpected(error);
-    }
-    return SchedProofDoor::policy_proof_<Policy, RuntimeNs, DeadlineNs, PeriodNs>(rt_priority);
+template <SchedulerPolicy_v Policy, std::uint8_t RtPriority, std::uint64_t RuntimeNs, std::uint64_t DeadlineNs,
+          std::uint64_t PeriodNs, class... Refused, eff::IsExecCtx Ctx, class Body, ::foundation::brand::IsBrand Fresh>
+    requires CtxFitsSchedPolicyMint<Ctx, Policy> && (sizeof...(Refused) == 0)
+          && RealTimePriorityFits<Policy, RtPriority>
+          && detail::SchedFrameLeaves<Body, PolicyProof<Policy, RuntimeNs, DeadlineNs, PeriodNs>, Fresh>
+[[nodiscard]] ::foundation::core::Result<
+    frame_value_of_t<Body, PolicyProof<Policy, RuntimeNs, DeadlineNs, PeriodNs>, Fresh>, ::foundation::os::Errno>
+mint_scheduler_policy(Ctx const&, Body&& body) noexcept {
+    CRUCIBLE_TRY(_, detail::apply_scheduler_policy<Policy>(RtPriority, RuntimeNs, DeadlineNs, PeriodNs));
+    return SchedProofDoor::frame_<PolicyProof<Policy, RuntimeNs, DeadlineNs, PeriodNs>, Fresh>(
+        static_cast<Body&&>(body), ProofUnit{RtPriority});
 }
 
 // The nice value is a value of the calling thread, not of the whole process
 // (setpriority_sys).
-template <int Nice, eff::IsExecCtx Ctx>
-    requires CtxFitsPriorityMint<Ctx, Nice>
-[[nodiscard]] std::expected<SchedPriority<Nice>, int> mint_priority(Ctx const&) noexcept {
-    if (int const error = ::foundation::os::error_number_of(detail::setpriority_sys(Nice)); error != 0) {
-        return std::unexpected(error);
-    }
-    return SchedProofDoor::priority_proof_<Nice>();
+template <int Nice, class... Refused, eff::IsExecCtx Ctx, class Body, ::foundation::brand::IsBrand Fresh>
+    requires CtxFitsPriorityMint<Ctx, Nice> && (sizeof...(Refused) == 0)
+          && detail::SchedFrameLeaves<Body, SchedPriority<Nice>, Fresh>
+[[nodiscard]] ::foundation::core::Result<frame_value_of_t<Body, SchedPriority<Nice>, Fresh>, ::foundation::os::Errno>
+mint_priority(Ctx const&, Body&& body) noexcept {
+    CRUCIBLE_TRY(_, detail::setpriority_sys(Nice));
+    return SchedProofDoor::frame_<SchedPriority<Nice>, Fresh>(static_cast<Body&&>(body));
 }
 
 using ::fixy::mint_thread_name;

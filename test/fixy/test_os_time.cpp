@@ -396,15 +396,16 @@ using BgWitness = fixy::BgObserveCtx;
     // The default posture is PinnedExplicit, which is the one a TSC
     // reader admits: an auto pin can still migrate.
     auto pin = fixy::sched::mint_affinity<ml::AffinityMask::single(0)>(bg);
-    if (!pin) {
+    if (pin.is_err()) {
         // A restricted cpuset returns EINVAL and CPU 0 may be outside
         // it.  That is the environment, not a defect, so the leg is
         // skipped rather than failed.
-        std::fprintf(stderr, "[skipped] no pin to CPU 0 available in this cpuset (errno %d)\n", pin.error());
+        std::fprintf(stderr, "[skipped] no pin to CPU 0 available in this cpuset (errno %d)\n",
+                     foundation::os::error_number_of(pin));
         return 0;
     }
 
-    auto reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(*pin));
+    auto reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(pin).expect("the pin held"));
     if (reader.is_err()) {
         std::fprintf(stderr, "a pin in force on this thread was refused with the error number %d\n",
                      foundation::os::error_number_of(reader));
@@ -438,10 +439,9 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     int pin_failure = 0;
     std::jthread pinner([&moved_in, &pin_failure, bg] {
         auto pin = fixy::sched::mint_affinity<ml::AffinityMask::single(0)>(bg);
-        if (pin) {
-            moved_in.emplace(std::move(*pin));
-        } else {
-            pin_failure = pin.error();
+        pin_failure = foundation::os::error_number_of(pin);
+        if (pin.is_ok()) {
+            moved_in.emplace(std::move(pin).expect("the pin held"));
         }
     });
     pinner.join();
@@ -470,11 +470,12 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     InitWitness init{eff::testing::init()};
 
     auto pin = fixy::sched::mint_affinity<ml::AffinityMask::single(0)>(bg);
-    if (!pin) {
-        std::fprintf(stderr, "[skipped] no pin to CPU 0 available in this cpuset (errno %d)\n", pin.error());
+    if (pin.is_err()) {
+        std::fprintf(stderr, "[skipped] no pin to CPU 0 available in this cpuset (errno %d)\n",
+                     foundation::os::error_number_of(pin));
         return 0;
     }
-    auto reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(*pin));
+    auto reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(pin).expect("the pin held"));
     if (reader.is_err()) {
         std::fprintf(stderr, "a pin in force on this thread was refused\n");
         return 1;
@@ -492,12 +493,13 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     }
 
     auto second_pin = fixy::sched::mint_affinity<ml::AffinityMask::single(0)>(bg);
-    if (!second_pin) {
+    if (second_pin.is_err()) {
         std::fprintf(stderr, "a second pin to CPU 0 failed where the first one succeeded\n");
         return 1;
     }
-    const auto second_reader = fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(*second_pin))
-                                   .expect("the TSC mint gives a reader over a pin in force");
+    const auto second_reader =
+        fixy::time::mint_tsc_reader<fixy::time::TscMode::Raw>(init, std::move(second_pin).expect("the pin held"))
+            .expect("the TSC mint gives a reader over a pin in force");
     if (second_reader.read(kTestNondet).is_err()) {
         std::fprintf(stderr, "a reader over a pin in force did not read\n");
         return 1;

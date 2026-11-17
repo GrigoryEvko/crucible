@@ -70,7 +70,6 @@
 
 #include <concepts>
 #include <cstdint>
-#include <expected>
 #include <meta>
 #include <type_traits>
 #include <utility>
@@ -189,13 +188,14 @@ concept CtxFitsAffinityMint = sched::CtxFitsRuntimeAffinity<Ctx> && (Posture != 
 // below names it as its sole friend, and a friend must already have
 // been declared.  The default argument belongs to this declaration and
 // is therefore absent from both the friend declaration and the
-// definition.
+// definition.  The result holds the proof, or the error of the kernel.
 namespace sched {
 
 template <AffinityMask Mask, PinningPosture Posture = PinningPosture::PinnedExplicit,
           ::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::CtxFitsAffinityMint<Ctx, Posture>
-[[nodiscard]] std::expected<::fixy::CpuPinned<Mask, Posture, ::fixy::PinProofUnit>, int>
+[[nodiscard]] ::foundation::core::Result<::fixy::CpuPinned<Mask, Posture, ::fixy::PinProofUnit>,
+                                         ::foundation::os::Errno>
 mint_affinity(Ctx const&) noexcept;
 
 }  // namespace sched
@@ -229,7 +229,7 @@ private:
     // Keep this friend a function that PERFORMS AND CHECKS the syscall.
     // A friend that merely forwards an argument proves nothing.
     // The trailing return type is not a style choice.  Written the other
-    // way round the declaration ends `..., int> ::fixy::sched::...`, and
+    // way round the declaration ends `..., Errno> ::fixy::sched::...`, and
     // the parser takes the `>::` as a nested-name-specifier inside the
     // template-id, so it reports "expected ')' before 'const'" on the
     // parameter.  Leading `auto` puts the qualified name after a plain
@@ -239,7 +239,8 @@ private:
     template <AffinityMask FriendMask, PinningPosture FriendPosture, ::foundation::effects::IsExecCtx FriendCtx>
         requires ::fixy::CtxFitsAffinityMint<FriendCtx, FriendPosture>
     friend auto ::fixy::sched::mint_affinity(FriendCtx const&) noexcept
-        -> std::expected<::fixy::CpuPinned<FriendMask, FriendPosture, ::fixy::PinProofUnit>, int>;
+        -> ::foundation::core::Result<::fixy::CpuPinned<FriendMask, FriendPosture, ::fixy::PinProofUnit>,
+                                      ::foundation::os::Errno>;
 
 public:
     CpuPinned() = delete("a default-constructed CpuPinned would claim a pin nobody performed.  Take one from "

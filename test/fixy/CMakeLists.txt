@@ -5053,6 +5053,17 @@ fixy_neg_compile_test(neg_os_sched_mint_priority_test_ctx
   "required for the satisfaction of .CtxFitsRuntimeAffinity<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, "
   "Es = \\{foundation::effects::Effect::Bg, foundation::effects::Effect::Init\\}\\]. evaluated to .false.")
 
+# A scheduling proof exists only inside the frame of its mint.  A body that
+# gives the proof back by value needs the copy that the proof deletes, and a
+# body that gives the borrow back binds to the deleted overload of a frame.
+fixy_neg_compile_test(neg_os_sched_frame_moves_proof_out
+  "use of deleted function .fixy::sched::SchedPriority<Nice>::SchedPriority\\(const fixy::sched::SchedPriority<Nice>&\\)"
+  "a nice value belongs to the thread that set it, and a copy could reach another thread"
+  "the result of a scheduling frame leaves the frame, so it holds no reference and no address")
+fixy_neg_compile_test(neg_os_sched_frame_keeps_borrow
+  "use of deleted function"
+  "the result of a scheduling frame leaves the frame, so it holds no reference and no address")
+
 # The runtime mask door reads the same gate, and apply_affinity_to_cpu
 # calls it.  The same two contexts.
 fixy_neg_compile_test(neg_os_sched_apply_affinity_to_mask_foreground_ctx

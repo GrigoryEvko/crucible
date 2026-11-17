@@ -13,7 +13,8 @@ namespace {
 using ForegroundCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
 
 [[maybe_unused]] void attempt(ForegroundCtx const& ctx) {
-    [[maybe_unused]] auto refused = fixy::sched::mint_scheduler_policy<fixy::SchedulerPolicy_v::Other>(ctx);
+    [[maybe_unused]] auto refused =
+        fixy::sched::mint_scheduler_policy<fixy::SchedulerPolicy_v::Other>(ctx, [](auto) noexcept {});
 }
 
 }  // namespace

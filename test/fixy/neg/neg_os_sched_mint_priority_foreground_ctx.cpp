@@ -13,7 +13,7 @@ namespace {
 using ForegroundCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
 
 [[maybe_unused]] void attempt(ForegroundCtx const& ctx) {
-    [[maybe_unused]] auto refused = fixy::sched::mint_priority<5>(ctx);
+    [[maybe_unused]] auto refused = fixy::sched::mint_priority<5>(ctx, [](auto) noexcept {});
 }
 
 }  // namespace
