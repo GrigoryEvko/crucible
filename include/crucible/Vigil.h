@@ -318,8 +318,8 @@ public:
             auto compiled_view = replay_.context().mint_compiled_view(fg);
             auto status = replay_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
-                return handle_divergence_(fg, entry.schema_hash, entry.shape_hash);
-            bind_external_inputs_(op, status, compiled_view);
+                return handle_divergence_(fg, op);
+            bind_inputs_(op, status, compiled_view);
             return compiled_result_(status);
         }
 
@@ -604,6 +604,28 @@ public:
         replay_.register_external(sid, data, compiled_view);
     }
 
+    // One data slot of an op of a replayed region (ScalarRole of Types.h),
+    // and the value that the replay bound to it last.
+    struct BoundScalar {
+        OpIndex op{};
+        ScalarSlot slot = ::fixy::index<0>();
+        int64_t value = 0;
+    };
+
+    // The data slots of the region of the last activation or switch, in the
+    // order of the ops and of the slots, each with its value.  The activation
+    // gives each slot the value of the recording, and the replay of each op
+    // writes the value of each data slot of the live op (bind_inputs_).  So
+    // after the replay of an op, its slots hold the values of this iteration,
+    // and a kernel of the region reads its scalar arguments here.  Each slot
+    // keeps its value while the Vigil records after a divergence.
+    [[nodiscard]] ::fixy::View<const BoundScalar> bound_scalars(VigilFgCtx const&) const& noexcept {
+        return bound_scalars_.view();
+    }
+
+    ::fixy::View<const BoundScalar> bound_scalars(VigilFgCtx const&) const&& =
+        delete("a temporary Vigil releases its slots at the end of the statement. Use a Vigil that has a name");
+
     [[nodiscard]] uint32_t compiled_iterations() const { return replay_.context().compiled_iterations(); }
     [[nodiscard]] uint32_t diverged_count() const { return replay_.context().diverged_count(); }
     [[nodiscard]] const CrucibleContext& context() const& { return replay_.context(); }
@@ -856,22 +878,28 @@ private:
         SlotId slot{};
     };
 
-    // Binds each external input of the op that the replay matched to the data
-    // of the live op.  An external is a tensor that no op of the region
+    // Binds the inputs of the op that the replay matched to the live op: each
+    // external tensor to the data of the live op, and each data slot to the
+    // value of the live op.  An external is a tensor that no op of the region
     // writes, such as a parameter or a batch of the data loader, and its
-    // address can change from one iteration to the next.  The activation
-    // lists each read of an external (external_reads_), in the order of the
-    // ops, and the cursor walks the list once in each iteration.  An op that
-    // reads no external costs two compares.  The cursor goes back to the
-    // start at op 0 and when the iteration completes.  O(1) for each op, and
-    // O(the reads) for the iteration.
-    CRUCIBLE_INLINE void bind_external_inputs_(const ValidatedOp& op, ReplayStatus status,
-                                               CrucibleContext::CompiledView const& compiled_view) {
+    // address can change from one iteration to the next.  A data scalar, such
+    // as a step size, can change its value from one iteration to the next.
+    // The activation lists each read of an external (external_reads_) and
+    // each data slot (bound_scalars_), in the order of the ops, and two
+    // cursors walk the lists once in each iteration.  An op that reads no
+    // external and has no data slot costs four compares.  The cursors go back
+    // to the start at op 0 and when the iteration completes.  O(1) for each
+    // op, and O(the reads and the slots) for the iteration.
+    CRUCIBLE_INLINE void bind_inputs_(const ValidatedOp& op, ReplayStatus status,
+                                      CrucibleContext::CompiledView const& compiled_view) {
         const uint32_t matched = replay_.context().engine().matched_op_index().value().raw();
-        // A new iteration starts the cursor again.  The COMPLETE below does
+        // A new iteration starts the cursors again.  The COMPLETE below does
         // that too, but the switch of a region advances the engine with no
         // call here, so a rewind can pass this function by.
-        if (matched == 0) next_external_read_ = 0;
+        if (matched == 0) {
+            next_external_read_ = 0;
+            next_bound_scalar_ = 0;
+        }
         const ::fixy::View<const ExternalRead> reads = external_reads_.view();
         while (next_external_read_ < reads.size()) {
             const ExternalRead& read = *reads.get(next_external_read_).expect("the test above bounds the cursor");
@@ -879,7 +907,19 @@ private:
             if (read.op.raw() == matched) bind_external_read_(op, read, compiled_view);
             ++next_external_read_;
         }
-        if (status == ReplayStatus::COMPLETE) next_external_read_ = 0;
+        // The guard matched the tags and the data slots of the live op, and
+        // an entry stores each of its five slots, so each read is in bounds.
+        const ::fixy::View<BoundScalar> scalars = bound_scalars_.view();
+        while (next_bound_scalar_ < scalars.size()) {
+            BoundScalar& bound = *scalars.get(next_bound_scalar_).expect("the test above bounds the cursor");
+            if (bound.op.raw() > matched) break;
+            if (bound.op.raw() == matched) bound.value = op.entry().scalar_values.at(bound.slot);
+            ++next_bound_scalar_;
+        }
+        if (status == ReplayStatus::COMPLETE) {
+            next_external_read_ = 0;
+            next_bound_scalar_ = 0;
+        }
     }
 
     // Binds one external slot to the storage of one input of the live op.  A
@@ -911,14 +951,14 @@ private:
     // Looks the diverging shape up in the region cache, tries to switch to a
     // matching region, and falls back to recording.
     //
-    // Takes the two guard values and nothing else. It used to take the whole
-    // Entry plus the metadata, the scope hash and the callsite hash, and the
-    // last four were all `[[maybe_unused]]`: the divergent operation is
-    // deliberately not recorded, as the tail of this function says, so no
-    // metadata ever reaches a reader from here.
-    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(VigilFgCtx const& fg,
-                                                                                 SchemaHash schema_hash,
-                                                                                 ShapeHash shape_hash) {
+    // The divergent operation is deliberately not recorded, as the tail of
+    // this function says.  A switch to a region that matches the op binds the
+    // inputs of the op to the new region, as a match of dispatch_op does.  The
+    // op comes by value, as in dispatch_transition_, so the op of dispatch_op
+    // has no address outside its frame.
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(VigilFgCtx const& fg, ValidatedOp op) {
+        const SchemaHash schema_hash = op.entry().schema_hash;
+        const ShapeHash shape_hash = op.entry().shape_hash;
         const uint32_t div_pos = replay_.context().engine().ops_matched();
 
         // A region the background thread published while the context was
@@ -963,6 +1003,7 @@ private:
             auto compiled_view = replay_.context().mint_compiled_view(fg);
             auto status = replay_.advance(schema_hash, shape_hash, compiled_view);
             if (status != ReplayStatus::DIVERGED) {
+                bind_inputs_(op, status, compiled_view);
                 publish_held_regions_();
                 return compiled_result_(status);
             }
@@ -1135,7 +1176,7 @@ private:
                 return;
             }
 
-            register_externals_from_region_(fg, region, uint32_t{alignment_pos_.value()});
+            register_inputs_from_region_(fg, region, uint32_t{alignment_pos_.value()});
             region_cache_.insert(region);
 
             // The matched ops already executed eagerly, so the engine has
@@ -1197,16 +1238,18 @@ private:
     }
 
     // Walks the region's ops to recover the storage address of each external
-    // slot from the recorded tensor metadata, and lists each read of an external
-    // for bind_external_inputs_.  The replay resumes at op resume_op, so the
-    // cursor starts at the first read of that op or of a later op.  A read
-    // of an earlier op of this iteration keeps the recorded address until
-    // the next iteration reads the external again.  Runs once per activation
-    // and per switch of a region.  O(the inputs of the region) and one
-    // allocation of the list.
-    [[gnu::cold]] void register_externals_from_region_(VigilFgCtx const& fg, const RegionNode& region,
-                                                       uint32_t resume_op) {
+    // slot from the recorded tensor metadata, and lists each read of an
+    // external and each data slot for bind_inputs_.  The replay resumes at op
+    // resume_op, so each cursor starts at the first item of that op or of a
+    // later op.  A read of an earlier op of this iteration keeps the recorded
+    // address, and a data slot of an earlier op keeps the recorded value,
+    // until the next iteration binds it again.  Runs once per activation and
+    // per switch of a region.  O(the inputs and the scalars of the region)
+    // and one allocation of each list.
+    [[gnu::cold]] void register_inputs_from_region_(VigilFgCtx const& fg, const RegionNode& region,
+                                                    uint32_t resume_op) {
         list_external_reads_(region, resume_op);
+        list_bound_scalars_(region, resume_op);
         if (region.plan.is_none()) return;
         const ::fixy::Ref<MemoryPlan> plan = PlanLink{region.plan}.expect("the test above found the plan");
 
@@ -1279,6 +1322,38 @@ private:
         });
     }
 
+    // Writes bound_scalars_: each data slot of an op of the region, in the
+    // order of the ops and of the slots, with the value of the recording.  Two
+    // passes, one to count and one to fill, so the list takes one allocation.
+    // O(the ops of the region).
+    [[gnu::cold]] void list_bound_scalars_(const RegionNode& region, uint32_t resume_op) {
+        const auto each_slot = [&region](auto&& on_slot) {
+            for (uint32_t i = 0; i < region.num_ops(); i++) {
+                const TraceEntry& te = region.op_at(i);
+                const DataSlots data = te.scalar_kinds.data_slots();
+                if (!data.has_data()) continue;
+                uint32_t position = 0;
+                for (const int64_t value : te.scalar_args()) {
+                    for (const ScalarSlot slot : ScalarSlot::check(position)) {
+                        if (data.role(slot) == ScalarRole::DATA) on_slot(BoundScalar{OpIndex{i}, slot, value});
+                    }
+                    ++position;
+                }
+            }
+        };
+        uint32_t count = 0;
+        each_slot([&count](const BoundScalar&) noexcept { ++count; });
+        bound_scalars_ = ::fixy::mint_heap_array(allocation_, count, BoundScalar{});
+        const ::fixy::View<BoundScalar> scalars = bound_scalars_.view();
+        uint32_t filled = 0;
+        next_bound_scalar_ = count;
+        each_slot([&](const BoundScalar& bound) noexcept {
+            *scalars.get(filled).expect("the first pass counted each slot") = bound;
+            if (next_bound_scalar_ == count && bound.op.raw() >= resume_op) next_bound_scalar_ = filled;
+            ++filled;
+        });
+    }
+
     // Verifies the prefix match, then delegates the pool detach, the slot
     // migration and the engine advance.  Returns true when the switch
     // succeeded and the engine sits at div_pos.
@@ -1302,7 +1377,7 @@ private:
         }
 
         if (!replay_.switch_region(alt, div_pos)) return false;
-        register_externals_from_region_(fg, alt, div_pos);
+        register_inputs_from_region_(fg, alt, div_pos);
         // This holds only on the success path; every failure returns above.
         // Pinning it here catches a refactor that skips the publication or
         // publishes the wrong region, which would otherwise keep dispatching
@@ -1463,13 +1538,16 @@ private:
     // the Vigil on.
     OpRecordStack op_record_stack_{};
 
-    // The reads of the external slots of the active region, in the order of
-    // the ops.  Each activation and each switch of a region writes them
-    // (register_externals_from_region_), and bind_external_inputs_ walks
-    // them.  Only the producer thread reads or writes the two members.
+    // The reads of the external slots and the data slots of the active
+    // region, in the order of the ops.  Each activation and each switch of a
+    // region writes them (register_inputs_from_region_), and bind_inputs_
+    // walks them.  Only the producer thread reads or writes the four members.
     ::fixy::HeapArray<ExternalRead> external_reads_{};
     // The next read of the iteration, at most the count of the reads.
     uint32_t next_external_read_ = 0;
+    ::fixy::HeapArray<BoundScalar> bound_scalars_{};
+    // The next data slot of the iteration, at most the count of the slots.
+    uint32_t next_bound_scalar_ = 0;
 
     // The regions that the foreground holds, for the sweep of the region
     // store on the publish stage.  The foreground writes the cells at the end

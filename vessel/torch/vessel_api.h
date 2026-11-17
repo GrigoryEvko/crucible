@@ -353,6 +353,27 @@ CRUCIBLE_VESSEL_API uint32_t crucible_active_region_slots(CrucibleHandle h, Cruc
 // the Vigil has no active region or the region has no plan.
 CRUCIBLE_VESSEL_API uint64_t crucible_active_pool_bytes(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
+// ── The data scalars of the replayed region ──────────────────────────
+
+// One data slot of the region of the last activation or switch (BoundScalar of
+// crucible/Vigil.h), 16 bytes.  A data slot holds a scalar of the type Scalar,
+// float or double, such as a step size, and the replay binds its value at each
+// iteration.  An op index is the position of the op in the region, in the
+// order of crucible_export_crtrace.
+typedef struct {
+    uint32_t op_index;
+    uint32_t slot;  // the scalar slot of the op, 0 to 4
+    int64_t value;  // the bits of the value that the replay bound last, as a slot of a trace holds them
+} CrucibleBoundScalar;
+
+// The data slots of the region of the last activation or switch, in the order
+// of the ops and of the slots.  The call writes the first slots into out, at
+// most capacity of them, and returns the count of the data slots.  The call
+// takes the producer claim of the Vigil, as a dispatch does.  out is null only
+// with a capacity of 0, for a read of the count.
+CRUCIBLE_VESSEL_API uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out,
+                                                    uint32_t capacity) CRUCIBLE_VESSEL_NOEXCEPT;
+
 #ifdef __cplusplus
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }

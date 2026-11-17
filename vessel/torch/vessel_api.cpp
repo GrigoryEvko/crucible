@@ -53,9 +53,10 @@ static_assert(CRUCIBLE_STATUS_MATCH == static_cast<int>(crucible::ReplayStatus::
 static_assert(CRUCIBLE_STATUS_DIVERGED == static_cast<int>(crucible::ReplayStatus::DIVERGED));
 static_assert(CRUCIBLE_STATUS_COMPLETE == static_cast<int>(crucible::ReplayStatus::COMPLETE));
 
-// CrucibleSlot has the 40 bytes that vessel_api.h states, so a C caller and
-// ctypes lay it out the same.
+// CrucibleSlot has the 40 bytes and CrucibleBoundScalar the 16 bytes that
+// vessel_api.h states, so a C caller and ctypes lay them out the same.
 static_assert(sizeof(CrucibleSlot) == 40);
+static_assert(sizeof(CrucibleBoundScalar) == 16);
 
 // The C form of one slot of a memory plan.
 [[nodiscard]] static CrucibleSlot encode_slot(const crucible::TensorSlot& slot) noexcept {
@@ -667,6 +668,22 @@ uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out, uint3
         }
     }
     return 0;
+}
+
+uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out, uint32_t capacity) noexcept {
+    CRUCIBLE_PRE(out != nullptr || capacity == 0);
+    CRUCIBLE_PRE((std::bit_cast<std::uintptr_t>(out) & (alignof(CrucibleBoundScalar) - 1U)) == 0U);
+    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
+    const crucible::VigilFgCtx fg = vigil->mint_producer_context();
+    const ::fixy::View<const crucible::Vigil::BoundScalar> bound = vigil->bound_scalars(fg);
+    uint32_t written = 0;
+    for (const crucible::Vigil::BoundScalar& source : bound) {
+        if (written == capacity) break;
+        out[written] = CrucibleBoundScalar{
+            .op_index = source.op.raw(), .slot = static_cast<uint32_t>(source.slot.raw()), .value = source.value};
+        ++written;
+    }
+    return ::fixy::narrow<uint32_t>(bound.size()).expect("a region holds fewer data slots than 2^32");
 }
 
 uint64_t crucible_active_pool_bytes(CrucibleHandle h) noexcept {

@@ -72,4 +72,7 @@ void test_dispatch_pool_bounds();
 void test_dispatch_pure_matches_dispatch_op();
 void test_dispatch_pure_divergence_and_recovery();
 
+// The data scalars of a replayed region (test_vigil_dispatch_scalars.cpp).
+void test_dispatch_binds_each_data_scalar();
+
 }  // namespace test_vigil_dispatch

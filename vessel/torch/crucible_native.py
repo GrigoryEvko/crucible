@@ -157,6 +157,30 @@ class RegionSlot(NamedTuple):
     is_external: bool
 
 
+class CrucibleBoundScalar(ctypes.Structure):
+    """One data slot of the replayed region, in the layout of CrucibleBoundScalar of vessel_api.h."""
+
+    _fields_ = [
+        ("op_index", ctypes.c_uint32),
+        ("slot", ctypes.c_uint32),
+        ("value", ctypes.c_int64),
+    ]
+
+
+class BoundScalar(NamedTuple):
+    """One data slot of the region of the last activation or switch (crucible::Vigil::BoundScalar).
+
+    A data slot holds a scalar of the type Scalar, float or double, and the
+    replay binds the value of the live op at each iteration.  An op index is
+    the position of the op in the region, in the order of export_trace.  The
+    value is the bits of the scalar, as a slot of a trace holds them.
+    """
+
+    op_index: int
+    slot: int
+    bits: int
+
+
 VESSEL_STAMP = AbiStamp("libcrucible_vessel.so", "crucible_abi_version", EXPECTED_ABI_VERSION,
                         "  cmake --build --preset release")
 DISPATCH_STAMP = AbiStamp("libcrucible_dispatch.so", "crucible_dispatch_abi_version",
@@ -731,6 +755,8 @@ class _VesselLib:
         L.crucible_active_region_slots.argtypes = [ctypes.c_void_p, ctypes.POINTER(CrucibleSlot), ctypes.c_uint32]
         L.crucible_active_pool_bytes.restype = ctypes.c_uint64
         L.crucible_active_pool_bytes.argtypes = [ctypes.c_void_p]
+        L.crucible_bound_scalars.restype = ctypes.c_uint32
+        L.crucible_bound_scalars.argtypes = [ctypes.c_void_p, ctypes.POINTER(CrucibleBoundScalar), ctypes.c_uint32]
 
         # The eager word of a region entry
         L.crucible_observe_eager_numerics.restype = ctypes.c_int
@@ -820,6 +846,20 @@ class _VesselLib:
     def active_pool_bytes(self, h: int) -> int:
         """The bytes of the pool of the plan of the active region, or 0 when the Vigil has no region or no plan."""
         return self._lib.crucible_active_pool_bytes(h)
+
+    def bound_scalars(self, h: int) -> list[BoundScalar]:
+        """The data slots of the region of the last activation or switch, in the order of the ops.  O(n) in the slots.
+
+        Raises:
+            RuntimeError: If the count of the slots changes between the read of the count and the read of the slots
+        """
+        count = self._lib.crucible_bound_scalars(h, None, 0)
+        bound = (CrucibleBoundScalar * count)()
+        written = self._lib.crucible_bound_scalars(h, bound, count)
+        if written != count:
+            raise RuntimeError(f"the region went from {count} to {written} data slots between two reads.  "
+                               f"Read the slots on the thread of the session, between two ops")
+        return [BoundScalar(item.op_index, item.slot, item.value) for item in bound]
 
 
 # =====================================================================
@@ -1555,6 +1595,10 @@ class CrucibleNative:
     def active_pool_bytes(self) -> int:
         """The bytes of the pool of the plan of the active region, or 0 when the Vigil has no region."""
         return self._vessel.active_pool_bytes(self._handle) if self._vessel else 0
+
+    def bound_scalars(self) -> list[BoundScalar]:
+        """The data slots of the replayed region with the values that the replay bound last, or no slot."""
+        return self._vessel.bound_scalars(self._handle) if self._vessel else []
 
     # ── Autograd engine serialisation ────────────────────────────────
     #

@@ -18,6 +18,8 @@
 //                                         dispatch_op
 //   ..._pure_recovery.cpp                 dispatch_op_pure through a
 //                                         divergence and a recovery
+//   ..._scalars.cpp                       the data scalars of a replayed
+//                                         region
 
 #include "vigil_dispatch.h"
 
@@ -157,6 +159,7 @@ int main() {
     test_dispatch_pool_bounds();
     test_dispatch_pure_matches_dispatch_op();
     test_dispatch_pure_divergence_and_recovery();
+    test_dispatch_binds_each_data_scalar();
     crucible::test::pass("test_vigil_dispatch: all tests passed\n");
     return 0;
 }
