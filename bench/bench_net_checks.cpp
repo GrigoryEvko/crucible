@@ -5,8 +5,9 @@
 // holds in a variable, so each call runs at run time.  The nets are those of
 // test_algebra_net_scale.cpp: the chain of 1,000 stages, the fork tree of
 // 1,001 agents with a par group in each fork, and the ring of 1,000 processes
-// with 4,000 actions.  Each net passes its checks, so each row runs the whole
-// body of its check.
+// with 4,000 actions.  The sink of the chain is a boundary agent here, so the
+// chain has a canonical form.  Each net passes its checks, so each row runs
+// the whole body of its check.
 //
 // Two rows are the references: the sort of Kahn and the union-find, as plain
 // loops over the wires of the chain, with no check of the wiring and no
@@ -14,7 +15,9 @@
 // linear in the wires, so no known method is faster by more than a constant.
 // find_dataflow_fault runs the sort of Kahn, and find_forest_fault runs the
 // union-find, after the check of the wiring.  So the ratio of each to its
-// reference gives the cost of that check and of the fault record.
+// reference gives the cost of that check and of the fault record.  The
+// canonical form runs the check of the wiring and one walk of the net, so
+// its reference is the check of the wiring, which reads each wire one time.
 //
 // Each line gives the core of its row, the percentiles of one call in
 // nanoseconds, and the coefficient of variation in thousandths.  A ratio line
@@ -79,7 +82,7 @@ inline constexpr net::NetSignature<1, 3> chain_kinds{
     .kinds = {
         {.name = "starter", .port_names = {"out"}, .port_types = {net::give(batch)}},
         {.name = "stage", .port_names = {"in", "out"}, .port_types = {net::take(batch), net::give(batch)}},
-        {.name = "sink", .port_names = {"in"}, .port_types = {net::take(batch)}},
+        {.name = "sink", .port_names = {"in"}, .port_types = {net::take(batch)}, .is_boundary = true},
     }};
 
 using LineNet = net::Net<1, 3, 1000, 999>;
@@ -301,9 +304,13 @@ void bench_chain(LineNet const& chain) {
     if (sort_by_kahn(chain) != 1000 || join_by_union_find(chain) != 999) {
         fixy::fatal("the references read the chain as a forest with no cycle of waits");
     }
-    print_row("find_wiring_fault, chain of 1000", measure_row(bench::Run{"wiring chain"}, [&] {
-                  bench::do_not_optimize(net::find_wiring_fault(chain).code);
-              }));
+    if (net::find_canonical_form(chain).fault.is_fault()) fixy::fatal("the chain has a canonical form");
+    bench::Report const wiring =
+        measure_row(bench::Run{"wiring chain"}, [&] { bench::do_not_optimize(net::find_wiring_fault(chain).code); });
+    print_row("find_wiring_fault, chain of 1000", wiring);
+    bench::Report const form = measure_row(bench::Run{"canonical form chain"},
+                                           [&] { bench::do_not_optimize(net::find_canonical_form(chain).hash); });
+    print_row("find_canonical_form, chain of 1000", form);
     bench::Report const forest =
         measure_row(bench::Run{"forest chain"}, [&] { bench::do_not_optimize(net::find_forest_fault(chain).code); });
     print_row("find_forest_fault, chain of 1000", forest);
@@ -324,6 +331,7 @@ void bench_chain(LineNet const& chain) {
     print_row("reference union-find, chain of 1000", union_find);
     print_ratio("find_dataflow_fault / reference sort of Kahn", dataflow, kahn);
     print_ratio("find_forest_fault / reference union-find", forest, union_find);
+    print_ratio("find_canonical_form / find_wiring_fault", form, wiring);
 }
 
 void bench_fork_tree(ForkNet const& tree) {

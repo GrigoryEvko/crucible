@@ -25,6 +25,7 @@ namespace {
 
 using foundation::algebra::net::Action;
 using foundation::algebra::net::AgentId;
+using foundation::algebra::net::CanonicalNet;
 using foundation::algebra::net::ChannelId;
 using foundation::algebra::net::give;
 using foundation::algebra::net::KindId;
@@ -350,6 +351,12 @@ static_assert(crossed_dataflow_fault.is_path_cut);
 inline constexpr LivenessFault waiting_ring_fault = find_liveness_fault(waiting_ring_of_1000);
 static_assert(waiting_ring_fault.code == LivenessFaultCode::CycleWithoutToken);
 
+// The canonical form of the sum tree: its result is a boundary agent, so the
+// walk from it numbers each agent.  The chain has no boundary agent, so it
+// has no form.
+inline constexpr CanonicalNet sum_form = find_canonical_form(sum_of_1000);
+static_assert(!sum_form.fault.is_fault());
+
 // The types of the nets and the systems above.  The chain and the sum tree
 // have one type.
 using ForkNet = Net<2, 7, 1001, 1332>;
@@ -391,6 +398,12 @@ template <class System>
     return find_liveness_fault(protocol);
 }
 
+// The canonical form of a net at run time.
+template <class Graph>
+[[gnu::noinline]] CanonicalNet find_form_at_run_time(Graph const& graph) noexcept {
+    return find_canonical_form(graph);
+}
+
 // An admitted net has the fault NoFault at compile time, as the
 // static_asserts of each net above show.
 [[nodiscard]] bool does_fork_match(ForkNet const& tree) noexcept {
@@ -416,9 +429,11 @@ template <class System>
 }
 
 [[nodiscard]] bool does_sum_match(LineNet const& sum) noexcept {
+    CanonicalNet const form = find_form_at_run_time(sum);
     return is_same_fault(find_at_run_time<NetCheck::Forest>(sum), NetFault{})
         && is_same_fault(find_at_run_time<NetCheck::Vicious>(sum), NetFault{})
-        && is_same_fault(find_at_run_time<NetCheck::Dataflow>(sum), NetFault{});
+        && is_same_fault(find_at_run_time<NetCheck::Dataflow>(sum), NetFault{})
+        && is_same_fault(form.fault, sum_form.fault) && form.hash == sum_form.hash;
 }
 
 [[nodiscard]] bool do_rings_match(RingSystem const& ring, WaitingRingSystem const& waiting) noexcept {

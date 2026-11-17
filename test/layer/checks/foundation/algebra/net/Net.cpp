@@ -764,6 +764,67 @@ static_assert(check_signature(merging_boundary)
                         "port of the net, so it merges nothing."));
 static_assert(find_signature_fault(merging_boundary).code == NetFaultCode::BoundaryMerges);
 
+// ── The canonical form ──────────────────────────────────────────────────
+//
+// (a + b) + c, with the inputs a, b and c and the result as boundary
+// agents.  The renumbered net holds the two adds at swapped indexes and its
+// wires in another order, so it is the same net.  The swapped net gives b to
+// the left port of the first add and a to its right port, so it is another
+// net, although each structural check admits the two.
+
+inline constexpr NetSignature<1, 5> sum_kinds{
+    .type_names = {"Value"},
+    .kinds = {
+        {.name = "input", .port_names = {"value"}, .port_types = {give(value)}, .is_boundary = true},
+        {.name = "add", .port_names = {"left", "right", "sum"}, .port_types = {take(value), take(value), give(value)}},
+        {.name = "result", .port_names = {"in"}, .port_types = {take(value)}, .is_boundary = true},
+        {.name = "num", .port_names = {"value"}, .port_types = {give(value)}},
+        {.name = "drop", .port_names = {"in"}, .port_types = {take(value)}},
+    }};
+
+inline constexpr Net<1, 5, 6, 5> sum_of_three{
+    .signature = sum_kinds,
+    .agents = {KindId{0}, KindId{0}, KindId{0}, KindId{1}, KindId{1}, KindId{2}},
+    .wires = {join_ports(0, 0, 3, 0), join_ports(1, 0, 3, 1), join_ports(3, 2, 4, 0), join_ports(2, 0, 4, 1),
+              join_ports(4, 2, 5, 0)}};
+inline constexpr Net<1, 5, 6, 5> renumbered_sum{
+    .signature = sum_kinds,
+    .agents = {KindId{0}, KindId{0}, KindId{0}, KindId{1}, KindId{1}, KindId{2}},
+    .wires = {join_ports(3, 2, 5, 0), join_ports(4, 2, 3, 0), join_ports(2, 0, 3, 1), join_ports(0, 0, 4, 0),
+              join_ports(1, 0, 4, 1)}};
+inline constexpr Net<1, 5, 6, 5> swapped_sum{
+    .signature = sum_kinds,
+    .agents = {KindId{0}, KindId{0}, KindId{0}, KindId{1}, KindId{1}, KindId{2}},
+    .wires = {join_ports(1, 0, 3, 0), join_ports(0, 0, 3, 1), join_ports(3, 2, 4, 0), join_ports(2, 0, 4, 1),
+              join_ports(4, 2, 5, 0)}};
+
+inline constexpr CanonicalNet sum_form = find_canonical_form(sum_of_three);
+inline constexpr CanonicalNet renumbered_form = find_canonical_form(renumbered_sum);
+inline constexpr CanonicalNet swapped_form = find_canonical_form(swapped_sum);
+static_assert(!sum_form.fault.is_fault() && !renumbered_form.fault.is_fault() && !swapped_form.fault.is_fault());
+static_assert(sum_form.hash == renumbered_form.hash && sum_form.hash != swapped_form.hash);
+static_assert(is_same_net(sum_of_three, renumbered_sum) && is_same_net(renumbered_sum, sum_of_three));
+static_assert(!is_same_net(sum_of_three, swapped_sum));
+inline constexpr NetVerdict swapped_dataflow = check_dataflow(swapped_sum);
+static_assert(swapped_dataflow.is_admitted(), swapped_dataflow);
+
+// A num and a drop wired to each other have no path to the input or the
+// result, so the net has no canonical form.
+inline constexpr Net<1, 5, 4, 2> sum_with_island{.signature = sum_kinds,
+                                                 .agents = {KindId{0}, KindId{2}, KindId{3}, KindId{4}},
+                                                 .wires = {join_ports(0, 0, 1, 0), join_ports(2, 0, 3, 0)}};
+inline constexpr CanonicalNet island_form = find_canonical_form(sum_with_island);
+static_assert(island_form.fault.code == NetFaultCode::AgentWithoutBoundaryPath && index_of(island_form.fault.agent) == 2
+              && island_form.hash == NetHash{});
+static_assert(check_canonical_form(sum_with_island)
+                  .says("net: agent 'num' (node 2) has no path to a boundary agent.  The canonical form numbers each "
+                        "agent from the free ports of the net."));
+static_assert(!is_same_net(sum_with_island, sum_with_island));
+static_assert(check_canonical_form(sum_of_three).is_admitted());
+
+// A fault of the wiring comes first.
+static_assert(find_canonical_form(fork_tree_open).fault.code == NetFaultCode::PortWithoutWire);
+
 }  // namespace detail::net_self_test
 
 }  // namespace foundation::algebra::net

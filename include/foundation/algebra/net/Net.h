@@ -40,6 +40,10 @@
 //   explain_fault(net, fault)    the text of the refusal of a fault
 //   determinism_of(net)          the determinism class of the net:
 //                                Deterministic, or MergesThroughDoor
+//   find_canonical_form(net)     the hash of the canonical form of the net,
+//                                or the fault that leaves it with no form
+//   check_canonical_form(net)    the consteval door of find_canonical_form
+//   is_same_net(net, net)        the two nets are the same net
 //
 // THE MODEL
 //   An agent has ports, and one of them is its principal port.  A rule fires
@@ -105,6 +109,32 @@
 //   agent stands for a free port, so check_signature refuses a boundary kind
 //   with an open door.
 //
+// THE CANONICAL FORM
+//   Two nets are the same net when a map of the agents of one onto the
+//   agents of the other keeps each kind, each wire and each port, and maps
+//   each boundary agent onto the boundary agent at the same place among the
+//   boundary agents.  The boundary agents stand for the free ports of the
+//   net in their order, so their order belongs to the net.  The inner agents
+//   have no order.
+//
+//   The canonical walk gives the boundary agents the first numbers, in their
+//   order in the net.  Then it walks the net depth first from each boundary
+//   agent in that order, with the ports of each agent in port order, and it
+//   gives each inner agent the next number at its first visit.  The walk
+//   reads only the kinds, the ports and the numbers, so two same nets get
+//   the same numbers.  The canonical form lists, for each number, the kind
+//   of its agent, and the number and the port of the peer of each port.  An
+//   inner agent with no path to a boundary agent gets no number, so a net
+//   with such an agent, or with no boundary agent, has no canonical form.
+//
+//   find_canonical_form gives the hash of the form.  is_same_net compares
+//   the two forms entry by entry, so a collision of two hashes does not make
+//   two nets the same.  A net that takes its inputs as inner agents, such as
+//   num agents, has no order of its inputs: two leaves of one kind have no
+//   identity, so a net and the same net with two such operands swapped have
+//   one form.  A user that tells operands apart gives each input as a
+//   boundary agent.
+//
 // THE VERDICT
 //   A check gives a NetVerdict.  An admitted verdict has no text.  A refusal
 //   names the agent, the node and the port in one line, for example:
@@ -159,6 +189,8 @@
 //     check_vicious     O(A + W)
 //     check_dataflow    O(A + W), the topological sort of Kahn
 //     determinism_of    O(A)
+//     find_canonical_form, is_same_net
+//                       O(A + W), a walk with an explicit stack
 //   Each check reads arrays, because a read of an array costs less in constant
 //   evaluation than a read through a pointer.  The body of each check is a
 //   template on the capacity of its arrays, and it reads the first agents and
@@ -508,6 +540,8 @@ enum class NetFaultCode : std::uint8_t {
     DataflowCycle = 25,
     // check_signature.  The fault names the kind.
     BoundaryMerges = 26,
+    // find_canonical_form.  The fault names the agent.
+    AgentWithoutBoundaryPath = 27,
 };
 
 // The most agents of a cycle that a fault names.  A longer cycle sets
@@ -810,6 +844,7 @@ template <std::size_t Types, std::size_t Kinds>
         case NetFaultCode::ViciousCircle:
         case NetFaultCode::DataflowMeetPort:
         case NetFaultCode::DataflowCycle:
+        case NetFaultCode::AgentWithoutBoundaryPath:
         default:
             break;
     }
@@ -1013,6 +1048,13 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
             refusal.put(": ");
             put_path_(refusal, graph, fault, agents, PathArrow::Back);
             refusal.put(".  Each agent waits on its inputs, so no agent of the cycle starts.");
+            return refusal;
+        }
+        case NetFaultCode::AgentWithoutBoundaryPath: {
+            NetVerdict refusal = NetVerdict::refuse("net: ");
+            put_agent(refusal, kind, node);
+            refusal.put(" has no path to a boundary agent.  The canonical form numbers each agent from the free ports "
+                        "of the net.");
             return refusal;
         }
         default:
@@ -1606,6 +1648,167 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
         }
     }
     return NetDeterminism::Deterministic;
+}
+
+// ── The canonical form ──────────────────────────────────────────────────
+
+// The hash of the canonical form of a net (THE CANONICAL FORM).
+enum class NetHash : std::uint64_t {
+};
+
+// The canonical form of a net: the fault that leaves the net with no form,
+// or the hash of the form.  The hash is 0 with a fault.
+struct CanonicalNet {
+    NetFault fault{};
+    NetHash hash{};
+};
+
+namespace detail {
+
+// The canonical numbers of the agents of a net with no fault of its wiring
+// (THE CANONICAL FORM).  number_of holds the number of each agent, or
+// no_index, and agent_at the agent of each number.  peer_agent and peer_port
+// give the other end of the wire at each port.  count is the count of the
+// numbered agents.
+template <std::size_t Agents>
+struct CanonicalOrder {
+    std::uint32_t number_of[Agents]{};
+    std::uint32_t agent_at[Agents]{};
+    std::uint32_t peer_agent[Agents * max_agent_ports]{};
+    std::uint32_t peer_port[Agents * max_agent_ports]{};
+    std::uint32_t count = 0;
+};
+
+// Writes the canonical numbers of a net with no fault of its wiring: the
+// boundary agents first in their order, then each inner agent at its first
+// visit of the walk.  Complexity: O(A + W).
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+constexpr void write_canonical_order_(Net<Types, Kinds, Agents, Wires> const& graph,
+                                      CanonicalOrder<Agents>& order) noexcept {
+    constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
+    for (Wire const& wire : graph.wires) {
+        std::uint32_t const left = index_of(wire.left.agent) * ports + wire.left.port;
+        std::uint32_t const right = index_of(wire.right.agent) * ports + wire.right.port;
+        order.peer_agent[left] = index_of(wire.right.agent);
+        order.peer_port[left] = wire.right.port;
+        order.peer_agent[right] = index_of(wire.left.agent);
+        order.peer_port[right] = wire.left.port;
+    }
+    for (std::uint32_t& slot : order.number_of)
+        slot = no_index;
+    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
+        if (!kind_of_(graph, AgentId{agent}).is_boundary) continue;
+        order.number_of[agent] = order.count;
+        order.agent_at[order.count] = agent;
+        ++order.count;
+    }
+    std::uint32_t const boundary_count = order.count;
+    std::uint32_t stack_agent[Agents]{};
+    std::uint32_t stack_port[Agents]{};
+    for (std::uint32_t root = 0; root < boundary_count; ++root) {
+        stack_agent[0] = order.agent_at[root];
+        stack_port[0] = 0;
+        std::uint32_t depth = 1;
+        while (depth != 0u) {
+            std::uint32_t const agent = stack_agent[depth - 1];
+            std::uint32_t const port = stack_port[depth - 1];
+            if (port == port_count_of(kind_of_(graph, AgentId{agent}))) {
+                --depth;
+                continue;
+            }
+            ++stack_port[depth - 1];
+            std::uint32_t const next = order.peer_agent[agent * ports + port];
+            if (order.number_of[next] != no_index) continue;
+            order.number_of[next] = order.count;
+            order.agent_at[order.count] = next;
+            ++order.count;
+            stack_agent[depth] = next;
+            stack_port[depth] = 0;
+            ++depth;
+        }
+    }
+}
+
+// One word of the canonical form, for its hash.
+enum class FormWord : std::uint64_t {
+};
+
+// The hash after one more word of the form: the finalizer of splitmix64 over
+// the sum of the hash, a constant and the word.  Each bit of the result
+// depends on each bit of the two, and the order of the words counts.
+[[nodiscard]] constexpr NetHash fold_word(NetHash hash, FormWord word) noexcept {
+    std::uint64_t mixed = static_cast<std::uint64_t>(hash) + 0x9e3779b97f4a7c15u + static_cast<std::uint64_t>(word);
+    mixed = (mixed ^ (mixed >> 30u)) * 0xbf58476d1ce4e5b9u;
+    mixed = (mixed ^ (mixed >> 27u)) * 0x94d049bb133111ebu;
+    return NetHash{mixed ^ (mixed >> 31u)};
+}
+
+}  // namespace detail
+
+// The canonical form of a net: the first fault of its wiring, the fault
+// AgentWithoutBoundaryPath, or the hash of its form (THE CANONICAL FORM).
+// The hash folds the count of the agents, and for each number the kind of
+// its agent and the number and the port of the peer of each port.
+// Complexity: O(K + A + W).
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr CanonicalNet find_canonical_form(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    NetFault const wiring = find_wiring_fault(graph);
+    if (wiring.is_fault()) return CanonicalNet{.fault = wiring};
+    constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
+    detail::CanonicalOrder<Agents> order{};
+    detail::write_canonical_order_(graph, order);
+    for (std::uint32_t agent = 0; agent < Agents; ++agent) {
+        if (order.number_of[agent] != detail::no_index) continue;
+        return CanonicalNet{.fault = NetFault{.code = NetFaultCode::AgentWithoutBoundaryPath, .agent = AgentId{agent}}};
+    }
+    NetHash hash = detail::fold_word(NetHash{}, detail::FormWord{Agents});
+    for (std::uint32_t number = 0; number < Agents; ++number) {
+        std::uint32_t const agent = order.agent_at[number];
+        hash = detail::fold_word(hash, detail::FormWord{index_of(graph.agents[agent])});
+        std::uint32_t const count = detail::port_count_of(detail::kind_of_(graph, AgentId{agent}));
+        for (std::uint32_t port = 0; port < count; ++port) {
+            hash = detail::fold_word(hash, detail::FormWord{order.number_of[order.peer_agent[agent * ports + port]]});
+            hash = detail::fold_word(hash, detail::FormWord{order.peer_port[agent * ports + port]});
+        }
+    }
+    return CanonicalNet{.hash = hash};
+}
+
+// The check of the canonical form, as a verdict with the text of its fault.
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] consteval NetVerdict check_canonical_form(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+    return explain_fault(graph, find_canonical_form(graph).fault);
+}
+
+// Two nets of one type are the same net (THE CANONICAL FORM): each has a
+// canonical form, and the two forms are equal entry by entry.  A net with no
+// form is the same as no net.  The kinds compare by their index in the
+// signature, so the two nets share the signature of their type.  The two
+// arguments can change places with no change of meaning.
+// Complexity: O(K + A + W).
+template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
+[[nodiscard]] constexpr bool is_same_net(Net<Types, Kinds, Agents, Wires> const& left,
+                                         Net<Types, Kinds, Agents, Wires> const& right) noexcept {
+    if (find_wiring_fault(left).is_fault() || find_wiring_fault(right).is_fault()) return false;
+    constexpr auto ports = static_cast<std::uint32_t>(max_agent_ports);
+    detail::CanonicalOrder<Agents> one{};
+    detail::CanonicalOrder<Agents> other{};
+    detail::write_canonical_order_(left, one);
+    detail::write_canonical_order_(right, other);
+    if (one.count != Agents || other.count != Agents) return false;
+    for (std::uint32_t number = 0; number < Agents; ++number) {
+        std::uint32_t const first = one.agent_at[number];
+        std::uint32_t const second = other.agent_at[number];
+        if (left.agents[first] != right.agents[second]) return false;
+        std::uint32_t const count = detail::port_count_of(detail::kind_of_(left, AgentId{first}));
+        for (std::uint32_t port = 0; port < count; ++port) {
+            std::uint32_t const at_first = first * ports + port;
+            std::uint32_t const at_second = second * ports + port;
+            if (one.number_of[one.peer_agent[at_first]] != other.number_of[other.peer_agent[at_second]]) return false;
+            if (one.peer_port[at_first] != other.peer_port[at_second]) return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace foundation::algebra::net
