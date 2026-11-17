@@ -48,6 +48,12 @@ namespace crucible::fuzz::boundary {
 inline void run_trace_file(std::span<const std::uint8_t> bytes) {
     constexpr std::size_t kMaxInputBytes = std::size_t{1} << 20;
     if (bytes.size() > kMaxInputBytes) bytes = bytes.first(kMaxInputBytes);
+    // The input lives for the call of the harness, so its View is valid
+    // here.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fuzzer gives its input as a pointer to raw bytes and a count")
+    const std::span<const std::byte> raw = as_bytes_view(bytes);
+    const ::fixy::View<std::byte const> image = ::fixy::mint_foreign_view(raw.data(), raw.size());
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     // The scratch path is absolute and holds no ".." component.
@@ -68,7 +74,7 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
                     return std::move(opened).consume();
                 },
                 [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
-        if (!file.is_open() || ::fixy::fs::write_full(ctx, file, as_bytes_view(bytes)).is_err()) return;
+        if (!file.is_open() || ::fixy::fs::write_full(ctx, file, image).is_err()) return;
     }
     // The load registers the names of the trace into the global table, so a
     // second name of one hash reaches the refusal of a collision.  The table

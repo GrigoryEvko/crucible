@@ -566,10 +566,10 @@ test/fuzz/boundary/ | std-object | 49 | - | -
 test/fuzz/boundary/harnesses/ | c-array-object | 6 | - | -
 test/fuzz/boundary/harnesses/ | c-library-call | 3 | - | -
 test/fuzz/boundary/harnesses/ | compiler-builtin | 1 | - | -
-test/fuzz/boundary/harnesses/ | opted-out | 13 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
+test/fuzz/boundary/harnesses/ | opted-out | 16 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | opted-out | 6 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
 test/fuzz/boundary/harnesses/ | raw-pointer-object | 8 | - | -
-test/fuzz/boundary/harnesses/ | region | 5 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
+test/fuzz/boundary/harnesses/ | region | 6 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the fuzzer gives the input of a harness as a pointer to raw bytes and a count, and mint_foreign_view is the door of such a run
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the fuzzer gives the host text as a pointer to raw bytes and a count | the fuzzer gives the host text of a harness as a pointer to raw bytes and a count, and mint_foreign_text is the door of such a run
 test/fuzz/boundary/harnesses/ | std-entity | 146 | - | -
 test/fuzz/boundary/harnesses/ | std-object | 80 | - | -
