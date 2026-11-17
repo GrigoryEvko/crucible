@@ -18,13 +18,32 @@
 
 #include <cstdint>
 
+namespace fixy::time {
+
+// The id of a clock of the kernel, the clockid_t of the C library.  The named
+// values are the clocks that the readers of fixy/os/Time.h read, and the door
+// file compares each value with <time.h>.  A PTP hardware clock has an id of
+// its own, which its descriptor gives (fixy/os/Time.h).  unbacked names no
+// clock: no clock of the kernel serves a source with it.
+enum class ClockId : std::int32_t {
+    unbacked = -1,
+    realtime = 0,
+    monotonic = 1,
+    process_cpu = 2,
+    thread_cpu = 3,
+    monotonic_raw = 4,
+    boot = 7,
+};
+
+}  // namespace fixy::time
+
 namespace fixy::time::detail {
 
-// The reading of the clock with the id CLOCK, as the kernel gives it, or the
-// error of a failed read.  CLOCK is a clockid_t of the C library.  The door
-// does not check the fields of the reading, and fixy/os/Time.h converts them.
+// The reading of the clock CLOCK, as the kernel gives it, or the error of a
+// failed read.  The door does not check the fields of the reading, and
+// fixy/os/Time.h converts them.
 [[nodiscard]] ::foundation::core::Result<::foundation::os::KernelTimespec, ::foundation::os::Errno>
-read_clock_(std::int32_t clock) noexcept;
+read_clock_(ClockId clock) noexcept;
 
 // Sleeps to the time of CLOCK_MONOTONIC NANOS after now, and gives the error
 // of a failed read or sleep.  A signal does not end the sleep before the

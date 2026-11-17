@@ -607,7 +607,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     }
 
     for (int descriptor : {0, 3, 17, 1023}) {
-        const ::clockid_t id = fixy::time::detail::ptp_clockid_from_fd(descriptor);
+        const std::int32_t id = std::to_underlying(fixy::time::detail::ptp_clockid_from_fd(descriptor));
         const unsigned int decoded = ~static_cast<unsigned int>(id) >> 3u;
         if (decoded != static_cast<unsigned int>(descriptor) || (static_cast<unsigned int>(id) & 7u) != 3u) {
             std::fprintf(stderr, "the PTP clock id of descriptor %d does not decode back to it\n", descriptor);

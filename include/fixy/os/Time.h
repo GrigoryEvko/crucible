@@ -11,6 +11,11 @@
 // returned on it, and refuses a negative field.  It clamps no field to
 // zero, because a stamp of a clamped value claims a reading that the
 // clock never returned.
+//
+// A clock has the strong id ClockId of fixy/os/MonotonicClock.h, and the
+// query of the capabilities of a PTP clock is in src/fixy/os/Time.cpp, the
+// one includer of <linux/ptp_clock.h>.  So this header includes no system
+// header.
 
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -32,12 +37,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <ctime>
 #include <limits>
 #include <type_traits>
 #include <utility>
-
-#include <linux/ptp_clock.h>
 
 namespace fixy::time {
 
@@ -55,38 +57,38 @@ enum class TscMode : std::uint8_t {
     Raw,  // rdtsc, not serialized
 };
 
-// Returns -1 for the sources this reader cannot serve, for two disjoint
-// reasons. The TSC and PMU sources are not clock_gettime-backed at all. The
-// PTP hardware clock is clock_gettime-backed, but its clockid is derived
-// per-fd as (~fd << 3) | 3 from an open /dev/ptpN descriptor, so no static
-// constant exists for it.
-[[nodiscard]] consteval ::clockid_t clockid_for(ClockSource_v source) noexcept {
+// Returns ClockId::unbacked for the sources this reader cannot serve, for two
+// disjoint reasons. The TSC and PMU sources are not clock_gettime-backed at
+// all. The PTP hardware clock is clock_gettime-backed, but its clockid is
+// derived per-fd as (~fd << 3) | 3 from an open /dev/ptpN descriptor, so no
+// static constant exists for it.
+[[nodiscard]] consteval ClockId clockid_for(ClockSource_v source) noexcept {
     switch (source) {
         case ClockSource_v::Realtime:
-            return CLOCK_REALTIME;
+            return ClockId::realtime;
         case ClockSource_v::Monotonic:
-            return CLOCK_MONOTONIC;
+            return ClockId::monotonic;
         case ClockSource_v::MonotonicRaw:
-            return CLOCK_MONOTONIC_RAW;
+            return ClockId::monotonic_raw;
         case ClockSource_v::Boot:
-            return CLOCK_BOOTTIME;
+            return ClockId::boot;
         case ClockSource_v::ThreadCpu:
-            return CLOCK_THREAD_CPUTIME_ID;
+            return ClockId::thread_cpu;
         case ClockSource_v::ProcessCpu:
-            return CLOCK_PROCESS_CPUTIME_ID;
+            return ClockId::process_cpu;
         case ClockSource_v::TscRaw:
         case ClockSource_v::TscSerialized:
         case ClockSource_v::PmuCounter:
-            return -1;
+            return ClockId::unbacked;
         case ClockSource_v::PtpHwClock:
-            return -1;
+            return ClockId::unbacked;
         default:
-            return -1;
+            return ClockId::unbacked;
     }
 }
 
 template <ClockSource_v Source>
-concept ClockBacked = (clockid_for(Source) >= 0);
+concept ClockBacked = (clockid_for(Source) != ClockId::unbacked);
 
 namespace detail {
 
@@ -129,12 +131,12 @@ template <TscMode Mode>
 // (~fd << 3) | CLOCKFD, where CLOCKFD is 3.  No userspace header defines
 // the macro, and this function does the arithmetic itself.  It uses
 // unsigned arithmetic, and it shifts no signed value.  The conversion
-// back to clockid_t keeps all 32 bits, and the kernel decodes them.
+// back to a ClockId keeps all 32 bits, and the kernel decodes them.
 inline constexpr unsigned int ptp_clockfd_tag = 3u;
 
-[[nodiscard]] constexpr ::clockid_t ptp_clockid_from_fd(int fd) noexcept {
+[[nodiscard]] constexpr ClockId ptp_clockid_from_fd(int fd) noexcept {
     const unsigned int complemented = ~static_cast<unsigned int>(fd);
-    return static_cast<::clockid_t>((complemented << 3u) | ptp_clockfd_tag);
+    return static_cast<ClockId>(static_cast<std::int32_t>((complemented << 3u) | ptp_clockfd_tag));
 }
 
 }  // namespace detail
@@ -173,7 +175,7 @@ namespace detail {
 // conversion.  ClockReader::read and PtpClockReader::read are its callers,
 // and a mint gate keeps each reader off the replay-bound foreground path.
 [[nodiscard]] inline ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
-read_clock_nanos(::clockid_t clock) noexcept {
+read_clock_nanos(ClockId clock) noexcept {
     CRUCIBLE_TRY(reading, read_clock_(clock));
     return nanos_from_timespec(reading);
 }
@@ -479,6 +481,16 @@ struct PtpClockCaps {
     std::uint8_t pad = 0;
 };
 
+namespace detail {
+
+// The capabilities of the PTP hardware clock behind the /dev/ptpN descriptor
+// DESCRIPTOR (the ioctl PTP_CLOCK_GETCAPS2), or the error of the query.  The
+// body is in src/fixy/os/Time.cpp, the one includer of <linux/ptp_clock.h>.
+// PtpClockReader::caps is its caller.
+[[nodiscard]] ::foundation::core::Result<PtpClockCaps, ::foundation::os::Errno> read_ptp_caps_(int descriptor) noexcept;
+
+}  // namespace detail
+
 // The reader of one PTP hardware clock.  It owns the descriptor of the
 // device.  The clock id that it reads through then names a descriptor
 // that is still open.  A move takes the descriptor, and each call of the
@@ -519,27 +531,10 @@ struct PtpClockReader final {
     // query names a device that is still open.  A reader that a move emptied
     // gives ebadf and makes no query.
     [[nodiscard]] ::foundation::core::Result<PtpClockCaps, ::foundation::os::Errno> caps() const noexcept {
-        using Caps = ::foundation::core::Result<PtpClockCaps, ::foundation::os::Errno>;
         if (!fd_.is_open()) [[unlikely]] {
             return ::foundation::core::err(::foundation::os::Errno::ebadf);
         }
-        ::ptp_clock_caps kernel_caps{};
-        return ::fixy::fs::detail::query_descriptor_(fd_.get(), PTP_CLOCK_GETCAPS2, &kernel_caps)
-            .match(
-                [&kernel_caps](::foundation::core::Unit) noexcept -> Caps {
-                    return PtpClockCaps{
-                        .max_adjustment_ppb = kernel_caps.max_adj,
-                        .alarms = kernel_caps.n_alarm,
-                        .external_timestamp_channels = kernel_caps.n_ext_ts,
-                        .periodic_outputs = kernel_caps.n_per_out,
-                        .pins = kernel_caps.n_pins,
-                        .max_phase_adjustment_ns = kernel_caps.max_phase_adj,
-                        .pps = kernel_caps.pps != 0,
-                        .cross_timestamping = kernel_caps.cross_timestamping != 0,
-                        .adjust_phase = kernel_caps.adjust_phase != 0,
-                    };
-                },
-                [](::foundation::os::Errno error) noexcept -> Caps { return ::foundation::core::err(error); });
+        return detail::read_ptp_caps_(fd_.get());
     }
 
 private:

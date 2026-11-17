@@ -136,8 +136,15 @@ static_assert(!std::is_default_constructible_v<PtpDeviceDoor> && !std::is_copy_c
 
 // The clock id of descriptor 3 is (~3 << 3) | 3, which is -29 as a
 // clockid_t, and the kernel's decode (~id >> 3) gives the descriptor back.
-static_assert(detail::ptp_clockid_from_fd(3) == -29);
-static_assert((~static_cast<unsigned int>(detail::ptp_clockid_from_fd(3)) >> 3u) == 3u);
+static_assert(std::to_underlying(detail::ptp_clockid_from_fd(3)) == -29);
+static_assert((~static_cast<unsigned int>(std::to_underlying(detail::ptp_clockid_from_fd(3))) >> 3u) == 3u);
+
+// Each source that clock_gettime serves has the id of its clock, and each
+// other source has none.
+static_assert(clockid_for(ClockSource_v::Monotonic) == ClockId::monotonic);
+static_assert(clockid_for(ClockSource_v::Boot) == ClockId::boot);
+static_assert(clockid_for(ClockSource_v::TscRaw) == ClockId::unbacked);
+static_assert(clockid_for(ClockSource_v::PtpHwClock) == ClockId::unbacked);
 
 // The readers and the sleeper are exercised in test/fixy/test_os_time.cpp,
 // which is also where the TSC leg lives: a TSC read needs a pin from

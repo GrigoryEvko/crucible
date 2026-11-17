@@ -248,7 +248,7 @@ void sleeper_gives_the_error_of_a_failed_call(Tally& tally) {
 // door does not read errno, so a failed call with a different errno gives the
 // error of the kernel too.
 void read_of_a_clock_the_kernel_refuses_gives_its_error(Tally& tally) {
-    constexpr std::int32_t no_clock = 99;
+    constexpr fixy::time::ClockId no_clock = static_cast<fixy::time::ClockId>(99);
     use_the_kernel_clock();
     const auto refused = fixy::time::detail::read_clock_nanos(no_clock);
     fail_each_read(EPERM);

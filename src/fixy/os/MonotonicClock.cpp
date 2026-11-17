@@ -26,6 +26,7 @@
 
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace fixy::time::detail {
 
@@ -37,16 +38,25 @@ namespace os = ::foundation::os;
 using Reading = core::Result<os::KernelTimespec, os::Errno>;
 using Slept = core::Result<core::Unit, os::Errno>;
 
-static_assert(std::is_same_v<::clockid_t, std::int32_t>, "the clock id of read_clock_ is the clockid_t of <time.h>");
+// The ids of fixy/os/MonotonicClock.h are the clock ids of <time.h>.
+static_assert(std::is_same_v<::clockid_t, std::underlying_type_t<ClockId>>,
+              "the type of a ClockId is the clockid_t of <time.h>");
+static_assert(std::to_underlying(ClockId::realtime) == CLOCK_REALTIME);
+static_assert(std::to_underlying(ClockId::monotonic) == CLOCK_MONOTONIC);
+static_assert(std::to_underlying(ClockId::process_cpu) == CLOCK_PROCESS_CPUTIME_ID);
+static_assert(std::to_underlying(ClockId::thread_cpu) == CLOCK_THREAD_CPUTIME_ID);
+static_assert(std::to_underlying(ClockId::monotonic_raw) == CLOCK_MONOTONIC_RAW);
+static_assert(std::to_underlying(ClockId::boot) == CLOCK_BOOTTIME);
 
 constexpr std::int64_t kNanosecondsPerSecond = 1000000000;
 constexpr long kInterrupted = -static_cast<long>(os::Errno::eintr);
 
 // The second read of a clock after a failed read of the C library.  It gives
 // the error of the kernel, or the reading if the kernel gives one.
-[[nodiscard]] CRUCIBLE_COLD Reading ask_the_kernel(std::int32_t clock) noexcept {
+[[nodiscard]] CRUCIBLE_COLD Reading ask_the_kernel(ClockId clock) noexcept {
     os::KernelTimespec reading{};
-    long const word = os::raw_syscall(os::Syscall::clock_gettime, clock, os::Word{static_cast<void const*>(&reading)});
+    long const word = os::raw_syscall(os::Syscall::clock_gettime, std::to_underlying(clock),
+                                      os::Word{static_cast<void const*>(&reading)});
     return os::result_of(word).match([&reading](std::uint64_t) noexcept -> Reading { return reading; },
                                      [](os::Errno error) noexcept -> Reading { return core::err(error); });
 }
@@ -81,16 +91,16 @@ constexpr long kInterrupted = -static_cast<long>(os::Errno::eintr);
 
 }  // namespace
 
-Reading read_clock_(std::int32_t clock) noexcept {
+Reading read_clock_(ClockId clock) noexcept {
     ::timespec reading{};
-    if (::clock_gettime(clock, &reading) != 0) [[unlikely]] {
+    if (::clock_gettime(std::to_underlying(clock), &reading) != 0) [[unlikely]] {
         return ask_the_kernel(clock);
     }
     return os::KernelTimespec{.seconds = reading.tv_sec, .nanoseconds = reading.tv_nsec};
 }
 
 Slept sleep_monotonic_(std::uint64_t nanos) noexcept {
-    CRUCIBLE_TRY(now, read_clock_(CLOCK_MONOTONIC));
+    CRUCIBLE_TRY(now, read_clock_(ClockId::monotonic));
     CRUCIBLE_TRY(deadline, deadline_after(now, nanos));
     return sleep_until(deadline);
 }
