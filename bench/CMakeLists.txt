@@ -77,6 +77,7 @@ crucible_bench(bench_core_atomic)
 crucible_bench(bench_core_containers)
 crucible_bench(bench_core_region)
 crucible_bench(bench_core_reduce)
+crucible_bench(bench_core_sort)
 # fp::fma at three levels in one program: two units at x86-64 and x86-64-v2
 # run the exact form, and the main unit at the host runs the instruction.
 # The flags of a source come after the flags of the target, so the last
