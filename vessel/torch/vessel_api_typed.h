@@ -369,8 +369,10 @@ template <class VigilType>
     if (entry.schema_hash.raw() == 0) return false;
     if (entry.num_inputs > crucible::kMaxOpInputs) return false;
     if (entry.num_outputs > crucible::kMaxOpOutputs) return false;
-    for (const crucible::ScalarCount stored : crucible::ScalarCount::check(entry.num_scalar_args))
-        return entry.data_slots.first(stored) == entry.data_slots;
+    for (const crucible::ScalarCount stored : crucible::ScalarCount::check(entry.num_scalar_args)) {
+        const crucible::DataSlots data = entry.data_slots();
+        return data.first(stored) == data;
+    }
     return false;
 }
 

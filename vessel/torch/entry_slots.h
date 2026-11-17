@@ -154,34 +154,45 @@ inline constexpr ::fixy::FixedArray<StructuralScalar, 16> kStructuralScalars{
     return false;
 }
 
-// The arguments of a schema whose slots are data: bit p is set when the
-// argument at position p is data.  An argument past kMaxSchemaArguments is
-// structural.
+// The arguments of a schema whose slots are data: the set of their positions.
+// An argument past kMaxSchemaArguments is structural.  The set is a BitSet of
+// one word of 32 bits, keyed by the position.  A cache slot of the boxed
+// fallback keeps the word of the set (bits()), and from_bits gives the set
+// back.
 class DataArguments {
 public:
     constexpr DataArguments() noexcept = default;
 
-    // The door from the bits of a cache slot.
-    [[nodiscard]] static constexpr DataArguments from_bits(uint32_t bits) noexcept { return DataArguments{bits}; }
+    // The door from the word of a cache slot.  A word of 32 bits holds no bit
+    // past the positions, so each word gives a set.
+    [[nodiscard]] static constexpr DataArguments from_bits(uint32_t bits) noexcept {
+        return DataArguments{::fixy::mint_bit_set_from_bits<kMaxSchemaArguments, ArgumentPosition>(bits).expect(
+            "a word of 32 bits holds only the bits of the positions")};
+    }
 
     // The same arguments with the argument at position data.
     [[nodiscard]] constexpr DataArguments with_data(ArgumentPosition position) const noexcept {
-        return DataArguments{bits_ | (uint32_t{1} << position.raw())};
+        DataArguments changed{*this};
+        changed.positions_.set(position);
+        return changed;
     }
 
     // The role of the argument at position, and structural past the last
     // position.
     [[nodiscard]] constexpr crucible::ScalarRole role(size_t position) const noexcept {
-        const bool is_data = position < kMaxSchemaArguments && ((bits_ >> position) & 1u) != 0;
-        return is_data ? crucible::ScalarRole::DATA : crucible::ScalarRole::STRUCTURAL;
+        for (const ArgumentPosition argument : ArgumentPosition::check(position))
+            return positions_.test(argument) ? crucible::ScalarRole::DATA : crucible::ScalarRole::STRUCTURAL;
+        return crucible::ScalarRole::STRUCTURAL;
     }
 
-    [[nodiscard]] constexpr uint32_t bits() const noexcept { return bits_; }
+    [[nodiscard]] constexpr uint32_t bits() const noexcept { return positions_.bits(); }
 
 private:
-    constexpr explicit DataArguments(uint32_t bits) noexcept : bits_{bits} {}
+    using Positions = ::fixy::BitSet<kMaxSchemaArguments, ArgumentPosition>;
 
-    uint32_t bits_ = 0;
+    constexpr explicit DataArguments(const Positions& positions) noexcept : positions_{positions} {}
+
+    Positions positions_{};
 };
 
 template <bool MayOverflow>
@@ -323,7 +334,7 @@ struct input_overflow_of<false> {
 // op_flags, and the other bits of op_flags stay.  O(kInlineScalars).
 inline void copy_stored_scalars(crucible::TraceRing::Entry& entry, StoredScalars const& scalars) noexcept {
     entry.num_scalar_args = static_cast<uint8_t>(scalars.stored);
-    entry.data_slots = scalars.data;
+    entry.set_data_slots(scalars.data);
     ::fixy::copy(entry.scalar_values.view(), scalars.values.view());
     entry.set_packed_scalar_types(scalars.tags);
 }
@@ -356,8 +367,8 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
         const uint32_t kept_bits = crucible::kScalarTypeBits * digest_slot;
         entry.set_packed_scalar_types(
             static_cast<uint16_t>(scalars.inline_scalars.tags & ((uint32_t{1} << kept_bits) - 1)));
-        entry.data_slots = scalars.inline_scalars.data.first(
-            crucible::ScalarCount::check(digest_slot).expect("the digest slot is a count of the slots"));
+        entry.set_data_slots(scalars.inline_scalars.data.first(
+            crucible::ScalarCount::check(digest_slot).expect("the digest slot is a count of the slots")));
     }
 }
 
@@ -411,7 +422,7 @@ inline constexpr uint32_t kGuardDataShift = 32 + crucible::ScalarSlotKinds::kDat
     // all the same.
     const uint32_t stored = ::fixy::min(uint32_t{entry.num_scalar_args}, uint32_t{kInlineScalars});
     const uint32_t tag_mask = (uint32_t{1} << (crucible::kScalarTypeBits * stored)) - 1;
-    const uint32_t data_bits = uint32_t{entry.data_slots.bits()} & ((uint32_t{1} << stored) - 1);
+    const uint32_t data_bits = uint32_t{entry.data_slot_bits} & ((uint32_t{1} << stored) - 1);
     const uint64_t header = uint64_t{entry.num_inputs} | (uint64_t{entry.num_scalar_args} << 16)
                           | (uint64_t{entry.packed_scalar_types() & tag_mask} << 32)
                           | (uint64_t{data_bits} << kGuardDataShift) | (uint64_t{depth.raw()} << 48);

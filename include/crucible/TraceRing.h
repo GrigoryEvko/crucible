@@ -125,7 +125,10 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         uint16_t num_inputs = 0;
         uint16_t num_outputs = 0;
         uint8_t num_scalar_args = 0;  // the stored slots, at most 5; the overflow digest is the last one
-        DataSlots data_slots{};  // the slots below the count that hold a data scalar
+        // The word of the data slots (DataSlots::bits()): the slots below the
+        // count that hold a data scalar.  A DataSlots is not trivially
+        // copyable, so the entry keeps its word.
+        uint8_t data_slot_bits = 0;
         uint8_t scalar_types = 0;  // a two-bit tag for each of slots 0 to 3, with slot 4 in op_flags
         uint8_t op_flags = 0;
         // Zero-initialised so the content hash never sees indeterminate bytes.
@@ -170,12 +173,19 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                 static_cast<uint8_t>((op_flags & ~op_flag::SCALAR4_TYPE_MASK) | (slot4 << op_flag::SCALAR4_TYPE_SHIFT));
         }
 
+        // The data slots of the entry, from their word.
+        [[nodiscard, gnu::pure]] constexpr DataSlots data_slots() const noexcept {
+            return DataSlots::from_bits(data_slot_bits);
+        }
+
+        constexpr void set_data_slots(const DataSlots& data) noexcept { data_slot_bits = data.bits(); }
+
         // The tags and the data slots of the stored slots, in the word that
         // an op of a region keeps.  The bits of a slot past the count go.
         [[nodiscard, gnu::pure]] constexpr ScalarSlotKinds scalar_kinds() const noexcept {
             const ScalarCount stored = ScalarCount::check(::fixy::min(uint32_t{num_scalar_args}, kScalarSlots))
                                            .expect("the minimum is a count");
-            return ScalarSlotKinds::of(packed_scalar_types(), data_slots).first(stored);
+            return ScalarSlotKinds::of(packed_scalar_types(), data_slots()).first(stored);
         }
     };
 
@@ -184,7 +194,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     static_assert(std::is_standard_layout_v<Entry>);
     static_assert(offsetof(Entry, schema_hash) == 0 && offsetof(Entry, shape_hash) == 8
                       && offsetof(Entry, num_inputs) == 16 && offsetof(Entry, num_outputs) == 18
-                      && offsetof(Entry, num_scalar_args) == 20 && offsetof(Entry, data_slots) == 21
+                      && offsetof(Entry, num_scalar_args) == 20 && offsetof(Entry, data_slot_bits) == 21
                       && offsetof(Entry, scalar_types) == 22 && offsetof(Entry, op_flags) == 23
                       && offsetof(Entry, scalar_values) == 24,
                   "Entry is bit-copied into the trace file, so each field offset is part of a persisted format");

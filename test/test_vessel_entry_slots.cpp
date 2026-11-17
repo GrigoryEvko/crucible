@@ -61,7 +61,7 @@ constexpr ScalarRole kData = ScalarRole::DATA;
 [[nodiscard]] bool same_slots(TraceRing::Entry const& left, TraceRing::Entry const& right) {
     if (left.num_scalar_args != right.num_scalar_args) return false;
     if (left.packed_scalar_types() != right.packed_scalar_types()) return false;
-    if (!(left.data_slots == right.data_slots)) return false;
+    if (!(left.data_slots() == right.data_slots())) return false;
     return left.scalar_values == right.scalar_values;
 }
 
@@ -157,8 +157,8 @@ void test_absent_optional_takes_a_slot() {
     assert(first.num_scalar_args == 2 && second.num_scalar_args == 2);
     assert(second.scalar_values.at(::fixy::index<0>()) == 0);
     assert(second.get_scalar_type(0) == ScalarType2::NONE);
-    assert(second.data_slots.role(::fixy::index<0>()) == kStructural && "an absent optional is structural");
-    assert(second.data_slots.role(::fixy::index<1>()) == kData);
+    assert(second.data_slots().role(::fixy::index<0>()) == kStructural && "an absent optional is structural");
+    assert(second.data_slots().role(::fixy::index<1>()) == kData);
     assert(!same_slots(first, second));
 }
 
@@ -535,8 +535,8 @@ void test_overflow_keeps_the_first_data_slots() {
     const TraceRing::Entry first = entry_with_data_first(kCount, 100);
     const TraceRing::Entry second = entry_with_data_first(kCount, 200);
     CRUCIBLE_FATAL_INVARIANT(first.num_scalar_args == kInlineScalars);
-    CRUCIBLE_FATAL_INVARIANT(first.data_slots.role(::fixy::index<0>()) == kData);
-    CRUCIBLE_FATAL_INVARIANT(first.data_slots.role(::fixy::index<4>()) == kStructural && "the digest is structural");
+    CRUCIBLE_FATAL_INVARIANT(first.data_slots().role(::fixy::index<0>()) == kData);
+    CRUCIBLE_FATAL_INVARIANT(first.data_slots().role(::fixy::index<4>()) == kStructural && "the digest is structural");
     CRUCIBLE_FATAL_INVARIANT(first.scalar_values.at(::fixy::index<4>()) == second.scalar_values.at(::fixy::index<4>())
                              && "the digest folds no value of the first data slots");
     CRUCIBLE_FATAL_INVARIANT(guard_word_of(first) == guard_word_of(second)
@@ -571,7 +571,7 @@ void test_overflow_keeps_the_first_data_slots() {
     write_scalar_slots(fits_entry, fits, InputOverflow{});
     write_scalar_slots(bounded_entry, bounded);
     CRUCIBLE_FATAL_INVARIANT(same_slots(fits_entry, bounded_entry));
-    CRUCIBLE_FATAL_INVARIANT(fits_entry.data_slots.role(::fixy::index<4>()) == kData);
+    CRUCIBLE_FATAL_INVARIANT(fits_entry.data_slots().role(::fixy::index<4>()) == kData);
 }
 
 // is_structural_scalar finds each row of kStructuralScalars, and no other

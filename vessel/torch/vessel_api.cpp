@@ -321,8 +321,8 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     // refuses each claim past the inline slots.  The ladder refuses a data
     // slot past the claim too, and a bit past the inline slots.
     entry.num_scalar_args = static_cast<uint8_t>(::fixy::min(num_scalars, uint16_t{UINT8_MAX}));
-    entry.data_slots = crucible::DataSlots::from_bits(data_slots);
-    if (entry.data_slots.bits() != data_slots) return refused_dispatch_result();
+    entry.set_data_slots(crucible::DataSlots::from_bits(data_slots));
+    if (entry.data_slot_bits != data_slots) return refused_dispatch_result();
     uint8_t flags = 0;
     if (inference_mode != 0) flags |= crucible::op_flag::INFERENCE_MODE;
     if (grad_enabled != 0) flags |= crucible::op_flag::GRAD_ENABLED;

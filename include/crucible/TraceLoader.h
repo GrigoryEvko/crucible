@@ -274,7 +274,7 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
     entry.num_outputs = num_outputs;
     // The check above keeps the count at most kScalarSlots.
     entry.num_scalar_args = static_cast<uint8_t>(num_scalars);
-    entry.data_slots = data;
+    entry.set_data_slots(data);
     // The whole packed set of flags, despite the name of the field.
     entry.op_flags = read_record_field_<uint8_t, offsetof(TraceOpRecord, inference_mode)>(op_record);
     if (grad_enabled != 0) {

@@ -308,45 +308,57 @@ enum class ScalarRole : uint8_t {
     DATA = 1,
 };
 
-// The data slots of an op: bit i is set when slot i holds a data scalar.  The
-// bits of the slots past the count of the stored scalars are zero.
+// The data slots of an op: the set of the slots that hold a data scalar.  The
+// slots past the count of the stored scalars are not in the set.  The set is a
+// BitSet of one byte, keyed by the slot.  A packed record, such as an entry of
+// the ring, keeps the word of the set (bits()), and from_bits gives the set
+// back.
 class DataSlots {
 public:
     constexpr DataSlots() noexcept = default;
 
-    // The door from the bits of a record.  The bits past the inline slots go.
+    // The door from the word of a record.  The bits past the inline slots go.
     [[nodiscard]] static constexpr DataSlots from_bits(uint8_t bits) noexcept {
-        return DataSlots{static_cast<uint8_t>(bits & kSlotBits)};
+        return DataSlots{
+            ::fixy::mint_bit_set_from_bits<kScalarSlots, ScalarSlot>(static_cast<uint8_t>(bits & kSlotBits))
+                .expect("the mask keeps only the bits of the inline slots")};
     }
 
-    // The data slots of the first count slots, with each bit of a later slot
-    // cleared.
+    // The data slots of the first count slots, with each later slot taken out.
     [[nodiscard]] constexpr DataSlots first(ScalarCount count) const noexcept {
-        return DataSlots{static_cast<uint8_t>(bits_ & ((uint32_t{1} << count.raw()) - 1))};
+        return from_bits(static_cast<uint8_t>(uint32_t{bits()} & ((uint32_t{1} << count.raw()) - 1)));
     }
 
     // The same slots with slot set to role.
     [[nodiscard]] constexpr DataSlots with(ScalarSlot slot, ScalarRole role) const noexcept {
-        const uint32_t bit = uint32_t{1} << slot.raw();
-        const uint32_t bits = uint32_t{bits_};
-        return DataSlots{static_cast<uint8_t>(role == ScalarRole::DATA ? (bits | bit) : (bits & ~bit))};
+        DataSlots changed{*this};
+        if (role == ScalarRole::DATA) {
+            changed.slots_.set(slot);
+        } else {
+            changed.slots_.reset(slot);
+        }
+        return changed;
     }
 
     [[nodiscard]] constexpr ScalarRole role(ScalarSlot slot) const noexcept {
-        return ((uint32_t{bits_} >> slot.raw()) & 1u) != 0 ? ScalarRole::DATA : ScalarRole::STRUCTURAL;
+        return slots_.test(slot) ? ScalarRole::DATA : ScalarRole::STRUCTURAL;
     }
 
-    [[nodiscard]] constexpr bool has_data() const noexcept { return bits_ != 0; }
-    [[nodiscard]] constexpr uint8_t bits() const noexcept { return bits_; }
+    [[nodiscard]] constexpr bool has_data() const noexcept { return !slots_.is_empty(); }
+    [[nodiscard]] constexpr uint8_t bits() const noexcept { return slots_.bits(); }
 
-    friend constexpr bool operator==(DataSlots, DataSlots) noexcept = default;
+    [[nodiscard]] friend constexpr bool operator==(const DataSlots& left, const DataSlots& right) noexcept {
+        return left.slots_ == right.slots_;
+    }
 
 private:
+    using Slots = ::fixy::BitSet<kScalarSlots, ScalarSlot>;
+
     static constexpr uint8_t kSlotBits = static_cast<uint8_t>((1u << kScalarSlots) - 1);
 
-    constexpr explicit DataSlots(uint8_t bits) noexcept : bits_{bits} {}
+    constexpr explicit DataSlots(const Slots& slots) noexcept : slots_{slots} {}
 
-    uint8_t bits_ = 0;
+    Slots slots_{};
 };
 
 // The kinds of the inline scalar slots of an op in one word: the tag of each
