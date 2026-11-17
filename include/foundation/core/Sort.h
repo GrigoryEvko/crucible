@@ -14,8 +14,8 @@
 //                                 a stable sort of a ViewMut of any count,
 //                                 with a ViewMut of scratch of the same count
 //                                 from the caller: a radix sort of the keys
-//                                 for Ascending, and a merge sort for each
-//                                 other order
+//                                 for Ascending, and driftsort for each other
+//                                 order
 //   find_lower_bound(view, value, less)
 //                                 the first position whose element is not
 //                                 below value, in a sorted View
@@ -33,8 +33,13 @@
 //   order, the stable sort of a run is one permutation: the elements in the
 //   order of less, and two equivalent elements in their order in the input.
 //   So the result of sort_stably has no freedom, and each thread count, each
-//   split and each host give the same bits.  The radix sort and the merge
-//   sort give the same bits too.
+//   split and each host give the same bits.  The radix sort and driftsort
+//   give the same bits too.
+//
+//   A less function that is not a strict weak order, such as < on floats
+//   with a NaN, breaks the precondition of sort_stably.  Each read and each
+//   write of the sort then stays in the run and its scratch, and a merge
+//   that sees such an order ends the process (CRUCIBLE_FATAL_INVARIANT).
 //
 //   The network is the bitonic sort of the next power of two P >= N, in the
 //   form in which each comparator puts the minimum at its lower position: the
@@ -55,10 +60,12 @@
 //   P * log2(P)^2 / 4 for P the next power of two.  sort_stably by Ascending
 //   of at least stable_sort_radix_count elements reads the elements one time
 //   for the counts of each byte of the keys.  Then it moves them one time for
-//   each byte in which two keys differ.  Each other sort_stably makes
-//   O(n log n) compares and copies: an insertion sort of each run of 32
-//   elements, and merges of the runs between the View and the scratch.  A
-//   merge of two runs that are in order is a copy.
+//   each byte in which two keys differ.  Each other sort_stably is driftsort
+//   (detail::StableSort): O(n log n) compares and copies in the worst case,
+//   O(n log k) for k distinct values, and n - 1 compares for a run that is in
+//   order or strictly descending.  Its loops over the elements have no branch
+//   on an element, and the compares of a partition and of a scan of a run go
+//   to vector lanes when less allows it.
 //   find_lower_bound and find_equivalent make O(log n) compares.  No operation
 //   allocates.
 
@@ -66,7 +73,9 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/Side.h>
 
 #include <concepts>
 #include <cstddef>
@@ -216,103 +225,729 @@ constexpr void sort_by_network(ViewMut<T, Brand, N> elements, Less less = Less{}
 
 // ── The stable sort ─────────────────────────────────────────────────────
 
-// The count of the elements of each run that the insertion sort orders
-// before the first merge.
+// The largest count of a run that the small sort of sort_stably orders: the
+// quicksort stops at it, and the merge tree in its eager mode sorts runs of
+// it.
 inline constexpr std::size_t stable_sort_run = 32;
+
+namespace side {
+
+// The scratch of a stable sort: a run of the count of the elements, which the
+// sort writes between its passes.
+struct SortScratch final {};
+
+}  // namespace side
 
 namespace detail {
 
-// The insertion sort of [first, first + count): stable, because an element
-// moves only past elements that are greater.
-template <class T, class Less>
-constexpr void insertion_sort_(T* first, std::size_t count, Less& less) noexcept {
-    for (std::size_t index = 1; index < count; ++index) {
-        T const moving = first[index];
-        std::size_t position = index;
-        while (position > 0 && less(moving, first[position - 1])) {
-            first[position] = first[position - 1];
-            --position;
-        }
-        first[position] = moving;
-    }
+// A count or an offset of the elements of a run of a stable sort.
+using SortCount = Quantity<unit::Element, std::size_t>;
+
+// The largest count that sort_stably orders with an insertion sort alone.
+inline constexpr std::size_t stable_sort_insertion_count = 20;
+
+// The shortest run of the input that the merge tree keeps as one sorted run
+// in an input of up to 64 * 64 elements.  A longer input takes about the
+// square root of its count.  Each sorted run forces merges, so a short one
+// does not pay for them.
+inline constexpr std::size_t stable_sort_root_run = 64;
+
+// The height of the stack of the merge tree: one run for each depth from 0
+// to 64, and the empty run at the bottom.
+inline constexpr std::size_t merge_tree_height = 66;
+
+// The elements of a block of the partition, whose compares the compiler can
+// put in the lanes of one vector of 512 bits for 32-bit elements.
+inline constexpr std::size_t partition_block = 16;
+
+// The elements of a block of the scan of a run of the input.
+inline constexpr std::size_t run_scan_block = 16;
+
+// The order of the run at the start of a part of the input.
+enum class RunOrder : std::uint8_t {
+    ascending,  // each element is not below the element before it
+    descending,  // each element is below the element before it
+};
+
+// The run at the start of a part of the input.
+struct InputRun {
+    std::size_t count = 0;
+    RunOrder order = RunOrder::ascending;
+};
+
+// Whether a run of the merge tree is in order, or holds elements that a
+// quicksort orders before the run takes part in a merge.
+enum class RunState : std::uint8_t {
+    sorted,
+    unsorted,
+};
+
+// One run of the merge tree.
+struct TreeRun {
+    std::size_t count = 0;
+    RunState state = RunState::sorted;
+};
+
+// Two runs of the merge tree, the left one before the right one.
+struct TreeRuns {
+    TreeRun left{};
+    TreeRun right{};
+};
+
+// Whether the merge tree sorts each short run of its input when it makes the
+// run, or keeps the run for the quicksort of a longer run.
+enum class RunMode : std::uint8_t {
+    eager,
+    lazy,
+};
+
+// The part of a partition that takes the pivot and the elements equivalent to
+// it.  The usual partition gives them to the right part.  When the pivot of a
+// run is equivalent to the pivot that made the run, the partition gives them
+// to the left part, which then holds only such elements.
+enum class PivotSide : std::uint8_t {
+    left,
+    right,
+};
+
+// The run of count elements from first.  The caller proves the elements live,
+// and first not null when the count is above zero.
+template <class T>
+[[nodiscard]] CRUCIBLE_INLINE constexpr View<T> run_of_(T* first, SortCount count) noexcept {
+    return View<T>{ViewDoor::key(), first, count.raw()};
 }
 
-// Copies the count elements from source into target, two runs that do not
-// overlap.  At run time an element that the copy of Region.h takes moves as
-// one copy of its bytes, so a long run takes no loop of single elements.  A
-// constant evaluation, and each other element, take a loop.
+// Copies the elements of source into target, two runs of one count that do
+// not overlap.  At run time an element that the copy of Region.h takes moves
+// as one copy of its bytes.  A constant evaluation, and each other element,
+// take a loop.
 template <class T>
-constexpr void copy_run_(T const* source, std::size_t count, T* target) noexcept {
+constexpr void copy_run_(View<T const> source, View<T> target) noexcept {
     if constexpr (RegionCopyElement<T>) {
         if !consteval {
-            static_cast<void>(::foundation::core::copy(view_over_(target, count), view_over_(source, count)));
+            static_cast<void>(::foundation::core::copy(target, source));
             return;
         }
     }
-    for (std::size_t index = 0; index < count; ++index) {
-        target[index] = source[index];
+    T const* const from = first_of_(ViewDoor::key(), source);
+    T* const to = first_of_(ViewDoor::key(), target);
+    for (std::size_t index = 0; index < source.size(); ++index) {
+        to[index] = from[index];
     }
 }
 
-// The merge of the sorted runs [0, middle) and [middle, count) of source
-// into target.  An element of the second run goes first only when it is
-// below the element of the first run, so the merge is stable.
-//
-// The stable merge of two runs is one permutation, so the merge takes it from
-// the two ends at the same time.  The front takes the smaller of the first
-// elements of the two runs, and the element of the first run on a tie.  The
-// back takes the larger of the last elements, and the element of the second
-// run on a tie.  So the front writes the first elements of the permutation,
-// the back writes the last ones, and the bits are the bits of a merge from
-// the front alone.  The two ends do not read the results of each other, so
-// the processor runs their two chains of compares at the same time.  Each
-// end takes as many elements as the shorter run holds, so no end reads past
-// a run, and no element goes out two times.  A merge from the front then
-// takes the elements between the two ends.
+// Moves the last element of a run into the sorted elements before it.  The
+// element moves only past greater elements, so the insertion is stable.
+// Complexity: one compare and one copy for each element that it passes.
 template <class T, class Less>
-constexpr void merge_runs_(T const* source, std::size_t middle, std::size_t count, T* target, Less& less) noexcept {
-    // Two runs are in order when the first element of the second run is not
-    // below the last element of the first run.  Then the merge is a copy,
-    // with one compare for the two runs.
-    if (middle == 0 || middle == count || !less(source[middle], source[middle - 1])) {
-        copy_run_(source, count, target);
-        return;
+constexpr void insert_last_(View<T> run, Less& less) noexcept {
+    T* const first = first_of_(ViewDoor::key(), run);
+    std::size_t position = run.size() - 1;
+    if (!less(first[position], first[position - 1])) return;
+    T const moving = first[position];
+    do {
+        first[position] = first[position - 1];
+        --position;
+    } while (position > 0 && less(moving, first[position - 1]));
+    first[position] = moving;
+}
+
+// The insertion sort of a run.  Complexity: O(n^2) compares and copies.
+template <class T, class Less>
+constexpr void insert_each_(View<T> run, Less& less) noexcept {
+    T* const first = first_of_(ViewDoor::key(), run);
+    for (std::size_t count = 2; count <= run.size(); ++count) {
+        insert_last_(run_of_(first, SortCount{count}), less);
     }
+}
+
+// THE SELECTS.  Each merge and each small sort below picks a position by a
+// mask: `left + ((right - left) & (0 - bit))` is left when the bit is 0 and
+// right when it is 1, with unsigned arithmetic that wraps.  The compiler then
+// emits a cmov or an and, and no branch on an element.  A select of a float
+// element in a vector register has no cmov, so GCC makes it a branch, and on
+// random runs that branch misses on about one half of the steps.
+
+// Sorts the four elements of source into target, stably, with five compares:
+// sort4_stable of driftsort.  The first two compares order the pairs (0, 1)
+// and (2, 3), the next two find the minimum and the maximum, and the last one
+// orders the two elements between them.  Each tie keeps the element of the
+// lower position first.
+template <class T, class Less>
+CRUCIBLE_INLINE constexpr void sort_four_(View<T const, 4> source, View<T, 4> target, Less& less) noexcept {
+    T const* const from = first_of_(ViewDoor::key(), source);
+    T* const to = first_of_(ViewDoor::key(), target);
+    std::size_t const first_pair = static_cast<std::size_t>(less(from[1], from[0]));
+    std::size_t const second_pair = static_cast<std::size_t>(less(from[3], from[2]));
+    std::size_t const low_a = first_pair;
+    std::size_t const high_a = first_pair ^ 1u;
+    std::size_t const low_b = 2 + second_pair;
+    std::size_t const high_b = 2 + (second_pair ^ 1u);
+    std::size_t const is_low_b = static_cast<std::size_t>(less(from[low_b], from[low_a]));
+    std::size_t const is_high_a = static_cast<std::size_t>(less(from[high_b], from[high_a]));
+    std::size_t const smallest = low_a + ((low_b - low_a) & (std::size_t{0} - is_low_b));
+    std::size_t const largest = high_b + ((high_a - high_b) & (std::size_t{0} - is_high_a));
+    // The two elements between the minimum and the maximum.  The two compares
+    // of the minimum and the maximum tell which of them comes first in the
+    // input, so a tie keeps that order.
+    std::size_t const inner_b = high_a + ((low_b - high_a) & (std::size_t{0} - is_high_a));
+    std::size_t const inner_a = low_b + ((high_a - low_b) & (std::size_t{0} - is_low_b));
+    std::size_t const unknown_left = inner_b + ((low_a - inner_b) & (std::size_t{0} - is_low_b));
+    std::size_t const unknown_right = inner_a + ((high_b - inner_a) & (std::size_t{0} - is_high_a));
+    std::size_t const is_swapped = static_cast<std::size_t>(less(from[unknown_right], from[unknown_left]));
+    std::size_t const middle_low = unknown_left + ((unknown_right - unknown_left) & (std::size_t{0} - is_swapped));
+    std::size_t const middle_high = unknown_right + ((unknown_left - unknown_right) & (std::size_t{0} - is_swapped));
+    to[0] = from[smallest];
+    to[1] = from[middle_low];
+    to[2] = from[middle_high];
+    to[3] = from[largest];
+}
+
+// Merges the sorted halves [0, count / 2) and [count / 2, count) of source
+// into target, from the two ends at the same time: the bidirectional merge
+// of quadsort and driftsort.  The front takes the smaller of the first
+// elements of the two halves, and the element of the left half on a tie.  The
+// back takes the larger of the last elements, and the element of the right
+// half on a tie.  Each end takes count / 2 elements, and the front takes the
+// middle element of an odd count, so the result is the stable merge, and the
+// two chains of compares run at the same time.  Each read stays in source for
+// each less function.  A less function that is not a strict weak order can
+// make the two ends take one element two times: the check at the end then
+// ends the process.  Complexity: count - 1 compares at most, and count copies.
+template <class T, class Less>
+constexpr void merge_halves_(View<T const> source, View<T> target, Less& less) noexcept {
+    std::size_t const count = source.size();
+    std::size_t const half = count / 2;
+    T const* const from = first_of_(ViewDoor::key(), source);
+    T* const to = first_of_(ViewDoor::key(), target);
     std::size_t left = 0;
-    std::size_t right = middle;
-    std::size_t left_end = middle;
+    std::size_t right = half;
+    std::size_t out = 0;
+    // The positions of the back wrap below zero only after the last step.
+    std::size_t left_back = half - 1;
+    std::size_t right_back = count - 1;
+    std::size_t out_back = count - 1;
+    for (std::size_t step = 0; step < half; ++step) {
+        std::size_t const is_right = static_cast<std::size_t>(less(from[right], from[left]));
+        to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
+        ++out;
+        right += is_right;
+        left += 1 - is_right;
+        std::size_t const is_left = static_cast<std::size_t>(less(from[right_back], from[left_back]));
+        to[out_back] = from[right_back + ((left_back - right_back) & (std::size_t{0} - is_left))];
+        --out_back;
+        left_back -= is_left;
+        right_back -= 1 - is_left;
+    }
+    std::size_t const left_end = left_back + 1;
+    std::size_t const right_end = right_back + 1;
+    if (count % 2 != 0) {
+        std::size_t const is_left = static_cast<std::size_t>(left < left_end);
+        to[out] = from[right + ((left - right) & (std::size_t{0} - is_left))];
+        left += is_left;
+        right += 1 - is_left;
+    }
+    CRUCIBLE_FATAL_INVARIANT(left == left_end && right == right_end);
+}
+
+// Merges the sorted runs [0, middle) and [middle, count) of source into
+// target, of the same count, from the two ends at the same time.  Each end
+// takes as many elements as the shorter run holds, by the ties of
+// merge_halves_.  A merge from the front then takes the elements between the
+// two ends, and the rest of one run is a copy.  The result is the stable
+// merge.  A less function that is not a strict weak order can make the two
+// ends cross: the check after them then ends the process.  Complexity:
+// count - 1 compares at most, and count copies.
+template <class T, class Less>
+constexpr void merge_two_ends_(View<T const> source, SortCount middle, View<T> target, Less& less) noexcept {
+    std::size_t const count = source.size();
+    T const* const from = first_of_(ViewDoor::key(), source);
+    T* const to = first_of_(ViewDoor::key(), target);
+    std::size_t left = 0;
+    std::size_t right = middle.raw();
+    std::size_t left_end = middle.raw();
     std::size_t right_end = count;
     std::size_t out = 0;
     std::size_t out_end = count;
-    std::size_t const shorter = middle < count - middle ? middle : count - middle;
-    // One compare at each end selects the element and moves the positions.
+    std::size_t const shorter = left_end < count - left_end ? left_end : count - left_end;
     for (std::size_t step = 0; step < shorter; ++step) {
-        bool const is_right_first = less(source[right], source[left]);
-        target[out++] = source[is_right_first ? right : left];
-        right += is_right_first ? 1 : 0;
-        left += is_right_first ? 0 : 1;
-        bool const is_left_last = less(source[right_end - 1], source[left_end - 1]);
-        target[--out_end] = source[is_left_last ? left_end - 1 : right_end - 1];
-        left_end -= is_left_last ? 1 : 0;
-        right_end -= is_left_last ? 0 : 1;
+        std::size_t const is_right = static_cast<std::size_t>(less(from[right], from[left]));
+        to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
+        ++out;
+        right += is_right;
+        left += 1 - is_right;
+        std::size_t const is_left = static_cast<std::size_t>(less(from[right_end - 1], from[left_end - 1]));
+        --out_end;
+        to[out_end] = from[right_end - 1 + ((left_end - right_end) & (std::size_t{0} - is_left))];
+        left_end -= is_left;
+        right_end -= 1 - is_left;
     }
+    CRUCIBLE_FATAL_INVARIANT(left <= left_end && right <= right_end);
     while (left < left_end && right < right_end) {
-        bool const is_right_first = less(source[right], source[left]);
-        target[out++] = source[is_right_first ? right : left];
-        right += is_right_first ? 1 : 0;
-        left += is_right_first ? 0 : 1;
+        std::size_t const is_right = static_cast<std::size_t>(less(from[right], from[left]));
+        to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
+        ++out;
+        right += is_right;
+        left += 1 - is_right;
     }
-    copy_run_(source + left, left_end - left, target + out);
-    copy_run_(source + right, right_end - right, target + out + (left_end - left));
+    copy_run_(run_of_(from + left, SortCount{left_end - left}), run_of_(to + out, SortCount{left_end - left}));
+    out += left_end - left;
+    copy_run_(run_of_(from + right, SortCount{right_end - right}), run_of_(to + out, SortCount{right_end - right}));
 }
+
+// THE STABLE SORT OF AN ORDER OF THE CALLER is driftsort, the stable sort of
+// the Rust standard library (Orson Peters and Lukas Bergdoll, 2024).
+//   - A run of up to stable_sort_insertion_count elements takes an insertion
+//     sort.
+//   - The merge tree scans the input for runs in order, and for strictly
+//     descending runs, which it reverses.  A run of at least the square root
+//     of the count stays a sorted run.  The input between such runs becomes
+//     unsorted runs.  The powersort rule of Munro and Wild gives each split
+//     point between two runs a depth, and a stack merges the runs in the
+//     order of the depths.  A merge of two unsorted runs is one longer
+//     unsorted run, so a random input becomes one unsorted run.
+//   - A merge with a sorted run first sorts each unsorted run by a stable
+//     quicksort, then merges the two runs from the two ends.
+//   - The stable quicksort takes the pseudomedian of samples of the run as its
+//     pivot.  The partition writes the elements before the pivot to the front
+//     of the scratch in their order, and the others to the back in the reverse
+//     order, with no branch on an element, then copies the two parts back.
+//     When a pivot is equivalent to the pivot that made its run, the partition
+//     puts the equivalent elements to the left, and the sort of that part
+//     ends: a run of k distinct values takes O(n log k).  After a budget of
+//     2 log2(n) partitions on one path, a part takes the eager merge tree, so
+//     the worst case is O(n log n).
+//   - A part of up to stable_sort_run elements takes the small sort: two
+//     stable sorts of eight by sort4_stable and a merge, insertions to two
+//     sorted halves, and a merge of the halves from the two ends.
+// A run of the elements and its scratch are the parts of the elements and of
+// the scratch at the same offset, so each step takes its run alone.
+template <class T, class Less>
+class StableSort final {
+public:
+    constexpr StableSort(View<T> elements, Side<side::SortScratch, View<T>> const& scratch, Less& less) noexcept
+        : elements_{first_of_(ViewDoor::key(), elements)},
+          scratch_{first_of_(ViewDoor::key(), scratch.value())},
+          less_{less} {}
+
+    // Sorts a run of the elements.
+    constexpr void sort(View<T> run) noexcept {
+        if (run.size() <= stable_sort_insertion_count) {
+            insert_each_(run, less_);
+            return;
+        }
+        sort_runs_(run, run.size() <= 2 * stable_sort_run ? RunMode::eager : RunMode::lazy);
+    }
+
+private:
+    // The part of the scratch at the offset of a run of the elements.
+    [[nodiscard]] constexpr T* scratch_of_(View<T> run) const noexcept {
+        return scratch_ + (first_of_(ViewDoor::key(), run) - elements_);
+    }
+
+    // The merge tree of a run (drift::sort of driftsort).
+    constexpr void sort_runs_(View<T> run, RunMode mode) noexcept {
+        std::size_t const count = run.size();
+        if (count < 2) return;
+        T* const first = first_of_(ViewDoor::key(), run);
+        // The scale of the depths: the ceiling of 2^62 / count.  A split
+        // point between [a, b) and [b, c) has the depth of the highest bit
+        // in which (a + b) * scale and (b + c) * scale differ.
+        std::uint64_t const scale = ((std::uint64_t{1} << 62) + count - 1) / count;
+        std::size_t good_run = count - count / 2 < stable_sort_root_run ? count - count / 2 : stable_sort_root_run;
+        if (count > stable_sort_root_run * stable_sort_root_run) {
+            // The square root of count: 2^((1 + log2 count) / 2), and one step
+            // of Newton.
+            int const shift = bit_width(count) / 2;
+            good_run = ((std::size_t{1} << shift) + (count >> shift)) / 2;
+        }
+        FixedArray<TreeRun, merge_tree_height> runs{};
+        FixedArray<std::uint8_t, merge_tree_height> depths{};
+        TreeRun* const run_stack = first_of_(ViewDoor::key(), runs.view());
+        std::uint8_t* const depth_stack = first_of_(ViewDoor::key(), depths.view());
+        std::size_t height = 0;
+        std::size_t scan = 0;
+        TreeRun previous{};
+        for (;;) {
+            // The last pass takes an empty run of the depth 0, which merges
+            // each run on the stack.
+            TreeRun next{};
+            std::uint8_t depth = 0;
+            if (scan < count) {
+                next = create_run_(run_of_(first + scan, SortCount{count - scan}), SortCount{good_run}, mode);
+                std::uint64_t const left_point = scan - previous.count + scan;
+                std::uint64_t const right_point = scan + scan + next.count;
+                depth = static_cast<std::uint8_t>(countl_zero((scale * left_point) ^ (scale * right_point)));
+            }
+            while (height > 1 && depth_stack[height - 1] >= depth) {
+                TreeRun const left = run_stack[height - 1];
+                std::size_t const merged = left.count + previous.count;
+                previous =
+                    merge_tree_runs_(run_of_(first + scan - merged, SortCount{merged}), TreeRuns{left, previous});
+                --height;
+            }
+            // Each depth on the stack is below the depth above it, and a depth
+            // is at most 64.
+            CRUCIBLE_FATAL_INVARIANT(height < merge_tree_height);
+            run_stack[height] = previous;
+            depth_stack[height] = depth;
+            ++height;
+            if (scan >= count) break;
+            scan += next.count;
+            previous = next;
+        }
+        if (previous.state == RunState::unsorted) sort_by_partitions_(run);
+    }
+
+    // The run at the start of rest: a sorted run of the input of good_run
+    // elements or more, a run that the small sort sorts in the eager mode, or
+    // an unsorted run of good_run elements in the lazy mode.
+    [[nodiscard]] constexpr TreeRun create_run_(View<T> rest, SortCount good_run, RunMode mode) noexcept {
+        std::size_t const count = rest.size();
+        T* const first = first_of_(ViewDoor::key(), rest);
+        if (count >= good_run.raw()) {
+            InputRun const found = find_input_run_(View<T const>{rest});
+            if (found.count >= good_run.raw()) {
+                if (found.order == RunOrder::descending) reverse_run_(run_of_(first, SortCount{found.count}));
+                return TreeRun{found.count, RunState::sorted};
+            }
+        }
+        if (mode == RunMode::eager) {
+            std::size_t const eager = count < stable_sort_run ? count : stable_sort_run;
+            sort_small_(run_of_(first, SortCount{eager}));
+            return TreeRun{eager, RunState::sorted};
+        }
+        return TreeRun{count < good_run.raw() ? count : good_run.raw(), RunState::unsorted};
+    }
+
+    // The run at the start of rest, in order or strictly descending.  A
+    // strictly descending run has no two equivalent elements, so its reverse
+    // is its stable sort.  Complexity: one compare for each element of the
+    // run, and at most run_scan_block more.
+    [[nodiscard]] constexpr InputRun find_input_run_(View<T const> rest) const noexcept {
+        std::size_t const count = rest.size();
+        if (count < 2) return InputRun{count, RunOrder::ascending};
+        T const* const first = first_of_(ViewDoor::key(), rest);
+        if (less_(first[1], first[0])) return InputRun{extend_run_<RunOrder::descending>(rest), RunOrder::descending};
+        return InputRun{extend_run_<RunOrder::ascending>(rest), RunOrder::ascending};
+    }
+
+    // The count of the run of the order Order at the start of rest, whose
+    // first two elements have that order.  The first stable_sort_run
+    // elements take one compare each, so a random input, whose runs end in a
+    // few elements, pays no block.  Then the compares of a block of elements
+    // go to a list of bits in a loop of their own, so the compiler can
+    // compare the block in vector lanes when less allows it.
+    template <RunOrder Order>
+    [[nodiscard]] constexpr std::size_t extend_run_(View<T const> rest) const noexcept {
+        std::size_t const count = rest.size();
+        T const* const first = first_of_(ViewDoor::key(), rest);
+        // The element at position breaks the run when it is out of the order
+        // of Order with the element before it.
+        auto const is_break = [&](SortCount position) constexpr noexcept {
+            if constexpr (Order == RunOrder::descending) {
+                return !less_(first[position.raw()], first[position.raw() - 1]);
+            } else {
+                return less_(first[position.raw()], first[position.raw() - 1]);
+            }
+        };
+        std::size_t length = 2;
+        std::size_t const scalar_end = count < stable_sort_run ? count : stable_sort_run;
+        while (length < scalar_end && !is_break(SortCount{length}))
+            ++length;
+        if (length < scalar_end) return length;
+        while (length + run_scan_block <= count) {
+            FixedArray<std::uint8_t, run_scan_block> breaks{};
+            std::uint8_t* const is_broken = first_of_(ViewDoor::key(), breaks.view());
+            std::uint8_t is_any_broken = 0;
+            for (std::size_t offset = 0; offset < run_scan_block; ++offset) {
+                is_broken[offset] = static_cast<std::uint8_t>(is_break(SortCount{length + offset}));
+                is_any_broken |= is_broken[offset];
+            }
+            if (is_any_broken != 0) {
+                std::size_t offset = 0;
+                while (is_broken[offset] == 0)
+                    ++offset;
+                return length + offset;
+            }
+            length += run_scan_block;
+        }
+        while (length < count && !is_break(SortCount{length}))
+            ++length;
+        return length;
+    }
+
+    // Reverses the order of the elements of a run.
+    static constexpr void reverse_run_(View<T> run) noexcept {
+        T* const first = first_of_(ViewDoor::key(), run);
+        std::size_t low = 0;
+        std::size_t high = run.size();
+        while (low + 1 < high) {
+            --high;
+            T const held = first[low];
+            first[low] = first[high];
+            first[high] = held;
+            ++low;
+        }
+    }
+
+    // The merge of two runs of the merge tree that fill merged.  Two unsorted
+    // runs are one unsorted run, because the scratch holds the count of the
+    // elements.  Each other pair takes a quicksort of each unsorted run, then
+    // a merge (logical_merge of driftsort).
+    [[nodiscard]] constexpr TreeRun merge_tree_runs_(View<T> merged, TreeRuns runs) noexcept {
+        std::size_t const count = merged.size();
+        if (runs.left.state == RunState::unsorted && runs.right.state == RunState::unsorted) {
+            return TreeRun{count, RunState::unsorted};
+        }
+        T* const first = first_of_(ViewDoor::key(), merged);
+        if (runs.left.state == RunState::unsorted) sort_by_partitions_(run_of_(first, SortCount{runs.left.count}));
+        if (runs.right.state == RunState::unsorted) {
+            sort_by_partitions_(run_of_(first + runs.left.count, SortCount{runs.right.count}));
+        }
+        merge_(merged, SortCount{runs.left.count});
+        return TreeRun{count, RunState::sorted};
+    }
+
+    // Merges the sorted runs [0, middle) and [middle, count) of a run in
+    // place.  Two runs in order take one compare.  Each other pair copies the
+    // run to its scratch and merges it back from the two ends.
+    constexpr void merge_(View<T> run, SortCount middle) noexcept {
+        std::size_t const count = run.size();
+        T* const first = first_of_(ViewDoor::key(), run);
+        if (middle.raw() == 0 || middle.raw() >= count || !less_(first[middle.raw()], first[middle.raw() - 1])) {
+            return;
+        }
+        View<T> const room = run_of_(scratch_of_(run), SortCount{count});
+        copy_run_(View<T const>{run}, room);
+        merge_two_ends_(View<T const>{room}, middle, run, less_);
+    }
+
+    // The stable quicksort of a run, with the budget of its depth.
+    constexpr void sort_by_partitions_(View<T> run) noexcept {
+        std::uint32_t const outer_budget = budget_;
+        budget_ = 2 * static_cast<std::uint32_t>(bit_width(run.size() | 1u) - 1);
+        partition_down_(run, Option<T>{none});
+        budget_ = outer_budget;
+    }
+
+    // The stable quicksort of a run whose elements are not before ancestor,
+    // the pivot of the partition that made the run, when it has one.  The left
+    // part of each partition takes the next pass of the loop, and the right
+    // part takes a call (quicksort of driftsort).
+    constexpr void partition_down_(View<T> run, Option<T> ancestor) noexcept {
+        for (;;) {
+            std::size_t const count = run.size();
+            if (count <= stable_sort_run) {
+                sort_small_(run);
+                return;
+            }
+            if (budget_ == 0) {
+                sort_runs_(run, RunMode::eager);
+                return;
+            }
+            --budget_;
+            T* const first = first_of_(ViewDoor::key(), run);
+            T const pivot = first[choose_pivot_(View<T const>{run})];
+            bool is_equal_partition =
+                Option<T>{ancestor}.match([&](T ancestor_pivot) noexcept { return !less_(ancestor_pivot, pivot); },
+                                          []() noexcept { return false; });
+            std::size_t left_count = 0;
+            if (!is_equal_partition) {
+                left_count = partition_<PivotSide::right>(run, pivot);
+                is_equal_partition = left_count == 0;
+            }
+            if (is_equal_partition) {
+                // Each element of the left part is equivalent to the pivot.
+                std::size_t const equal_count = partition_<PivotSide::left>(run, pivot);
+                run = run_of_(first + equal_count, SortCount{count - equal_count});
+                ancestor = Option<T>{none};
+                continue;
+            }
+            std::uint32_t const path_budget = budget_;
+            partition_down_(run_of_(first + left_count, SortCount{count - left_count}), Option<T>::some(pivot));
+            budget_ = path_budget;
+            run = run_of_(first, SortCount{left_count});
+        }
+    }
+
+    // The position of the pivot of a run of more than stable_sort_run
+    // elements: the median of the samples at 0, 4/8 and 7/8 of the run, and
+    // for a run of 64 elements or more, the median of three such medians of
+    // each sample, recursively (the pseudomedian of driftsort).
+    [[nodiscard]] constexpr std::size_t choose_pivot_(View<T const> run) const noexcept {
+        std::size_t const eighth = run.size() / 8;
+        T const* const first = first_of_(ViewDoor::key(), run);
+        T const* const chosen =
+            run.size() < 64 ? median_of_three_(first, first + eighth * 4, first + eighth * 7)
+                            : median_of_samples_(first, first + eighth * 4, first + eighth * 7, SortCount{eighth});
+        return static_cast<std::size_t>(chosen - first);
+    }
+
+    // The median of three samples of a run, as a pointer to one of them.  The
+    // three pointers can swap with no change of the meaning: each order gives
+    // a median of the three.
+    [[nodiscard]] constexpr T const* median_of_three_(T const* first, T const* second, T const* third) const noexcept {
+        bool const is_below_second = less_(*first, *second);
+        bool const is_below_third = less_(*first, *third);
+        // first lies between the other two.
+        if (is_below_second != is_below_third) return first;
+        // first is below both or not below both: the median is the smaller of
+        // the two in the first case and the larger in the second.
+        bool const is_second_below_third = less_(*second, *third);
+        return is_second_below_third != is_below_second ? third : second;
+    }
+
+    // The median of the medians of the samples around three samples, each
+    // sample with spread elements after it.  The three pointers can swap with
+    // no change of the meaning.
+    [[nodiscard]] constexpr T const* median_of_samples_(T const* first, T const* second, T const* third,
+                                                        SortCount spread) const noexcept {
+        if (spread.raw() * 8 >= 64) {
+            std::size_t const eighth = spread.raw() / 8;
+            SortCount const next{eighth};
+            first = median_of_samples_(first, first + eighth * 4, first + eighth * 7, next);
+            second = median_of_samples_(second, second + eighth * 4, second + eighth * 7, next);
+            third = median_of_samples_(third, third + eighth * 4, third + eighth * 7, next);
+        }
+        return median_of_three_(first, second, third);
+    }
+
+    // Partitions a run by pivot, stably, and gives the count of the left
+    // part.  An element goes left when it is before the pivot: less(element,
+    // pivot) for PivotSide::right, and !less(pivot, element) for
+    // PivotSide::left.  The scratch takes the left elements from its front in
+    // their order, and the others from its back in the reverse order, then
+    // the two parts go back to the run.
+    //
+    // Each element goes to the front cursor and to the rear cursor, and the
+    // compare moves only the front cursor.  The rear cursor of the element at
+    // index is count - 1 - index + front: the right elements so far are
+    // index - front.  So the loop has no select and no branch on an element,
+    // and the one compare feeds one add.  A second use of the compare, such
+    // as a cursor that falls by the complement, lets GCC emit the reverse
+    // compare, which -fharden-compares checks again.  The write to the
+    // cursor of the other part lands on a slot that a later element fills:
+    // before each write, the rear cursor is at or after the front cursor, the
+    // left elements lie before the front cursor and the right elements after
+    // the rear cursor.  Each element takes one slot for each less function,
+    // so the run keeps its elements.  Complexity: count compares and
+    // 3 * count copies.
+    template <PivotSide Pivot>
+    [[nodiscard]] constexpr std::size_t partition_(View<T> run, T const& pivot) noexcept {
+        std::size_t const count = run.size();
+        T* const first = first_of_(ViewDoor::key(), run);
+        T* const scratch = scratch_of_(run);
+        std::size_t front = 0;
+        std::size_t index = 0;
+        // The compares of a block of elements go to a list of bits in a loop
+        // of their own, so the compiler can compare the block in vector
+        // lanes when less allows it.  The writes then read the bits.
+        while (index + partition_block <= count) {
+            FixedArray<std::uint8_t, partition_block> lefts{};
+            std::uint8_t* const is_left = first_of_(ViewDoor::key(), lefts.view());
+            T const* const block = first + index;
+            for (std::size_t offset = 0; offset < partition_block; ++offset) {
+                if constexpr (Pivot == PivotSide::right) {
+                    is_left[offset] = static_cast<std::uint8_t>(less_(block[offset], pivot));
+                } else {
+                    is_left[offset] = static_cast<std::uint8_t>(!less_(pivot, block[offset]));
+                }
+            }
+            for (std::size_t offset = 0; offset < partition_block; ++offset) {
+                scratch[front] = block[offset];
+                scratch[count - 1 - (index + offset) + front] = block[offset];
+                front += is_left[offset];
+            }
+            index += partition_block;
+        }
+        for (; index < count; ++index) {
+            std::size_t is_left = 0;
+            if constexpr (Pivot == PivotSide::right) {
+                is_left = static_cast<std::size_t>(less_(first[index], pivot));
+            } else {
+                is_left = static_cast<std::size_t>(!less_(pivot, first[index]));
+            }
+            scratch[front] = first[index];
+            scratch[count - 1 - index + front] = first[index];
+            front += is_left;
+        }
+        copy_run_(run_of_(static_cast<T const*>(scratch), SortCount{front}), run_of_(first, SortCount{front}));
+        for (std::size_t back = front; back < count; ++back) {
+            first[back] = scratch[count - 1 - (back - front)];
+        }
+        return front;
+    }
+
+    // The small sort of a run of 2 to stable_sort_run elements, with its
+    // scratch of the same count (small_sort_general of driftsort).  Each half
+    // of the scratch takes a stable sort of the first eight or four elements
+    // of its half of the run, then the insertion of the other elements of
+    // that half.  The merge of the two halves from the two ends then writes
+    // the run.
+    constexpr void sort_small_(View<T> run) noexcept {
+        std::size_t const count = run.size();
+        if (count < 2) return;
+        T* const first = first_of_(ViewDoor::key(), run);
+        T* const scratch = scratch_of_(run);
+        std::size_t const half = count / 2;
+        std::size_t sorted = 1;
+        if (count >= 16) {
+            sort_eight_(run_of_(first, SortCount{8}));
+            sort_eight_(run_of_(first + half, SortCount{8}));
+            sorted = 8;
+        } else if (count >= 8) {
+            sort_four_(View<T const, 4>{ViewDoor::key(), first}, View<T, 4>{ViewDoor::key(), scratch}, less_);
+            sort_four_(View<T const, 4>{ViewDoor::key(), first + half}, View<T, 4>{ViewDoor::key(), scratch + half},
+                       less_);
+            sorted = 4;
+        } else {
+            scratch[0] = first[0];
+            scratch[half] = first[half];
+        }
+        for (std::size_t length = sorted + 1; length <= half; ++length) {
+            scratch[length - 1] = first[length - 1];
+            insert_last_(run_of_(scratch, SortCount{length}), less_);
+        }
+        for (std::size_t length = sorted + 1; length <= count - half; ++length) {
+            scratch[half + length - 1] = first[half + length - 1];
+            insert_last_(run_of_(scratch + half, SortCount{length}), less_);
+        }
+        merge_halves_(View<T const>{run_of_(scratch, SortCount{count})}, run, less_);
+    }
+
+    // The stable sort of the eight elements of a run into its scratch: two
+    // sorts of four in place, and their merge into the scratch (sort8_stable
+    // of driftsort).
+    constexpr void sort_eight_(View<T> run) noexcept {
+        T* const first = first_of_(ViewDoor::key(), run);
+        sort_four_in_place_(View<T, 4>{ViewDoor::key(), first});
+        sort_four_in_place_(View<T, 4>{ViewDoor::key(), first + 4});
+        merge_halves_(View<T const>{run}, run_of_(scratch_of_(run), SortCount{8}), less_);
+    }
+
+    // The stable sort of four elements in place: a copy of the four, then
+    // sort_four_ from the copy.
+    constexpr void sort_four_in_place_(View<T, 4> run) noexcept {
+        T* const first = first_of_(ViewDoor::key(), run);
+        FixedArray<T, 4> const held{first[0], first[1], first[2], first[3]};
+        sort_four_(View<T const, 4>{held.view()}, run, less_);
+    }
+
+    T* elements_ = nullptr;
+    T* scratch_ = nullptr;
+    Less& less_;
+    // The partitions that the current path of the quicksort can still make.
+    std::uint32_t budget_ = 0;
+};
 
 }  // namespace detail
 
 // ── The radix sort ──────────────────────────────────────────────────────
 
 // The count from which sort_stably sorts by the bytes of a key when the order
-// is Ascending.  Below it, the merge sort makes fewer steps than the counts
-// of the buckets.
+// is Ascending.  Below it, driftsort makes fewer steps than the counts of the
+// buckets.
 inline constexpr std::size_t stable_sort_radix_count = 256;
 
 namespace detail {
@@ -417,9 +1052,9 @@ constexpr void radix_sort_(T* elements, T* scratch, std::size_t count) noexcept 
 // LengthMismatch with no write.  The two are unique borrows, so they share no
 // element.  With the order Ascending and at least stable_sort_radix_count
 // elements, the sort is the radix sort of the keys of the elements.  Each
-// other sort is the merge sort.  The two give the same bits (THE ORDER).
-// Complexity: O(n) for the radix sort, with one pass for each byte of the
-// element, and O(n log n) compares and copies for the merge sort.
+// other sort is driftsort (detail::StableSort).  The two give the same bits
+// (THE ORDER).  Complexity: O(n) for the radix sort, with one pass for each
+// byte of the element, and O(n log n) compares and copies for driftsort.
 template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::size_t ScratchExtent,
           class Less = Ascending>
     requires SortElement<T> && StrictOrder<Less, T>
@@ -428,34 +1063,20 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
                                                                  Less less = Less{}) noexcept {
     std::size_t const count = elements.size();
     if (scratch.size() != count) return err(LengthMismatch{});
-    T* source = first_of_(detail::ViewDoor::key(), elements);
-    T* target = first_of_(detail::ViewDoor::key(), scratch);
+    T* const source = first_of_(detail::ViewDoor::key(), elements);
+    T* const target = first_of_(detail::ViewDoor::key(), scratch);
     // The key of the radix sort has at most eight bytes.  A wider integer of a
-    // GNU dialect, such as __int128, takes the merge sort.
+    // GNU dialect, such as __int128, takes the comparator form.
     if constexpr (std::same_as<Less, Ascending> && sizeof(T) <= 8) {
         if (count >= stable_sort_radix_count) {
             detail::radix_sort_(source, target, count);
             return Unit{};
         }
     }
-    for (std::size_t start = 0; start < count; start += stable_sort_run) {
-        std::size_t const size = count - start < stable_sort_run ? count - start : stable_sort_run;
-        detail::insertion_sort_(source + start, size, less);
-    }
-    bool is_in_scratch = false;
-    for (std::size_t width = stable_sort_run; width < count; width *= 2) {
-        for (std::size_t start = 0; start < count; start += 2 * width) {
-            std::size_t const rest = count - start;
-            std::size_t const size = rest < 2 * width ? rest : 2 * width;
-            std::size_t const middle = rest < width ? rest : width;
-            detail::merge_runs_(source + start, middle, size, target + start, less);
-        }
-        T* const merged = target;
-        target = source;
-        source = merged;
-        is_in_scratch = !is_in_scratch;
-    }
-    if (is_in_scratch) detail::copy_run_(source, count, target);
+    View<T> const run = detail::run_of_(source, detail::SortCount{count});
+    detail::StableSort<T, Less> sorter{
+        run, side_as<side::SortScratch>(detail::run_of_(target, detail::SortCount{count})), less};
+    sorter.sort(run);
     return Unit{};
 }
 

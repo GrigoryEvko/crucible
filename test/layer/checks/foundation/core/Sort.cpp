@@ -94,6 +94,38 @@ static_assert(networks_sort(std::make_index_sequence<9>{}));
 }
 static_assert(sort_stably_keeps_equal_keys_in_order());
 
+// The comparator form of 200 records of seven keys, which takes the lazy merge
+// tree, the stable quicksort, the partition of the keys equivalent to the
+// pivot and the small sorts, keeps the records of one key in their order of
+// input in constant evaluation too.
+[[nodiscard]] consteval bool comparator_form_keeps_equal_keys_in_order() noexcept {
+    FixedArray<Record, 200> records{};
+    std::uint32_t tag = 0;
+    std::uint32_t next = 5;
+    for (Record& record : records) {
+        next = (next * 37 + 11) % 101;
+        record = Record{next % 7, tag};
+        ++tag;
+    }
+    FixedArray<Record, 200> scratch{};
+    auto const by_key = [](Record const& left, Record const& right) noexcept { return left.key < right.key; };
+    bool is_sorted = false;
+    records = with_mut(std::move(records), [&](auto elements) noexcept {
+        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
+            is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok();
+        });
+    });
+    Record last{0, 0};
+    bool is_first = true;
+    for (Record const& record : records) {
+        if (!is_first && (record.key < last.key || (record.key == last.key && record.tag < last.tag))) return false;
+        last = record;
+        is_first = false;
+    }
+    return is_sorted;
+}
+static_assert(comparator_form_keeps_equal_keys_in_order());
+
 // A scratch of another count is refused.
 [[nodiscard]] consteval bool short_scratch_is_refused() noexcept {
     FixedArray<int, 4> values{4, 3, 2, 1};

@@ -1,7 +1,9 @@
 // Tests of foundation/core/Sort.h: each network of up to 20 elements on each
 // input of zeros and ones, the networks and the stable sort against a naive
 // sort of the total order of IEEE 754, the stability of the stable sort, the
-// radix sort against the merge sort, and the ordered searches against a scan.
+// paths of driftsort (few keys, runs of the input, the fallback of the
+// quicksort under the adversary of McIlroy), the radix sort against the
+// comparator form, and the ordered searches against a scan.
 
 #include <foundation/core/Sort.h>
 #include <foundation/effects/Effect.h>
@@ -224,8 +226,10 @@ void test_sort_stably_agrees_with_the_naive_sort() {
 }
 
 // Records in key order stay in place, and records in the reverse key order
-// come out in key order with the input order of each key.  The merges of runs
-// in order take the copy, and the other merges compare.
+// come out in key order with the input order of each key.  An input in key
+// order is one sorted run of the merge tree.  The reverse order with ties has
+// no strictly descending run longer than one key, so it takes the small sorts
+// and the quicksort.
 void test_sort_stably_of_ordered_runs() {
     auto const by_key = [](Keyed const& left, Keyed const& right) noexcept { return is_below(left, right); };
     ::fixy::FixedArray<std::size_t, 9> const counts{1, 31, 32, 33, 64, 65, 300, 1000, 4097};
@@ -257,6 +261,168 @@ void test_sort_stably_of_ordered_runs() {
             assert(before.key < record.key || (before.key == record.key && before.position < record.position));
         }
     }
+}
+
+// True when the records are in key order, the records of one key are in
+// their input order, and each position of the input is there once.
+[[nodiscard]] bool is_stable_order(View<Keyed const> sorted) noexcept {
+    HeapArray<std::uint8_t> seen = ::foundation::core::mint_heap_array(test_alloc(), sorted.size(), std::uint8_t{0});
+    for (std::size_t index = 0; index < sorted.size(); ++index) {
+        Keyed const record = ::crucible::test::element_at(sorted, index);
+        if (record.position >= sorted.size()) return false;
+        std::uint8_t& mark = ::crucible::test::element_at(seen.view(), record.position);
+        if (mark != 0) return false;
+        mark = 1;
+        if (index == 0) continue;
+        Keyed const before = ::crucible::test::element_at(sorted, index - 1);
+        if (before.key > record.key || (before.key == record.key && before.position > record.position)) return false;
+    }
+    return true;
+}
+
+// The records of count positions with the key of each position from a rule.
+template <class KeyRule>
+[[nodiscard]] HeapArray<Keyed> draw_records(std::size_t count, KeyRule rule) noexcept {
+    HeapArray<Keyed> records = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
+    std::uint32_t position = 0;
+    for (Keyed& record : records) {
+        record = Keyed{rule(position), position};
+        ++position;
+    }
+    return records;
+}
+
+// The stable sort of the records by key, and whether the result is in stable
+// order.
+[[nodiscard]] bool sorts_stably(HeapArray<Keyed>& records) noexcept {
+    auto const by_key = [](Keyed const& left, Keyed const& right) noexcept { return is_below(left, right); };
+    HeapArray<Keyed> scratch = ::foundation::core::mint_heap_array(test_alloc(), records.size(), Keyed{});
+    return sort_through_frames(records, scratch, by_key) && is_stable_order(View<Keyed const>{records.view()});
+}
+
+// Records of two or four keys take the partition of the elements equivalent
+// to the pivot, in the part of the quicksort above the small sorts.
+void test_sort_stably_of_few_keys() {
+    ::crucible::test::PhiloxStream stream{0x50470006u};
+    ::fixy::FixedArray<std::size_t, 3> const counts{65536, 100003, 262147};
+    for (std::size_t const count : counts) {
+        HeapArray<Keyed> two =
+            draw_records(count, [&](std::uint32_t) noexcept { return static_cast<std::uint32_t>(stream.below(2)); });
+        assert(sorts_stably(two));
+        HeapArray<Keyed> four =
+            draw_records(count, [&](std::uint32_t) noexcept { return static_cast<std::uint32_t>(stream.below(4)); });
+        assert(sorts_stably(four));
+        HeapArray<Keyed> one = draw_records(count, [](std::uint32_t) noexcept { return std::uint32_t{7}; });
+        assert(sorts_stably(one));
+    }
+}
+
+// The runs of the input: one strictly descending run, which the merge tree
+// reverses, runs of 500 records in alternate orders, which it merges, a saw of
+// short runs, and an input in order with one record out of order.
+void test_sort_stably_of_input_runs() {
+    ::fixy::FixedArray<std::size_t, 4> const counts{4095, 4097, 65536, 100003};
+    for (std::size_t const count : counts) {
+        auto const last = static_cast<std::uint32_t>(count);
+        HeapArray<Keyed> descending =
+            draw_records(count, [&](std::uint32_t position) noexcept { return last - position; });
+        assert(sorts_stably(descending));
+        HeapArray<Keyed> alternate = draw_records(count, [&](std::uint32_t position) noexcept {
+            return (position / 500) % 2 == 0 ? position : last - position;
+        });
+        assert(sorts_stably(alternate));
+        HeapArray<Keyed> saw = draw_records(count, [](std::uint32_t position) noexcept { return position % 97; });
+        assert(sorts_stably(saw));
+        HeapArray<Keyed> almost = draw_records(
+            count, [&](std::uint32_t position) noexcept { return position == last / 2 ? std::uint32_t{0} : position; });
+        assert(sorts_stably(almost));
+    }
+}
+
+// The adversary of McIlroy (A Killer Adversary for Quicksort, 1999).  A gas
+// key is above each solid key.  A compare of two gas keys first gives one of
+// them the next solid key, so each answer agrees with the final keys.  The
+// candidate is the gas key of the last compare that held one, and a compare of
+// the candidate with a gas key freezes the candidate.  A quicksort with a
+// pivot from a few samples then meets a pivot near an end of each run.
+//
+// The scan of the runs of driftsort compares neighbors, and that rule then
+// gives the keys in order, one sorted run.  So the keys of the odd positions
+// start solid: each run of the scan then ends after two elements, the input
+// is one unsorted run, and the gas keys of the even positions, above each
+// solid key, meet the adversary in the quicksort.
+class QuicksortAdversary {
+public:
+    explicit QuicksortAdversary(View<std::uint32_t> keys) noexcept : keys_{keys}, gas_{keys.size()} {
+        for (std::size_t index = 0; index < keys.size(); ++index) {
+            ::crucible::test::element_at(keys_, index) = index % 2 == 0 ? static_cast<std::uint32_t>(gas_) : solid_++;
+        }
+    }
+
+    [[nodiscard]] bool is_below(Keyed const& left, Keyed const& right) noexcept {
+        std::uint32_t& left_key = ::crucible::test::element_at(keys_, left.position);
+        std::uint32_t& right_key = ::crucible::test::element_at(keys_, right.position);
+        if (left_key == gas_ && right_key == gas_) {
+            if (left.position == candidate_) {
+                left_key = solid_++;
+            } else {
+                right_key = solid_++;
+            }
+        }
+        if (left_key == gas_) {
+            candidate_ = left.position;
+        } else if (right_key == gas_) {
+            candidate_ = right.position;
+        }
+        return left_key < right_key;
+    }
+
+    // Gives each key that is still gas the next solid key, in the order of
+    // the positions.
+    void freeze_each() noexcept {
+        for (std::size_t index = 0; index < keys_.size(); ++index) {
+            std::uint32_t& key = ::crucible::test::element_at(keys_, index);
+            if (key == gas_) key = solid_++;
+        }
+    }
+
+private:
+    View<std::uint32_t> keys_;
+    std::size_t gas_ = 0;
+    std::uint32_t solid_ = 0;
+    std::uint32_t candidate_ = 0;
+};
+
+// The keys of the adversary make an input on which the quicksort meets a
+// pivot near an end of each run, so it spends the budget of each path, and
+// the eager merge tree sorts the rest.  The sort of that input stays stable
+// and makes at most 3 n log2 n compares.  Each pivot of the adversary takes
+// about 28 samples, so a quicksort with no budget makes about n^2 / 56
+// compares: 5.1 n log2 n for 2^14 records, and about four times more for
+// 2^16.  With the budget, 2^16 records take 1.53 n log2 n.
+void test_sort_stably_bounds_the_adversary() {
+    constexpr std::size_t count = std::size_t{1} << 16;
+    HeapArray<std::uint32_t> keys = ::foundation::core::mint_heap_array(test_alloc(), count, std::uint32_t{0});
+    QuicksortAdversary adversary{keys.view()};
+    HeapArray<Keyed> probe = draw_records(count, [](std::uint32_t) noexcept { return std::uint32_t{0}; });
+    HeapArray<Keyed> probe_scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
+    auto const by_adversary = [&](Keyed const& left, Keyed const& right) noexcept {
+        return adversary.is_below(left, right);
+    };
+    assert(sort_through_frames(probe, probe_scratch, by_adversary));
+    adversary.freeze_each();
+    View<std::uint32_t const> const frozen{keys.view()};
+    HeapArray<Keyed> records = draw_records(
+        count, [&](std::uint32_t position) noexcept { return ::crucible::test::element_at(frozen, position); });
+    std::size_t compares = 0;
+    auto const by_counted_key = [&](Keyed const& left, Keyed const& right) noexcept {
+        ++compares;
+        return left.key < right.key;
+    };
+    HeapArray<Keyed> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
+    assert(sort_through_frames(records, scratch, by_counted_key));
+    assert(is_stable_order(View<Keyed const>{records.view()}));
+    assert(compares <= 3 * count * 16);
 }
 
 // An enumeration of a signed base, and one of an unsigned base, for the keys
@@ -319,7 +485,7 @@ template <class T>
     }
 }
 
-// The radix sort of Ascending and the merge sort of the same order as a
+// The radix sort of Ascending and the comparator form of the same order as a
 // function of the caller give the same bits, for counts below and above
 // stable_sort_radix_count.
 template <class T>
@@ -347,7 +513,7 @@ void check_radix_against_merge(::crucible::test::PhiloxStream& stream) noexcept 
     }
 }
 
-void test_radix_sort_agrees_with_the_merge_sort() {
+void test_radix_sort_agrees_with_the_comparator_form() {
     ::crucible::test::PhiloxStream stream{0x50470005u};
     check_radix_against_merge<std::uint8_t>(stream);
     check_radix_against_merge<std::int8_t>(stream);
@@ -404,7 +570,10 @@ int main() {
     test_sort_stably_is_stable();
     test_sort_stably_agrees_with_the_naive_sort();
     test_sort_stably_of_ordered_runs();
-    test_radix_sort_agrees_with_the_merge_sort();
+    test_sort_stably_of_few_keys();
+    test_sort_stably_of_input_runs();
+    test_sort_stably_bounds_the_adversary();
+    test_radix_sort_agrees_with_the_comparator_form();
     test_searches_agree_with_a_scan();
     crucible::test::pass("test_core_sort: all tests passed\n");
     return 0;

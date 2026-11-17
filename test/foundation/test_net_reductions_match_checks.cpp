@@ -570,8 +570,8 @@ template <std::size_t Count>
 // less function, and two equivalent elements in their order in the input
 // (THE ORDER of Sort.h).  The reference is an insertion sort of the test,
 // which moves an element only past a larger one.  sort_stably has two arms:
-// the merge sort for a less function of the caller, and the radix sort for
-// Ascending from stable_sort_radix_count elements.
+// the comparator arm, driftsort, for a less function of the caller, and the
+// radix arm for Ascending from stable_sort_radix_count elements.
 
 template <class T, std::size_t Count, class Less>
 [[nodiscard]] constexpr core::FixedArray<T, Count> sort_by_insertion(core::FixedArray<T, Count> elements,
@@ -589,8 +589,8 @@ template <class T, std::size_t Count, class Less>
 }
 
 template <class T, std::size_t Count, class Less>
-[[nodiscard]] constexpr core::FixedArray<T, Count> sort_by_merge_or_radix(core::FixedArray<T, Count> elements,
-                                                                          Less less) noexcept {
+[[nodiscard]] constexpr core::FixedArray<T, Count> sort_by_either_arm(core::FixedArray<T, Count> elements,
+                                                                      Less less) noexcept {
     core::FixedArray<T, Count> scratch{};
     bool is_sorted = false;
     elements = core::with_mut(std::move(elements), [&](auto run) noexcept {
@@ -602,18 +602,20 @@ template <class T, std::size_t Count, class Less>
     return elements;
 }
 
-// The merge arm keeps the order of the tags of each key, as the insertion
-// sort does: a run of one insertion run of 32 and one merge.
+// The comparator arm keeps the order of the tags of each key, as the
+// insertion sort does.  37 tickets take the eager merge tree: the small sorts
+// of 32 and of 5 tickets, and one merge from the two ends.  64 tickets take
+// two small sorts of 32 and one merge.
 template <std::size_t Count>
-[[nodiscard]] constexpr bool does_stable_merge_follow(core::FixedArray<Ticket, Count> const& tickets) noexcept {
-    return sort_by_merge_or_radix(tickets, ByKey{}) == sort_by_insertion(tickets, ByKey{});
+[[nodiscard]] constexpr bool does_comparator_arm_follow(core::FixedArray<Ticket, Count> const& tickets) noexcept {
+    return sort_by_either_arm(tickets, ByKey{}) == sort_by_insertion(tickets, ByKey{});
 }
 
-static_assert(does_stable_merge_follow<37>(draw_tickets<37>(0x5EED0101u)));
-static_assert(does_stable_merge_follow<64>(draw_tickets<64>(0x5EED0102u)));
+static_assert(does_comparator_arm_follow<37>(draw_tickets<37>(0x5EED0101u)));
+static_assert(does_comparator_arm_follow<64>(draw_tickets<64>(0x5EED0102u)));
 
 // The order of Ascending for a float, as a type of its own, so sort_stably
-// takes the merge arm for each count.
+// takes the comparator arm for each count.
 struct TotalOrder {
     template <class T>
     [[nodiscard]] constexpr bool operator()(T const& left, T const& right) const noexcept {
@@ -661,17 +663,17 @@ template <class T, std::size_t Count>
     return values;
 }
 
-// The radix arm and the merge arm give the same bits, and the result is in
-// the total order.
+// The radix arm and the comparator arm give the same bits, and the result is
+// in the total order.
 template <class T, std::size_t Count>
-[[nodiscard]] bool does_radix_follow_merge(std::uint64_t seed) noexcept {
+[[nodiscard]] bool does_radix_follow_comparator(std::uint64_t seed) noexcept {
     static_assert(Count >= core::stable_sort_radix_count, "the radix arm sorts from stable_sort_radix_count");
     auto const values = draw_ordered_values<T, Count>(seed);
-    auto const by_radix = sort_by_merge_or_radix(values, core::Ascending{});
-    auto const by_merge = sort_by_merge_or_radix(values, TotalOrder{});
+    auto const by_radix = sort_by_either_arm(values, core::Ascending{});
+    auto const by_comparator = sort_by_either_arm(values, TotalOrder{});
     bool is_same = true;
     for (std::size_t position = 0; position < Count; ++position) {
-        is_same = is_same && has_same_bits(slot_at(by_radix, position), slot_at(by_merge, position));
+        is_same = is_same && has_same_bits(slot_at(by_radix, position), slot_at(by_comparator, position));
         if (position > 0) {
             is_same = is_same && !core::Ascending{}(slot_at(by_radix, position), slot_at(by_radix, position - 1));
         }
@@ -679,14 +681,14 @@ template <class T, std::size_t Count>
     return is_same;
 }
 
-// The merge arm keeps the order of the tags of each key on runs of several
-// merges.
+// The comparator arm keeps the order of the tags of each key on runs of the
+// stable quicksort and its small sorts.
 template <std::size_t Count>
-[[nodiscard]] bool does_each_stable_merge_follow(std::uint64_t seed) noexcept {
+[[nodiscard]] bool does_each_comparator_arm_follow(std::uint64_t seed) noexcept {
     ::crucible::test::PhiloxStream stream{seed};
     bool is_each = true;
     for (std::uint32_t round = 0; round < 8; ++round) {
-        is_each = is_each && does_stable_merge_follow<Count>(draw_tickets<Count>(stream.next_wide()));
+        is_each = is_each && does_comparator_arm_follow<Count>(draw_tickets<Count>(stream.next_wide()));
     }
     return is_each;
 }
@@ -696,9 +698,9 @@ template <std::size_t Count>
 int main() {
     bool const is_sort = does_each_sort_follow<7>(0x7E570401u) && does_each_sort_follow<16>(0x7E570402u)
                       && does_each_sort_follow<37>(0x7E570403u);
-    bool const is_stable = does_each_stable_merge_follow<300>(0x7E570A01u)
-                        && does_radix_follow_merge<float, 300>(0x7E570A02u)
-                        && does_radix_follow_merge<double, 300>(0x7E570A03u);
+    bool const is_stable = does_each_comparator_arm_follow<300>(0x7E570A01u)
+                        && does_radix_follow_comparator<float, 300>(0x7E570A02u)
+                        && does_radix_follow_comparator<double, 300>(0x7E570A03u);
     assert(is_sort);
     assert(is_stable);
     return 0;
