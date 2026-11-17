@@ -448,8 +448,9 @@ public:
     }
 
     [[nodiscard]] constexpr QuarantineState state(cog::CogIdentity const& id) const noexcept {
-        return find(id).match([this](SlotIndex index) noexcept { return slots_.at(index).state; },
-                              []() noexcept { return QuarantineState::Healthy; });
+        return find(id)
+            .map([this](SlotIndex index) noexcept { return slots_.at(index).state; })
+            .value_or(QuarantineState::Healthy);
     }
 
     [[nodiscard]] constexpr QuarantineSnapshot current(cog::CogIdentity const& id) const noexcept {
@@ -475,9 +476,9 @@ public:
         // modulo the size and the base is slot zero. After the wrap
         // the write cursor is itself the oldest surviving slot.
         const std::size_t base = (next_event_.raw() + MaxEvents - event_count_) % MaxEvents;
-        return EventIndex::check((base + index) % MaxEvents)
-            .match([this](EventIndex slot) noexcept { return ::fixy::some(events_.at(slot)); },
-                   []() noexcept -> ::fixy::Option<QuarantineEvent> { return ::fixy::none; });
+        return EventIndex::check((base + index) % MaxEvents).map([this](EventIndex slot) noexcept {
+            return events_.at(slot);
+        });
     }
 };
 

@@ -273,8 +273,9 @@ struct Reader {
     // element read discovers the end of the buffer, leaving space only a
     // detach can reclaim.  A product that wraps has no room.
     [[nodiscard]] bool has_remaining(size_t count, size_t element_bytes) const noexcept {
-        return ::foundation::core::checked_mul(count, element_bytes)
-            .match([this](size_t need) noexcept { return remaining() >= need; }, [] noexcept { return false; });
+        return ::foundation::core::checked_mul(count, element_bytes).is_some_and([this](size_t need) noexcept {
+            return remaining() >= need;
+        });
     }
 };
 

@@ -187,22 +187,17 @@ qdisc_of_attributes(::fixy::View<std::byte const> attributes) noexcept {
 ::fixy::Result<std::int32_t, PacingError> detail::read_interface_index(NicInterfaceName iface) noexcept {
     InterfacePath const path = interface_path_of(iface, "ifindex");
     ::fixy::FixedText<16> text{};
-    if (::foundation::os::read_file(path.c_text(), text).is_err()) {
-        return ::fixy::err(PacingError::InterfaceNotFound);
-    }
+    CRUCIBLE_TRY(_, ::foundation::os::read_file(path.c_text(), text).map_err([](::foundation::os::Errno) noexcept {
+        return PacingError::InterfaceNotFound;
+    }));
     ::fixy::TextView digits = text.view();
     if (::fixy::ends_with(digits, "\n")) {
         digits = digits.window(0, digits.size() - 1).expect("a text that ends with a newline holds it");
     }
-    using Index = ::fixy::Result<std::int32_t, PacingError>;
-    return ::fixy::parse<std::int32_t>(digits).match(
-        [](std::int32_t index) -> Index {
-            if (index <= 0) {
-                return ::fixy::err(PacingError::InterfaceNotFound);
-            }
-            return index;
-        },
-        [](::fixy::ParseError) -> Index { return ::fixy::err(PacingError::InterfaceNotFound); });
+    return ::fixy::parse<std::int32_t>(digits)
+        .ok()
+        .filter([](std::int32_t const& index) noexcept { return index > 0; })
+        .ok_or(PacingError::InterfaceNotFound);
 }
 
 // A reply of a different request can reach the socket, so the scan reads

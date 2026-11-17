@@ -179,7 +179,8 @@ int read_numa_node_of_device(::fixy::CText sysfs_numa_node_path) noexcept {
         return -1;
     }
     return ::fixy::parse<int>(trim_line_end(text.view()))
-        .match([](int node) noexcept { return node < 0 ? -1 : node; }, [](::fixy::ParseError) noexcept { return -1; });
+        .map([](int node) noexcept { return node < 0 ? -1 : node; })
+        .value_or(-1);
 }
 
 std::uint64_t read_cpu_cur_freq_khz(int cpu) noexcept {

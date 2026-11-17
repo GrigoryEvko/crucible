@@ -208,9 +208,8 @@ template <::foundation::effects::IsExecCtx Ctx>
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::fs::CtxFitsFileMint<Ctx, ProcFileReadMode>
 [[nodiscard]] bool kernel_supports(Ctx const& ctx, CcAlgorithm algorithm) noexcept {
-    return read_available_congestion_control(ctx).match(
-        [algorithm](CcAvailability availability) noexcept { return availability.contains(algorithm); },
-        [](CcError) noexcept { return false; });
+    return read_available_congestion_control(ctx).is_ok_and(
+        [algorithm](CcAvailability const& availability) noexcept { return availability.contains(algorithm); });
 }
 
 template <LinkClass Link>
@@ -268,22 +267,19 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, CcError> set_cc_for_socket(Ctx const& ctx, SocketFd fd,
                                                                       DeclaredCcChoice choice) noexcept {
-    using Set = ::fixy::Result<::fixy::Unit, CcError>;
     return ::fixy::net::set_tcp_congestion(ctx, fd, choice.value().kernel_name.view())
-        .match([](::fixy::Unit) -> Set { return ::fixy::Unit{}; },
-               [](::foundation::os::Errno) -> Set { return ::fixy::err(CcError::SetSockOptFailed); });
+        .map_err([](::foundation::os::Errno) noexcept { return CcError::SetSockOptFailed; });
 }
 
 // The socket door reads TCP_CONGESTION.
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
 [[nodiscard]] ::fixy::Result<CcSelection, CcError> query_cc_selection_for_socket(Ctx const& ctx, SocketFd fd) noexcept {
-    using Queried = ::fixy::Result<CcSelection, CcError>;
-    return ::fixy::net::read_tcp_congestion(ctx, fd).match(
-        [](::fixy::FixedText<::fixy::net::congestion_name_bytes> name) -> Queried {
+    return ::fixy::net::read_tcp_congestion(ctx, fd)
+        .map_err([](::foundation::os::Errno) noexcept { return CcError::GetSockOptFailed; })
+        .and_then([](::fixy::FixedText<::fixy::net::congestion_name_bytes> name) noexcept {
             return detail::selection_of_kernel_name(name.view());
-        },
-        [](::foundation::os::Errno) -> Queried { return ::fixy::err(CcError::GetSockOptFailed); });
+        });
 }
 
 template <::foundation::effects::IsExecCtx Ctx>

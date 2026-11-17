@@ -309,11 +309,9 @@ public:
     }
 
     [[nodiscard]] bool should_quarantine(cog::CogIdentity const& cog) const noexcept {
-        return find_cog(cog).match(
-            [this](CogIndex slot) noexcept {
-                return cogs_.at(slot).mismatch_count >= config_.suspect_after_mismatches.value();
-            },
-            [] noexcept { return false; });
+        return find_cog(cog).is_some_and([this](CogIndex slot) noexcept {
+            return cogs_.at(slot).mismatch_count >= config_.suspect_after_mismatches.value();
+        });
     }
 
     [[nodiscard]] bool publish_latest(ObservationSnapshot& sink) const noexcept {

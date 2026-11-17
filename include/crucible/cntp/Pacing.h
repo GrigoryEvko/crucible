@@ -258,9 +258,8 @@ template <::foundation::effects::IsExecCtx Ctx>
     // The bind asks the kernel for a unique port.  With no bind, the kernel
     // takes the port from the process id, so two threads share it and can
     // read the replies of each other.
-    if (::fixy::net::bind_netlink(ctx, nl).is_err()) {
-        return ::fixy::err(PacingError::NetlinkOpenFailed);
-    }
+    CRUCIBLE_TRY(_, ::fixy::net::bind_netlink(ctx, nl).map_err(
+                        [](::foundation::os::Errno) noexcept { return PacingError::NetlinkOpenFailed; }));
 
     detail::QdiscDumpRequest const request{
         .header =
@@ -313,10 +312,8 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, PacingError>
 set_socket_pacing_rate(Ctx const& ctx, SocketFd fd, PositivePacingRate bytes_per_second) noexcept {
-    using Set = ::fixy::Result<::fixy::Unit, PacingError>;
     return ::fixy::net::set_max_pacing_rate(ctx, fd, bytes_per_second.value())
-        .match([](::fixy::Unit) -> Set { return ::fixy::Unit{}; },
-               [](::foundation::os::Errno) -> Set { return ::fixy::err(PacingError::SetSockOptFailed); });
+        .map_err([](::foundation::os::Errno) noexcept { return PacingError::SetSockOptFailed; });
 }
 
 }  // namespace crucible::cntp

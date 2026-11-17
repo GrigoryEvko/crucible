@@ -175,9 +175,9 @@ template <auto Field, std::size_t Extent>
         .max_pacing_rate_bps = decode_word<tcp_field::max_pacing_rate>(info),
         .delivered = decode_word<tcp_field::delivered>(info),
         .delivered_ce = decode_word<tcp_field::delivered_ce>(info),
-        .mode = decode_field<tcp_field::ca_state>(info).match(
-            [](detail::TcpCaState ca_state) noexcept { return mode_from_ca_state(ca_state); },
-            []() noexcept { return CongestionMode::Unknown; }),
+        .mode = decode_field<tcp_field::ca_state>(info)
+                    .map([](detail::TcpCaState ca_state) noexcept { return mode_from_ca_state(ca_state); })
+                    .value_or(CongestionMode::Unknown),
     };
 
     if (state.delivered != 0) {
@@ -193,8 +193,8 @@ template <auto Field, std::size_t Extent>
 [[nodiscard]] CongestionSample add_congestion_info(CongestionSample state,
                                                    ::fixy::View<std::byte const> congestion_info) noexcept {
     if (is_bbr(state.algorithm)) {
-        return congestion_info.window<detail::bbr_info_bytes>(0).match(
-            [state](BbrInfoBytes bytes) noexcept {
+        return congestion_info.window<detail::bbr_info_bytes>(0)
+            .map([state](BbrInfoBytes bytes) noexcept {
                 CongestionSample with_bbr = state;
                 with_bbr.bbr = decode_bbr(bytes);
                 with_bbr.btl_bw_bps = with_bbr.bbr.btl_bw_bps;
@@ -202,18 +202,18 @@ template <auto Field, std::size_t Extent>
                 with_bbr.mode = mode_from_bbr(with_bbr.bbr);
                 with_bbr.has_bbr = true;
                 return with_bbr;
-            },
-            [state]() noexcept { return state; });
+            })
+            .value_or(state);
     }
     if (state.algorithm == cntp::CcAlgorithm::Dctcp) {
-        return congestion_info.window<detail::dctcp_info_bytes>(0).match(
-            [state](DctcpInfoBytes bytes) noexcept {
+        return congestion_info.window<detail::dctcp_info_bytes>(0)
+            .map([state](DctcpInfoBytes bytes) noexcept {
                 CongestionSample with_dctcp = state;
                 with_dctcp.dctcp = decode_dctcp(bytes);
                 with_dctcp.has_dctcp = true;
                 return with_dctcp;
-            },
-            [state]() noexcept { return state; });
+            })
+            .value_or(state);
     }
     return state;
 }
@@ -223,13 +223,12 @@ template <auto Field, std::size_t Extent>
 ::fixy::Result<TcpInfoSnapshot, TelemetryError> detail::decode_tcp_sample(::fixy::View<std::byte const> info,
                                                                           ::fixy::View<std::byte const> congestion_info,
                                                                           cntp::CcAlgorithm algorithm) noexcept {
-    using Decoded = ::fixy::Result<TcpInfoSnapshot, TelemetryError>;
-    return info.window<tcp_info_bytes>(0).match(
-        [congestion_info, algorithm](TcpInfoBytes fields) noexcept -> Decoded {
+    return info.window<tcp_info_bytes>(0)
+        .ok_or(TelemetryError::GetTcpInfoFailed)
+        .map([congestion_info, algorithm](TcpInfoBytes fields) noexcept {
             CongestionSample const state = add_congestion_info(decode_tcp_info(fields, algorithm), congestion_info);
             return ::fixy::mint_tagged<::fixy::tags::source::TcpInfo>(state);
-        },
-        []() noexcept -> Decoded { return ::fixy::err(TelemetryError::GetTcpInfoFailed); });
+        });
 }
 
 void detail::CongestionAccumulator::record(TcpInfoSnapshot const& snapshot) noexcept {

@@ -21,10 +21,9 @@ namespace {
 
 [[nodiscard]] ::fixy::Result<PtpTimestampNs, PtpError>
 timestamp_from_stamp(::foundation::os::KernelTimespec const& stamp) noexcept {
-    using Stamped = ::fixy::Result<PtpTimestampNs, PtpError>;
-    return ::fixy::time::nanos_from_timespec(stamp).match(
-        [](std::uint64_t nanos) noexcept -> Stamped { return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(nanos); },
-        [](::foundation::os::Errno error) noexcept -> Stamped { return ::fixy::err(timestamp_error(error)); });
+    return ::fixy::time::nanos_from_timespec(stamp)
+        .map([](std::uint64_t nanos) noexcept { return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(nanos); })
+        .map_err(timestamp_error);
 }
 
 }  // namespace
@@ -43,10 +42,7 @@ timestamp_from_stamp(::foundation::os::KernelTimespec const& stamp) noexcept {
 }
 
 ::fixy::Result<PtpClockCaps, PtpError> query_ptp_clock_caps(PtpClockReader const& clock) noexcept {
-    using Queried = ::fixy::Result<PtpClockCaps, PtpError>;
-    return clock.caps().match(
-        [](PtpClockCaps caps) noexcept -> Queried { return caps; },
-        [](::foundation::os::Errno) noexcept -> Queried { return ::fixy::err(PtpError::ClockCapsUnavailable); });
+    return clock.caps().map_err([](::foundation::os::Errno) noexcept { return PtpError::ClockCapsUnavailable; });
 }
 
 // The reading is stamped as a PHC reading by the reader, which read it from
@@ -54,12 +50,11 @@ timestamp_from_stamp(::foundation::os::KernelTimespec const& stamp) noexcept {
 // the Ptp source tag.
 ::fixy::Result<PtpTimestampNs, PtpError> ptp_now(PtpClockReader const& clock,
                                                  ::foundation::effects::cap::Nondet nondet) noexcept {
-    using Stamped = ::fixy::Result<PtpTimestampNs, PtpError>;
-    return clock.read(nondet).match(
-        [](::fixy::PtpHwClockBytes<std::uint64_t> reading) noexcept -> Stamped {
+    return clock.read(nondet)
+        .map([](::fixy::PtpHwClockBytes<std::uint64_t> reading) noexcept {
             return ::fixy::mint_tagged<::fixy::tags::source::Ptp>(std::move(reading).consume());
-        },
-        [](::foundation::os::Errno error) noexcept -> Stamped { return ::fixy::err(timestamp_error(error)); });
+        })
+        .map_err(timestamp_error);
 }
 
 // The door gives a count of at most the size of buffer, so the window of

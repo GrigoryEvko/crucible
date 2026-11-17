@@ -246,12 +246,8 @@ private:
     // value.  O(MaxPeers).
     [[nodiscard]] ::fixy::Option<PeerIndex> find_enabled_(cog::CogIdentity const& peer,
                                                           TransportProbeKind kind) const noexcept {
-        return find_peer(peer).match(
-            [&](PeerIndex index) noexcept {
-                return peers_.at(index).enabled_kinds.test(kind) ? ::fixy::some(index)
-                                                                 : ::fixy::Option<PeerIndex>{::fixy::none};
-            },
-            []() noexcept { return ::fixy::Option<PeerIndex>{::fixy::none}; });
+        return find_peer(peer).filter(
+            [&](PeerIndex const& index) noexcept { return peers_.at(index).enabled_kinds.test(kind); });
     }
 
     // The counters of one kind of the peer at index.  Each kind is one bit,
@@ -368,21 +364,20 @@ public:
 
     [[nodiscard]] ProbeStats stats(cog::CogIdentity const& peer, TransportProbeKind kind) const noexcept {
         return find_enabled_(peer, kind)
-            .match(
-                [&](PeerIndex index) noexcept {
-                    detail::AtomicProbeStats const& counters = counters_(index, kind);
-                    return ProbeStats{
-                        .scheduled = counters.scheduled.load_acquire(),
-                        .succeeded = counters.succeeded.load_acquire(),
-                        .failed = counters.failed.load_acquire(),
-                        .timed_out = counters.timed_out.load_acquire(),
-                        .bytes_transferred = counters.bytes_transferred.load_acquire(),
-                        .last_latency_ns = counters.last_latency_ns.load_acquire(),
-                        .last_sequence = counters.last_sequence.load_acquire(),
-                        .last_failure = counters.last_failure.load_acquire(),
-                    };
-                },
-                []() noexcept { return ProbeStats{}; });
+            .map([&](PeerIndex index) noexcept {
+                detail::AtomicProbeStats const& counters = counters_(index, kind);
+                return ProbeStats{
+                    .scheduled = counters.scheduled.load_acquire(),
+                    .succeeded = counters.succeeded.load_acquire(),
+                    .failed = counters.failed.load_acquire(),
+                    .timed_out = counters.timed_out.load_acquire(),
+                    .bytes_transferred = counters.bytes_transferred.load_acquire(),
+                    .last_latency_ns = counters.last_latency_ns.load_acquire(),
+                    .last_sequence = counters.last_sequence.load_acquire(),
+                    .last_failure = counters.last_failure.load_acquire(),
+                };
+            })
+            .value_or(ProbeStats{});
     }
 };
 

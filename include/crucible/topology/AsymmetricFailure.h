@@ -421,13 +421,15 @@ public:
     }
 
     [[nodiscard]] constexpr FailureClass classify(cog::CogIdentity const& peer) const noexcept {
-        return find(peer.uuid).match([&](::fixy::Index<MaxPeers> index) { return summarize(index).local; },
-                                     [] { return FailureClass::Inconclusive; });
+        return find(peer.uuid)
+            .map([&](::fixy::Index<MaxPeers> index) { return summarize(index).local; })
+            .value_or(FailureClass::Inconclusive);
     }
 
     [[nodiscard]] constexpr FailureClass classify_with_witnesses(cog::CogIdentity const& peer) const noexcept {
-        return find(peer.uuid).match([&](::fixy::Index<MaxPeers> index) { return summarize(index).with_witnesses; },
-                                     [] { return FailureClass::Inconclusive; });
+        return find(peer.uuid)
+            .map([&](::fixy::Index<MaxPeers> index) { return summarize(index).with_witnesses; })
+            .value_or(FailureClass::Inconclusive);
     }
 
     [[nodiscard]] constexpr FailureSummary summary(cog::CogIdentity const& peer) const noexcept {

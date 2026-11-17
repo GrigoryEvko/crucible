@@ -339,11 +339,9 @@ struct TraceNode {
 // True when the link reaches the node.  The test compares the addresses of
 // the two nodes, so a link to a copy of the node is not a link to the node.
 [[nodiscard]] inline bool is_link_to(TraceLink const& link, TraceNode const& node) noexcept {
-    return link.match(
-        [&node](::fixy::Ref<TraceNode> const& linked) noexcept {
-            return ::fixy::same_object(linked, ::fixy::to(node));
-        },
-        []() noexcept { return false; });
+    return link.is_some_and([&node](::fixy::Ref<TraceNode> const& linked) noexcept {
+        return ::fixy::same_object(linked, ::fixy::to(node));
+    });
 }
 
 // Zero is the "never built" hash.  A TERMINAL node legitimately carries
@@ -875,11 +873,9 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
 // True for no recipe, and for a recipe whose hash was interned: a hash that
 // is not zero and not the end-of-region marker.
 [[nodiscard]] constexpr bool is_foldable_recipe(RecipeChoice const& recipe) noexcept {
-    return recipe.match(
-        [](::fixy::Ref<const NumericalRecipe> chosen) noexcept {
-            return ::foundation::decide::is_non_zero(chosen->hash) && !chosen->hash.is_sentinel();
-        },
-        []() noexcept { return true; });
+    return recipe.is_none_or([](::fixy::Ref<const NumericalRecipe> chosen) noexcept {
+        return ::foundation::decide::is_non_zero(chosen->hash) && !chosen->hash.is_sentinel();
+    });
 }
 
 // The schema of the first op, or the zero schema for no ops.  A region keeps

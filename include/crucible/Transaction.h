@@ -80,9 +80,8 @@ struct Transaction {
 // addresses of the two regions, so a copy of the region is not the region.
 // A transaction with no region holds no region.
 [[nodiscard]] inline bool holds_region(Transaction const& tx, ::fixy::Ref<const RegionNode> region) noexcept {
-    return tx.region.value().match(
-        [region](::fixy::Ref<RegionNode> const& held) noexcept { return ::fixy::same_object(held, region); },
-        []() noexcept { return false; });
+    return tx.region.value().is_some_and(
+        [region](::fixy::Ref<RegionNode> const& held) noexcept { return ::fixy::same_object(held, region); });
 }
 
 // A proof that the caller is the one thread that owns some state. It is

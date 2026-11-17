@@ -104,14 +104,10 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSocketOption<Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, IncastError> set_socket_rto_min_usec(Ctx const& ctx, SocketFd fd,
                                                                                 PositiveRtoMinUsec rto_min) noexcept {
-    using Set = ::fixy::Result<::fixy::Unit, IncastError>;
-    return ::fixy::net::set_tcp_rto_min(ctx, fd, rto_min.value())
-        .match([](::fixy::Unit) -> Set { return ::fixy::Unit{}; },
-               [](::foundation::os::Errno error) -> Set {
-                   bool const is_unsupported = error == ::foundation::os::Errno::enoprotoopt;
-                   return ::fixy::err(is_unsupported ? IncastError::UnsupportedRtoMinSockOpt
-                                                     : IncastError::SetRtoMinFailed);
-               });
+    return ::fixy::net::set_tcp_rto_min(ctx, fd, rto_min.value()).map_err([](::foundation::os::Errno error) noexcept {
+        bool const is_unsupported = error == ::foundation::os::Errno::enoprotoopt;
+        return is_unsupported ? IncastError::UnsupportedRtoMinSockOpt : IncastError::SetRtoMinFailed;
+    });
 }
 
 // A config that enables DCTCP first asks the kernel whether it has DCTCP.
@@ -131,9 +127,8 @@ template <::foundation::effects::IsExecCtx Ctx>
             return ::fixy::err(IncastError::AlgorithmUnavailable);
         }
         auto choice = mint_cc_choice<CcAlgorithm::Dctcp, LinkClass::LosslessDatacenterFabric>();
-        if (set_cc_for_socket(ctx, fd, choice).is_err()) {
-            return ::fixy::err(IncastError::SetCcFailed);
-        }
+        CRUCIBLE_TRY(
+            _, set_cc_for_socket(ctx, fd, choice).map_err([](CcError) noexcept { return IncastError::SetCcFailed; }));
     }
     return set_socket_rto_min_usec(ctx, fd, raw.rto_min_usec);
 }

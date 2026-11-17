@@ -338,10 +338,9 @@ template <::foundation::effects::IsExecCtx Ctx>
 template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::time::CtxFitsPtpClockReaderMint<Ctx>
 [[nodiscard]] ::fixy::Result<PtpClockReader, PtpError> open_ptp_clock(Ctx const& ctx, PtpDeviceIndex index) noexcept {
-    using Opened = ::fixy::Result<PtpClockReader, PtpError>;
-    return ::fixy::time::mint_ptp_clock_reader(ctx, index)
-        .match([](PtpClockReader reader) noexcept -> Opened { return reader; },
-               [](::foundation::os::Errno) noexcept -> Opened { return ::fixy::err(PtpError::OpenClockFailed); });
+    return ::fixy::time::mint_ptp_clock_reader(ctx, index).map_err([](::foundation::os::Errno) noexcept {
+        return PtpError::OpenClockFailed;
+    });
 }
 
 [[nodiscard]] ::fixy::Result<TimestampedPacketView, PtpError>
@@ -370,10 +369,9 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::net::CtxFitsSocketCall<Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, PtpError> enable_socket_timestamping(Ctx const& ctx,
                                                                                 cntp::SocketFd socket) noexcept {
-    using Enabled = ::fixy::Result<::fixy::Unit, PtpError>;
-    return ::fixy::net::set_socket_timestamping(ctx, socket)
-        .match([](::fixy::Unit) -> Enabled { return ::fixy::Unit{}; },
-               [](::foundation::os::Errno) -> Enabled { return ::fixy::err(PtpError::SocketTimestampingFailed); });
+    return ::fixy::net::set_socket_timestamping(ctx, socket).map_err([](::foundation::os::Errno) noexcept {
+        return PtpError::SocketTimestampingFailed;
+    });
 }
 
 // Turns on the hardware stamps of the NIC of iface, for each sent and each
@@ -383,10 +381,8 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::net::CtxFitsSocketCall<Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, PtpError>
 configure_hardware_timestamping(Ctx const& ctx, cntp::SocketFd control_socket, cntp::NicInterfaceName iface) noexcept {
-    using Configured = ::fixy::Result<::fixy::Unit, PtpError>;
     return ::fixy::net::set_hardware_timestamping(ctx, control_socket, iface.view())
-        .match([](::fixy::Unit) -> Configured { return ::fixy::Unit{}; },
-               [](::foundation::os::Errno) -> Configured { return ::fixy::err(PtpError::HardwareTimestampingFailed); });
+        .map_err([](::foundation::os::Errno) noexcept { return PtpError::HardwareTimestampingFailed; });
 }
 
 // Receives one datagram into buffer, with its stamp.  It does not wait: a

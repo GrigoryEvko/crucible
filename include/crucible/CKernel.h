@@ -49,11 +49,11 @@ namespace detail {
                                                   SchemaHash schema_hash) noexcept {
     const std::size_t position = ::fixy::find_lower_bound_by_key(
         entries, [](const CKernelEntry& entry) noexcept { return entry.schema_hash.raw(); }, schema_hash.raw());
-    return entries.get(position).match(
-        [schema_hash](auto entry) noexcept {
+    return entries.get(position)
+        .map([schema_hash](auto entry) noexcept {
             return entry->schema_hash == schema_hash ? entry->id : CKernelId::OPAQUE;
-        },
-        [] noexcept { return CKernelId::OPAQUE; });
+        })
+        .value_or(CKernelId::OPAQUE);
 }
 
 }  // namespace detail
@@ -278,11 +278,11 @@ void publish_static_ckernel_table(const StaticCKernelTable&&) = delete(
 // between two calls, and a pure call lets the compiler keep the OPAQUE of
 // the first call.
 [[nodiscard]] inline CKernelId classify_static(SchemaHash schema_hash) noexcept {
-    return detail::static_ckernel_table_.load_acquire().match(
-        [schema_hash](::fixy::Ref<const StaticCKernelTable> table) noexcept {
+    return detail::static_ckernel_table_.load_acquire()
+        .map([schema_hash](::fixy::Ref<const StaticCKernelTable> table) noexcept {
             return detail::find_kernel_id_(table->entries, schema_hash);
-        },
-        [] noexcept { return CKernelId::OPAQUE; });
+        })
+        .value_or(CKernelId::OPAQUE);
 }
 
 // The published array first, the run-time table second. An adapter that

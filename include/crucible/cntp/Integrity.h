@@ -363,13 +363,10 @@ private:
 template <ByteContiguousPayload Payload>
 [[nodiscard]] inline ::fixy::Result<IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>>, IntegrityError>
 wrap(Payload payload) noexcept(std::is_nothrow_move_constructible_v<Payload>) {
-    auto hash = xxhash64(detail::payload_bytes(payload));
-    if (hash.is_err()) {
-        return ::fixy::err(hash.err().expect("the hash holds its refusal"));
-    }
+    CRUCIBLE_TRY(hash, xxhash64(detail::payload_bytes(payload)));
     return IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>>{
         .payload = ::fixy::mint_linear<Payload>(std::move(payload)),
-        .hash = std::move(hash).expect("the hash is admitted"),
+        .hash = std::move(hash),
     };
 }
 

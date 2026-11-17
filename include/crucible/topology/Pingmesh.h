@@ -369,8 +369,9 @@ public:
     }
 
     [[nodiscard]] PingmeshPairStats pair_stats(cog::Uuid src, cog::Uuid dst) const noexcept {
-        return enabled_pair(src, dst).match([&](PairIndex index) { return stats_of(index, src, dst); },
-                                            [](PingmeshError) { return PingmeshPairStats{}; });
+        return enabled_pair(src, dst)
+            .map([&](PairIndex index) { return stats_of(index, src, dst); })
+            .value_or(PingmeshPairStats{});
     }
 
     // The detector is cumulative, because this carrier keeps no

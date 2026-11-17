@@ -256,14 +256,11 @@ public:
 
     [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError> start_encoding(::fixy::View<std::byte const> input,
                                                                              FountainSeed seed) noexcept {
-        auto admitted = admit_source_bytes(input.size());
-        if (admitted.is_err()) {
-            return ::fixy::err(admitted.err().expect("the admission refused the count"));
-        }
+        CRUCIBLE_TRY(admitted, admit_source_bytes(input.size()));
 
         input_ = input;
         seed_ = seed;
-        source_bytes_ = std::move(admitted).expect("the admission took the count");
+        source_bytes_ = std::move(admitted);
         next_id_ = 0;
         active_ = true;
         return ::fixy::Unit{};
@@ -283,31 +280,22 @@ public:
 
     [[nodiscard]] ::fixy::Result<LinearFountainPacket<SourceSymbols, SymbolBytes>, FountainError>
     next_packet_owned() noexcept {
-        auto packet = next_packet();
-        if (packet.is_err()) {
-            return ::fixy::err(packet.err().expect("the encoder refused the packet"));
-        }
-        return ::fixy::mint_linear<packet_type>(std::move(packet).expect("the encoder gave the packet"));
+        CRUCIBLE_TRY(packet, next_packet());
+        return ::fixy::mint_linear<packet_type>(std::move(packet));
     }
 
     [[nodiscard]] ::fixy::Result<packet_type, FountainError>
     encode_packet(::fixy::View<std::byte const> input, FountainSeed seed, std::uint32_t encoding_id) const noexcept {
-        auto admitted = admit_source_bytes(input.size());
-        if (admitted.is_err()) {
-            return ::fixy::err(admitted.err().expect("the admission refused the count"));
-        }
-        return encode_packet(input, seed, std::move(admitted).expect("the admission took the count"), encoding_id);
+        CRUCIBLE_TRY(admitted, admit_source_bytes(input.size()));
+        return encode_packet(input, seed, std::move(admitted), encoding_id);
     }
 
     template <ByteContiguousBuffer Input>
     [[nodiscard]] ::fixy::Result<LinearFountainPacket<SourceSymbols, SymbolBytes>, FountainError>
     encode_owned(LinearFountainBuffer<Input>&& input, FountainSeed seed, std::uint32_t encoding_id) const noexcept {
         auto raw = std::move(input).consume();
-        auto packet = encode_packet(detail::bytes(raw), seed, encoding_id);
-        if (packet.is_err()) {
-            return ::fixy::err(packet.err().expect("the encoder refused the packet"));
-        }
-        return ::fixy::mint_linear<packet_type>(std::move(packet).expect("the encoder gave the packet"));
+        CRUCIBLE_TRY(packet, encode_packet(detail::bytes(raw), seed, encoding_id));
+        return ::fixy::mint_linear<packet_type>(std::move(packet));
     }
 
 private:

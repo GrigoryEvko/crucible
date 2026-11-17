@@ -1311,9 +1311,9 @@ private:
                     const SlotId slot = *slots.get(input).expect("the input arrays of an entry hold one count");
                     const bool has_producer =
                         producers.get(input).expect("the input arrays of an entry hold one count")->is_valid();
-                    const bool is_external = plan_slots.get(slot.raw())
-                                                 .match([](auto planned) noexcept { return planned->is_external; },
-                                                        [] noexcept { return false; });
+                    const bool is_external = plan_slots.get(slot.raw()).is_some_and([](auto planned) noexcept {
+                        return planned->is_external;
+                    });
                     if (is_external && !has_producer) on_read(ExternalRead{OpIndex{i}, input, slot});
                 }
             }

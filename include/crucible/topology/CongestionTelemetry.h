@@ -265,9 +265,9 @@ template <::foundation::effects::IsExecCtx Ctx>
     ::fixy::FixedArray<std::byte, detail::tcp_info_bytes> info{};
     std::size_t const info_count =
         ::fixy::net::read_tcp_option(ctx, fd, ::fixy::net::TcpOption::info, info.view()).value_or(0);
-    cntp::CcAlgorithm const algorithm = cntp::query_cc_selection_for_socket(ctx, fd).match(
-        [](cntp::CcSelection selected) noexcept { return selected.algorithm; },
-        [](cntp::CcError) noexcept { return cntp::CcAlgorithm::Custom; });
+    cntp::CcAlgorithm const algorithm = cntp::query_cc_selection_for_socket(ctx, fd)
+                                            .map([](cntp::CcSelection selected) noexcept { return selected.algorithm; })
+                                            .value_or(cntp::CcAlgorithm::Custom);
     ::fixy::FixedArray<std::byte, detail::cc_info_bytes> congestion_info{};
     std::size_t const congestion_count =
         ::fixy::net::read_tcp_option(ctx, fd, ::fixy::net::TcpOption::congestion_info, congestion_info.view())

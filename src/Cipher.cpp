@@ -263,15 +263,11 @@ template <class Ctx>
 template <class Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError>
 open_prefix_(Ctx const& ctx, Cipher::RootPath const& prefix) noexcept {
-    using Opened = ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError>;
     return ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(prefix.c_text().view()))
-        .match(
-            [&](::fixy::Path<::fixy::tags::source::Sanitized> path) -> Opened {
-                return ::fixy::fs::open_dirfd(ctx, path).match(
-                    [](::fixy::fs::Dirfd dir) -> Opened { return dir; },
-                    [](::foundation::os::Errno error) -> Opened { return ::fixy::err(open_error_of_(error)); });
-            },
-            [](::fixy::PathTraversalError) -> Opened { return ::fixy::err(Cipher::OpenError::path_refused); });
+        .map_err([](::fixy::PathTraversalError) noexcept { return Cipher::OpenError::path_refused; })
+        .and_then([&](::fixy::Path<::fixy::tags::source::Sanitized> path) noexcept {
+            return ::fixy::fs::open_dirfd(ctx, path).map_err(open_error_of_);
+        });
 }
 
 // Makes the directory name under dir, and syncs dir, which holds the new
@@ -285,10 +281,8 @@ template <class Ctx>
     return ::fixy::fs::make_directory_at(ctx, dir, name)
         .match(
             [&](::fixy::Unit) -> Made {
-                if (::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).is_err()) {
-                    return ::fixy::err(Cipher::OpenError::open_failed);
-                }
-                return ::fixy::Unit{};
+                return ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).map_err(
+                    [](::foundation::os::Errno) noexcept { return Cipher::OpenError::open_failed; });
             },
             [](::foundation::os::Errno error) -> Made {
                 if (error == ::foundation::os::Errno::eexist) return ::fixy::Unit{};
@@ -299,8 +293,7 @@ template <class Ctx>
 // True when opened holds the error reason.
 [[nodiscard]] bool holds_error_(::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError> const& opened,
                                 Cipher::OpenError reason) noexcept {
-    return opened.match([](::fixy::fs::Dirfd const&) { return false; },
-                        [reason](Cipher::OpenError given) { return given == reason; });
+    return opened.is_err_and([reason](Cipher::OpenError const& given) noexcept { return given == reason; });
 }
 
 // Opens the directory at prefix as open_prefix_ does, but a directory that
@@ -352,7 +345,8 @@ template <class Ctx>
     using OpenError = Cipher::OpenError;
     Cipher::RootPath prefix{};
     const ::fixy::TextView start = ::fixy::starts_with(root, "/") ? ::fixy::TextView{"/"} : ::fixy::TextView{"./"};
-    if (prefix.append(start).is_err()) return ::fixy::err(OpenError::path_refused);
+    CRUCIBLE_TRY(
+        _, prefix.append(start).map_err([](::foundation::os::Errno) noexcept { return OpenError::path_refused; }));
     CRUCIBLE_TRY(start_dir, open_searchable_(ctx, prefix));
     ::fixy::fs::Dirfd level = std::move(start_dir);
     ::fixy::TextView rest = root;
@@ -721,9 +715,10 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
     // The entry fills its buffer: the header and then the payload.
     ::fixy::HeapArray<std::byte> encoded =
         ::fixy::mint_heap_array(allocation, cipher::federation::FEDERATION_HEADER_BYTES + payload_bytes, std::byte{0});
-    if (cipher::federation::serialize_federation_entry(encoded.view(), key, payload.view()).is_err()) {
-        return ::fixy::err(PersistRefusal::entry_encode_failed);
-    }
+    CRUCIBLE_TRY(_, cipher::federation::serialize_federation_entry(encoded.view(), key, payload.view())
+                        .map_err([](cipher::federation::FederationError) noexcept {
+                            return PersistRefusal::entry_encode_failed;
+                        }));
 
     // The index line: "<first_step>,<last_step>,<count>,<16-hex hash>\n".
     // The longest form is 20 + 1 + 20 + 1 + 20 + 1 + 16 + 1 = 80 bytes,
@@ -828,10 +823,11 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
                                                    + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES);
                      }));
 
-        auto entry = cipher::federation::deserialize_untrusted_federation_entry(
-            bytes.view(), cipher::federation::FEDERATION_UNIVERSE_CARDINALITY);
-        if (entry.is_err()) return ::fixy::err(LoadError::batch_entry_malformed);
-        const cipher::federation::FederationEntryView view = std::move(entry).expect("the entry decoded");
+        CRUCIBLE_TRY(view, cipher::federation::deserialize_untrusted_federation_entry(
+                               bytes.view(), cipher::federation::FEDERATION_UNIVERSE_CARDINALITY)
+                               .map_err([](cipher::federation::FederationError) noexcept {
+                                   return LoadError::batch_entry_malformed;
+                               }));
         const bool has_named_hashes = view.header.content_hash == hash
                                    && view.header.row_hash == SESSION_EVENT_FEDERATION_ROW_HASH
                                    && session_event_batch_hash(view.payload) == hash;
@@ -840,9 +836,10 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
             return ::fixy::err(LoadError::batch_count_mismatch);
         }
 
-        auto decoded = ::fixy::session::decode_session_log(allocation, view.payload);
-        if (decoded.is_err()) return ::fixy::err(LoadError::field_out_of_range);
-        ::fixy::HeapArray<SessionEvent> events = std::move(decoded).expect("the batch decoded");
+        CRUCIBLE_TRY(events, ::fixy::session::decode_session_log(allocation, view.payload)
+                                 .map_err([](::fixy::session::EventLogDecodeFailure) noexcept {
+                                     return LoadError::field_out_of_range;
+                                 }));
         // The count check above gives the batch count events, and count is
         // above zero.
         const bool has_named_range =
@@ -1035,8 +1032,8 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
 ::fixy::Option<ContentHash> Cipher::parse_head_(::fixy::TextView text) noexcept {
     const std::size_t digit_count = ::fixy::find(text, '\n').value_or(text.size());
     return ::foundation::core::parse_hex<std::uint64_t>(text.window(0, digit_count).value_or(::fixy::TextView{}))
-        .match([](std::uint64_t raw) -> ::fixy::Option<ContentHash> { return ::fixy::some(ContentHash{raw}); },
-               [](::fixy::ParseError) -> ::fixy::Option<ContentHash> { return ::fixy::none; });
+        .ok()
+        .map([](std::uint64_t raw) noexcept { return ContentHash{raw}; });
 }
 
 // The two members of the resident cache are cold.  A store and a load wait
@@ -1145,9 +1142,7 @@ Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocat
     using Opened = ::fixy::Result<::fixy::fs::Dirfd, OpenError>;
     Opened opened = with_file_ctx_(file_ctx, [&](auto const& ctx) -> Opened {
         CRUCIBLE_TRY(_, make_root_directories_(ctx, root.value().c_text().view()));
-        return ::fixy::fs::open_dirfd(ctx, root).match(
-            [](::fixy::fs::Dirfd dir) -> Opened { return dir; },
-            [](::foundation::os::Errno error) -> Opened { return ::fixy::err(open_error_of_(error)); });
+        return ::fixy::fs::open_dirfd(ctx, root).map_err(open_error_of_);
     });
     CRUCIBLE_TRY(root_dir, std::move(opened));
     root_dirfd_ = std::move(root_dir);

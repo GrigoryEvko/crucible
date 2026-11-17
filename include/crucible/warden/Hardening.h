@@ -303,8 +303,7 @@ public:
             detail::warn("madvise(MADV_HUGEPAGE)", error);
             return false;
         }
-        return advised.match([](std::size_t count) noexcept { return count != 0; },
-                             [](::foundation::os::Errno) noexcept { return false; });
+        return advised.is_ok_and([](std::size_t count) noexcept { return count != 0; });
     }
 
     // Faults in each page that holds a byte of the region, as a write does,
@@ -341,8 +340,7 @@ public:
             }
             return false;
         }
-        return collapsed.match([](std::size_t count) noexcept { return count != 0; },
-                               [](::foundation::os::Errno) noexcept { return false; });
+        return collapsed.is_ok_and([](std::size_t count) noexcept { return count != 0; });
     }
 
 private:

@@ -187,12 +187,10 @@ admit_runtime_budget_ms(std::uint32_t runtime_ms) noexcept {
 // refused, never truncated.
 [[nodiscard]] constexpr ::fixy::Result<CalibrationSampleCount, CalibrationError>
 admit_sample_count(std::uint32_t samples) noexcept {
-    return ::fixy::narrow<std::uint16_t>(samples).match(
-        [](std::uint16_t narrowed) noexcept {
+    return ::fixy::narrow<std::uint16_t>(samples)
+        .ok_or(CalibrationError::InvalidSampleCount)
+        .and_then([](std::uint16_t narrowed) noexcept {
             return ::fixy::admit_refined<measured_sample_count>(narrowed, CalibrationError::InvalidSampleCount);
-        },
-        []() noexcept -> ::fixy::Result<CalibrationSampleCount, CalibrationError> {
-            return ::fixy::err(CalibrationError::InvalidSampleCount);
         });
 }
 

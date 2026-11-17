@@ -74,8 +74,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
         if (slot.is_external) return true;
         const bool is_inside =
             ::foundation::core::checked_add(slot.offset_bytes, slot.nbytes)
-                .match([pool_bytes](uint64_t end_offset) noexcept { return end_offset <= pool_bytes; },
-                       [] noexcept { return false; });
+                .is_some_and([pool_bytes](uint64_t end_offset) noexcept { return end_offset <= pool_bytes; });
         return is_inside && slot.offset_bytes % ALIGNMENT == 0;
     }
 

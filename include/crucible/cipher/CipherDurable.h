@@ -198,12 +198,9 @@ namespace detail {
 template <DurableStance Stance, typename... Extras, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::fixy::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>
 open_with_stance_(Ctx const& ctx, Path<source::Sanitized> const& path, ::fixy::fs::FileMode perms) noexcept {
-    using Opened = ::fixy::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>;
     return ::fixy::fs::mint_file<atom_fs::mode<typename Stance::mode_type>,
                                  atom_fs::with_flag<typename Stance::flag_type>, Extras...>(ctx, path, perms)
-        .match(
-            [](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept -> Opened { return std::move(opened).consume(); },
-            [](::foundation::os::Errno error) noexcept -> Opened { return ::fixy::err(error); });
+        .map([](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept { return std::move(opened).consume(); });
 }
 
 }  // namespace detail
@@ -212,28 +209,22 @@ template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, warm_writer_stance, Extras...>
 [[nodiscard]] auto mint_warm_writer(Ctx const& ctx, Path<source::Sanitized> const& path,
                                     ::fixy::fs::FileMode perms) noexcept {
-    using Minted = ::fixy::Result<::fixy::Linear<CipherDurableHandle<warm_writer_stance>>, ::foundation::os::Errno>;
     return detail::open_with_stance_<warm_writer_stance, Extras...>(ctx, path, perms)
-        .match(
-            [](::fixy::fs::OwnedFd fd) noexcept -> Minted {
-                return ::fixy::mint_linear<CipherDurableHandle<warm_writer_stance>>(
-                    CipherDurableHandle<warm_writer_stance>{std::move(fd)});
-            },
-            [](::foundation::os::Errno error) noexcept -> Minted { return ::fixy::err(error); });
+        .map([](::fixy::fs::OwnedFd fd) noexcept {
+            return ::fixy::mint_linear<CipherDurableHandle<warm_writer_stance>>(
+                CipherDurableHandle<warm_writer_stance>{std::move(fd)});
+        });
 }
 
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, cold_writer_stance, Extras...>
 [[nodiscard]] auto mint_cold_writer(Ctx const& ctx, Path<source::Sanitized> const& path,
                                     ::fixy::fs::FileMode perms) noexcept {
-    using Minted = ::fixy::Result<::fixy::Linear<CipherDurableHandle<cold_writer_stance>>, ::foundation::os::Errno>;
     return detail::open_with_stance_<cold_writer_stance, Extras...>(ctx, path, perms)
-        .match(
-            [](::fixy::fs::OwnedFd fd) noexcept -> Minted {
-                return ::fixy::mint_linear<CipherDurableHandle<cold_writer_stance>>(
-                    CipherDurableHandle<cold_writer_stance>{std::move(fd)});
-            },
-            [](::foundation::os::Errno error) noexcept -> Minted { return ::fixy::err(error); });
+        .map([](::fixy::fs::OwnedFd fd) noexcept {
+            return ::fixy::mint_linear<CipherDurableHandle<cold_writer_stance>>(
+                CipherDurableHandle<cold_writer_stance>{std::move(fd)});
+        });
 }
 
 // This mint opens only the temporary file that becomes the new HEAD.
@@ -244,14 +235,11 @@ template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, head_advance_stance, Extras...>
 [[nodiscard]] auto mint_head_advancer(Ctx const& ctx, Path<source::Sanitized> const& path,
                                       ::fixy::fs::FileMode perms) noexcept {
-    using Minted = ::fixy::Result<::fixy::Linear<CipherDurableHandle<head_advance_stance>>, ::foundation::os::Errno>;
     return detail::open_with_stance_<head_advance_stance, Extras...>(ctx, path, perms)
-        .match(
-            [](::fixy::fs::OwnedFd fd) noexcept -> Minted {
-                return ::fixy::mint_linear<CipherDurableHandle<head_advance_stance>>(
-                    CipherDurableHandle<head_advance_stance>{std::move(fd)});
-            },
-            [](::foundation::os::Errno error) noexcept -> Minted { return ::fixy::err(error); });
+        .map([](::fixy::fs::OwnedFd fd) noexcept {
+            return ::fixy::mint_linear<CipherDurableHandle<head_advance_stance>>(
+                CipherDurableHandle<head_advance_stance>{std::move(fd)});
+        });
 }
 
 }  // namespace crucible::cipher::durable

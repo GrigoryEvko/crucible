@@ -380,8 +380,8 @@ public:
 
     [[nodiscard]] PhiMilli suspicion_phi(cog::CogIdentity const& peer, std::uint64_t now_ns) const noexcept {
         return find_peer_slot(slots_, peer.uuid)
-            .match([&](::fixy::Index<MaxPeers> index) { return suspicion_phi_of(slots_.at(index), now_ns); },
-                   [] { return PhiMilli{0}; });
+            .map([&](::fixy::Index<MaxPeers> index) { return suspicion_phi_of(slots_.at(index), now_ns); })
+            .value_or(PhiMilli{0});
     }
 
 private:

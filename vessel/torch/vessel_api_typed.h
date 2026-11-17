@@ -476,9 +476,8 @@ decode_c10_device_type(int8_t ordinal) noexcept {
 
 // The crucible layout of a c10 layout ordinal, or no value.
 [[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::Layout> decode_c10_layout(int8_t ordinal) noexcept {
-    return ::fixy::enum_from<C10Layout>(ordinal).match(
-        [](C10Layout layout) noexcept { return layout_of_c10(layout); },
-        [] noexcept { return ::fixy::Option<crucible::Layout>{::fixy::none}; });
+    return ::fixy::enum_from<C10Layout>(ordinal).and_then(
+        [](C10Layout layout) noexcept { return layout_of_c10(layout); });
 }
 
 // The tag a recording entry point accepts.  TraceRing owns the pointer

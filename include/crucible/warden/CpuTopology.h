@@ -291,14 +291,8 @@ namespace detail {
             return ::fixy::none;
         }
     }
-    return ::fixy::parse<std::size_t>(digits).match(
-        [](std::size_t cpu) noexcept -> ::fixy::Option<std::size_t> {
-            if (cpu >= kMaxCpuCount) {
-                return ::fixy::none;
-            }
-            return ::fixy::some(cpu);
-        },
-        [](::fixy::ParseError) noexcept -> ::fixy::Option<std::size_t> { return ::fixy::none; });
+    return ::fixy::parse<std::size_t>(digits).ok().filter(
+        [](std::size_t const& cpu) noexcept { return cpu < kMaxCpuCount; });
 }
 
 // A kernel CPU list names single CPUs and inclusive ranges, separated
