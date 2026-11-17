@@ -38,6 +38,9 @@ from assay.loop import heavy
 LOCKS_FILE = Path("/proc/locks")
 # The available memory of a lease of a case, which holds each job.
 MUCH_MEMORY_GB = 1e6
+# The most time that a step of the case of the fair share waits for a state of the pool.  It is only the guard against
+# a hang, and the verdict does not read a time.
+STATE_LIMIT_S = 60.0
 # A process that holds a lease of 4 jobs of a planted pool, writes the count of its slots to a file, and waits.
 HOLDER = """import pathlib, sys, time
 sys.path.insert(0, sys.argv[1])
@@ -405,64 +408,115 @@ def kill_cases(expect: testing.Expect) -> None:
         )
 
 
+class HeldJob:
+    """A lease of the size of the pool in a thread of its own, whose workers each take one slot and hold it (THE POOL).
+
+    The case sets the count of the workers.  A worker holds its slot until the case stops it, so the lease has no idle
+    token apart from the tokens of the stopped workers.  The pump then never sees a token that is idle only because the
+    host gave the thread of a worker no CPU.
+    """
+
+    def __init__(self, root: Path, pool: heavy.Pool, workers: int) -> None:
+        """Keep the root, the pool and the count of the first workers.  The case starts the thread."""
+        self.root = root
+        self.pool = pool
+        self.first_workers = workers
+        self.share: heavy.Share | None = None
+        self.is_ready = threading.Event()
+        self.finish = threading.Event()
+        self.workers: list[tuple[threading.Event, threading.Thread]] = []
+        self.thread = threading.Thread(target=self.run)
+
+    def run(self) -> None:
+        """Hold the lease, start the first workers at once, and keep the lease until the case sets the finish event."""
+        with heavy.leased(self.root, self.pool.size, self.pool, reader([MUCH_MEMORY_GB])) as share:
+            if share is not None:
+                self.share = share
+                self.set_workers(self.first_workers)
+                self.is_ready.set()
+                self.finish.wait()
+                self.set_workers(0)
+        self.is_ready.set()
+
+    @property
+    def held(self) -> int:
+        """The slots of the lease at this time, or 0 before the lease holds a slot."""
+        return 0 if self.share is None else self.share.lease.held
+
+    def set_workers(self, count: int) -> None:
+        """Stop the last workers, or start new ones, until `count` workers hold a slot or wait for one.
+
+        The thread of the job calls it at its start and at its end, and the case calls it between them.
+        """
+        while len(self.workers) > count:
+            stop, thread = self.workers.pop()
+            stop.set()
+            thread.join()
+        while len(self.workers) < count and self.share is not None:
+            stop = threading.Event()
+            thread = threading.Thread(target=held_until, args=(self.share.client, stop))
+            thread.start()
+            self.workers.append((stop, thread))
+
+
 def fair_cases(expect: testing.Expect) -> None:
     """Hold the fair share of the pool: a lease gives its idle tokens above its share to a hungry lease (THE POOL).
 
-    Job A starts alone and takes each slot of a pool of 8.  Job B then waits for its first slot.  Job A has a serial
-    phase, and then both jobs use each slot that they hold.  No job then stays at one slot while the other holds idle
-    tokens, and each one holds approximately its fair share.
+    Job A starts alone with a worker for each slot of a pool of 8, and it takes each slot.  Job B then waits for its
+    first slot, a hungry lease below its fair share of 4.  Job A stops half of its workers, so it holds idle tokens
+    above its share.  Job A gives them back, job B takes the free slots, and each job holds approximately its share.
+    Job A keeps one slot above its share when a stopped worker held its implicit slot, which is no token of the FIFO.
+    Each step waits for a state of the pool and not for a time, and STATE_LIMIT_S is only the guard against a hang.  A
+    worker holds its slot, so a host at a high load gives the pump no idle token, and the state then stays.
     """
     with tempfile.TemporaryDirectory(prefix="heavy-fair-") as work_text:
         root = Path(work_text)
         pool = heavy.Pool(root / "slots", 8)
-        shares: dict[str, heavy.Share] = {}
-        started = {name: threading.Event() for name in ("a", "b")}
+        fair = pool.size // 2
+        first = HeldJob(root, pool, pool.size)
+        second = HeldJob(root, pool, pool.size)
         samples: list[tuple[int, int]] = []
+        steps: list[bool] = []
 
-        def job(name: str, phases: tuple[tuple[int, float], ...]) -> None:
-            """Hold a lease of 8 jobs, and run each phase: its workers use the slots of the lease for its time."""
-            with heavy.leased(root, 8, pool, reader([MUCH_MEMORY_GB])) as share:
-                if share is None:
-                    return
-                shares[name] = share
-                started[name].set()
-                for workers, seconds in phases:
-                    stop = threading.Event()
-                    threads = [threading.Thread(target=cycled, args=(share.client, stop)) for _ in range(workers)]
-                    for thread in threads:
-                        thread.start()
-                    time.sleep(seconds)
-                    stop.set()
-                    for thread in threads:
-                        thread.join()
+        def sampled() -> tuple[int, int]:
+            """Give the slots of the two jobs at this time, and keep them."""
+            sample = (first.held, second.held)
+            samples.append(sample)
+            return sample
+
+        def is_shared() -> bool:
+            """Tell if the jobs hold each slot of the pool, and each one its fair share with one slot more or less."""
+            held_a, held_b = sampled()
+            return held_a + held_b == pool.size and held_a <= fair + 1 and held_b >= fair - 1
+
+        def peers_below_fair() -> int:
+            """Give the hungry leases below their fair share that job A sees."""
+            share = first.share
+            return 0 if share is None else share.lease.demand().peers_below_fair
 
         def run() -> None:
-            """Start job A, wait until it holds each slot, start job B, and sample the slots of the two jobs."""
-            first = threading.Thread(target=job, args=("a", ((8, 1.5), (1, 1.0), (8, 2.5))))
-            first.start()
-            started["a"].wait(10.0)
-            testing.wait_until(lambda: shares["a"].lease.held == pool.size, limit_s=10.0)
-            second = threading.Thread(target=job, args=("b", ((8, 4.0),)))
-            second.start()
-            while first.is_alive():
-                held_b = shares["b"].lease.held if "b" in shares else 0
-                samples.append((shares["a"].lease.held, held_b))
-                time.sleep(0.05)
-            second.join()
+            """Run the steps of the case, and end the two jobs."""
+            first.thread.start()
+            steps.append(first.is_ready.wait(STATE_LIMIT_S))
+            steps.append(testing.wait_until(lambda: sampled()[0] == pool.size, limit_s=STATE_LIMIT_S))
+            second.thread.start()
+            steps.append(testing.wait_until(lambda: peers_below_fair() == 1, limit_s=STATE_LIMIT_S))
+            first.set_workers(fair)
+            steps.append(testing.wait_until(is_shared, limit_s=STATE_LIMIT_S))
+            # Four ticks of each pump: the state stays, because no worker gives a slot back.
+            time.sleep(4 * heavy.TICK_S)
+            steps.append(is_shared())
+            first.finish.set()
+            second.finish.set()
+            first.thread.join()
+            second.thread.join()
 
         testing.captured(run)
-        last = samples[-10:]
-        holds = (
-            bool(last)
-            and max(a for a, _ in samples) == pool.size
-            and all(a + b <= pool.size for a, b in samples)
-            and min(b for _, b in last) >= pool.size // 2 - 1
-            and max(a for a, _ in last) <= pool.size // 2 + 1
-        )
         expect(
             f"a lease that took each slot gives its idle tokens above its fair share to a hungry lease, and the two "
-            f"jobs then hold approximately half of the pool each: the last samples (a, b) {last}",
-            holds,
+            f"jobs then hold approximately half of the pool each: the steps {steps}, the last samples (a, b) "
+            f"{samples[-5:]}",
+            steps == [True] * 5 and all(held_a + held_b <= pool.size for held_a, held_b in samples),
         )
 
 
@@ -744,13 +798,11 @@ def start_cases(expect: testing.Expect) -> None:
         )
 
 
-def cycled(client: jobserver.Client, stop: threading.Event) -> None:
-    """Use one slot of a jobserver after the other for a short job, until the stop event."""
-    while not stop.is_set():
-        with client.held(stop) as is_held:
-            if not is_held:
-                return
-            time.sleep(0.02)
+def held_until(client: jobserver.Client, stop: threading.Event) -> None:
+    """Take one slot of a jobserver, and hold it until the stop event."""
+    with client.held(stop) as is_held:
+        if is_held:
+            stop.wait()
 
 
 def main(argv: list[str]) -> int:
