@@ -97,6 +97,7 @@ crucible_bench(bench_iteration_detector)
 crucible_bench(bench_kernel_cache)
 crucible_bench(bench_merkle_dag)
 crucible_bench(bench_meta_log)
+crucible_bench(bench_net_checks)
 crucible_bench(bench_phases)
 # Default trace for bench_phases: SD1.5 U-Net (36499 ops) — real-world
 # production-scale baseline. 10k+ DAG ops is the minimum meaningful

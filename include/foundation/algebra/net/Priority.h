@@ -9,6 +9,14 @@
 //   NetChannel                the name and the capacity of a channel
 //   ProcessSystem<P, C, A>    the names of P processes, C channels, and A
 //                             actions
+//   LivenessFault             the fault that the check finds: a code, and the
+//                             process, the channel, the action or the cycle
+//                             that the code names
+//   find_liveness_fault(system)
+//                             the body of the check: the first fault, or the
+//                             fault NoFault
+//   explain_liveness_fault(system, fault)
+//                             the text of the refusal of a fault
 //   check_liveness(system)    each cycle of waits holds a token, so no
 //                             action of the system waits for ever
 //
@@ -44,6 +52,16 @@
 //   fixy/session/Watch.h keeps one priority for each session, so it refuses
 //   that last case.
 //
+// THE FAULT
+//   find_liveness_fault is constexpr and makes no text, so one body serves
+//   the consteval door check_liveness and a program at run time, as the find
+//   functions of Net.h do.  explain_liveness_fault makes the text from the
+//   fault and the system.  A run-time call keeps the arrays of the check on
+//   the stack, about 64 bytes for each action.  A program calls it on a
+//   system that it holds as a parameter or as a variable, never on a
+//   constant, because the compiler folds a call on a constant into a second
+//   run of the check (THE RUN-TIME FORM of foundation/algebra/net/Net.h).
+//
 // THE LIMITS
 //   A branch and a choice have no form here: a caller checks one system for
 //   each arm, or for each set of arms that the processes choose together.  A
@@ -69,6 +87,10 @@ namespace foundation::algebra::net {
 enum class ProcessId : std::uint32_t {
 };
 enum class ChannelId : std::uint32_t {
+};
+
+// The index of an action in the actions of a system.
+enum class ActionId : std::uint32_t {
 };
 
 // The two moves of an action on its channel.
@@ -103,10 +125,48 @@ struct ProcessSystem {
     Action actions[Actions]{};
 };
 
-namespace detail {
+// ── The fault ───────────────────────────────────────────────────────────
 
-// The most nodes of a cycle that a refusal of check_liveness names.
-inline constexpr std::uint32_t max_named_waits = 4;
+// The rule that a system breaks.  Each code has one text, which
+// explain_liveness_fault makes.
+enum class LivenessFaultCode : std::uint8_t {
+    NoFault = 0,
+    // The fault names the process.
+    ProcessWithoutName = 1,
+    // The fault names the channel.
+    ChannelWithoutName = 2,
+    // The fault names the action.
+    ActionPastSystem = 3,
+    // The fault names the action of the second process, and the process
+    // that held that side of the channel first.
+    SideHeldTwice = 4,
+    // The fault names the channel.
+    SendsWithoutReceives = 5,
+    // The fault names the first actions of the cycle in path, each after the
+    // action that waits on it.
+    CycleWithoutToken = 6,
+};
+
+// The most actions of a cycle that a fault names.  A longer cycle sets
+// is_path_cut.
+inline constexpr std::size_t max_liveness_path = 4;
+
+// The fault that check_liveness finds, with no text.  The code tells which
+// fields it sets.
+struct LivenessFault {
+    LivenessFaultCode code = LivenessFaultCode::NoFault;
+    std::uint8_t path_count = 0;
+    bool is_path_cut = false;
+    std::uint8_t reserved = 0;
+    ProcessId process{};
+    ChannelId channel{};
+    ActionId action{};
+    ActionId path[max_liveness_path]{};
+
+    [[nodiscard]] constexpr bool is_fault() const noexcept { return code != LivenessFaultCode::NoFault; }
+};
+
+namespace detail {
 
 // The index of an action among the sends, or among the receives, of its
 // channel.
@@ -140,21 +200,20 @@ constexpr void put_wait_(NetVerdict& text, ProcessSystem<Processes, Channels, Ac
 
 }  // namespace detail
 
-// Each cycle of waits of the marked graph of the system holds a token
-// (THE MODEL).  The refusal of a cycle names its first nodes, each after the
-// node that waits on it.  Complexity: O(P + C + A).
+// The first fault of the marked graph of the system (THE MODEL), or
+// NoFault.  Complexity: O(P + C + A).
 template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
-[[nodiscard]] consteval NetVerdict
-check_liveness(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
+[[nodiscard]] constexpr LivenessFault
+find_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
     constexpr std::uint32_t none = detail::no_index;
     for (std::uint32_t process = 0; process < Processes; ++process) {
         if (protocol.process_names[process].is_empty()) {
-            return NetVerdict::refuse("liveness: process ").put_number(process).put(" has no name.");
+            return LivenessFault{.code = LivenessFaultCode::ProcessWithoutName, .process = ProcessId{process}};
         }
     }
     for (std::uint32_t channel = 0; channel < Channels; ++channel) {
         if (protocol.channels[channel].name.is_empty()) {
-            return NetVerdict::refuse("liveness: channel ").put_number(channel).put(" has no name.");
+            return LivenessFault{.code = LivenessFaultCode::ChannelWithoutName, .channel = ChannelId{channel}};
         }
     }
 
@@ -171,22 +230,15 @@ check_liveness(ProcessSystem<Processes, Channels, Actions> const& protocol) noex
         auto const process = static_cast<std::uint32_t>(act.process);
         auto const channel = static_cast<std::uint32_t>(act.channel);
         if (process >= Processes || channel >= Channels || (act.move != Move::Send && act.move != Move::Receive)) {
-            return NetVerdict::refuse("liveness: action ")
-                .put_number(index)
-                .put(" names a process, a channel or a move that the system does not have.");
+            return LivenessFault{.code = LivenessFaultCode::ActionPastSystem, .action = ActionId{index}};
         }
         std::uint32_t const slot = 2 * channel + (act.move == Move::Send ? 0u : 1u);
         if (holder[slot] == none) holder[slot] = process;
         if (holder[slot] != process) {
-            return NetVerdict::refuse("liveness: the ")
-                .put(act.move == Move::Send ? "send" : "receive")
-                .put(" side of channel '")
-                .put_name(protocol.channels[channel].name)
-                .put("' is held by '")
-                .put_name(protocol.process_names[holder[slot]])
-                .put("' and by '")
-                .put_name(protocol.process_names[process])
-                .put("'.  One process holds each side of a channel.");
+            return LivenessFault{.code = LivenessFaultCode::SideHeldTwice,
+                                 .process = ProcessId{holder[slot]},
+                                 .channel = act.channel,
+                                 .action = ActionId{index}};
         }
         step_of[index] = step_count[slot];
         ++step_count[slot];
@@ -197,13 +249,7 @@ check_liveness(ProcessSystem<Processes, Channels, Actions> const& protocol) noex
     std::uint32_t steps = 0;
     for (std::uint32_t channel = 0; channel < Channels; ++channel) {
         if (step_count[2 * channel] != step_count[2 * channel + 1]) {
-            return NetVerdict::refuse("liveness: channel '")
-                .put_name(protocol.channels[channel].name)
-                .put("' has ")
-                .put_number(step_count[2 * channel])
-                .put(" sends and ")
-                .put_number(step_count[2 * channel + 1])
-                .put(" receives.  Each send has its receive.");
+            return LivenessFault{.code = LivenessFaultCode::SendsWithoutReceives, .channel = ChannelId{channel}};
         }
         step_first[channel] = steps;
         steps += step_count[2 * channel];
@@ -303,7 +349,7 @@ check_liveness(ProcessSystem<Processes, Channels, Actions> const& protocol) noex
             }
         }
     }
-    if (order_count == node_count) return NetVerdict{};
+    if (order_count == node_count) return LivenessFault{};
 
     // A cycle remains.  Each node that the sort left waits on another such
     // node, so a walk back along these waits repeats a node.
@@ -325,20 +371,127 @@ check_liveness(ProcessSystem<Processes, Channels, Actions> const& protocol) noex
         is_seen[walk] = true;
         walk = edge_from[into[walk]];
     }
-    NetVerdict refusal = NetVerdict::refuse("liveness: a cycle of waits holds no token: ");
+    LivenessFault fault{.code = LivenessFaultCode::CycleWithoutToken};
     std::uint32_t member = walk;
-    std::uint32_t shown = 0;
     do {
-        if (shown != 0u) refusal.put(" <- ");
-        Action const& act = protocol.actions[member];
-        detail::put_wait_(refusal, protocol, act, detail::ChannelStep{step_of[member]},
-                          ProcessId{holder[2 * static_cast<std::uint32_t>(act.channel) + 1]});
+        fault.path[fault.path_count] = ActionId{member};
+        ++fault.path_count;
         member = edge_from[into[member]];
-        ++shown;
-    } while (member != walk && shown < detail::max_named_waits);
-    if (member != walk) refusal.put(" <- ...");
-    refusal.put(".  No action of the cycle can start.");
-    return refusal;
+    } while (member != walk && fault.path_count < max_liveness_path);
+    fault.is_path_cut = member != walk;
+    return fault;
+}
+
+namespace detail {
+
+// The step of an action on its side of its channel: the count of the earlier
+// actions with its channel and its move.  Complexity: O(A).
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] constexpr ChannelStep step_at_(ProcessSystem<Processes, Channels, Actions> const& protocol,
+                                             ActionId action) noexcept {
+    Action const& act = protocol.actions[static_cast<std::uint32_t>(action)];
+    std::uint32_t step = 0;
+    for (std::uint32_t index = 0; index < static_cast<std::uint32_t>(action); ++index) {
+        Action const& earlier = protocol.actions[index];
+        if (earlier.channel == act.channel && earlier.move == act.move) ++step;
+    }
+    return ChannelStep{step};
+}
+
+// The process that receives from the channel, or process 0 for a channel
+// with no receive.  Complexity: O(A).
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] constexpr ProcessId receiver_of_(ProcessSystem<Processes, Channels, Actions> const& protocol,
+                                               ChannelId channel) noexcept {
+    for (Action const& act : protocol.actions) {
+        if (act.channel == channel && act.move == Move::Receive) return act.process;
+    }
+    return ProcessId{0};
+}
+
+}  // namespace detail
+
+// The text of the refusal of a fault that find_liveness_fault gave for this
+// system, or the admitted verdict for NoFault.  A fault of another system
+// reads no array past its end.  Complexity: O(A) and the names.
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard, gnu::cold]] constexpr NetVerdict
+explain_liveness_fault(ProcessSystem<Processes, Channels, Actions> const& protocol,
+                       LivenessFault const& fault) noexcept {
+    auto const action_index = static_cast<std::uint32_t>(fault.action);
+    auto const channel_index = static_cast<std::uint32_t>(fault.channel);
+    Action const act = action_index < Actions ? protocol.actions[action_index] : Action{};
+    NetName const channel_name = channel_index < Channels ? protocol.channels[channel_index].name : NetName{};
+    auto const process_name = [&](ProcessId process) constexpr noexcept {
+        auto const index = static_cast<std::uint32_t>(process);
+        return index < Processes ? protocol.process_names[index] : NetName{};
+    };
+    switch (fault.code) {
+        case LivenessFaultCode::NoFault:
+            return NetVerdict{};
+        case LivenessFaultCode::ProcessWithoutName:
+            return NetVerdict::refuse("liveness: process ")
+                .put_number(static_cast<std::uint32_t>(fault.process))
+                .put(" has no name.");
+        case LivenessFaultCode::ChannelWithoutName:
+            return NetVerdict::refuse("liveness: channel ").put_number(channel_index).put(" has no name.");
+        case LivenessFaultCode::ActionPastSystem:
+            return NetVerdict::refuse("liveness: action ")
+                .put_number(action_index)
+                .put(" names a process, a channel or a move that the system does not have.");
+        case LivenessFaultCode::SideHeldTwice:
+            return NetVerdict::refuse("liveness: the ")
+                .put(act.move == Move::Send ? "send" : "receive")
+                .put(" side of channel '")
+                .put_name(channel_name)
+                .put("' is held by '")
+                .put_name(process_name(fault.process))
+                .put("' and by '")
+                .put_name(process_name(act.process))
+                .put("'.  One process holds each side of a channel.");
+        case LivenessFaultCode::SendsWithoutReceives: {
+            std::uint32_t sends = 0;
+            std::uint32_t receives = 0;
+            for (Action const& each : protocol.actions) {
+                if (each.channel != fault.channel) continue;
+                if (each.move == Move::Send) ++sends;
+                if (each.move == Move::Receive) ++receives;
+            }
+            return NetVerdict::refuse("liveness: channel '")
+                .put_name(channel_name)
+                .put("' has ")
+                .put_number(sends)
+                .put(" sends and ")
+                .put_number(receives)
+                .put(" receives.  Each send has its receive.");
+        }
+        case LivenessFaultCode::CycleWithoutToken: {
+            NetVerdict refusal = NetVerdict::refuse("liveness: a cycle of waits holds no token: ");
+            for (std::uint32_t shown = 0; shown < fault.path_count && shown < max_liveness_path; ++shown) {
+                if (shown != 0u) refusal.put(" <- ");
+                auto const member = static_cast<std::uint32_t>(fault.path[shown]);
+                if (member >= Actions) continue;
+                Action const& wait = protocol.actions[member];
+                detail::put_wait_(refusal, protocol, wait, detail::step_at_(protocol, fault.path[shown]),
+                                  detail::receiver_of_(protocol, wait.channel));
+            }
+            if (fault.is_path_cut) refusal.put(" <- ...");
+            refusal.put(".  No action of the cycle can start.");
+            return refusal;
+        }
+        default:
+            break;
+    }
+    return NetVerdict::refuse("liveness: the fault has a code that no check gives.");
+}
+
+// Each cycle of waits of the marked graph of the system holds a token
+// (THE MODEL).  The refusal of a cycle names its first nodes, each after the
+// node that waits on it.  Complexity: O(P + C + A).
+template <std::size_t Processes, std::size_t Channels, std::size_t Actions>
+[[nodiscard]] consteval NetVerdict
+check_liveness(ProcessSystem<Processes, Channels, Actions> const& protocol) noexcept {
+    return explain_liveness_fault(protocol, find_liveness_fault(protocol));
 }
 
 }  // namespace foundation::algebra::net

@@ -9,6 +9,11 @@
 //               one boundary result: a dataflow net
 //   ring        the Ring global type over one rendezvous for each pair, with
 //               N roles and two iterations: 4N actions
+//
+// main runs each find function of the checks at run time on the same nets
+// and systems, and compares each fault with the fault of the compile.  A
+// chain with two crossed stages and a chain with a miswired stage give a
+// fault of each check, so a body that admits each net fails the test.
 
 #include <foundation/algebra/net/Net.h>
 #include <foundation/algebra/net/Priority.h>
@@ -23,9 +28,15 @@ using foundation::algebra::net::AgentId;
 using foundation::algebra::net::ChannelId;
 using foundation::algebra::net::give;
 using foundation::algebra::net::KindId;
+using foundation::algebra::net::LivenessFault;
+using foundation::algebra::net::LivenessFaultCode;
+using foundation::algebra::net::max_fault_path;
+using foundation::algebra::net::max_liveness_path;
 using foundation::algebra::net::Move;
 using foundation::algebra::net::Net;
 using foundation::algebra::net::NetChannel;
+using foundation::algebra::net::NetFault;
+using foundation::algebra::net::NetFaultCode;
 using foundation::algebra::net::NetName;
 using foundation::algebra::net::NetSignature;
 using foundation::algebra::net::NetVerdict;
@@ -264,8 +275,156 @@ template <std::size_t Roles>
     return protocol;
 }
 
-inline constexpr NetVerdict waiting_ring = check_liveness(build_waiting_ring<1000>());
+inline constexpr auto waiting_ring_of_1000 = build_waiting_ring<1000>();
+inline constexpr NetVerdict waiting_ring = check_liveness(waiting_ring_of_1000);
 static_assert(!waiting_ring.is_admitted());
+
+// ── The run-time form ───────────────────────────────────────────────────
+
+// Two faults are the same when each field that a check sets is the same.
+[[nodiscard]] constexpr bool is_same_fault(NetFault const& left, NetFault const& right) noexcept {
+    if (left.code != right.code || left.type != right.type || left.kind != right.kind || left.agent != right.agent
+        || left.port != right.port || left.wire != right.wire || left.path_count != right.path_count
+        || left.is_path_cut != right.is_path_cut) {
+        return false;
+    }
+    for (std::uint32_t index = 0; index < left.path_count && index < max_fault_path; ++index) {
+        if (left.path[index] != right.path[index]) return false;
+    }
+    return true;
+}
+
+[[nodiscard]] constexpr bool is_same_fault(LivenessFault const& left, LivenessFault const& right) noexcept {
+    if (left.code != right.code || left.process != right.process || left.channel != right.channel
+        || left.action != right.action || left.path_count != right.path_count
+        || left.is_path_cut != right.is_path_cut) {
+        return false;
+    }
+    for (std::uint32_t index = 0; index < left.path_count && index < max_liveness_path; ++index) {
+        if (left.path[index] != right.path[index]) return false;
+    }
+    return true;
+}
+
+// The chain with the inputs of two stages crossed from the stage at first:
+// stage first feeds stage first + 101, and stage first + 100 feeds stage
+// first + 1.  The wires of the stages between them close a cycle, their
+// principal ports meet auxiliary ports in a cycle, and they wait on each
+// other in a cycle.
+template <std::size_t Agents>
+[[nodiscard]] constexpr Net<1, 3, Agents, Agents - 1> cross_chain(Net<1, 3, Agents, Agents - 1> net,
+                                                                  AgentId first) noexcept {
+    auto const stage = static_cast<std::uint32_t>(first);
+    net.wires[stage].right = PortRef{AgentId{stage + 101}, 0};
+    net.wires[stage + 100].right = PortRef{AgentId{stage + 1}, 0};
+    return net;
+}
+
+// The chain with the output of a stage wired to the output of the next
+// stage: the wire joins two give ports, which are no duals.
+template <std::size_t Agents>
+[[nodiscard]] constexpr Net<1, 3, Agents, Agents - 1> miswire_chain(Net<1, 3, Agents, Agents - 1> net,
+                                                                    AgentId stage) noexcept {
+    auto const index = static_cast<std::uint32_t>(stage);
+    net.wires[index].right = PortRef{AgentId{index + 1}, 1};
+    return net;
+}
+
+inline constexpr AgentId crossed_stage{100};
+inline constexpr AgentId miswired_stage{500};
+inline constexpr auto crossed_chain = cross_chain(chain_of_1000, crossed_stage);
+inline constexpr auto miswired_chain = miswire_chain(chain_of_1000, miswired_stage);
+
+// The faults of the compile on the two faulty chains and the waiting ring.
+inline constexpr NetFault miswired_wiring_fault = find_wiring_fault(miswired_chain);
+static_assert(miswired_wiring_fault.code == NetFaultCode::WireNotDual && miswired_wiring_fault.wire == 500);
+inline constexpr NetFault crossed_forest_fault = find_forest_fault(crossed_chain);
+static_assert(crossed_forest_fault.code == NetFaultCode::ForestCycle && crossed_forest_fault.wire == 200);
+inline constexpr NetFault crossed_proof_net_fault = find_proof_net_fault(crossed_chain);
+static_assert(crossed_proof_net_fault.code == NetFaultCode::ProofNetCycle);
+inline constexpr NetFault crossed_vicious_fault = find_vicious_fault(crossed_chain);
+static_assert(crossed_vicious_fault.code == NetFaultCode::ViciousCircle && crossed_vicious_fault.is_path_cut);
+inline constexpr NetFault crossed_dataflow_fault = find_dataflow_fault(crossed_chain);
+static_assert(crossed_dataflow_fault.code == NetFaultCode::DataflowCycle && crossed_dataflow_fault.path_count == 5);
+static_assert(crossed_dataflow_fault.is_path_cut);
+inline constexpr LivenessFault waiting_ring_fault = find_liveness_fault(waiting_ring_of_1000);
+static_assert(waiting_ring_fault.code == LivenessFaultCode::CycleWithoutToken);
+
+// The types of the nets and the systems above.  The chain and the sum tree
+// have one type.
+using ForkNet = Net<2, 7, 1001, 1332>;
+using LineNet = Net<1, 3, 1000, 999>;
+using RingSystem = ProcessSystem<1000, 1000, 4000>;
+using WaitingRingSystem = ProcessSystem<1000, 1000, 2000>;
+
+// The checks of Net.h.
+enum class NetCheck : std::uint8_t {
+    Wiring = 0,
+    Forest = 1,
+    ProofNet = 2,
+    Vicious = 3,
+    Dataflow = 4,
+};
+
+// The fault of one check of a net at run time.  The net is a parameter, so
+// the compiler does not fold the call into a second constant evaluation
+// (THE RUN-TIME FORM of Net.h).  noinline keeps the arrays of each check in
+// a frame of its own.
+template <NetCheck Check, class Graph>
+[[gnu::noinline]] NetFault find_at_run_time(Graph const& graph) noexcept {
+    if constexpr (Check == NetCheck::Wiring) {
+        return find_wiring_fault(graph);
+    } else if constexpr (Check == NetCheck::Forest) {
+        return find_forest_fault(graph);
+    } else if constexpr (Check == NetCheck::ProofNet) {
+        return find_proof_net_fault(graph);
+    } else if constexpr (Check == NetCheck::Vicious) {
+        return find_vicious_fault(graph);
+    } else {
+        return find_dataflow_fault(graph);
+    }
+}
+
+// The fault of the liveness check of a system at run time.
+template <class System>
+[[gnu::noinline]] LivenessFault find_liveness_at_run_time(System const& protocol) noexcept {
+    return find_liveness_fault(protocol);
+}
+
+// An admitted net has the fault NoFault at compile time, as the
+// static_asserts of each net above show.
+[[nodiscard]] bool does_fork_match(ForkNet const& tree) noexcept {
+    return is_same_fault(find_at_run_time<NetCheck::Wiring>(tree), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(tree), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::Vicious>(tree), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::Dataflow>(tree), NetFault{});
+}
+
+// The chain passes, and the miswired chain and the crossed chain, made from
+// it at run time, give the faults of the compile.
+[[nodiscard]] bool does_chain_match(LineNet const& chain) noexcept {
+    LineNet const crossed = cross_chain(chain, crossed_stage);
+    LineNet const miswired = miswire_chain(chain, miswired_stage);
+    return is_same_fault(find_at_run_time<NetCheck::Forest>(chain), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(chain), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::Dataflow>(chain), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::Wiring>(miswired), miswired_wiring_fault)
+        && is_same_fault(find_at_run_time<NetCheck::Forest>(crossed), crossed_forest_fault)
+        && is_same_fault(find_at_run_time<NetCheck::ProofNet>(crossed), crossed_proof_net_fault)
+        && is_same_fault(find_at_run_time<NetCheck::Vicious>(crossed), crossed_vicious_fault)
+        && is_same_fault(find_at_run_time<NetCheck::Dataflow>(crossed), crossed_dataflow_fault);
+}
+
+[[nodiscard]] bool does_sum_match(LineNet const& sum) noexcept {
+    return is_same_fault(find_at_run_time<NetCheck::Forest>(sum), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::Vicious>(sum), NetFault{})
+        && is_same_fault(find_at_run_time<NetCheck::Dataflow>(sum), NetFault{});
+}
+
+[[nodiscard]] bool do_rings_match(RingSystem const& ring, WaitingRingSystem const& waiting) noexcept {
+    return is_same_fault(find_liveness_at_run_time(ring), LivenessFault{})
+        && is_same_fault(find_liveness_at_run_time(waiting), waiting_ring_fault);
+}
 
 }  // namespace
 
@@ -277,5 +436,7 @@ int main() {
         "role <- ");
     NetVerdict const empty = NetVerdict::refuse(nullptr);
     bool const is_empty_refusal = empty.size() == 0 && !empty.is_admitted();
-    return is_named && is_empty_refusal ? 0 : 1;
+    bool const is_run_time_same = does_fork_match(fork_of_1001) && does_chain_match(chain_of_1000)
+                               && does_sum_match(sum_of_1000) && do_rings_match(ring_of_1000, waiting_ring_of_1000);
+    return is_named && is_empty_refusal && is_run_time_same ? 0 : 1;
 }

@@ -1,7 +1,8 @@
 #pragma once
 
 // The interaction nets of the base: a plain constexpr graph of agents, ports
-// and wires, and the consteval checks over it.
+// and wires, and the checks over it.  Each check is one constexpr body, which
+// a consteval door runs at compile time and a program runs at run time.
 //
 //   NetName                 the name of a type, an agent kind or a port: a
 //                           string literal, or a static string of reflection
@@ -32,7 +33,8 @@
 //   find_signature_fault, find_wiring_fault, find_forest_fault,
 //   find_proof_net_fault, find_vicious_fault, find_dataflow_fault
 //                                the body of each check: the first fault, or
-//                                the fault NoFault
+//                                the fault NoFault, at compile time or at run
+//                                time
 //   explain_fault(net, fault)    the text of the refusal of a fault
 //
 // THE MODEL
@@ -98,6 +100,29 @@
 //   the text from the fault and the net, and each consteval door check_*
 //   gives that text.  So a caller that needs no text reads the fault, which
 //   holds 48 bytes and no text.
+//
+// THE RUN-TIME FORM
+//   Each find function is constexpr: the door check_* runs it at compile
+//   time, and a program calls it at run time on the same net, with the same
+//   body and the same fault.  The counts of the agents and the wires are the
+//   template arguments of the net, so a run-time net has the sizes of its
+//   type.  Its signature comes from a constant, because a NetName is
+//   consteval, and its agents and wires can come from the program.
+//
+//   At -O1 and above, the compiler tries to fold each call of a constexpr
+//   function whose arguments are constants.  So a run-time call on a constant
+//   net runs the whole check again in the compile: a test that called four
+//   checks on nets of 1,000 agents that way took 905 G compile instructions.
+//   A program calls a find function on a net that it holds as a parameter or
+//   as a variable, never on a constant.
+//
+//   A run-time call keeps the arrays of its body on the stack: check_proof_net
+//   takes about 190 bytes for each agent and 20 for each wire, and each other
+//   check less.  The flag -Wstack-usage of the build refuses a frame of more
+//   than 512 KB, so the compiler refuses a run-time call on a net of more
+//   than some thousand agents.  The text of explain_fault costs about 0.8 s of
+//   compile time in a Debug unit, so a program reads the fault and makes the
+//   text in one source file.
 //
 // THE COSTS
 //   P is the count of the ports, A of the agents and W of the wires.
@@ -595,7 +620,7 @@ public:
 // auxiliary ports, and a boundary kind has one port and no par group.
 // Complexity: O(T + K).
 template <std::size_t Types, std::size_t Kinds>
-[[nodiscard]] consteval NetFault find_signature_fault(NetSignature<Types, Kinds> const& signature) noexcept {
+[[nodiscard]] constexpr NetFault find_signature_fault(NetSignature<Types, Kinds> const& signature) noexcept {
     for (std::uint32_t type = 0; type < Types; ++type) {
         if (signature.type_names[type].is_empty()) {
             return NetFault{.code = NetFaultCode::TypeWithoutName, .type = TypeId{static_cast<std::uint16_t>(type)}};
@@ -954,7 +979,7 @@ namespace detail {
 // The body of find_wiring_fault, on the first agents and the first wires of
 // the arrays of a capacity class.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetFault find_wiring_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+[[nodiscard]] constexpr NetFault find_wiring_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
                                                        AgentCount agents, WireCount wires) noexcept {
     NetFault const kinds = find_signature_fault(graph.signature);
     if (kinds.is_fault()) return kinds;
@@ -1010,7 +1035,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
 // exactly one wire, and the two ports of a wire have dual types.
 // Complexity: O(K + A + W).
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetFault find_wiring_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+[[nodiscard]] constexpr NetFault find_wiring_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
     constexpr detail::WireCount wires{static_cast<std::uint32_t>(Wires)};
     if constexpr (detail::is_small_net<Agents, Wires>) {
@@ -1034,7 +1059,7 @@ namespace detail {
 // The body of find_forest_fault, on the arrays of a capacity class of a net
 // with no fault of its wiring.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetFault find_forest_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+[[nodiscard]] constexpr NetFault find_forest_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
                                                        AgentCount agents, WireCount wires) noexcept {
     for (std::uint32_t agent = 0; agent < count_of(agents); ++agent) {
         if (kind_of_(graph, AgentId{agent}).par_ports != 0u) {
@@ -1061,7 +1086,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
 // par group is refused: a net with a par group takes check_proof_net.
 // Complexity: O(K + A + W a(A)).
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetFault find_forest_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+[[nodiscard]] constexpr NetFault find_forest_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
     if (wiring.is_fault()) return wiring;
     constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
@@ -1101,7 +1126,7 @@ namespace detail {
 // net with no fault of its wiring.  Vertex v is agent v below the count of
 // the agents, and wire v - agent_count above.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetFault find_proof_net_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+[[nodiscard]] constexpr NetFault find_proof_net_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
                                                           AgentCount agents, WireCount wires) noexcept {
     constexpr std::size_t vertex_capacity = AgentCapacity + WireCapacity;
     constexpr std::uint32_t none = no_index;
@@ -1267,7 +1292,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
 
 // The first fault of the criterion of Danos and Regnier above, or NoFault.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetFault find_proof_net_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+[[nodiscard]] constexpr NetFault find_proof_net_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
     if (wiring.is_fault()) return wiring;
     constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
@@ -1301,7 +1326,7 @@ namespace detail {
 // The body of find_vicious_fault, on the arrays of a capacity class of a net
 // with no fault of its wiring.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetFault find_vicious_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+[[nodiscard]] constexpr NetFault find_vicious_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
                                                         AgentCount agents, WireCount wires) noexcept {
     constexpr std::uint32_t none = no_index;
     std::uint32_t const agent_count = count_of(agents);
@@ -1346,7 +1371,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
 // The first vicious circle above, or NoFault.  The fault names the first
 // agents of the circle in path.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetFault find_vicious_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+[[nodiscard]] constexpr NetFault find_vicious_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
     if (wiring.is_fault()) return wiring;
     constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
@@ -1381,7 +1406,7 @@ inline constexpr std::uint8_t max_wait_path = 5;
 // The body of find_dataflow_fault, on the arrays of a capacity class of a
 // net with no fault of its wiring.
 template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::size_t WireCapacity>
-[[nodiscard]] consteval NetFault find_dataflow_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
+[[nodiscard]] constexpr NetFault find_dataflow_fault_in_(Net<Types, Kinds, AgentCapacity, WireCapacity> const& graph,
                                                          AgentCount agents, WireCount wires) noexcept {
     constexpr std::uint32_t none = no_index;
     std::uint32_t const agent_count = count_of(agents);
@@ -1470,7 +1495,7 @@ template <std::size_t Types, std::size_t Kinds, std::size_t AgentCapacity, std::
 // The first fault of the dataflow above, or NoFault.  A cycle of waits names
 // the input where it closes in agent and port, and its first agents in path.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
-[[nodiscard]] consteval NetFault find_dataflow_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
+[[nodiscard]] constexpr NetFault find_dataflow_fault(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
     if (wiring.is_fault()) return wiring;
     constexpr detail::AgentCount agents{static_cast<std::uint32_t>(Agents)};
