@@ -57,15 +57,39 @@ The dispatch library's schema table is a process-global static, so an arm that
 ran after another in one process would read a table the earlier arm filled.
 Every (workload, arm) pair runs in a process of its own.
 
+THE CORES OF THE THREADS
+
+A Vigil runs five background threads: the thread of its pipeline and the four
+stages that drain, detect, build and publish.  The main thread takes the first
+core of the affinity of the process.  Each attach starts its Vigil while the
+main thread holds the other cores, so the background threads take them as
+their mask, and the pipeline pins each stage to its own core of that mask.
+Six isolated cores give each thread a core of its own.  No load balancer moves
+a thread between isolated cores, so with fewer cores some threads share one,
+and with one core all of them share it.  An arm prints the cores of its threads
+on standard error, and its host facts hold them.
+
+THE LOST TIME
+
+Each timed run of an attached arm reads the wall time and the CPU time of the
+main thread around its loop.  The thread CPU time of the kernel leaves out the
+steal of the hypervisor, so the difference is the time that the main thread
+lost: steal, interrupts and waits behind another thread of its core.  A run
+that lost more than LOST_BOUND_NS is not valid.  The arm prints it, and its
+report gives the count of such runs and the largest loss.
+
 USAGE
 
+    python3 utils/bin/loop bench --cores 6 --command -- \
+        .venv-torch/bin/python vessel/torch/bench_e2e.py --workload add1 --arm compiled --emit-json
     taskset -c 88 .venv-torch/bin/python vessel/torch/bench_e2e.py
     taskset -c 88 .venv-torch/bin/python vessel/torch/bench_e2e.py \
         --workload mlp_train --arm record
     taskset -c 88 .venv-torch/bin/python vessel/torch/bench_e2e.py --sweep-only
 
-The pin matters. Refer to the Code Guide, "Measurement discipline". Set
-CRUCIBLE_BUILD_DIR to the directory holding the libraries under test.
+The pin matters. Refer to the Code Guide, "Measurement discipline". loop bench
+claims the isolated cores, one lock for each core (utils/assay/loop/bench.py).
+Set CRUCIBLE_BUILD_DIR to the directory holding the libraries under test.
 
 A full run writes bench/baselines/TIER/vessel_e2e.json.  TIER is the hardware
 tier of the build under test, the entry CRUCIBLE_HOST_TIER of its CMake cache
@@ -75,6 +99,8 @@ tier of the build under test, the entry CRUCIBLE_HOST_TIER of its CMake cache
 from __future__ import annotations
 
 import argparse
+import contextlib
+import dataclasses
 import json
 import os
 import platform
@@ -130,6 +156,103 @@ ADD_CHUNKED = {"add1", "add1k"}
 # The run-to-run spread of p50 above which the host is judged to be contended
 # and the numbers are discarded rather than reported with a caveat.
 VARIANCE_GATE = 0.05
+
+# The time that the main thread can lose in one timed run, in nanoseconds,
+# before the run is not valid (THE LOST TIME).  The bound of the pause check of
+# bench/bench_harness.h.
+LOST_BOUND_NS = 1_000_000
+
+
+# =====================================================================
+# The cores of the threads
+# =====================================================================
+
+@dataclasses.dataclass(frozen=True)
+class Placement:
+    """The core of the main thread and the cores of the background threads of each Vigil (THE CORES OF THE THREADS).
+
+    main_cpu is None for a process with no CPU in its affinity.  vigil_cpus is empty when the affinity holds one CPU.
+    """
+
+    main_cpu: int | None
+    vigil_cpus: tuple[int, ...]
+
+
+def claimed_placement() -> Placement:
+    """Split the affinity of the process: its first CPU for the main thread, the other CPUs for each Vigil."""
+    cores = tuple(sorted(os.sched_getaffinity(0)))
+    if not cores:
+        return Placement(None, ())
+    return Placement(cores[0], cores[1:])
+
+
+# The placement of the process, read before any pin of the main thread.
+PLACEMENT = claimed_placement()
+
+
+def pin_main_thread() -> None:
+    """Pin the main thread to its core, and print the cores of the threads on standard error."""
+    if PLACEMENT.main_cpu is None:
+        return
+    os.sched_setaffinity(0, {PLACEMENT.main_cpu})
+    vigil = list(PLACEMENT.vigil_cpus) or [PLACEMENT.main_cpu]
+    print(f"[bench_e2e] main thread on cpu{PLACEMENT.main_cpu}, the background threads of each Vigil on cpus "
+          f"{vigil}", file=sys.stderr, flush=True)
+
+
+@contextlib.contextmanager
+def attached(model, optimizer):
+    """Attach a Vigil whose background threads start on the cores after the first (THE CORES OF THE THREADS).
+
+    The main thread holds those cores while the Vigil starts, and then it goes back to its own core.
+
+    Args:
+        model: The model to attach
+        optimizer: The optimizer, or None
+
+    Yields:
+        The live controller of attach()
+    """
+    from crucible_native import attach
+
+    if PLACEMENT.main_cpu is None or not PLACEMENT.vigil_cpus:
+        with attach(model, optimizer) as ctx:
+            yield ctx
+        return
+    with contextlib.ExitStack() as stack:
+        os.sched_setaffinity(0, PLACEMENT.vigil_cpus)
+        try:
+            ctx = stack.enter_context(attach(model, optimizer))
+        finally:
+            os.sched_setaffinity(0, {PLACEMENT.main_cpu})
+        yield ctx
+
+
+class LostTime:
+    """The lost time of the main thread in each timed run of an arm (THE LOST TIME)."""
+
+    def __init__(self, label: str) -> None:
+        """Hold no run yet."""
+        self.label = label
+        self.lost: list[int] = []
+
+    @contextlib.contextmanager
+    def run(self):
+        """Read the wall time and the CPU time of the main thread around one timed run, and print a run over the
+        bound."""
+        wall_before, cpu_before = time.monotonic_ns(), time.thread_time_ns()
+        yield
+        lost = max(0, (time.monotonic_ns() - wall_before) - (time.thread_time_ns() - cpu_before))
+        self.lost.append(lost)
+        if lost > LOST_BOUND_NS:
+            print(f"[bench_e2e] {self.label} run {len(self.lost)}: the main thread lost {lost / 1e6:.2f} ms, more "
+                  f"than {LOST_BOUND_NS / 1e6:g} ms, so the run is NOT VALID", file=sys.stderr, flush=True)
+
+    def report(self) -> dict:
+        """The count of the runs over the bound and the largest loss, for the report of the arm."""
+        return {"bound_ns": LOST_BOUND_NS,
+                "runs_over_bound": sum(1 for lost in self.lost if lost > LOST_BOUND_NS),
+                "max_ns": max(self.lost, default=0)}
 
 
 # =====================================================================
@@ -369,12 +492,11 @@ def arm_record(kind: str, runs: int, count: int) -> dict:
     publishes a region. That is the honest shape of the cost: a real loop pays
     it once at startup, not once per iteration.
     """
-    from crucible_native import attach
-
     model, optimizer, step = build_workload(kind)
     clock = time.perf_counter_ns
     target = RECORD_SAMPLES_PER_RUN[kind]
     budget = RECORD_ATTACH_BUDGET[kind]
+    lost = LostTime(f"RECORD {kind}")
 
     per_run = []
     attaches = 0
@@ -385,13 +507,14 @@ def arm_record(kind: str, runs: int, count: int) -> dict:
         samples: list[int] = []
         spent = 0
         while len(samples) < target and spent < budget:
-            with attach(model, optimizer) as ctx:
+            with attached(model, optimizer) as ctx:
                 spent += 1
                 attaches += 1
                 if ctx.is_compiled():
                     raise RuntimeError("the Vigil was already replaying at attach")
 
-                window = record_window(kind, ctx, step, clock, target - len(samples))
+                with lost.run():
+                    window = record_window(kind, ctx, step, clock, target - len(samples))
                 samples += window
                 windows.append(len(window))
 
@@ -410,6 +533,7 @@ def arm_record(kind: str, runs: int, count: int) -> dict:
             "samples_per_attach": {"min": ordered[0],
                                    "median": ordered[len(ordered) // 2],
                                    "max": ordered[-1]},
+            "lost_time": lost.report(),
             "vigil": last_state}
 
 
@@ -499,11 +623,10 @@ def arm_compiled(kind: str, runs: int, count: int) -> dict:
     A real loop spends all but its first few iterations here, so this is the arm
     whose tail matters. One attach per run offers as many iterations as asked.
     """
-    from crucible_native import attach
-
     model, optimizer, step = build_workload(kind)
     clock = time.perf_counter_ns
     stamps = [0] * (count + 1)
+    lost = LostTime(f"COMPILED {kind}")
 
     per_run = []
     attaches = 0
@@ -512,7 +635,7 @@ def arm_compiled(kind: str, runs: int, count: int) -> dict:
     last_state: dict = {}
 
     for _ in range(runs):
-        with attach(model, optimizer) as ctx:
+        with attached(model, optimizer) as ctx:
             attaches += 1
             if not pump_until_replaying(ctx, step, 30.0):
                 last_state = vigil_state(ctx)
@@ -520,7 +643,8 @@ def arm_compiled(kind: str, runs: int, count: int) -> dict:
 
             time_iterations(min(count, 100), step, stamps, clock)   # settle
 
-            time_iterations(count, step, stamps, clock)
+            with lost.run():
+                time_iterations(count, step, stamps, clock)
             samples = diffs(stamps, count)
 
             # A divergence inside the window means some of these iterations
@@ -538,6 +662,7 @@ def arm_compiled(kind: str, runs: int, count: int) -> dict:
         return {"arm": "COMPILED", "workload": kind, "attached": True,
                 "unavailable": "no run completed entirely while the Vigil replayed",
                 "attaches": attaches, "runs_interrupted": interrupted,
+                "lost_time": lost.report(),
                 "vigil": last_state}
 
     return {"arm": "COMPILED", "workload": kind, "attached": True,
@@ -545,6 +670,7 @@ def arm_compiled(kind: str, runs: int, count: int) -> dict:
             "attaches": attaches,
             "runs_interrupted_by_a_divergence": interrupted,
             "divergences_over_all_runs": diverged_total,
+            "lost_time": lost.report(),
             "vigil": last_state}
 
 
@@ -653,15 +779,15 @@ def sweep_process(elements: int, runs: int, count: int) -> dict:
         The three reduced arms, and the Vigil state at the end of COMPILED
     """
     import torch.nn as nn
-    from crucible_native import attach
 
+    pin_main_thread()
     step = build_add_out(elements)
     for _ in range(min(count, 200)):
         step()                                    # warm the caches
 
     before = across_runs(timed_runs(step, runs, count))
 
-    with attach(nn.Identity(), None) as ctx:
+    with attached(nn.Identity(), None) as ctx:
         if not pump_until_replaying(ctx, step, 30.0):
             return {"elements": elements, "unavailable": "the Vigil never replayed",
                     "vigil": vigil_state(ctx)}
@@ -826,6 +952,10 @@ def host_fingerprint() -> dict:
         "isolated_cpus": _read("/sys/devices/system/cpu/isolated"),
         "affinity": affinity if len(affinity) <= 8 else f"{len(affinity)} cpus",
         "pinned_cpu": cpu,
+        # The cores of the threads (THE CORES OF THE THREADS): the main thread,
+        # and the background threads of each Vigil.
+        "main_cpu": PLACEMENT.main_cpu,
+        "vigil_cpus": list(PLACEMENT.vigil_cpus),
         "governor": _read(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor")
                     if cpu is not None else "",
         # The sibling list of the pinned core is the fact that decides whether
@@ -857,6 +987,7 @@ def run_one_arm(kind: str, name: str, runs: int, count: int) -> dict:
 
     # One thread, so no intra-op pool competes for the pinned core.
     torch.set_num_threads(1)
+    pin_main_thread()
 
     report = ARMS[name](kind, runs, count)
     report["host"] = host_fingerprint()

@@ -90,7 +90,7 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
 @build/test/fuzz/generated/ | std-object | 14 | - | -
 bench/ | c-array-object | 87 | - | -
-bench/ | c-library-call | 604 | - | -
+bench/ | c-library-call | 602 | - | -
 bench/ | c-library-object | 13 | - | -
 bench/ | compiler-builtin | 12 | - | -
 bench/ | door-header | 2 | - | -
