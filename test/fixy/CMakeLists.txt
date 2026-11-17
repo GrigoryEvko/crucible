@@ -5536,6 +5536,11 @@ fixy_test(test_concurrent_parallel_tree_scan)
 fixy_test(test_concurrent_parallel_tree_segments)
 fixy_test(test_concurrent_parallel_tree_reduce)
 
+# The fourth part of the match of the reductions and their nets: the parallel
+# forms follow the tree plan and the scan plan of runs of some grains.  The
+# parallel forms need the threads of fixy, so this part is a fixy test.
+fixy_test(test_net_reductions_match_parallel)
+
 # test_os_thread_tasks starts threads through the door of
 # fixy/os/ThreadTasks.h with each option, and reads each option back from
 # the thread that it started.  test_concurrent_permission_fork runs the fork
