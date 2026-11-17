@@ -2,7 +2,7 @@
 #include <csetjmp>
 #endif
 #if defined(PLANT_DOOR_HEADER)
-#include <sys/socket.h>
+#include <linux/io_uring.h>
 #endif
 #if defined(PLANT_UPWARD_INCLUDE)
 #include <fixy/PlantHigh.h>

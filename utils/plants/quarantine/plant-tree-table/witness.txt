@@ -24,7 +24,7 @@ error enforced-layer-header src/foundation/Plant.cpp:2 | quarantine: layer-heade
 compile enforced-door-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt out=no
 flag enforced-door-header -DPLANT_DOOR_HEADER
 exit enforced-door-header fail
-error enforced-door-header src/foundation/Plant.cpp:5 | quarantine: door-header <sys/socket.h> has the door include/fixy/os/Socket.h;
+error enforced-door-header src/foundation/Plant.cpp:5 | quarantine: door-header <linux/io_uring.h> has the door src/fixy/os/Io.cpp;
 
 compile enforced-upward src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt out=no
 flag enforced-upward -DPLANT_UPWARD_INCLUDE
@@ -55,7 +55,7 @@ error error-layer-header src/foundation/Plant.cpp:2 | quarantine: layer-header <
 compile error-door-header src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
 flag error-door-header -DPLANT_DOOR_HEADER
 exit error-door-header fail
-error error-door-header src/foundation/Plant.cpp:5 | quarantine: door-header <sys/socket.h> has the door include/fixy/os/Socket.h;
+error error-door-header src/foundation/Plant.cpp:5 | quarantine: door-header <linux/io_uring.h> has the door src/fixy/os/Io.cpp;
 
 compile error-upward src/foundation/Plant.cpp rules={repo}/utils/rule-table.txt mode=error out=no
 flag error-upward -DPLANT_UPWARD_INCLUDE
