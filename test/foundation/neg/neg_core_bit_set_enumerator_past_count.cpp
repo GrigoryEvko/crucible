@@ -14,7 +14,4 @@ enum class ScalarSlot : std::uint8_t {
     fifth
 };
 
-int main() {
-    ::foundation::core::BitSet<4, ScalarSlot> const slots{};
-    return static_cast<int>(slots.size());
-}
+int main() { return static_cast<int>(sizeof(::foundation::core::BitSet<4, ScalarSlot>)); }
