@@ -11,11 +11,10 @@ bench/ | library-holder | 9 | - | -
 include/crucible/cntp/_wip/ | pinned-holder | 1 | - | -
 include/fixy/ | library-holder | 3 | - | -
 include/fixy/concurrent/ | library-holder | 3 | - | -
-include/fixy/os/ | library-holder | 3 | - | -
 include/fixy/session/ | library-holder | 12 | - | -
 include/foundation/permissions/ | library-holder | 1 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -
 test/ | library-holder | 3 | - | -
-test/fixy/ | library-holder | 13 | - | -
+test/fixy/ | library-holder | 12 | - | -
 test/fixy/ | pinned-holder | 1 | - | -
 test/layer/checks/foundation/ | pinned-holder | 1 | - | -

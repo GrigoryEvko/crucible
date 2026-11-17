@@ -84,7 +84,6 @@ rule artifact-symbols
 @build/libcrucible_perf.a | libc-ratchet | 1 | __vfprintf_chk | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_perf.a | libc-ratchet | 1 | stderr | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_perf.a | libc-ratchet | 1 | strlen | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
-@build/libcrucible_perf.a | ratchet | 1 | _ZNSt3_V215system_categoryEv | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_perf.a | ratchet | 1 | _ZSt9terminatev | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_perf.a | ratchet | 1 | __cxa_call_terminate | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_vigil.a | allow | 1 | __cxa_guard_acquire | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import

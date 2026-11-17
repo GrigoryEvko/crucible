@@ -119,8 +119,8 @@ bench/ | region | 1 | MEASURE: the raw loop over two strides is the baseline of 
 bench/ | region | 1 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 588 | - | -
-bench/ | std-object | 198 | - | -
+bench/ | std-entity | 587 | - | -
+bench/ | std-object | 197 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
 examples/fn/ | raw-pointer-object | 7 | - | -
@@ -131,8 +131,6 @@ include/crucible/ | opted-out | 1 | ABI: the front end gave the data pointer of 
 include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
-include/crucible/perf/detail/ | std-entity | 2 | - | -
-include/crucible/perf/detail/ | std-object | 1 | - | -
 include/fixy/ | base-std-entity | 351 | - | -
 include/fixy/ | base-std-object | 201 | - | -
 include/fixy/ | replace-pending:<array> | 6 | - | -
@@ -194,20 +192,16 @@ include/fixy/handle/ | replace-pending:<array> | 1 | - | -
 include/fixy/handle/ | replace-pending:<atomic> | 4 | - | -
 include/fixy/handle/ | replace-pending:<cstdio> | 1 | - | -
 include/fixy/handle/ | replace-pending:<cstdlib> | 1 | - | -
-include/fixy/os/ | base-c-library-object | 1 | - | -
-include/fixy/os/ | base-std-entity | 114 | - | -
-include/fixy/os/ | base-std-object | 52 | - | -
+include/fixy/os/ | base-std-entity | 65 | - | -
+include/fixy/os/ | base-std-object | 31 | - | -
 include/fixy/os/ | replace-pending:<algorithm> | 1 | - | -
 include/fixy/os/ | replace-pending:<array> | 1 | - | -
 include/fixy/os/ | replace-pending:<climits> | 1 | - | -
-include/fixy/os/ | replace-pending:<ctime> | 1 | - | -
-include/fixy/os/ | replace-pending:<expected> | 6 | - | -
 include/fixy/os/ | replace-pending:<limits> | 1 | - | -
 include/fixy/os/ | replace-pending:<optional> | 1 | - | -
-include/fixy/os/ | replace-pending:<span> | 2 | - | -
+include/fixy/os/ | replace-pending:<span> | 1 | - | -
 include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
-include/fixy/os/ | replace-pending:<system_error> | 4 | - | -
 include/fixy/os/ | replace-pending:<vector> | 2 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
 include/fixy/session/ | base-std-entity | 447 | - | -
@@ -305,7 +299,7 @@ test/ | c-array-object | 149 | - | -
 test/ | c-library-call | 723 | - | -
 test/ | c-library-object | 9 | - | -
 test/ | compiler-builtin | 1 | - | -
-test/ | door-header | 11 | - | -
+test/ | door-header | 8 | - | -
 test/ | foreign-symbol | 12 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | opted-out | 47 | PROBE: a traced child shows the directory of each sync of the Cipher store | the test of the syncs of the Cipher traces a child with ptrace and reads the path of each descriptor from /proc, because no door of the base traces a process or shows the directory of a sync, and the child door of the base waits only for the end of a child, not for a ptrace stop
@@ -321,8 +315,8 @@ test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the 
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
 test/ | replace-pending:<limits> | 12 | - | -
 test/ | replace-pending:std::bit_cast | 77 | - | -
-test/ | std-entity | 1464 | - | -
-test/ | std-object | 526 | - | -
+test/ | std-entity | 1455 | - | -
+test/ | std-object | 523 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 3 | - | -
@@ -340,9 +334,9 @@ test/ct/ | std-entity | 18 | - | -
 test/ct/ | std-object | 12 | - | -
 test/dag_neg/ | raw-pointer-object | 5 | - | -
 test/fixy/ | c-array-object | 87 | - | -
-test/fixy/ | c-library-call | 1048 | - | -
+test/fixy/ | c-library-call | 1028 | - | -
 test/fixy/ | c-library-object | 6 | - | -
-test/fixy/ | door-header | 12 | - | -
+test/fixy/ | door-header | 10 | - | -
 test/fixy/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 4 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
@@ -371,7 +365,7 @@ test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family,
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 143 | - | -
+test/fixy/ | raw-pointer-object | 142 | - | -
 test/fixy/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
@@ -401,8 +395,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2668 | - | -
-test/fixy/ | std-object | 959 | - | -
+test/fixy/ | std-entity | 2540 | - | -
+test/fixy/ | std-object | 917 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 288 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
@@ -614,7 +608,7 @@ test/layer/checks/fixy/fp/ | replace-pending:std::bit_cast | 1 | - | -
 test/layer/checks/fixy/fp/ | std-entity | 15 | - | -
 test/layer/checks/fixy/handle/ | std-entity | 2 | - | -
 test/layer/checks/fixy/os/ | c-array-object | 2 | - | -
-test/layer/checks/fixy/os/ | std-entity | 8 | - | -
+test/layer/checks/fixy/os/ | std-entity | 7 | - | -
 test/layer/checks/fixy/session/ | replace-pending:std::source_location | 1 | - | -
 test/layer/checks/fixy/session/ | std-entity | 2 | - | -
 test/layer/checks/fixy/session/ | std-object | 1 | - | -
