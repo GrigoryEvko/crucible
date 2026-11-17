@@ -471,15 +471,17 @@ static_assert(check_rules(undirected_table)
 // but a step of it closes a cycle of a forest.  The interfaces: twin.out (0)
 // for twin >< num and twin >< split; split.second (0) and twin.out (1) for
 // twin >< split in the order of the pair; join.left (0), join.right (1) and
-// twin.out (2) for join >< twin.
+// twin.out (2) for join >< twin.  The boundary kind out takes the result of
+// a net.
 
-inline constexpr NetSignature<1, 4> diamond_kinds{
+inline constexpr NetSignature<1, 5> diamond_kinds{
     .type_names = {"Value"},
     .kinds = {
         {.name = "num", .port_names = {"value"}, .port_types = {give(value)}},
         {.name = "twin", .port_names = {"in", "out"}, .port_types = {take(value), give(value)}},
         {.name = "split", .port_names = {"first", "second"}, .port_types = {give(value), give(value)}},
         {.name = "join", .port_names = {"sum", "left", "right"}, .port_types = {give(value), take(value), take(value)}},
+        {.name = "out", .port_names = {"in"}, .port_types = {take(value)}, .is_boundary = true},
     }};
 inline constexpr Rule twin_meets_num{"twin_meets_num", KindId{1}, KindId{0},
                                      RightSide{.agents = {KindId{2}, KindId{3}},
@@ -502,12 +504,33 @@ inline constexpr Rule join_meets_twin{"join_meets_twin", KindId{3}, KindId{1},
                                                 .agent_count = 1,
                                                 .wire_count = 3}};
 // twin >< num makes 2 agents from 2, so twin weighs more than split and join.
-inline constexpr RuleTable<1, 4, 3> diamond_table{.signature = diamond_kinds,
+inline constexpr RuleTable<1, 5, 3> diamond_table{.signature = diamond_kinds,
                                                   .rules = {twin_meets_num, split_meets_twin, join_meets_twin},
                                                   .step_weights = {KindWeight{KindId{1}, StepWeight{1}}}};
 inline constexpr RuleVerdict diamond_verdict = check_rules(diamond_table);
 static_assert(diamond_verdict.is_admitted(), diamond_verdict);
 static_assert(!diamond_verdict.keeps_forest());
+
+// The test of the property.  The net of the pair twin >< num and its out is a
+// forest.  One step of the rule leaves the split, the join and the out, with
+// two wires between the split and the join, so check_forest refuses the net
+// after the step, and check_dataflow still admits it.
+inline constexpr Net<1, 5, 3, 2> before_diamond{.signature = diamond_kinds,
+                                                .agents = {KindId{0}, KindId{1}, KindId{4}},
+                                                .wires = {Wire{PortRef{AgentId{0}, 0}, PortRef{AgentId{1}, 0}},
+                                                          Wire{PortRef{AgentId{1}, 1}, PortRef{AgentId{2}, 0}}}};
+inline constexpr NetVerdict before_diamond_verdict = check_forest(before_diamond);
+static_assert(before_diamond_verdict.is_admitted(), before_diamond_verdict);
+inline constexpr Net<1, 5, 3, 3> after_diamond{.signature = diamond_kinds,
+                                               .agents = {KindId{2}, KindId{3}, KindId{4}},
+                                               .wires = {Wire{PortRef{AgentId{1}, 0}, PortRef{AgentId{2}, 0}},
+                                                         Wire{PortRef{AgentId{0}, 0}, PortRef{AgentId{1}, 1}},
+                                                         Wire{PortRef{AgentId{0}, 1}, PortRef{AgentId{1}, 2}}}};
+static_assert(check_forest(after_diamond)
+                  .says("net: wire 2 from port 'second' of agent 'split' (node 0) to port 'right' of agent 'join' "
+                        "(node 1) closes a cycle.  The agents and the wires do not form a forest."));
+inline constexpr NetVerdict after_diamond_dataflow = check_dataflow(after_diamond);
+static_assert(after_diamond_dataflow.is_admitted(), after_diamond_dataflow);
 
 // A rule that reads a boundary agent, and a rule whose pair is not dual.
 inline constexpr Rule result_meets_num{"result_meets_num", result_kind, num_kind, RightSide{}};
