@@ -33,13 +33,15 @@
 //   1 is a row faster than that loop.
 //
 // THE CORE OF EACH SHARD
-//   Before the rows, a probe for each count of shards runs the shards of
+//   Before the rows, a probe for 2, 4 and 8 shards runs the shards of
 //   mint_parallel_for with the coupling and the thread options of the walk.
 //   Each shard reads the CPU of its own thread in procfs, and a line gives
 //   that CPU and its L3 group, named by the first CPU of the group.  The
 //   probe runs threads of its own with the placement of the walk, and not the
-//   threads of a timed row.  The JSON tail of the bench gives each row of the
-//   harness.
+//   threads of a timed row.  The walk of one shard starts no thread, because
+//   the parallelism rule gives it one thread, so it runs on the measuring
+//   thread, and its line gives the measuring core.  The JSON tail of the
+//   bench gives each row of the harness.
 //
 // With fewer than nine isolated cores, as under a run with no claim, the
 // threads keep the affinity of the process, and the bench says that its rows
@@ -231,6 +233,15 @@ void print_shard_cores(Placement const& placement) noexcept {
     ::fixy::report(::fixy::Sink::Out, "\n");
 }
 
+// Prints the core of the walk of one shard: the measuring core, because the
+// walk of one shard runs on the measuring thread (THE CORE OF EACH SHARD).
+void print_one_shard_core(Placement const& placement) noexcept {
+    bench::detail::flush_standard_output();
+    ::fixy::report(::fixy::Sink::Out, "  1 shard, on the measuring thread: cpu{} L3 of cpu{}\n",
+                   placement.measuring_core,
+                   bench::read_l3_group(bench::CpuId{placement.measuring_core}).first().value_or(-1));
+}
+
 // The five rows of one size: the rows of the harness, then the line of each
 // count of shards.  The rows go to all, for the JSON tail of the bench.
 void run_level(Level const& level, RowNames names, Placement const& placement,
@@ -329,7 +340,7 @@ int main() {
                        "process, and the rows are noisy.  Run the bench through loop bench, which claims its cores.\n",
                        cores.count(), kClaimedCores);
     }
-    print_shard_cores<1>(placement);
+    print_one_shard_core(placement);
     print_shard_cores<2>(placement);
     print_shard_cores<4>(placement);
     print_shard_cores<8>(placement);
