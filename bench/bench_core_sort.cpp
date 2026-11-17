@@ -24,11 +24,32 @@
 //
 // THE REFERENCES
 //   Each reference row runs the raw form of a reference on the windows of the
-//   row of the base, in the MEASURE region of this file.  std::stable_sort and
-//   std::sort of libstdc++ with the same order are the floor.  After the rows
-//   of one input, a line gives the median of a row of the base over the
-//   median of each reference, in thousandths: 1000 is parity, and a number
-//   above 1000 is slower than the reference.
+//   row of the base, in the MEASURE region of this file.  After the rows of
+//   one input, a line gives the median of a row of the base over the median
+//   of each reference, in thousandths: 1000 is parity, and a number above
+//   1000 is slower than the reference.
+//     std::stable_sort, std::sort   libstdc++ with the same order: the floor
+//     fluxsort                      the stable comparator sort of scandum, a
+//                                   pin of utils/pins.txt.  The rows of
+//                                   floats sort their bits as signed words by
+//                                   the key of the total order, so the order
+//                                   is the order of the row of the base
+//     x86-simd-sort AVX2            the vector sort of numpy at x86-64-v3, a
+//                                   pin of utils/pins.txt: the speed roof of
+//                                   a sort by a key.  It is not stable, and
+//                                   it sorts a float by <.  The pool holds no
+//                                   NaN, and the order differs from the
+//                                   total order only for -0 and +0
+//     x86-simd-sort host            the same sort at the level of the host.
+//                                   On a Zen 4 core its AVX-512 arm stores
+//                                   each partition with vpcompressd to
+//                                   memory, which the core runs in microcode
+//   The rows of a pinned reference need its source in the tools directory
+//   (python3 utils/bin/setup install fluxsort x86-simd-sort).  With no
+//   source, the configure prints the command, and the bench omits the rows.
+//   The Rust sorts of the state of the art, driftsort and ipnsort, have no
+//   C or C++ form, so the commit bodies give their medians from a probe on
+//   the same core and the same windows.
 //
 // Each line of a row gives the core of the row (the core that the harness
 // reads after its pin, or cpu-1 for a row with no pin), the percentiles of
@@ -45,6 +66,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "bench_core_sort_references.h"
 #include "bench_harness.h"
 
 namespace {
@@ -355,6 +377,46 @@ struct StdSort final {
     }
 };
 
+// The bits of a raw run of floats, as signed words, for the rows of fluxsort.
+[[nodiscard]] RawRun<std::int32_t> raw_bits_of(RawRun<float> const& floats) noexcept {
+    RawRun<std::int32_t> bits{floats.count};
+    __builtin_memcpy(bits.first, floats.first, floats.count * sizeof(float));
+    return bits;
+}
+
+#if defined(CRUCIBLE_BENCH_FLUXSORT)
+// The raw form of fluxsort: the bits of floats by the total order, or words
+// by their value.
+struct Fluxsort final {
+    void operator()(std::int32_t* first, std::int32_t* last) const noexcept {
+        bench_sort_references::sort_fluxsort_total_order(first, static_cast<std::size_t>(last - first));
+    }
+    void operator()(std::uint32_t* first, std::uint32_t* last) const noexcept {
+        bench_sort_references::sort_fluxsort_words(first, static_cast<std::size_t>(last - first));
+    }
+    void operator()(std::uint64_t* first, std::uint64_t* last) const noexcept {
+        bench_sort_references::sort_fluxsort_wide_words(first, static_cast<std::size_t>(last - first));
+    }
+};
+#endif
+
+#if defined(CRUCIBLE_BENCH_X86_SIMD_SORT)
+// The raw forms of x86-simd-sort: the AVX2 arm, and the arm of the host.
+struct SimdAvx2 final {
+    template <class T>
+    void operator()(T* first, T* last) const noexcept {
+        bench_sort_references::sort_simd_avx2(first, static_cast<std::size_t>(last - first));
+    }
+};
+
+struct SimdHost final {
+    template <class T>
+    void operator()(T* first, T* last) const noexcept {
+        bench_sort_references::sort_simd_host(first, static_cast<std::size_t>(last - first));
+    }
+};
+#endif
+
 // The row of std::lower_bound: the searches of the row of find_lower_bound.
 [[gnu::noinline]] bench::Report measure_std_lower_bound(bench::Run&& run, RawRun<float> const& sorted) {
     std::size_t probe = 0;
@@ -367,10 +429,50 @@ struct StdSort final {
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// The rows of the vector roof for a row of the base of Count elements of T:
+// the two arms of x86-simd-sort, and the ratios of the row to each.
+template <class T, std::size_t Count>
+void bench_simd_roof(Row const& row, RawRun<T> const& raw_pool) {
+#if defined(CRUCIBLE_BENCH_X86_SIMD_SORT)
+    bench::Report const avx2 = measure_reference<T, Count>(bench::Run{"x86-simd-sort avx2"}, raw_pool, SimdAvx2{});
+    bench::Report const host = measure_reference<T, Count>(bench::Run{"x86-simd-sort host"}, raw_pool, SimdHost{});
+    fixy::FixedText<96> avx2_text{};
+    fixy::FixedText<96> host_text{};
+    Row const avx2_row{name_with_count<Count>(avx2_text, "x86-simd-sort AVX2, not stable"), avx2};
+    Row const host_row{name_with_count<Count>(host_text, "x86-simd-sort of the host, not stable"), host};
+    print_row<Count>(avx2_row);
+    print_row<Count>(host_row);
+    print_ratio(Pair{.row = row, .reference = avx2_row});
+    print_ratio(Pair{.row = row, .reference = host_row});
+#else
+    static_cast<void>(row);
+    static_cast<void>(raw_pool);
+#endif
+}
+
+// The row of fluxsort, with the name flux_name, for a row of the base of
+// Count elements, and the ratio of the row to it.  The raw pool holds signed
+// words for floats, and the words of the row for an integer row.
+template <class T, std::size_t Count>
+void bench_fluxsort(Row const& row, RawRun<T> const& raw_pool, fixy::TextView flux_name) {
+#if defined(CRUCIBLE_BENCH_FLUXSORT)
+    bench::Report const flux = measure_reference<T, Count>(bench::Run{"fluxsort"}, raw_pool, Fluxsort{});
+    Row const flux_row{flux_name, flux};
+    print_row<Count>(flux_row);
+    print_ratio(Pair{.row = row, .reference = flux_row});
+#else
+    static_cast<void>(row);
+    static_cast<void>(raw_pool);
+    static_cast<void>(flux_name);
+#endif
+}
+
 // The rows of Count floats: sort_stably by Ascending and by an order of the
-// caller, the references, and the ratios.
+// caller, the references, and the ratios.  raw_bits holds the bits of the
+// floats of raw_pool, for fluxsort.
 template <std::size_t Count>
-[[gnu::noinline]] void bench_floats(View<float const> pool, RawRun<float> const& raw_pool) {
+[[gnu::noinline]] void bench_floats(View<float const> pool, RawRun<float> const& raw_pool,
+                                    RawRun<std::int32_t> const& raw_bits) {
     bench::Report const ascending =
         measure_sort_stably<float, Count>(bench::Run{"sort_stably"}, pool, ::foundation::core::Ascending{});
     bench::Report const ordered =
@@ -396,6 +498,10 @@ template <std::size_t Count>
     print_ratio(Pair{.row = ascending_row, .reference = std_sort_row});
     print_ratio(Pair{.row = ordered_row, .reference = std_stable_row});
     print_ratio(Pair{.row = ordered_row, .reference = std_sort_row});
+    fixy::FixedText<96> flux_text{};
+    bench_fluxsort<std::int32_t, Count>(ordered_row, raw_bits,
+                                        name_with_count<Count>(flux_text, "fluxsort float by the total order"));
+    bench_simd_roof<float, Count>(ascending_row, raw_pool);
 }
 
 // The rows of a sorted input of 2^20 floats.
@@ -415,6 +521,8 @@ template <std::size_t Count>
     print_row<kShared>(row);
     print_row<kShared>(reference);
     print_ratio(Pair{.row = row, .reference = reference});
+    bench_fluxsort<std::int32_t, kShared>(row, raw_bits_of(raw_sorted),
+                                          "fluxsort float by the total order, 1048576 sorted");
 }
 
 // The rows of 2^20 integer keys by Ascending.  type_name names T in the rows.
@@ -434,6 +542,10 @@ template <class T>
     print_row<kShared>(row);
     print_row<kShared>(reference);
     print_ratio(Pair{.row = row, .reference = reference});
+    fixy::FixedText<96> flux_text{};
+    bench_fluxsort<T, kShared>(row, raw_pool,
+                               fixy::format(flux_text, "fluxsort {}, {}", type_name, kShared).expect("the name fits"));
+    bench_simd_roof<T, kShared>(row, raw_pool);
 }
 
 // The rows of the network of N, with std::sort of the same N as the floor.
@@ -449,6 +561,7 @@ template <std::size_t N>
     print_row<N>(row);
     print_row<N>(reference);
     print_ratio(Pair{.row = row, .reference = reference});
+    bench_simd_roof<float, N>(row, raw_pool);
 }
 
 // The rows of find_lower_bound and std::lower_bound on a sorted run of 2^20.
@@ -475,13 +588,14 @@ int main() {
     HeapArray<float> const run = draw_pool();
     View<float const> const pool{run.view()};
     RawRun<float> const raw_pool = raw_copy_of(pool);
+    RawRun<std::int32_t> const raw_bits = raw_bits_of(raw_pool);
     bench_network<16>(pool, raw_pool);
     bench_network<64>(pool, raw_pool);
     bench_network<256>(pool, raw_pool);
-    bench_floats<256>(pool, raw_pool);
-    bench_floats<1024>(pool, raw_pool);
-    bench_floats<65536>(pool, raw_pool);
-    bench_floats<kShared>(pool, raw_pool);
+    bench_floats<256>(pool, raw_pool, raw_bits);
+    bench_floats<1024>(pool, raw_pool, raw_bits);
+    bench_floats<65536>(pool, raw_pool, raw_bits);
+    bench_floats<kShared>(pool, raw_pool, raw_bits);
     bench_sorted(pool);
     HeapArray<std::uint32_t> const words = words_of(pool);
     bench_words(View<std::uint32_t const>{words.view()}, "uint32");

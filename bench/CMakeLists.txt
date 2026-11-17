@@ -67,6 +67,36 @@ function(crucible_bench name)
   crucible_dump_asm(${name})
 endfunction()
 
+# crucible_bench_reference(TARGET TOOL DEFINITION SOURCE...) gives the bench
+# TARGET a pinned source of the state of the art: the pin TOOL of
+# utils/pins.txt, which `python3 utils/bin/setup install TOOL` puts into the
+# tools directory (THE SOURCES OF THE BENCH of utils/assay/setup/install.py).
+# The configure asks the install module for the directory src of the source,
+# with no network.  When the source is at its pin, TARGET gets that
+# directory as a system include directory, the compile definition
+# DEFINITION=1 and each SOURCE, which holds the doors to the reference.  When
+# the tools directory holds no source at the pin, the configure prints the
+# install command, and TARGET builds with no DEFINITION and with no SOURCE, so
+# the bench omits the rows of that reference.  Only the bench presets build
+# a bench, so the product links none of the code of a reference.
+function(crucible_bench_reference target tool definition)
+  execute_process(
+    COMMAND "${CRUCIBLE_PYTHON3}" -S "${CMAKE_SOURCE_DIR}/utils/bin/setup" install --print-bin "${tool}"
+    RESULT_VARIABLE status
+    OUTPUT_VARIABLE directory
+    ERROR_QUIET
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(NOT status EQUAL 0 OR directory STREQUAL "")
+    message(STATUS "${target}: the pinned ${tool} is not installed, so the bench omits its rows.  Install it with: "
+                   "python3 ${CMAKE_SOURCE_DIR}/utils/bin/setup install ${tool}")
+    return()
+  endif()
+  target_include_directories(${target} SYSTEM PRIVATE "${directory}")
+  target_compile_definitions(${target} PRIVATE ${definition}=1)
+  target_sources(${target} PRIVATE ${ARGN})
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${directory}")
+endfunction()
+
 # ── Migrated to the new bench::Run / Report / Compare API ─────────────
 crucible_bench(bench_meta_zero)
 crucible_bench(bench_observe_metrics_swmr)
@@ -78,6 +108,14 @@ crucible_bench(bench_core_containers)
 crucible_bench(bench_core_region)
 crucible_bench(bench_core_reduce)
 crucible_bench(bench_core_sort)
+# The stable reference fluxsort, and on x86-64 the vector roof x86-simd-sort:
+# its AVX2 arm in a unit at x86-64-v3, and the arm of the host.
+crucible_bench_reference(bench_core_sort fluxsort CRUCIBLE_BENCH_FLUXSORT bench_core_sort_fluxsort.cpp)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  crucible_bench_reference(bench_core_sort x86-simd-sort CRUCIBLE_BENCH_X86_SIMD_SORT bench_core_sort_simd.cpp
+                           bench_core_sort_simd_avx2.cpp)
+  set_source_files_properties(bench_core_sort_simd_avx2.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v3)
+endif()
 # fp::fma at three levels in one program: two units at x86-64 and x86-64-v2
 # run the exact form, and the main unit at the host runs the instruction.
 # The flags of a source come after the flags of the target, so the last
