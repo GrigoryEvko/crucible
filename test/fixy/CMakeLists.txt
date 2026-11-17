@@ -5307,7 +5307,7 @@ fixy_neg_compile_test(neg_owned_mmap_foreign_prot_row
 # members are private, and only the gated mints are friends.
 fixy_neg_compile_test(neg_os_fs_file_door_is_private
   "is private within this context"
-  "fixy::fs::FileDoor::open_path_\\(const char\\*, int, mode_t\\)")
+  "fixy::fs::FileDoor::open_path_\\(const char\\*, int, fixy::fs::FileMode\\)")
 
 fixy_neg_compile_test(neg_os_socket_door_is_private
   "is private within this context"
