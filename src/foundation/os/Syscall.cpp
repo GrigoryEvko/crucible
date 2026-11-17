@@ -560,8 +560,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 }
 
 // The largest release that an enumerator of Syscall needs, other than a
-// feature call.  The walk reads each enumerator, so a new call joins the
-// derivation with no other edit.
+// feature call, and that a flag of the need each_call needs (THE FLAGS of
+// foundation/os/KernelFloor.h).  The walks read each enumerator, so a new
+// call or a new flag joins the derivation with no other edit.
 [[nodiscard]] consteval KernelVersion derive_minimum_kernel() noexcept {
     KernelVersion largest = kFirstRelease;
     for (std::meta::info const enumerator : std::meta::enumerators_of(^^Syscall)) {
@@ -572,6 +573,12 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         KernelVersion const needed = introduced_in(call);
         if (needed > largest) {
             largest = needed;
+        }
+    }
+    for (std::meta::info const enumerator : std::meta::enumerators_of(^^KernelFlag)) {
+        FlagFloor const row = flag_floor(std::meta::extract<KernelFlag>(enumerator));
+        if (row.need == FlagNeed::each_call && row.release > largest) {
+            largest = row.release;
         }
     }
     return largest;

@@ -14,7 +14,9 @@
 
 #include <foundation/Platform.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <meta>
 
 namespace {
 
@@ -189,10 +191,90 @@ void test_judges_each_release_text() {
 
 // The floor is 5.6 on the two architectures: the release of openat2, which
 // each open beneath a directory issues, and the newest call that is no
-// feature call.
+// feature call.  The rows of the flags that a door needs in each call count
+// too, so a new such row above 5.6 fails this test.
 void test_derives_the_floor() {
     os::KernelVersion const floor = os::minimum_kernel();
     CRUCIBLE_FATAL_INVARIANT(std::is_eq(floor <=> os::KernelVersion{5, 6, 0}));
+}
+
+// The count of the rows of the flags that break a rule of THE FLAGS of
+// foundation/os/KernelFloor.h: a row with no word, a fallback row with no
+// fallback text, a row of the need each_call with a fallback text, a row of
+// a word that came before 2.6.0, or a row that a release far in the future
+// does not admit.
+consteval std::size_t count_rows_that_break_a_rule() {
+    std::size_t broken = 0;
+    for (std::meta::info const enumerator : std::meta::enumerators_of(^^os::KernelFlag)) {
+        os::KernelFlag const flag = std::meta::extract<os::KernelFlag>(enumerator);
+        os::FlagFloor const row = os::flag_floor(flag);
+        bool const has_fallback_text = row.fallback[0] != '\0';
+        bool const is_fallback_row = row.need == os::FlagNeed::fallback;
+        bool const is_broken = row.word[0] == '\0' || has_fallback_text != is_fallback_row
+                            || !(os::KernelVersion{2, 6, 0} < row.release)
+                            || os::judge_flag(flag, os::KernelVersion{999, 0, 0}) != os::FlagVerdict::admitted;
+        broken += is_broken ? 1 : 0;
+    }
+    return broken;
+}
+
+// Each row obeys the rules of THE FLAGS.
+void test_each_flag_row_obeys_the_rules() {
+    static_assert(count_rows_that_break_a_rule() == 0, "a row of flag_floor breaks a rule of THE FLAGS");
+    CRUCIBLE_FATAL_INVARIANT(count_rows_that_break_a_rule() == 0);
+}
+
+// The verdict of each row above the floor on a release that lacks its word
+// and on the release that added it.  A release that lacks the word gives the
+// fallback of the row, so the process runs there.
+void test_judges_each_flag_above_the_floor() {
+    using os::FlagVerdict;
+    using os::KernelFlag;
+    using os::KernelVersion;
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::advise_populate_write, KernelVersion{5, 13, 19})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::advise_populate_write, KernelVersion{5, 14, 0})
+                             == FlagVerdict::admitted);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::ring_coop_taskrun, KernelVersion{5, 18, 19})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::ring_coop_taskrun, KernelVersion{5, 19, 0})
+                             == FlagVerdict::admitted);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::ring_single_issuer, KernelVersion{5, 19, 17})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::ring_single_issuer, KernelVersion{6, 0, 0})
+                             == FlagVerdict::admitted);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::advise_collapse, KernelVersion{6, 0, 19})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::advise_collapse, KernelVersion{6, 1, 0})
+                             == FlagVerdict::admitted);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::ring_defer_taskrun, KernelVersion{6, 0, 19})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::ring_defer_taskrun, KernelVersion{6, 1, 0})
+                             == FlagVerdict::admitted);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::tcp_rto_min_us, KernelVersion{6, 14, 11})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::tcp_rto_min_us, KernelVersion{6, 15, 0})
+                             == FlagVerdict::admitted);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::thp_refusal_flags, KernelVersion{6, 17, 13})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::thp_refusal_flags, KernelVersion{6, 18, 0})
+                             == FlagVerdict::admitted);
+}
+
+// A release that lacks a word that a door needs in each call refuses the
+// row.  The floor counts such a row, so the start-up check refuses the
+// release too.
+void test_refuses_a_flag_of_each_call() {
+    using os::FlagVerdict;
+    using os::KernelFlag;
+    using os::KernelVersion;
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::resolve_beneath, KernelVersion{5, 5, 19})
+                             == FlagVerdict::refused);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_release("5.5.19") == os::KernelVerdict::too_old);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::resolve_beneath, KernelVersion{5, 6, 0})
+                             == FlagVerdict::admitted);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::open_path, KernelVersion{2, 6, 38}) == FlagVerdict::refused);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::open_path, KernelVersion{2, 6, 39}) == FlagVerdict::admitted);
 }
 
 }  // namespace
@@ -212,5 +294,8 @@ int main() {
     test_closes_each_listing_descriptor();
     test_judges_each_release_text();
     test_derives_the_floor();
+    test_each_flag_row_obeys_the_rules();
+    test_judges_each_flag_above_the_floor();
+    test_refuses_a_flag_of_each_call();
     return 0;
 }
