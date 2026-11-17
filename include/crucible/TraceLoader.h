@@ -143,10 +143,12 @@ inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 // the nesting depth of each op.  Version 4 has the tag of each scalar value.
 // Version 5 has the guard word of each op in the field of the shape hash: the
 // depth, the counts, the tags, the strides, the element types and the scalars
-// fold into it (compute_shape_hash of vessel/torch/entry_slots.h).  A word of
-// an earlier version compares with no live op.  The loader refuses each other
+// fold into it (compute_shape_hash of vessel/torch/entry_slots.h).  Version 6
+// has a guard word that folds the rank, the layout, the negative and conjugate
+// bits and the storage offset of each input (pack_tensor_word).  A word of an
+// earlier version compares with no live op.  The loader refuses each other
 // version.
-inline constexpr uint32_t TRACE_FORMAT_VERSION = 5;
+inline constexpr uint32_t TRACE_FORMAT_VERSION = 6;
 
 // The length of each metadata record.  A count whose records would not fit
 // in the bytes that remain is refused before any array is sized from it.

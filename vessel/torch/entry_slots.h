@@ -119,8 +119,8 @@ struct ScalarArgs<true> {
 
 // The input tensors of an operation past the metadata limit.  Each one folds
 // the fields that the content hash reads of an inline input: the rank, each
-// extent, each stride, the element type and the device.  O(ndim) for each
-// fold.
+// extent, each stride, the element type, the device, the layout, the negative
+// and conjugate bits and the storage offset.  O(ndim) for each fold.
 struct InputOverflow {
     uint32_t count = 0;
     uint64_t digest = kOverflowSeed;
@@ -133,12 +133,19 @@ struct InputOverflow {
             digest = ::foundation::reflect::combine_ids(
                 digest, static_cast<uint64_t>(crucible::raw_tensor_dim(meta.strides[d])));
         }
-        // The device comes through device_of, as in the content hash.
+        // The device comes through device_of, as in the content hash.  The
+        // layout, the negative and conjugate bits and the storage offset fold
+        // as in the word of a tensor (pack_tensor_word), so an input past the
+        // limit keeps each fact that changes the elements that the op reads.
+        constexpr auto kValueBits = static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ);
         const crucible::TensorDevice device = crucible::device_of(meta);
         const uint64_t placement = static_cast<uint64_t>(static_cast<uint8_t>(meta.dtype))
                                  | (static_cast<uint64_t>(static_cast<uint8_t>(device.type())) << 8)
-                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16);
-        digest = ::foundation::reflect::combine_ids(digest, placement);
+                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16)
+                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(meta.layout)) << 32)
+                                 | (static_cast<uint64_t>(meta.flags & kValueBits) << 40);
+        const uint64_t offset_word = static_cast<uint64_t>(meta.storage_offset) * crucible::detail::kStorageOffsetMix;
+        digest = ::foundation::reflect::combine_ids(digest, placement ^ offset_word);
         count = ::fixy::saturating_add(count, uint32_t{1});
     }
 };
@@ -222,16 +229,17 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
 //   - The depth of the op, the count of its inputs, the count of its scalars
 //     and the tag of each stored scalar
 //   - For each input, the word of the content hash (pack_tensor_word: the
-//     extents, the strides, the element type and the device), the rank, the
-//     layout and the negative and conjugate bits
+//     extents, the strides, the element type, the device, the rank, the
+//     layout, the negative and conjugate bits and the storage offset)
 //   - Each stored scalar slot, with the overflow digest of an op that has
 //     more scalars or more inputs than the slots.
 //
-// A changed alpha, stride or element type thus gives a different word, and
-// the replay diverges.  The word reads no data address, no version counter
-// and no autograd field, because these change at each iteration or in each
-// process.  The storage offset of an input stays out too: the binding of an
-// external input reads the live tensor.
+// A changed alpha, stride, element type or storage offset thus gives a
+// different word, and the replay diverges.  The word reads no data address, no
+// version counter and no autograd field, because these change at each
+// iteration or in each process.  A view at another offset of one storage reads
+// other elements, so a loop whose view moves at each iteration gets no
+// period, as a loop with a changing scalar gets none.
 //
 // A scalar that changes at each iteration, such as the step size of AdamW
 // with no fused kernel or a schedule of the learning rate, changes the word
@@ -248,16 +256,6 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
 // The seed of the guard word: "guardwrd" in ASCII.
 inline constexpr uint64_t kGuardSeed = 0x6775617264777264ULL;
 
-// The bits of the meta of an input that the content hash does not fold: the
-// rank, the layout and the negative and conjugate bits.  They take bits 24 to
-// 41, above the element type and the device of pack_tensor_word.
-[[nodiscard]] inline uint64_t pack_guard_bits(crucible::TensorMeta const& meta) noexcept {
-    constexpr auto kValueBits = static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ);
-    const uint64_t layout = ::fixy::bit_cast<uint8_t>(meta.layout);
-    const uint64_t value_flags = static_cast<uint8_t>(meta.flags & kValueBits);
-    return (uint64_t{meta.ndim} | (layout << 8) | (value_flags << 16)) << 24;
-}
-
 [[nodiscard]] inline crucible::ShapeHash compute_shape_hash(::fixy::View<const crucible::TensorMeta> inputs,
                                                             crucible::TraceRing::Entry const& entry,
                                                             crucible::OpDepth depth) noexcept {
@@ -271,8 +269,7 @@ inline constexpr uint64_t kGuardSeed = 0x6775617264777264ULL;
     uint64_t word = ::foundation::reflect::combine_ids(kGuardSeed, header);
     for (crucible::TensorMeta const& input : inputs)
         word = ::foundation::reflect::combine_ids(
-            word,
-            crucible::pack_tensor_word(input, crucible::detail::dim_hash_scalar_det(input)) ^ pack_guard_bits(input));
+            word, crucible::pack_tensor_word(input, crucible::detail::dim_hash_scalar_det(input)));
     const ::fixy::View<int64_t const> scalars =
         entry.scalar_values.view().window(0, stored).expect("the count of the stored scalars fits the slots");
     for (const int64_t scalar : scalars)

@@ -610,12 +610,23 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     return ContentHash{detail::fmix64(body_hash_state)};
 }
 
-// The word of one tensor in the content hash of a region: the XOR fold of its
-// extents and strides (dims, DimHash.h), its element type and its device.  The
-// device comes through device_of, so the word agrees with the equality of a
-// device: one index for the host.  The guard word of an op folds this word for
-// each input too (compute_shape_hash of vessel/torch/entry_slots.h), so the
-// guard and the content hash tell two inputs apart in the same way.
+// The word of one tensor in the content hash of a region.  It folds each fact
+// of the tensor that changes the elements that an op reads:
+//
+//   - The XOR fold of its extents and strides (dims, DimHash.h).
+//   - Its element type and its device, in the bits 0 to 23.  The device comes
+//     through device_of, so the word agrees with the equality of a device:
+//     one index for the host.
+//   - Its rank, its layout and its negative and conjugate bits, in the bits
+//     24 to 47.  A lane of extent zero and stride zero adds nothing to the
+//     fold of the dims, so only the rank tells [4, 0] from [4].
+//   - Its storage offset, times kStorageOffsetMix of DimHash.h.
+//
+// A tensor of rank zero, the strided layout, no bit and the offset zero gives
+// the word of the format before the rank, the layout, the bits and the offset
+// folded.  The guard word of an op folds this word for each input too
+// (compute_shape_hash of vessel/torch/entry_slots.h), so the guard and the
+// content hash tell two inputs apart in the same way.
 //
 // The vector routine and the scalar routine of DimHash.h give the same dims
 // (test_simd).  The content hash takes the vector routine, and the guard of
@@ -626,12 +637,17 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // stored content hash and each guard word.
 [[nodiscard, gnu::always_inline]] inline uint64_t pack_tensor_word(const TensorMeta& meta,
                                                                    const DimHashDet& dims) noexcept {
+    constexpr auto kValueBits = static_cast<uint8_t>(meta_flags::IS_NEG | meta_flags::IS_CONJ);
     const uint64_t per_dim_hash_xor = raw_dim_hash(dims);
     const TensorDevice device = device_of(meta);
     const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(meta.dtype))
                                | (static_cast<uint64_t>(std::to_underlying(device.type())) << 8)
-                               | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16);
-    return per_dim_hash_xor ^ meta_packed;
+                               | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16)
+                               | (uint64_t{meta.ndim} << 24)
+                               | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(meta.layout)) << 32)
+                               | (static_cast<uint64_t>(meta.flags & kValueBits) << 40);
+    const uint64_t offset_word = static_cast<uint64_t>(meta.storage_offset) * detail::kStorageOffsetMix;
+    return per_dim_hash_xor ^ meta_packed ^ offset_word;
 }
 
 // The whole region content-hash format, and the only place it is written.

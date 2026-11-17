@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""A replayed op whose alpha, stride or element type changes is a divergence, and a changing step size gives no region.
+"""A replayed op whose alpha, stride, element type or storage offset changes is a divergence.
 
-The replay compares two words of each live op with the op of the region: the
-schema hash and the guard word.  The guard word folds the layout of each input
-and each scalar, so an op that computes a different result cannot replay as a
-match.  Each check runs under CrucibleNative:
+A changing step size gives no region.  The replay compares two words of each
+live op with the op of the region: the schema hash and the guard word.  The
+guard word folds the layout of each input and each scalar, so an op that
+computes a different result cannot replay as a match.  Each check runs under
+CrucibleNative:
 
     alpha       aten::add.Tensor replays with alpha=1, then runs with alpha=2
     stride      aten::add.Tensor replays on a matrix, then runs on its transpose,
                 which has the same extents and other strides
     dtype       aten::add.Tensor replays on float32, then runs on float64 of the
                 same extents
+    offset      aten::add.Tensor replays on a view at the offset 0 of a buffer,
+                then runs on a view at the offset 4 of the same buffer, with the
+                same extents and strides
     step size   AdamW with no fused kernel computes its step size in Python at
                 each iteration and gives it to aten::div and aten::addcdiv_ as
                 a scalar.  The scalar changes at each iteration, so the loop
@@ -90,10 +94,17 @@ def add_steps() -> list[tuple[str, object, object]]:
     transposed = torch.ones(4, 4).t()
     first_double = torch.ones(4, 4, dtype=torch.float64)
     second_double = torch.ones(4, 4, dtype=torch.float64)
+    # Two views of 16 elements of one buffer: the first at the offset 0, the
+    # second at the offset 4.
+    buffer = torch.ones(20)
+    head = buffer[:16]
+    shifted = buffer[4:]
+    addend = torch.ones(16)
     return [
         ("alpha", lambda: torch.add(first, second, alpha=1), lambda: torch.add(first, second, alpha=2)),
         ("stride", lambda: torch.add(first, second), lambda: torch.add(first, transposed)),
         ("dtype", lambda: torch.add(first, second), lambda: torch.add(first_double, second_double)),
+        ("offset", lambda: torch.add(head, addend), lambda: torch.add(shifted, addend)),
     ]
 
 

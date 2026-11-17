@@ -12,9 +12,11 @@
 //
 // The guard word of an entry (compute_shape_hash) must change with each field
 // that changes the computation of the op: a stride, an element type, a device,
-// a rank, a layout, the negative and conjugate bits, a scalar, a tag, a count
-// and the depth.  It must not change with a data address, a version counter or
-// an autograd field, which change at each iteration.
+// a rank, a layout, the negative and conjugate bits, a storage offset, a
+// scalar, a tag, a count and the depth.  It must not change with a data
+// address, a version counter or an autograd field, which change at each
+// iteration.  The content hash of a region changes with the rank, the layout,
+// the two bits and the storage offset of a tensor too.
 
 #include "../vessel/torch/entry_slots.h"
 
@@ -373,6 +375,11 @@ void test_guard_word_reads_each_field_of_the_computation() {
     empty_rows.ndim = 2;
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(empty_rows, matrix, alpha_one) == base) && "the rank moves the word");
 
+    // A view at another offset of one storage reads other elements.
+    crucible::TensorMeta shifted = matrix;
+    shifted.storage_offset = 4;
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, shifted, alpha_one) == base) && "the storage offset moves it");
+
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(matrix, vector, alpha_one) == base) && "the order of the inputs moves it");
     const ::fixy::FixedArray<crucible::TensorMeta, 1> only_vector{vector};
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(only_vector.view(), alpha_one) == base) && "the input count moves it");
@@ -423,7 +430,6 @@ void test_guard_word_ignores_what_changes_at_each_iteration() {
                                       | crucible::meta_flags::IS_VIEW | crucible::meta_flags::IS_CONTIGUOUS);
     live.grad_fn_hash = crucible::grad_fn_hash(0x51DE);
     live.output_nr = 1;
-    live.storage_offset = 4;
     live.storage_nbytes = 4096;
     CRUCIBLE_FATAL_INVARIANT(guard_word_of(vector, live, alpha_one) == base);
 
@@ -442,6 +448,61 @@ void test_guard_word_ignores_what_changes_at_each_iteration() {
     CRUCIBLE_FATAL_INVARIANT(guard_word_of(tagged) == guard_word_of(stray));
 }
 
+// Each fact of a tensor that changes the elements that an op reads moves the
+// content hash of its region and the overflow digest of an input past the
+// limit: the rank, the layout, the negative bit, the conjugate bit and the
+// storage offset.  The old content hash folded none of the five, and the old
+// digest folded only the rank, so each pair below gave one hash for two
+// regions.  A lane of extent zero and stride zero adds nothing to the XOR fold
+// of the dims, so only the rank tells [4, 0] from [4] in the content hash.
+// The test reports each fact that does not move a hash, and then stops.  The
+// flags that no op reads move no hash.
+void test_each_fact_of_a_tensor_moves_the_hash_and_the_digest() {
+    const crucible::TensorMeta vector = vector_meta(4);
+    const crucible::ContentHash base = content_hash_of(vector);
+    const uint64_t base_digest = overflow_digest_of(vector);
+    uint32_t unmoved = 0;
+    const auto expect_moved = [&unmoved, &base, base_digest](::fixy::TextView fact,
+                                                             crucible::TensorMeta const& changed) {
+        if (content_hash_of(changed) == base) {
+            ++unmoved;
+            ::fixy::report(::fixy::Sink::Err, "  the {} does not move the content hash\n", fact);
+        }
+        if (overflow_digest_of(changed) == base_digest) {
+            ++unmoved;
+            ::fixy::report(::fixy::Sink::Err, "  the {} does not move the digest of an input past the limit\n", fact);
+        }
+    };
+
+    crucible::TensorMeta empty_rows = vector;
+    empty_rows.ndim = 2;
+    expect_moved("rank", empty_rows);
+
+    crucible::TensorMeta sparse = vector;
+    sparse.layout = crucible::Layout::Sparse;
+    expect_moved("layout", sparse);
+
+    crucible::TensorMeta negative = vector;
+    negative.flags = crucible::meta_flags::IS_NEG;
+    expect_moved("negative bit", negative);
+
+    crucible::TensorMeta conjugate = vector;
+    conjugate.flags = crucible::meta_flags::IS_CONJ;
+    expect_moved("conjugate bit", conjugate);
+
+    crucible::TensorMeta shifted = vector;
+    shifted.storage_offset = 4;
+    expect_moved("storage offset", shifted);
+
+    CRUCIBLE_FATAL_INVARIANT(unmoved == 0 && "each fact of a tensor that an op reads moves the hash and the digest");
+
+    crucible::TensorMeta live = vector;
+    live.flags = static_cast<uint8_t>(crucible::meta_flags::IS_LEAF | crucible::meta_flags::HAS_GRAD_FN
+                                      | crucible::meta_flags::IS_VIEW | crucible::meta_flags::IS_CONTIGUOUS);
+    CRUCIBLE_FATAL_INVARIANT(content_hash_of(live) == base && "the flags that no op reads move no hash");
+    CRUCIBLE_FATAL_INVARIANT(overflow_digest_of(live) == base_digest && "the flags that no op reads move no digest");
+}
+
 }  // namespace
 
 int main() {
@@ -453,6 +514,7 @@ int main() {
     test_input_past_the_limit_reaches_the_digest();
     test_host_index_is_one_device();
     test_content_hash_folds_the_tags();
+    test_each_fact_of_a_tensor_moves_the_hash_and_the_digest();
     test_built_device_has_one_host_index();
     test_guard_word_reads_each_field_of_the_computation();
     test_guard_word_reads_the_overflow_digest();

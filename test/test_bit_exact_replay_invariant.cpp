@@ -231,10 +231,12 @@ struct Built {
 // deliberate format change can be read off a failing run rather than
 // recomputed by hand.  The three hashes moved on 2026-11-16, when each op
 // folds the tags of its scalars, and again when each op folds its depth, the
-// producer of each input and its outputs, with no slot id.
-constexpr uint64_t kReferenceHeadContentHash = 0xfe09c6b60e41bd81ULL;
-constexpr uint64_t kReferenceTailContentHash = 0xc657dc4c2c05f43bULL;
-constexpr uint64_t kReferenceMerkleHash = 0x931fe9bdf1a77c87ULL;
+// producer of each input and its outputs, with no slot id.  They moved again
+// when the word of each tensor folds its rank, its layout, its two value bits
+// and its storage offset.
+constexpr uint64_t kReferenceHeadContentHash = 0x58213e6cd43c7cc3ULL;
+constexpr uint64_t kReferenceTailContentHash = 0x22fae7d608128ba5ULL;
+constexpr uint64_t kReferenceMerkleHash = 0x34564ac6d6da010aULL;
 constexpr uint64_t kReferencePoolBytes = 12544;
 
 }  // namespace

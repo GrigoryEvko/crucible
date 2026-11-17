@@ -201,7 +201,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 15;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 16;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -217,8 +217,12 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         // header folds the tags, the depths, the producers and the outputs of
         // the ops.  CDAG_VERSION 15 gives the shape hash of each op the
         // meaning of its guard word, so only the version moves the bytes.
+        // CDAG_VERSION 16 folds the rank, the layout, the two bits and the
+        // storage offset of each tensor into its word.  The tensors of this
+        // region have the ranks 2 and 1, so the version and the content hash
+        // of the header move the bytes.
         constexpr size_t EXPECTED_WIRE_BYTES = 1828;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0x7ea4fd51b66572a6ULL;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0xb7fb38e3439f9ae9ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,

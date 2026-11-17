@@ -61,6 +61,11 @@ inline constexpr ::fixy::FixedArray<uint64_t, kMaxTensorNDim> kDimMixStrides{
     kDimMixSeed * 13, kDimMixSeed * 14, kDimMixSeed * 15, kDimMixSeed * 16,
 };
 
+// The constant of the storage offset of a tensor (pack_tensor_word of
+// crucible/MerkleDag.h): the seed times 17, distinct from the sixteen
+// constants of the lanes.  An offset of zero adds nothing to a fold.
+inline constexpr uint64_t kStorageOffsetMix = kDimMixSeed * 17;
+
 // The descriptor's dimension count must not exceed the lane count, which its
 // own layout already guarantees.
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {

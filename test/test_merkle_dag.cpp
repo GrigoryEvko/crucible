@@ -562,6 +562,27 @@ template <class Fake>
         golden("mixed five-op region under a recipe", crucible::compute_content_hash(real_mix_sp, golden_recipe),
                0x89CDAB5A7F0898C6ULL);
 
+        // A tensor with each fact that the word of a tensor folds beside its
+        // dims, its element type and its device: a rank of two, the sparse
+        // layout, the negative and conjugate bits and a storage offset.
+        // Frozen 2026-11-16 when the word took these facts.  The tensor of
+        // the vectors above has the rank zero, the strided layout, no bit and
+        // the offset zero, so its word did not move.
+        ::foundation::core::FixedArray<crucible::TensorMeta, 1> fact_meta{real_input};
+        crucible::TensorMeta& fact_input = fact_meta.at(::foundation::core::index<0>());
+        fact_input.ndim = 2;
+        fact_input.sizes[0] = crucible::tensor_dim(3);
+        fact_input.sizes[1] = crucible::tensor_dim(4);
+        fact_input.strides[0] = crucible::tensor_dim(4);
+        fact_input.strides[1] = crucible::tensor_dim(1);
+        fact_input.layout = crucible::Layout::Sparse;
+        fact_input.flags = static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ);
+        fact_input.storage_offset = 5;
+        crucible::TraceEntry e_fact_tensor{};
+        e_fact_tensor.schema_hash = SchemaHash{0x66};
+        e_fact_tensor.set_inputs(fact_meta.view(), no_producer.view(), no_slot.view());
+        golden("one tensor with each fact", one_op(e_fact_tensor), 0x2FB41C5109940EECULL);
+
         assert(moved_vectors == 0
                && "the region content-hash format changed: every persisted content hash and "
                   "every cached kernel keyed on one is now stale");

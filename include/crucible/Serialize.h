@@ -59,8 +59,12 @@ using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::s
 // the depth, the counts, the tags, the strides, the element types and the
 // scalars.  A region of version 14 holds words that no live op gives, so it
 // would diverge at its first op.  The bump refuses it at the load.
+// 16 (2026-11-16): the word of each tensor in the content hash and in the guard
+// word folds its rank, its layout, its negative and conjugate bits and its
+// storage offset (pack_tensor_word).  A region of version 15 holds a content
+// hash and guard words that the current code no longer computes.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{15});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{16});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
