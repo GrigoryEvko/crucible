@@ -204,6 +204,7 @@ test/fixy/test_tagged.cpp | detail-use | 4 | namespace-scope: fixy::detail | use
 test/fixy/test_tagged.cpp | unchecked-use | admit | (anonymous namespace)::edges_in_family(std::meta::info): std::meta::access_context::unchecked | walks the admitted retags to check the sealed relation
 test/fixy/test_tagged.cpp | unchecked-use | admit | (anonymous namespace)::entering_source(std::meta::info): std::meta::access_context::unchecked | walks the admitted retags to check the sealed relation
 test/fixy/test_tagged.cpp | unchecked-use | admit | (anonymous namespace)::every_edge_moves_a_value(): std::meta::access_context::unchecked | walks the admitted retags to check the sealed relation
+test/foundation/target_unit_body.h | detail-use | 1 | crucible::test::(anonymous namespace)::bodies_of_this_unit(): foundation::core::detail | the probe of the target namespace takes the address of the exact form of fp::fma in each unit, and the exact form is an out-of-line function of foundation::core::detail with no public door of its own
 test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::graded_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
 test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::graded_trait_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
 test/foundation/test_algebra_core.cpp | detail-use | 1 | (anonymous namespace)::lattice_runs_at_run_time(): foundation::algebra::detail | runs the fixtures of the algebra headers
