@@ -249,6 +249,11 @@ struct FlowAnswer {
             closes = walk_flow(arguments[0], set, set, answered);
         } else if (head == ^^VendorPinned) {
             closes = walk_flow(arguments[1], set, loop_set, answered);
+        } else if (head == ^^Named) {
+            // The protocol of a name is closed, so a Continue in it binds a
+            // Loop in it, and the walk enters it outside every Loop.
+            const std::meta::info body = ::fixy::session::transition::decompose(protocol_registry, node).next;
+            closes = body != std::meta::info{} && walk_flow(body, set, ^^void, answered);
         }
     }
     push(answered, FlowAnswer{node, set, loop_set, closes});
@@ -475,9 +480,11 @@ concept RewindableChannelTo =
 //     0.  Its Resource, its policy and its permission set are not
 //     messages of that protocol.
 //   - a SharedReader, a crash record and a bare Permission carry no row.
-//   - each combinator of the registry of fixy/session/Protocol.h carries
-//     each of its type arguments, and the note of a choice carries none,
-//     because its role is a name.
+//   - a named state carries the protocol of its name, and not the class of
+//     the name.
+//   - each other combinator of the registry of fixy/session/Protocol.h
+//     carries each of its type arguments, and the note of a choice carries
+//     none, because its role is a name.
 //
 // A payload that the walk cannot classify stops the build, and the text
 // names it.  The walk stands here and not in
@@ -516,6 +523,7 @@ namespace detail {
         Rule{^^SharedReader, carries_nothing},
         Rule{^^Crash, carries_nothing},
         Rule{^^::foundation::permissions::Permission, carries_nothing},
+        Rule{^^Named, carries_nothing, ^^named_state_protocol_t},
     };
     stack<Rule> rules{};
     for (const Rule& rule : named)

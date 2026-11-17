@@ -55,6 +55,10 @@
 //   wrapper   Shape<Value, Inner>         a value slot over Inner
 //   marker    Shape<Next>                 a mark on the spine, with no
 //                                         message, then Next
+//   named     Shape<Name>                 a named state: the protocol is
+//                                         the member type `protocol` of
+//                                         the class Name, which is no
+//                                         registered combinator
 //
 // A registration whose shape has a different layout is refused at the
 // first query that meets it.
@@ -163,7 +167,8 @@ enum class shape_kind : std::uint8_t {
     back,
     terminal,
     wrapper,
-    marker
+    marker,
+    named
 };
 
 enum class polarity : std::uint8_t {
@@ -263,6 +268,18 @@ template <class T>
 [[nodiscard]] consteval static_run<T> to_static_run(std::span<const T> values) {
     const std::span<const T> stored = std::define_static_array(values);
     return static_run<T>{stored.data(), stored.size()};
+}
+
+// The template arguments of `type`, in static storage.  A type with no
+// template arguments gives the empty run.  The reflected constant array holds
+// the arguments, so the reader indexes a checked run and keeps no copy.
+[[nodiscard]] consteval static_run<std::meta::info> template_arguments_run(std::meta::info type) {
+    if (!std::meta::has_template_arguments(type)) return {};
+    const std::meta::info array = std::meta::reflect_constant_array(std::meta::template_arguments_of(type));
+    const std::meta::info array_type = std::meta::type_of(array);
+    if (!std::meta::is_array_type(array_type) || std::meta::extent(array_type) == 0) return {};
+    return static_run<std::meta::info>{std::meta::extract<const std::meta::info*>(array),
+                                       std::meta::extent(array_type)};
 }
 
 namespace detail {

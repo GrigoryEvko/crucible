@@ -3234,10 +3234,24 @@ fixy_test(test_session_rollback)
 fixy_test(test_session_checkpoint_bound)
 
 # The check of the shape of a checkpoint pair visits each node of a protocol
-# with shared arms one time, so a long row of wide choices is compliant.  No
-# declaration names a protocol of the test, so GCC writes no debug name that
-# spells it.
+# with shared arms one time, so a long row of wide choices is compliant.  Each
+# choice of the row is a named state, so the type of a choice, its display
+# text and the debug name of each type that names it stay linear in the row.
+# The test mints a session over each row and walks its first choices.
 fixy_test(test_session_checkpoint_shared_arms)
+
+# A named state stands for the member type protocol of its name.  The walks
+# see through a name, the type-building operations keep it, and a name hides
+# nothing from a gate.  A cycle of names is refused with its own diagnostic.
+fixy_test(test_session_named_state)
+fixy_neg_compile_test(neg_sess_named_state_cycle
+  "no matching function for call to .mint_session<fixy::session::Named<neg_sess_named_state_cycle_types::Ping> >"
+  "fixy::session::diagnostic \\[Protocol_Named_State_Cycle\\]: the named state .*Named<neg_sess_named_state_cycle_types::P[io]ng> reaches itself"
+  "a recursion is a Loop with its Continue inside the protocol of one name")
+fixy_neg_compile_test(neg_sess_named_state_hides_a_pin
+  "no matching function for call to .mint_session<fixy::session::Named<fixy::session::VendorPinned<"
+  "fixy::session::diagnostic \\[Protocol_Unregistered_Combinator\\]: the combinator fixy::session::Named<fixy::session::VendorPinned<"
+  "has no registration in the transition registry, or its template arguments do not match the layout of its kind")
 
 # The bound of the work of the checkpoint check is the template argument
 # WorkBound of the gate and the mint.  A pair past the default bound is

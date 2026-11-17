@@ -742,8 +742,8 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
           std::source_location loc) noexcept(std::is_nothrow_move_constructible_v<Resource>)
         -> SessionHandle<Proto, Resource, LoopCtx, Policy, PS>;
 
-    // Builds the handle at the head that R reaches after Continue, Loop
-    // and a vendor pin resolve.
+    // Builds the handle at the head that R reaches after Continue, Loop, a
+    // named state and a vendor pin resolve.
     template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
     [[nodiscard]] static constexpr auto step_(Resource r, watch::session_ref session = {},
                                               std::source_location loc = std::source_location::current()) noexcept;
@@ -809,7 +809,8 @@ public:
         std::declval<SessionOpenKey const&>(), std::declval<Resource>(), std::source_location{}));
 
     // The type of the handle at position R in the loop context LoopCtx,
-    // after Continue, Loop and a vendor pin resolve.  It builds nothing.
+    // after Continue, Loop, a named state and a vendor pin resolve.  It
+    // builds nothing.
     template <typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
               typename PS = ::foundation::permissions::EmptyPermSet>
     using handle_at = decltype(step_<R, Resource, LoopCtx, Policy, PS>(std::declval<Resource>()));
@@ -1609,6 +1610,10 @@ constexpr auto HandleFactory::step_(Resource r, watch::session_ref session, std:
         // arm, because is_loop_v reads under a pin, and the body of a Loop
         // is read from the Loop itself.
         return step_<typename R::protocol, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
+    } else if constexpr (is_named_state_v<R>) {
+        // A name stands for its protocol, so the handle steps that protocol.
+        // A name of a Loop resolves here, before the test for a Loop below.
+        return step_<named_state_protocol_t<R>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), session, loc);
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = detail::loop_body_t<R>;
         using InnerCtx = session_loop_ctx_rebind_inner_t<LoopCtx, detail::loop_frame_t<R, PS>>;

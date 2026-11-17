@@ -265,7 +265,8 @@ concept reliable_set_contains_v = detail::crash::holds_role(^^Reliable, ^^Role);
 // The walk refuses a combinator that the registry does not know, a
 // combinator that is not plain, and a step whose payload is a protocol.
 // Each wrapper passes to what it wraps, so a VendorPinned protocol gets
-// the answers of its inner protocol.  On a binary channel the sender of a
+// the answers of its inner protocol.  A named state passes to its protocol
+// in the same way.  On a binary channel the sender of a
 // Recv or of an Offer with no note is the channel peer.
 //
 // ── Delegation ───────────────────────────────────────────────────────
@@ -397,6 +398,10 @@ struct crash_algebra {
     template <class Child>
     consteval verdict marker(const tr::node&, context, const Child&) const {
         return refused;
+    }
+    template <class Child>
+    consteval verdict named(const tr::node& view, context on, const Child& child) const {
+        return view.entry.is_plain ? child(view.next, on) : refused;
     }
     consteval verdict unregistered(const tr::node&, context) const { return refused; }
 
@@ -619,6 +624,13 @@ struct erase_algebra {
     consteval std::meta::info marker(const crash::tr::node& view, context ctx, const Child& child) const {
         if (removes == erasure::checkpoints) return child(view.next, ctx);
         return std::meta::substitute(view.entry.shape, {child(view.next, ctx)});
+    }
+    // The erasure of a named state is a named state, so the erased protocol
+    // keeps each name.
+    template <class Child>
+    consteval std::meta::info named(const crash::tr::node& view, context ctx, const Child& child) const {
+        return crash::tr::detail::fold_named(protocol_registry, view, view.entry.shape, child(view.next, ctx), *this,
+                                             ctx);
     }
     consteval std::meta::info unregistered(const crash::tr::node&, context) const { return {}; }
 };

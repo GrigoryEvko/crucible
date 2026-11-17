@@ -168,7 +168,7 @@ include/fixy/collision/ | replace-pending:<string> | 1 | - | -
 include/fixy/collision/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/collision/ | replace-pending:<vector> | 1 | - | -
 include/fixy/concurrent/ | base-c-library-call | 4 | - | -
-include/fixy/concurrent/ | base-std-entity | 108 | - | -
+include/fixy/concurrent/ | base-std-entity | 107 | - | -
 include/fixy/concurrent/ | base-std-object | 33 | - | -
 include/fixy/concurrent/ | replace-pending:<array> | 6 | - | -
 include/fixy/concurrent/ | replace-pending:<atomic> | 2 | - | -

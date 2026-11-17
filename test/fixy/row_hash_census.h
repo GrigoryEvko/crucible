@@ -1201,6 +1201,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::Continue, kProtocol},
     {^^::fixy::session::End, kProtocol},
     {^^::fixy::session::VendorPinned, kProtocol},
+    {^^::fixy::session::Named, kProtocol},
     {^^::fixy::session::Crash,
      "the crash label of a session protocol: no endpoint sends it, an Offer receives it when a peer crashes, and "
      "the handle that steps through the protocol folds it"},

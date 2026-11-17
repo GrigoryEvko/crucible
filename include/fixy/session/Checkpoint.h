@@ -162,10 +162,10 @@ struct erase_loop<void> {
 template <typename LoopCtx>
 using erase_loop_t = typename erase_loop<LoopCtx>::type;
 
-// Continue, Loop and a vendor pin resolved, as the handle resolves them:
-// the head of R and the loop context at that head.  The check of the pair
-// reads each position under its pins, so no head of a checkpoint handle
-// holds a pin.
+// Continue, Loop, a vendor pin and a named state resolved, as the handle
+// resolves them: the head of R and the loop context at that head.  The check
+// of the pair reads each position under its pins and its names, so no head
+// of a checkpoint handle holds a pin or a name.
 template <typename R, typename LoopCtx>
 struct resolve {
     using head = R;
@@ -177,6 +177,8 @@ template <typename B, typename LoopCtx>
 struct resolve<Loop<B>, LoopCtx> : resolve<B, Loop<B>> {};
 template <VendorBackend V, typename P, typename LoopCtx>
 struct resolve<VendorPinned<V, P>, LoopCtx> : resolve<P, LoopCtx> {};
+template <typename Name, typename LoopCtx>
+struct resolve<Named<Name>, LoopCtx> : resolve<named_state_protocol_t<Named<Name>>, LoopCtx> {};
 
 }  // namespace detail::checkpoint
 
@@ -254,18 +256,29 @@ inline constexpr std::size_t admit_work = 64;
 inline constexpr int unfold_bound = 64;
 inline constexpr int depth_bound = 256;
 
+// The type under each VendorPinned and each named state at the head.
 consteval info strip(info type) {
     type = std::meta::dealias(type);
-    while (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^VendorPinned) {
-        type = std::meta::dealias(std::meta::template_arguments_of(type)[1]);
+    for (;;) {
+        if (!std::meta::has_template_arguments(type)) return type;
+        const info family = std::meta::template_of(type);
+        if (family == ^^VendorPinned) {
+            type = std::meta::dealias(std::meta::template_arguments_of(type)[1]);
+        } else if (family == ^^Named) {
+            const info body = tr::protocol_under_name(protocol_registry, type);
+            if (body == info{}) return type;
+            type = body;
+        } else {
+            return type;
+        }
     }
-    return type;
 }
 
-// The type under each vendor pin of P.  The door and the recorder read a
-// branch through it, so they see the primitive that the check saw.
+// The type under each vendor pin and each named state of P.  The door and
+// the recorder read a branch through it, so they see the primitive that the
+// check saw.
 template <typename P>
-using unpinned_t = typename[:strip(^^P):];
+using bare_t = typename[:strip(^^P):];
 
 consteval Kind kind_of(info type) {
     type = strip(type);
@@ -512,10 +525,13 @@ consteval void admit(Exploration& run, Configuration next) {
 }
 
 // One label exchange.  `active` selected label `index`, and `passive`
-// received it.
+// received it.  Each branch is read under its wrappers and named states one
+// time, so each later read of the position resolves no name.
 consteval CheckpointVerdict exchange(Exploration& run, Party active, Party passive, info active_branch,
                                      info passive_branch, const Party& active_start, const Party& passive_start,
                                      bool active_is_left) {
+    active_branch = strip(active_branch);
+    passive_branch = strip(passive_branch);
     const Kind active_kind = kind_of(active_branch);
     const Kind passive_kind = kind_of(passive_branch);
     if ((is_primitive(active_kind) || is_primitive(passive_kind)) && active_kind != passive_kind) {
@@ -585,6 +601,11 @@ consteval CheckpointVerdict choose(Exploration& run, const Party& active, const 
 // The check of the shape and the walk share one bound of work.
 // Complexity: the number of edges times the cost of the visited-set
 // lookup, which is linear in the configurations.  `bound` caps it.
+// The walk follows the protocol of each name.  On a cycle of names with a
+// step between two names, the check of the shape stops at depth_bound.  A
+// name whose protocol is a name of the cycle has no head under it, and the
+// walk stops at the loop limit of a constant evaluation.  The gate refuses
+// each cycle of names first, with Protocol_Named_State_Cycle.
 consteval CheckpointVerdict verdict_of(info left_protocol, info right_protocol, std::size_t bound) {
     std::size_t shape_work = 0;
     if (!is_checkpoint_shaped(left_protocol, shape_work, bound)
@@ -818,10 +839,11 @@ class CheckpointDoor final : ::foundation::NoObject<CheckpointDoor> {
     }
 
     // The effect of branch B, given the plain handle it reached.  The check
-    // reads the branch under its vendor pins, so a pinned Roll rolls back.
+    // reads the branch under its vendor pins and its names, so a pinned Roll
+    // and a Roll behind a name roll back.
     template <typename Branch, typename HeadLoop, typename Frame, typename Next>
     [[nodiscard]] static constexpr auto take_branch_(Next next) noexcept {
-        using Bare = detail::checkpoint::unpinned_t<Branch>;
+        using Bare = detail::checkpoint::bare_t<Branch>;
         if constexpr (std::is_same_v<Bare, Roll>) {
             using Saved = typename Frame::saved;
             using SavedLoop = typename Frame::saved_loop;

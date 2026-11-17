@@ -92,10 +92,17 @@ namespace fixy::concurrent {
 // template arguments of its specializations that hold what it carries.
 // Bit I of `carried_arguments` names template argument I.  The walk reads
 // each named argument that is a type, and no other argument.  A rule with
-// no bit set names a family that carries nothing.
+// no bit set and no carried member names a family that carries nothing.
+//
+// `carried_member` is an alias template `template <class T> using`, or null.
+// For a family that carries a type that no argument spells, such as a member
+// type of an argument, the walk reads the type that the alias gives for the
+// specialization.  A specialization for which the alias gives no type is
+// refused.
 struct payload_family_rule {
     std::meta::info family{};
     std::uint64_t carried_arguments = 0;
+    std::meta::info carried_member{};
 };
 
 namespace detail {
@@ -253,7 +260,7 @@ struct PayloadRowWalk {
 //   * a transparent family hands its hidden payload to the walk;
 //   * a rostered leaf adds nothing;
 //   * a family with a rule of the layer hands the arguments that the
-//     rule names to the walk;
+//     rule names to the walk, and the type of its carried member;
 //   * any other specialization is refused;
 //   * any other type hands its components to the walk, and a class that
 //     is only declared, or that holds state the walk cannot read, is
@@ -273,6 +280,9 @@ struct PayloadRowWalk {
         walked.is_refused = true;
         walked.refused_type = type;
     };
+    // The one door for a type that a node holds through a family: an
+    // argument, a hidden payload or a carried member.
+    auto reach = [&pending](std::meta::info type) consteval { pending.push_back(refl::node_reached_indirectly(type)); };
     while (!pending.empty() && !walked.is_refused) {
         const refl::TypeNode node = pending.back();
         pending.pop_back();
@@ -293,12 +303,12 @@ struct PayloadRowWalk {
                 const auto arguments = std::meta::template_arguments_of(type);
                 if (family == ^^::foundation::effects::Computation) {
                     walked.effect_mask |= effect_mask_of_row(arguments[0]);
-                    pending.push_back(refl::node_reached_indirectly(arguments[1]));
+                    reach(arguments[1]);
                 } else {
                     walked.effect_mask |= effect_bit(std::meta::extract<::foundation::effects::Effect>(arguments[0]));
                 }
             } else if (is_transparent(type)) {
-                pending.push_back(refl::node_reached_indirectly(std::meta::substitute(^^hidden_payload_t, {type})));
+                reach(std::meta::substitute(^^hidden_payload_t, {type}));
             } else if (is_rostered_leaf(type)) {
                 continue;
             } else if (const payload_family_rule rule = layer_rule_of(type, layer_rules);
@@ -306,9 +316,14 @@ struct PayloadRowWalk {
                 const auto arguments = std::meta::template_arguments_of(std::meta::dealias(type));
                 for (std::size_t index = 0; index < arguments.size() && index < 64; ++index) {
                     const bool is_carried = ((rule.carried_arguments >> index) & std::uint64_t{1}) != 0;
-                    if (is_carried && std::meta::is_type(arguments[index])) {
-                        pending.push_back(refl::node_reached_indirectly(arguments[index]));
+                    if (is_carried && std::meta::is_type(arguments[index])) reach(arguments[index]);
+                }
+                if (rule.carried_member != std::meta::info{}) {
+                    if (!std::meta::can_substitute(rule.carried_member, {type})) {
+                        refuse(type);
+                        continue;
                     }
+                    reach(std::meta::dealias(std::meta::substitute(rule.carried_member, {type})));
                 }
             } else {
                 refuse(type);

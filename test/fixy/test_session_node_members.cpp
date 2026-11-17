@@ -30,6 +30,11 @@ struct Alice {};
 struct Bob {};
 struct Hello {};
 
+// The name of a named state.
+struct Closing {
+    using protocol = ::fixy::session::Send<int, ::fixy::session::End>;
+};
+
 // A member that a reader can read at compile time: a type alias, a
 // nested type or a static data member.  A crash label also has a value
 // field, which the program reads at run time.
@@ -80,6 +85,7 @@ constexpr std::meta::info session_instances[] = {
     ^^s::Continue,
     ^^s::End,
     ^^s::VendorPinned<s::VendorBackend::NV, s::End>,
+    ^^s::Named<Closing>,
     ^^s::Delegate<s::End, s::End>,
     ^^s::Accept<s::End, s::End>,
     ^^s::Stop,

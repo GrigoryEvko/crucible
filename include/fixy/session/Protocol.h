@@ -1,8 +1,8 @@
 #pragma once
 
 // The session-type protocol DSL.  A protocol is a type built from Send,
-// Recv, Select, Offer, Loop, Continue, End, VendorPinned, Delegate and
-// Accept.  The two endpoints of one channel agree when their protocols
+// Recv, Select, Offer, Loop, Continue, End, VendorPinned, Named, Delegate
+// and Accept.  The two endpoints of one channel agree when their protocols
 // are duals.  Stop, Commit, Roll and Abort are combinators too, and no
 // plain protocol holds them: Stop is the runtime type of a crashed
 // endpoint (fixy/session/Crash.h), and the three others are the
@@ -157,6 +157,28 @@ template <VendorBackend V, typename Proto>
 struct VendorPinned : Proto {
     using protocol = Proto;
     static constexpr VendorBackend vendor_backend = V;
+};
+
+// A named state.  Name is a class with a member type `protocol`, and the
+// state stands for that protocol at each place where it stands:
+//
+//   struct Rest { using protocol = Select<Send<int, End>, End>; };
+//   using Ask = Select<Send<int, Named<Rest>>, Recv<int, Named<Rest>>>;
+//
+// A protocol that reaches one state from many places spells the state one
+// time, so its type, its display text and the debug name of each type that
+// names it grow with the protocol, and not with the tree of its paths.  The
+// section on named states of fixy/session/Fold.h gives the rules: the
+// protocol of a name is closed, no name reaches itself, and the dual, the
+// composition and the erasure keep the names.  The structural operations see
+// through the state, as they see through a VendorPinned, and a step resolves
+// the name, so no handle stands at a named state.  A keyed label step stands
+// before a name, not behind one (rule 6 of the section on branches and
+// labels of fixy/session/Fold.h).
+template <typename Name>
+struct Named : Name::protocol {
+    using name = Name;
+    using protocol = typename Name::protocol;
 };
 
 // The delegation heads.  Delegate<T, K> sends an endpoint of protocol T
@@ -342,6 +364,12 @@ inline constexpr ::fixy::session::transition::combinator vendor_pinned{
     .value_variance = ::fixy::session::transition::variance::invariant,
     .value_admits = ^^detail::vendor_is_named_v};
 
+// The dual of a named state is the named state of the dual protocol, so the
+// shape is its own dual (the section on named states of
+// fixy/session/Fold.h).
+inline constexpr ::fixy::session::transition::combinator named_state{
+    .shape = ^^Named, .kind = ::fixy::session::transition::shape_kind::named, .dual = ^^Named};
+
 // A delegation head is a step, and the protocol of the endpoint is its
 // payload.  The payload is invariant, so this layer states no refinement
 // between two delegated protocols at a head.  The payload order of
@@ -393,7 +421,7 @@ inline constexpr ::fixy::session::transition::combinator restart{.shape = ^^Abor
                                                                  .is_plain = false};
 
 inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
-                                                                   .count = 14};
+                                                                   .count = 15};
 
 // The crash label is a payload that no endpoint sends (rule 1) and that
 // is no label a peer can send (rule 2).  fixy/session/Crash.h states why.
@@ -439,6 +467,24 @@ inline constexpr std::string_view incoherent_prefix = "fixy::session::diagnostic
     return text;
 }
 
+inline constexpr std::string_view named_cycle_prefix = "fixy::session::diagnostic [Protocol_Named_State_Cycle]: ";
+
+// The refusal of a protocol with a named state that reaches itself.  The
+// walks of this layer follow the protocol of each name, so a cycle of names
+// would not end, and each entry check states this refusal first.  A
+// protocol with no named state costs one fold.  The text is built only for
+// a refused protocol, and it is no static string.
+consteval void require_acyclic_names(std::meta::info protocol) {
+    const std::meta::info cycle = ::fixy::session::transition::first_named_cycle(protocol_registry, protocol);
+    if (cycle == std::meta::info{}) return;
+    std::string text = refusal_text(named_cycle_prefix);
+    text += "the named state ";
+    text += std::meta::display_string_of(cycle);
+    text += " reaches itself through the protocols of the names.  A cycle of names is a recursion, and a recursion "
+            "is a Loop with its Continue inside the protocol of one name.";
+    throw std::meta::exception(text, cycle);
+}
+
 // The refusal every walk states first.  The head of the protocol must be
 // a registered combinator with a coherent registration.  Each refusal of
 // this layer is a function at namespace scope that is not a template, so
@@ -447,6 +493,7 @@ inline constexpr std::string_view incoherent_prefix = "fixy::session::diagnostic
 // message of the refusal.
 consteval void require_registered_head(std::meta::info protocol) {
     namespace tr = ::fixy::session::transition;
+    require_acyclic_names(protocol);
     if (!tr::is_registered(protocol_registry, protocol)) {
         throw std::meta::exception(refusal_text(tr::unregistered_message(unregistered_prefix, protocol)), protocol);
     }
@@ -471,12 +518,13 @@ inline constexpr std::string_view specialized_prefix = "fixy::session::diagnosti
 // reads: message_type and next of a Send or a Recv, delegated_proto and
 // next of a delegation head, body of a Loop, next of a Commit, protocol
 // and vendor_backend of a pin, which also derives from the protocol that
-// it pins, and branch_count, branches_tuple and the sender of an Offer of
+// it pins, name and protocol of a named state, which also derives from its
+// protocol, and branch_count, branches_tuple and the sender of an Offer of
 // a choice.  End, Continue, Stop, Roll and Abort hold no member.  The
 // children are each node that a handle can step to: the next step, each
 // branch of a choice (the crash branches among them), the body of a loop,
-// the protocol under a pin, and the protocol that a delegation head
-// carries.  The payload of a step is a child too, so the members of a
+// the protocol under a pin, the protocol of a named state, and the protocol
+// that a delegation head carries.  The payload of a step is a child too, so the members of a
 // crash label and of a keyed message are claimed.  The reader puts each
 // claim, base and child on the stacks of `result`, which its caller owns.
 consteval void session_node_members(std::meta::info type, ::fixy::session::transition::node_members& result) {
@@ -488,8 +536,7 @@ consteval void session_node_members(std::meta::info type, ::fixy::session::trans
     if (std::meta::is_type(type) && std::meta::has_template_arguments(type)) {
         const std::meta::info family = std::meta::template_of(type);
         if (family == ^^Crash || family == ^^PeerMsg || family == ^^Labelled) {
-            const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(type);
-            const std::meta::info* const argument = arguments.data();
+            const tr::static_run<std::meta::info> argument = tr::template_arguments_run(type);
             result.is_node = true;
             if (family == ^^Crash) {
                 tr::push(result.claims, member_claim{"peer", argument[0]});
@@ -521,6 +568,10 @@ consteval void session_node_members(std::meta::info type, ::fixy::session::trans
     } else if (shape == ^^VendorPinned) {
         tr::push(result.claims, member_claim{"protocol", view.next});
         tr::push(result.claims, member_claim{"vendor_backend", view.value});
+        tr::push(result.bases, view.next);
+    } else if (shape == ^^Named) {
+        tr::push(result.claims, member_claim{"name", view.name});
+        tr::push(result.claims, member_claim{"protocol", view.next});
         tr::push(result.bases, view.next);
     } else if (shape == ^^Select || shape == ^^Offer) {
         tr::push(result.claims, member_claim{"branch_count", std::meta::reflect_constant(view.branches.size())});
@@ -573,6 +624,7 @@ concept MembersAgreeBelow = members_agree_below(^^Node);
 // name the first such node.
 consteval bool require_agreeing_members(std::meta::info protocol) {
     namespace tr = ::fixy::session::transition;
+    require_acyclic_names(protocol);
     if (std::meta::extract<bool>(std::meta::substitute(^^MembersAgreeBelow, {std::meta::dealias(protocol)}))) {
         return true;
     }
@@ -641,6 +693,7 @@ concept SpineCoherentBelow = spine_coherent_below(^^Node);
 // name it.
 consteval bool require_registered_spine(std::meta::info protocol) {
     namespace tr = ::fixy::session::transition;
+    require_acyclic_names(protocol);
     if (!std::meta::extract<bool>(std::meta::substitute(^^SpineRegisteredBelow, {std::meta::dealias(protocol)}))) {
         const std::meta::info missing = tr::first_unregistered(protocol_registry, protocol);
         if (missing != std::meta::info{}) {
@@ -756,7 +809,7 @@ using session_loop_ctx_rebind_inner_t = [:detail::rebind_inner_loop_ctx(^^LoopCt
 // ── Shape traits ─────────────────────────────────────────────────────
 //
 // A recognizer compares the head shape of P, under its registered
-// wrappers, with one combinator.  It needs no registration of P, so it
+// wrappers and named states, with one combinator.  It needs no registration of P, so it
 // answers false for a type that is not a protocol.
 
 template <typename P>
@@ -820,6 +873,17 @@ template <typename P>
 inline constexpr VendorBackend protocol_vendor_v = detail::vendor_view<P>::vendor_backend;
 template <typename P>
 using protocol_inner_t = typename detail::vendor_view<P>::protocol;
+
+// True when P is a named state at its head, with no wrapper above it.  The
+// protocol of the state is read through the registry, from the member of its
+// name, so a specialization of Named that lies about its member does not
+// change it.
+template <typename P>
+concept is_named_state_v = detail::is_instance_of(^^P, ^^Named);
+
+template <typename P>
+    requires is_named_state_v<P>
+using named_state_protocol_t = [:transition::decompose(detail::protocol_registry, ^^P).next:];
 
 // A Send or a Recv whose payload names a label key, a PeerMsg or a
 // Labelled.  Outside a choice it is the Select or the Offer of that one
@@ -1172,7 +1236,11 @@ using compose_at_branch_t = typename detail::compose_at_branch_view<P, I, Q>::ty
 //      participant, so a Continue in the delegated protocol cannot name a
 //      Loop of the carrier;
 //   7. no combinator is one that no plain protocol holds: Stop, Commit,
-//      Roll and Abort.
+//      Roll and Abort;
+//   8. the protocol of each named state is well-formed outside every Loop,
+//      so a Continue in it binds a Loop in it.  No named state reaches
+//      itself: each entry check refuses a cycle of names with
+//      Protocol_Named_State_Cycle.
 //
 // A Send or a Recv of a PeerMsg or a Labelled is keyed.  Outside a choice
 // it is the Select or the Offer of that one branch, and the handle puts

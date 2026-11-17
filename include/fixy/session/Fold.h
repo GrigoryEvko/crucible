@@ -98,6 +98,27 @@
 // only when each back node is guarded: some step or choice lies between
 // it and its binder.  Without that guard the unfold does not stop.
 //
+// ── Named states ──────────────────────────────────────────────────────
+//
+// A named state stands for the member type `protocol` of a class, its name.
+// The node of a named state has that protocol as its next node, so each walk
+// that follows the next node sees through the name.  A protocol that reaches
+// one state from many places names the state one time.  Its spelled type,
+// its display text and the debug name of each type that names it then grow
+// with the protocol, and not with the tree of its paths.
+//
+// The protocol of a name is closed: each back node in it binds a binder in
+// it, so a name means one protocol at each place.  No name reaches itself.
+// A cycle of names would be a recursion, and recursion is a binder with its
+// back nodes.  first_named_cycle below finds such a cycle.
+//
+// An algebra that builds a type gives a named state for a named state.  The
+// name of that state is folded_name below, and its protocol is the fold of
+// the algebra over the protocol of the first name.  A fold that keeps the
+// protocol keeps the name.  So the dual, the composition and the erasure of
+// a protocol with named states keep the names, and the dual of the dual of
+// a named state is that state.
+//
 // ── No entry point for a specialization ───────────────────────────────
 //
 // The fold recurses in place.  It asks no template of a layer for the
@@ -136,10 +157,24 @@ struct node {
     std::meta::info next{};
     std::meta::info annotation{};
     std::meta::info value{};
+    // The class of a named state, or null.
+    std::meta::info name{};
     static_run<std::meta::info> branches{};
 };
 
 namespace detail {
+
+template <class Name>
+using name_protocol_t = typename Name::protocol;
+
+// The member type `protocol` of the class `name`, with its aliases removed,
+// or null.  A class that has no such member type, or that the unit only
+// declares, has none.
+[[nodiscard]] consteval std::meta::info protocol_of_name(std::meta::info name) {
+    if (!std::meta::is_type(name) || !std::meta::is_class_type(std::meta::dealias(name))) return {};
+    if (!std::meta::can_substitute(^^name_protocol_t, {std::meta::dealias(name)})) return {};
+    return std::meta::dealias(std::meta::substitute(^^name_protocol_t, {std::meta::dealias(name)}));
+}
 
 // The registered view of one type, read now.  `type` is a dealiased
 // type.  decompose below keeps the answer for each type.
@@ -179,6 +214,21 @@ namespace detail {
                 result.next = std::meta::dealias(argument[1]);
             }
             break;
+        // A name that is a registered combinator, such as a VendorPinned
+        // with its member protocol, would hide the combinator.  A name that
+        // a walk meets before its definition has no protocol, and the answer
+        // holds for the unit.
+        case shape_kind::named: {
+            result.is_malformed = count != 1 || !std::meta::is_type(argument[0])
+                               || lookup_combinator(registry, shape_of(argument[0])).is_found;
+            const std::meta::info protocol = result.is_malformed ? std::meta::info{} : protocol_of_name(argument[0]);
+            result.is_malformed = result.is_malformed || protocol == std::meta::info{};
+            if (!result.is_malformed) {
+                result.name = std::meta::dealias(argument[0]);
+                result.next = protocol;
+            }
+            break;
+        }
         case shape_kind::choice: {
             std::size_t first = 0;
             if (count != 0 && result.entry.annotation != std::meta::info{} && std::meta::is_type(argument[0])
@@ -233,6 +283,20 @@ inline constexpr node node_v = detail::decompose_now(Registry, Type);
 
 [[nodiscard]] consteval bool is_registered(std::meta::info registry, std::meta::info type) {
     return decompose(registry, type).is_registered;
+}
+
+// The protocol of a named state, or null for each other type, read once per
+// translation unit.  A walk that resolves many names reads this reflection
+// and not the whole node.
+template <std::meta::info Registry, std::meta::info Type>
+inline constexpr std::meta::info named_protocol_v =
+    node_v<Registry, Type>.entry.kind == shape_kind::named ? node_v<Registry, Type>.next : std::meta::info{};
+
+[[nodiscard]] consteval std::meta::info protocol_under_name(std::meta::info registry, std::meta::info type) {
+    const std::meta::info dealiased = std::meta::dealias(type);
+    if (!std::meta::is_type(dealiased)) return {};
+    return std::meta::extract<std::meta::info>(std::meta::substitute(
+        ^^named_protocol_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(dealiased)}));
 }
 
 // ── The members of a node ─────────────────────────────────────────────
@@ -355,9 +419,8 @@ struct definition_place {
 [[nodiscard]] consteval bool agrees_behind_closure(std::meta::info type, const node_members& view,
                                                    std::meta::info closure) {
     if (closure == ^^closure_stand_in || !std::meta::has_template_arguments(type)) return false;
-    const std::vector<std::meta::info> arguments = std::meta::template_arguments_of(type);
-    const std::meta::info* const argument = arguments.data();
-    const std::size_t argument_count = arguments.size();
+    const static_run<std::meta::info> argument = template_arguments_run(type);
+    const std::size_t argument_count = argument.size();
     stack<std::meta::info> copied_arguments{};
     bool is_replaced = false;
     for (std::size_t place = 0; place < argument_count; ++place) {
@@ -452,17 +515,22 @@ struct definition_place {
     return std::define_static_string(text);
 }
 
-// The type under every registered wrapper at the head of `type`.
+// The type under every registered wrapper and every named state at the head
+// of `type`.  A cycle of names at the head has no type under it, so the walk
+// stops at the loop limit of a constant evaluation.  The gates refuse each
+// cycle of names first (first_named_cycle below).
 [[nodiscard]] consteval std::meta::info strip_wrappers(std::meta::info registry, std::meta::info type) {
     std::meta::info current = std::meta::dealias(type);
     for (;;) {
         const node view = decompose(registry, current);
-        if (!view.is_registered || view.entry.kind != shape_kind::wrapper) return current;
+        if (!view.is_registered || (view.entry.kind != shape_kind::wrapper && view.entry.kind != shape_kind::named)) {
+            return current;
+        }
         current = view.next;
     }
 }
 
-// The shape at the head of `type` under its wrappers.  A recognizer
+// The shape at the head of `type` under its wrappers and named states.  A recognizer
 // compares this with one shape, so it answers false for a type that is
 // not a protocol and needs no registration of that type.
 [[nodiscard]] consteval std::meta::info head_shape(std::meta::info registry, std::meta::info type) {
@@ -539,6 +607,7 @@ struct definition_place {
 //   result binder(node, context, child)
 //   result wrapper(node, context, child)
 //   result marker(node, context, child)
+//   result named(node, context, child)
 //   result unregistered(node, context)
 //
 // An algebra has one member for each kind, and the fold calls the member
@@ -586,6 +655,8 @@ template <class Algebra>
             return algebra.wrapper(view, context, child);
         case shape_kind::marker:
             return algebra.marker(view, context, child);
+        case shape_kind::named:
+            return algebra.named(view, context, child);
         default:
             break;
     }
@@ -606,6 +677,51 @@ template <class Algebra>
         ^^fold_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(std::meta::dealias(type)),
                    std::meta::reflect_constant(algebra), std::meta::reflect_constant(context)}));
 }
+
+// ── The names that an algebra makes ───────────────────────────────────
+
+// The name of the named state that the algebra Algebra, with the context
+// Context, makes of the named state of Source.  Its protocol is the fold of
+// the algebra over the protocol of Source, which the build reads one time,
+// when a walk first meets the state.
+template <std::meta::info Registry, auto Algebra, auto Context, class Source>
+struct folded_name {
+    using protocol = typename[:fold(Registry, detail::protocol_of_name(^^Source), Algebra, Context):];
+};
+
+namespace detail {
+
+// The named state that an algebra makes of the named state `view`, of the
+// shape `shape`, when the fold of its protocol is `body`.  A fold that keeps
+// the protocol keeps the name.  A body that is null stays null, so the
+// splice of the result stops the build.
+template <class Algebra>
+[[nodiscard]] consteval std::meta::info fold_named(std::meta::info registry, const node& view, std::meta::info shape,
+                                                   std::meta::info body, const Algebra& algebra,
+                                                   typename Algebra::context context) {
+    if (body == std::meta::info{}) return {};
+    if (body == view.next) return std::meta::substitute(shape, {view.name});
+    return std::meta::substitute(
+        shape, {std::meta::substitute(^^folded_name,
+                                      {std::meta::reflect_constant(registry), std::meta::reflect_constant(algebra),
+                                       std::meta::reflect_constant(context), view.name})});
+}
+
+// The first name when `name` is the name that the algebra made of it with
+// the context, or null.
+template <class Algebra>
+[[nodiscard]] consteval std::meta::info folded_source(std::meta::info registry, std::meta::info name,
+                                                      const Algebra& algebra, typename Algebra::context context) {
+    if (!std::meta::has_template_arguments(name) || std::meta::template_of(name) != ^^folded_name) return {};
+    const static_run<std::meta::info> argument = template_arguments_run(name);
+    if (argument[0] != std::meta::reflect_constant(registry) || argument[1] != std::meta::reflect_constant(algebra)
+        || argument[2] != std::meta::reflect_constant(context)) {
+        return {};
+    }
+    return std::meta::dealias(argument[3]);
+}
+
+}  // namespace detail
 
 // ── Algebras ──────────────────────────────────────────────────────────
 
@@ -633,12 +749,13 @@ inline constexpr std::uint64_t label_word_bit = std::uint64_t{1} << 63;
     return id | label_word_bit;
 }
 
-// The head of one branch of a choice, under its wrappers.  `payload` is
-// the payload of a head step, or null.  `label_key` is the label that
-// the payload names through its registration, or null.
+// The head of one branch of a choice, under its wrappers and named states.
+// `payload` is the payload of a head step, or null.  `label_key` is the
+// label that the payload names through its registration, or null.
 // `has_stable_key` is false when that key has no stable identity, and
 // `label_word` is the word of a key with one, or zero.  `is_at_root` is
-// false when a wrapper or a binder stands above the head step.
+// false when a wrapper, a named state or a binder stands above the head
+// step.
 struct branch_head {
     bool is_label = true;
     std::meta::info payload{};
@@ -665,12 +782,12 @@ enum class choice_fault : std::uint8_t {
 
 namespace detail {
 
-// A branch is a label unless its head, under wrappers and binders, is an
-// input step whose payload a payload registration marks as no label.  A
-// binder at the head is looked through, because its first action is the
-// first action of its body.  `root` is a dealiased type, and
-// head_of_branch below keeps the answer for each type.  Complexity:
-// linear in the wrappers and binders at the head.
+// A branch is a label unless its head, under wrappers, named states and
+// binders, is an input step whose payload a payload registration marks as no
+// label.  A binder at the head is looked through, because its first action
+// is the first action of its body.  `root` is a dealiased type, and
+// head_of_branch below keeps the answer for each type.  Complexity: linear
+// in the wrappers, named states and binders at the head.
 [[nodiscard]] consteval branch_head head_of_branch_now(std::meta::info registry, std::meta::info root) {
     branch_head result{};
     node head = decompose(registry, strip_wrappers(registry, root));
@@ -806,9 +923,10 @@ namespace detail {
         case choice_fault::label_word_collision:
             return "two label keys of the choice have one label word, so the peer cannot tell the two labels apart";
         case choice_fault::keyed_label_below_root:
-            return "a label branch of a keyed choice starts with a wrapper or a binder, not with its label step.  The "
-                   "endpoint enters the branch past the label word of that step, so a wrapper or a loop entry above "
-                   "the step has no place on the wire";
+            return "a label branch of a keyed choice starts with a wrapper or a binder, or a named state, not with "
+                   "its label step.  The endpoint enters the branch past the label word of that step, so a wrapper, a "
+                   "name or a loop entry above the step has no place on the wire.  A name can stand after the label "
+                   "step";
         case choice_fault::label_key_without_identity:
             return "a label key of the choice has no stable identity, so it has no label word.  A closure type, an "
                    "unnamed class and a class with internal linkage print a name that is not a function of the "
@@ -917,6 +1035,10 @@ struct terminal_algebra {
     consteval bool marker(const node&, context, const Child&) const {
         return false;
     }
+    template <class Child>
+    consteval bool named(const node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
     consteval bool unregistered(const node&, context) const { return false; }
 };
 
@@ -964,6 +1086,10 @@ struct empty_choice_algebra {
     consteval bool marker(const node& view, context ctx, const Child& child) const {
         return child(view.next, ctx);
     }
+    template <class Child>
+    consteval bool named(const node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
     consteval bool unregistered(const node&, context) const { return true; }
 };
 
@@ -985,6 +1111,9 @@ struct empty_choice_algebra {
 //   8. A payload that is a protocol is well-formed outside every binder.
 //      The endpoint travels to another participant, so a back node of it
 //      cannot name a binder of the carrier.
+//   9. The protocol of a named state is well-formed outside every binder.
+//      A name means one protocol at each place where it stands, so a back
+//      node of it cannot name a binder above the name.
 //
 // A back node binds the nearest binder, so a rule asks only whether a
 // binder stands above a node, never how many.  The position holds that
@@ -1041,6 +1170,10 @@ struct well_formed_algebra {
     consteval bool marker(const node& view, context ctx, const Child& child) const {
         return view.entry.is_plain && child(view.next, ctx);
     }
+    template <class Child>
+    consteval bool named(const node& view, context, const Child& child) const {
+        return view.entry.is_plain && child(view.next, position{false, true});
+    }
     consteval bool unregistered(const node&, context) const { return false; }
 };
 
@@ -1081,6 +1214,14 @@ struct dual_algebra {
     template <class Child>
     consteval std::meta::info marker(const node& view, context ctx, const Child& child) const {
         return std::meta::substitute(view.entry.dual, {child(view.next, ctx)});
+    }
+    // The dual of a name that the dual made is its first name, so the dual
+    // of the dual of a named state is that state.
+    template <class Child>
+    consteval std::meta::info named(const node& view, context ctx, const Child& child) const {
+        const std::meta::info source = detail::folded_source(registry, view.name, *this, ctx);
+        if (source != std::meta::info{}) return std::meta::substitute(view.entry.dual, {source});
+        return detail::fold_named(registry, view, view.entry.dual, child(view.next, ctx), *this, ctx);
     }
     consteval std::meta::info unregistered(const node&, context) const { return {}; }
 
@@ -1150,6 +1291,10 @@ struct canonical_algebra {
     consteval std::meta::info marker(const node& view, context ctx, const Child& child) const {
         return std::meta::substitute(view.entry.shape, {child(view.next, ctx)});
     }
+    template <class Child>
+    consteval std::meta::info named(const node& view, context ctx, const Child& child) const {
+        return detail::fold_named(registry, view, view.entry.shape, child(view.next, ctx), *this, ctx);
+    }
     consteval std::meta::info unregistered(const node& view, context) const { return view.type; }
 };
 
@@ -1193,12 +1338,16 @@ struct compose_algebra {
     consteval std::meta::info marker(const node& view, context ctx, const Child& child) const {
         return std::meta::substitute(view.entry.shape, {child(view.next, ctx)});
     }
+    template <class Child>
+    consteval std::meta::info named(const node& view, context ctx, const Child& child) const {
+        return detail::fold_named(registry, view, view.entry.shape, child(view.next, ctx), *this, ctx);
+    }
     consteval std::meta::info unregistered(const node&, context) const { return {}; }
 };
 
-// Composition at one branch: the walk passes each step, binder, wrapper
-// and marker, and at the first choice it composes the suffix into branch
-// `index` alone.  The layer refuses a spine that reaches a terminal or
+// Composition at one branch: the walk passes each step, binder, wrapper,
+// marker and named state, and at the first choice it composes the suffix
+// into branch `index` alone.  The layer refuses a spine that reaches a terminal or
 // a back node first, and an index past the last branch.  The algebra
 // answers the null reflection for both.
 struct compose_at_choice_algebra {
@@ -1250,6 +1399,10 @@ struct compose_at_choice_algebra {
         if (below == std::meta::info{}) return {};
         return std::meta::substitute(view.entry.shape, {below});
     }
+    template <class Child>
+    consteval std::meta::info named(const node& view, context ctx, const Child& child) const {
+        return detail::fold_named(registry, view, view.entry.shape, child(view.next, ctx), *this, ctx);
+    }
     consteval std::meta::info unregistered(const node&, context) const { return {}; }
 };
 
@@ -1259,14 +1412,15 @@ namespace detail {
 [[nodiscard]] consteval bool passes_to_first_stop(const node& view) {
     return view.is_registered
         && (view.entry.kind == shape_kind::step || view.entry.kind == shape_kind::binder
-            || view.entry.kind == shape_kind::wrapper || view.entry.kind == shape_kind::marker);
+            || view.entry.kind == shape_kind::wrapper || view.entry.kind == shape_kind::marker
+            || view.entry.kind == shape_kind::named);
 }
 
 }  // namespace detail
 
 // The first node on the spine where composition at a branch stops: the
-// first choice, terminal or back node under the steps, binders, wrappers
-// and markers at the head.
+// first choice, terminal or back node under the steps, binders, wrappers,
+// markers and named states at the head.
 [[nodiscard]] consteval node first_stop_of_spine(std::meta::info registry, std::meta::info type) {
     node view = decompose(registry, type);
     while (detail::passes_to_first_stop(view))
@@ -1349,6 +1503,10 @@ struct binding_probe_algebra {
     consteval bool marker(const node& view, context is_bound, const Child& child) const {
         return child(view.next, is_bound);
     }
+    template <class Child>
+    consteval bool named(const node& view, context is_bound, const Child& child) const {
+        return child(view.next, is_bound);
+    }
     consteval bool unregistered(const node&, context) const { return true; }
 };
 
@@ -1364,6 +1522,134 @@ struct binding_probe_algebra {
 [[nodiscard]] consteval bool has_bound_terminal(std::meta::info registry, std::meta::info type,
                                                 std::size_t binders_above = 0) {
     return fold(registry, type, binding_probe_algebra{binding_probe_algebra::probe::bound_terminal}, binders_above > 0);
+}
+
+// ── Cycles of names ───────────────────────────────────────────────────
+
+namespace detail {
+
+[[nodiscard]] consteval bool run_holds(static_run<std::meta::info> run, std::meta::info item) {
+    for (const std::meta::info held : run) {
+        if (held == item) return true;
+    }
+    return false;
+}
+
+// The items of the two runs, each one time.  Complexity: the product of the
+// two lengths.
+[[nodiscard]] consteval static_run<std::meta::info> join_runs(static_run<std::meta::info> left,
+                                                              static_run<std::meta::info> right) {
+    if (right.empty()) return left;
+    if (left.empty()) return right;
+    stack<std::meta::info> joined{};
+    for (const std::meta::info item : left)
+        push(joined, item);
+    for (const std::meta::info item : right) {
+        if (!run_holds(left, item)) push(joined, item);
+    }
+    return joined.top == left.size() ? left : to_static_run(joined);
+}
+
+}  // namespace detail
+
+// The named states that a protocol reaches with no named state between: each
+// named state on its spine and in each payload that is a protocol.  The fold
+// stops at each named state, so it ends on a cycle of names too.
+struct names_below_algebra {
+    using result = static_run<std::meta::info>;
+    using context = int;
+
+    template <class Child>
+    consteval result terminal(const node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result back(const node&, context, const Child&) const {
+        return {};
+    }
+    template <class Child>
+    consteval result step(const node& view, context ctx, const Child& child) const {
+        const result after = child(view.next, ctx);
+        return view.entry.payload_is_protocol ? detail::join_runs(child(view.payload, ctx), after) : after;
+    }
+    template <class Child>
+    consteval result choice(const node& view, context ctx, const Child& child) const {
+        result names{};
+        for (const std::meta::info branch : view.branches)
+            names = detail::join_runs(names, child(branch, ctx));
+        return names;
+    }
+    template <class Child>
+    consteval result binder(const node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result wrapper(const node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result marker(const node& view, context ctx, const Child& child) const {
+        return child(view.next, ctx);
+    }
+    template <class Child>
+    consteval result named(const node& view, context, const Child&) const {
+        stack<std::meta::info> own_name{};
+        push(own_name, view.type);
+        return to_static_run(own_name);
+    }
+    consteval result unregistered(const node&, context) const { return {}; }
+};
+
+namespace detail {
+
+// The named state on a cycle of names that the walk from `named` finds, or
+// null.  `open` holds the names on the path of the walk, and `closed` the
+// names whose walk ended with no cycle.  Complexity: one visit for each
+// name, times the scans of the two stacks.
+consteval std::meta::info cycle_through(std::meta::info registry, std::meta::info named, stack<std::meta::info>& open,
+                                        stack<std::meta::info>& closed) {
+    for (const std::meta::info done : closed) {
+        if (done == named) return {};
+    }
+    for (const std::meta::info on_path : open) {
+        if (on_path == named) return named;
+    }
+    push(open, named);
+    const node view = decompose(registry, named);
+    if (view.next != std::meta::info{}) {
+        for (const std::meta::info below : fold(registry, view.next, names_below_algebra{}, 0)) {
+            const std::meta::info found = cycle_through(registry, below, open, closed);
+            if (found != std::meta::info{}) return found;
+        }
+    }
+    --open.top;
+    push(closed, named);
+    return {};
+}
+
+[[nodiscard]] consteval std::meta::info first_named_cycle_now(std::meta::info registry, std::meta::info type) {
+    stack<std::meta::info> open{};
+    stack<std::meta::info> closed{};
+    for (const std::meta::info below : fold(registry, type, names_below_algebra{}, 0)) {
+        const std::meta::info found = cycle_through(registry, below, open, closed);
+        if (found != std::meta::info{}) return found;
+    }
+    return {};
+}
+
+}  // namespace detail
+
+// The walk for one type, read once per translation unit.
+template <std::meta::info Registry, std::meta::info Type>
+inline constexpr std::meta::info named_cycle_v = detail::first_named_cycle_now(Registry, Type);
+
+// A named state of `type` that reaches itself through the protocols of the
+// names, or null.  A protocol with no named state costs one fold.
+[[nodiscard]] consteval std::meta::info first_named_cycle(std::meta::info registry, std::meta::info type) {
+    const std::meta::info dealiased = std::meta::dealias(type);
+    if (!std::meta::is_type(dealiased) || fold(registry, dealiased, names_below_algebra{}, 0).empty()) return {};
+    return std::meta::extract<std::meta::info>(std::meta::substitute(
+        ^^named_cycle_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(dealiased)}));
 }
 
 }  // namespace fixy::session::transition

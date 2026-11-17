@@ -297,6 +297,13 @@ consteval void add_choice_children(type_graph& graph, graph_node& made, std::siz
 // there when its children are made.
 consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, std::meta::info type, bool is_branch) {
     const node view = decompose(registry, type);
+    // A named state is no node of the graph.  The graph reads the protocol
+    // of the name in its place, so a relation compares two protocols and
+    // never two names.  The protocol takes its place before its children, so
+    // the build ends on a cycle of names too.
+    if (view.is_registered && view.entry.kind == shape_kind::named) {
+        return add_to_graph(registry, graph, view.next, is_branch);
+    }
     const std::size_t scope =
         graph.binders.top == 0 || !has_open_back(registry, view.type) ? npos : nearest_binder(graph);
     const std::size_t shared = find_built(graph, view.type, is_branch, scope);
