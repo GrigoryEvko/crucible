@@ -139,9 +139,10 @@ template <typename W, ::fixy::Lifetime_v Scope>
 concept LifetimePinnedRegion = ::fixy::is_band_of_v<::fixy::LifetimeLattice, W> && ::fixy::satisfies_v<W, Scope>
                             && std::convertible_to<::fixy::band_value_t<W>, ::fixy::Ref<const RegionNode>>;
 
-// The gate of a commit to the head log, CtxFitsCipherCommit, is in
-// crucible/cipher/SessionPersistenceSurface.h, so that a header that names
-// the gate and no member of the store does not include this header.
+// The gate of each operation of the store, the commit to the head log too,
+// is CtxFitsCipherPersistence of crucible/cipher/SessionPersistenceSurface.h,
+// so that a header that names the gate and no member of the store does not
+// include this header.
 
 }  // namespace cipher
 
