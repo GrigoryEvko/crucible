@@ -70,6 +70,14 @@ THE CORES OF A RUN
     gives each bench of the command N cores.  The harness pins each thread of
     the bench to one core of its affinity (bench/bench_harness.h).
 
+    An affinity mask has no order, so the placement also gives the bench the
+    cores in the order of the claim, in the variable ORDER_VARIABLE, as
+    "240,242,224".  The word ENV_PROGRAM sets it after the sudo of a
+    partition, so no policy of sudo can drop it, and the launcher of THE
+    CAPABILITIES keeps it.  The harness gives slot k the core k of that
+    order, so slot 0, the measuring thread, gets the quietest core of the
+    claim (THE CORES OF A RUN of bench/bench_harness.h).
+
     claimed() takes the cores of one claim.  It reads the groups of the cores
     that share one L3 cache, from the cache of level 3 in sysfs
     (cpuN/cache/indexK/shared_cpu_list).  When sysfs gives no such cache for
@@ -176,6 +184,10 @@ CGROUP_ROOT = Path("/sys/fs/cgroup")
 PARTITION_TYPES = frozenset({"root", "isolated"})
 # The program that starts a command in a slice, by its full path.  sudo can give the command a different PATH.
 SYSTEMD_RUN = "/usr/bin/systemd-run"
+# The program that sets the variable of the order of the cores before taskset, by its full path, and the variable that
+# holds the cores in the order of the claim (THE CORES OF A RUN).
+ENV_PROGRAM = "/usr/bin/env"
+ORDER_VARIABLE = "CRUCIBLE_BENCH_CORE_ORDER"
 # The directory of the lock file of each core, relative to the main work tree (THE CORES OF A RUN).
 CORE_LOCK_DIR = Path(".worktrees/.grun/bench-cores")
 # The compile definition of a bench target that states the count of its cores, as NAME=COUNT (THE CORES OF A RUN).
@@ -282,13 +294,15 @@ class Placement:
 
     cores is empty when the bench runs with no pin, and else sorted.  prefix holds the words that start the program on
     the cores.  record is the record of the runs with steal time of the claim, or None for a placement of no claim (THE
-    STEAL TIME).
+    STEAL TIME).  order holds the cores in the order of the claim, the quietest core first, and prefix gives it to the
+    program in ORDER_VARIABLE (THE CORES OF A RUN).
     """
 
     cores: tuple[int, ...]
     reserved: Reserved
     prefix: tuple[str, ...]
     record: Path | None = None
+    order: tuple[int, ...] = ()
 
     def command(self, words: tuple[str, ...]) -> tuple[str, ...]:
         """Return the words that run a program and its arguments on the cores of the placement."""
@@ -547,11 +561,16 @@ def ranked_groups(groups: tuple[tuple[int, ...], ...], counts: dict[int, int]) -
 
 
 def placement_on(cores: tuple[int, ...], reserved: Reserved, taskset: str) -> Placement:
-    """Return the placement of each bench on cores of the reserved CPUs, in the slice of a partition."""
+    """Return the placement of each bench on cores of the reserved CPUs, in the slice of a partition.
+
+    cores holds the cores in the order of the claim.  The words of the placement set ORDER_VARIABLE to that order
+    before taskset (THE CORES OF A RUN).
+    """
     held = tuple(sorted(cores))
-    pin = (taskset, "-c", format_cpu_list(held))
+    ordered = ",".join(str(core) for core in cores)
+    pin = (ENV_PROGRAM, f"{ORDER_VARIABLE}={ordered}", taskset, "-c", format_cpu_list(held))
     if reserved.source != "partition":
-        return Placement(held, reserved, pin)
+        return Placement(held, reserved, pin, order=cores)
     scope = (
         "sudo",
         "-n",
@@ -564,7 +583,7 @@ def placement_on(cores: tuple[int, ...], reserved: Reserved, taskset: str) -> Pl
         f"--gid={os.getgid()}",
         "--",
     )
-    return Placement(held, reserved, (*scope, *pin))
+    return Placement(held, reserved, (*scope, *pin), order=cores)
 
 
 def read_steal_ticks(core: int, stat_file: Path = STAT_FILE) -> int | None:
@@ -1161,6 +1180,21 @@ def l3_cases(expect: Callable[[str, bool], None], plant: Callable[[Path, str], N
         expect(
             "a group with a core of the record of the steal time comes after a clean group", clean.cores == (240, 242)
         )
+    noisy = work / "noisy"
+    for minutes in (1, 2, 3):
+        record_steal(noisy / STEAL_RECORD, 224, 20.0, now - 60 * minutes)
+    record_steal(noisy / STEAL_RECORD, 230, 20.0, now - 60)
+    with contextlib.redirect_stdout(io.StringIO()), claim(16, noisy) as whole:
+        pass
+    expected = (*group_b, 226, 228, 232, 234, 236, 238, 230, 224)
+    expect(
+        "a claim of 16 cores orders its cores by the record: the clean group first, then the fewest lines, so cpu224 "
+        f"with the most lines comes last: {whole.order}",
+        whole.cores == tuple(sorted(expected))
+        and whole.order == expected
+        and f"{ORDER_VARIABLE}={','.join(str(core) for core in expected)}" in whole.prefix
+        and whole.prefix.index(ENV_PROGRAM) < whole.prefix.index("-c"),
+    )
     plant(cpu_root / "cpu256" / "topology" / "thread_siblings_list", "256\n")
     expect(
         "a core with no L3 cache in sysfs is a group of its own when other cores have one",
@@ -1284,7 +1318,10 @@ def self_test() -> int:
         with claim(Settings("b", "p")) as where:
             expect("with no reservation and no CRUCIBLE_BENCH_CORE, no pin", where == Placement((), Reserved(), ()))
         with claim(Settings("b", "p", "5")) as where:
-            expect("with no reservation, CRUCIBLE_BENCH_CORE is the core", where.prefix == ("taskset", "-c", "5"))
+            expect(
+                "with no reservation, CRUCIBLE_BENCH_CORE is the core, and the order of the cores names it",
+                where.prefix == (ENV_PROGRAM, f"{ORDER_VARIABLE}=5", "taskset", "-c", "5") and where.order == (5,),
+            )
         try:
             with claim(Settings("b", "p", "cpu5")):
                 expect("a CRUCIBLE_BENCH_CORE that is no CPU number is refused", False)

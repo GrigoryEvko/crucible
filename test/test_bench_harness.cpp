@@ -620,11 +620,18 @@ void run_on_own_thread(Body body) {
         .join();
 }
 
-// The cores of a planted run: the isolated CPUs of the affinity.
+// The cores of a planted run: the isolated CPUs of the affinity, in the order
+// of a planted order of loop bench.
+[[nodiscard]] bench::Cores planted_cores_in(crucible::warden::CpuSet const& allowed,
+                                            crucible::warden::CpuSet const& isolated, bench::CoreOrder const& order) {
+    return bench::Cores::of(::fixy::side_as<bench::side::AllowedCpus>(allowed),
+                            ::fixy::side_as<bench::side::IsolatedCpus>(isolated), order);
+}
+
+// The cores of a planted run with no order of loop bench, in ascending order.
 [[nodiscard]] bench::Cores planted_cores(crucible::warden::CpuSet const& allowed,
                                          crucible::warden::CpuSet const& isolated) {
-    return bench::Cores::of(::fixy::side_as<bench::side::AllowedCpus>(allowed),
-                            ::fixy::side_as<bench::side::IsolatedCpus>(isolated));
+    return planted_cores_in(allowed, isolated, bench::CoreOrder{});
 }
 
 // The isolated CPUs of the bench VM: the even CPUs 224 to 254.
@@ -687,6 +694,62 @@ void test_slots_take_distinct_cores() {
     const bench::Cores none = planted_cores(shared, planted_isolated());
     CHECK(none.count() == 0u);
     CHECK(none.of_slot(bench::kMeasuringSlot).is_none());
+}
+
+// The order of a text of loop bench, or an empty order with a failed check
+// when the parse refuses the text.
+[[nodiscard]] bench::CoreOrder planted_order(::fixy::TextView text) {
+    ::fixy::Option<bench::CoreOrder> parsed = bench::parse_core_order(text);
+    CHECK(parsed.is_some());
+    return std::move(parsed).value_or(bench::CoreOrder{});
+}
+
+// The CPU of a slot of a planted run, or -1 past the last slot.
+[[nodiscard]] int core_at(bench::Cores const& cores, bench::ThreadSlot slot) noexcept {
+    return cores.of_slot(slot).value_or(bench::CpuId::none()).raw();
+}
+
+// A claim of loop bench of the cores 240 to 246, with the order "246,240,244"
+// of the steal record.  Slot 0, the measuring thread, takes cpu246, the first
+// core of the order, and the core of the run with no asked core is cpu246.
+// The slots then take 240 and 244, and the core that the order does not name,
+// 242, comes last.  An order that names a CPU outside the claim skips it.  A
+// text with no number, a number that parse() refuses, a CPU past the last CPU
+// of a mask, or a CPU twice is refused.  An empty text is an empty order.
+void test_slots_follow_the_order_of_the_claim() {
+    using Slot = bench::ThreadSlot;
+    crucible::warden::CpuSet claim{};
+    for (std::size_t cpu = 240; cpu <= 246; cpu += 2)
+        claim.insert(cpu);
+    const bench::Cores ordered = planted_cores_in(claim, planted_isolated(), planted_order("246,240,244"));
+    CHECK(ordered.count() == 4u && ordered.source() == bench::SlotOrder::Claim);
+    CHECK(core_at(ordered, bench::kMeasuringSlot) == 246);
+    CHECK(core_at(ordered, Slot{1}) == 240 && core_at(ordered, Slot{2}) == 244 && core_at(ordered, Slot{3}) == 242);
+    CHECK(core_at(ordered, Slot{4}) == -1);
+    CHECK(bench::detail::core_of_run(ordered, claim, bench::CpuId::none()).raw() == 246);
+    const crucible::warden::CpuSet later = ordered.from_slot(Slot{1});
+    CHECK(later.size() == 3u && !later.contains(246) && later.contains(242));
+    const bench::Spread spread = bench::Spread::of_claim(ordered);
+    CHECK(spread.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none()).raw() == 246);
+    CHECK(spread.of_slot(Slot{3}).value_or(bench::CpuId::none()).raw() == 242);
+
+    const bench::Cores outside = planted_cores_in(claim, planted_isolated(), planted_order("250,242"));
+    CHECK(outside.source() == bench::SlotOrder::Claim && core_at(outside, bench::kMeasuringSlot) == 242);
+    CHECK(core_at(outside, Slot{1}) == 240 && core_at(outside, Slot{3}) == 246 && outside.count() == 4u);
+
+    const bench::Cores ascending = planted_cores(claim, planted_isolated());
+    CHECK(ascending.source() == bench::SlotOrder::Ascending && core_at(ascending, bench::kMeasuringSlot) == 240);
+
+    CHECK(planted_order("").size() == 0u);
+    CHECK(planted_order("7").size() == 1u);
+    CHECK(bench::parse_core_order("240,,242").is_none());
+    CHECK(bench::parse_core_order("240,").is_none());
+    CHECK(bench::parse_core_order(",240").is_none());
+    CHECK(bench::parse_core_order("240;242").is_none());
+    CHECK(bench::parse_core_order(" 240").is_none());
+    CHECK(bench::parse_core_order("240,240").is_none());
+    CHECK(bench::parse_core_order("1024").is_none());
+    CHECK(bench::parse_core_order("-1").is_none());
 }
 
 // The CPU of a slot of a spread, or -1 past the last slot.
@@ -1026,6 +1089,7 @@ int main() {
     test_fan_out_keeps_the_worker_affinity();
     test_core_of_run_stays_in_the_affinity();
     test_slots_take_distinct_cores();
+    test_slots_follow_the_order_of_the_claim();
     test_spread_of_a_run();
     test_apart_core_of_a_claim();
     test_pins_of_the_threads_of_a_run();

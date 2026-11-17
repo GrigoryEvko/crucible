@@ -378,12 +378,21 @@ private:
 // process: one isolated core for each thread that the bench states with
 // CORES in bench/CMakeLists.txt (THE CORES OF A RUN of
 // utils/assay/loop/bench.py).  The cores of a run are the isolated CPUs of
-// that affinity, in ascending order.
+// that affinity.
+//
+// An affinity mask has no order, so loop bench also gives the cores in the
+// order of its claim, in the variable CRUCIBLE_BENCH_CORE_ORDER, as
+// "240,242,224".  A core with fewer lines in the record of the steal time
+// comes first in that order (THE STEAL TIME of utils/assay/loop/bench.py).
+// The slots of a run take the cores of the run in that order, and then each
+// core that the variable does not name, in ascending order.  With no such
+// variable, as under ctest, the slots take the cores in ascending order.
 //
 // Each thread of a run has a slot.  Slot 0 is the measuring thread of each
-// Run, and a body gives the threads that it starts the slots 1, 2 and so on.
-// The thread of slot k runs on the core k of the run, so no two threads of a
-// run share a core.  A thread that starts on an isolated CPU with a mask of
+// Run, so it takes the quietest core of the claim.  A body gives the threads
+// that it starts the slots 1, 2 and so on.  The thread of slot k runs on the
+// core k of the run, so no two threads of a run share a core.  A thread that
+// starts on an isolated CPU with a mask of
 // several CPUs stays on the CPU of the thread that started it, because no load
 // balancer reaches an isolated CPU.  So each thread takes a pin of its own:
 // a worker calls pin_calling_thread_to() with the core of its slot, and a
@@ -413,40 +422,120 @@ using ThreadSlot = ::fixy::Id<ThreadSlotTag, std::uint32_t>;
 // The slot of the measuring thread of each Run.
 inline constexpr ThreadSlot kMeasuringSlot{0};
 
-// The isolated cores of a run, in ascending order.  A Cores holds a CpuSet of
-// 1 KiB, and it is a plain value.
+// The CPUs of the slots of a run, at most: the CPUs that an affinity mask of
+// the thread door can name.  A spread holds as many (THE SPREAD OF A RUN).
+inline constexpr std::size_t kSpreadCpus = ::fixy::AffinityMask::kBits;
+
+// The cores of a claim in the order of loop bench (THE CORES OF A RUN).
+using CoreOrder = ::fixy::FixedList<CpuId, kSpreadCpus>;
+
+// Where the order of the slots of a run comes from: the order of the claim of
+// loop bench, or the ascending order of the CPUs.
+enum class SlotOrder : std::uint8_t {
+    Ascending,
+    Claim,
+};
+
+// The order of a text of the variable CRUCIBLE_BENCH_CORE_ORDER: CPU numbers
+// with one comma between two, such as "240,242,224".  An empty text gives an
+// empty order.  None for a text with a number that parse() refuses, a CPU that
+// an affinity mask cannot name, a CPU twice, or more than kSpreadCpus CPUs.
+// Complexity: linear in the text, times the CPUs of the order for the check of
+// a CPU twice.
+[[nodiscard]] inline ::fixy::Option<CoreOrder> parse_core_order(::fixy::TextView text) noexcept {
+    namespace topology = crucible::warden::detail;
+    CoreOrder order{};
+    ::fixy::TextView rest = text;
+    bool has_number = text.size() != 0;
+    while (has_number) {
+        std::size_t const comma = ::fixy::find(rest, ',').value_or(rest.size());
+        has_number = comma < rest.size();
+        ::fixy::Option<CpuId> cpu =
+            ::fixy::parse<std::uint16_t>(topology::text_prefix(rest, comma))
+                .match(
+                    [](std::uint16_t parsed) noexcept -> ::fixy::Option<CpuId> {
+                        if (parsed > ::fixy::AffinityMask::kMaxCore) return ::fixy::none;
+                        return ::fixy::some(CpuId{parsed});
+                    },
+                    [](::fixy::ParseError) noexcept -> ::fixy::Option<CpuId> { return ::fixy::none; });
+        rest = topology::text_suffix(rest, comma + 1);
+        CpuId const parsed = std::move(cpu).value_or(CpuId::none());
+        if (!parsed.is_valid()) return ::fixy::none;
+        for (CpuId const held : order) {
+            if (held == parsed) return ::fixy::none;
+        }
+        if (order.push(parsed).is_err()) return ::fixy::none;
+    }
+    return ::fixy::some(order);
+}
+
+// The order of the variable CRUCIBLE_BENCH_CORE_ORDER of the process, or an
+// empty order when the process has no such variable (THE CORES OF A RUN).
+[[nodiscard]] inline CoreOrder read_core_order() noexcept;
+
+// The isolated cores of a run, in the order of its slots.  A Cores holds a
+// CpuSet of 1 KiB and the CPUs of the slots, 4 KiB, and it is a plain value.
 class Cores {
 public:
-    // The isolated CPUs of the allowed CPUs.
+    // The isolated CPUs of the allowed CPUs.  The slots take them in the
+    // order of order, which can name other CPUs, and then each core that order
+    // does not name, in ascending order.  Complexity: linear in the CPUs of
+    // the set, times the CPUs of order.
     [[nodiscard]] static Cores of(::fixy::Side<side::AllowedCpus, crucible::warden::CpuSet> const& allowed,
-                                  ::fixy::Side<side::IsolatedCpus, crucible::warden::CpuSet> const& isolated) noexcept {
+                                  ::fixy::Side<side::IsolatedCpus, crucible::warden::CpuSet> const& isolated,
+                                  CoreOrder const& order) noexcept {
         Cores cores{};
         cores.set_ = allowed.value().intersection(isolated.value());
+        for (CpuId const cpu : order) {
+            bool is_held = false;
+            for (CpuId const held : cores.slots_) {
+                is_held = is_held || held == cpu;
+            }
+            if (is_held || !cores.set_.contains(cpu.raw())) continue;
+            static_cast<void>(cores.slots_.push(cpu));
+            cores.source_ = SlotOrder::Claim;
+        }
+        for (int const cpu : cores.set_) {
+            bool is_named = false;
+            for (CpuId const named : order) {
+                is_named = is_named || named.raw() == cpu;
+            }
+            if (is_named) continue;
+            if (cores.slots_.push(CpuId{cpu}).is_err()) break;
+        }
         return cores;
     }
 
-    // The cores of the affinity of the calling thread.  Complexity: one read
-    // of procfs and one of sysfs.
+    // The cores of the affinity of the calling thread, in the order of
+    // CRUCIBLE_BENCH_CORE_ORDER.  Complexity: one read of procfs for the
+    // affinity, one for the order, and one of sysfs.
     [[nodiscard]] static Cores of_calling_thread() noexcept {
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
         return of(::fixy::side_as<side::AllowedCpus>(crucible::warden::allowed_cpus(startup)),
-                  ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)));
+                  ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)), read_core_order());
     }
 
-    // The count of the cores.  Complexity: linear in the words of the set.
-    [[nodiscard]] std::size_t count() const noexcept { return set_.size(); }
+    // The count of the cores: one for each slot.
+    [[nodiscard]] std::size_t count() const noexcept { return slots_.size(); }
 
-    // The core of a slot: the CPU at the position of the slot in ascending
-    // order, or none when the run has too few cores.  Two slots never get one
-    // core.  Complexity: linear in the CPUs up to the slot.
+    // Where the order of the slots comes from.
+    [[nodiscard]] SlotOrder source() const noexcept { return source_; }
+
+    // The core of a slot: the CPU at the position of the slot in the order of
+    // the slots, or none when the run has too few cores.  Two slots never get
+    // one core.  Complexity: linear in the slots up to the slot.
     [[nodiscard]] ::fixy::Option<CpuId> of_slot(ThreadSlot slot) const noexcept {
         std::uint32_t position = 0;
-        for (int const cpu : set_) {
-            if (position == slot.raw()) return ::fixy::some(CpuId{cpu});
+        for (CpuId const cpu : slots_) {
+            if (position == slot.raw()) return ::fixy::some(cpu);
             ++position;
         }
         return ::fixy::none;
     }
+
+    // The core of each slot, in the order of the slots.
+    [[nodiscard]] ::fixy::View<CpuId const> slots() const& noexcept { return slots_.view(); }
+    void slots() const&& = delete("a view into a temporary Cores dangles at the end of the full expression");
 
     // The cores as a set, for the affinity mask of a thread door.
     [[nodiscard]] crucible::warden::CpuSet const& set() const& noexcept { return set_; }
@@ -456,12 +545,12 @@ public:
     // or the empty set when the run has too few cores.  A library that starts
     // several threads and pins each one inside the mask of its caller, such as
     // the pipeline of a Vigil, takes these cores through run_on_cores().
-    // Complexity: linear in the CPUs of the set.
+    // Complexity: linear in the slots.
     [[nodiscard]] crucible::warden::CpuSet from_slot(ThreadSlot first) const noexcept {
         crucible::warden::CpuSet later{};
         std::uint32_t position = 0;
-        for (int const cpu : set_) {
-            if (position >= first.raw()) later.insert(static_cast<std::size_t>(cpu));
+        for (CpuId const cpu : slots_) {
+            if (position >= first.raw()) later.insert(static_cast<std::size_t>(cpu.raw()));
             ++position;
         }
         return later;
@@ -469,6 +558,8 @@ public:
 
 private:
     crucible::warden::CpuSet set_{};
+    ::fixy::FixedList<CpuId, kSpreadCpus> slots_{};
+    SlotOrder source_ = SlotOrder::Ascending;
 };
 
 // The CPUs that share the L3 cache of a CPU: the shared_cpu_list of the cache
@@ -527,8 +618,8 @@ template <class GroupOf>
 // ── THE SPREAD OF A RUN ────────────────────────────────────────────
 //
 // A run of many threads gives slot k the CPU k of a list.  With a claim of
-// loop bench, the list is the cores of the claim in ascending order, as
-// Cores::of_slot gives them.  With no claim, such as a row of more threads
+// loop bench, the list is the cores of the claim in the order of their slots,
+// as Cores::of_slot gives them.  With no claim, such as a row of more threads
 // than the reserved cores, the list is the CPUs of the affinity of the process
 // in the order of the topology: the first allowed CPU of each core in
 // ascending order, then the second allowed CPU of each core, and so on.  A run
@@ -542,8 +633,6 @@ template <class GroupOf>
 // A spread holds at most kSpreadCpus CPUs: the CPUs that an affinity mask of
 // the thread door can name.
 
-inline constexpr std::size_t kSpreadCpus = ::fixy::AffinityMask::kBits;
-
 // Where the CPUs of a spread come from.
 enum class SpreadSource : std::uint8_t {
     Claim,
@@ -552,13 +641,13 @@ enum class SpreadSource : std::uint8_t {
 
 class Spread {
 public:
-    // The cores of a claim, in ascending order.  Complexity: linear in the
-    // cores.
+    // The cores of a claim, in the order of their slots.  Complexity: linear
+    // in the cores.
     [[nodiscard]] static Spread of_claim(Cores const& cores) noexcept {
         Spread spread{};
         spread.source_ = SpreadSource::Claim;
-        for (int const cpu : cores.set()) {
-            if (spread.order_.push(CpuId{cpu}).is_err()) break;
+        for (CpuId const cpu : cores.slots()) {
+            if (spread.order_.push(cpu).is_err()) break;
         }
         return spread;
     }
@@ -2484,8 +2573,9 @@ private:
         // its SMT sibling (timer-tick IRQ landing pad).
         const CpuId asked = (pin_mode_ == Pin::Explicit) ? core_ : CpuId::none();
         const crucible::warden::CpuSet allowed = crucible::warden::allowed_cpus(startup);
-        const Cores cores = Cores::of(::fixy::side_as<side::AllowedCpus>(allowed),
-                                      ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)));
+        const Cores cores =
+            Cores::of(::fixy::side_as<side::AllowedCpus>(allowed),
+                      ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)), read_core_order());
         int target = detail::core_of_run(cores, allowed, asked).raw();
         if (asked.is_valid() && target != asked.raw()) {
             std::fprintf(stderr,
@@ -2644,14 +2734,18 @@ inline void print_system_info() {
     const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
     ::fixy::report(Sink::Out, "  cpus:      {} online\n", crucible::warden::num_online_cpus(startup));
     const crucible::warden::CpuSet allowed = crucible::warden::allowed_cpus(startup);
-    const Cores cores = Cores::of(::fixy::side_as<side::AllowedCpus>(allowed),
-                                  ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)));
+    const Cores cores =
+        Cores::of(::fixy::side_as<side::AllowedCpus>(allowed),
+                  ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)), read_core_order());
     ::fixy::report(Sink::Out, "  core:      cpu{}, of the {} cpus of the affinity of the process\n",
                    detail::core_of_run(cores, allowed, CpuId{env_core()}).raw(), allowed.size());
-    if (cores.count() > 1) {
-        ::fixy::report(Sink::Out, "  cores:     {} isolated cores, one for each thread of the run:", cores.count());
-        for (int const cpu : cores.set()) {
-            ::fixy::report(Sink::Out, " cpu{}", cpu);
+    if (cores.count() > 0) {
+        ::fixy::report(Sink::Out, "  cores:     {} isolated cores, slot k on core k, in {}:", cores.count(),
+                       cores.source() == SlotOrder::Claim
+                           ? TextView{"the order of the claim from CRUCIBLE_BENCH_CORE_ORDER, the quietest first"}
+                           : TextView{"ascending order, with no order from loop bench"});
+        for (CpuId const cpu : cores.slots()) {
+            ::fixy::report(Sink::Out, " cpu{}", cpu.raw());
         }
         ::fixy::report(Sink::Out, "\n");
     }
@@ -2745,6 +2839,47 @@ static_assert(std::is_same_v<decltype(::fixy::sched::mint_priority<-10>(::fixy::
 [[nodiscard]] inline const char* env(const char* name) noexcept {
     const char* s = std::getenv(name);
     return (s != nullptr && s[0] != '\0') ? s : nullptr;
+}
+
+// The text of CRUCIBLE_BENCH_CORE_ORDER comes from /proc/self/environ, the
+// environment of the process at its start, with a zero after each variable.
+// loop bench sets the variable in that environment (THE CORES OF A RUN).  A
+// file that does not read gives a warning and the empty order.  An
+// environment larger than the buffer ends the process, because a cut can drop
+// the variable.  A text that parse_core_order() refuses ends the process too,
+// because loop bench writes each such text.  Complexity: one read of procfs,
+// and linear in the environment.
+inline CoreOrder read_core_order() noexcept {
+    constexpr std::size_t kEnvironBytes = 65536;
+    namespace topology = crucible::warden::detail;
+    constexpr ::fixy::TextView kKey{"CRUCIBLE_BENCH_CORE_ORDER="};
+    ::fixy::FixedText<kEnvironBytes> environ_text{};
+    if (::foundation::os::read_file("/proc/self/environ", environ_text).is_err()) {
+        ::fixy::report(::fixy::Sink::Err, "WARN bench: /proc/self/environ does not read, so the slots of the run take "
+                                          "the cores in ascending order\n");
+        return CoreOrder{};
+    }
+    if (environ_text.size() == kEnvironBytes) {
+        ::fixy::fatal("the environment of the process holds {} bytes or more, so the harness cannot read "
+                      "CRUCIBLE_BENCH_CORE_ORDER in it",
+                      kEnvironBytes);
+    }
+    ::fixy::TextView rest = environ_text.view();
+    while (rest.size() != 0) {
+        std::size_t const end = ::fixy::find(rest, '\0').value_or(rest.size());
+        ::fixy::TextView const variable = topology::text_prefix(rest, end);
+        rest = topology::text_suffix(rest, end + 1);
+        if (!::fixy::starts_with(variable, kKey)) continue;
+        ::fixy::TextView const text = topology::text_suffix(variable, kKey.size());
+        return parse_core_order(text).match(
+            [](CoreOrder order) noexcept { return order; },
+            [&text]() noexcept -> CoreOrder {
+                ::fixy::fatal("CRUCIBLE_BENCH_CORE_ORDER is '{}', and it must hold CPU numbers with a comma "
+                              "between two, each CPU one time, such as 240,242,224",
+                              text);
+            });
+    }
+    return CoreOrder{};
 }
 
 // Parse CRUCIBLE_BENCH_CORE. Returns -1 when unset, invalid, or outside
