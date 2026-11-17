@@ -22,7 +22,8 @@ int main() {
     crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
     crucible::RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), test.alloc};
 
-    auto external = ::fixy::mint_tagged<::fixy::tags::source::External>(registry.entries().value());
+    auto external = ::fixy::mint_tagged<::fixy::tags::source::External>(
+        registry.entries(::foundation::effects::testing::foreground()).value());
     crucible::RecipeRegistry::Entries registry_entries = external;
     (void)registry_entries;
     return 0;

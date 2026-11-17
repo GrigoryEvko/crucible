@@ -29,7 +29,8 @@ int main() {
     RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), test_ctx.alloc};
 
     ::fixy::Result<::fixy::RecipeSpec<RecipeRegistry::RecipeRef>, RecipeError> wrong_slot =
-        reg.by_name_pinned<::fixy::Tolerance::BITEXACT>(recipe_names::kF32Strict);
+        reg.by_name_pinned<::fixy::Tolerance::BITEXACT>(::foundation::effects::testing::foreground(),
+                                                        recipe_names::kF32Strict);
     (void)wrong_slot;
     return 0;
 }

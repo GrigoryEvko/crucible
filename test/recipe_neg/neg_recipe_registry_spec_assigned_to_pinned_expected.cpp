@@ -29,7 +29,7 @@ int main() {
     RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), test_ctx.alloc};
 
     ::fixy::Result<::fixy::NumericalTier<::fixy::Tolerance::BITEXACT, RecipeRegistry::RecipeRef>, RecipeError>
-        wrong_slot = reg.by_name_spec(recipe_names::kF32Strict);
+        wrong_slot = reg.by_name_spec(::foundation::effects::testing::foreground(), recipe_names::kF32Strict);
     (void)wrong_slot;
     return 0;
 }

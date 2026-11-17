@@ -1,34 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that MetaLog::try_append_pure rejects a
-// caller that declares Row<Effect::Bg>.
+// MetaLog::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  A context whose row holds Bg
+// is the context of the background thread, which drains the log and never
+// calls the producer side, so it fails the gate.
 //
-// MetaLog::try_append is the FOREGROUND producer-side write
-// (per the SPSC protocol — fg writes head, bg reads tail).  A
-// caller declaring Row<Bg> is structurally incorrect: bg threads
-// are the consumer side of MetaLog, not the producer.  IsPure
-// <Row<Bg>> = Subrow<Row<Bg>, Row<>> is false (Bg not in ∅), so
-// the requires-clause rejects.
-//
-// This is the second per-axis rejection leg (companion to the
-// Row<IO> fixture).  Together they pin TWO independent atoms
-// causing rejection, preventing a regression that accidentally
-// widened the constraint to accept either.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Bg>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/MetaLog.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
-    crucible::MetaLog log{::foundation::effects::testing::test().alloc};
+    const ::fixy::BgDrainCtx bg{eff::testing::bg()};
+    crucible::MetaLog log{eff::testing::test().alloc};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
-    // Caller declares Row<Bg> — bg consumer-side context cannot
-    // call the producer-side try_append_pure path.  IsPure<Row<Bg>>
-    // is false; the requires-clause rejects.
-    (void)log.try_append_pure<eff::Row<eff::Effect::Bg>>(record.view());
+    (void)log.try_append_pure(bg.in_row<eff::Row<eff::Effect::Bg>>(), record.view());
     return 0;
 }

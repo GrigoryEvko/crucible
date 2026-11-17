@@ -1,26 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::try_append_pure rejects a
-// caller declaring Row<Effect::Block>.  Sibling of MetaLog's
-// neg-compile matrix.
+// TraceRing::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  A context whose row holds
+// Block can wait in the kernel, so it fails the gate of the hot path.
 //
-// IsPure<R> = Subrow<R, Row<>>.  Row<Block> contains the Block
-// atom, so {Block} ⊄ ∅ — the requires-clause rejects.  A blocking
-// caller (futex, condvar, syscall-blocking path) cannot run on
-// the hot per-op recording path; the row mismatch catches the
-// miscategorization at compile time.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Block>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     crucible::TraceRing::Entry e{};
-    (void)ring.try_append_pure<eff::Row<eff::Effect::Block>>(e);
+    (void)ring.try_append_pure(test.in_row<eff::Row<eff::Effect::Block>>(), e);
     return 0;
 }

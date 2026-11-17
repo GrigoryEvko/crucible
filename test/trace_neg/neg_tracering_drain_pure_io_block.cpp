@@ -1,25 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Multi-atom rejection on the consumer side.
-// Pins that TraceRing::drain_pure rejects Row<IO, Block> — same exact
-// row Cipher::record_event REQUIRES.  Per the producer-side multi-
-// atom fixture, this proves a row CORRECT for one row-typed entry
-// point is REJECTED on a different one, and the constraint is not
-// silently widened to "anything matching some other API's row".
+// TraceRing::drain_pure reads the row of the context of the caller, and the
+// gate IsPure asks that the row is empty.  A context whose row holds IO and
+// Block, the row that Cipher::record_event asks for, fails the gate.
 //
-// IsPure<Row<IO, Block>> = false.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::IO, Effect::Block>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure<eff::Row<eff::Effect::IO, eff::Effect::Block>>(out.view());
+    (void)ring.drain_pure(test.in_row<eff::Row<eff::Effect::IO, eff::Effect::Block>>(), out.view());
     return 0;
 }

@@ -1,35 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Saturation-row rejection.  Pins that
-// MetaLog::try_append_pure rejects a caller declaring the full
-// 6-atom OsUniverse row (AllRow = Row<Alloc, IO, Block, Bg, Init,
-// Test>).
+// MetaLog::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  The context of the load stage
+// of the background thread holds the widest row that a background context
+// can hold: Bg, Alloc, IO, Block and Nondet.  It fails the gate.
 //
-// AllRow is the TOP of the F* effect lattice — a context that
-// admits every observable effect.  IsPure<AllRow> = Subrow<AllRow,
-// Row<>> = false (the top is NOT a subset of the bottom).  This
-// is the maximum-cardinality rejection witness.
-//
-// Together with the per-axis fixtures (alloc/io/block/bg/init/test)
-// and the multi-atom fixture (io_block), this fixture:
-//   • Pins that the constraint scales to the saturation-row case
-//     (a refactor that special-cased "below 6 atoms" would slip).
-//   • Witnesses that AllRow — the canonical "anything goes" row
-//     used as the F* refinement-chain top — is correctly rejected.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<AllRow>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/MetaLog.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
-    crucible::MetaLog log{::foundation::effects::testing::test().alloc};
+    const ::fixy::BgLoadCtx load{eff::testing::bg()};
+    crucible::MetaLog log{eff::testing::test().alloc};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
-    // AllRow contains every Effect atom — the F* lattice top.
-    // IsPure<AllRow> is false; the requires-clause rejects.
-    (void)log.try_append_pure<eff::AllRow>(record.view());
+    (void)log.try_append_pure(load, record.view());
     return 0;
 }

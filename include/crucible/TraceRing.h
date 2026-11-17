@@ -54,6 +54,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 
 namespace crucible {
@@ -375,15 +376,16 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             try_append(e, meta_start, scope_hash, callsite_hash, depth));
     }
 
-    // Preferred at new call sites: appending touches memory only, so the
-    // caller's effect row must be empty, and a caller that allocates, blocks,
-    // performs I/O, or runs at init or test time is rejected here rather than
-    // discovered later. The plain try_append remains for callers that cannot
-    // name their row.
-    template <typename CallerRow = ::foundation::effects::Row<>>
-        requires ::fixy::IsPure<CallerRow>
+    // Preferred at new call sites: appending touches memory only, so the row
+    // of the context of the caller must be empty.  A context that allocates,
+    // blocks, performs I/O, or runs at init or test time is rejected here
+    // rather than discovered later.  The row comes from the context, so a
+    // caller cannot state a row that is not its own.  The plain try_append
+    // remains for callers that hold no context.
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
-    try_append_pure(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
+    try_append_pure(Ctx const&, const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                     CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return try_append(e, meta_start, scope_hash, callsite_hash, depth);
     }
@@ -497,15 +499,13 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     }
 
     // The consumer counterpart of try_append_pure. A drain touches memory
-    // only, so the caller's row must be empty. The thread that owns the
-    // consumer side declares its own context separately from this call.
-    template <typename CallerRow = ::foundation::effects::Row<>>
-        requires ::fixy::IsPure<CallerRow>
-    [[nodiscard, gnu::hot]] uint32_t drain_pure(::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
-                                                ::fixy::View<ScopeHash> out_scope_hashes = {},
-                                                ::fixy::View<CallsiteHash> out_callsite_hashes = {},
-                                                ::fixy::View<OpDepth> out_depths = {}) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
+    // only, so the row of the context of the caller must be empty.
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
+    [[nodiscard, gnu::hot]] uint32_t
+    drain_pure(Ctx const&, ::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
+               ::fixy::View<ScopeHash> out_scope_hashes = {}, ::fixy::View<CallsiteHash> out_callsite_hashes = {},
+               ::fixy::View<OpDepth> out_depths = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return drain(out, out_meta_starts, out_scope_hashes, out_callsite_hashes, out_depths);
     }
 

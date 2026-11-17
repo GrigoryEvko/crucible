@@ -1,25 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::try_append_pure rejects a
-// caller declaring Row<Effect::IO>.  Sibling of MetaLog's
-// try_append_pure neg-compile matrix.
+// TraceRing::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  A context whose row holds IO
+// fails the gate, so filesystem or network code cannot reach the pure append
+// of the hot path.
 //
-// IsPure<R> = Subrow<R, Row<>>.  Row<IO> contains the IO atom,
-// so {IO} ⊄ ∅ — the requires-clause rejects.  An IO-context
-// caller (filesystem code, network code, syscall path) cannot
-// silently invoke try_append_pure on the hot path.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::IO>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     crucible::TraceRing::Entry e{};
-    (void)ring.try_append_pure<eff::Row<eff::Effect::IO>>(e);
+    (void)ring.try_append_pure(test.in_row<eff::Row<eff::Effect::IO>>(), e);
     return 0;
 }

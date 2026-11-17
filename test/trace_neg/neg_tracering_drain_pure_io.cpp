@@ -1,24 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::drain_pure rejects a
-// caller declaring Row<Effect::IO>.
+// TraceRing::drain_pure reads the row of the context of the caller, and the
+// gate IsPure asks that the row is empty.  A context whose row holds IO, such
+// as a consumer that writes a checkpoint between drains, fails the gate.
 //
-// drain_pure carries `requires IsPure<CallerRow>`.  IsPure<Row<IO>>
-// is false; the requires-clause rejects.  An IO-context bg
-// consumer (e.g., a path that fseek()s a checkpoint between
-// drain calls) cannot silently invoke drain_pure.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::IO>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure<eff::Row<eff::Effect::IO>>(out.view());
+    (void)ring.drain_pure(test.in_row<eff::Row<eff::Effect::IO>>(), out.view());
     return 0;
 }

@@ -278,9 +278,18 @@ static void test_spsc_concurrent_integrity() {
                          N, lost_spin.load());
 }
 
-// Only the accepting legs of the row-typed facade are exercised here.
-// The rejecting legs are negative-compile fixtures, because a caller
-// with an impure row fails to compile rather than failing at runtime.
+// Only the accepting legs of the row-typed facade run here.  The facade
+// reads the row of the context of the caller, and a context whose row is
+// not empty fails to compile, in the concept below and in the fixtures.
+
+constexpr ::fixy::HotFgCtx kPure = ::foundation::effects::testing::foreground();
+
+template <typename Ctx>
+concept AppendsPure =
+    requires(MetaLog& log, Ctx const& ctx, ::fixy::View<const TensorMeta> metas) { log.try_append_pure(ctx, metas); };
+static_assert(AppendsPure<::fixy::HotFgCtx>);
+static_assert(!AppendsPure<::fixy::TestRunnerCtx>);
+static_assert(!AppendsPure<::fixy::BgDrainCtx>);
 
 static void test_try_append_pure() {
     namespace eff = ::fixy;
@@ -289,7 +298,7 @@ static void test_try_append_pure() {
         MetaLog log{::foundation::effects::testing::test().alloc};
         TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xA0)));
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
-        auto idx = log.try_append_pure(record.view());
+        auto idx = log.try_append_pure(kPure, record.view());
         assert(idx.is_valid());
         assert(idx.raw() == 0);
         assert(log.size().peek() == 1);
@@ -303,8 +312,8 @@ static void test_try_append_pure() {
         TensorMeta m2 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xC0)));
         const ::fixy::FixedArray<TensorMeta, 1> first_record{m1};
         const ::fixy::FixedArray<TensorMeta, 1> second_record{m2};
-        auto idx1 = log.try_append_pure<eff::Row<>>(first_record.view());
-        auto idx2 = log.try_append_pure<eff::Row<>>(second_record.view());
+        auto idx1 = log.try_append_pure(kPure, first_record.view());
+        auto idx2 = log.try_append_pure(kPure, second_record.view());
         assert(idx1.is_valid() && idx2.is_valid());
         assert(idx1.raw() == 0);
         assert(idx2.raw() == 1);
@@ -319,9 +328,9 @@ static void test_try_append_pure() {
         TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xD0)));
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
         auto i0 = log.try_append(record.view());  // index 0
-        auto i1 = log.try_append_pure(record.view());  // index 1
+        auto i1 = log.try_append_pure(kPure, record.view());  // index 1
         auto i2 = log.try_append(record.view());  // index 2
-        auto i3 = log.try_append_pure<eff::Row<>>(record.view());  // index 3
+        auto i3 = log.try_append_pure(kPure, record.view());  // index 3
         assert(i0.raw() == 0);
         assert(i1.raw() == 1);
         assert(i2.raw() == 2);
@@ -358,7 +367,7 @@ static void test_try_append_pure_concurrent() {
         for (uint32_t i = 0; i < N; /* advance only on success */) {
             TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
             const ::fixy::FixedArray<TensorMeta, 1> record{m};
-            auto idx = log.try_append_pure(record.view());
+            auto idx = log.try_append_pure(kPure, record.view());
             if (idx.is_valid()) [[likely]] {
                 ++i;
             } else {

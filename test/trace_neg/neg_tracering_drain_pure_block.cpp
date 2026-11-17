@@ -1,24 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::drain_pure rejects a
-// caller declaring Row<Effect::Block>.
+// TraceRing::drain_pure reads the row of the context of the caller, and the
+// gate IsPure asks that the row is empty.  A context whose row holds Block,
+// such as a consumer that waits in the kernel between drains, fails the
+// gate.
 //
-// IsPure<Row<Block>> = false; rejection at the requires-clause.
-// A blocking bg thread (e.g., one that holds a futex across the
-// drain call) cannot silently invoke drain_pure — the row mismatch
-// catches the contract violation before the SPSC tail advances.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Block>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure<eff::Row<eff::Effect::Block>>(out.view());
+    (void)ring.drain_pure(test.in_row<eff::Row<eff::Effect::Block>>(), out.view());
     return 0;
 }

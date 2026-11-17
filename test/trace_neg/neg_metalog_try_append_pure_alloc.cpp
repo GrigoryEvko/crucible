@@ -1,24 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Per-axis neg-compile parity.  Pins that
-// MetaLog::try_append_pure rejects a caller declaring Row<Alloc>.
+// MetaLog::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  A context whose row holds
+// Alloc fails the gate, because the pure append allocates nothing and a
+// caller that allocates is not a hot-path caller.
 //
-// IsPure<R> = Subrow<R, Row<>>.  Row<Alloc> contains the Alloc
-// atom, so {Alloc} ⊄ ∅; the requires-clause rejects.  This is
-// the third per-axis rejection leg (companion to the IO and Bg
-// fixtures).
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Alloc>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/MetaLog.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
-    crucible::MetaLog log{::foundation::effects::testing::test().alloc};
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
+    crucible::MetaLog log{eff::testing::test().alloc};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
-    (void)log.try_append_pure<eff::Row<eff::Effect::Alloc>>(record.view());
+    (void)log.try_append_pure(test.in_row<eff::Row<eff::Effect::Alloc>>(), record.view());
     return 0;
 }

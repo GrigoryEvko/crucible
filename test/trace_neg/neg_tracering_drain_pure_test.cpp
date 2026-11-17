@@ -1,23 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::drain_pure rejects a
-// caller declaring Row<Effect::Test>.
+// TraceRing::drain_pure reads the row of the context of the caller, and the
+// gate IsPure asks that the row is empty.  A context whose row holds Test is
+// the context of a test runner, which does not stand in for a pure consumer,
+// so it fails the gate.
 //
-// IsPure<Row<Test>> = false.  Test context is reserved for
-// poison-byte injection / invariant probes / mock fixtures and
-// must not cross into production drain_pure call sites.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Test>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure<eff::Row<eff::Effect::Test>>(out.view());
+    (void)ring.drain_pure(test.in_row<eff::Row<eff::Effect::Test>>(), out.view());
     return 0;
 }

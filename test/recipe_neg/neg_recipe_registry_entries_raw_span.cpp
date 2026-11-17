@@ -21,7 +21,7 @@ int main() {
     ::fixy::BumpArena arena{};
     crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
     crucible::RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), test.alloc};
-    auto const raw = registry.entries().value();
+    auto const raw = registry.entries(::foundation::effects::testing::foreground()).value();
     consume(raw);
     return 0;
 }

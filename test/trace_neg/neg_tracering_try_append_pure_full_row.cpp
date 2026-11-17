@@ -1,32 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Saturation-row rejection.  Pins that
-// TraceRing::try_append_pure rejects a caller declaring the full
-// 6-atom OsUniverse row (AllRow = Row<Alloc, IO, Block, Bg, Init,
-// Test>).
+// TraceRing::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  The context of the load stage
+// of the background thread holds the widest row that a background context
+// can hold: Bg, Alloc, IO, Block and Nondet.  It fails the gate.
 //
-// AllRow is the TOP of the F* effect lattice — a context that
-// admits every observable effect.  IsPure<AllRow> = Subrow<AllRow,
-// Row<>> = false (the top is NOT a subset of the bottom).  This
-// is the maximum-cardinality rejection witness.
-//
-// Together with the per-axis fixtures (alloc/io/block/bg/init/test)
-// and the multi-atom fixture (io_block), this fixture pins that the
-// constraint scales to the saturation-row case (a refactor that
-// special-cased "below 6 atoms" would slip).
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<AllRow>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::BgLoadCtx load{eff::testing::bg()};
     crucible::TraceRing ring;
     crucible::TraceRing::Entry e{};
-    // AllRow contains every Effect atom — the F* lattice top.
-    (void)ring.try_append_pure<eff::AllRow>(e);
+    (void)ring.try_append_pure(load, e);
     return 0;
 }

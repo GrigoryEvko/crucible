@@ -10,6 +10,7 @@
 #include <fixy/Tags.h>
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
@@ -149,19 +150,24 @@ public:
     RecipeRegistry(RecipeRegistry&&) = delete("interior pointers would dangle");
     RecipeRegistry& operator=(RecipeRegistry&&) = delete("interior pointers would dangle");
 
+    // Each read below is a pure projection: the row of the context of the
+    // caller must be a subrow of pure_projection_row.  The row comes from the
+    // context, so a caller cannot state a row that is not its own.
+    //
     // Comparison is exact and case-sensitive. The whole table fits in a couple
     // of cache lines, so a linear scan beats hashing the name.
-    template <typename CallerRow = pure_projection_row>
-        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]] ::fixy::Result<RecipeRef, RecipeError> by_name(::fixy::TextView name) const noexcept;
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>, pure_projection_row>
+    [[nodiscard, gnu::pure]] ::fixy::Result<RecipeRef, RecipeError> by_name(Ctx const&,
+                                                                            ::fixy::TextView name) const noexcept;
 
     // Resolves a hash recovered from persisted state back to the recipe in
     // this process. Substituting a default on a miss is wrong: it silently
     // replays the run under different numerics. The miss has to abort the load
     // and say which recipe could not be resolved.
-    template <typename CallerRow = pure_projection_row>
-        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]] ::fixy::Result<RecipeRef, RecipeError> by_hash(RecipeHash hash) const noexcept;
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>, pure_projection_row>
+    [[nodiscard, gnu::pure]] ::fixy::Result<RecipeRef, RecipeError> by_hash(Ctx const&, RecipeHash hash) const noexcept;
 
     // Order matches the starter table's declaration order and is stable for
     // the lifetime of the registry.
@@ -169,16 +175,16 @@ public:
     // The view points into a member of the registry.  A temporary registry
     // releases that member at the end of the statement, and the deleted
     // `const&&` twin refuses the read.
-    template <typename CallerRow = pure_projection_row>
-        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    [[nodiscard, gnu::pure]] Entries entries() const& noexcept {
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>, pure_projection_row>
+    [[nodiscard, gnu::pure]] Entries entries(Ctx const&) const& noexcept {
         return ::fixy::mint_tagged<::fixy::tags::source::JsonRegistry>(entries_.view());
     }
 
-    template <typename CallerRow = pure_projection_row>
-        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
-    auto entries() const&& = delete("a temporary registry releases its entries at the end of the statement. Use a "
-                                    "registry that has a name");
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>, pure_projection_row>
+    auto entries(Ctx const&) const&& = delete("a temporary registry releases its entries at the end of the statement. "
+                                              "Use a registry that has a name");
 
     [[nodiscard, gnu::const]] static constexpr std::size_t size() noexcept { return STARTER_COUNT; }
 
@@ -192,18 +198,18 @@ public:
     // bottom always succeeds. A failure to resolve the name or hash is
     // reported ahead of any tier mismatch.
 
-    template <::fixy::Tolerance T, typename CallerRow = pure_projection_row>
-        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
+    template <::fixy::Tolerance T, ::foundation::effects::IsExecCtx Ctx>
+        requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>, pure_projection_row>
     [[nodiscard, gnu::pure]] ::fixy::Result<::fixy::NumericalTier<T, RecipeRef>, RecipeError>
-    by_name_pinned(::fixy::TextView name) const noexcept {
+    by_name_pinned(Ctx const&, ::fixy::TextView name) const noexcept {
         return found_or_<::fixy::Result<::fixy::NumericalTier<T, RecipeRef>, RecipeError>>(
             find_name_(name), RecipeError::NameNotFound, [](RecipeRef recipe) noexcept { return pin_<T>(recipe); });
     }
 
-    template <::fixy::Tolerance T, typename CallerRow = pure_projection_row>
-        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
+    template <::fixy::Tolerance T, ::foundation::effects::IsExecCtx Ctx>
+        requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>, pure_projection_row>
     [[nodiscard, gnu::pure]] ::fixy::Result<::fixy::NumericalTier<T, RecipeRef>, RecipeError>
-    by_hash_pinned(RecipeHash hash) const noexcept {
+    by_hash_pinned(Ctx const&, RecipeHash hash) const noexcept {
         return found_or_<::fixy::Result<::fixy::NumericalTier<T, RecipeRef>, RecipeError>>(
             find_hash_(hash), RecipeError::HashNotFound, [](RecipeRef recipe) noexcept { return pin_<T>(recipe); });
     }
@@ -214,18 +220,18 @@ public:
     // and still use different reduction algorithms, and a consumer that needs
     // a specific one gets the wrong answer with no numerical warning.
 
-    template <typename CallerRow = pure_projection_row>
-        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>, pure_projection_row>
     [[nodiscard, gnu::pure]] ::fixy::Result<::fixy::RecipeSpec<RecipeRef>, RecipeError>
-    by_name_spec(::fixy::TextView name) const noexcept {
+    by_name_spec(Ctx const&, ::fixy::TextView name) const noexcept {
         return found_or_<::fixy::Result<::fixy::RecipeSpec<RecipeRef>, RecipeError>>(
             find_name_(name), RecipeError::NameNotFound, [](RecipeRef recipe) noexcept { return spec_(recipe); });
     }
 
-    template <typename CallerRow = pure_projection_row>
-        requires ::foundation::effects::Subrow<CallerRow, pure_projection_row>
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>, pure_projection_row>
     [[nodiscard, gnu::pure]] ::fixy::Result<::fixy::RecipeSpec<RecipeRef>, RecipeError>
-    by_hash_spec(RecipeHash hash) const noexcept {
+    by_hash_spec(Ctx const&, RecipeHash hash) const noexcept {
         return found_or_<::fixy::Result<::fixy::RecipeSpec<RecipeRef>, RecipeError>>(
             find_hash_(hash), RecipeError::HashNotFound, [](RecipeRef recipe) noexcept { return spec_(recipe); });
     }
@@ -428,17 +434,20 @@ inline RecipeRegistry::RecipeRegistry(erased_door_, PoolBorrow pool, ::foundatio
                intern_starter_<3>(pool, a), intern_starter_<4>(pool, a), intern_starter_<5>(pool, a),
                intern_starter_<6>(pool, a), intern_starter_<7>(pool, a)} {}
 
-template <typename CallerRow>
-    requires ::foundation::effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>,
+                                           RecipeRegistry::pure_projection_row>
 inline ::fixy::Result<RecipeRegistry::RecipeRef, RecipeError>
-RecipeRegistry::by_name(::fixy::TextView name) const noexcept {
+RecipeRegistry::by_name(Ctx const&, ::fixy::TextView name) const noexcept {
     return found_or_<::fixy::Result<RecipeRef, RecipeError>>(find_name_(name), RecipeError::NameNotFound,
                                                              [](RecipeRef recipe) noexcept { return recipe; });
 }
 
-template <typename CallerRow>
-    requires ::foundation::effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
-inline ::fixy::Result<RecipeRegistry::RecipeRef, RecipeError> RecipeRegistry::by_hash(RecipeHash hash) const noexcept {
+template <::foundation::effects::IsExecCtx Ctx>
+    requires ::foundation::effects::Subrow<::foundation::effects::row_type_of_t<Ctx>,
+                                           RecipeRegistry::pure_projection_row>
+inline ::fixy::Result<RecipeRegistry::RecipeRef, RecipeError> RecipeRegistry::by_hash(Ctx const&,
+                                                                                      RecipeHash hash) const noexcept {
     // Comparing the stored hash is the identity the caller means, because
     // interning is what wrote it and it is authoritative from then on.
     return found_or_<::fixy::Result<RecipeRef, RecipeError>>(find_hash_(hash), RecipeError::HashNotFound,

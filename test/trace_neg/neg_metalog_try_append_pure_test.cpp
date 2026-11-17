@@ -1,32 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Per-axis neg-compile parity.  Pins that
-// MetaLog::try_append_pure rejects a caller declaring Row<Test>.
+// MetaLog::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  A context whose row holds
+// Test is the context of a test runner, which does not stand in for the
+// foreground thread of the record path, so it fails the gate.
 //
-// IsPure<R> = Subrow<R, Row<>>.  Row<Test> contains the Test
-// atom, so {Test} ⊄ ∅; the requires-clause rejects.  Test is
-// reserved for test-only call sites that may exercise paths
-// production code never touches (e.g., poison-byte injection,
-// invariant probes); a production hot-path append should never
-// run in a Test-tagged context, and a Test caller should not
-// invoke the production-hot-path append.
-//
-// Together with the alloc/block/init/io/bg fixtures, this completes
-// the per-axis rejection
-// matrix: every atom in the OsUniverse independently triggers
-// IsPure failure.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Test>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/MetaLog.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
-    crucible::MetaLog log{::foundation::effects::testing::test().alloc};
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
+    crucible::MetaLog log{eff::testing::test().alloc};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
-    (void)log.try_append_pure<eff::Row<eff::Effect::Test>>(record.view());
+    (void)log.try_append_pure(test.in_row<eff::Row<eff::Effect::Test>>(), record.view());
     return 0;
 }

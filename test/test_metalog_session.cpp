@@ -160,7 +160,10 @@ void test_permissioned_bulk_drain() {
         make_meta(3),
     };
 
-    const ::crucible::MetaIndex start = producer.try_append(records.view());
+    // The pure append takes a context whose row is empty, and it appends where
+    // the plain append appends.
+    const FgCtx fg = ::foundation::effects::testing::foreground();
+    const ::crucible::MetaIndex start = producer.try_append_pure(fg, records.view());
     CRUCIBLE_TEST_REQUIRE(start.is_valid());
     CRUCIBLE_TEST_REQUIRE(start.raw() == 0);
 

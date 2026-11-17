@@ -1,26 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::try_append_pure rejects a
-// caller declaring Row<Effect::Test>.
+// TraceRing::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  A context whose row holds
+// Test is the context of a test runner, which does not stand in for the
+// foreground thread of the record path, so it fails the gate.
 //
-// IsPure<R> = Subrow<R, Row<>>.  Test is the test-only context
-// (poison-byte injection, invariant probes, mock fixtures); a
-// production hot-path append must never be in a Test-tagged
-// context, and a Test caller should not invoke the production-
-// hot-path append.  Compile-time rejection catches cross-context
-// leakage between test fixtures and production hot path.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Test>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     crucible::TraceRing::Entry e{};
-    (void)ring.try_append_pure<eff::Row<eff::Effect::Test>>(e);
+    (void)ring.try_append_pure(test.in_row<eff::Row<eff::Effect::Test>>(), e);
     return 0;
 }

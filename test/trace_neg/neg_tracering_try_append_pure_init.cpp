@@ -1,25 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::try_append_pure rejects a
-// caller declaring Row<Effect::Init>.
+// TraceRing::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  A context whose row holds
+// Init runs at startup, before the record path runs, so it fails the gate.
 //
-// IsPure<R> = Subrow<R, Row<>>.  Init is the one-shot startup
-// context — Vigil::init, Keeper bootstrap, Cipher tier construction.
-// The hot per-op recording path must never be invoked from Init
-// context (init is the moment BEFORE the ring exists logically).
-// Compile-time rejection catches accidental cross-tier wiring.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Init>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::ColdInitCtx init{eff::testing::init()};
     crucible::TraceRing ring;
     crucible::TraceRing::Entry e{};
-    (void)ring.try_append_pure<eff::Row<eff::Effect::Init>>(e);
+    (void)ring.try_append_pure(init.in_row<eff::Row<eff::Effect::Init>>(), e);
     return 0;
 }

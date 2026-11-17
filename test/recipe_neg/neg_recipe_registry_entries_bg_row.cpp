@@ -1,16 +1,18 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// entries<CallerRow>() gives only a read-only span over entries that the
-// constructor filled.  A Bg row is not pure, so this projection must
-// refuse it.
+// entries(ctx) gives only a read-only span over entries that the
+// constructor filled.  A context whose row holds Bg is not pure, so this
+// projection refuses it.
 //
-// Expected diagnostic: the Subrow<Row<Bg>, Row<>> constraint of entries
-// is not satisfied.
+// Expected diagnostic: the Subrow constraint of entries on the row of the
+// context is not satisfied.
 
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 
@@ -20,8 +22,9 @@ int main() {
     ::fixy::BumpArena arena{};
     auto init = eff::testing::init();
     auto test = eff::testing::test();
+    const ::fixy::BgDrainCtx bg{eff::testing::bg()};
     crucible::RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
     crucible::RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), test.alloc};
-    auto wrong = reg.entries<eff::Row<eff::Effect::Bg>>();
-    return wrong.value().empty() ? 0 : 1;
+    auto wrong = reg.entries(bg.in_row<eff::Row<eff::Effect::Bg>>());
+    return wrong.value().size() == 0 ? 0 : 1;
 }

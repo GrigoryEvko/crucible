@@ -3294,20 +3294,24 @@ crucible_neg_compile_test(neg_recipe_registry_pinned_assigned_to_spec_expected
 # row that is not empty.  The first regex names the lookup and the row,
 # and the second names the Subrow gate that refused the row.
 crucible_neg_compile_test(neg_recipe_registry_by_name_io_row
-  "no matching function for call to .crucible::RecipeRegistry::by_name<foundation::effects::Row<foundation::effects::Effect::IO> >"
-  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::IO>\\]")
+  "no matching function for call to .crucible::RecipeRegistry::by_name\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >"
+  "Subrow<foundation::effects::row_type_of_t<Ctx>, foundation::effects::Row<> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >\\]")
 crucible_neg_compile_test(neg_recipe_registry_by_hash_init_row
-  "no matching function for call to .crucible::RecipeRegistry::by_hash<foundation::effects::Row<foundation::effects::Effect::Init> >"
-  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Init>\\]")
+  "no matching function for call to .crucible::RecipeRegistry::by_hash\\(foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >"
+  "Subrow<foundation::effects::row_type_of_t<Ctx>, foundation::effects::Row<> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >\\]")
 crucible_neg_compile_test(neg_recipe_registry_entries_bg_row
-  "no matching function for call to .crucible::RecipeRegistry::entries<foundation::effects::Row<foundation::effects::Effect::Bg> >"
-  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>\\]")
+  "no matching function for call to .crucible::RecipeRegistry::entries\\(foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >"
+  "Subrow<foundation::effects::row_type_of_t<Ctx>, foundation::effects::Row<> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >\\]")
 crucible_neg_compile_test(neg_recipe_registry_pinned_alloc_row
-  "no matching function for call to .crucible::RecipeRegistry::by_name_pinned<foundation::algebra::lattices::Tolerance::BITEXACT, foundation::effects::Row<foundation::effects::Effect::Alloc> >"
-  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>\\]")
+  "no matching function for call to .crucible::RecipeRegistry::by_name_pinned<foundation::algebra::lattices::Tolerance::BITEXACT>\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >"
+  "Subrow<foundation::effects::row_type_of_t<Ctx>, foundation::effects::Row<> >. \\[with .*Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >\\]")
 crucible_neg_compile_test(neg_recipe_registry_spec_block_row
-  "no matching function for call to .crucible::RecipeRegistry::by_name_spec<foundation::effects::Row<foundation::effects::Effect::Block> >"
-  "Subrow<CallerRow, foundation::effects::Row<> >. \\[with CallerRow = foundation::effects::Row<foundation::effects::Effect::Block>\\]")
+  "no matching function for call to .crucible::RecipeRegistry::by_name_spec\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >"
+  "Subrow<foundation::effects::row_type_of_t<Ctx>, foundation::effects::Row<> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >\\]")
+# A read with no context, which a gate with a default row admitted.
+crucible_neg_compile_test(neg_recipe_registry_by_name_no_context
+  "no matching function for call to .crucible::RecipeRegistry::by_name\\("
+  "IsExecCtx")
 
 # entries() gives a View tagged source::JsonRegistry.  A raw View and a
 # View with a different tag must not reach a consumer of the entries.
@@ -3651,77 +3655,99 @@ crucible_neg_compile_test(neg_computation_cache_federation_without_local_permiss
   "no matching function for call to .serialize_computation_cache_federation_entry<neg_payload, foundation::effects::Row<>, int>\\("
   "serialize_computation_cache_federation_entry\\(LocalCipherPermission<Brand>&, foundation::core::View<std::byte>")
 
-# ─── The row gate of MetaLog::try_append_pure ───────────────────────
-# MetaLog::try_append_pure<CallerRow> requires IsPure<CallerRow>, that
-# is, CallerRow is a subrow of Row<>.  There is one fixture for each of
-# the six atoms (Alloc, IO, Block, Bg, Init and Test), one for a row of
-# two atoms, and one for the full row.  If the gate widens to admit one
-# atom or one combination of atoms, the fixture for it compiles.  Each
-# regex names the row that the gate refused.
+# ─── The row gates of MetaLog and TraceRing ─────────────────────────
+# MetaLog::try_append_pure, TraceRing::try_append_pure and
+# TraceRing::drain_pure take the context of the caller first, and each
+# requires IsPure of the row of that context.  Each family has one
+# fixture for each of the six atoms (Alloc, IO, Block, Bg, Init and
+# Test), one for a row of two atoms, one for the widest row of a
+# background context, and one for a call with no context, which a gate
+# with a default row admitted.  If a gate widens to admit one atom or
+# one combination of atoms, the fixture for it compiles.  Each regex
+# names the context that the gate refused.
 crucible_neg_compile_test(neg_metalog_try_append_pure_io
-    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::IO> >"
-    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::IO>.")
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >\\]")
 crucible_neg_compile_test(neg_metalog_try_append_pure_bg
-    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Bg> >"
-    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Bg>.")
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >\\]")
 crucible_neg_compile_test(neg_metalog_try_append_pure_alloc
-    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Alloc> >"
-    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc>.")
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >\\]")
 crucible_neg_compile_test(neg_metalog_try_append_pure_block
-    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Block> >"
-    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Block>.")
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >\\]")
 crucible_neg_compile_test(neg_metalog_try_append_pure_init
-    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Init> >"
-    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Init>.")
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >\\]")
 crucible_neg_compile_test(neg_metalog_try_append_pure_test
-    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::Test> >"
-    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Test>.")
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >\\]")
 crucible_neg_compile_test(neg_metalog_try_append_pure_io_block
-    "no matching function for call to .crucible::MetaLog::try_append_pure<foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >"
-    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>.")
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\]")
 crucible_neg_compile_test(neg_metalog_try_append_pure_full_row
-    "no matching function for call to .crucible::MetaLog::try_append_pure<fixy::AllRow>"
-    "satisfaction of .IsPure<CallerRow>. .with CallerRow = foundation::effects::Row<foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, ")
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\("
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet> >\\]")
+crucible_neg_compile_test(neg_metalog_try_append_pure_no_context
+  "no matching function for call to .crucible::MetaLog::try_append_pure\\("
+  "IsExecCtx")
 
-# ─── TraceRing row-fence — full per-axis matrix on both legs ──────
-# TraceRing::try_append_pure<CallerRow> AND TraceRing::drain_pure<CallerRow>
-# both require IsPure<CallerRow>.  Sibling of the MetaLog::try_append_pure
-# matrix above.  16 fixtures = 8 per direction (per-axis × 6 atoms +
-# multi-atom + saturation).  Pins both directions of the SPSC ring.
-# Producer side:
-crucible_neg_compile_test(neg_tracering_try_append_pure_alloc
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
 crucible_neg_compile_test(neg_tracering_try_append_pure_io
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_test(neg_tracering_try_append_pure_block
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >\\]")
 crucible_neg_compile_test(neg_tracering_try_append_pure_bg
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >\\]")
+crucible_neg_compile_test(neg_tracering_try_append_pure_alloc
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_test(neg_tracering_try_append_pure_block
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >\\]")
 crucible_neg_compile_test(neg_tracering_try_append_pure_init
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >\\]")
 crucible_neg_compile_test(neg_tracering_try_append_pure_test
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >\\]")
 crucible_neg_compile_test(neg_tracering_try_append_pure_io_block
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\]")
 crucible_neg_compile_test(neg_tracering_try_append_pure_full_row
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-# Consumer side:
-crucible_neg_compile_test(neg_tracering_drain_pure_alloc
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\("
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet> >\\]")
+crucible_neg_compile_test(neg_tracering_try_append_pure_no_context
+  "no matching function for call to .crucible::TraceRing::try_append_pure\\("
+  "IsExecCtx")
+
 crucible_neg_compile_test(neg_tracering_drain_pure_io
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
-crucible_neg_compile_test(neg_tracering_drain_pure_block
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::drain_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO> >\\]")
 crucible_neg_compile_test(neg_tracering_drain_pure_bg
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::drain_pure\\(foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg> >\\]")
+crucible_neg_compile_test(neg_tracering_drain_pure_alloc
+  "no matching function for call to .crucible::TraceRing::drain_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Alloc> >\\]")
+crucible_neg_compile_test(neg_tracering_drain_pure_block
+  "no matching function for call to .crucible::TraceRing::drain_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Block> >\\]")
 crucible_neg_compile_test(neg_tracering_drain_pure_init
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::drain_pure\\(foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init> >\\]")
 crucible_neg_compile_test(neg_tracering_drain_pure_test
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::drain_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test> >\\]")
 crucible_neg_compile_test(neg_tracering_drain_pure_io_block
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::drain_pure\\(foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >"
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block> >\\]")
 crucible_neg_compile_test(neg_tracering_drain_pure_full_row
-  "constraints not satisfied|template constraint failure|associated constraints" "satisfaction of .IsPure<CallerRow>")
+  "no matching function for call to .crucible::TraceRing::drain_pure\\("
+  "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet> >\\]")
+crucible_neg_compile_test(neg_tracering_drain_pure_no_context
+  "no matching function for call to .crucible::TraceRing::drain_pure\\("
+  "IsExecCtx")
 
 # Vigil::dispatch_op_pure takes crucible::VigilFgCtx, the context of the
 # Vigil's producer claim.  Each fixture passes another context, or none.
@@ -4092,6 +4118,9 @@ crucible_neg_compile_test(neg_vigil_alignment_pos_uint8_max
 crucible_neg_compile_test(neg_metalog_producer_drain
     "has no member named .try_drain_one."
     ".class crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ProducerHandle. has no member")
+crucible_neg_compile_test(neg_metalog_producer_try_append_pure_test_row
+    "no matching function for call to .crucible::PermissionedMetaLog<.anonymous.::Tag, foundation::permissions::<lambda\\(\\)> >::ProducerHandle::try_append_pure\\("
+    "satisfaction of .IsPure<foundation::effects::row_type_of_t<Ctx> >. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, ")
 
 crucible_neg_compile_test(neg_metalog_consumer_append
     "has no member named .try_append."

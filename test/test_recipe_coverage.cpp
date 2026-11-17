@@ -22,6 +22,8 @@
 #include <crucible/Types.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
@@ -46,7 +48,10 @@ auto g_init = ::foundation::effects::testing::init();
 inline ::foundation::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
-[[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept { return reg.entries().value(); }
+// A context whose row is empty, which each read of the registry admits.
+constexpr ::fixy::HotFgCtx kPure = ::foundation::effects::testing::foreground();
+
+[[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept { return reg.entries(kPure).value(); }
 
 // Each op falls in exactly one category, and the category says which fields
 // of a recipe carry weight for that op.
@@ -409,7 +414,7 @@ int main() {
         for (const auto& cell : kCoverageMatrix) {
             if (cell.covered) {
                 RecipeRegistry::RecipeRef const rec =
-                    registry.by_name(cell.starter_name).expect("a claimed-covered starter is in the registry");
+                    registry.by_name(kPure, cell.starter_name).expect("a claimed-covered starter is in the registry");
                 assert(rec->out_dtype == cell.out_dtype);
                 assert(rec->determinism == cell.det);
             } else {

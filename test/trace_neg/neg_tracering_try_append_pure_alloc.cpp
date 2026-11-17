@@ -1,25 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::try_append_pure rejects a
-// caller declaring Row<Effect::Alloc>.  Sibling of MetaLog's
-// try_append_pure neg-compile matrix.
+// TraceRing::try_append_pure reads the row of the context of the caller, and
+// the gate IsPure asks that the row is empty.  A context whose row holds
+// Alloc fails the gate, because the pure append allocates nothing.
 //
-// IsPure<R> = Subrow<R, Row<>>.  Row<Alloc> contains the Alloc
-// atom, so {Alloc} ⊄ ∅ — the requires-clause rejects.  Caller
-// in an allocating context (anywhere on the foreground recording
-// path that does heap allocation) is rejected at compile time.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Alloc>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     crucible::TraceRing::Entry e{};
-    (void)ring.try_append_pure<eff::Row<eff::Effect::Alloc>>(e);
+    (void)ring.try_append_pure(test.in_row<eff::Row<eff::Effect::Alloc>>(), e);
     return 0;
 }

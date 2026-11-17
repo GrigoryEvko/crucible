@@ -1,25 +1,21 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::drain_pure rejects a
-// caller declaring Row<Effect::Alloc>.
+// TraceRing::drain_pure reads the row of the context of the caller, and the
+// gate IsPure asks that the row is empty.  A context whose row holds Alloc,
+// such as a consumer that allocates between drains, fails the gate.
 //
-// drain_pure carries `requires IsPure<CallerRow>`, identical to
-// try_append_pure on the producer side.  This fixture witnesses
-// rejection on the consumer side.  The bug class caught: a bg
-// thread that performed an arena-allocate before drain_pure
-// silently slipping its Alloc grade through the row contract.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Alloc>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure<eff::Row<eff::Effect::Alloc>>(out.view());
+    (void)ring.drain_pure(test.in_row<eff::Row<eff::Effect::Alloc>>(), out.view());
     return 0;
 }

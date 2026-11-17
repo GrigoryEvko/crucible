@@ -29,7 +29,8 @@ int main() {
     RecipePool pool{::fixy::mint_borrowed_ref(arena), init_ctx};
     RecipeRegistry reg{::fixy::mint_borrowed_ref(pool), test_ctx.alloc};
 
-    auto wrong = reg.by_name_pinned<::fixy::RecipeFamily::Kahan>(recipe_names::kF32Strict);
+    auto wrong = reg.by_name_pinned<::fixy::RecipeFamily::Kahan>(::foundation::effects::testing::foreground(),
+                                                                 recipe_names::kF32Strict);
     (void)wrong;
     return 0;
 }

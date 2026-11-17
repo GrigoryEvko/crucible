@@ -8,6 +8,8 @@
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
@@ -32,6 +34,9 @@ auto g_test = ::foundation::effects::testing::test();
 auto g_init = ::foundation::effects::testing::init();
 inline ::foundation::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
+
+// A context whose row is empty, which each read of the registry admits.
+constexpr ::fixy::HotFgCtx kPure = ::foundation::effects::testing::foreground();
 
 // The cache never reads a kernel, so the address of a fake object stands
 // for one.
@@ -73,8 +78,10 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
         RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
 
-        RecipeRegistry::RecipeRef const a = reg_a.by_name(names::kF16F32AccumTc).expect("the starter is present");
-        RecipeRegistry::RecipeRef const b = reg_b.by_name(names::kF16F32AccumTc).expect("the starter is present");
+        RecipeRegistry::RecipeRef const a =
+            reg_a.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
+        RecipeRegistry::RecipeRef const b =
+            reg_b.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
 
         // Two pools, two addresses.
         assert(!::fixy::same_object(a, b));
@@ -96,9 +103,9 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         RecipeRegistry::RecipeRef const rec_tc =
-            registry.by_name(names::kF16F32AccumTc).expect("the starter is present");
+            registry.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
         RecipeRegistry::RecipeRef const rec_strict =
-            registry.by_name(names::kF32Strict).expect("the starter is present");
+            registry.by_name(kPure, names::kF32Strict).expect("the starter is present");
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
@@ -134,7 +141,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         // Persistence time: the original process pins a recipe and takes
         // the region's content hash.
         const NumericalRecipe* recipe_orig =
-            &*registry.by_name(names::kBf16F32AccumTc).expect("the starter is present");
+            &*registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);
@@ -149,7 +156,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         // Recovery time.  This runs in the same process, but the call path
         // is the one a fresh recovery process takes.
         RecipeRegistry::RecipeRef const recovered =
-            registry.by_hash(persisted_recipe_hash).expect("the persisted hash resolves");
+            registry.by_hash(kPure, persisted_recipe_hash).expect("the persisted hash resolves");
         // Recovery inside one process lands on the canonical pointer.
         assert(&*recovered == recipe_orig);
         assert(recovered->hash == persisted_recipe_hash);
@@ -173,7 +180,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipePool pool_a{::fixy::mint_borrowed_ref(recipe_arena_a), init_cap()};
         RecipeRegistry reg_a{::fixy::mint_borrowed_ref(pool_a), alloc_cap()};
         RecipeRegistry::RecipeRef const rec_a =
-            reg_a.by_name(names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
+            reg_a.by_name(kPure, names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops_a{};
         mk_ops(ops_a);
@@ -187,7 +194,7 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipePool pool_b{::fixy::mint_borrowed_ref(recipe_arena_b), init_cap()};
         RecipeRegistry reg_b{::fixy::mint_borrowed_ref(pool_b), alloc_cap()};
         RecipeRegistry::RecipeRef const rec_b =
-            reg_b.by_name(names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
+            reg_b.by_name(kPure, names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
         // Different pointers, so the two pools really are independent.
         assert(!::fixy::same_object(rec_a, rec_b));
         // One hash, which is the identity that crosses them.
@@ -214,11 +221,11 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
         RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), alloc_cap()};
 
         RecipeRegistry::RecipeRef const rec_tc =
-            registry.by_name(names::kF16F32AccumTc).expect("the starter is present");
+            registry.by_name(kPure, names::kF16F32AccumTc).expect("the starter is present");
         RecipeRegistry::RecipeRef const rec_ord =
-            registry.by_name(names::kF16F32AccumOrdered).expect("the starter is present");
+            registry.by_name(kPure, names::kF16F32AccumOrdered).expect("the starter is present");
         RecipeRegistry::RecipeRef const rec_bf16_tc =
-            registry.by_name(names::kBf16F32AccumTc).expect("the starter is present");
+            registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
         ::foundation::core::FixedArray<TraceEntry, kOpsCount> ops{};
         mk_ops(ops);

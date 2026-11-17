@@ -15,5 +15,5 @@ int main() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena arena{};
     crucible::RecipeRegistry registry{::fixy::mint_borrowed_ref(arena), test.alloc};
-    return static_cast<int>(registry.entries().value().size());
+    return static_cast<int>(registry.entries(::foundation::effects::testing::foreground()).value().size());
 }

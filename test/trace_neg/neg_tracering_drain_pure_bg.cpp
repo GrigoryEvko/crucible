@@ -1,25 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::drain_pure rejects a
-// caller declaring Row<Effect::Bg>.
+// TraceRing::drain_pure reads the row of the context of the caller, and the
+// gate IsPure asks that the row is empty.  The background thread holds Bg in
+// its row, and the pure drain asks it to narrow its context to the empty row
+// before the call.  A context whose row holds Bg fails the gate.
 //
-// IsPure<Row<Bg>> = false.  The bg thread that *owns* the consumer
-// side is itself in a Bg context, but each drain_pure() call is a
-// pure memory-only operation and the wrapper enforces this.  A
-// caller that has accumulated Bg context (e.g., from earlier in
-// the bg loop body) must drop it before calling drain_pure.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Bg>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::BgDrainCtx bg{eff::testing::bg()};
     crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure<eff::Row<eff::Effect::Bg>>(out.view());
+    (void)ring.drain_pure(bg.in_row<eff::Row<eff::Effect::Bg>>(), out.view());
     return 0;
 }

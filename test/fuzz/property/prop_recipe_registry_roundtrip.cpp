@@ -32,6 +32,8 @@
 #include <crucible/RecipeRegistry.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
 namespace names = crucible::recipe_names;
@@ -57,6 +59,8 @@ int main(int argc, char** argv) {
             const ::foundation::effects::Init init = ::foundation::effects::testing::init();
             RecipePool pool{::fixy::mint_borrowed_ref(arena), init};
             RecipeRegistry registry{::fixy::mint_borrowed_ref(pool), init.alloc};
+            // Each read of the registry takes a context whose row is empty.
+            constexpr ::fixy::HotFgCtx pure = ::foundation::effects::testing::foreground();
 
             // Phase 1: every starter name → canonical pointer →
             // by_hash recovers the same pointer.
@@ -71,9 +75,9 @@ int main(int argc, char** argv) {
                 names::kFp8E5m2F32AccumMxOrd,
             };
             for (auto n : kNames) {
-                bool const is_round_trip = registry.by_name(n).match(
+                bool const is_round_trip = registry.by_name(pure, n).match(
                     [&](RecipeRegistry::RecipeRef via_name) noexcept {
-                        return registry.by_hash(via_name->hash)
+                        return registry.by_hash(pure, via_name->hash)
                             .match(
                                 [&](RecipeRegistry::RecipeRef via_hash) noexcept {
                                     return ::fixy::same_object(via_name, via_hash);
@@ -89,11 +93,11 @@ int main(int argc, char** argv) {
             // by_hash should hit.  Else it should miss with
             // HashNotFound, not NameNotFound.
             const RecipeRegistry::RecipeRef extra_recipe = pool.intern(init.alloc, extra);
-            return registry.by_hash(extra_recipe->hash)
+            return registry.by_hash(pure, extra_recipe->hash)
                 .match(
                     [&](RecipeRegistry::RecipeRef found) noexcept {
                         // A hit must be one of the starter recipes.
-                        for (const auto& entry : registry.entries().value()) {
+                        for (const auto& entry : registry.entries(pure).value()) {
                             if (::fixy::same_object(entry.recipe, found)) return true;
                         }
                         return false;

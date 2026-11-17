@@ -1,24 +1,22 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Pins that TraceRing::drain_pure rejects a
-// caller declaring Row<Effect::Init>.
+// TraceRing::drain_pure reads the row of the context of the caller, and the
+// gate IsPure asks that the row is empty.  A context whose row holds Init
+// runs at startup, before the background thread drains, so it fails the
+// gate.
 //
-// IsPure<Row<Init>> = false.  Init is the one-shot startup phase
-// before bg pumping has begun; calling drain_pure from Init
-// would mean the consumer is being driven before the producer
-// has been wired up.
-//
-// [GCC-WRAPPER-TEXT] — requires-clause constraint failure on
-// IsPure<Row<Effect::Init>>.
+// Expected diagnostic: IsPure of the row of the context is not satisfied.
 
 #include <crucible/TraceRing.h>
-#include <fixy/Aliases.h>
+#include <fixy/Ctx.h>
+#include <foundation/effects/Ctx.h>
 
-namespace eff = ::fixy;
+namespace eff = ::foundation::effects;
 
 int main() {
+    const ::fixy::ColdInitCtx init{eff::testing::init()};
     crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure<eff::Row<eff::Effect::Init>>(out.view());
+    (void)ring.drain_pure(init.in_row<eff::Row<eff::Effect::Init>>(), out.view());
     return 0;
 }
