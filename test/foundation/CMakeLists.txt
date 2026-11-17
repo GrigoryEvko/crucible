@@ -3148,12 +3148,18 @@ endif()
 foundation_test(test_core_elementwise)
 
 # fp::fma against the exact oracle of test/exact_sum.h.  The unit of the test
-# takes the target of its preset: with no -march it runs the exact form in
-# integers.  The second unit runs the instruction: of x86-64-v3 on x86_64,
-# so the test also compares the two forms there, and of aarch64 on aarch64.
-foundation_test(test_core_fma test_core_fma.cpp fma_unit_wide.cpp)
+# takes the target of its preset, x86-64-v3 in the build of the preset
+# default.  On x86_64 two more units run the two forms in each build: the unit
+# of x86-64-v3 runs the instruction, and the unit of x86-64 runs the exact
+# form in integers, the fp::fma of a build at x86-64 or x86-64-v2.  The
+# baseline unit comes first on the link line, so the link keeps its copy of
+# each shared body.  On aarch64 the three units run the instruction.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  foundation_test(test_core_fma fma_unit_baseline.cpp test_core_fma.cpp fma_unit_wide.cpp)
+  set_source_files_properties(fma_unit_baseline.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64)
   set_source_files_properties(fma_unit_wide.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64-v3)
+else()
+  foundation_test(test_core_fma test_core_fma.cpp fma_unit_baseline.cpp fma_unit_wide.cpp)
 endif()
 
 foundation_neg_compile_test(neg_core_view_windows_zero_width

@@ -3,10 +3,11 @@
 //
 // The oracle is the exact sum of test/exact_sum.h: the exact product and the
 // addend in a fixed-point integer, rounded one time.  The test compares the
-// bits of fp::fma of this unit with the oracle, and with fp::fma of the unit
-// of x86-64-v3, which runs the instruction.  With no -march, this unit runs
-// the exact form in integers, so the test compares that form with the oracle
-// and with the instruction.  The cases are the hard cases of a fused
+// bits of fp::fma of this unit with the oracle, with fp::fma of the unit of
+// x86-64-v3, which runs the instruction, and with fp::fma of the unit of
+// x86-64, which runs the exact form in integers.  So each build compares the
+// exact form and the instruction with the oracle, also a build at x86-64-v3
+// such as the build of the preset default.  The cases are the hard cases of a fused
 // multiply-add: exact ties and near ties of the round, the error of a product
 // as the result of a cancellation, products that underflow into the
 // subnormal range or to zero, sums near the largest value, the zeros of the
@@ -55,6 +56,7 @@ template <class T>
 struct Counts {
     std::size_t cases = 0;
     std::size_t fused = 0;
+    std::size_t exact = 0;
 };
 
 // True when the host runs the code of the wide unit: x86-64-v3 on x86_64,
@@ -68,7 +70,8 @@ struct Counts {
 #endif
 }
 
-// Compares fp::fma of this unit and of the wide unit with the oracle.
+// Compares fp::fma of this unit, of the wide unit and of the baseline unit
+// with the oracle.
 template <class T>
 void check_case(T left, T right, T addend, Counts& counts) noexcept {
     T const expected = exact_fma(left, right, addend);
@@ -84,6 +87,16 @@ void check_case(T left, T right, T addend, Counts& counts) noexcept {
         T const fused = ::crucible::test::fma_of_wide_unit(left, right, addend);
         assert(agree(fused, expected));
         ++counts.fused;
+    }
+    if (::crucible::test::is_baseline_unit_exact()) {
+        T const exact = ::crucible::test::fma_of_baseline_unit(left, right, addend);
+        if (!agree(exact, expected)) {
+            ::fixy::report(::fixy::Sink::Err, "fma({}, {}, {}): the exact form gives {}, the oracle gives {}\n",
+                           bits_of_value(left), bits_of_value(right), bits_of_value(addend), bits_of_value(exact),
+                           bits_of_value(expected));
+        }
+        assert(agree(exact, expected));
+        ++counts.exact;
     }
 }
 
@@ -275,8 +288,10 @@ int main() {
     test_fixed_cases<double>(double_counts);
     test_random_cases<float>(0xF3A0000000000001u, float_counts);
     test_random_cases<double>(0xF3A0000000000002u, double_counts);
-    ::crucible::test::pass("test_core_fma: {} float cases and {} double cases agree with the exact oracle, {} and {} "
-                           "with the instruction of the wide unit\n",
-                           float_counts.cases, double_counts.cases, float_counts.fused, double_counts.fused);
+    ::crucible::test::pass(
+        "test_core_fma: {} float cases and {} double cases agree with the exact oracle, {} and {} "
+        "with the instruction of the wide unit, {} and {} with the exact form of the baseline unit\n",
+        float_counts.cases, double_counts.cases, float_counts.fused, double_counts.fused, float_counts.exact,
+        double_counts.exact);
     return 0;
 }
