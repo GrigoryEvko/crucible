@@ -1008,6 +1008,13 @@ inline constexpr StatedZero kZeros[] = {
      "an inline list of at most N elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::GrowList,
      "a list of elements on the heap that grows: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::BitSet,
+     "an inline set of the indexes below a count: it holds bits and makes no claim about what the indexes name"},
+    {^^::foundation::core::HeapBitSet,
+     "a set of the ids of one domain on the heap: it holds bits and makes no claim about what the ids name"},
+    {^^::foundation::core::BitCursor,
+     "the position of a walk over the indexes of a bit set: it lives inside the loop, and it is never a value in a "
+     "signature"},
     {^^::foundation::core::GrowText,
      "a text on the heap that grows: it holds characters and makes no claim about them"},
     {^^::foundation::core::HeapText,

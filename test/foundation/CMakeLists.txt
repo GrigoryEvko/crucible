@@ -3301,6 +3301,34 @@ foundation_neg_compile_test(neg_core_grow_list_frame_gives_view
   "use of deleted function .void foundation::core::GrowList<T>::with_view\\(Body&&\\) &"
   "the result of a frame door holds no borrow: the next append can end the storage of the list")
 
+# A BitSet and a HeapBitSet set, reset and test each index, walk the indexes
+# in their order, and agree with a model of plain flags at counts that end
+# inside a word, at a word and past a word.  An id past the count of a heap
+# set ends the process.
+foundation_test(test_core_bit_set)
+
+# A BitSet takes an Index of its own count or of a smaller one, and no number.
+# A HeapBitSet takes the id of its own domain, does not copy, and its mint
+# takes the allocation capability and a count of elements.
+foundation_neg_compile_test(neg_core_bit_set_index_of_larger_set
+  "cannot convert .Index<128>. to .Index<64>."
+  "initializing argument 1 of .constexpr void foundation::core::BitSet<N>::set\\(foundation::core::Index<Count>\\) &")
+foundation_neg_compile_test(neg_core_bit_set_raw_number
+  "cannot convert .int. to .foundation::core::Index<64>."
+  "initializing argument 1 of .constexpr bool foundation::core::BitSet<N>::test\\(foundation::core::Index<Count>\\) const")
+foundation_neg_compile_test(neg_core_heap_bit_set_id_of_other_domain
+  "cannot convert .Id<OpTag,.....>. to .Id<SlotTag,.....>."
+  "initializing argument 1 of .constexpr void foundation::core::HeapBitSet<Tag>::set\\(foundation::core::BitId<Tag>\\) &")
+foundation_neg_compile_test(neg_core_heap_bit_set_copied
+  "use of deleted function .foundation::core::HeapBitSet<Tag>::HeapBitSet\\(const foundation::core::HeapBitSet<Tag>&\\)"
+  "a copy of a HeapBitSet allocates, and no allocation capability shows at a copy")
+foundation_neg_compile_test(neg_core_heap_bit_set_mint_without_allocation_marker
+  "no matching function for call to .mint_heap_bit_set<SlotTag>\\(foundation::effects::cap::IO,"
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_heap_bit_set_mint_raw_count
+  "no matching function for call to .mint_heap_bit_set<SlotTag>\\(foundation::core::Alloc, uint32_t\\)."
+  "cannot convert .8. \\(type .uint32_t. \\{aka .unsigned int.\\}\\) to type .foundation::core::Quantity<foundation::core::unit::Element, unsigned int>.")
+
 # The frame doors of foundation/core/Frame.h write each owner of the Region
 # family and each sum of the Choice family.  The door of an owner gives the
 # owner back, and the name that the caller moved from holds no storage while
@@ -3774,7 +3802,7 @@ foundation_neg_compile_test(neg_net_reflect_growth_without_door
 # fixy/os/Process.h.  The two hold their cold parts in fixy, so each test
 # links fixy.
 foreach(_death_test
-    test_aligned_bytes test_core_array test_core_box test_core_branded test_core_bump_arena test_core_choice
+    test_aligned_bytes test_core_array test_core_bit_set test_core_box test_core_branded test_core_bump_arena test_core_choice
     test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_masked_array
     test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
     test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe

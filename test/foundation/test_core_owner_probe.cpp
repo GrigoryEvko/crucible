@@ -42,7 +42,7 @@
 // roster that the count can go red.
 //
 // What the roster cannot see: it sees only the headers that this unit
-// includes, which are the headers of the nine owners.  An owner on the core
+// includes, which are the headers of the probed owners.  An owner on the core
 // in a header that this unit does not include stays out of the roster until
 // this unit includes that header.  An owner that writes its own moves and
 // never names the core has no state in detail::owner, so the roster cannot
@@ -55,6 +55,7 @@
 #include <foundation/Platform.h>
 #include <foundation/SwissTableBuffer.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/BitSet.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Grow.h>
 #include <foundation/core/Owner.h>
@@ -64,6 +65,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 
+#include <cstdint>
 #include <utility>
 
 namespace {
@@ -683,6 +685,60 @@ struct AlignedBytesProbe {
     }
 };
 
+// The domain of the ids of the probe of a HeapBitSet.
+struct ProbeSlotTag final {};
+
+struct HeapBitSetProbe {
+    using Owner = ::foundation::core::HeapBitSet<ProbeSlotTag>;
+    using SlotId = ::foundation::core::BitId<ProbeSlotTag>;
+
+    // A set of count ids that holds its last id.
+    static Owner make(std::uint32_t count) {
+        Owner set = ::foundation::core::mint_heap_bit_set<ProbeSlotTag>(
+            kAlloc, ::foundation::core::Quantity<::foundation::core::unit::Element, std::uint32_t>{count});
+        set.set(SlotId{count - 1});
+        return set;
+    }
+
+    static void self_move() {
+        Owner held = make(70);
+        Owner& alias = held;
+        held = static_cast<Owner&&>(alias);
+        CRUCIBLE_FATAL_INVARIANT(held.extent().raw() == 70 && held.test(SlotId{69}));
+    }
+
+    static void child_move() {}
+
+    // MOVED-FROM: new words in the source are a second allocation, and the
+    // ASan run finds a second release if the source kept the first one.
+    static void moved_from() {
+        Owner target = make(8);
+        Owner source = make(130);
+        target = static_cast<Owner&&>(source);
+        source = make(16);
+        CRUCIBLE_FATAL_INVARIANT(target.extent().raw() == 130 && target.test(SlotId{129}));
+        Owner taken{static_cast<Owner&&>(target)};
+        target = make(16);
+        CRUCIBLE_FATAL_INVARIANT(taken.size() == 1 && taken.test(SlotId{129}));
+    }
+
+    static void linear() {}
+
+    // EMPTY: a moved-from HeapBitSet holds no id, its walk gives nothing, and
+    // a verb with an id ends through fatal().
+    static void empty() {
+        ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+        Owner source = make(64);
+        Owner const target{static_cast<Owner&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(target.extent().raw() == 64);
+        CRUCIBLE_FATAL_INVARIANT(through(source).extent().raw() == 0 && through(source).is_empty());
+        CRUCIBLE_FATAL_INVARIANT(through(source).begin() == through(source).end());
+        expect_dies(
+            test, [&source] noexcept { static_cast<void>(through(source).test(SlotId{0})); },
+            ::foundation::core::TextView{"foundation: fatal: a HeapBitSet got an id at or past the count of its mint"});
+    }
+};
+
 struct SwissTableBufferProbe {
     using Owner = SwissTableBuffer<int>;
 
@@ -795,7 +851,7 @@ struct ProbeList {
 };
 
 using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
-                            HeapTextProbe, AlignedBytesProbe, SwissTableBufferProbe, OwnedMmapProbe>;
+                            HeapTextProbe, AlignedBytesProbe, HeapBitSetProbe, SwissTableBufferProbe, OwnedMmapProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "

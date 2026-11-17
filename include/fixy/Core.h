@@ -18,6 +18,7 @@
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
+#include <foundation/core/BitSet.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Branded.h>
 #include <foundation/core/BumpArena.h>
@@ -146,6 +147,8 @@ using ::foundation::core::Tally;
 // The scans all_of and any_of of the Region family stay in foundation::core:
 // fixy::all_of and fixy::any_of are the combinators of the refinement
 // predicates of fixy/Predicates.h.
+using ::foundation::core::BitId;
+using ::foundation::core::BitSet;
 using ::foundation::core::BrandedIndex;
 using ::foundation::core::BrandedView;
 using ::foundation::core::ByteImageable;
@@ -164,6 +167,7 @@ using ::foundation::core::FixedList;
 using ::foundation::core::ForeignElement;
 using ::foundation::core::Full;
 using ::foundation::core::HeapArray;
+using ::foundation::core::HeapBitSet;
 using ::foundation::core::Index;
 using ::foundation::core::index;
 using ::foundation::core::IndexCount;
@@ -178,6 +182,7 @@ using ::foundation::core::mint_heap_array_copy;
 using ::foundation::core::mint_heap_array_with;
 using ::foundation::core::mint_heap_array_written;
 using ::foundation::core::mint_heap_array_zeroed;
+using ::foundation::core::mint_heap_bit_set;
 using ::foundation::core::mint_masked_array;
 using ::foundation::core::RunOf;
 using ::foundation::core::RunSet;
