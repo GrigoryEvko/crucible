@@ -46,7 +46,8 @@ using MapCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::
 template <typename Prot, typename Brand>
 [[nodiscard]] auto map_pages(perm::Permission<PageTag, Brand> const& owner, std::size_t length) {
     MapCtx ctx{eff::testing::test()};
-    return ::fixy::OwnedMmap<PageTag, Prot, mm::share::Anonymous, Brand>::mint_region(ctx, owner, -1, length, 0);
+    return ::fixy::OwnedMmap<PageTag, Prot, mm::share::Anonymous, Brand>::mint_region(ctx, owner, -1, length,
+                                                                                      ::fixy::fs::FileOffset{0});
 }
 
 static_assert(!std::is_copy_constructible_v<Region>);
@@ -98,15 +99,19 @@ int check_the_kernel_maps_the_claimed_protection() {
     const std::size_t len = page_bytes();
     auto const owner = perm::mint_permission_root<PageTag>();
     auto read_only = map_pages<mm::prot::ReadOnly>(owner, len);
-    if (!read_only) return 0;
-    if (protection_of(read_only->data()) != "r--p") {
-        std::fprintf(stderr, "a region typed prot::ReadOnly is mapped %s\n", protection_of(read_only->data()).c_str());
+    if (read_only.is_err()) return 0;
+    auto const read_only_region = std::move(read_only).expect("the map gave a read-only region");
+    if (protection_of(read_only_region.data()) != "r--p") {
+        std::fprintf(stderr, "a region typed prot::ReadOnly is mapped %s\n",
+                     protection_of(read_only_region.data()).c_str());
         return 50;
     }
     auto writable = map_pages<mm::prot::WriteCopy>(owner, len);
-    if (!writable) return 0;
-    if (protection_of(writable->data()) != "rw-p") {
-        std::fprintf(stderr, "a region typed prot::WriteCopy is mapped %s\n", protection_of(writable->data()).c_str());
+    if (writable.is_err()) return 0;
+    auto const writable_region = std::move(writable).expect("the map gave a writable region");
+    if (protection_of(writable_region.data()) != "rw-p") {
+        std::fprintf(stderr, "a region typed prot::WriteCopy is mapped %s\n",
+                     protection_of(writable_region.data()).c_str());
         return 51;
     }
     return 0;
@@ -191,9 +196,9 @@ int check_live_mapping() {
     const std::size_t len = page_bytes();
     auto const owner = perm::mint_permission_root<PageTag>();
     auto mapped = map_pages<mm::prot::WriteCopy>(owner, len);
-    if (!mapped) return 0;  // mapping unavailable; nothing to check
+    if (mapped.is_err()) return 0;  // mapping unavailable; nothing to check
 
-    auto r = std::move(*mapped);
+    auto r = std::move(mapped).expect("the map gave a region");
     void* const addr = r.data();
     if (!r.is_mapped()) return 10;
     if (addr == nullptr) return 11;
@@ -219,9 +224,9 @@ int check_release_hands_the_region_back() {
     const std::size_t len = page_bytes();
     auto const owner = perm::mint_permission_root<PageTag>();
     auto mapped = map_pages<mm::prot::WriteCopy>(owner, len);
-    if (!mapped) return 0;
+    if (mapped.is_err()) return 0;
 
-    auto r = std::move(*mapped);
+    auto r = std::move(mapped).expect("the map gave a region");
     void* const addr = r.data();
     auto [out_addr, out_len] = std::move(r).release(SampleLeak{});
     if (out_addr != addr) return 20;
@@ -237,12 +242,12 @@ int check_move_assign_unmaps_the_replaced_region() {
     const std::size_t len = page_bytes();
     auto const owner = perm::mint_permission_root<PageTag>();
     auto first = map_pages<mm::prot::WriteCopy>(owner, len);
-    if (!first) return 0;
+    if (first.is_err()) return 0;
     auto second = map_pages<mm::prot::WriteCopy>(owner, len);
-    if (!second) return 0;
+    if (second.is_err()) return 0;
 
-    auto a = std::move(*first);
-    auto b = std::move(*second);
+    auto a = std::move(first).expect("the map gave a region");
+    auto b = std::move(second).expect("the map gave a region");
     void* const second_addr = b.data();
     a = std::move(b);
     if (b.is_mapped()) return 30;

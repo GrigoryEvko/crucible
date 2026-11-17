@@ -142,17 +142,19 @@ region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
         std::fprintf(stderr, "[skipped] memfd_create is unavailable here (errno %d)\n", errno);
         return 0;
     }
-    if (::ftruncate(fd, static_cast<::off_t>(kPageBytes)) != 0) {
+    // The file holds two pages, and the second page holds a different
+    // pattern, so a map at offset zero does not show it.
+    if (::ftruncate(fd, static_cast<::off_t>(2 * kPageBytes)) != 0) {
         std::fprintf(stderr, "ftruncate on the memfd failed (errno %d)\n", errno);
         ::close(fd);
         return 1;
     }
 
-    std::uint8_t pattern[kPageBytes];
-    for (std::size_t index = 0; index < kPageBytes; ++index) {
-        pattern[index] = static_cast<std::uint8_t>((index * 7u) & 0xFFu);
+    std::uint8_t pattern[2 * kPageBytes];
+    for (std::size_t index = 0; index < 2 * kPageBytes; ++index) {
+        pattern[index] = static_cast<std::uint8_t>((index * 7u + (index / kPageBytes) * 3u) & 0xFFu);
     }
-    if (::pwrite(fd, pattern, kPageBytes, 0) != static_cast<::ssize_t>(kPageBytes)) {
+    if (::pwrite(fd, pattern, 2 * kPageBytes, 0) != static_cast<::ssize_t>(2 * kPageBytes)) {
         std::fprintf(stderr, "pwrite of the pattern failed (errno %d)\n", errno);
         ::close(fd);
         return 1;
@@ -160,24 +162,13 @@ region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
 
     const auto owner = perm::mint_permission_root<FileRegion>();
     auto mapped = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, owner, fd, kPageBytes));
-    // The second page of the file is the map of the offset below, so the
-    // file grows to two pages before the descriptor closes.  The second
-    // page holds a different pattern, so a map at offset zero does not
-    // show it.
-    std::uint8_t later[kPageBytes];
-    for (std::size_t index = 0; index < kPageBytes; ++index) {
-        later[index] = static_cast<std::uint8_t>((index * 11u + 3u) & 0xFFu);
-    }
-    bool const has_second_page =
-        ::ftruncate(fd, static_cast<::off_t>(2 * kPageBytes)) == 0
-        && ::pwrite(fd, later, kPageBytes, static_cast<::off_t>(kPageBytes)) == static_cast<::ssize_t>(kPageBytes);
     auto second = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(
         ctx, owner, fd, kPageBytes, fixy::fs::FileOffset{static_cast<std::int64_t>(kPageBytes)}));
     // The descriptor is not needed once the mapping exists: the mapping
     // holds its own reference to the file.
     ::close(fd);
-    if (mapped.is_err() || second.is_err() || !has_second_page) {
-        std::fprintf(stderr, "a shared read-only mapping of the memfd failed (errno %d, %d)\n",
+    if (mapped.is_err() || second.is_err()) {
+        fixy::report(fixy::Sink::Err, "a shared read-only mapping of the memfd failed (errno {}, {})\n",
                      foundation::os::error_number_of(mapped), foundation::os::error_number_of(second));
         return 1;
     }
@@ -191,8 +182,10 @@ region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
 
     // A map at an offset shows the bytes of the file from that offset.
     auto const second_region = std::move(second).expect("the mint gave a mapping at the offset");
-    if (std::memcmp(second_region.data(), later, kPageBytes) != 0) {
-        std::fprintf(stderr, "the file mapping at an offset did not show the bytes from that offset\n");
+    fixy::View<std::byte const> const later =
+        fixy::View<std::byte const>{fixy::bytes(pattern)}.window(kPageBytes, kPageBytes).expect("two pages");
+    if (!fixy::equal(second_region.view<std::byte const>().expect("a page is a whole count of bytes"), later)) {
+        fixy::report(fixy::Sink::Err, "the file mapping at an offset did not show the bytes from that offset\n");
         return 1;
     }
     return 0;

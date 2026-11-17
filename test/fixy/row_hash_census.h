@@ -491,6 +491,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::io::engine, kGradeVocabulary},
     {^^::fixy::io::zerocopy, kGradeVocabulary},
     {^^::fixy::io::ring_flag, kGradeVocabulary},
+    {^^::fixy::io::side, "the roles of the two offsets of a transfer: empty tags that a Side names at compile time, "
+                         "and none of them is a value"},
     {^^::fixy::fs::open_mode, kGradeVocabulary},
     {^^::fixy::fs::flag, kGradeVocabulary},
     {^^::fixy::fs::sync_op, kGradeVocabulary},
@@ -1424,6 +1426,7 @@ inline constexpr StatedZero kZeros[] = {
      "value, and it is never a template argument of a kernel signature"},
 
     {^^::fixy::io::IoUringRing, kDescriptor},
+    {^^::fixy::io::IoRingDoor, kDescriptorDoor},
     {^^::fixy::fs::OwnedFd, kDescriptor},
     {^^::fixy::fs::Dirfd, kDescriptor},
     {^^::fixy::fs::FileDoor, kDescriptorDoor},

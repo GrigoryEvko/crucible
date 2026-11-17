@@ -112,15 +112,21 @@ class CipherDurableHandle;
 // because a Result of the handle needs the complete class.
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, warm_writer_stance, Extras...>
-[[nodiscard]] auto mint_warm_writer(Ctx const&, Path<source::Sanitized> const&, ::mode_t perms = 0644) noexcept;
+[[nodiscard]] auto
+mint_warm_writer(Ctx const&, Path<source::Sanitized> const&,
+                 ::fixy::fs::FileMode perms = ::fixy::fs::FileMode::owner_read_write_others_read) noexcept;
 
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, cold_writer_stance, Extras...>
-[[nodiscard]] auto mint_cold_writer(Ctx const&, Path<source::Sanitized> const&, ::mode_t perms = 0644) noexcept;
+[[nodiscard]] auto
+mint_cold_writer(Ctx const&, Path<source::Sanitized> const&,
+                 ::fixy::fs::FileMode perms = ::fixy::fs::FileMode::owner_read_write_others_read) noexcept;
 
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, head_advance_stance, Extras...>
-[[nodiscard]] auto mint_head_advancer(Ctx const&, Path<source::Sanitized> const&, ::mode_t perms = 0644) noexcept;
+[[nodiscard]] auto
+mint_head_advancer(Ctx const&, Path<source::Sanitized> const&,
+                   ::fixy::fs::FileMode perms = ::fixy::fs::FileMode::owner_read_write_others_read) noexcept;
 
 template <DurableStance Stance>
 class [[nodiscard]] CipherDurableHandle final {
@@ -132,15 +138,15 @@ class [[nodiscard]] CipherDurableHandle final {
     // the one its return type names.
     template <typename... FriendExtras, eff::IsExecCtx FriendCtx>
         requires ::crucible::cipher::durable::CtxFitsDurableMint<FriendCtx, warm_writer_stance, FriendExtras...>
-    friend auto mint_warm_writer(FriendCtx const&, Path<source::Sanitized> const&, ::mode_t) noexcept;
+    friend auto mint_warm_writer(FriendCtx const&, Path<source::Sanitized> const&, ::fixy::fs::FileMode) noexcept;
 
     template <typename... FriendExtras, eff::IsExecCtx FriendCtx>
         requires ::crucible::cipher::durable::CtxFitsDurableMint<FriendCtx, cold_writer_stance, FriendExtras...>
-    friend auto mint_cold_writer(FriendCtx const&, Path<source::Sanitized> const&, ::mode_t) noexcept;
+    friend auto mint_cold_writer(FriendCtx const&, Path<source::Sanitized> const&, ::fixy::fs::FileMode) noexcept;
 
     template <typename... FriendExtras, eff::IsExecCtx FriendCtx>
         requires ::crucible::cipher::durable::CtxFitsDurableMint<FriendCtx, head_advance_stance, FriendExtras...>
-    friend auto mint_head_advancer(FriendCtx const&, Path<source::Sanitized> const&, ::mode_t) noexcept;
+    friend auto mint_head_advancer(FriendCtx const&, Path<source::Sanitized> const&, ::fixy::fs::FileMode) noexcept;
 
 public:
     using stance_type = Stance;
@@ -191,7 +197,7 @@ namespace detail {
 // reaches its consumer on the value path and no local holds it.
 template <DurableStance Stance, typename... Extras, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::fixy::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>
-open_with_stance_(Ctx const& ctx, Path<source::Sanitized> const& path, ::mode_t perms) noexcept {
+open_with_stance_(Ctx const& ctx, Path<source::Sanitized> const& path, ::fixy::fs::FileMode perms) noexcept {
     using Opened = ::fixy::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>;
     return ::fixy::fs::mint_file<atom_fs::mode<typename Stance::mode_type>,
                                  atom_fs::with_flag<typename Stance::flag_type>, Extras...>(ctx, path, perms)
@@ -204,7 +210,8 @@ open_with_stance_(Ctx const& ctx, Path<source::Sanitized> const& path, ::mode_t 
 
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, warm_writer_stance, Extras...>
-[[nodiscard]] auto mint_warm_writer(Ctx const& ctx, Path<source::Sanitized> const& path, ::mode_t perms) noexcept {
+[[nodiscard]] auto mint_warm_writer(Ctx const& ctx, Path<source::Sanitized> const& path,
+                                    ::fixy::fs::FileMode perms) noexcept {
     using Minted = ::fixy::Result<::fixy::Linear<CipherDurableHandle<warm_writer_stance>>, ::foundation::os::Errno>;
     return detail::open_with_stance_<warm_writer_stance, Extras...>(ctx, path, perms)
         .match(
@@ -217,7 +224,8 @@ template <typename... Extras, eff::IsExecCtx Ctx>
 
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, cold_writer_stance, Extras...>
-[[nodiscard]] auto mint_cold_writer(Ctx const& ctx, Path<source::Sanitized> const& path, ::mode_t perms) noexcept {
+[[nodiscard]] auto mint_cold_writer(Ctx const& ctx, Path<source::Sanitized> const& path,
+                                    ::fixy::fs::FileMode perms) noexcept {
     using Minted = ::fixy::Result<::fixy::Linear<CipherDurableHandle<cold_writer_stance>>, ::foundation::os::Errno>;
     return detail::open_with_stance_<cold_writer_stance, Extras...>(ctx, path, perms)
         .match(
@@ -234,7 +242,8 @@ template <typename... Extras, eff::IsExecCtx Ctx>
 // the rename.
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, head_advance_stance, Extras...>
-[[nodiscard]] auto mint_head_advancer(Ctx const& ctx, Path<source::Sanitized> const& path, ::mode_t perms) noexcept {
+[[nodiscard]] auto mint_head_advancer(Ctx const& ctx, Path<source::Sanitized> const& path,
+                                      ::fixy::fs::FileMode perms) noexcept {
     using Minted = ::fixy::Result<::fixy::Linear<CipherDurableHandle<head_advance_stance>>, ::foundation::os::Errno>;
     return detail::open_with_stance_<head_advance_stance, Extras...>(ctx, path, perms)
         .match(

@@ -104,6 +104,20 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
     return TransferFiles{std::move(source), std::move(destination)};
 }
 
+// The bytes that the destination file of the scratch directory holds at
+// offset, read through a second descriptor of the file door, equal expected.
+[[nodiscard]] bool destination_holds_at(IoBlockCtx const& ctx, ScratchDir const& scratch, std::size_t offset,
+                                        fixy::View<std::byte const> expected) {
+    MadeFd opened = descriptor_of(fs::mint_file<fs::read_only>(ctx, sanitized(scratch.file("dst"))));
+    if (opened.is_err()) return false;
+    fs::OwnedFd const reader = std::move(opened).expect("the destination opened for a read");
+    fixy::FixedArray<std::byte, 5 * kPayloadBytes> whole{};
+    std::size_t const count = fs::read_full(ctx, reader, whole.view()).value_or(0);
+    if (count < offset + expected.size()) return false;
+    return fixy::equal(whole.view().window(offset, expected.size()).expect("the window is inside the bytes read"),
+                       expected);
+}
+
 // Whether the destination holds the pattern at its start.
 [[nodiscard]] bool destination_holds(fs::OwnedFd const& destination, std::span<const std::uint8_t> pattern) {
     std::uint8_t readback[kPayloadBytes];
@@ -250,16 +264,13 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
         ctx, files.source, files.destination, kPayloadBytes,
         fixy::io::SourceOffsetOf{fs::FileOffset{static_cast<std::int64_t>(half)}});
     if (std::move(from_middle).value_or(0) != half) {
-        std::fprintf(stderr, "a transfer from the middle of the source did not stop at its end\n");
+        fixy::report(fixy::Sink::Err, "a transfer from the middle of the source did not stop at its end\n");
         return 1;
     }
-    std::uint8_t readback[kPayloadBytes];
-    bool const holds_second_half =
-        ::pread(files.destination.get(), readback, half, static_cast<::off_t>(2 * kPayloadBytes))
-            == static_cast<::ssize_t>(half)
-        && std::memcmp(readback, pattern + half, half) == 0;
-    if (!holds_second_half) {
-        std::fprintf(stderr, "a transfer from the middle of the source did not move its second half\n");
+    fixy::View<std::byte const> const second_half =
+        fixy::View<std::byte const>{fixy::bytes(pattern)}.window(half, half).expect("the half is in the pattern");
+    if (!destination_holds_at(ctx, scratch, 2 * kPayloadBytes, second_half)) {
+        fixy::report(fixy::Sink::Err, "a transfer from the middle of the source did not move its second half\n");
         return 1;
     }
     return 0;
@@ -314,15 +325,13 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
         fixy::io::SourceOffsetOf{fs::FileOffset{static_cast<std::int64_t>(half)}},
         fixy::io::DestinationOffsetOf{fs::FileOffset{static_cast<std::int64_t>(placed_at)}});
     if (std::move(placed).value_or(0) != half) {
-        std::fprintf(stderr, "a copy with two offsets did not move the second half of the source\n");
+        fixy::report(fixy::Sink::Err, "a copy with two offsets did not move the second half of the source\n");
         return 1;
     }
-    std::uint8_t readback[kPayloadBytes];
-    bool const holds_second_half = ::pread(files.destination.get(), readback, half, static_cast<::off_t>(placed_at))
-                                    == static_cast<::ssize_t>(half)
-                                && std::memcmp(readback, pattern + half, half) == 0;
-    if (!holds_second_half) {
-        std::fprintf(stderr, "a copy with two offsets did not write at the destination offset\n");
+    fixy::View<std::byte const> const second_half =
+        fixy::View<std::byte const>{fixy::bytes(pattern)}.window(half, half).expect("the half is in the pattern");
+    if (!destination_holds_at(ctx, scratch, placed_at, second_half)) {
+        fixy::report(fixy::Sink::Err, "a copy with two offsets did not write at the destination offset\n");
         return 1;
     }
     return 0;

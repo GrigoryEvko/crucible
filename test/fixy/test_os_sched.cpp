@@ -20,6 +20,7 @@
 // of static_asserts masks the bugs that appear when a body is
 // instantiated for runtime evaluation rather than folded.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/Sched.h>
@@ -329,7 +330,8 @@ holds_prior_mask(foundation::core::Result<fixy::sched::PriorAffinity, foundation
         [](foundation::os::KernelSchedAttr attributes) noexcept { return attributes.nice; },
         [](foundation::os::Errno) noexcept { return std::int32_t{5}; });
     if (nice_after_frame != 5) {
-        std::fprintf(stderr, "the nice value did not stay after the frame ended (nice %d)\n", nice_after_frame);
+        fixy::report(fixy::Sink::Err, "the nice value did not stay after the frame ended (nice {})\n",
+                     nice_after_frame);
         return 1;
     }
 
