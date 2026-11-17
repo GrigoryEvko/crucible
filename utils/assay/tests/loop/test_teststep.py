@@ -1006,17 +1006,19 @@ def needs_cases(expect: testing.Expect) -> None:
         f"the test with a unit of x86-64-v4 needs v4, and the test with -mavx2 needs v3 or more, in the build {kind}",
         needs.get("test_target_units") == 4 and needs.get("test_swiss_table_avx2", 0) >= 3,
     )
+    # test_types has no -m word of its own, and it links the libraries of the build.  So its need is the need of the
+    # build, also in a build of -march=native with no level word (THE FLOOR OF A PROGRAM of TestLevel.cmake).  A build
+    # at v1 writes no row of it.
+    plain = needs.get("test_types", 1)
     expect(
-        f"each target of the build of the level v{level} needs that level or more, and a plain test has a row",
-        all(value >= level for value in needs.values()) and (level < 2 or needs.get("test_core_fma", 0) >= level),
+        f"each target of the build of the level v{level} needs that level or more, and a plain test has a row of that "
+        f"level",
+        all(value >= level for value in needs.values()) and (level < 2 or plain == level),
     )
-    # test_core_fma has a unit of x86-64 and the units of the build, so its need is the need of the build, also in a
-    # build of -march=native with no level word (THE FLOOR OF A PROGRAM of TestLevel.cmake).
-    floor = needs.get("test_core_fma", 1)
-    lower = sorted(target for target, value in needs.items() if value < floor)
+    lower = sorted(target for target, value in needs.items() if value < plain)
     expect(
-        f"no target of the build {kind} needs less than the build, v{floor}, so -mno-avx512f or a lower -march of a "
-        f"target does not lower its need: {lower}",
+        f"no target of the build {kind} needs less than the plain test test_types, v{plain}, so -mno-avx512f or a "
+        f"lower -march of a target does not lower its need: {lower}",
         not lower,
     )
 
