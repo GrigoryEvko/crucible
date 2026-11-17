@@ -114,9 +114,13 @@ class _VesselLib:
             ctypes.POINTER(ctypes.c_int64),   # scalar_values
             ctypes.c_uint16,                  # num_scalars
             ctypes.c_uint16,                  # scalar_types, two bits for each value
+            ctypes.c_uint8,                   # data_slots, one bit for each value
             ctypes.c_uint8,                   # grad_enabled
             ctypes.c_uint8,                   # inference_mode
         ]
+
+        lib.crucible_is_structural_scalar.restype = ctypes.c_int
+        lib.crucible_is_structural_scalar.argtypes = [ctypes.c_uint64, ctypes.c_uint32]
 
         lib.crucible_flush.restype = None
         lib.crucible_flush.argtypes = [ctypes.c_void_p]
@@ -235,6 +239,19 @@ def _scalar_tag(val):
     return 0
 
 
+def _is_data_type(argument_type) -> bool:
+    """True for the schema type Scalar or float, an optional of one, or a list of one.
+
+    A slot of such an argument is a data slot (ScalarRole of crucible/Types.h),
+    unless crucible_is_structural_scalar names the argument.  The type comes
+    from the schema of the operator, as on the native recording paths.
+    """
+    kind = argument_type.kind()
+    if kind in ("OptionalType", "ListType"):
+        return _is_data_type(argument_type.getElementType())
+    return kind in ("NumberType", "FloatType")
+
+
 def _scalar_to_int64(val):
     """Bitcast a Python scalar to int64 for TraceRing::Entry::scalar_values."""
     if isinstance(val, bool):
@@ -270,6 +287,8 @@ class CrucibleMode(TorchDispatchMode):
         self._verbose = verbose
         self._op_count = 0
         self._schema_cache = {}
+        # The names of the data arguments of each operator (_data_arguments).
+        self._data_argument_cache = {}
         self._prev_compiled = False
 
     def __del__(self):
@@ -340,15 +359,18 @@ class CrucibleMode(TorchDispatchMode):
         else:
             metas_ptr = None
 
-        # Extract scalar arguments from args and kwargs, each with its tag.
-        scalars = self._extract_scalars(args, kwargs)
+        # Extract scalar arguments from args and kwargs, each with its tag and
+        # its role.
+        scalars = self._extract_scalars(func, args, kwargs, self._data_arguments(func, op_name, schema_hash))
         num_scalars = min(len(scalars), 5)
         ScalarArray = ctypes.c_int64 * 5
         scalar_buf = ScalarArray()
         scalar_types = 0
+        data_slots = 0
         for i in range(num_scalars):
-            scalar_buf[i], tag = scalars[i]
+            scalar_buf[i], tag, is_data = scalars[i]
             scalar_types |= tag << (2 * i)
+            data_slots |= int(is_data) << i
         scalars_ptr = ctypes.cast(scalar_buf, ctypes.POINTER(ctypes.c_int64))
 
         # Grad/inference mode flags
@@ -361,7 +383,7 @@ class CrucibleMode(TorchDispatchMode):
             schema_hash,
             num_inputs, num_outputs,
             metas_ptr, n_metas,
-            scalars_ptr, num_scalars, scalar_types,
+            scalars_ptr, num_scalars, scalar_types, data_slots,
             grad_on, infer_on,
         )
         # The next op starts an iteration of a region, so the Vigil takes the
@@ -383,7 +405,7 @@ class CrucibleMode(TorchDispatchMode):
             # The status is a field of the action COMPILED only.
             label = (f"{action.name}:{DispatchStatus(dr.status).name}"
                      if action == DispatchAction.COMPILED else action.name)
-            extra = f" scalars={scalars[:num_scalars]}" if num_scalars > 0 else ""
+            extra = f" scalars={[value for value, _, _ in scalars[:num_scalars]]}" if num_scalars > 0 else ""
             print(f"  [{label}] {op_name} "
                   f"in={num_inputs} out={num_outputs}{extra}")
 
@@ -513,14 +535,39 @@ class CrucibleMode(TorchDispatchMode):
             return [x for x in result if isinstance(x, torch.Tensor)]
         return []
 
+    def _data_arguments(self, func, op_name, schema_hash):
+        """Return the names of the arguments of the operator whose slots are data.
+
+        The type of an argument in the schema gives its role (_is_data_type),
+        and the list of the vessel makes some of them structural
+        (crucible_is_structural_scalar).  The answer depends on the operator
+        only, so the mode keeps it for each name.  O(arguments) at the first
+        call for an operator.
+        """
+        names = self._data_argument_cache.get(op_name)
+        if names is None:
+            names = frozenset(
+                argument.name for position, argument in enumerate(func._schema.arguments)
+                if _is_data_type(argument.type)
+                and not self._vessel.crucible_is_structural_scalar(schema_hash, position))
+            self._data_argument_cache[op_name] = names
+        return names
+
     @staticmethod
-    def _extract_scalars(args, kwargs):
-        """Extract scalar arguments as pairs of an int64 bitcast value and its tag."""
+    def _extract_scalars(func, args, kwargs, data_arguments):
+        """Extract the scalar arguments as triples of an int64 bitcast value, its tag and its role.
+
+        The role is True for a data scalar: an argument whose name is in
+        data_arguments.  A positional argument has the name of the argument
+        of the schema at its position.
+        """
+        arguments = func._schema.arguments
         scalars = []
-        for a in args:
+        for position, a in enumerate(args):
             if isinstance(a, (int, float, bool)) and not isinstance(a, torch.Tensor):
-                scalars.append((_scalar_to_int64(a), _scalar_tag(a)))
-        for v in kwargs.values():
+                is_data = position < len(arguments) and arguments[position].name in data_arguments
+                scalars.append((_scalar_to_int64(a), _scalar_tag(a), is_data))
+        for name, v in kwargs.items():
             if isinstance(v, (int, float, bool)) and not isinstance(v, torch.Tensor):
-                scalars.append((_scalar_to_int64(v), _scalar_tag(v)))
+                scalars.append((_scalar_to_int64(v), _scalar_tag(v), name in data_arguments))
         return scalars

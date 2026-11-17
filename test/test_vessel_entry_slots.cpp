@@ -13,10 +13,11 @@
 // The guard word of an entry (compute_shape_hash) must change with each field
 // that changes the computation of the op: a stride, an element type, a device,
 // a rank, a layout, the negative and conjugate bits, a storage offset, a
-// scalar, a tag, a count and the depth.  It must not change with a data
-// address, a version counter or an autograd field, which change at each
-// iteration.  The content hash of a region changes with the rank, the layout,
-// the two bits and the storage offset of a tensor too.
+// structural scalar, a tag, a role, a count and the depth.  It must not change
+// with a data address, a version counter, an autograd field or the value of a
+// data scalar, which change at each iteration.  The content hash of a region
+// changes with the rank, the layout, the two bits and the storage offset of a
+// tensor too, and not with the value of a data scalar.
 
 #include "../vessel/torch/entry_slots.h"
 
@@ -31,6 +32,7 @@
 
 namespace {
 
+using crucible::ScalarRole;
 using crucible::ScalarType2;
 using crucible::TraceRing;
 using crucible::vessel::compute_shape_hash;
@@ -39,14 +41,18 @@ using crucible::vessel::kInlineScalars;
 using crucible::vessel::ScalarArgs;
 using crucible::vessel::write_scalar_slots;
 
+constexpr ScalarRole kStructural = ScalarRole::STRUCTURAL;
+constexpr ScalarRole kData = ScalarRole::DATA;
+
 // The entry of an operation whose scalars are the integers 1, 2, ... count,
-// with the last scalar replaced by last of the tag last_tag.  O(count).
+// with the last scalar replaced by last of the tag last_tag and the role
+// last_role.  O(count).
 [[nodiscard]] TraceRing::Entry entry_of(uint32_t count, int64_t last, InputOverflow const& inputs,
-                                        ScalarType2 last_tag = ScalarType2::INT) {
+                                        ScalarType2 last_tag = ScalarType2::INT, ScalarRole last_role = kStructural) {
     ScalarArgs<true> scalars{};
     for (uint32_t index = 1; index < count; index++)
-        scalars.push(static_cast<int64_t>(index), ScalarType2::INT);
-    if (count != 0) scalars.push(last, last_tag);
+        scalars.push(static_cast<int64_t>(index), ScalarType2::INT, kStructural);
+    if (count != 0) scalars.push(last, last_tag, last_role);
     TraceRing::Entry entry{};
     write_scalar_slots(entry, scalars, inputs);
     return entry;
@@ -55,6 +61,7 @@ using crucible::vessel::write_scalar_slots;
 [[nodiscard]] bool same_slots(TraceRing::Entry const& left, TraceRing::Entry const& right) {
     if (left.num_scalar_args != right.num_scalar_args) return false;
     if (left.packed_scalar_types() != right.packed_scalar_types()) return false;
+    if (!(left.data_slots == right.data_slots)) return false;
     return left.scalar_values == right.scalar_values;
 }
 
@@ -71,7 +78,7 @@ using crucible::vessel::write_scalar_slots;
 void test_fitting_operation_keeps_its_scalars() {
     ScalarArgs<false> bounded{};
     for (int64_t value = 1; value <= kInlineScalars + 1; value++)
-        bounded.push(value, ScalarType2::INT);
+        bounded.push(value, ScalarType2::INT, kStructural);
     TraceRing::Entry plain{};
     write_scalar_slots(plain, bounded);
     assert(plain.num_scalar_args == kInlineScalars);
@@ -114,8 +121,9 @@ void test_tag_tells_an_integer_from_a_double() {
     ScalarArgs<false> integer_scalars{};
     ScalarArgs<false> floating_scalars{};
     for (uint16_t slot = 0; slot < kInlineScalars; slot++) {
-        integer_scalars.push(kOneBits, ScalarType2::INT);
-        floating_scalars.push(kOneBits, slot + 1 == kInlineScalars ? ScalarType2::FLOAT : ScalarType2::INT);
+        integer_scalars.push(kOneBits, ScalarType2::INT, kStructural);
+        floating_scalars.push(kOneBits, slot + 1 == kInlineScalars ? ScalarType2::FLOAT : ScalarType2::INT,
+                              kStructural);
     }
     write_scalar_slots(integer, integer_scalars);
     write_scalar_slots(floating, floating_scalars);
@@ -137,11 +145,11 @@ void test_tag_tells_an_integer_from_a_double() {
 // give two entries.
 void test_absent_optional_takes_a_slot() {
     ScalarArgs<false> min_only{};
-    min_only.push(::fixy::bit_cast<int64_t>(1.0), ScalarType2::FLOAT);
+    min_only.push(::fixy::bit_cast<int64_t>(1.0), ScalarType2::FLOAT, kData);
     min_only.push_absent();
     ScalarArgs<false> max_only{};
     max_only.push_absent();
-    max_only.push(::fixy::bit_cast<int64_t>(1.0), ScalarType2::FLOAT);
+    max_only.push(::fixy::bit_cast<int64_t>(1.0), ScalarType2::FLOAT, kData);
     TraceRing::Entry first{};
     TraceRing::Entry second{};
     write_scalar_slots(first, min_only);
@@ -149,6 +157,8 @@ void test_absent_optional_takes_a_slot() {
     assert(first.num_scalar_args == 2 && second.num_scalar_args == 2);
     assert(second.scalar_values.at(::fixy::index<0>()) == 0);
     assert(second.get_scalar_type(0) == ScalarType2::NONE);
+    assert(second.data_slots.role(::fixy::index<0>()) == kStructural && "an absent optional is structural");
+    assert(second.data_slots.role(::fixy::index<1>()) == kData);
     assert(!same_slots(first, second));
 }
 
@@ -189,15 +199,15 @@ void test_input_past_the_limit_reaches_the_digest() {
     return crucible::compute_content_hash(ops.view());
 }
 
-// The content hash of a region of one op with the one scalar of the bits 1
-// and the tags of the scalars.
-[[nodiscard]] crucible::ContentHash content_hash_of_scalar(uint16_t scalar_types) {
-    ::fixy::FixedArray<int64_t, 1> scalars{int64_t{1}};
+// The content hash of a region of one op with the one scalar of the bits and
+// the word of the tags and the data slots of the scalars.
+[[nodiscard]] crucible::ContentHash content_hash_of_scalar(uint16_t scalar_kinds, int64_t bits = 1) {
+    ::fixy::FixedArray<int64_t, 1> scalars{bits};
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
     crucible::TraceEntry& op = ops.at(::fixy::index<0>());
     op.schema_hash = crucible::SchemaHash{42};
     op.set_scalar_args(scalars.view());
-    op.scalar_types = scalar_types;
+    op.scalar_kinds = crucible::ScalarSlotKinds::from_bits(scalar_kinds);
     return crucible::compute_content_hash(ops.view());
 }
 
@@ -209,6 +219,37 @@ void test_content_hash_folds_the_tags() {
     CRUCIBLE_FATAL_INVARIANT(!(content_hash_of_scalar(integer) == content_hash_of_scalar(floating)));
     const auto past_the_count = static_cast<uint16_t>(static_cast<uint16_t>(ScalarType2::NONE) << 2);
     CRUCIBLE_FATAL_INVARIANT(content_hash_of_scalar(integer) == content_hash_of_scalar(integer | past_the_count));
+}
+
+// The word of the one slot of an op: the tag, and the bit of the data slot.
+[[nodiscard]] uint16_t kinds_of_slot(ScalarType2 tag, ScalarRole role) {
+    return crucible::ScalarSlotKinds::of(static_cast<uint16_t>(tag),
+                                         crucible::DataSlots{}.with(::fixy::index<0>(), role))
+        .bits();
+}
+
+// The content hash of a region reads the tag and the role of a data slot but
+// not its value, so a loop whose step size changes keeps one region.  The value
+// of a structural slot moves the hash.  The old hash folded each value, so the
+// first check gave two hashes.
+void test_content_hash_reads_no_data_value() {
+    const uint16_t data = kinds_of_slot(ScalarType2::FLOAT, kData);
+    const uint16_t structural = kinds_of_slot(ScalarType2::FLOAT, kStructural);
+    const int64_t first_lr = ::fixy::bit_cast<int64_t>(1e-3);
+    const int64_t second_lr = ::fixy::bit_cast<int64_t>(2e-3);
+    CRUCIBLE_FATAL_INVARIANT(content_hash_of_scalar(data, first_lr) == content_hash_of_scalar(data, second_lr)
+                             && "the value of a data slot moves no content hash");
+    CRUCIBLE_FATAL_INVARIANT(
+        !(content_hash_of_scalar(structural, first_lr) == content_hash_of_scalar(structural, second_lr))
+        && "the value of a structural slot moves the content hash");
+    CRUCIBLE_FATAL_INVARIANT(!(content_hash_of_scalar(data, first_lr) == content_hash_of_scalar(structural, first_lr))
+                             && "the role moves the content hash");
+    CRUCIBLE_FATAL_INVARIANT(!(content_hash_of_scalar(data, first_lr)
+                               == content_hash_of_scalar(kinds_of_slot(ScalarType2::INT, kData), first_lr))
+                             && "the tag of a data slot moves the content hash");
+    // A structural zero and a data slot fold one value, and the role tells
+    // them apart.
+    CRUCIBLE_FATAL_INVARIANT(!(content_hash_of_scalar(data, 0) == content_hash_of_scalar(structural, 0)));
 }
 
 // The overflow digest of the vessel after the fold of meta.
@@ -302,10 +343,10 @@ void test_built_device_has_one_host_index() {
     return meta;
 }
 
-// The scalars of an op whose one scalar has the bits and the tag.
-[[nodiscard]] ScalarArgs<false> one_scalar(int64_t bits, ScalarType2 tag) {
+// The scalars of an op whose one scalar has the bits, the tag and the role.
+[[nodiscard]] ScalarArgs<false> one_scalar(int64_t bits, ScalarType2 tag, ScalarRole role = kStructural) {
     ScalarArgs<false> scalars{};
-    scalars.push(bits, tag);
+    scalars.push(bits, tag, role);
     return scalars;
 }
 
@@ -385,7 +426,7 @@ void test_guard_word_reads_each_field_of_the_computation() {
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(only_vector.view(), alpha_one) == base) && "the input count moves it");
 
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, matrix, one_scalar(2, ScalarType2::INT)) == base)
-                             && "a scalar moves the word");
+                             && "a structural scalar moves the word");
     // alpha=1 and alpha=4.9e-324 have one bit pattern, and the tag tells them
     // apart.
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, matrix, one_scalar(1, ScalarType2::FLOAT)) == base)
@@ -446,6 +487,110 @@ void test_guard_word_ignores_what_changes_at_each_iteration() {
     stray.set_packed_scalar_types(
         static_cast<uint16_t>(tagged.packed_scalar_types() | (static_cast<uint16_t>(ScalarType2::NONE) << 2)));
     CRUCIBLE_FATAL_INVARIANT(guard_word_of(tagged) == guard_word_of(stray));
+}
+
+// The guard word reads the tag and the role of a data slot, but not its value.
+// A loop whose alpha or step size changes at each iteration thus keeps one
+// word for each op, and the detector finds its period.  The old word folded
+// each value, so the first two checks gave two words.
+void test_guard_word_reads_no_data_value() {
+    const crucible::TensorMeta vector = vector_meta(4);
+    const crucible::TensorMeta matrix = matrix_meta();
+    const crucible::ShapeHash alpha_one = guard_word_of(vector, matrix, one_scalar(1, ScalarType2::INT, kData));
+    CRUCIBLE_FATAL_INVARIANT(guard_word_of(vector, matrix, one_scalar(2, ScalarType2::INT, kData)) == alpha_one
+                             && "the value of a data slot moves no word");
+    const int64_t first_lr = ::fixy::bit_cast<int64_t>(1e-3);
+    const int64_t second_lr = ::fixy::bit_cast<int64_t>(2e-3);
+    CRUCIBLE_FATAL_INVARIANT(guard_word_of(vector, matrix, one_scalar(first_lr, ScalarType2::FLOAT, kData))
+                             == guard_word_of(vector, matrix, one_scalar(second_lr, ScalarType2::FLOAT, kData)));
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, matrix, one_scalar(1, ScalarType2::FLOAT, kData)) == alpha_one)
+                             && "the tag of a data slot moves the word");
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, matrix, one_scalar(1, ScalarType2::INT)) == alpha_one)
+                             && "the role moves the word");
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, matrix, one_scalar(0, ScalarType2::INT, kData))
+                               == guard_word_of(vector, matrix, one_scalar(0, ScalarType2::INT)))
+                             && "a data slot and a structural zero give two words");
+}
+
+// The entry of an op with count scalars: slot 0 is a data scalar of the
+// value, and the others are the structural values 1 to count - 1.
+// O(count).
+[[nodiscard]] TraceRing::Entry entry_with_data_first(uint32_t count, int64_t value) {
+    ScalarArgs<true> scalars{};
+    scalars.push(value, ScalarType2::FLOAT, kData);
+    for (uint32_t index = 1; index < count; index++)
+        scalars.push(index, ScalarType2::FLOAT, kStructural);
+    TraceRing::Entry entry{};
+    write_scalar_slots(entry, scalars, InputOverflow{});
+    return entry;
+}
+
+// An op with more scalars than the slots keeps a data scalar of the first four
+// slots inline, and the digest folds no value of it.  A data scalar that can go
+// into the digest slot folds its value, so it is structural in an entry that
+// overflows.  The overflow digest of the old code folded each value, so the
+// first check gave two words.
+void test_overflow_keeps_the_first_data_slots() {
+    constexpr uint32_t kCount = 7;
+    const TraceRing::Entry first = entry_with_data_first(kCount, 100);
+    const TraceRing::Entry second = entry_with_data_first(kCount, 200);
+    CRUCIBLE_FATAL_INVARIANT(first.num_scalar_args == kInlineScalars);
+    CRUCIBLE_FATAL_INVARIANT(first.data_slots.role(::fixy::index<0>()) == kData);
+    CRUCIBLE_FATAL_INVARIANT(first.data_slots.role(::fixy::index<4>()) == kStructural && "the digest is structural");
+    CRUCIBLE_FATAL_INVARIANT(first.scalar_values.at(::fixy::index<4>()) == second.scalar_values.at(::fixy::index<4>())
+                             && "the digest folds no value of the first data slots");
+    CRUCIBLE_FATAL_INVARIANT(guard_word_of(first) == guard_word_of(second)
+                             && "a data value of an inline slot moves no word of an op that overflows");
+
+    // A data scalar at the last slot or past it folds its value into the
+    // digest.
+    ScalarArgs<true> late{};
+    ScalarArgs<true> late_moved{};
+    for (uint32_t index = 0; index < kCount; index++) {
+        late.push(index, ScalarType2::FLOAT, index == 5 ? kData : kStructural);
+        late_moved.push(index == 5 ? 99 : index, ScalarType2::FLOAT, index == 5 ? kData : kStructural);
+    }
+    TraceRing::Entry late_entry{};
+    TraceRing::Entry late_moved_entry{};
+    write_scalar_slots(late_entry, late, InputOverflow{});
+    write_scalar_slots(late_moved_entry, late_moved, InputOverflow{});
+    CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(late_entry) == guard_word_of(late_moved_entry))
+                             && "a data value in the digest moves the word");
+
+    // With no overflow, a data scalar of the last slot stays a data slot, and
+    // the two scalar sets give one entry.
+    ScalarArgs<true> fits{};
+    ScalarArgs<false> bounded{};
+    for (uint32_t index = 0; index < kInlineScalars; index++) {
+        const ScalarRole role = index + 1 == kInlineScalars ? kData : kStructural;
+        fits.push(index, ScalarType2::FLOAT, role);
+        bounded.push(index, ScalarType2::FLOAT, role);
+    }
+    TraceRing::Entry fits_entry{};
+    TraceRing::Entry bounded_entry{};
+    write_scalar_slots(fits_entry, fits, InputOverflow{});
+    write_scalar_slots(bounded_entry, bounded);
+    CRUCIBLE_FATAL_INVARIANT(same_slots(fits_entry, bounded_entry));
+    CRUCIBLE_FATAL_INVARIANT(fits_entry.data_slots.role(::fixy::index<4>()) == kData);
+}
+
+// is_structural_scalar finds each row of kStructuralScalars, and no other
+// argument of the schemas of the rows.  The vessel test
+// test_guard_divergence.py checks each row against the types of the schemas
+// of PyTorch.
+void test_is_structural_scalar_reads_each_row() {
+    for (const crucible::vessel::StructuralScalar& row : crucible::vessel::kStructuralScalars) {
+        const crucible::SchemaHash schema_hash{crucible::vessel::fnv1a_text(row.schema)};
+        const crucible::vessel::ArgumentPosition position =
+            crucible::vessel::ArgumentPosition::check(row.position).expect("a row names a position of the schema");
+        CRUCIBLE_FATAL_INVARIANT(crucible::vessel::is_structural_scalar(schema_hash, position));
+    }
+
+    const crucible::SchemaHash pow{crucible::vessel::fnv1a_text("aten::pow.Tensor_Scalar")};
+    const crucible::SchemaHash add{crucible::vessel::fnv1a_text("aten::add.Tensor")};
+    CRUCIBLE_FATAL_INVARIANT(!crucible::vessel::is_structural_scalar(pow, ::fixy::index<0>()));
+    CRUCIBLE_FATAL_INVARIANT(!crucible::vessel::is_structural_scalar(add, ::fixy::index<2>())
+                             && "the alpha of add is data");
 }
 
 // Each fact of a tensor that changes the elements that an op reads moves the
@@ -514,11 +659,15 @@ int main() {
     test_input_past_the_limit_reaches_the_digest();
     test_host_index_is_one_device();
     test_content_hash_folds_the_tags();
+    test_content_hash_reads_no_data_value();
     test_each_fact_of_a_tensor_moves_the_hash_and_the_digest();
     test_built_device_has_one_host_index();
     test_guard_word_reads_each_field_of_the_computation();
     test_guard_word_reads_the_overflow_digest();
     test_guard_word_ignores_what_changes_at_each_iteration();
+    test_guard_word_reads_no_data_value();
+    test_overflow_keeps_the_first_data_slots();
+    test_is_structural_scalar_reads_each_row();
     crucible::test::pass("test_vessel_entry_slots: PASS\n");
     return 0;
 }

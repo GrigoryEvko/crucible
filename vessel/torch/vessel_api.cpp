@@ -300,7 +300,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers o
 CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t schema_hash, uint16_t num_inputs,
                                                uint16_t num_outputs, const CrucibleMeta* metas, uint32_t n_metas,
                                                const int64_t* scalar_values, uint16_t num_scalars,
-                                               uint16_t scalar_types, uint8_t grad_enabled,
+                                               uint16_t scalar_types, uint8_t data_slots, uint8_t grad_enabled,
                                                uint8_t inference_mode) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
@@ -311,7 +311,12 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     entry.schema_hash = crucible::SchemaHash{schema_hash};
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
-    entry.num_scalar_args = num_scalars;
+    // A claim past the width of the field saturates, so the ladder below
+    // refuses each claim past the inline slots.  The ladder refuses a data
+    // slot past the claim too, and a bit past the inline slots.
+    entry.num_scalar_args = static_cast<uint8_t>(::fixy::min(num_scalars, uint16_t{UINT8_MAX}));
+    entry.data_slots = crucible::DataSlots::from_bits(data_slots);
+    if (entry.data_slots.bits() != data_slots) return refused_dispatch_result();
     uint8_t flags = 0;
     if (inference_mode != 0) flags |= crucible::op_flag::INFERENCE_MODE;
     if (grad_enabled != 0) flags |= crucible::op_flag::GRAD_ENABLED;
@@ -364,6 +369,15 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
         }
     }
     return refused_dispatch_result();
+}
+
+// The position of the C caller is a number, and a position past the
+// arguments of a schema is no structural scalar.
+int crucible_is_structural_scalar(uint64_t schema_hash, uint32_t position) noexcept {
+    for (const crucible::vessel::ArgumentPosition at : crucible::vessel::ArgumentPosition::check(position)) {
+        return crucible::vessel::is_structural_scalar(crucible::SchemaHash{schema_hash}, at) ? 1 : 0;
+    }
+    return 0;
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
@@ -560,7 +574,8 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         rec.scope_hash = te.scope_hash;
         rec.callsite_hash = te.callsite_hash;
         rec.depth = te.depth;
-        rec.scalar_types = te.scalar_types;
+        rec.scalar_types = te.scalar_kinds.tags();
+        rec.data_slots = te.scalar_kinds.data_slots().bits();
         rec.num_inputs = te.num_inputs();
         rec.num_outputs = te.num_outputs();
         rec.num_scalars = te.num_scalar_args();

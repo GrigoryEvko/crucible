@@ -105,14 +105,15 @@ void fill_random_entry(crucible::fuzz::prop::Rng& rng, TraceRing::Entry& e) noex
     e.shape_hash = ShapeHash{rng.next64()};
     e.num_inputs = static_cast<uint16_t>(rng.next32() & 0xFFFFu);
     e.num_outputs = static_cast<uint16_t>(rng.next32() & 0xFFFFu);
-    e.num_scalar_args = static_cast<uint16_t>(rng.next32() & 0xFFFFu);
+    e.num_scalar_args = static_cast<uint8_t>(rng.next32() & 0xFFu);
+    e.data_slots = crucible::DataSlots::from_bits(static_cast<uint8_t>(rng.next32() & 0xFFu));
     e.scalar_types = static_cast<uint8_t>(rng.next32() & 0xFFu);
     e.op_flags = static_cast<uint8_t>(rng.next32() & 0xFFu);
     for (auto& v : e.scalar_values)
         v = static_cast<int64_t>(rng.next64());
 }
 
-// Compare two Entries byte-by-byte.  Entry has no padding (8+8+2+2+2
+// Compare two Entries byte-by-byte.  Entry has no padding (8+8+2+2+1+1
 // +1+1+40 = 64, all fields aligned naturally), so memcmp is the exact
 // equality predicate.
 [[nodiscard]] bool entry_equal(const TraceRing::Entry& a, const TraceRing::Entry& b) noexcept {

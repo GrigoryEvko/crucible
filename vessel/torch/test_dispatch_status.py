@@ -16,6 +16,10 @@ check runs through the two entries:
     again           an op with one input and one output after the refused ops
                     gives RECORD
 
+crucible_dispatch_op_ex also checks the claim of the scalars: a count of 257
+scalars, a data slot past the count and a data bit past the five slots give
+REFUSED, and a data slot below the count gives RECORD.
+
 The eager word of crucible_create and crucible_observe_eager_numerics has a
 layout (EagerNumerics of crucible/NumericalRecipe.h).  A word with a bit that
 no field names, or with the precision 3, gives a null handle and the result 0.
@@ -84,6 +88,7 @@ def bind(lib: ctypes.CDLL) -> tuple:
     dispatch_op_ex.argtypes = [
         ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
         ctypes.POINTER(ctypes.c_int64), ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint8,
+        ctypes.c_uint8,
     ]
     return dispatch_op, dispatch_op_ex
 
@@ -131,6 +136,29 @@ def run_entry(entry: str, call, handle: int) -> list[str]:
     return problems
 
 
+def check_scalar_claims(dispatch_op_ex, handle: int) -> list[str]:
+    """Return one line for each claim of the scalars of crucible_dispatch_op_ex that the entry judges wrongly.
+
+    An entry holds five scalars and a byte of their count.  A claim of 257
+    scalars must not wrap to a count of one, and a data slot must lie below
+    the count, because the replay binds its value from the stored scalars.
+    """
+    problems: list[str] = []
+    pair = records(2)
+    values = (ctypes.c_int64 * 5)()
+    entry = "crucible_dispatch_op_ex"
+    cases = (
+        ("a claim of 257 scalars", 257, 0, DispatchAction.REFUSED),
+        ("a data slot past the count of one scalar", 1, 0b10, DispatchAction.REFUSED),
+        ("a data bit past the five slots", 5, 0b100000, DispatchAction.REFUSED),
+        ("a data slot below the count of one scalar", 1, 0b1, DispatchAction.RECORD),
+    )
+    for case, count, data_slots, expected in cases:
+        result = dispatch_op_ex(handle, SCHEMA_HASH, 1, 1, pair, 2, values, count, 0, data_slots, 0, 0)
+        check(problems, entry, case, result, expected)
+    return problems
+
+
 # Eager words with a bit that no field of EagerNumerics names, or with the
 # precision 3, which PyTorch does not name.
 UNNAMED_EAGER_WORDS = (1 << 5, 1 << 31, 0x3)
@@ -165,8 +193,9 @@ def main() -> int:
         problems += run_entry(
             "crucible_dispatch_op_ex",
             lambda h, inputs, outputs, metas, count: dispatch_op_ex(h, SCHEMA_HASH, inputs, outputs, metas, count,
-                                                                    None, 0, 0, 0, 0),
+                                                                    None, 0, 0, 0, 0, 0),
             handle)
+        problems += check_scalar_claims(dispatch_op_ex, handle)
         problems += check_eager_words(vessel, handle)
     finally:
         vessel.crucible_destroy(handle)

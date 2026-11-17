@@ -286,7 +286,7 @@ int main(int argc, char* argv[]) {
             e.shape_hash = ShapeHash{bench_rand()};
             e.num_inputs = static_cast<uint16_t>(1 + (bench_rand() % 3));
             e.num_outputs = static_cast<uint16_t>(1 + (bench_rand() % 2));
-            e.num_scalar_args = static_cast<uint16_t>(bench_rand() % 3);
+            e.num_scalar_args = static_cast<uint8_t>(bench_rand() % 3);
             e.op_flags = static_cast<uint8_t>(e.op_flags | op_flag::GRAD_ENABLED);
 
             const uint16_t total_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);

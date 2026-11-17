@@ -276,6 +276,126 @@ private:
     uint16_t depth_ = 0;
 };
 
+// The tag of slot i of a packed set of tags (ScalarType2 of TraceRing.h): two
+// bits for each slot, slot 0 in the low bits.
+inline constexpr uint32_t kScalarTypeBits = 2;
+
+// The inline scalar slots of an op, the index of one slot, and a count of
+// slots, which is at most kScalarSlots.
+inline constexpr uint32_t kScalarSlots = 5;
+using ScalarSlot = ::fixy::Index<kScalarSlots>;
+using ScalarCount = ::fixy::Index<kScalarSlots + 1>;
+
+// The role of a scalar slot.  The type of the argument in the schema of the
+// op gives the role, and the value does not.
+//
+// A data slot holds a value that the computation reads at run time: an
+// argument of the type Scalar, float or double, or an element of a list of
+// them.  The guard and the content hash read the tag of a data slot but not
+// its value, so a loop whose step size changes at each iteration keeps one
+// region.  The replay binds the value of each data slot at each iteration, as
+// it binds an external tensor.  A kernel takes the value as an argument at run
+// time, so no lowering folds it into a constant, and the bound of its recipe
+// holds for each value.
+//
+// A structural slot holds a value that picks the computation: an int, a bool,
+// an enumerator, an element of a list of ints, an absent optional, or the
+// overflow digest.  The guard and the content hash read its value.  A short
+// list of exceptions gives the role structural to some arguments of the type
+// Scalar or float (kStructuralScalars of vessel/torch/entry_slots.h).
+enum class ScalarRole : uint8_t {
+    STRUCTURAL = 0,
+    DATA = 1,
+};
+
+// The data slots of an op: bit i is set when slot i holds a data scalar.  The
+// bits of the slots past the count of the stored scalars are zero.
+class DataSlots {
+public:
+    constexpr DataSlots() noexcept = default;
+
+    // The door from the bits of a record.  The bits past the inline slots go.
+    [[nodiscard]] static constexpr DataSlots from_bits(uint8_t bits) noexcept {
+        return DataSlots{static_cast<uint8_t>(bits & kSlotBits)};
+    }
+
+    // The data slots of the first count slots, with each bit of a later slot
+    // cleared.
+    [[nodiscard]] constexpr DataSlots first(ScalarCount count) const noexcept {
+        return DataSlots{static_cast<uint8_t>(bits_ & ((uint32_t{1} << count.raw()) - 1))};
+    }
+
+    // The same slots with slot set to role.
+    [[nodiscard]] constexpr DataSlots with(ScalarSlot slot, ScalarRole role) const noexcept {
+        const uint32_t bit = uint32_t{1} << slot.raw();
+        const uint32_t bits = uint32_t{bits_};
+        return DataSlots{static_cast<uint8_t>(role == ScalarRole::DATA ? (bits | bit) : (bits & ~bit))};
+    }
+
+    [[nodiscard]] constexpr ScalarRole role(ScalarSlot slot) const noexcept {
+        return ((uint32_t{bits_} >> slot.raw()) & 1u) != 0 ? ScalarRole::DATA : ScalarRole::STRUCTURAL;
+    }
+
+    [[nodiscard]] constexpr bool has_data() const noexcept { return bits_ != 0; }
+    [[nodiscard]] constexpr uint8_t bits() const noexcept { return bits_; }
+
+    friend constexpr bool operator==(DataSlots, DataSlots) noexcept = default;
+
+private:
+    static constexpr uint8_t kSlotBits = static_cast<uint8_t>((1u << kScalarSlots) - 1);
+
+    constexpr explicit DataSlots(uint8_t bits) noexcept : bits_{bits} {}
+
+    uint8_t bits_ = 0;
+};
+
+// The kinds of the inline scalar slots of an op in one word: the tag of each
+// slot in the bits 0 to 9, two bits for each slot with slot 0 in the low bits,
+// and the data slots in the bits 10 to 14.  The bits of a slot past the count
+// of the stored scalars are zero.  An op of a region keeps this word, so a
+// TraceEntry stays 96 bytes.
+class ScalarSlotKinds {
+public:
+    static constexpr uint32_t kDataShift = kScalarTypeBits * kScalarSlots;
+
+    constexpr ScalarSlotKinds() noexcept = default;
+
+    // The door from the word of a record.  The bits past the data slots go.
+    [[nodiscard]] static constexpr ScalarSlotKinds from_bits(uint16_t bits) noexcept {
+        return ScalarSlotKinds{static_cast<uint16_t>(bits & kKindBits)};
+    }
+
+    // The word of the packed tags and the data slots.  The bits of the tags
+    // past the inline slots go.
+    [[nodiscard]] static constexpr ScalarSlotKinds of(uint16_t tags, DataSlots data) noexcept {
+        return from_bits(static_cast<uint16_t>((tags & kTagBits) | (uint32_t{data.bits()} << kDataShift)));
+    }
+
+    // The kinds of the first count slots, with each bit of a later slot
+    // cleared.
+    [[nodiscard]] constexpr ScalarSlotKinds first(ScalarCount count) const noexcept {
+        const uint32_t tag_mask = (uint32_t{1} << (kScalarTypeBits * count.raw())) - 1;
+        return of(static_cast<uint16_t>(tags() & tag_mask), data_slots().first(count));
+    }
+
+    // The tags, two bits for each slot, slot 0 in the low bits.
+    [[nodiscard]] constexpr uint16_t tags() const noexcept { return static_cast<uint16_t>(bits_ & kTagBits); }
+    [[nodiscard]] constexpr DataSlots data_slots() const noexcept {
+        return DataSlots::from_bits(static_cast<uint8_t>(bits_ >> kDataShift));
+    }
+    [[nodiscard]] constexpr uint16_t bits() const noexcept { return bits_; }
+
+    friend constexpr bool operator==(ScalarSlotKinds, ScalarSlotKinds) noexcept = default;
+
+private:
+    static constexpr uint16_t kTagBits = static_cast<uint16_t>((1u << kDataShift) - 1);
+    static constexpr uint16_t kKindBits = static_cast<uint16_t>((1u << (kDataShift + kScalarSlots)) - 1);
+
+    constexpr explicit ScalarSlotKinds(uint16_t bits) noexcept : bits_{bits} {}
+
+    uint16_t bits_ = 0;
+};
+
 struct AllocationCountTag {};
 struct AllocatorEpochTag {};
 

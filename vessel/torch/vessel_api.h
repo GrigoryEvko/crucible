@@ -160,7 +160,7 @@ typedef struct {
 // Python ctypes consumers cross-check via crucible_abi_version() at
 // load.  The constant is also exposed as a #define so C consumers can
 // bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 8ULL
+#define CRUCIBLE_VESSEL_ABI_VERSION 9ULL
 
 // Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
 // Never aborts — pure constant return.  Used by crucible_native.py
@@ -208,12 +208,23 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle h
 // two bits for each, the first value in the low bits: 0 an integer, 1 a
 // double, 2 a bool, 3 an argument that boxes into None.  The bits of a slot
 // past num_scalars are ignored.
-CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle h, uint64_t schema_hash,
-                                                                   uint16_t num_inputs, uint16_t num_outputs,
-                                                                   const CrucibleMeta* metas, uint32_t n_metas,
-                                                                   const int64_t* scalar_values, uint16_t num_scalars,
-                                                                   uint16_t scalar_types, uint8_t grad_enabled,
-                                                                   uint8_t inference_mode) CRUCIBLE_VESSEL_NOEXCEPT;
+// data_slots: bit i is set when value i is a data scalar (ScalarRole of
+// crucible/Types.h): its argument has the type Scalar or float in the schema,
+// and crucible_is_structural_scalar gives 0 for it.  The guard word reads the
+// tag of a data scalar but not its value, and the replay binds its value.  A
+// bit of a slot past num_scalars gives the action REFUSED.
+CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(
+    CrucibleHandle h, uint64_t schema_hash, uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
+    uint32_t n_metas, const int64_t* scalar_values, uint16_t num_scalars, uint16_t scalar_types, uint8_t data_slots,
+    uint8_t grad_enabled, uint8_t inference_mode) CRUCIBLE_VESSEL_NOEXCEPT;
+
+// 1 when the argument at position of the operator of schema_hash is a
+// structural scalar by the list of the vessel (kStructuralScalars of
+// vessel/torch/entry_slots.h), although its type is Scalar or float: its
+// value changes the shape of an output or picks the arm of the kernel.  0 for
+// each other argument.  A caller of crucible_dispatch_op_ex reads the role of
+// each slot through it, as the native recording paths do.
+CRUCIBLE_VESSEL_API int crucible_is_structural_scalar(uint64_t schema_hash, uint32_t position) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Control ──────────────────────────────────────────────────────────
 

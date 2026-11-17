@@ -363,12 +363,15 @@ template <class VigilType>
 //     BackgroundThread asserts the same bound when it drains the ring,
 //     so a larger count reaches a contract violation rather than the
 //     pipeline; the adapter rejects the operation here instead.
+//   - each data slot below num_scalar_args, because the replay binds the
+//     value of each data slot from Entry::scalar_values.
 [[nodiscard]] CRUCIBLE_HOT constexpr bool entry_is_well_formed(const crucible::TraceRing::Entry& entry) noexcept {
     if (entry.schema_hash.raw() == 0) return false;
     if (entry.num_inputs > crucible::kMaxOpInputs) return false;
     if (entry.num_outputs > crucible::kMaxOpOutputs) return false;
-    if (entry.num_scalar_args > decltype(crucible::TraceRing::Entry::scalar_values)::size()) return false;
-    return true;
+    for (const crucible::ScalarCount stored : crucible::ScalarCount::check(entry.num_scalar_args))
+        return entry.data_slots.first(stored) == entry.data_slots;
+    return false;
 }
 
 // The structural invariant of TensorMeta is that sizes[] and strides[]

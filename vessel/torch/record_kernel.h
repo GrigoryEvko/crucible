@@ -77,22 +77,11 @@
 namespace crucible::vessel {
 
 // =====================================================================
-// FNV-1a
+// FNV-1a over bytes
 //
-// One definition for both recording paths and for the Python ctypes path in
-// vessel_api.cpp. The background thread joins a trace entry to the schema
-// table on this hash, so two spellings of the fold would give two schema
-// hashes for one operator.  The guard word of an entry is a different fold
-// (compute_shape_hash of entry_slots.h).
+// The step and the fold over a text are in entry_slots.h, with the list of
+// the structural scalars that keys on the schema hash.
 // =====================================================================
-
-inline constexpr uint64_t kFnvOffset = 0xcbf29ce484222325ULL;
-inline constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
-
-// One step of the fold: one byte goes into the accumulator.
-[[nodiscard]] constexpr uint64_t fnv1a_step(uint64_t accumulator, uint8_t byte) noexcept {
-    return (accumulator ^ byte) * kFnvPrime;
-}
 
 // The default seed starts a fresh fold. Passing a previous result continues
 // one, which is how the shape hash chains across several tensors.
@@ -101,14 +90,6 @@ inline constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
                                           uint64_t accumulator = kFnvOffset) noexcept {
     for (const std::byte byte : bytes)
         accumulator = fnv1a_step(accumulator, static_cast<uint8_t>(byte));
-    return accumulator;
-}
-
-// The fold over the characters of a text.  Complexity: O(n) in the
-// characters.
-[[nodiscard]] constexpr uint64_t fnv1a_text(::fixy::TextView text, uint64_t accumulator = kFnvOffset) noexcept {
-    for (const char character : text)
-        accumulator = fnv1a_step(accumulator, static_cast<uint8_t>(character));
     return accumulator;
 }
 
@@ -686,6 +667,37 @@ template <class T>
 template <class... Args>
 inline constexpr uint32_t scalar_bound_v = (uint32_t{0} + ... + scalar_bound_of<Args>());
 
+// The role of the slots of an argument by its declared type (the role of a
+// scalar argument, entry_slots.h): data for a double, a Scalar and a list of
+// them, the role of the payload for an optional, and structural for each other
+// type.  A double is the type float of the schema, and an at::Scalar is the
+// type Scalar, so the boxed fallback reads the same role from the schema.
+template <class T>
+[[nodiscard]] consteval crucible::ScalarRole role_of_kind() noexcept {
+    constexpr ArgumentKind kind = argument_kind_of<T>();
+    if constexpr (kind == ArgumentKind::Optional)
+        return role_of_kind<optional_payload_t<T>>();
+    else if constexpr (kind == ArgumentKind::Double || kind == ArgumentKind::Scalar || kind == ArgumentKind::DoubleList
+                       || kind == ArgumentKind::ScalarList)
+        return crucible::ScalarRole::DATA;
+    else
+        return crucible::ScalarRole::STRUCTURAL;
+}
+
+// The role of the argument at Position of an operator: the role of its type,
+// unless kStructuralScalars names the argument.  An argument past
+// kMaxSchemaArguments is structural, as on the boxed path.
+template <std::size_t Position, class T>
+[[nodiscard]] consteval crucible::ScalarRole argument_role(crucible::SchemaHash schema_hash) noexcept {
+    if constexpr (Position >= kMaxSchemaArguments) {
+        return crucible::ScalarRole::STRUCTURAL;
+    } else {
+        const ArgumentPosition position = ArgumentPosition::check(Position).expect("the test above bounds Position");
+        if (is_structural_scalar(schema_hash, position)) return crucible::ScalarRole::STRUCTURAL;
+        return role_of_kind<T>();
+    }
+}
+
 // ---------------------------------------------------------------------
 // The table classifies every parameter type the fork's 3110 operators use.
 // The list is the measured inventory of `using schema` parameter types, in
@@ -921,9 +933,10 @@ struct Recording {
 //
 // One argument, classified by the table above and recorded accordingly. An
 // Optional recurses once into its payload, which the payload witnesses prove
-// terminates.
+// terminates.  Role is the role of each slot of the argument (argument_role),
+// and an absent optional fills a structural slot.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the record reads the arguments and the results of an operator of PyTorch")
-template <uint32_t Capacity, bool MayOverflow, class T>
+template <crucible::ScalarRole Role, uint32_t Capacity, bool MayOverflow, class T>
 void record_argument(Recording<Capacity, MayOverflow>& recording, const T& value) {
     constexpr ArgumentKind kind = argument_kind_of<T>();
 
@@ -948,41 +961,41 @@ void record_argument(Recording<Capacity, MayOverflow>& recording, const T& value
         }
     } else if constexpr (kind == ArgumentKind::Optional) {
         if (value.has_value()) {
-            record_argument(recording, *value);
+            record_argument<Role>(recording, *value);
         } else {
             recording.scalars.push_absent();
         }
     } else if constexpr (kind == ArgumentKind::Bool) {
-        recording.scalars.push(value ? 1 : 0, crucible::ScalarType2::BOOL);
+        recording.scalars.push(value ? 1 : 0, crucible::ScalarType2::BOOL, Role);
     } else if constexpr (kind == ArgumentKind::Integer) {
-        recording.scalars.push(static_cast<int64_t>(value), crucible::ScalarType2::INT);
+        recording.scalars.push(static_cast<int64_t>(value), crucible::ScalarType2::INT, Role);
     } else if constexpr (kind == ArgumentKind::Enumerator) {
-        recording.scalars.push(static_cast<int64_t>(std::to_underlying(value)), crucible::ScalarType2::INT);
+        recording.scalars.push(static_cast<int64_t>(std::to_underlying(value)), crucible::ScalarType2::INT, Role);
     } else if constexpr (kind == ArgumentKind::Double) {
-        recording.scalars.push(::fixy::bit_cast<int64_t>(value), crucible::ScalarType2::FLOAT);
+        recording.scalars.push(::fixy::bit_cast<int64_t>(value), crucible::ScalarType2::FLOAT, Role);
     } else if constexpr (kind == ArgumentKind::Scalar) {
         if (value.isFloatingPoint()) {
-            recording.scalars.push(::fixy::bit_cast<int64_t>(value.toDouble()), crucible::ScalarType2::FLOAT);
+            recording.scalars.push(::fixy::bit_cast<int64_t>(value.toDouble()), crucible::ScalarType2::FLOAT, Role);
         } else if (value.isBoolean()) {
-            recording.scalars.push(value.toBool() ? 1 : 0, crucible::ScalarType2::BOOL);
+            recording.scalars.push(value.toBool() ? 1 : 0, crucible::ScalarType2::BOOL, Role);
         } else if (value.isIntegral(/*includeBool=*/false)) {
-            recording.scalars.push(value.toLong(), crucible::ScalarType2::INT);
+            recording.scalars.push(value.toLong(), crucible::ScalarType2::INT, Role);
         }
     } else if constexpr (kind == ArgumentKind::SymInt) {
         if (const auto concrete = value.maybe_as_int(); concrete.has_value())
-            recording.scalars.push(*concrete, crucible::ScalarType2::INT);
+            recording.scalars.push(*concrete, crucible::ScalarType2::INT, Role);
     } else if constexpr (kind == ArgumentKind::IntegerList) {
         for (const int64_t element : value)
-            recording.scalars.push(element, crucible::ScalarType2::INT);
+            recording.scalars.push(element, crucible::ScalarType2::INT, Role);
     } else if constexpr (kind == ArgumentKind::DoubleList) {
         for (const double element : value)
-            recording.scalars.push(::fixy::bit_cast<int64_t>(element), crucible::ScalarType2::FLOAT);
+            recording.scalars.push(::fixy::bit_cast<int64_t>(element), crucible::ScalarType2::FLOAT, Role);
     } else if constexpr (kind == ArgumentKind::SymIntList) {
         for (const c10::SymInt& element : value)
-            record_argument(recording, element);
+            record_argument<Role>(recording, element);
     } else if constexpr (kind == ArgumentKind::ScalarList) {
         for (const at::Scalar& element : value)
-            record_argument(recording, element);
+            record_argument<Role>(recording, element);
     } else {
         static_assert(kind == ArgumentKind::Ignored, "every ArgumentKind must have a branch");
     }
@@ -1295,6 +1308,10 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     static constexpr crucible::SchemaHash kSchemaHash{kRow.schema_hash};
     static constexpr bool kIsMutable = kRow.is_mutable;
 
+    // The role of the slots of the argument at Position, of the type Arg.
+    template <std::size_t Position, class Arg>
+    static constexpr crucible::ScalarRole kArgumentRole = argument_role<Position, Arg>(kSchemaHash);
+
     // One of the fused multi-tensor kernels, which is half of what the phase
     // derivation reads to name an operation an optimizer operation. Constant
     // here, so the derivation folds to a grad-mode question on this path.
@@ -1435,6 +1452,14 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         return record_in_slots(vigil, fg, dispatch_keys, depth, metas.view(), args...);
     }
 
+    // Records each argument with the role of its position (kArgumentRole), in
+    // the order of the arguments, as the boxed fallback reads its stack.
+    template <std::size_t... Positions>
+    CRUCIBLE_INLINE static void record_arguments(OpRecording& recording, std::index_sequence<Positions...>,
+                                                 const Args&... args) {
+        (record_argument<kArgumentRole<Positions, Args>>(recording, args), ...);
+    }
+
     // Records the inputs into the slots, runs the operation, records its
     // results, and gives the operation to the Vigil.  The slots hold the
     // records from the first record_argument to the dispatch, and no other
@@ -1443,9 +1468,10 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
                                                 c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
                                                 typename OpRecording::Slots metas, Args... args) {
         // Inputs before the operation runs, because an out= argument is
-        // written by it.
+        // written by it.  The role of each argument comes from its type and
+        // its position, at compile time.
         OpRecording recording{metas};
-        (record_argument(recording, args), ...);
+        record_arguments(recording, std::index_sequence_for<Args...>{}, args...);
         const auto scope_hash = crucible::ScopeHash{c10::CrucibleState::get_tls_state().scope_hash()};
 
         if constexpr (std::is_void_v<Ret>) {

@@ -110,9 +110,13 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // the three paths.
 // =====================================================================
 
+using crucible::vessel::ArgumentPosition;
+using crucible::vessel::DataArguments;
 using crucible::vessel::fnv1a_step;
 using crucible::vessel::fnv1a_text;
 using crucible::vessel::InputOverflow;
+using crucible::vessel::is_structural_scalar;
+using crucible::vessel::kMaxSchemaArguments;
 using crucible::vessel::kAfterCrucibleKeyset;
 using crucible::vessel::MAX_INLINE_METAS;
 using crucible::vessel::MetaCount;
@@ -193,6 +197,9 @@ static constexpr uint64_t SLOT_READY = 2;
 static constexpr uint64_t SLOT_RETIRED = 3;
 static constexpr uint64_t FLAG_MUTABLE = 1;
 static constexpr uint64_t FLAG_FOREACH = 2;
+// The data arguments of the schema (DataArguments of entry_slots.h) are in
+// the high 32 bits of the flags.
+static constexpr uint32_t FLAG_DATA_ARGUMENTS_SHIFT = 32;
 
 struct SchemaHashSlot {
     ::fixy::Atomic<uint64_t> state{SLOT_EMPTY};
@@ -230,21 +237,39 @@ struct SchemaInfo {
     crucible::SchemaHash hash;
     bool is_mutable = false;
     bool is_foreach = false;
+    // The arguments whose slots are data, with the structural scalars of
+    // entry_slots.h taken out.
+    DataArguments data_arguments{};
 };
 
+// The data arguments of a schema with the rows of kStructuralScalars of the
+// schema taken out.  O(arguments * rows), once for each schema.
+[[nodiscard]] static DataArguments without_structural_scalars(crucible::SchemaHash schema_hash,
+                                                              DataArguments by_type) noexcept {
+    DataArguments kept{};
+    for (uint32_t position = 0; position < kMaxSchemaArguments; ++position) {
+        for (const ArgumentPosition at : ArgumentPosition::check(position)) {
+            if (by_type.role(position) == crucible::ScalarRole::DATA && !is_structural_scalar(schema_hash, at))
+                kept = kept.with_data(at);
+        }
+    }
+    return kept;
+}
+
 // The facts of an operator that the cache does not hold, from the two parts
-// of its name and the mutability of its schema.  The helper registers the
-// name for the trace reader, and the first empty slot of the window of the
-// key gets the facts.  A run misses each operator one time, so the helper is
-// cold, and the text of the name is on its stack only.  Complexity: the
-// length of the name.
+// of its name, the mutability of its schema and the data arguments that the
+// types of its schema give.  The helper registers the name for the trace
+// reader, and the first empty slot of the window of the key gets the facts.
+// A run misses each operator one time, so the helper is cold, and the text of
+// the name is on its stack only.  Complexity: the length of the name.
 CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fixy::TextView base_name,
-                                                   ::fixy::TextView overload, bool mutable_op, ExternalOpKey key,
-                                                   uint64_t idx) {
+                                                   ::fixy::TextView overload, bool mutable_op,
+                                                   DataArguments data_by_type, ExternalOpKey key, uint64_t idx) {
     // FNV-1a over "namespace::name.overload".
     uint64_t hash = fnv1a_text(base_name);
     if (overload.size() != 0) hash = fnv1a_text(overload, fnv1a_step(hash, static_cast<uint8_t>('.')));
     const auto schema_hash = crucible::SchemaHash{hash};
+    const DataArguments data_arguments = without_structural_scalars(schema_hash, data_by_type);
 
     // Register name for visualization / diagnostics.
     // "aten::mm.default" -> SchemaTable for op name lookup.
@@ -282,13 +307,37 @@ CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fix
         if (slot.state.cas_acq_rel(SLOT_EMPTY, SLOT_CLAIMED).is_ok()) {
             slot.key = key;
             slot.hash = schema_hash;
-            slot.flags = (mutable_op ? FLAG_MUTABLE : 0) | (foreach_op ? FLAG_FOREACH : 0);
+            slot.flags = (mutable_op ? FLAG_MUTABLE : 0) | (foreach_op ? FLAG_FOREACH : 0)
+                       | (uint64_t{data_arguments.bits()} << FLAG_DATA_ARGUMENTS_SHIFT);
             slot.state.store_release(SLOT_READY);
             break;
         }
     }
-    return {schema_hash, mutable_op, foreach_op};
+    return {schema_hash, mutable_op, foreach_op, data_arguments};
 }
+
+// The arguments of a schema whose slots are data by their types: an argument
+// of the type Scalar or float, an optional of one, or a list of one (the role
+// of a scalar argument, entry_slots.h).  The unboxed kernels read the same
+// role from the C++ types of the arguments (role_of_kind of
+// record_kernel.h).  The types are of PyTorch, so the read is in an ABI
+// region.  O(arguments), once for each schema.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the role reads the argument types of the schema of PyTorch")
+[[nodiscard]] static DataArguments data_arguments_of(const c10::FunctionSchema& schema) {
+    DataArguments data{};
+    const auto& arguments = schema.arguments();
+    for (size_t position = 0; position < arguments.size(); ++position) {
+        c10::TypePtr type = arguments[position].real_type();
+        if (const auto optional = type->cast<c10::OptionalType>()) type = optional->getElementType();
+        if (const auto list = type->cast<c10::ListType>()) type = list->getElementType();
+        const bool is_data = type->kind() == c10::TypeKind::NumberType || type->kind() == c10::TypeKind::FloatType;
+        if (!is_data) continue;
+        for (const ArgumentPosition at : ArgumentPosition::check(position))
+            data = data.with_data(at);
+    }
+    return data;
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The lookup stays a call, and GCC can inline the whole body into
 // crucibleFallback, which adds about 1000 instructions there.  A cold helper
@@ -312,7 +361,8 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
         // window, and neither one reads the facts of the other.  A retired
         // slot of this key is not ready, so the lookup passes it.
         if (state == SLOT_READY && slot.key.value() == key.value()) [[likely]]
-            return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0};
+            return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0,
+                    DataArguments::from_bits(static_cast<uint32_t>(slot.flags >> FLAG_DATA_ARGUMENTS_SHIFT))};
         if (state == SLOT_EMPTY) break;
     }
 
@@ -325,8 +375,9 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
     const ::fixy::TextView base_name = ::fixy::mint_foreign_text(name.name.data(), name.name.size());
     const ::fixy::TextView overload = ::fixy::mint_foreign_text(name.overload_name.data(), name.overload_name.size());
     const bool mutable_op = schema.is_mutable();
+    const DataArguments data_by_type = data_arguments_of(schema);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    return record_schema_miss(vigil, base_name, overload, mutable_op, key, idx);
+    return record_schema_miss(vigil, base_name, overload, mutable_op, data_by_type, key, idx);
 }
 
 // Retires each ready slot of the key, so no lookup reads its facts again.
@@ -456,11 +507,15 @@ struct ExtractionResult {
 // an ABI region.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction reads the boxed stack of an operator of PyTorch")
 [[nodiscard]] static ExtractionResult extract_inputs(const torch::jit::Stack& stack, size_t args_begin, size_t num_args,
-                                                     MetaSlots metas) {
+                                                     DataArguments data_arguments, MetaSlots metas) {
     ExtractionResult r{};
 
     for (size_t i = 0; i < num_args; i++) {
         const auto& iv = stack[args_begin + i];
+        // The role of each slot of the argument comes from its type in the
+        // schema, and not from the tag of its boxed value: an int and a
+        // Scalar that holds an integer box into the same tag.
+        const crucible::ScalarRole role = data_arguments.role(i);
 
         if (iv.isTensor()) {
             const auto& t = iv.toTensor();
@@ -492,15 +547,15 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction reads the boxed stack of an o
             // An absent optional, whatever its payload.
             r.scalars.push_absent();
         } else if (iv.isInt() || iv.isDouble() || iv.isBool()) {
-            r.scalars.push(scalar_to_int64(iv), scalar_tag(iv));
+            r.scalars.push(scalar_to_int64(iv), scalar_tag(iv), role);
         } else if (iv.isIntList()) {
             // IntList args (e.g., size=[3,4] in reshape, padding=[1,2] in conv).
             for (int64_t elem : iv.toIntList()) {
-                r.scalars.push(elem, crucible::ScalarType2::INT);
+                r.scalars.push(elem, crucible::ScalarType2::INT, role);
             }
         } else if (iv.isDoubleList()) {
             for (double elem : iv.toDoubleList()) {
-                r.scalars.push(::fixy::bit_cast<int64_t>(elem), crucible::ScalarType2::FLOAT);
+                r.scalars.push(::fixy::bit_cast<int64_t>(elem), crucible::ScalarType2::FLOAT, role);
             }
         } else if (iv.isList() && iv.toList().elementType()->kind() == c10::NumberType::Kind) {
             // A Scalar[] argument boxes into a list of numbers.  Each element
@@ -509,7 +564,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction reads the boxed stack of an o
             for (const auto ref : iv.toList()) {
                 const c10::IValue element = ref;
                 if (element.isInt() || element.isDouble() || element.isBool())
-                    r.scalars.push(scalar_to_int64(element), scalar_tag(element));
+                    r.scalars.push(scalar_to_int64(element), scalar_tag(element), role);
             }
         }
     }
@@ -587,11 +642,12 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
         return;
     }
     const auto args_begin = stack.size() - num_args;
-    ExtractionResult extracted = extract_inputs(stack, args_begin, num_args, metas);
-    MetaCount& counts = extracted.counts;
 
-    // -- Compute hashes + mutability -----------------------------------
-    const auto [schema_hash, is_mutable, is_foreach] = get_schema_info(vigil, op, schema);
+    // -- Compute hashes, mutability and the data arguments -------------
+    const auto [schema_hash, is_mutable, is_foreach, data_arguments] = get_schema_info(vigil, op, schema);
+
+    ExtractionResult extracted = extract_inputs(stack, args_begin, num_args, data_arguments, metas);
+    MetaCount& counts = extracted.counts;
 
     // -- Execute eagerly (Tier 1: always redispatch) ------------------
     op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, &stack);

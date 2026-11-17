@@ -83,7 +83,10 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         // Ops 0 and 1 run inside op 2, and op 0 inside op 1.
         op.depth = crucible::OpDepth{static_cast<uint16_t>(NUM_OPS - 1 - i)};
         // The one scalar of op i has the tag i: an integer, a double, a bool.
-        op.scalar_types = static_cast<uint16_t>(i);
+        // The double of op 1 is a data scalar.
+        const crucible::DataSlots data = crucible::DataSlots{}.with(
+            ::fixy::index<0>(), i == 1 ? crucible::ScalarRole::DATA : crucible::ScalarRole::STRUCTURAL);
+        op.scalar_kinds = crucible::ScalarSlotKinds::of(static_cast<uint16_t>(i), data);
 
         crucible::TensorMeta large_input = make_meta(4, 8);
         large_input.storage_nbytes = kLargeStorageBytes;
@@ -136,7 +139,8 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         assert(loaded_op.training_phase == source_op.training_phase);
         assert(loaded_op.torch_function == source_op.torch_function);
         assert(loaded_op.depth == source_op.depth && "the store keeps the nesting depth of each op");
-        assert(loaded_op.scalar_types == source_op.scalar_types && "the store keeps the tag of each scalar");
+        assert(loaded_op.scalar_kinds == source_op.scalar_kinds
+               && "the store keeps the tag and the role of each scalar");
 
         for (uint16_t j = 0; j < source_op.num_inputs(); j++) {
             const crucible::TensorMeta& loaded_meta = crucible::test::element_at(loaded_op.input_metas(), j);
@@ -201,7 +205,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 16;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 17;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -220,9 +224,12 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         // CDAG_VERSION 16 folds the rank, the layout, the two bits and the
         // storage offset of each tensor into its word.  The tensors of this
         // region have the ranks 2 and 1, so the version and the content hash
-        // of the header move the bytes.
+        // of the header move the bytes.  CDAG_VERSION 17 writes the data
+        // slots of each op in the word of its tags, and the double of op 1 is
+        // a data scalar.  So the version, the word of op 1 and the content
+        // hash of the header move the bytes.
         constexpr size_t EXPECTED_WIRE_BYTES = 1828;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0xb7fb38e3439f9ae9ULL;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0x5acb2024b32b59b6ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,
@@ -273,6 +280,15 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         assert(reason_with_byte(9, std::byte{1}) == LoadError::field_out_of_range);
         assert(reason_with_byte(24, flipped_at(24)) == LoadError::content_hash_mismatch);
         assert(reason_with_byte(36, flipped_at(36)) == LoadError::first_schema_mismatch);
+
+        // The ops start at 61, after the fields of the region and its plan
+        // flag.  Op 0 holds its count of scalars at 97..98 and the word of
+        // its tags and data slots at 104..105.  Op 0 holds one scalar, so the
+        // bit 11 of the word is the data bit of slot 1, past the count.
+        assert(static_cast<uint8_t>(*wire.get(97).expect("the byte is inside the image")) == 1
+               && "op 0 holds one scalar");
+        assert(reason_with_byte(105, std::byte{0x08}) == LoadError::field_out_of_range
+               && "a data slot past the count is not an image of the writer");
 
         // A bad magic number and a bad kind byte: the magic comes first.
         const ::fixy::HeapArray<std::byte> bad_kind = with_byte(test.alloc, wire, 8, std::byte{0xFF});

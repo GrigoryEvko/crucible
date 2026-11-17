@@ -50,10 +50,139 @@ inline constexpr uint16_t kInlineScalars =
     static_cast<uint16_t>(decltype(crucible::TraceRing::Entry::scalar_values)::size());
 
 // The index of an inline scalar slot.
-using ScalarSlot = ::fixy::Index<kInlineScalars>;
+using ScalarSlot = crucible::ScalarSlot;
 
 // The seed of each overflow fold: "overflow" in ASCII.
 inline constexpr uint64_t kOverflowSeed = 0x6f766572666c6f77ULL;
+
+// =====================================================================
+// FNV-1a
+//
+// One definition for both recording paths, the Python ctypes path in
+// vessel_api.cpp and the list of exceptions below.  The background thread
+// joins a trace entry to the schema table on this hash, so two spellings of
+// the fold would give two schema hashes for one operator.  The guard word of
+// an entry is a different fold (compute_shape_hash).
+// =====================================================================
+
+inline constexpr uint64_t kFnvOffset = 0xcbf29ce484222325ULL;
+inline constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
+
+// One step of the fold: one byte goes into the accumulator.
+[[nodiscard]] constexpr uint64_t fnv1a_step(uint64_t accumulator, uint8_t byte) noexcept {
+    return (accumulator ^ byte) * kFnvPrime;
+}
+
+// The fold over the characters of a text.  Complexity: O(n) in the
+// characters.
+[[nodiscard]] constexpr uint64_t fnv1a_text(::fixy::TextView text, uint64_t accumulator = kFnvOffset) noexcept {
+    for (const char character : text)
+        accumulator = fnv1a_step(accumulator, static_cast<uint8_t>(character));
+    return accumulator;
+}
+
+// =====================================================================
+// The role of a scalar argument
+//
+// The type of an argument in the ATen schema gives the role of each slot that
+// it fills (ScalarRole of crucible/Types.h).  An argument of the type Scalar,
+// float or double, and each element of a list of them, is data.  An argument
+// of each other type is structural.  An optional takes the role of its
+// payload, and an absent optional fills one structural slot.  The rule reads
+// the schema of PyTorch, which is its stable contract, and no value of the
+// argument.
+//
+// A data value never changes the shape of an output or the op sequence: an
+// op whose decomposition depends on the value runs other nested ops, and the
+// guard of the first different op diverges.  A kernel that takes a data value
+// gives each value its meaning at run time, also a value with an arm of its
+// own, such as beta = 0 of addmm, which reads no element of its input.
+//
+// The list below gives the role structural to the arguments of the type
+// Scalar or float whose value changes the shape of an output or picks the arm
+// of the kernel.  Each row names the schema, the position of the argument in
+// the schema, and the reason.
+// =====================================================================
+
+// The position of an argument in the schema of an operator.  The unboxed
+// kernels and the boxed fallback count the arguments in the same order.  An
+// operator of the table of aten_op_table.h has at most 32 arguments, and an
+// argument at a later position is structural on the two paths.
+inline constexpr uint32_t kMaxSchemaArguments = 32;
+using ArgumentPosition = ::fixy::Index<kMaxSchemaArguments>;
+
+// One argument of the type Scalar or float that is structural.
+struct StructuralScalar {
+    ::fixy::TextView schema;
+    uint32_t position = 0;
+    ::fixy::TextView reason;
+};
+
+inline constexpr ::fixy::FixedArray<StructuralScalar, 16> kStructuralScalars{
+    // The kernel of pow picks an arm by the exponent: a square, a square
+    // root, a reciprocal or a general power.  So the value guards the arm.
+    StructuralScalar{"aten::pow.Tensor_Scalar", 1, "the exponent picks the arm of the kernel"},
+    StructuralScalar{"aten::pow.Tensor_Scalar_out", 1, "the exponent picks the arm of the kernel"},
+    StructuralScalar{"aten::pow_.Scalar", 1, "the exponent picks the arm of the kernel"},
+    // The values of arange give the count of the elements of its output.
+    StructuralScalar{"aten::arange", 0, "the end gives the length of the output"},
+    StructuralScalar{"aten::arange.start", 0, "the start gives the length of the output"},
+    StructuralScalar{"aten::arange.start", 1, "the end gives the length of the output"},
+    StructuralScalar{"aten::arange.start_step", 0, "the start gives the length of the output"},
+    StructuralScalar{"aten::arange.start_step", 1, "the end gives the length of the output"},
+    StructuralScalar{"aten::arange.start_step", 2, "the step gives the length of the output"},
+    StructuralScalar{"aten::arange.out", 0, "the end gives the length of the output"},
+    StructuralScalar{"aten::arange.start_out", 0, "the start gives the length of the output"},
+    StructuralScalar{"aten::arange.start_out", 1, "the end gives the length of the output"},
+    StructuralScalar{"aten::arange.start_out", 2, "the step gives the length of the output"},
+    // The order of a vector norm picks the arm of the reduction: a count, a
+    // sum of the magnitudes, a root of the sum of the squares, a maximum or a
+    // general power.  clip_grad_norm_ calls the two of them.
+    StructuralScalar{"aten::linalg_vector_norm", 1, "the order picks the arm of the reduction"},
+    StructuralScalar{"aten::_foreach_norm.Scalar", 1, "the order picks the arm of the reduction"},
+    StructuralScalar{"aten::norm.Scalar", 1, "the order picks the arm of the reduction"},
+};
+
+// True when the argument at position of the operator of schema_hash is in
+// kStructuralScalars.  O(rows): the unboxed kernels ask at compile time, and
+// the boxed fallback asks once for each schema, in its cold miss.
+[[nodiscard]] constexpr bool is_structural_scalar(crucible::SchemaHash schema_hash,
+                                                  ArgumentPosition position) noexcept {
+    for (const StructuralScalar& row : kStructuralScalars) {
+        if (fnv1a_text(row.schema) == schema_hash.raw() && row.position == position.raw()) return true;
+    }
+    return false;
+}
+
+// The arguments of a schema whose slots are data: bit p is set when the
+// argument at position p is data.  An argument past kMaxSchemaArguments is
+// structural.
+class DataArguments {
+public:
+    constexpr DataArguments() noexcept = default;
+
+    // The door from the bits of a cache slot.
+    [[nodiscard]] static constexpr DataArguments from_bits(uint32_t bits) noexcept { return DataArguments{bits}; }
+
+    // The same arguments with the argument at position data.
+    [[nodiscard]] constexpr DataArguments with_data(ArgumentPosition position) const noexcept {
+        return DataArguments{bits_ | (uint32_t{1} << position.raw())};
+    }
+
+    // The role of the argument at position, and structural past the last
+    // position.
+    [[nodiscard]] constexpr crucible::ScalarRole role(size_t position) const noexcept {
+        const bool is_data = position < kMaxSchemaArguments && ((bits_ >> position) & 1u) != 0;
+        return is_data ? crucible::ScalarRole::DATA : crucible::ScalarRole::STRUCTURAL;
+    }
+
+    [[nodiscard]] constexpr uint32_t bits() const noexcept { return bits_; }
+
+private:
+    constexpr explicit DataArguments(uint32_t bits) noexcept : bits_{bits} {}
+
+    uint32_t bits_ = 0;
+};
 
 template <bool MayOverflow>
 struct ScalarArgs;
@@ -61,17 +190,20 @@ struct ScalarArgs;
 // The first kInlineScalars scalars of an operation, as the entry slots take
 // them.  `stored` counts the values, and the slots past it hold zero with the
 // tag INT.  `tags` holds the tag of each stored slot, two bits for each slot,
-// slot 0 in the low bits.  The copy into an entry is then one copy of the
-// kInlineScalars slots and one write of the tags.
+// slot 0 in the low bits, and `data` holds the data slots.  The copy into an
+// entry is then one copy of the kInlineScalars slots and one write of the
+// tags and of the data slots.
 struct StoredScalars {
     ::fixy::FixedArray<int64_t, kInlineScalars> values{};
     uint16_t stored = 0;
     uint16_t tags = 0;
+    crucible::DataSlots data{};
 
-    void push(int64_t value, crucible::ScalarType2 tag) noexcept {
-        if (stored < kInlineScalars) {
-            values.at(ScalarSlot::check(stored).expect("the test above keeps the count below the slots")) = value;
+    void push(int64_t value, crucible::ScalarType2 tag, crucible::ScalarRole role) noexcept {
+        for (const ScalarSlot slot : ScalarSlot::check(stored)) {
+            values.at(slot) = value;
             tags = static_cast<uint16_t>(tags | (static_cast<uint32_t>(tag) << (crucible::kScalarTypeBits * stored)));
+            data = data.with(slot, role);
             ++stored;
         }
     }
@@ -89,15 +221,22 @@ struct ScalarArgs<false> {
 
     StoredScalars inline_scalars{};
 
-    void push(int64_t value, crucible::ScalarType2 tag) noexcept { inline_scalars.push(value, tag); }
+    void push(int64_t value, crucible::ScalarType2 tag, crucible::ScalarRole role) noexcept {
+        inline_scalars.push(value, tag, role);
+    }
 
-    // An argument that boxes into None.
-    void push_absent() noexcept { push(0, crucible::ScalarType2::NONE); }
+    // An argument that boxes into None.  Its absence is structural.
+    void push_absent() noexcept { push(0, crucible::ScalarType2::NONE, crucible::ScalarRole::STRUCTURAL); }
 };
 
 // The scalars of an operation that can carry more than the inline slots.
 // The first kCapacity stay inline, `count` counts each scalar, and `digest`
-// folds each scalar and its tag.  O(1) for each push.
+// folds each scalar and its tag.  The digest folds no value of a data scalar
+// in the first kCapacity - 1 slots, because those slots stay inline in each
+// entry and the replay binds them.  An entry that overflows puts its digest
+// in the last slot or before it, so a data scalar at or past the last slot
+// can go into the digest.  Its value folds, and in such an entry it is
+// structural (write_scalar_slots).  O(1) for each push.
 template <>
 struct ScalarArgs<true> {
     static constexpr uint16_t kCapacity = kInlineScalars;
@@ -106,15 +245,17 @@ struct ScalarArgs<true> {
     uint32_t count = 0;
     uint64_t digest = kOverflowSeed;
 
-    void push(int64_t value, crucible::ScalarType2 tag) noexcept {
-        inline_scalars.push(value, tag);
-        digest = ::foundation::reflect::combine_ids(digest, static_cast<uint64_t>(value));
+    void push(int64_t value, crucible::ScalarType2 tag, crucible::ScalarRole role) noexcept {
+        const bool can_go_into_digest = count >= uint32_t{kCapacity} - 1;
+        const bool is_bound_inline = role == crucible::ScalarRole::DATA && !can_go_into_digest;
+        inline_scalars.push(value, tag, role);
+        digest = ::foundation::reflect::combine_ids(digest, is_bound_inline ? 0 : static_cast<uint64_t>(value));
         digest = ::foundation::reflect::combine_ids(digest, static_cast<uint64_t>(tag));
         count = ::fixy::saturating_add(count, uint32_t{1});
     }
 
-    // An argument that boxes into None.
-    void push_absent() noexcept { push(0, crucible::ScalarType2::NONE); }
+    // An argument that boxes into None.  Its absence is structural.
+    void push_absent() noexcept { push(0, crucible::ScalarType2::NONE, crucible::ScalarRole::STRUCTURAL); }
 };
 
 // The input tensors of an operation past the metadata limit.  Each one folds
@@ -181,7 +322,8 @@ struct input_overflow_of<false> {
 // the kInlineScalars slots has no check and no count.  The tag of slot 4 is in
 // op_flags, and the other bits of op_flags stay.  O(kInlineScalars).
 inline void copy_stored_scalars(crucible::TraceRing::Entry& entry, StoredScalars const& scalars) noexcept {
-    entry.num_scalar_args = scalars.stored;
+    entry.num_scalar_args = static_cast<uint8_t>(scalars.stored);
+    entry.data_slots = scalars.data;
     ::fixy::copy(entry.scalar_values.view(), scalars.values.view());
     entry.set_packed_scalar_types(scalars.tags);
 }
@@ -208,12 +350,14 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
         digest = ::foundation::reflect::combine_ids(digest, inputs.count);
         entry.scalar_values.at(ScalarSlot::check(digest_slot).expect("the digest slot is the last slot or before it")) =
             static_cast<int64_t>(digest);
-        entry.num_scalar_args = static_cast<uint16_t>(digest_slot + 1);
-        // The digest slot holds an integer, so its tag is INT, and the bits
-        // of a slot past it are zero.
+        entry.num_scalar_args = static_cast<uint8_t>(digest_slot + 1);
+        // The digest slot holds an integer, so its tag is INT, and it is
+        // structural.  The bits of a slot past it are zero.
         const uint32_t kept_bits = crucible::kScalarTypeBits * digest_slot;
         entry.set_packed_scalar_types(
             static_cast<uint16_t>(scalars.inline_scalars.tags & ((uint32_t{1} << kept_bits) - 1)));
+        entry.data_slots = scalars.inline_scalars.data.first(
+            crucible::ScalarCount::check(digest_slot).expect("the digest slot is a count of the slots"));
     }
 }
 
@@ -226,28 +370,27 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
 // pair.  So the word holds each field that the content hash of a region folds
 // for the op and that the op shows before it runs, apart from the wiring:
 //
-//   - The depth of the op, the count of its inputs, the count of its scalars
-//     and the tag of each stored scalar
+//   - The depth of the op, the count of its inputs, the count of its scalars,
+//     the tag of each stored scalar and the data slots
 //   - For each input, the word of the content hash (pack_tensor_word: the
 //     extents, the strides, the element type, the device, the rank, the
 //     layout, the negative and conjugate bits and the storage offset)
-//   - Each stored scalar slot, with the overflow digest of an op that has
-//     more scalars or more inputs than the slots.
+//   - The value of each structural slot, with the overflow digest of an op
+//     that has more scalars or more inputs than the slots.  A data slot
+//     folds zero, and its role bit tells it from a structural zero.
 //
-// A changed alpha, stride, element type or storage offset thus gives a
-// different word, and the replay diverges.  The word reads no data address, no
-// version counter and no autograd field, because these change at each
-// iteration or in each process.  A view at another offset of one storage reads
-// other elements, so a loop whose view moves at each iteration gets no
-// period, as a loop with a changing scalar gets none.
+// A changed stride, element type, storage offset, structural scalar or tag
+// thus gives a different word, and the replay diverges.  The word reads no
+// data address, no version counter and no autograd field, because these
+// change at each iteration or in each process.  A view at another offset of
+// one storage reads other elements, so a loop whose view moves at each
+// iteration gets no period.
 //
-// A scalar that changes at each iteration, such as the step size of AdamW
-// with no fused kernel or a schedule of the learning rate, changes the word
-// of its op at each iteration.  Then the detector finds no period, and the
-// Vigil records and builds no region.  A later design binds such a scalar
-// as an input of the region, as an external tensor is bound.  That design
-// splits the word into a part of the structure, which keys the detector, and
-// a part of the values, which the replay binds at each iteration.
+// A data scalar is an input of the region, as an external tensor is (the
+// role of crucible/Types.h).  A loop whose step size or learning rate changes
+// at each iteration thus keeps one word for each op, the detector finds its
+// period, and the replay binds the new value at each iteration.  An op with
+// no data slot gives the word of a fold that reads no role.
 //
 // The three recording paths call this function after they write the scalar
 // slots of the entry, so their words agree.  O(inputs + kInlineScalars).
@@ -256,24 +399,38 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
 // The seed of the guard word: "guardwrd" in ASCII.
 inline constexpr uint64_t kGuardSeed = 0x6775617264777264ULL;
 
+// The bit of the header of the guard word where the data slots start, after
+// the tags of the five slots.
+inline constexpr uint32_t kGuardDataShift = 32 + crucible::ScalarSlotKinds::kDataShift;
+
 [[nodiscard]] inline crucible::ShapeHash compute_shape_hash(::fixy::View<const crucible::TensorMeta> inputs,
                                                             crucible::TraceRing::Entry const& entry,
                                                             crucible::OpDepth depth) noexcept {
-    // The slots past the count hold zero, and their tags are zero.  The mask
-    // keeps each bit of a slot past the count out of the word all the same.
+    // The slots past the count hold zero, and their tags and data bits are
+    // zero.  The masks keep each bit of a slot past the count out of the word
+    // all the same.
     const uint32_t stored = ::fixy::min(uint32_t{entry.num_scalar_args}, uint32_t{kInlineScalars});
     const uint32_t tag_mask = (uint32_t{1} << (crucible::kScalarTypeBits * stored)) - 1;
+    const uint32_t data_bits = uint32_t{entry.data_slots.bits()} & ((uint32_t{1} << stored) - 1);
     const uint64_t header = uint64_t{entry.num_inputs} | (uint64_t{entry.num_scalar_args} << 16)
-                          | (uint64_t{entry.packed_scalar_types() & tag_mask} << 32) | (uint64_t{depth.raw()} << 48);
+                          | (uint64_t{entry.packed_scalar_types() & tag_mask} << 32)
+                          | (uint64_t{data_bits} << kGuardDataShift) | (uint64_t{depth.raw()} << 48);
 
     uint64_t word = ::foundation::reflect::combine_ids(kGuardSeed, header);
     for (crucible::TensorMeta const& input : inputs)
         word = ::foundation::reflect::combine_ids(
             word, crucible::pack_tensor_word(input, crucible::detail::dim_hash_scalar_det(input)));
+    // A data slot folds zero, as in the content hash (ContentHashFold of
+    // crucible/MerkleDag.h).  The mask of a slot is each bit for a
+    // structural slot and no bit for a data slot, so the fold has no branch.
     const ::fixy::View<int64_t const> scalars =
         entry.scalar_values.view().window(0, stored).expect("the count of the stored scalars fits the slots");
-    for (const int64_t scalar : scalars)
-        word = ::foundation::reflect::combine_ids(word, static_cast<uint64_t>(scalar));
+    uint32_t data_left = data_bits;
+    for (const int64_t scalar : scalars) {
+        const uint64_t structural_mask = uint64_t{data_left & 1u} - 1;
+        word = ::foundation::reflect::combine_ids(word, static_cast<uint64_t>(scalar) & structural_mask);
+        data_left >>= 1;
+    }
     return crucible::ShapeHash{word};
 }
 

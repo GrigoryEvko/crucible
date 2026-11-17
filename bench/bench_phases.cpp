@@ -289,7 +289,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 }
                 total_inputs += re.num_inputs;
                 total_outputs += re.num_outputs;
-                total_scalars += std::min(re.num_scalar_args, uint16_t(5));
+                total_scalars += ::fixy::min(uint32_t{re.num_scalar_args}, kScalarSlots);
                 ++ops;
             }
             return ops;
@@ -313,7 +313,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         for (const TraceRing::Entry& entry : trace.entries) {
             total_inputs += entry.num_inputs;
             total_outputs += entry.num_outputs;
-            total_scalars += std::min(entry.num_scalar_args, uint16_t(5));
+            total_scalars += ::fixy::min(uint32_t{entry.num_scalar_args}, kScalarSlots);
         }
 
         const uint64_t t0 = bench::rdtsc_start();
@@ -390,7 +390,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             }
             total_inputs += re.num_inputs;
             total_outputs += re.num_outputs;
-            total_scalars += std::min(re.num_scalar_args, uint16_t(5));
+            total_scalars += ::fixy::min(uint32_t{re.num_scalar_args}, kScalarSlots);
         }
 
         ::fixy::HeapArray<TraceEntry> op_buffer = ::fixy::mint_heap_array(A, count, TraceEntry{});
@@ -436,7 +436,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.scope_hash = scope_data.at(index);
                 te.callsite_hash = callsite_data.at(index);
                 te.depth = depth_data.at(index);
-                te.scalar_types = re.packed_scalar_types();
+                te.scalar_kinds = re.scalar_kinds();
                 te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
 
                 const uint8_t flags = re.op_flags;
@@ -445,7 +445,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
                 te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
                 te.kernel_id = CKernelId::OPAQUE;
-                const uint16_t n_scalars = ::fixy::min(re.num_scalar_args, uint16_t{5});
+                const uint32_t n_scalars = ::fixy::min(uint32_t{re.num_scalar_args}, kScalarSlots);
                 const ::fixy::View<int64_t> scalars =
                     scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars");
                 scalar_cursor += n_scalars;

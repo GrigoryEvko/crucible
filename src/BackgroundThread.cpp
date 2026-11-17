@@ -1087,7 +1087,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         }
         total_inputs += re.num_inputs;
         total_outputs += re.num_outputs;
-        total_scalars += ::fixy::min(re.num_scalar_args, uint16_t{5});
+        total_scalars += ::fixy::min(uint32_t{re.num_scalar_args}, kScalarSlots);
     }
     if (has_overflow) {
         return ::fixy::err(BuildRefusal::MetaLogOverflow);
@@ -1225,7 +1225,7 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         // means the recorder wrote past it or a stored count is corrupt.
         // The check ends the process in each build, before a copy can
         // read past the array.
-        CRUCIBLE_FATAL_INVARIANT(re.num_scalar_args <= 5);
+        CRUCIBLE_FATAL_INVARIANT(re.num_scalar_args <= kScalarSlots);
         const uint16_t n_scalars = re.num_scalar_args;
 
         // The scalars of each op go into its entry, also for an op with no
@@ -1236,10 +1236,8 @@ BackgroundThread::TraceBuild BackgroundThread::build_trace_columns_(
         ::fixy::copy(scalars, re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
             .expect("the two runs hold the scalars of the op");
         te.set_scalar_args(scalars);
-        // The tags of the copied slots.  The check above keeps the count at
-        // most five, so the shift stays below the 16 bits of the tags.
-        te.scalar_types =
-            static_cast<uint16_t>(re.packed_scalar_types() & ((uint32_t{1} << (kScalarTypeBits * n_scalars)) - 1));
+        // The tags and the data slots of the copied slots.
+        te.scalar_kinds = re.scalar_kinds();
 
         // The windows of this op.  An op with no metadata has no tensors,
         // because the scan refused an op with tensors and no metadata index.

@@ -58,10 +58,10 @@ MAX_ITERATIONS = 60
 UPDATE_WIDTH = 40
 
 HEADER = struct.Struct("<4sIII")
-# The op record of the versions 5 and 6 of the format: the four hashes, the five scalar
+# The op record of the version 7 of the format: the four hashes, the five scalar
 # values, the three counts, the gradient flag, the packed op flags, the nesting
-# depth, the tags of the scalar values, and four bytes of pad.
-OP_RECORD = struct.Struct("<QQQQ5qHHHBBHH4x")
+# depth, the tags of the scalar values, the data slots, and three bytes of pad.
+OP_RECORD = struct.Struct("<QQQQ5qHHHBBHHB3x")
 NAME_HEAD = struct.Struct("<QH")
 META_SIZE = ctypes.sizeof(crucible_mode._VesselLib.Meta)
 META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset

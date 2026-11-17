@@ -185,11 +185,11 @@ public:
     // zero, because each op of a larger depth runs inside one of them.
     OpDepth depth{};
 
-    // The tag of each scalar argument (ScalarType2 of TraceRing.h), two bits
-    // for each, the first scalar in the low bits.  The bits of a slot past
-    // the count are zero.  The tag tells the integer 1 from the double
-    // 4.9e-324, whose bits are the same.
-    uint16_t scalar_types = 0;
+    // The tag of each scalar argument (ScalarType2 of TraceRing.h) and the
+    // data slots (ScalarRole of Types.h).  The bits of a slot past the count
+    // are zero.  The tag tells the integer 1 from the double 4.9e-324, whose
+    // bits are the same.
+    ScalarSlotKinds scalar_kinds{};
 
     // The counts.
     [[nodiscard]] uint16_t num_inputs() const noexcept { return arrays_.count<kInputCount>(); }
@@ -797,17 +797,30 @@ private:
                 content_hash_state, pack_tensor_word(output_meta, detail::dim_hash_simd_det(output_meta)));
         }
 
+        // A data slot folds zero for its value, because the computation reads
+        // the value at run time (ScalarRole of Types.h).  A slot past the
+        // inline slots has no role, and its value folds.
         content_hash_state =
             detail::combine_ids(content_hash_state, static_cast<uint64_t>(op_record.num_scalar_args()));
+        // The mask of a slot is each bit for a structural slot and no bit for
+        // a data slot, so the fold has no branch.  The data bits run out
+        // after the inline slots.
+        uint32_t data_left = op_record.scalar_kinds.data_slots().bits();
         for (const int64_t scalar : op_record.scalar_args()) {
-            content_hash_state = detail::combine_ids(content_hash_state, static_cast<uint64_t>(scalar));
+            const uint64_t structural_mask = uint64_t{data_left & 1u} - 1;
+            content_hash_state =
+                detail::combine_ids(content_hash_state, static_cast<uint64_t>(scalar) & structural_mask);
+            data_left >>= 1;
         }
-        // The tags of the scalars, one step for the op.  Only the bits of the
-        // slots below the count fold, so bits that no scalar owns cannot move
-        // the hash.  At most five slots have a tag.
-        const uint32_t tagged = ::fixy::min(uint32_t{op_record.num_scalar_args()}, uint32_t{5});
-        const uint32_t tag_mask = (uint32_t{1} << (2 * tagged)) - 1;
-        content_hash_state = detail::combine_ids(content_hash_state, uint64_t{op_record.scalar_types & tag_mask});
+        // The tags and the data slots, one step for the op.  Only the bits of
+        // the slots below the count fold, so bits that no scalar owns cannot
+        // move the hash.  At most five slots have a tag.  An op with no data
+        // slot folds the word of its tags alone.
+        const ScalarCount tagged =
+            ScalarCount::check(::fixy::min(std::size_t{op_record.num_scalar_args()}, std::size_t{kScalarSlots}))
+                .expect("the minimum is a count of the slots");
+        content_hash_state =
+            detail::combine_ids(content_hash_state, uint64_t{op_record.scalar_kinds.first(tagged).bits()});
     }
 
     // The golden-ratio constant, matching the seed every other fold in this

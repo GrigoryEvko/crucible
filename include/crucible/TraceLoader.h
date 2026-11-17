@@ -86,8 +86,12 @@ struct TraceOpRecord {
     OpDepth depth{};
     // The tag of each scalar value, two bits for each, slot 0 in the low bits.
     uint16_t scalar_types = 0;
+    // The data slots (DataSlots of crucible/Types.h): bit i is set when slot i
+    // holds a data scalar.  Only the bits of the slots below the count can be
+    // set.
+    uint8_t data_slots = 0;
     // The writer writes zero here, and the loader reads nothing.
-    ::fixy::FixedArray<uint8_t, 4> pad{};
+    ::fixy::FixedArray<uint8_t, 3> pad{};
 };
 
 struct LoadedTrace {
@@ -128,6 +132,9 @@ enum class TraceLoadError : uint8_t {
     ReadFailed,
     // A metadata record breaks a claim of its type.
     MetaCorrupt,
+    // An op record holds more scalars than the inline slots, or a data slot
+    // past its count of scalars.
+    OpCorrupt,
     // The metadata of an op runs past the metadata count.
     MetaRunPastCount,
 };
@@ -145,10 +152,11 @@ inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 // depth, the counts, the tags, the strides, the element types and the scalars
 // fold into it (compute_shape_hash of vessel/torch/entry_slots.h).  Version 6
 // has a guard word that folds the rank, the layout, the negative and conjugate
-// bits and the storage offset of each input (pack_tensor_word).  A word of an
-// earlier version compares with no live op.  The loader refuses each other
-// version.
-inline constexpr uint32_t TRACE_FORMAT_VERSION = 6;
+// bits and the storage offset of each input (pack_tensor_word).  Version 7 has
+// the data slots of each op, and a guard word that reads the tag of a data
+// slot but not its value.  A word of an earlier version compares with no live
+// op.  The loader refuses each other version.
+inline constexpr uint32_t TRACE_FORMAT_VERSION = 7;
 
 // The length of each metadata record.  A count whose records would not fit
 // in the bytes that remain is refused before any array is sized from it.
@@ -252,9 +260,21 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
     const auto num_outputs = read_record_field_<uint16_t, offsetof(TraceOpRecord, num_outputs)>(op_record);
     const auto num_scalars = read_record_field_<uint16_t, offsetof(TraceOpRecord, num_scalars)>(op_record);
     const auto grad_enabled = read_record_field_<uint8_t, offsetof(TraceOpRecord, grad_enabled)>(op_record);
+    const auto data_bits = read_record_field_<uint8_t, offsetof(TraceOpRecord, data_slots)>(op_record);
+    // An entry holds at most kScalarSlots scalars, and a data slot is one of
+    // them.  The build of a region ends the process on a larger count, so
+    // the load refuses it first.
+    const DataSlots data = DataSlots::from_bits(data_bits);
+    bool is_well_formed = false;
+    for (const ScalarCount stored : ScalarCount::check(num_scalars))
+        is_well_formed = data.bits() == data_bits && data.first(stored) == data;
+    if (!is_well_formed) [[unlikely]]
+        return ::fixy::err(TraceLoadError::OpCorrupt);
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
-    entry.num_scalar_args = num_scalars;
+    // The check above keeps the count at most kScalarSlots.
+    entry.num_scalar_args = static_cast<uint8_t>(num_scalars);
+    entry.data_slots = data;
     // The whole packed set of flags, despite the name of the field.
     entry.op_flags = read_record_field_<uint8_t, offsetof(TraceOpRecord, inference_mode)>(op_record);
     if (grad_enabled != 0) {
@@ -420,6 +440,7 @@ encode_trace_op(TraceOpRecord const& record) noexcept {
     write_record_field_<offsetof(TraceOpRecord, inference_mode)>(bytes, record.inference_mode);
     write_record_field_<offsetof(TraceOpRecord, depth)>(bytes, record.depth.raw());
     write_record_field_<offsetof(TraceOpRecord, scalar_types)>(bytes, record.scalar_types);
+    write_record_field_<offsetof(TraceOpRecord, data_slots)>(bytes, record.data_slots);
     return image;
 }
 

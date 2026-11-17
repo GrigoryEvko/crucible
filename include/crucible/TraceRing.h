@@ -99,10 +99,6 @@ enum class ScalarType2 : uint8_t {
     NONE = 3,  // an argument that boxes into None; the value is zero
 };
 
-// The tag of slot i of a packed set of tags: two bits for each slot, slot 0
-// in the low bits.
-inline constexpr uint32_t kScalarTypeBits = 2;
-
 namespace tracering_hw {
 
 // This value is the locality of each prefetch in try_append.  A change of the
@@ -128,7 +124,8 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         ShapeHash shape_hash;
         uint16_t num_inputs = 0;
         uint16_t num_outputs = 0;
-        uint16_t num_scalar_args = 0;  // the total count, of which only the first 5 are stored inline
+        uint8_t num_scalar_args = 0;  // the stored slots, at most 5; the overflow digest is the last one
+        DataSlots data_slots{};  // the slots below the count that hold a data scalar
         uint8_t scalar_types = 0;  // a two-bit tag for each of slots 0 to 3, with slot 4 in op_flags
         uint8_t op_flags = 0;
         // Zero-initialised so the content hash never sees indeterminate bytes.
@@ -172,6 +169,14 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             op_flags =
                 static_cast<uint8_t>((op_flags & ~op_flag::SCALAR4_TYPE_MASK) | (slot4 << op_flag::SCALAR4_TYPE_SHIFT));
         }
+
+        // The tags and the data slots of the stored slots, in the word that
+        // an op of a region keeps.  The bits of a slot past the count go.
+        [[nodiscard, gnu::pure]] constexpr ScalarSlotKinds scalar_kinds() const noexcept {
+            const ScalarCount stored = ScalarCount::check(::fixy::min(uint32_t{num_scalar_args}, kScalarSlots))
+                                           .expect("the minimum is a count");
+            return ScalarSlotKinds::of(packed_scalar_types(), data_slots).first(stored);
+        }
     };
 
     static_assert(sizeof(Entry) == 64, "Entry must be exactly one cache line");
@@ -179,8 +184,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     static_assert(std::is_standard_layout_v<Entry>);
     static_assert(offsetof(Entry, schema_hash) == 0 && offsetof(Entry, shape_hash) == 8
                       && offsetof(Entry, num_inputs) == 16 && offsetof(Entry, num_outputs) == 18
-                      && offsetof(Entry, num_scalar_args) == 20 && offsetof(Entry, scalar_types) == 22
-                      && offsetof(Entry, op_flags) == 23 && offsetof(Entry, scalar_values) == 24,
+                      && offsetof(Entry, num_scalar_args) == 20 && offsetof(Entry, data_slots) == 21
+                      && offsetof(Entry, scalar_types) == 22 && offsetof(Entry, op_flags) == 23
+                      && offsetof(Entry, scalar_values) == 24,
                   "Entry is bit-copied into the trace file, so each field offset is part of a persisted format");
     CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Entry);
 

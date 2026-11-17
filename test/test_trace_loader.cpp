@@ -233,6 +233,8 @@ static void test_encoders_round_trip_through_the_loader() {
     // slot 4 goes into the high bits of op_flags.
     record.scalar_types = static_cast<uint16_t>(static_cast<uint16_t>(ScalarType2::FLOAT)
                                                 | (static_cast<uint16_t>(ScalarType2::NONE) << 8));
+    // The one scalar is a data scalar.
+    record.data_slots = 1;
 
     const ::fixy::FixedArray<std::byte, TRACE_META_BYTES> meta_bytes = encode_trace_meta(meta);
     for (const std::byte byte : meta_bytes.view()
@@ -289,6 +291,7 @@ static void test_encoders_round_trip_through_the_loader() {
     assert(entry.packed_scalar_types() == record.scalar_types);
     assert(entry.get_scalar_type(0) == ScalarType2::FLOAT && entry.get_scalar_type(4) == ScalarType2::NONE);
     assert((entry.op_flags & op_flag::GRAD_ENABLED) != 0 && "the tag of slot 4 keeps the other op flags");
+    assert(entry.data_slots.role(::fixy::index<0>()) == crucible::ScalarRole::DATA && "the loader keeps the role");
 
     const TensorMeta& loaded = *trace.metas.get(0).expect("the trace holds one meta");
     assert(loaded.ndim == 2);
@@ -302,6 +305,62 @@ static void test_encoders_round_trip_through_the_loader() {
     assert(loaded.storage_nbytes == 64);
     assert(loaded.data_ptr.value() == nullptr);
     crucible::test::pass("  test_encoders_round_trip:       PASSED\n");
+}
+
+// The load of a trace of one op record with no tensor and an empty name
+// table, through the encoders.
+static ::fixy::Result<LoadedTrace, TraceLoadError> load_one_op(TraceOpRecord const& record) {
+    constexpr size_t kOpAt = TRACE_HEADER_BYTES;
+    constexpr size_t kBytes = kOpAt + sizeof(TraceOpRecord) + sizeof(uint32_t);
+    ::fixy::FixedArray<std::byte, kBytes> image{};
+    const ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header_bytes = encode_trace_header(1, 0);
+    const ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)> op_bytes = encode_trace_op(record);
+    ::fixy::copy(image.view().window<TRACE_HEADER_BYTES>(0).expect("the header fits the image"), header_bytes.view());
+    ::fixy::copy(image.view().window<sizeof(TraceOpRecord)>(kOpAt).expect("the op fits the image"), op_bytes.view());
+    constexpr ::fixy::CText kFileName{"crtrace-one-op.bin"};
+    const auto checked = [](::fixy::TextView text) noexcept {
+        return ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(text))
+            .expect("a plain relative path passes the check");
+    };
+    const ::fixy::fs::Dirfd here =
+        ::fixy::fs::open_dirfd(kTestIo, checked(::fixy::TextView{"."})).expect("the working directory opens");
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(kTestIo, here, kFileName)
+                                .match(
+                                    [&image](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept {
+                                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
+                                        return ::fixy::fs::write_full(kTestIo, file, image.view()).is_ok();
+                                    },
+                                    [](::foundation::os::Errno) noexcept { return false; });
+    assert(is_written);
+    ::fixy::Result<LoadedTrace, TraceLoadError> loaded = load_trace(kTestIo, checked(kFileName.view()));
+    assert(::fixy::fs::unlink_at(kTestIo, here, kFileName).is_ok());
+    return loaded;
+}
+
+// An op record with more scalars than the inline slots, or with a data slot
+// past its count of scalars, is refused.  The build of a region ends the
+// process on a count past the slots, and the replay binds a data slot from
+// the stored values, so the load refuses each first.  The old loader took
+// each count, so the first check loaded the op.
+static void test_op_with_scalars_past_the_slots_is_refused() {
+    TraceOpRecord record{};
+    record.schema_hash = SchemaHash{0x5CA1A2ULL};
+    record.num_scalars = 6;
+    assert(is_refused_as(load_one_op(record), TraceLoadError::OpCorrupt));
+
+    record.num_scalars = 1;
+    record.data_slots = 0b10;
+    assert(is_refused_as(load_one_op(record), TraceLoadError::OpCorrupt) && "a data slot past the count");
+    record.data_slots = 0b100000;
+    assert(is_refused_as(load_one_op(record), TraceLoadError::OpCorrupt) && "a bit past the inline slots");
+
+    record.data_slots = 0b1;
+    const LoadedTrace trace = load_one_op(record).expect("a data slot below the count loads");
+    const TraceRing::Entry& entry = *trace.entries.get(0).expect("the trace holds one op");
+    assert(entry.num_scalar_args == 1);
+    assert(entry.data_slots.role(::fixy::index<0>()) == crucible::ScalarRole::DATA);
+    crucible::test::pass("  test_op_scalars_past_the_slots: PASSED\n");
 }
 
 // The trailing schema-name section of the file carries a length field
@@ -730,6 +789,7 @@ int main() {
     test_adversarial_num_ops_rejected();
     test_round_trip_single_op();
     test_encoders_round_trip_through_the_loader();
+    test_op_with_scalars_past_the_slots_is_refused();
     test_schema_name_table_round_trip();
     test_schema_name_table_corrupt_zero_len();
     test_schema_name_table_corrupt_oversize_len();

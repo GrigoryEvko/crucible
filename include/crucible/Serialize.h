@@ -63,8 +63,12 @@ using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::s
 // word folds its rank, its layout, its negative and conjugate bits and its
 // storage offset (pack_tensor_word).  A region of version 15 holds a content
 // hash and guard words that the current code no longer computes.
+// 17 (2026-11-17): the word of the tags of each op holds its data slots too
+// (ScalarSlotKinds), and the guard word and the content hash read the tag of
+// a data slot but not its value.  A region of version 16 holds a content hash
+// and guard words that the current code no longer computes.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{16});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{17});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
@@ -517,7 +521,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         }
         w.w(std::to_underlying(te.kernel_id));
         w.w(te.depth.raw());
-        w.w(te.scalar_types);
+        w.w(te.scalar_kinds.bits());
 
         // Each array of the entry holds its count.
         for (const TensorMeta& meta : te.input_metas()) {
@@ -663,9 +667,19 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         }
         // Each value of the word is a depth (OpDepth).
         te.depth = OpDepth{r.r<uint16_t>()};
-        // Each value of two bits is a tag, and the content hash folds only the
-        // bits of the slots below the count.
-        te.scalar_types = r.r<uint16_t>();
+        // Each value of two bits is a tag, and each bit of the data slots is
+        // a role.  The writer writes only the bits of the slots below the
+        // count, so a word with a bit of a later slot is not an image that
+        // the writer produced.
+        {
+            const ScalarCount tagged =
+                ScalarCount::check(::fixy::min(std::size_t{num_scalar_args}, std::size_t{kScalarSlots}))
+                    .expect("the minimum is a count of the slots");
+            const uint16_t kinds = r.read_gated<uint16_t>([tagged](uint16_t word) noexcept {
+                return ScalarSlotKinds::from_bits(word).first(tagged).bits() == word;
+            });
+            te.scalar_kinds = ScalarSlotKinds::from_bits(kinds);
+        }
 
         const ::fixy::View<TensorMeta> input_metas = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
         for (TensorMeta& meta : input_metas) {
