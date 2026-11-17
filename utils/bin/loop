@@ -88,7 +88,7 @@ SUBCOMMANDS = {
 # The subcommands that start compiles, links or tests, and the OOM score of
 # their process (THE OOM SCORE).  The kernel takes a score from -1000 to 1000.
 EXPENDABLE = frozenset({"test", "gauge", "derive", "pgo", "syntax", "bench", "fuzz", "land", "heavy", "nightly",
-                        "release"})
+                        "release", "levels"})
 OOM_SCORE_ADJ = 800
 
 if __name__ == "__main__":
