@@ -23,11 +23,17 @@
 //      times the count of the threads.  For mpsc push, the base is the row of
 //      one producer and the consumer, times the count of the producers.  The
 //      pause check of the harness reads the threads over the window.
+//      The window is bench::kWindows consecutive windows of equal time, one
+//      phase each (THE WINDOWS of bench/bench_harness.h).  Each thread counts
+//      its ops in each window, and the row gives the median and the spread of
+//      the throughput of the windows.  Each window has the pause check of the
+//      time that the main thread lost in it.
 //   2. The latency: the workers go on, and the main thread runs the op under
 //      Run::measure, one op in each sample.  Its report gives p50, p99 and
 //      the maximum of one op.  The harness takes the cost of the clock off
 //      each sample, so an op of a few nanoseconds reads at the resolution of
-//      the clock.
+//      the clock.  The JSON tail of the bench gives the latency report of
+//      each row.
 //
 // THE COUNTS OF THREADS
 //   With no argument, the rows have 1, 2, 4, 8 and 16 threads, up to the
@@ -71,8 +77,9 @@ using Item = std::uint64_t;
 
 // The threads of one row, at most.  The command of the owner runs 224.
 constexpr std::size_t kMaxThreads = 256;
-// The rows of one op, at most.
+// The rows of one op, at most, and the latency reports of the three ops.
 constexpr std::size_t kMaxRows = 16;
+constexpr std::size_t kMaxReports = 3 * kMaxRows;
 constexpr std::uint64_t kWindowNs = 500000000;
 constexpr std::size_t kLatencySamples = 1000000;
 constexpr std::size_t kLatencyWarmup = 10000;
@@ -82,22 +89,43 @@ constexpr std::size_t kLatencyMs = 1000;
 constexpr std::uint64_t kOpsPerCheck = 64;
 constexpr std::uint64_t kOpsPerClock = 1024;
 constexpr std::size_t kRingCapacity = 4096;
-// The count of window ops of a worker that did not publish it yet.
-constexpr std::uint64_t kUnpublished = ~std::uint64_t{0};
-
 enum class OpKind : std::uint8_t {
     SharedAdd,
     OwnAdd,
     MpscPush,
 };
 
-// The phase of a row (THE PHASES OF A ROW).  The main thread writes it.
+// The phase of a row (THE PHASES OF A ROW).  The main thread writes it.  The
+// window has one phase for each of its windows, so a worker reads the window
+// in the one cell that it reads for the phase.
 enum class Phase : std::uint32_t {
     Wait,
-    Window,
+    Window0,
+    Window1,
+    Window2,
+    Window3,
+    Window4,
     Latency,
     Stop,
 };
+static_assert(static_cast<std::uint32_t>(Phase::Latency) - static_cast<std::uint32_t>(Phase::Window0)
+                  == bench::kWindows,
+              "the window of a row has one phase for each window of the harness");
+
+using WindowIndex = ::fixy::Index<bench::kWindows>;
+
+// The window of a phase, or none for a phase outside the window.
+[[nodiscard]] ::fixy::Option<WindowIndex> window_of(Phase phase) noexcept {
+    std::uint32_t const raw = static_cast<std::uint32_t>(phase);
+    std::uint32_t const first = static_cast<std::uint32_t>(Phase::Window0);
+    if (raw < first) return ::fixy::none;
+    return WindowIndex::check(raw - first);
+}
+
+// The phase of a window.
+[[nodiscard]] Phase phase_of(WindowIndex window) noexcept {
+    return static_cast<Phase>(static_cast<std::uint32_t>(Phase::Window0) + window.raw());
+}
 
 // The role of the thread of a slot in a row.
 enum class Role : std::uint8_t {
@@ -108,10 +136,12 @@ enum class Role : std::uint8_t {
 struct ThreadCountTag final {};
 using ThreadCount = ::fixy::Id<ThreadCountTag, std::uint32_t>;
 
-// The line that one thread writes: its own cell, and its ops in the window.
+// The line that one thread writes: its own cell, its ops in each window, and
+// whether it published them.
 struct alignas(64) ThreadLine {
     ::fixy::Atomic<std::uint64_t> cell{};
-    ::fixy::Atomic<std::uint64_t> window_ops{kUnpublished};
+    ::fixy::FixedArray<::fixy::Atomic<std::uint64_t>, bench::kWindows> window_ops{};
+    ::fixy::Atomic<bool> is_published{false};
 };
 
 struct alignas(64) PhaseLine {
@@ -155,20 +185,25 @@ template <OpKind Kind>
     }
 }
 
-// The loop of a producer worker: the ops of the window, which it publishes,
-// then the ops of the latency phase until the stop.
+// The loop of a producer worker: the ops of each window, which it publishes,
+// then the ops of the latency phase until the stop.  A run of kOpsPerCheck
+// ops counts in the window of the phase that the worker read before it.
 template <OpKind Kind>
 void run_producer(RowState& state, ThreadLine& line) noexcept {
     static_cast<void>(state.ready.value.fetch_add_acq_rel(1));
     while (read_phase(state) == Phase::Wait)
         CRUCIBLE_SPIN_PAUSE;
-    std::uint64_t ops = 0;
-    while (read_phase(state) == Phase::Window) {
+    ::fixy::FixedArray<std::uint64_t, bench::kWindows> ops{};
+    for (::fixy::Option<WindowIndex> window = window_of(read_phase(state)); window.is_some();
+         window = window_of(read_phase(state))) {
         for (std::uint64_t op = 0; op < kOpsPerCheck; ++op)
             run_op<Kind>(state, line);
-        ops += kOpsPerCheck;
+        for (WindowIndex const index : window)
+            ops.at(index) += kOpsPerCheck;
     }
-    line.window_ops.store_release(ops);
+    for (WindowIndex const index : ops.indices())
+        line.window_ops.at(index).store_release(ops.at(index));
+    line.is_published.store_release(true);
     while (read_phase(state) != Phase::Stop) {
         for (std::uint64_t op = 0; op < kOpsPerCheck; ++op)
             run_op<Kind>(state, line);
@@ -180,7 +215,7 @@ void run_producer(RowState& state, ThreadLine& line) noexcept {
 void run_consumer(RowState& state, ThreadLine& line) noexcept {
     // A pop of an MPSC ring is a merge of the producers, so it takes Nondet.
     eff::cap::Nondet const merge = eff::testing::test().nondet;
-    line.window_ops.store_release(0);
+    line.is_published.store_release(true);
     static_cast<void>(state.ready.value.fetch_add_acq_rel(1));
     while (read_phase(state) != Phase::Stop) {
         for (std::uint64_t pop = 0; pop < kOpsPerCheck; ++pop) {
@@ -189,16 +224,20 @@ void run_consumer(RowState& state, ThreadLine& line) noexcept {
     }
 }
 
-// What the window of the main thread measured.
+// What the window of the main thread measured: its ops, its wall time and the
+// time that it lost in each window, and the pause of the whole window.
 struct Window {
-    std::uint64_t ops = 0;
-    std::uint64_t wall_ns = 0;
+    ::fixy::FixedArray<std::uint64_t, bench::kWindows> ops{};
+    ::fixy::FixedArray<std::uint64_t, bench::kWindows> wall_ns{};
+    ::fixy::FixedArray<std::uint64_t, bench::kWindows> lost_ns{};
     bench::Pause pause{};
 };
 
 // The window of the main thread on the CPU of slot 0 (THE PHASES OF A ROW).
-// It starts the window, runs the op for kWindowNs, and then starts the
-// latency phase.
+// It starts each window, runs the op for its part of kWindowNs, and then
+// starts the latency phase.  The check of each window reads two clocks and no
+// file of procfs, so it does not change the basis of the pause of the whole
+// window (THE WINDOWS of bench/bench_harness.h).
 template <OpKind Kind>
 [[nodiscard]] Window run_window(RowState& state, ThreadLine& line, bench::CpuId cpu) noexcept {
     bench::CoreHold const hold{cpu};
@@ -210,18 +249,29 @@ template <OpKind Kind>
     };
     bench::PauseReading const before = bench::detail::read_pause();
     Window window{};
-    std::uint64_t const start = now();
-    state.phase.phase.store_release(Phase::Window);
-    std::uint64_t end = start;
-    while (end - start < kWindowNs) {
-        for (std::uint64_t op = 0; op < kOpsPerClock; ++op)
-            run_op<Kind>(state, line);
-        window.ops += kOpsPerClock;
-        end = now();
+    bench::WindowClock window_clock = bench::detail::read_window_clock();
+    std::uint64_t start = now();
+    for (WindowIndex const index : ::fixy::IndexRange<bench::kWindows>{}) {
+        state.phase.phase.store_release(phase_of(index));
+        std::uint64_t end = start;
+        std::uint64_t ops = 0;
+        while (end - start < kWindowNs / bench::kWindows) {
+            for (std::uint64_t op = 0; op < kOpsPerClock; ++op)
+                run_op<Kind>(state, line);
+            ops += kOpsPerClock;
+            end = now();
+        }
+        bench::WindowClock const window_end = bench::detail::read_window_clock();
+        window.ops.at(index) = ops;
+        window.wall_ns.at(index) = end - start;
+        window.lost_ns.at(index) =
+            bench::detail::lost_between(::fixy::side_as<bench::side::ReadingBefore>(window_clock),
+                                        ::fixy::side_as<bench::side::ReadingAfter>(window_end));
+        window_clock = window_end;
+        start = end;
     }
     state.phase.phase.store_release(Phase::Latency);
     bench::PauseReading const after = bench::detail::read_pause();
-    window.wall_ns = end - start;
     window.pause = bench::detail::pause_between(::fixy::side_as<bench::side::ReadingBefore>(before),
                                                 ::fixy::side_as<bench::side::ReadingAfter>(after));
     return window;
@@ -232,6 +282,12 @@ struct RowResult {
     ThreadCount threads{1};
     // The ops of the producers in one second, in hundredths of a million.
     std::uint64_t centi_mops = 0;
+    // The throughput of the producers in each window, in millions of ops in
+    // one second, summed up by its median and its spread, and the count of
+    // the windows in which the main thread lost more than the bound of the
+    // pause check (THE WINDOWS of bench/bench_harness.h).
+    bench::WindowSpread windows{};
+    std::size_t paused_windows = 0;
     bench::Pause window_pause{};
     bench::Report latency{};
 };
@@ -280,16 +336,32 @@ template <OpKind Kind>
     ThreadLine& own = line_of(state, bench::kMeasuringSlot);
     bench::CpuId const main_cpu = cpu_of(bench::kMeasuringSlot);
     Window const window = run_window<Kind>(state, own, main_cpu);
-    std::uint64_t ops = window.ops;
+    ::fixy::FixedArray<std::uint64_t, bench::kWindows> ops = window.ops;
     for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
         ThreadLine const& line = line_of(state, bench::ThreadSlot{slot});
-        while (line.window_ops.load_acquire() == kUnpublished)
+        while (!line.is_published.load_acquire())
             CRUCIBLE_SPIN_PAUSE;
-        ops += line.window_ops.load_acquire();
+        for (WindowIndex const index : ops.indices())
+            ops.at(index) += line.window_ops.at(index).load_acquire();
+    }
+
+    std::uint64_t all_ops = 0;
+    std::uint64_t all_wall_ns = 0;
+    std::size_t paused_windows = 0;
+    ::fixy::FixedArray<double, bench::kWindows> window_mops{};
+    for (WindowIndex const index : ops.indices()) {
+        std::uint64_t const wall_ns = window.wall_ns.at(index);
+        all_ops += ops.at(index);
+        all_wall_ns += wall_ns;
+        window_mops.at(index) =
+            wall_ns == 0 ? 0.0 : static_cast<double>(ops.at(index)) * 1000.0 / static_cast<double>(wall_ns);
+        paused_windows += window.lost_ns.at(index) > bench::kPauseBoundNs ? std::size_t{1} : std::size_t{0};
     }
 
     RowResult result{.threads = threads,
-                     .centi_mops = window.wall_ns == 0 ? 0 : ops * 100000 / window.wall_ns,
+                     .centi_mops = all_wall_ns == 0 ? 0 : all_ops * 100000 / all_wall_ns,
+                     .windows = bench::spread_of_windows(window_mops.view()),
+                     .paused_windows = paused_windows,
                      .window_pause = window.pause};
     result.latency = run_of<Kind>()
                          .core(main_cpu.raw())
@@ -320,28 +392,36 @@ struct EfficiencyBase {
 };
 
 // Prints one row: its threads, its throughput, its efficiency over the base
-// times the ratio of the producers, its pause, and the report of its latency.
-// The two ratios print with two decimals.
+// times the ratio of the producers, the median and the spread of the
+// throughput of its windows, its pause, and the report of its latency.  The
+// ratios print with two decimals, and the spread with one.  A pause of the
+// whole window or of one window over the bound makes the row not valid.
 template <OpKind Kind>
 void print_row(RowResult const& row, EfficiencyBase const& base) noexcept {
     std::uint64_t const ideal = base.centi_mops * producers_of<Kind>(row.threads) / base.producers;
     std::uint64_t const efficiency = ideal == 0 ? 0 : row.centi_mops * 100 / ideal;
-    bool const is_paused = row.window_pause.is_over_bound();
+    auto const median = static_cast<std::uint64_t>(row.windows.median * 100.0 + 0.5);
+    auto const spread = static_cast<std::uint64_t>(row.windows.spread * 1000.0 + 0.5);
+    bool const is_paused = row.window_pause.is_over_bound() || row.paused_windows > 0;
     // The rows of the harness go through stdio, and report() does not.
     bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "  {} threads: {}.{}{} Mops/s, efficiency {}.{}{}", row.threads.raw(),
                    row.centi_mops / 100, row.centi_mops % 100 / 10, row.centi_mops % 10, efficiency / 100,
                    efficiency % 100 / 10, efficiency % 10);
-    ::fixy::report(::fixy::Sink::Out, ", window pause {} us, other thread delay {} us{}\n",
-                   row.window_pause.own_ns() / 1000, row.window_pause.other.run_delay_ns / 1000,
+    ::fixy::report(::fixy::Sink::Out, ", {} windows: median {}.{}{} Mops/s, spread {}.{}%", row.windows.windows,
+                   median / 100, median % 100 / 10, median % 10, spread / 10, spread % 10);
+    ::fixy::report(::fixy::Sink::Out, ", window pause {} us, other thread delay {} us, {} paused windows{}\n",
+                   row.window_pause.own_ns() / 1000, row.window_pause.other.run_delay_ns / 1000, row.paused_windows,
                    is_paused ? ::fixy::TextView{"  NOT VALID"} : ::fixy::TextView{});
     row.latency.print_text();
 }
 
 // The rows of one op, then the line of each row.  The first row is the base
-// of the efficiency.
+// of the efficiency.  The latency report of each row goes to reports, for the
+// JSON tail of the bench.
 template <OpKind Kind>
-void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> counts, ::fixy::TextView title) {
+void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> counts, ::fixy::TextView title,
+                 ::fixy::FixedList<bench::Report, kMaxReports>& reports) {
     bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "\n=== {} ===\n", title);
     ::fixy::FixedList<RowResult, kMaxRows> rows{};
@@ -355,6 +435,9 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
     EfficiencyBase const base{.producers = producers_of<Kind>(first.threads), .centi_mops = first.centi_mops};
     for (RowResult const& row : rows) {
         print_row<Kind>(row, base);
+    }
+    for (RowResult& row : rows) {
+        bench::add_report(reports, std::move(row.latency));
     }
 }
 
@@ -416,9 +499,11 @@ int run_bench(::fixy::os::Args const& arguments) {
                            threads.raw(), bench::kPauseThreads);
         }
     }
-    run_op_rows<OpKind::SharedAdd>(spread, counts.view(), "shared add: one cell for all threads");
-    run_op_rows<OpKind::OwnAdd>(spread, counts.view(), "own add: one cell on its own line for each thread");
-    run_op_rows<OpKind::MpscPush>(spread, counts.view(), "mpsc push: the last thread is the one consumer");
+    ::fixy::FixedList<bench::Report, kMaxReports> reports{};
+    run_op_rows<OpKind::SharedAdd>(spread, counts.view(), "shared add: one cell for all threads", reports);
+    run_op_rows<OpKind::OwnAdd>(spread, counts.view(), "own add: one cell on its own line for each thread", reports);
+    run_op_rows<OpKind::MpscPush>(spread, counts.view(), "mpsc push: the last thread is the one consumer", reports);
+    bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
 }
 
