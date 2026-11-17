@@ -99,6 +99,13 @@ struct ForeignBytes {
 [[nodiscard]] ForeignBytes cog_nic_cog_probe_bpf_object() noexcept;
 [[nodiscard]] ForeignBytes cog_offload_cap_probe_bpf_object() noexcept;
 
+// The bytes of an embedded object as a read-only View.  The bytes have
+// static storage in their embed unit, so the View lives as long as the
+// process.
+[[nodiscard]] inline ::fixy::View<unsigned char const> view_bytes(ForeignBytes bytes) noexcept {
+    return ::fixy::mint_foreign_view(bytes.abi, bytes.size);
+}
+
 #define CRUCIBLE_PERF_FOREIGN_NAME(literal) \
     (::crucible::perf::detail::ForeignName{.abi = (literal), .text = ::fixy::TextView{literal}})
 

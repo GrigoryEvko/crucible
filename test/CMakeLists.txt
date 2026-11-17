@@ -676,6 +676,12 @@ crucible_test(test_perf_syscall_latency_smoke)
 crucible_test(test_perf_senses_smoke)
 crucible_test(test_perf_sched_tp_btf_smoke)
 crucible_test(test_perf_syscall_tp_btf_smoke)
+# Each embed unit of crucible_perf holds an ELF object of the BPF machine.  A
+# build with no BPF substrate writes no embed unit, so only a build with
+# CRUCIBLE_HAVE_BPF registers the test.  The test loads no program.
+if(CRUCIBLE_HAVE_BPF)
+  crucible_test(test_perf_bpf_objects)
+endif()
 # warden::DeadlineWatchdog wires SchedSwitch context-
 # switch telemetry into Policy's miss-budget enforcement.  Smoke
 # verifies type-shape (move-only, ≤64 B), nullptr-Senses graceful
