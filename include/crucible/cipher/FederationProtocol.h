@@ -55,8 +55,6 @@
 #include <fixy/Tagged.h>
 #include <fixy/session/ContentAddressed.h>
 #include <fixy/session/Global.h>
-#include <fixy/session/Network.h>
-#include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -271,12 +269,15 @@ deserialize_federation_entry(const ::foundation::permissions::Permission<
 // binary descriptions with no relation.
 //
 // The global type is written on fixy/session/Global.h, and each local
-// type is its projection (fixy/session/Projection.h).  A carrier states
-// its network model (fixy/session/NetworkModel.h).  The protocol has no
-// choice, and the coordinator receives from two senders.  So it is
-// implementable on per-pair FIFO and on a bag, but not on a mailbox
-// (fixy/session/Network.h).  A mint that gives the handle of a role
-// must first ask ::fixy::session::CarrierImplements with the global
+// type below is its projection (fixy/session/Projection.h) onto one role.
+// The header states each local type, and the check file of the header
+// proves that each one is the projection, so a unit that includes the
+// header compiles no projection.  A carrier states its network model
+// (fixy/session/NetworkModel.h).  The protocol has no choice, and the
+// coordinator receives from two senders.  So it is implementable on
+// per-pair FIFO and on a bag, but not on a mailbox (fixy/session/Network.h),
+// and the check file proves that too.  A mint that gives the handle of a
+// role must first ask ::fixy::session::CarrierImplements with the global
 // type and the carrier.
 //
 // No production file makes the handle of a role, so this header carries
@@ -331,27 +332,18 @@ using FederationGlobal = ::fixy::session::global::Rec<::fixy::session::global::M
 // A projection gives a queue and a local type.  At the start of the
 // protocol each queue is empty, so a role protocol is the local type.
 template <typename KeyTag = AnyFederationKey>
-using SenderProto = typename ::fixy::session::project_t<FederationGlobal<KeyTag>, SenderRole>::local;
-
-template <typename KeyTag = AnyFederationKey>
-using ReceiverProto = typename ::fixy::session::project_t<FederationGlobal<KeyTag>, ReceiverRole>::local;
-
-template <typename KeyTag = AnyFederationKey>
-using CoordProto = typename ::fixy::session::project_t<FederationGlobal<KeyTag>, CoordRole>::local;
-
-template <typename KeyTag = AnyFederationKey>
-using ExpectedSenderProto = ::fixy::session::Loop<::fixy::session::Send<
+using SenderProto = ::fixy::session::Loop<::fixy::session::Send<
     ::fixy::session::PeerMsg<CoordRole, HeaderLabel, HeaderPayload<KeyTag>>,
     ::fixy::session::Recv<::fixy::session::PeerMsg<CoordRole, AckLabel, Ack<KeyTag>>, ::fixy::session::Continue>>>;
 
 template <typename KeyTag = AnyFederationKey>
-using ExpectedReceiverProto = ::fixy::session::Loop<
+using ReceiverProto = ::fixy::session::Loop<
     ::fixy::session::Recv<::fixy::session::PeerMsg<CoordRole, PullLabel, PullRequest<KeyTag>>,
                           ::fixy::session::Send<::fixy::session::PeerMsg<CoordRole, BodyLabel, BodyPayload<KeyTag>>,
                                                 ::fixy::session::Continue>>>;
 
 template <typename KeyTag = AnyFederationKey>
-using ExpectedCoordProto = ::fixy::session::Loop<::fixy::session::Recv<
+using CoordProto = ::fixy::session::Loop<::fixy::session::Recv<
     ::fixy::session::PeerMsg<SenderRole, HeaderLabel, HeaderPayload<KeyTag>>,
     ::fixy::session::Send<::fixy::session::PeerMsg<SenderRole, AckLabel, Ack<KeyTag>>,
                           ::fixy::session::Send<::fixy::session::PeerMsg<ReceiverRole, PullLabel, PullRequest<KeyTag>>,

@@ -2,6 +2,9 @@
 
 #include <crucible/cipher/FederationProtocol.h>
 
+#include <fixy/session/Network.h>
+#include <fixy/session/Projection.h>
+
 namespace crucible::cipher::federation {
 
 // The offsets below are pinned because a codec written elsewhere
@@ -60,13 +63,22 @@ static_assert(sizeof(FederationEntryHeader::reserved) == 4,
               "reserved MUST be a 32-bit field — a later layout claims this "
               "slot, and the width has to be there waiting for it.");
 
+// The header states each local type, and each one is the projection of the
+// global type onto its role, with an empty queue at the start.
 static_assert(::fixy::session::global::is_global_well_formed_v<FederationGlobal<>>);
 static_assert(::fixy::session::project_t<FederationGlobal<>, SenderRole>::queue::size == 0);
 static_assert(::fixy::session::project_t<FederationGlobal<>, ReceiverRole>::queue::size == 0);
 static_assert(::fixy::session::project_t<FederationGlobal<>, CoordRole>::queue::size == 0);
-static_assert(std::is_same_v<SenderProto<>, ExpectedSenderProto<>>);
-static_assert(std::is_same_v<ReceiverProto<>, ExpectedReceiverProto<>>);
-static_assert(std::is_same_v<CoordProto<>, ExpectedCoordProto<>>);
+static_assert(std::is_same_v<::fixy::session::project_t<FederationGlobal<>, SenderRole>::local, SenderProto<>>);
+static_assert(std::is_same_v<::fixy::session::project_t<FederationGlobal<>, ReceiverRole>::local, ReceiverProto<>>);
+static_assert(std::is_same_v<::fixy::session::project_t<FederationGlobal<>, CoordRole>::local, CoordProto<>>);
+struct CheckKey {};
+static_assert(
+    std::is_same_v<::fixy::session::project_t<FederationGlobal<CheckKey>, SenderRole>::local, SenderProto<CheckKey>>);
+static_assert(std::is_same_v<::fixy::session::project_t<FederationGlobal<CheckKey>, ReceiverRole>::local,
+                             ReceiverProto<CheckKey>>);
+static_assert(
+    std::is_same_v<::fixy::session::project_t<FederationGlobal<CheckKey>, CoordRole>::local, CoordProto<CheckKey>>);
 static_assert(role_protocol_matches_v<SenderRole, SenderProto<>>);
 static_assert(role_protocol_matches_v<ReceiverRole, ReceiverProto<>>);
 static_assert(role_protocol_matches_v<CoordRole, CoordProto<>>);
