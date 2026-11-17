@@ -160,12 +160,12 @@ def main():
     # ── Phase 2: Training through Crucible ───────────────────
     print("Phase 2: Training through Crucible...")
 
-    # Reset model for clean test.  AdamW with no fused kernel computes its step
-    # size in Python at each iteration and gives it to aten::div and
-    # aten::addcdiv_ as a scalar.  The guard word folds each scalar, so that
-    # loop has no period and never replays (test_guard_divergence.py).  The
-    # fused kernel takes constant scalars and reads the step from a tensor, so
-    # its loop replays.
+    # Reset model for clean test.  The loop trains with the fused AdamW.  With
+    # no fused kernel, the update of each parameter is a block of ops, and two
+    # parameters of one shape repeat the block.  Under this mode that loop did
+    # not replay in 200 iterations, and the detector cut a region of 10 ops
+    # again and again.  The native vessel replays the same loop from its fifth
+    # iteration (test_guard_divergence.py checks the step size of AdamW there).
     model = MiniGPT(VOCAB, D_MODEL, N_HEADS, N_LAYERS, D_FF, MAX_SEQ)
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, fused=True)
@@ -193,10 +193,11 @@ def main():
                 print(f"  iter {i:2d}: [{status}] loss={loss_val:.4f} "
                       f"diverged={diverged} ops/iter={ops_per}")
 
-            # Give bg thread time to process after a few recording iters
-            if i == 4:
+            # The background pipeline processes each recorded iteration before
+            # the next one starts, so the result does not depend on its speed,
+            # as in test_stress.py.
+            if not compiled:
                 mode.flush()
-                _spin_for(0.1)
 
         print()
         mode.flush()

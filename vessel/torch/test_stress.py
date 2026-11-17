@@ -252,14 +252,13 @@ def main():
     all_ok = all_ok and ok
 
     # ── Test 2: GPT-4L ───────────────────────────────────────
-    # AdamW with no fused kernel computes its step size in Python at each
-    # iteration and gives it to aten::div and aten::addcdiv_ as a scalar.  The
-    # guard word folds each scalar, so that loop has no period and never
-    # replays (test_guard_divergence.py).  The fused kernel takes constant
-    # scalars and reads the step from a tensor, so its loop replays.
+    # AdamW with no fused kernel, the default on the host, computes its step
+    # size in Python at each iteration and gives it to aten::addcdiv_ as a data
+    # scalar.  The guard word reads the tag of a data scalar but not its
+    # value, so the loop replays (test_guard_divergence.py).
     torch.manual_seed(42)
     gpt = GPT4L(vocab=256, d=128, h=8, d_ff=256, n_layers=4, max_seq=64)
-    gpt_opt = torch.optim.AdamW(gpt.parameters(), lr=1e-3, fused=True)
+    gpt_opt = torch.optim.AdamW(gpt.parameters(), lr=1e-3)
     tok = torch.randint(0, 256, (4, 32))
     tgt = torch.randint(0, 256, (4, 32))
 
