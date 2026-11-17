@@ -7,7 +7,9 @@
 // mint_socket below makes the call through SocketDoor, the one door to
 // socket(2), so a socket handle holds a descriptor that the kernel returned
 // to a gated mint.  The door file src/fixy/os/Socket.cpp issues the call with
-// the raw primitive of foundation/os/Syscall.h.
+// the raw primitive of foundation/os/Syscall.h.  The words of the calls come
+// from fixy/os/SocketCalls.h (THE KERNEL WORDS), so this header includes no
+// system header.
 //
 // Two kinds are declared: the netlink socket of the qdisc query, and the
 // TCP stream socket whose options the test of THE SOCKET CALLS reads back
@@ -30,9 +32,6 @@
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 #include <foundation/os/Errno.h>
-
-#include <linux/netlink.h>
-#include <sys/socket.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -74,8 +73,9 @@ struct socket_triple final {
 // socket as a known kind.  A kind with no row has no triple, so the mint refuses
 // it and socket(2) never sees a guessed triple.
 inline constexpr ::fixy::atom_pack::tag_row<detail::socket_triple> socket_table[] = {
-    {^^socket_kind::NetlinkRoute, {AF_NETLINK, SOCK_RAW, NETLINK_ROUTE}},
-    {^^socket_kind::TcpStream, {AF_INET, SOCK_STREAM, 0}},
+    {^^socket_kind::NetlinkRoute,
+     {detail::address_family_netlink, detail::socket_type_raw, detail::netlink_route_protocol}},
+    {^^socket_kind::TcpStream, {detail::address_family_inet, detail::socket_type_stream, 0}},
 };
 
 template <typename Kind>
@@ -169,9 +169,10 @@ inline constexpr std::size_t congestion_name_bytes = 15;
 namespace detail {
 
 // The address of a netlink socket that asks the kernel for a unique port:
-// the bytes of struct sockaddr_nl with no port and no group.
+// the bytes of struct sockaddr_nl with no port and no group.  The check file
+// of this header compares the size with that struct.
 struct NetlinkAddress final {
-    std::uint16_t family = AF_NETLINK;
+    std::uint16_t family = static_cast<std::uint16_t>(address_family_netlink);
     std::uint16_t pad = 0;
     std::uint32_t port = 0;
     std::uint32_t groups = 0;
@@ -249,7 +250,7 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsSocketCall<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_max_pacing_rate(Ctx const&, NonNegative<int> socket, std::uint64_t bytes_per_second) noexcept {
-    return detail::set_option_(socket.value(), SOL_SOCKET, SO_MAX_PACING_RATE, &bytes_per_second,
+    return detail::set_option_(socket.value(), detail::socket_level, detail::max_pacing_rate_option, &bytes_per_second,
                                sizeof(bytes_per_second));
 }
 
@@ -259,8 +260,6 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsSocketCall<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 bind_netlink(Ctx const&, ::fixy::fs::OwnedFd const& socket) noexcept {
-    static_assert(sizeof(detail::NetlinkAddress) == sizeof(::sockaddr_nl),
-                  "NetlinkAddress has the bytes of struct sockaddr_nl");
     detail::NetlinkAddress const address{};
     return detail::bind_address_(socket.get(), &address, sizeof(address));
 }
@@ -272,7 +271,7 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 send_bytes(Ctx const&, ::fixy::fs::OwnedFd const& socket, ::foundation::core::View<std::byte const> buffer) noexcept {
     return detail::send_with_flags_(socket.get(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
-                                    buffer.size(), MSG_DONTWAIT);
+                                    buffer.size(), detail::no_wait_flag);
 }
 
 // Receives the bytes that the socket holds, at most the size of buffer, and
@@ -282,7 +281,7 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 receive_bytes(Ctx const&, ::fixy::fs::OwnedFd const& socket, ::foundation::core::View<std::byte> buffer) noexcept {
     return detail::receive_with_flags_(socket.get(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
-                                       buffer.size(), MSG_DONTWAIT);
+                                       buffer.size(), detail::no_wait_flag);
 }
 
 // The longest name of a network interface of the kernel, with no zero
@@ -298,7 +297,8 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_socket_timestamping(Ctx const&, NonNegative<int> socket) noexcept {
     std::uint32_t const flags = detail::receive_timestamping_flags;
-    return detail::set_option_(socket.value(), SOL_SOCKET, SO_TIMESTAMPING, &flags, sizeof(flags));
+    return detail::set_option_(socket.value(), detail::socket_level, detail::timestamping_option, &flags,
+                               sizeof(flags));
 }
 
 // Turns on the hardware stamps of the NIC of the network interface
@@ -322,8 +322,9 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsSocketCall<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<TimestampedReceive, ::foundation::os::Errno>
 receive_with_timestamps(Ctx const&, NonNegative<int> socket, ::foundation::core::View<std::byte> buffer) noexcept {
-    return detail::receive_with_timestamps_(
-        socket.value(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer), buffer.size(), MSG_DONTWAIT);
+    return detail::receive_with_timestamps_(socket.value(),
+                                            first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
+                                            buffer.size(), detail::no_wait_flag);
 }
 
 }  // namespace fixy::net

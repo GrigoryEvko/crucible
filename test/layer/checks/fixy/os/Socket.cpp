@@ -5,8 +5,10 @@
 #include <foundation/core/Scalar.h>
 
 #include <linux/net_tstamp.h>
+#include <linux/netlink.h>
 #include <linux/sockios.h>
 #include <net/if.h>
+#include <sys/socket.h>
 
 #include <cstddef>
 #include <ctime>
@@ -16,6 +18,8 @@ namespace fixy::net::detail::socket_surface_invariants {
 static_assert(socket_triple_of(^^socket_kind::NetlinkRoute).domain == AF_NETLINK);
 static_assert(socket_triple_of(^^socket_kind::NetlinkRoute).type == SOCK_RAW);
 static_assert(socket_triple_of(^^socket_kind::NetlinkRoute).protocol == NETLINK_ROUTE);
+static_assert(socket_triple_of(^^socket_kind::TcpStream).domain == AF_INET);
+static_assert(socket_triple_of(^^socket_kind::TcpStream).type == SOCK_STREAM);
 
 struct NotASocketKind final {};
 static_assert(MappedSocketKind<socket_kind::NetlinkRoute>);
@@ -40,6 +44,15 @@ static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_cons
 // THE KERNEL WORDS of fixy/os/SocketCalls.h are the words of the system
 // headers.
 static_assert(socket_level == SOL_SOCKET);
+static_assert(address_family_inet == AF_INET && address_family_netlink == AF_NETLINK);
+static_assert(socket_type_stream == SOCK_STREAM && socket_type_raw == SOCK_RAW);
+static_assert(netlink_route_protocol == NETLINK_ROUTE);
+static_assert(max_pacing_rate_option == SO_MAX_PACING_RATE);
+static_assert(no_wait_flag == MSG_DONTWAIT);
+static_assert(sizeof(NetlinkAddress) == sizeof(::sockaddr_nl), "NetlinkAddress has the bytes of struct sockaddr_nl");
+static_assert(offsetof(NetlinkAddress, family) == offsetof(::sockaddr_nl, nl_family)
+              && offsetof(NetlinkAddress, port) == offsetof(::sockaddr_nl, nl_pid)
+              && offsetof(NetlinkAddress, groups) == offsetof(::sockaddr_nl, nl_groups));
 static_assert(send_no_signal_flag == MSG_NOSIGNAL);
 static_assert(socket_close_on_exec_flag == SOCK_CLOEXEC);
 static_assert(timestamping_option == SO_TIMESTAMPING && timestamping_option == SCM_TIMESTAMPING);

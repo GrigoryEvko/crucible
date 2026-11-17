@@ -10,12 +10,13 @@
 // descriptor below zero gives EBADF and makes no system call.
 //
 // THE KERNEL WORDS
-//   The timestamp calls need words and structs of <sys/socket.h>,
-//   <linux/net_tstamp.h>, <linux/sockios.h> and <net/if.h>.  The door file
-//   includes none of them, so this header gives each one as a word or as a
-//   plain record of a 64-bit build.  An address in a record is a word, as
-//   the primitive takes it.  The check file of fixy/os/Socket.h compares
-//   each word, each size and each offset with those headers.
+//   The socket calls need words and structs of <sys/socket.h>,
+//   <linux/netlink.h>, <linux/net_tstamp.h>, <linux/sockios.h> and
+//   <net/if.h>.  No door file and no door header includes them, so this
+//   header gives each one as a word or as a plain record of a 64-bit build.
+//   An address in a record is a word, as the primitive takes it.  The check
+//   file of fixy/os/Socket.h compares each word, each size and each offset
+//   with those headers.
 
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
@@ -76,6 +77,25 @@ namespace fixy::net::detail {
 
 // SOL_SOCKET: the level of the options of each socket.
 inline constexpr int socket_level = 1;
+
+// AF_INET and AF_NETLINK: the address families of the socket kinds of
+// fixy/os/Socket.h.
+inline constexpr int address_family_inet = 2;
+inline constexpr int address_family_netlink = 16;
+
+// SOCK_STREAM and SOCK_RAW: the types of the socket kinds.
+inline constexpr int socket_type_stream = 1;
+inline constexpr int socket_type_raw = 3;
+
+// NETLINK_ROUTE: the protocol of a netlink socket to the routing subsystem.
+inline constexpr int netlink_route_protocol = 0;
+
+// SO_MAX_PACING_RATE of a 64-bit build: the option of the largest pacing rate
+// of a socket.
+inline constexpr int max_pacing_rate_option = 47;
+
+// MSG_DONTWAIT: a send or a receive that does not wait.
+inline constexpr int no_wait_flag = 0x40;
 
 // MSG_NOSIGNAL: a send to a socket with no connection, or to a peer that
 // closed, gives EPIPE and raises no SIGPIPE.  The send door adds it to the
@@ -233,7 +253,7 @@ set_tcp_option_(int socket, TcpOption option, void const* value, std::uint32_t s
 read_tcp_option_(int socket, TcpOption option, void* value, std::uint32_t capacity) noexcept;
 
 // Sets the option NAME of LEVEL of SOCKET to the SIZE bytes at VALUE.
-// fixy/os/Socket.h gives LEVEL and NAME from <sys/socket.h>.
+// fixy/os/Socket.h gives LEVEL and NAME from THE KERNEL WORDS above.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_option_(int socket, int level, int name, void const* value, std::uint32_t size) noexcept;
 
