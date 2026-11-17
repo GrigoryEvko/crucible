@@ -218,19 +218,20 @@ template <class Key>
 
 // THE KEYS OF A BitSet: the position of each kind of key.  The walk of a set
 // makes the key at a position itself, from the positions of its own bits, so
-// no function of the base makes a key from a number with no check.
+// no function of the base makes a key from a number with no check.  A
+// BitKeyKind holds no key and makes none, so it is no passkey.
 template <class Key>
-struct BitKey;
+struct BitKeyKind;
 
 template <std::size_t M>
-struct BitKey<Index<M>> {
+struct BitKeyKind<Index<M>> {
     static constexpr bool is_proven = true;
 
     [[nodiscard]] static constexpr std::size_t position_of_(Index<M> key) noexcept { return key.raw(); }
 };
 
 template <class Tag, UnsignedInteger Word>
-struct BitKey<Id<Tag, Word>> {
+struct BitKeyKind<Id<Tag, Word>> {
     static constexpr bool is_proven = false;
 
     [[nodiscard]] static constexpr std::size_t position_of_(Id<Tag, Word> key) noexcept {
@@ -240,7 +241,7 @@ struct BitKey<Id<Tag, Word>> {
 
 template <class E>
     requires std::is_scoped_enum_v<E>
-struct BitKey<E> {
+struct BitKeyKind<E> {
     using Raw = std::make_unsigned_t<std::underlying_type_t<E>>;
 
     static constexpr bool is_proven = false;
@@ -375,7 +376,7 @@ public:
         std::size_t const position = word_ * detail::bits_in_<Word> + static_cast<std::size_t>(countr_zero(bits_));
         if constexpr (std::is_scoped_enum_v<Member>) {
             return static_cast<Member>(position);
-        } else if constexpr (detail::BitKey<Member>::is_proven) {
+        } else if constexpr (detail::BitKeyKind<Member>::is_proven) {
             return Member{detail::IndexDoor::key(), position};
         } else {
             using IdWord = std::remove_cvref_t<decltype(std::declval<Member const&>().raw())>;
@@ -401,7 +402,7 @@ template <std::size_t N, class Key>
     requires IndexCount<N> && BitSetKey<Key, N>
 class BitSet final {
     using Word = detail::BitWordOf<N>;
-    using KeyKind = detail::BitKey<Key>;
+    using KeyKind = detail::BitKeyKind<Key>;
 
     // The enumerators of an enum key lie below N, so each enumerator is a
     // position of the set.  A value that no enumerator names gets the compare
