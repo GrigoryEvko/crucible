@@ -126,6 +126,54 @@ static_assert(sort_stably_keeps_equal_keys_in_order());
 }
 static_assert(comparator_form_keeps_equal_keys_in_order());
 
+// An order by key projects a data member or a function to a key that
+// Ascending orders.  A projection to a record is refused.
+struct Outer {
+    Record record{};
+    std::uint32_t weight = 0;
+};
+static_assert(KeyProjection<decltype(&Outer::weight), Outer> && !KeyProjection<decltype(&Outer::record), Outer>);
+static_assert(StrictOrder<decltype(order_by_key(&Outer::weight)), Outer>);
+static_assert(order_by_key (&Record::key)(Record{1, 0}, Record{2, 0})
+              && order_by_key_descending(&Record::key)(Record{2, 0}, Record{1, 0}));
+
+// The radix sort by key of 300 records keeps the records of one key in their
+// order of input in each direction, in constant evaluation too.
+template <KeyDirection Direction>
+[[nodiscard]] consteval bool radix_by_key_keeps_equal_keys_in_order() noexcept {
+    FixedArray<Record, 300> records{};
+    std::uint32_t tag = 0;
+    std::uint32_t next = 3;
+    for (Record& record : records) {
+        next = (next * 37 + 11) % 101;
+        record = Record{next % 9, tag};
+        ++tag;
+    }
+    FixedArray<Record, 300> scratch{};
+    bool is_sorted = false;
+    records = with_mut(std::move(records), [&](auto elements) noexcept {
+        scratch = with_mut(std::move(scratch), [&](auto room) noexcept {
+            if constexpr (Direction == KeyDirection::ascending) {
+                is_sorted = sort_stably(std::move(elements), std::move(room), order_by_key(&Record::key)).is_ok();
+            } else {
+                is_sorted =
+                    sort_stably(std::move(elements), std::move(room), order_by_key_descending(&Record::key)).is_ok();
+            }
+        });
+    });
+    Record last{0, 0};
+    bool is_first = true;
+    for (Record const& record : records) {
+        bool const is_before = Direction == KeyDirection::ascending ? record.key < last.key : record.key > last.key;
+        if (!is_first && (is_before || (record.key == last.key && record.tag < last.tag))) return false;
+        last = record;
+        is_first = false;
+    }
+    return is_sorted;
+}
+static_assert(radix_by_key_keeps_equal_keys_in_order<KeyDirection::ascending>());
+static_assert(radix_by_key_keeps_equal_keys_in_order<KeyDirection::descending>());
+
 // A scratch of another count is refused.
 [[nodiscard]] consteval bool short_scratch_is_refused() noexcept {
     FixedArray<int, 4> values{4, 3, 2, 1};

@@ -19,6 +19,10 @@
 //   sort_stably by an order of the caller
 //                                   the comparator form: the order of
 //                                   Ascending as a function of the caller
+//   sort_stably by order_by_key     records of a float key and a payload of
+//                                   four bytes, by the radix sort of the keys
+//                                   in each direction, and by the comparator
+//                                   form of the same order
 //   sort_by_network<N>              the network of N, which is not stable
 //   find_lower_bound                one search of a sorted run of 2^20
 //
@@ -187,6 +191,35 @@ template <typename Body>
 struct FloatTotalOrder {
     [[nodiscard]] bool operator()(float const& left, float const& right) const noexcept {
         return ::foundation::core::encode_total_order_key(left) < ::foundation::core::encode_total_order_key(right);
+    }
+};
+
+// A record of a float key and a payload, for the rows of an order by a key.
+struct KeyedRecord final {
+    float key = 0.0f;
+    std::uint32_t payload = 0;
+};
+
+// The count of the records of their pool.
+constexpr std::size_t kRecordPoolCount = std::size_t{1} << 22;
+
+// The records of the first floats of the pool: the key of each record is a
+// float of the pool, and its payload is its position.
+[[nodiscard]] HeapArray<KeyedRecord> records_of(View<float const> pool) noexcept {
+    HeapArray<KeyedRecord> records = ::foundation::core::mint_heap_array(kAlloc, kRecordPoolCount, KeyedRecord{});
+    std::uint32_t position = 0;
+    for (KeyedRecord& record : records) {
+        record = KeyedRecord{*pool.get(position).expect("the key fits the pool"), position};
+        ++position;
+    }
+    return records;
+}
+
+// The ascending order of the keys of the records as a function of the
+// caller, so that a sort takes the comparator form.
+struct RecordKeyOrder {
+    [[nodiscard]] bool operator()(KeyedRecord const& left, KeyedRecord const& right) const noexcept {
+        return ::foundation::core::Ascending{}(left.key, right.key);
     }
 };
 
@@ -548,6 +581,38 @@ template <class T>
     bench_simd_roof<T, kShared>(row, raw_pool);
 }
 
+// The rows of Count records by their float keys: the radix sort of
+// order_by_key in each direction, the comparator form of the same order, and
+// std::stable_sort of that order as the floor.
+template <std::size_t Count>
+[[gnu::noinline]] void bench_records(View<KeyedRecord const> pool, RawRun<KeyedRecord> const& raw_pool) {
+    bench::Report const by_key = measure_sort_stably<KeyedRecord, Count>(
+        bench::Run{"order_by_key"}, pool, ::foundation::core::order_by_key(&KeyedRecord::key));
+    bench::Report const by_key_descending = measure_sort_stably<KeyedRecord, Count>(
+        bench::Run{"order_by_key_descending"}, pool, ::foundation::core::order_by_key_descending(&KeyedRecord::key));
+    bench::Report const by_order =
+        measure_sort_stably<KeyedRecord, Count>(bench::Run{"record comparator"}, pool, RecordKeyOrder{});
+    bench::Report const std_stable = measure_reference<KeyedRecord, Count>(bench::Run{"std::stable_sort records"},
+                                                                           raw_pool, StdStableSort<RecordKeyOrder>{});
+    fixy::FixedText<96> by_key_text{};
+    fixy::FixedText<96> descending_text{};
+    fixy::FixedText<96> order_text{};
+    fixy::FixedText<96> std_text{};
+    Row const by_key_row{name_with_count<Count>(by_key_text, "sort_stably records by order_by_key"), by_key};
+    Row const descending_row{name_with_count<Count>(descending_text, "sort_stably records by order_by_key_descending"),
+                             by_key_descending};
+    Row const order_row{name_with_count<Count>(order_text, "sort_stably records by an order of the caller"), by_order};
+    Row const std_row{name_with_count<Count>(std_text, "std::stable_sort records by the key"), std_stable};
+    print_row<Count>(by_key_row);
+    print_row<Count>(descending_row);
+    print_row<Count>(order_row);
+    print_row<Count>(std_row);
+    print_ratio(Pair{.row = by_key_row, .reference = std_row});
+    print_ratio(Pair{.row = descending_row, .reference = std_row});
+    print_ratio(Pair{.row = order_row, .reference = std_row});
+    print_ratio(Pair{.row = by_key_row, .reference = order_row});
+}
+
 // The rows of the network of N, with std::sort of the same N as the floor.
 template <std::size_t N>
 [[gnu::noinline]] void bench_network(View<float const> pool, RawRun<float> const& raw_pool) {
@@ -601,6 +666,11 @@ int main() {
     bench_words(View<std::uint32_t const>{words.view()}, "uint32");
     HeapArray<std::uint64_t> const wide_words = wide_words_of(pool);
     bench_words(View<std::uint64_t const>{wide_words.view()}, "uint64");
+    HeapArray<KeyedRecord> const records = records_of(pool);
+    View<KeyedRecord const> const record_pool{records.view()};
+    RawRun<KeyedRecord> const raw_records = raw_copy_of(record_pool);
+    bench_records<65536>(record_pool, raw_records);
+    bench_records<kShared>(record_pool, raw_records);
     bench_search(pool);
     return 0;
 }

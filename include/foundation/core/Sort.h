@@ -10,12 +10,16 @@
 //                                 compare-exchange steps, for N from 2 to 256,
 //                                 in a ViewMut of the fixed extent N
 //   plan_sort_network<N>()        the comparators of that network, in order
+//   order_by_key(project), order_by_key_descending(project)
+//                                 the order of the elements by the key that
+//                                 a data member or a function gives
+//                                 (KeyOrder), in each direction
 //   sort_stably(view, scratch, less)
 //                                 a stable sort of a ViewMut of any count,
 //                                 with a ViewMut of scratch of the same count
 //                                 from the caller: a radix sort of the keys
-//                                 for Ascending, and driftsort for each other
-//                                 order
+//                                 for Ascending and for an order by a key,
+//                                 and driftsort for each other order
 //   find_lower_bound(view, value, less)
 //                                 the first position whose element is not
 //                                 below value, in a sorted View
@@ -58,9 +62,12 @@
 // THE COSTS
 //   sort_by_network of N makes the comparators of its plan: about
 //   P * log2(P)^2 / 4 for P the next power of two.  sort_stably by Ascending
-//   of at least stable_sort_radix_count elements reads the elements one time
-//   for the counts of each byte of the keys.  Then it moves them one time for
-//   each byte in which two keys differ.  Each other sort_stably is driftsort
+//   or by an order by a key of at most eight bytes, of at least
+//   stable_sort_radix_count elements, reads the elements one time for the
+//   counts of each byte of the keys.  Then it moves them one time for each
+//   byte in which two keys differ.  At run time a float or a double first
+//   takes the bits of its key in its place, and the bits of the float come
+//   back after the last pass.  Each other sort_stably is driftsort
 //   (detail::StableSort): O(n log n) compares and copies in the worst case,
 //   O(n log k) for k distinct values, and n - 1 compares for a run that is in
 //   order or strictly descending.  Its loops over the elements have no branch
@@ -126,6 +133,88 @@ concept StrictOrder = std::is_nothrow_invocable_v<Less&, T const&, T const&>
 template <class T>
 concept SortElement = std::is_object_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T> && !std::is_array_v<T>
                    && std::is_nothrow_copy_constructible_v<T> && std::is_nothrow_copy_assignable_v<T>;
+
+// ── The order by a key ──────────────────────────────────────────────────
+
+// The direction of an order by a key.
+enum class KeyDirection : std::uint8_t {
+    ascending,  // the order of Ascending on the keys
+    descending,  // the reverse of the order of Ascending on the keys
+};
+
+namespace detail {
+
+// The key of an element: the data member that project names, or the result
+// of project.
+template <class Project, class T>
+[[nodiscard]] CRUCIBLE_INLINE constexpr decltype(auto) project_key_(Project const& project, T const& element) noexcept {
+    if constexpr (std::is_member_object_pointer_v<Project>) {
+        return (element.*project);
+    } else {
+        return project(element);
+    }
+}
+
+template <class Project, class T>
+using projected_key_t =
+    std::remove_cvref_t<decltype(project_key_(std::declval<Project const&>(), std::declval<T const&>()))>;
+
+}  // namespace detail
+
+// A projection of an element of T to its key: a pointer to a data member of
+// T, or a function of a T const& with no throw, whose key is an element that
+// Ascending orders.
+template <class Project, class T>
+concept KeyProjection =
+    (std::is_member_object_pointer_v<Project> || std::is_nothrow_invocable_v<Project const&, T const&>)
+    && AscendingElement<detail::projected_key_t<Project, T>>;
+
+// The order of the elements by their keys: Ascending on the keys, or its
+// reverse.  Two elements of one key are equivalent, so a stable sort keeps
+// them in their order of input in each direction.  order_by_key and
+// order_by_key_descending make one.  From stable_sort_radix_count elements,
+// sort_stably sorts by the bytes of the keys when a key has at most eight
+// bytes, as it does for Ascending, and it gives the bits of the comparator
+// form of the same order (THE ORDER).
+template <class Project, KeyDirection Direction>
+class KeyOrder final {
+public:
+    static constexpr KeyDirection direction = Direction;
+
+    constexpr explicit KeyOrder(Project project) noexcept : project_{project} {}
+
+    template <class T>
+        requires KeyProjection<Project, T>
+    [[nodiscard]] constexpr bool operator()(T const& left, T const& right) const noexcept {
+        if constexpr (Direction == KeyDirection::ascending) {
+            return Ascending{}(detail::project_key_(project_, left), detail::project_key_(project_, right));
+        } else {
+            return Ascending{}(detail::project_key_(project_, right), detail::project_key_(project_, left));
+        }
+    }
+
+    // The key of an element.
+    template <class T>
+        requires KeyProjection<Project, T>
+    [[nodiscard]] constexpr detail::projected_key_t<Project, T> key_of(T const& element) const noexcept {
+        return detail::project_key_(project_, element);
+    }
+
+private:
+    Project project_{};
+};
+
+// The ascending order of the keys that project gives.
+template <class Project>
+[[nodiscard]] constexpr KeyOrder<Project, KeyDirection::ascending> order_by_key(Project project) noexcept {
+    return KeyOrder<Project, KeyDirection::ascending>{project};
+}
+
+// The descending order of the keys that project gives.
+template <class Project>
+[[nodiscard]] constexpr KeyOrder<Project, KeyDirection::descending> order_by_key_descending(Project project) noexcept {
+    return KeyOrder<Project, KeyDirection::descending>{project};
+}
 
 // ── The network ─────────────────────────────────────────────────────────
 
@@ -997,29 +1086,30 @@ template <AscendingElement T>
 // The count of the values of one byte of a key.
 inline constexpr std::size_t radix_buckets = 256;
 
-// Sorts the count elements from elements by the bytes of their keys, from the
-// lowest byte, with one pass for each byte in which two elements differ.  A
-// pass moves each element to its bucket in the order of its source, so the
-// sort is stable, and the order of the keys is the order of Ascending.  The
-// result is in elements, and the values of scratch have no meaning.  The
-// count is at least 1.  Complexity: one read of the elements for the counts
-// of each byte, and one read and one write of the elements for each pass.
-template <AscendingElement T>
-    requires(sizeof(T) <= 8)
-constexpr void radix_sort_(T* elements, T* scratch, std::size_t count) noexcept {
-    constexpr std::size_t bytes = sizeof(T);
-    FixedArray<std::size_t, radix_buckets * bytes> counts{};
+// Sorts a run by the Bytes low bytes of the key of each element, from the
+// lowest byte, with one pass for each byte in which two elements differ.
+// key_of gives the key of an element: an unsigned word whose order is the
+// order of the sort.  A pass moves each element to its bucket in the order of
+// its source, so the sort is stable.  The result is in the run, and the
+// values of the scratch have no meaning.  The run holds at least one element.
+// Complexity: one read of the run for the counts of each byte, and one read
+// and one write of the run for each pass.
+template <std::size_t Bytes, class T, class KeyOf>
+constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& scratch, KeyOf const& key_of) noexcept {
+    std::size_t const count = run.size();
+    T* const elements = first_of_(ViewDoor::key(), run);
+    FixedArray<std::size_t, radix_buckets * Bytes> counts{};
     std::size_t* const tally = first_of_(ViewDoor::key(), counts.view());
     for (std::size_t index = 0; index < count; ++index) {
-        radix_key_t<T> const key = radix_key_(elements[index]);
-        for (std::size_t byte = 0; byte < bytes; ++byte) {
+        auto const key = key_of(elements[index]);
+        for (std::size_t byte = 0; byte < Bytes; ++byte) {
             ++tally[byte * radix_buckets + ((key >> (8 * byte)) & 0xFFu)];
         }
     }
-    radix_key_t<T> const first_key = radix_key_(elements[0]);
+    auto const first_key = key_of(elements[0]);
     T* source = elements;
-    T* target = scratch;
-    for (std::size_t byte = 0; byte < bytes; ++byte) {
+    T* target = first_of_(ViewDoor::key(), scratch.value());
+    for (std::size_t byte = 0; byte < Bytes; ++byte) {
         std::size_t* const bucket = tally + byte * radix_buckets;
         // A byte that each element shares moves no element.
         if (bucket[(first_key >> (8 * byte)) & 0xFFu] == count) continue;
@@ -1031,18 +1121,51 @@ constexpr void radix_sort_(T* elements, T* scratch, std::size_t count) noexcept 
         }
         for (std::size_t index = 0; index < count; ++index) {
             T const element = source[index];
-            target[bucket[(radix_key_(element) >> (8 * byte)) & 0xFFu]++] = element;
+            target[bucket[(key_of(element) >> (8 * byte)) & 0xFFu]++] = element;
         }
         T* const sorted = target;
         target = source;
         source = sorted;
     }
-    if (source != elements) {
-        for (std::size_t index = 0; index < count; ++index) {
-            elements[index] = source[index];
-        }
+    if (source != elements) copy_run_(run_of_(static_cast<T const*>(source), SortCount{count}), run);
+}
+
+// Writes the bits of the radix key of each float of a run in its place.
+template <class T>
+    requires std::same_as<T, float> || std::same_as<T, double>
+constexpr void encode_radix_keys_(View<T> run) noexcept {
+    T* const first = first_of_(ViewDoor::key(), run);
+    for (std::size_t index = 0; index < run.size(); ++index) {
+        first[index] = __builtin_bit_cast(T, radix_key_(first[index]));
     }
 }
+
+// Writes back the float of the radix key in each place of a run: the inverse
+// of encode_radix_keys_.  A flip of the sign bit gives the total order key,
+// and the total order key of a total order key is the bits of the float.
+template <class T>
+    requires std::same_as<T, float> || std::same_as<T, double>
+constexpr void decode_radix_keys_(View<T> run) noexcept {
+    using Key = radix_key_t<T>;
+    using Signed = std::conditional_t<sizeof(T) == 4, std::int32_t, std::int64_t>;
+    constexpr Key sign = Key{1} << (8 * sizeof(T) - 1);
+    T* const first = first_of_(ViewDoor::key(), run);
+    for (std::size_t index = 0; index < run.size(); ++index) {
+        Key const key = __builtin_bit_cast(Key, first[index]) ^ sign;
+        Key const flip = static_cast<Key>(__builtin_bit_cast(Signed, key) >> (8 * sizeof(T) - 1)) >> 1;
+        first[index] = __builtin_bit_cast(T, key ^ flip);
+    }
+}
+
+// True for an order by key whose key has at most eight bytes: an order that
+// the radix sort can take.
+template <class Less, class T>
+inline constexpr bool is_radix_order_by_key_v = false;
+
+template <class Project, KeyDirection Direction, class T>
+    requires KeyProjection<Project, T>
+inline constexpr bool is_radix_order_by_key_v<KeyOrder<Project, Direction>, T> =
+    sizeof(projected_key_t<Project, T>) <= 8;
 
 }  // namespace detail
 
@@ -1050,11 +1173,12 @@ constexpr void radix_sort_(T* elements, T* scratch, std::size_t count) noexcept 
 // order in the input.  The scratch holds as many elements as the elements,
 // and its values after the call have no meaning.  Two counts that differ give
 // LengthMismatch with no write.  The two are unique borrows, so they share no
-// element.  With the order Ascending and at least stable_sort_radix_count
-// elements, the sort is the radix sort of the keys of the elements.  Each
-// other sort is driftsort (detail::StableSort).  The two give the same bits
-// (THE ORDER).  Complexity: O(n) for the radix sort, with one pass for each
-// byte of the element, and O(n log n) compares and copies for driftsort.
+// element.  With the order Ascending, or an order by a key of at most eight
+// bytes (KeyOrder), and at least stable_sort_radix_count elements, the sort
+// is the radix sort of the keys of the elements.  Each other sort is
+// driftsort (detail::StableSort).  The two give the same bits (THE ORDER).
+// Complexity: O(n) for the radix sort, with one pass for each byte of the
+// key, and O(n log n) compares and copies for driftsort.
 template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::size_t ScratchExtent,
           class Less = Ascending>
     requires SortElement<T> && StrictOrder<Less, T>
@@ -1063,19 +1187,50 @@ template <class T, class Brand, std::size_t Extent, class ScratchBrand, std::siz
                                                                  Less less = Less{}) noexcept {
     std::size_t const count = elements.size();
     if (scratch.size() != count) return err(LengthMismatch{});
-    T* const source = first_of_(detail::ViewDoor::key(), elements);
-    T* const target = first_of_(detail::ViewDoor::key(), scratch);
+    View<T> const run = detail::run_of_(first_of_(detail::ViewDoor::key(), elements), detail::SortCount{count});
+    auto const room = side_as<side::SortScratch>(
+        detail::run_of_(first_of_(detail::ViewDoor::key(), scratch), detail::SortCount{count}));
     // The key of the radix sort has at most eight bytes.  A wider integer of a
     // GNU dialect, such as __int128, takes the comparator form.
     if constexpr (std::same_as<Less, Ascending> && sizeof(T) <= 8) {
         if (count >= stable_sort_radix_count) {
-            detail::radix_sort_(source, target, count);
+            if constexpr (std::same_as<T, float> || std::same_as<T, double>) {
+                if !consteval {
+                    // The key of a float is a bijection of its bits.  So at run
+                    // time the sort writes the bits of the key of each element
+                    // in its place one time, sorts the bits as an unsigned
+                    // word, and writes each element back one time, in place of
+                    // the key of each element in each pass.  A copy of a float
+                    // keeps its bits.
+                    detail::encode_radix_keys_(run);
+                    detail::radix_sort_<sizeof(T)>(run, room, [](T const& element) noexcept {
+                        return __builtin_bit_cast(detail::radix_key_t<T>, element);
+                    });
+                    detail::decode_radix_keys_(run);
+                    return Unit{};
+                }
+            }
+            detail::radix_sort_<sizeof(T)>(run, room,
+                                           [](T const& element) noexcept { return detail::radix_key_(element); });
+            return Unit{};
+        }
+    } else if constexpr (detail::is_radix_order_by_key_v<Less, T>) {
+        if (count >= stable_sort_radix_count) {
+            // The complement of the key of a descending order sorts it as an
+            // ascending one, and two elements of one key keep their order.
+            constexpr std::size_t bytes = sizeof(decltype(less.key_of(std::declval<T const&>())));
+            detail::radix_sort_<bytes>(run, room, [&](T const& element) noexcept {
+                auto const key = detail::radix_key_(less.key_of(element));
+                if constexpr (Less::direction == KeyDirection::descending) {
+                    return static_cast<decltype(key)>(~key);
+                } else {
+                    return key;
+                }
+            });
             return Unit{};
         }
     }
-    View<T> const run = detail::run_of_(source, detail::SortCount{count});
-    detail::StableSort<T, Less> sorter{
-        run, side_as<side::SortScratch>(detail::run_of_(target, detail::SortCount{count})), less};
+    detail::StableSort<T, Less> sorter{run, room, less};
     sorter.sort(run);
     return Unit{};
 }

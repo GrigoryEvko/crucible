@@ -963,6 +963,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::Comparator, "one compare-exchange of a sorting network: two positions, and it makes no "
                                        "claim about the elements"},
     {^^::foundation::core::Ascending, "the order of a sort when the caller gives none: it holds nothing"},
+    {^^::foundation::core::KeyOrder,
+     "the order of a sort by the key of each element: it holds the projection to the key, the argument of a sort, "
+     "and it is never a value in a kernel signature"},
     {^^::foundation::core::CacheLine, "a layout wrapper: it aligns its cell and makes no claim about the cell"},
     {^^::foundation::core::Tally, kDescriptor},
     {^^::foundation::core::View,

@@ -2,9 +2,12 @@
 // input of zeros and ones, the networks and the stable sort against a naive
 // sort of the total order of IEEE 754, the stability of the stable sort, the
 // paths of driftsort (few keys, runs of the input, the fallback of the
-// quicksort under the adversary of McIlroy), the radix sort against the
-// comparator form, and the ordered searches against a scan.
+// quicksort under the adversary of McIlroy), the end of the process on an
+// order that is not a strict weak order, the radix sort and the orders by key
+// against the comparator form, and the ordered searches against a scan.
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Sort.h>
 #include <foundation/effects/Effect.h>
 
@@ -530,6 +533,109 @@ void test_radix_sort_agrees_with_the_comparator_form() {
     check_radix_against_merge<double>(stream);
 }
 
+// A less function of random answers is not a strict weak order, so it breaks
+// the precondition of sort_stably.  The two ends of a merge then take a
+// different count of the elements of one half, and the check of the merge
+// ends the process.  Each sort runs in a child process.  ASan ends a child
+// with no SIGABRT on a read or a write outside the run and its scratch, and
+// then the test fails.  The seed of each count is fixed.
+void test_sort_stably_ends_on_a_random_order(::fixy::TestRunnerCtx const& test) {
+    ::fixy::FixedArray<std::size_t, 3> const counts{40, 1000, 65536};
+    std::uint32_t seed = 0x50470010u;
+    for (std::size_t const count : counts) {
+        ::crucible::test::PhiloxStream stream{seed};
+        HeapArray<float> values = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
+        float next = 0.0f;
+        for (float& value : values) {
+            value = next;
+            next += 1.0f;
+        }
+        HeapArray<float> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
+        ::fixy::check::expect_dies(
+            test,
+            [&values, &scratch, &stream] noexcept {
+                auto const coin = [&stream](float const& /*left*/, float const& /*right*/) noexcept {
+                    return stream.below(2) == 0;
+                };
+                static_cast<void>(sort_through_frames(values, scratch, coin));
+            },
+            ::foundation::core::TextView{"fatal invariant failed: left"});
+        ++seed;
+    }
+}
+
+// A record of a float key, a short key and its position, for the orders by
+// key.  The member spare holds the two bytes between the short key and the
+// position, so the record has no padding byte.
+struct KeyedRecord {
+    float key = 0.0f;
+    std::int16_t short_key = 0;
+    std::uint16_t spare = 0;
+    std::uint32_t position = 0;
+};
+
+[[nodiscard]] bool has_same_records(View<KeyedRecord const> left, View<KeyedRecord const> right) noexcept {
+    if (left.size() != right.size()) return false;
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        KeyedRecord const one = ::crucible::test::element_at(left, index);
+        KeyedRecord const other = ::crucible::test::element_at(right, index);
+        if (bits_of(one.key) != bits_of(other.key) || one.short_key != other.short_key
+            || one.position != other.position) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// sort_stably by an order by key gives the records of the comparator form of
+// the same order.
+template <class Order, class Comparator>
+void check_order_by_key(HeapArray<KeyedRecord> const& input, Order order, Comparator comparator) noexcept {
+    View<KeyedRecord const> const source{input.view()};
+    HeapArray<KeyedRecord> by_key = ::foundation::core::mint_heap_array_copy<KeyedRecord>(test_alloc(), source);
+    HeapArray<KeyedRecord> by_comparator = ::foundation::core::mint_heap_array_copy<KeyedRecord>(test_alloc(), source);
+    HeapArray<KeyedRecord> scratch = ::foundation::core::mint_heap_array(test_alloc(), input.size(), KeyedRecord{});
+    assert(sort_through_frames(by_key, scratch, order));
+    assert(sort_through_frames(by_comparator, scratch, comparator));
+    assert(has_same_records(View<KeyedRecord const>{by_key.view()}, View<KeyedRecord const>{by_comparator.view()}));
+}
+
+// order_by_key and order_by_key_descending give the records of the comparator
+// form of the same order, below and above stable_sort_radix_count: a float
+// key of a data member with each class of float and with ties, and a signed
+// short key of a function.
+void test_order_by_key_agrees_with_the_comparator_form() {
+    ::crucible::test::PhiloxStream stream{0x50470007u};
+    ::fixy::FixedArray<std::size_t, 6> const counts{1, 255, 256, 1000, 4097, 65536};
+    for (std::size_t const count : counts) {
+        HeapArray<KeyedRecord> input = ::foundation::core::mint_heap_array(test_alloc(), count, KeyedRecord{});
+        std::uint32_t position = 0;
+        for (KeyedRecord& record : input) {
+            float const key = position % 5 == 0 ? 1.5f : draw_special_float(stream);
+            auto const short_key = static_cast<std::int16_t>(static_cast<std::int32_t>(stream.below(600)) - 300);
+            record = KeyedRecord{.key = key, .short_key = short_key, .spare = 0, .position = position};
+            ++position;
+        }
+        auto const by_short_key = [](KeyedRecord const& record) noexcept { return record.short_key; };
+        check_order_by_key(input, ::foundation::core::order_by_key(&KeyedRecord::key),
+                           [](KeyedRecord const& left, KeyedRecord const& right) noexcept {
+                               return ::foundation::core::Ascending{}(left.key, right.key);
+                           });
+        check_order_by_key(input, ::foundation::core::order_by_key_descending(&KeyedRecord::key),
+                           [](KeyedRecord const& left, KeyedRecord const& right) noexcept {
+                               return ::foundation::core::Ascending{}(right.key, left.key);
+                           });
+        check_order_by_key(input, ::foundation::core::order_by_key(by_short_key),
+                           [](KeyedRecord const& left, KeyedRecord const& right) noexcept {
+                               return left.short_key < right.short_key;
+                           });
+        check_order_by_key(input, ::foundation::core::order_by_key_descending(by_short_key),
+                           [](KeyedRecord const& left, KeyedRecord const& right) noexcept {
+                               return right.short_key < left.short_key;
+                           });
+    }
+}
+
 // find_lower_bound and find_equivalent give the first position that a scan finds.
 void test_searches_agree_with_a_scan() {
     ::crucible::test::PhiloxStream stream{0x50470004u};
@@ -574,6 +680,9 @@ int main() {
     test_sort_stably_of_input_runs();
     test_sort_stably_bounds_the_adversary();
     test_radix_sort_agrees_with_the_comparator_form();
+    test_order_by_key_agrees_with_the_comparator_form();
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_sort_stably_ends_on_a_random_order(test);
     test_searches_agree_with_a_scan();
     crucible::test::pass("test_core_sort: all tests passed\n");
     return 0;

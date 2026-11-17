@@ -15,6 +15,10 @@ static_assert(std::is_same_v<::fixy::SegmentError, ::foundation::core::SegmentEr
 static_assert(std::is_same_v<::fixy::ScanKind, ::foundation::core::ScanKind>);
 static_assert(std::is_same_v<::fixy::Comparator, ::foundation::core::Comparator>);
 static_assert(std::is_same_v<::fixy::Ascending, ::foundation::core::Ascending>);
+static_assert(std::is_same_v<::fixy::KeyDirection, ::foundation::core::KeyDirection>);
+static_assert(std::is_same_v<decltype(::fixy::order_by_key(&::fixy::TreeStep::left)),
+                             ::foundation::core::KeyOrder<decltype(&::fixy::TreeStep::left),
+                                                          ::foundation::core::KeyDirection::ascending>>);
 
 // Two addresses are of one entity when the two constants of them are one type.
 template <auto First, auto Second>
