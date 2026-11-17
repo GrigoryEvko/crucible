@@ -28,6 +28,7 @@ crucible/cipher/ComputationCacheFederation.cpp | 0.8 | ::fixy::session::combinat
 crucible/cipher/FederationProtocol.cpp | 0.5 | ::fixy::session::combinators
 crucible/cntp/Backpressure.cpp | 0.3 | ::fixy::tags::admitted_retags
 crucible/cntp/ConnectionPool.cpp | 0.5 | ::fixy::tags::admitted_retags
+crucible/cntp/GossipMulticast.cpp | unmeasured | ::fixy::tags::admitted_retags
 crucible/cntp/IncastControl.cpp | 0.3 | ::fixy::tags::admitted_retags, unknown
 crucible/cntp/IncastControlRuntime.cpp | 0.3 | unknown
 crucible/cntp/MtlsTransport.cpp | 0.4 | ::fixy::tags::admitted_retags
@@ -36,6 +37,8 @@ crucible/cntp/RoceConfig.cpp | 0.5 | ::fixy::tags::admitted_retags, unknown
 crucible/cntp/Tcam.cpp | 0.6 | ::fixy::tags::admitted_retags
 crucible/cntp/_wip/GpuDirect.cpp | 0.4 | ::fixy::tags::admitted_retags
 crucible/cntp/_wip/Sharp.cpp | 0.5 | ::fixy::tags::admitted_retags
+crucible/cntp/dataplane/TcEbpf.cpp | unmeasured | ::fixy::tags::admitted_retags
+crucible/cntp/dataplane/Xdp.cpp | unmeasured | ::fixy::tags::admitted_retags
 crucible/cog/CogIdentity.cpp | 0.3 | ::fixy::tags::admitted_retags
 crucible/cog/FitsCog.cpp | 1.4 | ::foundation::effects::resource
 crucible/cog/NicConfig.cpp | 0.8 | ::fixy::tags::admitted_retags
