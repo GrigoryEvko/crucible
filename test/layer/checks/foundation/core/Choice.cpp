@@ -1094,15 +1094,184 @@ static_assert(Result<lookup_probe::Plain, Code>{lookup_probe::Plain{8}}.expect("
 }
 static_assert(owned_handles() == 56);
 
+// ── The combinators ───────────────────────────────────────────────────
+
+// The function objects of the probes: each takes a Part and gives a Given.
+// The calls are only declared, because no probe runs them.  The probes are
+// variable templates and not concepts, because they gate nothing.
+template <class Part, class Given>
+struct GivesFrom {
+    [[nodiscard]] Given operator()(Part) const noexcept;
+};
+template <class Part, class Given>
+struct GivesFromReference {
+    [[nodiscard]] Given operator()(Part const&) const noexcept;
+};
+template <class Sum, class Fn>
+constexpr bool maps_with = requires(Sum sum, Fn fn) { static_cast<Sum&&>(sum).map(fn); };
+template <class Sum, class Fn>
+constexpr bool chains_with = requires(Sum sum, Fn fn) { static_cast<Sum&&>(sum).and_then(fn); };
+template <class Sum, class Fn>
+constexpr bool maps_error_with = requires(Sum sum, Fn fn) { static_cast<Sum&&>(sum).map_err(fn); };
+template <class Sum, class Fn>
+constexpr bool recovers_with = requires(Sum sum, Fn fn) { static_cast<Sum&&>(sum).or_else(fn); };
+template <class Sum, class Fn>
+constexpr bool filters_with = requires(Sum sum, Fn fn) { static_cast<Sum&&>(sum).filter(fn); };
+template <class Sum, class Fn>
+constexpr bool tests_with = requires(Sum const& sum, Fn fn) {
+    { sum.is_some_and(fn) } -> std::same_as<bool>;
+    { sum.is_none_or(fn) } -> std::same_as<bool>;
+};
+template <class Sum, class Fn>
+constexpr bool tests_value_with = requires(Sum const& sum, Fn fn) {
+    { sum.is_ok_and(fn) } -> std::same_as<bool>;
+};
+template <class Sum, class Fn>
+constexpr bool tests_error_with = requires(Sum const& sum, Fn fn) {
+    { sum.is_err_and(fn) } -> std::same_as<bool>;
+};
+
+// map and and_then of an Option consume it, as the rvalue match does, so a
+// named or a const Option has none.  fn takes the payload by value with no
+// conversion, and its result holds no borrow.  A linear payload moves into
+// fn.  and_then takes an fn that gives an Option.
+static_assert(maps_with<Option<int>, GivesFrom<int, std::int64_t>>);
+static_assert(std::same_as<decltype(std::declval<Option<int>>().map(GivesFrom<int, Code>{})), Option<Code>>);
+static_assert(!maps_with<Option<int>&, GivesFrom<int, std::int64_t>>);
+static_assert(!maps_with<Option<int> const, GivesFrom<int, std::int64_t>>);
+static_assert(!maps_with<Option<int>, GivesFromReference<int, std::int64_t>>);
+static_assert(!maps_with<Option<int>, GivesFrom<std::int64_t, std::int64_t>>);
+static_assert(!maps_with<Option<int>, GivesFrom<int, int const*>>);
+static_assert(!maps_with<Option<int>, GivesFrom<int, TextView>>);
+static_assert(maps_with<Option<Token>, GivesFrom<Token, int>> && maps_with<Option<Owner>, GivesFrom<Owner, Owner>>);
+static_assert(chains_with<Option<int>, GivesFrom<int, Option<Code>>>);
+static_assert(!chains_with<Option<int>, GivesFrom<int, Code>>);
+static_assert(!chains_with<Option<int>, GivesFrom<int, Result<Code, Code>>>);
+static_assert(!chains_with<Option<int>, GivesFrom<int, Option<int const*>>>);
+static_assert(!chains_with<Option<int>, GivesFromReference<int, Option<Code>>>);
+static_assert(!chains_with<Option<int>&, GivesFrom<int, Option<Code>>>);
+
+// filter drops a refused payload, so a linear payload has none.  keep reads
+// the payload through a const reference and gives exactly bool.
+static_assert(filters_with<Option<int>, GivesFromReference<int, bool>>);
+static_assert(filters_with<Option<Owner>, GivesFromReference<Owner, bool>>);
+static_assert(!filters_with<Option<Token>, GivesFromReference<Token, bool>>);
+static_assert(!filters_with<Option<int>, GivesFromReference<int, int>>);
+static_assert(!filters_with<Option<int>&, GivesFromReference<int, bool>>);
+
+// is_some_and and is_none_or read through a const reference, also of a
+// linear payload, and the test gives exactly bool.
+static_assert(tests_with<Option<int>, GivesFromReference<int, bool>>);
+static_assert(tests_with<Option<Token>, GivesFromReference<Token, bool>>);
+static_assert(!tests_with<Option<int>, GivesFromReference<int, int>>);
+
+// map of a Result passes the error, and map_err passes the value, also a
+// linear value.  The new error is an error value, so a plain integer is
+// refused.  An fn that takes its part by reference binds to the deleted twin.
+static_assert(
+    std::same_as<decltype(std::declval<Result<int, Code>>().map(GivesFrom<int, Code32>{})), Result<Code32, Code>>);
+static_assert(!maps_with<Result<int, Code>&, GivesFrom<int, Code32>>);
+static_assert(!maps_with<Result<int, Code>, GivesFromReference<int, Code32>>);
+static_assert(!maps_with<Result<int, Code>, GivesFrom<int, int const*>>);
+static_assert(
+    std::same_as<decltype(std::declval<Result<int, Code>>().map_err(GivesFrom<Code, Code32>{})), Result<int, Code32>>);
+static_assert(maps_error_with<Result<Token, Code>, GivesFrom<Code, Code32>>);
+static_assert(maps_error_with<Result<int, Token>, GivesFrom<Token, Code>>);
+static_assert(!maps_error_with<Result<int, Code>, GivesFrom<Code, int>>);
+static_assert(!maps_error_with<Result<int, Code>, GivesFrom<Code, Err<Code32>>>);
+static_assert(!maps_error_with<Result<int, Code>, GivesFrom<Code, ReferringError>>);
+static_assert(!maps_error_with<Result<int, Code>, GivesFromReference<Code, Code32>>);
+
+// and_then of a Result converts the error as CRUCIBLE_TRY converts it, so an
+// error with no implicit conversion is refused.  or_else gives a Result of
+// the same value type, so the value passes with no conversion.
+static_assert(chains_with<Result<int, Code>, GivesFrom<int, Result<std::int64_t, Code>>>);
+static_assert(chains_with<Result<int, Code>, GivesFrom<int, Result<std::int64_t, NetError>>>);
+static_assert(!chains_with<Result<int, Code>, GivesFrom<int, Result<std::int64_t, Code32>>>);
+static_assert(!chains_with<Result<int, Code>, GivesFrom<int, Result<std::int64_t, ExplicitNetError>>>);
+static_assert(!chains_with<Result<int, Code>, GivesFrom<int, Option<std::int64_t>>>);
+static_assert(recovers_with<Result<int, Code>, GivesFrom<Code, Result<int, Code32>>>);
+static_assert(!recovers_with<Result<int, Code>, GivesFrom<Code, Result<std::int64_t, Code32>>>);
+static_assert(!recovers_with<Result<int, Code>, GivesFrom<Code, Option<int>>>);
+static_assert(!recovers_with<Result<int, Code>, GivesFromReference<Code, Result<int, Code32>>>);
+
+// is_ok_and and is_err_and read through a const reference, also a linear
+// part.
+static_assert(tests_value_with<Result<Token, Code>, GivesFromReference<Token, bool>>);
+static_assert(tests_error_with<Result<int, Token>, GivesFromReference<Token, bool>>);
+static_assert(!tests_value_with<Result<int, Code>, GivesFromReference<int, int>>);
+
+// The values in a constant evaluation, on each path.  Each combinator gives
+// the value of the match that it replaces.
+[[nodiscard]] constexpr bool is_even(int const& value) noexcept { return value % 2 == 0; }
+static_assert(Option<int>::some(3).map([](int value) noexcept { return value * 2; }) == Option<int>::some(6));
+static_assert(Option<int>{none}.map([](int value) noexcept { return value * 2; }) == Option<int>{none});
+static_assert(Option<Owner>::some(Owner{7}).map([](Owner owner) noexcept { return owner.handle; })
+              == Option<int>::some(7));
+static_assert(Option<Token>::some(Token{8})
+                  .map([](Token token) noexcept { return token; })
+                  .expect("map gives the token back")
+                  .handle
+              == 8);
+static_assert(Option<SlotNumber>::some(SlotNumber{4}).map([](SlotNumber slot) noexcept { return slot.raw; })
+              == Option<std::uint32_t>::some(4u));
+static_assert(Option<int>::some(4).and_then([](int value) noexcept { return is_even(value) ? some(value) : none; })
+              == Option<int>::some(4));
+static_assert(Option<int>::some(3).and_then([](int value) noexcept -> Option<int> {
+    if (is_even(value)) return some(value);
+    return none;
+}) == Option<int>{none});
+static_assert(Option<int>{none}.and_then([](int value) noexcept { return some(value); }) == Option<int>{none});
+static_assert(Option<int>::some(4).filter([](int const& value) noexcept { return is_even(value); })
+              == Option<int>::some(4));
+static_assert(Option<int>::some(3).filter([](int const& value) noexcept { return is_even(value); })
+              == Option<int>{none});
+static_assert(Option<int>{none}.filter([](int const& value) noexcept { return is_even(value); }) == Option<int>{none});
+static_assert(Option<int>::some(4).is_some_and([](int const& value) noexcept { return is_even(value); }));
+static_assert(!Option<int>::some(3).is_some_and([](int const& value) noexcept { return is_even(value); }));
+static_assert(!Option<int>{none}.is_some_and([](int const& value) noexcept { return is_even(value); }));
+static_assert(Option<int>::some(4).is_none_or([](int const& value) noexcept { return is_even(value); }));
+static_assert(!Option<int>::some(3).is_none_or([](int const& value) noexcept { return is_even(value); }));
+static_assert(Option<int>{none}.is_none_or([](int const& value) noexcept { return is_even(value); }));
+
+static_assert(checked_half(8).map([](int value) noexcept { return value + 1; }) == Result<int, Code>{5});
+static_assert(checked_half(7).map([](int value) noexcept { return value + 1; })
+              == Result<int, Code>{err(Code::closed)});
+static_assert(checked_half(7).map_err([](Code) noexcept { return Code32::closed; })
+              == Result<int, Code32>{err(Code32::closed)});
+static_assert(checked_half(8).map_err([](Code) noexcept { return Code32::closed; }) == Result<int, Code32>{4});
+static_assert(checked_half(8).and_then([](int value) noexcept { return checked_half(value); }) == Result<int, Code>{2});
+static_assert(checked_half(12).and_then([](int value) noexcept { return checked_half(value); })
+              == Result<int, Code>{3});
+static_assert(checked_half(12).and_then([](int value) noexcept { return checked_half(value + 1); })
+              == Result<int, Code>{err(Code::closed)});
+static_assert(checked_half(7)
+                  .and_then([](int value) noexcept { return checked_quarter(value); })
+                  .is_err_and([](NetError const& error) noexcept { return error.code == Code::closed; }));
+static_assert(checked_half(7).or_else([](Code) noexcept { return Result<int, Code32>{9}; }) == Result<int, Code32>{9});
+static_assert(checked_half(8).or_else([](Code) noexcept { return Result<int, Code32>{9}; }) == Result<int, Code32>{4});
+static_assert(checked_half(7).or_else([](Code) noexcept { return Result<int, Code32>{err(Code32::full)}; })
+              == Result<int, Code32>{err(Code32::full)});
+static_assert(checked_half(8).is_ok_and([](int const& value) noexcept { return value == 4; }));
+static_assert(!checked_half(7).is_ok_and([](int const&) noexcept { return true; }));
+static_assert(checked_half(7).is_err_and([](Code const& code) noexcept { return code == Code::closed; }));
+static_assert(!checked_half(8).is_err_and([](Code const&) noexcept { return true; }));
+static_assert(refused_with(5)
+                  .map_err([](Token token) noexcept { return token; })
+                  .err()
+                  .expect("map_err gives the token back")
+                  .handle
+              == 5);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.2, the three members of the niche
-// protocol that the section designs, and with_mut, the frame door of
-// foundation/core/Frame.h.  CRUCIBLE_TRY is a macro, and no type has a member
-// of its name.
+// protocol that the section designs, with_mut, the frame door of
+// foundation/core/Frame.h, and the combinators.  CRUCIBLE_TRY is a macro, and
+// no type has a member of its name.
 inline constexpr TextView choice_names{
     "none NoValue Unit Err err some is_some is_none value_or ok_or is_ok is_err ok is which niche empty is_empty "
-    "is_empty_never_built with_mut"};
+    "is_empty_never_built with_mut map map_err and_then or_else filter is_some_and is_none_or is_ok_and is_err_and"};
 
 // Each form of an Option, and each Result, gives only the shared verbs, the
 // language protocols and the names of the list.

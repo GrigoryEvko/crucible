@@ -20,6 +20,8 @@
 //
 // The raw forms are in one opt-out region of the class ORACLE.  Each raw form
 // is the reference for the shape of its family operation, so it must stay raw.
+// The one exception is a combinator of Option or Result: its reference is the
+// hand match that it replaces, beside it, and the match has its own pair.
 
 #include <fixy/Core.h>
 #include <fixy/Qtt.h>
@@ -652,6 +654,204 @@ result_try_convert(fixy::Result<std::uint32_t, Code8> result) noexcept {
 [[gnu::used]] std::uint32_t result_match(fixy::Result<std::uint32_t, Code32> result) noexcept {
     return std::move(result).match([](std::uint32_t value) noexcept { return value * 3u; },
                                    [](Code32 code) noexcept { return static_cast<std::uint32_t>(code); });
+}
+
+// ── The combinators of Option and Result ─────────────────────────────────
+//
+// Each pair compares a combinator with the hand match that it replaces, so
+// the function NAME_raw of these pairs is a match of the family and not raw
+// code.  It needs no opt-out region.  The match pairs with its raw form in
+// option_match and result_match.
+
+namespace {
+
+[[nodiscard]] constexpr fixy::Option<std::uint32_t> half_when_even(std::uint32_t value) noexcept {
+    if (value % 2u != 0u) return fixy::none;
+    return fixy::Option<std::uint32_t>::some(value / 2u);
+}
+
+[[nodiscard]] constexpr fixy::Result<std::uint32_t, NetError8> checked_half(std::uint32_t value) noexcept {
+    if (value % 2u != 0u) return fixy::err(Code8::lost);
+    return value / 2u;
+}
+
+}  // namespace
+
+// map of an Option of a plain payload.
+[[gnu::used]] fixy::Option<std::uint64_t> option_map(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).map([](std::uint32_t slot) noexcept { return std::uint64_t{slot} * 24u; });
+}
+
+[[gnu::used]] fixy::Option<std::uint64_t> option_map_raw(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).match([](std::uint32_t slot) noexcept { return fixy::some(std::uint64_t{slot} * 24u); },
+                                   []() noexcept { return fixy::Option<std::uint64_t>{fixy::none}; });
+}
+
+// map of an Option of a niche payload, an Index.
+[[gnu::used]] fixy::Option<std::uint32_t> option_map_niche(fixy::Option<fixy::Index<1024>> option) noexcept {
+    return std::move(option).map(
+        [](fixy::Index<1024> index) noexcept { return static_cast<std::uint32_t>(index.raw() * 3u); });
+}
+
+[[gnu::used]] fixy::Option<std::uint32_t> option_map_niche_raw(fixy::Option<fixy::Index<1024>> option) noexcept {
+    return std::move(option).match(
+        [](fixy::Index<1024> index) noexcept { return fixy::some(static_cast<std::uint32_t>(index.raw() * 3u)); },
+        []() noexcept { return fixy::Option<std::uint32_t>{fixy::none}; });
+}
+
+// map and then value_or, the form of a map with a default.
+[[gnu::used]] std::uint64_t option_map_value_or(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).map([](std::uint32_t slot) noexcept { return std::uint64_t{slot} * 24u; }).value_or(7u);
+}
+
+[[gnu::used]] std::uint64_t option_map_value_or_raw(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).match([](std::uint32_t slot) noexcept { return std::uint64_t{slot} * 24u; },
+                                   []() noexcept { return std::uint64_t{7}; });
+}
+
+// and_then of an Option: a second step that can miss.
+[[gnu::used]] fixy::Option<std::uint32_t> option_and_then(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).and_then([](std::uint32_t value) noexcept { return half_when_even(value); });
+}
+
+[[gnu::used]] fixy::Option<std::uint32_t> option_and_then_raw(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).match([](std::uint32_t value) noexcept { return half_when_even(value); },
+                                   []() noexcept { return fixy::Option<std::uint32_t>{fixy::none}; });
+}
+
+// filter of an Option.
+[[gnu::used]] fixy::Option<std::uint32_t> option_filter(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).filter([](std::uint32_t const& slot) noexcept { return slot % 2u == 0u; });
+}
+
+[[gnu::used]] fixy::Option<std::uint32_t> option_filter_raw(fixy::Option<std::uint32_t> option) noexcept {
+    return std::move(option).match(
+        [](std::uint32_t slot) noexcept {
+            if (slot % 2u != 0u) return fixy::Option<std::uint32_t>{fixy::none};
+            return fixy::some(slot);
+        },
+        []() noexcept { return fixy::Option<std::uint32_t>{fixy::none}; });
+}
+
+// is_some_and and is_none_or of an Option that the caller keeps in memory.
+[[gnu::used]] bool option_is_some_and(fixy::Option<std::uint32_t> const& option, std::uint32_t limit) noexcept {
+    return option.is_some_and([limit](std::uint32_t const& slot) noexcept { return slot < limit; });
+}
+
+[[gnu::used]] bool option_is_some_and_raw(fixy::Option<std::uint32_t> const& option, std::uint32_t limit) noexcept {
+    return option.match([limit](std::uint32_t const& slot) noexcept { return slot < limit; },
+                        []() noexcept { return false; });
+}
+
+[[gnu::used]] bool option_is_none_or(fixy::Option<std::uint32_t> const& option, std::uint32_t limit) noexcept {
+    return option.is_none_or([limit](std::uint32_t const& slot) noexcept { return slot < limit; });
+}
+
+[[gnu::used]] bool option_is_none_or_raw(fixy::Option<std::uint32_t> const& option, std::uint32_t limit) noexcept {
+    return option.match([limit](std::uint32_t const& slot) noexcept { return slot < limit; },
+                        []() noexcept { return true; });
+}
+
+// A read through as_ref against the same read through the borrow match.
+// The Ref of the payload has an address that is not null, so the Option of
+// the Ref takes no test of the null pointer.
+[[gnu::used]] bool option_as_ref(fixy::Option<std::uint32_t> const& option, std::uint32_t limit) noexcept {
+    return fixy::as_ref(option).is_some_and([limit](auto const& slot) noexcept { return *slot < limit; });
+}
+
+[[gnu::used]] bool option_as_ref_raw(fixy::Option<std::uint32_t> const& option, std::uint32_t limit) noexcept {
+    return option.match([limit](std::uint32_t const& slot) noexcept { return slot < limit; },
+                        []() noexcept { return false; });
+}
+
+// map of a Result: the error passes.
+[[gnu::used]] fixy::Result<std::uint32_t, Code32> result_map(fixy::Result<std::uint64_t, Code32> result) noexcept {
+    return std::move(result).map([](std::uint64_t value) noexcept { return static_cast<std::uint32_t>(value >> 3u); });
+}
+
+[[gnu::used]] fixy::Result<std::uint32_t, Code32> result_map_raw(fixy::Result<std::uint64_t, Code32> result) noexcept {
+    using Mapped = fixy::Result<std::uint32_t, Code32>;
+    return std::move(result).match(
+        [](std::uint64_t value) noexcept -> Mapped { return static_cast<std::uint32_t>(value >> 3u); },
+        [](Code32 code) noexcept -> Mapped { return fixy::err(code); });
+}
+
+// map_err of a Result: the value passes.
+[[gnu::used]] fixy::Result<std::uint64_t, NetError8>
+result_map_err(fixy::Result<std::uint64_t, Code32> result) noexcept {
+    return std::move(result).map_err(
+        [](Code32 code) noexcept { return NetError8{code == Code32::gone ? Code8::lost : Code8{2}}; });
+}
+
+[[gnu::used]] fixy::Result<std::uint64_t, NetError8>
+result_map_err_raw(fixy::Result<std::uint64_t, Code32> result) noexcept {
+    using Converted = fixy::Result<std::uint64_t, NetError8>;
+    return std::move(result).match([](std::uint64_t value) noexcept -> Converted { return value; },
+                                   [](Code32 code) noexcept -> Converted {
+                                       return fixy::err(NetError8{code == Code32::gone ? Code8::lost : Code8{2}});
+                                   });
+}
+
+// CRUCIBLE_TRY over map_err, against the hand test of the error and the
+// return of a converted error.
+[[gnu::used]] fixy::Result<std::uint64_t, Code8>
+result_try_map_err(fixy::Result<std::uint32_t, Code32> result) noexcept {
+    CRUCIBLE_TRY(value, std::move(result).map_err([](Code32) noexcept { return Code8::lost; }));
+    return std::uint64_t{value} + 1u;
+}
+
+[[gnu::used]] fixy::Result<std::uint64_t, Code8>
+result_try_map_err_raw(fixy::Result<std::uint32_t, Code32> result) noexcept {
+    if (result.is_err()) return fixy::err(Code8::lost);
+    return std::uint64_t{std::move(result).expect("the test above found a value")} + 1u;
+}
+
+// and_then of a Result, whose error converts as CRUCIBLE_TRY converts it.
+[[gnu::used]] fixy::Result<std::uint32_t, NetError8>
+result_and_then(fixy::Result<std::uint32_t, Code8> result) noexcept {
+    return std::move(result).and_then([](std::uint32_t value) noexcept { return checked_half(value); });
+}
+
+[[gnu::used]] fixy::Result<std::uint32_t, NetError8>
+result_and_then_raw(fixy::Result<std::uint32_t, Code8> result) noexcept {
+    using Chained = fixy::Result<std::uint32_t, NetError8>;
+    return std::move(result).match([](std::uint32_t value) noexcept -> Chained { return checked_half(value); },
+                                   [](Code8 code) noexcept -> Chained { return fixy::err(code); });
+}
+
+// or_else of a Result: a recovery from the error.
+[[gnu::used]] fixy::Result<std::uint32_t, NetError8>
+result_or_else(fixy::Result<std::uint32_t, Code32> result) noexcept {
+    return std::move(result).or_else(
+        [](Code32 code) noexcept { return checked_half(static_cast<std::uint32_t>(code)); });
+}
+
+[[gnu::used]] fixy::Result<std::uint32_t, NetError8>
+result_or_else_raw(fixy::Result<std::uint32_t, Code32> result) noexcept {
+    using Recovered = fixy::Result<std::uint32_t, NetError8>;
+    return std::move(result).match(
+        [](std::uint32_t value) noexcept -> Recovered { return value; },
+        [](Code32 code) noexcept -> Recovered { return checked_half(static_cast<std::uint32_t>(code)); });
+}
+
+// is_ok_and and is_err_and of a Result that the caller keeps in memory.
+[[gnu::used]] bool result_is_ok_and(fixy::Result<std::uint32_t, Code32> const& result, std::uint32_t limit) noexcept {
+    return result.is_ok_and([limit](std::uint32_t const& value) noexcept { return value < limit; });
+}
+
+[[gnu::used]] bool result_is_ok_and_raw(fixy::Result<std::uint32_t, Code32> const& result,
+                                        std::uint32_t limit) noexcept {
+    return result.match([limit](std::uint32_t const& value) noexcept { return value < limit; },
+                        [](Code32 const&) noexcept { return false; });
+}
+
+[[gnu::used]] bool result_is_err_and(fixy::Result<std::uint32_t, Code32> const& result) noexcept {
+    return result.is_err_and([](Code32 const& code) noexcept { return code == Code32::late; });
+}
+
+[[gnu::used]] bool result_is_err_and_raw(fixy::Result<std::uint32_t, Code32> const& result) noexcept {
+    return result.match([](std::uint32_t const&) noexcept { return false; },
+                        [](Code32 const& code) noexcept { return code == Code32::late; });
 }
 
 // The match of a OneOf of three alternatives compares the tag with each of

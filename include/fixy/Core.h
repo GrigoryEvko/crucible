@@ -117,6 +117,7 @@ using ::foundation::core::mint_box;
 using ::foundation::core::mint_hole;
 using ::foundation::core::Address;
 using ::foundation::core::address_of;
+using ::foundation::core::as_ref;
 using ::foundation::core::AddressKey;
 using ::foundation::core::AddressKeyTarget;
 using ::foundation::core::mint_address_key;

@@ -817,6 +817,207 @@ void test_free_some() {
         == 5u);
 }
 
+// The combinators of an Option.  map, and_then and filter move the payload
+// out first, so the source is empty after each one, and each payload ends
+// one time.  The probe reads each source after its combinator on purpose.
+void test_option_combinators() {
+    auto const doubled = [](int value) noexcept { return value * 2; };
+    CRUCIBLE_FATAL_INVARIANT(Option<int>::some(4).map(doubled) == Option<int>::some(8));
+    CRUCIBLE_FATAL_INVARIANT(Option<int>{none}.map(doubled) == Option<int>{none});
+    auto const half_when_even = [](int value) noexcept -> Option<int> {
+        if (value % 2 != 0) return none;
+        return Option<int>::some(value / 2);
+    };
+    CRUCIBLE_FATAL_INVARIANT(Option<int>::some(6).and_then(half_when_even) == Option<int>::some(3));
+    CRUCIBLE_FATAL_INVARIANT(Option<int>::some(5).and_then(half_when_even) == Option<int>{none});
+    CRUCIBLE_FATAL_INVARIANT(Option<int>{none}.and_then(half_when_even) == Option<int>{none});
+    auto const is_even = [](int const& value) noexcept { return value % 2 == 0; };
+    CRUCIBLE_FATAL_INVARIANT(Option<int>::some(6).filter(is_even) == Option<int>::some(6));
+    CRUCIBLE_FATAL_INVARIANT(Option<int>::some(5).filter(is_even) == Option<int>{none});
+    Option<int> const held = Option<int>::some(6);
+    Option<int> const empty{};
+    CRUCIBLE_FATAL_INVARIANT(held.is_some_and(is_even) && !empty.is_some_and(is_even));
+    CRUCIBLE_FATAL_INVARIANT(held.is_none_or(is_even) && empty.is_none_or(is_even));
+    CRUCIBLE_FATAL_INVARIANT(!Option<int>::some(5).is_some_and(is_even) && !Option<int>::some(5).is_none_or(is_even));
+    CRUCIBLE_FATAL_INVARIANT(held.is_some());
+
+    Option<SlotNumber> const slot = Option<SlotNumber>::some(SlotNumber{9});
+    CRUCIBLE_FATAL_INVARIANT(slot.is_some_and([](SlotNumber const& kept) noexcept { return kept.raw == 9u; }));
+    CRUCIBLE_FATAL_INVARIANT(Option<SlotNumber>{slot}.map([](SlotNumber kept) noexcept { return kept.raw; })
+                             == Option<std::uint32_t>::some(9u));
+    {
+        Option<CountedOwner> source = Option<CountedOwner>::some(CountedOwner{81});
+        bool source_was_empty_in_fn = false;
+        Option<int> const handle = static_cast<Option<CountedOwner>&&>(source).map(
+            [&source, &source_was_empty_in_fn](CountedOwner owner) noexcept {
+                source_was_empty_in_fn = source.is_none();
+                return owner.handle();
+            });
+        CRUCIBLE_FATAL_INVARIANT(handle == Option<int>::some(81) && source_was_empty_in_fn && source.is_none());
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+        Option<CountedOwner> refused = Option<CountedOwner>::some(CountedOwner{82});
+        Option<CountedOwner> const kept = static_cast<Option<CountedOwner>&&>(refused).filter(
+            [](CountedOwner const& owner) noexcept { return owner.handle() == 0; });
+        CRUCIBLE_FATAL_INVARIANT(kept.is_none() && refused.is_none() && live_owners == 0);
+        Option<CountedOwner> accepted = Option<CountedOwner>::some(CountedOwner{83});
+        Option<CountedOwner> const passed = static_cast<Option<CountedOwner>&&>(accepted).filter(
+            [](CountedOwner const& owner) noexcept { return owner.handle() == 83; });
+        CRUCIBLE_FATAL_INVARIANT(handle_of(passed) == 83 && accepted.is_none() && live_owners == 1);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
+// A linear payload moves into the function of map and and_then one time,
+// and a test reads it through a const reference with no move.
+void test_option_combinators_linear() {
+    {
+        Option<CountedToken> held = Option<CountedToken>::some(CountedToken{91});
+        bool const is_read = held.is_some_and([](CountedToken const& token) noexcept { return token.handle() == 91; });
+        CRUCIBLE_FATAL_INVARIANT(is_read && held.is_some() && live_tokens == 1);
+        Option<int> const handle = static_cast<Option<CountedToken>&&>(held).map([](CountedToken token) noexcept {
+            int const raw = token.handle();
+            ::foundation::linear::drop(static_cast<CountedToken&&>(token));
+            return raw;
+        });
+        CRUCIBLE_FATAL_INVARIANT(handle == Option<int>::some(91) && live_tokens == 0);
+        Option<CountedToken> chained =
+            Option<CountedToken>::some(CountedToken{92}).and_then([](CountedToken token) noexcept {
+                return Option<CountedToken>::some(static_cast<CountedToken&&>(token));
+            });
+        CRUCIBLE_FATAL_INVARIANT(live_tokens == 1);
+        CountedToken taken = static_cast<Option<CountedToken>&&>(chained).expect("and_then kept the token");
+        CRUCIBLE_FATAL_INVARIANT(taken.handle() == 92);
+        ::foundation::linear::drop(static_cast<CountedToken&&>(taken));
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
+}
+
+// The combinators of a Result.  map and and_then pass the error, and map_err
+// and or_else pass the value, also an owning value and a linear error.
+void test_result_combinators() {
+    auto const doubled = [](int value) noexcept { return value * 2; };
+    auto const widened = [](Refusal refusal) noexcept { return NetRefusal{refusal}; };
+    CRUCIBLE_FATAL_INVARIANT((half_of(8).map(doubled) == Result<int, Refusal>{8}));
+    CRUCIBLE_FATAL_INVARIANT(half_of(7).map(doubled).err().expect("map passes the error") == Refusal::closed);
+    CRUCIBLE_FATAL_INVARIANT(half_of(8).map_err(widened).expect("map_err passes the value") == 4);
+    CRUCIBLE_FATAL_INVARIANT(half_of(7).map_err(widened).err().expect("map_err converts the error").cause
+                             == Refusal::closed);
+    CRUCIBLE_FATAL_INVARIANT((half_of(8).and_then(half_of) == Result<int, Refusal>{2}));
+    CRUCIBLE_FATAL_INVARIANT(half_of(16).and_then(quarter_of).expect("eight has a quarter") == 2);
+    CRUCIBLE_FATAL_INVARIANT(half_of(12).and_then(quarter_of).err().expect("six has no quarter").cause
+                             == Refusal::closed);
+    CRUCIBLE_FATAL_INVARIANT(half_of(7).and_then(quarter_of).err().expect("and_then converts the error").cause
+                             == Refusal::closed);
+    auto const recovered = [](Refusal) noexcept { return Result<int, NetRefusal>{-1}; };
+    CRUCIBLE_FATAL_INVARIANT(half_of(7).or_else(recovered).expect("or_else recovers the error") == -1);
+    CRUCIBLE_FATAL_INVARIANT(half_of(8).or_else(recovered).expect("or_else passes the value") == 4);
+    Result<int, Refusal> const even = half_of(8);
+    Result<int, Refusal> const odd = half_of(7);
+    auto const is_four = [](int const& value) noexcept { return value == 4; };
+    auto const is_closed = [](Refusal const& refusal) noexcept { return refusal == Refusal::closed; };
+    CRUCIBLE_FATAL_INVARIANT(even.is_ok_and(is_four) && !odd.is_ok_and(is_four));
+    CRUCIBLE_FATAL_INVARIANT(odd.is_err_and(is_closed) && !even.is_err_and(is_closed));
+    {
+        Result<CountedOwner, Refusal> held{CountedOwner{84}};
+        Result<CountedOwner, NetRefusal> converted =
+            static_cast<Result<CountedOwner, Refusal>&&>(held).map_err(widened);
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 2);
+        CountedOwner const taken =
+            static_cast<Result<CountedOwner, NetRefusal>&&>(converted).expect("map_err passed the owner");
+        CRUCIBLE_FATAL_INVARIANT(taken.handle() == 84);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+    {
+        Result<int, Refusal> const refused = refuse_with(64).map_err([](CountedToken token) noexcept {
+            ::foundation::linear::drop(static_cast<CountedToken&&>(token));
+            return Refusal::full;
+        });
+        CRUCIBLE_FATAL_INVARIANT(
+            refused.is_err_and([](Refusal const& refusal) noexcept { return refusal == Refusal::full; }));
+        CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
+    }
+}
+
+// A test reads its part through a const reference and counts the lend, as
+// the borrow match does.  A write that ends the payload while holds runs
+// ends the process.
+void test_combinator_lend_aborts() {
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Option<Handle> held = Option<Handle>::some(Handle{76});
+            static_cast<void>(held.is_some_and([&held](Handle const& handle) noexcept {
+                clear_handle(held);
+                return handle.value == 76;
+            }));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a write ends the payload of a sum while a borrow match lends that payload to "
+            "an arm"});
+    expect_dies(
+        test_context(),
+        [] noexcept {
+            Result<Handle, Refusal> held{Handle{77}};
+            static_cast<void>(held.is_ok_and([&held](Handle const& handle) noexcept {
+                replace_result(held);
+                return handle.value == 77;
+            }));
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: a write ends the payload of a sum while a borrow match lends that payload to "
+            "an arm"});
+}
+
+// The property: each combinator gives the value of the match that it
+// replaces, for random values and each state.
+void test_combinators_agree_with_match() {
+    ::crucible::test::PhiloxStream stream{0x5EEDC401CE000003u};
+    auto const scaled = [](std::uint64_t value) noexcept { return value * 3u + 1u; };
+    auto const is_odd = [](std::uint64_t const& value) noexcept { return (value & 1u) != 0; };
+    for (int trial = 0; trial < 4096; ++trial) {
+        std::uint64_t const model_value = stream.next_wide();
+        bool const model_holds = (stream.next_word() & 1u) != 0;
+        std::uint64_t const fallback = ~model_value;
+        auto const option = [&]() noexcept {
+            return model_holds ? Option<std::uint64_t>::some(model_value) : Option<std::uint64_t>{};
+        };
+        std::uint64_t const matched = option().match([&](std::uint64_t value) noexcept { return scaled(value); },
+                                                     [&] noexcept { return fallback; });
+        CRUCIBLE_FATAL_INVARIANT(option().map(scaled).value_or(fallback) == matched);
+        bool const is_kept = model_holds && is_odd(model_value);
+        CRUCIBLE_FATAL_INVARIANT(option().filter(is_odd).is_some() == is_kept);
+        CRUCIBLE_FATAL_INVARIANT(option().is_some_and(is_odd) == is_kept);
+        CRUCIBLE_FATAL_INVARIANT(option().is_none_or(is_odd) == (!model_holds || is_odd(model_value)));
+
+        int const value = static_cast<int>(stream.below(1u << 20));
+        bool const model_is_even = value % 2 == 0;
+        int const mapped = half_of(value).map([](int half) noexcept { return half + 1; }).value_or(-1);
+        CRUCIBLE_FATAL_INVARIANT(mapped == (model_is_even ? value / 2 + 1 : -1));
+        CRUCIBLE_FATAL_INVARIANT(
+            half_of(value)
+                .map_err([](Refusal) noexcept { return NetRefusal{Refusal::full}; })
+                .is_err_and([](NetRefusal const& refusal) noexcept { return refusal.cause == Refusal::full; })
+            == !model_is_even);
+    }
+}
+
+// as_ref gives the payload of a named Option as an Option of a Ref, and the
+// Option keeps its payload.
+void test_as_ref() {
+    using ::foundation::core::as_ref;
+    Option<int> const held = Option<int>::some(42);
+    Option<int> const empty{};
+    CRUCIBLE_FATAL_INVARIANT(as_ref(held).is_some_and([](auto const& ref) noexcept { return *ref == 42; }));
+    CRUCIBLE_FATAL_INVARIANT(as_ref(empty).is_none() && held.is_some());
+    {
+        Option<CountedOwner> const owned = Option<CountedOwner>::some(CountedOwner{85});
+        CRUCIBLE_FATAL_INVARIANT(
+            as_ref(owned).is_some_and([](auto const& ref) noexcept { return ref->handle() == 85; }));
+        CRUCIBLE_FATAL_INVARIANT(handle_of(owned) == 85 && live_owners == 1);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -853,5 +1054,11 @@ int main() {
     test_ok_or();
     test_error_conversion();
     test_free_some();
+    test_option_combinators();
+    test_option_combinators_linear();
+    test_result_combinators();
+    test_combinator_lend_aborts();
+    test_combinators_agree_with_match();
+    test_as_ref();
     return 0;
 }

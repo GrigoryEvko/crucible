@@ -242,6 +242,45 @@ consteval bool reaches_in_constant_evaluation() {
 }
 static_assert(reaches_in_constant_evaluation());
 
+// as_ref gives the payload of a named Option as an Option of a Ref of a
+// const payload with a fresh brand, one brand for each call.  The Option of
+// a Ref has the size of one pointer.  A temporary Option takes the deleted
+// overload, because the Ref would dangle.  The Ref reads a linear payload
+// too, and consumes nothing.  The annotation no_start_over_bytes keeps the
+// checked lifetime start from forging a handle.
+struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] LinearHandle {
+    int handle = 0;
+    constexpr explicit LinearHandle(int value) noexcept : handle{value} {}
+    LinearHandle(LinearHandle&&) noexcept = default;
+    LinearHandle(LinearHandle const&) = delete("a linear handle has one owner");
+    constexpr LinearHandle& operator=(LinearHandle&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+};
+template <class Held>
+Held ref_of(Option<Held>);
+extern Option<int> const held_number;
+extern Option<LinearHandle> const held_handle;
+static_assert(std::is_same_v<decltype(target_of(ref_of(as_ref(held_number)))), Target<int const>>);
+static_assert(::foundation::brand::IsFreshBrand<decltype(brand_of(ref_of(as_ref(held_number))))>);
+static_assert(!std::is_same_v<decltype(as_ref(held_number)), decltype(as_ref(held_number))>);
+static_assert(sizeof(decltype(as_ref(held_number))) == sizeof(void*));
+static_assert(std::is_same_v<decltype(target_of(ref_of(as_ref(held_handle)))), Target<LinearHandle const>>);
+template <class O>
+constexpr bool borrows_with_as_ref = requires(O option) { as_ref(static_cast<O&&>(option)); };
+static_assert(borrows_with_as_ref<Option<int>&> && borrows_with_as_ref<Option<int> const&>);
+static_assert(!borrows_with_as_ref<Option<int>> && !borrows_with_as_ref<Option<int> const>);
+
+// The Ref reads the payload in a constant evaluation, and an empty Option
+// gives no Ref.
+consteval bool reads_through_as_ref() {
+    Option<int> const full = Option<int>::some(9);
+    Option<int> const empty{none};
+    return as_ref(full).is_some_and([](auto const& ref) noexcept { return *ref == 9; }) && as_ref(empty).is_none();
+}
+static_assert(reads_through_as_ref());
+
 // ── Address ────────────────────────────────────────────────────────────
 
 // One word, and no address from an integer, from a pointer or with no object.
@@ -374,10 +413,11 @@ static_assert(std::is_same_v<decltype(mint_hole(std::declval<Box<std::uint64_t>>
 // The family list of the Ref family (plan section 11.5).  Each public member
 // of a type of the family is a shared verb, a language protocol or a name of
 // this list.  Ref and Box have no empty state, so they take the dereference.
-inline constexpr TextView ref_names{"Ref to same_object downcast KindFamily KindTagged Box mint_box BumpArena make "
-                                    "array copy_text Slot emplace clear FnRef CallRef Address address_of is_aligned "
-                                    "AddressKey mint_address_key hash lower_by Hole mint_hole BoxWord box_word_key "
-                                    "release_to_word claim_box is_empty"};
+inline constexpr TextView ref_names{
+    "Ref to as_ref same_object downcast KindFamily KindTagged Box mint_box BumpArena make "
+    "array copy_text Slot emplace clear FnRef CallRef Address address_of is_aligned "
+    "AddressKey mint_address_key hash lower_by Hole mint_hole BoxWord box_word_key "
+    "release_to_word claim_box is_empty"};
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<Abstract, CheckBrand>, DereferenceProtocol);

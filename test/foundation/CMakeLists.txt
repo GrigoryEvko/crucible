@@ -2198,6 +2198,33 @@ foundation_neg_compile_test(neg_core_option_match_arm_takes_reference
 foundation_neg_compile_test(neg_core_result_match_gives_borrow
   "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) && \\[with OnOk = main\\(\\)::<lambda\\(Numbers\\)>; OnErr = main\\(\\)::<lambda\\(Code\\)>; T = foundation::core::FixedArray<int, 4>; E = Code\\]."
   "the result of the rvalue match holds no borrow, because each part ends in its arm")
+foundation_neg_compile_test(neg_core_option_map_takes_reference
+  "use of deleted function .void foundation::core::Option<T>::map\\(Fn&&\\) &&"
+  "the function of map takes the payload by value, so it names no object that map ends")
+foundation_neg_compile_test(neg_core_option_and_then_takes_reference
+  "use of deleted function .void foundation::core::Option<T>::and_then\\(Fn&&\\) &&"
+  "the function of and_then takes the payload by value, so it names no object that and_then ends")
+foundation_neg_compile_test(neg_core_result_map_takes_reference
+  "use of deleted function .void foundation::core::Result<T, E>::map\\(Fn&&\\) &&"
+  "the function of map takes the value by value, so it names no object that map ends")
+foundation_neg_compile_test(neg_core_result_map_err_takes_reference
+  "use of deleted function .void foundation::core::Result<T, E>::map_err\\(Fn&&\\) &&"
+  "the function of map_err takes the error by value, so it names no object that map_err ends")
+foundation_neg_compile_test(neg_core_result_and_then_takes_reference
+  "use of deleted function .void foundation::core::Result<T, E>::and_then\\(Fn&&\\) &&"
+  "the function of and_then takes the value by value, so it names no object that and_then ends")
+foundation_neg_compile_test(neg_core_result_or_else_takes_reference
+  "use of deleted function .void foundation::core::Result<T, E>::or_else\\(Fn&&\\) &&"
+  "the function of or_else takes the error by value, so it names no object that or_else ends")
+foundation_neg_compile_test(neg_core_option_filter_linear
+  "no matching function for call to .foundation::core::Option<Descriptor>::filter"
+  "DroppablePayload<T>")
+foundation_neg_compile_test(neg_core_result_map_err_integer
+  "no matching function for call to .foundation::core::Result<int, Code>::map_err"
+  "ErrorValue<")
+foundation_neg_compile_test(neg_core_as_ref_temporary
+  "use of deleted function .void foundation::core::as_ref\\(const Option<.>&&\\)"
+  "a Ref into a temporary Option dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_option_match_arm_types
   "no matching function for call to .foundation::core::Option<int>::match\\(main\\(\\)::<lambda\\(int\\)>, main\\(\\)::<lambda\\(\\)>\\)."
   "the expression .is_same_v<_Tp, _Up> \\[with _Tp = int. _Up = long int\\]. evaluated to .false.")
@@ -2256,7 +2283,7 @@ foundation_neg_compile_test(neg_core_result_lifetime_start
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::Result<unsigned int, Code>\\]")
 foundation_neg_compile_test(neg_core_result_error_unrelated
   "use of deleted function .foundation::core::Result<T, E>::Result\\(foundation::core::Err<F>\\) \\[with F = Other. T = int. E = Code\\]."
-  "the error type does not convert to the error type of this Result: give E a noexcept implicit constructor from F, or map the error with match")
+  "the error type does not convert to the error type of this Result: give E a noexcept implicit constructor from F, or convert the error with map_err")
 foundation_neg_compile_test(neg_core_result_error_explicit_conversion
   "use of deleted function .foundation::core::Result<T, E>::Result\\(foundation::core::Err<F>\\) \\[with F = Code. T = int. E = NetError\\]."
   "the error type does not convert to the error type of this Result")

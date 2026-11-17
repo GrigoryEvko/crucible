@@ -32,7 +32,9 @@ THE PAIRS
       * memcpy or memset
       * An access through std::unique_ptr or std::optional
       * std::unreachable
-      * A contract_assert.
+      * A contract_assert
+      * The hand match that a combinator of Option or Result replaces.  The
+        match pairs with its own raw form in a different pair.
     test/shape/CMakeLists.txt compiles the unit with the flags of the
     foundation library of the build.  Each build then compares the two
     functions of a pair with its own level, `-fharden-` flags and contract
@@ -782,6 +784,45 @@ PROBES: tuple[Probe, ...] = (
         f"{TAG_CHECK}",
         checks=("fatal",),
     ),
+    # The combinators of Option and Result.  The raw side of each pair is the hand match that the combinator replaces.
+    Probe("option_map", "map of an Option is the code of the rvalue match whose empty arm gives an empty Option"),
+    Probe(
+        "option_map_niche",
+        "map of an Option of an Index is the code of the rvalue match whose empty arm gives an empty Option",
+    ),
+    Probe(
+        "option_map_value_or",
+        "map and then value_or of an Option is the code of the rvalue match whose empty arm gives the default",
+    ),
+    Probe(
+        "option_and_then", "and_then of an Option is the code of the rvalue match whose empty arm gives an empty Option"
+    ),
+    Probe(
+        "option_filter",
+        "filter of an Option is the check of the tag, one test of the tag, and one test of the payload with a branch to "
+        "the return of the empty or the full Option.  The hand match builds the two results with conditional moves, "
+        "so the family side has the one branch and fewer instructions",
+        branches=True,
+    ),
+    Probe("option_is_some_and", "is_some_and of an Option is the code of the borrow match whose empty arm gives false"),
+    Probe("option_is_none_or", "is_none_or of an Option is the code of the borrow match whose empty arm gives true"),
+    Probe(
+        "option_as_ref",
+        "a read through as_ref of an Option is the code of the borrow match, with no test of the null pointer of the Ref",
+    ),
+    Probe("result_map", "map of a Result is the code of the rvalue match whose error arm gives the error"),
+    Probe("result_map_err", "map_err of a Result is the code of the rvalue match whose value arm gives the value"),
+    Probe(
+        "result_try_map_err",
+        "CRUCIBLE_TRY over map_err is the code of the hand test of the error and the return of the converted error",
+    ),
+    Probe(
+        "result_and_then",
+        "and_then of a Result is the code of the rvalue match whose error arm gives the converted error",
+    ),
+    Probe("result_or_else", "or_else of a Result is the code of the rvalue match whose value arm gives the value"),
+    Probe("result_is_ok_and", "is_ok_and of a Result is the code of the borrow match whose error arm gives false"),
+    Probe("result_is_err_and", "is_err_and of a Result is the code of the borrow match whose value arm gives false"),
     Probe(
         "one_of_match",
         "the match of a OneOf of three alternatives compares the tag with each of the three indices, and a tag after "

@@ -228,6 +228,35 @@ template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
     return detail::RefDoor::lend<::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>(object);
 }
 
+// The payload of an Option as an Option of a Ref of a const T with the
+// fresh brand of the call, or no value for an empty Option: one test of the
+// state, as get() of a OneOf gives an alternative.  The Option keeps its
+// payload, and the Ref reads it, also of a linear payload.  The loop of the
+// Option gives the payload, so the Ref and its brand leave only the body of
+// this function, whose own template argument the brand is.  The pack refuses
+// each explicit argument, so no caller names the brand.  The function is free
+// and not a member, because this header includes Choice.h, so the class
+// Option cannot name a Ref.  The addresses of the Option and of its payload
+// are not null, because a reference names an object.  The build keeps each
+// test of an address for null (-fno-delete-null-pointer-checks), so two
+// assumptions state those facts, and the full Option of the Ref takes no
+// test of the null pointer.
+template <class... Refused, ChoicePayload T, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+as_ref(Option<T> const& option) noexcept {
+    [[assume(__builtin_addressof(option) != nullptr)]];
+    for (T const& payload : option) {
+        [[assume(__builtin_addressof(payload) != nullptr)]];
+        return Option<Ref<T const, Fresh>>::some(detail::RefDoor::lend<Fresh>(payload));
+    }
+    return none;
+}
+
+template <class... Refused, class T>
+void as_ref(Option<T> const&& option) =
+    delete("a Ref into a temporary Option dangles at the end of the full expression: name the Option");
+
 // True when the two Refs reach one object.  The two targets are one type,
 // with or without a const, and the two brands can differ.
 template <class First, class FirstBrand, class Second, class SecondBrand>

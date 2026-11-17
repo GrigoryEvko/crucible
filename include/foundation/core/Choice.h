@@ -7,7 +7,9 @@
 // base gives a Result, and its caller handles the error with the same
 // roads as for an Option: match(), ok(), err(), value_or() and expect().
 // CRUCIBLE_TRY takes the value, or returns the error to the caller of the
-// function.
+// function.  map_err(fn) converts the error at a call site, so
+// `CRUCIBLE_TRY(fd, open(path).map_err(to_open_error));` returns the error
+// of the caller.
 // An error is a value: a scoped enum, or a trivially copyable class of at
 // most 16 bytes, so an error never allocates.  An error can also be a
 // linear class, so a failed operation can give a resource back.  Err<E>
@@ -17,10 +19,20 @@
 // to each other: ok() and ok_or() make the crossing.
 //
 // Option<T> holds one T or no value.  The only roads to the payload are a
-// loop of zero or one turns, the total match(), value_or(), ok_or(), and
-// expect(), the fatal unwrap with a reason.  The type has no operator* and no
-// operator->, so a read of an empty Option is not possible.  The whole
-// type is [[nodiscard]].
+// loop of zero or one turns, the total match(), value_or(), ok_or(), the
+// combinators, and expect(), the fatal unwrap with a reason.  The type has
+// no operator* and no operator->, so a read of an empty Option is not
+// possible.  The whole type is [[nodiscard]].
+//
+// A combinator is a match with one arm fixed by the shape of the sum, so
+// the caller writes only the arm that does work.  An Option gives map,
+// and_then and filter, which consume it, and is_some_and and is_none_or,
+// which read it.  A Result gives map, map_err, and_then and or_else, which
+// consume it, and is_ok_and and is_err_and, which read it.  A combinator
+// is no second road to a result that a chain of the others gives: a
+// default after a map is map(fn).value_or(fallback), and a side effect
+// belongs in a match.  as_ref(option) of foundation/core/Ref.h gives the
+// payload as an Option of a Ref.
 //
 // The loop and the borrow match read the payload.  The one road that writes
 // the payload in place is the frame door option.with_mut(on_some, on_none)
@@ -55,11 +67,12 @@
 // of the value.  A sum with a linear alternative carries the linear marker
 // itself, so the rule must-consume holds the sum to one consume.  An Option
 // or a Result gives a linear payload only through a consumer that takes the
-// Option or the Result as an rvalue: expect(), ok(), err() and the rvalue
-// match().  A read through a const reference consumes nothing.  A consumer
-// that drops a linear part does not exist: value_or() drops its fallback,
-// ok() drops the error, the rvalue err() drops the value, and a move through
-// the cursor of a mutable loop empties the payload in place.
+// Option or the Result as an rvalue: expect(), ok(), err(), the rvalue
+// match(), and the combinators that transform.  A read through a const
+// reference consumes nothing.  A consumer that drops a linear part does not
+// exist: value_or() drops its fallback, ok() drops the error, the rvalue
+// err() drops the value, filter() drops a refused payload, and a move
+// through the cursor of a mutable loop empties the payload in place.
 //
 // The families of foundation/core use only the language, the compiler
 // builtins and the headers of the base allowance.  fixy/Core.h puts their
@@ -440,6 +453,30 @@ template <ChoicePayload T, ErrorValue E>
 class Result;
 
 namespace detail {
+
+// An Option of a payload.  The concept reads only the reflection of T and
+// the template Option, so a unit cannot change its answer.  It forms no
+// Option of a deduced payload, so it checks no gate of the payload and
+// reads no open template such as niche.  A partial specialization over
+// Option<T> would form Option<T> and read the payload gate, which reads
+// niche, and the rule home refuses that.  The combinators of Option and
+// Result read the two tests, so the tests come before the two classes.
+template <class T>
+concept IsOption = ::foundation::reflect::IsInstanceOf<T, ^^Option>;
+
+// The payload of an Option, from the reflection of its one template
+// argument.  An Atomic cell of an Option takes the word of this payload.
+template <IsOption T>
+using option_payload_t = [:std::meta::template_arguments_of(std::meta::dealias(std::meta::remove_cvref(^^T)))[0]:];
+
+// A Result of a value and an error.
+template <class T>
+concept IsResult = ::foundation::reflect::IsInstanceOf<T, ^^Result>;
+
+// The value type of a Result, from the reflection of its first template
+// argument.  or_else gives a Result of the same value type.
+template <IsResult T>
+using result_value_t = [:std::meta::template_arguments_of(std::meta::dealias(std::meta::remove_cvref(^^T)))[0]:];
 
 template <bool IsPlain, class... Ts>
 class SumSlotOf;
@@ -948,6 +985,97 @@ public:
         T taken(static_cast<T&&>(slot_.payload_()));
         slot_.clear_();
         return Result<T, E>{static_cast<T&&>(taken)};
+    }
+
+    // THE COMBINATORS
+    //   A combinator is the rvalue match with the empty arm fixed by the
+    //   shape of the sum: the absence passes through, so the caller writes
+    //   only the arm of the payload.  map, and_then and filter consume the
+    //   Option through && and leave it empty, as the rvalue match does.  fn
+    //   takes the payload by value, and its result holds no borrow, by the
+    //   gates of the rvalue match.  A linear payload moves into fn, so map and
+    //   and_then consume it one time.  filter drops a refused payload, so a
+    //   linear payload has no filter.  is_some_and and is_none_or only read,
+    //   so they take a const reference and consume nothing.  Each body tests
+    //   the absence first, as the match does, and costs the one branch of the
+    //   match.
+
+    // The result of fn on the payload, as a full Option, or an empty Option.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, T&&> && TakesPayloadByValue<Fn, T>
+              && ChoicePayload<std::invoke_result_t<Fn, T&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, T&&>>
+    [[nodiscard]] constexpr Option<std::invoke_result_t<Fn, T&&>>
+    map(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
+        using Mapped = Option<std::invoke_result_t<Fn, T&&>>;
+        if (!slot_.holds_()) return Mapped{none};
+        T taken(static_cast<T&&>(slot_.payload_()));
+        slot_.clear_();
+        return Mapped::some(static_cast<Fn&&>(fn)(static_cast<T&&>(taken)));
+    }
+
+    // An fn of map that takes its payload by reference binds to this
+    // overload, so the refusal gives its reason.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
+    void map(Fn&& fn) && = delete(
+        "the function of map takes the payload by value, so it names no object that map ends: write the parameter as "
+        "a value, or name the Option and match its borrow");
+
+    // The Option that fn gives for the payload, or an empty Option.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, T&&> && TakesPayloadByValue<Fn, T>
+              && detail::IsOption<std::invoke_result_t<Fn, T&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, T&&>>
+    [[nodiscard]] constexpr std::invoke_result_t<Fn, T&&>
+    and_then(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
+        if (!slot_.holds_()) return none;
+        T taken(static_cast<T&&>(slot_.payload_()));
+        slot_.clear_();
+        return static_cast<Fn&&>(fn)(static_cast<T&&>(taken));
+    }
+
+    // An fn of and_then that takes its payload by reference binds to this
+    // overload, so the refusal gives its reason.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
+    void and_then(Fn&& fn) && = delete(
+        "the function of and_then takes the payload by value, so it names no object that and_then ends: write the "
+        "parameter as a value, or name the Option and match its borrow");
+
+    // The Option when keep accepts its payload, else an empty Option.  The
+    // payload moves out first, so keep reads a local through a const
+    // reference, and no write through keep reaches the Option.
+    template <class Keep>
+        requires DroppablePayload<T> && std::is_invocable_v<Keep&, T const&>
+              && std::same_as<std::invoke_result_t<Keep&, T const&>, bool>
+    [[nodiscard]] constexpr Option filter(Keep&& keep) && noexcept(std::is_nothrow_invocable_v<Keep&, T const&>) {
+        if (!slot_.holds_()) return Option{none};
+        T taken(static_cast<T&&>(slot_.payload_()));
+        slot_.clear_();
+        if (!keep(static_cast<T const&>(taken))) return Option{none};
+        return Option{detail::SomeTag{}, static_cast<T&&>(taken)};
+    }
+
+    // True when the Option holds a payload that holds accepts.  holds reads
+    // the payload through a const reference, the Option keeps it, and an
+    // owning Option counts the lend (THE LEND COUNT).
+    template <class Holds>
+        requires std::is_invocable_v<Holds&, T const&> && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
+    [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_some_and(Holds&& holds) const
+        noexcept(std::is_nothrow_invocable_v<Holds&, T const&>) {
+        if (!slot_.holds_()) return false;
+        [[maybe_unused]] auto const lend = slot_.lend_();
+        return holds(slot_.payload_());
+    }
+
+    // True when the Option is empty, or when holds accepts its payload.  The
+    // read is that of is_some_and.
+    template <class Holds>
+        requires std::is_invocable_v<Holds&, T const&> && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
+    [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_none_or(Holds&& holds) const
+        noexcept(std::is_nothrow_invocable_v<Holds&, T const&>) {
+        if (!slot_.holds_()) return true;
+        [[maybe_unused]] auto const lend = slot_.lend_();
+        return holds(slot_.payload_());
     }
 
     // The total match.  on_some gets the payload, or on_none runs, and
@@ -1710,7 +1838,7 @@ public:
     template <class F>
     Result(Err<F>) = delete(
         "the error type does not convert to the error type of this Result: give E a noexcept implicit constructor "
-        "from F, or map the error with match");
+        "from F, or convert the error with map_err");
 
     Result(NoValue) = delete("an empty Option has no error for a Result: write std::move(option).ok_or(error)");
 
@@ -1769,6 +1897,121 @@ public:
         requires std::same_as<T, Unit>
     {
         slot_.expect_value_(why);
+    }
+
+    // THE COMBINATORS
+    //   A combinator is the rvalue match with one arm fixed by the shape of
+    //   the sum.  map and and_then pass the error through, and map_err and
+    //   or_else pass the value through.  Each consumes the Result through &&,
+    //   fn takes its part by value, and the result of fn holds no borrow, by
+    //   the gates of the rvalue match.  A linear part moves into fn or into the
+    //   new Result, so no combinator drops a part.  is_ok_and and is_err_and
+    //   only read, through a const reference.  Each body tests the error
+    //   first, as the match does, and costs the one branch of the match.
+
+    // The result of fn on the value, with the same error, or the error.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, T&&> && TakesPayloadByValue<Fn, T>
+              && ChoicePayload<std::invoke_result_t<Fn, T&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, T&&>>
+    [[nodiscard]] constexpr Result<std::invoke_result_t<Fn, T&&>, E>
+    map(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
+        using Mapped = Result<std::invoke_result_t<Fn, T&&>, E>;
+        if (!slot_.holds_()) return Mapped{Err<E>{static_cast<E&&>(slot_.error_())}};
+        return Mapped{static_cast<Fn&&>(fn)(static_cast<T&&>(slot_.value_()))};
+    }
+
+    // An fn of map that takes its value by reference binds to this overload,
+    // so the refusal gives its reason.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
+    void map(Fn&& fn) && = delete(
+        "the function of map takes the value by value, so it names no object that map ends: write the parameter as a "
+        "value, or name the Result and match its borrow");
+
+    // The value, or the result of fn on the error.  The new error is an
+    // ErrorValue, so a plain integer is refused, as for each Result.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, E&&> && TakesPayloadByValue<Fn, E>
+              && HoldsNoBorrow<std::invoke_result_t<Fn, E&&>> && ErrorValue<std::invoke_result_t<Fn, E&&>>
+    [[nodiscard]] constexpr Result<T, std::invoke_result_t<Fn, E&&>>
+    map_err(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, E&&>) {
+        using Failed = std::invoke_result_t<Fn, E&&>;
+        using Mapped = Result<T, Failed>;
+        if (!slot_.holds_()) return Mapped{Err<Failed>{static_cast<Fn&&>(fn)(static_cast<E&&>(slot_.error_()))}};
+        return Mapped{static_cast<T&&>(slot_.value_())};
+    }
+
+    // An fn of map_err that takes its error by reference binds to this
+    // overload, so the refusal gives its reason.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, E&&> && (!TakesPayloadByValue<Fn, E>)
+    void map_err(Fn&& fn) && =
+        delete("the function of map_err takes the error by value, so it names no object that map_err ends: write the "
+               "parameter as a value, or name the Result and match its borrow");
+
+    // The Result that fn gives for the value, or the error.  The error
+    // converts to the error of that Result as CRUCIBLE_TRY converts it.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, T&&> && TakesPayloadByValue<Fn, T>
+              && detail::IsResult<std::invoke_result_t<Fn, T&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, T&&>>
+              && std::is_nothrow_constructible_v<std::invoke_result_t<Fn, T&&>, Err<E>>
+    [[nodiscard]] constexpr std::invoke_result_t<Fn, T&&>
+    and_then(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
+        if (!slot_.holds_()) return Err<E>{static_cast<E&&>(slot_.error_())};
+        return static_cast<Fn&&>(fn)(static_cast<T&&>(slot_.value_()));
+    }
+
+    // An fn of and_then that takes its value by reference binds to this
+    // overload, so the refusal gives its reason.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, T&&> && (!TakesPayloadByValue<Fn, T>)
+    void and_then(Fn&& fn) && =
+        delete("the function of and_then takes the value by value, so it names no object that and_then ends: write the "
+               "parameter as a value, or name the Result and match its borrow");
+
+    // The value, or the Result that fn gives for the error: a recovery.  fn
+    // gives a Result of the same value type, so the value passes with no
+    // conversion.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, E&&> && TakesPayloadByValue<Fn, E>
+              && detail::IsResult<std::invoke_result_t<Fn, E&&>> && HoldsNoBorrow<std::invoke_result_t<Fn, E&&>>
+              && std::same_as<detail::result_value_t<std::invoke_result_t<Fn, E&&>>, T>
+    [[nodiscard]] constexpr std::invoke_result_t<Fn, E&&>
+    or_else(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, E&&>) {
+        using Recovered = std::invoke_result_t<Fn, E&&>;
+        if (!slot_.holds_()) return static_cast<Fn&&>(fn)(static_cast<E&&>(slot_.error_()));
+        return Recovered{static_cast<T&&>(slot_.value_())};
+    }
+
+    // An fn of or_else that takes its error by reference binds to this
+    // overload, so the refusal gives its reason.
+    template <class Fn>
+        requires std::is_invocable_v<Fn, E&&> && (!TakesPayloadByValue<Fn, E>)
+    void or_else(Fn&& fn) && =
+        delete("the function of or_else takes the error by value, so it names no object that or_else ends: write the "
+               "parameter as a value, or name the Result and match its borrow");
+
+    // True when the Result holds a value that holds accepts.  holds reads the
+    // value through a const reference, the Result keeps it, and an owning
+    // Result counts the lend (THE LEND COUNT), as the borrow match does.
+    template <class Holds>
+        requires std::is_invocable_v<Holds&, T const&> && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
+    [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_ok_and(Holds&& holds) const
+        noexcept(std::is_nothrow_invocable_v<Holds&, T const&>) {
+        [[maybe_unused]] auto const lend = slot_.lend_();
+        if (!slot_.holds_()) return false;
+        return holds(slot_.value_());
+    }
+
+    // True when the Result holds an error that holds accepts.  The read is
+    // that of is_ok_and.
+    template <class Holds>
+        requires std::is_invocable_v<Holds&, E const&> && std::same_as<std::invoke_result_t<Holds&, E const&>, bool>
+    [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_err_and(Holds&& holds) const
+        noexcept(std::is_nothrow_invocable_v<Holds&, E const&>) {
+        [[maybe_unused]] auto const lend = slot_.lend_();
+        if (slot_.holds_()) return false;
+        return holds(slot_.error_());
     }
 
     // The total match: on_ok gets the value, or on_err gets the error, and
@@ -1889,24 +2132,6 @@ public:
 };
 
 namespace detail {
-
-// An Option of a payload.  The concept reads only the reflection of T and
-// the template Option, so a unit cannot change its answer.  It forms no
-// Option of a deduced payload, so it checks no gate of the payload and
-// reads no open template such as niche.  A partial specialization over
-// Option<T> would form Option<T> and read the payload gate, which reads
-// niche, and the rule home refuses that.
-template <class T>
-concept IsOption = ::foundation::reflect::IsInstanceOf<T, ^^Option>;
-
-// The payload of an Option, from the reflection of its one template
-// argument.  An Atomic cell of an Option takes the word of this payload.
-template <IsOption T>
-using option_payload_t = [:std::meta::template_arguments_of(std::meta::dealias(std::meta::remove_cvref(^^T)))[0]:];
-
-// A Result of a value and an error.
-template <class T>
-concept IsResult = ::foundation::reflect::IsInstanceOf<T, ^^Result>;
 
 // The operand of CRUCIBLE_TRY: an rvalue of an Option or a Result that is
 // not const, so the macro can consume it.
