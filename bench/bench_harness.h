@@ -83,6 +83,7 @@
 #include <crucible/warden/Policy.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/os/CpuPinned.h>
 #include <fixy/os/Process.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/Time.h>
@@ -451,6 +452,21 @@ public:
     [[nodiscard]] crucible::warden::CpuSet const& set() const& noexcept { return set_; }
     void set() const&& = delete("a reference into a temporary Cores dangles at the end of the full expression");
 
+    // The cores of the slots from first to the last slot of the run, as a set,
+    // or the empty set when the run has too few cores.  A library that starts
+    // several threads and pins each one inside the mask of its caller, such as
+    // the pipeline of a Vigil, takes these cores through run_on_cores().
+    // Complexity: linear in the CPUs of the set.
+    [[nodiscard]] crucible::warden::CpuSet from_slot(ThreadSlot first) const noexcept {
+        crucible::warden::CpuSet later{};
+        std::uint32_t position = 0;
+        for (int const cpu : set_) {
+            if (position >= first.raw()) later.insert(static_cast<std::size_t>(cpu));
+            ++position;
+        }
+        return later;
+    }
+
 private:
     crucible::warden::CpuSet set_{};
 };
@@ -513,10 +529,25 @@ namespace detail {
             });
 }
 
-// The pin of the calling thread to one core for a scope, and the restore of
-// its affinity at the end of the scope.  A hold of a core that is not valid
-// changes nothing.  The process ends when the pin or the restore fails,
-// because the thread would then run on a CPU that the claim does not give it.
+namespace detail {
+
+// The affinity mask of a set of CPUs.  A CPU past the last CPU of a mask is
+// left out.  Complexity: linear in the CPUs of the set.
+[[nodiscard]] inline ::fixy::AffinityMask mask_of(crucible::warden::CpuSet const& cpus) noexcept {
+    ::fixy::AffinityMask mask{};
+    for (int const cpu : cpus) {
+        if (cpu > ::fixy::AffinityMask::kMaxCore) continue;
+        mask = ::fixy::AffinityLattice::join(mask, ::fixy::AffinityMask::single(static_cast<std::uint16_t>(cpu)));
+    }
+    return mask;
+}
+
+}  // namespace detail
+
+// The pin of the calling thread to some cores for a scope, and the restore of
+// its affinity at the end of the scope.  A hold of no core changes nothing.
+// The process ends when the pin or the restore fails, because the thread would
+// then run on a CPU that the claim does not give it.
 class CoreHold {
 public:
     explicit CoreHold(CpuId core) noexcept {
@@ -524,6 +555,13 @@ public:
         const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
         prior_ = ::fixy::some(::fixy::sched::apply_affinity_to_cpu(startup, core.raw())
                                   .expect("the pin of a thread to a core of the claim of its run"));
+    }
+
+    explicit CoreHold(crucible::warden::CpuSet const& cores) noexcept {
+        if (cores.is_empty()) return;
+        const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+        prior_ = ::fixy::some(::fixy::sched::apply_affinity_to_mask(startup, detail::mask_of(cores))
+                                  .expect("the pin of a thread to the cores of the claim of its run"));
     }
 
     ~CoreHold() {
@@ -559,6 +597,22 @@ template <class Fn>
     return static_cast<Fn&&>(fn)();
 }
 
+// Calls fn with the calling thread on a set of cores, and then gives the
+// thread back its affinity.  A thread that fn starts takes that set as its
+// mask.  It stays on the core on which it starts, but a library that pins its
+// threads inside the mask of their caller gives each thread its own core of
+// the set.  The pipeline of a Vigil does so for its four stages (fixy/
+// concurrent/StageCpus.h):
+//
+//   Vigil vigil = bench::run_on_cores(cores.from_slot(bench::ThreadSlot{1}), [] { return Vigil{}; });
+//
+// An empty set calls fn with no pin.
+template <class Fn>
+[[nodiscard]] decltype(auto) run_on_cores(crucible::warden::CpuSet const& cores, Fn&& fn) {
+    CoreHold const hold{cores};
+    return static_cast<Fn&&>(fn)();
+}
+
 // ── THE PAUSE CHECK ────────────────────────────────────────────────
 //
 // loop bench reads the steal column of /proc/stat, which counts in ticks of
@@ -587,6 +641,16 @@ template <class Fn>
 // run delay shows two threads on one core.  A thread that starts and ends in
 // the loop gives none.
 //
+// A run delay is a pause only when its mean wait for each arrival on a CPU is
+// more than kWaitBoundNs.  A thread that shares its core with a thread that
+// runs waits a slice of the scheduler at each arrival, hundreds of
+// microseconds or more.  A thread that parks and wakes many times, such as a
+// stage of a pipeline, can wait some microseconds at each wake, and the sum of
+// many such waits says nothing about a lost core.  The arrivals are the third
+// number of schedstat.  The check marked the start of the pipeline of a Vigil
+// in a sampled loop: a stage waited 1.6 ms in 5 arrivals on the core of the
+// pipeline thread, before it moved to its own core.
+//
 // A Run whose pause is more than kPauseBoundNs is not valid: its row prints
 // the pause and NOT VALID, and its JSON gives paused 1.
 
@@ -596,15 +660,29 @@ template <class Fn>
 // 3.3 ms.
 inline constexpr std::uint64_t kPauseBoundNs = 1000000;
 
+// The bound of the mean wait for each arrival of a run delay that is a pause:
+// a wait longer than the wake of an idle vCPU, and shorter than a slice of the
+// scheduler.
+inline constexpr std::uint64_t kWaitBoundNs = 100000;
+
 // The threads whose run delay one reading holds, at most.  The other threads
 // of a larger process are not read.
 inline constexpr std::size_t kPauseThreads = 64;
 
-// The run delay of one thread at one reading, in nanoseconds.
+// The run delay of one thread at one reading, in nanoseconds, and the count of
+// its arrivals on a CPU.
 struct ThreadDelay {
     ::fixy::process::ThreadId tid{};
     std::uint64_t run_delay_ns = 0;
+    std::uint64_t arrivals = 0;
 };
+
+// True when a run delay over a window is a pause: more than kPauseBoundNs in
+// all, with a mean wait for each arrival of more than kWaitBoundNs.  A delay
+// with no arrival waited in one piece.
+[[nodiscard]] constexpr bool is_run_delay_paused(ThreadDelay const& window) noexcept {
+    return window.run_delay_ns > kPauseBoundNs && window.run_delay_ns > window.arrivals * kWaitBoundNs;
+}
 
 // How the pause of the measuring thread is judged: by its lost time, or, when
 // it slept, by its run delay alone.
@@ -614,15 +692,16 @@ enum class PauseBasis : std::uint8_t {
     RunDelay,
 };
 
-// What the pause check reads at the start and at the end of a sampled loop.
-// basis is NotMeasured when a read failed.
+// What the pause check reads at the start and at the end of a sampled loop:
+// the clocks and the switches of the measuring thread, its run delay, and the
+// run delay of each thread of the process.  basis is NotMeasured when a read
+// failed.
 struct PauseReading {
     PauseBasis basis = PauseBasis::NotMeasured;
     std::uint64_t wall_ns = 0;
     std::uint64_t cpu_ns = 0;
     std::uint64_t voluntary_switches = 0;
-    std::uint64_t run_delay_ns = 0;
-    ::fixy::process::ThreadId tid{};
+    ThreadDelay own{};
     ::fixy::FixedList<ThreadDelay, kPauseThreads> others{};
 };
 
@@ -633,11 +712,11 @@ struct Pause {
     // did not run in it.
     std::uint64_t wall_ns = 0;
     std::uint64_t lost_ns = 0;
-    // The run delay of the measuring thread in the window.
-    std::uint64_t run_delay_ns = 0;
-    // The largest run delay of another thread in the window, and its id.
-    std::uint64_t thread_delay_ns = 0;
-    ::fixy::process::ThreadId delayed_tid{};
+    // The run delay of the measuring thread in the window, and its arrivals.
+    ThreadDelay own{};
+    // The run delay of the other thread that the check names: the longest
+    // delay that is a pause, or else the longest delay.
+    ThreadDelay other{};
 
     // The pause of the measuring thread by its basis: its lost time, its run
     // delay when it slept, or zero when the check did not read.
@@ -646,7 +725,7 @@ struct Pause {
             case PauseBasis::LostTime:
                 return lost_ns;
             case PauseBasis::RunDelay:
-                return run_delay_ns;
+                return own.run_delay_ns;
             case PauseBasis::NotMeasured:
                 return 0;
             default:
@@ -654,9 +733,13 @@ struct Pause {
         }
     }
 
-    // True when a thread of the Run lost more time than kPauseBoundNs.
+    // True when the measuring thread lost more than kPauseBoundNs, or when a
+    // run delay of a thread of the Run is a pause.
     [[nodiscard]] constexpr bool is_over_bound() const noexcept {
-        return own_ns() > kPauseBoundNs || thread_delay_ns > kPauseBoundNs;
+        const bool is_own_paused = basis == PauseBasis::LostTime ? lost_ns > kPauseBoundNs
+                                 : basis == PauseBasis::RunDelay ? is_run_delay_paused(own)
+                                                                 : false;
+        return is_own_paused || is_run_delay_paused(other);
     }
 };
 
@@ -707,34 +790,48 @@ template <std::size_t Capacity>
     return after.value() > before.value() ? after.value() - before.value() : 0;
 }
 
+// The run delay of one thread over a window: the growth of its delay and of
+// its arrivals between two readings.
+[[nodiscard]] constexpr ThreadDelay delay_between(::fixy::Side<side::ReadingBefore, ThreadDelay> const& before,
+                                                  ::fixy::Side<side::ReadingAfter, ThreadDelay> const& after) noexcept {
+    const auto delta = [](std::uint64_t first, std::uint64_t last) noexcept {
+        return grown(::fixy::side_as<side::ReadingBefore>(first), ::fixy::side_as<side::ReadingAfter>(last));
+    };
+    return ThreadDelay{.tid = after.value().tid,
+                       .run_delay_ns = delta(before.value().run_delay_ns, after.value().run_delay_ns),
+                       .arrivals = delta(before.value().arrivals, after.value().arrivals)};
+}
+
 // The pause between two readings of one thread (THE PAUSE CHECK).  The
 // measuring thread is judged by its run delay when it made a voluntary switch,
-// and else by its lost time.  The other threads give the largest run delay of
-// a thread that both readings hold.  Complexity: O(n * m) in the threads of
-// the two readings, at most kPauseThreads each.
+// and else by its lost time.  The other threads that both readings hold give
+// the longest run delay that is a pause, or else the longest run delay.
+// Complexity: O(n * m) in the threads of the two readings, at most
+// kPauseThreads each.
 [[nodiscard]] constexpr Pause pause_between(::fixy::Side<side::ReadingBefore, PauseReading> const& before_side,
                                             ::fixy::Side<side::ReadingAfter, PauseReading> const& after_side) noexcept {
     PauseReading const& before = before_side.value();
     PauseReading const& after = after_side.value();
     Pause pause{};
     if (before.basis == PauseBasis::NotMeasured || after.basis == PauseBasis::NotMeasured) return pause;
-    const auto delta = [](std::uint64_t first, std::uint64_t last) noexcept {
-        return grown(::fixy::side_as<side::ReadingBefore>(first), ::fixy::side_as<side::ReadingAfter>(last));
-    };
-    pause.wall_ns = delta(before.wall_ns, after.wall_ns);
-    const std::uint64_t cpu_ns = delta(before.cpu_ns, after.cpu_ns);
+    pause.wall_ns =
+        grown(::fixy::side_as<side::ReadingBefore>(before.wall_ns), ::fixy::side_as<side::ReadingAfter>(after.wall_ns));
+    const std::uint64_t cpu_ns =
+        grown(::fixy::side_as<side::ReadingBefore>(before.cpu_ns), ::fixy::side_as<side::ReadingAfter>(after.cpu_ns));
     pause.lost_ns = pause.wall_ns > cpu_ns ? pause.wall_ns - cpu_ns : 0;
-    pause.run_delay_ns = delta(before.run_delay_ns, after.run_delay_ns);
+    pause.own =
+        delay_between(::fixy::side_as<side::ReadingBefore>(before.own), ::fixy::side_as<side::ReadingAfter>(after.own));
     pause.basis = after.voluntary_switches > before.voluntary_switches ? PauseBasis::RunDelay : PauseBasis::LostTime;
     for (ThreadDelay const& late : after.others) {
-        if (late.tid == after.tid) continue;
+        if (late.tid == after.own.tid) continue;
         for (ThreadDelay const& early : before.others) {
             if (early.tid != late.tid) continue;
-            const std::uint64_t delayed = delta(early.run_delay_ns, late.run_delay_ns);
-            if (delayed > pause.thread_delay_ns) {
-                pause.thread_delay_ns = delayed;
-                pause.delayed_tid = late.tid;
-            }
+            const ThreadDelay window =
+                delay_between(::fixy::side_as<side::ReadingBefore>(early), ::fixy::side_as<side::ReadingAfter>(late));
+            const bool is_paused = is_run_delay_paused(window);
+            const bool was_paused = is_run_delay_paused(pause.other);
+            const bool is_longer = window.run_delay_ns > pause.other.run_delay_ns;
+            if ((is_paused && (!was_paused || is_longer)) || (!was_paused && is_longer)) pause.other = window;
         }
     }
     return pause;
@@ -755,14 +852,22 @@ template <std::size_t Capacity>
                [](::fixy::ParseError) noexcept -> ::fixy::Option<std::uint64_t> { return ::fixy::none; });
 }
 
-// The run delay of a schedstat file of procfs: its second number, in
-// nanoseconds, or none when the file does not read.
-[[nodiscard]] inline ::fixy::Option<std::uint64_t> read_run_delay(::fixy::CText path) noexcept {
+// The run delay and the arrivals of a schedstat file of procfs, which holds
+// the run time, the run delay in nanoseconds and the arrivals on a CPU, or
+// none when the file does not read.  The thread id of the result is zero.
+[[nodiscard]] inline ::fixy::Option<ThreadDelay> read_schedstat(::fixy::CText path) noexcept {
+    namespace topology = crucible::warden::detail;
     ::fixy::FixedText<128> text{};
     if (::foundation::os::read_file(path, text).is_err()) return ::fixy::none;
     ::fixy::TextView const all = text.view();
-    std::size_t const blank = ::fixy::find(all, ' ').value_or(all.size());
-    return leading_number(crucible::warden::detail::text_suffix(all, blank + 1));
+    ::fixy::TextView const delay_text = topology::text_suffix(all, ::fixy::find(all, ' ').value_or(all.size()) + 1);
+    ::fixy::TextView const arrivals_text =
+        topology::text_suffix(delay_text, ::fixy::find(delay_text, ' ').value_or(delay_text.size()) + 1);
+    ::fixy::Option<std::uint64_t> delay = leading_number(delay_text);
+    ::fixy::Option<std::uint64_t> arrivals = leading_number(arrivals_text);
+    if (delay.is_none() || arrivals.is_none()) return ::fixy::none;
+    return ::fixy::some(
+        ThreadDelay{.run_delay_ns = std::move(delay).value_or(0), .arrivals = std::move(arrivals).value_or(0)});
 }
 
 // The run delay of each thread of the process, at most kPauseThreads of them.
@@ -774,12 +879,11 @@ inline void read_thread_delays(::fixy::FixedList<ThreadDelay, kPauseThreads>& de
         const bool is_built = path.append(::fixy::CText{"/proc/self/task/"}).is_ok() && path.append(name).is_ok()
                            && path.append(::fixy::CText{"/schedstat"}).is_ok();
         if (tid.is_none() || !is_built) return ::foundation::os::Visit::proceed;
-        ::fixy::Option<std::uint64_t> delay = read_run_delay(path.c_text());
-        if (delay.is_none()) return ::foundation::os::Visit::proceed;
-        const ThreadDelay found{
-            .tid = ::fixy::process::ThreadId{::fixy::narrow<std::uint32_t>(std::move(tid).value_or(0)).value_or(0)},
-            .run_delay_ns = std::move(delay).value_or(0)};
-        return delays.push(found).is_ok() ? ::foundation::os::Visit::proceed : ::foundation::os::Visit::stop;
+        ::fixy::Option<ThreadDelay> found = read_schedstat(path.c_text());
+        if (found.is_none()) return ::foundation::os::Visit::proceed;
+        ThreadDelay delay = std::move(found).value_or(ThreadDelay{});
+        delay.tid = ::fixy::process::ThreadId{::fixy::narrow<std::uint32_t>(std::move(tid).value_or(0)).value_or(0)};
+        return delays.push(delay).is_ok() ? ::foundation::os::Visit::proceed : ::foundation::os::Visit::stop;
     }));
 }
 
@@ -798,21 +902,78 @@ inline void read_thread_delays(::fixy::FixedList<ThreadDelay, kPauseThreads>& de
     ::fixy::Option<std::uint64_t> switches = is_status_read
                                                ? leading_number(value_of_line(status.view(), "voluntary_ctxt_switches"))
                                                : ::fixy::Option<std::uint64_t>{};
-    ::fixy::Option<std::uint64_t> delay = read_run_delay("/proc/thread-self/schedstat");
+    ::fixy::Option<ThreadDelay> own = read_schedstat("/proc/thread-self/schedstat");
     auto cpu_read = cpu.read(nondet);
     auto wall_read = wall.read(nondet);
-    if (switches.is_none() || delay.is_none() || cpu_read.is_err() || wall_read.is_err()) return reading;
+    if (switches.is_none() || own.is_none() || cpu_read.is_err() || wall_read.is_err()) return reading;
     reading.cpu_ns = std::move(cpu_read).expect("the test above found the reading").peek();
     reading.wall_ns = std::move(wall_read).expect("the test above found the reading").peek();
     reading.voluntary_switches = std::move(switches).value_or(0);
-    reading.run_delay_ns = std::move(delay).value_or(0);
-    reading.tid = ::fixy::process::current_thread(startup);
+    reading.own = std::move(own).value_or(ThreadDelay{});
+    reading.own.tid = ::fixy::process::current_thread(startup);
     read_thread_delays(reading.others);
     reading.basis = PauseBasis::LostTime;
     return reading;
 }
 
+// The field processor of a stat file of procfs: the CPU on which the thread
+// ran last, or none.  The name of a thread can hold a parenthesis and blanks,
+// so the fields start after the last closing parenthesis.  Field 3, the
+// state, comes first there, and processor is field 39.  Complexity: linear in
+// the text.
+[[nodiscard]] inline ::fixy::Option<std::uint64_t> processor_of_stat(::fixy::TextView stat) noexcept {
+    namespace topology = crucible::warden::detail;
+    constexpr std::size_t kFieldsBeforeProcessor = 36;
+    std::size_t after_name = 0;
+    std::size_t position = 0;
+    for (char const character : stat) {
+        ++position;
+        if (character == ')') after_name = position;
+    }
+    if (after_name == 0) return ::fixy::none;
+    ::fixy::TextView rest = topology::trim_blanks(topology::text_suffix(stat, after_name));
+    for (std::size_t field = 0; field < kFieldsBeforeProcessor; ++field) {
+        std::size_t const blank = ::fixy::find(rest, ' ').value_or(rest.size());
+        rest = topology::trim_blanks(topology::text_suffix(rest, blank + 1));
+    }
+    return leading_number(rest);
+}
+
 }  // namespace detail
+
+// Prints the id of each thread of the process, the CPU on which it ran last,
+// and the count of its involuntary switches since it started, from
+// /proc/self/task/TID/stat and status, on one line after the label.  A bench
+// of several threads prints it after a row, while its threads live, to show
+// that no two of them share a core (THE CORES OF A RUN).  A thread that is
+// alone on its core makes an involuntary switch only for a kernel thread of
+// that core.  Complexity: one listing of /proc/self/task and two reads for
+// each thread.
+inline void print_thread_cpus(::fixy::TextView label) noexcept {
+    using ::fixy::Sink;
+    detail::flush_standard_output();
+    ::fixy::report(Sink::Out, "     └─ threads of {} (cpu, involuntary switches):", label);
+    static_cast<void>(::foundation::os::for_each_entry("/proc/self/task", [](::fixy::CText name) noexcept {
+        const auto read = [&name](::fixy::CText leaf, auto& text) noexcept {
+            ::foundation::os::PathText<64> path{};
+            const bool is_built = path.append(::fixy::CText{"/proc/self/task/"}).is_ok() && path.append(name).is_ok()
+                               && path.append(leaf).is_ok();
+            return is_built && ::foundation::os::read_file(path.c_text(), text).is_ok();
+        };
+        ::fixy::FixedText<1024> stat{};
+        ::fixy::FixedText<4096> status{};
+        if (!read("/stat", stat) || !read("/status", status)) return ::foundation::os::Visit::proceed;
+        ::fixy::Option<std::uint64_t> cpu = detail::processor_of_stat(stat.view());
+        ::fixy::Option<std::uint64_t> switches =
+            detail::leading_number(detail::value_of_line(status.view(), "nonvoluntary_ctxt_switches"));
+        if (cpu.is_some()) {
+            ::fixy::report(Sink::Out, " {} cpu{} {},", name.view(), std::move(cpu).value_or(0),
+                           std::move(switches).value_or(0));
+        }
+        return ::foundation::os::Visit::proceed;
+    }));
+    ::fixy::report(Sink::Out, "\n");
+}
 
 // ── BPF perf::Senses accessor (shared aggregator singleton) ───────
 //
@@ -1213,11 +1374,11 @@ struct Report {
                      "\"cv\":%.5f,\"wall_ns\":%.0f,\"drift_pct\":%.3f,"
                      "\"cycles_per_op\":%.3f,"
                      "\"freq_start_hz\":%lu,\"freq_end_hz\":%lu,"
-                     "\"pause_ns\":%lu,\"thread_delay_ns\":%lu,\"paused\":%d",
+                     "\"pause_ns\":%lu,\"thread_delay_ns\":%lu,\"thread_arrivals\":%lu,\"paused\":%d",
                      batch, pct.n, pinned_cpu.raw(), pinned_cpu_count, pct.p50, pct.p75, pct.p90, pct.p95, pct.p99,
                      pct.p99_9, pct.p99_99, pct.min, pct.max, pct.mean, pct.stddev, pct.cv, wall_ns, drift_pct,
                      cycles_per_op, static_cast<unsigned long>(freq_start_hz), static_cast<unsigned long>(freq_end_hz),
-                     pause.own_ns(), pause.thread_delay_ns, pause.is_over_bound() ? 1 : 0);
+                     pause.own_ns(), pause.other.run_delay_ns, pause.other.arrivals, pause.is_over_bound() ? 1 : 0);
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         print_bpf_json_(out);
 #endif
@@ -1238,15 +1399,18 @@ private:
                            pause.lost_ns / 1000);
         } else {
             ::fixy::report(Sink::Out,
-                           " the measuring thread slept, and it waited {} us on its run queue.  The steal of its core "
-                           "is not measured.",
-                           pause.run_delay_ns / 1000);
+                           " the measuring thread slept, and it waited {} us on its run queue in {} arrivals.  The "
+                           "steal of its core is not measured.",
+                           pause.own.run_delay_ns / 1000, pause.own.arrivals);
         }
-        if (pause.thread_delay_ns > 0) {
-            ::fixy::report(Sink::Out, "  Thread {} waited {} us on its run queue.",
-                           static_cast<std::uint32_t>(pause.delayed_tid), pause.thread_delay_ns / 1000);
+        if (pause.other.run_delay_ns > 0) {
+            ::fixy::report(Sink::Out, "  Thread {} waited {} us on its run queue in {} arrivals.",
+                           static_cast<std::uint32_t>(pause.other.tid), pause.other.run_delay_ns / 1000,
+                           pause.other.arrivals);
         }
-        ::fixy::report(Sink::Out, "  The bound is {} us, so the row is NOT VALID.\n", kPauseBoundNs / 1000);
+        ::fixy::report(Sink::Out,
+                       "  The bounds are {} us in all and {} us for each arrival, so the row is NOT VALID.\n",
+                       kPauseBoundNs / 1000, kWaitBoundNs / 1000);
     }
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF

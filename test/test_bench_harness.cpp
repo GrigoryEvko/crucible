@@ -689,6 +689,16 @@ void test_slots_take_distinct_cores() {
     CHECK(none.of_slot(bench::kMeasuringSlot).is_none());
 }
 
+// The CPU of a thread is field 39 of its stat file, and the fields start after
+// the last closing parenthesis, because the name of a thread can hold one.
+void test_processor_of_stat() {
+    const ::fixy::TextView stat =
+        "77 (bad) name) S 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 "
+        "29 30 31 32 33 34 35 36 37 38 241 40 41 42\n";
+    CHECK(bench::detail::processor_of_stat(stat).value_or(0) == 241u);
+    CHECK(bench::detail::processor_of_stat("no parenthesis 1 2 3").is_none());
+}
+
 // A worker pins itself to the core of its slot, and a thread that starts
 // inside run_on_core takes that core as its affinity and keeps it.  The
 // calling thread gets its affinity back after run_on_core.  The core is the
@@ -728,12 +738,22 @@ constexpr ::fixy::process::ThreadId kMeasuringTid{100};
 constexpr ::fixy::process::ThreadId kOtherTid{7};
 
 // A planted reading of the measuring thread, which lists the measuring thread
-// and the thread 7 with no run delay.
+// with its own run delay and the thread 7 with no run delay.
 [[nodiscard]] bench::PauseReading with_threads(bench::PauseReading reading) {
     reading.basis = bench::PauseBasis::LostTime;
-    reading.tid = kMeasuringTid;
-    static_cast<void>(reading.others.push(bench::ThreadDelay{.tid = kMeasuringTid, .run_delay_ns = 0}));
-    static_cast<void>(reading.others.push(bench::ThreadDelay{.tid = kOtherTid, .run_delay_ns = 0}));
+    reading.own.tid = kMeasuringTid;
+    static_cast<void>(reading.others.push(reading.own));
+    static_cast<void>(reading.others.push(bench::ThreadDelay{.tid = kOtherTid}));
+    return reading;
+}
+
+// The planted reading after a window in which the thread 7 waited on its run
+// queue in some arrivals.
+[[nodiscard]] bench::PauseReading with_other_delay(bench::PauseReading reading, bench::ThreadDelay const& delay) {
+    for (bench::ThreadDelay& thread : reading.others) {
+        if (thread.tid == delay.tid) thread = delay;
+    }
+    if (delay.tid != kOtherTid && delay.tid != kMeasuringTid) static_cast<void>(reading.others.push(delay));
     return reading;
 }
 
@@ -744,9 +764,10 @@ constexpr ::fixy::process::ThreadId kOtherTid{7};
 
 // The verdict of the pause check on planted readings.  A thread that never
 // slept is judged by its lost time, a thread that slept by its run delay, and
-// another thread by its run delay.  A thread that only one reading holds, and
-// the measuring thread in the list of the threads, count nothing.  A reading
-// that failed gives no pause.
+// another thread by its run delay.  A run delay is a pause only with a mean
+// wait of more than 100 us for each arrival.  A thread that only one reading
+// holds, and the measuring thread in the list of the threads, count nothing.
+// A reading that failed gives no pause.
 void test_pause_between_planted_readings() {
     using bench::side::ReadingAfter;
     using bench::side::ReadingBefore;
@@ -757,27 +778,52 @@ void test_pause_between_planted_readings() {
     CHECK(stolen.basis == bench::PauseBasis::LostTime && stolen.wall_ns == 10000000u);
     CHECK(stolen.lost_ns == 2500000u && stolen.own_ns() == 2500000u && stolen.is_over_bound());
 
+    const bench::PauseReading quiet = with_threads({.voluntary_switches = 4});
     const bench::Pause clean = planted_pause(
-        ::fixy::side_as<ReadingBefore>(with_threads({.voluntary_switches = 4})),
+        ::fixy::side_as<ReadingBefore>(quiet),
         ::fixy::side_as<ReadingAfter>(with_threads({.wall_ns = 10000000, .cpu_ns = 9950000, .voluntary_switches = 4})));
     CHECK(clean.lost_ns == 50000u && !clean.is_over_bound());
 
-    const bench::Pause slept =
-        planted_pause(::fixy::side_as<ReadingBefore>(with_threads({.voluntary_switches = 4, .run_delay_ns = 100})),
-                      ::fixy::side_as<ReadingAfter>(with_threads(
-                          {.wall_ns = 10000000, .cpu_ns = 5000000, .voluntary_switches = 5, .run_delay_ns = 200100})));
+    const bench::Pause slept = planted_pause(
+        ::fixy::side_as<ReadingBefore>(with_threads({.voluntary_switches = 4, .own = {.run_delay_ns = 100}})),
+        ::fixy::side_as<ReadingAfter>(with_threads(
+            {.wall_ns = 10000000, .cpu_ns = 5000000, .voluntary_switches = 5, .own = {.run_delay_ns = 200100}})));
     CHECK(slept.basis == bench::PauseBasis::RunDelay && slept.own_ns() == 200000u && !slept.is_over_bound());
 
-    bench::PauseReading late = with_threads({.wall_ns = 10000000, .cpu_ns = 10000000, .voluntary_switches = 4});
-    for (bench::ThreadDelay& thread : late.others) {
-        if (thread.tid == kOtherTid) thread.run_delay_ns = 1500000;
-    }
-    static_cast<void>(
-        late.others.push(bench::ThreadDelay{.tid = ::fixy::process::ThreadId{8}, .run_delay_ns = 9000000}));
-    const bench::Pause delayed = planted_pause(::fixy::side_as<ReadingBefore>(with_threads({.voluntary_switches = 4})),
-                                               ::fixy::side_as<ReadingAfter>(late));
-    CHECK(delayed.own_ns() == 0u && delayed.thread_delay_ns == 1500000u);
-    CHECK(delayed.delayed_tid == kOtherTid && delayed.is_over_bound());
+    // A thread that slept and then waited 2 ms in 4 arrivals lost its core.
+    // The same 2 ms in 100 arrivals are the wakes of a parked thread.
+    const bench::Pause shared = planted_pause(
+        ::fixy::side_as<ReadingBefore>(quiet),
+        ::fixy::side_as<ReadingAfter>(with_threads(
+            {.wall_ns = 10000000, .voluntary_switches = 5, .own = {.run_delay_ns = 2000000, .arrivals = 4}})));
+    CHECK(shared.basis == bench::PauseBasis::RunDelay && shared.is_over_bound());
+    const bench::Pause parked = planted_pause(
+        ::fixy::side_as<ReadingBefore>(quiet),
+        ::fixy::side_as<ReadingAfter>(with_threads(
+            {.wall_ns = 10000000, .voluntary_switches = 5, .own = {.run_delay_ns = 2000000, .arrivals = 100}})));
+    CHECK(parked.own_ns() == 2000000u && !parked.is_over_bound());
+
+    // The thread 7 waited 1.5 ms in 3 arrivals, and the thread 9 waited 5 ms in
+    // 1000 arrivals.  The check names the thread 7, whose delay is a pause.  The
+    // thread 8 is only in the later reading, so it counts nothing.
+    const bench::PauseReading busy = with_threads({.wall_ns = 10000000, .cpu_ns = 10000000, .voluntary_switches = 4});
+    const bench::PauseReading late = with_other_delay(
+        with_other_delay(with_other_delay(busy, {.tid = kOtherTid, .run_delay_ns = 1500000, .arrivals = 3}),
+                         {.tid = ::fixy::process::ThreadId{9}, .run_delay_ns = 5000000, .arrivals = 1000}),
+        {.tid = ::fixy::process::ThreadId{8}, .run_delay_ns = 9000000, .arrivals = 1});
+    const bench::PauseReading early = with_other_delay(quiet, {.tid = ::fixy::process::ThreadId{9}});
+    const bench::Pause delayed =
+        planted_pause(::fixy::side_as<ReadingBefore>(early), ::fixy::side_as<ReadingAfter>(late));
+    CHECK(delayed.own_ns() == 0u && delayed.other.run_delay_ns == 1500000u && delayed.other.arrivals == 3u);
+    CHECK(delayed.other.tid == kOtherTid && delayed.is_over_bound());
+
+    // With no delay that is a pause, the check names the longest delay, and the
+    // run stays valid.
+    const bench::Pause woken =
+        planted_pause(::fixy::side_as<ReadingBefore>(early),
+                      ::fixy::side_as<ReadingAfter>(with_other_delay(
+                          busy, {.tid = ::fixy::process::ThreadId{9}, .run_delay_ns = 5000000, .arrivals = 1000})));
+    CHECK(woken.other.tid == ::fixy::process::ThreadId{9} && !woken.is_over_bound());
 
     const bench::Pause unread =
         planted_pause(::fixy::side_as<ReadingBefore>(bench::PauseReading{}),
@@ -854,7 +900,8 @@ void test_planted_pause_is_caught() {
     ::fixy::report(::fixy::Sink::Err,
                    "test_bench_harness: the planted pause of 2 ms lost {} us of {} us, with a run delay of {} us.  The "
                    "check judged it by its {}\n",
-                   paused.pause.lost_ns / 1000, paused.pause.wall_ns / 1000, paused.pause.run_delay_ns / 1000, basis);
+                   paused.pause.lost_ns / 1000, paused.pause.wall_ns / 1000, paused.pause.own.run_delay_ns / 1000,
+                   basis);
 }
 
 }  // namespace
@@ -879,8 +926,9 @@ int main() {
     test_pins_of_the_threads_of_a_run();
     test_pause_between_planted_readings();
     test_planted_pause_is_caught();
+    test_processor_of_stat();
 
-    constexpr int kNumGroups = 17;
+    constexpr int kNumGroups = 18;
     if (g_failures == 0) {
         crucible::test::pass("test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;
