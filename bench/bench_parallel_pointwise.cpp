@@ -32,6 +32,15 @@
 //   width of the target, with no plan, no shard and no thread.  A ratio above
 //   1 is a row faster than that loop.
 //
+// THE CORE OF EACH SHARD
+//   Before the rows, a probe for each count of shards runs the shards of
+//   mint_parallel_for with the coupling and the thread options of the walk.
+//   Each shard reads the CPU of its own thread in procfs, and a line gives
+//   that CPU and its L3 group, named by the first CPU of the group.  The
+//   probe runs threads of its own with the placement of the walk, and not the
+//   threads of a timed row.  The JSON tail of the bench gives each row of the
+//   harness.
+//
 // With fewer than nine isolated cores, as under a run with no claim, the
 // threads keep the affinity of the process, and the bench says that its rows
 // are noisy.
@@ -64,6 +73,11 @@ using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc
 constexpr std::size_t kShardThreads = 8;
 constexpr std::size_t kClaimedCores = kShardThreads + 1;
 constexpr std::size_t kWallMs = 3000;
+// The rows of the harness of the two sizes: the reference and four counts of
+// shards each.
+constexpr std::size_t kRows = 10;
+// The CPU of a shard of the probe that did not read its CPU.
+constexpr std::uint64_t kNoCpu = ~std::uint64_t{0};
 
 // One size of the bench: the side of its square planes.
 struct Level {
@@ -172,9 +186,55 @@ void print_line(LineBasis const& basis, Level const& level, bench::Report const&
                    ratio % 100 / 10, ratio % 10);
 }
 
+// The tag of the region of the probe of the shards: no element, because a
+// shard of the probe reads none.
+struct ShardProbeCells final {
+    using permission_row = eff::Row<>;
+};
+
+// Prints the CPU and the L3 group of each shard of a walk of Shards shards
+// (THE CORE OF EACH SHARD).  The shards wait on each other, as the shards of
+// the walk do, so each shard has a thread of its own.  The CPU of a shard is
+// field 39 of /proc/thread-self/stat, read in its thread.
+template <std::size_t Shards>
+void print_shard_cores(Placement const& placement) noexcept {
+    BgCtx const ctx{eff::testing::bg()};
+    ::fixy::TestRunnerCtx const test{eff::testing::test()};
+    ::fixy::FixedArray<::fixy::Atomic<std::uint64_t>, Shards> cpus{};
+    auto whole = ::fixy::spawn::mint_parallel_for_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
+        ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64},
+        ::fixy::mint_owned_region<std::uint32_t>(nullptr, std::size_t{0},
+                                                 ::foundation::permissions::mint_permission_root<ShardProbeCells>()),
+        [&cpus](auto& shard) noexcept {
+            static_cast<void>(shard);
+            constexpr std::size_t index = std::remove_cvref_t<decltype(shard)>::tag_type::index;
+            ::fixy::FixedText<1024> stat{};
+            bool const is_read = ::foundation::os::read_file("/proc/thread-self/stat", stat).is_ok();
+            std::uint64_t const cpu = is_read ? bench::detail::processor_of_stat(stat.view()).value_or(kNoCpu) : kNoCpu;
+            cpus.at(::fixy::index<index>()).store_release(cpu);
+        },
+        placement.options);
+    ::foundation::linear::drop(std::move(whole));
+    // The rows of the harness go through stdio, and report() does not.
+    bench::detail::flush_standard_output();
+    ::fixy::report(::fixy::Sink::Out, "  {} shards, probed with the options of the walk:", Shards);
+    for (auto const [index, cell] : cpus.enumerate()) {
+        std::uint64_t const cpu = cell->load_acquire();
+        if (cpu == kNoCpu) {
+            ::fixy::report(::fixy::Sink::Out, " shard {} no cpu,", index.raw());
+            continue;
+        }
+        bench::CpuId const core{::fixy::narrow<int>(cpu).value_or(-1)};
+        ::fixy::report(::fixy::Sink::Out, " shard {} cpu{} L3 of cpu{},", index.raw(), cpu,
+                       bench::read_l3_group(core).first().value_or(-1));
+    }
+    ::fixy::report(::fixy::Sink::Out, "\n");
+}
+
 // The five rows of one size: the rows of the harness, then the line of each
-// count of shards.
-void run_level(Level const& level, RowNames names, Placement const& placement) {
+// count of shards.  The rows go to all, for the JSON tail of the bench.
+void run_level(Level const& level, RowNames names, Placement const& placement,
+               ::fixy::FixedList<bench::Report, kRows>& all) {
     auto const alloc = eff::testing::test().alloc;
     auto const fill = [](std::size_t position) noexcept { return static_cast<float>(position % 1021) * 0.25f + 0.5f; };
     Storage out = ::fixy::mint_heap_array_with<float, 64>(alloc, level.count(), fill);
@@ -186,7 +246,7 @@ void run_level(Level const& level, RowNames names, Placement const& placement) {
         .right = plane_of(::fixy::View<float const>{right.view()}, level),
     };
 
-    bench::Report const reference =
+    bench::Report reference =
         names.reference.core(placement.measuring_core)
             .batch(1)
             .warmup(16)
@@ -221,6 +281,10 @@ void run_level(Level const& level, RowNames names, Placement const& placement) {
     for (bench::Report const& measured : reports) {
         print_line(basis, level, measured);
         basis.shards *= 2;
+    }
+    bench::add_report(all, std::move(reference));
+    for (bench::Report& measured : reports) {
+        bench::add_report(all, std::move(measured));
     }
 }
 
@@ -265,19 +329,25 @@ int main() {
                        "process, and the rows are noisy.  Run the bench through loop bench, which claims its cores.\n",
                        cores.count(), kClaimedCores);
     }
+    print_shard_cores<1>(placement);
+    print_shard_cores<2>(placement);
+    print_shard_cores<4>(placement);
+    print_shard_cores<8>(placement);
+    ::fixy::FixedList<bench::Report, kRows> reports{};
     run_level(Level{.side = 1024},
               RowNames{.reference = bench::Run{"raw loop add 1024x1024 [reference]"},
                        .one = bench::Run{"parallel add 1024x1024 [1 shard]"},
                        .two = bench::Run{"parallel add 1024x1024 [2 shards]"},
                        .four = bench::Run{"parallel add 1024x1024 [4 shards]"},
                        .eight = bench::Run{"parallel add 1024x1024 [8 shards]"}},
-              placement);
+              placement, reports);
     run_level(Level{.side = 4096},
               RowNames{.reference = bench::Run{"raw loop add 4096x4096 [reference]"},
                        .one = bench::Run{"parallel add 4096x4096 [1 shard]"},
                        .two = bench::Run{"parallel add 4096x4096 [2 shards]"},
                        .four = bench::Run{"parallel add 4096x4096 [4 shards]"},
                        .eight = bench::Run{"parallel add 4096x4096 [8 shards]"}},
-              placement);
+              placement, reports);
+    bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
 }
