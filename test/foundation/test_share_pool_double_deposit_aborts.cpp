@@ -45,8 +45,10 @@ void deposit_while_lending() {
     auto first = mint_region();
     auto second = mint_region();
     fp::SharedPermissionPool pool{std::move(first)};
-    fp::with_shared_read(
-        pool, [&pool, token = std::move(second)](auto) mutable noexcept { pool.deposit_exclusive(std::move(token)); });
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    fp::with_shared_read(test, pool, [&pool, token = std::move(second)](auto) mutable noexcept {
+        pool.deposit_exclusive(std::move(token));
+    });
 }
 
 }  // namespace

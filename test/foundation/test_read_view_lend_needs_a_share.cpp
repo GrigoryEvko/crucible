@@ -37,7 +37,8 @@ static void lend_a_guard_that_gave_its_share_away() {
     auto root = fp::mint_permission_root<Region>();
     using Brand = decltype(root)::brand_type;
     fp::SharedPermissionPool<Region, Brand> pool{std::move(root)};
-    fp::SharedPermissionGuard<Region, Brand> lent = pool.lend().expect("an idle pool lends a share");
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    fp::SharedPermissionGuard<Region, Brand> lent = pool.lend(test).expect("an idle pool lends a share");
     fp::SharedPermissionGuard<Region, Brand> holder{std::move(through(lent))};
     auto back = fp::with_read_view(std::move(through(lent)), [](auto const&) noexcept {});
     (void)back;
@@ -51,7 +52,8 @@ static void lend_a_guard_that_gave_its_share_away() {
     auto root = fp::mint_permission_root<Region>();
     using Brand = decltype(root)::brand_type;
     fp::SharedPermissionPool<Region, Brand> pool{std::move(root)};
-    fp::SharedPermissionGuard<Region, Brand> lent = pool.lend().expect("an idle pool lends a share");
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    fp::SharedPermissionGuard<Region, Brand> lent = pool.lend(test).expect("an idle pool lends a share");
     bool read = false;
     auto back = fp::with_read_view(std::move(lent), [&read](auto const&) noexcept { read = true; });
     return read && back.holds_share();

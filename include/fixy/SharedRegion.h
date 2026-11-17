@@ -200,18 +200,18 @@ public:
     // Both forward to the pool, which already weighs the tag's row
     // against the context.  They are here so a caller holds one object
     // rather than a region beside a pool that happens to match it.
-    template <typename Ctx = ::foundation::permissions::detail::no_ctx>
+    template <typename Ctx>
         requires ::foundation::permissions::PoolCtx<Tag, Ctx>
     [[nodiscard]] ::foundation::core::Option<::foundation::permissions::SharedPermissionGuard<Tag, Brand>>
-    lend(Ctx const& ctx = {}) noexcept {
+    lend(Ctx const& ctx) noexcept {
         return pool_.lend(ctx);
     }
 
     // The inverse of the constructor: when no share is outstanding the
     // exclusive comes back, and with it the region it covered.
-    template <typename Ctx = ::foundation::permissions::detail::no_ctx>
+    template <typename Ctx>
         requires ::foundation::permissions::PoolCtx<Tag, Ctx>
-    [[nodiscard]] ::foundation::core::Option<OwnedRegion<T, Tag, Brand>> try_upgrade(Ctx const& ctx = {}) noexcept {
+    [[nodiscard]] ::foundation::core::Option<OwnedRegion<T, Tag, Brand>> try_upgrade(Ctx const& ctx) noexcept {
         using Upgraded = ::foundation::core::Option<OwnedRegion<T, Tag, Brand>>;
         auto exclusive = pool_.try_upgrade(ctx);
         if (exclusive.is_none()) return Upgraded{::foundation::core::none};

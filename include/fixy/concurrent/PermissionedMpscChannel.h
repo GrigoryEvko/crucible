@@ -268,7 +268,7 @@ public:
     // in flight.  Several producer handles coexisting is the point of
     // the fractional side.  A lent handle opens the channel.
     [[nodiscard]] ::foundation::core::Option<ProducerHandle> producer() noexcept {
-        auto lent = producer_pool_.lend();
+        auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(producer_pool_);
         if (lent.is_none()) return ::foundation::core::none;
         producers_.add_producer();
         return ::foundation::core::Option<ProducerHandle>::some(
@@ -292,7 +292,7 @@ public:
     template <typename Body>
         requires std::is_invocable_v<Body>
     bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
-        auto upgrade = producer_pool_.try_upgrade();
+        auto upgrade = ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(producer_pool_);
         if (upgrade.is_none()) return false;
         std::forward<Body>(body)();
         producer_pool_.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
@@ -312,7 +312,7 @@ public:
     template <typename Drop>
         requires __is_empty
     (__remove_cvref(Drop)) && std::is_nothrow_invocable_v<Drop&, T> void drain(Drop&& drop) noexcept {
-        auto exclusive = producer_pool_.try_upgrade();
+        auto exclusive = ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(producer_pool_);
         if (exclusive.is_none()) [[unlikely]] {
             ::foundation::core::fatal("a drain of an MPSC channel while a producer handle lives.");
         }

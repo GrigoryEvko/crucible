@@ -1,12 +1,10 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// A lend with no context names no scope that may read the region.  That
-// is sound only for a pure tag.  The region here does IO, and the
-// static_assert in the body of lend is the only check that compares its
-// row when no context is passed.
+// The schedule decides whether a lend gives a share, so a lend takes a
+// context that holds Nondet and admits the row of the tag.  A lend with no
+// context does not compile, and the region here also does IO.
 //
-// Expected diagnostic: the static_assert in lend that asks for an empty
-// row when no context is passed.
+// Expected diagnostic: lend has no candidate with no argument.
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/SharedPermission.h>

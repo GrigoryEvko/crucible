@@ -39,6 +39,10 @@ namespace {
 using IoBlockCtx =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
+// The context of a lend and an upgrade of a pool: the schedule decides
+// their outcome, so the context holds Nondet.
+using PoolOpCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Nondet>>;
+
 // Each mapping is minted with the exclusive permission of its region, and
 // takes its tag and its brand from it.  So each region tag declares the
 // row a permission needs.
@@ -235,14 +239,15 @@ inline constexpr std::size_t kPageBytes = 4096;
     perm::SharedPermissionPool pool{std::move(root)};
     static_assert(std::is_same_v<decltype(pool)::brand_type, std::remove_cvref_t<decltype(mapped->peek())>::brand_type>,
                   "the pool keeps the brand of the permission the mapping was minted with");
+    const PoolOpCtx pool_ctx{eff::testing::test()};
     {
-        auto share = pool.lend();
+        auto share = pool.lend(pool_ctx);
         if (share.is_none()) {
             std::fprintf(stderr, "the pool refused a share with no exclusive out\n");
             return 1;
         }
         // An exclusive that the pool gives here goes back to the pool at once.
-        const bool is_upgraded_under_a_share = pool.try_upgrade().match(
+        const bool is_upgraded_under_a_share = pool.try_upgrade(pool_ctx).match(
             [&pool](auto exclusive) noexcept {
                 pool.deposit_exclusive(std::move(exclusive));
                 return true;
@@ -254,7 +259,7 @@ inline constexpr std::size_t kPageBytes = 4096;
         }
     }
 
-    auto exclusive = pool.try_upgrade();
+    auto exclusive = pool.try_upgrade(pool_ctx);
     int failures = 0;
     if (exclusive.is_none()) {
         std::fprintf(stderr, "the pool kept the exclusive after the last share ended\n");

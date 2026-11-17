@@ -21,6 +21,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
@@ -190,7 +191,7 @@ public:
     // The ref-qualifier pair is the enforcement, not a lifetime
     // annotation.  The token this returns is a proof that the guard's
     // share is outstanding, so it must not be minted from a guard that
-    // is about to die: `pool.lend().expect(why).token()` would hand back a
+    // is about to die: `pool.lend(ctx).expect(why).token()` would hand back a
     // proof of a share released at the end of the statement.  No
     // annotation can be written on the implicit object parameter at all,
     // so the qualifier carries the claim instead.
@@ -235,21 +236,54 @@ public:
 // out.  The body is in src/foundation/SharedPermission.cpp.
 [[noreturn]] CRUCIBLE_COLD void shared_permission_pool_outlived_abort_() noexcept;
 
-// The context a pool operation may run in: none, which is the token
-// form and asks the tag's row to be empty in the body, or one that
-// admits the tag's row and holds Nondet.  A lend fails while the exclusive
-// is out, and an upgrade fails while a share is out.  Another thread ends a
-// share or deposits the exclusive at a time that the schedule decides, so
-// two runs with the same inputs can get two outcomes.  The token form takes
-// no context, so no row gates it.
-namespace detail {
-struct no_ctx {};
-}  // namespace detail
-
+// The context a pool operation runs in: one that admits the tag's row and
+// holds Nondet.  A lend fails while the exclusive is out, and an upgrade
+// fails while a share is out.  Another thread ends a share or deposits the
+// exclusive at a time that the schedule decides, so two runs with the same
+// inputs can get two outcomes.  So each lend and each upgrade takes a
+// context, and no call with no context compiles.
 template <typename Tag, typename Ctx>
-concept PoolCtx = std::same_as<Ctx, detail::no_ctx>
-               || (CtxAdmitsPermission<Tag, Ctx>
-                   && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>);
+concept PoolCtx = CtxAdmitsPermission<Tag, Ctx>
+               && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>;
+
+namespace detail {
+
+// THE INTERNAL DOOR OF THE CHANNELS.  A lend and an upgrade with no
+// context, for the members of the channels of fixy/concurrent and
+// fixy/channels that take no context yet: producer, with_drained_access
+// and drain of the MPSC channel, and reader and with_drained_access of the
+// SWMR session.  Each of them asks for the share or the exclusive of a pool
+// that the channel itself owns, for a tag whose row is empty, and the
+// schedule decides its outcome as it decides the outcome of lend(ctx).  The
+// pop and the snapshots of each channel take the tag of Nondet, so the
+// entry of each read of the schedule there is gated.  These members move to
+// a form that takes the context, one channel at a time, and then the door
+// goes.  No other code calls the door.  The rule owners keeps each use of a
+// detail namespace of the base out of the code outside the base, and the
+// fixtures neg_share_pool_*_without_ctx_* hold that a lend or an upgrade
+// with no context does not compile.
+class ChannelPoolDoor final : ::foundation::NoObject<ChannelPoolDoor> {
+public:
+    template <typename Tag, typename Brand>
+    [[nodiscard]] static ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>>
+    lend(SharedPermissionPool<Tag, Brand>& pool) noexcept {
+        static_assert(permission_row_empty(^^Tag), "the internal door of the channels lends only a share of a tag "
+                                                   "whose permission row is empty.  A tag with effects uses "
+                                                   "lend(ctx).");
+        return pool.lend_raw_();
+    }
+
+    template <typename Tag, typename Brand>
+    [[nodiscard]] static ::foundation::core::Option<Permission<Tag, Brand>>
+    try_upgrade(SharedPermissionPool<Tag, Brand>& pool) noexcept {
+        static_assert(permission_row_empty(^^Tag), "the internal door of the channels upgrades only a pool of a tag "
+                                                   "whose permission row is empty.  A tag with effects uses "
+                                                   "try_upgrade(ctx).");
+        return pool.try_upgrade_raw_();
+    }
+};
+
+}  // namespace detail
 
 // The pool carries the brand of the exclusive it was built from, so its
 // shares are shares of that region and its upgrade hands that region
@@ -273,13 +307,9 @@ public:
     }
 
     // A share of the region, or no value while the exclusive is out.
-    template <typename Ctx = detail::no_ctx>
+    template <typename Ctx>
         requires PoolCtx<Tag, Ctx>
-    [[nodiscard]] ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>> lend(Ctx const& = {}) noexcept {
-        static_assert(!std::same_as<Ctx, detail::no_ctx> || permission_row_empty(^^Tag),
-                      "SharedPermissionPool<Tag>::lend() without ExecCtx is only valid "
-                      "for permission_row<Tag> == Row<>.  Effectful permission tags "
-                      "must use lend(ctx).");
+    [[nodiscard]] ::foundation::core::Option<SharedPermissionGuard<Tag, Brand>> lend(Ctx const&) noexcept {
         return lend_raw_();
     }
 
@@ -290,13 +320,9 @@ public:
     // and the claim a single compare-exchange: a lend that was about to
     // succeed retries and then fails on the flag, and a lend that
     // already incremented makes this compare-exchange fail.
-    template <typename Ctx = detail::no_ctx>
+    template <typename Ctx>
         requires PoolCtx<Tag, Ctx>
-    [[nodiscard]] ::foundation::core::Option<Permission<Tag, Brand>> try_upgrade(Ctx const& = {}) noexcept {
-        static_assert(!std::same_as<Ctx, detail::no_ctx> || permission_row_empty(^^Tag),
-                      "SharedPermissionPool<Tag>::try_upgrade() without ExecCtx is only "
-                      "valid for permission_row<Tag> == Row<>.  Effectful permission "
-                      "tags must use try_upgrade(ctx).");
+    [[nodiscard]] ::foundation::core::Option<Permission<Tag, Brand>> try_upgrade(Ctx const&) noexcept {
         return try_upgrade_raw_();
     }
 
@@ -368,6 +394,7 @@ private:
     }
 
     friend class SharedPermissionGuard<Tag, Brand>;
+    friend class detail::ChannelPoolDoor;
 
     // Holds a value exactly when the exclusive-out bit is clear.
     std::optional<Permission<Tag, Brand>> parked_;
@@ -421,19 +448,19 @@ mint_permission_share(Args&&...) noexcept {
 // declaration serves a void-returning body, because there is no
 // optional<void> to carry the lend-failed case: the bool says whether
 // the body ran, and that declaration carries no [[nodiscard]], as its
-// two predecessors did not.  The call leads with a context or with the
-// pool, and the body is last; one shared body serves both.
+// two predecessors did not.  The call leads with a context, the pool is
+// next, and the body is last; one shared body serves both.
 
 namespace detail {
-    // True when the argument list is an optional context, a pool as an
-    // lvalue, and a body that takes a share of the pool, and the context,
-    // when there is one, fits the lend of the pool (PoolCtx).  The test is a
-    // function that is not a template, so no translation unit can
-    // specialize it to lend from a class that is no pool.
+    // True when the argument list is a context, a pool as an lvalue, and a
+    // body that takes a share of the pool, and the context fits the lend of
+    // the pool (PoolCtx).  The test is a function that is not a template, so
+    // no translation unit can specialize it to lend from a class that is no
+    // pool.
     [[nodiscard]] consteval bool with_shared_read_shaped(std::initializer_list<std::meta::info> arguments) {
         const std::vector<std::meta::info> args(arguments);
         const std::size_t n_ctx = leading_ctx_count(arguments);
-        if (n_ctx > 1 || args.size() != n_ctx + 2) return false;
+        if (n_ctx != 1 || args.size() != n_ctx + 2) return false;
         const std::meta::info pool = std::meta::dealias(std::meta::remove_cvref(args[n_ctx]));
         if (!std::meta::has_template_arguments(pool) || std::meta::template_of(pool) != ^^SharedPermissionPool) {
             return false;
@@ -442,7 +469,6 @@ namespace detail {
         const std::vector<std::meta::info> pool_arguments = std::meta::template_arguments_of(pool);
         const std::meta::info token = std::meta::substitute(^^SharedPermission, pool_arguments);
         if (!std::meta::is_invocable_type(args[n_ctx + 1], {token})) return false;
-        if (n_ctx == 0) return true;
         return std::meta::extract<bool>(
             std::meta::substitute(^^PoolCtx, {pool_arguments[0], std::meta::remove_cvref(args[0])}));
     }
@@ -469,13 +495,7 @@ namespace detail {
         auto forwarded = std::forward_as_tuple(std::forward<Args>(args)...);
         Pool& pool = std::get<sizeof...(Args) - 2>(forwarded);
         Body&& body = std::get<sizeof...(Args) - 1>(std::move(forwarded));
-        auto lent = [&] {
-            if constexpr (leading_ctx_count({^^Args...}) == 1) {
-                return pool.lend(std::get<0>(forwarded));
-            } else {
-                return pool.lend();
-            }
-        }();
+        auto lent = pool.lend(std::get<0>(forwarded));
         // The loop makes one turn when the pool lent a share, and the guard
         // stays in the Option until the return.
         for (SharedPermissionGuard<typename Pool::tag_type, typename Pool::brand_type> const& guard : lent) {

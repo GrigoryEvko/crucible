@@ -25,7 +25,8 @@ using Anonymous = fixy::atom::mmap::with_share<fixy::mmap::share::Anonymous>;
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
     perm::SharedPermissionPool pool{perm::mint_permission_root<AnonRegion>()};
-    auto guard = pool.lend().expect("an idle pool lends a share");
+    const eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Nondet>> pool_ctx{eff::testing::test()};
+    auto guard = pool.lend(pool_ctx).expect("an idle pool lends a share");
     auto const share = guard.token();
     [[maybe_unused]] auto refused = fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, share, 4096);
     return 0;

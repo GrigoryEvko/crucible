@@ -16,6 +16,7 @@
 // The run-time attacks run under a watchdog that aborts with a
 // diagnostic, so a lost wakeup fails the test and does not hang it.
 
+#include <fixy/Ctx.h>
 #include <fixy/Secret.h>
 #include <fixy/session/Classification.h>
 #include <fixy/session/Classified.h>
@@ -592,6 +593,7 @@ void require(bool condition, const char* what) {
 // guard.
 void readers_hold_past_an_upgrade_attempt() {
     const Watchdog watchdog{"readers_hold_past_an_upgrade_attempt", std::chrono::seconds{20}};
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     fp::SharedPermissionPool pool{fp::mint_permission_root<X>()};
     constexpr int kReaders = 4;
     std::atomic<int> holding{0};
@@ -600,7 +602,7 @@ void readers_hold_past_an_upgrade_attempt() {
         std::vector<std::jthread> readers;
         for (int reader = 0; reader < kReaders; ++reader) {
             readers.emplace_back([&] {
-                auto guard = pool.lend();
+                auto guard = pool.lend(test);
                 require(guard.is_some(), "a reader gets a share while no writer holds the region");
                 holding.fetch_add(1, std::memory_order_acq_rel);
                 while (!release.load(std::memory_order_acquire))
@@ -611,7 +613,7 @@ void readers_hold_past_an_upgrade_attempt() {
             std::this_thread::yield();
         for (int attempt = 0; attempt < 1000; ++attempt) {
             // An exclusive that the pool gives here goes back to the pool at once.
-            const bool is_upgraded = pool.try_upgrade().match(
+            const bool is_upgraded = pool.try_upgrade(test).match(
                 [&pool](auto exclusive) noexcept {
                     pool.deposit_exclusive(std::move(exclusive));
                     return true;
@@ -621,9 +623,9 @@ void readers_hold_past_an_upgrade_attempt() {
         }
         release.store(true, std::memory_order_release);
     }
-    auto exclusive = pool.try_upgrade();
+    auto exclusive = pool.try_upgrade(test);
     require(exclusive.is_some(), "the upgrade succeeds once every share is back");
-    require(pool.lend().is_none(), "a reader gets a share while the writer holds the region");
+    require(pool.lend(test).is_none(), "a reader gets a share while the writer holds the region");
     pool.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
 }
 
@@ -632,6 +634,7 @@ void readers_hold_past_an_upgrade_attempt() {
 // the region.
 void readers_and_writer_race() {
     const Watchdog watchdog{"readers_and_writer_race", std::chrono::seconds{30}};
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     fp::SharedPermissionPool pool{fp::mint_permission_root<X>()};
     std::atomic<int> readers_inside{0};
     std::atomic<bool> writer_inside{false};
@@ -643,7 +646,7 @@ void readers_and_writer_race() {
         for (int reader = 0; reader < 3; ++reader) {
             readers.emplace_back([&] {
                 while (!stop.load(std::memory_order_acquire)) {
-                    auto guard = pool.lend();
+                    auto guard = pool.lend(test);
                     if (guard.is_none()) continue;
                     readers_inside.fetch_add(1, std::memory_order_acq_rel);
                     if (writer_inside.load(std::memory_order_acquire)) overlaps.fetch_add(1);
@@ -653,7 +656,7 @@ void readers_and_writer_race() {
         }
         int writes = 0;
         while (writes < kWrites) {
-            const bool is_written = pool.try_upgrade().match(
+            const bool is_written = pool.try_upgrade(test).match(
                 [&](auto exclusive) noexcept {
                     writer_inside.store(true, std::memory_order_release);
                     if (readers_inside.load(std::memory_order_acquire) != 0) overlaps.fetch_add(1);
@@ -820,11 +823,12 @@ void read_proof_ends_with_the_loan() {
 // The share stays counted while the view lives, so an upgrade inside the
 // body fails.  After the guard ends, the upgrade succeeds.
 void read_proof_ends_with_the_share() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     fp::SharedPermissionPool pool{fp::mint_permission_root<X>()};
     {
-        auto guard = pool.lend().expect("a reader gets a share of a free pool");
-        auto [upgraded_inside, held] = fp::with_read_view(std::move(guard), [&pool](auto const&) noexcept {
-            return pool.try_upgrade().match(
+        auto guard = pool.lend(test).expect("a reader gets a share of a free pool");
+        auto [upgraded_inside, held] = fp::with_read_view(std::move(guard), [&pool, &test](auto const&) noexcept {
+            return pool.try_upgrade(test).match(
                 [&pool](auto exclusive) noexcept {
                     pool.deposit_exclusive(std::move(exclusive));
                     return true;
@@ -834,7 +838,7 @@ void read_proof_ends_with_the_share() {
         require(!upgraded_inside, "an upgrade succeeds while a read proof lives");
         require(held.holds_share(), "the door hands the share back");
     }
-    auto exclusive = pool.try_upgrade();
+    auto exclusive = pool.try_upgrade(test);
     require(exclusive.is_some(), "the upgrade succeeds once the share ends");
     pool.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
 }

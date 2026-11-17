@@ -1744,20 +1744,28 @@ foundation_neg_compile_test(neg_share_pool_lend_ctx_without_nondet
 foundation_neg_compile_test(neg_share_pool_upgrade_ctx_without_nondet
   "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(const .anonymous.::CompileCtx&\\)."
   "required for the satisfaction of .PoolCtx<Tag, Ctx>. \\[with Tag = <unnamed>::NeedsIo; Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
+# A lend and an upgrade take a context, for a tag with effects and for a
+# pure tag.  The form with no context is the internal door of the channels.
 foundation_neg_compile_test(neg_share_pool_lend_without_ctx_refuses_row
-  "static assertion failed: SharedPermissionPool<Tag>::lend\\(\\) without ExecCtx is only valid"
-  "foundation::permissions::permission_row_empty\\(\\^\\^.anonymous.::NeedsIo\\)\\). evaluates to false")
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::lend\\(\\)."
+  "candidate expects 1 argument, 0 provided")
 foundation_neg_compile_test(neg_share_pool_upgrade_without_ctx_refuses_row
-  "static assertion failed: SharedPermissionPool<Tag>::try_upgrade\\(\\) without ExecCtx is only valid"
-  "foundation::permissions::permission_row_empty\\(\\^\\^.anonymous.::NeedsIo\\)\\). evaluates to false")
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(\\)."
+  "candidate expects 1 argument, 0 provided")
+foundation_neg_compile_test(neg_share_pool_lend_without_ctx_pure_tag
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::Pure, .*>::lend\\(\\)."
+  "candidate expects 1 argument, 0 provided")
+foundation_neg_compile_test(neg_share_pool_upgrade_without_ctx_pure_tag
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::Pure, .*>::try_upgrade\\(\\)."
+  "candidate expects 1 argument, 0 provided")
 # with_shared_read lends from an lvalue pool only, in its value form and
 # in its void form.
 foundation_neg_compile_test(neg_shared_read_of_a_temporary_pool
   "no matching function for call to .with_shared_read\\("
-  "required for the satisfaction of .WithSharedReadArgs<Args \\.\\.\\.>. \\[with Args = \\{foundation::permissions::SharedPermissionPool<<unnamed>::Region")
+  "required for the satisfaction of .WithSharedReadArgs<Args \\.\\.\\.>. \\[with Args = \\{const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Nondet> >&, foundation::permissions::SharedPermissionPool<<unnamed>::Region")
 foundation_neg_compile_test(neg_shared_read_of_a_temporary_pool_void_body
   "no matching function for call to .with_shared_read\\("
-  "required for the satisfaction of .WithSharedReadArgs<Args \\.\\.\\.>. \\[with Args = \\{foundation::permissions::SharedPermissionPool<<unnamed>::Region")
+  "required for the satisfaction of .WithSharedReadArgs<Args \\.\\.\\.>. \\[with Args = \\{const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Nondet> >&, foundation::permissions::SharedPermissionPool<<unnamed>::Region")
 
 # A pool that still parks its exclusive refuses a second deposit, and a pool
 # that lends a share refuses a deposit.  Each attack runs in a child

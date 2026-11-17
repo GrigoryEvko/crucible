@@ -27,7 +27,8 @@ using Shared = fixy::atom::mmap::with_share<fixy::mmap::share::Shared>;
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
     perm::SharedPermissionPool pool{perm::mint_permission_root<FileRegion>()};
-    auto guard = pool.lend().expect("an idle pool lends a share");
+    const eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Nondet>> pool_ctx{eff::testing::test()};
+    auto guard = pool.lend(pool_ctx).expect("an idle pool lends a share");
     [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, guard, -1, 4096);
     return 0;
 }

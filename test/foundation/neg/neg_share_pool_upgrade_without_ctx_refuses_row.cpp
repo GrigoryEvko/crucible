@@ -1,12 +1,11 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// An upgrade with no context names no scope that may own the region.
-// That is sound only for a pure tag.  The region here does IO, and the
-// static_assert in the body of try_upgrade is the only check that
-// compares its row when no context is passed.
+// The schedule decides whether an upgrade gives the exclusive, so an
+// upgrade takes a context that holds Nondet and admits the row of the tag.
+// An upgrade with no context does not compile, and the region here also
+// does IO.
 //
-// Expected diagnostic: the static_assert in try_upgrade that asks for an
-// empty row when no context is passed.
+// Expected diagnostic: try_upgrade has no candidate with no argument.
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/SharedPermission.h>

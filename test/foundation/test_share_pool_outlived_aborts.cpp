@@ -26,7 +26,8 @@ void end_pool_while_shared() {
     auto root = fp::mint_permission_root<Region>();
     using Brand = decltype(root)::brand_type;
     auto pool = std::make_unique<fp::SharedPermissionPool<Region, Brand>>(std::move(root));
-    ::foundation::core::Option<fp::SharedPermissionGuard<Region, Brand>> const share = pool->lend();
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    ::foundation::core::Option<fp::SharedPermissionGuard<Region, Brand>> const share = pool->lend(test);
     // The pool ends here, while the share is out.
     pool.reset();
 }

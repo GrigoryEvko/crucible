@@ -42,13 +42,13 @@ void test_stashed_token_does_not_unblock_upgrade(::fixy::TestRunnerCtx const& te
 
     std::optional<SharedPermission<Region, decltype(pool)::brand_type>> stashed_token;
     {
-        auto guard = pool.lend().expect("an idle pool lends a share");
+        auto guard = pool.lend(test).expect("an idle pool lends a share");
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
         // The attack step: copy the token out, past the guard's scope.
         stashed_token = guard.token();
 
-        auto blocked = pool.try_upgrade();
+        auto blocked = pool.try_upgrade(test);
         CRUCIBLE_TEST_ASSERT(test, blocked.is_none());
         CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
     }
@@ -58,19 +58,19 @@ void test_stashed_token_does_not_unblock_upgrade(::fixy::TestRunnerCtx const& te
     CRUCIBLE_TEST_ASSERT(test, stashed_token.has_value());
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
-    auto upgraded = pool.try_upgrade();
+    auto upgraded = pool.try_upgrade(test);
     CRUCIBLE_TEST_ASSERT(test, upgraded.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.is_exclusive_out());
 
     // The other half of the invariant: while the exclusive permission is
     // out, lending must fail until it is deposited back.
-    auto cannot_lend = pool.lend();
+    auto cannot_lend = pool.lend(test);
     CRUCIBLE_TEST_ASSERT(test, cannot_lend.is_none());
 
     pool.deposit_exclusive(std::move(upgraded).expect("the test above found the exclusive"));
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
 
-    auto relent = pool.lend();
+    auto relent = pool.lend(test);
     CRUCIBLE_TEST_ASSERT(test, relent.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 }
@@ -79,8 +79,8 @@ void test_multiple_guards_block_upgrade(::fixy::TestRunnerCtx const& test) {
     auto exc = mint_permission_root<Region>();
     SharedPermissionPool pool{std::move(exc)};
 
-    auto g1 = pool.lend();
-    auto g2 = pool.lend();
+    auto g1 = pool.lend(test);
+    auto g2 = pool.lend(test);
     CRUCIBLE_TEST_ASSERT(test, g1.is_some() && g2.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 2);
 
@@ -95,18 +95,18 @@ void test_multiple_guards_block_upgrade(::fixy::TestRunnerCtx const& test) {
 
     // Each refused upgrade gives an empty Option.  The answer has a name, so
     // the temporary ends in this file and not in the macro.
-    bool const is_refused_under_two_guards = pool.try_upgrade().is_none();
+    bool const is_refused_under_two_guards = pool.try_upgrade(test).is_none();
     CRUCIBLE_TEST_ASSERT(test, is_refused_under_two_guards);
 
     g1 = ::foundation::core::none;
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
-    bool const is_refused_under_one_guard = pool.try_upgrade().is_none();
+    bool const is_refused_under_one_guard = pool.try_upgrade(test).is_none();
     CRUCIBLE_TEST_ASSERT(test, is_refused_under_one_guard);
 
     g2 = ::foundation::core::none;
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
-    auto up = pool.try_upgrade();
+    auto up = pool.try_upgrade(test);
     CRUCIBLE_TEST_ASSERT(test, up.is_some());
 }
 

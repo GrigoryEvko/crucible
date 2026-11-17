@@ -47,7 +47,7 @@ void test_pool_lend_basic(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
 
     {
-        auto guard1 = pool.lend().expect("an idle pool lends a share");
+        auto guard1 = pool.lend(test).expect("an idle pool lends a share");
         CRUCIBLE_TEST_ASSERT(test, guard1.holds_share());
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
@@ -59,8 +59,8 @@ void test_pool_lend_basic(::fixy::TestRunnerCtx const& test) {
         (void)token;
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
-        auto guard2 = pool.lend();
-        auto guard3 = pool.lend();
+        auto guard2 = pool.lend(test);
+        auto guard3 = pool.lend(test);
         CRUCIBLE_TEST_ASSERT(test, guard2.is_some());
         CRUCIBLE_TEST_ASSERT(test, guard3.is_some());
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 3);
@@ -80,7 +80,7 @@ void test_guard_move_semantics(::fixy::TestRunnerCtx const& test) {
     SharedPermissionPool pool{std::move(exc)};
 
     {
-        auto g1 = pool.lend().expect("an idle pool lends a share");
+        auto g1 = pool.lend(test).expect("an idle pool lends a share");
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
 
         auto g2{std::move(through(g1))};
@@ -96,19 +96,19 @@ void test_try_upgrade_succeeds_when_idle(::fixy::TestRunnerCtx const& test) {
     auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool pool{std::move(exc)};
 
-    auto recovered = pool.try_upgrade();
+    auto recovered = pool.try_upgrade(test);
     // The upgrade gives the Option of the base.
     static_assert(std::is_same_v<decltype(recovered),
                                  ::foundation::core::Option<Permission<ConfigRegion, decltype(pool)::brand_type>>>);
     CRUCIBLE_TEST_ASSERT(test, recovered.is_some());
     CRUCIBLE_TEST_ASSERT(test, pool.is_exclusive_out());
 
-    auto fail_guard = pool.lend();
+    auto fail_guard = pool.lend(test);
     CRUCIBLE_TEST_ASSERT(test, fail_guard.is_none());
 
     pool.deposit_exclusive(std::move(recovered).expect("the test above found the exclusive"));
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
-    auto post_guard = pool.lend();
+    auto post_guard = pool.lend(test);
     CRUCIBLE_TEST_ASSERT(test, post_guard.is_some());
 }
 
@@ -116,9 +116,9 @@ void test_try_upgrade_fails_when_outstanding(::fixy::TestRunnerCtx const& test) 
     auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool pool{std::move(exc)};
 
-    auto guard = pool.lend().expect("an idle pool lends a share");
+    auto guard = pool.lend(test).expect("an idle pool lends a share");
 
-    auto upgrade = pool.try_upgrade();
+    auto upgrade = pool.try_upgrade(test);
     CRUCIBLE_TEST_ASSERT(test, !upgrade.is_some());
     CRUCIBLE_TEST_ASSERT(test, !pool.is_exclusive_out());
     CRUCIBLE_TEST_ASSERT(test, guard.holds_share());
@@ -151,14 +151,14 @@ void test_lend_vs_upgrade_no_simultaneity(::fixy::TestRunnerCtx const& test) {
     std::vector<std::jthread> workers;
     for (int t = 0; t < NUM_THREADS; ++t) {
         workers.emplace_back(
-            [&pool, &in_exclusive_count, &in_shared_count, &max_shared_seen, &violation, t](std::stop_token) {
+            [&test, &pool, &in_exclusive_count, &in_shared_count, &max_shared_seen, &violation, t](std::stop_token) {
                 for (int i = 0; i < ITERATIONS; ++i) {
                     // Half the threads are biased toward read; half toward
                     // write.  This keeps both modes heavily exercised.
                     const bool prefer_write = (t % 2 == 0);
 
                     if (prefer_write && (i % 4 == 0)) {
-                        auto upgrade = pool.try_upgrade();
+                        auto upgrade = pool.try_upgrade(test);
                         if (upgrade.is_some()) {
                             if (in_shared_count.load(std::memory_order_acquire) != 0) {
                                 violation.store(true, std::memory_order_release);
@@ -173,7 +173,7 @@ void test_lend_vs_upgrade_no_simultaneity(::fixy::TestRunnerCtx const& test) {
                             pool.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
                         }
                     } else {
-                        auto guard = pool.lend();
+                        auto guard = pool.lend(test);
                         if (guard.is_some()) {
                             const int now = in_shared_count.fetch_add(1, std::memory_order_acq_rel) + 1;
                             int seen = max_shared_seen.load(std::memory_order_relaxed);
@@ -234,11 +234,11 @@ void test_swmr_sees_consistent_state(::fixy::TestRunnerCtx const& test) {
     // completion before any reader starts.
     std::latch start_latch{NUM_READERS + 1};
 
-    std::jthread writer([&pool, &counter, &writer_done, &start_latch](std::stop_token) {
+    std::jthread writer([&test, &pool, &counter, &writer_done, &start_latch](std::stop_token) {
         start_latch.arrive_and_wait();
         for (int i = 0; i < ITERATIONS; ++i) {
             for (;;) {
-                auto upgrade = pool.try_upgrade();
+                auto upgrade = pool.try_upgrade(test);
                 if (upgrade.is_some()) {
                     const std::uint64_t v = static_cast<std::uint64_t>(i) + 1;
                     counter.lo = v;
@@ -254,45 +254,45 @@ void test_swmr_sees_consistent_state(::fixy::TestRunnerCtx const& test) {
 
     std::vector<std::jthread> readers;
     for (int t = 0; t < NUM_READERS; ++t) {
-        readers.emplace_back(
-            [&pool, &counter, &writer_done, &reader_violation, &reader_iters_total, &start_latch](std::stop_token) {
-                start_latch.arrive_and_wait();
+        readers.emplace_back([&test, &pool, &counter, &writer_done, &reader_violation, &reader_iters_total,
+                              &start_latch](std::stop_token) {
+            start_latch.arrive_and_wait();
 
-                // True only if this iteration acquired a guard.
-                auto do_one_iter = [&]() noexcept {
-                    auto guard = pool.lend();
-                    if (guard.is_none()) return false;
-                    const std::uint64_t lo = counter.lo;
-                    const std::uint64_t hi = counter.hi;
-                    if (lo != hi) {
-                        reader_violation.store(true, std::memory_order_release);
-                    }
-                    return true;
-                };
-
-                std::uint64_t local_iters = 0;
-
-                // This loop is unbounded, and terminates because every
-                // deposit clears the exclusive bit, which lets a waiting
-                // reader's compare-exchange succeed.
-                while (local_iters < MIN_READER_ITERS) {
-                    if (do_one_iter()) {
-                        ++local_iters;
-                    } else {
-                        CRUCIBLE_SPIN_PAUSE;
-                    }
+            // True only if this iteration acquired a guard.
+            auto do_one_iter = [&]() noexcept {
+                auto guard = pool.lend(test);
+                if (guard.is_none()) return false;
+                const std::uint64_t lo = counter.lo;
+                const std::uint64_t hi = counter.hi;
+                if (lo != hi) {
+                    reader_violation.store(true, std::memory_order_release);
                 }
+                return true;
+            };
 
-                while (!writer_done.load(std::memory_order_acquire)) {
-                    if (do_one_iter()) {
-                        ++local_iters;
-                    } else {
-                        CRUCIBLE_SPIN_PAUSE;
-                    }
+            std::uint64_t local_iters = 0;
+
+            // This loop is unbounded, and terminates because every
+            // deposit clears the exclusive bit, which lets a waiting
+            // reader's compare-exchange succeed.
+            while (local_iters < MIN_READER_ITERS) {
+                if (do_one_iter()) {
+                    ++local_iters;
+                } else {
+                    CRUCIBLE_SPIN_PAUSE;
                 }
+            }
 
-                reader_iters_total.fetch_add(local_iters, std::memory_order_acq_rel);
-            });
+            while (!writer_done.load(std::memory_order_acquire)) {
+                if (do_one_iter()) {
+                    ++local_iters;
+                } else {
+                    CRUCIBLE_SPIN_PAUSE;
+                }
+            }
+
+            reader_iters_total.fetch_add(local_iters, std::memory_order_acq_rel);
+        });
     }
 
     writer.join();
@@ -309,7 +309,7 @@ void test_with_shared_read_helper(::fixy::TestRunnerCtx const& test) {
     auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool pool{std::move(exc)};
 
-    auto result_opt = with_shared_read(pool, [](auto) noexcept { return 42; });
+    auto result_opt = with_shared_read(test, pool, [](auto) noexcept { return 42; });
     // The read gives the result of the body in the Option of the base.
     static_assert(std::is_same_v<decltype(result_opt), ::foundation::core::Option<int>>);
     CRUCIBLE_TEST_ASSERT(test, result_opt.is_some());
@@ -318,14 +318,14 @@ void test_with_shared_read_helper(::fixy::TestRunnerCtx const& test) {
 
     // A void body makes the helper return bool.
     bool ran = false;
-    bool ok = with_shared_read(pool, [&ran](auto) noexcept { ran = true; });
+    bool ok = with_shared_read(test, pool, [&ran](auto) noexcept { ran = true; });
     CRUCIBLE_TEST_ASSERT(test, ok);
     CRUCIBLE_TEST_ASSERT(test, ran);
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
 
-    auto upgrade = pool.try_upgrade();
+    auto upgrade = pool.try_upgrade(test);
     CRUCIBLE_TEST_ASSERT(test, upgrade.is_some());
-    auto failed_opt = with_shared_read(pool, [](auto) noexcept { return 99; });
+    auto failed_opt = with_shared_read(test, pool, [](auto) noexcept { return 99; });
     CRUCIBLE_TEST_ASSERT(test, !failed_opt.is_some());
     pool.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
 }

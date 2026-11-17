@@ -206,7 +206,7 @@ void test_fork_inline_inside_the_door(::fixy::TestRunnerCtx const& test) {
 void test_door_over_a_share_guard(::fixy::TestRunnerCtx const& test) {
     SharedPermissionPool pool{mint_permission_root<ConfigData>()};
     {
-        auto guard = pool.lend().expect("an idle pool lends a share");
+        auto guard = pool.lend(test).expect("an idle pool lends a share");
         auto [counted, held] = with_read_view(std::move(guard), [&pool](auto const& view) noexcept {
             static_assert(std::is_same_v<typename std::remove_cvref_t<decltype(view)>::tag_type, ConfigData>);
             return pool.outstanding();
@@ -216,11 +216,11 @@ void test_door_over_a_share_guard(::fixy::TestRunnerCtx const& test) {
         CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 1);
         // The refused upgrade gives an empty Option.  The answer has a name,
         // so the temporary ends in this file and not in the macro.
-        bool const is_refused = pool.try_upgrade().is_none();
+        bool const is_refused = pool.try_upgrade(test).is_none();
         CRUCIBLE_TEST_ASSERT(test, is_refused);
     }
     CRUCIBLE_TEST_ASSERT(test, pool.outstanding() == 0);
-    auto exclusive = pool.try_upgrade();
+    auto exclusive = pool.try_upgrade(test);
     CRUCIBLE_TEST_ASSERT(test, exclusive.is_some());
     ::foundation::linear::drop(std::move(exclusive).expect("the test above found the exclusive"));
 }

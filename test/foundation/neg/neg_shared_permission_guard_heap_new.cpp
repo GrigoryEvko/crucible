@@ -19,7 +19,10 @@ struct Region {
 int main() {
     auto root = fp::mint_permission_root<Region>();
     fp::SharedPermissionPool pool{std::move(root)};
-    auto share = pool.lend().expect("an idle pool lends a share");
+    const ::foundation::effects::ExecCtx<::foundation::effects::Test,
+                                         ::foundation::effects::Row<::foundation::effects::Effect::Nondet>>
+        pool_ctx{::foundation::effects::testing::test()};
+    auto share = pool.lend(pool_ctx).expect("an idle pool lends a share");
     using Guard = decltype(share);
     auto* leaked = new Guard(std::move(share));
     (void)leaked;

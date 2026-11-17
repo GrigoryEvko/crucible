@@ -54,9 +54,9 @@ struct SharedPermissionPoolSaturated : tag_base {
         "either a guard leak or genuinely unbounded reuse — the fix "
         "depends on which.";
     static constexpr tag_text_literal correct_example =
-        "{ auto guard = pool.lend(); use(guard); }  // RAII drop releases";
+        "{ auto guard = pool.lend(ctx); use(guard); }  // RAII drop releases";
     static constexpr tag_text_literal violating_example =
-        "auto* leak = new Option<SharedPermissionGuard<Tag>>(pool.lend());  // never deleted";
+        "auto* leak = new Option<SharedPermissionGuard<Tag>>(pool.lend(ctx));  // never deleted";
 };
 
 struct HugePageAllocationFailed : tag_base {

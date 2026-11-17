@@ -22,7 +22,10 @@ struct Region {
 
 int main() {
     fp::SharedPermissionPool pool{fp::mint_permission_root<Region>()};
-    sess::SharedReader reader{pool.lend().expect("an idle pool lends a share")};
+    const ::foundation::effects::ExecCtx<::foundation::effects::Test,
+                                         ::foundation::effects::Row<::foundation::effects::Effect::Nondet>>
+        pool_ctx{::foundation::effects::testing::test()};
+    sess::SharedReader reader{pool.lend(pool_ctx).expect("an idle pool lends a share")};
     auto back = reader.read([](auto const&) noexcept {});
     (void)back;
     return 0;

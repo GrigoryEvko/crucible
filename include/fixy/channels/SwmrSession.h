@@ -227,7 +227,7 @@ public:
     // error of GCC 16 at -O1 with TSan, because the compiler does not see that
     // the Option holds no handle on the path where the pool lent no share.
     [[nodiscard, gnu::noinline]] ::fixy::Option<ReaderHandle> reader() noexcept {
-        auto lent = reader_pool_.lend();
+        auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(reader_pool_);
         if (lent.is_none()) return ::fixy::none;
         return ::fixy::some(ReaderHandle{*this, std::move(lent).expect("SwmrSession::reader: the pool lent a share")});
     }
@@ -239,7 +239,7 @@ public:
     template <typename Body>
         requires std::is_invocable_v<Body>
     bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
-        auto upgrade = reader_pool_.try_upgrade();
+        auto upgrade = ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(reader_pool_);
         if (upgrade.is_none()) return false;
         std::forward<Body>(body)();
         reader_pool_.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
