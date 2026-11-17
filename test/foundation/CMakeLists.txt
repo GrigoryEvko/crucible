@@ -3641,6 +3641,11 @@ foundation_neg_compile_test(neg_core_fixed_array_enumerate_of_temporary
 # kernel floor judges each kind of release text.
 foundation_test(test_os_floor)
 
+# The x86-64 level door: the level of words that lack one feature, the level
+# of this host against the probes of GCC, and the pick of a requested level.
+# A request above the host ends the process in a child.
+foundation_test(test_os_x86_level)
+
 # The CText of a temporary PathText would point into an object that the
 # full expression ends.
 foundation_neg_compile_test(neg_os_path_text_of_temporary
@@ -3746,7 +3751,7 @@ foreach(_death_test
     test_aligned_bytes test_core_array test_core_box test_core_branded test_core_bump_arena test_core_choice
     test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_masked_array
     test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
-    test_lattice_closure test_moved_from_token test_platform test_report_sink_pipe test_swiss_table_buffer
-    test_swiss_table_buffer_ignore)
+    test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
+    test_swiss_table_buffer test_swiss_table_buffer_ignore)
   target_link_libraries(${_death_test} PRIVATE fixy)
 endforeach()
