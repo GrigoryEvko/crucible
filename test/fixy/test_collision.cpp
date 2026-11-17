@@ -22,6 +22,7 @@
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 
+#include <concepts>
 #include <cstddef>
 #include <expected>
 #include <meta>
@@ -52,8 +53,11 @@ struct tls_tag final {};
 // atom::refined_with is parametric on the predicate that was proved.  The
 // test brings its own for the same reason as tls_tag: which predicate a
 // hot body needs is the caller's business, and H002 only asks that there
-// IS one.
-struct hot_invariant final {};
+// IS one.  The predicate has a call on an int, so a binding over an int
+// admits it, and its mint checks it.
+struct hot_invariant final {
+    constexpr bool operator()(std::same_as<int> auto count) const noexcept { return count >= 0; }
+};
 
 // ---------------------------------------------------------------------
 // grades answers without fn.

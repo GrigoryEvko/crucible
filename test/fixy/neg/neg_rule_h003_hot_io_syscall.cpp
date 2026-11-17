@@ -14,11 +14,15 @@
 #include <fixy/Fn.h>
 #include <fixy/atoms/Syscall.h>
 
+#include <concepts>
+
 // The tag has external linkage.  An atom whose argument has internal
 // linkage has no stable identity, and the gate refuses it at tier 2.
 namespace fixture {
 
-struct owner_pid_proved final {};
+struct owner_pid_proved final {
+    constexpr bool operator()(std::same_as<int> auto pid) const noexcept { return pid > 0; }
+};
 
 }  // namespace fixture
 

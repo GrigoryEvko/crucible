@@ -8,7 +8,8 @@
 //   1. Is the payload an object type a wrapper can hold?
 //   2. Is every entry in the pack an atom?
 //   3. Does each axis carry at most one atom?
-//   4. Is the combination admitted?  (Collision.h rules, Corpus.h entries.)
+//   4. Is the combination admitted?  (A refinement that the payload can
+//      check, the Collision.h rules, the Corpus.h entries.)
 //
 // Each question is one concept here.  fixy/Fn.h asks them in the class
 // body, one tier per question, and each tier silences itself when an
@@ -31,6 +32,7 @@
 #include <fixy/Axis.h>
 #include <fixy/Collision.h>
 #include <fixy/Corpus.h>
+#include <fixy/Predicates.h>
 #include <foundation/Platform.h>
 #include <foundation/diag/Tag.h>
 #include <foundation/reflect/Anchor.h>
@@ -166,13 +168,42 @@ concept ValidComposition = ::fixy::collision::rules_of<T, Atoms...>::valid;
 template <class T, class... Atoms>
 concept NotInCorpus = !::fixy::corpus::is_in_corpus_v<T, Atoms...>;
 
-// ---------------------------------------------------------------------
-// The whole gate.  This is what the negative corpus asserts against and
-// what the mint factories put in their signatures.
+// The payload half of a refinement.  refined_with<Pred> states that Pred
+// holds for the payload, and the mint of fixy/Fn.h checks that claim with a
+// call of Pred on each value.  So a call of Pred on the payload must run,
+// through the sealed call that the checked mint of fixy/Refined.h asks for.
+// A predicate with no call operator, or with a call operator for another
+// type, refines nothing on this payload.  A pack with no refined_with
+// passes.
+namespace detail::reject {
 
 template <class T, class... Atoms>
-concept IsAccepted = IsAcceptedPayload<T> && AllAtomsWellFormed<Atoms...> && UniqueAtomPerAxis<Atoms...>
-                  && NotInCorpus<T, Atoms...> && ValidComposition<T, Atoms...>;
+[[nodiscard]] consteval bool is_refinement_defined_on_payload_() noexcept {
+    using Grade = typename ::fixy::collision::grades<Atoms...>::template on<Axis::Refinement>;
+    constexpr std::meta::info predicate = ::fixy::atom::refinement_predicate_of(^^Grade);
+    if constexpr (predicate == ^^void) {
+        return true;
+    } else {
+        using Predicate = [:predicate:];
+        return PredicateInvocableOn<Predicate{}, T>;
+    }
+}
+
+}  // namespace detail::reject
+
+template <class T, class... Atoms>
+concept RefinementDefinedOnPayload = detail::reject::is_refinement_defined_on_payload_<T, Atoms...>();
+
+// ---------------------------------------------------------------------
+// The whole gate.  This is what the negative corpus asserts against and
+// what the mint factories put in their signatures.  The refinement half
+// reads one grade on the Refinement axis, so it comes after the tiers that
+// make each entry an atom and each axis carry one grade.
+
+template <class T, class... Atoms>
+concept IsAccepted =
+    IsAcceptedPayload<T> && AllAtomsWellFormed<Atoms...> && UniqueAtomPerAxis<Atoms...>
+    && RefinementDefinedOnPayload<T, Atoms...> && NotInCorpus<T, Atoms...> && ValidComposition<T, Atoms...>;
 
 // ---------------------------------------------------------------------
 // The diagnostics.
@@ -352,7 +383,8 @@ template <class T, class... Atoms>
         return Tier::Malformed;
     } else if constexpr (!UniqueAtomPerAxis<Atoms...>) {
         return Tier::Duplicate;
-    } else if constexpr (!NotInCorpus<T, Atoms...> || !ValidComposition<T, Atoms...>) {
+    } else if constexpr (!RefinementDefinedOnPayload<T, Atoms...> || !NotInCorpus<T, Atoms...>
+                         || !ValidComposition<T, Atoms...>) {
         return Tier::Composition;
     } else {
         return Tier::Ok;
@@ -447,6 +479,12 @@ template <class T, class... Atoms>
         constexpr std::string_view codes = ::fixy::collision::rules_of<T, Atoms...>::failing_codes();
         ::foundation::reflect::anchored_t<^^T, std::string> text{
             "fixy::fn<Type, Atoms...> [tier 5]: the combination is refused.  "};
+        if constexpr (!RefinementDefinedOnPayload<T, Atoms...>) {
+            text += "The predicate of refined_with has no sealed call on the payload ";
+            text += std::meta::display_string_of(^^T);
+            text += ", so the mint cannot check the fact that the refinement states.  Give the predicate one call "
+                    "operator that takes the payload, as fixy/Predicates.h does.  ";
+        }
         if constexpr (!std::is_void_v<Entry>) {
             text += "Corpus entry ";
             text += Entry::name;

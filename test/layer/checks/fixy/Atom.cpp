@@ -1,6 +1,7 @@
 // The compile-time checks of fixy/Atom.h.
 
 #include <fixy/Atom.h>
+#include <fixy/Predicates.h>
 
 namespace fixy::atom {
 
@@ -208,6 +209,23 @@ static_assert(atom_refusal_of_(^^refined_with<CaptureLessLambdaType>) == atom_re
 static_assert(!IsAtom<from_source<decltype([] {})>>, "the identity read covers every parametric atom");
 static_assert(!IsAtom<protocol<decltype([] {})>>);
 static_assert(IsAtom<refined_with<atom_axis_witness_predicate>>);
+
+// A vacuous predicate holds for each value, so it is no witness.  The
+// relation reads the strict pole and each conjunction of vacuous
+// predicates.  A conjunction with one conjunct that states a fact states
+// that fact, so the gate admits it.
+static_assert(!IsRefinementPredicate<::fixy::pole::pred::True>);
+static_assert(!IsRefinementPredicate<::fixy::AllOf<>>);
+static_assert(!IsRefinementPredicate<::fixy::AllOf<::fixy::pole::pred::True{}>>);
+static_assert(!IsRefinementPredicate<::fixy::AllOf<::fixy::all_of<>>>);
+static_assert(!IsRefinementPredicate<::fixy::AllOf<::fixy::all_of<>, ::fixy::all_of<::fixy::all_of<>>>>);
+static_assert(IsRefinementPredicate<::fixy::IsPositive>);
+static_assert(IsRefinementPredicate<::fixy::AllOf<::fixy::positive>>);
+static_assert(IsRefinementPredicate<::fixy::AllOf<::fixy::all_of<>, ::fixy::positive>>);
+
+// The Refinement grade names its predicate, and the strict pole names none.
+static_assert(refinement_predicate_of(^^refined_with<atom_axis_witness_predicate>) == ^^atom_axis_witness_predicate);
+static_assert(refinement_predicate_of(^^::fixy::pole::pred::True) == ^^void);
 }  // namespace refinement_predicate_shape_witness
 
 // A forge-phase source carries its phase as a non-type parameter and stays

@@ -14,11 +14,15 @@
 
 #include <fixy/Fn.h>
 
+#include <concepts>
+
 // The tag has external linkage.  An atom whose argument has internal
 // linkage has no stable identity, and the gate refuses it at tier 2.
 namespace fixture {
 
-struct parser_bounds_proved final {};
+struct parser_bounds_proved final {
+    constexpr bool operator()(std::same_as<int> auto offset) const noexcept { return offset >= 0; }
+};
 
 }  // namespace fixture
 

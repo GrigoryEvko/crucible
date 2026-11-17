@@ -14,15 +14,20 @@
 #include <fixy/Fn.h>
 #include <fixy/session/Handle.h>
 
+#include <concepts>
+
 struct wire final {
     int last_received = 0;
 };
 
-struct ring_depth_proved final {};
-
 using AtRecv = ::fixy::session::SessionHandle<::fixy::session::Recv<int, ::fixy::session::End>, wire>;
+
+struct handle_is_live final {
+    constexpr bool operator()(std::same_as<AtRecv> auto const& handle) const noexcept { return handle.is_live(); }
+};
+
 using Refused = ::fixy::fn<AtRecv, ::fixy::atom::regime::hot, ::fixy::atom::cost_constant,
-                           ::fixy::atom::refined_with<ring_depth_proved>>;
+                           ::fixy::atom::refined_with<handle_is_live>>;
 
 static_assert(sizeof(Refused) > 0);
 

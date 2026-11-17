@@ -16,11 +16,15 @@
 
 #include <foundation/effects/Effect.h>
 
+#include <concepts>
+
 // The tag has external linkage.  An atom whose argument has internal
 // linkage has no stable identity, and the gate refuses it at tier 2.
 namespace fixture {
 
-struct queue_depth_proved final {};
+struct queue_depth_proved final {
+    constexpr bool operator()(std::same_as<int> auto depth) const noexcept { return depth >= 0; }
+};
 
 }  // namespace fixture
 

@@ -1073,7 +1073,21 @@ fixy_neg_compile_test(neg_atom_from_source_internal_linkage
   "refused because an argument names a closure type, an unnamed class or an entity with internal linkage")
 fixy_neg_compile_test(neg_atom_refined_with_vacuous_predicate
   "template constraint failure for .template<class Pred> +requires +IsRefinementPredicate<Pred> struct fixy::atom::refined_with."
-  "the expression .!\\(is_same_v<Pred, fixy::pole::pred::True>\\) \\[with Pred = fixy::pole::pred::True\\]. evaluated to .false.")
+  "the expression .!is_vacuous_predicate_.+ \\[with Pred = fixy::pole::pred::True\\]. evaluated to .false.")
+# A conjunction of no predicates holds for each value too, so refined_with
+# refuses it as it refuses the strict pole.  A predicate whose call cannot
+# run on the payload refines nothing there, and tier 5 refuses the binding.
+fixy_neg_compile_test(neg_atom_refined_with_all_of_empty
+  "template constraint failure for .template<class Pred> +requires +IsRefinementPredicate<Pred> struct fixy::atom::refined_with."
+  "the expression .!is_vacuous_predicate_.+ \\[with Pred = fixy::refined_algebra::AllOf<>\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_atom_refined_with_no_call_operator
+  "${_fixy_tier5_reason}"
+  "The predicate of refined_with has no sealed call on the payload int"
+  "fixy::atom::refined_with<parser_bounds_proved> >::tier5_composition_ok_.+ evaluates to false")
+fixy_neg_compile_test(neg_atom_refined_with_wrong_argument_type
+  "${_fixy_tier5_reason}"
+  "The predicate of refined_with has no sealed call on the payload int"
+  "fixy::atom::refined_with<ratio_is_non_negative> >::tier5_composition_ok_.+ evaluates to false")
 
 # The declassification policies are closed the same way: the namespace
 # and the file of the declaration, read by IsDeclassificationPolicy.

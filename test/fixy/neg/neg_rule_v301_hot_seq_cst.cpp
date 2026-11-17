@@ -11,11 +11,15 @@
 
 #include <fixy/Fn.h>
 
+#include <concepts>
+
 // The tag has external linkage.  An atom whose argument has internal
 // linkage has no stable identity, and the gate refuses it at tier 2.
 namespace fixture {
 
-struct ring_index_proved final {};
+struct ring_index_proved final {
+    constexpr bool operator()(std::same_as<int> auto index) const noexcept { return index >= 0; }
+};
 
 }  // namespace fixture
 

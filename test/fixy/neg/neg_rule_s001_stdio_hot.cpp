@@ -17,11 +17,15 @@
 
 #include <fixy/Fn.h>
 
+#include <concepts>
+
 // The tag has external linkage.  An atom whose argument has internal
 // linkage has no stable identity, and the gate refuses it at tier 2.
 namespace fixture {
 
-struct log_rate_proved final {};
+struct log_rate_proved final {
+    constexpr bool operator()(std::same_as<int> auto rate) const noexcept { return rate >= 0; }
+};
 
 }  // namespace fixture
 

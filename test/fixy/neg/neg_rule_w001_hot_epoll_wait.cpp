@@ -12,11 +12,15 @@
 #include <fixy/Fn.h>
 #include <fixy/atoms/Syscall.h>
 
+#include <concepts>
+
 // The tag has external linkage.  An atom whose argument has internal
 // linkage has no stable identity, and the gate refuses it at tier 2.
 namespace fixture {
 
-struct ready_count_proved final {};
+struct ready_count_proved final {
+    constexpr bool operator()(std::same_as<int> auto count) const noexcept { return count >= 0; }
+};
 
 }  // namespace fixture
 

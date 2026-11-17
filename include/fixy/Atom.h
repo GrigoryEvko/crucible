@@ -17,6 +17,7 @@
 // families in fixy/atoms/{Ctrl,Dispatch,Stack,Global,Stdio}.h.
 
 #include <fixy/Axis.h>
+#include <fixy/Predicates.h>
 #include <fixy/Tags.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
@@ -321,28 +322,57 @@ concept IsAtom = detail::HasAtomShape<G> && detail::atom_refusal_of_(^^G) == det
 template <typename Proto>
 concept IsSessionProtocol = std::is_same_v<Proto, std::remove_cvref_t<Proto>> && std::is_class_v<Proto>;
 
-// Whether a predicate is invocable on a given value type cannot be folded
-// into a per-predicate gate, so that check happens per-type at construction
-// and is deliberately absent here.
+// The atom does not know the payload, so this gate does not ask whether a
+// call of the predicate can run on it.  fixy/Reject.h asks that at tier 5,
+// where the payload of the binding is known, and the mint of fixy/Fn.h then
+// runs the predicate on each value.
 //
 // The type of the predicate is the whole claim of `refined_with<Pred>`.  A
 // stateful predicate, such as a threshold held in a member, makes a claim
 // that its type does not state, so the gate asks for an empty class that
 // the type alone can construct.
 //
-// `pole::pred::True` is refused.  It is the strict pole of the Refinement
-// axis, the claim of a binding that names no refinement, and it proves
-// nothing.  Written as an atom it would read as a witness: H002 asks a hot
-// binding for one, and the vacuous predicate would satisfy it.  A binding
-// that proves nothing names no Refinement atom.
+// A vacuous predicate is refused.  `pole::pred::True` is the strict pole of
+// the Refinement axis, the claim of a binding that names no refinement, and
+// it proves nothing.  AllOf<> and a conjunction of vacuous predicates hold
+// for each value too.  Written as an atom such a predicate would read as a
+// witness: H002 asks a hot binding for one, and the vacuous predicate would
+// satisfy it.  A binding that proves nothing names no Refinement atom.
 //
 // A closure is an empty class that the type alone can construct, so it
 // passes this gate.  IsAtom refuses the atom, because the name of a
 // closure type is not a function of the type.
+namespace detail {
+
+// True when a predicate holds for each value by its shape alone: the
+// strict pole pole::pred::True, and an AllOf whose each conjunct is
+// vacuous, AllOf<> included.  The relation is closed: it reads these two
+// shapes and answers false for each other predicate, so it runs no
+// predicate on a value.  The function is not a template, so no other file
+// can add a shape.  Complexity: O(conjuncts of the tree).
+//
+// The relation reads AllOf through the readers of fixy/Predicates.h, so
+// this header includes it.  A declaration of AllOf here would move the
+// home of the template to this file, and the seal of fixy/Predicates.h
+// then refuses each call of an AllOf.
+[[nodiscard]] consteval bool is_vacuous_predicate_(std::meta::info predicate) {
+    const std::meta::info named = std::meta::dealias(predicate);
+    if (named == ^^::fixy::pole::pred::True) return true;
+    if (!::fixy::refined::is_specialization_of(named, ^^::fixy::refined_algebra::AllOf)) return false;
+    for (std::size_t index = 0; index < ::fixy::refined::argument_count_of(named); ++index) {
+        if (!is_vacuous_predicate_(::fixy::refined::predicate_type_of(::fixy::refined::argument_of(named, index)))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace detail
+
 template <typename Pred>
 concept IsRefinementPredicate =
     std::is_same_v<Pred, std::remove_cvref_t<Pred>> && std::is_class_v<Pred> && std::is_empty_v<Pred>
-    && std::is_default_constructible_v<Pred> && !std::is_same_v<Pred, ::fixy::pole::pred::True>;
+    && std::is_default_constructible_v<Pred> && !detail::is_vacuous_predicate_(^^Pred);
 
 // A provenance source is an empty marker class by convention, and this gate
 // is stricter than the two above because that convention is stricter.  A
@@ -793,6 +823,17 @@ template <typename Pred>
     requires IsRefinementPredicate<Pred>
 struct refined_with final : atom_of<Axis::Refinement> {};
 
+// The predicate that a Refinement grade states, or the reflection of void
+// for the strict pole, which states none.  refined_with is the one atom of
+// the axis.  fixy/Reject.h reads this to ask whether a call of the
+// predicate can run on the payload, and fixy/Fn.h reads it to run that
+// call on each value at the mint.
+[[nodiscard]] consteval std::meta::info refinement_predicate_of(std::meta::info grade) {
+    const std::meta::info named = std::meta::dealias(grade);
+    if (!::fixy::refined::is_specialization_of(named, ^^refined_with)) return ^^void;
+    return std::meta::dealias(::fixy::refined::argument_of(named, 0));
+}
+
 // The Type axis has no atom.  The bound type is the binding's own first
 // template parameter, so no call site writes one.
 
@@ -1056,7 +1097,12 @@ template <std::meta::info Ns, class Roster>
 // with a value rather than one of these tags.
 struct atom_axis_witness_proto final {};
 struct atom_axis_witness_source final {};
-struct atom_axis_witness_predicate final {};
+// The predicate witness has a call operator on an int, so a binding over
+// an int admits the atom, and the walk of the atoms in test/fixy/test_fn.cpp
+// reads it.
+struct atom_axis_witness_predicate final {
+    constexpr bool operator()(std::same_as<int> auto count) const noexcept { return count >= 0; }
+};
 
 // The roster of this header: every atom above, one instantiation per
 // parametric atom.
