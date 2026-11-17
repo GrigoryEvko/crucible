@@ -81,9 +81,11 @@
 #include <crucible/warden/CpuTopology.h>
 #include <crucible/warden/Hardening.h>
 #include <crucible/warden/Policy.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/Sched.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/File.h>
 
 namespace bench {
 
@@ -365,20 +367,108 @@ private:
     uint64_t overhead_cycles_;
 };
 
-// ── Platform introspection helpers ────────────────────────────────
+// ── THE CORES OF A RUN ─────────────────────────────────────────────
+//
+// loop bench gives a bench the cores of its claim as the affinity of its
+// process: one isolated core for each thread that the bench states with
+// CORES in bench/CMakeLists.txt (THE CORES OF A RUN of
+// utils/assay/loop/bench.py).  The cores of a run are the isolated CPUs of
+// that affinity, in ascending order.
+//
+// Each thread of a run has a slot.  Slot 0 is the measuring thread of each
+// Run, and a body gives the threads that it starts the slots 1, 2 and so on.
+// The thread of slot k runs on the core k of the run, so no two threads of a
+// run share a core.  A thread that starts on an isolated CPU with a mask of
+// several CPUs stays on the CPU of the thread that started it, because no load
+// balancer reaches an isolated CPU.  So each thread takes a pin of its own:
+// a worker calls pin_calling_thread_to() with the core of its slot, and a
+// thread that a library starts, such as the drain thread of a Vigil, starts
+// inside run_on_core() with that core.
+//
+// Read the cores with Cores::of_calling_thread() on the main thread before
+// the first Run.  A Run pins its thread to one core for the measurement, and
+// a thread that its body starts takes that one core as its affinity.  A run
+// with no isolated CPU in its affinity, such as a run under ctest, has no
+// cores.  No slot then has a core, and each thread keeps the affinity that it
+// inherits.
+
+namespace side {
+
+// The roles of the two sets of CPUs of Cores::of.
+struct AllowedCpus final {};
+struct IsolatedCpus final {};
+
+}  // namespace side
+
+struct ThreadSlotTag final {};
+
+// The slot of one thread of a run.
+using ThreadSlot = ::fixy::Id<ThreadSlotTag, std::uint32_t>;
+
+// The slot of the measuring thread of each Run.
+inline constexpr ThreadSlot kMeasuringSlot{0};
+
+// The isolated cores of a run, in ascending order.  A Cores holds a CpuSet of
+// 1 KiB, and it is a plain value.
+class Cores {
+public:
+    // The isolated CPUs of the allowed CPUs.
+    [[nodiscard]] static Cores of(::fixy::Side<side::AllowedCpus, crucible::warden::CpuSet> const& allowed,
+                                  ::fixy::Side<side::IsolatedCpus, crucible::warden::CpuSet> const& isolated) noexcept {
+        Cores cores{};
+        cores.set_ = allowed.value().intersection(isolated.value());
+        return cores;
+    }
+
+    // The cores of the affinity of the calling thread.  Complexity: one read
+    // of procfs and one of sysfs.
+    [[nodiscard]] static Cores of_calling_thread() noexcept {
+        const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+        return of(::fixy::side_as<side::AllowedCpus>(crucible::warden::allowed_cpus(startup)),
+                  ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)));
+    }
+
+    // The count of the cores.  Complexity: linear in the words of the set.
+    [[nodiscard]] std::size_t count() const noexcept { return set_.size(); }
+
+    // The core of a slot: the CPU at the position of the slot in ascending
+    // order, or none when the run has too few cores.  Two slots never get one
+    // core.  Complexity: linear in the CPUs up to the slot.
+    [[nodiscard]] ::fixy::Option<CpuId> of_slot(ThreadSlot slot) const noexcept {
+        std::uint32_t position = 0;
+        for (int const cpu : set_) {
+            if (position == slot.raw()) return ::fixy::some(CpuId{cpu});
+            ++position;
+        }
+        return ::fixy::none;
+    }
+
+    // The cores as a set, for the affinity mask of a thread door.
+    [[nodiscard]] crucible::warden::CpuSet const& set() const& noexcept { return set_; }
+    void set() const&& = delete("a reference into a temporary Cores dangles at the end of the full expression");
+
+private:
+    crucible::warden::CpuSet set_{};
+};
 
 namespace detail {
 
-// The core of a run in the affinity allowed of the process: the explicit core
-// when allowed holds it, else the core that warden::select_hot_cpu_of picks in
-// allowed, the isolated CPUs first.  A run never leaves its affinity.  loop
-// bench gives each bench one core of its own, so a pin to a core outside it
-// would measure on the core of another bench.  -1 for an empty affinity.
-// Complexity: linear in the CPUs of allowed, times one sysfs read each.
-[[nodiscard]] inline int core_of_run(crucible::warden::CpuSet const& allowed, int explicit_core) noexcept {
-    if (explicit_core >= 0 && allowed.contains(explicit_core)) return explicit_core;
-    return crucible::warden::detail::select_hot_cpu_of(allowed, crucible::warden::CoreSelector{},
-                                                       crucible::warden::CpuSet{});
+// The core of a run in the affinity allowed of the process: the asked core
+// when allowed holds it, else the core of the measuring slot, else the core
+// that warden::select_hot_cpu_of picks in allowed.  A run never leaves its
+// affinity.  loop bench gives each bench cores of its own, so a pin to a core
+// outside them would measure on the core of another bench.  None for an empty
+// affinity.  Complexity: linear in the CPUs of allowed, times one sysfs read
+// each.
+[[nodiscard]] inline CpuId core_of_run(Cores const& cores, crucible::warden::CpuSet const& allowed,
+                                       CpuId asked) noexcept {
+    if (asked.is_valid() && allowed.contains(asked.raw())) return asked;
+    ::fixy::Option<CpuId> const measuring = cores.of_slot(kMeasuringSlot);
+    for (CpuId const core : measuring) {
+        if (allowed.contains(core.raw())) return core;
+    }
+    return CpuId{crucible::warden::detail::select_hot_cpu_of(allowed, crucible::warden::CoreSelector{},
+                                                             crucible::warden::CpuSet{})};
 }
 
 // Read /sys/.../cpu<N>/cpufreq/scaling_cur_freq (kHz) → Hz, 0 on failure.
@@ -400,6 +490,70 @@ namespace detail {
 }
 
 }  // namespace detail
+
+// Pins the calling thread to one core for the rest of its life, through the
+// gated door of fixy/os/Sched.h (THE CORES OF A RUN).  A worker that a body
+// starts calls it first, with the core of its slot.  The result is the error
+// of the kernel, or einval for a core that names no CPU.
+[[nodiscard]] inline ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> pin_calling_thread_to(CpuId core) noexcept {
+    if (!core.is_valid()) return ::fixy::err(::foundation::os::Errno::einval);
+    const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    // A drop of the prior mask keeps the pin.
+    return ::fixy::sched::apply_affinity_to_cpu(startup, core.raw())
+        .match(
+            [](::fixy::sched::PriorAffinity) noexcept -> ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> {
+                return ::fixy::Unit{};
+            },
+            [](::foundation::os::Errno error) noexcept -> ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> {
+                return ::fixy::err(error);
+            });
+}
+
+// The pin of the calling thread to one core for a scope, and the restore of
+// its affinity at the end of the scope.  A hold of a core that is not valid
+// changes nothing.  The process ends when the pin or the restore fails,
+// because the thread would then run on a CPU that the claim does not give it.
+class CoreHold {
+public:
+    explicit CoreHold(CpuId core) noexcept {
+        if (!core.is_valid()) return;
+        const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+        prior_ = ::fixy::some(::fixy::sched::apply_affinity_to_cpu(startup, core.raw())
+                                  .expect("the pin of a thread to a core of the claim of its run"));
+    }
+
+    ~CoreHold() {
+        std::move(prior_).match(
+            [](::fixy::sched::PriorAffinity held) noexcept {
+                std::move(held).restore().expect("the restore of the affinity of a thread after a hold of one core");
+            },
+            []() noexcept {});
+    }
+
+    CoreHold(CoreHold const&) = delete("a copy would restore one affinity two times");
+    CoreHold& operator=(CoreHold const&) = delete("a copy would restore one affinity two times");
+    CoreHold(CoreHold&&) = delete("a hold ends in the scope of the thread that pinned");
+    CoreHold& operator=(CoreHold&&) = delete("a hold ends in the scope of the thread that pinned");
+
+private:
+    ::fixy::Option<::fixy::sched::PriorAffinity> prior_{};
+};
+
+// Calls fn with the calling thread on one core, and then gives the thread back
+// its affinity (THE CORES OF A RUN).  A thread that fn starts takes that core
+// as its affinity and keeps it, so a thread that a library starts, such as the
+// drain thread of a Vigil, runs on the core of its slot.  The result of fn is a
+// prvalue, so an object that cannot move, such as a Vigil, is built in the
+// place of the result:
+//
+//   Vigil vigil = bench::run_on_core(drain_core, [] { return Vigil{}; });
+//
+// A core that is not valid calls fn with no pin.
+template <class Fn>
+[[nodiscard]] decltype(auto) run_on_core(CpuId core, Fn&& fn) {
+    CoreHold const hold{core};
+    return static_cast<Fn&&>(fn)();
+}
 
 // ── BPF perf::Senses accessor (shared aggregator singleton) ───────
 //
@@ -1693,13 +1847,15 @@ private:
         // warden inside the affinity, with the heuristic of the Keeper's
         // mint_hardening(): isolcpu first, P-core preference, and no cpu0 or
         // its SMT sibling (timer-tick IRQ landing pad).
-        const bool explicit_valid = (pin_mode_ == Pin::Explicit) && core_.is_valid();
-        const int asked = explicit_valid ? core_.raw() : -1;
-        int target = detail::core_of_run(crucible::warden::allowed_cpus(startup), asked);
-        if (asked >= 0 && target != asked) {
+        const CpuId asked = (pin_mode_ == Pin::Explicit) ? core_ : CpuId::none();
+        const crucible::warden::CpuSet allowed = crucible::warden::allowed_cpus(startup);
+        const Cores cores = Cores::of(::fixy::side_as<side::AllowedCpus>(allowed),
+                                      ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)));
+        int target = detail::core_of_run(cores, allowed, asked).raw();
+        if (asked.is_valid() && target != asked.raw()) {
             std::fprintf(stderr,
                          "WARN bench: cpu%d is outside the affinity of the process, so the run measures on cpu%d\n",
-                         asked, target);
+                         asked.raw(), target);
         }
         if (target < 0) target = sched_getcpu();
         if (target < 0) return PinResult{};
@@ -1816,39 +1972,58 @@ private:
 
 [[nodiscard]] inline int env_core() noexcept;
 
-inline void print_system_info(FILE* out = stdout) {
-    std::fprintf(out, "=== system ===\n");
+namespace detail {
 
-    FILE* f = std::fopen("/proc/cpuinfo", "r");
-    if (f) {
-        char line[512];
-        while (std::fgets(line, sizeof(line), f)) {
-            if (std::strncmp(line, "model name", 10) == 0) {
-                char* colon = std::strchr(line, ':');
-                if (colon) {
-                    char* v = colon + 1;
-                    while (*v == ' ' || *v == '\t')
-                        ++v;
-                    size_t len = std::strlen(v);
-                    if (len && v[len - 1] == '\n') v[len - 1] = '\0';
-                    std::fprintf(out, "  cpu:       %s\n", v);
-                }
-                break;
-            }
-        }
-        std::fclose(f);
-    }
+// Writes the text that stdio holds for standard output, so a report of the
+// base, which writes at once, comes after it.
+inline void flush_standard_output() noexcept { static_cast<void>(std::fflush(stdout)); }
 
-    f = std::fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", "r");
-    if (f) {
-        char g[64]{};
-        if (std::fgets(g, sizeof(g), f)) {
-            size_t len = std::strlen(g);
-            if (len && g[len - 1] == '\n') g[len - 1] = '\0';
-            std::fprintf(out, "  governor:  %s\n", g);
-        }
-        std::fclose(f);
+// The value of the first line of text that starts with key: the characters
+// after the colon of the line, with no blank at either end, or no character.
+// Complexity: linear in the text.
+[[nodiscard]] inline ::fixy::TextView value_of_line(::fixy::TextView text, ::fixy::TextView key) noexcept {
+    namespace topology = crucible::warden::detail;
+    ::fixy::TextView rest = text;
+    while (rest.size() != 0) {
+        std::size_t const end = ::fixy::find(rest, '\n').value_or(rest.size());
+        ::fixy::TextView const line = topology::text_prefix(rest, end);
+        rest = topology::text_suffix(rest, end + 1);
+        if (!::fixy::starts_with(line, key)) continue;
+        std::size_t const colon = ::fixy::find(line, ':').value_or(line.size());
+        return topology::trim_blanks(topology::text_suffix(line, colon + 1));
     }
+    return ::fixy::TextView{};
+}
+
+// The first line of a small file of procfs or sysfs, or no character when the
+// file does not read.  The text lives in the FixedText of the caller.
+template <std::size_t Capacity>
+[[nodiscard]] ::fixy::TextView read_first_line(::fixy::CText path, ::fixy::FixedText<Capacity>& text) noexcept {
+    if (::foundation::os::read_file(path, text).is_err()) return ::fixy::TextView{};
+    ::fixy::TextView const all = text.view();
+    return crucible::warden::detail::text_prefix(all, ::fixy::find(all, '\n').value_or(all.size()));
+}
+
+}  // namespace detail
+
+// Prints the facts of the host and of the run: the processor, the governor,
+// the profile, the CPUs, the cores of the run, the TSC and the BPF senses.
+// Call it first in main, before a Run pins the thread.
+inline void print_system_info() {
+    using ::fixy::Sink;
+    using ::fixy::TextView;
+    detail::flush_standard_output();
+    ::fixy::report(Sink::Out, "=== system ===\n");
+
+    // The first 4 KiB of /proc/cpuinfo hold the block of the first CPU.
+    ::fixy::FixedText<4096> cpuinfo{};
+    if (::foundation::os::read_file("/proc/cpuinfo", cpuinfo).is_ok()) {
+        ::fixy::report(Sink::Out, "  cpu:       {}\n", detail::value_of_line(cpuinfo.view(), "model name"));
+    }
+    ::fixy::FixedText<64> governor_text{};
+    TextView const governor =
+        detail::read_first_line("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", governor_text);
+    if (governor.size() != 0) ::fixy::report(Sink::Out, "  governor:  {}\n", governor);
 
     // The profile this binary was built with, or none.  The root
     // CMakeLists.txt defines CRUCIBLE_PGO_PROFILE under CRUCIBLE_PGO=use
@@ -1856,30 +2031,37 @@ inline void print_system_info(FILE* out = stdout) {
     // build and a number from a plain build are not comparable, and the
     // report says which one it is.
 #ifdef CRUCIBLE_PGO_PROFILE
-    std::fprintf(out, "  pgo:       %s\n", CRUCIBLE_PGO_PROFILE);
+    ::fixy::report(Sink::Out, "  pgo:       {}\n", TextView{CRUCIBLE_PGO_PROFILE});
 #else
-    std::fprintf(out, "  pgo:       none\n");
+    ::fixy::report(Sink::Out, "  pgo:       none\n");
 #endif
 
 #ifdef __linux__
-    const long nproc = sysconf(_SC_NPROCESSORS_ONLN);
-    std::fprintf(out, "  cpus:      %ld online\n", nproc);
-
-    // The core of each run with the default pin, from the affinity of the
-    // process and CRUCIBLE_BENCH_CORE, as pin_() picks it.
+    // The cores of the run, and the core of each Run with the default pin,
+    // from the affinity of the process and CRUCIBLE_BENCH_CORE, as pin_()
+    // picks it.
     const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+    ::fixy::report(Sink::Out, "  cpus:      {} online\n", crucible::warden::num_online_cpus(startup));
     const crucible::warden::CpuSet allowed = crucible::warden::allowed_cpus(startup);
-    std::fprintf(out, "  core:      cpu%d, of the %zu cpus of the affinity of the process\n",
-                 detail::core_of_run(allowed, env_core()), allowed.size());
+    const Cores cores = Cores::of(::fixy::side_as<side::AllowedCpus>(allowed),
+                                  ::fixy::side_as<side::IsolatedCpus>(crucible::warden::isolated_cpus(startup)));
+    ::fixy::report(Sink::Out, "  core:      cpu{}, of the {} cpus of the affinity of the process\n",
+                   detail::core_of_run(cores, allowed, CpuId{env_core()}).raw(), allowed.size());
+    if (cores.count() > 1) {
+        ::fixy::report(Sink::Out, "  cores:     {} isolated cores, one for each thread of the run:", cores.count());
+        for (int const cpu : cores.set()) {
+            ::fixy::report(Sink::Out, " cpu{}", cpu);
+        }
+        ::fixy::report(Sink::Out, "\n");
+    }
 #endif
 
     const double nspc = Timer::ns_per_cycle();
-    const double ghz = (nspc > 0) ? 1.0 / nspc : 0.0;
-    std::fprintf(out, "  TSC:       %.4f ns/cycle (≈ %.3f GHz)\n", nspc, ghz);
-    std::fprintf(out, "  RDTSC oh:  %lu cycles (≈ %.2f ns)\n", Timer::overhead_cycles(), Timer::overhead_ns());
+    const auto tsc_khz = static_cast<std::uint64_t>(Timer::tsc_freq_hz() / 1e3);
+    ::fixy::report(Sink::Out, "  TSC:       {} kHz\n", tsc_khz);
+    ::fixy::report(Sink::Out, "  RDTSC oh:  {} cycles\n", Timer::overhead_cycles());
     if (nspc <= 0.0) {
-        std::fprintf(stderr, "WARN bench: TSC calibration failed (ns_per_cycle == 0); "
-                             "cycles/op will read 0.\n");
+        ::fixy::report(Sink::Err, "WARN bench: TSC calibration failed (ns_per_cycle == 0); cycles/op will read 0.\n");
     }
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
@@ -1890,31 +2072,29 @@ inline void print_system_info(FILE* out = stdout) {
         // Show both the SenseHub-internal tracepoint count and the
         // Senses-aggregator coverage, so a 0/2 attached banner is
         // distinguishable from a partial sense_hub-only attach.
-        std::fprintf(out,
-                     "  BPF senses: harness subset loaded "
-                     "(SenseHub=%zu tracepoints, %zu/2 harness facades; "
-                     "full suite is reported by bench_perf_loader)\n",
-                     std::move(hub).expect("the test above found the hub")->attached_programs().value(),
-                     cov.attached_count());
+        ::fixy::report(Sink::Out,
+                       "  BPF senses: harness subset loaded (SenseHub={} tracepoints, {}/2 harness facades; full "
+                       "suite is reported by bench_perf_loader)\n",
+                       std::move(hub).expect("the test above found the hub")->attached_programs().value(),
+                       cov.attached_count());
     } else if (cov.attached_count() > 0) {
-        std::fprintf(out,
-                     "  BPF senses: harness subset partial — %zu/2 facades attached "
-                     "(sense_hub failed; set CRUCIBLE_PERF_VERBOSE=1 "
-                     "for libbpf logs)\n",
-                     cov.attached_count());
+        ::fixy::report(Sink::Out,
+                       "  BPF senses: harness subset partial, {}/2 facades attached (sense_hub failed; set "
+                       "CRUCIBLE_PERF_VERBOSE=1 for libbpf logs)\n",
+                       cov.attached_count());
     } else {
-        std::fprintf(out, "  BPF senses: UNAVAILABLE — set CRUCIBLE_PERF_VERBOSE=1 for libbpf logs;\n"
-                          "              typical fix: sudo sysctl kernel.unprivileged_bpf_disabled=0\n"
-                          "              or run it through /usr/local/bin/crucible-caps (loop bench does)\n");
+        ::fixy::report(Sink::Out, "  BPF senses: UNAVAILABLE. Set CRUCIBLE_PERF_VERBOSE=1 for libbpf logs.\n"
+                                  "              typical fix: sudo sysctl kernel.unprivileged_bpf_disabled=0\n"
+                                  "              or run it through /usr/local/bin/crucible-caps (loop bench does)\n");
     }
 #else
-    std::fprintf(out, "  BPF senses: disabled at build time\n");
+    ::fixy::report(Sink::Out, "  BPF senses: disabled at build time\n");
 #endif
 
     if (const char* s = std::getenv("CRUCIBLE_BENCH_SAMPLES")) {
-        std::fprintf(out, "  samples:   %s (CRUCIBLE_BENCH_SAMPLES)\n", s);
+        std::fprintf(stdout, "  samples:   %s (CRUCIBLE_BENCH_SAMPLES)\n", s);
     }
-    std::fprintf(out, "\n");
+    std::fprintf(stdout, "\n");
 }
 
 // The bench raises its nice value through the typed mint

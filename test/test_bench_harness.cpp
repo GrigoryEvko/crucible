@@ -34,6 +34,7 @@
 #include <crucible/perf/SenseHub.h>
 #include <fixy/Ctx.h>
 #include <fixy/os/CpuPinned.h>
+#include <fixy/os/OwnedThread.h>
 #include <fixy/os/Sched.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
 
@@ -606,21 +607,119 @@ void test_fan_out_keeps_the_worker_affinity() {
 // CRUCIBLE_BENCH_CORE names a third core, and a core that the affinity holds
 // is taken as asked.  The masks are planted, so the test reads no affinity of
 // the host.
+// Runs a body on a thread of its own, through the owned thread of the base,
+// and joins the thread.  The join orders each write of the body before the
+// return.
+template <class Body>
+void run_on_own_thread(Body body) {
+    namespace eff = ::foundation::effects;
+    using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
+    std::move(
+        ::fixy::thread::mint_owned_thread(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{}, std::move(body))
+            .expect("the thread door starts a thread with the default options"))
+        .join();
+}
+
+// The cores of a planted run: the isolated CPUs of the affinity.
+[[nodiscard]] bench::Cores planted_cores(crucible::warden::CpuSet const& allowed,
+                                         crucible::warden::CpuSet const& isolated) {
+    return bench::Cores::of(::fixy::side_as<bench::side::AllowedCpus>(allowed),
+                            ::fixy::side_as<bench::side::IsolatedCpus>(isolated));
+}
+
+// The isolated CPUs of the bench VM: the even CPUs 224 to 254.
+[[nodiscard]] crucible::warden::CpuSet planted_isolated() {
+    crucible::warden::CpuSet isolated{};
+    for (std::size_t cpu = 224; cpu < 256; cpu += 2)
+        isolated.insert(cpu);
+    return isolated;
+}
+
+[[nodiscard]] int core_of_run(crucible::warden::CpuSet const& allowed, int asked) {
+    return bench::detail::core_of_run(planted_cores(allowed, planted_isolated()), allowed, bench::CpuId{asked}).raw();
+}
+
 void test_core_of_run_stays_in_the_affinity() {
     crucible::warden::CpuSet first{};
     first.insert(224);
     crucible::warden::CpuSet second{};
     second.insert(226);
-    CHECK(bench::detail::core_of_run(first, -1) == 224);
-    CHECK(bench::detail::core_of_run(second, -1) == 226);
-    CHECK(bench::detail::core_of_run(first, 246) == 224);
-    CHECK(bench::detail::core_of_run(second, 246) == 226);
-    CHECK(bench::detail::core_of_run(first, 246) != bench::detail::core_of_run(second, 246));
+    CHECK(core_of_run(first, -1) == 224);
+    CHECK(core_of_run(second, -1) == 226);
+    CHECK(core_of_run(first, 246) == 224);
+    CHECK(core_of_run(second, 246) == 226);
+    CHECK(core_of_run(first, 246) != core_of_run(second, 246));
     crucible::warden::CpuSet both{};
     both.insert(224);
     both.insert(226);
-    CHECK(bench::detail::core_of_run(both, 226) == 226);
-    CHECK(bench::detail::core_of_run(crucible::warden::CpuSet{}, 224) == -1);
+    CHECK(core_of_run(both, 226) == 226);
+    CHECK(core_of_run(crucible::warden::CpuSet{}, 224) == -1);
+}
+
+// A claim of loop bench of four cores, 240 to 246, as the affinity of the
+// process.  The measuring thread takes the first core, each slot takes its own
+// core, and no slot past the claim gets one.  Two claims at the same time give
+// no core to two threads.  An affinity with no isolated CPU, as under ctest,
+// gives no core to any slot.
+void test_slots_take_distinct_cores() {
+    crucible::warden::CpuSet claim{};
+    for (std::size_t cpu = 240; cpu <= 246; cpu += 2)
+        claim.insert(cpu);
+    const bench::Cores cores = planted_cores(claim, planted_isolated());
+    CHECK(cores.count() == 4u);
+    CHECK(core_of_run(claim, -1) == 240);
+    const auto core_of_slot = [&cores](std::uint32_t slot) noexcept {
+        return cores.of_slot(bench::ThreadSlot{slot}).value_or(bench::CpuId::none()).raw();
+    };
+    CHECK(core_of_slot(0) == 240 && core_of_slot(1) == 242 && core_of_slot(2) == 244 && core_of_slot(3) == 246);
+    CHECK(core_of_slot(4) == -1);
+
+    crucible::warden::CpuSet other{};
+    other.insert(224);
+    other.insert(226);
+    const bench::Cores second = planted_cores(other, planted_isolated());
+    for (std::uint32_t slot = 0; slot < 2; ++slot) {
+        CHECK(!claim.contains(second.of_slot(bench::ThreadSlot{slot}).value_or(bench::CpuId::none()).raw()));
+    }
+
+    crucible::warden::CpuSet shared{};
+    shared.insert_range(0, 223);
+    const bench::Cores none = planted_cores(shared, planted_isolated());
+    CHECK(none.count() == 0u);
+    CHECK(none.of_slot(bench::kMeasuringSlot).is_none());
+}
+
+// A worker pins itself to the core of its slot, and a thread that starts
+// inside run_on_core takes that core as its affinity and keeps it.  The
+// calling thread gets its affinity back after run_on_core.  The core is the
+// first CPU of the affinity of the test, so the checks run on each host.  A
+// core that is not valid pins nothing.
+void test_pins_of_the_threads_of_a_run() {
+    const std::size_t unpinned_count = affinity_cpu_count();
+    const int first_cpu = []() noexcept {
+        constexpr ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
+        return crucible::warden::allowed_cpus(startup).first().value_or(-1);
+    }();
+    if (first_cpu < 0) return;
+    std::size_t worker_count = 0;
+    bool is_pinned = false;
+    run_on_own_thread([&worker_count, &is_pinned, first_cpu]() noexcept {
+        is_pinned = bench::pin_calling_thread_to(bench::CpuId{first_cpu}).is_ok();
+        worker_count = affinity_cpu_count();
+    });
+    CHECK(is_pinned && worker_count == 1u);
+    CHECK(bench::pin_calling_thread_to(bench::CpuId::none()).is_err());
+
+    std::size_t started_count = 0;
+    const std::size_t held_count = bench::run_on_core(bench::CpuId{first_cpu}, [&started_count]() noexcept {
+        run_on_own_thread([&started_count]() noexcept { started_count = affinity_cpu_count(); });
+        return affinity_cpu_count();
+    });
+    CHECK(held_count == 1u && started_count == 1u);
+    CHECK(affinity_cpu_count() == unpinned_count);
+    const std::size_t free_count =
+        bench::run_on_core(bench::CpuId::none(), []() noexcept { return affinity_cpu_count(); });
+    CHECK(free_count == unpinned_count);
 }
 
 }  // namespace
@@ -641,8 +740,10 @@ int main() {
     test_run_pins_through_the_door_and_restores();
     test_fan_out_keeps_the_worker_affinity();
     test_core_of_run_stays_in_the_affinity();
+    test_slots_take_distinct_cores();
+    test_pins_of_the_threads_of_a_run();
 
-    constexpr int kNumGroups = 13;
+    constexpr int kNumGroups = 15;
     if (g_failures == 0) {
         crucible::test::pass("test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;
