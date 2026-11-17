@@ -101,7 +101,10 @@ THE STEAL TIME
     after the output of the bench.  A run with steal time above zero on one
     of its cores is not valid, as a report with a variation above 5 % is
     not, and the line says so.  A run with no pin prints no steal time.  A
-    tick is 10 ms, so a pause of a few milliseconds reads as no steal.
+    tick is 10 ms, so a pause of a few milliseconds reads as no steal.  The
+    harness measures such a pause in nanoseconds for each run of a bench, and
+    it marks a run with a pause over its bound (THE PAUSE CHECK of
+    bench/bench_harness.h).
 
     Each core with steal time in a run adds one line to the record
     STEAL_RECORD in CORE_LOCK_DIR: the date in UTC, the core and the steal

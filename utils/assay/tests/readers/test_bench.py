@@ -36,6 +36,17 @@ def read_cases(expect: testing.Expect) -> None:
         [item.name for item in found] == ["try_push", "try_pop"] and found[0].p50 == 7.0 and found[1].cv == 0.07,
     )
     expect("an output with no marker gives None", bench_reader.reports("try_push: p50=7 ns\n") is None)
+    paused = json.dumps([dict(REPORT, pause_ns=2_400_000, thread_delay_ns=0, paused=1), REPORT])
+    first, second = bench_reader.reports(f"{bench_reader.MARKER}\n{paused}\n") or (None, None)
+    expect(
+        "a report with the fields of the pause check gives them, and a report with none reads as no pause",
+        first is not None
+        and second is not None
+        and first.pause_ns == 2_400_000
+        and first.is_paused
+        and second.pause_ns == 0
+        and not second.is_paused,
+    )
 
 
 def refusal_cases(expect: testing.Expect) -> None:
@@ -45,6 +56,10 @@ def refusal_cases(expect: testing.Expect) -> None:
         ("a tail that is no array", f"{bench_reader.MARKER}\n{{}}\n"),
         ("a report with no name", f'{bench_reader.MARKER}\n[{{"n": 1}}]\n'),
         ("a report with a field that is no number", f"{bench_reader.MARKER}\n{json.dumps([dict(REPORT, cv='low')])}\n"),
+        (
+            "a report with a pause that is no number",
+            f"{bench_reader.MARKER}\n{json.dumps([dict(REPORT, paused=True)])}\n",
+        ),
     ):
         try:
             bench_reader.reports(output)

@@ -21,9 +21,10 @@ THE RUN
     and THE STEAL TIME of assay.loop.bench).  A run with steal time adds its
     lines to the record of that section.  Only one run occurs at a time,
     because two runs at the same time change the times of the two.
-      * A run counts when its status is 0, the host was quiet, the core lost
-        no time to steal, and the coefficient of variation of each report is
-        at most MAX_CV.  The host is quiet at QUIET_OTHERS_PCT of
+      * A run counts when its status is 0, the host was quiet, the cores lost
+        no time to steal, no report has a pause over the bound of the
+        harness (THE PAUSE CHECK of bench/bench_harness.h), and the
+        coefficient of variation of each report is at most MAX_CV.  The host is quiet at QUIET_OTHERS_PCT of
         assay.loop.history.  The run adds one sample of the quantity 1.  A
         bench that does not use the reports of the harness prints no JSON
         tail.  Its run counts on a quiet host.
@@ -205,6 +206,7 @@ def judged(ran: Ran, core_facts: Sequence[tuple[str, str]]) -> Judged:
     except bench_reader.BenchError as problem:
         return Judged(0.0, facts, str(problem))
     largest = max((report.cv for report in found or ()), default=0.0)
+    paused = [report for report in found or () if report.is_paused]
     facts = (*facts, ("cv", f"{largest:.4f}"), ("reports", str(len(found or ()))))
     quiet_pct = loop_history.QUIET_OTHERS_PCT
     if ran.others_pct is None:
@@ -213,6 +215,11 @@ def judged(ran: Ran, core_facts: Sequence[tuple[str, str]]) -> Judged:
         reason = f"other processes used {ran.others_pct:.1f} % of the host, more than {quiet_pct:g} %"
     elif ran.steal_ms is not None and ran.steal_ms > 0:
         reason = f"the core lost {ran.steal_ms:.0f} ms to steal: the hypervisor ran other work on its host core"
+    elif paused:
+        reason = (
+            f"the report {paused[0].name} lost {paused[0].pause_ns / 1e6:.2f} ms to a pause, more than the bound of "
+            "the pause check of the harness"
+        )
     elif largest > MAX_CV:
         reason = f"the largest coefficient of variation is {largest:.4f}, more than {MAX_CV:g}"
     else:

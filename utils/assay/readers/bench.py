@@ -17,6 +17,12 @@ THE REPORT
     refuses a tail that is not a JSON array, and an object with no name or
     with a field that is no number.
 
+    The fields of the pause check of the harness are optional, because a
+    program built before that check gives none: pause_ns, the time that the
+    measuring thread lost, and paused, 1 when a thread of the run lost more
+    than the bound of the harness (THE PAUSE CHECK of bench/bench_harness.h).
+    A report with no such field reads as a report with no pause.
+
 `guard selftest tests.readers.test_bench` does a test of the module.
 """
 
@@ -28,6 +34,8 @@ JSON_VARIABLE = "CRUCIBLE_BENCH_JSON"
 MARKER = "=== json ==="
 # The fields of a report that the reader keeps, each a number (THE REPORT).
 NUMBERS = ("n", "p50", "p99", "max", "cv", "wall_ns", "drift_pct")
+# The optional fields of a report, each a number, and zero when the report does not give it (THE REPORT).
+OPTIONAL_NUMBERS = ("pause_ns", "paused")
 
 
 class BenchError(ValueError):
@@ -36,7 +44,8 @@ class BenchError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Report:
-    """One report of a bench: its name, its samples, its percentiles, its variation, its wall time and its drift."""
+    """One report of a bench: its name, its samples, its percentiles, its variation, its wall time, its drift and its
+    pause."""
 
     name: str
     n: float
@@ -46,23 +55,38 @@ class Report:
     cv: float
     wall_ns: float
     drift_pct: float
+    pause_ns: float = 0.0
+    paused: float = 0.0
+
+    @property
+    def is_paused(self) -> bool:
+        """True when a thread of the run lost more time than the bound of the harness."""
+        return self.paused > 0
+
+
+def number_of(value: dict[str, object], field: str) -> float:
+    """Return one number field of a report.
+
+    Raises:
+        BenchError: If the field is no number
+    """
+    found = value.get(field)
+    if not isinstance(found, (int, float)) or isinstance(found, bool):
+        raise BenchError(f"the field {field} of the report {value['name']!r} is no number")
+    return float(found)
 
 
 def report_of(value: object) -> Report:
     """Return the report of one JSON object of the array (THE REPORT).
 
     Raises:
-        BenchError: If the object has no name, or a field of NUMBERS is no number
+        BenchError: If the object has no name, or a field of NUMBERS or a given field of OPTIONAL_NUMBERS is no number
     """
     if not isinstance(value, dict) or not isinstance(value.get("name"), str):
         raise BenchError(f"a report of the JSON tail has no name: {str(value)[:200]}")
-    numbers: list[float] = []
-    for field in NUMBERS:
-        found = value.get(field)
-        if not isinstance(found, (int, float)) or isinstance(found, bool):
-            raise BenchError(f"the field {field} of the report {value['name']!r} is no number")
-        numbers.append(float(found))
-    return Report(str(value["name"]), *numbers)
+    numbers = [number_of(value, field) for field in NUMBERS]
+    optional = [number_of(value, field) if field in value else 0.0 for field in OPTIONAL_NUMBERS]
+    return Report(str(value["name"]), *numbers, *optional)
 
 
 def reports(output: str) -> tuple[Report, ...] | None:

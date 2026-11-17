@@ -74,6 +74,12 @@ def judged_cases(expect: testing.Expect) -> None:
     )
     unstolen = measurement.judged(measurement.Ran(("planted",), completed(0, tail(0.01)), 1.0, 2.0, 0.0), CORE_FACTS)
     expect("a run with no steal time counts", unstolen.quantity == 1.0 and dict(unstolen.facts).get("steal_ms") == "0")
+    paused_tail = f"{bench_reader.MARKER}\n{json.dumps([dict(REPORT, pause_ns=2_400_000, paused=1)])}\n"
+    paused = measurement.judged(measurement.Ran(("planted",), completed(0, paused_tail), 1.0, 2.0, 0.0), CORE_FACTS)
+    expect(
+        "a run with a report over the bound of the pause check does not count, and gives the pause",
+        paused.quantity == 0.0 and "2.40 ms to a pause" in dict(paused.facts).get("skip", ""),
+    )
     plain = judge(completed(0, "plain text\n"), 2.0)
     expect(
         "a quiet run of a bench with no JSON tail counts",
