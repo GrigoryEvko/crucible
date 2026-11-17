@@ -28,8 +28,12 @@
 function(crucible_bench name)
   add_executable(${name} ${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
+  # Each loop starts a line of 64 bytes, so a change of other code does not
+  # move a timed loop inside its line.  With loops at 16 bytes, the roof of
+  # bench_core_strided took 130 or 150 ns at L1 for one code, by the place of
+  # its timed loop.
   target_compile_options(${name} PRIVATE
-    -O3 -march=native -mtune=native -fno-omit-frame-pointer)
+    -O3 -march=native -mtune=native -fno-omit-frame-pointer -falign-loops=64)
   target_compile_definitions(${name} PRIVATE CRUCIBLE_BENCH)
   # The CRUCIBLE_HAVE_BPF compile definition (1 when libbpf+clang+xxd
   # are available, 0 otherwise) is set PUBLIC on the `crucible`
