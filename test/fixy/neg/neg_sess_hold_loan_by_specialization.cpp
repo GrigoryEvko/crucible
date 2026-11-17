@@ -43,7 +43,7 @@ namespace fp = ::foundation::permissions;
 // The lend of a hold of Region gives a Record, and its first part is the
 // message that the hold lends.
 using Lend = decltype(std::declval<fs::PermHold<fp::PermSet<Region>>>().template lend<Region>(0));
-using Lent = ::foundation::core::pack_at_t<0, Lend::types>;
+using Lent = ::foundation::reflect::pack_at_t<0, Lend::types>;
 
 // The deduced return type instantiates the body of steal.
 using Stolen = decltype(fs::PermHold<fp::PermSet<ForgeTag>>::steal(std::declval<Lent&>()));

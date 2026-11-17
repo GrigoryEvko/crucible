@@ -3,8 +3,10 @@
 // The primitive families in namespace fixy.
 //
 // The families live in include/foundation/core/, in namespace
-// foundation::core, because the foundation layers use them too.  This
-// header puts each public name of the families into namespace fixy, so
+// foundation::core, because the foundation layers use them too.  The list
+// of types Pack lives in include/foundation/reflect/TypeList.h, in
+// namespace foundation::reflect.  This header puts each public name of the
+// families into namespace fixy, so
 // code outside the base spells fixy::Option and fixy::none.  Each line
 // is a using-declaration of the one entity, so the fixy name and the
 // foundation name are the same entity and not a second type.
@@ -52,6 +54,7 @@
 #include <foundation/core/Strided.h>
 #include <foundation/core/Text.h>
 #include <foundation/core/Values.h>
+#include <foundation/reflect/TypeList.h>
 
 namespace fixy {
 
@@ -93,15 +96,15 @@ using ::foundation::core::Unit;
 
 using ::foundation::core::OneOf;
 
-using ::foundation::core::Pack;
-using ::foundation::core::pack_apply_t;
-using ::foundation::core::pack_at_t;
-using ::foundation::core::pack_concat_t;
-using ::foundation::core::pack_contains_v;
-using ::foundation::core::pack_index_of_v;
-using ::foundation::core::pack_size_v;
-using ::foundation::core::pack_unique_v;
 using ::foundation::core::Record;
+using ::foundation::reflect::Pack;
+using ::foundation::reflect::pack_apply_t;
+using ::foundation::reflect::pack_at_t;
+using ::foundation::reflect::pack_concat_t;
+using ::foundation::reflect::pack_contains_v;
+using ::foundation::reflect::pack_index_of_v;
+using ::foundation::reflect::pack_size_v;
+using ::foundation::reflect::pack_unique_v;
 
 using ::foundation::core::Box;
 using ::foundation::core::box_word_key;

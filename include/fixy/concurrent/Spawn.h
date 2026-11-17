@@ -93,6 +93,7 @@
 #include <foundation/os/Errno.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <array>
 #include <cstddef>
@@ -194,25 +195,22 @@ namespace perm = ::foundation::permissions;
 
 namespace detail {
 
-// The std::tuple of the types of a foundation::core::Pack, in the shape that
-// each_body_takes_its_child of foundation reads.
+// The std::tuple of the types of a foundation::reflect::Pack, in the shape
+// that each_body_takes_its_child of foundation reads.
 [[nodiscard]] consteval std::meta::info tuple_of_pack(std::meta::info pack) {
     return std::meta::substitute(^^std::tuple, std::meta::template_arguments_of(pack));
 }
 
-// True when the two packs are foundation::core::Pack, the fork admits the
-// context, the parent and the children, and each body takes the view of its
-// own child.  The test is a function at namespace scope that is not a
-// template, so no translation unit can specialize it to spawn a body that the
-// fork refuses.
+// True when the fork admits the context, the parent and the children, and
+// each body takes the view of its own child.  The two packs are
+// foundation::reflect::Pack, because CtxFitsSpawn reads PackType before
+// this test.  The test is a function at namespace scope that is not a
+// template, so no translation unit can specialize it to spawn a body that
+// the fork refuses.
 [[nodiscard]] consteval bool spawn_fits(std::meta::info ctx, std::meta::info parent, std::meta::info brand,
                                         std::meta::info children_pack, std::meta::info callables_pack) {
     const std::meta::info children = std::meta::dealias(children_pack);
     const std::meta::info callables = std::meta::dealias(callables_pack);
-    const bool are_packs = std::meta::has_template_arguments(children) && std::meta::has_template_arguments(callables)
-                        && std::meta::template_of(children) == (^^::foundation::core::Pack)
-                        && std::meta::template_of(callables) == (^^::foundation::core::Pack);
-    if (!are_packs) return false;
     const std::vector<std::meta::info> child_tags = std::meta::template_arguments_of(children);
     std::vector<std::meta::info> fork_arguments{ctx, parent};
     fork_arguments.insert(fork_arguments.end(), child_tags.begin(), child_tags.end());
@@ -229,10 +227,11 @@ inline constexpr bool no_callable_throws_v = !(::fixy::type_tree_contains_throws
 
 // The two substrate gates are folded into one concept so the declaration
 // below carries a single requires clause.
-// ChildrenPack and CallablesPack are foundation::core::Pack of the children
-// and of the decayed bodies.
+// ChildrenPack and CallablesPack are foundation::reflect::Pack of the
+// children and of the decayed bodies.
 template <typename Ctx, typename Parent, typename Brand, typename ChildrenPack, typename CallablesPack>
-concept CtxFitsSpawn = detail::spawn_fits(^^Ctx, ^^Parent, ^^Brand, ^^ChildrenPack, ^^CallablesPack);
+concept CtxFitsSpawn = ::foundation::reflect::PackType<ChildrenPack> && ::foundation::reflect::PackType<CallablesPack>
+                    && detail::spawn_fits(^^Ctx, ^^Parent, ^^Brand, ^^ChildrenPack, ^^CallablesPack);
 
 // The gate of the door of a test (design note 4): the gate of mint_spawn,
 // and a second context that owns Test, which only the testing door of
@@ -296,8 +295,8 @@ namespace detail {
 // not part of that instantiation.
 template <BodyCoupling Coupling, typename... Children, typename Ctx, typename Parent, typename Brand,
           typename... Callables>
-    requires CtxFitsSpawn<Ctx, Parent, Brand, ::foundation::core::Pack<Children...>,
-                          ::foundation::core::Pack<std::decay_t<Callables>...>>
+    requires CtxFitsSpawn<Ctx, Parent, Brand, ::foundation::reflect::Pack<Children...>,
+                          ::foundation::reflect::Pack<std::decay_t<Callables>...>>
 [[nodiscard]] perm::Permission<Parent, Brand>
 spawn_on_host_(Ctx const& ctx, ::fixy::concurrent::HostFacts const& host, ::fixy::concurrent::WorkBudget budget,
                perm::Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept {
@@ -331,8 +330,8 @@ spawn_on_host_(Ctx const& ctx, ::fixy::concurrent::HostFacts const& host, ::fixy
 // through a WriteView of the parent's brand, as the fork lends it.
 template <BodyCoupling Coupling, typename... Children, typename Ctx, typename Parent, typename Brand,
           typename... Callables>
-    requires CtxFitsSpawn<Ctx, Parent, Brand, ::foundation::core::Pack<Children...>,
-                          ::foundation::core::Pack<std::decay_t<Callables>...>>
+    requires CtxFitsSpawn<Ctx, Parent, Brand, ::foundation::reflect::Pack<Children...>,
+                          ::foundation::reflect::Pack<std::decay_t<Callables>...>>
 [[nodiscard]] perm::Permission<Parent, Brand> mint_spawn(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
                                                          perm::Permission<Parent, Brand>&& parent,
                                                          Callables&&... callables) noexcept {
@@ -344,8 +343,8 @@ template <BodyCoupling Coupling, typename... Children, typename Ctx, typename Pa
 // note 4).  The test context is the authority of the facts.
 template <BodyCoupling Coupling, typename... Children, typename Ctx, typename TestCtx, typename Parent, typename Brand,
           typename... Callables>
-    requires CtxFitsSpawnOnHost<Ctx, TestCtx, Parent, Brand, ::foundation::core::Pack<Children...>,
-                                ::foundation::core::Pack<std::decay_t<Callables>...>>
+    requires CtxFitsSpawnOnHost<Ctx, TestCtx, Parent, Brand, ::foundation::reflect::Pack<Children...>,
+                                ::foundation::reflect::Pack<std::decay_t<Callables>...>>
 [[nodiscard]] perm::Permission<Parent, Brand>
 mint_spawn_on_host(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::HostFacts const& host,
                    ::fixy::concurrent::WorkBudget budget, perm::Permission<Parent, Brand>&& parent,

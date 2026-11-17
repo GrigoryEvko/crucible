@@ -21,7 +21,7 @@ static_assert(::fixy::some(7).is_some());
 static_assert(std::is_same_v<::fixy::OneOf<int, long>, ::foundation::core::OneOf<int, long>>);
 static_assert(::fixy::OneOf<int, long>{7L}.is<long>());
 static_assert(std::is_same_v<::fixy::Record<int, long>, ::foundation::core::Record<int, long>>);
-static_assert(std::is_same_v<::fixy::Pack<int, long>, ::foundation::core::Pack<int, long>>);
+static_assert(std::is_same_v<::fixy::Pack<int, long>, ::foundation::reflect::Pack<int, long>>);
 static_assert(::fixy::pack_size_v<::fixy::Pack<int, long>> == 2);
 static_assert(std::is_same_v<::fixy::pack_at_t<1, ::fixy::Pack<int, long>>, long>);
 static_assert(::fixy::pack_contains_v<long, ::fixy::Pack<int, long>>);

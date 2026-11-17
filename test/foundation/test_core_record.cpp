@@ -1,4 +1,5 @@
-// Tests of foundation/core/Record.h: Record and Pack.
+// Tests of foundation/core/Record.h and of the Pack of
+// foundation/reflect/TypeList.h.
 
 #include <foundation/core/Record.h>
 
@@ -6,6 +7,7 @@
 #include <foundation/core/Ref.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/reflect/TypeList.h>
 
 #include "philox_stream.h"
 
@@ -17,8 +19,8 @@
 
 namespace {
 
-using ::foundation::core::Pack;
 using ::foundation::core::Record;
+using ::foundation::reflect::Pack;
 
 // The count of live CountedPart objects.  A Record must destroy each part
 // one time and leak none.

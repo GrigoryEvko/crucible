@@ -247,48 +247,28 @@ static_assert(std::is_same_v<decltype(Record<int>{} <=> Record<int>{}), std::str
 static_assert(std::is_same_v<decltype(Record<int, float>{} <=> Record<int, float>{}), std::partial_ordering>);
 static_assert(std::is_same_v<decltype(Record<>{} <=> Record<>{}), std::strong_ordering>);
 
-// The operations of a Pack.
-using Three = Pack<int, long, char>;
-static_assert(PackType<Three> && PackType<Pack<>>);
-static_assert(!PackType<int> && !PackType<Record<int>> && !PackType<Three const>);
-static_assert(std::is_empty_v<Three>);
-static_assert(pack_size_v<Three> == 3 && pack_size_v<Pack<>> == 0);
-static_assert(std::is_same_v<pack_at_t<0, Three>, int> && std::is_same_v<pack_at_t<2, Three>, char>);
-static_assert(pack_contains_v<long, Three> && !pack_contains_v<short, Three>);
-static_assert(pack_index_of_v<int, Three> == 0 && pack_index_of_v<char, Three> == 2);
-static_assert(std::is_same_v<pack_concat_t<>, Pack<>>);
-static_assert(std::is_same_v<pack_concat_t<Three>, Three>);
-static_assert(std::is_same_v<pack_concat_t<Pack<int>, Pack<>, Pack<long, char>>, Three>);
-static_assert(std::is_same_v<pack_apply_t<Record, Three>, Record<int, long, char>>);
-static_assert(pack_unique_v<Three> && pack_unique_v<Pack<>> && !pack_unique_v<Pack<int, long, int>>);
-static_assert(std::is_same_v<Record<int, long>::types, Pack<int, long>>);
-
-// A type in a nested Pack only is no part of the outer Pack.
-static_assert(!pack_contains_v<int, Pack<Pack<int>, long>>);
-static_assert(pack_index_of_v<Pack<int>, Pack<Pack<int>, long>> == 0);
-
-// A class that only looks like a Pack is no Pack.
-template <class... Ts>
-struct NotAPack final {};
-static_assert(!PackType<NotAPack<int>> && !PackType<Pack<int>&>);
+// The part types of a Record are a Pack of foundation/reflect/TypeList.h,
+// and a Record is no Pack.
+static_assert(std::is_same_v<Record<int, long>::types, ::foundation::reflect::Pack<int, long>>);
+static_assert(std::is_same_v<::foundation::reflect::pack_apply_t<Record, ::foundation::reflect::Pack<int, long, char>>,
+                             Record<int, long, char>>);
+static_assert(!::foundation::reflect::PackType<Record<int>>);
 
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.3, and part, the one data member of a
 // cell, which a public base of each Record holds.
-inline constexpr TextView record_names{
-    "Record Pack types part pack_size_v pack_at_t pack_contains_v pack_index_of_v pack_concat_t pack_apply_t "
-    "pack_unique_v"};
+inline constexpr TextView record_names{"Record Pack types part"};
 
-// Each form of a cell, and a Pack, give only the shared verbs, the language
-// protocols and the names of the list.
+// Each form of a cell, and the Pack of its part types, give only the shared
+// verbs, the language protocols and the names of the list.
 CRUCIBLE_CLOSED_SURFACE(record_names, Record<>);
 CRUCIBLE_CLOSED_SURFACE(record_names, Record<int, long>);
 CRUCIBLE_CLOSED_SURFACE(record_names, Record<TokenA, TokenB>);
 CRUCIBLE_CLOSED_SURFACE(record_names, Record<MoveOnly, NoDefault>);
 CRUCIBLE_CLOSED_SURFACE(record_names, Record<Fixed, int>);
-CRUCIBLE_CLOSED_SURFACE(record_names, Pack<>);
-CRUCIBLE_CLOSED_SURFACE(record_names, Pack<int, long>);
+CRUCIBLE_CLOSED_SURFACE(record_names, ::foundation::reflect::Pack<>);
+CRUCIBLE_CLOSED_SURFACE(record_names, ::foundation::reflect::Pack<int, long>);
 
 // The walk reads the member of each cell through the public bases: a list
 // with no name part refuses a Record of one part and a Record of no part

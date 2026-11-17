@@ -781,17 +781,17 @@ struct foundation::contracts::armed_instances<^^::fixy::concurrent::detail::can_
 // The spawn fit needs a context that owns Bg, a declared split, and one
 // nothrow body per child.
 static_assert(::fixy::spawn::CtxFitsSpawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
-                                          ::foundation::core::Pack<w::SpawnLeft, w::SpawnRight>,
-                                          ::foundation::core::Pack<w::LeftBody, w::RightBody>>);
+                                          ::foundation::reflect::Pack<w::SpawnLeft, w::SpawnRight>,
+                                          ::foundation::reflect::Pack<w::LeftBody, w::RightBody>>);
 static_assert(!::fixy::spawn::CtxFitsSpawn<fe::ExecCtx<>, w::SpawnWhole, w::SpawnBrand,
-                                           ::foundation::core::Pack<w::SpawnLeft, w::SpawnRight>,
-                                           ::foundation::core::Pack<w::LeftBody, w::RightBody>>);
+                                           ::foundation::reflect::Pack<w::SpawnLeft, w::SpawnRight>,
+                                           ::foundation::reflect::Pack<w::LeftBody, w::RightBody>>);
 static_assert(!::fixy::spawn::CtxFitsSpawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
-                                           ::foundation::core::Pack<w::SpawnLeft, w::SpawnRight>,
-                                           ::foundation::core::Pack<w::LeftBody, w::LeftBody>>);
+                                           ::foundation::reflect::Pack<w::SpawnLeft, w::SpawnRight>,
+                                           ::foundation::reflect::Pack<w::LeftBody, w::LeftBody>>);
 static_assert(!::fixy::spawn::CtxFitsSpawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand,
-                                           ::foundation::core::Pack<w::SpawnRight, w::SpawnLeft>,
-                                           ::foundation::core::Pack<w::RightBody, w::LeftBody>>);
+                                           ::foundation::reflect::Pack<w::SpawnRight, w::SpawnLeft>,
+                                           ::foundation::reflect::Pack<w::RightBody, w::LeftBody>>);
 // A std::tuple is not the shape of the gate.
 static_assert(
     !::fixy::spawn::CtxFitsSpawn<w::BgCtx, w::SpawnWhole, w::SpawnBrand, std::tuple<w::SpawnLeft, w::SpawnRight>,

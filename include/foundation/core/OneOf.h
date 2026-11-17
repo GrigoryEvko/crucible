@@ -47,6 +47,7 @@
 #include <foundation/core/Index.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <concepts>
 #include <cstddef>
@@ -55,24 +56,6 @@
 namespace foundation::core {
 
 namespace detail {
-
-// T is one of Ts.
-template <class T, class... Ts>
-concept AlternativeOf = (std::is_same_v<T, Ts> || ...);
-
-// The index of T in Ts.  The gate of OneOf holds each type one time at
-// most.  Complexity: linear in the count of Ts.
-template <class T, class... Ts>
-[[nodiscard]] consteval std::size_t index_in_() noexcept {
-    bool const matches[] = {std::is_same_v<T, Ts>...};
-    std::size_t index = 0;
-    while (index < sizeof...(Ts) && !matches[index])
-        ++index;
-    return index;
-}
-
-template <class T, class... Ts>
-inline constexpr std::size_t index_in_v = detail::index_in_<T, Ts...>();
 
 // The fatal exit of a tag that names no alternative of a OneOf.  The call
 // takes no argument, so each inlined read of a tag adds only a compare and a
@@ -174,10 +157,11 @@ public:
     // and the type of the value must be one of Ts, so no conversion of the
     // value selects an alternative.
     template <class U>
-        requires detail::AlternativeOf<std::remove_cvref_t<U>, Ts...>
+        requires ::foundation::reflect::OccursIn<std::remove_cvref_t<U>, Ts...>
               && std::constructible_from<std::remove_cvref_t<U>, U&&>
     constexpr OneOf(U&& value) noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<U>, U&&>)
-        : slot_{detail::AlternativeAt<detail::index_in_v<std::remove_cvref_t<U>, Ts...>>{}, static_cast<U&&>(value)} {}
+        : slot_{detail::AlternativeAt<::foundation::reflect::index_of_v<std::remove_cvref_t<U>, Ts...>>{},
+                static_cast<U&&>(value)} {}
 
     // The index of the active alternative, as an Index of the Region family.
     // Each constructor of the slot writes the index of the alternative that
@@ -196,9 +180,9 @@ public:
 
     // True when the active alternative is T.  The cost is one compare.
     template <class T>
-        requires detail::AlternativeOf<T, Ts...>
+        requires ::foundation::reflect::OccursIn<T, Ts...>
     [[nodiscard]] constexpr bool is() const noexcept {
-        return index_() == detail::index_in_v<T, Ts...>;
+        return index_() == ::foundation::reflect::index_of_v<T, Ts...>;
     }
 
     // The fatal unwrap at a boundary.  The reason tells why the active
@@ -206,9 +190,9 @@ public:
     // the place of the call to fatal(), and the process ends.  A passing
     // expect() costs one branch.
     template <class T>
-        requires detail::AlternativeOf<T, Ts...>
+        requires ::foundation::reflect::OccursIn<T, Ts...>
     [[nodiscard]] constexpr T expect(Fmt<> why) && noexcept {
-        constexpr std::size_t index = detail::index_in_v<T, Ts...>;
+        constexpr std::size_t index = ::foundation::reflect::index_of_v<T, Ts...>;
         if (index_() != index) [[unlikely]] {
             fatal(why);
         }
@@ -229,20 +213,20 @@ public:
     // tag.  The condition reads a local reference and no member, so a
     // hardened build folds it too.
     template <class T, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires detail::AlternativeOf<T, Ts...> && (sizeof...(Refused) == 0)
+        requires ::foundation::reflect::OccursIn<T, Ts...> && (sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get() const& noexcept {
-        constexpr std::size_t index = detail::index_in_v<T, Ts...>;
+        constexpr std::size_t index = ::foundation::reflect::index_of_v<T, Ts...>;
         if (index_() != index) return Option<Ref<T const, Fresh>>{none};
         T const& alternative = alternative_<index>();
         [[assume(__builtin_addressof(alternative) != nullptr)]];
         return Option<Ref<T const, Fresh>>::some(detail::RefDoor::lend<Fresh>(alternative));
     }
     template <class T, class... Refused>
-        requires detail::AlternativeOf<T, Ts...>
+        requires ::foundation::reflect::OccursIn<T, Ts...>
     void get() && = delete("an alternative of a temporary OneOf dangles at the end of the full expression");
     template <class T, class... Refused>
-        requires detail::AlternativeOf<T, Ts...>
+        requires ::foundation::reflect::OccursIn<T, Ts...>
     void get() const&& = delete("an alternative of a temporary OneOf dangles at the end of the full expression");
 
     // The total match: the arm at each position takes the alternative at

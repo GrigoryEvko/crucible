@@ -120,7 +120,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <meta>
 #include <type_traits>
 
 namespace foundation::core {
@@ -173,21 +172,11 @@ concept AtomicWordMembers =
            atomic_word<T>::from_word(word);
        } && std::is_trivially_destructible_v<T> && std::is_nothrow_copy_constructible_v<T>;
 
-// An Option<X> for some X.  The gate reads the template of its argument by
-// reflection, as PackType of Record.h does, so no trait of a unit can change
-// its answer.
-template <class T>
-concept OptionType = std::meta::has_template_arguments(std::meta::dealias(^^T))
-                  && std::meta::template_of(std::meta::dealias(^^T)) == ^^Option;
-
-// The payload of an Option.
-template <OptionType T>
-using option_payload_t = [:std::meta::template_arguments_of(std::meta::dealias(^^T))[0]:];
-
 // An Option whose payload declares a word.  The cell derives the word of the
-// Option from the word of the payload.
+// Option from the word of the payload.  IsOption of Choice.h holds for an
+// Option<X>, and option_payload_t of Choice.h gives its X.
 template <class T>
-concept OptionOfWordShape = OptionType<T> && HasAtomicWord<option_payload_t<T>>;
+concept OptionOfWordShape = IsOption<T> && HasAtomicWord<option_payload_t<T>>;
 
 }  // namespace detail
 

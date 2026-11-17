@@ -42,6 +42,7 @@
 #include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <cstddef>
 #include <type_traits>
@@ -105,12 +106,13 @@ public:
     // The element type of the run at index I.
     template <std::size_t I>
         requires(I < sizeof...(Runs))
-    using element_t = typename pack_at_t<I, Pack<Runs...>>::element_type;
+    using element_t = typename ::foundation::reflect::pack_at_t<I, ::foundation::reflect::Pack<Runs...>>::element_type;
 
     // The slot of the count of the run at index I.
     template <std::size_t I>
         requires(I < sizeof...(Runs))
-    static constexpr std::size_t slot_of = pack_at_t<I, Pack<Runs...>>::slot;
+    static constexpr std::size_t slot_of =
+        ::foundation::reflect::pack_at_t<I, ::foundation::reflect::Pack<Runs...>>::slot;
 
     // What the set borrows, for the payload walk of
     // fixy/concurrent/PayloadRow.h: a function type with one pointer

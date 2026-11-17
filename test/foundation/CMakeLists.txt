@@ -2321,13 +2321,13 @@ foundation_neg_compile_test(neg_core_one_of_match_arm_takes_reference
   "an arm of the rvalue match takes its alternative by value, so it names no object that the match ends")
 foundation_neg_compile_test(neg_core_one_of_is_non_member
   "no matching function for call to .foundation::core::OneOf<int, long int>::is<short int>\\(\\) const."
-  "required for the satisfaction of .AlternativeOf<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
+  "required for the satisfaction of .OccursIn<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
 foundation_neg_compile_test(neg_core_one_of_expect_non_member
   "no matching function for call to .foundation::core::OneOf<int, long int>::expect<short int>\\(const char \\[8\\]\\)."
-  "required for the satisfaction of .AlternativeOf<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
+  "required for the satisfaction of .OccursIn<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
 foundation_neg_compile_test(neg_core_one_of_get_non_member
   "no matching function for call to .foundation::core::OneOf<int, long int>::get<short int>\\(\\)."
-  "required for the satisfaction of .AlternativeOf<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
+  "required for the satisfaction of .OccursIn<T, Ts \\.\\.\\.>. \\[with T = short int. Ts = \\{int, long int\\}\\]")
 foundation_neg_compile_test(neg_core_one_of_get_of_temporary
   "use of deleted function .void foundation::core::OneOf<Ts>::get\\(\\) && \\[with T = int; Refused = \\{\\}; Ts = \\{int, Code\\}\\]."
   "an alternative of a temporary OneOf dangles at the end of the full expression")
@@ -2525,17 +2525,17 @@ foundation_neg_compile_test(neg_core_pack_size_not_a_pack
   "use of invalid variable template .pack_size_v<foundation::core::Record<int, long int> >."
   "required for the satisfaction of .PackType<P>. \\[with P = foundation::core::Record<int, long int>\\]")
 foundation_neg_compile_test(neg_core_pack_concat_not_a_pack
-  "template constraint failure for .template<class ... Ps>  requires \\(... && PackType<Ps>\\) using foundation::core::pack_concat_t"
-  "the expression .\\(... && PackType<Ps>\\) \\[with Ps = \\{foundation::core::Pack<int>, long int\\}\\]. evaluated to .false.")
+  "template constraint failure for .template<class ... Ps>  requires \\(... && PackType<Ps>\\) using foundation::reflect::pack_concat_t"
+  "the expression .\\(... && PackType<Ps>\\) \\[with Ps = \\{foundation::reflect::Pack<int>, long int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_pack_at_out_of_range
-  "template constraint failure for .template<class ... Ts> template<long unsigned int I>  requires  I < sizeof ... \\(Ts ...\\) using foundation::core::detail::PackParts<foundation::core::Pack<Ts ...> >::at = typename foundation::core::detail::PackAt<[A-Za-z_][A-Za-z0-9_]*, [A-Za-z_][A-Za-z0-9_]* ...>::type."
+  "template constraint failure for .template<class ... Ts> template<long unsigned int I>  requires  I < sizeof ... \\(Ts ...\\) using foundation::reflect::detail::PackParts<foundation::reflect::Pack<Ts ...> >::at = typename foundation::reflect::detail::PackAt<[A-Za-z_][A-Za-z0-9_]*, [A-Za-z_][A-Za-z0-9_]* ...>::type."
   "the expression .I < sizeof ... \\(Ts ...\\) \\[with I = 2; Ts = \\{int, long int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_pack_index_of_absent
-  "no matching function for call to .foundation::core::detail::PackParts<foundation::core::Pack<int, long int> >::index_of<char>\\(\\)."
-  "the expression .\\(count<T>\\) == 1 \\[with Ts = \\{int, long int\\}; T = char\\]. evaluated to .false.")
+  "no matching function for call to .foundation::reflect::detail::PackParts<foundation::reflect::Pack<int, long int> >::index_of<char>\\(\\)."
+  "required for the satisfaction of .OccursOnce<T, Ts ...>. \\[with T = char; Ts = \\{int, long int\\}\\]")
 foundation_neg_compile_test(neg_core_pack_index_of_twice
-  "no matching function for call to .foundation::core::detail::PackParts<foundation::core::Pack<int, long int, int> >::index_of<int>\\(\\)."
-  "the expression .\\(count<T>\\) == 1 \\[with Ts = \\{int, long int, int\\}; T = int\\]. evaluated to .false.")
+  "no matching function for call to .foundation::reflect::detail::PackParts<foundation::reflect::Pack<int, long int, int> >::index_of<int>\\(\\)."
+  "required for the satisfaction of .OccursOnce<T, Ts ...>. \\[with T = int; Ts = \\{int, long int, int\\}\\]")
 
 # ── The Ref family: the allocation door and Box ───────────────────────
 #

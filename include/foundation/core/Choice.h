@@ -77,6 +77,7 @@
 #include <foundation/core/Record.h>
 #include <foundation/reflect/Instance.h>
 #include <foundation/reflect/TypeComponents.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <concepts>
 #include <cstddef>
@@ -423,23 +424,14 @@ concept ErrorValue = !std::is_const_v<E> && !std::is_volatile_v<E> && !detail::E
 template <class F, class E>
 concept ErrorConvertsTo = ErrorValue<F> && ErrorValue<E> && !std::same_as<F, E> && std::is_nothrow_convertible_v<F, E>;
 
-namespace detail {
-
-// T is one of Ts exactly one time.  A concept, and not a variable template,
-// because no unit can specialize a concept, so no unit can change what the
-// gate of OneOf admits.  Complexity: linear in the count of Ts.
-template <class T, class... Ts>
-concept OccursOnce = (std::size_t{0} + ... + static_cast<std::size_t>(std::is_same_v<T, Ts>)) == 1;
-
-}  // namespace detail
-
 // The alternatives of a OneOf (foundation/core/OneOf.h): 2 to 255 payloads,
 // with no type two times, so a value selects one alternative.  The value of
 // the tag of a OneOf is the index of the active alternative, so it fits in
-// one byte.
+// one byte.  OccursOnce is a concept, so no unit can change what the gate
+// admits.
 template <class... Ts>
-concept OneOfAlternatives =
-    sizeof...(Ts) >= 2 && sizeof...(Ts) <= 255 && (ChoicePayload<Ts> && ...) && (detail::OccursOnce<Ts, Ts...> && ...);
+concept OneOfAlternatives = sizeof...(Ts) >= 2 && sizeof...(Ts) <= 255 && (ChoicePayload<Ts> && ...)
+                         && (::foundation::reflect::OccursOnce<Ts, Ts...> && ...);
 
 template <ChoicePayload T>
 class Option;
@@ -1899,9 +1891,18 @@ public:
 namespace detail {
 
 // An Option of a payload.  The concept reads only the reflection of T and
-// the template Option, so a unit cannot change its answer.
+// the template Option, so a unit cannot change its answer.  It forms no
+// Option of a deduced payload, so it checks no gate of the payload and
+// reads no open template such as niche.  A partial specialization over
+// Option<T> would form Option<T> and read the payload gate, which reads
+// niche, and the rule home refuses that.
 template <class T>
 concept IsOption = ::foundation::reflect::IsInstanceOf<T, ^^Option>;
+
+// The payload of an Option, from the reflection of its one template
+// argument.  An Atomic cell of an Option takes the word of this payload.
+template <IsOption T>
+using option_payload_t = [:std::meta::template_arguments_of(std::meta::dealias(std::meta::remove_cvref(^^T)))[0]:];
 
 // A Result of a value and an error.
 template <class T>

@@ -4276,11 +4276,11 @@ crucible_neg_compile_test(neg_metalog_consumer_wrong_permission
 # to a singleton that the registry does not hold.
 crucible_neg_compile_test(neg_singleton_init_graph_cycle
     "template constraint failure for .template<class Registry, class Edges>  requires  AcyclicInitGraph<Registry, Edges> struct crucible::singleton_init_graph::init_graph."
-    "the expression .\\(retires_each_node_<Registry>\\)\\(\\{\\}\\) \\[with Registry = foundation::core::Pack<fixy::atom::global::singleton<neg_singleton_init_graph_cycle_types::first_tag>.*\\]. evaluated to .false.")
+    "the expression .\\(retires_each_node_<Registry>\\)\\(\\{\\}\\) \\[with Registry = foundation::reflect::Pack<fixy::atom::global::singleton<neg_singleton_init_graph_cycle_types::first_tag>.*\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_singleton_init_graph_unregistered_edge
     "template constraint failure for .template<class Registry, class Edges>  requires  AcyclicInitGraph<Registry, Edges> struct crucible::singleton_init_graph::init_graph."
-    "required for the satisfaction of .EdgesNameRegisteredSingletons<Registry, Edges>. \\[with Registry = foundation::core::Pack<fixy::atom::global::singleton<neg_singleton_init_graph_unregistered_edge_types::registered_tag> >.*\\]"
-    "the expression .edges_name_registered_<Registry, Edges> \\[with Registry = foundation::core::Pack<.*\\]. evaluated to .false.")
+    "required for the satisfaction of .EdgesNameRegisteredSingletons<Registry, Edges>. \\[with Registry = foundation::reflect::Pack<fixy::atom::global::singleton<neg_singleton_init_graph_unregistered_edge_types::registered_tag> >.*\\]"
+    "the expression .edges_name_registered_<Registry, Edges> \\[with Registry = foundation::reflect::Pack<.*\\]. evaluated to .false.")
 
 # ─── Vessel ABI Tagged direction fence ────────────────────────────
 #

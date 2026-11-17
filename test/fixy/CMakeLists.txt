@@ -5837,7 +5837,7 @@ fixy_neg_compile_test(neg_canonicalize_for_wrong_rounding
 # mint_parallel_for by its context gate and by its body signature.
 fixy_neg_compile_test(neg_spawn_mint_spawn_ctx_lacks_bg
   "no matching function for call to .mint_spawn<fixy::spawn::BodyCoupling::Independent, \\{anonymous\\}::Left, \\{anonymous\\}::Right>\\("
-  "required for the satisfaction of .CtxFitsSpawn<Ctx, Parent, Brand, foundation::core::Pack<[A-Za-z_]+ \\.\\.\\.>")
+  "required for the satisfaction of .CtxFitsSpawn<Ctx, Parent, Brand, foundation::reflect::Pack<[A-Za-z_]+ \\.\\.\\.>")
 
 # The arm of a spawn changes with the budget and with the caches of the host,
 # so a spawn states whether its bodies wait on each other, with no default.

@@ -1,11 +1,12 @@
 #pragma once
 
-// The Record family: a product of values, and a list of types.
+// The Record family: a product of values.
 //
 // A product whose parts have meanings is a named struct.  Record<Ts...> is
 // the product of generic code: the result of a split into two tokens, a
 // value with the next step of a protocol, the pair of an index and an
-// element.  Pack<Ts...> is a list of types with no value.
+// element.  Record<Ts...>::types is the Pack of its part types, a list of
+// types of foundation/reflect/TypeList.h.
 //
 // A Record is an aggregate.  Record<A, B>{a, b} builds it, and a narrowing
 // conversion does not compile.  The deduction guide gives Record{a, b} the
@@ -58,24 +59,13 @@
 // <=> exists when each part has <=> that gives std::strong_ordering or
 // std::partial_ordering.  Its category is strong when each part is strong,
 // and partial in each other case.
-//
-// Pack<Ts...> is an empty class.  Its operations are variable templates and
-// aliases over one class, so each has an instantiation depth of one:
-//
-//   pack_size_v<P>             the count of types
-//   pack_at_t<I, P>            the type at index I, for I below the count
-//   pack_contains_v<T, P>      true when T is one of the types
-//   pack_index_of_v<T, P>      the index of T, when T is in P one time
-//   pack_concat_t<Ps...>       one Pack of the types of each P, in order
-//   pack_apply_t<Template, P>  Template<Ts...>
-//   pack_unique_v<P>           true when no type is in P two times
 
 #include <foundation/Linear.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <compare>
 #include <concepts>
 #include <cstddef>
-#include <meta>
 #include <type_traits>
 #include <utility>
 
@@ -86,17 +76,6 @@ template <class T>
 concept RecordElement = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
                      && !std::is_abstract_v<T> && std::is_nothrow_destructible_v<T>
                      && (!std::is_move_constructible_v<T> || std::is_nothrow_move_constructible_v<T>);
-
-// A list of types, for deduction only.  It has no member.
-template <class... Ts>
-struct Pack final {};
-
-// A Pack<Ts...> for some Ts, with no cv-qualifier.  The gate reads the
-// template of its argument by reflection, so no member and no trait of a
-// unit can change its answer.
-template <class P>
-concept PackType = !std::is_const_v<P> && !std::is_volatile_v<P> && std::meta::has_template_arguments(^^P)
-                && std::meta::template_of(^^P) == ^^Pack;
 
 template <RecordElement... Ts>
 struct Record;
@@ -182,69 +161,11 @@ struct RecordCells;
 template <std::size_t... Is, class... Ts>
 struct RecordCells<std::index_sequence<Is...>, Ts...> : RecordCell<Is, Ts>... {};
 
-// The type at index I of Ts.  A class defers the index, because a Pack of
-// no type cannot name a type of its pack in a declaration.
-template <std::size_t I, class... Ts>
-struct PackAt {
-    using type = Ts...[I];
-};
-
-// The operations of one Pack.  The primary has no definition, so a type
-// that is no Pack has no operation.  Each constraint of an operation is a
-// constraint of a member, so a gate reads only its own instance.
-template <class P>
-struct PackParts;
-
-template <class... Ts>
-struct PackParts<Pack<Ts...>> {
-    static constexpr std::size_t size = sizeof...(Ts);
-
-    template <std::size_t I>
-        requires(I < sizeof...(Ts))
-    using at = typename PackAt<I, Ts...>::type;
-
-    template <class T>
-    static constexpr std::size_t count = (std::size_t{0} + ... + std::size_t{std::is_same_v<T, Ts>});
-
-    // The index of T, when T is in the Pack one time.  Linear in the count
-    // of types, at compile time only.
-    template <class T>
-        requires(count<T> == 1)
-    [[nodiscard]] static consteval std::size_t index_of() noexcept {
-        constexpr bool matches[] = {std::is_same_v<T, Ts>..., false};
-        std::size_t index = 0;
-        while (!matches[index]) {
-            ++index;
-        }
-        return index;
-    }
-
-    static constexpr bool unique = ((count<Ts> == 1) && ...);
-
-    template <template <class...> class Template>
-    using apply = Template<Ts...>;
-};
-
-// The step of the fold of pack_concat_t.  Only this class has the operator,
-// so no Pack gets an operator.
-template <class P>
-struct PackJoin;
-
-template <class... Ts>
-struct PackJoin<Pack<Ts...>> {
-    using type = Pack<Ts...>;
-
-    template <class... Us>
-    friend consteval PackJoin<Pack<Ts..., Us...>> operator|(PackJoin, PackJoin<Pack<Us...>>) noexcept {
-        return {};
-    }
-};
-
 }  // namespace detail
 
 template <RecordElement... Ts>
 struct Record : detail::RecordCells<std::index_sequence_for<Ts...>, Ts...> {
-    using types = Pack<Ts...>;
+    using types = ::foundation::reflect::Pack<Ts...>;
 
     [[nodiscard]] static consteval std::size_t size() noexcept { return sizeof...(Ts); }
 
@@ -336,27 +257,6 @@ private:
 
 template <class... Ts>
 Record(Ts...) -> Record<Ts...>;
-
-template <PackType P>
-inline constexpr std::size_t pack_size_v = detail::PackParts<P>::size;
-
-template <std::size_t I, PackType P>
-using pack_at_t = typename detail::PackParts<P>::template at<I>;
-
-template <class T, PackType P>
-inline constexpr bool pack_contains_v = detail::PackParts<P>::template count<T> != 0;
-
-template <class T, PackType P>
-inline constexpr std::size_t pack_index_of_v = detail::PackParts<P>::template index_of<T>();
-
-template <PackType... Ps>
-using pack_concat_t = typename decltype((detail::PackJoin<Pack<>>{} | ... | detail::PackJoin<Ps>{}))::type;
-
-template <template <class...> class Template, PackType P>
-using pack_apply_t = typename detail::PackParts<P>::template apply<Template>;
-
-template <PackType P>
-inline constexpr bool pack_unique_v = detail::PackParts<P>::unique;
 
 }  // namespace foundation::core
 

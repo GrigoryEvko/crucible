@@ -12,6 +12,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
+#include <foundation/reflect/TypeList.h>
 
 #include "philox_stream.h"
 
@@ -24,10 +25,10 @@
 
 namespace {
 
-using ::foundation::core::Pack;
-using ::foundation::core::pack_at_t;
-using ::foundation::core::pack_size_v;
 using ::foundation::core::Record;
+using ::foundation::reflect::Pack;
+using ::foundation::reflect::pack_at_t;
+using ::foundation::reflect::pack_size_v;
 
 struct TokenA final {};
 struct TokenB final {};

@@ -214,6 +214,7 @@ using ref_target_t = typename RefTargetOf<R>::type;
     using ConstEnumeratedPair = decltype(*std::declval<FixedArray<int, 4> const&>().enumerate().begin());
     using EnumeratedPair = decltype(*std::declval<View<int, 4>>().enumerate().begin());
     using ZippedPair = decltype(*zip(std::declval<View<int, 4>>(), std::declval<View<long const, 4>>()).begin());
+    using ::foundation::reflect::pack_at_t;
     return std::is_same_v<pack_at_t<0, typename ConstEnumeratedPair::types>, Index<4>>
         && std::is_same_v<ref_target_t<pack_at_t<1, typename ConstEnumeratedPair::types>>, int const>
         && std::is_same_v<ref_target_t<pack_at_t<1, typename EnumeratedPair::types>>, int>
