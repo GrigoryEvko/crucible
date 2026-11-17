@@ -153,17 +153,6 @@
       "vendor": { "crucible": { "tier": "gate", "configuration": "x86_64-debug-tsan-v3" } }
     },
     {
-      "name": "syntax-x86-64-v3",
-      "inherits": "default",
-      "displayName": "GCC 16, -march=x86-64-v3, parse only: the AVX2 arms, which the build of the preset default compiles at x86-64-v3",
-      "binaryDir": "${sourceDir}/build-syntax-x86-64-v3",
-      "cacheVariables": {
-        "CMAKE_CXX_FLAGS": "-march=x86-64-v3",
-        "CRUCIBLE_SYNTAX_ONLY": "ON"
-      },
-      "vendor": { "crucible": { "tier": "manual", "reason": "The build of the preset default compiles the AVX2 arms at x86-64-v3, so this parse adds no arm. The gate of the main branch reads its configurations from its own presets, so this preset stays for the landing that moves the default build to x86-64-v3, and the next change removes it. No entry runs it" } }
-    },
-    {
       "name": "syntax-x86-64",
       "inherits": "default",
       "displayName": "GCC 16, -march=x86-64, parse only: the SSE2 and SSE4.2 arms for the quarantine ledgers (loop syntax)",
