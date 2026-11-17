@@ -323,6 +323,13 @@ STEPS = (
         preset="pgo-generate",
     ),
     Step(
+        "levels",
+        tiers.Tier.RELEASE,
+        ("loop", "levels"),
+        "builds the two vessel libraries at each x86-64 level, v1 to v4, installs one level root, and runs the vessel "
+        "tests at each level of the host from the root",
+    ),
+    Step(
         "evidence",
         tiers.Tier.NIGHTLY,
         ("loop", "evidence", "run"),

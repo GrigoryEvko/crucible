@@ -75,6 +75,7 @@ SUBCOMMANDS = {
     "evidence": ("assay.loop.evidence", "give the evidence of the sampled checks, or add to it: loop evidence status"),
     "nightly": ("assay.loop.nightly", "run the work of the tiers gate and nightly in a time budget: loop nightly"),
     "release": ("assay.loop.release", "run the work of each tier in a time budget: loop release"),
+    "levels": ("assay.loop.levels", "build and test the vessel pair of each x86-64 level in one root: loop levels"),
     "step": ("assay.loop.step", None),
     "meter-compiler": ("assay.loop.meter_compiler", None),
     "test-step": ("assay.loop.teststep", None),
