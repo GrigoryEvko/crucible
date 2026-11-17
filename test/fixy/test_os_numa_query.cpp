@@ -3,8 +3,8 @@
 // (NumaCounters.h), run against the kernel.
 //
 // The storage of each range is an anonymous mapping, because a mapping is
-// the owner that gives a View in this tree.  The mint of a mapping gives a
-// std::expected, so map_pages holds one, as map_region of
+// the owner that gives a View in this tree.  map_pages takes the mapping
+// out of the Result of its mint, as map_region of
 // test/fixy/test_core_region.cpp does.
 
 #include <fixy/Core.h>
@@ -37,9 +37,9 @@ using Anonymous = fixy::atom::mmap::with_share<fixy::mmap::share::Anonymous>;
 
 template <class Owner>
 [[nodiscard]] auto map_pages(IoBlockCtx const& ctx, Owner const& owner, std::size_t bytes) {
-    auto mapped = fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, bytes);
-    CRUCIBLE_FATAL_INVARIANT(mapped);
-    return std::move(*mapped).consume();
+    return fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, bytes)
+        .expect("an anonymous mapping of the test pages succeeds")
+        .consume();
 }
 
 [[nodiscard]] std::size_t page_bytes() noexcept { return fixy::topology::Topology::instance().page_size_bytes(); }

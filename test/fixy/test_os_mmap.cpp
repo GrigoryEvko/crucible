@@ -15,6 +15,7 @@
 // with, and once with the exclusive that a pool hands back after its
 // last share ends.
 
+#include <fixy/Core.h>
 #include <fixy/os/Mmap.h>
 #include <foundation/permissions/SharedPermission.h>
 
@@ -73,27 +74,39 @@ using Shared = fixy::atom::mmap::with_share<fixy::mmap::share::Shared>;
 
 inline constexpr std::size_t kPageBytes = 4096;
 
+// The region of a mint, out of its Linear, or the Errno of the map.  The
+// region owns the pages, so the unmap happens once, at the end of its
+// owner.
+template <class Region>
+[[nodiscard]] fixy::Result<Region, foundation::os::Errno>
+region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
+    CRUCIBLE_TRY(made, std::move(minted));
+    return std::move(made).consume();
+}
+
 [[nodiscard]] int anonymous_mapping_carries_what_was_written() {
     IoBlockCtx ctx{eff::testing::test()};
 
     const auto owner = perm::mint_permission_root<AnonRegion>();
-    auto mapped = fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, kPageBytes);
-    if (!mapped) {
-        std::fprintf(stderr, "an anonymous mapping of one page failed (%s)\n", mapped.error().message().c_str());
+    auto mapped = region_of(fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, kPageBytes));
+    if (mapped.is_err()) {
+        std::fprintf(stderr, "an anonymous mapping of one page failed (errno %d)\n",
+                     foundation::os::error_number_of(mapped));
         return 1;
     }
-    if (!mapped->peek().is_mapped()) {
+    auto region = std::move(mapped).expect("the mint gave a mapping");
+    if (!region.is_mapped()) {
         std::fprintf(stderr, "a successful mint handed back a region that reports itself unmapped\n");
         return 1;
     }
-    if (mapped->peek().size() != kPageBytes) {
+    if (region.size() != kPageBytes) {
         std::fprintf(stderr, "the region reported a length the mint was not given\n");
         return 1;
     }
 
     // A fresh anonymous mapping is zero-filled, which is the one thing
     // mmap(2) promises about its contents.
-    auto* const bytes = static_cast<std::uint8_t*>(mapped->peek().data());
+    auto* const bytes = static_cast<std::uint8_t*>(region.data());
     for (std::size_t index = 0; index < kPageBytes; ++index) {
         if (bytes[index] != 0) {
             std::fprintf(stderr, "a fresh anonymous page was not zero-filled at byte %zu\n", index);
@@ -114,16 +127,8 @@ inline constexpr std::size_t kPageBytes = 4096;
     // Advice the kernel may ignore, so only the call's own report is
     // checked.  Sequential is one of the safe ones: it changes readahead
     // and discards nothing.
-    if (auto advised = fixy::mmap::advise<fixy::mmap::advice::Sequential>(ctx, mapped->peek_mut()); !advised) {
-        std::fprintf(stderr, "madvise(MADV_SEQUENTIAL) failed (%s)\n", advised.error().message().c_str());
-        return 1;
-    }
-
-    // Moving the region out of the Linear leaves the wrapper empty and
-    // the region owning the pages, so the unmapping happens once, here.
-    auto region = std::move(*mapped).consume();
-    if (!region.is_mapped()) {
-        std::fprintf(stderr, "the region lost its mapping on the way out of the Linear\n");
+    if (auto advised = fixy::mmap::advise<fixy::mmap::advice::Sequential>(ctx, region); advised.is_err()) {
+        std::fprintf(stderr, "madvise(MADV_SEQUENTIAL) failed (errno %d)\n", foundation::os::error_number_of(advised));
         return 1;
     }
     return 0;
@@ -154,18 +159,40 @@ inline constexpr std::size_t kPageBytes = 4096;
     }
 
     const auto owner = perm::mint_permission_root<FileRegion>();
-    auto mapped = fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, owner, fd, kPageBytes);
+    auto mapped = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, owner, fd, kPageBytes));
+    // The second page of the file is the map of the offset below, so the
+    // file grows to two pages before the descriptor closes.  The second
+    // page holds a different pattern, so a map at offset zero does not
+    // show it.
+    std::uint8_t later[kPageBytes];
+    for (std::size_t index = 0; index < kPageBytes; ++index) {
+        later[index] = static_cast<std::uint8_t>((index * 11u + 3u) & 0xFFu);
+    }
+    bool const has_second_page =
+        ::ftruncate(fd, static_cast<::off_t>(2 * kPageBytes)) == 0
+        && ::pwrite(fd, later, kPageBytes, static_cast<::off_t>(kPageBytes)) == static_cast<::ssize_t>(kPageBytes);
+    auto second = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(
+        ctx, owner, fd, kPageBytes, fixy::fs::FileOffset{static_cast<std::int64_t>(kPageBytes)}));
     // The descriptor is not needed once the mapping exists: the mapping
     // holds its own reference to the file.
     ::close(fd);
-    if (!mapped) {
-        std::fprintf(stderr, "a shared read-only mapping of the memfd failed (%s)\n", mapped.error().message().c_str());
+    if (mapped.is_err() || second.is_err() || !has_second_page) {
+        std::fprintf(stderr, "a shared read-only mapping of the memfd failed (errno %d, %d)\n",
+                     foundation::os::error_number_of(mapped), foundation::os::error_number_of(second));
         return 1;
     }
 
-    const auto* const bytes = static_cast<const std::uint8_t*>(mapped->peek().data());
+    auto const region = std::move(mapped).expect("the mint gave a mapping");
+    const auto* const bytes = static_cast<const std::uint8_t*>(region.data());
     if (std::memcmp(bytes, pattern, kPageBytes) != 0) {
         std::fprintf(stderr, "the file mapping did not show the bytes the file holds\n");
+        return 1;
+    }
+
+    // A map at an offset shows the bytes of the file from that offset.
+    auto const second_region = std::move(second).expect("the mint gave a mapping at the offset");
+    if (std::memcmp(second_region.data(), later, kPageBytes) != 0) {
+        std::fprintf(stderr, "the file mapping at an offset did not show the bytes from that offset\n");
         return 1;
     }
     return 0;
@@ -181,27 +208,26 @@ inline constexpr std::size_t kPageBytes = 4096;
     // is minted with it, so the two name one identity.
     const auto exclusive = perm::mint_permission_root<DiscardRegion>();
 
-    auto mapped = fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, exclusive, kPageBytes);
-    if (!mapped) {
-        std::fprintf(stderr, "an anonymous mapping for the discard leg failed (%s)\n",
-                     mapped.error().message().c_str());
+    auto mapped = region_of(fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, exclusive, kPageBytes));
+    if (mapped.is_err()) {
+        std::fprintf(stderr, "an anonymous mapping for the discard leg failed (errno %d)\n",
+                     foundation::os::error_number_of(mapped));
         return 1;
     }
-    static_assert(std::is_same_v<std::remove_cvref_t<decltype(mapped->peek())>::brand_type,
-                                 foundation::brand::brand_of_t<decltype(exclusive)>>,
+    auto region = std::move(mapped).expect("the mint gave a mapping");
+    static_assert(std::is_same_v<decltype(region)::brand_type, foundation::brand::brand_of_t<decltype(exclusive)>>,
                   "a mapping takes the brand of the permission it was minted with");
 
-    auto* const bytes = static_cast<std::uint8_t*>(mapped->peek().data());
+    auto* const bytes = static_cast<std::uint8_t*>(region.data());
     std::memset(bytes, 0xA5, kPageBytes);
     if (bytes[0] != 0xA5) {
         std::fprintf(stderr, "the mapping did not take the fill\n");
         return 1;
     }
 
-    if (auto discarded =
-            fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, mapped->peek_mut(), exclusive);
-        !discarded) {
-        std::fprintf(stderr, "madvise(MADV_DONTNEED) failed (%s)\n", discarded.error().message().c_str());
+    if (auto discarded = fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, region, exclusive);
+        discarded.is_err()) {
+        std::fprintf(stderr, "madvise(MADV_DONTNEED) failed (errno %d)\n", foundation::os::error_number_of(discarded));
         return 1;
     }
 
@@ -228,16 +254,18 @@ inline constexpr std::size_t kPageBytes = 4096;
     IoBlockCtx ctx{eff::testing::test()};
 
     auto root = perm::mint_permission_root<PooledRegion>();
-    auto mapped = fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, root, kPageBytes);
-    if (!mapped) {
-        std::fprintf(stderr, "an anonymous mapping for the pooled leg failed (%s)\n", mapped.error().message().c_str());
+    auto mapped = region_of(fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, root, kPageBytes));
+    if (mapped.is_err()) {
+        std::fprintf(stderr, "an anonymous mapping for the pooled leg failed (errno %d)\n",
+                     foundation::os::error_number_of(mapped));
         return 1;
     }
-    auto* const bytes = static_cast<std::uint8_t*>(mapped->peek().data());
+    auto region = std::move(mapped).expect("the mint gave a mapping");
+    auto* const bytes = static_cast<std::uint8_t*>(region.data());
     std::memset(bytes, 0x3C, kPageBytes);
 
     perm::SharedPermissionPool pool{std::move(root)};
-    static_assert(std::is_same_v<decltype(pool)::brand_type, std::remove_cvref_t<decltype(mapped->peek())>::brand_type>,
+    static_assert(std::is_same_v<decltype(pool)::brand_type, decltype(region)::brand_type>,
                   "the pool keeps the brand of the permission the mapping was minted with");
     const PoolOpCtx pool_ctx{eff::testing::test()};
     {
@@ -266,11 +294,10 @@ inline constexpr std::size_t kPageBytes = 4096;
         ++failures;
     }
     for (auto const& held : exclusive) {
-        if (auto discarded =
-                fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, mapped->peek_mut(), held);
-            !discarded) {
-            std::fprintf(stderr, "madvise(MADV_DONTNEED) with the pooled exclusive failed (%s)\n",
-                         discarded.error().message().c_str());
+        if (auto discarded = fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, region, held);
+            discarded.is_err()) {
+            std::fprintf(stderr, "madvise(MADV_DONTNEED) with the pooled exclusive failed (errno %d)\n",
+                         foundation::os::error_number_of(discarded));
             ++failures;
         } else if (bytes[0] != 0 || bytes[kPageBytes - 1] != 0) {
             std::fprintf(stderr, "MADV_DONTNEED with the pooled exclusive did not discard the page\n");
@@ -287,13 +314,14 @@ inline constexpr std::size_t kPageBytes = 4096;
     IoBlockCtx ctx{eff::testing::test()};
 
     const auto owner = perm::mint_permission_root<LeakedRegion>();
-    auto mapped = fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, kPageBytes);
-    if (!mapped) {
-        std::fprintf(stderr, "an anonymous mapping for the leak leg failed (%s)\n", mapped.error().message().c_str());
+    auto mapped = region_of(fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, kPageBytes));
+    if (mapped.is_err()) {
+        std::fprintf(stderr, "an anonymous mapping for the leak leg failed (errno %d)\n",
+                     foundation::os::error_number_of(mapped));
         return 1;
     }
 
-    auto region = std::move(*mapped).consume();
+    auto region = std::move(mapped).expect("the mint gave a mapping");
     void* const expected_address = region.data();
 
     const auto [address, length] = std::move(region).release(fixy::atom::leak::resource<UnmappedByTheTestItself>{});

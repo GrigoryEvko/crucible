@@ -37,6 +37,7 @@
 
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
+#include <fixy/os/Fd.h>
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
@@ -52,9 +53,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <meta>
-#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -291,23 +290,29 @@ public:
 
     // The one door.  It maps with the bits of Prot, Share and the
     // modifiers, and it builds a region only from an address the kernel
-    // returned.  On failure it returns the errno and builds no region.
+    // returned.  On failure it returns the error of the kernel and builds
+    // no region.  The map reads the file of fd from the byte at offset.
     //
     // The permission is read and not consumed.  The caller keeps it, and
     // presents it again to fixy::mmap::advise_release_aware.
+    //
+    // The return type is Result<OwnedMmap, Errno>, and the body deduces it.
+    // A declaration of a member is part of the class, so a Result of the
+    // class in the declaration names a class that is not yet complete.
     template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx>
         requires mmap::CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...>
-    [[nodiscard]] static std::expected<OwnedMmap, std::error_code>
-    mint_region(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/, int fd,
-                std::size_t length, ::off_t offset) noexcept {
+    [[nodiscard]] static auto mint_region(Ctx const&,
+                                          ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/, int fd,
+                                          std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
+        using Mapped = ::foundation::core::Result<OwnedMmap, ::foundation::os::Errno>;
         constexpr int protection = mmap::prot_bits_of(^^Prot);
         constexpr int flags = (mmap::share_flags_of(^^Share) | ... | mmap::detail::modifier_flags<Modifiers>());
-        auto mapped = mmap::detail::map_region_(length, protection, flags, fd, offset);
-        if (mapped.is_err()) {
-            return std::unexpected{std::error_code{
-                std::to_underlying(mapped.err().expect("the map door gave an error")), std::system_category()}};
+        ::foundation::core::Result<void*, ::foundation::os::Errno> mapped =
+            mmap::detail::map_region_(length, protection, flags, fd, offset.raw());
+        for (::foundation::os::Errno const error : mapped.err()) {
+            return Mapped{::foundation::core::err(error)};
         }
-        return OwnedMmap{std::move(mapped).expect("the map door gave the address of the map"), length};
+        return Mapped{OwnedMmap{std::move(mapped).expect("the map door gave the address of the map"), length}};
     }
 
     OwnedMmap(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");

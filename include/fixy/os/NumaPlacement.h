@@ -59,8 +59,6 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
-#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -100,7 +98,7 @@ concept CtxFitsNumaBind =
 // as its sole friend, and a friend must already have been declared.
 template <typename Tag, typename Prot, typename Brand, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsNumaBind<Ctx>
-[[nodiscard]] std::expected<::fixy::NumaPlacement<Tag, Prot, Brand>, std::error_code>
+[[nodiscard]] ::foundation::core::Result<::fixy::NumaPlacement<Tag, Prot, Brand>, ::foundation::os::Errno>
 mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot, Brand>>&& region,
                     NumaNodeId node) noexcept;
 
@@ -156,8 +154,8 @@ private:
         requires ::fixy::numa::CtxFitsNumaBind<FriendCtx>
     friend auto ::fixy::numa::mint_numa_placement(
         FriendCtx const&, ::fixy::Linear<::fixy::NumaBindableRegion<FriendTag, FriendProt, FriendBrand>>&&,
-        NumaNodeId) noexcept
-        -> std::expected<::fixy::NumaPlacement<FriendTag, FriendProt, FriendBrand>, std::error_code>;
+        NumaNodeId) noexcept -> ::foundation::core::Result<::fixy::NumaPlacement<FriendTag, FriendProt, FriendBrand>,
+                                                           ::foundation::os::Errno>;
 
 public:
     NumaPlacement() = delete("a default-constructed NumaPlacement would claim a binding that nobody made.  Take one "
@@ -204,20 +202,21 @@ namespace numa {
 
 template <typename Tag, typename Prot, typename Brand, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsNumaBind<Ctx>
-[[nodiscard]] std::expected<::fixy::NumaPlacement<Tag, Prot, Brand>, std::error_code>
+[[nodiscard]] ::foundation::core::Result<::fixy::NumaPlacement<Tag, Prot, Brand>, ::foundation::os::Errno>
 mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot, Brand>>&& region,
                     NumaNodeId node) noexcept {
     // The region leaves the Linear first, so each exit below ends its
     // life exactly one time: a refusal unmaps it, and success moves it
-    // into the proof.
+    // into the proof.  A node that is not concrete and a region with no
+    // mapping give einval, and the mint makes no system call.
     ::fixy::NumaBindableRegion<Tag, Prot, Brand> owned = std::move(region).consume();
     if (!is_concrete_numa_node(node) || !owned.is_mapped()) {
-        return std::unexpected{std::make_error_code(std::errc::invalid_argument)};
+        return ::foundation::core::err(::foundation::os::Errno::einval);
     }
-    if (int const error =
-            ::foundation::os::error_number_of(::fixy::detail::mbind_sys(owned.data(), owned.size(), node));
-        error != 0) {
-        return std::unexpected{std::error_code{error, std::system_category()}};
+    ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> const bound =
+        ::fixy::detail::mbind_sys(owned.data(), owned.size(), node);
+    for (::foundation::os::Errno const error : bound.err()) {
+        return ::foundation::core::err(error);
     }
     return ::fixy::NumaPlacement<Tag, Prot, Brand>{std::move(owned), node};
 }

@@ -314,14 +314,15 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
     const ::foundation::permissions::Permission<bpf_map_region<Tag>> owner =
         ::foundation::permissions::permission_erase_brand(
             ::foundation::permissions::mint_permission_root<bpf_map_region<Tag>>());
-    auto mapped = ReadOnlyMapping<Tag>::mint_region(ctx, owner, map_descriptor.value(), length, 0);
-    if (!mapped) {
+    ::fixy::Result<ReadOnlyMapping<Tag>, ::foundation::os::Errno> mapped =
+        ReadOnlyMapping<Tag>::mint_region(ctx, owner, map_descriptor.value(), length, ::fixy::fs::FileOffset{0});
+    for (::foundation::os::Errno const error : mapped.err()) {
         report_unavailable(facade, map_name.text,
                            "mmap failed (apply CAP_BPF; BPF_F_MMAPABLE needs CAP_BPF or kernel 5.5 or later)",
-                           mapped.error().value());
+                           ::foundation::os::error_number(error));
         return ::fixy::none;
     }
-    return ::fixy::Option<ReadOnlyMapping<Tag>>::some(std::move(*mapped));
+    return std::move(mapped).ok();
 }
 
 // What a ring facade tells the loader beyond its object: the ring map and

@@ -49,17 +49,28 @@ inline constexpr fixy::NumaNodeId kNodeZero{0};
 
 [[nodiscard]] std::size_t page_bytes() noexcept { return static_cast<std::size_t>(::sysconf(_SC_PAGESIZE)); }
 
+using foundation::os::Errno;
+
 // The mapping takes the tag and the brand of the permission.  The
-// permission ends here, because no case of this test discards pages.
+// permission ends here, because no case of this test discards pages.  An
+// anonymous mapping of two pages does not fail on a host that runs the
+// tests.
 [[nodiscard]] auto map_two_pages(BgCtx const& ctx) noexcept {
     auto const owner = foundation::permissions::mint_permission_root<BoundRegion>();
-    return fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, 2 * page_bytes());
+    return fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, 2 * page_bytes())
+        .expect("an anonymous mapping of two pages succeeds");
+}
+
+// The error of a result, or the zero Errno for a value.
+template <typename T>
+[[nodiscard]] Errno error_of(fixy::Result<T, Errno> const& result) noexcept {
+    return result.err().value_or(Errno{});
 }
 
 // True when the kernel refused a binding for a reason of the machine, not
 // of the call: no NUMA support, or a cpuset that does not admit the node.
-[[nodiscard]] bool is_machine_refusal(std::error_code const& error) noexcept {
-    return error.value() == ENOSYS || error.value() == EPERM || error.value() == EINVAL;
+[[nodiscard]] bool is_machine_refusal(Errno error) noexcept {
+    return error == Errno::enosys || error == Errno::eperm || error == Errno::einval;
 }
 
 // The policy the kernel keeps for the page at the address.  mode is
@@ -87,29 +98,25 @@ struct AddressPolicy {
 
 [[nodiscard]] int a_bound_region_is_on_its_node() {
     BgCtx ctx{eff::testing::bg()};
-    auto mapped = map_two_pages(ctx);
-    if (!mapped) {
-        std::fprintf(stderr, "an anonymous mapping of two pages failed (%s)\n", mapped.error().message().c_str());
-        return 1;
-    }
-    auto placed = fixy::numa::mint_numa_placement(ctx, std::move(*mapped), kNodeZero);
-    if (!placed) {
-        if (is_machine_refusal(placed.error())) {
-            std::fprintf(stderr, "[skipped] the kernel refused a binding to node 0 (%s)\n",
-                         placed.error().message().c_str());
+    auto placed = fixy::numa::mint_numa_placement(ctx, map_two_pages(ctx), kNodeZero);
+    if (placed.is_err()) {
+        if (is_machine_refusal(error_of(placed))) {
+            std::fprintf(stderr, "[skipped] the kernel refused a binding to node 0 (errno %d)\n",
+                         foundation::os::error_number_of(placed));
             return kSkip;
         }
-        std::fprintf(stderr, "a binding to node 0 failed (%s)\n", placed.error().message().c_str());
+        std::fprintf(stderr, "a binding to node 0 failed (errno %d)\n", foundation::os::error_number_of(placed));
         return 1;
     }
-    if (placed->node() != kNodeZero || placed->size() != 2 * page_bytes()) {
+    auto const placement = std::move(placed).expect("the binding succeeded");
+    if (placement.node() != kNodeZero || placement.size() != 2 * page_bytes()) {
         std::fprintf(stderr, "the proof states a node or a length that the mint was not given\n");
         return 1;
     }
 
-    std::memset(placed->data(), 0x5a, placed->size());
+    std::memset(placement.data(), 0x5a, placement.size());
 
-    AddressPolicy const policy = policy_at(placed->data());
+    AddressPolicy const policy = policy_at(placement.data());
     if (!policy.is_known || policy.mode != MPOL_BIND) {
         std::fprintf(stderr, "the kernel does not report MPOL_BIND for a region with a proof (mode %d)\n", policy.mode);
         return 1;
@@ -124,8 +131,8 @@ struct AddressPolicy {
             return 1;
         }
     }
-    auto* const second_page = static_cast<unsigned char*>(placed->data()) + page_bytes();
-    if (node_of_page(placed->data()) != 0 || node_of_page(second_page) != 0) {
+    auto* const second_page = static_cast<unsigned char*>(placement.data()) + page_bytes();
+    if (node_of_page(placement.data()) != 0 || node_of_page(second_page) != 0) {
         std::fprintf(stderr, "a page that the test wrote is not on node 0\n");
         return 1;
     }
@@ -134,16 +141,15 @@ struct AddressPolicy {
 
 [[nodiscard]] int the_proof_admits_only_its_node() {
     BgCtx ctx{eff::testing::bg()};
-    auto mapped = map_two_pages(ctx);
-    if (!mapped) return 1;
-    auto placed = fixy::numa::mint_numa_placement(ctx, std::move(*mapped), kNodeZero);
-    if (!placed) return is_machine_refusal(placed.error()) ? kSkip : 1;
+    auto placed = fixy::numa::mint_numa_placement(ctx, map_two_pages(ctx), kNodeZero);
+    if (placed.is_err()) return is_machine_refusal(error_of(placed)) ? kSkip : 1;
+    auto placement = std::move(placed).expect("the binding succeeded");
 
-    if (!placed->admits(kNodeZero) || !placed->admits(fixy::NumaNodeId::None)) {
+    if (!placement.admits(kNodeZero) || !placement.admits(fixy::NumaNodeId::None)) {
         std::fprintf(stderr, "a proof over node 0 does not admit node 0\n");
         return 1;
     }
-    if (placed->admits(fixy::NumaNodeId{1}) || placed->admits(fixy::NumaNodeId::Any)) {
+    if (placement.admits(fixy::NumaNodeId{1}) || placement.admits(fixy::NumaNodeId::Any)) {
         std::fprintf(stderr, "a proof over node 0 admits a request that it does not cover\n");
         return 1;
     }
@@ -151,16 +157,16 @@ struct AddressPolicy {
     // A move carries the claim, and the source covers no node after it.
     // The proof carries the brand of the mapping, so its type is read off
     // the mint's result rather than spelled.
-    using Placement = decltype(placed)::value_type;
+    using Placement = decltype(placement);
     static_assert(std::is_same_v<Placement::region_type::tag_type, BoundRegion>);
     static_assert(foundation::brand::IsBranded<Placement::region_type>,
                   "a placement keeps the brand of the mapping it binds");
-    Placement moved{std::move(*placed)};
+    Placement moved{std::move(placement)};
     if (moved.node() != kNodeZero || !moved.admits(kNodeZero)) {
         std::fprintf(stderr, "a move did not carry the binding\n");
         return 1;
     }
-    if (placed->admits(kNodeZero) || placed->node() != fixy::NumaNodeId::None) {
+    if (placement.admits(kNodeZero) || placement.node() != fixy::NumaNodeId::None) {
         std::fprintf(stderr, "the source of a move still claims a node\n");
         return 1;
     }
@@ -178,10 +184,8 @@ struct AddressPolicy {
 [[nodiscard]] int the_mint_refuses_a_sentinel_node() {
     BgCtx ctx{eff::testing::bg()};
     for (fixy::NumaNodeId const sentinel : {fixy::NumaNodeId::None, fixy::NumaNodeId::Any}) {
-        auto mapped = map_two_pages(ctx);
-        if (!mapped) return 1;
-        auto placed = fixy::numa::mint_numa_placement(ctx, std::move(*mapped), sentinel);
-        if (placed || placed.error() != std::errc::invalid_argument) {
+        auto const placed = fixy::numa::mint_numa_placement(ctx, map_two_pages(ctx), sentinel);
+        if (error_of(placed) != Errno::einval) {
             std::fprintf(stderr, "the mint did not refuse a sentinel node with EINVAL\n");
             return 1;
         }
@@ -192,8 +196,8 @@ struct AddressPolicy {
 [[nodiscard]] int the_mint_refuses_an_empty_region() {
     BgCtx ctx{eff::testing::bg()};
     auto empty = fixy::mint_linear<fixy::NumaBindableRegion<BoundRegion, fixy::mmap::prot::WriteCopy>>();
-    auto placed = fixy::numa::mint_numa_placement(ctx, std::move(empty), kNodeZero);
-    if (placed || placed.error() != std::errc::invalid_argument) {
+    auto const placed = fixy::numa::mint_numa_placement(ctx, std::move(empty), kNodeZero);
+    if (error_of(placed) != Errno::einval) {
         std::fprintf(stderr, "the mint did not refuse a region with no mapping\n");
         return 1;
     }
@@ -204,10 +208,8 @@ struct AddressPolicy {
 // it, and the mint gives back the kernel's error and no proof.
 [[nodiscard]] int the_mint_refuses_a_node_the_machine_lacks() {
     BgCtx ctx{eff::testing::bg()};
-    auto mapped = map_two_pages(ctx);
-    if (!mapped) return 1;
-    auto placed = fixy::numa::mint_numa_placement(ctx, std::move(*mapped), fixy::NumaNodeId{253});
-    if (placed) {
+    auto const placed = fixy::numa::mint_numa_placement(ctx, map_two_pages(ctx), fixy::NumaNodeId{253});
+    if (placed.is_ok()) {
         std::fprintf(stderr, "the mint built a proof over node 253\n");
         return 1;
     }

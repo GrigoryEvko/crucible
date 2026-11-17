@@ -63,19 +63,6 @@ void close_descriptor_(int descriptor) noexcept;
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 query_descriptor_(int descriptor, std::uint64_t request, void* argument) noexcept;
 
-// The error number of the error of FAILED, a Result of a door that holds an
-// error.  The calls of fixy/os give it to a std::error_code of the system
-// category.  Each caller reads only a Result that holds an error, so the EIO
-// of a Result with a value is not a path of the tree.
-template <class T>
-[[nodiscard]] constexpr int
-error_number_of_(::foundation::core::Result<T, ::foundation::os::Errno> const& failed) noexcept {
-    return std::to_underlying(failed.err().value_or(::foundation::os::Errno::eio));
-}
-
-// The error number of a call on a handle that holds no descriptor.
-inline constexpr int closed_handle_error = std::to_underlying(::foundation::os::Errno::ebadf);
-
 }  // namespace detail
 
 }  // namespace fixy::fs

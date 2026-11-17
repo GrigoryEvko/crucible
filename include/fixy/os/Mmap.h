@@ -47,9 +47,7 @@
 #include <foundation/os/MapWords.h>
 
 #include <cstddef>
-#include <expected>
 #include <meta>
-#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -231,10 +229,22 @@ inline constexpr bool region_mint_admits_v<Ctx, Prot, Share, region_modifiers<Mo
     CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...>;
 
 template <typename Region, typename... Modifiers, typename Ctx, typename Owner>
-[[nodiscard]] std::expected<Region, std::error_code> mint_region_with_(region_modifiers<Modifiers...>, Ctx const& ctx,
-                                                                       Owner const& owner, int fd, std::size_t length,
-                                                                       ::off_t offset) noexcept {
+[[nodiscard]] ::foundation::core::Result<Region, ::foundation::os::Errno>
+mint_region_with_(region_modifiers<Modifiers...>, Ctx const& ctx, Owner const& owner, int fd, std::size_t length,
+                  ::fixy::fs::FileOffset offset) noexcept {
     return Region::template mint_region<Modifiers...>(ctx, owner, fd, length, offset);
+}
+
+// The Linear of the region of a map, or the error of the map.  The region
+// holds an address, so the step is a test of the error and not a match,
+// which gives no result that holds an address.
+template <typename Region>
+[[nodiscard]] ::foundation::core::Result<Linear<Region>, ::foundation::os::Errno>
+linear_region_(::foundation::core::Result<Region, ::foundation::os::Errno> mapped) noexcept {
+    for (::foundation::os::Errno const error : mapped.err()) {
+        return ::foundation::core::err(error);
+    }
+    return mint_linear<Region>(std::move(mapped).expect("the map door gave a region"));
 }
 
 template <typename A>
@@ -317,23 +327,21 @@ concept CtxFitsReleaseAwareAdvise = CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice
 //
 // The descriptor is a plain int rather than an owning handle type, so
 // that a descriptor from any source reaches this without a conversion.
+// The map reads the file from the byte at offset.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand>
     requires CtxFitsMmapMint<Ctx, Atoms...>
-[[nodiscard]] inline std::expected<
-    Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>, std::error_code>
+[[nodiscard]] inline ::foundation::core::Result<
+    Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>,
+    ::foundation::os::Errno>
 mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> const& owner, int fd, std::size_t length,
-          ::off_t offset = 0) noexcept {
+          ::fixy::fs::FileOffset offset = ::fixy::fs::FileOffset{0}) noexcept {
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
     // The syscall lives with the region's only constructor, in
     // fixy/os/OwnedMmap.h, so that no address but the kernel's can become a
     // region, and its bits come from the region type.  What this mint
     // adds is the atom pack: which atoms, and the row they lift to.
-    auto region =
-        detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, fd, length, offset);
-    if (!region) {
-        return std::unexpected{region.error()};
-    }
-    return mint_linear<Region>(std::move(*region));
+    return detail::linear_region_<Region>(
+        detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, fd, length, offset));
 }
 
 // An anonymous mapping takes a descriptor of -1 and an offset of 0,
@@ -341,29 +349,24 @@ mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> cons
 // mint_mmap.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand>
     requires CtxFitsAnonMmapMint<Ctx, Atoms...>
-[[nodiscard]] inline std::expected<
-    Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>, std::error_code>
+[[nodiscard]] inline ::foundation::core::Result<
+    Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>,
+    ::foundation::os::Errno>
 mint_mmap_anon(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> const& owner,
                std::size_t length) noexcept {
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
-    auto region = detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, -1, length, 0);
-    if (!region) {
-        return std::unexpected{region.error()};
-    }
-    return mint_linear<Region>(std::move(*region));
+    return detail::linear_region_<Region>(detail::mint_region_with_<Region>(
+        detail::region_modifiers_t<Atoms...>{}, ctx, owner, -1, length, ::fixy::fs::FileOffset{0}));
 }
 
+// The advice gives the unit, or the error of the kernel.  The door gives
+// einval for a region that is not mapped, and it makes no system call.
 template <typename Advice, typename Tag, typename Prot, typename Share, typename Brand,
           ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSafeAdvise<Ctx, Advice>
-[[nodiscard]] inline std::expected<void, std::error_code> advise(Ctx const&,
-                                                                 OwnedMmap<Tag, Prot, Share, Brand>& region) noexcept {
-    // The door gives EINVAL for a region that is not mapped.
-    if (auto const advised = detail::advise_region_(region.data(), region.size(), advice_value_of(^^Advice));
-        advised.is_err()) {
-        return std::unexpected{std::error_code{::fixy::fs::detail::error_number_of_(advised), std::system_category()}};
-    }
-    return {};
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+advise(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region) noexcept {
+    return detail::advise_region_(region.data(), region.size(), advice_value_of(^^Advice));
 }
 
 // What makes this surface safe is the permission the caller has to
@@ -395,15 +398,11 @@ template <typename Advice, typename Tag, typename Prot, typename Share, typename
 template <typename Advice, typename Tag, typename Prot, typename Share, typename Brand, typename Proof,
           ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsReleaseAwareAdvise<Ctx, Advice, OwnedMmap<Tag, Prot, Share, Brand>, Proof>
-[[nodiscard]] inline std::expected<void, std::error_code>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region,
                      Proof const& /*exclusive_proof*/) noexcept {
-    // The door gives EINVAL for a region that is not mapped.
-    if (auto const advised = detail::advise_region_(region.data(), region.size(), advice_value_of(^^Advice));
-        advised.is_err()) {
-        return std::unexpected{std::error_code{::fixy::fs::detail::error_number_of_(advised), std::system_category()}};
-    }
-    return {};
+    // The door gives einval for a region that is not mapped.
+    return detail::advise_region_(region.data(), region.size(), advice_value_of(^^Advice));
 }
 
 }  // namespace fixy::mmap

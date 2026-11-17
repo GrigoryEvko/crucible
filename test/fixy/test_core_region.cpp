@@ -2,9 +2,8 @@
 // mapping, its windows, copy and fill.
 //
 // The storage of each View is an anonymous mapping, because a mapping is
-// the owner that gives a View in this tree.  The mint of a mapping gives
-// a std::expected, so map_region holds one, and the report of the
-// quarantine plugin names it there and nowhere else.
+// the owner that gives a View in this tree.  map_region takes the mapping
+// out of the Result of its mint.
 
 #include <fixy/Core.h>
 #include <fixy/os/Mmap.h>
@@ -63,9 +62,9 @@ struct Tint {
 
 template <class Owner>
 [[nodiscard]] auto map_region(IoBlockCtx const& ctx, Owner const& owner, std::size_t bytes) {
-    auto mapped = fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, bytes);
-    CRUCIBLE_FATAL_INVARIANT(mapped);
-    return std::move(*mapped).consume();
+    return fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, owner, bytes)
+        .expect("an anonymous mapping of the test region succeeds")
+        .consume();
 }
 
 // Each element of first equals the element at the same position of second.
