@@ -60,6 +60,7 @@
 #include <foundation/core/Grow.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/SlotMap.h>
 #include <foundation/effects/Effect.h>
 
 #include <fixy/Ctx.h>
@@ -224,6 +225,10 @@ struct BoxProbe {
 struct HeapArrayTag {};
 struct MaskedArrayTag {};
 struct GrowListTag {};
+struct SlotMapTag {};
+
+// The domain of the keys of the probe of a SlotMap.
+struct ProbeHandleTag final {};
 
 // The holder of the child owner of an element.  Each tag names one owner.
 template <class Tag>
@@ -274,6 +279,12 @@ template <>
 struct Inner<GrowListTag> {
     using brand_type = InnerBrand<GrowListTag>;
     GrowList<Elem<GrowListTag>> child = ::foundation::core::mint_grow_list<Elem<GrowListTag>>(8);
+};
+
+template <>
+struct Inner<SlotMapTag> {
+    using brand_type = InnerBrand<SlotMapTag>;
+    ::foundation::core::SlotMap<Elem<SlotMapTag>, ProbeHandleTag> child{};
 };
 
 // The Inner that an element holds.  The frame door of the Option lends the
@@ -490,6 +501,50 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
                 0, [](Elem<Tag>&) noexcept { return false; }, [] noexcept { return true; }));
             through(source).append(kAlloc, Elem<Tag>{}).expect("a moved-from list keeps its maximum");
             CRUCIBLE_FATAL_INVARIANT(through(source).size() == 1);
+        }
+        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
+    }
+};
+
+struct SlotMapProbe : ElementArms<SlotMapProbe> {
+    using Tag = SlotMapTag;
+    using Owner = ::foundation::core::SlotMap<Elem<Tag>, ProbeHandleTag>;
+    using Key = ::foundation::core::SlotKey<ProbeHandleTag>;
+
+    static Owner make(unsigned count) {
+        Owner map = ::foundation::core::mint_slot_map<Elem<Tag>, ProbeHandleTag>(
+            kAlloc, ::foundation::core::Quantity<::foundation::core::unit::Element, std::uint32_t>{8});
+        for (unsigned inserted = 0; inserted < count; ++inserted) {
+            static_cast<void>(map.insert(Elem<Tag>{}).expect("the map of the probe has a free slot"));
+        }
+        return map;
+    }
+
+    // The first value in the order of the slots.  The values live in their
+    // slots, which never move, so the Inner stays where it is.
+    static Inner<Tag>& give_first_an_inner(Owner& owner) {
+        for (Elem<Tag>& element : owner) {
+            return give_an_inner(element);
+        }
+        ::foundation::core::fatal("the SlotMap of the probe holds no value");
+    }
+
+    using LinearOwner = ::foundation::core::SlotMap<LinearElement, ProbeHandleTag>;
+
+    static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<LinearOwner>()); }
+
+    // EMPTY: a moved-from SlotMap holds no slot: a read of a key finds no
+    // value, its walk gives nothing, and an insert gives Full.
+    static void empty() {
+        {
+            Owner source = make(2);
+            Key const first{std::uint64_t{1} << 32};
+            Owner const target{static_cast<Owner&&>(through(source))};
+            CRUCIBLE_FATAL_INVARIANT(target.size() == 2 && target.get(first).is_some());
+            CRUCIBLE_FATAL_INVARIANT(through(source).size() == 0 && through(source).capacity().raw() == 0);
+            CRUCIBLE_FATAL_INVARIANT(through(source).get(first).is_none());
+            CRUCIBLE_FATAL_INVARIANT(through(source).begin() == through(source).end());
+            CRUCIBLE_FATAL_INVARIANT(through(source).insert(Elem<Tag>{}).is_err());
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
@@ -850,8 +905,9 @@ struct ProbeList {
     static void run() { (run_probe<Probes>(), ...); }
 };
 
-using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
-                            HeapTextProbe, AlignedBytesProbe, HeapBitSetProbe, SwissTableBufferProbe, OwnedMmapProbe>;
+using AllProbes =
+    ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe, HeapTextProbe,
+              AlignedBytesProbe, HeapBitSetProbe, SlotMapProbe, SwissTableBufferProbe, OwnedMmapProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "

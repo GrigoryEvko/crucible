@@ -46,6 +46,7 @@
 #include <foundation/core/RunSet.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Side.h>
+#include <foundation/core/SlotMap.h>
 #include <foundation/core/StorageFloat.h>
 #include <foundation/core/Strided.h>
 #include <foundation/core/Text.h>
@@ -184,8 +185,11 @@ using ::foundation::core::mint_heap_array_written;
 using ::foundation::core::mint_heap_array_zeroed;
 using ::foundation::core::mint_heap_bit_set;
 using ::foundation::core::mint_masked_array;
+using ::foundation::core::mint_slot_map;
 using ::foundation::core::RunOf;
 using ::foundation::core::RunSet;
+using ::foundation::core::SlotKey;
+using ::foundation::core::SlotMap;
 using ::foundation::core::split_at;
 using ::foundation::core::split_chunks;
 using ::foundation::core::starts_with;

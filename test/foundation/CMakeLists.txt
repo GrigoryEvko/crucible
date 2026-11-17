@@ -3329,6 +3329,34 @@ foundation_neg_compile_test(neg_core_heap_bit_set_mint_raw_count
   "no matching function for call to .mint_heap_bit_set<SlotTag>\\(foundation::core::Alloc, uint32_t\\)."
   "cannot convert .8. \\(type .uint32_t. \\{aka .unsigned int.\\}\\) to type .foundation::core::Quantity<foundation::core::unit::Element, unsigned int>.")
 
+# A SlotMap gives each value a key of its slot and its generation, refuses a
+# stale, a forged or a removed key, retires a slot at the wrap of its
+# generation, walks its values in the order of the slots, and agrees with a
+# model of the slots under random inserts, removes and reads.
+foundation_test(test_core_slot_map)
+
+# A SlotMap takes the key of its own domain and no number, does not copy, and
+# its mint takes the allocation capability, a value that moves with no throw
+# and a word of a generation of at most 32 bits.
+foundation_neg_compile_test(neg_core_slot_map_key_of_other_domain
+  "no matching function for call to .foundation::core::SlotMap<int, HandleTag, unsigned int>::get\\(foundation::core::SlotKey<OtherTag>&\\)."
+  "cannot convert .key. \\(type .foundation::core::SlotKey<OtherTag>. \\{aka .const foundation::core::Id<OtherTag, long unsigned int>.\\}\\) to type .foundation::core::SlotKey<HandleTag>.")
+foundation_neg_compile_test(neg_core_slot_map_raw_key
+  "no matching function for call to .foundation::core::SlotMap<int, HandleTag, unsigned int>::get\\(uint64_t\\)."
+  "cannot convert .1. \\(type .uint64_t. \\{aka .long unsigned int.\\}\\) to type .foundation::core::SlotKey<HandleTag>.")
+foundation_neg_compile_test(neg_core_slot_map_copied
+  "use of deleted function .foundation::core::SlotMap<T, Tag, Generation>::SlotMap\\(const foundation::core::SlotMap<T, Tag, Generation>&\\)"
+  "a copy of a SlotMap allocates, and no allocation capability shows at a copy")
+foundation_neg_compile_test(neg_core_slot_map_mint_without_allocation_marker
+  "no matching function for call to .mint_slot_map<int, HandleTag>\\(foundation::effects::cap::IO,"
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_slot_map_wide_generation
+  "no matching function for call to .mint_slot_map<int, HandleTag, uint64_t>\\(foundation::core::Alloc,"
+  "required for the satisfaction of .SlotGeneration<Generation>. \\[with Generation = long unsigned int\\]")
+foundation_neg_compile_test(neg_core_slot_map_throwing_move
+  "no matching function for call to .mint_slot_map<ThrowingMove, HandleTag>\\(foundation::core::Alloc,"
+  "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
+
 # The frame doors of foundation/core/Frame.h write each owner of the Region
 # family and each sum of the Choice family.  The door of an owner gives the
 # owner back, and the name that the caller moved from holds no storage while
@@ -3805,7 +3833,7 @@ foreach(_death_test
     test_aligned_bytes test_core_array test_core_bit_set test_core_box test_core_branded test_core_bump_arena test_core_choice
     test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_masked_array
     test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
-    test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
+    test_core_slot_map test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
     test_swiss_table_buffer test_swiss_table_buffer_ignore)
   target_link_libraries(${_death_test} PRIVATE fixy)
 endforeach()
