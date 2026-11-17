@@ -208,7 +208,7 @@ that the axis does not apply to the row.
 | `mint_reader_runtime_session` | `include/fixy/channels/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_recording_endpoint` | `include/fixy/channels/EndpointMint.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_stage_from_endpoints` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_substrate_session` | `include/fixy/channels/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
+| `mint_substrate_session` | `include/fixy/channels/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_swmr_reader` | `include/fixy/channels/SwmrSession.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_swmr_stage_from_endpoint` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_swmr_writer` | `include/fixy/channels/SwmrSession.h` | Y | - | Y | Y | token | · | HS14: 4 |
@@ -359,9 +359,9 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 188 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 190 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 26 |
+| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 27 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 
