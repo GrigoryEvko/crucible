@@ -284,6 +284,10 @@ include(cmake/Linker.cmake)
 # the warnings directory of the checks.  It comes before the first target and
 # before the first test.
 include(cmake/TestLauncher.cmake)
+# The x86-64 level that each test needs, which the test launcher checks before
+# the program of the test starts.  It reads each target at the end of the
+# configure.
+include(cmake/TestLevel.cmake)
 
 # The GCC plugin: CRUCIBLE_QUARANTINE_MODE = REPORT | ERROR.  Each build loads the
 # quarantine plugin, which also applies the contract rule.  The file puts its

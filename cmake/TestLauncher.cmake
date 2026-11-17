@@ -42,6 +42,11 @@ file(REMOVE "${CMAKE_BINARY_DIR}/CTestCustom.cmake")
 # --trace never.  The launcher then does not trace the test, and the test runs
 # on each call of `loop test` (utils/assay/loop/teststep.py, THE READ SET).
 # Only a test that needs a listener of seccomp of its own takes it.
+#
+# On x86_64, a command that names the file of a target ($<TARGET_FILE:NAME>)
+# gives the launcher --x86-level with the need of each such target, so the
+# launcher skips the test on a host below the need (THE NEED OF A TEST of
+# cmake/TestLevel.cmake).  The value starts with v1, so it is never empty.
 function(crucible_script_test)
   cmake_parse_arguments(PARSE_ARGV 0 _script "COMMAND_EXPAND_LISTS" "NAME;WORKING_DIRECTORY;TRACE"
                         "COMMAND;CONFIGURATIONS")
@@ -68,6 +73,19 @@ function(crucible_script_test)
     set(_script_launcher ${CRUCIBLE_TEST_STEP} --name "${_script_NAME}")
     if(DEFINED _script_TRACE)
       list(APPEND _script_launcher --trace "${_script_TRACE}")
+    endif()
+    string(REGEX MATCHALL "\\$<TARGET_FILE:[A-Za-z0-9_.+-]+>" _script_files "${_script_COMMAND}")
+    if(_script_files AND CRUCIBLE_TEST_LEVELS)
+      list(TRANSFORM _script_files REPLACE "^\\$<TARGET_FILE:(.+)>$" "\\1")
+      list(REMOVE_DUPLICATES _script_files)
+      set(_script_needs "v1")
+      foreach(_script_target IN LISTS _script_files)
+        string(APPEND _script_needs ",$<TARGET_PROPERTY:${_script_target},${CRUCIBLE_X86_LEVEL_NEED_PROPERTY}>")
+      endforeach()
+      list(APPEND _script_launcher --x86-level "${_script_needs}")
+      list(JOIN _script_files "|" _script_record)
+      set_property(GLOBAL APPEND PROPERTY _CRUCIBLE_LEVEL_SCRIPT_TESTS
+                   "${_script_NAME}|${CMAKE_CURRENT_SOURCE_DIR}|${_script_record}")
     endif()
   endif()
   add_test(NAME "${_script_NAME}" COMMAND ${_script_launcher} ${_script_COMMAND} ${_script_options})

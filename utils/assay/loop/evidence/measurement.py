@@ -5,7 +5,9 @@ THE SELECTION
     target of its code model (assay.loop.evidence.items, THE KEYS).  The key
     of a bench holds its program and the host.  run() selects the pending
     items of the nightly target, or with is_release of the release target
-    (THE PENDING ITEMS of that module).
+    (THE PENDING ITEMS of that module).  A bench whose x86-64 level is above
+    the level of the host does not run, and a line names the two levels
+    (THE CHECK of assay.core.x86level).
 
 THE RUN
     A run is one run of the program of a bench on the cores that claimed() of
@@ -62,7 +64,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from assay.core import proc
+from assay.core import proc, x86level
 from assay.core import report as check_report
 from assay.core.exit import ExitCode
 from assay.loop import bench
@@ -270,6 +272,25 @@ def selection(
     ]
 
 
+def level_selection(chosen: list[Measured], build_dir: Path) -> list[Measured]:
+    """Return the selected benches that the host can run, and write a line for each bench above the host.
+
+    A bench whose x86-64 level is above the level of the host does not start, because a check in the program can run
+    after code of its level (THE CHECK of assay.core.x86level).  Complexity: one read of the needs of the build.
+
+    Raises:
+        x86level.LevelError: If the needs of the build or the level of the host cannot be read
+    """
+    kept: list[Measured] = []
+    for measured in chosen:
+        text = x86level.bench_refusal(build_dir, measured.name)
+        if text is None:
+            kept.append(measured)
+        else:
+            check_report.write_line(f"{PROGRAM}: {text}")
+    return kept
+
+
 def next_measured(chosen: Sequence[Measured], remaining_s: float) -> Measured | None:
     """Return the pending bench with the minimum runs, then the minimum evidence, of the benches with a run that fits.
 
@@ -338,7 +359,11 @@ def run(build_dir: Path, budget_s: float, is_release: bool, names: Sequence[str]
         check_report.write_line(f"{PROGRAM}: the benches of {build_dir} cannot be read: {problem}", is_error=True)
         return ExitCode.MISSING_INPUT
     store = evidence_store.EvidenceStore()
-    chosen = selection(programs, store, target, names)
+    try:
+        chosen = level_selection(selection(programs, store, target, names), build_dir)
+    except x86level.LevelError as problem:
+        check_report.write_line(f"{PROGRAM}: the x86-64 level of the host cannot be read: {problem}", is_error=True)
+        return ExitCode.MISSING_INPUT
     settings = bench.Settings.from_environment()
     entry = "release" if is_release else "nightly"
     check_report.write_line(

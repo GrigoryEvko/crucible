@@ -16,13 +16,16 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from assay.core import cache_root, proc, testing
+from assay.core import cache_root, proc, testing, x86level
 from assay.core import meter as cost_meter
 from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.loop import readset
 from assay.loop import teststep as test_launcher
+
+# The variable that names the build directory of the test: its level probe and its file of needs.
+BUILD_VARIABLE = "ASSAY_TEST_BUILD_DIR"
 
 
 class Planted:
@@ -81,7 +84,10 @@ class Planted:
         # A case for a CI runner or for kept cores sets the variable itself.  Each verdict is then the same in each
         # environment.
         environment = proc.environment(
-            {test_launcher.REGISTRY_ENV: str(self.table), test_launcher.LEDGERS_ENV: str(self.ledgers)}
+            {
+                test_launcher.REGISTRY_ENV: str(self.table),
+                test_launcher.LEDGERS_ENV: str(self.ledgers),
+            }
         )
         environment.pop(cost_meter.GITHUB_ACTIONS_ENV, None)
         environment.pop(test_launcher.CORES_ENV, None)
@@ -116,12 +122,106 @@ class Planted:
         """Run the launcher on a script test as crucible_script_test() registers it: a program of PATH, with --name."""
         done = proc.run(
             proc.Command(
-                [*self.launcher, "--build-dir", str(self.build), "--name", name, *command],
+                [
+                    *self.launcher,
+                    "--build-dir",
+                    str(self.build),
+                    "--name",
+                    name,
+                    *command,
+                ],
                 timeout_s=proc.TOOL_S,
                 env=self._environment_of(extra),
             )
         )
         return done.exit, done.err
+
+    def plant_host_level(self, level: int, request: str = "") -> None:
+        """Write the cache of the level of the host of the build with the boot id of this kernel (THE LEVEL OF A HOST)."""
+        key = f"{x86level.boot_id()} {request or '-'}"
+        (self.build / x86level.CACHE_FILE).write_text(f"{key} {level}\n", encoding="ascii")
+
+    def level_cases(self, expect: testing.Expect) -> None:
+        """Check the skip of a test whose need is above a planted host, before its program starts (THE LEVEL)."""
+        self.budget(2000)
+        marker = self.root / "started"
+        program = self.plant_test("test_leveled", f'#!/bin/sh\ntouch "{marker}"\nexit 0\n')
+        launch = [*self.launcher, "--build-dir", str(self.build)]
+        environment = self._environment_of({})
+        environment.pop(x86level.REQUEST_VARIABLE, None)
+
+        def run(*words: str, **extra: str) -> tuple[int, str]:
+            """Run the launcher with the words before the program, and return its exit and its standard error."""
+            marker.unlink(missing_ok=True)
+            done = proc.run(
+                proc.Command(
+                    [*launch, *words, str(program)],
+                    timeout_s=proc.TOOL_S,
+                    env={**environment, **extra},
+                )
+            )
+            return done.exit, done.err
+
+        if not x86level.is_x86_64():
+            status, _ = run("--x86-level", "v4")
+            expect(
+                "a host other than x86_64 runs a test with each need",
+                status == 0 and marker.exists(),
+            )
+            return
+        self.plant_host_level(2)
+        status, said = run("--x86-level", "v3")
+        expect(
+            "a planted host of v2 skips a test that needs v3 with the skip code, before its program starts, and the "
+            "line names the level of the host and the need",
+            status == x86level.SKIP_CODE
+            and not marker.exists()
+            and "the host runs the x86-64 level v2" in said
+            and "the test test_leveled needs the level v3" in said,
+        )
+        expect("a skip writes no record of the test", not self._record_of("test_leveled"))
+        status, _ = run("--x86-level", "v1,,v2")
+        expect(
+            "a need at or below the planted host runs the test, and the need is the highest item",
+            status == 0 and marker.exists(),
+        )
+        status, said = run("--x86-level", "v5")
+        expect(
+            "a need that is no level is a usage error, and the test does not start",
+            status == 2 and not marker.exists() and "'v5'" in said,
+        )
+        status, said = run("--x86-level", "v3", **{x86level.REQUEST_VARIABLE: "v3"})
+        expect(
+            "a request with no entry in the cache reads the level probe of the build, and a build with no probe fails "
+            "the test with the reason, and the test does not start",
+            status == 1 and not marker.exists() and x86level.PROBE_LIBRARY in said,
+        )
+        probe = Path(os.environ.get(BUILD_VARIABLE, "")) / x86level.PROBE_DIRECTORY / x86level.PROBE_LIBRARY
+        if not os.environ.get(BUILD_VARIABLE) or not probe.is_file():
+            expect(
+                f"{BUILD_VARIABLE} names a build with the level probe {x86level.PROBE_LIBRARY}",
+                False,
+            )
+            return
+        (self.build / x86level.PROBE_DIRECTORY).mkdir(exist_ok=True)
+        (self.build / x86level.PROBE_DIRECTORY / x86level.PROBE_LIBRARY).write_bytes(probe.read_bytes())
+        (self.build / x86level.CACHE_FILE).unlink()
+        status, said = run("--x86-level", "v2", **{x86level.REQUEST_VARIABLE: "v1"})
+        cached = (self.build / x86level.CACHE_FILE).read_text(encoding="ascii").split()
+        expect(
+            "the level probe of the build gives the level of the request v1, a test that needs v2 skips, and the "
+            "launcher keeps the level in the cache with the boot id and the request",
+            status == x86level.SKIP_CODE
+            and not marker.exists()
+            and "which the request CRUCIBLE_ISA_LEVEL=v1 gives" in said
+            and cached == [x86level.boot_id(), "v1", "1"],
+        )
+        host = x86level.probe_level(self.build / x86level.PROBE_DIRECTORY / x86level.PROBE_LIBRARY, "")
+        status, _ = run("--x86-level", f"v{host}")
+        expect(
+            f"the probe gives the level v{host} of this host, and a test that needs it runs",
+            status == 0 and marker.exists(),
+        )
 
     def _record_of(self, name: str) -> dict[str, object]:
         """Return the record of one test of the build directory, or no field when the test has no record."""
@@ -181,7 +281,10 @@ class Planted:
         )
         traced = test_launcher.TRACED_ENV
         status, _ = self.launch_script("planted_traced", "sh", "-c", f'test "${traced}" = 1')
-        expect("a script test that the launcher plans to trace gets the mark of a traced run", status == 0)
+        expect(
+            "a script test that the launcher plans to trace gets the mark of a traced run",
+            status == 0,
+        )
         status, _ = self.launch_script("planted_untraced", "--trace", "never", "sh", "-c", f'test -z "${traced}"')
         expect(
             "a script test with --trace never gets no mark of a traced run, and the launcher writes no read set of it",
@@ -191,14 +294,29 @@ class Planted:
             ("an option with no value", ["--name"]),
             ("an option two times", ["--name", "a", "--name", "b", "sh"]),
             ("no program", ["--build-dir", str(self.build)]),
-            ("the option of a self-test, which the launcher does not have", ["--self-test"]),
+            (
+                "the option of a self-test, which the launcher does not have",
+                ["--self-test"],
+            ),
             ("a value of --trace that is not never", ["--trace", "sometimes", "sh"]),
         )
         for label, words in usage_errors:
-            done = proc.run(proc.Command([*self.launcher, *words], timeout_s=proc.TOOL_S, env=self._environment_of({})))
-            expect(f"a usage error gives status 2: {label}", done.exit == 2 and "usage:" in done.err)
+            done = proc.run(
+                proc.Command(
+                    [*self.launcher, *words],
+                    timeout_s=proc.TOOL_S,
+                    env=self._environment_of({}),
+                )
+            )
+            expect(
+                f"a usage error gives status 2: {label}",
+                done.exit == 2 and "usage:" in done.err,
+            )
         status, said = self.launch_script("planted/script", "sh", "-c", "exit 0")
-        expect("a test name that is not a writer key gives status 2", status == 2 and "is not a word" in said)
+        expect(
+            "a test name that is not a writer key gives status 2",
+            status == 2 and "is not a word" in said,
+        )
         dotted = self.plant_test("test_planted.sh", "#!/bin/sh\nexit 0\n")
         status, said = self.launch(dotted)
         record = self._record_of("test_planted.sh")
@@ -249,7 +367,10 @@ class Planted:
         second = self.plant_test("test_emulated_second", '#!/bin/sh\nexit "${1:-0}"\n')
         first_status, _ = self.launch_emulated("3", first)
         second_status, _ = self.launch_emulated("3", second, "3")
-        first_record, second_record = self._record_of("test_emulated_first"), self._record_of("test_emulated_second")
+        first_record, second_record = (
+            self._record_of("test_emulated_first"),
+            self._record_of("test_emulated_second"),
+        )
         expect(
             "two tests behind one emulator run through it, and each gets a record of its own, with the name and the "
             "path of its program",
@@ -258,7 +379,10 @@ class Planted:
             and (second_record.get("exit"), second_record.get("command")) == (3, str(second))
             and self._record_of(self.emulator.name) == {},
         )
-        for words, label in (("4", "a count that leaves no program"), ("x", "a word that is not a count")):
+        for words, label in (
+            ("4", "a count that leaves no program"),
+            ("x", "a word that is not a count"),
+        ):
             status, said = self.launch_emulated(words, first)
             expect(
                 f"--emulator-words with {label} is a usage error",
@@ -309,7 +433,10 @@ class Planted:
         program = self.program
         self.budget(2000)
         status, said = self.launch(program)
-        expect("a test at or below the limit passes with no line", status == 0 and "[step-" not in said)
+        expect(
+            "a test at or below the limit passes with no line",
+            status == 0 and "[step-" not in said,
+        )
 
         self.budget(0)
         status, said = self.launch(program)
@@ -318,7 +445,10 @@ class Planted:
             status == 1 and f"{program}:0: error: [step-memory] " in said and "no row of the kind test" in said,
         )
         record = self._record_of("test_planted")
-        expect("the record of the failed test says rejected", record["result"] == "rejected")
+        expect(
+            "the record of the failed test says rejected",
+            record["result"] == "rejected",
+        )
         status, said = self.launch_script("planted_script", "sh", "-c", "exit 0")
         expect(
             "a passed script test above the memory limit fails, with an error line that names its record",
@@ -353,7 +483,8 @@ class Planted:
         host_counts = cost_meter.host_gives_counter()
         on_host = f"(this host: {'a counter' if host_counts else 'no counter'})"
         worker = self.plant_test(
-            "test_working", f"#!{sys.executable} -S\ntotal = 0\nfor index in range(2_000_000):\n    total += index\n"
+            "test_working",
+            f"#!{sys.executable} -S\ntotal = 0\nfor index in range(2_000_000):\n    total += index\n",
         )
         self.budget(2000, 0.0002)
         status, said = self.launch(worker, **{cost_meter.INSTRUCTIONS_ENV: "0"})
@@ -384,10 +515,19 @@ class Planted:
             expect("the record of a counted test keeps its count", False)
             return
         giga = measured / test_launcher.GIGA
-        self.ledger("step-cost", f"- | test | {giga * 2:.6f} | test_working | a planted reason\n")
+        self.ledger(
+            "step-cost",
+            f"- | test | {giga * 2:.6f} | test_working | a planted reason\n",
+        )
         status, said = self.launch(worker)
-        expect("a ledger row keeps a test up to its kept value, with no line", status == 0 and "[step-" not in said)
-        self.ledger("step-cost", f"- | test | {giga / 2:.6f} | test_working | a planted reason\n")
+        expect(
+            "a ledger row keeps a test up to its kept value, with no line",
+            status == 0 and "[step-" not in said,
+        )
+        self.ledger(
+            "step-cost",
+            f"- | test | {giga / 2:.6f} | test_working | a planted reason\n",
+        )
         status, said = self.launch(worker)
         expect(
             "a test that does more work than its row keeps fails again",
@@ -401,14 +541,26 @@ class Planted:
         self.budget(0)
         self.ledger("step-memory", "- | test | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
-        expect("a ledger row of the kind test admits the test, with no line", status == 0 and "[step-" not in said)
+        expect(
+            "a ledger row of the kind test admits the test, with no line",
+            status == 0 and "[step-" not in said,
+        )
         self.ledger("step-memory", "- | compile | 0.05 | test_planted | a planted reason\n")
         status, said = self.launch(program)
         expect("a ledger row of the kind compile admits no test", status == 1)
-        self.ledger("step-memory", "- | x86_64-release | 0.05 | test_planted | a planted reason\n")
+        self.ledger(
+            "step-memory",
+            "- | x86_64-release | 0.05 | test_planted | a planted reason\n",
+        )
         status, said = self.launch(program)
-        expect("a ledger row with a KIND that is no kind of the rule admits nothing", status == 1)
-        self.ledger("step-memory", "@build/test/test_planted | test | 0.05 | - | a planted reason\n")
+        expect(
+            "a ledger row with a KIND that is no kind of the rule admits nothing",
+            status == 1,
+        )
+        self.ledger(
+            "step-memory",
+            "@build/test/test_planted | test | 0.05 | - | a planted reason\n",
+        )
         status, said = self.launch(program)
         expect("a ledger row that names a file and not a test admits nothing", status == 1)
         self.ledger("step-memory", "- | test | 0.000001 | test_planted | a planted reason\n")
@@ -420,7 +572,10 @@ class Planted:
         (self.build / cost_meter.CONFIGURATION_FILE).write_text("x86_64-debug-asan-bench\n")
         self.ledger("step-memory", "- | test | 0.05 | test_planted | a row of each build\n")
         status, said = self.launch(program)
-        expect("a ledger row keeps the test of a build with options too", status == 0 and "[step-" not in said)
+        expect(
+            "a ledger row keeps the test of a build with options too",
+            status == 0 and "[step-" not in said,
+        )
         (self.build / cost_meter.CONFIGURATION_FILE).unlink()
         self.budget(2000)
         status, said = self.launch(program)
@@ -430,7 +585,10 @@ class Planted:
             status == 0 and "step-memory" not in said,
         )
         status, said = self.launch(self.root / "no-such-test")
-        expect("a test that cannot start gives status 127", status == 127 and "cannot start" in said)
+        expect(
+            "a test that cannot start gives status 127",
+            status == 127 and "cannot start" in said,
+        )
 
     def core_cases(self, expect: testing.Expect) -> None:
         """Check the core limit of a test, of a child of the test and of the launcher (CORE DUMPS of the launcher)."""
@@ -484,7 +642,10 @@ class Planted:
             "a child of a test that aborts writes no core dump",
             status == 0 and f" signal {signal.SIGABRT.value}\n" in said and (not can_stop or "child-core 0 " in said),
         )
-        for keep_label, extra in (("", {}), (f", also with {cores_env}={cores_keep}", {cores_env: cores_keep})):
+        for keep_label, extra in (
+            ("", {}),
+            (f", also with {cores_env}={cores_keep}", {cores_env: cores_keep}),
+        ):
             wait_status = self.launch_for_wait_status(aborter, **extra)
             expect(
                 f"a test that aborts ends the launcher on SIGABRT, and the launcher writes no core dump{keep_label}",
@@ -500,7 +661,8 @@ def fallen_row_cases(expect: testing.Expect) -> None:
     run = cost_meter.Measurement(0, 0.1, 0.0, 0.2, 50 * 1024, 1.0, 0.0, None)
     with tempfile.TemporaryDirectory(prefix="test-step-rows-") as directory:
         Path(cost_meter.ledger_file("step-memory", directory)).write_text(
-            "format 1\nrule step-memory\n- | test | 0.6 | test_planted | a planted row\n", encoding="utf-8"
+            "format 1\nrule step-memory\n- | test | 0.6 | test_planted | a planted row\n",
+            encoding="utf-8",
         )
         measured = test_launcher.judge("test_planted", "test/test_planted", run, budget, directory)
     expect(
@@ -538,7 +700,11 @@ def bench_scope_cases(expect: testing.Expect) -> None:
     expect(
         "test_limits() gives the limit of the kind test of each rule of the launcher, and no other rule or kind",
         test_launcher.test_limits(
-            {"step-memory": {"compile": 4, "test": 1.5}, "step-cost": {"compile": 110}, "other-rule": {"test": 2}}
+            {
+                "step-memory": {"compile": 4, "test": 1.5},
+                "step-cost": {"compile": 110},
+                "other-rule": {"test": 2},
+            }
         )
         == {"step-memory": 1.5},
     )
@@ -584,9 +750,15 @@ def version_unit_cases(expect: testing.Expect) -> None:
         expect("a change of the byte code keeps the version", version() == first)
         module.write_text("SIZE = 22\n")
         second = version()
-        expect("a change of a module of the package changes the version of a master command", second != first)
+        expect(
+            "a change of a module of the package changes the version of a master command",
+            second != first,
+        )
         script.write_text("# a planted script, changed\n")
-        expect("a change of the VALUE of a word NAME=VALUE changes the version", version() != second)
+        expect(
+            "a change of the VALUE of a word NAME=VALUE changes the version",
+            version() != second,
+        )
         expect(
             "the words of the command go into the version",
             test_launcher.version_of(["a", "b"], []) != test_launcher.version_of(["a", "c"], []),
@@ -606,13 +778,28 @@ def launched_cases(expect: testing.Expect) -> None:
         "a script test with a name runs its program behind the launcher",
         test_launcher.launched([*launcher, "--name", "planted", "python3", "check.py"]) == ["python3", "check.py"],
     )
-    expect("a command with no launcher is its own command", test_launcher.launched(executable) == executable)
+    expect(
+        "a command with no launcher is its own command",
+        test_launcher.launched(executable) == executable,
+    )
     expect(
         "a launcher with an option and no program gives its own command",
         test_launcher.launched([*launcher, "--name", "planted"]) == [*launcher, "--name", "planted"],
     )
-    fixture = [sys.executable, "-S", master, "fixture", "/build", "neg.cpp", "neg", "regex"]
-    expect("the driver of a negative fixture is not the launcher", test_launcher.launched(fixture) == fixture)
+    fixture = [
+        sys.executable,
+        "-S",
+        master,
+        "fixture",
+        "/build",
+        "neg.cpp",
+        "neg",
+        "regex",
+    ]
+    expect(
+        "the driver of a negative fixture is not the launcher",
+        test_launcher.launched(fixture) == fixture,
+    )
     emulated = ["/usr/bin/qemu-aarch64-static", "-L", "/sysroot", *executable]
     expect(
         "a test of a cross build runs its emulator behind the launcher, and its program is the word after the emulator",
@@ -718,8 +905,20 @@ def environment_unit_cases(expect: testing.Expect) -> None:
             and not derived([*master, "selftest", "core.cache"])
             and not derived([*master, "selftest", "absent"])
             and not derived([*master, "warnings", scratch])
-            and not derived([sys.executable, "-S", str(Path(scratch) / test_launcher.MASTER), "fixture"])
-            and not derived(["/tree/build/bin/test_x", str(Path(scratch) / test_launcher.GUARD_MASTER)])
+            and not derived(
+                [
+                    sys.executable,
+                    "-S",
+                    str(Path(scratch) / test_launcher.MASTER),
+                    "fixture",
+                ]
+            )
+            and not derived(
+                [
+                    "/tree/build/bin/test_x",
+                    str(Path(scratch) / test_launcher.GUARD_MASTER),
+                ]
+            )
             and not derived([]),
         )
     expect(
@@ -730,6 +929,86 @@ def environment_unit_cases(expect: testing.Expect) -> None:
     expect(
         "with the caches off, the launcher stops the writes of compiled modules and names no prefix, as the masters do",
         stopped[test_launcher.NO_BYTECODE_ENV] == "1" and test_launcher.PYCACHE_PREFIX_ENV not in stopped,
+    )
+
+
+def level_unit_cases(expect: testing.Expect) -> None:
+    """Check the need of a list of levels, the rows of the needs, the text of a skip and the key of the cache."""
+    expect(
+        "the need is the highest level of the list, an empty item adds nothing, and no level gives v1",
+        x86level.parse_need("v1,v3,v2") == 3 and x86level.parse_need("v1,") == 1 and x86level.parse_need("") == 1,
+    )
+    for text in ("v0", "v5", "3", "v1,x"):
+        try:
+            x86level.parse_need(text)
+            expect(f"the need {text!r} is refused", False)
+        except x86level.LevelError:
+            expect(f"the need {text!r} is refused", True)
+    expect(
+        "a host at or above the need gives no skip, and a host below it gives a text with the two levels",
+        x86level.refusal(3, 3, "", "the test t") is None
+        and x86level.refusal(4, 2, "v2", "the bench b")
+        == "skip: the host runs the x86-64 level v2, which the request CRUCIBLE_ISA_LEVEL=v2 gives, and the bench b "
+        "needs the level v4.  The program does not start",
+    )
+    with tempfile.TemporaryDirectory(prefix="x86level-") as scratch:
+        build = Path(scratch)
+        expect("a build with no file of needs has no need", x86level.needs_of(build) == {})
+        (build / x86level.NEEDS_FILE).write_text("# a comment\nbench_a v4\n\ntest_b v3\n", encoding="utf-8")
+        expect(
+            "the file of needs gives the level of each row",
+            x86level.needs_of(build) == {"bench_a": 4, "test_b": 3},
+        )
+        (build / x86level.NEEDS_FILE).write_text("bench_a 4\n", encoding="utf-8")
+        try:
+            x86level.needs_of(build)
+            expect("a row with no level word is refused", False)
+        except x86level.LevelError as problem:
+            expect(
+                "a row with no level word is refused, and the error names its line",
+                ":1:" in str(problem),
+            )
+        (build / x86level.CACHE_FILE).write_text("an-earlier-boot - 4\n", encoding="ascii")
+        try:
+            x86level.host_level(build, "", "this-boot")
+            expect("an entry of an earlier boot is not used", False)
+        except x86level.LevelError as problem:
+            expect(
+                "an entry of an earlier boot is not used, so the check reads the probe, which this build has not",
+                x86level.PROBE_LIBRARY in str(problem),
+            )
+        (build / x86level.CACHE_FILE).write_text("this-boot - 3\n", encoding="ascii")
+        expect(
+            "an entry of this boot and of the same request gives its level",
+            x86level.host_level(build, "", "this-boot") == 3,
+        )
+
+
+def needs_cases(expect: testing.Expect) -> None:
+    """Check the needs that the configure of the build of the test wrote (THE NEED OF A TEST of TestLevel.cmake).
+
+    The build gives each test the level of its flags, a test with a unit of x86-64-v4 the level v4, and a test with
+    -mavx2 at least v3, because AVX2 is a feature of x86-64-v3.
+    """
+    build_text = os.environ.get(BUILD_VARIABLE, "")
+    if not x86level.is_x86_64():
+        expect("a host other than x86_64 writes no need", True)
+        return
+    if not build_text:
+        expect(f"{BUILD_VARIABLE} names the build of the test", False)
+        return
+    build = Path(build_text)
+    needs = x86level.needs_of(build)
+    kind = (build / cost_meter.KIND_FILE).read_text(encoding="ascii").strip()
+    level_word = kind.rsplit("-", 1)[-1]
+    level = x86level.LEVEL_WORDS.get(level_word, 1)
+    expect(
+        f"the test with a unit of x86-64-v4 needs v4, and the test with -mavx2 needs v3 or more, in the build {kind}",
+        needs.get("test_target_units") == 4 and needs.get("test_swiss_table_avx2", 0) >= 3,
+    )
+    expect(
+        f"each target of the build of the level v{level} needs that level or more, and a plain test has a row",
+        all(value >= level for value in needs.values()) and (level < 2 or needs.get("test_core_fma", 0) >= level),
     )
 
 
@@ -763,6 +1042,9 @@ def main(argv: list[str]) -> int:
             planted_group(Planted.core_cases),
             planted_group(Planted.emulator_cases),
             planted_group(Planted.environment_cases),
+            planted_group(Planted.level_cases),
+            level_unit_cases,
+            needs_cases,
             fallen_row_cases,
             bench_scope_cases,
             version_unit_cases,

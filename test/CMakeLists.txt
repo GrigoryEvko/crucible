@@ -4331,9 +4331,11 @@ set_tests_properties(check_report_self_test guard_warnings_self_test PROPERTIES
 # except a negative fixture, and it holds the kind test of the rules
 # step-memory and step-cost of utils/registry.txt while the test runs.  The fixture
 # driver holds them for a fixture.  The rule registry (test guard_registry)
-# refuses a test that the two do not run.
+# refuses a test that the two do not run.  The test reads the level probe and
+# the needs of this build (THE NEED OF A TEST of cmake/TestLevel.cmake).
 crucible_script_test(NAME test_launcher_self_test
-  COMMAND ${CMAKE_COMMAND} -E env python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_teststep)
+  COMMAND ${CMAKE_COMMAND} -E env ASSAY_TEST_BUILD_DIR=${CMAKE_BINARY_DIR}
+          python3 -S ${CMAKE_SOURCE_DIR}/utils/bin/guard selftest tests.loop.test_teststep)
 set_tests_properties(test_launcher_self_test PROPERTIES LABELS "ci_guard")
 
 # cmake/BuildLauncher.cmake puts `loop step` (utils/assay/loop/step.py) in front of

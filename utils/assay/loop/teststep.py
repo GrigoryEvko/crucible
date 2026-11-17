@@ -50,6 +50,21 @@ THE EMULATOR
     launched_program() gives the program of the command of a test to a
     reader of the tests of a build, such as assay.loop.affected.
 
+THE LEVEL
+    The configure gives a test of x86_64 the option --x86-level with the
+    x86-64 level that its program needs, such as v3 for each test of the
+    build of the preset default, or v4 for a test with a unit of x86-64-v4
+    (THE NEED OF A TEST of cmake/TestLevel.cmake).  The value is a list of
+    levels with commas, and the need is the highest one.  Before the program
+    starts, the subcommand reads the level of the host through the level
+    probe of the build (THE LEVEL OF A HOST of assay.core.x86level).  A host
+    below the need ends the subcommand with the skip code SKIP_CODE of that
+    module, and the test does not start, because a check in the program can
+    run after code of its level.  The line of the skip names the level of the
+    host and the need.  The skip writes no record.  CRUCIBLE_ISA_LEVEL asks
+    for a lower level of the host, so a run on this host plants a host of a
+    lower level.  A need of v1 and a host other than x86_64 have no check.
+
 THE ENVIRONMENT
     The subcommand runs the test in a clean environment
     (canonical_environment()).  The result of a test then does not change
@@ -273,7 +288,7 @@ PROFILE_NAMES = (cost_meter.CALL_PROFILE_ENV, cost_meter.LINES_ENV)
 PASSED_THROUGH = frozenset({LAUNCHED_ENV, TRACED_ENV, cost_meter.TEST_JOBSERVER_ENV, *PROFILE_NAMES})
 SEARCH_PATH = "PATH"
 # The options before the command, each with one value, and the one value of --trace (THE READ SET).
-OPTIONS = ("--build-dir", "--name", "--emulator-words", "--trace")
+OPTIONS = ("--build-dir", "--name", "--emulator-words", "--trace", "--x86-level")
 TRACE_NEVER = "never"
 # The directory of the test groups of the subcommand selftest of the master guard, relative to the root (THE READ SET).
 TEST_GROUPS = "utils/assay/tests"
@@ -287,7 +302,8 @@ MASTERS = (GUARD_MASTER, MASTER, "utils/bin/setup")
 PACKAGE = "assay"
 USAGE = (
     "usage: loop test-step [--build-dir BUILD] [--name NAME] [--emulator-words N] [--trace never] "
-    "[EMULATOR [EMULATOR_ARG]...] PROGRAM [ARG]... | guard selftest tests.loop.test_teststep"
+    "[--x86-level LEVEL[,LEVEL]...] [EMULATOR [EMULATOR_ARG]...] PROGRAM [ARG]... | guard selftest "
+    "tests.loop.test_teststep"
 )
 # The characters of a test name: the characters of a writer key of utils/assay/core/report.py, which the test of this
 # module holds equal to WRITER_KEY.  A name does not start with '-' or '.'.
@@ -572,7 +588,7 @@ def is_test_name(name: str) -> bool:
 class Options:
     """The options of the command line: each one is None when the command line does not give it."""
 
-    __slots__ = ("build_dir", "emulator_words", "name", "trace")
+    __slots__ = ("build_dir", "emulator_words", "name", "trace", "x86_level")
 
     def __init__(self) -> None:
         """Start with no option."""
@@ -580,6 +596,7 @@ class Options:
         self.name: str | None = None
         self.emulator_words: str | None = None
         self.trace: str | None = None
+        self.x86_level: str | None = None
 
 
 def option_field(option: str) -> str:
@@ -744,11 +761,55 @@ def traced_run(
     return readset.plan(build_dir, name, command, version_of(words, ()))
 
 
+def level_verdict(level_text: str, build_dir: str | None, name: str) -> int | None:
+    """Return the exit of a test whose host is below its need, or None when the test runs (THE LEVEL).
+
+    The subcommand imports assay.core.x86level only for a test with --x86-level, because each test pays the import of
+    this module.
+
+    Args:
+        level_text: The value of --x86-level
+        build_dir: The absolute build directory, which holds the level probe, or None
+        name: The name of the test
+
+    Returns:
+        The skip code of assay.core.x86level for a host below the need, 1 when the level of the host cannot be read,
+        2 for a value that is no list of levels, and None when the test runs
+    """
+    from assay.core import x86level
+
+    try:
+        need = x86level.parse_need(level_text)
+    except x86level.LevelError as problem:
+        print(f"loop test-step: --x86-level: {problem}.  {USAGE}", file=sys.stderr)
+        return 2
+    if need <= 1 or not x86level.is_x86_64():
+        return None
+    if build_dir is None:
+        print(
+            f"loop test-step: the test {name} needs the x86-64 level v{need}, and the launcher has no build "
+            f"directory with the level probe.  Give it --build-dir",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        host = x86level.host_level(build_dir)
+    except x86level.LevelError as problem:
+        print(f"loop test-step: the level of the host cannot be read for the test {name}: {problem}", file=sys.stderr)
+        return 1
+    text = x86level.refusal(need, host, os.environ.get(x86level.REQUEST_VARIABLE, ""), f"the test {name}")
+    if text is None:
+        return None
+    print(f"loop test-step: {text}", file=sys.stderr)
+    return x86level.SKIP_CODE
+
+
 def main(argv: list[str]) -> int:
     """Run the test of the command line, and end as it ended.
 
     Args:
-        argv: [--build-dir BUILD] [--name NAME] [--emulator-words N] [--trace never] [EMULATOR...] PROGRAM [ARG]...
+        argv: [--build-dir BUILD] [--name NAME] [--emulator-words N] [--trace never] [--x86-level LEVELS]
+            [EMULATOR...] PROGRAM [ARG]...
 
     Returns:
         2 on a usage error.  Else the function ends the process as the test ended
@@ -783,6 +844,10 @@ def main(argv: list[str]) -> int:
         build_dir = cost_meter.build_dir_of(program)
     if build_dir is not None:
         build_dir = os.path.abspath(build_dir)
+    if options.x86_level is not None:
+        verdict = level_verdict(options.x86_level, build_dir, name)
+        if verdict is not None:
+            return verdict
     is_built = build_dir is not None and program.startswith(build_dir + os.sep)
     place = program if is_built or build_dir is None else cost_record.test_record_file(build_dir, name)
     # The launcher reads the registry before the test runs.  The parse then frees its memory before the start of the

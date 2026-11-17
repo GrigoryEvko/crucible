@@ -21,7 +21,10 @@ THE COLLECTION
        objects that no longer exist.
     5. It runs each bench, with its output in BUILD_DIR/pgo-run/NAME.log.  The
        process group of a bench that runs for longer than its time limit gets
-       SIGTERM, and SIGKILL after TERMINATE_GRACE_S.
+       SIGTERM, and SIGKILL after TERMINATE_GRACE_S.  A bench whose x86-64
+       level is above the level of the host does not start (THE CHECK of
+       assay.core.x86level).  It goes to the skipped benches, and a line names
+       the two levels.
     6. It writes the record COLLECTION beside the counters: the commit, the
        state of the tree, the time, the host, the tier, the benches of each
        outcome and the count of counter files.  CMakeLists.txt reads the
@@ -60,7 +63,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from assay.core import proc
+from assay.core import proc, x86level
 from assay.core.paths import REPO_ROOT
 from assay.loop import bench as loop_bench
 from assay.loop import history as loop_history
@@ -145,6 +148,31 @@ def select(benches: tuple[str, ...], patterns: tuple[str, ...]) -> tuple[tuple[s
     """
     skipped = tuple(name for name in benches if any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns))
     return tuple(name for name in benches if name not in skipped), skipped
+
+
+def level_split(
+    build_dir: Path, benches: tuple[str, ...], skipped: tuple[str, ...]
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Move each bench whose x86-64 level is above the host to the skipped benches, and print its line (step 5).
+
+    Complexity: one read of the needs of the build, and linear in the benches.
+
+    Raises:
+        PgoError: If the needs of the build or the level of the host cannot be read
+    """
+    kept: list[str] = []
+    above: list[str] = []
+    for name in benches:
+        try:
+            text = x86level.bench_refusal(build_dir, name)
+        except x86level.LevelError as problem:
+            raise PgoError(f"the x86-64 level of the host cannot be read: {problem}") from None
+        if text is None:
+            kept.append(name)
+        else:
+            print(f"loop pgo: {text}")
+            above.append(name)
+    return tuple(kept), (*skipped, *above)
 
 
 def run_bench(command: list[str], log: Path, timeout_s: float) -> int | None:
@@ -317,6 +345,7 @@ def collect(root: Path) -> int:
     facts.profile_dir.mkdir(parents=True, exist_ok=True)
     for counter in counter_files(facts.profile_dir):
         counter.unlink()
+    benches, skipped = level_split(build_dir, benches, skipped)
     logs = build_dir / RUN_LOGS
     outcomes = run_benches(build_dir / "bench", benches, logs, timeout_s)
     counters = len(counter_files(facts.profile_dir))

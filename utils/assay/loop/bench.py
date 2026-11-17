@@ -5,15 +5,18 @@ THE STEPS FOR EACH BENCH
        with the job count of assay.core.proc (DEFAULT_JOBS).  The build is
        incremental.  A bench that is current builds nothing.  --no-build
        omits the step.
-    2. It runs the bench through the launcher of assay.loop.caps, when the
+    2. A bench whose x86-64 level is above the level of the host does not
+       start, and a warning names the two levels (THE CHECK of
+       assay.core.x86level).  The next bench runs.
+    3. It runs the bench through the launcher of assay.loop.caps, when the
        build loads BPF (the cache entry BPF_ENTRY) and the launcher is ready
        (THE CAPABILITIES).
-    3. It runs the bench with taskset on the cores of the reserved CPUs of the
+    4. It runs the bench with taskset on the cores of the reserved CPUs of the
        host that no other bench holds, one core for each thread of the bench
        (THE CORES OF A RUN).  When the host reserves no CPU, it uses the core
        of CRUCIBLE_BENCH_CORE, or no pin when that variable is not set.  It
        then warns that the results are noisy.
-    4. It prints the steal time of each core during the run, and it marks a
+    5. It prints the steal time of each core during the run, and it marks a
        run with steal time as not valid (THE STEAL TIME).
 
     The form --command runs one command on a claim of cores in place of the
@@ -153,7 +156,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import configuration as build_config
-from assay.core import proc
+from assay.core import proc, x86level
 from assay.core.paths import REPO_ROOT
 from assay.loop import caps, heavy
 from assay.readers import cmake as cmake_reader
@@ -984,6 +987,13 @@ def run(root: Path, request: Request, settings: Settings) -> int:
                 raise BenchError(f"build failed: {target} (known-drifted bench? try another target)")
         if not os.access(binary, os.X_OK):
             raise BenchError(f"missing binary: {binary} (build it first, drop --no-build)")
+        try:
+            refusal = x86level.bench_refusal(build_dir, target)
+        except x86level.LevelError as problem:
+            raise BenchError(f"the x86-64 level of the host cannot be read: {problem}") from None
+        if refusal is not None:
+            warn(refusal)
+            continue
         words = (str(binary), *request.bench_args)
         with claimed(settings, counts.get(target, ONE_CORE), roots) as where:
             announce(where)
