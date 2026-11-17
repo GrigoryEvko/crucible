@@ -178,10 +178,9 @@ public:
         // prefix scan below wraps past the buffer end, re-reads the
         // still-set bits of the cells it already counted, and grows R
         // beyond Capacity.  The drain then returns duplicates, clears
-        // every bit, and leaves tail ahead of head, at which point the
-        // producer's unsigned gate underflows and reads as full
-        // forever.  Clamping rather than rejecting keeps the
-        // partial-fill contract.
+        // every bit, and leaves tail ahead of head.  The signed gate of
+        // the producers reads that negative distance as room.  Clamping
+        // rather than rejecting keeps the partial-fill contract.
         const std::size_t cap = Capacity < out.size() ? Capacity : out.size();
         if (cap == 0) return 0;
 

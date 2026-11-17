@@ -69,8 +69,8 @@ concept AllocationCapability = std::same_as<Marker, Alloc>;
 
 namespace detail {
 
-// Gives back the storage that heap_allocate_ or heap_allocate_zeroed_ gave,
-// with the same bytes and the same alignment.  storage must not be null.
+// Gives back the storage that heap_allocate_ gave, with the same bytes and
+// the same alignment.  storage must not be null.
 void heap_release_(void* storage, std::size_t bytes, std::size_t alignment) noexcept;
 
 // Gives the storage of bytes bytes at the alignment.  bytes is more than

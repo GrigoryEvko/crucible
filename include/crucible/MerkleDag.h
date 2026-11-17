@@ -1258,8 +1258,8 @@ template <typename GuardEval, typename RegionExec>
                 // compiled kernel.
                 //
                 // Reading epsilon here is therefore a regression, and the
-                // UNTIL case of test_loop_replay_ignores_epsilon is what
-                // reports it.
+                // UNTIL loops of the epsilon case of test/test_merkle_loop.cpp
+                // report it.
                 //
                 // An UNTIL count of zero cannot arrive: make_loop rejects it,
                 // because it would skip the body and report success.

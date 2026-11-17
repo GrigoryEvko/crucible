@@ -228,8 +228,8 @@ using MpscWide = c::MpscRing<int, 128>;
 
     // try_pop_batch clamps the request to Capacity.  Unclamped, the
     // prefix scan wraps past the buffer end, counts cells it already
-    // took, and leaves tail ahead of head — after which the producer's
-    // unsigned gate underflows and the ring reads as full forever.
+    // took, and returns more items than the ring holds.  The count and
+    // the empty ring below show the clamp.
     Run<Plain, 64> oversized{};
     const std::size_t taken = ring.try_pop_batch(kNondet, oversized.each());
     if (taken != 6) {
@@ -245,10 +245,9 @@ using MpscWide = c::MpscRing<int, 128>;
         return 1;
     }
 
-    // The ring still accepts pushes, which is what the clamp protects:
-    // an underflowed gate would refuse every one of them.
+    // The ring still accepts a push after the clamped drain.
     if (!ring.try_push(Plain{7, 0})) {
-        std::fprintf(stderr, "MPSC ring refused a push after the oversized drain — the capacity gate underflowed\n");
+        ::fixy::report(::fixy::Sink::Err, "MPSC ring refused a push after the oversized drain\n");
         return 1;
     }
     (void)ring.try_pop(kNondet);

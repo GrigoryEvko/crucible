@@ -1102,7 +1102,7 @@ struct empty_choice_algebra {
 //   3. No output step sends a payload that a payload registration
 //      marks as not sendable.
 //   4. Each wrapper value is admitted by the value filter.
-//   5. Each choice obeys the six rules of the section on branches and
+//   5. Each choice obeys the seven rules of the section on branches and
 //      labels.
 //   6. Each step whose payload names a label has a keyed choice in its
 //      registration, so the step reads as that choice.

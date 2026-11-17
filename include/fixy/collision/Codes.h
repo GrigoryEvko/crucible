@@ -41,7 +41,8 @@ enum class RuleCode : std::uint8_t {
     G002,  // thread-local x atomic representation
     D002,  // unbounded recursion x unbounded cost
     P002,  // ghost x an emitting surface other than the effect row
-    // Pending: the axis each waits on is named in pending_rules below.
+    // The codes from here to F102 read an axis family.  Each is a live rule,
+    // so pending_rules below is empty.
     B001,
     // B002 is a code of its own, not a renaming of B001.  B001's theorem
     // is the back-pressure trap, with its own remedy.  The containment
