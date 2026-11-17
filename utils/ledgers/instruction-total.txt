@@ -1,12 +1,12 @@
 # The ledger of the rule instruction-total: the baseline of the user instructions of the compiles of a build
-# of the configuration x86_64-debug-asan, the build of the preset default.
+# of the configuration x86_64-debug-asan-v3, the build of the preset default.
 # `python3 utils/bin/guard explain instruction-total` tells the rule, and
 # `python3 utils/bin/guard write --rule instruction-total --build-dir BUILD` writes the two rows again from a
 # build of that configuration.  The rule does not apply to a build of a different configuration.
 #
 # The two rows:
-#   - | x86_64-debug-asan | INSTRUCTIONS | objects | REASON
-#   - | x86_64-debug-asan | INSTRUCTIONS | fixtures | REASON
+#   - | x86_64-debug-asan-v3 | INSTRUCTIONS | objects | REASON
+#   - | x86_64-debug-asan-v3 | INSTRUCTIONS | fixtures | REASON
 #   The sum, over each object of the target all and over each negative fixture, of the user instructions
 #   of the compile that made it, at the last write.  The record of a ccache hit keeps the count of the
 #   compile that made its object, from the cost store of utils/assay/core/cost_store.py.  A result of the
@@ -20,5 +20,5 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-- | x86_64-debug-asan | 10578482945391 | fixtures | the owner decision of 2026-11-15: a correct change that fails only on a cost limit raises the baseline.  The build ran 30408 G, 5.47% above the baseline of 28830 G.  The pointwise walk gives each op of the element family and of the CPU kernels more code: the tile path of an op of at most two inputs, the lane plans with the offsets of two axes in registers, and the step-two reads
-- | x86_64-debug-asan | 19829501317815 | objects | the owner decision of 2026-11-15: a correct change that fails only on a cost limit raises the baseline.  The build ran 30408 G, 5.47% above the baseline of 28830 G.  The pointwise walk gives each op of the element family and of the CPU kernels more code: the tile path of an op of at most two inputs, the lane plans with the offsets of two axes in registers, and the step-two reads
+- | x86_64-debug-asan-v3 | 10573755725473 | fixtures | the owner decision of 2026-11-17 moves the default build to x86-64-v3, so the baseline moves to the configuration x86_64-debug-asan-v3.  At x86-64-v3 the compiler emits the AVX2 arms of the SIMD family and of each kernel
+- | x86_64-debug-asan-v3 | 22099510794217 | objects | the owner decision of 2026-11-17 moves the default build to x86-64-v3, so the baseline moves to the configuration x86_64-debug-asan-v3.  At x86-64-v3 the compiler emits the AVX2 arms of the SIMD family and of each kernel

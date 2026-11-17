@@ -101,10 +101,8 @@ rule artifact-symbols
 @build/libcrucible_vigil.a | crt-allow | 1 | __dso_handle | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_vigil.a | libc-allow | 1 | _Unwind_Resume | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_vigil.a | libc-allow | 1 | __cxa_atexit | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
-@build/libcrucible_vigil.a | libc-allow | 1 | __popcountdi2 | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_vigil.a | libc-allow | 1 | __stack_chk_fail | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_vigil.a | libc-allow | 1 | __tls_get_addr | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
-@build/libcrucible_vigil.a | libc-allow | 1 | memcmp | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_vigil.a | libc-allow | 1 | memcpy | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_vigil.a | libc-allow | 1 | memmove | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
 @build/libcrucible_vigil.a | libc-allow | 1 | memset | a class of symbols that the rule did not read before: the imports of each static library of the root, with the provider of each import
