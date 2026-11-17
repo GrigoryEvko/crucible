@@ -687,6 +687,11 @@
       "constructor": "\\bOwnedFd\\("
     },
     {
+      "name": "neg_witness_io_ioringdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "\\bIoRingDoor\\("
+    },
+    {
       "name": "neg_witness_io_iouringring_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bIoUringRing\\("
@@ -1855,6 +1860,10 @@
     },
     {
       "type": "fixy::io::IoUringRing",
+      "header": "fixy/os/Io.h"
+    },
+    {
+      "type": "fixy::io::IoRingDoor",
       "header": "fixy/os/Io.h"
     },
     {

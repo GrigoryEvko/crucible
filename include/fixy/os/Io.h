@@ -25,10 +25,11 @@
 //     A pack that names no ring-flag atom sets up a ring with no setup
 //     bits, so no tag stands for the default ring.
 //
-//  3. IoUringRing's constructor is private and mint_io_uring_ring is its
-//     sole friend.  A handle that owns a descriptor and three mappings
-//     is a claim about what the kernel gave you, and nothing but the
-//     setup call can make that claim truthfully.
+//  3. IoUringRing's constructor is private, its sole friend is IoRingDoor,
+//     and the one friend of the door is mint_io_uring_ring.  A handle that
+//     owns a descriptor and three mappings is a claim about what the
+//     kernel gave you, and nothing but the setup call can make that claim
+//     truthfully.
 //
 //  4. The ring flags are a closed table, as the mapping tags are.  A
 //     flag with no row is refused, so the mint never sets up a ring
@@ -38,7 +39,9 @@
 //     synthesizes nothing.  It takes two OwnedFd handles, not two ints, so
 //     it moves bytes only between descriptors that the caller owns.  It
 //     asks again after a short transfer or EINTR, and the sendfile form
-//     takes no destination offset, which sendfile does not read.
+//     takes no destination offset, which sendfile does not read.  The two
+//     offsets have two roles (side::SourceOffset and
+//     side::DestinationOffset), so a call cannot swap them.
 //
 //  6. The door file src/fixy/os/Io.cpp holds the setup of the ring, its
 //     maps and its release, and the two transfers.  It issues them with
@@ -51,23 +54,34 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
 #include <fixy/os/Fd.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Side.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
 #include <foundation/os/Errno.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <meta>
-#include <system_error>
 #include <type_traits>
 #include <utility>
 
 namespace fixy::io {
 
 class IoUringRing;
+
+// The two roles of an offset of a transfer.
+namespace side {
+// The offset in the source, where the transfer starts to read.
+struct SourceOffset final {};
+// The offset in the destination, where the transfer starts to write.
+struct DestinationOffset final {};
+}  // namespace side
+
+using SourceOffsetOf = ::foundation::core::Side<side::SourceOffset, ::fixy::fs::FileOffset>;
+using DestinationOffsetOf = ::foundation::core::Side<side::DestinationOffset, ::fixy::fs::FileOffset>;
 
 namespace detail {
 
@@ -347,11 +361,7 @@ set_up_ring_(std::uint32_t sq_entries, std::uint32_t cq_entries, std::uint32_t f
 
 }  // namespace detail
 
-// Declared before the class so the class can name it as its sole friend.
-// The definition follows the class, because it builds one.
-template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
-    requires CtxFitsIoUringMint<Ctx, Atoms...>
-[[nodiscard]] std::expected<Linear<IoUringRing>, std::error_code> mint_io_uring_ring(Ctx const&) noexcept;
+class IoRingDoor;
 
 // One descriptor and three mappings, released in the reverse of the
 // order the kernel handed them over.
@@ -359,8 +369,10 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 // The constructor is private.  With a public one, a caller who never
 // called io_uring_setup can hand it any nine numbers, and the destructor
 // closes a descriptor and unmaps three addresses that the caller chose.
-// Only the setup call knows what the
-// kernel actually gave out, so only the setup call can build one.
+// Only the setup call knows what the kernel actually gave out, so only
+// the setup call can build one.  IoRingDoor is the one friend, and its
+// one friend is mint_io_uring_ring.  A Result of a ring needs the complete
+// class, so the door, which comes after the class, builds the ring.
 class [[nodiscard]] IoUringRing {
     // The empty parts are the empty handle.  A completion size of zero marks
     // a completion ring that aliases the submission ring (SINGLE_MMAP).
@@ -368,14 +380,7 @@ class [[nodiscard]] IoUringRing {
 
     explicit IoUringRing(detail::RingParts const& parts) noexcept : parts_{parts} {}
 
-    // The trailing return type is not a style choice: written the other
-    // way the declaration ends `..., std::error_code> ::fixy::io::...`
-    // and the parser takes the `>::` as a nested-name-specifier inside
-    // the template-id.  The same shape is documented at
-    // fixy/os/CpuPinned.h, where a friend crosses a header boundary.
-    template <typename... FriendAtoms, ::foundation::effects::IsExecCtx FriendCtx>
-        requires CtxFitsIoUringMint<FriendCtx, FriendAtoms...>
-    friend auto mint_io_uring_ring(FriendCtx const&) noexcept -> std::expected<Linear<IoUringRing>, std::error_code>;
+    friend class IoRingDoor;
 
 public:
     // Default construction is the empty handle: it owns nothing, closes
@@ -420,18 +425,44 @@ private:
     void release_() noexcept;
 };
 
+// Declared before the door so the door can name it as its one friend.  The
+// result holds the ring, or the error of the setup of the kernel.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsIoUringMint<Ctx, Atoms...>
-[[nodiscard]] std::expected<Linear<IoUringRing>, std::error_code> mint_io_uring_ring(Ctx const&) noexcept {
-    constexpr std::uint32_t sq_n = detail::sq_entries_of_v<Atoms...>;
-    constexpr std::uint32_t cq_n = detail::cq_entries_of_v<Atoms...>;
-    constexpr std::uint32_t flags = detail::fold_ring_flags<Atoms...>();
+[[nodiscard]] ::foundation::core::Result<Linear<IoUringRing>, ::foundation::os::Errno>
+mint_io_uring_ring(Ctx const&) noexcept;
 
-    auto parts = detail::set_up_ring_(sq_n, cq_n, flags);
-    if (parts.is_err()) {
-        return std::unexpected{std::error_code{::fixy::fs::detail::error_number_of_(parts), std::system_category()}};
+// The door to the setup of a ring.  No object of it exists.  Its member is
+// private, and its one friend is mint_io_uring_ring, so a ring comes only
+// from that mint, after its gate.
+//
+// The trailing return type is necessary: fixy/os/CpuPinned.h gives the
+// parse reason.
+class IoRingDoor final : ::foundation::NoObject<IoRingDoor> {
+    template <typename... FriendAtoms, ::foundation::effects::IsExecCtx FriendCtx>
+        requires CtxFitsIoUringMint<FriendCtx, FriendAtoms...>
+    friend auto mint_io_uring_ring(FriendCtx const&) noexcept
+        -> ::foundation::core::Result<Linear<IoUringRing>, ::foundation::os::Errno>;
+
+    // Sets up a ring through the door of src/fixy/os/Io.cpp, and gives the
+    // ring that owns the parts that the kernel gave, or the error.
+    [[nodiscard]] static ::foundation::core::Result<Linear<IoUringRing>, ::foundation::os::Errno>
+    set_up_(std::uint32_t sq_entries, std::uint32_t cq_entries, std::uint32_t flags) noexcept {
+        ::foundation::core::Result<detail::RingParts, ::foundation::os::Errno> parts =
+            detail::set_up_ring_(sq_entries, cq_entries, flags);
+        for (::foundation::os::Errno const error : parts.err()) {
+            return ::foundation::core::err(error);
+        }
+        return mint_linear<IoUringRing>(IoUringRing{std::move(parts).expect("the setup door gave the parts")});
     }
-    return mint_linear<IoUringRing>(IoUringRing{std::move(parts).expect("the setup door gave the parts of the ring")});
+};
+
+template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsIoUringMint<Ctx, Atoms...>
+[[nodiscard]] ::foundation::core::Result<Linear<IoUringRing>, ::foundation::os::Errno>
+mint_io_uring_ring(Ctx const&) noexcept {
+    return IoRingDoor::set_up_(detail::sq_entries_of_v<Atoms...>, detail::cq_entries_of_v<Atoms...>,
+                               detail::fold_ring_flags<Atoms...>());
 }
 
 // A transfer moves the bytes of one descriptor to another inside the
@@ -444,50 +475,37 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
 // It returns the count that it moved, and a count short of the length
 // means that the source ended.  Another error returns its code and not
 // the count, so after an error the destination can hold a part of the
-// bytes.
-namespace detail {
-
-// The check and the result that the two forms share.  step makes the
-// transfer through the door, and gives the count that it moved or the error
-// of the kernel.
-template <typename Step>
-[[nodiscard]] std::expected<std::size_t, std::error_code>
-transfer_all(::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination, Step step) noexcept {
-    if (!source.is_open() || !destination.is_open()) {
-        return std::unexpected{std::error_code{::fixy::fs::detail::closed_handle_error, std::system_category()}};
-    }
-    auto moved = step();
-    if (moved.is_err()) {
-        return std::unexpected{std::error_code{::fixy::fs::detail::error_number_of_(moved), std::system_category()}};
-    }
-    return std::move(moved).expect("the transfer door gave the count that it moved");
-}
-
-}  // namespace detail
+// bytes.  A handle that holds no descriptor gives ebadf, and the
+// transfer makes no system call.
 
 // sendfile writes at the file position of the destination and moves it,
 // so this form takes no destination offset.  It reads the source from
 // source_offset and does not move the file position of the source.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSendfileTransfer<Ctx, Atoms...>
-[[nodiscard]] inline std::expected<std::size_t, std::error_code>
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
-                  std::size_t length, ::off_t source_offset = 0) noexcept {
-    return detail::transfer_all(source, destination, [&] {
-        return detail::send_file_(destination.get(), source.get(), source_offset, length);
-    });
+                  std::size_t length,
+                  SourceOffsetOf source_offset = SourceOffsetOf{::fixy::fs::FileOffset{0}}) noexcept {
+    if (!source.is_open() || !destination.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
+    return detail::send_file_(destination.get(), source.get(), source_offset.value().raw(), length);
 }
 
 // copy_file_range reads from source_offset and writes at
 // destination_offset, and it moves neither file position.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsCopyRangeTransfer<Ctx, Atoms...>
-[[nodiscard]] inline std::expected<std::size_t, std::error_code>
+[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
 zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
-                  std::size_t length, ::off_t source_offset = 0, ::off_t destination_offset = 0) noexcept {
-    return detail::transfer_all(source, destination, [&] {
-        return detail::copy_file_range_(source.get(), source_offset, destination.get(), destination_offset, length);
-    });
+                  std::size_t length, SourceOffsetOf source_offset = SourceOffsetOf{::fixy::fs::FileOffset{0}},
+                  DestinationOffsetOf destination_offset = DestinationOffsetOf{::fixy::fs::FileOffset{0}}) noexcept {
+    if (!source.is_open() || !destination.is_open()) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
+    return detail::copy_file_range_(source.get(), source_offset.value().raw(), destination.get(),
+                                    destination_offset.value().raw(), length);
 }
 
 }  // namespace fixy::io

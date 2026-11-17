@@ -21,6 +21,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
 
@@ -30,6 +31,12 @@
 namespace fixy::fs {
 
 namespace eff = ::foundation::effects;
+
+// A position in a file: the count of bytes from the start of the file.  The
+// representation is the signed 64-bit loff_t of the kernel, so a door gives
+// the value to the kernel with no conversion.  The kernel refuses a negative
+// offset with einval.
+using FileOffset = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::int64_t>;
 
 class FileDoor;
 

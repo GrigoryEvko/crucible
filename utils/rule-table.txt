@@ -973,6 +973,9 @@ witness <fixy/os/Sched.h> private | fixy::sched::PriorAffinity | fixy::sched::Pr
 witness <fixy/os/Sched.h> deleted | fixy::sched::PriorAffinityDoor | fixy::sched::PriorAffinityDoor{}
 witness <fixy/os/OwnedMmap.h> private | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private> | fixy::OwnedMmap<int, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private>{static_cast<void*>(nullptr), std::size_t{0}}
 witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{{3, nullptr, 0, nullptr, 0, nullptr, 0, 0, 0}}
+# The door of a ring.  No object of it exists, its member is private, and
+# its one friend is mint_io_uring_ring, which sets up the ring.
+witness <fixy/os/Io.h> deleted | fixy::io::IoRingDoor | fixy::io::IoRingDoor{}
 witness <fixy/os/Fd.h> private | fixy::fs::OwnedFd | fixy::fs::OwnedFd{3}
 # The four doors of OwnedFd.  No object of a door exists, its members
 # are private, and its friends are the gated mints that open a descriptor.

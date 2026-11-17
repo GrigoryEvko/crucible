@@ -77,6 +77,7 @@ struct TransferFiles final {
 
 using MadeFd = fixy::Result<fs::OwnedFd, foundation::os::Errno>;
 using MadeFiles = fixy::Result<TransferFiles, foundation::os::Errno>;
+using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
 
 // The descriptor of a mint, or the Errno of the open that failed.  The door
 // gives the Errno in its Result and does not set errno.
@@ -84,6 +85,12 @@ using MadeFiles = fixy::Result<TransferFiles, foundation::os::Errno>;
     return std::move(minted).match(
         [](fixy::Linear<fs::OwnedFd> opened) -> MadeFd { return std::move(opened).consume(); },
         [](foundation::os::Errno error) -> MadeFd { return fixy::err(error); });
+}
+
+// The ring of a mint, out of its Linear, or the Errno of the setup.
+[[nodiscard]] MadeRing ring_of(fixy::Result<fixy::Linear<fixy::io::IoUringRing>, foundation::os::Errno> minted) {
+    CRUCIBLE_TRY(made, std::move(minted));
+    return std::move(made).consume();
 }
 
 // The two files of a transfer, or the Errno of the first open or write of
@@ -108,15 +115,19 @@ using MadeFiles = fixy::Result<TransferFiles, foundation::os::Errno>;
 [[nodiscard]] int ring_setup_hands_back_a_mapped_ring() {
     IoBlockCtx ctx{eff::testing::test()};
 
-    auto ring = fixy::io::mint_io_uring_ring<Engine, Sq8, Cq16>(ctx);
-    if (!ring) {
+    // The ring leaves the Linear in ring_of, and it keeps the descriptor
+    // and the mappings, so the release happens once, when this returns.
+    MadeRing ring = ring_of(fixy::io::mint_io_uring_ring<Engine, Sq8, Cq16>(ctx));
+    if (ring.is_err()) {
         // ENOSYS: no io_uring in this kernel.  EPERM: disabled by
         // sysctl or refused by a seccomp filter.
-        std::fprintf(stderr, "[skipped] io_uring_setup is unavailable here (%s)\n", ring.error().message().c_str());
+        fixy::report(fixy::Sink::Err, "[skipped] io_uring_setup is unavailable here (errno {})\n",
+                     foundation::os::error_number_of(ring));
         return 0;
     }
+    fixy::io::IoUringRing owned = std::move(ring).expect("the setup gave a ring");
 
-    const auto& handle = ring->peek();
+    const auto& handle = owned;
     if (!handle.is_valid()) {
         std::fprintf(stderr, "a successful setup handed back a ring that reports itself invalid\n");
         return 1;
@@ -174,14 +185,6 @@ using MadeFiles = fixy::Result<TransferFiles, foundation::os::Errno>;
         return 1;
     }
 
-    // Consuming out of the Linear leaves the ring owning the descriptor
-    // and the mappings, so the release happens once, when this returns.
-    auto owned = std::move(*ring).consume();
-    if (!owned.is_valid()) {
-        std::fprintf(stderr, "the ring lost its descriptor on the way out of the Linear\n");
-        return 1;
-    }
-
     // A move takes the descriptor and the three mappings, and each accessor
     // of the ring that the move emptied gives the empty value.
     fixy::io::IoUringRing const moved = std::move(owned);
@@ -217,13 +220,14 @@ using MadeFiles = fixy::Result<TransferFiles, foundation::os::Errno>;
     }
     TransferFiles files = std::move(made).expect("the doors made the two transfer files");
 
-    const auto moved = fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source, files.destination, kPayloadBytes);
-    if (!moved) {
-        std::fprintf(stderr, "sendfile failed (%s)\n", moved.error().message().c_str());
+    auto moved = fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source, files.destination, kPayloadBytes);
+    if (moved.is_err()) {
+        fixy::report(fixy::Sink::Err, "sendfile failed (errno {})\n", foundation::os::error_number_of(moved));
         return 1;
     }
-    if (*moved != kPayloadBytes) {
-        std::fprintf(stderr, "sendfile moved %zu bytes of the %zu asked for\n", *moved, kPayloadBytes);
+    std::size_t const moved_count = std::move(moved).expect("sendfile gave its count");
+    if (moved_count != kPayloadBytes) {
+        fixy::report(fixy::Sink::Err, "sendfile moved {} bytes of the {} asked for\n", moved_count, kPayloadBytes);
         return 1;
     }
     if (!destination_holds(files.destination, pattern)) {
@@ -233,10 +237,29 @@ using MadeFiles = fixy::Result<TransferFiles, foundation::os::Errno>;
 
     // A length past the end of the source moves the whole source and
     // stops there.  The count says where the source ended.
-    const auto past_end =
-        fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source, files.destination, 2 * kPayloadBytes);
-    if (!past_end || *past_end != kPayloadBytes) {
+    auto past_end = fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source, files.destination, 2 * kPayloadBytes);
+    if (std::move(past_end).value_or(0) != kPayloadBytes) {
         std::fprintf(stderr, "a transfer past the end of the source did not stop at the end\n");
+        return 1;
+    }
+
+    // A source offset starts the read at that byte, so a transfer from the
+    // middle of the source moves the bytes of its second half.
+    std::size_t const half = kPayloadBytes / 2;
+    auto from_middle = fixy::io::zerocopy_transfer<Sendfile>(
+        ctx, files.source, files.destination, kPayloadBytes,
+        fixy::io::SourceOffsetOf{fs::FileOffset{static_cast<std::int64_t>(half)}});
+    if (std::move(from_middle).value_or(0) != half) {
+        std::fprintf(stderr, "a transfer from the middle of the source did not stop at its end\n");
+        return 1;
+    }
+    std::uint8_t readback[kPayloadBytes];
+    bool const holds_second_half =
+        ::pread(files.destination.get(), readback, half, static_cast<::off_t>(2 * kPayloadBytes))
+            == static_cast<::ssize_t>(half)
+        && std::memcmp(readback, pattern + half, half) == 0;
+    if (!holds_second_half) {
+        std::fprintf(stderr, "a transfer from the middle of the source did not move its second half\n");
         return 1;
     }
     return 0;
@@ -263,19 +286,43 @@ using MadeFiles = fixy::Result<TransferFiles, foundation::os::Errno>;
     }
     TransferFiles files = std::move(made).expect("the doors made the two transfer files");
 
-    const auto moved = fixy::io::zerocopy_transfer<CopyFileRange>(ctx, files.source, files.destination, kPayloadBytes);
-    if (!moved) {
+    auto moved = fixy::io::zerocopy_transfer<CopyFileRange>(ctx, files.source, files.destination, kPayloadBytes);
+    if (moved.is_err()) {
         // copy_file_range refuses some filesystem pairs outright, and
         // which pairs it refuses has changed across kernels.
-        std::fprintf(stderr, "[skipped] copy_file_range refused this pair (%s)\n", moved.error().message().c_str());
+        fixy::report(fixy::Sink::Err, "[skipped] copy_file_range refused this pair (errno {})\n",
+                     foundation::os::error_number_of(moved));
         return 0;
     }
-    if (*moved != kPayloadBytes) {
-        std::fprintf(stderr, "copy_file_range moved %zu bytes of the %zu asked for\n", *moved, kPayloadBytes);
+    std::size_t const moved_count = std::move(moved).expect("copy_file_range gave its count");
+    if (moved_count != kPayloadBytes) {
+        fixy::report(fixy::Sink::Err, "copy_file_range moved {} bytes of the {} asked for\n", moved_count,
+                     kPayloadBytes);
         return 1;
     }
     if (!destination_holds(files.destination, pattern)) {
         std::fprintf(stderr, "the destination does not hold the source bytes\n");
+        return 1;
+    }
+
+    // The two offsets have two roles: the copy reads the second half of the
+    // source, and it writes those bytes at the destination offset.
+    std::size_t const half = kPayloadBytes / 2;
+    std::size_t const placed_at = 4 * kPayloadBytes;
+    auto placed = fixy::io::zerocopy_transfer<CopyFileRange>(
+        ctx, files.source, files.destination, half,
+        fixy::io::SourceOffsetOf{fs::FileOffset{static_cast<std::int64_t>(half)}},
+        fixy::io::DestinationOffsetOf{fs::FileOffset{static_cast<std::int64_t>(placed_at)}});
+    if (std::move(placed).value_or(0) != half) {
+        std::fprintf(stderr, "a copy with two offsets did not move the second half of the source\n");
+        return 1;
+    }
+    std::uint8_t readback[kPayloadBytes];
+    bool const holds_second_half = ::pread(files.destination.get(), readback, half, static_cast<::off_t>(placed_at))
+                                    == static_cast<::ssize_t>(half)
+                                && std::memcmp(readback, pattern + half, half) == 0;
+    if (!holds_second_half) {
+        std::fprintf(stderr, "a copy with two offsets did not write at the destination offset\n");
         return 1;
     }
     return 0;

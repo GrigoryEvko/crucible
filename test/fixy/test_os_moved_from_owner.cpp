@@ -105,13 +105,12 @@ template <typename T>
     }
     if (!refuses_with(fixy::net::bind_netlink(ctx, source), Errno::ebadf)) return answered(name, "bind_netlink");
     if (!refuses_with(fixy::perf::read_count(ctx, source), Errno::ebadf)) return answered(name, "read_count");
-    // A transfer gives a std::expected, and each refusal of one is an error.
-    if (fixy::io::zerocopy_transfer<Sendfile>(ctx, source, live, 1)
-        || fixy::io::zerocopy_transfer<Sendfile>(ctx, live, source, 1)) {
+    if (!refuses_with(fixy::io::zerocopy_transfer<Sendfile>(ctx, source, live, 1), Errno::ebadf)
+        || !refuses_with(fixy::io::zerocopy_transfer<Sendfile>(ctx, live, source, 1), Errno::ebadf)) {
         return answered(name, "a sendfile transfer");
     }
-    if (fixy::io::zerocopy_transfer<CopyFileRange>(ctx, source, live, 1)
-        || fixy::io::zerocopy_transfer<CopyFileRange>(ctx, live, source, 1)) {
+    if (!refuses_with(fixy::io::zerocopy_transfer<CopyFileRange>(ctx, source, live, 1), Errno::ebadf)
+        || !refuses_with(fixy::io::zerocopy_transfer<CopyFileRange>(ctx, live, source, 1), Errno::ebadf)) {
         return answered(name, "a copy_file_range transfer");
     }
     if (source.release() >= 0) return answered(name, "release");
