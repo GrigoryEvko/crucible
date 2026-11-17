@@ -83,11 +83,16 @@
 //
 // THE THREADS.  An allocation and a free come from any thread, and the count
 // of the generations is an atomic.  The attach, the detach and each change
-// call c10::SetCPUAllocator, which writes one pointer of an array of PyTorch
-// with no lock.  They run on the thread of the session: its TLS holds the
-// Vigil, so it is also the producer thread of the Vigil, which runs each
-// change.  A reader on another thread gets the old allocator or the new one,
-// and the two stay valid for the life of the process.
+// write the state of the sessions with no lock, and they call
+// c10::SetCPUAllocator, which writes one pointer of an array of PyTorch with
+// no lock.  So they have one writer, the thread of the sessions: the thread
+// that holds the live claims of the Vigils of the process (ProducerClaim in
+// foundation/effects/Ctx.h).  crucible_create claims the Vigil of a session on
+// the thread of the session, before the attach.  Each change runs on the
+// producer thread of a Vigil.  A call on another thread, while a claim of a
+// Vigil lives, ends the process.  A reader on another thread gets the old
+// allocator or the new one, and the two stay valid for the life of the
+// process.
 
 #include <crucible/CrucibleContext.h>
 #include <crucible/Types.h>
@@ -110,8 +115,8 @@ inline constexpr uint8_t kNoAllocatorSwitch = 0xFF;
 
 // The state of the allocator that the record path reads at the entry and at
 // the exit of each op, and at each read of a storage.  The thread of the
-// sessions is its one writer, at the attach, at the detach and at each change.
-// The record path reads it on the same thread.
+// sessions (THE THREADS) is its one writer, at the attach, at the detach and
+// at each change.  The record path reads it on the same thread.
 struct AllocatorFollow {
     // The period of the CPU allocator.  The attach, the detach and each change
     // to the prior allocator add one (THE PERIODS).

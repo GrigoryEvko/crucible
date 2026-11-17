@@ -176,6 +176,10 @@ CRUCIBLE_VESSEL_API uint64_t crucible_abi_version(void) CRUCIBLE_VESSEL_NOEXCEPT
 // TF32 for a cuDNN convolution, bit 4 the flush of denormal floats.  The Vigil
 // records each region under this word.  A word with another bit, or with the
 // precision 3, gives no Vigil, and the call gives a null handle.
+// The calling thread claims the Vigil: it is the producer thread of each op of
+// the Vigil.  Each live Vigil of the process has one producer thread, so a
+// create on a second thread, while a Vigil of another thread lives, ends the
+// process (ProducerClaim in foundation/effects/Ctx.h).
 CRUCIBLE_VESSEL_API CrucibleHandle crucible_create(uint32_t eager_numerics) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Destroy a Vigil instance. Joins the background thread.

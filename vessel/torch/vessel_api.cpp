@@ -197,7 +197,12 @@ CrucibleHandle crucible_create(uint32_t eager_numerics) noexcept {
     if (!crucible::is_named_eager_word(eager)) return nullptr;
     crucible::Vigil::Config config{};
     config.eager = eager;
-    return new crucible::Vigil(std::move(config));
+    crucible::Vigil& vigil = *new crucible::Vigil(std::move(config));
+    // The thread of the session claims the Vigil before the session writes a
+    // structure of the process.  A claim on a second thread, while a Vigil of
+    // another thread lives, ends the process here.
+    static_cast<void>(vigil.mint_producer_context());
+    return &vigil;
 }
 
 void crucible_destroy(CrucibleHandle h) noexcept {

@@ -1110,11 +1110,18 @@ class CrucibleNative:
       7. Give the autograd engine its worker threads back
       8. Restore Tensor.backward and the attached model
       9. Remove scope hooks
-      10. Destroy Vigil
+      10. Detach the generation allocator, then destroy Vigil
 
     The TLS mode is a two-state gate for the C++ side: INACTIVE or not.  RECORD
     is what activation sets and the Vigil owns the move from recording a region
     to replaying one, which is_compiled() reports.
+
+    The sessions of a process run on one thread.  A session writes structures
+    of the process with no lock: the state of the generation allocator, the CPU
+    allocator of PyTorch and the wrap of Tensor.backward.  The create of the
+    Vigil claims the thread of the session, and each live Vigil of the process
+    has one producer thread.  So a session on a second thread, while a session
+    of another thread lives, ends the process at the create of its Vigil.
     """
 
     # CrucibleMode ordinals (must match c10::CrucibleMode enum)
@@ -1274,17 +1281,19 @@ class CrucibleNative:
         # Remove scope hooks
         self._remove_hooks()
 
+        # The last session puts the prior CPU allocator back.  A storage that
+        # the session made keeps its generation and frees through the
+        # generation allocator after this.  The detach comes before the end of
+        # the Vigil, so it runs while this thread holds the claim of the Vigil,
+        # and a session of another thread cannot start between the two.
+        if self._dispatch is not None and self._allocator_attached:
+            self._dispatch.detach_allocator()
+            self._allocator_attached = False
+
         # Destroy Vigil
         if self._vessel and self._handle:
             self._vessel.destroy(self._handle)
             self._handle = 0
-
-        # The last session puts the prior CPU allocator back.  A storage that
-        # the session made keeps its generation and frees through the
-        # generation allocator after this.
-        if self._dispatch is not None and self._allocator_attached:
-            self._dispatch.detach_allocator()
-            self._allocator_attached = False
 
         if self._verbose:
             log.info("[crucible] native dispatch deactivated")
