@@ -11,7 +11,11 @@ target_link_libraries(crucible_vessel PRIVATE crucible)
 # The level probe libcrucible_level.so tells the loader the level of the
 # host.  It compiles at -march=x86-64 in each build, after the flags of the
 # build, so it runs on each x86_64 host.  It compiles the handler sources of
-# foundation itself, because libfoundation.a has the level of the build.
+# foundation itself, because libfoundation.a has the level of the build.  It
+# carries no sanitizer, so a Python process with no sanitizer runtime loads
+# it in each build: the loader of the vessel, and the test launcher, which
+# reads the level of the host before a test starts (THE LEVEL of
+# utils/assay/loop/teststep.py).
 #
 # THE LEVEL ROOT
 #   The install of a build at a level puts the two vessel libraries into
@@ -32,6 +36,16 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     target_include_directories(crucible_level PRIVATE ${CMAKE_SOURCE_DIR}/include)
     target_link_libraries(crucible_level PRIVATE crucible_dialect)
     target_compile_options(crucible_level PRIVATE -march=x86-64 -mtune=generic)
+    # The options of a source come after the options that crucible_dialect
+    # gives, so -fno-sanitize=all ends each sanitizer of the build.  No other
+    # target of this directory compiles these sources.  The link options of
+    # crucible_dialect also name the sanitizer, and GCC then links its
+    # runtime with --no-as-needed.  An item of the link libraries comes after
+    # each link option, so -fno-sanitize=all there ends the sanitizer of the
+    # link too.
+    set_source_files_properties(level_probe.cpp ${CRUCIBLE_HANDLER_SOURCES} PROPERTIES
+        COMPILE_OPTIONS -fno-sanitize=all)
+    target_link_libraries(crucible_level PRIVATE -fno-sanitize=all)
     set_target_properties(crucible_level PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
     install(TARGETS crucible_level LIBRARY DESTINATION lib/crucible COMPONENT vessel)
     # The loader opens the probe before each vessel library, so a build of a
