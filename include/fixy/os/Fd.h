@@ -38,6 +38,19 @@ namespace eff = ::foundation::effects;
 // offset with einval.
 using FileOffset = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::int64_t>;
 
+// The permission bits of a file or a directory that an open or a make
+// creates, with the octal values of chmod(2).  The kernel removes the bits of
+// the umask of the process from the value.  A named value states the set of
+// bits, so no call gives a number that a reader takes for octal and the
+// compiler takes for decimal.
+enum class FileMode : std::uint32_t {
+    owner_read = 0400,
+    owner_read_write = 0600,
+    owner_all = 0700,
+    owner_read_write_others_read = 0644,
+    owner_all_others_read_execute = 0755,
+};
+
 class FileDoor;
 
 namespace detail {

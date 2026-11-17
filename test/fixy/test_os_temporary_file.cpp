@@ -60,7 +60,7 @@ using Opened = fixy::Result<fs::OwnedFd, Errno>;
     if (size_of(ctx, file) != 0) return 2;
     if (fs::write_full(ctx, file, fixy::TextView{"twelve bytes"}).is_err()) return 3;
     if (size_of(ctx, file) != 12) return 4;
-    Opened second = descriptor_of(fs::mint_temporary_file_at(ctx, temporary, 0400));
+    Opened second = descriptor_of(fs::mint_temporary_file_at(ctx, temporary, fs::FileMode::owner_read));
     if (second.is_err()) return 5;
     fs::OwnedFd const other = std::move(second).expect("the second temporary file opened");
     if (other.get() == file.get() || size_of(ctx, other) != 0) return 6;

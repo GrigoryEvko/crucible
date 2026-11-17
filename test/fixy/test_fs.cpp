@@ -87,15 +87,15 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 
 // Reads a file back through a second descriptor of the file door, opened
 // for a read, so the write and the read meet at the byte level.
-[[nodiscard]] bool file_holds(const std::string& path, const std::uint8_t* expected) {
+[[nodiscard]] bool file_holds(const std::string& path, const std::uint8_t (&expected)[kPayloadBytes]) {
     IoBlockCtx const ctx{eff::testing::test()};
     Opened in = opened_of(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
     if (in.error_number != 0) return false;
-    std::uint8_t readback[kPayloadBytes];
-    if (fs::read_full(ctx, in.file, std::as_writable_bytes(std::span{readback})).value_or(0) != kPayloadBytes) {
+    fixy::FixedArray<std::byte, kPayloadBytes> readback{};
+    if (fs::read_full(ctx, in.file, readback.view()).value_or(0) != kPayloadBytes) {
         return false;
     }
-    return std::memcmp(readback, expected, kPayloadBytes) == 0;
+    return fixy::equal(readback.view(), foundation::core::bytes(expected));
 }
 
 [[nodiscard]] int mint_file_writes_syncs_and_commits(const ScratchDir& scratch) {
@@ -191,7 +191,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         std::fprintf(stderr, "mint_file WriteTruncate failed (errno %d)\n", writer.error_number);
         return 1;
     }
-    if (auto written = fs::write_full(ctx, writer.file, std::as_bytes(std::span{pattern})); written.is_err()) {
+    if (auto written = fs::write_full(ctx, writer.file, foundation::core::bytes(pattern)); written.is_err()) {
         std::fprintf(stderr, "write_full failed (errno %d)\n", errno_of(written));
         return 1;
     }
@@ -206,23 +206,24 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         std::fprintf(stderr, "mint_file ReadOnly failed (errno %d)\n", reader.error_number);
         return 1;
     }
-    std::byte readback[kPayloadBytes * 2]{};
-    if (fs::read_full(ctx, reader.file, std::span{readback}).value_or(0) != kPayloadBytes) {
+    fixy::FixedArray<std::byte, kPayloadBytes * 2> readback{};
+    if (fs::read_full(ctx, reader.file, readback.view()).value_or(0) != kPayloadBytes) {
         std::fprintf(stderr, "read_full did not stop at the end of the file\n");
         return 1;
     }
-    if (std::memcmp(readback, pattern, kPayloadBytes) != 0) {
+    if (!fixy::equal(readback.view().window(0, kPayloadBytes).expect("the readback holds two payloads"),
+                     foundation::core::bytes(pattern))) {
         std::fprintf(stderr, "read_full returned bytes that write_full did not put\n");
         return 1;
     }
 
     const fs::OwnedFd empty{};
-    const auto refused = fs::read_full(ctx, empty, std::span{readback});
+    const auto refused = fs::read_full(ctx, empty, readback.view());
     if (refused.is_ok() || errno_of(refused) != EBADF) {
         std::fprintf(stderr, "read_full on an empty handle was not refused with EBADF\n");
         return 1;
     }
-    const auto refused_write = fs::write_full(ctx, empty, std::as_bytes(std::span{pattern}));
+    const auto refused_write = fs::write_full(ctx, empty, foundation::core::bytes(pattern));
     if (refused_write.is_ok() || errno_of(refused_write) != EBADF) {
         std::fprintf(stderr, "write_full on an empty handle was not refused with EBADF\n");
         return 1;

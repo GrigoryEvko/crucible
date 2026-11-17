@@ -96,11 +96,11 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
 // The two files of a transfer, or the Errno of the first open or write of
 // the doors that failed.
 [[nodiscard]] MadeFiles make_transfer_files(IoBlockCtx const& ctx, ScratchDir const& scratch,
-                                            std::span<const std::uint8_t> pattern) {
+                                            const std::uint8_t (&pattern)[kPayloadBytes]) {
     using ReadWrite = fixy::atom::fs::mode<fs::open_mode::ReadWrite>;
     CRUCIBLE_TRY(source, descriptor_of(fs::mint_file<ReadWrite>(ctx, sanitized(scratch.file("src")))));
     CRUCIBLE_TRY(destination, descriptor_of(fs::mint_file<ReadWrite>(ctx, sanitized(scratch.file("dst")))));
-    CRUCIBLE_TRY(_, fs::write_full(ctx, source, std::as_bytes(pattern)));
+    CRUCIBLE_TRY(_, fs::write_full(ctx, source, fixy::bytes(pattern)));
     return TransferFiles{std::move(source), std::move(destination)};
 }
 
