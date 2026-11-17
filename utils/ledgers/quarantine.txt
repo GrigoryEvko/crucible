@@ -85,8 +85,8 @@ reason test/ | The units harness, tests and fixtures of section 14.1 of the plan
 reason test/fuzz/ | The unit fuzz of section 14.1 of the plan misc/01_10_2026_quarantine.md moves test/fuzz/ onto the types of the base, and the entry of libFuzzer keeps a region
 reason utils/tools/ | The unit tools of section 14.1 of the plan misc/01_10_2026_quarantine.md moves utils/tools/ onto the types of the base
 reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_quarantine.md moves vessel/ onto the types of the base, and the ABI of PyTorch stays behind regions
-@build/ | opted-out | 7 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
-@build/ | region | 7 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
+@build/ | opted-out | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
+@build/ | region | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
 @build/test/fuzz/generated/ | std-object | 14 | - | -
 bench/ | c-array-object | 87 | - | -
