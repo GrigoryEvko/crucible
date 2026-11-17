@@ -15,6 +15,17 @@
 #   the features of each level, and this file holds no list of them.  A
 #   feature above v4, such as AVX512-VNNI of -march=native, gives the need v4.
 #
+# THE FLOOR OF A PROGRAM
+#   A target or a source can also give less than the build, such as
+#   -mno-avx512f or -march=x86-64-v3 in a build at x86-64-v4.  But a program
+#   can link the static libraries of the build, and each unit of them has the
+#   level of the build.  An example is test_swiss_table_avx2, whose own units
+#   need v3 and whose libraries need v4 in a build at x86-64-v4.  So the need
+#   of a program is never less than the need of the -m words of the build.  A
+#   program that links no library of the build, such as a taint test of
+#   test/ct, then can need more than its own units.  It skips on a host below
+#   the build, and it never runs an instruction above the host.
+#
 #   At the end of the configure, _crucible_test_levels() reads each executable
 #   target of the target all, the flags of its target and the flags of each
 #   of its sources.  A target outside all, such as a negative fixture, has no
@@ -155,10 +166,13 @@ function(_crucible_need_of_target out target build_words build_need)
     _crucible_m_words(_target_words ${_options})
   endif()
   # A unit with no -m word of its own has the need of the target, so only such a word costs a run of the
-  # preprocessor.
+  # preprocessor.  The need never falls below the need of the build (THE FLOOR OF A PROGRAM).
   set(_need ${build_need})
   if(_target_words)
-    _crucible_need_of_words(_need ${build_words} ${_target_words})
+    _crucible_need_of_words(_own ${build_words} ${_target_words})
+    if(_own GREATER _need)
+      set(_need ${_own})
+    endif()
   endif()
   get_target_property(_sources ${target} SOURCES)
   get_target_property(_source_dir ${target} SOURCE_DIR)

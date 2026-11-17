@@ -1010,6 +1010,15 @@ def needs_cases(expect: testing.Expect) -> None:
         f"each target of the build of the level v{level} needs that level or more, and a plain test has a row",
         all(value >= level for value in needs.values()) and (level < 2 or needs.get("test_core_fma", 0) >= level),
     )
+    # test_core_fma has a unit of x86-64 and the units of the build, so its need is the need of the build, also in a
+    # build of -march=native with no level word (THE FLOOR OF A PROGRAM of TestLevel.cmake).
+    floor = needs.get("test_core_fma", 1)
+    lower = sorted(target for target, value in needs.items() if value < floor)
+    expect(
+        f"no target of the build {kind} needs less than the build, v{floor}, so -mno-avx512f or a lower -march of a "
+        f"target does not lower its need: {lower}",
+        not lower,
+    )
 
 
 def planted_group(cases: Callable[[Planted, testing.Expect], None]) -> testing.Group:
