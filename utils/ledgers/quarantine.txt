@@ -108,6 +108,7 @@ bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
 bench/ | raw-pointer-object | 92 | - | -
 bench/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
+bench/ | region | 1 | MEASURE: a plain thread_local is the reference of one access of ThreadLocalRef | a plain thread_local of an inline function is the reference of one access of ThreadLocalRef in bench_thread_local_ref
 bench/ | region | 1 | MEASURE: the doors of the pinned references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the pinned fluxsort is the stable reference of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 2 | MEASURE: the pinned x86-simd-sort is the speed roof of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
@@ -234,7 +235,7 @@ include/foundation/ | replace-pending:<atomic> | 1 | - | -
 include/foundation/ | replace-pending:<bit> | 3 | - | -
 include/foundation/ | replace-pending:<cstring> | 1 | - | -
 include/foundation/ | replace-pending:<span> | 2 | - | -
-include/foundation/ | replace-pending:<string_view> | 2 | - | -
+include/foundation/ | replace-pending:<string_view> | 1 | - | -
 include/foundation/algebra/ | base-std-entity | 16 | - | -
 include/foundation/algebra/ | base-std-object | 11 | - | -
 include/foundation/algebra/ | replace-pending:<string_view> | 4 | - | -
