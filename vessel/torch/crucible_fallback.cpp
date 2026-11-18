@@ -62,7 +62,7 @@ namespace {
 //
 // The checks name the enum of PyTorch, so they are in an ABI region.  The
 // search of an enumerator by its identifier is the reflection door of the
-// base (enumerator_named of foundation/core/Text.h).
+// base (has_enumerator_named of foundation/core/Text.h).
 // =====================================================================
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the checks read the dispatch keys that the PyTorch fork declares")
@@ -74,11 +74,11 @@ static_assert(std::to_underlying(c10::DispatchKey::Crucible) + 1
 
 // The positive control: a search that never finds a name would pass the next
 // assertion for the wrong reason.
-static_assert(::fixy::enumerator_named<c10::DispatchKey>("Crucible").is_some()
-                  && ::fixy::enumerator_named<c10::DispatchKey>("EndOfFunctionalityKeys").is_some(),
+static_assert(::fixy::has_enumerator_named<c10::DispatchKey>("Crucible")
+                  && ::fixy::has_enumerator_named<c10::DispatchKey>("EndOfFunctionalityKeys"),
               "the search of an enumerator of c10::DispatchKey finds no known key, so it proves nothing");
 
-static_assert(::fixy::enumerator_named<c10::DispatchKey>("DeferredInit").is_none(),
+static_assert(!::fixy::has_enumerator_named<c10::DispatchKey>("DeferredInit"),
               "DispatchKey::DeferredInit survived the patch: the removal hunk did not apply, so Crucible widened "
               "the key budget instead of reusing the dead slot.  Repair "
               "patches/pytorch-crucible-integration.patch.");

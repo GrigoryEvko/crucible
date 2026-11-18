@@ -182,6 +182,8 @@ static_assert(enumerator_named<Lane>("CopyHostToDevice").expect("Lane declares i
 static_assert(enumerator_named<Lane>("Alias").expect("Lane declares it") == Lane::Send);
 static_assert(enumerator_named<Lane>("Copy").is_none() && enumerator_named<Lane>("").is_none());
 static_assert(enumerator_named<Lane>("send").is_none() && enumerator_named<NoLane>("Send").is_none());
+static_assert(has_enumerator_named<Lane>("Alias") && !has_enumerator_named<Lane>("Copy"));
+static_assert(!has_enumerator_named<NoLane>("Send"));
 
 }  // namespace detail::text_checks
 

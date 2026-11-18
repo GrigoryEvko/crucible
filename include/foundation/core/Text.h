@@ -57,7 +57,8 @@
 //   static storage and a zero after its last character, so the view never
 //   dangles.  enumerator_named<E>(name) is the search in the other direction:
 //   at compile time, the enumerator of E whose identifier is name, or no
-//   value.
+//   value.  has_enumerator_named<E>(name) asks only if E declares it, with
+//   no Option over E, for a foreign enum.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
@@ -417,10 +418,21 @@ template <::foundation::reflect::ScopedEnum E, char Separator>
     return detail::c_text_over_(words.first, words.size).view();
 }
 
-// The enumerator of E whose identifier is name, or no value when E declares
-// no such enumerator, such as an enumerator that a patch of a foreign header
-// removes.  The search runs at compile time only.  Complexity: linear in the
+// True when E declares an enumerator whose identifier is name.  A patch of a
+// foreign header can remove an enumerator, and a check of the patch asks this.
+// The answer is a bool, so the search instantiates no Option over a foreign
+// enum.  The search runs at compile time only.  Complexity: linear in the
 // enumerators and the characters of the name.
+template <::foundation::reflect::ScopedEnum E>
+[[nodiscard]] consteval bool has_enumerator_named(TextView name) noexcept {
+    std::size_t const position =
+        ::foundation::reflect::detail::enumerator_position(^^E, detail::text_first_(name), name.size());
+    return position != ::foundation::reflect::enum_count<E>;
+}
+
+// The enumerator of E whose identifier is name, or no value when E declares
+// no such enumerator.  The search runs at compile time only.  Complexity:
+// linear in the enumerators and the characters of the name.
 template <::foundation::reflect::ScopedEnum E>
 [[nodiscard]] consteval Option<E> enumerator_named(TextView name) noexcept {
     std::size_t const position =

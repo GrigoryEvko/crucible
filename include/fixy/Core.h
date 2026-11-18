@@ -75,6 +75,7 @@ using ::foundation::core::unreachable;
 // only in an ABI region, and the full name shows the reader the escape.
 using ::foundation::core::CText;
 using ::foundation::core::enumerator_named;
+using ::foundation::core::has_enumerator_named;
 using ::foundation::core::FixedText;
 using ::foundation::core::freeze;
 using ::foundation::core::GrowText;
