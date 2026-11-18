@@ -2272,6 +2272,15 @@ class Run {
 public:
     explicit Run(std::string name) : name_{std::move(name)} {}
 
+    // A run whose name is a text of the base that a bench formats, such as
+    // the name of a row with its count of threads.  Complexity: one copy of
+    // the text.
+    template <std::size_t Capacity>
+    explicit Run(::fixy::FixedText<Capacity> const& name) {
+        for (char const character : name)
+            name_.push_back(character);
+    }
+
     // Pinning policy:
     //   default:       pin to first isolcpu (else sched_getcpu())
     //   .core(N) N≥0:  pin to CPU N

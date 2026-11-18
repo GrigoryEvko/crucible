@@ -33,7 +33,7 @@
 //      the maximum of one op.  The harness takes the cost of the clock off
 //      each sample, so an op of a few nanoseconds reads at the resolution of
 //      the clock.  The JSON tail of the bench gives the latency report of
-//      each row.
+//      each row, with the count of its threads in its name.
 //
 // THE COUNTS OF THREADS
 //   With no argument, the rows have 1, 2, 4, 8 and 16 threads, up to the
@@ -292,16 +292,19 @@ struct RowResult {
     bench::Report latency{};
 };
 
-// The literal name of the latency report of an op.
+// The name of the latency report of an op in a row, with the count of the
+// threads of the row, such as "shared add [latency of one op, 4 threads]".
+// Each row gives a report, so each report of the JSON tail has a name of its
+// own.
 template <OpKind Kind>
-[[nodiscard]] bench::Run run_of() {
-    if constexpr (Kind == OpKind::SharedAdd) {
-        return bench::Run{"shared add [latency of one op]"};
-    } else if constexpr (Kind == OpKind::OwnAdd) {
-        return bench::Run{"own add [latency of one op]"};
-    } else {
-        return bench::Run{"mpsc push [latency of one op]"};
-    }
+[[nodiscard]] bench::Run run_of(ThreadCount threads) {
+    ::fixy::TextView const op = Kind == OpKind::SharedAdd ? ::fixy::TextView{"shared add"}
+                              : Kind == OpKind::OwnAdd    ? ::fixy::TextView{"own add"}
+                                                          : ::fixy::TextView{"mpsc push"};
+    ::fixy::FixedText<64> name{};
+    static_cast<void>(::fixy::format(name, "{} [latency of one op, {} threads]", op, threads.raw())
+                          .expect("the name of a latency report fits in 64 characters"));
+    return bench::Run{name};
 }
 
 // Runs one row of an op on the first threads.count slots of the spread.
@@ -361,7 +364,7 @@ template <OpKind Kind>
                      .windows = bench::spread_of_windows(window_mops.view()),
                      .paused_windows = bench::detail::paused_windows_of(window.lost_ns.view(), window.pause.basis),
                      .window_pause = window.pause};
-    result.latency = run_of<Kind>()
+    result.latency = run_of<Kind>(threads)
                          .core(main_cpu.raw())
                          .batch(1)
                          .samples(kLatencySamples)
