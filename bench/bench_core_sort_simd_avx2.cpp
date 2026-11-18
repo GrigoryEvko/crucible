@@ -22,6 +22,10 @@ void sort_simd_avx2(std::uint64_t* first, std::size_t count) noexcept {
     x86simdsortStatic::qsort(first, count, false, false);
 }
 
+void sort_simd_avx2_keyvalue(float* keys, std::uint32_t* values, std::size_t count) noexcept {
+    x86simdsortStatic::keyvalue_qsort(keys, values, count, false, false);
+}
+
 }  // namespace bench_sort_references
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

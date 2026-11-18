@@ -48,6 +48,10 @@
 //                                   On a Zen 4 core its AVX-512 arm stores
 //                                   each partition with vpcompressd to
 //                                   memory, which the core runs in microcode
+//     x86-simd-sort keyvalue_qsort  the AVX2 arm of the sort of keys with
+//                                   values: the roof of the rows of records.
+//                                   It takes the keys and the payloads of the
+//                                   records as two runs, and it is not stable
 //   The rows of a pinned reference need its source in the tools directory
 //   (python3 utils/bin/setup install fluxsort x86-simd-sort).  With no
 //   source, the configure prints the command, and the bench omits the rows.
@@ -448,6 +452,41 @@ struct SimdHost final {
         bench_sort_references::sort_simd_host(first, static_cast<std::size_t>(last - first));
     }
 };
+
+// The body of the roof of the records: before each sample the raw keys and
+// payloads take the window of the raw pool of records that the row of the base
+// takes, and a call sorts the keys with their payloads by keyvalue_qsort.
+template <std::size_t Count>
+struct KeyValueSortBody final {
+    KeyedRecord const* pool = nullptr;
+    std::size_t pool_count = 0;
+    float* keys = nullptr;
+    std::uint32_t* payloads = nullptr;
+    std::size_t sample = 0;
+
+    void before_sample() noexcept {
+        std::size_t const windows = pool_count / Count;
+        KeyedRecord const* const window = pool + (sample % windows) * Count;
+        for (std::size_t index = 0; index < Count; ++index) {
+            keys[index] = window[index].key;
+            payloads[index] = window[index].payload;
+        }
+        ++sample;
+    }
+
+    void operator()() noexcept {
+        bench_sort_references::sort_simd_avx2_keyvalue(keys, payloads, Count);
+        bench::do_not_optimize(keys[0]);
+    }
+};
+
+template <std::size_t Count>
+[[gnu::noinline]] bench::Report measure_keyvalue_roof(bench::Run&& run, RawRun<KeyedRecord> const& pool) {
+    RawRun<float> keys{Count};
+    RawRun<std::uint32_t> payloads{Count};
+    return measure_row(static_cast<bench::Run&&>(run),
+                       KeyValueSortBody<Count>{pool.first, pool.count, keys.first, payloads.first, 0});
+}
 #endif
 
 // The row of std::lower_bound: the searches of the row of find_lower_bound.
@@ -611,6 +650,14 @@ template <std::size_t Count>
     print_ratio(Pair{.row = descending_row, .reference = std_row});
     print_ratio(Pair{.row = order_row, .reference = std_row});
     print_ratio(Pair{.row = by_key_row, .reference = order_row});
+#if defined(CRUCIBLE_BENCH_X86_SIMD_SORT)
+    bench::Report const roof = measure_keyvalue_roof<Count>(bench::Run{"x86-simd-sort keyvalue"}, raw_pool);
+    fixy::FixedText<96> roof_text{};
+    Row const roof_row{name_with_count<Count>(roof_text, "x86-simd-sort AVX2 keyvalue_qsort, not stable"), roof};
+    print_row<Count>(roof_row);
+    print_ratio(Pair{.row = by_key_row, .reference = roof_row});
+    print_ratio(Pair{.row = order_row, .reference = roof_row});
+#endif
 }
 
 // The rows of the network of N, with std::sort of the same N as the floor.
