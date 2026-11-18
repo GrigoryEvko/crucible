@@ -273,6 +273,7 @@ def run_part(cxx: str, include: Path, jobs: int, part: tuple[int, int], rows: li
             (name, label, result.result() if isinstance(result, Future) else result) for name, label, result in units
         ]
         store.save_memo()
+        store.close()
     clean: list[str] = []
     planted_failures: list[str] = []
     for name, label, result in results:

@@ -63,7 +63,7 @@ from assay.core.exit import ExitCode
 from assay.guard import selftest
 from assay.loop.fixture import store as compile_store
 from assay.oracle import runner
-from assay.oracle.unit_store import USE_LINKER, UnitStore, linker_of, program_flags
+from assay.oracle.unit_store import USE_LINKER, UnitStore, linker_of, program_flags, source_lock
 from assay.tests import oracle as oracle_parts
 
 # The group oracle gives this module the part of the call (THE PARTS).
@@ -450,6 +450,35 @@ def sweep_cases(expect: testing.Expect) -> None:
                 "with the caches off there is no store, and the sweep removes nothing",
                 UnitStore("c++", (), (), root / "scratch").sweep_sources() == 0,
             )
+    held_sweep_cases(expect)
+
+
+def held_sweep_cases(expect: testing.Expect) -> None:
+    """A sweep in a run keeps each source directory that a store of the run holds (THE LOCK OF A SOURCE DIRECTORY).
+
+    The run takes the sources of one unit of 40 KB.  Then the time of its directory goes five hours back, as when the
+    sweep read the time before the run used the directory again.  A sweep of a second store with a limit of 1 KB then
+    has the directory as its only victim.
+    """
+    with tempfile.TemporaryDirectory(prefix="unit_store_held_") as scratch:
+        root = Path(scratch)
+        running = UnitStore("c++", (), (), root / "scratch", store_root=root / "store")
+        source = running.sources([("unit.cpp", "x" * (40 << 10))])[0]
+        directory = source.parent
+        past = directory.stat().st_mtime - 5 * 3600.0
+        os.utime(directory, (past, past))
+        sweeping = UnitStore("c++", (), (), root / "scratch", store_root=root / "store")
+        removed = sweeping.sweep_sources(max_bytes=1 << 10)
+        expect(
+            "a sweep keeps the sources of a unit while the store of its run holds them, also with an old time",
+            removed == 0 and source.is_file(),
+        )
+        running.close()
+        removed = sweeping.sweep_sources(max_bytes=1 << 10)
+        expect(
+            "after the store frees its locks, the sweep removes the directory and its lock file",
+            removed == 1 and not directory.exists() and not source_lock(directory).exists(),
+        )
 
 
 def slot_cases(expect: testing.Expect, cxx: str, root: Path) -> None:

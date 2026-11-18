@@ -38,6 +38,20 @@ THE SOURCES
     each directory with a use in the last SOURCES_IN_USE_S, because a unit
     of a run can read it.
 
+THE LOCK OF A SOURCE DIRECTORY
+    A store holds a lock of flock(2) in the shared mode on each source
+    directory that it uses, from its first use until UnitStore.close().  The
+    lock file is .DIGEST.lock beside the directory, in its fan-out directory.
+    So the lock file is not in a search root of a compile, and the sweep
+    does not read it as a directory.  The sweep reads the time of each
+    directory before it removes the directory, and a run can use an idle
+    directory again between the two steps.  For that reason, the sweep
+    removes a directory only under the lock in the exclusive mode, which it
+    takes with no wait.  A directory that a store holds then stays.  The
+    sweep removes the lock file after the directory and before it frees the
+    lock.  A store that then gets the lock of the removed file sees another
+    inode at the path, and it takes the lock of the file at the path.
+
 THE KEY OF A STATIC UNIT
     compile_key of the store hashes the identity of the compiler, the
     command, the working directory, the environment of the compiler and the
@@ -155,6 +169,7 @@ computation to its build.
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -162,6 +177,7 @@ import shutil
 import tempfile
 import threading
 import time
+import weakref
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -184,6 +200,8 @@ LIMIT_BYTES = 256 << 20
 SOURCES_LIMIT_BYTES = 256 << 20
 # A source directory with a use in this period can be in use by a unit of a run.  The byte limit keeps it.
 SOURCES_IN_USE_S = 2 * cache_root.TOUCH_INTERVAL
+# The end of the name of the lock file of a source directory (THE LOCK OF A SOURCE DIRECTORY).
+SOURCE_LOCK_SUFFIX = ".lock"
 # The file name of the digest memo of one caller, in the memo directory of the store.
 DIGEST_MEMO_NAME = "units-{}.digests"
 # The time limit of the run of a program, in seconds.
@@ -294,6 +312,69 @@ def _source_directories(sources_root: Path) -> list[cache_dir.Entry]:
             files = sum(cache_dir.allocated(item.lstat()) for item in tree_paths.listing(directory.path))
             found.append(cache_dir.Entry(directory.path, directory.size + files, directory.used))
     return found
+
+
+def source_lock(directory: Path) -> Path:
+    """Return the lock file of a source directory: .DIGEST.lock in its fan-out directory (THE LOCK OF A SOURCE DIRECTORY)."""
+    return directory.parent / f".{directory.name}{SOURCE_LOCK_SUFFIX}"
+
+
+def _held_lock(directory: Path) -> int:
+    """Take the lock of a source directory in the shared mode, and return its descriptor (THE LOCK OF A SOURCE DIRECTORY).
+
+    The call waits while a sweep removes the directory.  When the sweep removed the lock file before the lock, the call
+    takes the lock of the file at the path again.  The fan-out directory exists after the call.
+    """
+    lock = source_lock(directory)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    while True:
+        descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_SH)
+            held = os.fstat(descriptor)
+            named = os.stat(lock)
+        except FileNotFoundError:
+            os.close(descriptor)
+            continue
+        except BaseException:
+            os.close(descriptor)
+            raise
+        if (held.st_dev, held.st_ino) == (named.st_dev, named.st_ino):
+            return descriptor
+        os.close(descriptor)
+
+
+def _released_locks(held: dict[Path, int]) -> None:
+    """Close each descriptor of the source locks of a store, which frees each lock.  O(locks)."""
+    for descriptor in held.values():
+        with contextlib.suppress(OSError):
+            os.close(descriptor)
+    held.clear()
+
+
+def _removed_idle(directory: Path) -> bool:
+    """Remove a source directory that no store holds and that had no use in SOURCES_IN_USE_S, and tell if it went.
+
+    The sweep takes the lock in the exclusive mode with no wait, so a directory that a store holds stays.  A use after
+    the read of the sweep and before the lock also keeps the directory (THE LOCK OF A SOURCE DIRECTORY).  Complexity:
+    one removal of the files of the directory.
+    """
+    lock = source_lock(directory)
+    try:
+        descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if time.time() - directory.stat().st_mtime <= SOURCES_IN_USE_S:
+            return False
+        shutil.rmtree(directory)
+        lock.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(descriptor)
 
 
 def _kept(data: bytes) -> str:
@@ -530,6 +611,14 @@ class UnitStore:
         self._lock = threading.Lock()
         self._slots = threading.BoundedSemaphore(compile_slots)
         self._program_paths: dict[str, str | None] = {}
+        # The descriptor of the lock of each source directory that the store holds (THE LOCK OF A SOURCE DIRECTORY).
+        # The finalizer frees the locks at close(), at the collection of the store, or at the exit of the interpreter.
+        self._source_locks: dict[Path, int] = {}
+        self._release_locks = weakref.finalize(self, _released_locks, self._source_locks)
+
+    def close(self) -> None:
+        """Free the lock of each source directory of the store.  A sweep can then remove the directories."""
+        self._release_locks()
 
     def save_memo(self) -> None:
         """Write the digest memo of the lookups of this run.  A failure to write changes nothing."""
@@ -542,10 +631,15 @@ class UnitStore:
 
         A source that holds its text is not written again, and a source with
         other bytes is written again.  A file of the directory that is not a
-        source makes the unit miss (Unit.holds_only_sources).
+        source makes the unit miss (Unit.holds_only_sources).  The store holds
+        the lock of the directory before it reads the directory, until
+        close() (THE LOCK OF A SOURCE DIRECTORY).
         """
         digest = _digest(json.dumps([list(pair) for pair in files]).encode("utf-8"))
         directory = self.sources_root / digest[:2] / digest
+        with self._lock:
+            if directory not in self._source_locks:
+                self._source_locks[directory] = _held_lock(directory)
         directory.mkdir(parents=True, exist_ok=True)
         paths: list[Path] = []
         for name, text in files:
@@ -569,8 +663,9 @@ class UnitStore:
         limit, the directories with the oldest use go until the remaining
         directories hold less than cache_dir.EVICT_TO of the limit.  A
         directory with a use in the last SOURCES_IN_USE_S can be in use, and
-        only its age removes it.  The turn is due one time each day, or when a
-        sample of the sources is over the limit.
+        only its age removes it.  A directory that a store holds stays (THE
+        LOCK OF A SOURCE DIRECTORY).  The turn is due one time each day, or
+        when a sample of the sources is over the limit.
 
         Return the count of removed directories.  Complexity: O(d log d) for d directories, and one stat of each
         file of each directory.
@@ -586,8 +681,7 @@ class UnitStore:
             idle = [entry for entry in found if now - entry.used > SOURCES_IN_USE_S]
             in_use = sum(entry.size for entry in found) - sum(entry.size for entry in idle)
             for entry in cache_dir.victims(idle, max(max_bytes - in_use, 0), now=now):
-                with contextlib.suppress(OSError):
-                    shutil.rmtree(entry.path)
+                if _removed_idle(entry.path):
                     removed += 1
         return removed
 
