@@ -1,0 +1,5 @@
+# The ledger of the rule determinism.  `python3 utils/bin/guard explain determinism` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule determinism` writes this file.
+format 1
+rule determinism
+utils/assay/guard/engines/buildsys/cost_budgets.py | history | admit | is_deleted_source | The prune of guard write reads the git history to tell a deleted source from a generated source of a different build.  Only guard write calls it, and no verdict reads the value
