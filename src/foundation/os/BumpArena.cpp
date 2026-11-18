@@ -111,7 +111,7 @@ void BumpArena::open_epoch_() noexcept {
 }
 
 void BumpArena::end_epoch_() noexcept {
-    if (retained_bytes_ > retained_bytes_limit) {
+    if (retained_bytes_ > retained_limit_) {
         free_blocks_from_(1);
     }
     for (std::uint32_t index = 0; index < block_count_; ++index) {

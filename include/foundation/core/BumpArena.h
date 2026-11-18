@@ -32,10 +32,11 @@
 //     the epoch covers each byte that the arena gives out during the body.
 //     After the body, each of those bytes dies, and the arena keeps its
 //     blocks for the next epoch.  So a loop that runs an epoch in each turn
-//     takes no block in its steady state.  An arena that holds more than
-//     retained_bytes_limit bytes at the end gives back each block but the
-//     first.  An epoch in a different epoch of one arena, and an epoch of an
-//     arena that holds bytes, end the process.
+//     takes no block in its steady state.  An arena that holds more than its
+//     retained limit at the end gives back each block but the first.  The
+//     limit is default_retained_bytes_limit until set_retained_limit sets a
+//     different one.  An epoch in a different epoch of one arena, and an
+//     epoch of an arena that holds bytes, end the process.
 //
 // The result of the body of an epoch holds no borrow (HoldsNoBorrow of
 // foundation/core/Choice.h).  So a Ref, a View, an address, or a class that
@@ -60,6 +61,7 @@
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
@@ -133,10 +135,11 @@ inline void bump_unpoison_(void const* /*first*/, std::size_t /*count*/) noexcep
 
 class BumpArena final {
 public:
-    // The bytes of blocks that an arena keeps when an epoch ends.  An arena
-    // that holds more gives back each block but the first, so one epoch with
-    // an unusual peak does not pin its peak for the life of the arena.
-    static constexpr std::size_t retained_bytes_limit = std::size_t{64} << 20;
+    // The bytes of blocks that an arena keeps when an epoch ends, until
+    // set_retained_limit sets a different limit.  An arena that holds more
+    // gives back each block but the first, so one epoch with an unusual peak
+    // does not pin its peak for the life of the arena.
+    static constexpr std::size_t default_retained_bytes_limit = std::size_t{64} << 20;
 
     // The count of blocks that one arena can hold.
     static constexpr std::uint32_t max_blocks = 64;
@@ -235,6 +238,15 @@ public:
     // keeps for the next epoch.
     [[nodiscard]] std::size_t retained_bytes() const noexcept { return retained_bytes_; }
 
+    // The bytes of blocks that the arena keeps when an epoch ends.  The end
+    // of each later epoch reads the limit.  A limit of zero keeps only the
+    // first block.
+    void set_retained_limit(Quantity<unit::Byte, std::size_t> limit) & noexcept { retained_limit_ = limit.raw(); }
+
+    [[nodiscard]] Quantity<unit::Byte, std::size_t> retained_limit() const noexcept {
+        return Quantity<unit::Byte, std::size_t>{retained_limit_};
+    }
+
 private:
     // The bump: bytes bytes at the alignment, from the current block.  bytes
     // is above zero and at most __PTRDIFF_MAX__, and the alignment is a power
@@ -270,8 +282,8 @@ private:
     // The checks of an epoch at its start: no open epoch, and no byte given.
     void open_epoch_() noexcept;
 
-    // Each byte that the arena gave out dies.  Above the limit, each block
-    // but the first goes back to the door.  The blocks that stay are
+    // Each byte that the arena gave out dies.  Above the retained limit, each
+    // block but the first goes back to the door.  The blocks that stay are
     // poisoned, and the first block becomes the current block.
     void end_epoch_() noexcept;
 
@@ -283,6 +295,7 @@ private:
     // The cold fields, read on the cold path, by the epoch and by the query.
     std::size_t block_size_ = 0;
     std::size_t retained_bytes_ = 0;
+    std::size_t retained_limit_ = default_retained_bytes_limit;
     std::uint32_t cur_index_ = 0;
     std::uint32_t block_count_ = 0;
     bool has_open_epoch_ = false;

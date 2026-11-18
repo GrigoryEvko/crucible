@@ -116,8 +116,8 @@ struct RefTargetOf<Ref<T, Brand>> {
 static_assert(make_gives_fresh_refs());
 
 // The closed surface of the arena.
-inline constexpr TextView bump_arena_names{"BumpArena make array with_epoch retained_bytes retained_bytes_limit "
-                                           "max_blocks block_alignment"};
+inline constexpr TextView bump_arena_names{"BumpArena make array with_epoch retained_bytes set_retained_limit "
+                                           "retained_limit default_retained_bytes_limit max_blocks block_alignment"};
 CRUCIBLE_CLOSED_SURFACE(bump_arena_names, BumpArena);
 
 }  // namespace detail::bump_arena_checks

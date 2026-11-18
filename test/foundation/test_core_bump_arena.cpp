@@ -126,12 +126,38 @@ void test_end_above_the_limit_keeps_one_block() {
     BumpArena arena{block};
     arena.with_epoch([&]() noexcept {
         static_cast<void>(take(arena, 64));
-        static_cast<void>(take(arena, BumpArena::retained_bytes_limit));
-        CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() > BumpArena::retained_bytes_limit);
+        static_cast<void>(take(arena, BumpArena::default_retained_bytes_limit));
+        CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() > BumpArena::default_retained_bytes_limit);
     });
     CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == block);
     arena.with_epoch([&]() noexcept { static_cast<void>(take(arena, 64)); });
     CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == block);
+}
+
+// A retained limit that set_retained_limit sets refuses each block but the
+// first at the end of an epoch above it.  The same epoch under the default
+// limit keeps each block.
+void test_set_limit_refuses_the_blocks_above_it() {
+    using Bytes = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
+    BumpArena kept{4096};
+    CRUCIBLE_FATAL_INVARIANT(kept.retained_limit() == Bytes{BumpArena::default_retained_bytes_limit});
+    kept.with_epoch([&]() noexcept { static_cast<void>(take(kept, 20000)); });
+    CRUCIBLE_FATAL_INVARIANT(kept.retained_bytes() > 4096);
+
+    BumpArena limited{4096};
+    limited.set_retained_limit(Bytes{4096});
+    CRUCIBLE_FATAL_INVARIANT(limited.retained_limit() == Bytes{4096});
+    limited.with_epoch([&]() noexcept {
+        static_cast<void>(take(limited, 1000));
+        static_cast<void>(take(limited, 20000));
+        CRUCIBLE_FATAL_INVARIANT(limited.retained_bytes() > 4096);
+    });
+    CRUCIBLE_FATAL_INVARIANT(limited.retained_bytes() == 4096);
+
+    BumpArena zero{4096};
+    zero.set_retained_limit(Bytes{0});
+    zero.with_epoch([&]() noexcept { static_cast<void>(take(zero, 64)); });
+    CRUCIBLE_FATAL_INVARIANT(zero.retained_bytes() == 4096);
 }
 
 // A long run of epochs with a mix of sizes takes its blocks in its first
@@ -154,7 +180,7 @@ void test_long_run_keeps_its_blocks() {
     }
     CRUCIBLE_FATAL_INVARIANT(retained_after_one_period > 0);
     CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == retained_after_one_period);
-    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() <= BumpArena::retained_bytes_limit);
+    CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() <= BumpArena::default_retained_bytes_limit);
 }
 
 // Each wrong use ends the process: an epoch in an epoch of one arena, an
@@ -239,6 +265,7 @@ int main() {
     test_large_request_takes_its_own_block();
     test_end_keeps_the_blocks();
     test_end_above_the_limit_keeps_one_block();
+    test_set_limit_refuses_the_blocks_above_it();
     test_long_run_keeps_its_blocks();
     test_wrong_uses_end_the_process(test);
     test_agrees_with_plain_model();
