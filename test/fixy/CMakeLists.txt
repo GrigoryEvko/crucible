@@ -343,12 +343,17 @@ fixy_test(test_contexts)
 # pack isolates them.  The message lists every code a pack trips, which
 # is what lets each of the three stand on its own.
 
+# The refusal prints the code and the theorem of each rule that the pack
+# trips.  The fixtures of L002, H002 and I002 also match the text of their
+# theorem, so a refusal that drops the theorem fails three rules of three
+# families.
 set(_fixy_tier5_reason "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 5\\]: the combination is refused")
 set(_fixy_tier5_member "::tier5_composition_ok_.+ evaluates to false")
 
 fixy_neg_compile_test(neg_rule_l002_borrow_async
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) .*L002"
+  "L002: borrow x async\\. A borrowed reference's lifetime is tied to the caller's frame"
   "${_fixy_tier5_member}")
 fixy_neg_compile_test(neg_rule_l007_borrow_bg_row
   "${_fixy_tier5_reason}"
@@ -425,6 +430,7 @@ fixy_neg_compile_test(neg_rule_h001_hot_unstated_cost
 fixy_neg_compile_test(neg_rule_h002_hot_no_witness
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) H002:"
+  "H002: hot x no refinement witness\\. A hot body buys its nanoseconds by assuming an invariant"
   "${_fixy_tier5_member}")
 fixy_neg_compile_test(neg_rule_h003_hot_alloc_row
   "${_fixy_tier5_reason}"
@@ -716,6 +722,7 @@ fixy_neg_compile_test(neg_rule_i003_ct_thrown_failure
 fixy_neg_compile_test(neg_rule_i002_returned_plain_error
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) I002:"
+  "I002: classified x a failure whose error type is not fixy::Secret\\. The error value leaves the classified binding"
   "${_fixy_tier5_member}")
 fixy_neg_compile_test(neg_rule_i002_thrown_unseen_family
   "${_fixy_tier5_reason}"

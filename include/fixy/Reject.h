@@ -467,13 +467,20 @@ template <class... Atoms>
 // Reached only through the tier chain in fn, which has already
 // established that the pack is atoms and unique per axis.  The guard
 // here repeats that, because a static_assert message is instantiated
-// whatever the condition beside it concluded.
+// whatever the condition beside it concluded.  A pack that passes each
+// tier gets a literal, so each fn type of the tree builds no refusal
+// text.
+//
+// The refusal names the code and the theorem of each collision rule that
+// the pack trips, so a reader learns why the combination is refused.
 template <class T, class... Atoms>
 [[nodiscard]] consteval std::string_view tier5_message_() noexcept {
     if constexpr (!IsAcceptedPayload<T> || !AllAtomsWellFormed<Atoms...>) {
         return "fixy::fn<Type, Atoms...> [tier 5]: not reached — an earlier tier refused this pack.";
     } else if constexpr (!UniqueAtomPerAxis<Atoms...>) {
         return "fixy::fn<Type, Atoms...> [tier 5]: not reached — tier 4 refused this pack.";
+    } else if constexpr (first_failing_tier_<T, Atoms...>() == Tier::Ok) {
+        return "fixy::fn<Type, Atoms...> [tier 5]: not reached — the pack passes each tier.";
     } else {
         using Entry = corpus_tag_or_void_t<T, Atoms...>;
         constexpr std::string_view codes = ::fixy::collision::rules_of<T, Atoms...>::failing_codes();
@@ -492,10 +499,19 @@ template <class T, class... Atoms>
             text += Entry::cite();
             text += "  ";
         }
+        // The theorems are appended from the rows, whose texts are string
+        // literals.  GCC 16 does not append a view that define_static_string
+        // gave, in a constant expression: the append compares the pointer
+        // with null, and GCC refuses that comparison for such a pointer.
         if constexpr (!codes.empty()) {
             text += "Collision rule(s) ";
             text += codes;
-            text += ": fixy/Collision.h carries each theorem and its citation.";
+            text += ":";
+            for (const auto& verdict : ::fixy::collision::rules_of<T, Atoms...>::verdicts()) {
+                if (verdict.ok) continue;
+                text += "  ";
+                text += verdict.theorem;
+            }
         }
         return std::define_static_string(text);
     }

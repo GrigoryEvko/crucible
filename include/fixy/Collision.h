@@ -87,6 +87,7 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Text.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Anchor.h>
@@ -612,7 +613,8 @@ enum class CallShapeReading : std::uint8_t {
 
 [[nodiscard]] consteval CallShapeReading call_shape_reading_(std::meta::info grade) noexcept {
     const std::meta::info named = std::meta::dealias(grade);
-    if (named == ^^::fixy::pole::Unconstrained<Axis::CallShape> || named == ^^::fixy::atom::dispatch::recurses_unbounded) {
+    if (named == ^^::fixy::pole::Unconstrained<Axis::CallShape>
+        || named == ^^::fixy::atom::dispatch::recurses_unbounded) {
         return CallShapeReading::NoIndirectCall;
     }
     const std::meta::info declared = std::meta::has_template_arguments(named) ? std::meta::template_of(named) : named;
@@ -1003,7 +1005,8 @@ struct rules_of {
     static constexpr bool R003_ok = !(coroutine && row_bg);
     static constexpr bool L006_ok = !(linear && longjmp_unsafe);
     static constexpr bool G002_ok = !(thread_local_state && atomic_repr && !publishes_past_the_thread);
-    static constexpr bool D002_ok = !(recurses_unbounded && (unbounded_cost || !G::template mentions<Axis::Complexity>));
+    static constexpr bool D002_ok =
+        !(recurses_unbounded && (unbounded_cost || !G::template mentions<Axis::Complexity>));
 
     // ── The regime family, live since fixy/atoms/Regime.h ────────────
     //
@@ -1392,9 +1395,10 @@ struct rules_of {
 
     // ── Naming the rules a pack trips ────────────────────────────────
     //
-    // fn's tier-5 message carries these codes, so a reader and a
-    // negative fixture both learn WHICH rule refused rather than only
-    // that one did.  The codes are stable API for exactly that reason.
+    // fn's tier-5 message carries the code and the theorem of each rule
+    // that refuses the pack, so a reader and a negative fixture both learn
+    // WHICH rule refused and why, rather than only that one did.  The codes
+    // are stable API for exactly that reason.
     //
     // The pairing is written out rather than walked by reflection.  A
     // walk over members_of(^^live_rules<Atoms...>) reads the verdicts
@@ -1404,28 +1408,205 @@ struct rules_of {
     // two pins of fixy/collision/Report.h compare the rows here against the
     // <code>_ok members reflection finds in live_rules<>, whose empty
     // pack trips nothing, so a rule written without a row is named.
+    //
+    // Each row holds the theorem of its rule, with its remedy.  The
+    // refusal of fn prints it, and validate() asserts each row with it, so
+    // each theorem is written one time.
     struct rule_verdict {
         bool ok{};
-        std::string_view code{};
+        ::foundation::core::TextView code{};
+        std::string_view theorem{};
     };
 
     [[nodiscard]] static consteval auto verdicts() noexcept {
         return std::array{
-            rule_verdict{L002_ok, "L002"}, rule_verdict{M012_ok, "M012"}, rule_verdict{P010_ok, "P010"},
-            rule_verdict{L007_ok, "L007"}, rule_verdict{T001_ok, "T001"}, rule_verdict{R002_ok, "R002"},
-            rule_verdict{R003_ok, "R003"}, rule_verdict{L006_ok, "L006"}, rule_verdict{G002_ok, "G002"},
-            rule_verdict{D002_ok, "D002"}, rule_verdict{P002_ok, "P002"}, rule_verdict{H001_ok, "H001"},
-            rule_verdict{H002_ok, "H002"}, rule_verdict{H003_ok, "H003"}, rule_verdict{H010_ok, "H010"},
-            rule_verdict{R001_ok, "R001"}, rule_verdict{S001_ok, "S001"}, rule_verdict{W001_ok, "W001"},
-            rule_verdict{W002_ok, "W002"}, rule_verdict{B001_ok, "B001"}, rule_verdict{B002_ok, "B002"},
-            rule_verdict{V201_ok, "V201"}, rule_verdict{V202_ok, "V202"}, rule_verdict{V203_ok, "V203"},
-            rule_verdict{V301_ok, "V301"}, rule_verdict{V401_ok, "V401"}, rule_verdict{V101_ok, "V101"},
-            rule_verdict{V402_ok, "V402"}, rule_verdict{F101_ok, "F101"}, rule_verdict{F102_ok, "F102"},
-            rule_verdict{S011_ok, "S011"}, rule_verdict{D001_ok, "D001"}, rule_verdict{L003_ok, "L003"},
-            rule_verdict{F103_ok, "F103"}, rule_verdict{F104_ok, "F104"}, rule_verdict{F105_ok, "F105"},
-            rule_verdict{E044_ok, "E044"}, rule_verdict{S010_ok, "S010"}, rule_verdict{I004_ok, "I004"},
-            rule_verdict{I003_ok, "I003"}, rule_verdict{I002_ok, "I002"}, rule_verdict{R004_ok, "R004"},
-            rule_verdict{W003_ok, "W003"},
+            rule_verdict{L002_ok, "L002",
+                         "L002: borrow x async. A borrowed reference's lifetime is tied to the caller's frame and "
+                         "cannot bridge a suspension or a hand-off to another thread. Scope the borrow before the "
+                         "await, or capture by value."},
+            rule_verdict{M012_ok, "M012",
+                         "M012: monotonic x concurrent without an atomic representation. Two threads stepping a "
+                         "monotonic counter through a non-atomic carrier lose updates. Use repr<ReprKind::Atomic>."},
+            rule_verdict{P010_ok, "P010",
+                         "P010: ghost x Row<Alloc|IO|Block>. A ghost binding is erased at codegen and emits no "
+                         "instructions, but each of those three effects requires emitted code. The row holds the "
+                         "lifts of the atoms, so a kernel wait or a system call counts too. Drop the ghost grade, or "
+                         "drop the observable effect."},
+            rule_verdict{L007_ok, "L007",
+                         "L007: borrow x Row<Bg>. When the background thread runs the body, the caller's frame may "
+                         "have unwound and the borrow dangles. Move ownership into the closure, or drop the Bg atom."},
+            rule_verdict{T001_ok, "T001",
+                         "T001: capability x trust::unverified. A capability mints a non-revocable authorization "
+                         "token that consumers treat as proof of authority, which a binding of unverified "
+                         "provenance cannot establish."},
+            rule_verdict{R002_ok, "R002",
+                         "R002: coroutine x borrow. A coroutine resumes after the caller's frame may have unwound, "
+                         "dangling the borrow."},
+            rule_verdict{R003_ok, "R003",
+                         "R003: coroutine x Row<Bg>. The suspension and the background hand-off are two independent "
+                         "reasons the body outlives its caller; naming both says neither owns the lifetime."},
+            rule_verdict{L006_ok, "L006",
+                         "L006: linear x longjmp. A longjmp past a linear value's scope skips its consumption, so "
+                         "the resource leaks with no diagnostic."},
+            rule_verdict{G002_ok, "G002",
+                         "G002: thread-local x atomic representation x no reader on another thread. A thread-local "
+                         "slot whose stores reach no other thread is private to one thread, so an atomic carrier "
+                         "inside it pays for synchronization nobody can observe. Drop the atomic representation, or "
+                         "state the scope that the stores reach and the fence that publishes them, such as "
+                         "scope::system with barrier::acq_rel for a per-thread counter that a monitor thread reads."},
+            rule_verdict{D002_ok, "D002",
+                         "D002: unbounded recursion x an unbounded or unstated cost. A recursion with neither a "
+                         "depth bound nor a cost bound is a stack overflow the type system could have refused. "
+                         "State the proven depth with dispatch::recurses<N>, or bound the cost of the binding."},
+            rule_verdict{P002_ok, "P002",
+                         "P002: ghost x an emitting surface. A ghost binding is erased at codegen, and a stdio "
+                         "write or a syscall is emitted code by definition. P010 catches the atoms that lift an "
+                         "effect through the row of the binding. A call through the vDSO lifts the empty row, and "
+                         "these two axes are the door that catches it."},
+            rule_verdict{H001_ok, "H001",
+                         "H001: hot x an unstated or unbounded cost. The hot path must justify its compute "
+                         "envelope, so declare atom::cost_constant or atom::cost_linear<N>. An unstated cost is the "
+                         "Complexity strict pole, which states no cost, and a hot binding must state one."},
+            rule_verdict{H002_ok, "H002",
+                         "H002: hot x no refinement witness. A hot body buys its nanoseconds by assuming an "
+                         "invariant instead of checking it, so something upstream must have proved it. Attach a "
+                         "Refined input that carries the proof."},
+            rule_verdict{H003_ok, "H003",
+                         "H003: hot x Alloc or IO in the row of the binding. The allocator and the kernel bound "
+                         "neither in nanoseconds, whatever cost the binding states, and a system call that lifts IO "
+                         "counts as a stated IO does. Move the allocation or the I/O off the hot path, into an Init "
+                         "or a Bg context."},
+            rule_verdict{H010_ok, "H010",
+                         "H010: hot x Row<Bg>. A function cannot be both on the foreground hot path and in "
+                         "background context: the two name different threads. H001 and H003 both admit a hot Bg "
+                         "binding with a constant cost and no Alloc or IO, which is still this contradiction."},
+            rule_verdict{R001_ok, "R001",
+                         "R001: coroutine x hot. A coroutine frame costs an indirect call plus a state spill at "
+                         "every suspension point, and one resume breaches the budget."},
+            rule_verdict{S001_ok, "S001",
+                         "S001: stdio x hot. Buffered stdio takes a lock and may block. Neither belongs on a path "
+                         "budgeted in nanoseconds."},
+            rule_verdict{W001_ok, "W001",
+                         "W001: hot x a kernel wait. Block is in the row that the pack lifts to, from a wait "
+                         "strategy that enters the kernel, a system call that can park the caller, or a stated "
+                         "Block. The scheduler bounds such a wait at 1-5 us, against a budget that the "
+                         "cache-coherence fabric bounds at 10-40 ns. Wait with a spin, move the call off the hot "
+                         "path, or leave the hot path."},
+            rule_verdict{W002_ok, "W002",
+                         "W002: Row<Bg> x a spin that burns the core. A background body that spins holds a core the "
+                         "scheduler could have given to foreground work. Park, or use UMWAIT, which halts the core "
+                         "instead of spinning it."},
+            rule_verdict{B001_ok, "B001",
+                         "B001: a Bg observable surface that may run unbounded is a back-pressure trap. The "
+                         "producer cannot see the consumer fall behind, because the surface exists to report facts "
+                         "and not to apply back pressure. Declare atom::space_bounded<N> and atom::cost_linear<N>."},
+            rule_verdict{B002_ok, "B002",
+                         "B002: an observability surface names an effect outside the binding's effect row. "
+                         "Observability names which PART of the declared row is observation; it is not a second row "
+                         "and cannot widen the first. Add the effect to the Effect grade if the operation really "
+                         "performs it, or drop it from the surface."},
+            rule_verdict{V201_ok, "V201",
+                         "V201: hot x an instruction tier at or above NonDeterministicTsc. A serialising timestamp "
+                         "read drains the pipeline, 20-40 cycles against a budget of tens of nanoseconds, and "
+                         "PrivilegedMsr sits above it on the ladder. Read the counter off the hot path, or drop the "
+                         "tier."},
+            rule_verdict{V202_ok, "V202",
+                         "V202: the PrivilegedMsr tier x an effect row with no Init. rdmsr, wrmsr, IN and OUT belong "
+                         "to startup, where they can be ordered and audited and where the ring-0 capability is held. "
+                         "Add Effect::Init to the row, or drop the tier."},
+            rule_verdict{V203_ok, "V203",
+                         "V203: a replay-deterministic payload x an instruction tier at or above "
+                         "NonDeterministicTsc. The payload's DetSafe band claims the same bits on every replay; a "
+                         "timestamp counter differs per run by construction. Lower the band, or drop the tier."},
+            rule_verdict{V301_ok, "V301",
+                         "V301: hot x a fence at or above SeqCst. A seq_cst fence drains the store buffer, about 30 "
+                         "ns on x86, against a budget bounded by the cache-coherence fabric at 10-40 ns. Publish "
+                         "with a release store and read with an acquire load, or leave the hot path."},
+            rule_verdict{V401_ok, "V401",
+                         "V401: a scope at or above Cluster x a fence below AcqRel. The publication reaches further "
+                         "than the fence orders, so a reader on another block can observe the write before the data "
+                         "the writer published ahead of it. Fence with acq_rel or stronger, or narrow the scope."},
+            rule_verdict{V101_ok, "V101",
+                         "V101: a replay-deterministic payload x an ISA pinned to one trunk. A body emitted for one "
+                         "vendor's vector width reduces in that width's order, so its bits differ per host; the "
+                         "payload's DetSafe band claims the same bits on every replay. Emit Scalar or Portable, or "
+                         "lower the band."},
+            rule_verdict{V402_ok, "V402",
+                         "V402: a trunk-pinned scope x a trunk-pinned ISA that do not cohere. The host shareability "
+                         "scopes are the ARM DMB ISH/OSH family and the accelerator scopes are GPU scope; an x86 ISA "
+                         "has neither and an ARM ISA has only the first. Pin the scope and the ISA on one trunk, or "
+                         "leave one at its shared point."},
+            rule_verdict{F101_ok, "F101",
+                         "F101: a replay-deterministic payload x FP reassociation permitted. Reassociation rewrites "
+                         "the sum into a different tree, and a different tree rounds differently, so the bits differ "
+                         "between builds; the bounded-depth rung is refused with the unrestricted one for the same "
+                         "reason. Forbid reassociation, or lower the band."},
+            rule_verdict{F102_ok, "F102",
+                         "F102: a replay-deterministic payload x FP contraction across statements. Whether a "
+                         "multiply and an add fuse into one FMA decides where the single rounding falls, and 'fast' "
+                         "leaves that to the build. Contract within an expression instead, which is visible in the "
+                         "source and stable, or lower the band."},
+            rule_verdict{S011_ok, "S011",
+                         "S011: capability x a replay-deterministic payload. A capability is an authorization token "
+                         "minted for one run, and replay cannot mint the same token again, so the payload's claim of "
+                         "the same bits on every replay cannot hold. Carry a content-addressed handle instead of the "
+                         "capability, or lower the band."},
+            rule_verdict{D001_ok, "D001",
+                         "D001: an indirect call whose family names no noexcept signature. A throw out of the callee "
+                         "crosses a boundary that promised none and ends the process, and a callee whose signature "
+                         "nobody names is potentially-throwing. Name the signature with noexcept, as a function "
+                         "pointer type or as a member type `signature` of the tag class, or put a noexcept "
+                         "trampoline in front of the call that turns the failure into a Result."},
+            rule_verdict{L003_ok, "L003",
+                         "L003: borrow x a spawn no structured join ties to the frame. A detached or raw-cloned "
+                         "child shares the address space and can run after the caller's frame has unwound, so the "
+                         "borrow dangles. Spawn through mint_spawn, which joins, or move ownership into the child."},
+            rule_verdict{F103_ok, "F103",
+                         "F103: constant time x FP reassociation by an unrestricted rewrite. The compiler can pick "
+                         "the tree of the sum from the magnitudes of the operands, so the count of operations "
+                         "follows the data. Forbid reassociation, or bound it to a tree of fixed depth."},
+            rule_verdict{F104_ok, "F104",
+                         "F104: constant time x an FP mode that honours denormal inputs. A denormal input costs 30 "
+                         "to 100 times the cycles of a normal one on x86 and ARM, so the time tells the magnitude of "
+                         "the input. Name FpDenormalInput::DenormalsAreZero in the mode (MXCSR.DAZ, FPCR.FZ)."},
+            rule_verdict{F105_ok, "F105",
+                         "F105: constant time x an FP mode that preserves subnormal results. A subnormal result "
+                         "costs 30 to 100 times the cycles of a normal one, so the time tells the magnitude of the "
+                         "result. Name FpFtz::FlushToZero in the mode."},
+            rule_verdict{E044_ok, "E044",
+                         "E044: constant time x a suspension or a Bg row. The scheduler then decides when the body "
+                         "runs, and it sees the classified data through the timing. Keep the constant-time core "
+                         "synchronous, and put only its boundary in async code."},
+            rule_verdict{S010_ok, "S010",
+                         "S010: constant time x a staleness window. A stale value makes the body check freshness at "
+                         "run time, and that check is a branch whose time follows the data. Keep Staleness at "
+                         "Fresh, or drop constant_time."},
+            rule_verdict{I004_ok, "I004",
+                         "I004: classified x a suspension or a Bg row x a session protocol, without constant time. "
+                         "The peer sees each send, and the time of each send follows the classified data. Send from "
+                         "a synchronous binding that states atom::constant_time, or declassify before the send "
+                         "under a policy whose mask licenses IO: AuditedLogging, WireSerialize or UserDisplay."},
+            rule_verdict{I003_ok, "I003",
+                         "I003: constant time x a failure path. The caller branches on success or failure, so the "
+                         "discriminant leaks the condition that chose it, and that condition reads classified data. "
+                         "Select the result with fixy::ct::select and fail after a declassification, or trap as "
+                         "fixy::ct::eq does."},
+            rule_verdict{I002_ok, "I002",
+                         "I002: classified x a failure whose error type is not fixy::Secret. The error value leaves "
+                         "the classified binding and carries what the body knew when it failed. No declassification "
+                         "policy licenses the failure channel. Wrap the error type in fixy::Secret, or state "
+                         "atom::as_public."},
+            rule_verdict{R004_ok, "R004",
+                         "R004: a suspension x a live session handle x a frame that is not linear. The suspension "
+                         "makes the frame a continuation that holds the handle. A continuation that is dropped drops "
+                         "the protocol, and one that is resumed twice does one step two times. Keep the Usage grade "
+                         "linear, or close the session before the suspension."},
+            rule_verdict{W003_ok, "W003",
+                         "W003: hot x a live session handle x no stated wait. The next step of the handle goes "
+                         "through a transport, and a receive or a full send waits there. An unstated wait can be a "
+                         "futex at 1-5 us against a budget of 10-40 ns. State the wait strategy with a "
+                         "fixy::atom::sync atom, a spin such as sync::spin_pause, or close the session before the "
+                         "hot path."},
         };
     }
 
@@ -1438,7 +1619,8 @@ struct rules_of {
         for (const rule_verdict& verdict : verdicts()) {
             if (verdict.ok) continue;
             if (!text.empty()) text += ", ";
-            text += std::string{verdict.code};
+            for (const char letter : verdict.code)
+                text += letter;
         }
         return std::define_static_string(text);
     }
@@ -1448,172 +1630,22 @@ struct rules_of {
     [[nodiscard]] static consteval std::string_view every_code() noexcept {
         ::foundation::reflect::anchored_t<^^Payload, std::string> text;
         for (const rule_verdict& verdict : verdicts()) {
-            text += std::string{verdict.code};
+            for (const char letter : verdict.code)
+                text += letter;
             text += ' ';
         }
         return std::define_static_string(text);
     }
 
+    // Asserts each row with its theorem, so a refused pack fires one
+    // assertion for each rule that it trips.  The test files call it on
+    // packs that pass.
     [[nodiscard]] static consteval bool validate() noexcept {
-        static_assert(L002_ok, "L002: borrow x async. A borrowed reference's lifetime is tied to the caller's frame "
-                               "and cannot bridge a suspension or a hand-off to another thread. Scope the borrow "
-                               "before the await, or capture by value.");
-        static_assert(M012_ok, "M012: monotonic x concurrent without an atomic representation. Two threads stepping "
-                               "a monotonic counter through a non-atomic carrier lose updates. Use "
-                               "repr<ReprKind::Atomic>.");
-        static_assert(P010_ok, "P010: ghost x Row<Alloc|IO|Block>. A ghost binding is erased at codegen and emits no "
-                               "instructions, but each of those three effects requires emitted code. The row holds "
-                               "the lifts of the atoms, so a kernel wait or a system call counts too. Drop the ghost "
-                               "grade, or drop the observable effect.");
-        static_assert(L007_ok, "L007: borrow x Row<Bg>. When the background thread runs the body, the caller's frame "
-                               "may have unwound and the borrow dangles. Move ownership into the closure, or drop "
-                               "the Bg atom.");
-        static_assert(T001_ok, "T001: capability x trust::unverified. A capability mints a non-revocable "
-                               "authorization token that consumers treat as proof of authority, which a binding of "
-                               "unverified provenance cannot establish.");
-        static_assert(R002_ok, "R002: coroutine x borrow. A coroutine resumes after the caller's frame may have "
-                               "unwound, dangling the borrow.");
-        static_assert(R003_ok, "R003: coroutine x Row<Bg>. The suspension and the background hand-off are two "
-                               "independent reasons the body outlives its caller; naming both says neither owns the "
-                               "lifetime.");
-        static_assert(L006_ok, "L006: linear x longjmp. A longjmp past a linear value's scope skips its consumption, "
-                               "so the resource leaks with no diagnostic.");
-        static_assert(G002_ok, "G002: thread-local x atomic representation x no reader on another thread. A "
-                               "thread-local slot whose stores reach no other thread is private to one thread, so an "
-                               "atomic carrier inside it pays for synchronization nobody can observe. Drop the atomic "
-                               "representation, or state the scope that the stores reach and the fence that "
-                               "publishes them, such as scope::system with barrier::acq_rel for a per-thread counter "
-                               "that a monitor thread reads.");
-        static_assert(D002_ok, "D002: unbounded recursion x an unbounded or unstated cost. A recursion with neither a "
-                               "depth bound nor a cost bound is a stack overflow the type system could have refused. "
-                               "State the proven depth with dispatch::recurses<N>, or bound the cost of the binding.");
-        static_assert(P002_ok, "P002: ghost x an emitting surface. A ghost binding is erased at codegen, and a "
-                               "stdio write or a syscall is emitted code by definition. P010 catches the atoms "
-                               "that lift an effect through the row of the binding. A call through the vDSO lifts "
-                               "the empty row, and these two axes are the door that catches it.");
-        static_assert(H001_ok,
-                      "H001: hot x an unstated or unbounded cost. The hot path must justify its compute "
-                      "envelope, so declare atom::cost_constant or atom::cost_linear<N>. An unstated cost "
-                      "is the Complexity strict pole, which states no cost, and a hot binding must state one.");
-        static_assert(H002_ok, "H002: hot x no refinement witness. A hot body buys its nanoseconds by assuming an "
-                               "invariant instead of checking it, so something upstream must have proved it. Attach "
-                               "a Refined input that carries the proof.");
-        static_assert(H003_ok, "H003: hot x Alloc or IO in the row of the binding. The allocator and the kernel bound "
-                               "neither in nanoseconds, whatever cost the binding states, and a system call that "
-                               "lifts IO counts as a stated IO does. Move the allocation or the I/O off the hot path, "
-                               "into an Init or a Bg context.");
-        static_assert(H010_ok, "H010: hot x Row<Bg>. A function cannot be both on the foreground hot path and in "
-                               "background context: the two name different threads. H001 and H003 both admit a hot "
-                               "Bg binding with a constant cost and no Alloc or IO, which is still this "
-                               "contradiction.");
-        static_assert(R001_ok, "R001: coroutine x hot. A coroutine frame costs an indirect call plus a state spill "
-                               "at every suspension point, and one resume breaches the budget.");
-        static_assert(S001_ok, "S001: stdio x hot. Buffered stdio takes a lock and may block. Neither belongs on a "
-                               "path budgeted in nanoseconds.");
-        static_assert(W001_ok, "W001: hot x a kernel wait. Block is in the row that the pack lifts to, from a wait "
-                               "strategy that enters the kernel, a system call that can park the caller, or a stated "
-                               "Block. The scheduler bounds such a wait at 1-5 us, against a budget that the "
-                               "cache-coherence fabric bounds at 10-40 ns. Wait with a spin, move the call off the "
-                               "hot path, or leave the hot path.");
-        static_assert(W002_ok, "W002: Row<Bg> x a spin that burns the core. A background body that spins holds a core "
-                               "the scheduler could have given to foreground work. Park, or use UMWAIT, which halts "
-                               "the core instead of spinning it.");
-        static_assert(B001_ok, "B001: a Bg observable surface that may run unbounded is a back-pressure trap. The "
-                               "producer cannot see the consumer fall behind, because the surface exists to report "
-                               "facts and not to apply back pressure. Declare atom::space_bounded<N> and "
-                               "atom::cost_linear<N>.");
-        static_assert(B002_ok, "B002: an observability surface names an effect outside the binding's effect row. "
-                               "Observability names which PART of the declared row is observation; it is not a "
-                               "second row and cannot widen the first. Add the effect to the Effect grade if the "
-                               "operation really performs it, or drop it from the surface.");
-        static_assert(V201_ok, "V201: hot x an instruction tier at or above NonDeterministicTsc. A serialising "
-                               "timestamp read drains the pipeline, 20-40 cycles against a budget of tens of "
-                               "nanoseconds, and PrivilegedMsr sits above it on the ladder. Read the counter off "
-                               "the hot path, or drop the tier.");
-        static_assert(V202_ok, "V202: the PrivilegedMsr tier x an effect row with no Init. rdmsr, wrmsr, IN and OUT "
-                               "belong to startup, where they can be ordered and audited and where the ring-0 "
-                               "capability is held. Add Effect::Init to the row, or drop the tier.");
-        static_assert(V203_ok, "V203: a replay-deterministic payload x an instruction tier at or above "
-                               "NonDeterministicTsc. The payload's DetSafe band claims the same bits on every "
-                               "replay; a timestamp counter differs per run by construction. Lower the band, or "
-                               "drop the tier.");
-        static_assert(V301_ok, "V301: hot x a fence at or above SeqCst. A seq_cst fence drains the store buffer, "
-                               "about 30 ns on x86, against a budget bounded by the cache-coherence fabric at 10-40 "
-                               "ns. Publish with a release store and read with an acquire load, or leave the hot "
-                               "path.");
-        static_assert(V401_ok, "V401: a scope at or above Cluster x a fence below AcqRel. The publication reaches "
-                               "further than the fence orders, so a reader on another block can observe the write "
-                               "before the data the writer published ahead of it. Fence with acq_rel or stronger, "
-                               "or narrow the scope.");
-        static_assert(V101_ok, "V101: a replay-deterministic payload x an ISA pinned to one trunk. A body emitted "
-                               "for one vendor's vector width reduces in that width's order, so its bits differ "
-                               "per host; the payload's DetSafe band claims the same bits on every replay. Emit "
-                               "Scalar or Portable, or lower the band.");
-        static_assert(V402_ok, "V402: a trunk-pinned scope x a trunk-pinned ISA that do not cohere. The host "
-                               "shareability scopes are the ARM DMB ISH/OSH family and the accelerator scopes are "
-                               "GPU scope; an x86 ISA has neither and an ARM ISA has only the first. Pin the scope "
-                               "and the ISA on one trunk, or leave one at its shared point.");
-        static_assert(F101_ok, "F101: a replay-deterministic payload x FP reassociation permitted. Reassociation "
-                               "rewrites the sum into a different tree, and a different tree rounds differently, so "
-                               "the bits differ between builds; the bounded-depth rung is refused with the "
-                               "unrestricted one for the same reason. Forbid reassociation, or lower the band.");
-        static_assert(F102_ok, "F102: a replay-deterministic payload x FP contraction across statements. Whether a "
-                               "multiply and an add fuse into one FMA decides where the single rounding falls, and "
-                               "'fast' leaves that to the build. Contract within an expression instead, which is "
-                               "visible in the source and stable, or lower the band.");
-        static_assert(S011_ok, "S011: capability x a replay-deterministic payload. A capability is an "
-                               "authorization token minted for one run, and replay cannot mint the same token "
-                               "again, so the payload's claim of the same bits on every replay cannot hold. Carry "
-                               "a content-addressed handle instead of the capability, or lower the band.");
-        static_assert(D001_ok, "D001: an indirect call whose family names no noexcept signature. A throw out of the "
-                               "callee crosses a boundary that promised none and ends the process, and a callee "
-                               "whose signature nobody names is potentially-throwing. Name the signature with "
-                               "noexcept, as a function pointer type or as a member type `signature` of the tag "
-                               "class, or put a noexcept trampoline in front of the call that turns the failure "
-                               "into a Result.");
-        static_assert(L003_ok, "L003: borrow x a spawn no structured join ties to the frame. A detached or "
-                               "raw-cloned child shares the address space and can run after the caller's frame "
-                               "has unwound, so the borrow dangles. Spawn through mint_spawn, which joins, or "
-                               "move ownership into the child.");
-        static_assert(F103_ok, "F103: constant time x FP reassociation by an unrestricted rewrite. The compiler "
-                               "can pick the tree of the sum from the magnitudes of the operands, so the count of "
-                               "operations follows the data. Forbid reassociation, or bound it to a tree of fixed "
-                               "depth.");
-        static_assert(F104_ok, "F104: constant time x an FP mode that honours denormal inputs. A denormal input "
-                               "costs 30 to 100 times the cycles of a normal one on x86 and ARM, so the time tells "
-                               "the magnitude of the input. Name FpDenormalInput::DenormalsAreZero in the mode "
-                               "(MXCSR.DAZ, FPCR.FZ).");
-        static_assert(F105_ok, "F105: constant time x an FP mode that preserves subnormal results. A subnormal "
-                               "result costs 30 to 100 times the cycles of a normal one, so the time tells the "
-                               "magnitude of the result. Name FpFtz::FlushToZero in the mode.");
-        static_assert(E044_ok, "E044: constant time x a suspension or a Bg row. The scheduler then decides when the "
-                               "body runs, and it sees the classified data through the timing. Keep the "
-                               "constant-time core synchronous, and put only its boundary in async code.");
-        static_assert(S010_ok, "S010: constant time x a staleness window. A stale value makes the body check "
-                               "freshness at run time, and that check is a branch whose time follows the data. "
-                               "Keep Staleness at Fresh, or drop constant_time.");
-        static_assert(I004_ok, "I004: classified x a suspension or a Bg row x a session protocol, without constant "
-                               "time. The peer sees each send, and the time of each send follows the classified "
-                               "data. Send from a synchronous binding that states atom::constant_time, or "
-                               "declassify before the send under a policy whose mask licenses IO: AuditedLogging, "
-                               "WireSerialize or UserDisplay.");
-        static_assert(I003_ok, "I003: constant time x a failure path. The caller branches on success or failure, "
-                               "so the discriminant leaks the condition that chose it, and that condition reads "
-                               "classified data. Select the result with fixy::ct::select and fail after a "
-                               "declassification, or trap as fixy::ct::eq does.");
-        static_assert(I002_ok, "I002: classified x a failure whose error type is not fixy::Secret. The error value "
-                               "leaves the classified binding and carries what the body knew when it failed. No "
-                               "declassification policy licenses the failure channel. Wrap the error type in "
-                               "fixy::Secret, or state atom::as_public.");
-        static_assert(R004_ok, "R004: a suspension x a live session handle x a frame that is not linear. The "
-                               "suspension makes the frame a continuation that holds the handle. A continuation "
-                               "that is dropped drops the protocol, and one that is resumed twice does one step two "
-                               "times. Keep the Usage grade linear, or close the session before the suspension.");
-        static_assert(W003_ok, "W003: hot x a live session handle x no stated wait. The next step of the handle goes "
-                               "through a transport, and a receive or a full send waits there. An unstated wait can "
-                               "be a futex at 1-5 us against a budget of 10-40 ns. State the wait strategy with a "
-                               "fixy::atom::sync atom, a spin such as sync::spin_pause, or close the session before "
-                               "the hot path.");
+        static constexpr auto rows = verdicts();
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+        template for (constexpr rule_verdict row : rows) { static_assert(row.ok, row.theorem); }
+#pragma GCC diagnostic pop
         return valid;
     }
 
