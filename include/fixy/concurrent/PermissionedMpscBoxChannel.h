@@ -1,12 +1,12 @@
 #pragma once
 
 // An MPSC channel of Box values, behind fractional producer shares and one
-// linear consumer permission, as PermissionedMpscChannel.  A cell of the
-// ring of fixy/concurrent/MpscRing.h holds only a trivially copyable value,
-// and a Box is no such value.  So the channel holds a PermissionedMpscChannel
-// of the words of a Box (THE WORD OF A BOX of foundation/core/Ref.h), and the
-// channel class is the authority of those words.  Each handle of this channel
-// holds the handle of the same role of the inner channel.
+// linear consumer permission, as the merge form of PermissionedChannel.  A
+// cell of the ring of fixy/concurrent/MpscRing.h holds only a trivially
+// copyable value, and a Box is no such value.  So the channel holds a merge
+// channel of the words of a Box (THE WORD OF A BOX of foundation/core/Ref.h),
+// and the channel class is the authority of those words.  Each handle of this
+// channel holds the handle of the same role of the inner channel.
 //
 // THE OWNERS
 //     Each producer handle belongs to its producer thread, and the consumer
@@ -35,7 +35,7 @@
 //     still holds, and NoItem::Closed after the last one.
 
 #include <fixy/concurrent/ChannelEnd.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/WorkingSet.h>
 
 #include <foundation/Brand.h>
@@ -68,7 +68,7 @@ template <::foundation::core::DroppableBoxPayload T, std::size_t Capacity, typen
 class PermissionedMpscBoxChannel
     : public ::foundation::Pinned<PermissionedMpscBoxChannel<T, Capacity, UserTag, Brand>> {
     using word_type = ::foundation::core::BoxWord<T, PermissionedMpscBoxChannel>;
-    using cell_channel = PermissionedMpscChannel<word_type, Capacity, UserTag, Brand>;
+    using cell_channel = PermissionedChannel<ChannelForm::merge, word_type, Capacity, UserTag, Brand>;
 
 public:
     using value_type = ::foundation::core::Box<T>;
@@ -268,9 +268,9 @@ private:
     cell_channel cells_;
 };
 
-// The Box channel of a whole root of type Root, as mpsc_channel_t.
+// The Box channel of a whole root of type Root, as channel_t.
 template <::foundation::core::DroppableBoxPayload T, std::size_t Capacity, typename Root>
-using mpsc_box_channel_t = PermissionedMpscBoxChannel<T, Capacity, typename detail::mpsc_root_parts<Root>::user_tag,
-                                                      typename detail::mpsc_root_parts<Root>::brand>;
+using mpsc_box_channel_t = PermissionedMpscBoxChannel<T, Capacity, typename detail::channel_root_parts<Root>::user_tag,
+                                                      typename detail::channel_root_parts<Root>::brand>;
 
 }  // namespace fixy::concurrent

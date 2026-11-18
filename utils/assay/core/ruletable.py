@@ -541,8 +541,8 @@ def is_qualified_name(text: str) -> bool:
 def witness_name(type_: str) -> str:
     """Return the full name of the class TYPE_: the text with each template argument list removed.
 
-    fixy::concurrent::PermissionedSpscChannel<int, 8, Tag, Brand>::ProducerHandle gives
-    fixy::concurrent::PermissionedSpscChannel::ProducerHandle.  The answer is empty when the angle brackets of TYPE_
+    fixy::concurrent::PermissionedChannel<Form, int, 8, Tag, Brand>::ProducerHandle gives
+    fixy::concurrent::PermissionedChannel::ProducerHandle.  The answer is empty when the angle brackets of TYPE_
     do not pair, or when the remaining text is not identifiers with "::" between them.  rule_table.cpp gives the
     same answer.  Complexity: linear in the length of TYPE_.
     """

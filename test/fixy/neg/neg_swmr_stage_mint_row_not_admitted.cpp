@@ -7,7 +7,7 @@
 // Expected diagnostic: CtxFitsSwmrPublishStage is not satisfied.
 
 #include <fixy/Ctx.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Stage.h>
 
 #include <foundation/effects/Computation.h>
@@ -24,7 +24,7 @@ namespace eff = ::foundation::effects;
 struct IoTag {};
 struct FixtureBrand {};
 using IoPayload = eff::Computation<eff::Row<eff::Effect::IO>, int>;
-using IoIn = c::PermissionedSpscChannel<IoPayload, 8, IoTag, FixtureBrand>;
+using IoIn = c::PermissionedChannel<c::ChannelForm::wire, IoPayload, 8, IoTag, FixtureBrand>;
 struct Writer {
     void publish(IoPayload const&) noexcept {}
 };

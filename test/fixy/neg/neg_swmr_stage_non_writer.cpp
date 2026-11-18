@@ -17,8 +17,10 @@ namespace swmr_writer_fixture {
 namespace c = ::fixy::concurrent;
 namespace channels = ::fixy::channels;
 struct InTag {};
-inline auto in_root() noexcept { return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<InTag>>(); }
-using In = c::spsc_channel_t<int, 8, decltype(in_root())>;
+inline auto in_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, InTag>>();
+}
+using In = c::channel_t<int, 8, decltype(in_root())>;
 struct Writer {
     void publish(int const&) noexcept {}
 };

@@ -15,8 +15,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
 #include <fixy/check/Check.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
 
@@ -47,17 +46,21 @@ struct ReaderTag {
 
 // One call site for every root of each channel type.  Each call mints a
 // new root, and every root of one site has one brand.
-auto link_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<LinkTag>>(); }
-auto mpsc_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole<MpscTag>>(); }
+auto link_root() noexcept { return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, LinkTag>>(); }
+auto mpsc_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, MpscTag>>();
+}
 auto writer_root() noexcept { return perm::mint_permission_root<WriterTag>(); }
 auto reader_root() noexcept { return perm::mint_permission_root<ReaderTag>(); }
 
 // A second root site of the link tag, which gives a second brand.
-auto other_link_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<LinkTag>>(); }
+auto other_link_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, LinkTag>>();
+}
 
-using Link = c::spsc_channel_t<int, 8, decltype(link_root())>;
-using OtherLink = c::spsc_channel_t<int, 8, decltype(other_link_root())>;
-using Mpsc = c::mpsc_channel_t<int, 8, decltype(mpsc_root())>;
+using Link = c::channel_t<int, 8, decltype(link_root())>;
+using OtherLink = c::channel_t<int, 8, decltype(other_link_root())>;
+using Mpsc = c::channel_t<int, 8, decltype(mpsc_root())>;
 using Swmr = ses::SwmrSession<int, WriterTag, ReaderTag, foundation::brand::brand_of_t<decltype(reader_root())>,
                               foundation::brand::brand_of_t<decltype(writer_root())>>;
 
@@ -150,14 +153,13 @@ void pipeline_joins_two_links_of_one_type() {
 void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
     constexpr ::fixy::TextView kSecondSwmrWriter{"two live writer handles of one SWMR session"};
     ::fixy::check::expect_dies(test, second_spsc_producer,
-                               ::fixy::TextView{"two live producer handles of one SPSC channel"});
+                               ::fixy::TextView{"two live producer handles of one wire channel"});
     ::fixy::check::expect_dies(test, second_spsc_consumer,
-                               ::fixy::TextView{"two live consumer handles of one SPSC channel"});
-    ::fixy::check::expect_dies(
-        test, recombined_access_while_a_handle_lives,
-        ::fixy::TextView{"recombined access to an SPSC channel while its producer handle lives"});
+                               ::fixy::TextView{"two live consumer handles of one channel"});
+    ::fixy::check::expect_dies(test, recombined_access_while_a_handle_lives,
+                               ::fixy::TextView{"recombined access to a wire channel while its producer handle lives"});
     ::fixy::check::expect_dies(test, second_mpsc_consumer,
-                               ::fixy::TextView{"two live consumer handles of one MPSC channel"});
+                               ::fixy::TextView{"two live consumer handles of one channel"});
     ::fixy::check::expect_dies(test, second_swmr_writer, kSecondSwmrWriter);
     ::fixy::check::expect_dies(test, writer_move_keeps_the_source_claim, kSecondSwmrWriter);
     ::fixy::check::expect_dies(test, pipeline_joins_two_links_of_one_type,

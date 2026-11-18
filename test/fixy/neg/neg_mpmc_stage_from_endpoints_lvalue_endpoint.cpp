@@ -20,17 +20,17 @@ struct LeftTag {};
 struct RightTag {};
 struct OutTag {};
 inline auto left_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<LeftTag>>();
+    return ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, LeftTag>>();
 }
 inline auto right_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<RightTag>>();
+    return ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, RightTag>>();
 }
 inline auto out_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<OutTag>>();
+    return ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, OutTag>>();
 }
-using Left = c::spsc_channel_t<int, 8, decltype(left_root())>;
-using Right = c::spsc_channel_t<int, 8, decltype(right_root())>;
-using Out = c::spsc_channel_t<int, 8, decltype(out_root())>;
+using Left = c::channel_t<int, 8, decltype(left_root())>;
+using Right = c::channel_t<int, 8, decltype(right_root())>;
+using Out = c::channel_t<int, 8, decltype(out_root())>;
 inline void fan_in(Left::ConsumerHandle&&, Right::ConsumerHandle&&, Out::ProducerHandle&&) noexcept {}
 }  // namespace mpmc_lvalue_fixture
 

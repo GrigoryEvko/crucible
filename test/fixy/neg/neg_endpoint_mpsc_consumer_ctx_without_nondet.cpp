@@ -4,7 +4,7 @@
 // otherwise give its pop the tag of a context that cannot hold it.
 
 #include <fixy/channels/Endpoint.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 namespace eff = foundation::effects;
 
@@ -13,7 +13,7 @@ namespace {
 struct UserTag {};
 struct UserBrand {};
 
-using Channel = fixy::concurrent::PermissionedMpscChannel<int, 8, UserTag, UserBrand>;
+using Channel = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, UserTag, UserBrand>;
 using FgCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
 
 [[maybe_unused]] void attempt(FgCtx const& ctx, Channel::ConsumerHandle&& consumer) {

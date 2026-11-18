@@ -7,7 +7,7 @@
 // Expected diagnostic: SwmrPublishStageBody is not satisfied.
 
 #include <fixy/Ctx.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Stage.h>
 
 #include <utility>
@@ -20,8 +20,8 @@ namespace c = ::fixy::concurrent;
 struct InTag {};
 struct OutTag {};
 struct FixtureBrand {};
-using In = c::PermissionedSpscChannel<int, 8, InTag, FixtureBrand>;
-using Out = c::PermissionedSpscChannel<int, 8, OutTag, FixtureBrand>;
+using In = c::PermissionedChannel<c::ChannelForm::wire, int, 8, InTag, FixtureBrand>;
+using Out = c::PermissionedChannel<c::ChannelForm::wire, int, 8, OutTag, FixtureBrand>;
 inline void body(In::ConsumerHandle&&, Out::ProducerHandle&&) noexcept {}
 
 using Refused = decltype(c::mint_swmr_stage<&body>(

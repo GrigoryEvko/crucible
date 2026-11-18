@@ -29,7 +29,7 @@
 // exits 0.
 
 #include <fixy/channels/SubstrateSessionBridge.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
@@ -64,11 +64,11 @@ struct ArmTag {};
 // brand of that site.
 template <int Arm>
 auto arm_root() noexcept {
-    return perm::mint_permission_root<cc::spsc_tag::Whole<ArmTag<Arm>>>();
+    return perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, ArmTag<Arm>>>();
 }
 
 template <int Arm>
-using Channel = cc::spsc_channel_t<Item, kRingSlots, decltype(arm_root<Arm>())>;
+using Channel = cc::channel_t<Item, kRingSlots, decltype(arm_root<Arm>())>;
 
 constexpr auto kForeground = ::foundation::effects::testing::foreground();
 

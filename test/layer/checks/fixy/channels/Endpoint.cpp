@@ -10,8 +10,10 @@ namespace proto = ::fixy::session;
 
 using endpoint_witness::UserTag;
 using endpoint_witness::UserBrand;
-using SmallSpsc = ::fixy::concurrent::PermissionedSpscChannel<int, 64, UserTag, UserBrand>;
-using SmallMpsc = ::fixy::concurrent::PermissionedMpscChannel<int, 64, UserTag, UserBrand>;
+using SmallSpsc =
+    ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, int, 64, UserTag, UserBrand>;
+using SmallMpsc =
+    ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::merge, int, 64, UserTag, UserBrand>;
 using endpoint_witness::FgCtx;
 using ProdEp = Endpoint<SmallSpsc, Direction::Producer, FgCtx>;
 using ConsEp = Endpoint<SmallSpsc, Direction::Consumer, FgCtx>;

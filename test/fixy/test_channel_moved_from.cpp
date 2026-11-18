@@ -1,7 +1,7 @@
 // A moved-from channel handle fails closed.
 //
-// Each endpoint of fixy/concurrent/PermissionedSpscChannel.h and
-// fixy/concurrent/PermissionedMpscChannel.h holds its channel through
+// Each endpoint of fixy/concurrent/PermissionedChannel.h and
+// fixy/concurrent/PermissionedChannel.h holds its channel through
 // foundation/ChannelBinding.h, which the move clears.  The move gives the
 // linear Permission or the pool share to the new handle, so a use of the
 // source would act through a token it no longer holds.  Each attack below
@@ -20,8 +20,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 #include <foundation/ChannelBinding.h>
 #include <foundation/Linear.h>
@@ -40,12 +39,16 @@ struct SpscTag {};
 struct MpscTag {};
 struct ThreadedTag {};
 
-auto spsc_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<SpscTag>>(); }
-auto mpsc_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole<MpscTag>>(); }
-auto threaded_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<ThreadedTag>>(); }
+auto spsc_root() noexcept { return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, SpscTag>>(); }
+auto mpsc_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, MpscTag>>();
+}
+auto threaded_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, ThreadedTag>>();
+}
 
-using Spsc = c::spsc_channel_t<int, 8, decltype(spsc_root())>;
-using Mpsc = c::mpsc_channel_t<int, 8, decltype(mpsc_root())>;
+using Spsc = c::channel_t<int, 8, decltype(spsc_root())>;
+using Mpsc = c::channel_t<int, 8, decltype(mpsc_root())>;
 
 // The binding costs one pointer, and it keeps the handle move-only.
 static_assert(sizeof(Spsc::ProducerHandle) == sizeof(void*));
@@ -185,7 +188,7 @@ void moved_from_handles_end_the_process(::fixy::TestRunnerCtx const& test) {
 // The producer handle is moved into the thread that pushes, and the consumer
 // stays here.  The thread sanitizer preset runs this with no report.
 [[nodiscard]] int handle_moved_into_a_thread() {
-    using Channel = c::spsc_channel_t<int, 64, decltype(threaded_root())>;
+    using Channel = c::channel_t<int, 64, decltype(threaded_root())>;
     constexpr int kItems = 2000;
     Channel channel{};
     auto [producer_perm, consumer_perm] =

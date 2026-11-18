@@ -11,8 +11,10 @@ namespace proto = ::fixy::session;
 struct UserTag {};
 struct UserBrand {};
 
-using Spsc = ::fixy::concurrent::PermissionedSpscChannel<int, 64, UserTag, UserBrand>;
-using Mpsc = ::fixy::concurrent::PermissionedMpscChannel<int, 64, UserTag, UserBrand>;
+using Spsc =
+    ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, int, 64, UserTag, UserBrand>;
+using Mpsc =
+    ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::merge, int, 64, UserTag, UserBrand>;
 
 static_assert(std::is_same_v<handle_for_t<Spsc, Direction::Producer>, typename Spsc::ProducerHandle>);
 static_assert(std::is_same_v<handle_for_t<Spsc, Direction::Consumer>, typename Spsc::ConsumerHandle>);

@@ -5,14 +5,15 @@
 // Expected diagnostic: drain has no candidate, because the class of the drop
 // is not empty.
 
-#include <fixy/concurrent/PermissionedMpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 namespace {
 
 struct UserTag {};
 struct UserBrand {};
 
-using Channel = ::fixy::concurrent::PermissionedMpscChannel<int, 8, UserTag, UserBrand>;
+using Channel =
+    ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::merge, int, 8, UserTag, UserBrand>;
 
 [[maybe_unused]] int attempt(Channel& channel) noexcept {
     int count = 0;

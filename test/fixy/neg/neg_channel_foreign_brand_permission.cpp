@@ -4,7 +4,7 @@
 // are still two types.  A producer token of the second site does not
 // open the channel of the first site.
 
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 #include <utility>
 
@@ -13,12 +13,16 @@ namespace perm = foundation::permissions;
 
 namespace {
 struct TraceTag {};
-auto first_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<TraceTag>>(); }
-auto second_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<TraceTag>>(); }
+auto first_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, TraceTag>>();
+}
+auto second_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, TraceTag>>();
+}
 }  // namespace
 
-using FirstChannel = c::spsc_channel_t<int, 8, decltype(first_root())>;
-using SecondChannel = c::spsc_channel_t<int, 8, decltype(second_root())>;
+using FirstChannel = c::channel_t<int, 8, decltype(first_root())>;
+using SecondChannel = c::channel_t<int, 8, decltype(second_root())>;
 
 int main() {
     FirstChannel first{};

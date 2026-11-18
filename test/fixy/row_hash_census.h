@@ -44,9 +44,8 @@
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/concurrent/PermissionFork.h>
 #include <fixy/concurrent/PermissionedMpscBoxChannel.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/PermissionedSpscBoxChannel.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/RingValue.h>
 #include <fixy/concurrent/Spawn.h>
@@ -503,8 +502,7 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::mmap::prot, kGradeVocabulary},
     {^^::fixy::mmap::share, kGradeVocabulary},
     {^^::fixy::mmap::advice, kGradeVocabulary},
-    {^^::fixy::concurrent::mpsc_tag, kGradeVocabulary},
-    {^^::fixy::concurrent::spsc_tag, kGradeVocabulary},
+    {^^::fixy::concurrent::channel_tag, kGradeVocabulary},
     {^^::fixy::spawn, "the holder of the parallel-for fan-out: static members only, and no object of it exists"},
     {^^::fixy::thread, "the options and the name of a thread that the thread door starts: settings of the door, which "
                        "carry no claim to fold"},
@@ -677,13 +675,15 @@ struct SwmrReaderTag {
 };
 struct SwmrReaderBrand {};
 struct SwmrWriterBrand {};
-// The tags and the brand of the two ring channel witnesses.  A channel
-// names its tag and the brand of its root.
+// The tags and the brand of the witnesses of the two forms of the ring
+// channel.  A channel names its form, its tag and the brand of its root.
 struct SpscWitnessTag {};
 struct MpscWitnessTag {};
 struct ChannelWitnessBrand {};
-using SpscWitness = ::fixy::concurrent::PermissionedSpscChannel<int, 8, SpscWitnessTag, ChannelWitnessBrand>;
-using MpscWitness = ::fixy::concurrent::PermissionedMpscChannel<int, 8, MpscWitnessTag, ChannelWitnessBrand>;
+using SpscWitness = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, int, 8,
+                                                            SpscWitnessTag, ChannelWitnessBrand>;
+using MpscWitness = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::merge, int, 8,
+                                                            MpscWitnessTag, ChannelWitnessBrand>;
 struct SpscBoxWitnessTag {};
 using SpscBoxWitness = ::fixy::concurrent::PermissionedSpscBoxChannel<int, 8, SpscBoxWitnessTag, ChannelWitnessBrand>;
 struct MpscBoxWitnessTag {};
@@ -817,8 +817,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::ChaseLevDeque, ^^::fixy::concurrent::ChaseLevDeque<int, 8>},
     {^^::fixy::concurrent::MpscRing, ^^::fixy::concurrent::MpscRing<int, 8>},
     {^^::fixy::concurrent::SpscRing, ^^::fixy::concurrent::SpscRing<int, 8>},
-    {^^::fixy::concurrent::PermissionedMpscChannel, ^^MpscWitness},
-    {^^::fixy::concurrent::PermissionedSpscChannel, ^^SpscWitness},
+    {^^::fixy::concurrent::PermissionedChannel, ^^SpscWitness},
     {^^::fixy::concurrent::PermissionedSpscBoxChannel, ^^SpscBoxWitness},
     {^^::fixy::concurrent::PermissionedMpscBoxChannel, ^^MpscBoxWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},

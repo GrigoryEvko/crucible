@@ -1,5 +1,5 @@
-// What fixy/concurrent/PermissionedSpscChannel.h,
-// fixy/concurrent/PermissionedMpscChannel.h and
+// What fixy/concurrent/PermissionedChannel.h,
+// fixy/concurrent/PermissionedChannel.h and
 // fixy/concurrent/WorkingSet.h claim, checked.
 //
 // The two channels put the same ring behind two different ownership
@@ -11,8 +11,7 @@
 // behaviour, so it is the half with the most runtime checks here.
 
 #include <fixy/Core.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 #include <foundation/Linear.h>
 
@@ -42,17 +41,25 @@ struct BulkTag {};
 // One root site for each channel.  The brand of a root names its site,
 // and a channel type names that brand, so each channel below is the
 // channel of one site.
-auto trace_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<TraceTag>>(); }
-auto meta_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole<MetaTag>>(); }
-auto other_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<OtherTag>>(); }
-auto bulk_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole<BulkTag>>(); }
+auto trace_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, TraceTag>>();
+}
+auto meta_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, MetaTag>>();
+}
+auto other_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, OtherTag>>();
+}
+auto bulk_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, BulkTag>>();
+}
 
-using Spsc = c::spsc_channel_t<int, 8, decltype(trace_root())>;
-using Mpsc = c::mpsc_channel_t<int, 8, decltype(meta_root())>;
+using Spsc = c::channel_t<int, 8, decltype(trace_root())>;
+using Mpsc = c::channel_t<int, 8, decltype(meta_root())>;
 // The lend of a producer gives the Option of the base.
 static_assert(
     std::is_same_v<decltype(std::declval<Mpsc&>().producer()), ::foundation::core::Option<Mpsc::ProducerHandle>>);
-using OtherSpsc = c::spsc_channel_t<int, 8, decltype(other_root())>;
+using OtherSpsc = c::channel_t<int, 8, decltype(other_root())>;
 
 // ── Ownership is in the types ────────────────────────────────────────
 
@@ -319,7 +326,7 @@ template <class Channel, class Producer, class Consumer>
     constexpr int kProducers = 4;
     constexpr int kPerProducer = 500;
 
-    using BulkChannel = c::mpsc_channel_t<int, 256, decltype(bulk_root())>;
+    using BulkChannel = c::channel_t<int, 256, decltype(bulk_root())>;
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<BulkChannel::producer_tag, BulkChannel::consumer_tag>(bulk_root());
     BulkChannel channel{std::move(producer_root)};

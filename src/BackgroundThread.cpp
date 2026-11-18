@@ -17,7 +17,7 @@
 #include <fixy/concurrent/ChannelEnd.h>
 #include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/PermissionedSpscBoxChannel.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
 #include <fixy/os/Futex.h>
@@ -50,16 +50,20 @@ struct GraphPublishTag {};
 // mints its four roots here, so the type of each channel names the brand
 // of one site, and the stage functions can name the channel types.
 [[nodiscard]] inline auto start_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<StartTag>>();
+    return ::foundation::permissions::mint_permission_root<
+        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::wire, StartTag>>();
 }
 [[nodiscard]] inline auto trace_batch_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<TraceBatchTag>>();
+    return ::foundation::permissions::mint_permission_root<
+        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::wire, TraceBatchTag>>();
 }
 [[nodiscard]] inline auto build_work_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<BuildWorkTag>>();
+    return ::foundation::permissions::mint_permission_root<
+        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::wire, BuildWorkTag>>();
 }
 [[nodiscard]] inline auto graph_publish_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<GraphPublishTag>>();
+    return ::foundation::permissions::mint_permission_root<
+        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::wire, GraphPublishTag>>();
 }
 
 // The idle wait of a stage.  A stage with no work polls for SPIN_BUDGET, and
@@ -220,8 +224,7 @@ struct BackgroundThread::Pipeline {
     // joins first.
     ::fixy::Option<::fixy::thread::OwnedThread> thread{};
 
-    using StartChannel =
-        ::fixy::concurrent::spsc_channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
+    using StartChannel = ::fixy::concurrent::channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
     // A Box owns each message of the three channels after the start, and the
     // channel moves the Box from one stage to the next (THE OWNERS of
     // fixy/concurrent/PermissionedSpscBoxChannel.h).

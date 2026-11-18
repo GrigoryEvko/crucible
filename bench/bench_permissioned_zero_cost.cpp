@@ -44,7 +44,7 @@
 #include <fixy/Core.h>
 #include <fixy/channels/Endpoint.h>
 #include <fixy/concurrent/MpscRing.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <foundation/Linear.h>
 #include <foundation/permissions/Permission.h>
 
@@ -60,10 +60,11 @@ constexpr std::size_t kCap = 1U << 20;  // 1M slots — never fills
 struct MpscBenchTag {};
 
 auto bench_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::fixy::concurrent::mpsc_tag::Whole<MpscBenchTag>>();
+    return ::foundation::permissions::mint_permission_root<
+        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::merge, MpscBenchTag>>();
 }
 
-using Channel = ::fixy::concurrent::mpsc_channel_t<Item, kCap, decltype(bench_root())>;
+using Channel = ::fixy::concurrent::channel_t<Item, kCap, decltype(bench_root())>;
 
 // The two halves of the root: the producer token for the pool and the
 // consumer token for the consumer handle.

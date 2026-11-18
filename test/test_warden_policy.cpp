@@ -24,7 +24,7 @@
 #include <crucible/warden/CpuTopology.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/PermissionFork.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/os/NumaPlacement.h>
 #include <fixy/os/Pages.h>
 #include <fixy/os/Sched.h>
@@ -535,11 +535,11 @@ void test_registry_applies_on_mint_hardening() {
 }
 
 // The tag of the two threads of the race of the registry.  The split of
-// fixy/concurrent/PermissionedSpscChannel.h gives one permission to each.
+// fixy/concurrent/PermissionedChannel.h gives one permission to each.
 struct RegistryRaceTag final {};
-using RaceWhole = ::fixy::concurrent::spsc_tag::Whole<RegistryRaceTag>;
-using RaceWriter = ::fixy::concurrent::spsc_tag::Producer<RegistryRaceTag>;
-using RaceReader = ::fixy::concurrent::spsc_tag::Consumer<RegistryRaceTag>;
+using RaceWhole = ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::wire, RegistryRaceTag>;
+using RaceWriter = ::fixy::concurrent::channel_tag::Producer<::fixy::concurrent::ChannelForm::wire, RegistryRaceTag>;
+using RaceReader = ::fixy::concurrent::channel_tag::Consumer<::fixy::concurrent::ChannelForm::wire, RegistryRaceTag>;
 using RaceCtx = ::foundation::effects::ExecCtx<::foundation::effects::Bg,
                                                ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 

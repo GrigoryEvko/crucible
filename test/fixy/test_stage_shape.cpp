@@ -15,11 +15,14 @@
 // it was written for; this proves it matches the shape the channels
 // actually have.
 
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/StageShape.h>
+
+#include <foundation/Linear.h>
 
 #include <cstdio>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -41,12 +44,15 @@ int g_failures = 0;
 // the brand of a root site.
 struct StageShapeTag {};
 struct StageShapeBrand {};
-using IntSpsc = c::PermissionedSpscChannel<int, 8, StageShapeTag, StageShapeBrand>;
-using FloatSpsc = c::PermissionedSpscChannel<float, 8, StageShapeTag, StageShapeBrand>;
+using IntSpsc = c::PermissionedChannel<c::ChannelForm::wire, int, 8, StageShapeTag, StageShapeBrand>;
+using FloatSpsc = c::PermissionedChannel<c::ChannelForm::wire, float, 8, StageShapeTag, StageShapeBrand>;
 
 // A body that drains one real channel into another is a stage.  Nothing
 // about these two handle types was written with StageShape in view.
-void real_pass_through(IntSpsc::ConsumerHandle&&, IntSpsc::ProducerHandle&&) noexcept {}
+void real_pass_through(IntSpsc::ConsumerHandle&& in, IntSpsc::ProducerHandle&& out) noexcept {
+    ::foundation::linear::drop(std::move(in));
+    ::foundation::linear::drop(std::move(out));
+}
 static_assert(c::PipelineStage<&real_pass_through>);
 static_assert(c::StageArity<&real_pass_through>::input_count == 1);
 static_assert(c::StageArity<&real_pass_through>::output_count == 1);
@@ -56,7 +62,10 @@ static_assert(c::pipeline_stage_is_value_preserving_v<&real_pass_through>);
 
 // A body that changes the element type is a stage that is not value
 // preserving, and the shape recovers both element types.
-void real_int_to_float(IntSpsc::ConsumerHandle&&, FloatSpsc::ProducerHandle&&) noexcept {}
+void real_int_to_float(IntSpsc::ConsumerHandle&& in, FloatSpsc::ProducerHandle&& out) noexcept {
+    ::foundation::linear::drop(std::move(in));
+    ::foundation::linear::drop(std::move(out));
+}
 static_assert(c::PipelineStage<&real_int_to_float>);
 static_assert(std::is_same_v<c::pipeline_stage_input_value_t<&real_int_to_float>, int>);
 static_assert(std::is_same_v<c::pipeline_stage_output_value_t<&real_int_to_float>, float>);

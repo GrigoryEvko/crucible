@@ -138,8 +138,10 @@ struct EndpointTag1 {};
 struct EndpointTag2 {};
 struct EndpointBrand {};
 using EndpointFgCtx = fe::ExecCtx<fe::ctx_cap::Fg, Row<>>;
-using EndpointCh1 = ::fixy::concurrent::PermissionedSpscChannel<int, 64, EndpointTag1, EndpointBrand>;
-using EndpointCh2 = ::fixy::concurrent::PermissionedSpscChannel<int, 64, EndpointTag2, EndpointBrand>;
+using EndpointCh1 = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, int, 64,
+                                                            EndpointTag1, EndpointBrand>;
+using EndpointCh2 = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, int, 64,
+                                                            EndpointTag2, EndpointBrand>;
 using ConsumerEndpoint = ::fixy::channels::Endpoint<EndpointCh1, ::fixy::channels::Direction::Consumer, EndpointFgCtx>;
 using ProducerEndpoint = ::fixy::channels::Endpoint<EndpointCh2, ::fixy::channels::Direction::Producer, EndpointFgCtx>;
 

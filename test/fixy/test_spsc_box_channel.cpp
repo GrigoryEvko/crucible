@@ -65,7 +65,7 @@ inline constexpr std::uint64_t kNoLabel = ~std::uint64_t{0};
 // object.  A full ring gives the Box of the push back, with its object.
 void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
     {
-        auto root = perm::mint_permission_root<c::spsc_tag::Whole<ParcelTag>>();
+        auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, ParcelTag>>();
         using Channel = c::spsc_box_channel_t<Parcel, 2, decltype(root)>;
         // The two handles have the shapes that a stage reads, with a Box as
         // the payload, and they name one channel.
@@ -107,7 +107,7 @@ void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
 // Box that the ring still holds, and then Closed.
 void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept {
     {
-        auto root = perm::mint_permission_root<c::spsc_tag::Whole<ParcelTag>>();
+        auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, ParcelTag>>();
         using Channel = c::spsc_box_channel_t<Parcel, 2, decltype(root)>;
         Channel channel{};
         auto [producer_perm, consumer_perm] =
@@ -131,7 +131,7 @@ void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept 
 // handles end first, so no handle lives at the drain.
 void end_of_channel_ends_each_object(fixy::TestRunnerCtx const& test) noexcept {
     {
-        auto root = perm::mint_permission_root<c::spsc_tag::Whole<ParcelTag>>();
+        auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, ParcelTag>>();
         using Channel = c::spsc_box_channel_t<Parcel, 2, decltype(root)>;
         Channel channel{};
         auto [producer_perm, consumer_perm] =
@@ -201,7 +201,7 @@ void two_threads_move_many_boxes(fixy::TestRunnerCtx const& test) noexcept {
     std::uint64_t received = 0;
     std::uint64_t out_of_order = 0;
     {
-        auto root = perm::mint_permission_root<c::spsc_tag::Whole<BulkTag>>();
+        auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, BulkTag>>();
         using BulkChannel = c::spsc_box_channel_t<Parcel, 64, decltype(root)>;
         BulkChannel channel{};
         auto [producer_perm, consumer_perm] =

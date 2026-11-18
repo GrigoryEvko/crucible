@@ -6,7 +6,7 @@
 // The fixture splits the token correctly for its own channel.  The call
 // that gives the token to the other channel fails.
 
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 #include <utility>
 
@@ -16,12 +16,14 @@ namespace perm = foundation::permissions;
 namespace {
 struct TraceTag {};
 struct MetaTag {};
-auto trace_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<TraceTag>>(); }
-auto meta_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<MetaTag>>(); }
+auto trace_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, TraceTag>>();
+}
+auto meta_root() noexcept { return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, MetaTag>>(); }
 }  // namespace
 
-using TraceChannel = c::spsc_channel_t<int, 8, decltype(trace_root())>;
-using MetaChannel = c::spsc_channel_t<int, 8, decltype(meta_root())>;
+using TraceChannel = c::channel_t<int, 8, decltype(trace_root())>;
+using MetaChannel = c::channel_t<int, 8, decltype(meta_root())>;
 
 int main() {
     MetaChannel meta{};

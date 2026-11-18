@@ -1,9 +1,9 @@
 #pragma once
 
 // An SPSC channel of Box values, behind one linear Permission per endpoint,
-// as PermissionedSpscChannel.  A cell of the ring of fixy/concurrent/
-// SpscRing.h holds only a trivially copyable value, and a Box is no such
-// value.  So the channel holds a PermissionedSpscChannel of the words of a
+// as the wire form of PermissionedChannel.  A cell of the ring of
+// fixy/concurrent/SpscRing.h holds only a trivially copyable value, and a Box
+// is no such value.  So the channel holds a wire channel of the words of a
 // Box (THE WORD OF A BOX of foundation/core/Ref.h), and the channel class is
 // the authority of those words.  Each handle of this channel holds the
 // handle of the same role of the inner channel.
@@ -35,7 +35,7 @@
 //     holds, and NoItem::Closed after the last one.
 
 #include <fixy/concurrent/ChannelEnd.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/WorkingSet.h>
 
 #include <foundation/Brand.h>
@@ -65,7 +65,7 @@ template <::foundation::core::DroppableBoxPayload T, std::size_t Capacity, typen
 class PermissionedSpscBoxChannel
     : public ::foundation::Pinned<PermissionedSpscBoxChannel<T, Capacity, UserTag, Brand>> {
     using word_type = ::foundation::core::BoxWord<T, PermissionedSpscBoxChannel>;
-    using cell_channel = PermissionedSpscChannel<word_type, Capacity, UserTag, Brand>;
+    using cell_channel = PermissionedChannel<ChannelForm::wire, word_type, Capacity, UserTag, Brand>;
 
 public:
     using value_type = ::foundation::core::Box<T>;
@@ -243,9 +243,9 @@ private:
     cell_channel cells_;
 };
 
-// The Box channel of a whole root of type Root, as spsc_channel_t.
+// The Box channel of a whole root of type Root, as channel_t.
 template <::foundation::core::DroppableBoxPayload T, std::size_t Capacity, typename Root>
-using spsc_box_channel_t = PermissionedSpscBoxChannel<T, Capacity, typename detail::spsc_root_parts<Root>::user_tag,
-                                                      typename detail::spsc_root_parts<Root>::brand>;
+using spsc_box_channel_t = PermissionedSpscBoxChannel<T, Capacity, typename detail::channel_root_parts<Root>::user_tag,
+                                                      typename detail::channel_root_parts<Root>::brand>;
 
 }  // namespace fixy::concurrent

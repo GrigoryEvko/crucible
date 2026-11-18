@@ -43,8 +43,8 @@ def text_cases(expect: testing.Expect) -> None:
     expect("the slug drops the root namespace and the case", writer.slug_of("fixy::Secret") == "secret")
     expect(
         "the slug gives one underscore for each run of other characters",
-        writer.slug_of("fixy::concurrent::PermissionedSpscChannel::ProducerHandle")
-        == "concurrent_permissionedspscchannel_producerhandle",
+        writer.slug_of("fixy::concurrent::PermissionedChannel::ProducerHandle")
+        == "concurrent_permissionedchannel_producerhandle",
     )
     expect("a name in another root namespace keeps its root", writer.slug_of("forge::Door") == "forge_door")
     witness = ruletable.parse(OPEN_ROW).witnesses[0]

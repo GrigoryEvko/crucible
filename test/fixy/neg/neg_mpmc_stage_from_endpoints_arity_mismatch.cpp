@@ -19,12 +19,14 @@ namespace c = ::fixy::concurrent;
 namespace channels = ::fixy::channels;
 struct InTag {};
 struct OutTag {};
-inline auto in_root() noexcept { return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<InTag>>(); }
-inline auto out_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<OutTag>>();
+inline auto in_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, InTag>>();
 }
-using In = c::spsc_channel_t<int, 8, decltype(in_root())>;
-using Out = c::spsc_channel_t<int, 8, decltype(out_root())>;
+inline auto out_root() noexcept {
+    return ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, OutTag>>();
+}
+using In = c::channel_t<int, 8, decltype(in_root())>;
+using Out = c::channel_t<int, 8, decltype(out_root())>;
 inline void fan_in(In::ConsumerHandle&&, In::ConsumerHandle&&, Out::ProducerHandle&&) noexcept {}
 }  // namespace mpmc_arity_fixture
 

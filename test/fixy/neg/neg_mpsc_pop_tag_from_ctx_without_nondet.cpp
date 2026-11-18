@@ -4,7 +4,7 @@
 // constraint of mint_from_ctx, at the call.
 
 #include <fixy/Ctx.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <foundation/effects/Capability.h>
 
 namespace {
@@ -12,7 +12,7 @@ namespace {
 struct UserTag {};
 struct UserBrand {};
 
-using Channel = fixy::concurrent::PermissionedMpscChannel<int, 8, UserTag, UserBrand>;
+using Channel = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, UserTag, UserBrand>;
 
 [[maybe_unused]] void attempt(fixy::BgDrainCtx const& drain, Channel::ConsumerHandle& consumer) {
     [[maybe_unused]] auto item = consumer.try_pop(foundation::effects::extract_bare(

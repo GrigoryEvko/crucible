@@ -6,8 +6,8 @@
 // first session handle, so the session owns the channel handle for its
 // whole life.
 //
-// The table holds the SPSC and the MPSC channel of fixy/concurrent.  Those
-// are the only permissioned channels of fixy/concurrent.
+// The table holds each form of the permissioned channel of
+// fixy/concurrent/PermissionedChannel.h.
 //
 // fixy/session/Admission.h refuses a raw pointer to a channel handle as a
 // session resource, because the handle can move or die first.  So the
@@ -16,8 +16,7 @@
 // no residency tier (foundation/effects/Ctx.h).
 
 #include <fixy/concurrent/HandleTraits.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 
@@ -39,18 +38,17 @@ enum class Direction : std::uint8_t {
 
 namespace detail {
 
-// The two channels of the table.  The set is read by reflection off the
-// two templates, so no other type joins it, and a cv-qualified channel is
-// not a channel of the table.
+// The channels of the table.  The set is read by reflection off the one
+// template, so no other type joins it, and a cv-qualified channel is not a
+// channel of the table.
 template <class Substr>
 concept IsBridgedChannel = std::same_as<Substr, std::remove_cvref_t<Substr>>
-                        && ::foundation::reflect::IsInstanceOfAny<Substr, ^^::fixy::concurrent::PermissionedSpscChannel,
-                                                                  ^^::fixy::concurrent::PermissionedMpscChannel>;
+                        && ::foundation::reflect::IsInstanceOf<Substr, ^^::fixy::concurrent::PermissionedChannel>;
 
 }  // namespace detail
 
-// Both channels name their handles ProducerHandle and ConsumerHandle, so
-// one rule gives the handle of each role of either channel.
+// Each form names its handles ProducerHandle and ConsumerHandle, so one rule
+// gives the handle of each role of each form.
 template <class Substr, Direction Dir>
 struct handle_for;
 

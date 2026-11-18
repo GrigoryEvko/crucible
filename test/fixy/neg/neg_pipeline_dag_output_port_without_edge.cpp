@@ -6,7 +6,7 @@
 // output with no edge is a channel that no stage drains.
 
 #include <fixy/Ctx.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 
 namespace output_without_edge_fixture {
@@ -17,7 +17,7 @@ namespace cc = ::fixy::concurrent;
 // the graph connects two handles of one channel.
 struct LinkTag {};
 struct FixtureBrand {};
-using Link = cc::PermissionedSpscChannel<int, 8, LinkTag, FixtureBrand>;
+using Link = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, LinkTag, FixtureBrand>;
 inline void plain(Link::ConsumerHandle&&, Link::ProducerHandle&&) noexcept {}
 inline void fan_out(Link::ConsumerHandle&&, Link::ProducerHandle&&, Link::ProducerHandle&&) noexcept {}
 using Plain = cc::Stage<&plain, fixy::HotFgCtx>;

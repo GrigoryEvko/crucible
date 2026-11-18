@@ -2,7 +2,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/Refined.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <foundation/Platform.h>
 #include <foundation/ThreadLocalRef.h>
 
@@ -445,9 +445,10 @@ template <typename H>
 concept HdrCompatible = HdrHistogramCompatible<H> || ConcurrentHdrCompatible<H>;
 
 // The channel carries the brand of the root that its permissions grow
-// from, as fixy/concurrent/PermissionedSpscChannel.h says.
+// from, as fixy/concurrent/PermissionedChannel.h says.
 template <std::uint8_t Significant, std::uint64_t MaxValue, std::size_t Capacity, typename UserTag, typename Brand>
-using HdrRecordChannel = ::fixy::concurrent::PermissionedSpscChannel<std::uint64_t, Capacity, UserTag, Brand>;
+using HdrRecordChannel = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, std::uint64_t,
+                                                                 Capacity, UserTag, Brand>;
 
 template <HdrCompatible H, typename ConsumerHandle>
 std::size_t drain_record_stream(H& hist, ConsumerHandle& consumer,

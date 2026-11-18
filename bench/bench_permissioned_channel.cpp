@@ -29,8 +29,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/os/OwnedThread.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
@@ -218,8 +217,8 @@ template <class Op>
 
 // spsc push: the main thread pushes, and the worker of slot 1 pops.
 [[nodiscard]] RowResult spsc_push_row(bench::Spread const& spread) {
-    auto root = perm::mint_permission_root<cc::spsc_tag::Whole<SpscBenchTag>>();
-    using Spsc = cc::spsc_channel_t<Item, kCapacity, decltype(root)>;
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, SpscBenchTag>>();
+    using Spsc = cc::channel_t<Item, kCapacity, decltype(root)>;
     RowControl control{};
     Spsc channel{};
     auto [producer_perm, consumer_perm] =
@@ -242,8 +241,8 @@ template <class Op>
 
 // spsc pop: the main thread pops, and the worker of slot 1 pushes.
 [[nodiscard]] RowResult spsc_pop_row(bench::Spread const& spread) {
-    auto root = perm::mint_permission_root<cc::spsc_tag::Whole<SpscBenchTag>>();
-    using Spsc = cc::spsc_channel_t<Item, kCapacity, decltype(root)>;
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, SpscBenchTag>>();
+    using Spsc = cc::channel_t<Item, kCapacity, decltype(root)>;
     RowControl control{};
     Spsc channel{};
     auto [producer_perm, consumer_perm] =
@@ -274,8 +273,8 @@ template <class Channel>
 // mpsc push: the main thread and the workers of slots 1 to threads - 2 push,
 // and the worker of the last slot pops.
 [[nodiscard]] RowResult mpsc_push_row(bench::Spread const& spread, ThreadCount threads, bench::Run run) {
-    auto root = perm::mint_permission_root<cc::mpsc_tag::Whole<MpscBenchTag>>();
-    using Mpsc = cc::mpsc_channel_t<Item, kCapacity, decltype(root)>;
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscBenchTag>>();
+    using Mpsc = cc::channel_t<Item, kCapacity, decltype(root)>;
     RowControl control{};
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));
@@ -323,8 +322,8 @@ template <class Channel>
 // mpsc pop: the main thread pops, and the workers of slots 1 to threads - 1
 // push.
 [[nodiscard]] RowResult mpsc_pop_row(bench::Spread const& spread, ThreadCount threads, bench::Run run) {
-    auto root = perm::mint_permission_root<cc::mpsc_tag::Whole<MpscBenchTag>>();
-    using Mpsc = cc::mpsc_channel_t<Item, kCapacity, decltype(root)>;
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscBenchTag>>();
+    using Mpsc = cc::channel_t<Item, kCapacity, decltype(root)>;
     RowControl control{};
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));

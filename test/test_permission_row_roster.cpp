@@ -20,7 +20,7 @@
 //
 // The walk cannot read a class template, because a member of a template
 // is known only for an instance.  The template tags with an empty row
-// are the channel role tags (spsc_tag, mpsc_tag, metalog_tag) and
+// are the channel role tags (channel_tag, metalog_tag) and
 // perf::detail::bpf_map_region.  A root of the whole tag of a channel
 // gives both endpoints of that channel, so it is an authority that this
 // walk does not see.  A BPF map region is minted inside the map door.

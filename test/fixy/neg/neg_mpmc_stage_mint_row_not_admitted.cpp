@@ -7,7 +7,7 @@
 // Expected diagnostic: CtxFitsVariadicStage is not satisfied.
 
 #include <fixy/Ctx.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Stage.h>
 
 #include <foundation/effects/Computation.h>
@@ -26,9 +26,9 @@ struct PlainTag {};
 struct OutTag {};
 struct FixtureBrand {};
 using IoPayload = eff::Computation<eff::Row<eff::Effect::IO>, int>;
-using IoIn = c::PermissionedSpscChannel<IoPayload, 8, IoTag, FixtureBrand>;
-using PlainIn = c::PermissionedSpscChannel<int, 8, PlainTag, FixtureBrand>;
-using Out = c::PermissionedSpscChannel<int, 8, OutTag, FixtureBrand>;
+using IoIn = c::PermissionedChannel<c::ChannelForm::wire, IoPayload, 8, IoTag, FixtureBrand>;
+using PlainIn = c::PermissionedChannel<c::ChannelForm::wire, int, 8, PlainTag, FixtureBrand>;
+using Out = c::PermissionedChannel<c::ChannelForm::wire, int, 8, OutTag, FixtureBrand>;
 inline void fan_in(IoIn::ConsumerHandle&&, PlainIn::ConsumerHandle&&, Out::ProducerHandle&&) noexcept {}
 
 using Refused =

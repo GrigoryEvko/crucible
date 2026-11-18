@@ -3,14 +3,14 @@
 // Nondet, and a pop with no tag has no overload.  A consumer handle alone
 // is no evidence that the code that holds it may read a merge.
 
-#include <fixy/concurrent/PermissionedMpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 namespace {
 
 struct UserTag {};
 struct UserBrand {};
 
-using Channel = fixy::concurrent::PermissionedMpscChannel<int, 8, UserTag, UserBrand>;
+using Channel = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, UserTag, UserBrand>;
 
 [[maybe_unused]] void attempt(Channel::ConsumerHandle& consumer) { [[maybe_unused]] auto item = consumer.try_pop(); }
 

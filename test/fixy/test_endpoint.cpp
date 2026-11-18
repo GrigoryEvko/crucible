@@ -50,8 +50,10 @@ constexpr auto pop_int = [](auto& handle) noexcept -> ::fixy::Option<int> { retu
 // Each channel of this file has one root site, and its type names the
 // brand of that site.
 struct BridgeTag {};
-auto bridge_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<BridgeTag>>(); }
-using BridgeSpsc = c::spsc_channel_t<int, 8, decltype(bridge_root())>;
+auto bridge_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, BridgeTag>>();
+}
+using BridgeSpsc = c::channel_t<int, 8, decltype(bridge_root())>;
 
 // The table bridges the two directions of a channel.  A value that names
 // no direction has no handle of its pole, so the channel does not bridge it.
@@ -86,8 +88,10 @@ static_assert(!channels::IsBridgeableDirection<BridgeSpsc, static_cast<channels:
 // ── The endpoint ─────────────────────────────────────────────────────
 
 struct EndpointTag {};
-auto endpoint_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<EndpointTag>>(); }
-using EndpointSpsc = c::spsc_channel_t<int, 8, decltype(endpoint_root())>;
+auto endpoint_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, EndpointTag>>();
+}
+using EndpointSpsc = c::channel_t<int, 8, decltype(endpoint_root())>;
 
 // A snapshot of an endpoint takes the tag of Nondet from its context, so an
 // endpoint of the foreground context reads no snapshot.
@@ -143,10 +147,14 @@ static_assert(ReadsSnapshot<channels::Endpoint<EndpointSpsc, channels::Direction
 
 struct StageInTag {};
 struct StageOutTag {};
-auto stage_in_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<StageInTag>>(); }
-auto stage_out_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<StageOutTag>>(); }
-using StageIn = c::spsc_channel_t<int, 8, decltype(stage_in_root())>;
-using StageOut = c::spsc_channel_t<int, 8, decltype(stage_out_root())>;
+auto stage_in_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, StageInTag>>();
+}
+auto stage_out_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, StageOutTag>>();
+}
+using StageIn = c::channel_t<int, 8, decltype(stage_in_root())>;
+using StageOut = c::channel_t<int, 8, decltype(stage_out_root())>;
 
 // The body doubles each value it drains.
 void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out) noexcept {
@@ -187,10 +195,14 @@ void doubling_stage(StageIn::ConsumerHandle&& in, StageOut::ProducerHandle&& out
 // producer pole, so the body is a stage and the endpoint mint takes it.
 struct FeedInTag {};
 struct FeedOutTag {};
-auto feed_in_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<FeedInTag>>(); }
-auto feed_out_root() noexcept { return perm::mint_permission_root<c::mpsc_tag::Whole<FeedOutTag>>(); }
-using FeedIn = c::spsc_channel_t<int, 8, decltype(feed_in_root())>;
-using FeedOut = c::mpsc_channel_t<int, 8, decltype(feed_out_root())>;
+auto feed_in_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, FeedInTag>>();
+}
+auto feed_out_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, FeedOutTag>>();
+}
+using FeedIn = c::channel_t<int, 8, decltype(feed_in_root())>;
+using FeedOut = c::channel_t<int, 8, decltype(feed_out_root())>;
 
 void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out) noexcept {
     while (true) {
@@ -234,12 +246,18 @@ void forwarding_stage(FeedIn::ConsumerHandle&& in, FeedOut::ProducerHandle&& out
 struct FanLeftTag {};
 struct FanRightTag {};
 struct FanOutTag {};
-auto fan_left_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<FanLeftTag>>(); }
-auto fan_right_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<FanRightTag>>(); }
-auto fan_out_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<FanOutTag>>(); }
-using FanLeft = c::spsc_channel_t<int, 8, decltype(fan_left_root())>;
-using FanRight = c::spsc_channel_t<int, 8, decltype(fan_right_root())>;
-using FanOut = c::spsc_channel_t<int, 8, decltype(fan_out_root())>;
+auto fan_left_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, FanLeftTag>>();
+}
+auto fan_right_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, FanRightTag>>();
+}
+auto fan_out_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, FanOutTag>>();
+}
+using FanLeft = c::channel_t<int, 8, decltype(fan_left_root())>;
+using FanRight = c::channel_t<int, 8, decltype(fan_right_root())>;
+using FanOut = c::channel_t<int, 8, decltype(fan_out_root())>;
 
 // The body sums one value from each input.
 void summing_stage(FanLeft::ConsumerHandle&& left, FanRight::ConsumerHandle&& right,
@@ -292,8 +310,10 @@ struct LastValueWriter {
 };
 
 struct SwmrInTag {};
-auto swmr_in_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<SwmrInTag>>(); }
-using SwmrIn = c::spsc_channel_t<int, 8, decltype(swmr_in_root())>;
+auto swmr_in_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, SwmrInTag>>();
+}
+using SwmrIn = c::channel_t<int, 8, decltype(swmr_in_root())>;
 
 void publishing_stage(SwmrIn::ConsumerHandle&& in, LastValueWriter&& writer) noexcept {
     while (true) {
@@ -325,8 +345,10 @@ void publishing_stage(SwmrIn::ConsumerHandle&& in, LastValueWriter&& writer) noe
 // ── The recording wrapper ────────────────────────────────────────────
 
 struct RecordTag {};
-auto record_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<RecordTag>>(); }
-using RecordSpsc = c::spsc_channel_t<int, 8, decltype(record_root())>;
+auto record_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, RecordTag>>();
+}
+using RecordSpsc = c::channel_t<int, 8, decltype(record_root())>;
 
 [[nodiscard]] int recording_endpoint_records_each_step() {
     const FgCtx ctx = ::foundation::effects::testing::foreground();

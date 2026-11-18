@@ -21,9 +21,9 @@ namespace eff = ::foundation::effects;
 struct Tag {};
 using IoWork = eff::Computation<eff::Row<eff::Effect::IO>, int>;
 inline auto channel_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<Tag>>();
+    return ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, Tag>>();
 }
-using Channel = c::spsc_channel_t<IoWork, 8, decltype(channel_root())>;
+using Channel = c::channel_t<IoWork, 8, decltype(channel_root())>;
 }  // namespace substrate_row_fixture
 
 // The ring of the channel builds each slot from an empty initializer, and

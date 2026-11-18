@@ -8,7 +8,7 @@
 // name the same channel, and the two brands refuse the chain.
 
 #include <fixy/Ctx.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 
 #include <foundation/permissions/Permission.h>
@@ -24,15 +24,23 @@ struct InTag {};
 struct LinkTag {};
 struct OutTag {};
 
-inline auto in_root() noexcept { return perm::mint_permission_root<cc::spsc_tag::Whole<InTag>>(); }
-inline auto a_root() noexcept { return perm::mint_permission_root<cc::spsc_tag::Whole<LinkTag>>(); }
-inline auto b_root() noexcept { return perm::mint_permission_root<cc::spsc_tag::Whole<LinkTag>>(); }
-inline auto out_root() noexcept { return perm::mint_permission_root<cc::spsc_tag::Whole<OutTag>>(); }
+inline auto in_root() noexcept {
+    return perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, InTag>>();
+}
+inline auto a_root() noexcept {
+    return perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, LinkTag>>();
+}
+inline auto b_root() noexcept {
+    return perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, LinkTag>>();
+}
+inline auto out_root() noexcept {
+    return perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, OutTag>>();
+}
 
-using InChannel = cc::spsc_channel_t<int, 8, decltype(in_root())>;
-using AChannel = cc::spsc_channel_t<int, 8, decltype(a_root())>;
-using BChannel = cc::spsc_channel_t<int, 8, decltype(b_root())>;
-using OutChannel = cc::spsc_channel_t<int, 8, decltype(out_root())>;
+using InChannel = cc::channel_t<int, 8, decltype(in_root())>;
+using AChannel = cc::channel_t<int, 8, decltype(a_root())>;
+using BChannel = cc::channel_t<int, 8, decltype(b_root())>;
+using OutChannel = cc::channel_t<int, 8, decltype(out_root())>;
 
 inline void writes_a(InChannel::ConsumerHandle&&, AChannel::ProducerHandle&&) noexcept {}
 inline void drains_b(BChannel::ConsumerHandle&&, OutChannel::ProducerHandle&&) noexcept {}

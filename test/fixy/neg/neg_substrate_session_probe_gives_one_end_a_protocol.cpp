@@ -22,9 +22,9 @@ namespace c = ::fixy::concurrent;
 namespace eff = ::foundation::effects;
 struct Tag {};
 inline auto channel_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<c::spsc_tag::Whole<Tag>>();
+    return ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, Tag>>();
 }
-using Channel = c::spsc_channel_t<int, 8, decltype(channel_root())>;
+using Channel = c::channel_t<int, 8, decltype(channel_root())>;
 }  // namespace substrate_one_end_fixture
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges the protocol of one end of a channel")

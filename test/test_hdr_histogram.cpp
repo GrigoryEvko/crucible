@@ -319,7 +319,8 @@ int main() {
     check_published_buckets(ReaderStart::WithProducers);
     check_published_buckets(ReaderStart::AfterProducers);
 
-    auto whole = ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<HistStreamTag>>();
+    auto whole = ::foundation::permissions::mint_permission_root<
+        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::wire, HistStreamTag>>();
     using Channel = crucible::observe::HdrRecordChannel<2, 1000000, 8, HistStreamTag,
                                                         ::foundation::brand::brand_of_t<decltype(whole)>>;
     Channel channel;

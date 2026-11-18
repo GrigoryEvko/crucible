@@ -12,7 +12,8 @@ struct CreditTag {};
 }  // namespace
 
 int main() {
-    auto root = ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<CreditTag>>();
+    auto root = ::foundation::permissions::mint_permission_root<
+        ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::wire, CreditTag>>();
     return ::fixy::concurrent::spsc_box_channel_t<::foundation::core::Hole<8, 8>, 2, decltype(root)>::capacity() == 2
              ? 0
              : 1;

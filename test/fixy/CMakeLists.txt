@@ -4201,8 +4201,8 @@ fixy_test(test_channel_close)
 # duplicate the one and double-count the other.
 fixy_neg_compile_test(neg_channel_producer_handle_copied
   "use of deleted function"
-  "ProducerHandle owns the Producer Permission"
-  "duplicate the linear token")
+  "ProducerHandle owns the producer token or one pool share"
+  "copy would duplicate it")
 
 # The role is in the handle type: a producer has no pop.
 fixy_neg_compile_test(neg_channel_pop_from_producer_handle
@@ -4212,15 +4212,15 @@ fixy_neg_compile_test(neg_channel_pop_from_producer_handle
 # Two channels with the same value type and capacity still have
 # distinct tags, so an endpoint token from one cannot open the other.
 fixy_neg_compile_test(neg_channel_foreign_tag_permission
-  "cannot convert"
-  "spsc_tag::Producer<.*TraceTag"
-  "spsc_tag::Producer<.*MetaTag")
+  "no known conversion for argument 1"
+  "channel_tag::Producer<fixy::concurrent::ChannelForm::wire, .*TraceTag"
+  "channel_tag::Producer<fixy::concurrent::ChannelForm::wire, .*MetaTag")
 
 # Two root sites of one tag give two brands.  The token of the second site
 # does not open the channel of the first, although the tag is the same.
 fixy_neg_compile_test(neg_channel_foreign_brand_permission
-  "cannot convert .*Permission<fixy::concurrent::spsc_tag::Producer<\\{anonymous\\}::TraceTag>, foundation::permissions::<lambda\\(\\)> >&&"
-  "PermissionedSpscChannel<T, Capacity, UserTag, Brand>::producer\\(foundation::permissions::Permission<fixy::concurrent::spsc_tag::Producer<UserTag>, Brand>&&\\)"
+  "no known conversion for argument 1 from .*Permission<fixy::concurrent::channel_tag::Producer<fixy::concurrent::ChannelForm::wire, \\{anonymous\\}::TraceTag>, foundation::permissions::<lambda\\(\\)> >&&"
+  "PermissionedChannel<Form, T, Capacity, UserTag, Brand>::producer\\(foundation::permissions::Permission<fixy::concurrent::channel_tag::Producer<Form, UserTag>, Brand>&&\\) requires  Form == fixy::concurrent::ChannelForm::wire"
   "UserTag = \\{anonymous\\}::TraceTag. Brand = foundation::permissions::<lambda\\(\\)>\\]")
 
 # ── The channel sessions, the endpoints and the stage bridge ──────────
@@ -4576,8 +4576,8 @@ fixy_neg_compile_test(neg_pipeline_mint_chain_break
 # last regexes pin the producer on channel A and the consumer on channel B.
 fixy_neg_compile_test(neg_pipeline_mint_chain_across_channels
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
-  "&writes_a\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::InTag, <unnamed>::FixtureBrand>::ConsumerHandle&&, fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&")
+  "&writes_a\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::InTag, <unnamed>::FixtureBrand>::ConsumerHandle&&, fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&")
 # One payload, one capacity and one tag on two channels.  The roots of the
 # two channels come from two call sites, so only the brand of each channel
 # can refuse the chain.  The two last regexes pin the tag of channel A on
@@ -4585,8 +4585,8 @@ fixy_neg_compile_test(neg_pipeline_mint_chain_across_channels
 # own site.
 fixy_neg_compile_test(neg_pipeline_mint_chain_across_root_sites
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
-  "PermissionedSpscChannel<int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle&&")
+  "PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ProducerHandle&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle&&")
 fixy_neg_compile_test(neg_pipeline_mint_empty_pack
   "no matching function for call to .mint_pipeline\\(const fixy::BgDrainCtx&\\)."
   "sizeof \\.\\.\\. \\(Stages \\.\\.\\.\\) >= 1 \\[with Stages = \\{\\}\\]. evaluated to .false.")
@@ -4675,7 +4675,7 @@ fixy_neg_compile_test(neg_pipeline_dag_unreachable_stage
 fixy_neg_compile_test(neg_pipeline_dag_edge_across_channels
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
   "StagePack<fixy::concurrent::Stage<&writes_a\\(.*<unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedSpscChannel<int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&"
+  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&"
   "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeAcrossChannels, 0, 0, 0\\}")
 
 # The port check.  The first stage and the last stage are the ends of the
@@ -4875,7 +4875,7 @@ fixy_neg_compile_test(neg_os_clock_reader_ctx_without_nondet
 # endpoint refuses a context with no Nondet.  A receive from a socket reads
 # a peer, so a context with IO and Block and no Nondet cannot receive.
 fixy_neg_compile_test(neg_mpsc_pop_without_nondet_tag
-  "no matching function for call to .fixy::concurrent::PermissionedMpscChannel<int, 8, \\{anonymous\\}::UserTag, \\{anonymous\\}::UserBrand>::ConsumerHandle::try_pop\\(\\)."
+  "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, \\{anonymous\\}::UserTag, \\{anonymous\\}::UserBrand>::ConsumerHandle::try_pop\\(\\)."
   "candidate expects 1 argument, 0 provided")
 fixy_neg_compile_test(neg_mpsc_pop_tag_from_ctx_without_nondet
   "no matching function for call to .mint_from_ctx<foundation::effects::Effect::Nondet>\\(const fixy::BgDrainCtx&\\)."
@@ -4909,7 +4909,7 @@ fixy_neg_compile_test(neg_mpsc_ring_pop_without_nondet_tag
   "no matching function for call to .fixy::concurrent::MpscRing<int, 8>::try_pop\\(\\)."
   "candidate expects 1 argument, 0 provided")
 fixy_neg_compile_test(neg_mpsc_drain_with_state
-  "no matching function for call to .fixy::concurrent::PermissionedMpscChannel<int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::drain\\("
+  "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::drain\\("
   "__is_empty")
 fixy_neg_compile_test(neg_nondet_tag_from_the_source_of_a_narrow_ctx
   "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >::cap\\(\\) const."

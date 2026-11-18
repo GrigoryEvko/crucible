@@ -6,7 +6,7 @@
 // The consumer side and the channel itself are untouched here, so the
 // only thing that can refuse this is the deleted copy constructor.
 
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 #include <utility>
 
@@ -15,10 +15,12 @@ namespace perm = foundation::permissions;
 
 namespace {
 struct TraceTag {};
-auto trace_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<TraceTag>>(); }
+auto trace_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, TraceTag>>();
+}
 }  // namespace
 
-using Channel = c::spsc_channel_t<int, 8, decltype(trace_root())>;
+using Channel = c::channel_t<int, 8, decltype(trace_root())>;
 
 int main() {
     Channel channel{};

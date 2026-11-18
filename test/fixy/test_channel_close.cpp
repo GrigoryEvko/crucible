@@ -16,8 +16,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/ChannelEnd.h>
-#include <fixy/concurrent/PermissionedMpscChannel.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
 #include <fixy/os/ThreadTasks.h>
@@ -93,8 +92,8 @@ template <class Handle>
 // items.  A release keeps the channel open, and a moved-from handle ends with
 // no effect.
 [[nodiscard]] int spsc_close_and_release() noexcept {
-    auto root = perm::mint_permission_root<cc::spsc_tag::Whole<SpscTag>>();
-    using Spsc = cc::spsc_channel_t<int, 8, decltype(root)>;
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, SpscTag>>();
+    using Spsc = cc::channel_t<int, 8, decltype(root)>;
     Spsc channel{};
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(root));
@@ -135,8 +134,8 @@ template <class Handle>
 // a different producer lives leaves it open.  A lend after the end opens it
 // again, and a drained access keeps the state.
 [[nodiscard]] int mpsc_last_producer_closes() noexcept {
-    auto root = perm::mint_permission_root<cc::mpsc_tag::Whole<MpscTag>>();
-    using Mpsc = cc::mpsc_channel_t<int, 8, decltype(root)>;
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscTag>>();
+    using Mpsc = cc::channel_t<int, 8, decltype(root)>;
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));
     Mpsc channel{std::move(producer_root)};
@@ -194,8 +193,8 @@ void push_one_item(In&&, Out&& out) noexcept {
 // the channel ahead closes before the stage object ends.
 [[nodiscard]] int stage_run_ends_its_handles() noexcept {
     const ::fixy::HotFgCtx ctx = eff::testing::foreground();
-    auto root = perm::mint_permission_root<cc::mpsc_tag::Whole<MpscTag>>();
-    using OutChannel = cc::mpsc_channel_t<int, 8, decltype(root)>;
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscTag>>();
+    using OutChannel = cc::channel_t<int, 8, decltype(root)>;
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<OutChannel::producer_tag, OutChannel::consumer_tag>(std::move(root));
     OutChannel out_channel{std::move(producer_root)};
@@ -316,8 +315,8 @@ template <class Drain>
 // One SPSC round: the producer pushes its items and ends, and the consumer
 // receives each item, in order, before Closed.
 [[nodiscard]] int spsc_round() noexcept {
-    auto root = perm::mint_permission_root<cc::spsc_tag::Whole<SpscTag>>();
-    using Spsc = cc::spsc_channel_t<int, 8, decltype(root)>;
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, SpscTag>>();
+    using Spsc = cc::channel_t<int, 8, decltype(root)>;
     Spsc channel{};
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(root));
@@ -335,8 +334,8 @@ template <class Drain>
 // One MPSC round: three producers push their items and end, and the
 // consumer receives each item, in the order of each producer, before Closed.
 [[nodiscard]] int mpsc_round() noexcept {
-    auto root = perm::mint_permission_root<cc::mpsc_tag::Whole<MpscTag>>();
-    using Mpsc = cc::mpsc_channel_t<int, 8, decltype(root)>;
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscTag>>();
+    using Mpsc = cc::channel_t<int, 8, decltype(root)>;
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(root));
     Mpsc channel{std::move(producer_root)};
@@ -446,14 +445,14 @@ void threaded_sink(In&& in, Out&& out) noexcept {
 [[nodiscard]] int threaded_pipeline_without_sentinel() noexcept {
     const ::fixy::HotFgCtx ctx = eff::testing::foreground();
     const ::fixy::BgDrainCtx coordinator{eff::testing::bg()};
-    auto start_root = perm::mint_permission_root<cc::spsc_tag::Whole<StartTag>>();
-    auto link_root = perm::mint_permission_root<cc::spsc_tag::Whole<LinkTag>>();
-    auto fan_root = perm::mint_permission_root<cc::mpsc_tag::Whole<FanTag>>();
-    auto sink_root = perm::mint_permission_root<cc::spsc_tag::Whole<SinkTag>>();
-    using StartChannel = cc::spsc_channel_t<int, 8, decltype(start_root)>;
-    using LinkChannel = cc::spsc_channel_t<int, 8, decltype(link_root)>;
-    using FanChannel = cc::mpsc_channel_t<int, 8, decltype(fan_root)>;
-    using SinkChannel = cc::spsc_channel_t<int, 8, decltype(sink_root)>;
+    auto start_root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, StartTag>>();
+    auto link_root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, LinkTag>>();
+    auto fan_root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, FanTag>>();
+    auto sink_root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, SinkTag>>();
+    using StartChannel = cc::channel_t<int, 8, decltype(start_root)>;
+    using LinkChannel = cc::channel_t<int, 8, decltype(link_root)>;
+    using FanChannel = cc::channel_t<int, 8, decltype(fan_root)>;
+    using SinkChannel = cc::channel_t<int, 8, decltype(sink_root)>;
 
     StartChannel start{};
     LinkChannel link{};

@@ -8,7 +8,7 @@
 // built from nothing here, so the mint takes them as parameters.
 
 #include <fixy/Ctx.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 
 #include <utility>
@@ -24,10 +24,10 @@ struct ATag {};
 struct BTag {};
 struct OutTag {};
 struct FixtureBrand {};
-using InChannel = cc::PermissionedSpscChannel<int, 8, InTag, FixtureBrand>;
-using AChannel = cc::PermissionedSpscChannel<int, 8, ATag, FixtureBrand>;
-using BChannel = cc::PermissionedSpscChannel<int, 8, BTag, FixtureBrand>;
-using OutChannel = cc::PermissionedSpscChannel<int, 8, OutTag, FixtureBrand>;
+using InChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, InTag, FixtureBrand>;
+using AChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, ATag, FixtureBrand>;
+using BChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, BTag, FixtureBrand>;
+using OutChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, OutTag, FixtureBrand>;
 
 inline void writes_a(InChannel::ConsumerHandle&&, AChannel::ProducerHandle&&) noexcept {}
 inline void drains_b(BChannel::ConsumerHandle&&, OutChannel::ProducerHandle&&) noexcept {}

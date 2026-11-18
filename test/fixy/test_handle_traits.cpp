@@ -11,7 +11,7 @@
 // The second is the cross-check that matters more.  A synthetic proves
 // the predicate matches the shape the predicate was written for, which
 // is close to circular.  What settles it is the production handle: a
-// PermissionedSpscChannel's ConsumerHandle must answer yes to exactly
+// PermissionedChannel's ConsumerHandle must answer yes to exactly
 // the consumer predicate, and its ProducerHandle to exactly the producer
 // one, with no synthetic in the way.
 //
@@ -21,7 +21,7 @@
 // handle.
 
 #include <fixy/concurrent/HandleTraits.h>
-#include <fixy/concurrent/PermissionedSpscChannel.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <foundation/permissions/Permission.h>
 
 #include <cstdio>
@@ -74,8 +74,10 @@ struct synth_swmr_hybrid {
 // ── the real channel ────────────────────────────────────────────────
 
 struct HandleTraitsTag {};
-auto handle_traits_root() noexcept { return perm::mint_permission_root<c::spsc_tag::Whole<HandleTraitsTag>>(); }
-using Spsc = c::spsc_channel_t<int, 8, decltype(handle_traits_root())>;
+auto handle_traits_root() noexcept {
+    return perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, HandleTraitsTag>>();
+}
+using Spsc = c::channel_t<int, 8, decltype(handle_traits_root())>;
 
 // The production handles answer exactly one predicate each.  These are
 // the cells that are not circular: neither handle was written with this
@@ -101,7 +103,7 @@ static_assert(!c::is_consumer_handle_v<Spsc>);
 static_assert(!c::is_producer_handle_v<Spsc>);
 
 // A different element type carries through.
-using SpscBytes = c::spsc_channel_t<unsigned char, 8, decltype(handle_traits_root())>;
+using SpscBytes = c::channel_t<unsigned char, 8, decltype(handle_traits_root())>;
 static_assert(std::is_same_v<c::consumer_handle_value_t<SpscBytes::ConsumerHandle>, unsigned char>);
 static_assert(std::is_same_v<c::producer_handle_value_t<SpscBytes::ProducerHandle>, unsigned char>);
 
