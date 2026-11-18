@@ -91,7 +91,7 @@ public:
     // cell write, and the caller owns the cell from CAS success until
     // that set.
 
-    [[nodiscard, gnu::hot]] bool try_push(T item) noexcept {
+    [[nodiscard, gnu::hot]] bool try_push(T const& item) noexcept {
         for (;;) {
             // load_relaxed, not peek_relaxed: producers race-CAS a
             // shared head_, so the sole-writer claim behind
