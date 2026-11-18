@@ -3,6 +3,7 @@
 // bounded_above<9> to even is outside admitted_implications, and it is
 // inert.  No chain reaches even, and the constrained weakening fails.
 
+#include <fixy/PredicateImplies.h>
 #include <fixy/Refined.h>
 
 namespace {

@@ -21,7 +21,7 @@ struct not_a_rule {};
 }  // namespace fixy::refined::admitted_implications
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-#include <fixy/Predicates.h>
+#include <fixy/PredicateImplies.h>
 
 static_assert(::fixy::detail::refined_edge_walk::every_edge_holds());
 

@@ -3,6 +3,7 @@
 // for it declared in some other namespace is inert, so a weakening
 // constrained on the relation fails its constraint.
 
+#include <fixy/PredicateImplies.h>
 #include <fixy/Refined.h>
 
 namespace {

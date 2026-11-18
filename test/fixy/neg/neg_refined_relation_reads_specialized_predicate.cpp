@@ -5,7 +5,7 @@
 // relation finds the class outside fixy/Predicates.h and stops the build,
 // so no gate reads a claim that the specialized class refutes.
 
-#include <fixy/Predicates.h>
+#include <fixy/PredicateImplies.h>
 #include <foundation/Quarantine.h>
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges InRange<1, 4096> to admit zero")

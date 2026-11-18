@@ -6,6 +6,7 @@
 
 #include <fixy/Refined.h>
 
+#include <fixy/PredicateImplies.h>
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/diag/FailClosed.h>
 
@@ -567,7 +568,7 @@ template <auto P, auto Q, class T>
 // For each ordered pair of predicates of a roster that the relation
 // admits, no value of a fixed set satisfies the premise and fails the
 // conclusion.  The rosters cover each edge and each rule of
-// fixy/Predicates.h: the integer roster the bounds, the divisors, the
+// fixy/PredicateImplies.h: the integer roster the bounds, the divisors, the
 // signs and the two combinators, the pointer roster each alignment from
 // 1 to 64 and the null tests, and the size roster the lengths.  The pointer
 // values are 256 consecutive bytes, so each residue of an address modulo 64

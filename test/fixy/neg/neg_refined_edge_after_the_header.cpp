@@ -1,4 +1,4 @@
-// An implication edge added to the relation after fixy/Predicates.h.
+// An implication edge added to the relation after fixy/PredicateImplies.h.
 //
 // Zero is non-negative and not positive, so the edge is unsound.  The
 // file opens admitted_implications again and declares it, as a file
@@ -8,7 +8,7 @@
 // ask, so it stops the build rather than reach the late edge through
 // the chain from the range to non_negative.
 
-#include <fixy/Predicates.h>
+#include <fixy/PredicateImplies.h>
 #include <foundation/Quarantine.h>
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture plants a declaration in a base namespace, and a check refuses it")

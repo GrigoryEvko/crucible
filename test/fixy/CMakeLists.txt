@@ -1183,6 +1183,13 @@ fixy_neg_compile_test(neg_refined_implication_not_admitted
   "required for the satisfaction of .PredicateImplies<P, Q>. \\[with P = fixy::IsNonNegative\\{\\}; Q = fixy::IsPositive\\{\\}\\]"
   "the expression .predicate_implies\\(.* evaluated to .false.")
 
+# fixy/Refined.h does not include the relation of fixy/PredicateImplies.h,
+# so a unit that names the relation with fixy/Refined.h alone finds no
+# declaration.
+fixy_neg_compile_test(neg_refined_relation_not_in_the_interface
+  ".PredicateImplies. is not a member of .fixy."
+  "neg_refined_relation_not_in_the_interface\\.cpp:9:[0-9]+: error:")
+
 # The relation holds a seal that counts every member at the foot of the
 # header.  An edge or a rule added after it stops the build at the first
 # implication query that reads the seal after it.

@@ -2,6 +2,7 @@
 // compares its bounds by value.  The conversion that turns -1 into the
 // largest unsigned value never admits the step.
 
+#include <fixy/PredicateImplies.h>
 #include <fixy/Refined.h>
 
 namespace {

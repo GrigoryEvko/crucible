@@ -5,6 +5,7 @@
 // predicate too, so this file takes the trusted door to reach the
 // relation.
 
+#include <fixy/PredicateImplies.h>
 #include <fixy/Refined.h>
 
 namespace {

@@ -4,7 +4,7 @@
 // predicate_implies.  The closure is a function at namespace scope that
 // is not a template, so no specialization matches it.
 
-#include <fixy/Predicates.h>
+#include <fixy/PredicateImplies.h>
 
 #include <meta>
 

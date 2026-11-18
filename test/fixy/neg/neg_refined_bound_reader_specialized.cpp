@@ -4,7 +4,7 @@
 // magnitude.  No such template exists, so the specialization does not
 // compile.
 
-#include <fixy/Predicates.h>
+#include <fixy/PredicateImplies.h>
 
 template <>
 inline constexpr int fixy::refined::exact_bound_of<4096> = 1;

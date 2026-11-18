@@ -2,6 +2,7 @@
 // no admitted step leads back from a ceiling to a range.  The
 // constrained weakening from the ceiling to the range fails.
 
+#include <fixy/PredicateImplies.h>
 #include <fixy/Refined.h>
 
 namespace {

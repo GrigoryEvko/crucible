@@ -25,8 +25,10 @@
 // asks the type system to take an invariant on faith.
 //
 // This header holds the refinement and the sealed refinement.
-// fixy/Predicates.h holds the predicates, their combinators and the
-// closed implication relation between them.
+// fixy/Predicates.h holds the predicates and their combinators.
+// fixy/PredicateImplies.h holds the closed implication relation between
+// them, and this header does not include it: only a gate that weakens a
+// refinement reads the relation.
 
 #include <fixy/GradedFacade.h>
 #include <fixy/Predicates.h>
@@ -357,7 +359,7 @@ template <typename T>
 using NonEmpty = Refined<non_empty, T>;
 
 // This uses length_ge<1> rather than non_empty because length_ge
-// participates in the implication relation of fixy/Predicates.h, so a
+// participates in the implication relation of fixy/PredicateImplies.h, so a
 // non-empty span strengthens to a longer-minimum one without being
 // re-validated.  non_empty stays useful for a container whose size is
 // not cheap to compute, which a span's is.
@@ -366,7 +368,7 @@ using NonEmptySpan = Refined<length_ge<std::size_t{1}>, std::span<T>>;
 
 // N of zero is permitted here as a degenerate any-length alias,
 // because the underlying predicate is vacuous at zero. The implication
-// relation of fixy/Predicates.h correctly refuses to bridge that case
+// relation of fixy/PredicateImplies.h correctly refuses to bridge that case
 // to non_empty.
 template <std::size_t N, typename T>
 using MinLength = Refined<length_ge<N>, T>;

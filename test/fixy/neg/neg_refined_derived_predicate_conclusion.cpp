@@ -3,6 +3,7 @@
 // refuses a predicate with a base class.  No range implies it, and the
 // constrained weakening fails.
 
+#include <fixy/PredicateImplies.h>
 #include <fixy/Refined.h>
 
 namespace {

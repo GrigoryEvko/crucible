@@ -20,7 +20,7 @@ consteval bool returns_bool(std::meta::info premise, std::meta::info conclusion)
 }  // namespace fixy::refined::admitted_implications
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-#include <fixy/Predicates.h>
+#include <fixy/PredicateImplies.h>
 
 static_assert(::fixy::detail::refined_edge_walk::every_edge_holds());
 
