@@ -63,7 +63,7 @@ fixy/Corpus.cpp | 1.8 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown
 fixy/Fn.cpp | 7.2 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/Machine.cpp | 0.0 | ::fixy::machine::no_edges, unknown
 fixy/OwnedRegion.cpp | 0.5 | ::foundation::permissions::permission_rows
-fixy/Predicates.cpp | unmeasured | ::fixy::refined::admitted_implications
+fixy/PredicateImplies.cpp | unmeasured | ::fixy::refined::admitted_implications
 fixy/Reject.cpp | 5.9 | unknown
 fixy/Role.cpp | 5.0 | ::fixy::role, ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/ScopedView.cpp | 0.0 | ::fixy::session::combinators

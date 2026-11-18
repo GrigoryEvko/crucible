@@ -131,7 +131,7 @@ include/crucible/ | opted-out | 1 | ABI: the front end gave the data pointer of 
 include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
-include/fixy/ | base-std-entity | 349 | - | -
+include/fixy/ | base-std-entity | 347 | - | -
 include/fixy/ | base-std-object | 197 | - | -
 include/fixy/ | replace-pending:<array> | 6 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
@@ -601,7 +601,7 @@ test/layer/checks/fixy/ | c-library-call | 1 | - | -
 test/layer/checks/fixy/ | raw-pointer-object | 10 | - | -
 test/layer/checks/fixy/ | replace-pending:<limits> | 10 | - | -
 test/layer/checks/fixy/ | std-entity | 124 | - | -
-test/layer/checks/fixy/ | std-object | 14 | - | -
+test/layer/checks/fixy/ | std-object | 12 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 24 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 11 | - | -
 test/layer/checks/fixy/collision/ | std-entity | 17 | - | -
