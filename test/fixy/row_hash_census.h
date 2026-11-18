@@ -1462,6 +1462,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::NumaNodeMask, kPayload},
     {^^::fixy::numa::NodeAllocationCounters, kPayload},
     {^^::fixy::numa::NumaQueryError, kPayload},
+    {^^::fixy::numa::ThreadMemoryPolicy, kPayload},
     {^^::fixy::net::SocketDoor, kDescriptorDoor},
     {^^::fixy::net::NoTimestampMessage, kPayload},
     {^^::fixy::net::ShortTimestampMessage, kPayload},

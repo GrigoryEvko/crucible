@@ -1,7 +1,7 @@
 #pragma once
 
 // The argument words of the memory policy door of fixy/os/NumaPlacement.h:
-// the policies of a range, and the flags of mbind.
+// the policies of a range and of a thread, and the flags of mbind.
 //
 // The values are the values of <linux/mempolicy.h> on x86_64 and aarch64.  The
 // door file src/foundation/os/Syscall.cpp compares each one with that header,
@@ -10,6 +10,10 @@
 // This header is in the floor layer F0_os of utils/rule-table.txt.
 
 namespace foundation::os {
+
+// The policy of a thread that has no policy of its own: each page on the node
+// of the CPU that first touches it (MPOL_DEFAULT).  It takes no mask.
+inline constexpr int kMemoryPolicyDefault = 0;
 
 // The policy that takes each page of a range from the node of the mask, and
 // from another node when that node is low on free memory (MPOL_PREFERRED).

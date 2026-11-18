@@ -115,6 +115,8 @@ enum class Syscall : std::uint8_t {
     setpriority,
     mbind,
     move_pages,
+    get_mempolicy,
+    set_mempolicy,
     getpid,
     setsockopt,
     getsockopt,

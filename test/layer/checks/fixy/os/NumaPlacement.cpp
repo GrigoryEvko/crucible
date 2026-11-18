@@ -95,6 +95,31 @@ template <class... Ids>
 static_assert(nodes_of("0") == nodes(0) && nodes_of("0-1") == nodes(0, 1));
 static_assert(nodes_of("0-1,4\n") == nodes(0, 1, 4) && nodes_of("2,0-1") == nodes(0, 1, 2));
 static_assert(nodes_of("253") == nodes(253));
+
+// THE THREAD POLICY: the words that the read names, and the policies that
+// the set takes.
+using ::fixy::numa::is_settable_thread_policy;
+using ::fixy::numa::thread_policy_kind_of;
+using ::fixy::numa::ThreadMemoryPolicy;
+using ::fixy::numa::ThreadPolicyKind;
+static_assert(thread_policy_kind_of(0).is_some_and([](ThreadPolicyKind kind) {
+    return kind == ThreadPolicyKind::first_touch;
+}));
+static_assert(thread_policy_kind_of(3).is_some_and([](ThreadPolicyKind kind) {
+    return kind == ThreadPolicyKind::interleave;
+}));
+static_assert(thread_policy_kind_of(4).is_none(), "MPOL_LOCAL is a policy that the door does not name.");
+static_assert(thread_policy_kind_of(3 | (1 << 15)).is_none(), "a word with a mode flag is no plain policy.");
+static_assert(is_settable_thread_policy(ThreadMemoryPolicy{}));
+static_assert(!is_settable_thread_policy(ThreadMemoryPolicy{.kind = ThreadPolicyKind::first_touch, .nodes = nodes(0)}));
+static_assert(is_settable_thread_policy(ThreadMemoryPolicy{.kind = ThreadPolicyKind::interleave,
+                                                           .nodes = nodes(0, 1)}));
+static_assert(!is_settable_thread_policy(ThreadMemoryPolicy{.kind = ThreadPolicyKind::bind, .nodes = nodes()}));
+static_assert(is_settable_thread_policy(ThreadMemoryPolicy{.kind = ThreadPolicyKind::preferred, .nodes = nodes(1)}));
+static_assert(!is_settable_thread_policy(ThreadMemoryPolicy{.kind = ThreadPolicyKind::preferred,
+                                                            .nodes = nodes(0, 1)}));
+static_assert(!(ThreadMemoryPolicy{.kind = ThreadPolicyKind::bind, .nodes = nodes(0)}
+                == ThreadMemoryPolicy{.kind = ThreadPolicyKind::interleave, .nodes = nodes(0)}));
 static_assert(numa::parse_numa_node_list("").is_none() && numa::parse_numa_node_list("254").is_none(),
               "an empty list and a node past 253 give no mask");
 static_assert(numa::parse_numa_node_list("3-1").is_none() && numa::parse_numa_node_list("0,,1").is_none()

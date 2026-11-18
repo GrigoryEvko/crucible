@@ -110,6 +110,7 @@ static_assert(kLockOnFault == MLOCK_ONFAULT, "kLockOnFault is not MLOCK_ONFAULT 
 
 // The argument words of foundation/os/MemoryPolicyWords.h are the words of the
 // kernel header.
+static_assert(kMemoryPolicyDefault == MPOL_DEFAULT, "kMemoryPolicyDefault is not MPOL_DEFAULT of <linux/mempolicy.h>");
 static_assert(kMemoryPolicyBind == MPOL_BIND, "kMemoryPolicyBind is not MPOL_BIND of <linux/mempolicy.h>");
 static_assert(kMemoryPolicyPreferred == MPOL_PREFERRED,
               "kMemoryPolicyPreferred is not MPOL_PREFERRED of <linux/mempolicy.h>");
@@ -235,6 +236,10 @@ constexpr long kNoCall = -1;
             return __NR_mbind;
         case Syscall::move_pages:
             return __NR_move_pages;
+        case Syscall::get_mempolicy:
+            return __NR_get_mempolicy;
+        case Syscall::set_mempolicy:
+            return __NR_set_mempolicy;
         case Syscall::getpid:
             return __NR_getpid;
         case Syscall::setsockopt:
@@ -460,8 +465,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // The release in which a call came to the architecture of the build, with the
 // operations that the doors give it: the later of the first release of the
 // architecture and the release that added the call.  openat, renameat,
-// unlinkat, mkdirat and newfstatat came in 2.6.16.  mbind came in 2.6.7, and
-// the memory policy door uses
+// unlinkat, mkdirat and newfstatat came in 2.6.16.  mbind, get_mempolicy and
+// set_mempolicy came in 2.6.7, and the memory policy door uses
 // MPOL_MF_MOVE, which came in 2.6.16.  move_pages came in 2.6.18, and pipe2
 // and dup3 came in 2.6.27.  futex came
 // in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
@@ -482,6 +487,10 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::newfstatat:
         case Syscall::mbind:
             added = KernelVersion{2, 6, 16};
+            break;
+        case Syscall::get_mempolicy:
+        case Syscall::set_mempolicy:
+            added = KernelVersion{2, 6, 7};
             break;
         case Syscall::move_pages:
             added = KernelVersion{2, 6, 18};

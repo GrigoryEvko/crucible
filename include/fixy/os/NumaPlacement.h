@@ -56,6 +56,7 @@
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
+#include <foundation/os/MemoryPolicyWords.h>
 
 #include <climits>
 #include <cstddef>
@@ -651,6 +652,122 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsNumaQuery<Ctx>
 [[nodiscard]] Result<NumaNodeMask, NumaQueryError> read_allowed_numa_nodes(Ctx const&) noexcept {
     return ::fixy::detail::read_allowed_numa_nodes_();
+}
+
+// THE THREAD POLICY
+//   The memory policy of a thread places each page that the thread touches
+//   first and that no policy of a range covers (set_mempolicy(2)).  A thread
+//   that fork or clone makes takes the policy of its parent, and execve keeps
+//   it.  So a launcher such as numactl --interleave gives its policy to each
+//   worker.  read_thread_memory_policy reads the policy of the calling
+//   thread, and set_thread_memory_policy sets it.  A caller that changes the
+//   policy for a time reads it first and sets it back after.
+
+// The kind of the memory policy of a thread.
+enum class ThreadPolicyKind : std::uint8_t {
+    // No policy of the thread: each page on the node of the CPU that first
+    // touches it (MPOL_DEFAULT).  The policy has no nodes.
+    first_touch,
+    // Each page on a node of the mask, and on no other node (MPOL_BIND).
+    bind,
+    // The pages on the nodes of the mask in turn (MPOL_INTERLEAVE).
+    interleave,
+    // Each page on the one node of the mask, or on another node when that
+    // node is low on free memory (MPOL_PREFERRED).
+    preferred,
+};
+
+// The memory policy of a thread: its kind and its nodes.  first_touch has
+// no nodes, and each other kind has at least one.
+struct ThreadMemoryPolicy final {
+    ThreadPolicyKind kind = ThreadPolicyKind::first_touch;
+    NumaNodeMask nodes{};
+
+    [[nodiscard]] friend constexpr bool operator==(ThreadMemoryPolicy const& left,
+                                                   ThreadMemoryPolicy const& right) noexcept {
+        return left.kind == right.kind && left.nodes == right.nodes;
+    }
+};
+
+// The kind of the policy word WORD that get_mempolicy gives, or no value for
+// a word that the door does not name: a policy of a later kernel, such as
+// MPOL_LOCAL or MPOL_WEIGHTED_INTERLEAVE, or a word with a mode flag.
+[[nodiscard]] constexpr Option<ThreadPolicyKind> thread_policy_kind_of(int word) noexcept {
+    switch (word) {
+        case ::foundation::os::kMemoryPolicyDefault:
+            return Option<ThreadPolicyKind>::some(ThreadPolicyKind::first_touch);
+        case ::foundation::os::kMemoryPolicyBind:
+            return Option<ThreadPolicyKind>::some(ThreadPolicyKind::bind);
+        case ::foundation::os::kMemoryPolicyInterleave:
+            return Option<ThreadPolicyKind>::some(ThreadPolicyKind::interleave);
+        case ::foundation::os::kMemoryPolicyPreferred:
+            return Option<ThreadPolicyKind>::some(ThreadPolicyKind::preferred);
+        default:
+            return none;
+    }
+}
+
+// True when POLICY is a policy that set_mempolicy takes: first_touch with no
+// nodes, preferred with one node, and bind or interleave with at least one.
+[[nodiscard]] constexpr bool is_settable_thread_policy(ThreadMemoryPolicy const& policy) noexcept {
+    switch (policy.kind) {
+        case ThreadPolicyKind::first_touch:
+            return policy.nodes.is_empty();
+        case ThreadPolicyKind::preferred:
+            return policy.nodes.size() == 1;
+        case ThreadPolicyKind::bind:
+        case ThreadPolicyKind::interleave:
+            return !policy.nodes.is_empty();
+        default:
+            return false;
+    }
+}
+
+// get_mempolicy and set_mempolicy are calls of the memory-policy family, as
+// mbind is, so the gate is the gate of the other memory-policy doors: the
+// context must own IO and Block.
+template <typename Ctx>
+concept CtxFitsThreadPolicy =
+    ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block>;
+
+}  // namespace numa
+
+namespace detail {
+
+// Reads the memory policy of the calling thread with get_mempolicy.  A word
+// that thread_policy_kind_of does not name gives eopnotsupp, and a node past
+// the nodes that NumaNodeId names gives eoverflow.  The body is in
+// src/fixy/os/NumaPlacement.cpp.
+[[nodiscard]] Result<numa::ThreadMemoryPolicy, ::foundation::os::Errno> get_mempolicy_sys() noexcept;
+
+// Sets the memory policy of the calling thread with set_mempolicy.  A policy
+// that is_settable_thread_policy refuses gives einval and makes no system
+// call.  The body is in src/fixy/os/NumaPlacement.cpp.
+[[nodiscard]] Result<Unit, ::foundation::os::Errno> set_mempolicy_sys(numa::ThreadMemoryPolicy const& policy) noexcept;
+
+}  // namespace detail
+
+namespace numa {
+
+// The memory policy of the calling thread (THE THREAD POLICY).  A host with
+// more nodes than NumaNodeId names gives the error of the kernel, einval.
+// Not a mint: it reads the kernel and synthesizes no authority.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsThreadPolicy<Ctx>
+[[nodiscard]] Result<ThreadMemoryPolicy, ::foundation::os::Errno> read_thread_memory_policy(Ctx const&) noexcept {
+    return ::fixy::detail::get_mempolicy_sys();
+}
+
+// Sets the memory policy of the calling thread to POLICY (THE THREAD
+// POLICY).  A policy that is_settable_thread_policy refuses gives einval, and
+// a node that the cpuset of the process does not allow gives the error of the
+// kernel, einval.  The policy holds for the pages that the thread touches
+// first after the call.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsThreadPolicy<Ctx>
+[[nodiscard]] Result<Unit, ::foundation::os::Errno>
+set_thread_memory_policy(Ctx const&, ThreadMemoryPolicy const& policy) noexcept {
+    return ::fixy::detail::set_mempolicy_sys(policy);
 }
 
 }  // namespace numa

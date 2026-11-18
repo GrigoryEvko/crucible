@@ -1,6 +1,7 @@
-// The memory policy door of fixy/os/NumaPlacement.h: the binding of a range
-// to one node and the census of the nodes of the pages of a range, through
-// the raw system call primitive of foundation/os/Syscall.h.
+// The memory policy door of fixy/os/NumaPlacement.h: the policy of a range,
+// the census of the nodes of the pages of a range, and the policy of the
+// calling thread, through the raw system call primitive of
+// foundation/os/Syscall.h.
 //
 // The argument words come from foundation/os/MemoryPolicyWords.h, which the
 // door file of the primitive compares with the kernel header, and the size of
@@ -69,7 +70,93 @@ query_of(long answer) noexcept {
         });
 }
 
+// The count of the words of the node mask that the kernel reads and writes.
+constexpr std::size_t numa_mask_words = numa_mask_bits / numa_mask_word_bits;
+
+// Sets the bit of each node of NODES in the words of WORDS, which start at
+// zero.  Linear in the count of the nodes.
+void fill_mask_words(NumaNodeMask const& nodes, unsigned long (&words)[numa_mask_words]) noexcept {
+    for (NumaNodeMask::Slot const slot : nodes.slots()) {
+        std::size_t const bit = slot.raw();
+        words[bit / numa_mask_word_bits] |= 1UL << (bit % numa_mask_word_bits);
+    }
+}
+
+// The nodes of the bits of WORDS, or eoverflow for a bit past the nodes that
+// NumaNodeId names.  Linear in the bits of the words.
+[[nodiscard]] ::foundation::core::Result<NumaNodeMask, ::foundation::os::Errno>
+nodes_of_mask_words(unsigned long const (&words)[numa_mask_words]) noexcept {
+    NumaNodeMask nodes{};
+    for (std::size_t bit = 0; bit < numa_mask_bits; ++bit) {
+        if ((words[bit / numa_mask_word_bits] & (1UL << (bit % numa_mask_word_bits))) == 0) {
+            continue;
+        }
+        if (bit >= numa_concrete_node_count) {
+            return ::foundation::core::err(::foundation::os::Errno::eoverflow);
+        }
+        nodes.insert(static_cast<NumaNodeId>(bit)).expect("a bit below the concrete count names a concrete node");
+    }
+    return nodes;
+}
+
+// The policy word of set_mempolicy for a kind of a thread policy.
+[[nodiscard]] constexpr int thread_policy_word(numa::ThreadPolicyKind kind) noexcept {
+    switch (kind) {
+        case numa::ThreadPolicyKind::first_touch:
+            return ::foundation::os::kMemoryPolicyDefault;
+        case numa::ThreadPolicyKind::bind:
+            return ::foundation::os::kMemoryPolicyBind;
+        case numa::ThreadPolicyKind::interleave:
+            return ::foundation::os::kMemoryPolicyInterleave;
+        case numa::ThreadPolicyKind::preferred:
+            return ::foundation::os::kMemoryPolicyPreferred;
+        default:
+            return -1;
+    }
+}
+
 }  // namespace
+
+// get_mempolicy with no address and no flags gives the policy of the calling
+// thread.  The kernel writes at most the node count that it receives, less
+// one, into the mask, as mbind reads it.
+::foundation::core::Result<numa::ThreadMemoryPolicy, ::foundation::os::Errno> get_mempolicy_sys() noexcept {
+    int word = -1;
+    unsigned long mask[numa_mask_words]{};
+    for (::foundation::os::Errno const error :
+         ::foundation::os::unit_of(::foundation::os::raw_syscall(::foundation::os::Syscall::get_mempolicy, &word,
+                                                                 static_cast<void*>(mask), numa_mask_bits + 1,
+                                                                 static_cast<void const*>(nullptr), 0))
+             .err()) {
+        return ::foundation::core::err(error);
+    }
+    numa::ThreadMemoryPolicy policy{};
+    for (numa::ThreadPolicyKind const kind : numa::thread_policy_kind_of(word)) {
+        policy.kind = kind;
+        for (::foundation::os::Errno const error : nodes_of_mask_words(mask).err()) {
+            return ::foundation::core::err(error);
+        }
+        policy.nodes = nodes_of_mask_words(mask).expect("the check above read the mask");
+        return policy;
+    }
+    return ::foundation::core::err(::foundation::os::Errno::eopnotsupp);
+}
+
+// set_mempolicy reads the node count less one bits of the mask.  The policy
+// first_touch takes no mask, and the door passes none.
+::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+set_mempolicy_sys(numa::ThreadMemoryPolicy const& policy) noexcept {
+    if (!numa::is_settable_thread_policy(policy)) {
+        return ::foundation::core::err(::foundation::os::Errno::einval);
+    }
+    unsigned long mask[numa_mask_words]{};
+    fill_mask_words(policy.nodes, mask);
+    bool const has_nodes = policy.kind != numa::ThreadPolicyKind::first_touch;
+    return ::foundation::os::unit_of(
+        ::foundation::os::raw_syscall(::foundation::os::Syscall::set_mempolicy, thread_policy_word(policy.kind),
+                                      has_nodes ? static_cast<void const*>(mask) : static_cast<void const*>(nullptr),
+                                      has_nodes ? numa_mask_bits + 1 : std::size_t{0}));
+}
 
 // The kernel decrements the node count that it receives before it reads
 // the mask, so the call passes one more than the width of the mask.  The
@@ -80,11 +167,8 @@ mbind_sys(void* address, std::size_t length, NumaPolicy policy, NumaNodeMask con
     if (nodes.is_empty()) {
         return ::foundation::core::err(::foundation::os::Errno::einval);
     }
-    unsigned long mask[numa_mask_bits / numa_mask_word_bits]{};
-    for (NumaNodeMask::Slot const slot : nodes.slots()) {
-        std::size_t const bit = slot.raw();
-        mask[bit / numa_mask_word_bits] |= 1UL << (bit % numa_mask_word_bits);
-    }
+    unsigned long mask[numa_mask_words]{};
+    fill_mask_words(nodes, mask);
     return ::foundation::os::unit_of(::foundation::os::raw_syscall(
         ::foundation::os::Syscall::mbind, address, length, policy_word(policy), static_cast<void const*>(mask),
         numa_mask_bits + 1, ::foundation::os::kMemoryPolicyStrict | ::foundation::os::kMemoryPolicyMove));

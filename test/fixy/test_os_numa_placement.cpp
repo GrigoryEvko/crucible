@@ -323,13 +323,77 @@ template <class Proof>
     return 0;
 }
 
+// The thread policy door refuses a policy that set_mempolicy does not take
+// before it calls the kernel: first_touch with a node, preferred with two
+// nodes, and an interleave with no node.
+[[nodiscard]] int the_thread_policy_door_refuses_a_bad_policy() {
+    using fixy::numa::ThreadMemoryPolicy;
+    using fixy::numa::ThreadPolicyKind;
+    BgCtx ctx{eff::testing::bg()};
+    fixy::NumaNodeMask two_nodes{};
+    two_nodes.insert(fixy::NumaNodeId{0}).expect("node 0 is concrete");
+    two_nodes.insert(fixy::NumaNodeId{1}).expect("node 1 is concrete");
+    fixy::NumaNodeMask const one_node = fixy::make_numa_node_mask(fixy::NumaNodeId{0}).expect("node 0 is concrete");
+    auto const touch = fixy::numa::set_thread_memory_policy(
+        ctx, ThreadMemoryPolicy{.kind = ThreadPolicyKind::first_touch, .nodes = one_node});
+    auto const preferred = fixy::numa::set_thread_memory_policy(
+        ctx, ThreadMemoryPolicy{.kind = ThreadPolicyKind::preferred, .nodes = two_nodes});
+    auto const empty = fixy::numa::set_thread_memory_policy(
+        ctx, ThreadMemoryPolicy{.kind = ThreadPolicyKind::interleave, .nodes = fixy::NumaNodeMask{}});
+    if (error_of(touch) != Errno::einval || error_of(preferred) != Errno::einval || error_of(empty) != Errno::einval) {
+        fixy::report(fixy::Sink::Err, "the thread policy door did not refuse a policy that the kernel refuses\n");
+        return 1;
+    }
+    return 0;
+}
+
+// The thread policy reads back as the door set it.  The case reads the policy
+// of the thread, sets an interleave over the allowed nodes, reads it, sets the
+// first policy back and reads that.  A policy of a launcher that the door does
+// not name skips the case.
+[[nodiscard]] int the_thread_policy_reads_back_as_set() {
+    using fixy::numa::ThreadMemoryPolicy;
+    using fixy::numa::ThreadPolicyKind;
+    BgCtx ctx{eff::testing::bg()};
+    auto first_read = fixy::numa::read_thread_memory_policy(ctx);
+    if (first_read.is_err()) {
+        if (error_of(first_read) == Errno::eopnotsupp) return kSkip;
+        fixy::report(fixy::Sink::Err, "the read of the thread policy failed (errno {})\n",
+                     foundation::os::error_number_of(first_read));
+        return 1;
+    }
+    ThreadMemoryPolicy const first = std::move(first_read).expect("the read gave the policy");
+    ThreadMemoryPolicy const interleave{.kind = ThreadPolicyKind::interleave, .nodes = allowed_nodes(ctx)};
+    auto const set = fixy::numa::set_thread_memory_policy(ctx, interleave);
+    if (set.is_err()) {
+        if (is_machine_refusal(error_of(set))) return kSkip;
+        fixy::report(fixy::Sink::Err, "the set of an interleave of the thread failed (errno {})\n",
+                     foundation::os::error_number_of(set));
+        return 1;
+    }
+    bool const is_interleave = fixy::numa::read_thread_memory_policy(ctx).match(
+        [&interleave](ThreadMemoryPolicy read) noexcept { return read == interleave; },
+        [](Errno) noexcept { return false; });
+    bool const is_back = fixy::numa::set_thread_memory_policy(ctx, first).is_ok();
+    bool const is_first = fixy::numa::read_thread_memory_policy(ctx).match(
+        [&first](ThreadMemoryPolicy read) noexcept { return read == first; }, [](Errno) noexcept { return false; });
+    if (!is_interleave || !is_back || !is_first) {
+        fixy::report(fixy::Sink::Err, "the thread policy did not read back as set (interleave {}, back {}, first {})\n",
+                     is_interleave, is_back, is_first);
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     int const refusals = the_mint_refuses_a_sentinel_node() + the_mint_refuses_an_empty_region()
                        + the_mint_refuses_a_node_the_machine_lacks() + the_policy_mint_refuses_a_bad_mask()
-                       + the_allowed_nodes_are_not_empty();
+                       + the_allowed_nodes_are_not_empty() + the_thread_policy_door_refuses_a_bad_policy();
     if (refusals != 0) return 1;
+    int const thread_policy = the_thread_policy_reads_back_as_set();
+    if (thread_policy != 0 && thread_policy != kSkip) return 1;
     int const interleaved = an_interleaved_region_spreads_over_its_nodes();
     if (interleaved != 0 && interleaved != kSkip) return 1;
     int const preferred = a_preferred_region_is_on_its_node();
