@@ -1141,6 +1141,11 @@ protocol_decode(fixy::View<std::byte const, 16> image) noexcept {
     return fixy::decode<ProtocolRecord>(image);
 }
 
+// format of the Protocol family has no probe.  Each append of a text stores
+// a byte at an address with an index register, which the rule refuses with
+// no declaration, and format is no part of a hot path.  test_core_protocol
+// checks the text that it writes.
+
 // equal of a double compares its bits.
 [[gnu::used]] bool protocol_equal_double(double left, double right) noexcept { return fixy::equal(left, right); }
 

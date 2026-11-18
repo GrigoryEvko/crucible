@@ -983,6 +983,9 @@ PROBES: tuple[Probe, ...] = (
         "hand reader does.  The order of the tests and of the blocks of the error can differ",
         branches=True,
     ),
+    # format of the Protocol family has no probe.  Each append of a text stores a byte at an address with an index
+    # register, which this rule refuses with no declaration, and format is no part of a hot path.
+    # test_core_protocol checks the text that it writes.
     Probe("protocol_equal_double", "equal of a double compares its bits, as a compare of the bit_cast words does"),
     Probe("fixed_array_order", "<=> of a FixedArray is lexicographic, as <=> of a std::array is"),
     # The Scalar family.
