@@ -420,6 +420,7 @@ add_library(foundation STATIC
   src/foundation/Platform.cpp
   src/foundation/SharedPermission.cpp
   src/foundation/core/Grow.cpp
+  src/foundation/core/KeyedHash.cpp
   src/foundation/core/Report.cpp
   src/foundation/os/Abort.cpp
   src/foundation/os/Auxiliary.cpp
