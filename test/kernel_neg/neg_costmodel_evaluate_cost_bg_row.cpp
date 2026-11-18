@@ -18,6 +18,7 @@ int main() {
     const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg>> bg_ctx{eff::testing::bg()};
     auto hw = ::crucible::blackwell_b200();
     ::crucible::KernelConfig cfg{};
-    (void)::crucible::evaluate_cost(bg_ctx, 1u, 1u, 1u, ::crucible::ScalarType::Float, cfg, hw);
+    (void)::crucible::evaluate_cost(bg_ctx, ::crucible::FlopCount{1}, ::crucible::ByteCount{1},
+                                    ::crucible::ElementCount{1}, ::crucible::ScalarType::Float, cfg, hw);
     return 0;
 }

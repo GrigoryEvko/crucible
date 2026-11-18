@@ -38,40 +38,77 @@ static void test_preset_sanity() {
     assert(b200.max_warps_per_sm == 64);
     assert(b200.max_threads_per_sm() == 32 * 64);
     assert(b200.total_threads() == 128ULL * 32 * 64);
-    assert(approx(b200.peak_fp16, 1125.0f));
-    assert(approx(b200.hbm_bw, 8000.0f));
+    // The rates of the presets are whole numbers below 2^53, so a double
+    // holds each one exactly.
+    CRUCIBLE_FATAL_INVARIANT(b200.peak_fp16 == FlopRate{1.125e15});
+    CRUCIBLE_FATAL_INVARIANT(b200.hbm_bw == ByteRate{8.0e12});
 
     auto h100 = hopper_h100();
     assert(h100.num_sms == 132);
-    assert(approx(h100.peak_fp16, 990.0f));
-    assert(approx(h100.hbm_bw, 3350.0f));
+    CRUCIBLE_FATAL_INVARIANT(h100.peak_fp16 == FlopRate{9.9e14});
+    CRUCIBLE_FATAL_INVARIANT(h100.hbm_bw == ByteRate{3.35e12});
     assert(h100.sm_version == 90);
 
     auto mi300 = mi300x();
     assert(mi300.warp_size.value() == 64);  // AMD wavefront
-    assert(approx(mi300.peak_fp16, 1300.0f));
+    CRUCIBLE_FATAL_INVARIANT(mi300.peak_fp16 == FlopRate{1.3e15});
 
     auto a100 = ampere_a100();
     assert(a100.num_sms == 108);
-    assert(approx(a100.peak_fp8, 0.0f));  // A100 predates FP8
+    CRUCIBLE_FATAL_INVARIANT(a100.peak_fp8 == FlopRate{0.0});  // A100 predates FP8
 
     crucible::test::pass("  test_preset_sanity:             PASSED\n");
 }
 
+// The bits of a double, so a test compares two numbers bit for bit.
+[[nodiscard]] static std::uint64_t bits_of_number(double value) { return ::fixy::bit_cast<std::uint64_t>(value); }
+
 static void test_ridge_point() {
     auto hw = blackwell_b200();
-    // Ridge is (peak_tflops × 1000) / hbm_bw, in FLOP per byte.
-    // (1125 × 1000) / 8000 = 140.625
-    assert(approx(hw.ridge_point(ScalarType::Half), 140.625f));
-    // (90 × 1000) / 8000 = 11.25
-    assert(approx(hw.ridge_point(ScalarType::Float), 11.25f));
+    // The ridge is the peak over the bandwidth, in flops per byte.
+    // 1.125 * 10^15 / (8 * 10^12) = 140.625, which a double holds exactly.
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(hw.compute_ridge_point(ScalarType::Half).raw()) == bits_of_number(140.625));
+    // 9 * 10^13 / (8 * 10^12) = 11.25, exactly.
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(hw.compute_ridge_point(ScalarType::Float).raw()) == bits_of_number(11.25));
 
-    // (990 × 1000) / 3350 is about 295.5.  The ridge sits much higher here
-    // because this part has less bandwidth relative to its peak.
+    // 9.9 * 10^14 / (3.35 * 10^12) is about 295.5.  The ridge sits much
+    // higher here because this part has less bandwidth relative to its peak.
     auto h100 = hopper_h100();
-    assert(approx(h100.ridge_point(ScalarType::Half), 295.52f));
+    CRUCIBLE_FATAL_INVARIANT(approx(static_cast<float>(h100.compute_ridge_point(ScalarType::Half).raw()), 295.52f));
+
+    // A part with no bandwidth has the ridge 0.
+    CRUCIBLE_FATAL_INVARIANT(HardwareProfile{}.compute_ridge_point(ScalarType::Half) == FlopsPerByte{0.0});
 
     crucible::test::pass("  test_ridge_point:               PASSED\n");
+}
+
+// evaluate_cost against the same formula on plain doubles, bit for bit.
+// The memory time is the latency plus the bytes over the bandwidth per
+// nanosecond, and the compute time is the flops over the peak per
+// nanosecond times the two utilisations.
+static void test_evaluate_cost() {
+    auto const hw = blackwell_b200();
+    KernelConfig const cfg{};
+    CostBreakdown const cost =
+        evaluate_cost(pure_ctx, FlopCount{1024}, ByteCount{2048}, ElementCount{4096}, ScalarType::Float, cfg, hw);
+    double const occupancy = static_cast<double>(
+        sm_occupancy(pure_ctx, cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw).value());
+    double const memory = 350.0 + 2048.0 / 8000.0;
+    double const compute = 1024.0 / ((90000.0 * 1.0) * occupancy);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(cost.memory_ns.raw()) == bits_of_number(memory));
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(cost.compute_ns.raw()) == bits_of_number(compute));
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(cost.total_ns.raw()) == bits_of_number(memory + 3000.0));
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(cost.arithmetic_intensity.raw()) == bits_of_number(0.5));
+    CRUCIBLE_FATAL_INVARIANT(cost.flops == FlopCount{1024} && cost.bytes == ByteCount{2048});
+    CRUCIBLE_FATAL_INVARIANT(cost.bottleneck == CostBreakdown::Bottleneck::LAUNCH);
+
+    // No bytes give the intensity 0, and a part with no rate gives no time.
+    CostBreakdown const empty = evaluate_cost(pure_ctx, FlopCount{1024}, ByteCount{0}, ElementCount{4096},
+                                              ScalarType::Float, cfg, HardwareProfile{});
+    CRUCIBLE_FATAL_INVARIANT(empty.arithmetic_intensity == FlopsPerByte{0.0});
+    CRUCIBLE_FATAL_INVARIANT(empty.compute_ns == Nanoseconds{0.0} && empty.memory_ns == Nanoseconds{0.0});
+
+    crucible::test::pass("  test_evaluate_cost:             PASSED\n");
 }
 
 static void test_wave_efficiency() {
@@ -173,11 +210,11 @@ concept TakesSmOccupancy = requires(Ctx const& ctx, HardwareProfile const& hw, V
 };
 template <class Ctx>
 concept TakesEvaluateCost = requires(Ctx const& ctx, KernelConfig const& cfg, HardwareProfile const& hw) {
-    evaluate_cost(ctx, uint64_t{1}, uint64_t{1}, uint64_t{1}, ScalarType::Float, cfg, hw);
+    evaluate_cost(ctx, FlopCount{1}, ByteCount{1}, ElementCount{1}, ScalarType::Float, cfg, hw);
 };
 template <class Ctx>
 concept TakesEvaluateCostDefault = requires(Ctx const& ctx, HardwareProfile const& hw) {
-    evaluate_cost(ctx, uint64_t{1}, uint64_t{1}, uint64_t{1}, ScalarType::Float, hw);
+    evaluate_cost(ctx, FlopCount{1}, ByteCount{1}, ElementCount{1}, ScalarType::Float, hw);
 };
 template <class Ctx>
 concept TakesFusionBenefit = requires(Ctx const& ctx) { compute_fusion_benefit(ctx, 10.0, 5.0, uint64_t{64}, 1u); };
@@ -209,9 +246,11 @@ static void test_pure_context_gate() {
     KernelConfig cfg{};
     assert(approx(wave_efficiency(narrowed, 0, hw).value(), 0.0f));
     assert(approx(sm_occupancy(narrowed, cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw).value(), 0.5f));
-    const CostBreakdown explicit_cfg = evaluate_cost(narrowed, 1024, 2048, 4096, ScalarType::Float, cfg, hw);
-    const CostBreakdown default_cfg = evaluate_cost(narrowed, 1024, 2048, 4096, ScalarType::Float, hw);
-    assert(approx(static_cast<float>(explicit_cfg.total_ns), static_cast<float>(default_cfg.total_ns)));
+    const CostBreakdown explicit_cfg =
+        evaluate_cost(narrowed, FlopCount{1024}, ByteCount{2048}, ElementCount{4096}, ScalarType::Float, cfg, hw);
+    const CostBreakdown default_cfg =
+        evaluate_cost(narrowed, FlopCount{1024}, ByteCount{2048}, ElementCount{4096}, ScalarType::Float, hw);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(explicit_cfg.total_ns.raw()) == bits_of_number(default_cfg.total_ns.raw()));
     assert(compute_fusion_benefit(narrowed, 10000.0, 6000.0, 1024000, 1).saved_launches == 1);
 
     crucible::test::pass("  test_pure_context_gate:         PASSED\n");
@@ -220,11 +259,12 @@ static void test_pure_context_gate() {
 int main() {
     test_preset_sanity();
     test_ridge_point();
+    test_evaluate_cost();
     test_wave_efficiency();
     test_sm_occupancy();
     test_validate_config();
     test_fusion_benefit();
     test_pure_context_gate();
-    crucible::test::pass("test_cost_model: 7 groups, all passed\n");
+    crucible::test::pass("test_cost_model: 8 groups, all passed\n");
     return 0;
 }

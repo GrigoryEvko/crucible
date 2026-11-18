@@ -1,10 +1,11 @@
 #pragma once
 
-// The units are chosen so that no formula here carries a conversion factor.
-// Bandwidth is in GB/s, which is identically bytes per nanosecond, so a byte
-// count divided by a bandwidth is already a time. Throughput is in TFLOPS,
-// which is FLOPs per nanosecond scaled by 1e3. Every time is nanoseconds and
-// every size is bytes.
+// Each rate, count and time of the model is a Quantity, so its unit is part
+// of its type.  A bandwidth is in bytes per second, and a peak is in flops
+// per second.  A formula converts a rate to a rate per nanosecond with
+// convert, and a count over that rate is a time in nanoseconds.  A sum of
+// bytes and nanoseconds, or a compare of a bandwidth with a peak, does not
+// compile.
 
 #include <crucible/Types.h>
 #include <fixy/Core.h>
@@ -15,6 +16,22 @@
 #include <cstdint>
 
 namespace crucible {
+
+using ByteRate = ::fixy::Quantity<::fixy::unit::BytePerSecond, double>;
+using FlopRate = ::fixy::Quantity<::fixy::unit::FlopPerSecond, double>;
+using FlopsPerByte = ::fixy::Quantity<::fixy::unit::FlopPerByte, double>;
+using Nanoseconds = ::fixy::Quantity<::fixy::unit::Nanosecond, double>;
+using FlopCount = ::fixy::Quantity<::fixy::unit::Flop, std::uint64_t>;
+using ByteCount = ::fixy::Quantity<::fixy::unit::Byte, std::uint64_t>;
+using ElementCount = ::fixy::Quantity<::fixy::unit::Element, std::uint64_t>;
+
+namespace cost_model_detail {
+
+// The rates per nanosecond, so a count over a rate is a time in nanoseconds.
+using BytePerNanosecond = ::fixy::unit::Quotient<::fixy::unit::Byte, ::fixy::unit::Nanosecond>;
+using FlopPerNanosecond = ::fixy::unit::Quotient<::fixy::unit::Flop, ::fixy::unit::Nanosecond>;
+
+}  // namespace cost_model_detail
 
 // Each refinement below names its predicate, so a site that builds one
 // writes ::fixy::mint_refined<predicate>(value) and the check runs there.
@@ -77,26 +94,26 @@ struct HardwareProfile {
     uint64_t l2_bytes = 0;
     uint64_t hbm_bytes = 0;
 
-    // GB/s, which is identically bytes per nanosecond.
-    float smem_bw_per_sm = 0;
-    float l2_bw = 0;
-    float hbm_bw = 0;
+    ByteRate smem_bw_per_sm{0.0};
+    ByteRate l2_bw{0.0};
+    ByteRate hbm_bw{0.0};
 
-    float smem_latency = 20;
-    float l2_latency = 200;
-    float hbm_latency = 400;
-    float launch_ns = 3000;
+    Nanoseconds smem_latency{20.0};
+    Nanoseconds l2_latency{200.0};
+    Nanoseconds hbm_latency{400.0};
+    Nanoseconds launch_ns{3000.0};
 
-    // Whole-chip TFLOPS. Tensor-core rate where the precision has one, scalar
-    // ALU rate otherwise. Zero means the part does not implement the format.
-    float peak_fp64 = 0;
-    float peak_fp32 = 0;
-    float peak_tf32 = 0;
-    float peak_fp16 = 0;
-    float peak_bf16 = 0;
-    float peak_fp8 = 0;
-    float peak_fp4 = 0;
-    float peak_int8 = 0;
+    // The rate of the whole chip.  Tensor-core rate where the precision has
+    // one, scalar ALU rate otherwise.  Zero means the part does not implement
+    // the format.
+    FlopRate peak_fp64{0.0};
+    FlopRate peak_fp32{0.0};
+    FlopRate peak_tf32{0.0};
+    FlopRate peak_fp16{0.0};
+    FlopRate peak_bf16{0.0};
+    FlopRate peak_fp8{0.0};
+    FlopRate peak_fp4{0.0};
+    FlopRate peak_int8{0.0};
 
     uint32_t sm_version = 0;
 
@@ -108,7 +125,7 @@ struct HardwareProfile {
         return static_cast<uint64_t>(num_sms) * max_threads_per_sm();
     }
 
-    [[nodiscard]] constexpr float peak_tflops(ScalarType dtype) const {
+    [[nodiscard]] constexpr FlopRate select_peak_rate(ScalarType dtype) const {
         switch (dtype) {
             case ScalarType::Double:
                 return peak_fp64;
@@ -128,12 +145,13 @@ struct HardwareProfile {
         }
     }
 
-    // The arithmetic intensity, in FLOPs per byte, at which compute and memory
-    // are balanced. A kernel below the ridge is memory-bound and one above it
-    // is compute-bound.
-    [[nodiscard]] constexpr float ridge_point(ScalarType dtype) const {
-        float peak = peak_tflops(dtype);
-        return (hbm_bw > 0) ? (peak * 1e3f) / hbm_bw : 0.0f;
+    // The arithmetic intensity at which compute and memory are balanced: the
+    // peak over the bandwidth, in flops per byte.  A kernel below the ridge is
+    // memory-bound and one above it is compute-bound.  A part with no
+    // bandwidth has the ridge 0.
+    [[nodiscard]] constexpr FlopsPerByte compute_ridge_point(ScalarType dtype) const {
+        if (!(hbm_bw > ByteRate{0.0})) return FlopsPerByte{0.0};
+        return divide(select_peak_rate(dtype), hbm_bw);
     }
 };
 
@@ -149,21 +167,21 @@ struct HardwareProfile {
     hw.l1_per_sm = 262144;
     hw.l2_bytes = 50ULL << 20;
     hw.hbm_bytes = 192ULL << 30;
-    hw.smem_bw_per_sm = 1000;
-    hw.l2_bw = 12000;
-    hw.hbm_bw = 8000;
-    hw.smem_latency = 20;
-    hw.l2_latency = 150;
-    hw.hbm_latency = 350;
-    hw.launch_ns = 3000;
-    hw.peak_fp64 = 45;
-    hw.peak_fp32 = 90;
-    hw.peak_tf32 = 225;
-    hw.peak_fp16 = 1125;  // dense rate, not the sparsity-doubled figure
-    hw.peak_bf16 = 1125;
-    hw.peak_fp8 = 2250;
-    hw.peak_fp4 = 4500;
-    hw.peak_int8 = 2250;
+    hw.smem_bw_per_sm = ByteRate{1000.0e9};
+    hw.l2_bw = ByteRate{12000.0e9};
+    hw.hbm_bw = ByteRate{8000.0e9};
+    hw.smem_latency = Nanoseconds{20.0};
+    hw.l2_latency = Nanoseconds{150.0};
+    hw.hbm_latency = Nanoseconds{350.0};
+    hw.launch_ns = Nanoseconds{3000.0};
+    hw.peak_fp64 = FlopRate{45.0e12};
+    hw.peak_fp32 = FlopRate{90.0e12};
+    hw.peak_tf32 = FlopRate{225.0e12};
+    hw.peak_fp16 = FlopRate{1125.0e12};  // dense rate, not the sparsity-doubled figure
+    hw.peak_bf16 = FlopRate{1125.0e12};
+    hw.peak_fp8 = FlopRate{2250.0e12};
+    hw.peak_fp4 = FlopRate{4500.0e12};
+    hw.peak_int8 = FlopRate{2250.0e12};
     hw.sm_version = 100;
     return hw;
 }
@@ -180,21 +198,21 @@ struct HardwareProfile {
     hw.l1_per_sm = 262144;
     hw.l2_bytes = 50ULL << 20;
     hw.hbm_bytes = 80ULL << 30;
-    hw.smem_bw_per_sm = 800;
-    hw.l2_bw = 9000;
-    hw.hbm_bw = 3350;
-    hw.smem_latency = 20;
-    hw.l2_latency = 200;
-    hw.hbm_latency = 400;
-    hw.launch_ns = 4000;
-    hw.peak_fp64 = 34;
-    hw.peak_fp32 = 67;
-    hw.peak_tf32 = 495;
-    hw.peak_fp16 = 990;
-    hw.peak_bf16 = 990;
-    hw.peak_fp8 = 1979;
-    hw.peak_fp4 = 0;
-    hw.peak_int8 = 1979;
+    hw.smem_bw_per_sm = ByteRate{800.0e9};
+    hw.l2_bw = ByteRate{9000.0e9};
+    hw.hbm_bw = ByteRate{3350.0e9};
+    hw.smem_latency = Nanoseconds{20.0};
+    hw.l2_latency = Nanoseconds{200.0};
+    hw.hbm_latency = Nanoseconds{400.0};
+    hw.launch_ns = Nanoseconds{4000.0};
+    hw.peak_fp64 = FlopRate{34.0e12};
+    hw.peak_fp32 = FlopRate{67.0e12};
+    hw.peak_tf32 = FlopRate{495.0e12};
+    hw.peak_fp16 = FlopRate{990.0e12};
+    hw.peak_bf16 = FlopRate{990.0e12};
+    hw.peak_fp8 = FlopRate{1979.0e12};
+    hw.peak_fp4 = FlopRate{0.0};
+    hw.peak_int8 = FlopRate{1979.0e12};
     hw.sm_version = 90;
     return hw;
 }
@@ -211,21 +229,21 @@ struct HardwareProfile {
     hw.l1_per_sm = 131072;
     hw.l2_bytes = 256ULL << 20;
     hw.hbm_bytes = 192ULL << 30;
-    hw.smem_bw_per_sm = 600;
-    hw.l2_bw = 7000;
-    hw.hbm_bw = 5300;
-    hw.smem_latency = 25;
-    hw.l2_latency = 180;
-    hw.hbm_latency = 380;
-    hw.launch_ns = 4000;
-    hw.peak_fp64 = 81;
-    hw.peak_fp32 = 164;
-    hw.peak_tf32 = 0;
-    hw.peak_fp16 = 1300;
-    hw.peak_bf16 = 1300;
-    hw.peak_fp8 = 2600;
-    hw.peak_fp4 = 0;
-    hw.peak_int8 = 2600;
+    hw.smem_bw_per_sm = ByteRate{600.0e9};
+    hw.l2_bw = ByteRate{7000.0e9};
+    hw.hbm_bw = ByteRate{5300.0e9};
+    hw.smem_latency = Nanoseconds{25.0};
+    hw.l2_latency = Nanoseconds{180.0};
+    hw.hbm_latency = Nanoseconds{380.0};
+    hw.launch_ns = Nanoseconds{4000.0};
+    hw.peak_fp64 = FlopRate{81.0e12};
+    hw.peak_fp32 = FlopRate{164.0e12};
+    hw.peak_tf32 = FlopRate{0.0};
+    hw.peak_fp16 = FlopRate{1300.0e12};
+    hw.peak_bf16 = FlopRate{1300.0e12};
+    hw.peak_fp8 = FlopRate{2600.0e12};
+    hw.peak_fp4 = FlopRate{0.0};
+    hw.peak_int8 = FlopRate{2600.0e12};
     hw.sm_version = 0;  // this vendor has no equivalent version number
     return hw;
 }
@@ -242,21 +260,21 @@ struct HardwareProfile {
     hw.l1_per_sm = 196608;
     hw.l2_bytes = 40ULL << 20;
     hw.hbm_bytes = 80ULL << 30;
-    hw.smem_bw_per_sm = 600;
-    hw.l2_bw = 6000;
-    hw.hbm_bw = 2039;
-    hw.smem_latency = 25;
-    hw.l2_latency = 200;
-    hw.hbm_latency = 450;
-    hw.launch_ns = 5000;
-    hw.peak_fp64 = 19;
-    hw.peak_fp32 = 19;
-    hw.peak_tf32 = 156;
-    hw.peak_fp16 = 312;
-    hw.peak_bf16 = 312;
-    hw.peak_fp8 = 0;
-    hw.peak_fp4 = 0;
-    hw.peak_int8 = 624;
+    hw.smem_bw_per_sm = ByteRate{600.0e9};
+    hw.l2_bw = ByteRate{6000.0e9};
+    hw.hbm_bw = ByteRate{2039.0e9};
+    hw.smem_latency = Nanoseconds{25.0};
+    hw.l2_latency = Nanoseconds{200.0};
+    hw.hbm_latency = Nanoseconds{450.0};
+    hw.launch_ns = Nanoseconds{5000.0};
+    hw.peak_fp64 = FlopRate{19.0e12};
+    hw.peak_fp32 = FlopRate{19.0e12};
+    hw.peak_tf32 = FlopRate{156.0e12};
+    hw.peak_fp16 = FlopRate{312.0e12};
+    hw.peak_bf16 = FlopRate{312.0e12};
+    hw.peak_fp8 = FlopRate{0.0};
+    hw.peak_fp4 = FlopRate{0.0};
+    hw.peak_int8 = FlopRate{624.0e12};
     hw.sm_version = 80;
     return hw;
 }
@@ -285,15 +303,15 @@ struct KernelConfig {
 }
 
 struct CostBreakdown {
-    double compute_ns = 0;
-    double memory_ns = 0;
-    double launch_ns = 0;
-    double total_ns = 0;
+    Nanoseconds compute_ns{0.0};
+    Nanoseconds memory_ns{0.0};
+    Nanoseconds launch_ns{0.0};
+    Nanoseconds total_ns{0.0};
 
-    uint64_t flops = 0;
-    uint64_t bytes = 0;  // traffic at the bottleneck level of the hierarchy
+    FlopCount flops{0};
+    ByteCount bytes{0};  // traffic at the bottleneck level of the hierarchy
 
-    float arithmetic_intensity = 0;
+    FlopsPerByte arithmetic_intensity{0.0};
     ValidUtilization wave_efficiency = ::fixy::mint_refined<valid_utilization>(0.0f);
     ValidUtilization occupancy = ::fixy::mint_refined<valid_utilization>(0.0f);
 
@@ -366,37 +384,43 @@ template <class Ctx>
 
 template <class Ctx>
     requires CtxFitsCostModel<Ctx>
-[[nodiscard]] inline CostBreakdown evaluate_cost(Ctx const& ctx, uint64_t flops, uint64_t bytes, uint64_t elements,
-                                                 ScalarType dtype, const KernelConfig& cfg, const HardwareProfile& hw) {
-    CostBreakdown cb;
+[[nodiscard]] inline CostBreakdown evaluate_cost(Ctx const& ctx, FlopCount flops, ByteCount bytes,
+                                                 ElementCount elements, ScalarType dtype, const KernelConfig& cfg,
+                                                 const HardwareProfile& hw) {
+    CostBreakdown cb{};
     cb.flops = flops;
     cb.bytes = bytes;
     cb.launch_ns = hw.launch_ns;
 
-    cb.arithmetic_intensity = (bytes > 0) ? static_cast<float>(flops) / static_cast<float>(bytes) : 0.0f;
+    auto const measured_flops = ::fixy::round_to_float<double>(flops);
+    auto const measured_bytes = ::fixy::round_to_float<double>(bytes);
+    if (bytes > ByteCount{0}) cb.arithmetic_intensity = divide(measured_flops, measured_bytes);
 
-    cb.wave_efficiency = wave_efficiency(ctx, elements, hw);
+    cb.wave_efficiency = wave_efficiency(ctx, elements.raw(), hw);
     cb.occupancy = sm_occupancy(ctx, cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw);
 
-    // The factor of 1e3 turns TFLOPS into FLOPs per nanosecond. The two
-    // utilisation tests below filter exactly the structural zeros, since
+    // The rate of the kernel is the peak per nanosecond times the two
+    // utilisations, and the flops over that rate are the compute time.  The
+    // two utilisation tests filter exactly the structural zeros, since
     // neither value can be out of range.
-    float peak = hw.peak_tflops(dtype);
-    if (peak > 0 && cb.wave_efficiency.value() > 0 && cb.occupancy.value() > 0) {
-        double effective = static_cast<double>(peak) * 1e3 * static_cast<double>(cb.wave_efficiency.value())
-                         * static_cast<double>(cb.occupancy.value());
-        cb.compute_ns = static_cast<double>(flops) / effective;
+    FlopRate const peak = hw.select_peak_rate(dtype);
+    if (peak > FlopRate{0.0} && cb.wave_efficiency.value() > 0 && cb.occupancy.value() > 0) {
+        auto const peak_per_nanosecond = ::fixy::convert<cost_model_detail::FlopPerNanosecond>(peak);
+        auto const effective = multiply(multiply(peak_per_nanosecond, static_cast<double>(cb.wave_efficiency.value())),
+                                        static_cast<double>(cb.occupancy.value()));
+        cb.compute_ns = divide(measured_flops, effective);
     }
 
-    if (hw.hbm_bw > 0) {
-        cb.memory_ns =
-            static_cast<double>(hw.hbm_latency) + static_cast<double>(bytes) / static_cast<double>(hw.hbm_bw);
+    if (hw.hbm_bw > ByteRate{0.0}) {
+        auto const bandwidth_per_nanosecond = ::fixy::convert<cost_model_detail::BytePerNanosecond>(hw.hbm_bw);
+        cb.memory_ns = add(hw.hbm_latency, divide(measured_bytes, bandwidth_per_nanosecond));
     }
 
     // Compute and memory overlap, so the slower of the two sets the pace.
-    cb.total_ns = ::fixy::max(cb.compute_ns, cb.memory_ns) + cb.launch_ns;
+    Nanoseconds const slower = cb.compute_ns > cb.memory_ns ? cb.compute_ns : cb.memory_ns;
+    cb.total_ns = add(slower, cb.launch_ns);
 
-    if (cb.launch_ns > ::fixy::max(cb.compute_ns, cb.memory_ns) * 2.0)
+    if (cb.launch_ns > multiply(slower, 2.0))
         cb.bottleneck = CostBreakdown::Bottleneck::LAUNCH;
     else if (cb.wave_efficiency.value() < 0.1f)
         cb.bottleneck = CostBreakdown::Bottleneck::UNDERUTIL;
@@ -410,8 +434,8 @@ template <class Ctx>
 
 template <class Ctx>
     requires CtxFitsCostModel<Ctx>
-[[nodiscard]] inline CostBreakdown evaluate_cost(Ctx const& ctx, uint64_t flops, uint64_t bytes, uint64_t elements,
-                                                 ScalarType dtype, const HardwareProfile& hw) {
+[[nodiscard]] inline CostBreakdown evaluate_cost(Ctx const& ctx, FlopCount flops, ByteCount bytes,
+                                                 ElementCount elements, ScalarType dtype, const HardwareProfile& hw) {
     KernelConfig default_cfg{};
     return evaluate_cost(ctx, flops, bytes, elements, dtype, default_cfg, hw);
 }
