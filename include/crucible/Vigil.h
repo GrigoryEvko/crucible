@@ -640,6 +640,19 @@ public:
     ::fixy::View<const BoundScalar> bound_scalars(VigilFgCtx const&) const&& =
         delete("a temporary Vigil releases its slots at the end of the statement. Use a Vigil that has a name");
 
+    // The count of loads whose arena the Vigil keeps: the last load, and each
+    // earlier load whose region a holder of the foreground named at the last
+    // load (release_unheld_loads_).  At most LOAD_SLOTS.  Only the producer
+    // thread reads or writes the arenas, so the query takes its context.
+    // Complexity: O(LOAD_SLOTS).
+    [[nodiscard]] uint32_t kept_load_count(VigilFgCtx const&) const noexcept {
+        uint32_t kept = 0;
+        for (const ::fixy::Option<LoadedRegion>& load : loads_) {
+            if (load.is_some()) ++kept;
+        }
+        return kept;
+    }
+
     [[nodiscard]] uint32_t compiled_iterations() const { return replay_.context().compiled_iterations(); }
     [[nodiscard]] uint32_t diverged_count() const { return replay_.context().diverged_count(); }
     [[nodiscard]] const CrucibleContext& context() const& { return replay_.context(); }
