@@ -2526,6 +2526,9 @@ foundation_test(test_core_record_oracle)
 # refuses a pointer, a base with one, and a part with no annotation.  decode
 # refuses a const member.
 foundation_test(test_core_protocol)
+# keyed_hash against the vectors of the official BLAKE3, at run time and in a
+# constant evaluation.
+foundation_test(test_core_keyed_hash)
 foundation_neg_compile_test(neg_core_protocol_equal_bit_field
   "no matching function for call to .equal\\(const HoldsBitField&, const HoldsBitField&\\)."
   "required for the satisfaction of .Equatable<T>. \\[with T = HoldsBitField\\]")
