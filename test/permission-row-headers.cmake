@@ -18,8 +18,7 @@ set(CRUCIBLE_PERMISSION_ROW_HEADERS
     fixy/channels/SwmrSession.h
     fixy/concurrent/ParallelPointwise.h
     fixy/concurrent/ParallelTree.h
-    fixy/concurrent/PermissionedMpscChannel.h
-    fixy/concurrent/PermissionedSpscChannel.h
+    fixy/concurrent/PermissionedChannel.h
     fixy/os/OwnedMmap.h
     foundation/permissions/FederationDoor.h
     foundation/permissions/Permission.h

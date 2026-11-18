@@ -107,42 +107,22 @@
       "constructor": "\\bMpmcStage\\("
     },
     {
-      "name": "neg_witness_concurrent_permissionedmpscboxchannel_consumerhandle_direct_construction",
+      "name": "neg_witness_concurrent_permissionedboxchannel_consumerhandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bConsumerHandle\\("
     },
     {
-      "name": "neg_witness_concurrent_permissionedmpscboxchannel_producerhandle_direct_construction",
+      "name": "neg_witness_concurrent_permissionedboxchannel_producerhandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bProducerHandle\\("
     },
     {
-      "name": "neg_witness_concurrent_permissionedmpscchannel_consumerhandle_direct_construction",
+      "name": "neg_witness_concurrent_permissionedchannel_consumerhandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bConsumerHandle\\("
     },
     {
-      "name": "neg_witness_concurrent_permissionedmpscchannel_producerhandle_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bProducerHandle\\("
-    },
-    {
-      "name": "neg_witness_concurrent_permissionedspscboxchannel_consumerhandle_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bConsumerHandle\\("
-    },
-    {
-      "name": "neg_witness_concurrent_permissionedspscboxchannel_producerhandle_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bProducerHandle\\("
-    },
-    {
-      "name": "neg_witness_concurrent_permissionedspscchannel_consumerhandle_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bConsumerHandle\\("
-    },
-    {
-      "name": "neg_witness_concurrent_permissionedspscchannel_producerhandle_direct_construction",
+      "name": "neg_witness_concurrent_permissionedchannel_producerhandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bProducerHandle\\("
     },
@@ -1316,36 +1296,20 @@
       "header": "fixy/session/Flow.h"
     },
     {
-      "type": "fixy::concurrent::PermissionedSpscChannel<int, 8, fixy::concurrent::detail::spsc_channel_witness::WitnessTag, fixy::concurrent::detail::spsc_channel_witness::WitnessBrand>::ProducerHandle",
-      "header": "fixy/concurrent/PermissionedSpscChannel.h"
+      "type": "fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ProducerHandle",
+      "header": "fixy/concurrent/PermissionedChannel.h"
     },
     {
-      "type": "fixy::concurrent::PermissionedSpscChannel<int, 8, fixy::concurrent::detail::spsc_channel_witness::WitnessTag, fixy::concurrent::detail::spsc_channel_witness::WitnessBrand>::ConsumerHandle",
-      "header": "fixy/concurrent/PermissionedSpscChannel.h"
+      "type": "fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ConsumerHandle",
+      "header": "fixy/concurrent/PermissionedChannel.h"
     },
     {
-      "type": "fixy::concurrent::PermissionedSpscBoxChannel<int, 8, fixy::concurrent::detail::spsc_channel_witness::WitnessTag, fixy::concurrent::detail::spsc_channel_witness::WitnessBrand>::ProducerHandle",
-      "header": "fixy/concurrent/PermissionedSpscBoxChannel.h"
+      "type": "fixy::concurrent::PermissionedBoxChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ProducerHandle",
+      "header": "fixy/concurrent/PermissionedBoxChannel.h"
     },
     {
-      "type": "fixy::concurrent::PermissionedSpscBoxChannel<int, 8, fixy::concurrent::detail::spsc_channel_witness::WitnessTag, fixy::concurrent::detail::spsc_channel_witness::WitnessBrand>::ConsumerHandle",
-      "header": "fixy/concurrent/PermissionedSpscBoxChannel.h"
-    },
-    {
-      "type": "fixy::concurrent::PermissionedMpscChannel<int, 8, fixy::concurrent::detail::mpsc_channel_witness::WitnessTag, fixy::concurrent::detail::mpsc_channel_witness::WitnessBrand>::ProducerHandle",
-      "header": "fixy/concurrent/PermissionedMpscChannel.h"
-    },
-    {
-      "type": "fixy::concurrent::PermissionedMpscChannel<int, 8, fixy::concurrent::detail::mpsc_channel_witness::WitnessTag, fixy::concurrent::detail::mpsc_channel_witness::WitnessBrand>::ConsumerHandle",
-      "header": "fixy/concurrent/PermissionedMpscChannel.h"
-    },
-    {
-      "type": "fixy::concurrent::PermissionedMpscBoxChannel<int, 8, fixy::concurrent::detail::mpsc_channel_witness::WitnessTag, fixy::concurrent::detail::mpsc_channel_witness::WitnessBrand>::ProducerHandle",
-      "header": "fixy/concurrent/PermissionedMpscBoxChannel.h"
-    },
-    {
-      "type": "fixy::concurrent::PermissionedMpscBoxChannel<int, 8, fixy::concurrent::detail::mpsc_channel_witness::WitnessTag, fixy::concurrent::detail::mpsc_channel_witness::WitnessBrand>::ConsumerHandle",
-      "header": "fixy/concurrent/PermissionedMpscBoxChannel.h"
+      "type": "fixy::concurrent::PermissionedBoxChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ConsumerHandle",
+      "header": "fixy/concurrent/PermissionedBoxChannel.h"
     },
     {
       "type": "fixy::channels::swmr_session::SwmrSession<int, fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::channels::swmr_session::detail::swmr_session_witness::WriterBrand>::WriterHandle",
@@ -1912,7 +1876,7 @@
       "header": "fixy/concurrent/Stage.h"
     },
     {
-      "type": "fixy::channels::Endpoint<fixy::concurrent::PermissionedSpscChannel<int, 64, fixy::channels::detail::endpoint_witness::UserTag, fixy::channels::detail::endpoint_witness::UserBrand>, fixy::channels::Direction::Producer, fixy::channels::detail::endpoint_witness::FgCtx>",
+      "type": "fixy::channels::Endpoint<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 64, fixy::channels::detail::endpoint_witness::UserTag, fixy::channels::detail::endpoint_witness::UserBrand>, fixy::channels::Direction::Producer, fixy::channels::detail::endpoint_witness::FgCtx>",
       "header": "fixy/channels/Endpoint.h"
     },
     {
