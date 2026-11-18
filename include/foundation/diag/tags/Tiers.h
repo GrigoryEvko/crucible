@@ -93,8 +93,8 @@ struct DetSafeLeak : tag_base {
 
 struct NumericalTierMismatch : tag_base {
     static constexpr tag_text_literal name = "NumericalTierMismatch";
-    static constexpr tag_text_literal description = "A function pinned at NumericalTier<BITEXACT_STRICT> or "
-                                                    "NumericalTier<BITEXACT_TC> invoked a kernel whose recipe "
+    static constexpr tag_text_literal description = "A function pinned at NumericalTier<BITEXACT> or "
+                                                    "NumericalTier<ULP_FP32> invoked a kernel whose recipe "
                                                     "tier is RELAXED, ULP_INT8, ULP_FP8, or ULP_FP16.  The "
                                                     "tier-pinned consumer requires bit-exact (or bounded-ULP) "
                                                     "outputs; the looser kernel cannot satisfy the contract.  "
@@ -110,26 +110,26 @@ struct NumericalTierMismatch : tag_base {
 
     static constexpr Severity severity = Severity::Error;
     static constexpr tag_text_literal why_this_matters =
-        "Recipe tiers (FORGE.md §20) discipline the cross-vendor "
-        "numerics CI: BITEXACT_STRICT recipes produce byte-identical "
-        "output across all backends; BITEXACT_TC tolerate ≤1 ULP "
-        "tensor-core deviation; ORDERED enforce a per-recipe tolerance; "
-        "UNORDERED admit reduction-order changes.  A caller pinned at "
-        "BITEXACT_STRICT calling an UNORDERED kernel silently propagates "
+        "The Tolerance of a recipe (FORGE.md §20) states its error "
+        "bound for the cross-vendor numerics CI.  A BITEXACT recipe "
+        "gives the same bytes on each backend.  A ULP tier admits one "
+        "unit in the last place at its precision.  A RELAXED recipe "
+        "admits each change of the reduction order.  A caller pinned at "
+        "BITEXACT that calls a RELAXED kernel silently propagates "
         "non-determinism through the model — checkpoint loads from a "
-        "BITEXACT chain produce divergent outputs after the UNORDERED "
+        "BITEXACT chain produce divergent outputs after the RELAXED "
         "kernel runs.  The recipe-tier discipline is what makes "
         "federation work.";
     static constexpr tag_text_literal symptom_pattern = "Often surfaces after a Mimic backend ships a fast-path "
-                                                        "ALLREDUCE (UNORDERED tier) and a downstream training step "
-                                                        "expecting BITEXACT_TC tries to consume its output.  Or after "
+                                                        "ALLREDUCE (RELAXED tier) and a downstream training step "
+                                                        "expecting ULP_FP32 tries to consume its output.  Or after "
                                                         "a Forge Phase E recipe-select picker switches to a tighter "
-                                                        "BITEXACT_STRICT recipe and a previously-OK ORDERED kernel is "
+                                                        "BITEXACT recipe and a previously-OK ULP_FP32 kernel is "
                                                         "now rejected.";
     static constexpr tag_text_literal correct_example =
-        "select_recipe<Tolerance::BITEXACT_TC>(KernelKind::GEMM_MM, fleet);";
+        "select_recipe<Tolerance::ULP_FP32>(KernelKind::GEMM_MM, fleet);";
     static constexpr tag_text_literal violating_example =
-        "auto k = unordered_allreduce(x); // UNORDERED; rejected by BITEXACT";
+        "auto k = unordered_allreduce(x); // RELAXED; rejected by BITEXACT";
 };
 
 struct MemOrderViolation : tag_base {
@@ -612,7 +612,7 @@ struct RecipeSpecMismatch : tag_base {
     static constexpr Severity severity = Severity::Error;
     static constexpr tag_text_literal why_this_matters = "RecipeSpec<Tier, Family, T> (28_04 §4.4.4) carries a "
                                                          "kernel's numerical recipe along TWO axes: ToleranceLattice "
-                                                         "tier (BITEXACT_STRICT ⊐ BITEXACT_TC ⊐ ULP_FP64 ⊐ ... ⊐ "
+                                                         "tier (BITEXACT ⊐ ULP_FP64 ⊐ ULP_FP32 ⊐ ... ⊐ "
                                                          "RELAXED) AND RecipeFamily (PAIRWISE / LINEAR / KAHAN / "
                                                          "BLOCK_STABLE).  Mismatched tiers produce nonequivalent "
                                                          "outputs (wrong by ULP); mismatched families break "
@@ -628,7 +628,7 @@ struct RecipeSpecMismatch : tag_base {
                                                         "constraint.  Diagnostic names BOTH axes mismatched; "
                                                         "common remediation is a recipe-family change OR a "
                                                         "tier relaxation (with documented impact on bit-exactness).";
-    static constexpr tag_text_literal correct_example = "compile(RecipeSpec<BITEXACT_TC, PAIRWISE, Kernel>{node});";
+    static constexpr tag_text_literal correct_example = "compile(RecipeSpec<BITEXACT, PAIRWISE, Kernel>{node});";
     static constexpr tag_text_literal violating_example =
         "compile(RecipeSpec<RELAXED, KAHAN, Kernel>{node});  // wrong axes";
 };

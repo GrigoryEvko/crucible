@@ -607,7 +607,7 @@ test/layer/checks/fixy/concurrent/ | raw-pointer-object | 2 | - | -
 test/layer/checks/fixy/concurrent/ | replace-pending:<limits> | 1 | - | -
 test/layer/checks/fixy/fp/ | replace-pending:<limits> | 15 | - | -
 test/layer/checks/fixy/fp/ | replace-pending:std::bit_cast | 1 | - | -
-test/layer/checks/fixy/fp/ | std-entity | 15 | - | -
+test/layer/checks/fixy/fp/ | std-entity | 14 | - | -
 test/layer/checks/fixy/handle/ | std-entity | 2 | - | -
 test/layer/checks/fixy/os/ | c-array-object | 2 | - | -
 test/layer/checks/fixy/os/ | std-entity | 7 | - | -
