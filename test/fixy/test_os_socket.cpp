@@ -83,6 +83,9 @@ namespace {
 using IoBlockCtx =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>;
 
+// True when the test runs under the emulator of a cross build, qemu user mode.
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
+
 [[nodiscard]] bool socket_option_is(int fd, int option, int expected) noexcept {
     int value = -1;
     ::socklen_t length = sizeof(value);
@@ -158,11 +161,21 @@ struct LinkDumpRequest final {
     }
     auto const rto = fixy::net::set_tcp_rto_min(ctx, socket, 10000);
     if (rto.is_err() && rto.err().value_or(foundation::os::Errno{}) != foundation::os::Errno::enoprotoopt) return 26;
-    if (fixy::net::set_max_pacing_rate(ctx, socket, 1000000).is_err()) return 27;
+    // qemu user mode has no SO_MAX_PACING_RATE, and the door gives its
+    // refusal.  A real kernel takes the option.
+    auto const pacing = fixy::net::set_max_pacing_rate(ctx, socket, 1000000);
+    bool const is_emulator_refusal =
+        kIsUnderEmulator && pacing.err().value_or(foundation::os::Errno{}) == foundation::os::Errno::enoprotoopt;
+    if (pacing.is_err() && !is_emulator_refusal) return 27;
     // The kernel struct tcp_info starts with eight one-byte fields, and the
-    // kernel writes at least them into a buffer that holds them.
+    // kernel writes at least them into a buffer that holds them.  qemu user
+    // mode answers TCP_INFO with the four bytes of one int.
     foundation::core::FixedArray<std::byte, 256> info{};
-    if (fixy::net::read_tcp_option(ctx, socket, fixy::net::TcpOption::info, info.view()).value_or(0) < 8) return 28;
+    auto const info_read = fixy::net::read_tcp_option(ctx, socket, fixy::net::TcpOption::info, info.view());
+    std::size_t const info_bytes = info_read.match([](std::size_t count) noexcept { return count; },
+                                                   [](foundation::os::Errno) noexcept { return std::size_t{0}; });
+    bool const is_emulator_answer = kIsUnderEmulator && info_read.is_ok();
+    if (info_bytes < 8 && !is_emulator_answer) return 28;
     return 0;
 }
 
@@ -173,7 +186,12 @@ struct LinkDumpRequest final {
     fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!tcp.is_open()) return 31;
     fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.get());
-    if (fixy::net::set_socket_timestamping(ctx, socket).is_err()) return 32;
+    // qemu user mode has no SO_TIMESTAMPING, and the door gives its refusal.
+    auto const stamping = fixy::net::set_socket_timestamping(ctx, socket);
+    if (kIsUnderEmulator && stamping.err().value_or(foundation::os::Errno{}) == foundation::os::Errno::enoprotoopt) {
+        return 0;
+    }
+    if (stamping.is_err()) return 32;
     int const flags = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE
                     | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_TSONLY;
     if (!socket_option_is(tcp.get(), SO_TIMESTAMPING, flags)) return 33;
@@ -193,7 +211,9 @@ struct LinkDumpRequest final {
     auto const loopback = fixy::net::set_hardware_timestamping(ctx, socket, "lo");
     if (loopback.is_ok()) return 42;
     Errno const refusal = loopback.err().value_or(Errno::eio);
-    if (refusal != Errno::eperm && refusal != Errno::eopnotsupp) return 43;
+    // qemu user mode has no SIOCSHWTSTAMP and refuses it with enotty.
+    bool const is_emulator_refusal = kIsUnderEmulator && refusal == Errno::enotty;
+    if (refusal != Errno::eperm && refusal != Errno::eopnotsupp && !is_emulator_refusal) return 43;
     if (fixy::net::set_hardware_timestamping(ctx, socket, "sixteen-chars-xx").err().value_or(Errno::eio)
         != Errno::enametoolong) {
         return 44;

@@ -5444,6 +5444,14 @@ fixy_neg_compile_test(neg_os_fs_mint_file_ctx_lacks_block
 # with no triple.  Each second regex holds the anonymous-namespace prefix
 # that the compiler emits and the source does not.
 fixy_test(test_os_socket)
+# qemu user mode has no SO_MAX_PACING_RATE, no SO_TIMESTAMPING and no
+# SIOCSHWTSTAMP, and it answers TCP_INFO with four bytes.  The socket test
+# accepts those answers only under the emulator.
+if(CMAKE_CROSSCOMPILING_EMULATOR)
+  target_compile_definitions(test_os_socket PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=1)
+else()
+  target_compile_definitions(test_os_socket PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=0)
+endif()
 fixy_neg_compile_test(neg_os_socket_ctx_lacks_block
   "no matching function for call"
   "mint_socket<fixy::net::socket_kind::NetlinkRoute>\\(\\{anonymous\\}::IoOnlyCtx&\\)")
