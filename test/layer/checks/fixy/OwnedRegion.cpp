@@ -119,11 +119,10 @@ static_assert(!std::is_constructible_v<OR_int_a, OR_int_a_branded&&>, "a branded
 static_assert(!std::is_constructible_v<OR_int_a_branded, OR_int_a&&>, "an erased region does not acquire a brand");
 
 // The smallest thing adopt asks of an arena: one bump pointer over a
-// fixed block.  This layer cannot name the crucible Arena, so the self
-// test holds its own.  The lifetime start gives a live object only to a
-// type whose every subobject is an implicit-lifetime type.  For a proof
-// type, or an aggregate that holds one, it gives a pointer to an object
-// whose lifetime never started, so the constraint refuses that type.
+// fixed block.  The lifetime start gives a live object only to a type
+// whose every subobject is an implicit-lifetime type.  For a proof type,
+// or an aggregate that holds one, it gives a pointer to an object whose
+// lifetime never started, so the constraint refuses that type.
 class BumpArena {
     alignas(std::max_align_t) std::array<unsigned char, 4096> block_{};
     std::size_t used_ = 0;
@@ -150,6 +149,22 @@ static_assert(!ArrayArena<BumpArena, ::foundation::permissions::Permission<test_
               "the arena must not start the lifetime of a proof type over its bytes");
 static_assert(!ArrayArena<BumpArena, HoldsPermission>,
               "the arena must not start the lifetime of an aggregate that holds a proof type");
+
+// An allocator that puts no constraint on its element.  The door itself
+// refuses a proof type, so the refusal does not rest on the allocator.
+class UncheckedArena {
+public:
+    template <typename T>
+    [[nodiscard]] T* alloc_array(::foundation::effects::Alloc, std::size_t) noexcept {
+        return nullptr;
+    }
+};
+static_assert(ArrayArena<UncheckedArena, int>);
+static_assert(!ArrayArena<UncheckedArena, ::foundation::permissions::Permission<test_tag_a>>,
+              "the door must refuse a proof type also for an allocator that puts no constraint on it");
+static_assert(!ArrayArena<UncheckedArena, HoldsPermission>,
+              "the door must refuse an aggregate that holds a proof type also for an allocator that puts no "
+              "constraint on it");
 
 // A region minted from a branded permission carries that brand and its
 // borrow carries it.  The split and the recombine are not constexpr, so

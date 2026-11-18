@@ -6337,6 +6337,15 @@ fixy_neg_compile_test(neg_owned_region_does_not_erase_its_brand
   "conversion from .OwnedRegion<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::permissions::<lambda\\(\\)>>."
   "to non-scalar type .OwnedRegion<\\[\\.\\.\\.\\],\\[\\.\\.\\.\\],foundation::brand::DefaultBrand>. requested")
 
+# The arena door refuses a proof type for each allocator, also for an
+# allocator that puts no constraint on its element.
+fixy_neg_compile_test(neg_owned_region_unchecked_arena_permission
+  "no matching function for call to .mint_owned_region<foundation::permissions::Permission<\\{anonymous\\}::Proofs"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::permissions::Permission<<unnamed>::Proofs, foundation::brand::DefaultBrand>\\]")
+fixy_neg_compile_test(neg_owned_region_unchecked_arena_holds_permission
+  "no matching function for call to .mint_owned_region<\\{anonymous\\}::HoldsProof>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = <unnamed>::HoldsProof\\]")
+
 # The fractional axis: no guard, no read.
 fixy_neg_compile_test(neg_shared_read_without_a_share
   "no matching function for call to .mint_shared_read\\(\\{anonymous\\}::BgCtx&"

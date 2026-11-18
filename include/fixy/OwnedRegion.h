@@ -231,14 +231,19 @@ struct has_split_pack_authoring_witness<Parent, ::fixy::Slice<Parent, Is, SplitN
 
 namespace fixy {
 
-// This layer cannot name the crucible Arena.  What adopt reads of an
-// allocator is one member template, so that is the whole requirement:
-// alloc_array<T>(token, count) returning T*, with a null result for a
-// zero count left to adopt itself.
+// What adopt reads of an allocator is one member template:
+// alloc_array<T>(token, count) returning T*, with a null result for a zero
+// count left to adopt itself.  The door also requires that T is an
+// implicit-lifetime type throughout (foundation/Lifetime.h).  An allocator
+// gives bytes, and the lifetime of an object of such a type can start over
+// bytes.  A proof type, or an aggregate that holds one, has no object over
+// the bytes of an allocator, so the door refuses it for each allocator, also
+// for an allocator that puts no constraint on T.
 template <typename Allocator, typename T>
-concept ArrayArena = requires(Allocator& arena, ::foundation::effects::Alloc token, std::size_t count) {
-    { arena.template alloc_array<T>(token, count) } -> std::same_as<T*>;
-};
+concept ArrayArena = ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+                  && requires(Allocator& arena, ::foundation::effects::Alloc token, std::size_t count) {
+                         { arena.template alloc_array<T>(token, count) } -> std::same_as<T*>;
+                     };
 
 template <typename T, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class OwnedRegion;
