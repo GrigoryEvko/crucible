@@ -389,6 +389,141 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
             [](fixy::LengthMismatch) noexcept { return std::uint32_t{0}; });
 }
 
+// ── The walks ───────────────────────────────────────────────────────────────
+//
+// Each terminal of a walk pushes each element through the nest of its stages,
+// so a chain compiles to the loop of its raw form.  A float fold stays left
+// to right: the raw loop and the chain multiply in lanes and add the products
+// in order.
+
+// The sum of the squares of a run of floats, left to right.
+[[gnu::used]] float walk_map_fold_f32(fixy::View<float const> view) noexcept {
+    return view.walk()
+        .map([](float const& value) noexcept { return value * value; })
+        .fold(0.0f, [](float sum, float square) noexcept { return sum + square; });
+}
+
+// The same over 32-bit words, whose add the optimizer can reorder.
+[[gnu::used]] std::uint32_t walk_map_fold_u32(fixy::View<std::uint32_t const> view) noexcept {
+    return view.walk()
+        .map([](std::uint32_t const& value) noexcept { return value * value; })
+        .fold(std::uint32_t{0}, [](std::uint32_t sum, std::uint32_t square) noexcept { return sum + square; });
+}
+
+// The count of the floats above a limit.
+[[gnu::used]] std::size_t walk_filter_count_f32(fixy::View<float const> view) noexcept {
+    return view.walk().filter([](float const& value) noexcept { return value > 0.5f; }).count();
+}
+
+// The count of the words that three divides.
+[[gnu::used]] std::size_t walk_filter_count_u32(fixy::View<std::uint32_t const> view) noexcept {
+    return view.walk().filter([](std::uint32_t const& value) noexcept { return value % 3 == 0; }).count();
+}
+
+// The dot product of two runs of one fixed extent, left to right.
+[[gnu::used]] float walk_zip_fold_f32(fixy::View<float const, 64> left, fixy::View<float const, 64> right) noexcept {
+    return left.walk()
+        .zip(right.walk())
+        .map([](auto const& pair) noexcept {
+            auto const& [first, second] = pair;
+            return *first * *second;
+        })
+        .fold(0.0f, [](float sum, float product) noexcept { return sum + product; });
+}
+
+// The dot product of two runs of a dynamic extent: the compare of the counts,
+// and the loop over the pairs.
+[[gnu::used]] float walk_try_zip_fold_f32(fixy::View<float const> left, fixy::View<float const> right) noexcept {
+    return left.walk()
+        .try_zip(right.walk())
+        .match(
+            [](auto pairs) noexcept {
+                return static_cast<decltype(pairs)&&>(pairs)
+                    .map([](auto const& pair) noexcept {
+                        auto const& [first, second] = pair;
+                        return *first * *second;
+                    })
+                    .fold(0.0f, [](float sum, float product) noexcept { return sum + product; });
+            },
+            [](fixy::LengthMismatch) noexcept { return -1.0f; });
+}
+
+// The hash of the first rank extents of a fixed array of 8: the shape of the
+// loops of the record path over the extents of a tensor.
+[[gnu::used]] std::uint64_t walk_limit_fold_u64(fixy::View<std::uint64_t const, 8> extents,
+                                                std::uint8_t rank) noexcept {
+    return extents.walk()
+        .limit(fixy::ElementCount{rank})
+        .fold(std::uint64_t{0xcbf29ce484222325ULL}, [](std::uint64_t hash, std::uint64_t const& extent) noexcept {
+            return (hash ^ extent) * 0x100000001b3ULL;
+        });
+}
+
+// A long exact chain: two maps on one side, a map on the other side, a zip, a
+// map of the pair and a fold.
+[[gnu::used]] std::uint32_t walk_long_chain_u32(fixy::View<std::uint32_t const, 64> left,
+                                                fixy::View<std::uint32_t const, 64> right) noexcept {
+    return left.walk()
+        .map([](std::uint32_t const& value) noexcept { return value + 3; })
+        .map([](std::uint32_t value) noexcept { return value * 5; })
+        .zip(right.walk().map([](std::uint32_t const& value) noexcept { return value ^ 0x55u; }))
+        .map([](auto const& pair) noexcept {
+            auto const& [first, second] = pair;
+            return first * second + 1;
+        })
+        .fold(std::uint32_t{0}, [](std::uint32_t sum, std::uint32_t term) noexcept { return sum + term; });
+}
+
+// A map, a filter, a limit and a fold: the stop of a limit of a walk of
+// unknown count, inside a fold.
+[[gnu::used]] std::uint32_t walk_filter_limit_fold_u32(fixy::View<std::uint32_t const> view,
+                                                       std::uint32_t limit) noexcept {
+    return view.walk()
+        .map([](std::uint32_t const& value) noexcept { return value * 3; })
+        .filter([](std::uint32_t const& value) noexcept { return value % 7 == 0; })
+        .limit(fixy::ElementCount{limit})
+        .fold(std::uint32_t{0}, [](std::uint32_t sum, std::uint32_t value) noexcept { return sum + value; });
+}
+
+// any_of after a map, over a run of a fixed extent: the stop of the push.
+[[gnu::used]] bool walk_map_any_u32(fixy::View<std::uint32_t const, 64> view) noexcept {
+    return view.walk()
+        .map([](std::uint32_t const& value) noexcept { return value >> 3; })
+        .any_of([](std::uint32_t const& shifted) noexcept { return shifted == 17; });
+}
+
+// all_of: the stop at the first refusal.
+[[gnu::used]] bool walk_all_u32(fixy::View<std::uint32_t const> view) noexcept {
+    return view.walk().all_of([](std::uint32_t const& value) noexcept { return value < 1000; });
+}
+
+// The sum of the words of each run of a run of runs, one run after the other.
+[[gnu::used]] std::uint32_t walk_flat_map_fold_u32(fixy::View<fixy::View<std::uint32_t const> const> runs) noexcept {
+    return runs.walk()
+        .flat_map([](fixy::View<std::uint32_t const> const& run) noexcept { return run.walk(); })
+        .fold(std::uint32_t{0}, [](std::uint32_t sum, std::uint32_t const& value) noexcept { return sum + value; });
+}
+
+// The cursor loop over a map: the counted loop of the View.
+[[gnu::used]] float walk_map_fold_cursor_f32(fixy::View<float const> view) noexcept {
+    float sum = 0.0f;
+    for (float const square : view.walk().map([](float const& value) noexcept { return value * value; })) {
+        sum += square;
+    }
+    return sum;
+}
+
+// The cursor loop over a filter: a scalar loop nest (THE CURSOR LOOP of
+// foundation/core/Walk.h).
+[[gnu::used]] std::size_t walk_filter_count_cursor_f32(fixy::View<float const> view) noexcept {
+    std::size_t kept = 0;
+    for ([[maybe_unused]] float const& value :
+         view.walk().filter([](float const& candidate) noexcept { return candidate > 0.5f; })) {
+        ++kept;
+    }
+    return kept;
+}
+
 // The parallel columns of one branded scope, as a helper of the scope takes
 // them: each column by value.  A probe function is compiled and never
 // called, so its brand is a named empty class.
@@ -1435,6 +1570,139 @@ struct RawColumn final {
         ++other;
     }
     return sum;
+}
+
+[[gnu::used]] float walk_map_fold_f32_raw(float const* first, std::size_t count) noexcept {
+    float sum = 0.0f;
+    for (std::size_t index = 0; index < count; ++index) {
+        sum += first[index] * first[index];
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t walk_map_fold_u32_raw(std::uint32_t const* first, std::size_t count) noexcept {
+    std::uint32_t sum = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        sum += first[index] * first[index];
+    }
+    return sum;
+}
+
+[[gnu::used]] std::size_t walk_filter_count_f32_raw(float const* first, std::size_t count) noexcept {
+    std::size_t kept = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        if (first[index] > 0.5f) ++kept;
+    }
+    return kept;
+}
+
+[[gnu::used]] std::size_t walk_filter_count_u32_raw(std::uint32_t const* first, std::size_t count) noexcept {
+    std::size_t kept = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        if (first[index] % 3 == 0) ++kept;
+    }
+    return kept;
+}
+
+[[gnu::used]] float walk_zip_fold_f32_raw(float const* left, float const* right) noexcept {
+    float sum = 0.0f;
+    for (std::size_t index = 0; index < 64; ++index) {
+        sum += left[index] * right[index];
+    }
+    return sum;
+}
+
+[[gnu::used]] float walk_try_zip_fold_f32_raw(float const* left, std::size_t left_count, float const* right,
+                                              std::size_t right_count) noexcept {
+    if (left_count != right_count) return -1.0f;
+    float sum = 0.0f;
+    for (std::size_t index = 0; index < left_count; ++index) {
+        sum += left[index] * right[index];
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint64_t walk_limit_fold_u64_raw(std::uint64_t const* extents, std::uint8_t rank) noexcept {
+    std::uint64_t hash = 0xcbf29ce484222325ULL;
+    for (std::size_t index = 0; index < rank && index < 8; ++index) {
+        hash = (hash ^ extents[index]) * 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+[[gnu::used]] std::uint32_t walk_long_chain_u32_raw(std::uint32_t const* left, std::uint32_t const* right) noexcept {
+    std::uint32_t sum = 0;
+    for (std::size_t index = 0; index < 64; ++index) {
+        std::uint32_t const first = (left[index] + 3) * 5;
+        std::uint32_t const second = right[index] ^ 0x55u;
+        sum += first * second + 1;
+    }
+    return sum;
+}
+
+[[gnu::used]] std::uint32_t walk_filter_limit_fold_u32_raw(std::uint32_t const* first, std::size_t count,
+                                                           std::uint32_t limit) noexcept {
+    std::size_t left = limit;
+    std::uint32_t sum = 0;
+    if (left == 0) return sum;
+    for (std::uint32_t const* cursor = first; cursor != first + count; ++cursor) {
+        std::uint32_t const value = *cursor * 3;
+        if (value % 7 != 0) continue;
+        sum += value;
+        if (--left == 0) break;
+    }
+    return sum;
+}
+
+[[gnu::used]] bool walk_map_any_u32_raw(std::uint32_t const* first) noexcept {
+    for (std::uint32_t const* cursor = first; cursor != first + 64; ++cursor) {
+        if ((*cursor >> 3) == 17) return true;
+    }
+    return false;
+}
+
+[[gnu::used]] bool walk_all_u32_raw(std::uint32_t const* first, std::size_t count) noexcept {
+    for (std::uint32_t const* cursor = first; cursor != first + count; ++cursor) {
+        if (*cursor >= 1000) return false;
+    }
+    return true;
+}
+
+[[gnu::used]] std::uint32_t walk_flat_map_fold_u32_raw(RawWindow const* runs, std::size_t count) noexcept {
+    std::uint32_t sum = 0;
+    for (std::size_t run = 0; run < count; ++run) {
+        for (std::size_t index = 0; index < runs[run].count; ++index) {
+            sum += runs[run].first[index];
+        }
+    }
+    return sum;
+}
+
+[[gnu::used]] float walk_map_fold_cursor_f32_raw(float const* first, std::size_t count) noexcept {
+    float sum = 0.0f;
+    for (std::size_t index = 0; index < count; ++index) {
+        sum += first[index] * first[index];
+    }
+    return sum;
+}
+
+// The raw form of a cursor that skips the refused elements in its step: a
+// scalar loop nest.
+[[gnu::used]] std::size_t walk_filter_count_cursor_f32_raw(float const* first, std::size_t count) noexcept {
+    float const* const end = first + count;
+    float const* cursor = first;
+    while (cursor != end && !(*cursor > 0.5f)) {
+        ++cursor;
+    }
+    std::size_t kept = 0;
+    while (cursor != end) {
+        ++kept;
+        ++cursor;
+        while (cursor != end && !(*cursor > 0.5f)) {
+            ++cursor;
+        }
+    }
+    return kept;
 }
 
 [[gnu::used]] void branded_columns_raw(std::atomic<std::uint32_t>& cell, RawColumn first, RawColumn second,

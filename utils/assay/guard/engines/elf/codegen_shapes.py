@@ -625,6 +625,93 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
+        "walk_map_fold_f32",
+        "map and fold of a walk is the loop of the raw form.  The two multiply in lanes and add the products in order, "
+        "so the float sum stays left to right",
+    ),
+    Probe("walk_map_fold_u32", "map and fold of a walk is the vector loop of the raw form"),
+    Probe(
+        "walk_filter_count_f32",
+        "filter and count of a walk is the vector loop of the raw form, a compare of the lanes and a mask.  At "
+        "x86-64-v4 the two forms enter the scalar tail through different branches",
+        branches=True,
+    ),
+    Probe(
+        "walk_filter_count_u32",
+        "filter and count of a walk is the vector loop of the raw form.  At x86-64-v4 the two forms enter the scalar "
+        "tail through different branches, and at -O1 the family side has one more register move",
+        branches=True,
+    ),
+    Probe(
+        "walk_zip_fold_f32",
+        "zip, map and fold of two walks of one fixed extent is the loop of the raw form: the type proves the counts "
+        "equal, so the walk has no compare",
+    ),
+    Probe(
+        "walk_try_zip_fold_f32",
+        "try_zip, map and fold is the compare of the counts and the loop of the raw form.  At -O1, the match of the "
+        "Result of try_zip reads the tag, and the path of two counts that differ jumps to the shared return",
+        branches=True,
+    ),
+    Probe(
+        "walk_limit_fold_u64",
+        "limit and fold of a walk of a fixed extent is the loop of the raw form, with fewer instructions.  At -O1 the "
+        "family side clamps the limit with one cmova and ends the loop on one compare, where the raw form tests the "
+        "two bounds in the loop",
+        branches=True,
+    ),
+    Probe(
+        "walk_long_chain_u32",
+        "a chain of five stages over two walks is the loop of the raw form, with fewer instructions.  At -O1 GCC keeps "
+        "the add of the first map and the lea of the second map in the loop, where the raw form merges them into one "
+        "lea",
+        branches=True,
+    ),
+    Probe(
+        "walk_filter_limit_fold_u32",
+        "map, filter, limit and fold is the loop of the raw form, with the stop after the limit.  The family side "
+        "enters the loop through a jump to its load, and the raw form falls into it, so the targets of the branches "
+        "are different",
+        branches=True,
+    ),
+    Probe(
+        "walk_map_any_u32",
+        "map and any_of of a walk of a fixed extent is the loop of the raw form, with the stop at the first element "
+        "that the test accepts.  The two forms put the exits of the stop in a different order, so the targets of the "
+        "branches are different.  At x86-64-v3 and x86-64-v4, in a unit with -fharden-compares, the compare of the "
+        "vector exit of the family side takes a second test into a trap.  A walk of a dynamic extent gets the same "
+        "shape at x86-64 and x86-64-v3",
+        branches=True,
+    ),
+    Probe(
+        "walk_all_u32",
+        "all_of of a walk is the loop of the raw form, with the stop at the first element that the test refuses.  The "
+        "two forms put the exits of the stop in a different order.  At -O1 all_of gives the negation of the stop "
+        "through one shared return, where the raw form returns from the loop",
+        branches=True,
+    ),
+    Probe(
+        "walk_flat_map_fold_u32",
+        "flat_map and fold of a walk is the loop nest of the raw form.  At -O1 the family side tests an empty run "
+        "before its inner loop with a branch, and the raw form tests it with the compare of the inner loop",
+        branches=True,
+    ),
+    Probe(
+        "walk_map_fold_cursor_f32",
+        "the cursor loop over a map is the vector loop of the raw form.  After the vector loop, the family side tests "
+        "the end of the cursor before each element of the scalar tail, where the raw form counts the tail, so it has "
+        "three to six more instructions outside the vector loop.  fold of the walk has none of them",
+        branches=True,
+    ),
+    Probe(
+        "walk_filter_count_cursor_f32",
+        "the cursor loop over a filter is the scalar loop nest of the raw cursor that skips the refused elements in "
+        "its step, with a branch on each element: filter(keep).count() gives the vector loop.  At -O1 the step of the "
+        "View cursor keeps its check of the end",
+        checks=("fatal",),
+        branches=True,
+    ),
+    Probe(
         "branded_columns",
         "a loop over three parallel BrandedViews that a function takes by value is the loop of three raw columns.  "
         "Each read keeps the base pointer of its column in a register, so the loop loads and stores no view on the "
