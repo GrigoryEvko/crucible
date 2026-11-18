@@ -18,9 +18,13 @@
 # that g++, with the order of cmake/Toolchain-gcc16.cmake: CRUCIBLE_CXX, then
 # CRUCIBLE_GCC16_PREFIX, then $HOME/.local/gcc16-patched.
 #
-# CMake runs a program of a configure check through
+# CMake runs a program of a configure check and each test through
 # CMAKE_CROSSCOMPILING_EMULATOR: qemu-aarch64-static with the sysroot, when the
-# host has it.
+# host has it.  The emulator also gives the guest the library path of the
+# runtime libraries of the cross compiler.  The run path of a program is no
+# path of its libraries, so the loader looks for libgcc_s.so.1 of libstdc++ in
+# the sysroot, which has no such file.  A test that does not need libgcc_s
+# itself then does not start.
 
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
@@ -77,13 +81,15 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
+set(_crucible_cross_runtime "${_crucible_cross_prefix}/usr/${_crucible_cross_triplet}/lib64")
+
 find_program(_crucible_cross_qemu NAMES qemu-aarch64-static qemu-aarch64)
 if(_crucible_cross_qemu)
-  set(CMAKE_CROSSCOMPILING_EMULATOR "${_crucible_cross_qemu};-L;${_crucible_cross_sysroot}")
+  set(CMAKE_CROSSCOMPILING_EMULATOR
+      "${_crucible_cross_qemu};-L;${_crucible_cross_sysroot};-E;LD_LIBRARY_PATH=${_crucible_cross_runtime}")
 endif()
 
 # The libstdc++ of the cross compiler, for a program that the emulator runs.
 # The root CMakeLists.txt gives each link this rpath (cmake/ToolchainRunPath.cmake).
 include("${CMAKE_CURRENT_LIST_DIR}/ToolchainRunPath.cmake")
-crucible_toolchain_run_path("${_crucible_cross_prefix}"
-                            "${_crucible_cross_prefix}/usr/${_crucible_cross_triplet}/lib64")
+crucible_toolchain_run_path("${_crucible_cross_prefix}" "${_crucible_cross_runtime}")
