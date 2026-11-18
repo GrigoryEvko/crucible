@@ -92,6 +92,10 @@ public:
     // that set.
 
     [[nodiscard, gnu::hot]] bool try_push(T const& item) noexcept {
+        // The copy reads the item before the claim of the ticket.  The claim
+        // is an atomic step, so a read through the reference after it loads
+        // the item from memory again.
+        const T value = item;
         for (;;) {
             // load_relaxed, not peek_relaxed: producers race-CAS a
             // shared head_, so the sole-writer claim behind
@@ -107,7 +111,7 @@ public:
             }
 
             const std::size_t cell_idx = pos & MASK;
-            cells_[cell_idx] = item;
+            cells_[cell_idx] = value;
 
             const std::size_t word_idx = cell_idx >> 6;
             const std::size_t bit_idx = cell_idx & 63;
