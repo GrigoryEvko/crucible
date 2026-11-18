@@ -970,7 +970,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::OneOf,
      "one value of a closed set of types: the result of a call, never a value in a kernel signature"},
     {^^::foundation::core::LengthMismatch,
-     "the error of a copy between two Views of different counts: it holds nothing"},
+     "the error of an operation of two runs of different counts, such as a copy or try_zip: it holds nothing"},
     {^^::foundation::core::TreeStep, "one combine of the plan of a tree or of a scan: the nodes of its two operands, "
                                      "and it makes no claim about their values"},
     {^^::foundation::core::Comparator, "one compare-exchange of a sorting network: two positions, and it makes no "
@@ -985,6 +985,9 @@ inline constexpr StatedZero kZeros[] = {
      "a borrow of a run of elements: it owns nothing and makes no claim about what the elements hold"},
     {^^::foundation::core::ViewCursor,
      "the position of a loop over a View: it lives inside the loop, and it is never a value in a signature"},
+    {^^::foundation::core::Walk,
+     "a lazy chain of steps over a borrowed run: it owns nothing, it lives in the expression of its chain, and it "
+     "is never a value in a kernel signature"},
     {^^::foundation::core::RunSet,
      "a borrow of some runs of elements and their counts: it owns nothing and makes no claim about what the "
      "elements hold"},
