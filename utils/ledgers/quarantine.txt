@@ -623,7 +623,7 @@ test/layer/checks/foundation/algebra/ | std-entity | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | replace-pending:<limits> | 24 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-entity | 41 | - | -
-test/layer/checks/foundation/algebra/lattices/ | std-object | 14 | - | -
+test/layer/checks/foundation/algebra/lattices/ | std-object | 13 | - | -
 test/layer/checks/foundation/contracts/ | c-array-object | 4 | - | -
 test/layer/checks/foundation/diag/ | std-entity | 102 | - | -
 test/layer/checks/foundation/diag/ | std-object | 36 | - | -

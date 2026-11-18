@@ -2,12 +2,12 @@
 # format-version:  1
 # matrix-size:     56
 # fold-seed:       0xf0117a11eda11a5e
-# fold-anchor:     0x57abebd139c89244
+# fold-anchor:     0x6a7a8a566d476d89
 # toolchain-tag:   0x531f2bb4b45652c8
 # (a diff means a row_hash_contribution specialisation moved. Name the ceremony in the commit message and recapture this golden.)
 # (the R** lines fold no reflected name and are portable across toolchains. Every other line is not.)
 G01_Linear               0x1d459776daf5970d
-G02_Affine               0xd157e337354fe86e
+G02_Affine               0x62dc8bf5de01a375
 G03_TaggedVerified       0xda909da3bd58d721
 G04_TaggedUnverified     0x1190638994f0134f
 G05_Secret               0x8f5cca9d55d191e3

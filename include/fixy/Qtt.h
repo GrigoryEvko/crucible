@@ -2,7 +2,9 @@
 
 // Move-only wrapper over one QTT usage grade.  Linear<T> enforces
 // "consumed exactly once" and Affine<T> enforces "consumed at most
-// once"; the two are Qtt<Grade, T> at the grades One and Zero.
+// once"; the two are Qtt<Grade, T> at the grades One and AtMostOne.  The
+// erased grade Zero names a value that no run time reads, so no wrapper
+// holds a value at it.
 //
 // Wrap every resource-carrying type in Linear: a file handle, an mmap
 // region, an arena-owned object with drop semantics, a channel
@@ -110,12 +112,14 @@ namespace fixy {
 
 namespace detail {
 
-// Only the two bounded grades name a consume discipline.  A value at
-// Omega may be used freely, and that is the bare T.
+// Only the two bounded grades of a value at run time name a consume
+// discipline: exactly once and at most once.  A value at Omega may be used
+// freely, and that is the bare T.  A value at Zero is erased, and no run
+// time holds it.
 template <auto Grade>
 concept IsConsumeBound = std::same_as<decltype(Grade), ::foundation::algebra::lattices::QttGrade>
                       && (Grade == ::foundation::algebra::lattices::QttGrade::One
-                          || Grade == ::foundation::algebra::lattices::QttGrade::Zero);
+                          || Grade == ::foundation::algebra::lattices::QttGrade::AtMostOne);
 
 // The reporter, out of line and cold so the checked build carries one
 // predictable branch on the hot path and nothing else.  The site string
@@ -222,7 +226,7 @@ template <class T>
 using Linear = Qtt<::foundation::algebra::lattices::QttGrade::One, T>;
 
 template <class T>
-using Affine = Qtt<::foundation::algebra::lattices::QttGrade::Zero, T>;
+using Affine = Qtt<::foundation::algebra::lattices::QttGrade::AtMostOne, T>;
 
 // A type is already linear when its own discipline encodes the
 // exactly-once obligation, and consume-disciplined when it already
@@ -296,7 +300,7 @@ class CRUCIBLE_QTT_ABI [[nodiscard]]
                   "move-only linearity token (deleted copy, [[nodiscard]], sizeof = 1, EBO-collapsible).  "
                   "Wrapping it stacks two disciplines without adding a new bug class.  Use the token "
                   "directly.");
-    static_assert(Grade != ::foundation::algebra::lattices::QttGrade::Zero || !is_already_consume_disciplined_v<T>,
+    static_assert(Grade != ::foundation::algebra::lattices::QttGrade::AtMostOne || !is_already_consume_disciplined_v<T>,
                   "Affine<Token> over a consume-disciplined token is unsound: the token carries an "
                   "EXACTLY-ONCE obligation; wrapping in Affine downgrades that to at-most-once, making "
                   "the consume OPTIONAL when it is REQUIRED.  Use the token directly.");

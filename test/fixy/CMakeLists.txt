@@ -6017,7 +6017,7 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_with_thread_options_ctx_lacks_
 # the instantiation, which the fixture source never spells.
 fixy_neg_compile_test(neg_qtt_affine_over_linear
   "Affine<Token> over a consume-disciplined token is unsound"
-  "QttGrade::Zero, fixy::Qtt<foundation::algebra::lattices::QttGrade::One")
+  "QttGrade::AtMostOne, fixy::Qtt<foundation::algebra::lattices::QttGrade::One")
 
 fixy_neg_compile_test(neg_qtt_linear_over_linear
   "Linear<Token> over an already-linear token is redundant"
@@ -6029,7 +6029,13 @@ fixy_neg_compile_test(neg_qtt_linear_over_permission
 
 fixy_neg_compile_test(neg_qtt_affine_over_permission
   "Affine<Token> over a consume-disciplined token is unsound"
-  "QttGrade::Zero, foundation::permissions::Permission")
+  "QttGrade::AtMostOne, foundation::permissions::Permission")
+
+# The erased grade names a value that no run time reads, so no wrapper
+# holds a value at it.  A value moved to grade 0 does not compile.
+fixy_neg_compile_test(neg_qtt_value_at_erased_grade
+  "template constraint failure for .template<auto Grade, class T> +requires +IsConsumeBound<Grade> class fixy::Qtt."
+  "required for the satisfaction of .IsConsumeBound<Grade>. \\[with Grade = foundation::algebra::lattices::QttGrade::Zero\\]")
 
 # The move assignment of the wrapper is user-provided, so the wrapper is
 # not trivially copyable, and std::bit_cast builds no Linear from bytes.

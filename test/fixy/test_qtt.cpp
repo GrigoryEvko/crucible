@@ -48,14 +48,15 @@ static_assert(alignof(Affine<TwoWords>) == alignof(TwoWords));
 
 // The two aliases are the one template at its two bounded grades.
 static_assert(std::is_same_v<Linear<int>, ::fixy::Qtt<QttGrade::One, int>>);
-static_assert(std::is_same_v<Affine<int>, ::fixy::Qtt<QttGrade::Zero, int>>);
+static_assert(std::is_same_v<Affine<int>, ::fixy::Qtt<QttGrade::AtMostOne, int>>);
 static_assert(!std::is_same_v<Linear<int>, Affine<int>>);
 
 template <auto Grade>
 concept CanNameQtt = requires { typename ::fixy::Qtt<Grade, int>; };
 
 static_assert(CanNameQtt<QttGrade::One>);
-static_assert(CanNameQtt<QttGrade::Zero>);
+static_assert(CanNameQtt<QttGrade::AtMostOne>);
+static_assert(!CanNameQtt<QttGrade::Zero>, "an erased value is held by no run time, so no wrapper holds it");
 static_assert(!CanNameQtt<QttGrade::Omega>, "an unrestricted value is the bare T");
 static_assert(!CanNameQtt<1>, "the grade is a QttGrade, not an integer");
 
@@ -98,11 +99,13 @@ static_assert(fa::GradedWrapper<Affine<int>>);
 static_assert(fa::is_graded_wrapper_v<Linear<int>>);
 static_assert(fa::is_graded_wrapper_v<Affine<int>>);
 static_assert(Linear<int>::lattice_name() == "QttSemiring::At<1>");
-static_assert(Affine<int>::lattice_name() == "QttSemiring::At<0>");
+static_assert(Affine<int>::lattice_name()
+              == "QttSemiring::At<\xE2\x89\xA4"
+                 "1>");
 static_assert(Linear<int>::value_type_name().ends_with("int"));
 static_assert(Affine<int>::value_type_name().ends_with("int"));
 static_assert(std::is_same_v<Linear<int>::lattice_type, fa::lattices::qtt::LinearGrade>);
-static_assert(std::is_same_v<Affine<int>::lattice_type, fa::lattices::qtt::Erased>);
+static_assert(std::is_same_v<Affine<int>::lattice_type, fa::lattices::qtt::AffineGrade>);
 static_assert(Linear<int>::modality == fa::ModalityKind::Absolute);
 static_assert(Affine<int>::modality == fa::ModalityKind::Absolute);
 

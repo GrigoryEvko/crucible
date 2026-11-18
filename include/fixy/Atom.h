@@ -411,6 +411,12 @@ concept IsDeclassificationPolicy =
 // The resolver that reads an atom pack decides what each atom resolves to;
 // this header supplies only the axis the engagement check needs.
 
+// The Usage atoms and the grades of foundation/algebra/lattices/QttSemiring.h.
+// The strict pole of the axis is the grade One: a value used exactly one
+// time.  affine is the grade AtMostOne, copy the grade Omega and ghost the
+// erased grade Zero.  borrow reads a view and capability_usage uses a
+// token at most one time.  No resolver reads a grade from these atoms: a
+// reader compares the atom types.
 struct affine final : atom_of<Axis::Usage> {};
 struct copy final : atom_of<Axis::Usage> {};
 struct ghost final : atom_of<Axis::Usage> {};

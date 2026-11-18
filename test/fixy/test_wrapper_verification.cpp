@@ -317,7 +317,9 @@ static_assert(forwarders_actually_forward<Stale<int>>());
 // the two refinements rather than against a literal.  A band's name
 // carries the tier and not the payload.
 static_assert(Linear<int>::lattice_name() == "QttSemiring::At<1>");
-static_assert(Affine<int>::lattice_name() == "QttSemiring::At<0>");
+static_assert(Affine<int>::lattice_name()
+              == "QttSemiring::At<\xE2\x89\xA4"
+                 "1>");
 static_assert(Refined<positive_local, int>::lattice_name() == SealedRefined<positive_local, int>::lattice_name());
 static_assert(Secret<int>::lattice_name() == "ConfLattice::At<Secret>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");

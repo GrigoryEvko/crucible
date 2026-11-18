@@ -99,11 +99,13 @@ using SharedU64 = fa::Graded<fa::ModalityKind::Absolute, fl::DualLattice<fl::Fra
 static_assert(sizeof(StaleU64) == sizeof(std::uint64_t) + sizeof(fl::StalenessSemiring::element_type));
 static_assert(sizeof(SharedU64) == sizeof(std::uint64_t) + sizeof(fl::Rational));
 
-// The two semirings are also lattices, and the two orders are distinct
-// structures on one carrier.  The shares of FractionalLattice are no
-// semiring: their add is partial, and the check file of the header states
-// the laws of the partial monoid.
-static_assert(fa::Semiring<fl::QttSemiring> && fa::BoundedLattice<fl::QttSemiring>);
+// The staleness semiring is also a lattice, and the two orders are distinct
+// structures on one carrier.  The QTT semiring orders its grades as a
+// join-semilattice: 0 and 1 have no meet, so it is no lattice, and its
+// check file holds the laws of its join.  The shares of FractionalLattice
+// are no semiring: their add is partial, and the check file of the header
+// states the laws of the partial monoid.
+static_assert(fa::Semiring<fl::QttSemiring> && !fa::LatticeShape<fl::QttSemiring>);
 static_assert(fa::Semiring<fl::StalenessSemiring> && fa::BoundedLattice<fl::StalenessSemiring>);
 static_assert(fa::SemiringShape<fl::FractionalLattice> && fa::BoundedLattice<fl::FractionalLattice>);
 
@@ -214,10 +216,12 @@ void qtt_semiring_runs_at_run_time() {
     const QttGrade zero = opaque(QttGrade::Zero);
     const QttGrade one = opaque(QttGrade::One);
     const QttGrade omega = opaque(QttGrade::Omega);
-    expect(QttSemiring::leq(zero, one) && QttSemiring::leq(one, omega));
-    expect(!QttSemiring::leq(omega, one));
+    const QttGrade at_most_one = opaque(QttGrade::AtMostOne);
+    expect(!QttSemiring::leq(zero, one) && !QttSemiring::leq(one, zero));
+    expect(QttSemiring::leq(zero, at_most_one) && QttSemiring::leq(one, at_most_one));
+    expect(QttSemiring::leq(at_most_one, omega) && !QttSemiring::leq(omega, one));
+    expect(QttSemiring::join(zero, one) == QttGrade::AtMostOne);
     expect(QttSemiring::join(one, omega) == QttGrade::Omega);
-    expect(QttSemiring::meet(one, omega) == QttGrade::One);
     expect(QttSemiring::join(one, one) == QttGrade::One);
 
     // Two uses of a value are not one use: add saturates where join does not.
@@ -226,6 +230,8 @@ void qtt_semiring_runs_at_run_time() {
     expect(QttSemiring::mul(zero, omega) == QttGrade::Zero);
     expect(QttSemiring::mul(one, omega) == QttGrade::Omega);
     expect(QttSemiring::mul(omega, omega) == QttGrade::Omega);
+    expect(QttSemiring::mul(at_most_one, at_most_one) == QttGrade::AtMostOne);
+    expect(QttSemiring::add(at_most_one, at_most_one) == QttGrade::Omega);
     expect(QttSemiring::zero() == QttGrade::Zero);
     expect(QttSemiring::one() == QttGrade::One);
 

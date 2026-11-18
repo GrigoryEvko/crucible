@@ -25,7 +25,6 @@
 #include <foundation/algebra/lattices/HappensBefore.h>
 #include <foundation/algebra/lattices/MonotoneLattice.h>
 #include <foundation/algebra/lattices/NumaNodeLattice.h>
-#include <foundation/algebra/lattices/QttSemiring.h>
 #include <foundation/algebra/lattices/SeqPrefixLattice.h>
 #include <foundation/algebra/lattices/StalenessSemiring.h>
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
@@ -142,7 +141,9 @@ void each_lattice_keeps_its_carrier(TestRunnerCtx const& test) {
     check_closure<fl::DualLattice<fl::FractionalLattice>>(test, Rational{1, 3}, Rational{1, bound});
     check_closure<fl::StalenessSemiring>(test, fl::staleness::at(1), fl::staleness::at(100),
                                          fl::staleness::at(::foundation::core::max_of<std::uint64_t> - 1));
-    check_closure<fl::QttSemiring>(test, fl::QttGrade::One);
+    // The QTT semiring is a join-semilattice with no meet, so it is no
+    // lattice of this walk.  Its check file walks each pair and triple of
+    // its four grades through leq, join, add and mul.
     check_closure<fl::MonotoneLattice<std::uint64_t>>(test, std::uint64_t{1}, std::uint64_t{1000});
     check_closure<fl::MonotoneLattice<std::int32_t>>(test, std::int32_t{-1}, std::int32_t{0}, std::int32_t{1});
     check_closure<fl::MonotoneLattice<double>>(test, -::foundation::core::infinity_of<double>, -0.0, 0.0,

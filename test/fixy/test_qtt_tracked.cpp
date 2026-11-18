@@ -38,13 +38,13 @@ constexpr ::fixy::TextView kLinearConsumedTwice{
     "foundation::algebra::lattices::QttGrade::One"};
 constexpr ::fixy::TextView kAffineConsumedTwice{
     "foundation: consumed twice failed: constexpr T fixy::Qtt<Grade, T>::consume() && [with auto Grade = "
-    "foundation::algebra::lattices::QttGrade::Zero"};
+    "foundation::algebra::lattices::QttGrade::AtMostOne"};
 constexpr ::fixy::TextView kLinearReadAfterConsume{
     "foundation: read after consume failed: constexpr const T& fixy::Qtt<Grade, T>::peek() const & [with auto Grade = "
     "foundation::algebra::lattices::QttGrade::One"};
 constexpr ::fixy::TextView kAffineReadAfterConsume{
     "foundation: read after consume failed: constexpr const T& fixy::Qtt<Grade, T>::peek() const & [with auto Grade = "
-    "foundation::algebra::lattices::QttGrade::Zero"};
+    "foundation::algebra::lattices::QttGrade::AtMostOne"};
 constexpr ::fixy::TextView kLinearWrittenAfterConsume{
     "foundation: written after consume failed: constexpr T& fixy::Qtt<Grade, T>::peek_mut() & [with auto Grade = "
     "foundation::algebra::lattices::QttGrade::One"};

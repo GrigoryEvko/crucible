@@ -8,7 +8,7 @@
 // to remember to write.
 //
 // The second required diagnostic is the compiler's rendering of the
-// instantiation, `Qtt<...QttGrade::Zero, fixy::Qtt<`, which the source
+// instantiation, `Qtt<...QttGrade::AtMostOne, fixy::Qtt<`, which the source
 // never spells: it writes Affine<Linear<int>>.
 
 #include <fixy/Qtt.h>

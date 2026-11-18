@@ -31,7 +31,7 @@ static_assert(qtt_consume_tracked || std::is_trivially_move_constructible_v<Line
 static_assert(Linear<int>::modality == ::foundation::algebra::ModalityKind::Absolute);
 static_assert(Affine<int>::modality == ::foundation::algebra::ModalityKind::Absolute);
 static_assert(std::is_same_v<Linear<int>::lattice_type, ::foundation::algebra::lattices::qtt::LinearGrade>);
-static_assert(std::is_same_v<Affine<int>::lattice_type, ::foundation::algebra::lattices::qtt::Erased>);
+static_assert(std::is_same_v<Affine<int>::lattice_type, ::foundation::algebra::lattices::qtt::AffineGrade>);
 
 // Qtt carries a non-type parameter, which is the case the reflection
 // form in foundation/reflect/Instance.h exists for.  The cv-ref strip
@@ -48,7 +48,7 @@ static_assert(!::foundation::reflect::IsInstanceOf<Linear<int>, ^^std::unique_pt
 // The grade is readable off the wrapper, which is what tells the
 // exactly-once half of the family from the at-most-once half.
 static_assert(Linear<int>::usage_grade == ::foundation::algebra::lattices::QttGrade::One);
-static_assert(Affine<int>::usage_grade == ::foundation::algebra::lattices::QttGrade::Zero);
+static_assert(Affine<int>::usage_grade == ::foundation::algebra::lattices::QttGrade::AtMostOne);
 
 namespace detail::qtt_witness {
 
