@@ -82,6 +82,8 @@ public:
     // releasing CAS, so the capacity check counts completed steals.
     // The release fence makes the cell store visible before the bottom
     // store that advertises it, which is why both stores are relaxed.
+    // The owner thread is the one writer of bottom, so its relaxed load of
+    // bottom reads its own last store.
     [[nodiscard]] bool push_bottom(T item) noexcept {
         const std::int64_t b = bottom_.load(std::memory_order_relaxed);
         const std::int64_t t = top_.get();
@@ -94,7 +96,10 @@ public:
         return true;
     }
 
-    // Owner only.
+    // Owner only.  The owner thread is the one writer of bottom, and the
+    // relaxed loads of bottom read its own last store.  The relaxed load of
+    // the cell reads a cell that the owner wrote, and a thief that takes the
+    // same cell meets the owner at the seq_cst compare-and-swap of top.
     [[nodiscard]] std::optional<T> pop_bottom() noexcept {
         std::int64_t b = bottom_.load(std::memory_order_relaxed) - 1;
         bottom_.store(b, std::memory_order_relaxed);
@@ -122,7 +127,7 @@ public:
         // takes it, a lost CAS means the thief already advanced top and
         // owns it.  Either way the deque ends up empty, so bottom is
         // restored on both paths.
-        if (!top_.compare_exchange_advance(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
+        if (!top_.compare_exchange_advance_seq_cst(t, t + 1)) {
             bottom_.store(b + 1, std::memory_order_relaxed);
             return std::nullopt;
         }
@@ -148,10 +153,11 @@ public:
         }
 
         // Speculative: a lost CAS below means the owner or another
-        // thief claimed slot t, and this value is discarded.
-        const T item = buffer_[t & MASK].load(std::memory_order_relaxed);
+        // thief claimed slot t, and this value is discarded.  A thief does
+        // not own the cell, so the read takes acquire order.
+        const T item = buffer_[t & MASK].load(std::memory_order_acquire);
 
-        if (!top_.compare_exchange_advance(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
+        if (!top_.compare_exchange_advance_seq_cst(t, t + 1)) {
             return std::nullopt;
         }
 

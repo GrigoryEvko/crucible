@@ -700,6 +700,12 @@ enum class CounterWriters : std::uint8_t {
     sole = 1,
 };
 
+// The gate of the reads and the writes of the one writer of a counter:
+// peek_relaxed and advance_sole_writer_from.  Each of the two members asks
+// for this one concept, so a stronger gate changes one place.
+template <CounterWriters Writers>
+concept SoleWriterCounter = Writers == CounterWriters::sole;
+
 template <typename T, CounterWriters Writers = CounterWriters::many, typename Cmp = std::less<T>>
     requires std::is_trivially_copyable_v<T>
 class AtomicMonotonic;
@@ -730,27 +736,35 @@ public:
     using row_payload = T;
     static constexpr CounterWriters writers = Writers;
 
+    // The value, with acquire order: the read of each thread.  It pairs with
+    // the release half of each write.  A read that takes an order as an
+    // argument does not exist: the order of each read is in its name.
     [[nodiscard]] T get() const noexcept { return value_.load(std::memory_order_acquire); }
+
+    T load(std::memory_order) const noexcept = delete(
+        "AtomicMonotonic: the order of a read is in its name.  get() reads with acquire order, peek_relaxed() is the "
+        "read of the one writer of its own value, and load_relaxed() seeds a compare-and-swap loop");
 
     // Relaxed is sound only because the caller is the sole writer of
     // this counter and is reading its own value. A reader on another
     // thread needs get(), whose acquire pairs with the release half of
     // advance and bump.
     [[nodiscard]] T peek_relaxed() const noexcept
-        requires(Writers == CounterWriters::sole)
+        requires SoleWriterCounter<Writers>
     {
         return value_.load(std::memory_order_relaxed);
     }
     T peek_relaxed() const noexcept
-        requires(Writers == CounterWriters::many)
+        requires(!SoleWriterCounter<Writers>)
     = delete("AtomicMonotonic::peek_relaxed: a counter of many writers has no thread that reads its own last store. "
              "Read it with get(), or seed a compare-exchange with load_relaxed()");
 
-    // Same load as peek_relaxed, but for a caller that is not the sole
-    // writer and is seeding a compare-and-advance retry loop. Relaxed
-    // is sound because the following compare-exchange supplies the
-    // synchronization: on success it establishes the happens-before
-    // edge, and on failure it refreshes the expected value.
+    // The seed of a compare-and-swap loop of a writer that is not the one
+    // writer.  No thread owns the value that it reads, and the read gives
+    // the caller no data: the compare-and-swap that follows it reads the
+    // value again in its own atomic step.  On success that step makes the
+    // edge of the order, and on failure it gives the expected value of the
+    // next turn.  So the seed needs no order.
     [[nodiscard]] T load_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
 
     [[nodiscard]] bool try_advance(T new_value) noexcept {
@@ -806,13 +820,23 @@ public:
     // ignore semantic cannot hold the load.  The store is a plain release
     // with no locked instruction.  Two writers use advance instead: between
     // the check and the store here, another writer can pass the new value.
-    void advance_sole_writer_from(T current, T new_value) noexcept {
+    // A counter of many writers has no such write, so the member asks for
+    // the gate of the one writer, as peek_relaxed does.
+    void advance_sole_writer_from(T current, T new_value) noexcept
+        requires SoleWriterCounter<Writers>
+    {
         CRUCIBLE_PRE(Cmp{}(current, new_value));
-        // Equal under the order, which asks of T no operator==.
+        // Equal under the order, which asks of T no operator==.  The relaxed
+        // load reads the own last store of the one writer.
         T const stored = value_.load(std::memory_order_relaxed);
         CRUCIBLE_FATAL_INVARIANT(!Cmp{}(current, stored) && !Cmp{}(stored, current));
         value_.store(new_value, std::memory_order_release);
     }
+    void advance_sole_writer_from(T current, T new_value) noexcept
+        requires(!SoleWriterCounter<Writers>)
+    = delete("AtomicMonotonic::advance_sole_writer_from: a counter of many writers has no one writer, and a second "
+             "writer can pass the new value between the check and the store.  Use advance, or name "
+             "CounterWriters::sole for a counter of one writer");
 
     // delta is a magnitude, not a signed step. Cmp fixes the direction:
     // std::less adds and std::greater subtracts. A negative delta would
@@ -827,7 +851,10 @@ public:
         requires std::integral<T> && (kIsLess || kIsGreater)
     {
         CRUCIBLE_PRE(::foundation::decide::non_negative(delta));
-        T observed = value_.load(std::memory_order_relaxed);
+        // Each writer of the counter reads a value that a different thread
+        // can have stored, so the seed and the failure of the compare-and-
+        // swap read with acquire order.
+        T observed = value_.load(std::memory_order_acquire);
         for (;;) {
             if constexpr (kIsLess) {
                 CRUCIBLE_PRE(::foundation::decide::no_overflow_sum(observed, delta));
@@ -835,7 +862,7 @@ public:
                 CRUCIBLE_PRE(observed >= static_cast<T>(std::numeric_limits<T>::min() + delta));
             }
             const T stepped = kIsLess ? static_cast<T>(observed + delta) : static_cast<T>(observed - delta);
-            if (value_.compare_exchange_weak(observed, stepped, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            if (value_.compare_exchange_weak(observed, stepped, std::memory_order_acq_rel, std::memory_order_acquire)) {
                 return observed;
             }
         }
@@ -853,29 +880,53 @@ public:
     // precondition, because the type system cannot prove it.
     void reset_under_quiescence(T value = T{}) noexcept { value_.store(value, std::memory_order_release); }
 
-    [[nodiscard]] T load(std::memory_order order = std::memory_order_acquire) const noexcept {
-        return value_.load(order);
-    }
+    // THE COMPARE-AND-SWAP FORMS.  Each advances the counter from EXPECTED
+    // to DESIRED, and DESIRED must be ahead of EXPECTED under Cmp.  A
+    // failure writes the value that it read into EXPECTED.  The order of
+    // each form is in its name, so no caller gives an order, and no form
+    // takes a failure order that the standard forbids.
 
-    // failure_order must not be release or acq_rel. The standard
-    // forbids it and nothing here rejects it, so the caller owns that
-    // constraint.
-    [[nodiscard]] bool compare_exchange_advance(T& expected, T desired,
-                                                std::memory_order success_order = std::memory_order_acq_rel,
-                                                std::memory_order failure_order = std::memory_order_acquire) noexcept
+    // Strong.  acq_rel on success, acquire on failure.
+    [[nodiscard]] bool compare_exchange_advance_acq_rel(T& expected, T desired) noexcept
         requires(kIsLess || kIsGreater)
     {
         CRUCIBLE_PRE(Cmp{}(expected, desired));
-        return value_.compare_exchange_strong(expected, desired, success_order, failure_order);
+        return value_.compare_exchange_strong(expected, desired, std::memory_order_acq_rel, std::memory_order_acquire);
     }
 
-    [[nodiscard]] bool
-    compare_exchange_advance_weak(T& expected, T desired, std::memory_order success_order = std::memory_order_acq_rel,
-                                  std::memory_order failure_order = std::memory_order_acquire) noexcept
+    // Weak, for a loop: it can fail with no other writer.  acq_rel on
+    // success, acquire on failure.
+    [[nodiscard]] bool compare_exchange_advance_weak_acq_rel(T& expected, T desired) noexcept
         requires(kIsLess || kIsGreater)
     {
         CRUCIBLE_PRE(Cmp{}(expected, desired));
-        return value_.compare_exchange_weak(expected, desired, success_order, failure_order);
+        return value_.compare_exchange_weak(expected, desired, std::memory_order_acq_rel, std::memory_order_acquire);
+    }
+
+    // Strong.  seq_cst on success, relaxed on failure: the order of the top
+    // of the Chase-Lev deque (Le, Pop, Cohen and Zappa Nardelli, PPoPP
+    // 2013).  The owner and a thief race for the last item at top, and the
+    // single total order of the seq_cst operations with the fences of the
+    // deque decides which one takes it.  A failure only gives up the item,
+    // and it reads no data, so it needs no order.
+    [[nodiscard]] bool compare_exchange_advance_seq_cst(T& expected, T desired) noexcept
+        requires(kIsLess || kIsGreater)
+    {
+        CRUCIBLE_PRE(Cmp{}(expected, desired));
+        return value_.compare_exchange_strong(expected, desired, std::memory_order_seq_cst, std::memory_order_relaxed);
+    }
+
+    // Weak, relaxed on success and on failure: the claim of a ticket of the
+    // MPSC ring of fixy/concurrent/MpscRing.h.  The claim carries no data:
+    // the release fetch_or of the ready bit of the cell publishes the item,
+    // and the acquire load of the bitmap of the consumer reads it.  So the
+    // claim needs no order, until a sequence word of each cell replaces the
+    // protocol of the ring.
+    [[nodiscard]] bool compare_exchange_advance_weak_relaxed(T& expected, T desired) noexcept
+        requires(kIsLess || kIsGreater)
+    {
+        CRUCIBLE_PRE(Cmp{}(expected, desired));
+        return value_.compare_exchange_weak(expected, desired, std::memory_order_relaxed, std::memory_order_relaxed);
     }
 
     // A pure global ordering operation that touches no atomic, so it

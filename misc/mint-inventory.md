@@ -172,7 +172,7 @@ that the axis does not apply to the row.
 | `FederationAdmission::mint_federation_admittance` | `include/fixy/Federation.h` | Y | Y | Y | Y | member | · | HS14: 3 |
 | `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
 | `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 6 |
 | `mint_band` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_borrowed` | `include/fixy/Borrowed.h` | Y | Y | Y | Y | token | · | HS14: 15 |
 | `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 15 |

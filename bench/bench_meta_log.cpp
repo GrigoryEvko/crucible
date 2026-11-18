@@ -148,7 +148,7 @@ int main() {
                 auto idx = log->try_append(meta3.view());
                 bench::do_not_optimize(idx);
                 if (++since_drain >= kD) [[unlikely]] {
-                    log->advance_tail(log->head.load(std::memory_order_relaxed));
+                    log->advance_tail(log->head.peek_relaxed());
                     since_drain = 0;
                 }
             });
@@ -157,8 +157,8 @@ int main() {
         // ── Raw atomics (floor for ordering cost) ─────────────────────
         [&] {
             auto log = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-            return bench::run("head.load (relaxed)", [&] {
-                auto h = log->head.load(std::memory_order_relaxed);
+            return bench::run("head.peek_relaxed", [&] {
+                auto h = log->head.peek_relaxed();
                 bench::do_not_optimize(h);
             });
         }(),

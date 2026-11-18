@@ -511,16 +511,17 @@ int check_atomic_monotonic() {
         if (ring_head.get() != 42ULL) return 131;
     }
 
-    // The default ordering of a load is acquire, and the explicit-order
-    // overload exists for callers that need another.  The one writer of a
-    // counter publishes with a release store and no locked instruction.
+    // The order of each read is in its name: get() reads with acquire
+    // order, and peek_relaxed() is the read of the one writer.  The one
+    // writer of a counter publishes with a release store and no locked
+    // instruction.
     {
-        AtomicMonotonic<std::uint64_t> counter = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> counter =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
 
-        if (counter.load() != 0ULL) return 132;
-
-        if (counter.load(std::memory_order_seq_cst) != 0ULL) return 133;
-        if (counter.load(std::memory_order_relaxed) != 0ULL) return 134;
+        if (counter.get() != 0ULL) return 132;
+        if (counter.peek_relaxed() != 0ULL) return 133;
+        if (counter.load_relaxed() != 0ULL) return 134;
 
         counter.advance_sole_writer_from(0ULL, 7ULL);
         if (counter.get() != 7ULL) return 135;
@@ -539,26 +540,43 @@ int check_atomic_monotonic() {
         AtomicMonotonic<std::uint64_t> top = ::fixy::mint_atomic_monotonic<std::uint64_t>(5);
 
         std::uint64_t observed = 5ULL;
-        bool ok = top.compare_exchange_advance(observed, 6ULL);
+        bool ok = top.compare_exchange_advance_acq_rel(observed, 6ULL);
         if (!ok) return 137;
         if (top.get() != 6ULL) return 138;
 
         observed = 5ULL;  // deliberately stale guess
-        ok = top.compare_exchange_advance(observed, 7ULL);
+        ok = top.compare_exchange_advance_acq_rel(observed, 7ULL);
         if (ok) return 139;
         if (observed != 6ULL) return 140;
 
         // Retrying with the value just reported back succeeds.
-        ok = top.compare_exchange_advance(observed, 7ULL);
+        ok = top.compare_exchange_advance_acq_rel(observed, 7ULL);
         if (!ok) return 141;
         if (top.get() != 7ULL) return 142;
 
-        // The explicit-order form with seq_cst on success is what a
-        // work-stealing pop needs.
+        // The seq_cst form is what a work-stealing pop needs.  A stale
+        // guess fails and reports the value too.
         observed = 7ULL;
-        ok = top.compare_exchange_advance(observed, 8ULL, std::memory_order_seq_cst, std::memory_order_relaxed);
+        ok = top.compare_exchange_advance_seq_cst(observed, 8ULL);
         if (!ok) return 143;
         if (top.get() != 8ULL) return 144;
+        observed = 7ULL;
+        ok = top.compare_exchange_advance_seq_cst(observed, 9ULL);
+        if (ok) return 194;
+        if (observed != 8ULL) return 195;
+    }
+
+    // The relaxed weak form claims a ticket, as a producer of the MPSC ring
+    // does: a loop on the reported value takes the next ticket.
+    {
+        AtomicMonotonic<std::uint64_t> head = ::fixy::mint_atomic_monotonic<std::uint64_t>(10);
+        std::uint64_t observed = 9ULL;  // deliberately stale guess
+        bool claimed = false;
+        for (int retries = 0; retries < 16 && !claimed; ++retries) {
+            claimed = head.compare_exchange_advance_weak_relaxed(observed, observed + 1);
+        }
+        if (!claimed) return 196;
+        if (head.get() != 11ULL) return 197;
     }
 
     // The weak form may fail spuriously, so the caller must loop on the
@@ -571,7 +589,7 @@ int check_atomic_monotonic() {
         bool advanced = false;
         for (int retries = 0; retries < 16 && !advanced; ++retries) {
             target = observed + 1;
-            advanced = seq.compare_exchange_advance_weak(observed, target);
+            advanced = seq.compare_exchange_advance_weak_acq_rel(observed, target);
         }
         if (!advanced) return 145;
         if (seq.get() != 101ULL) return 146;
@@ -581,13 +599,14 @@ int check_atomic_monotonic() {
     // bottom store and its load of top. The fence sits on the counter type so
     // that it reads next to the two calls it separates.
     {
-        AtomicMonotonic<std::uint64_t> bottom = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> bottom =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
         AtomicMonotonic<std::uint64_t> top = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
 
         // One thread only. No race is exercised here, just the API shape.
         bottom.advance_sole_writer_from(0ULL, 5ULL);
         AtomicMonotonic<std::uint64_t>::fence_seq_cst();
-        const auto t = top.load(std::memory_order_relaxed);
+        const auto t = top.load_relaxed();
         if (t != 0ULL) return 147;
         if (bottom.get() != 5ULL) return 148;
     }
@@ -599,12 +618,12 @@ int check_atomic_monotonic() {
                 1000ULL);
 
         std::uint64_t observed = 1000ULL;
-        bool ok = ttl.compare_exchange_advance(observed, 999ULL);
+        bool ok = ttl.compare_exchange_advance_acq_rel(observed, 999ULL);
         if (!ok) return 149;
         if (ttl.get() != 999ULL) return 150;
 
         observed = 1000ULL;  // deliberately stale guess
-        ok = ttl.compare_exchange_advance(observed, 998ULL);
+        ok = ttl.compare_exchange_advance_acq_rel(observed, 998ULL);
         if (ok) return 151;
         if (observed != 999ULL) return 152;
     }
@@ -757,16 +776,19 @@ int check_contracts_abort() {
     // still, and a step that wraps past the end of the carrier.  A held
     // value that is not the stored one is refused where the Debug check is
     // armed, and every test binary arms it.
-    expect_dies(test, [&atomic] noexcept { atomic.advance_sole_writer_from(10, 9); }, kSoleWriterStepBack);
-    expect_dies(test, [&atomic] noexcept { atomic.advance_sole_writer_from(10, 10); }, kSoleWriterStepBack);
-    AtomicMonotonic<std::uint8_t> at_top = ::fixy::mint_atomic_monotonic<std::uint8_t>(std::uint8_t{255});
+    AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> sole =
+        ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(10);
+    expect_dies(test, [&sole] noexcept { sole.advance_sole_writer_from(10, 9); }, kSoleWriterStepBack);
+    expect_dies(test, [&sole] noexcept { sole.advance_sole_writer_from(10, 10); }, kSoleWriterStepBack);
+    AtomicMonotonic<std::uint8_t, ::fixy::CounterWriters::sole> at_top =
+        ::fixy::mint_atomic_monotonic<std::uint8_t, ::fixy::CounterWriters::sole>(std::uint8_t{255});
     expect_dies(
         test, [&at_top] noexcept { at_top.advance_sole_writer_from(std::uint8_t{255}, std::uint8_t{0}); },
         kSoleWriterStepBack);
     expect_dies(
-        test, [&atomic] noexcept { atomic.advance_sole_writer_from(7, 11); },
+        test, [&sole] noexcept { sole.advance_sole_writer_from(7, 11); },
         ::fixy::TextView{"foundation: fatal invariant failed: !Cmp{}(current, stored) && !Cmp{}(stored, current)"});
-    if (atomic.get() != 10 || at_top.get() != 255) return 198;
+    if (sole.get() != 10 || at_top.get() != 255) return 198;
 
     AtomicMonotonic<std::int64_t> signed_counter = ::fixy::mint_atomic_monotonic<std::int64_t>(0);
     expect_dies(
@@ -792,7 +814,7 @@ int check_contracts_abort() {
 
     std::uint64_t expected = 10;
     expect_dies(
-        test, [&atomic, &expected] noexcept { (void)atomic.compare_exchange_advance(expected, 9); },
+        test, [&atomic, &expected] noexcept { (void)atomic.compare_exchange_advance_acq_rel(expected, 9); },
         ::fixy::TextView{"foundation: contract violation: Cmp{}(expected, desired)"});
 
     // A satisfied contract is silent.

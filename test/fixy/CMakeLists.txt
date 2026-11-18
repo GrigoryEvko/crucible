@@ -251,6 +251,15 @@ fixy_neg_compile_test(neg_mutation_atomic_monotonic_user_copy
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_peek_shared
   "a counter of many writers has no thread that reads its own last store"
   "fixy::AtomicMonotonic<T, Writers, Cmp>::peek_relaxed\\(\\) const")
+fixy_neg_compile_test(neg_mutation_atomic_monotonic_sole_step_shared
+  "a counter of many writers has no one writer"
+  "fixy::AtomicMonotonic<T, Writers, Cmp>::advance_sole_writer_from\\(T, T\\)")
+fixy_neg_compile_test(neg_mutation_atomic_monotonic_load_with_an_order
+  "use of deleted function"
+  "the order of a read is in its name")
+fixy_neg_compile_test(neg_mutation_atomic_monotonic_cas_with_an_order
+  "no matching function for call to .*compare_exchange_advance_acq_rel"
+  "candidate expects 2 arguments, 4 provided")
 fixy_neg_compile_test(neg_mutation_write_once_non_null_not_pointer
   "required for the satisfaction of .SlotPointer<Ptr>. \\[with Ptr = int\\]"
   "the expression .is_pointer_v<Ptr> \\[with Ptr = int\\]. evaluated to .false.")

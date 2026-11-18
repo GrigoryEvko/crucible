@@ -102,8 +102,7 @@ public:
                 return false;
             }
             std::uint64_t expected = pos;
-            if (!head_.compare_exchange_advance_weak(expected, pos + 1, std::memory_order_relaxed,
-                                                     std::memory_order_relaxed)) {
+            if (!head_.compare_exchange_advance_weak_relaxed(expected, pos + 1)) {
                 continue;
             }
 
@@ -133,8 +132,7 @@ public:
                 return 0;
             }
             std::uint64_t expected = pos;
-            if (!head_.compare_exchange_advance_weak(expected, pos + N, std::memory_order_relaxed,
-                                                     std::memory_order_relaxed)) {
+            if (!head_.compare_exchange_advance_weak_relaxed(expected, pos + N)) {
                 continue;
             }
 
