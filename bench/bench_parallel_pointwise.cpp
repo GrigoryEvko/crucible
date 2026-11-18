@@ -7,10 +7,12 @@
 //   each other (WaitOnEachOther), so mint_parallel_for gives each shard a
 //   thread of its own and runs no shard on the measuring thread.  A claim of
 //   nine cores spans the two L3 groups of bench.slice.  The measuring thread
-//   takes the core apart, whose L3 group holds the fewest cores of the claim
-//   (bench::apart_core), and the shards take the eight other cores.  The
-//   threads start with the placement OneCpuEach of fixy/os/ThreadTasks.h over
-//   those eight cores, so the thread of shard k runs on the core k.  A thread
+//   takes the core apart, the quietest core of the L3 group that holds the
+//   fewest cores of the claim (bench::apart_core).  A row of S shards takes
+//   the first S other cores in the order of the claim, the quietest first
+//   (Cores::first_slots_apart).  The threads start with the placement
+//   OneCpuEach of fixy/os/ThreadTasks.h over those S cores, so the thread of
+//   shard k runs on the core k of the mask.  A thread
 //   with a mask of several isolated cores stays on the core of the thread that
 //   starts it, so with no such placement the shards share one core.  A shard
 //   on the core of the measuring thread made the pause check refuse the row of
@@ -99,12 +101,26 @@ struct RowNames {
     bench::Run eight;
 };
 
-// The options of the threads of the shards, and the core of the measuring
-// thread.
+// The cores of the claim, the core of the measuring thread, and whether the
+// claim has a core for each thread of the largest row.
 struct Placement {
-    ::fixy::thread::ThreadOptions options;
+    bench::Cores cores;
     int measuring_core = -1;
+    bool is_claimed = false;
 };
+
+// The options of the threads of a row of Shards shards: the first Shards cores
+// of the claim apart from the measuring core, one for each thread, or the
+// affinity of the process with no claim (THE CORES).
+template <std::size_t Shards>
+[[nodiscard]] ::fixy::thread::ThreadOptions options_of(Placement const& placement) noexcept {
+    if (!placement.is_claimed) return ::fixy::thread::ThreadOptions{};
+    using CoreCount = ::fixy::Quantity<::fixy::unit::Element, std::size_t>;
+    crucible::warden::CpuSet const shards =
+        placement.cores.first_slots_apart(bench::CpuId{placement.measuring_core}, CoreCount{Shards});
+    return ::fixy::thread::ThreadOptions{.affinity = bench::detail::mask_of(shards),
+                                         .placement = ::fixy::thread::ThreadPlacement::OneCpuEach};
+}
 
 struct AddOp final {
     template <class X>
@@ -150,7 +166,7 @@ template <std::size_t Shards, class Out>
     ::fixy::TestRunnerCtx const test{eff::testing::test()};
     bool const is_written =
         ::fixy::concurrent::write_pointwise_in_parallel_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
-            ctx, test, walk.placement.options, out, AddOp{}, walk.left, walk.right)
+            ctx, test, options_of<Shards>(walk.placement), out, AddOp{}, walk.left, walk.right)
             .is_ok();
     if (!is_written) ::fixy::fatal("the three planes of the bench have one shape");
 }
@@ -215,7 +231,7 @@ void print_shard_cores(Placement const& placement) noexcept {
             std::uint64_t const cpu = is_read ? bench::detail::processor_of_stat(stat.view()).value_or(kNoCpu) : kNoCpu;
             cpus.at(::fixy::index<index>()).store_release(cpu);
         },
-        placement.options);
+        options_of<Shards>(placement));
     ::foundation::linear::drop(std::move(whole));
     // The rows of the harness go through stdio, and report() does not.
     bench::detail::flush_standard_output();
@@ -299,16 +315,6 @@ void run_level(Level const& level, RowNames names, Placement const& placement,
     }
 }
 
-// The cores of the shards: each core of the claim but the core of the
-// measuring thread.
-[[nodiscard]] crucible::warden::CpuSet shard_cores_of(bench::Cores const& cores, bench::CpuId measuring) noexcept {
-    crucible::warden::CpuSet shards{};
-    for (int const cpu : cores.set()) {
-        if (cpu != measuring.raw()) shards.insert(static_cast<std::size_t>(cpu));
-    }
-    return shards;
-}
-
 }  // namespace
 
 int main() {
@@ -320,19 +326,12 @@ int main() {
         is_claimed ? bench::apart_core(cores, [](bench::CpuId cpu) noexcept { return bench::read_l3_group(cpu); })
                          .value_or(bench::CpuId::none())
                    : bench::CpuId{bench::env_core()};
-    Placement const placement{
-        .options =
-            is_claimed
-                ? ::fixy::thread::ThreadOptions{.affinity = bench::detail::mask_of(shard_cores_of(cores, measuring)),
-                                                .placement = ::fixy::thread::ThreadPlacement::OneCpuEach}
-                : ::fixy::thread::ThreadOptions{},
-        .measuring_core = measuring.raw(),
-    };
+    Placement const placement{.cores = cores, .measuring_core = measuring.raw(), .is_claimed = is_claimed};
     bench::detail::flush_standard_output();
     if (is_claimed) {
         ::fixy::report(::fixy::Sink::Out,
-                       "  shard k on core k of the 8 cores of the claim apart from cpu{}, which the measuring thread "
-                       "takes\n",
+                       "  a row of S shards takes the first S cores of the order of the claim apart from cpu{}, which "
+                       "the measuring thread takes\n",
                        placement.measuring_core);
     } else {
         ::fixy::report(::fixy::Sink::Out,

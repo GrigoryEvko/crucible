@@ -820,8 +820,11 @@ void test_spread_of_a_run() {
 
 // A claim of nine cores of the bench VM spans its two L3 groups, the even CPUs
 // 224 to 238 and 240 to 254.  The core apart is the one core of the claim in
-// its group, in either order of the groups.  A claim in one group gives its
-// highest core.  An empty claim gives none.
+// its group, in either order of the groups.  Of the cores of the smallest
+// group, the core apart is the first in the order of the slots: the first core
+// of the order of loop bench, or the lowest core with no such order.  An empty
+// claim gives none.  The shards of a row take the first cores of the order
+// apart from that core.
 void test_apart_core_of_a_claim() {
     const auto groups = [](bench::CpuId cpu) noexcept {
         crucible::warden::CpuSet group{};
@@ -846,8 +849,28 @@ void test_apart_core_of_a_claim() {
     crucible::warden::CpuSet one_group{};
     for (std::size_t cpu = 240; cpu <= 246; cpu += 2)
         one_group.insert(cpu);
-    CHECK(apart_of(one_group) == 246);
+    CHECK(apart_of(one_group) == 240);
+    const auto apart_in = [&groups](crucible::warden::CpuSet const& claim, ::fixy::TextView order) noexcept {
+        return bench::apart_core(planted_cores_in(claim, planted_isolated(), planted_order(order)), groups)
+            .value_or(bench::CpuId::none())
+            .raw();
+    };
+    CHECK(apart_in(one_group, "244,240,246,242") == 244);
+    crucible::warden::CpuSet two_apart{};
+    two_apart.insert(224);
+    two_apart.insert(226);
+    for (std::size_t cpu = 240; cpu <= 252; cpu += 2)
+        two_apart.insert(cpu);
+    CHECK(apart_in(two_apart, "240,224,226") == 224);
+    CHECK(apart_in(two_apart, "226,240") == 226);
     CHECK(apart_of(crucible::warden::CpuSet{}) == -1);
+
+    using CoreCount = ::fixy::Quantity<::fixy::unit::Element, std::size_t>;
+    const bench::Cores ordered = planted_cores_in(two_apart, planted_isolated(), planted_order("246,224,250,240"));
+    const crucible::warden::CpuSet shards = ordered.first_slots_apart(bench::CpuId{224}, CoreCount{2});
+    CHECK(shards.size() == 2u && shards.contains(246) && shards.contains(250) && !shards.contains(224));
+    const crucible::warden::CpuSet all = ordered.first_slots_apart(bench::CpuId{224}, CoreCount{64});
+    CHECK(all.size() == 8u && !all.contains(224));
 
     // The L3 group of cpu0 on the host holds cpu0, or sysfs gives no L3.
     const crucible::warden::CpuSet host_group = bench::read_l3_group(bench::CpuId{0});

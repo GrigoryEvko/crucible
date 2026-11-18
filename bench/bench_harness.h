@@ -556,6 +556,24 @@ public:
         return later;
     }
 
+    // The first cores of the order of the slots apart from one core, as a set
+    // of at most count cores.  A row of count threads that a mask places, such
+    // as the shards of a parallel walk, takes them, so the row takes the
+    // quietest cores of the claim and not the lowest.  Complexity: linear in
+    // the slots.
+    [[nodiscard]] crucible::warden::CpuSet
+    first_slots_apart(CpuId apart, ::fixy::Quantity<::fixy::unit::Element, std::size_t> count) const noexcept {
+        crucible::warden::CpuSet first{};
+        std::size_t taken = 0;
+        for (CpuId const cpu : slots_) {
+            if (taken == count.raw()) break;
+            if (cpu == apart) continue;
+            first.insert(static_cast<std::size_t>(cpu.raw()));
+            ++taken;
+        }
+        return first;
+    }
+
 private:
     crucible::warden::CpuSet set_{};
     ::fixy::FixedList<CpuId, kSpreadCpus> slots_{};
@@ -590,25 +608,27 @@ private:
     return crucible::warden::CpuSet{};
 }
 
-// The core of a claim apart from the others: the core whose L3 group holds
-// the fewest cores of the claim, and the highest such core.  group_of gives
-// the L3 group of a CpuId, as read_l3_group() does.  A thread that only
-// starts and joins the threads of a run takes it, and the threads of the run
-// keep the cores of one group.  None for an empty claim.  Complexity:
+// The core of a claim apart from the others: of the cores whose L3 group holds
+// the fewest cores of the claim, the first in the order of the slots.  With a
+// claim of loop bench, that order puts the quietest core first (THE CORES OF A
+// RUN), so the measuring thread gets the quietest core of the smallest group.
+// group_of gives the L3 group of a CpuId, as read_l3_group() does.  A thread
+// that only starts and joins the threads of a run takes it, and the threads of
+// the run keep the cores of one group.  None for an empty claim.  Complexity:
 // quadratic in the cores of the claim.
 template <class GroupOf>
 [[nodiscard]] ::fixy::Option<CpuId> apart_core(Cores const& cores, GroupOf const& group_of) noexcept {
     CpuId apart = CpuId::none();
     std::size_t fewest = cores.count() + 1;
-    for (int const cpu : cores.set()) {
-        const crucible::warden::CpuSet group = group_of(CpuId{cpu});
+    for (CpuId const cpu : cores.slots()) {
+        const crucible::warden::CpuSet group = group_of(cpu);
         std::size_t sharing = 0;
         for (int const other : cores.set()) {
-            if (other == cpu || group.contains(other)) ++sharing;
+            if (other == cpu.raw() || group.contains(other)) ++sharing;
         }
-        if (sharing <= fewest) {
+        if (sharing < fewest) {
             fewest = sharing;
-            apart = CpuId{cpu};
+            apart = cpu;
         }
     }
     if (!apart.is_valid()) return ::fixy::none;
