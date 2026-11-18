@@ -87,6 +87,7 @@
 #include <fixy/os/Process.h>
 #include <fixy/os/Sched.h>
 #include <fixy/os/Time.h>
+#include <foundation/core/Sort.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Directory.h>
 #include <foundation/os/File.h>
@@ -1372,6 +1373,63 @@ namespace detail {
     return sorted[lo] * (1.0 - f) + sorted[hi] * f;
 }
 
+// The median of the samples of one part of a run, such as a window or a half,
+// with the interpolation of percentile_interp at 0.5.  The part sorts in its
+// own storage by sort_stably and Ascending, with a scratch from the heap.  A
+// sample is a time of at least zero with no NaN, so Ascending gives the order
+// of <.  An empty part gives 0.  Complexity: one sort of the part, and one
+// pass up to its middle.
+[[nodiscard]] inline double median_of_part(::fixy::HeapArray<double> part) noexcept {
+    std::size_t const count = part.size();
+    if (count == 0) return 0.0;
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    ::fixy::HeapArray<double> scratch = ::fixy::mint_heap_array(alloc, count, 0.0);
+    bool is_sorted = false;
+    part = ::fixy::with_mut(std::move(part), [&scratch, &is_sorted](auto elements) noexcept {
+        scratch = ::fixy::with_mut(std::move(scratch), [&elements, &is_sorted](auto room) noexcept {
+            is_sorted =
+                ::foundation::core::sort_stably(std::move(elements), std::move(room), ::foundation::core::Ascending{})
+                    .is_ok();
+        });
+    });
+    if (!is_sorted) ::fixy::fatal("the scratch of the sort of a part of a run has the count of the part");
+    double const middle = 0.5 * static_cast<double>(count - 1);
+    auto const low_position = static_cast<std::size_t>(middle);
+    std::size_t const high_position = low_position + 1 < count ? low_position + 1 : low_position;
+    double const fraction = middle - static_cast<double>(low_position);
+    double low = 0.0;
+    double high = 0.0;
+    std::size_t position = 0;
+    for (double const value : part) {
+        if (position == low_position) low = value;
+        if (position == high_position) {
+            high = value;
+            break;
+        }
+        ++position;
+    }
+    return low * (1.0 - fraction) + high * fraction;
+}
+
+namespace side {
+
+// The roles of the two positions of a part of the samples.
+struct PartFirst final {};
+struct PartEnd final {};
+
+}  // namespace side
+
+// A copy of the samples from first up to end, the part of median_of_part.
+// Complexity: one allocation and one copy of the part.
+[[nodiscard]] inline ::fixy::HeapArray<double> part_of_samples(std::vector<double> const& samples,
+                                                               ::fixy::Side<side::PartFirst, std::size_t> first,
+                                                               ::fixy::Side<side::PartEnd, std::size_t> end) noexcept {
+    std::size_t const begin = first.value();
+    return ::fixy::mint_heap_array_with<double>(
+        ::foundation::effects::testing::test().alloc, end.value() - begin,
+        [&samples, begin](std::size_t position) noexcept { return samples[begin + position]; });
+}
+
 struct Percentiles {
     double p50 = 0, p75 = 0, p90 = 0, p95 = 0;
     double p99 = 0, p99_9 = 0, p99_99 = 0;
@@ -2635,13 +2693,11 @@ private:
         bool drift_flag = false;
         const size_t N = ns_samples.size();
         if (N >= 200) {
-            const auto half = static_cast<std::ptrdiff_t>((N + 1) / 2);
-            std::vector<double> h1(ns_samples.begin(), ns_samples.begin() + half);
-            std::vector<double> h2(ns_samples.begin() + half, ns_samples.end());
-            std::sort(h1.begin(), h1.end());
-            std::sort(h2.begin(), h2.end());
-            const double m1 = percentile_interp(h1, 0.5);
-            const double m2 = percentile_interp(h2, 0.5);
+            std::size_t const half = (N + 1) / 2;
+            const double m1 = median_of_part(part_of_samples(
+                ns_samples, ::fixy::side_as<side::PartFirst>(std::size_t{0}), ::fixy::side_as<side::PartEnd>(half)));
+            const double m2 = median_of_part(
+                part_of_samples(ns_samples, ::fixy::side_as<side::PartFirst>(half), ::fixy::side_as<side::PartEnd>(N)));
             const double m = (m1 + m2) / 2.0;
             drift = (m > 0) ? std::abs(m1 - m2) / m * 100.0 : 0.0;
             drift_flag = drift > 10.0;
@@ -2653,10 +2709,9 @@ private:
         std::size_t window_begin = 0;
         for (std::size_t const window_end : window.ends) {
             if (window_end > window_begin) {
-                std::vector<double> part(ns_samples.begin() + static_cast<std::ptrdiff_t>(window_begin),
-                                         ns_samples.begin() + static_cast<std::ptrdiff_t>(window_end));
-                std::sort(part.begin(), part.end());
-                static_cast<void>(window_medians.append(percentile_interp(part, 0.5)));
+                static_cast<void>(window_medians.append(
+                    median_of_part(part_of_samples(ns_samples, ::fixy::side_as<side::PartFirst>(window_begin),
+                                                   ::fixy::side_as<side::PartEnd>(window_end)))));
             }
             window_begin = window_end;
         }

@@ -954,6 +954,25 @@ void test_spread_of_planted_windows() {
     CHECK(approx(reversed.median, five.median) && approx(reversed.spread, five.spread));
 }
 
+// The median of a part of a run, as the drift and the windows read it, on
+// planted samples in the order of a loop.  An even part gives the mean of its
+// two middle values, an odd part its middle value, a part of one sample that
+// sample, and an empty part 0, as percentile_interp of a sorted part does.
+void test_median_of_a_part() {
+    ::fixy::FixedArray<double, 6> const samples{5.0, 1.0, 4.0, 2.0, 3.0, 9.0};
+    const auto median_of = [&samples](std::size_t first, std::size_t end) noexcept {
+        ::fixy::View<double const> const part =
+            samples.view().window(first, end - first).expect("the part fits the planted samples");
+        return bench::median_of_part(
+            ::fixy::mint_heap_array_copy<double>(::foundation::effects::testing::test().alloc, part));
+    };
+    CHECK(approx(median_of(0, 6), 3.5));
+    CHECK(approx(median_of(1, 4), 2.0));
+    CHECK(approx(median_of(0, 1), 5.0));
+    CHECK(approx(median_of(2, 2), 0.0));
+    CHECK(approx(median_of(3, 6), 3.0));
+}
+
 // A Run splits its sampled loop into five windows (THE WINDOWS of
 // bench/bench_harness.h).  Ten samples give five windows and keep the ten
 // samples.  Three samples give one window for each sample.  A body of about
@@ -1208,6 +1227,7 @@ int main() {
     test_planted_pause_is_caught();
     test_processor_of_stat();
     test_spread_of_planted_windows();
+    test_median_of_a_part();
     test_run_measures_in_windows();
     test_windows_judge_no_sleep();
 
