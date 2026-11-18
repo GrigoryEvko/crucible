@@ -93,23 +93,71 @@ void test_sequential_when_l2_resident() {
     CRUCIBLE_TEST_REQUIRE(dec.tier == Tier::L2Resident);
 }
 
+// A set of twice L3 on a stated host of 16 CPUs with the start cost of this
+// tree is DRAM-bound and parallel.  The host is stated, because on a host
+// with a small L3 such a set is too small to pay for the starts of two
+// threads.  On this host, the set of this host gives a factor of the ladder.
 void test_parallel_when_dram_bound() {
-    const auto& topo = Topology::instance();
-    // Twice L3 leaves no doubt about the tier on any supported host.
-    const std::size_t ws = topo.l3_instance_bytes() * 2;
-
-    WorkBudget budget{
-        .read_bytes = ws / 2,
-        .write_bytes = ws / 2,
-        .item_count = 1000000,
+    const fixy::concurrent::HostFacts host{
+        .l1d_bytes = std::size_t{32} << 10,
+        .l2_bytes = std::size_t{1} << 20,
+        .l3_bytes = std::size_t{32} << 20,
+        .process_cpus = 16,
+        .largest_l3_group_cpus = 8,
+        .numa_nodes = 2,
+        .thread_start_bytes = fixy::concurrent::parallelism_rule_detail::kThreadStartBytes,
     };
-    const auto dec = ParallelismRule::recommend(budget);
-    if (topo.process_cpu_count() >= 2) {
-        CRUCIBLE_TEST_REQUIRE(dec.kind == ParallelismDecision::Kind::Parallel);
-        CRUCIBLE_TEST_REQUIRE(dec.factor >= 2);
-        CRUCIBLE_TEST_REQUIRE(dec.tier == Tier::DRAMBound);
-    }
-    CRUCIBLE_TEST_REQUIRE(on_factor_ladder_(dec.factor));
+    const std::size_t ws = host.l3_bytes * 2;
+    const WorkBudget budget{.read_bytes = ws / 2, .write_bytes = ws / 2, .item_count = 1000000};
+    const auto dec = ParallelismRule::recommend_for(host, budget);
+    CRUCIBLE_TEST_REQUIRE(dec.kind == ParallelismDecision::Kind::Parallel);
+    CRUCIBLE_TEST_REQUIRE(dec.factor >= 2);
+    CRUCIBLE_TEST_REQUIRE(dec.tier == Tier::DRAMBound);
+
+    const std::size_t local_ws = Topology::instance().l3_instance_bytes() * 2;
+    const auto local = ParallelismRule::recommend(WorkBudget{.read_bytes = local_ws / 2, .write_bytes = local_ws / 2});
+    CRUCIBLE_TEST_REQUIRE(on_factor_ladder_(local.factor));
+    CRUCIBLE_TEST_REQUIRE(local.tier == Tier::DRAMBound);
+}
+
+// THE START COST of fixy/concurrent/ParallelismRule.h, on a host like the
+// bench VM: an L3 of 16 MiB for 8 CPUs, 9 CPUs for the process, and the start
+// cost of this tree, 3 MiB.  The walk of 12 MiB of the parallel walk bench
+// stays on the calling thread, because two threads cost 6 MiB of work and
+// 6 MiB of starts each.  A set of 16 MiB gets two threads, and a set of
+// 192 MiB gets the cap 8 of the ladder.  The same host with no start cost
+// gives the cap of each tier: 4 in L3 and 8 past it.  A start cost so large
+// that no factor pays keeps each set sequential.
+void test_start_cost_picks_the_cheapest_factor() {
+    fixy::concurrent::HostFacts host{
+        .l1d_bytes = std::size_t{32} << 10,
+        .l2_bytes = std::size_t{1} << 20,
+        .l3_bytes = std::size_t{16} << 20,
+        .process_cpus = 9,
+        .largest_l3_group_cpus = 8,
+        .numa_nodes = 2,
+        .thread_start_bytes = fixy::concurrent::parallelism_rule_detail::kThreadStartBytes,
+    };
+    const WorkBudget walk{.read_bytes = std::size_t{8} << 20, .write_bytes = std::size_t{4} << 20};
+    const WorkBudget l3_set{.read_bytes = std::size_t{16} << 20};
+    const WorkBudget dram_set{.read_bytes = std::size_t{192} << 20};
+    CRUCIBLE_TEST_REQUIRE(fixy::concurrent::parallelism_rule_detail::kThreadStartBytes == (std::size_t{3} << 20));
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::host_facts().thread_start_bytes
+                          == fixy::concurrent::parallelism_rule_detail::kThreadStartBytes);
+    CRUCIBLE_TEST_REQUIRE(!ParallelismRule::recommend_for(host, walk).is_parallel());
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(host, walk).tier == Tier::L3Resident);
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(host, l3_set).factor == 2);
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(host, dram_set).factor == 8);
+
+    host.thread_start_bytes = 0;
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(host, walk).factor == 4);
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(host, l3_set).factor == 4);
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(host, dram_set).factor == 8);
+
+    host.thread_start_bytes = std::size_t{1} << 30;
+    CRUCIBLE_TEST_REQUIRE(!ParallelismRule::recommend_for(host, l3_set).is_parallel());
+    CRUCIBLE_TEST_REQUIRE(!ParallelismRule::recommend_for(host, dram_set).is_parallel());
+    CRUCIBLE_TEST_REQUIRE(ParallelismRule::recommend_for(host, dram_set).numa == NumaPolicy::NumaIgnore);
 }
 
 void test_factor_ladder() {
@@ -361,6 +409,7 @@ int main() {
     run_test("no-regression invariant", test_no_regression_invariant);
     run_test("Parallel only with two workers", test_parallel_only_with_two_workers);
     run_test("one-CPU hosts stay sequential", test_one_cpu_hosts_stay_sequential);
+    run_test("the start cost picks the cheapest factor", test_start_cost_picks_the_cheapest_factor);
 
     std::fprintf(stderr, "\n%d failed\n", total_failed);
     return total_failed == 0 ? 0 : 1;

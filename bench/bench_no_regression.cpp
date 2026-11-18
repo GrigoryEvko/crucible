@@ -1,8 +1,10 @@
 // No-regression bench for the cache-tier rule.
 //
-// L1/L2 workloads must stay on the inline path, while L3/DRAM
-// workloads must go parallel and beat the sequential baseline by
-// kParallelWinFactor.  The "rule" arm runs the work through
+// L1/L2 workloads must stay on the inline path.  An L3/DRAM workload that
+// the rule makes parallel must beat the sequential baseline by
+// kParallelWinFactor, and one that the rule keeps sequential, such as on
+// one CPU, must cost no more than the sequential baseline.  The "rule" arm
+// runs the work through
 // fixy::spawn::mint_parallel_for, which asks
 // fixy::concurrent::ParallelismRule for a decision and runs at the
 // factor of that decision.  The "forced" baseline intentionally
@@ -496,14 +498,6 @@ int main() {
             std::printf("  FAIL %-26s expected sequential decision for small tier\n", w.name);
             ++failures;
         }
-        // A process of one CPU, such as a run of loop bench on a claim of one
-        // core, has no second worker.  A large set then stays sequential, and
-        // only the gate of no regression against the sequential arm applies.
-        const bool has_second_cpu = ::fixy::topology::Topology::instance().process_cpu_count() >= 2;
-        if (!small && has_second_cpu && !dec.is_parallel()) {
-            std::printf("  FAIL %-26s expected parallel decision for large tier\n", w.name);
-            ++failures;
-        }
 
         // A row with a variation above 5 % asks for a second run of the bench,
         // and its workload gets no gate in this run.  The variation is no
@@ -529,8 +523,13 @@ int main() {
                 ++failures;
             }
         }
-        // The rule runs inline for a small tier, and for each tier on one CPU.
-        if (small || !has_second_cpu) {
+        // A sequential decision runs the rule arm inline: for a small tier, for
+        // each tier on one CPU, such as on a claim of one core of loop bench,
+        // and for a set whose work does not pay for the starts of two threads
+        // (THE START COST of fixy/concurrent/ParallelismRule.h).  Its gate is
+        // the overhead against the sequential arm.  A parallel decision must
+        // beat the two other arms.
+        if (!dec.is_parallel()) {
             if (rul_p50 > seq_p50 * kGateTolerance && (rul_p50 - seq_p50) > kInlineAbsoluteToleranceNs) {
                 std::printf("  FAIL %-26s rule inline overhead exceeded budget: %.3fx\n", w.name,
                             ratio(rul_p50, seq_p50));

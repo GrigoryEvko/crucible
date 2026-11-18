@@ -2,9 +2,10 @@
 
 // Decides whether a body runs inline or in parallel, and at what factor
 // and NUMA policy.  The decision comes from the working set's size
-// against the host's cache hierarchy and from nothing else.  There is
-// no per-item time estimate and no caller hint, because a hint of that
-// kind cannot be checked and is wrong exactly when it hurts most.
+// against the host's cache hierarchy and against the cost of a thread
+// start, and from nothing else.  There is no per-item time estimate and
+// no caller hint, because a hint of that kind cannot be checked and is
+// wrong exactly when it hurts most.
 //
 // The commitment is that the rule never regresses.  A working set that
 // fits a core's L2 is already hot in that core, so a second worker adds
@@ -52,6 +53,20 @@
 //
 //  3. is_core_private_tier and is_core_resident name the one question the
 //     callers ask, so no caller writes its own comparison.
+//
+//  4. THE START COST.  mint_parallel_for starts and joins one thread for
+//     each unit of the factor in each call, and the caller runs no shard.
+//     The cost of one start and join, in the bytes that one core walks in
+//     the same time, is HostFacts::thread_start_bytes.  A factor f then
+//     costs ws / f for the work of each thread and f * thread_start_bytes
+//     for the starts, and one thread costs ws.  The rule takes the factor
+//     of the ladder, up to the cap of the tier, with the least cost, and
+//     the smaller factor of two with one cost.  A set whose work no factor
+//     of two or more makes cheaper stays sequential.  With a start cost of
+//     zero, such as a pool of workers that start once, the cost falls with
+//     each factor, and the rule takes the cap of the tier.  host_facts()
+//     gives the measure kThreadStartBytes of this tree, and a test gives a
+//     host of its own.
 
 #include <fixy/os/Topology.h>
 #include <foundation/NoObject.h>
@@ -127,6 +142,17 @@ inline constexpr std::size_t kMaxFactor = 16;
 // bandwidth to a set that already fits in it.
 inline constexpr std::size_t kL3ResidentMaxFactor = 4;
 
+// The cost of the start and the join of one thread of mint_parallel_for, in
+// the bytes that one core walks in the same time (THE START COST).  The
+// rows of bench/bench_parallel_pointwise.cpp on the isolated cores of the
+// bench VM luks-a, on 2026-11-18, two runs: 2 threads with an empty body
+// start and join in 151.4 to 151.7 us, so 75.7 us for each thread.  The
+// raw loop of the add over 12 MiB in L3 takes 314 to 316 us, so one core
+// walks 39.8 bytes in a ns.  The product is 3.01 MB, rounded to 3 MiB.  4
+// and 8 threads cost 69 to 93 us for each thread.  A pool whose workers
+// start once makes this cost near zero.
+inline constexpr std::size_t kThreadStartBytes = std::size_t{3} << 20;
+
 // Rounds down, so a request between two ladder entries under-spawns.
 [[nodiscard]] constexpr std::size_t round_to_factor_ladder(std::size_t want) noexcept {
     if (want >= 16) return 16;
@@ -150,6 +176,10 @@ struct HostFacts {
     std::size_t process_cpus = 1;
     std::size_t largest_l3_group_cpus = 1;
     std::size_t numa_nodes = 1;
+    // The cost of the start and the join of one thread, in the bytes that one
+    // core walks in the same time (THE START COST).  Zero gives the factor of
+    // the tier alone.
+    std::size_t thread_start_bytes = 0;
 };
 
 // Stateless.  The cache sizes are read at decision time, by which point
@@ -182,6 +212,7 @@ public:
             .process_cpus = topo.process_cpu_count(),
             .largest_l3_group_cpus = topo.largest_l3_group_cpus(),
             .numa_nodes = topo.numa_nodes(),
+            .thread_start_bytes = parallelism_rule_detail::kThreadStartBytes,
         };
     }
 
@@ -230,10 +261,25 @@ public:
             numa = host.numa_nodes > 1 ? NumaPolicy::NumaSpread : NumaPolicy::NumaIgnore;
         }
 
+        // The factor of the ladder up to the cap of the tier with the least
+        // cost: ws / factor for the work of each thread and factor times the
+        // start cost for the starts, and ws for the calling thread alone.  Of
+        // two factors with one cost, the smaller one (THE START COST).
+        const std::size_t ceiling = parallelism_rule_detail::round_to_factor_ladder(want);
+        std::size_t factor = 1;
+        std::size_t least_cost = ws;
+        for (std::size_t candidate = 2; candidate <= ceiling; candidate *= 2) {
+            const std::size_t cost = ::foundation::core::saturating_add(
+                ws / candidate, ::foundation::core::saturating_mul(candidate, host.thread_start_bytes));
+            if (cost < least_cost) {
+                factor = candidate;
+                least_cost = cost;
+            }
+        }
         // A factor of one is the calling thread alone, which is the
-        // sequential decision.  A process of one CPU, or a largest L3 group
-        // of one CPU, gives that factor.
-        const std::size_t factor = parallelism_rule_detail::round_to_factor_ladder(want);
+        // sequential decision.  A process of one CPU, a largest L3 group of
+        // one CPU, and a set whose work does not pay for the starts of two
+        // threads give that factor.
         if (factor < 2) return dec;
         dec.kind = ParallelismDecision::Kind::Parallel;
         dec.factor = factor;

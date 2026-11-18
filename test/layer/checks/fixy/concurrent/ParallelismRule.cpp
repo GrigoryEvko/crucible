@@ -56,6 +56,22 @@ static_assert(!ParallelismRule::recommend_for(kGroupOfOne, kL3Set).is_parallel()
 static_assert(ParallelismRule::recommend_for(kGroupOfOne, kDramSet).factor == 16);
 static_assert(ParallelismRule::recommend_for(kGroupOfOne, kDramSet).numa == NumaPolicy::NumaSpread);
 
+// Design note 4: a set whose work does not pay for the starts of two threads
+// stays sequential, and the start cost picks the factor with the least cost.
+// The host is the bench VM: an L3 of 16 MiB for 8 CPUs, and 9 CPUs.
+inline constexpr HostFacts kStartCostHost{.l1d_bytes = 32 << 10,
+                                          .l2_bytes = 1 << 20,
+                                          .l3_bytes = 16 << 20,
+                                          .process_cpus = 9,
+                                          .largest_l3_group_cpus = 8,
+                                          .numa_nodes = 2,
+                                          .thread_start_bytes = ladder::kThreadStartBytes};
+inline constexpr WorkBudget kWalk{.read_bytes = 8 << 20, .write_bytes = 4 << 20};
+static_assert(!ParallelismRule::recommend_for(kStartCostHost, kWalk).is_parallel());
+static_assert(ParallelismRule::recommend_for(kStartCostHost, WorkBudget{.read_bytes = 16 << 20}).factor == 2);
+static_assert(ParallelismRule::recommend_for(kStartCostHost, WorkBudget{.read_bytes = std::size_t{192} << 20}).factor
+              == 8);
+
 static_assert(is_core_private_tier(Tier::L1Resident));
 static_assert(is_core_private_tier(Tier::L2Resident));
 static_assert(!is_core_private_tier(Tier::L3Resident));
