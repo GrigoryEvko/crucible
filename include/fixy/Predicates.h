@@ -313,7 +313,20 @@ consteval std::size_t seal_class(std::meta::info type, std::meta::info value) {
 
 }  // namespace refined
 
+namespace refined {
+
+// An alignment is a power of two that is not zero, as the alignment of
+// foundation/core/DataAddress.h is.  The test of Aligned reads the low bits
+// of an address under the mask N - 1, which is alignment to N only for such
+// an N.  The rule aligned_weakens also holds only for such an N: Aligned<6>
+// admits the address 2, and Aligned<3> refuses it.
 template <std::size_t Alignment>
+concept IsAlignment = Alignment != 0 && (Alignment & (Alignment - 1)) == 0;
+
+}  // namespace refined
+
+template <std::size_t Alignment>
+    requires refined::IsAlignment<Alignment>
 struct Aligned {
     template <class V>
         requires std::is_pointer_v<V>
@@ -323,6 +336,7 @@ struct Aligned {
 };
 
 template <std::size_t Alignment>
+    requires refined::IsAlignment<Alignment>
 inline constexpr Aligned<Alignment> aligned{};
 
 // The four bounded predicates below compare the value with each bound by
@@ -710,7 +724,8 @@ inline constexpr ::foundation::fail_closed::edge<predicate_t<non_null>, predicat
 inline constexpr narrowing_edge<predicate_t<non_zero>, predicate_t<non_null>> non_zero_implies_non_null{};
 
 // Aligned<N> ⇒ Aligned<M> when N ≥ M and M divides N, so a
-// cache-line-aligned pointer is also word-aligned.
+// cache-line-aligned pointer is also word-aligned.  Each alignment is a
+// power of two (refined::IsAlignment), so M divides N exactly when M ≤ N.
 [[nodiscard]] consteval rule_verdict aligned_weakens(std::meta::info premise, std::meta::info conclusion) {
     if (!is_specialization_of(premise, ^^Aligned) || !is_specialization_of(conclusion, ^^Aligned)) return {};
     const std::size_t strong = size_argument_of(premise, 0);

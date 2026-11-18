@@ -354,12 +354,11 @@ using MinLength = Refined<length_ge<N>, T>;
 template <auto Max, typename T>
 using MaxBounded = Refined<bounded_above<Max>, T>;
 
-// Two traps neither alias rejects. An N that is not a power of two
-// still compiles and turns the alignment test into an arbitrary
-// low-bit mask. An inverted bound with Lo above Hi also still
-// compiles, and the predicate becomes vacuously false, so the failure
+// AlignedTo refuses an N that is not a power of two, because Aligned
+// does.  WithinRange does not refuse an inverted bound with Lo above
+// Hi: the predicate is then false for each value, so the failure
 // surfaces at the mint rather than at compile time.  Bounded below is
-// the alias that closes the second trap.
+// the alias that refuses it.
 template <std::size_t N, typename T>
 using AlignedTo = Refined<aligned<N>, T>;
 template <auto Lo, auto Hi, typename T>

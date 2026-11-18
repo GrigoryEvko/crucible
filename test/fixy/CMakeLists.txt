@@ -1148,6 +1148,16 @@ fixy_neg_compile_test(neg_syscall_family_outside_the_chain
 fixy_test(test_refined)
 fixy_test(test_refined_chain_attack)
 
+# An alignment is a power of two that is not zero.  The test of Aligned
+# reads the address under the mask N - 1, and the rule aligned_weakens
+# proves Aligned<3> from Aligned<6>, which address 2 refutes.
+fixy_neg_compile_test(neg_refined_aligned_not_power_of_two
+  "template constraint failure for .template<long unsigned int Alignment> +requires +IsAlignment<Alignment> struct fixy::Aligned."
+  "the expression .\\(Alignment & Alignment - 1\\) == 0 \\[with Alignment = 6\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_refined_aligned_zero
+  "template constraint failure for .template<long unsigned int Alignment> +requires +IsAlignment<Alignment> struct fixy::Aligned."
+  "the expression .Alignment != 0 \\[with Alignment = 0\\]. evaluated to .false.")
+
 # The checked mint carries CRUCIBLE_PRE(Pred(v)); a refused value in a
 # constant expression reaches the macro's consteval trap through the
 # mint, and the expansion note names the macro inside Refined.h.

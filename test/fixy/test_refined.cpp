@@ -233,7 +233,7 @@ static_assert(!fixy::PredicateImplies<fixy::is_zero, fixy::non_negative>, "is_ze
 // anywhere but in the namespace is inert.
 static_assert(fixy::PredicateImplies<fixy::aligned<64>, fixy::aligned<8>>);
 static_assert(!fixy::PredicateImplies<fixy::aligned<8>, fixy::aligned<64>>);
-static_assert(!fixy::PredicateImplies<fixy::aligned<48>, fixy::aligned<32>>, "48 is not a multiple of 32");
+static_assert(!fixy::PredicateImplies<fixy::aligned<16>, fixy::aligned<32>>, "16 is not a multiple of 32");
 static_assert(fixy::PredicateImplies<fixy::bounded_above<10>, fixy::bounded_above<20>>);
 static_assert(!fixy::PredicateImplies<fixy::bounded_above<20>, fixy::bounded_above<10>>);
 static_assert(fixy::PredicateImplies<fixy::in_range<3, 7>, fixy::bounded_above<7>>);
@@ -547,11 +547,103 @@ template <auto P, auto Q, class T>
     return 0;
 }
 
+// ── The relation against brute force ─────────────────────────────────
+//
+// For each ordered pair of predicates of a roster that the relation
+// admits, no value of a fixed set satisfies the premise and fails the
+// conclusion.  The rosters cover each edge and each rule of
+// fixy/Predicates.h: the integer roster the bounds, the divisors, the
+// signs and the two combinators, the pointer roster each alignment from
+// 1 to 64 and the null tests, and the size roster the lengths.  The pointer
+// values are 256 consecutive bytes, so each residue of an address modulo 64
+// occurs, and the null pointer.  The ranges are fixed, and no value comes
+// from a seed.
+
+// A container of a count of cells, the value of the size predicates: it
+// answers size and empty as a container does.
+struct counted_cells final {
+    unsigned long count = 0;
+    [[nodiscard]] constexpr unsigned long size() const noexcept { return count; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return count == 0; }
+};
+
+// True when Premise implies Conclusion on each value that check reaches,
+// or when the relation does not admit the pair.
+template <auto Premise, auto Conclusion, class Check>
+[[nodiscard]] bool admitted_pair_holds(Check const& check) noexcept {
+    if constexpr (fixy::PredicateImplies<Premise, Conclusion>) {
+        return check(Premise, Conclusion);
+    } else {
+        return true;
+    }
+}
+
+template <class Check, auto Premise, auto... Conclusions>
+[[nodiscard]] bool each_conclusion_holds(Check const& check) noexcept {
+    return (admitted_pair_holds<Premise, Conclusions>(check) && ...);
+}
+
+template <class Check, auto... Predicates>
+[[nodiscard]] bool each_admitted_pair_holds(Check const& check) noexcept {
+    return (each_conclusion_holds<Check, Predicates, Predicates...>(check) && ...);
+}
+
+int check_implications_against_brute_force() {
+    auto const on_integers = [](auto const& premise, auto const& conclusion) noexcept {
+        for (int value = -24; value <= 24; ++value) {
+            if (premise(value) && !conclusion(value)) return false;
+        }
+        return true;
+    };
+    if (!each_admitted_pair_holds<
+            decltype(on_integers), fixy::positive, fixy::non_negative, fixy::non_zero, fixy::is_zero,
+            fixy::power_of_two, fixy::bounded_above<-1>, fixy::bounded_above<0>, fixy::bounded_above<3>,
+            fixy::bounded_below<-1>, fixy::bounded_below<0>, fixy::bounded_below<1>, fixy::bounded_below<2>,
+            fixy::in_range<-3, -1>, fixy::in_range<0, 3>, fixy::in_range<1, 3>, fixy::in_range<-3, 3>,
+            fixy::divisible_by<1>, fixy::divisible_by<2>, fixy::divisible_by<3>, fixy::divisible_by<4>,
+            fixy::divisible_by<6>, fixy::all_of<fixy::positive, fixy::bounded_above<3>>,
+            fixy::any_of<fixy::is_zero, fixy::positive>>(on_integers)) {
+        return 80;
+    }
+
+    ::fixy::FixedList<char, 256> cells{};
+    for (int index = 0; index < 256; ++index) {
+        static_cast<void>(cells.push('\0').expect("the list holds 256 cells"));
+    }
+    auto const on_addresses = [&cells](auto const& premise, auto const& conclusion) noexcept {
+        if (premise(static_cast<char const*>(nullptr)) && !conclusion(static_cast<char const*>(nullptr))) return false;
+        for (char const& cell : cells) {
+            if (premise(&cell) && !conclusion(&cell)) return false;
+        }
+        return true;
+    };
+    if (!each_admitted_pair_holds<decltype(on_addresses), fixy::aligned<1>, fixy::aligned<2>, fixy::aligned<4>,
+                                  fixy::aligned<8>, fixy::aligned<16>, fixy::aligned<32>, fixy::aligned<64>,
+                                  fixy::non_null, fixy::non_zero, fixy::is_zero>(on_addresses)) {
+        return 81;
+    }
+
+    auto const on_sizes = [](auto const& premise, auto const& conclusion) noexcept {
+        for (unsigned long count = 0; count <= 6; ++count) {
+            counted_cells const counted{.count = count};
+            if (premise(counted) && !conclusion(counted)) return false;
+        }
+        return true;
+    };
+    if (!each_admitted_pair_holds<decltype(on_sizes), fixy::length_ge<0>, fixy::length_ge<1>, fixy::length_ge<2>,
+                                  fixy::length_ge<4>, fixy::exact_size<0>, fixy::exact_size<1>, fixy::exact_size<3>,
+                                  fixy::non_empty>(on_sizes)) {
+        return 82;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     instantiate_every_combinator_at_runtime();
 
+    if (int rc = check_implications_against_brute_force(); rc != 0) return rc;
     if (int rc = check_chained_weakening(); rc != 0) return rc;
     if (int rc = check_value_paths(); rc != 0) return rc;
     if (int rc = check_refined_doors_and_aliases(); rc != 0) return rc;
