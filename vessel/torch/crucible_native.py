@@ -62,7 +62,11 @@ log = logging.getLogger(__name__)
 
 
 # =====================================================================
-# FNV-1a 64-bit — must match C++ fnv1a_bytes() in crucible_fallback.cpp
+# FNV-1a 64-bit: the scope hash of a module path
+#
+# The fold is the FNV-1a of fnv1a_step in vessel/torch/entry_slots.h.  The
+# dispatch library takes the scope hash from the CrucibleState of the thread
+# as it is, and no C++ code folds a module path again.
 # =====================================================================
 
 _FNV_OFFSET = 0xCBF29CE484222325
@@ -214,7 +218,7 @@ class CrucibleAbiMismatchError(RuntimeError):
 
 
 def _fnv1a(data: bytes) -> int:
-    """FNV-1a 64-bit hash, identical to C++ fnv1a_bytes()."""
+    """FNV-1a 64-bit hash, the fold of fnv1a_step in vessel/torch/entry_slots.h."""
     h = _FNV_OFFSET
     for b in data:
         h = ((h ^ b) * _FNV_PRIME) & _MASK64
