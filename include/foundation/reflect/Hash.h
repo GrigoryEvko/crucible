@@ -254,6 +254,23 @@ consteval void append_value_type(std::string& suffix, std::meta::info type) {
              || std::meta::is_reflection_type(type));
 }
 
+// Calls visit with each base of the class or union TYPE, and then with each
+// of its non-static data members, the private ones too, until visit gives
+// true.  True when visit gave true.  Each walk of the parts of a class in
+// this header goes through it.  Complexity: linear in the bases and the
+// members.
+template <class Visit>
+[[nodiscard]] consteval bool any_part_(std::meta::info type, Visit visit) {
+    const std::meta::access_context everywhere = std::meta::access_context::unchecked();
+    for (const std::meta::info base : std::meta::bases_of(type, everywhere)) {
+        if (visit(base)) return true;
+    }
+    for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, everywhere)) {
+        if (visit(member)) return true;
+    }
+    return false;
+}
+
 // True when a value of this type can hold the address of an object, a
 // reference, a member pointer or a reflection.  None of these can be
 // read back to a declared name from inside a class value.  Complexity:
@@ -266,14 +283,8 @@ consteval void append_value_type(std::string& suffix, std::meta::info type) {
     }
     if (std::meta::is_array_type(type)) return carries_unreadable_part(std::meta::remove_all_extents(type));
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
-    const std::meta::access_context everywhere = std::meta::access_context::unchecked();
-    for (const std::meta::info base : std::meta::bases_of(type, everywhere)) {
-        if (carries_unreadable_part(std::meta::type_of(base))) return true;
-    }
-    for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, everywhere)) {
-        if (carries_unreadable_part(std::meta::type_of(member))) return true;
-    }
-    return false;
+    return any_part_(type,
+                     [](std::meta::info part) consteval { return carries_unreadable_part(std::meta::type_of(part)); });
 }
 
 // True when a value of this type holds a union at any depth.  A union
@@ -286,14 +297,7 @@ consteval void append_value_type(std::string& suffix, std::meta::info type) {
     if (std::meta::is_union_type(type)) return true;
     if (std::meta::is_array_type(type)) return carries_a_union(std::meta::remove_all_extents(type));
     if (!std::meta::is_class_type(type)) return false;
-    const std::meta::access_context everywhere = std::meta::access_context::unchecked();
-    for (const std::meta::info base : std::meta::bases_of(type, everywhere)) {
-        if (carries_a_union(std::meta::type_of(base))) return true;
-    }
-    for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, everywhere)) {
-        if (carries_a_union(std::meta::type_of(member))) return true;
-    }
-    return false;
+    return any_part_(type, [](std::meta::info part) consteval { return carries_a_union(std::meta::type_of(part)); });
 }
 
 [[nodiscard]] consteval identity_verdict identity_of_function(std::meta::info function, std::string* suffix);
@@ -762,20 +766,20 @@ inline constexpr std::uint64_t layout_mark_entry = 9;
     state = combine_ids(state, std::meta::alignment_of(plain));
     state = combine_ids(state, layout_name_of(plain));
     if (!std::meta::is_class_type(plain) && !std::meta::is_union_type(plain)) return state;
-    const auto unchecked = std::meta::access_context::unchecked();
-    for (const std::meta::info base : std::meta::bases_of(plain, unchecked)) {
-        state = combine_ids(state, layout_mark_base);
-        state = combine_ids(state, static_cast<std::uint64_t>(std::meta::offset_of(base).total_bits()));
-        state = fold_layout(state, std::meta::type_of(base));
-    }
-    for (const std::meta::info member : std::meta::nonstatic_data_members_of(plain, unchecked)) {
-        state = combine_ids(state, layout_mark_member);
-        state = combine_ids(state, static_cast<std::uint64_t>(std::meta::offset_of(member).total_bits()));
-        state = combine_ids(state, std::meta::is_bit_field(member) ? std::meta::bit_size_of(member) : 0);
-        state = combine_ids(state, std::meta::has_identifier(member) ? hash_name(std::meta::identifier_of(member))
-                                                                     : layout_mark_no_name);
-        state = fold_layout(state, std::meta::type_of(member));
-    }
+    // Each base, and then each member: its mark, its offset in bits, for a
+    // member its width and its name, and the fold of its type.
+    static_cast<void>(any_part_(plain, [&state](std::meta::info part) consteval {
+        const bool is_base = std::meta::is_base(part);
+        state = combine_ids(state, is_base ? layout_mark_base : layout_mark_member);
+        state = combine_ids(state, static_cast<std::uint64_t>(std::meta::offset_of(part).total_bits()));
+        if (!is_base) {
+            state = combine_ids(state, std::meta::is_bit_field(part) ? std::meta::bit_size_of(part) : 0);
+            state = combine_ids(state, std::meta::has_identifier(part) ? hash_name(std::meta::identifier_of(part))
+                                                                       : layout_mark_no_name);
+        }
+        state = fold_layout(state, std::meta::type_of(part));
+        return false;
+    }));
     return state;
 }
 
@@ -797,19 +801,18 @@ template <typename... Ts>
 }
 
 // The digest of the C entries of the namespace Scope whose names start with
-// prefix, such as c_entry_digest<^^::>("crucible_").  Scope is a template
-// argument, so only a unit that names the digest walks the namespace.
-// Complexity: linear in the members of the namespace.
-template <std::meta::info Scope>
-[[nodiscard]] consteval std::uint64_t c_entry_digest(std::string_view prefix) {
+// the text of prefix, such as c_entry_digest<^^::>("crucible_").  Scope is a
+// template argument, so only a unit that names the digest walks the
+// namespace.  Complexity: linear in the members of the namespace.
+template <std::meta::info Scope, std::size_t Size>
+[[nodiscard]] consteval std::uint64_t c_entry_digest(char const (&prefix)[Size]) {
     std::uint64_t state = detail::layout_seed;
     const auto unchecked = std::meta::access_context::unchecked();
     for (const std::meta::info member : std::meta::members_of(Scope, unchecked)) {
         if (!std::meta::is_function(member) || !std::meta::has_c_language_linkage(member)) continue;
-        const std::string_view name = std::meta::identifier_of(member);
-        if (!name.starts_with(prefix)) continue;
+        if (!std::meta::identifier_of(member).starts_with({prefix, Size - 1})) continue;
         state = combine_ids(state, detail::layout_mark_entry);
-        state = combine_ids(state, detail::hash_name(name));
+        state = combine_ids(state, detail::hash_name(std::meta::identifier_of(member)));
         state = combine_ids(state, detail::layout_name_of(std::meta::type_of(member)));
     }
     return state;

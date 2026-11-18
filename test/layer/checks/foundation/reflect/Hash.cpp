@@ -2,6 +2,8 @@
 
 #include <foundation/reflect/Hash.h>
 
+#include <foundation/Quarantine.h>
+
 namespace foundation::reflect {
 
 namespace detail::stable_name_self_test {
@@ -343,6 +345,20 @@ struct Shapes {
         InnerSigned inner;
     } holds_changed_inner;
     struct {
+        std::uint32_t low : 3;
+        std::uint32_t high : 5;
+    } narrow_bits;
+    struct {
+        std::uint32_t low : 4;
+        std::uint32_t high : 4;
+    } other_bits;
+};
+
+// The shapes that hold a raw pointer or a C array, and two entries with C
+// linkage: the digest reads the layout of each of them.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the layout digest reads a raw pointer, a C array and an entry with C linkage")
+struct RawShapes {
+    struct {
         Inner* link;
     } points_to_inner;
     struct {
@@ -354,22 +370,15 @@ struct Shapes {
     struct {
         std::uint8_t bytes[4];
     } four_bytes;
-    struct {
-        std::uint32_t low : 3;
-        std::uint32_t high : 5;
-    } narrow_bits;
-    struct {
-        std::uint32_t low : 4;
-        std::uint32_t high : 4;
-    } other_bits;
 };
+
+extern "C" int layout_test_entry_first(int value) noexcept;
+extern "C" int layout_test_entry_second(double value) noexcept;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 [[nodiscard]] consteval std::uint64_t digest_of_member(std::meta::info member) {
     return layout_digest(std::meta::type_of(member));
 }
-
-extern "C" int layout_test_entry_first(int value) noexcept;
-extern "C" int layout_test_entry_second(double value) noexcept;
 
 }  // namespace layout_test
 
@@ -387,10 +396,10 @@ static_assert(layout_test::digest_of_member(^^layout_test::Shapes::base)
 // extent of an array and the width of a bit-field.
 static_assert(layout_test::digest_of_member(^^layout_test::Shapes::holds_inner)
               != layout_test::digest_of_member(^^layout_test::Shapes::holds_changed_inner));
-static_assert(layout_test::digest_of_member(^^layout_test::Shapes::points_to_inner)
-              != layout_test::digest_of_member(^^layout_test::Shapes::points_to_changed_inner));
-static_assert(layout_test::digest_of_member(^^layout_test::Shapes::three_bytes)
-              != layout_test::digest_of_member(^^layout_test::Shapes::four_bytes));
+static_assert(layout_test::digest_of_member(^^layout_test::RawShapes::points_to_inner)
+              != layout_test::digest_of_member(^^layout_test::RawShapes::points_to_changed_inner));
+static_assert(layout_test::digest_of_member(^^layout_test::RawShapes::three_bytes)
+              != layout_test::digest_of_member(^^layout_test::RawShapes::four_bytes));
 static_assert(layout_test::digest_of_member(^^layout_test::Shapes::narrow_bits)
               != layout_test::digest_of_member(^^layout_test::Shapes::other_bits));
 // The order of a list of types, and the C entries of a namespace.
