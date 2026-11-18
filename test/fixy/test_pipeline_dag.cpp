@@ -1,7 +1,7 @@
 // The diamond graph, run for real: a fan-out stage gives each value to
 // two stages, a fan-in stage reads the two, and each stage body runs one
-// time.  Static assertions check the ports of the diamond and the row of a
-// pipeline.
+// time.  Static assertions check the ports of the diamond, the row of a
+// pipeline, and the net of some stage graphs.
 //
 // test/fixy/test_endpoint.cpp runs a fan-in stage that it builds from
 // channel endpoints.
@@ -9,6 +9,8 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/Pipeline.h>
+#include <fixy/concurrent/StageNet.h>
+#include <foundation/algebra/net/Net.h>
 #include <foundation/effects/Row.h>
 
 #include <cstddef>
@@ -76,6 +78,47 @@ using Diamond = cc::StageGraph<cc::StagePack<FanOutStage, PlainStage, PlainStage
 static_assert(cc::StageGraphWellFormed<Diamond<1>>);
 static_assert(!cc::StageGraphWellFormed<Diamond<0>>);
 static_assert(!cc::StageGraphWellFormed<Diamond<2>>);
+
+// The net of a stage graph (fixy/concurrent/StageNet.h).  The diamond has
+// four stages, an input end and an output end, and four edges and two end
+// wires.  Its edges run forward, so its dataflow and its vicious circles
+// pass.  The fan-out and the fan-in close a cycle with no direction, so it is
+// no forest.
+namespace net = ::foundation::algebra::net;
+
+inline constexpr auto diamond_net = cc::net_of_stage_graph<Diamond<1>>();
+inline constexpr net::NetVerdict diamond_dataflow = net::check_dataflow(diamond_net);
+static_assert(diamond_dataflow.is_admitted(), diamond_dataflow);
+static_assert(net::check_wiring(diamond_net).is_admitted() && net::check_vicious(diamond_net).is_admitted());
+static_assert(net::find_forest_fault(diamond_net).code == net::NetFaultCode::ForestCycle);
+static_assert(net::determinism_of(diamond_net) == net::NetDeterminism::Deterministic);
+static_assert(net::check_canonical_form(diamond_net).is_admitted());
+
+// The diamond with its two middle stages at swapped places in the stage pack
+// is the same net.  A diamond whose upper path enters the second input of the
+// fan-in is another net, although the gate and each check admit the two.
+using MirroredDiamond = cc::StageGraph<cc::StagePack<FanOutStage, PlainStage, PlainStage, FanInStage>,
+                                       cc::EdgePack<cc::StageEdge<0, 2, 0, 0>, cc::StageEdge<0, 1, 1, 0>,
+                                                    cc::StageEdge<2, 3, 0, 0>, cc::StageEdge<1, 3, 0, 1>>>;
+using CrossedDiamond = cc::StageGraph<cc::StagePack<FanOutStage, PlainStage, PlainStage, FanInStage>,
+                                      cc::EdgePack<cc::StageEdge<0, 1, 0, 0>, cc::StageEdge<0, 2, 1, 0>,
+                                                   cc::StageEdge<1, 3, 0, 1>, cc::StageEdge<2, 3, 0, 0>>>;
+static_assert(net::is_same_net(diamond_net, cc::net_of_stage_graph<MirroredDiamond>()));
+static_assert(!net::is_same_net(diamond_net, cc::net_of_stage_graph<CrossedDiamond>()));
+static_assert(net::check_dataflow(cc::net_of_stage_graph<CrossedDiamond>()).is_admitted());
+
+// A chain is a forest, and a chain of three is another net than a chain of
+// two.  One stage is a graph too: its input and its output are the ends.
+using ChainOfTwo = cc::StageGraph<cc::StagePack<PlainStage, PlainStage>, cc::EdgePack<cc::StageEdge<0, 1>>>;
+using ChainOfThree = cc::StageGraph<cc::StagePack<PlainStage, PlainStage, PlainStage>,
+                                    cc::EdgePack<cc::StageEdge<0, 1>, cc::StageEdge<1, 2>>>;
+using OneStage = cc::StageGraph<cc::StagePack<PlainStage>, cc::EdgePack<>>;
+inline constexpr auto chain_net = cc::net_of_stage_graph<ChainOfThree>();
+static_assert(net::check_forest(chain_net).is_admitted() && net::check_dataflow(chain_net).is_admitted());
+static_assert(net::find_canonical_form(chain_net).hash
+              != net::find_canonical_form(cc::net_of_stage_graph<ChainOfTwo>()).hash);
+static_assert(cc::StageGraphWellFormed<OneStage>);
+static_assert(net::check_forest(cc::net_of_stage_graph<OneStage>()).is_admitted());
 
 // The coordinating context must admit the row of every stage, so the row
 // of a pipeline is the union of the stage rows, and no effect more.
