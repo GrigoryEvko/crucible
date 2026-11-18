@@ -589,6 +589,16 @@ PROBES: tuple[Probe, ...] = (
         checks=("fatal",),
     ),
     Probe(
+        "packed_word_get",
+        "get of a field of a PackedWord is the shift and the mask of a raw word, with no check: the type of the word "
+        "names the place of the field",
+    ),
+    Probe(
+        "packed_word_with",
+        "with of a field of a PackedWord is the compare of the value with the width of the field, and the mask and "
+        "the or of a raw word, with no call",
+    ),
+    Probe(
         "heap_bit_set_test",
         "test of a HeapBitSet adds one compare of the id with the count and one branch to a call of the fatal exit to "
         "the load and the test of a raw bitmap.  The count is a run-time value, so no type proves the bound",

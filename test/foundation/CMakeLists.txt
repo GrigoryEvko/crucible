@@ -3441,6 +3441,23 @@ foundation_neg_compile_test(neg_core_heap_bit_set_mint_raw_count
   "no matching function for call to .mint_heap_bit_set<SlotTag>\\(foundation::core::Alloc, uint32_t\\)."
   "cannot convert .8. \\(type .uint32_t. \\{aka .unsigned int.\\}\\) to type .foundation::core::Quantity<foundation::core::unit::Element, unsigned int>.")
 
+# A PackedWord reads and writes each field, refuses a word with a bit above
+# its last field and a value past the width of a field, and agrees with the
+# shift and the mask of a hand-written word.
+foundation_test(test_core_packed_word)
+
+# A layout of a PackedWord fits its word and names each tag one time, and get
+# and with take only a tag of the layout.
+foundation_neg_compile_test(neg_core_packed_word_widths_past_word
+  "template constraint failure for .template<class Word, class \\.\\.\\. Fields>  requires  PackedLayout<Word, Fields \\.\\.\\.> class foundation::core::PackedWord."
+  "the expression .\\(\\(Fields::width \\+ \\.\\.\\. \\+0\\)\\) <= sizeof \\(Word\\) \\* 8 \\[with Fields = \\{foundation::core::BitField<Tags, 5>, foundation::core::BitField<Data, 4>\\}; Word = unsigned char\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_packed_word_tag_twice
+  "template constraint failure for .template<class Word, class \\.\\.\\. Fields>  requires  PackedLayout<Word, Fields \\.\\.\\.> class foundation::core::PackedWord."
+  "the expression .\\(\\(tag_count_<typename Fields::tag_type, Fields \\.\\.\\.>\\) == 1 && \\.\\.\\.\\) \\[with Fields = \\{foundation::core::BitField<Tags, 4>, foundation::core::BitField<Tags, 4>\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_packed_word_tag_of_no_field
+  "no matching function for call to .foundation::core::PackedWord<short unsigned int, foundation::core::BitField<Tags, 10>, foundation::core::BitField<Data, 5> >::get<Other>\\(\\) const."
+  "required for the satisfaction of .NamesOneField<Tag, Fields \\.\\.\\.>. \\[with Tag = Other;")
+
 # A SlotMap gives each value a key of its slot and its generation, refuses a
 # stale, a forged or a removed key, retires a slot at the wrap of its
 # generation, walks its values in the order of the slots, and agrees with a

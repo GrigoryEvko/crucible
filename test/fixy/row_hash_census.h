@@ -1030,6 +1030,11 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::BitCursor,
      "the position of a walk over the indexes of a bit set: it lives inside the loop, and it is never a value in a "
      "signature"},
+    {^^::foundation::core::PackedWord,
+     "one unsigned word of bit fields: it holds bits and makes no claim about what the fields name"},
+    {^^::foundation::core::BitField,
+     "the tag and the width of one field of a packed word: it holds no value, and it is never a value in a "
+     "signature"},
     {^^::foundation::core::SmallList,
      "a list of elements inline and then on the heap: it holds storage and makes no claim about what the elements "
      "hold"},

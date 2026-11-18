@@ -68,6 +68,7 @@
 #include <fixy/Tags.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/PackedWord.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/RunSet.h>
 #include <foundation/effects/Capability.h>
@@ -141,6 +142,7 @@ inline constexpr std::meta::info transparent_payload_families[] = {
 // entry needs a line of its own rather than falling through.
 inline constexpr std::meta::info leaf_payload_families[] = {
     ^^::fixy::Saturated,  // a value and a clamped flag; no row
+    ^^::foundation::core::PackedWord,  // one unsigned word of bit fields; no row
 };
 
 [[nodiscard]] consteval bool is_specialization(std::meta::info type) noexcept {

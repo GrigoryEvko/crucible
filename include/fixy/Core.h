@@ -38,6 +38,7 @@
 #include <foundation/core/List.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/OneOf.h>
+#include <foundation/core/PackedWord.h>
 #include <foundation/core/Parse.h>
 #include <foundation/core/Philox.h>
 #include <foundation/core/Quantity.h>
@@ -326,6 +327,13 @@ using ::foundation::core::low_mask;
 using ::foundation::core::popcount;
 using ::foundation::core::rotl;
 using ::foundation::core::rotr;
+
+// A word of named bit fields (foundation/core/PackedWord.h).
+using ::foundation::core::BitField;
+using ::foundation::core::FieldTag;
+using ::foundation::core::NamesOneField;
+using ::foundation::core::PackedLayout;
+using ::foundation::core::PackedWord;
 
 using ::foundation::core::exchange;
 using ::foundation::core::Exchangeable;

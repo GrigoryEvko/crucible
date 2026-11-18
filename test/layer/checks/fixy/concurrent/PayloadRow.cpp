@@ -64,6 +64,20 @@ static_assert(
 // ── a rostered leaf reports nothing, and says so deliberately ───────
 static_assert(std::is_same_v<payload_row_t<::fixy::Saturated<unsigned>>, eff::Row<>>);
 
+// A packed word holds one unsigned word, and its field tags are names only.
+struct LowField final {};
+struct HighField final {};
+using TwoFieldWord = ::foundation::core::PackedWord<unsigned short, ::foundation::core::BitField<LowField, 4>,
+                                                    ::foundation::core::BitField<HighField, 4>>;
+static_assert(std::is_same_v<payload_row_t<TwoFieldWord>, eff::Row<>>);
+static_assert(payload_row_is_classified<TwoFieldWord>());
+
+// A plain class that holds a packed word answers for the word.
+struct HoldsPackedWord {
+    TwoFieldWord word{};
+};
+static_assert(std::is_same_v<payload_row_t<HoldsPackedWord>, eff::Row<>>);
+
 // ── the gate itself ─────────────────────────────────────────────────
 //
 // What the gate admits, and what it refuses.  The refusals are the

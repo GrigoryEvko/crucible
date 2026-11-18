@@ -481,6 +481,26 @@ enum class ShapeLane : std::uint8_t {
     return set.test(id);
 }
 
+// The packed word of the kinds of the scalar slots of an op: ten bits of tags
+// and five bits of data slots.
+struct ShapeTagsField final {};
+struct ShapeDataField final {};
+using ShapeKinds =
+    fixy::PackedWord<std::uint16_t, fixy::BitField<ShapeTagsField, 10>, fixy::BitField<ShapeDataField, 5>>;
+
+// get of a PackedWord: the shift and the mask of the word.
+[[gnu::used]] std::uint8_t packed_word_get(ShapeKinds kinds) noexcept { return kinds.get<ShapeDataField>(); }
+
+// with of a PackedWord: the compare of the value with the width of the field,
+// and the mask and the or of the word.  A refused value gives zero.
+[[gnu::used]] std::uint16_t packed_word_with(ShapeKinds kinds, std::uint8_t data) noexcept {
+    std::uint16_t word = 0;
+    for (ShapeKinds const changed : kinds.with<ShapeDataField>(data)) {
+        word = changed.bits();
+    }
+    return word;
+}
+
 // get of a SlotMap: the compare of the index with the used slots, the load of
 // the generation, its compare with the key and the test of its low bit, and
 // the load of the value.
@@ -1467,6 +1487,17 @@ struct RawColumn final {
 
 [[gnu::used]] bool bit_set_lane_test_raw(std::uint16_t const& word, std::uint8_t lane) noexcept {
     return ((std::uint32_t{word} >> lane) & 1u) != 0;
+}
+
+[[gnu::used]] std::uint8_t packed_word_get_raw(std::uint16_t word) noexcept {
+    return static_cast<std::uint8_t>((std::uint32_t{word} >> 10) & 0x1Fu);
+}
+
+[[gnu::used]] std::uint16_t packed_word_with_raw(std::uint16_t word, std::uint8_t data) noexcept {
+    if ((std::uint32_t{data} & ~0x1Fu) != 0) {
+        return 0;
+    }
+    return static_cast<std::uint16_t>((std::uint32_t{word} & ~0x7C00u) | (std::uint32_t{data} << 10));
 }
 
 // A bitmap on the heap with its count of bits.
