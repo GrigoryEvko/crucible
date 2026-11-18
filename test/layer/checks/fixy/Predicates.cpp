@@ -2,8 +2,6 @@
 
 #include <fixy/Predicates.h>
 
-#include <array>
-
 namespace fixy {
 
 // The checks of the implication relation between the predicates are in the
@@ -54,8 +52,13 @@ constexpr auto false_implies_anything = implies<negate<positive>, positive>;
 static_assert(false_implies_anything(1));
 static_assert(!false_implies_anything(0));
 
-constexpr std::array<int, 8> a8{};
-constexpr std::array<int, 7> a7{};
+// Two values with a size, as exact_size reads them.
+template <std::size_t Count>
+struct SizedProbe {
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return Count; }
+};
+constexpr SizedProbe<8> a8{};
+constexpr SizedProbe<7> a7{};
 static_assert(exact_size<8>(a8));
 static_assert(!exact_size<7>(a8));
 static_assert(exact_size<7>(a7));
