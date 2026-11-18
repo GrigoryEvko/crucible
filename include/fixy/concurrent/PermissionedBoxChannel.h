@@ -204,6 +204,10 @@ public:
             return std::move(cells_).release();
         }
 
+        // The close door of the inner handle: the producer ends its stream
+        // before the end of its scope.
+        void close() && noexcept { std::move(cells_).close(); }
+
         // Gives the object of the Box to the ring.  The result is empty when
         // the ring took the object, and holds the same Box when the ring was
         // full.

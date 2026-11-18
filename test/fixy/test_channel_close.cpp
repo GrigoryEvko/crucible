@@ -500,12 +500,67 @@ void threaded_sink(In&& in, Out&& out) noexcept {
     return failures;
 }
 
+// The close door of a producer handle ends the stream before the end of the
+// scope of the handle.  The wire producer closes the channel at once.  The
+// first of two merge producers leaves the channel open, and the second closes
+// it, and each close gives its pool share back at once.
+[[nodiscard]] int producers_close_before_their_scope_ends() noexcept {
+    int failures = 0;
+    {
+        auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, SpscTag>>();
+        using Wire = cc::channel_t<int, 8, decltype(root)>;
+        Wire channel{};
+        auto [producer_perm, consumer_perm] =
+            perm::mint_permission_split<Wire::producer_tag, Wire::consumer_tag>(std::move(root));
+        auto consumer = channel.consumer(std::move(consumer_perm));
+        auto producer = channel.producer(std::move(producer_perm));
+        push_or_spin(producer, 4);
+        std::move(producer).close();
+        if (!channel.is_closed()) {
+            ::fixy::report(::fixy::Sink::Err, "the wire channel is not closed after the close of its producer\n");
+            ++failures;
+        }
+        failures += expect_code("the item before the close", code_of(consumer.try_receive()), 4);
+        failures += expect_code("a receive after the close", code_of(consumer.try_receive()), kClosed);
+        ::foundation::linear::drop(std::move(consumer));
+    }
+    {
+        auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscTag>>();
+        using Merge = cc::channel_t<int, 8, decltype(root)>;
+        auto [producer_root, consumer_perm] =
+            perm::mint_permission_split<Merge::producer_tag, Merge::consumer_tag>(std::move(root));
+        Merge channel{std::move(producer_root)};
+        auto consumer = channel.consumer(std::move(consumer_perm));
+        const eff::cap::Nondet merge = eff::testing::test().nondet;
+        auto first = lend(channel);
+        auto second = lend(channel);
+        push_or_spin(first, 5);
+        std::move(first).close();
+        if (channel.outstanding_producers() != 1) {
+            ::fixy::report(::fixy::Sink::Err, "the close of a merge producer kept its pool share\n");
+            ++failures;
+        }
+        failures += expect_code("the item of the closed producer", code_of(consumer.try_receive(merge)), 5);
+        failures += expect_code("a channel with one producer left", code_of(consumer.try_receive(merge)), kEmpty);
+        std::move(second).close();
+        failures +=
+            expect_code("a channel after the close of each producer", code_of(consumer.try_receive(merge)), kClosed);
+        if (channel.outstanding_producers() != 0) {
+            ::fixy::report(::fixy::Sink::Err, "the close of the last merge producer kept its pool share\n");
+            ++failures;
+        }
+        ::foundation::linear::drop(std::move(consumer));
+    }
+    return failures;
+}
+
 }  // namespace
 
 int main() {
     int failures = 0;
     failures += spsc_close_and_release();
     failures += mpsc_last_producer_closes();
+    failures += producers_close_before_their_scope_ends();
     failures += stage_run_ends_its_handles();
     failures += rounds_receive_each_item_before_closed();
     failures += threaded_pipeline_without_sentinel();

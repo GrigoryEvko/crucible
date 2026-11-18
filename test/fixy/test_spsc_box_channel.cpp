@@ -103,8 +103,9 @@ void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
     CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 0);
 }
 
-// The end of the producer handle closes the channel.  try_receive gives each
-// Box that the ring still holds, and then Closed.
+// The close door of the producer handle closes the channel before the end of
+// the scope of the handle.  try_receive gives each Box that the ring still
+// holds, and then Closed.
 void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept {
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, ParcelTag>>();
@@ -116,7 +117,7 @@ void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept 
         auto producer = channel.producer(std::move(producer_perm));
         CRUCIBLE_TEST_ASSERT(test, consumer.try_receive().err() == fixy::some(c::NoItem::Empty));
         CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(5)).is_none());
-        ::foundation::linear::drop(std::move(producer));
+        std::move(producer).close();
 
         CRUCIBLE_TEST_ASSERT(test, consumer.is_closed());
         fixy::Option<fixy::Box<Parcel>> const last = consumer.try_receive().ok();

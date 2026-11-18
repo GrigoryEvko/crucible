@@ -304,6 +304,21 @@ public:
             return std::move(share_);
         }
 
+        // The close door.  The handle ends its producer of the stream before
+        // the end of its scope, so a reader of the code sees where the stream
+        // ends, and it is unbound after the call.  The last producer handle
+        // closes the channel.  The token of a wire ends here, and the share of
+        // a merge goes back to its pool here.
+        void close() && noexcept {
+            ch_->end_producer_();
+            ch_.unbind();
+            if constexpr (Form == ChannelForm::wire) {
+                ::foundation::linear::drop(std::move(share_));
+            } else {
+                typename parts::producer_share const ended{std::move(share_)};
+            }
+        }
+
         // The value comes by reference to const, which is the shape of a
         // producer pole in fixy/concurrent/HandleTraits.h.  A value parameter
         // hides the pole, and no stage can then feed the channel.
