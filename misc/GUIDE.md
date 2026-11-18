@@ -165,7 +165,7 @@ PyTorch's CUDACachingAllocator: freelist search, splitting, coalescing, mutex co
 
 `PoolAllocator` makes one aligned host allocation of `pool_bytes` when a region becomes active. Every "allocation" = `base_ptr + offset`: no mutex, no fragmentation, no contention. Plan is read-only at runtime. The PyTorch Vessel puts no tensor there at this time, because COMPILED mode still does each operation eagerly (refer to L4). The device pool, one `cudaMalloc(pool_bytes)` for each plan, is planned.
 
-**Deterministic:** same DFG → same plan → same addresses. When compiled kernels use the plan (planned), this removes the history-dependent allocator non-determinism of PyTorch. **Arena allocator** for DAG metadata: bump-pointer, ~2ns/alloc. An `ArenaEpoch` ends all bytes of an arena at one time, and the arena keeps its blocks for the next epoch (`include/crucible/Arena.h`). **Aliased tensors** (views, transposes): one offset for base storage, aliases reference with different (offset, sizes, strides). Zero-cost. **Dynamic shapes:** new plan built by background thread, swapped atomically at iteration boundary.
+**Deterministic:** same DFG → same plan → same addresses. When compiled kernels use the plan (planned), this removes the history-dependent allocator non-determinism of PyTorch. **Arena allocator** for DAG metadata: bump-pointer, ~2ns/alloc. `BumpArena::with_epoch` ends at one time each byte that the arena gave out during its body, and the arena keeps its blocks for the next epoch (`include/foundation/core/BumpArena.h`). **Aliased tensors** (views, transposes): one offset for base storage, aliases reference with different (offset, sizes, strides). Zero-cost. **Dynamic shapes:** new plan built by background thread, swapped atomically at iteration boundary.
 
 **Automatic activation checkpointing** (planned) from measured data:
 ```
@@ -757,12 +757,12 @@ void process(const TraceEntry* entry) {
 **Compiler enforcement:** `-fsanitize=address` in debug, `-Werror=use-after-free=3 -Werror=free-nonheap-object -Werror=dangling-pointer=2 -Werror=mismatched-new-delete -Wanalyzer-use-after-free -Wanalyzer-double-free`. No code of the tree throws through `__cxa_throw`. A container or a view of the standard library can throw inside libstdc++, and §XII tells how the rule `artifact-symbols` holds each such path on the artifact.
 
 **Discipline:**
-- Graph and DAG memory lives in an Arena (bump pointer, ~2 ns alloc, no fragmentation, no UAF) or in the buffers of a region. Only `std::move(epoch).end()` of an `ArenaEpoch` ends the bytes of an arena before the arena ends (`include/crucible/Arena.h`).
+- Graph and DAG memory lives in a `BumpArena` (bump pointer, ~2 ns alloc, no fragmentation, no UAF) or in the buffers of a region. Only the end of an epoch of `with_epoch` ends the bytes of an arena before the arena ends (`include/foundation/core/BumpArena.h`).
 - No `new` / `delete`. No `malloc` / `free` on hot path.
 - No `std::shared_ptr`. No `std::unique_ptr` on hot path (only for top-level ring/MetaLog buffers).
 - `= delete("reason")` on copy and move of non-value types. WITH a reason string.
 - `static_assert(sizeof(T) == N)` on layout-critical structs.
-- Arena type punning uses `std::start_lifetime_as<T>()` (C++23) — NOT `reinterpret_cast`.
+- `BumpArena` builds each element with its constructor, through `make` and `array`. A lifetime start over bytes uses `foundation::lifetime::start_as_array` (`include/foundation/Lifetime.h`), which refuses a proof type — NOT `reinterpret_cast`. The rule `owners` refuses `std::start_lifetime_as` outside that header.
 
 ```cpp
 // ✓ CORRECT
@@ -773,7 +773,7 @@ class Arena {
     template<typename T>
     T* alloc_obj() {
         void* raw = bump(sizeof(T), alignof(T));
-        return std::start_lifetime_as<T>(raw);  // C++23, not reinterpret_cast
+        return ::new (raw) T{};  // the constructor starts the lifetime, as BumpArena::make does
     }
 };
 ```
@@ -2027,7 +2027,7 @@ template<typename T>
                   "Arena does not call destructors");
     void* raw = bump(sizeof(T), alignof(T));
     if (!raw) [[unlikely]] std::abort();
-    auto* obj = std::start_lifetime_as<T>(raw);
+    auto* obj = static_cast<T*>(raw);             // the address only: the new below starts the lifetime
     ::new (obj) T{};                              // default-init (NSDMI fires)
     return obj;
 }
