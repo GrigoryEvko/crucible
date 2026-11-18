@@ -58,9 +58,69 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
     return copy;
 }
 
+// write_meta writes the image of a TensorMeta, and read_meta decodes those
+// bytes as an UncheckedTensorMeta.  So the image of a descriptor and the
+// image of its fields are one byte string, and decode_tensor_meta of the
+// fields gives the descriptor back with no data pointer and no grad_fn.
+static void check_descriptor_images_agree() {
+    crucible::TensorMeta meta = make_meta(16, 4);
+    meta.dtype = crucible::ScalarType::Half;
+    meta.device_type = crucible::DeviceType::CUDA;
+    meta.device_idx = 3;
+    meta.layout = crucible::Layout::Strided;
+    meta.requires_grad = true;
+    meta.flags = crucible::meta_flags::IS_LEAF | crucible::meta_flags::IS_CONJ;
+    meta.output_nr = 2;
+    meta.storage_offset = -5;
+    meta.version = 0x01020304u;
+    meta.storage_nbytes = 0x1122334455667788ULL;
+
+    crucible::UncheckedTensorMeta fields{};
+    for (const auto lane : decltype(fields.sizes)::indices()) {
+        fields.sizes.at(lane) = crucible::raw_tensor_dim(meta.sizes[lane.raw()]);
+        fields.strides.at(lane) = crucible::raw_tensor_dim(meta.strides[lane.raw()]);
+    }
+    fields.ndim = meta.ndim;
+    fields.dtype = std::to_underlying(meta.dtype);
+    fields.device_type = std::to_underlying(meta.device_type);
+    fields.device_idx = meta.device_idx;
+    fields.layout = std::to_underlying(meta.layout);
+    fields.requires_grad = static_cast<uint8_t>(meta.requires_grad ? 1 : 0);
+    fields.flags = meta.flags;
+    fields.output_nr = meta.output_nr;
+    fields.storage_offset = meta.storage_offset;
+    fields.version = meta.version;
+    fields.storage_nbytes = meta.storage_nbytes;
+    // The local parts of the fields have no place in the image.
+    fields.pad0 = 0xFFFFFFFFu;
+    fields.grad_fn_hash = 0x5EED;
+
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::TensorMeta>> meta_image{};
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::UncheckedTensorMeta>> fields_image{};
+    ::fixy::encode(meta, meta_image.view());
+    ::fixy::encode(fields, fields_image.view());
+    assert(meta_image == fields_image && "the image of a descriptor is the image of its fields");
+
+    // The reader decodes the image, so the local parts of the fields come
+    // back as zero.
+    const auto& written = meta_image;
+    const crucible::UncheckedTensorMeta read =
+        ::fixy::decode<crucible::UncheckedTensorMeta>(written.view())
+            .match([](crucible::UncheckedTensorMeta value) noexcept { return value; },
+                   [](::fixy::DecodeFault) noexcept { return crucible::UncheckedTensorMeta{.ndim = 0xFF}; });
+    assert(read.pad0 == 0 && read.grad_fn_hash == 0 && "the image holds no local part");
+    const crucible::TensorMeta back =
+        crucible::decode_tensor_meta(read, crucible::external_data_ptr(nullptr)).expect("the image holds a descriptor");
+    crucible::TensorMeta expected = meta;
+    expected.data_ptr = crucible::external_data_ptr(nullptr);
+    expected.grad_fn_hash = crucible::grad_fn_hash(0);
+    assert(back == expected && "the door gives the descriptor back with no data pointer and no grad_fn");
+}
+
 [[gnu::cold]] int main() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena dag_arena{1 << 16};
+    check_descriptor_images_agree();
 
     constexpr uint32_t NUM_OPS = 3;
     // A storage of more than 4 GiB, which a size of 32 bits cannot hold.
@@ -206,7 +266,7 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 17;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 18;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -228,9 +288,12 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         // of the header move the bytes.  CDAG_VERSION 17 writes the data
         // slots of each op in the word of its tags, and the double of op 1 is
         // a data scalar.  So the version, the word of op 1 and the content
-        // hash of the header move the bytes.
-        constexpr size_t EXPECTED_WIRE_BYTES = 1828;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0x5acb2024b32b59b6ULL;
+        // hash of the header move the bytes.  CDAG_VERSION 18 writes each
+        // tensor descriptor as its image of the Protocol family, with no data
+        // pointer and no hash of the grad_fn: 16 bytes less for each of the 9
+        // descriptors of the image, so 144 bytes less.
+        constexpr size_t EXPECTED_WIRE_BYTES = 1684;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0xaa19bc806f609735ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             std::fprintf(stderr,

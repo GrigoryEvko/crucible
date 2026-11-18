@@ -971,7 +971,11 @@ PROBES: tuple[Probe, ...] = (
         "shorter",
         branches=True,
     ),
-    Probe("protocol_hash", "hash of the Protocol family is the fmix64 fold of the parts that a hand fold writes"),
+    Probe(
+        "protocol_hash",
+        "hash of the Protocol family puts the 16 bytes of the image into one block and folds it with one multiply, "
+        "as a hand fold of the two words does",
+    ),
     Probe("protocol_encode", "encode of the Protocol family writes each part with one store, as memcpy does"),
     Probe(
         "protocol_decode",

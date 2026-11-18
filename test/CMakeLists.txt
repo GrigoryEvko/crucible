@@ -2296,10 +2296,10 @@ crucible_neg_compile_test(neg_tensor_meta_layout_above_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<crucible::IsValidLayout\\(\\), signed char>\\(99\\)")
 
-# write_meta writes the data pointer and the gradient-function hash as
-# zero.  Each zero is a constexpr fixy::Refined<is_zero, uint64_t>, so
-# an edit that feeds the live field in does not compile, where it would
-# otherwise break DetSafe bit-stable replay.  Two fixtures:
+# A constant refined to be zero, fixy::Refined<is_zero, uint64_t>, holds a
+# field that must be zero in an image, so an edit that feeds a live value in
+# does not compile, where it would otherwise break DetSafe bit-stable
+# replay.  Two fixtures:
 #   * neg_serialize_is_zero_nonzero_construct — boundary edge (v == 1)
 #     catches a predicate relaxed to admit every non-negative value.
 #   * neg_serialize_is_zero_uint64_max — wide miss (UINT64_MAX)

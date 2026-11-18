@@ -121,8 +121,9 @@ namespace {
     assert(region_a.merkle_hash.raw() != 0 && region_b.merkle_hash.raw() != 0);
     assert(branch.merkle_hash.raw() == expected);
     // The store keeps the merkle hash of a branch, so the value of this
-    // branch is frozen.  It folds the hash of the default guard.
-    assert(branch.merkle_hash.raw() == 0x74BB4D3DE12D8DADULL);
+    // branch is frozen.  It folds the hash of the default guard, and
+    // CDAG_VERSION 18 pins it.
+    assert(branch.merkle_hash.raw() == 0xCC66375416F9F4E9ULL);
 
     // An image of the branch holds the merkle hash of each target.  A
     // resolver that knows only the first target gives the second arm no

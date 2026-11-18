@@ -68,8 +68,15 @@ using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::s
 // (ScalarSlotKinds), and the guard word and the content hash read the tag of
 // a data slot but not its value.  A region of version 16 holds a content hash
 // and guard words that the current code no longer computes.
+// 18 (2026-11-18): the hash of the Protocol family folds the blocks of the
+// image with the step of foldhash-f, so the hash of each guard, the merkle
+// hash of each branch, the signature of the feedback edges and the hash of a
+// loop term change.  And each tensor descriptor goes on the wire as its image
+// of the family, with no data pointer and no hash of the grad_fn: 16 bytes
+// less for each tensor.  A region of version 17 holds other bytes and other
+// hashes.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{17});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{18});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
@@ -317,72 +324,29 @@ struct Reader {
     }
 };
 
-// Two fields are process-local and must never reach persisted bytes: the data
-// pointer is a runtime address, and the gradient-function hash is an identity
-// only this process holds. Both are written as zero, and each zero is a
-// constant refined to be zero, so a later edit that feeds the live field in
-// does not compile, where it would otherwise produce an image whose bytes
-// differ between runs. Pad bytes are zero for the same reason.
-inline void write_meta(Writer& w, const TensorMeta& m) {
-    for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
-        w.w(m.sizes[d].value());
-    }
-    for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
-        w.w(m.strides[d].value());
-    }
-    constexpr auto zero_ptr = ::fixy::mint_refined<::fixy::is_zero>(std::uint64_t{0});
-    w.w(zero_ptr.value());
-    w.w(m.ndim);
-    w.w(m.dtype);
-    w.w(m.device_type);
-    w.w(m.device_idx);
-    w.w(m.layout);
-    w.w(m.requires_grad);
-    w.w(m.flags);
-    w.w(m.output_nr);
-    w.w(m.storage_offset);
-    w.w(m.version);
-    w.w(m.storage_nbytes);
-    constexpr auto zero_grad_fn_hash = ::fixy::mint_refined<::fixy::is_zero>(std::uint64_t{0});
-    w.w(zero_grad_fn_hash.value());
-}
+// A tensor descriptor goes on the wire as its image of the Protocol family
+// (Writer::write_image): each field in declaration order, the low byte first.
+// The data pointer, the storage generation and the hash of the grad_fn are
+// local parts of a TensorMeta, so the image holds no byte of them, and no
+// image can carry an address or an identity of one process to another.
+inline void write_meta(Writer& w, const TensorMeta& m) { w.write_image(m); }
 
-// The two process-local fields are reset here whatever the bytes hold, so an
-// older or corrupt image cannot resurrect an address from another process.
+// The reader decodes the image as an UncheckedTensorMeta, whose image has the
+// same bytes, and decode_tensor_meta makes the TensorMeta of it.  That door
+// refuses each field that breaks a claim of a descriptor: a rank past
+// kMaxTensorNDim, a size or a stride past kMaxTensorDimExtent, a lane past
+// the rank that holds no zero, an element type, a device type or a layout
+// that names no enumerator, a device index below -1, a gradient byte other
+// than 0 and 1, and a reserved bit of the flags.  Each refusal is
+// field_out_of_range.  A refused descriptor gives the default TensorMeta,
+// and the parse that follows it is discarded.  The descriptor has no data
+// pointer and no grad_fn.
 inline TensorMeta read_meta(Reader& r) {
-    TensorMeta m{};
-    // A dimension past the extent bound is refused here.  tensor_dim states
-    // the bound as a contract, which aborts on a byte from outside.
-    for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
-        m.sizes[d] = tensor_dim(r.read_gated<int64_t>(::fixy::bounded_above<kMaxTensorDimExtent>));
-    }
-    for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
-        m.strides[d] = tensor_dim(r.read_gated<int64_t>(::fixy::bounded_above<kMaxTensorDimExtent>));
-    }
-    (void)r.r<uint64_t>();  // the persisted data pointer, deliberately dropped
-    m.data_ptr = external_data_ptr(nullptr);
-    // The rank is bounded by the fixed width of the size and stride arrays.
-    m.ndim = make_ndim(::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(
-        r.read_gated<uint8_t>(::fixy::bounded_above<kMaxTensorNDim>)));
-    // The scalar-type enumerators are sparse, and a value outside the set
-    // reaches a switch whose default is marked unreachable.
-    m.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(r.read_gated<int8_t>(valid_scalar_type)));
-    // The device type and the layout both feed the content hash, which is the
-    // node's identity, so an unrecognised value would not fail loudly. It
-    // would produce a node whose identity silently disagrees with the one that
-    // was written.
-    m.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
-    m.device_idx = r.r<int8_t>();
-    m.layout = make_layout(::fixy::mint_refined<valid_layout>(r.read_gated<int8_t>(valid_layout)));
-    m.requires_grad = r.read_bool();
-    m.flags = r.r<uint8_t>();
-    m.output_nr = r.r<uint8_t>();
-    m.storage_offset = r.r<int64_t>();
-    m.version = r.r<uint32_t>();
-    m.storage_nbytes = r.r<uint64_t>();
-    (void)r.r<uint64_t>();  // the persisted gradient-function hash, dropped
-    m.grad_fn_hash = grad_fn_hash(0);
-    return m;
+    const UncheckedTensorMeta fields = r.read_image(UncheckedTensorMeta{});
+    ::fixy::Option<TensorMeta> meta = decode_tensor_meta(fields, external_data_ptr(nullptr));
+    if (meta.is_none()) [[unlikely]]
+        r.refuse(LoadError::field_out_of_range);
+    return std::move(meta).value_or(TensorMeta{});
 }
 
 // A plan slot and a guard go on the wire as their images of the Protocol

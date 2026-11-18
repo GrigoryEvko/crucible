@@ -567,19 +567,14 @@ inline ::fixy::Ref<LoopNode> TraceNode::expect_loop() noexcept {
     return ::fixy::Ref<LoopNode>{::fixy::to(static_cast<LoopNode&>(*this))};
 }
 
-// An empty edge set hashes to 0 and any non-empty set hashes non-zero.  The
-// non-zero seed is what makes the first claim hold: fmix64 is a permutation,
-// so only one accumulator state maps to 0, and the seed is not it.  The edge
-// count folds in as well, so {A} and {A, A} differ.
+// The hash of the Protocol family of the edges as one run: their images one
+// after the other, and then their count, so {A} and {A, A} differ and the
+// order of the edges takes part.  An empty edge set hashes to 0, and a
+// non-empty set never does: the one fold that gives 0 gives 1 here.
 CRUCIBLE_PURE inline uint64_t feedback_signature(::fixy::View<const FeedbackEdge> edges) noexcept {
     if (edges.size() == 0) return 0;
-    constexpr uint64_t kSeed = 0x6665656462616B73ULL;  // "feedbaks"
-    uint64_t signature_state = kSeed;
-    for (const auto& edge : edges) {
-        signature_state = ::foundation::reflect::combine_ids(signature_state, ::fixy::hash(edge).raw());
-    }
-    signature_state = ::foundation::reflect::combine_ids(signature_state, edges.size());
-    return signature_state;
+    uint64_t const signature = ::fixy::hash(edges).raw();
+    return signature == 0 ? uint64_t{1} : signature;
 }
 
 // The local Spec is the explicit projection onto the fields that carry

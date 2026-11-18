@@ -363,12 +363,18 @@ using ValidLayout = ::fixy::Refined<valid_layout, std::int8_t>;
 }
 
 // The fields of one tensor descriptor as a writer outside the process gave
-// them: a C caller of the vessel, or a metadata record of a trace file.  No
-// field holds a checked claim, so this type is not a TensorMeta, and
-// decode_tensor_meta is the one door from it to a TensorMeta.  The data
-// pointer is not a field, because only the caller of the door knows if the
-// address has a meaning in this process.
-struct UncheckedTensorMeta {
+// them: a C caller of the vessel, a metadata record of a trace file, or the
+// image of a descriptor in a region of the store.  No field holds a checked
+// claim, so this type is not a TensorMeta, and decode_tensor_meta is the one
+// door from it to a TensorMeta.  The data pointer is not a field, because
+// only the caller of the door knows if the address has a meaning in this
+// process.
+//
+// The image of the Protocol family of this type has the bytes of the image of
+// a TensorMeta, part for part: the pad of the C layout and the hash of the
+// grad_fn are local parts, as the local parts of a TensorMeta are.  So the
+// reader of the store decodes the image of a TensorMeta as this type.
+struct[[= ::fixy::derive_protocol{}]] UncheckedTensorMeta {
     ::fixy::FixedArray<int64_t, kMaxTensorNDim> sizes{};
     ::fixy::FixedArray<int64_t, kMaxTensorNDim> strides{};
     uint8_t ndim = 0;
@@ -381,10 +387,13 @@ struct UncheckedTensorMeta {
     uint8_t output_nr = 0;
     int64_t storage_offset = 0;
     uint32_t version = 0;
-    // The padding before the storage size.  The door does not read it.
-    uint32_t pad0 = 0;
+    // The padding before the storage size.  The door does not read it, and
+    // the image does not hold it.
+    [[= ::fixy::local_part{}]] uint32_t pad0 = 0;
     uint64_t storage_nbytes = 0;
-    uint64_t grad_fn_hash = 0;
+    // The identity of an autograd object of the process of the writer.  The
+    // image does not hold it, so a descriptor of the store has no grad_fn.
+    [[= ::fixy::local_part{}]] uint64_t grad_fn_hash = 0;
 };
 
 // The TensorMeta of the fields, with data_ptr as its data pointer, or no value

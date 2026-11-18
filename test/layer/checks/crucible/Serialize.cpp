@@ -22,6 +22,13 @@ static_assert(::fixy::encoded_size_v<Guard> == 12 && sizeof(Guard) == 12,
 static_assert(kTensorSlotWireBytes == 40 && sizeof(TensorSlot) == kTensorSlotWireBytes,
               "the image of a TensorSlot is its 40 bytes.  A new field changes the format of the store.");
 
+// write_meta writes the image of a TensorMeta, and read_meta decodes it as an
+// UncheckedTensorMeta, so the two images have one size.  The test of the
+// store compares their bytes.
+static_assert(::fixy::encoded_size_v<TensorMeta> == 156 && ::fixy::encoded_size_v<UncheckedTensorMeta> == 156,
+              "the image of a descriptor is its 156 bytes.  A new field changes the format of the store.");
+static_assert(::fixy::Decodable<UncheckedTensorMeta> && !::fixy::Decodable<TensorMeta>);
+
 }  // namespace detail_ser
 
 }  // namespace crucible

@@ -179,47 +179,42 @@ using Image = FixedArray<std::byte, encoded_size_v<Sample>>;
     return left.address <=> right.address;
 }
 
-// The hand fold of the hash of THE HASH of foundation/core/Protocol.h.
-constexpr std::uint64_t kClassSeed = 0x9E3779B97F4A7C15ULL;
-constexpr std::uint64_t kArrayPrime = 0x100000001b3ULL;
+// The hand fold of THE HASH of foundation/core/Protocol.h over the bytes of
+// an image: blocks of 16 bytes, the last one filled with zero bytes, each
+// block as two little-endian words.
+constexpr std::uint64_t kFoldSeed = 0x243f6a8885a308d3ULL;
+constexpr std::uint64_t kStartSeed = 0x13198a2e03707344ULL;
 
-[[nodiscard]] std::uint64_t mix(std::uint64_t word) noexcept { return ::foundation::reflect::fmix64(word); }
+// The hash of the pinned Sample of test_hash_agrees_with_the_hand_fold, from
+// a fold of its image by a Python script outside the tree: the fold is
+// integer arithmetic on the bytes of the image, so each target gives it.
+constexpr std::uint64_t kPinnedSampleHash = 0x00ed05457e277e0cULL;
 
-[[nodiscard]] std::uint64_t hand_hash(Sample const& sample) noexcept {
-    std::uint64_t const header = mix(kClassSeed * kClassSeed ^ mix(static_cast<std::uint64_t>(sample.tag)));
-    std::uint64_t pad = 0;
-    for (std::uint8_t const byte : sample.pad.view()) {
-        pad = pad * kArrayPrime ^ mix(byte);
+[[nodiscard]] std::uint64_t folded_multiply(std::uint64_t left, std::uint64_t right) noexcept {
+    ::foundation::core::WideProduct<std::uint64_t> const product = ::foundation::core::widening_mul(left, right);
+    return product.low ^ product.high;
+}
+
+template <std::size_t N>
+[[nodiscard]] std::uint64_t hand_hash_of_image(FixedArray<std::byte, N> const& image) noexcept {
+    std::uint64_t accumulator = kStartSeed;
+    for (std::size_t first = 0; first < N; first += 16) {
+        std::uint64_t low = 0;
+        std::uint64_t high = 0;
+        for (std::size_t lane = 0; lane < 16; ++lane) {
+            std::size_t const at = first + lane;
+            std::uint64_t const byte =
+                at < N ? static_cast<std::uint8_t>(image.at(Index<N>::check(at).expect("the byte is in the image")))
+                       : 0;
+            if (lane < 8) {
+                low |= byte << (8 * lane);
+            } else {
+                high |= byte << (8 * (lane - 8));
+            }
+        }
+        accumulator = folded_multiply(low ^ accumulator, high ^ kFoldSeed);
     }
-    std::uint64_t lanes = 0;
-    for (std::uint16_t const lane : sample.lanes.view()) {
-        lanes = lanes * kArrayPrime ^ mix(lane);
-    }
-    std::uint64_t pairs = 0;
-    for (std::int32_t const pair : sample.pairs.view()) {
-        pairs = pairs * kArrayPrime ^ mix(static_cast<std::uint64_t>(pair));
-    }
-    std::uint64_t const ticket = mix(kClassSeed * kClassSeed ^ mix(sample.ticket.raw()));
-    FixedArray<std::uint64_t, 13> const parts{
-        header,
-        mix(sample.small),
-        mix(static_cast<std::uint64_t>(sample.signed_small)),
-        mix(sample.flag ? 1U : 0U),
-        mix(static_cast<std::uint64_t>(sample.phase)),
-        mix(pad),
-        mix(sample.word),
-        mix(static_cast<std::uint64_t>(sample.wide)),
-        mix(bit_cast<std::uint32_t>(sample.ratio)),
-        mix(bit_cast<std::uint64_t>(sample.scale)),
-        mix(lanes),
-        mix(pairs),
-        ticket,
-    };
-    std::uint64_t state = kClassSeed;
-    for (std::uint64_t const part : parts.view()) {
-        state = state * kClassSeed ^ part;
-    }
-    return mix(state);
+    return accumulator;
 }
 
 // The byte at an offset of an image.
@@ -261,6 +256,17 @@ void put_word(Image& image, std::size_t at, Word word) noexcept {
 [[nodiscard]] Image image_of(Sample const& sample) noexcept {
     Image image{};
     encode(sample, image.view());
+    return image;
+}
+
+// The hand hash of a Sample: the hand fold of its hand image.
+[[nodiscard]] std::uint64_t hand_hash(Sample const& sample) noexcept { return hand_hash_of_image(hand_image(sample)); }
+
+// The image of a value of an Encodable type, by encode.
+template <class T>
+[[nodiscard]] FixedArray<std::byte, encoded_size_v<T>> encoded(T const& value) noexcept {
+    FixedArray<std::byte, encoded_size_v<T>> image{};
+    encode(value, image.view());
     return image;
 }
 
@@ -307,6 +313,294 @@ void test_hash_agrees_with_the_hand_fold() {
     pinned.pairs.at(index<1>()) = -7;
     pinned.ticket = Ticket{42};
     CRUCIBLE_FATAL_INVARIANT(hash(pinned).raw() == hand_hash(pinned));
+    CRUCIBLE_FATAL_INVARIANT(hash(pinned).raw() == kPinnedSampleHash);
+}
+
+// ── The paths of the fold over an array ────────────────────────────────
+
+// A pair of two widths: an element of a class for the fold of a long array.
+struct[[= derive_protocol{}]] Pair {
+    std::uint16_t narrow = 0;
+    std::uint8_t tiny = 0;
+};
+
+// A long array of leaves that starts at a multiple of the size of a leaf:
+// the fold of whole blocks in a loop, with a head before the first block and
+// a tail after the last one.
+struct[[= derive_protocol{}]] AlignedBytes {
+    std::uint64_t lead = 0;
+    FixedArray<std::uint8_t, 50> bytes{};
+};
+
+struct[[= derive_protocol{}]] AlignedLanes {
+    std::uint16_t lead = 0;
+    FixedArray<std::uint16_t, 37> lanes{};
+};
+
+// A long array of leaves that does not start at a multiple of the size of a
+// leaf, so a leaf crosses the end of a block: the fold of the bytes of each
+// element.
+struct[[= derive_protocol{}]] ShiftedWords {
+    std::uint8_t lead = 0;
+    FixedArray<std::uint32_t, 40> words{};
+    std::uint8_t last = 0;
+};
+
+struct[[= derive_protocol{}]] ShiftedWide {
+    std::uint32_t lead = 0;
+    FixedArray<std::uint64_t, 20> wide{};
+};
+
+// A long array of classes: the fold of the bytes of each element.
+struct[[= derive_protocol{}]] ManyPairs {
+    std::uint8_t lead = 0;
+    FixedArray<Pair, 18> pairs{};
+};
+
+// A short array of classes and a leaf that crosses the end of a block.
+struct[[= derive_protocol{}]] FewPairs {
+    std::uint32_t lead = 0;
+    FixedArray<Pair, 5> pairs{};
+    std::uint64_t crossing = 0;
+};
+
+// An image of no byte, of one full block, and of one byte more.
+struct[[= derive_protocol{}]] Empty {};
+
+struct[[= derive_protocol{}]] OneBlock {
+    std::uint64_t low = 0;
+    std::uint64_t high = 0;
+};
+
+struct[[= derive_protocol{}]] OneBlockAndByte {
+    std::uint64_t low = 0;
+    std::uint64_t high = 0;
+    std::uint8_t more = 0;
+};
+
+// Each leaf of a value from the stream: the bits of its unsigned word.
+template <class Leaf>
+[[nodiscard]] Leaf random_leaf(::crucible::test::PhiloxStream& stream) noexcept {
+    return static_cast<Leaf>(stream.next_wide());
+}
+
+template <class Leaf, std::size_t N>
+void fill(FixedArray<Leaf, N>& array, ::crucible::test::PhiloxStream& stream) noexcept {
+    for (Leaf& leaf : array) {
+        leaf = random_leaf<Leaf>(stream);
+    }
+}
+
+template <std::size_t N>
+void fill(FixedArray<Pair, N>& array, ::crucible::test::PhiloxStream& stream) noexcept {
+    for (Pair& pair : array) {
+        pair.narrow = random_leaf<std::uint16_t>(stream);
+        pair.tiny = random_leaf<std::uint8_t>(stream);
+    }
+}
+
+// The hash of the value is the hand fold of its image, and each byte of the
+// image takes part.
+template <class T>
+void expect_hash_of_image(T const& value) noexcept {
+    auto const image = encoded(value);
+    CRUCIBLE_FATAL_INVARIANT(hash(value).raw() == hand_hash_of_image(image));
+}
+
+void test_hash_of_each_array_path() {
+    static_assert(encoded_size_v<AlignedBytes> == 58 && encoded_size_v<AlignedLanes> == 76);
+    static_assert(encoded_size_v<ShiftedWords> == 162 && encoded_size_v<ShiftedWide> == 164);
+    static_assert(encoded_size_v<ManyPairs> == 55 && encoded_size_v<FewPairs> == 27);
+    static_assert(encoded_size_v<Empty> == 0 && encoded_size_v<OneBlock> == 16
+                  && encoded_size_v<OneBlockAndByte> == 17);
+
+    ::crucible::test::PhiloxStream stream{0x4841534850415448ULL};
+    for (int round = 0; round < 512; ++round) {
+        AlignedBytes aligned_bytes{};
+        aligned_bytes.lead = random_leaf<std::uint64_t>(stream);
+        fill(aligned_bytes.bytes, stream);
+        expect_hash_of_image(aligned_bytes);
+
+        AlignedLanes aligned_lanes{};
+        aligned_lanes.lead = random_leaf<std::uint16_t>(stream);
+        fill(aligned_lanes.lanes, stream);
+        expect_hash_of_image(aligned_lanes);
+
+        ShiftedWords shifted_words{};
+        shifted_words.lead = random_leaf<std::uint8_t>(stream);
+        fill(shifted_words.words, stream);
+        shifted_words.last = random_leaf<std::uint8_t>(stream);
+        expect_hash_of_image(shifted_words);
+
+        ShiftedWide shifted_wide{};
+        shifted_wide.lead = random_leaf<std::uint32_t>(stream);
+        fill(shifted_wide.wide, stream);
+        expect_hash_of_image(shifted_wide);
+
+        ManyPairs many_pairs{};
+        many_pairs.lead = random_leaf<std::uint8_t>(stream);
+        fill(many_pairs.pairs, stream);
+        expect_hash_of_image(many_pairs);
+
+        FewPairs few_pairs{};
+        few_pairs.lead = random_leaf<std::uint32_t>(stream);
+        fill(few_pairs.pairs, stream);
+        few_pairs.crossing = random_leaf<std::uint64_t>(stream);
+        expect_hash_of_image(few_pairs);
+
+        OneBlock one_block{random_leaf<std::uint64_t>(stream), random_leaf<std::uint64_t>(stream)};
+        expect_hash_of_image(one_block);
+
+        OneBlockAndByte one_more{random_leaf<std::uint64_t>(stream), random_leaf<std::uint64_t>(stream),
+                                 random_leaf<std::uint8_t>(stream)};
+        expect_hash_of_image(one_more);
+        // A byte past one full block gives a second fold, so the zero byte
+        // after a block differs from the block alone.
+        OneBlockAndByte const zero_more{one_block.low, one_block.high, 0};
+        CRUCIBLE_FATAL_INVARIANT(hash(zero_more).raw() != hash(one_block).raw());
+    }
+    // An image of no byte folds no block.
+    CRUCIBLE_FATAL_INVARIANT(hash(Empty{}).raw() == kStartSeed);
+}
+
+// ── foldhash-f ──────────────────────────────────────────────────────────
+
+// The integer path of foldhash-f of Orson Peters with the seeds of THE HASH:
+// each integer goes into a sponge of 128 bits at the count of bits that the
+// sponge holds, and a sponge that the next integer would pass folds first.
+class Foldhash final {
+public:
+    void write(std::uint64_t value, unsigned bits) noexcept {
+        if (sponge_bits_ + bits > 128) {
+            accumulator_ = folded_multiply(sponge_low_ ^ accumulator_, sponge_high_ ^ kFoldSeed);
+            sponge_low_ = value;
+            sponge_high_ = 0;
+            sponge_bits_ = bits;
+            return;
+        }
+        if (sponge_bits_ < 64) {
+            sponge_low_ |= value << sponge_bits_;
+            if (sponge_bits_ != 0 && sponge_bits_ + bits > 64) sponge_high_ |= value >> (64 - sponge_bits_);
+        } else {
+            sponge_high_ |= value << (sponge_bits_ - 64);
+        }
+        sponge_bits_ += bits;
+    }
+
+    [[nodiscard]] std::uint64_t finish() const noexcept {
+        if (sponge_bits_ == 0) return accumulator_;
+        return folded_multiply(sponge_low_ ^ accumulator_, sponge_high_ ^ kFoldSeed);
+    }
+
+private:
+    std::uint64_t accumulator_ = kStartSeed;
+    std::uint64_t sponge_low_ = 0;
+    std::uint64_t sponge_high_ = 0;
+    unsigned sponge_bits_ = 0;
+};
+
+// A record whose leaves fill whole blocks: 4 + 2 + 2 + 8 bytes, then 8 more.
+struct[[= derive_protocol{}]] Filled {
+    std::uint32_t id = 0;
+    std::uint16_t kind = 0;
+    std::uint16_t flags = 0;
+    std::int64_t payload = 0;
+    std::uint64_t extra = 0;
+};
+
+// The hash of a record whose leaves fill whole blocks is foldhash-f of its
+// fields, in declaration order.
+void test_hash_is_foldhash_on_whole_blocks() {
+    ::crucible::test::PhiloxStream stream{0x464F4C4448415348ULL};
+    for (int round = 0; round < 4096; ++round) {
+        Filled const filled{random_leaf<std::uint32_t>(stream), random_leaf<std::uint16_t>(stream),
+                            random_leaf<std::uint16_t>(stream), random_leaf<std::int64_t>(stream),
+                            random_leaf<std::uint64_t>(stream)};
+        Foldhash reference{};
+        reference.write(filled.id, 32);
+        reference.write(filled.kind, 16);
+        reference.write(filled.flags, 16);
+        reference.write(static_cast<std::uint64_t>(filled.payload), 64);
+        reference.write(filled.extra, 64);
+        CRUCIBLE_FATAL_INVARIANT(hash(filled).raw() == reference.finish());
+    }
+}
+
+// ── The hash of a run ───────────────────────────────────────────────────
+
+// An element of 4 bytes: four of them fill one block.
+struct[[= derive_protocol{}]] Edge {
+    std::uint16_t from = 0;
+    std::uint16_t to = 0;
+};
+
+// The hand fold of a run: the images of the elements one after the other,
+// the last block filled with zero bytes, and then one block with the count.
+template <class T, std::size_t N>
+[[nodiscard]] std::uint64_t hand_hash_of_run(FixedArray<T, N> const& elements, std::size_t count) noexcept {
+    constexpr std::size_t step = encoded_size_v<T>;
+    FixedArray<std::byte, N * step> bytes{};
+    for (std::size_t index = 0; index < count; ++index) {
+        auto const image = encoded(elements.at(Index<N>::check(index).expect("the index is below the count")));
+        for (std::size_t at = 0; at < step; ++at) {
+            bytes.at(Index<N * step>::check(index * step + at).expect("the byte is in the run")) =
+                image.at(Index<step>::check(at).expect("the byte is in the image"));
+        }
+    }
+    std::uint64_t accumulator = kStartSeed;
+    std::size_t const total = count * step;
+    for (std::size_t first = 0; first < total; first += 16) {
+        std::uint64_t low = 0;
+        std::uint64_t high = 0;
+        for (std::size_t lane = 0; lane < 16 && first + lane < total; ++lane) {
+            std::uint64_t const byte = static_cast<std::uint8_t>(
+                bytes.at(Index<N * step>::check(first + lane).expect("the byte is in the run")));
+            if (lane < 8) {
+                low |= byte << (8 * lane);
+            } else {
+                high |= byte << (8 * (lane - 8));
+            }
+        }
+        accumulator = folded_multiply(low ^ accumulator, high ^ kFoldSeed);
+    }
+    return folded_multiply(static_cast<std::uint64_t>(count) ^ accumulator, kFoldSeed);
+}
+
+// The hash of the first count elements, through a View of them.
+template <class T, std::size_t N>
+[[nodiscard]] std::uint64_t hash_of_run(FixedArray<T, N> const& elements, std::size_t count) noexcept {
+    ::foundation::core::View<T const> const run = elements.view().window(0, count).expect("the count is at most N");
+    return hash(run).raw();
+}
+
+void test_hash_of_a_run() {
+    ::crucible::test::PhiloxStream stream{0x52554E4841534831ULL};
+    FixedArray<Pair, 40> pairs{};
+    FixedArray<Edge, 40> edges{};
+    FixedArray<OneBlock, 6> blocks{};
+    for (int round = 0; round < 64; ++round) {
+        fill(pairs, stream);
+        for (Edge& edge : edges) {
+            edge = Edge{random_leaf<std::uint16_t>(stream), random_leaf<std::uint16_t>(stream)};
+        }
+        for (OneBlock& block : blocks) {
+            block = OneBlock{random_leaf<std::uint64_t>(stream), random_leaf<std::uint64_t>(stream)};
+        }
+        for (std::size_t count = 0; count <= 40; ++count) {
+            CRUCIBLE_FATAL_INVARIANT(hash_of_run(pairs, count) == hand_hash_of_run(pairs, count));
+            CRUCIBLE_FATAL_INVARIANT(hash_of_run(edges, count) == hand_hash_of_run(edges, count));
+        }
+        for (std::size_t count = 0; count <= 6; ++count) {
+            CRUCIBLE_FATAL_INVARIANT(hash_of_run(blocks, count) == hand_hash_of_run(blocks, count));
+        }
+    }
+    // A zero element after a run gives another hash, and the order of the
+    // elements takes part.
+    FixedArray<Edge, 2> const one_and_zero{Edge{1, 2}, Edge{0, 0}};
+    FixedArray<Edge, 2> const two{Edge{1, 2}, Edge{3, 4}};
+    FixedArray<Edge, 2> const swapped{Edge{3, 4}, Edge{1, 2}};
+    CRUCIBLE_FATAL_INVARIANT(hash_of_run(one_and_zero, 1) != hash_of_run(one_and_zero, 2));
+    CRUCIBLE_FATAL_INVARIANT(hash_of_run(two, 2) != hash_of_run(swapped, 2));
 }
 
 void test_encode_writes_the_hand_image() {
@@ -470,8 +764,11 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 int main() {
     test_equal_and_order_agree_with_the_hand_forms();
     test_hash_agrees_with_the_hand_fold();
+    test_hash_of_each_array_path();
+    test_hash_is_foldhash_on_whole_blocks();
     test_encode_writes_the_hand_image();
     test_decode_inverts_encode();
+    test_hash_of_a_run();
     test_decode_refuses_each_byte_that_names_no_value();
     test_format_names_each_part();
     test_float_rule();

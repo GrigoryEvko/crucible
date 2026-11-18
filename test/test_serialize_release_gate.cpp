@@ -67,13 +67,19 @@ constexpr size_t kRegionPrefix = 32 + 4 + 8 + 8 + 4 + 4 + 1;  // = 61
 //   num_scalar_args(2) grad_enabled(1) op_flags(1) kernel_id(1) depth(2)
 //   scalar_types(2)
 constexpr size_t kEntryHeader = 8 + 8 + 8 + 8 + 2 + 2 + 2 + 1 + 1 + 1 + 2 + 2;  // = 45
-// write_meta layout: sizes[8]*8 + strides[8]*8 + data_ptr(8) + ndim(1)
-//   + dtype(1) + ...
+// The image of a descriptor: sizes[8]*8 + strides[8]*8 + ndim(1) + dtype(1)
+//   + device_type(1) + device_idx(1) + layout(1) + requires_grad(1)
+//   + flags(1) + ... with no data pointer.
 constexpr size_t kMetaBase = kRegionPrefix + kEntryHeader;  // first meta start
-constexpr size_t kMetaNdim = kMetaBase + 64 + 64 + 8;  // ndim byte
+constexpr size_t kMetaSize0Top = kMetaBase + 7;  // the high byte of sizes[0]
+constexpr size_t kMetaSize1 = kMetaBase + 8;  // the low byte of sizes[1], past the rank 1
+constexpr size_t kMetaNdim = kMetaBase + 64 + 64;  // ndim byte
 constexpr size_t kMetaDtype = kMetaNdim + 1;  // dtype byte
 constexpr size_t kMetaDevice = kMetaDtype + 1;  // device_type byte
-constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
+constexpr size_t kMetaDeviceIdx = kMetaDevice + 1;  // device_idx byte
+constexpr size_t kMetaLayout = kMetaDeviceIdx + 1;  // layout byte
+constexpr size_t kMetaGrad = kMetaLayout + 1;  // requires_grad byte
+constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
 
 // Rejection is no region coming back out of the boundary.
 [[nodiscard]] bool is_rejected(::foundation::effects::Test bg, ::fixy::View<const std::byte> bytes) {
@@ -129,6 +135,16 @@ constexpr size_t kMetaLayout = kMetaDevice + 1 + 1;  // +device_idx, layout byte
         {"meta.device_type", kMetaDevice, 3},
         // The layout enumeration is dense up to 5, so 99 is out of range.
         {"meta.layout", kMetaLayout, 99},
+        // A size of 0x70 in its high byte is far past kMaxTensorDimExtent.
+        {"meta.sizes[0]", kMetaSize0Top, 0x70},
+        // The rank is 1, so the lane of sizes[1] must hold zero.
+        {"meta.sizes[1]", kMetaSize1, 1},
+        // The host index is -1, and an index below it names no device.
+        {"meta.device_idx", kMetaDeviceIdx, 0xFE},
+        // A bool byte is 0 or 1.
+        {"meta.requires_grad", kMetaGrad, 2},
+        // Bits 6 and 7 of the flags are reserved.
+        {"meta.flags", kMetaFlags, 0x40},
     };
 
     for (const auto& c : cases) {

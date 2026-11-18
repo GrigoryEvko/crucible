@@ -101,8 +101,9 @@ int main() {
     // The hash of a Guard is a part of the merkle hash of each branch, and
     // the store keeps that hash.  So these values are frozen: a change of the
     // type of a field, such as the type of the pad, must keep each of them.
-    // A Guard and its OpIndex have no base, so the walk of the bases adds no
-    // step to these values.
+    // The hash is the fold of the 12 bytes of the image of the Guard in one
+    // block, so a Python fold of those bytes outside the tree gives each
+    // value.  CDAG_VERSION 18 pins them.
     {
         crucible::Guard by_kind{};
         by_kind.kind = crucible::Guard::Kind::OP_SEQUENCE;
@@ -117,12 +118,12 @@ int main() {
         by_all.op_index = crucible::OpIndex{7};
         by_all.arg_index = 3;
         by_all.dim_index = 2;
-        assert(hash_of(crucible::Guard{}) == 0x037FC81E2E2231FCULL);
-        assert(hash_of(by_kind) == 0x17DFDFC26EEFC973ULL);
-        assert(hash_of(by_op) == 0x20E09BB3247F17AFULL);
-        assert(hash_of(by_arg) == 0x5911F28FFD72AA41ULL);
-        assert(hash_of(by_dim) == 0x3763183160C197F5ULL);
-        assert(hash_of(by_all) == 0x2553193CAB394B89ULL);
+        assert(hash_of(crucible::Guard{}) == 0x4038B42334584479ULL);
+        assert(hash_of(by_kind) == 0xF13EEE04DEC598B4ULL);
+        assert(hash_of(by_op) == 0x933B5CA50B01183DULL);
+        assert(hash_of(by_arg) == 0xBA8B5554228EA232ULL);
+        assert(hash_of(by_dim) == 0x579A8AC20EC6AAA4ULL);
+        assert(hash_of(by_all) == 0x416F8BAE8D65F697ULL);
     }
 
     // A FixedArray field folds as its elements, with the reduction of a C

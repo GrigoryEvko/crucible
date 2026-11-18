@@ -1125,7 +1125,8 @@ struct[[= fixy::derive_protocol{}]] ProtocolRecord final {
     return std::is_lt(fixy::order(left, right));
 }
 
-// hash folds each part with fmix64.
+// hash puts the 16 bytes of the image into one block and folds it with one
+// multiply.
 [[gnu::used]] std::uint64_t protocol_hash(ProtocolRecord const& value) noexcept { return fixy::hash(value).raw(); }
 
 // encode writes each part as its bytes.
@@ -2042,14 +2043,13 @@ struct RawDecodeFault final {
 }
 
 [[gnu::used]] std::uint64_t protocol_hash_raw(RawProtocolRecord const& value) noexcept {
-    constexpr std::uint64_t seed = 0x9E3779B97F4A7C15ULL;
-    std::uint64_t state = seed;
-    state = state * seed ^ foundation::reflect::fmix64(value.key);
-    state = state * seed ^ foundation::reflect::fmix64(value.count);
-    state = state * seed ^ foundation::reflect::fmix64(value.lane);
-    state = state * seed ^ foundation::reflect::fmix64(static_cast<std::uint64_t>(value.kind));
-    state = state * seed ^ foundation::reflect::fmix64(value.flag ? 1U : 0U);
-    return foundation::reflect::fmix64(state);
+    std::uint64_t const high = std::uint64_t{value.count} | (std::uint64_t{value.lane} << 32)
+                             | (static_cast<std::uint64_t>(value.kind) << 48)
+                             | (static_cast<std::uint64_t>(value.flag ? 1U : 0U) << 56);
+    __extension__ using Wide = unsigned __int128;
+    Wide const product =
+        static_cast<Wide>(value.key ^ 0x13198a2e03707344ULL) * static_cast<Wide>(high ^ 0x243f6a8885a308d3ULL);
+    return static_cast<std::uint64_t>(product) ^ static_cast<std::uint64_t>(product >> 64);
 }
 
 [[gnu::used]] void protocol_encode_raw(RawProtocolRecord const& value, std::byte* out) noexcept {

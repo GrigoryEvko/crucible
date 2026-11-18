@@ -34,23 +34,29 @@
 // THE HASH
 //   hash gives 64 bits with no key.  It is an id inside one process, and a
 //   hash of the store that the format version of the store pins, such as
-//   the hash of a guard in the merkle hash of a branch.  The fold reads
-//   each part of the image, a pad part too, and no local part:
+//   the hash of a guard in the merkle hash of a branch.  The hash is a
+//   function of the image of THE IMAGE: a pad part takes part, and a local
+//   part does not.  The fold divides the image into blocks of 16 bytes and
+//   fills the last block with zero bytes.  Each block is two words, low and
+//   high, each of 8 bytes in little-endian order:
 //
-//     a leaf     fmix64 of its value widened to 64 bits: a signed integer
-//                with its sign, a float or a double as its bits, and a plain
-//                char or a wchar_t as its bits with no sign
-//     an array   h = 0, then h = h * 0x100000001b3 ^ hash(element) for each
-//                element, then fmix64(h).  A C array and a FixedArray of one
-//                element type give one hash
-//     a class    h = 0x9E3779B97F4A7C15, then h = h * 0x9E3779B97F4A7C15 ^
-//                hash(part) for each part, then fmix64(h)
+//     acc = 0x13198a2e03707344
+//     for each block: acc = fold(low ^ acc, high ^ 0x243f6a8885a308d3)
+//     hash = acc
 //
-//   fmix64 is the one mixer of foundation/reflect/Hash.h.  The fold reads
-//   values and not bytes, so it is the same on each target.  A peer that
-//   chooses the input can find two values of one hash, so a key that
-//   crosses a trust boundary is a keyed hash of the bytes of encode, with
-//   its width and its key in its type, and never this hash.
+//   fold(a, b) is the low word of the 128-bit product a * b, xored with its
+//   high word.  The step and the two seeds are those of foldhash-f (Orson
+//   Peters, 2024), so a record whose leaves fill whole blocks gets the bits
+//   of foldhash-f with those seeds.  An image of no byte gives the first
+//   seed.  The hash of a View of values folds their images one after the
+//   other as one image, and then one block with the count of the values in
+//   its low word.  The fold reads the words of each leaf at the offsets of
+//   the image, with no write of the image: one fold for each 16 bytes, and
+//   one shift and one or for each leaf.  It is integer arithmetic only, so it gives
+//   the same bits on each target.  A peer that chooses the input can find
+//   two values of one hash, so a key that crosses a trust boundary is a
+//   keyed hash of the bytes of encode, with its width and its key in its
+//   type, and never this hash.
 //
 // THE CODEC
 //   encode writes the image into a View of exactly encoded_size_v<T> bytes,
@@ -72,6 +78,7 @@
 //   not written.  format is no part of a hot path.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Equatable.h>
@@ -81,7 +88,6 @@
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
 #include <foundation/reflect/EnumName.h>
-#include <foundation/reflect/Hash.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -311,55 +317,6 @@ template <class T>
     }
 }
 
-// ── The hash ────────────────────────────────────────────────────────────
-
-inline constexpr std::uint64_t hash_class_seed = 0x9E3779B97F4A7C15ULL;
-inline constexpr std::uint64_t hash_array_prime = 0x100000001b3ULL;
-
-template <class T>
-[[nodiscard]] constexpr std::uint64_t hash_part_(T const& part) noexcept;
-
-// The fold of a class over its bases and the members of its image, one
-// statement for each part.
-template <class T, std::size_t... Bases, std::size_t... Members>
-[[nodiscard]] constexpr std::uint64_t hash_parts_([[maybe_unused]] T const& object,
-                                                  std::index_sequence<Bases...> /*bases*/,
-                                                  std::index_sequence<Members...> /*members*/) noexcept {
-    std::uint64_t state = hash_class_seed;
-    ((state = state * hash_class_seed ^ detail::hash_part_(detail::base_at_<Bases>(object))), ...);
-    ((state = state * hash_class_seed ^ detail::hash_part_(detail::member_at_<Members>(object))), ...);
-    return ::foundation::reflect::fmix64(state);
-}
-
-// The hash of one part (THE HASH).  Complexity: one fmix64 for each leaf,
-// array and class.
-template <class T>
-[[nodiscard]] constexpr std::uint64_t hash_part_(T const& part) noexcept {
-    using Bare = std::remove_cv_t<T>;
-    if constexpr (std::is_array_v<Bare>) {
-        std::uint64_t state = 0;
-        for (std::size_t index = 0; index < std::extent_v<Bare>; ++index) {
-            state = state * hash_array_prime ^ detail::hash_part_(part[index]);
-        }
-        return ::foundation::reflect::fmix64(state);
-    } else if constexpr (is_fixed_array_at(^^Bare)) {
-        std::uint64_t state = 0;
-        for (auto const& element : part.view()) {
-            state = state * hash_array_prime ^ detail::hash_part_(element);
-        }
-        return ::foundation::reflect::fmix64(state);
-    } else if constexpr (derives_protocol_at(^^Bare)) {
-        constexpr std::meta::info type = std::meta::dealias(^^Bare);
-        return detail::hash_parts_(part, std::make_index_sequence<base_count(type)>{}, image_member_sequence_<Bare>{});
-    } else if constexpr (Float<Bare> || std::is_same_v<Bare, bool> || is_target_signed_character_v<Bare>) {
-        return ::foundation::reflect::fmix64(static_cast<std::uint64_t>(detail::leaf_word_(part)));
-    } else if constexpr (std::is_enum_v<Bare>) {
-        return ::foundation::reflect::fmix64(static_cast<std::uint64_t>(std::to_underlying(part)));
-    } else {
-        return ::foundation::reflect::fmix64(static_cast<std::uint64_t>(part));
-    }
-}
-
 // ── The codec ───────────────────────────────────────────────────────────
 
 template <class T>
@@ -537,6 +494,215 @@ template <class T>
     }
 }
 
+// ── The hash ────────────────────────────────────────────────────────────
+
+// The two seeds of the fold: the first two words of the fraction of pi in
+// hex, which foldhash takes as its seeds.
+inline constexpr std::uint64_t hash_fold_seed = 0x243f6a8885a308d3ULL;
+inline constexpr std::uint64_t hash_start_seed = 0x13198a2e03707344ULL;
+
+// The bytes of one block of the fold.
+inline constexpr std::size_t hash_block_bytes = 16;
+
+// An array of at most this count of elements folds each element at its own
+// offset.  A longer array folds in a loop.
+inline constexpr std::size_t hash_unroll_limit = 16;
+
+// The low word and the high word of the full product, xored.
+[[nodiscard]] constexpr std::uint64_t folded_multiply_(std::uint64_t left, std::uint64_t right) noexcept {
+    WideProduct<std::uint64_t> const product = widening_mul(left, right);
+    return product.low ^ product.high;
+}
+
+// The state of the fold: the accumulator, and the two little-endian words of
+// the block that the fold fills.  The position in the block is a constant of
+// each caller, so the state holds no position.
+struct HashState final {
+    std::uint64_t accumulator = hash_start_seed;
+    std::uint64_t low = 0;
+    std::uint64_t high = 0;
+
+    // Folds the block into the accumulator, and empties the block.
+    constexpr void fold_block() noexcept {
+        accumulator = folded_multiply_(low ^ accumulator, high ^ hash_fold_seed);
+        low = 0;
+        high = 0;
+    }
+};
+
+// Puts the low Width bytes of word at the byte Position of the block.  The
+// bytes past the end of the block are not put.
+template <std::size_t Position, std::size_t Width>
+    requires(Position < hash_block_bytes && Width <= sizeof(std::uint64_t))
+constexpr void put_in_block_(HashState& state, std::uint64_t word) noexcept {
+    if constexpr (Position >= sizeof(std::uint64_t)) {
+        state.high |= word << (8 * (Position - sizeof(std::uint64_t)));
+    } else if constexpr (Position + Width <= sizeof(std::uint64_t)) {
+        state.low |= word << (8 * Position);
+    } else {
+        state.low |= word << (8 * Position);
+        state.high |= word >> (8 * (sizeof(std::uint64_t) - Position));
+    }
+}
+
+// Puts the Width bytes of a leaf at the byte Offset of the image.  A leaf
+// that fills its block folds the block.  A leaf that crosses the end of its
+// block puts its first bytes, folds the block, and puts its last bytes at the
+// start of the next block.
+template <std::size_t Offset, std::size_t Width>
+constexpr void put_leaf_(HashState& state, std::uint64_t word) noexcept {
+    constexpr std::size_t position = Offset % hash_block_bytes;
+    if constexpr (position + Width < hash_block_bytes) {
+        detail::put_in_block_<position, Width>(state, word);
+    } else if constexpr (position + Width == hash_block_bytes) {
+        detail::put_in_block_<position, Width>(state, word);
+        state.fold_block();
+    } else {
+        constexpr std::size_t first = hash_block_bytes - position;
+        detail::put_in_block_<position, first>(state, word);
+        state.fold_block();
+        detail::put_in_block_<0, Width - first>(state, word >> (8 * first));
+    }
+}
+
+// Puts one byte at a position of the block that the caller holds, and folds
+// the block when the byte fills it.
+constexpr void put_byte_(HashState& state, std::size_t& position, std::byte byte) noexcept {
+    std::uint64_t const word = static_cast<std::uint8_t>(byte);
+    if (position < sizeof(std::uint64_t)) {
+        state.low |= word << (8 * position);
+    } else {
+        state.high |= word << (8 * (position - sizeof(std::uint64_t)));
+    }
+    if (++position == hash_block_bytes) {
+        state.fold_block();
+        position = 0;
+    }
+}
+
+template <std::size_t Offset, class T>
+constexpr void hash_part_(HashState& state, T const& part) noexcept;
+
+// The fold of a class: each base and each member of its image, at its offset
+// in the image.
+template <std::size_t Offset, class T, std::size_t... Bases, std::size_t... Members>
+constexpr void hash_parts_([[maybe_unused]] HashState& state, [[maybe_unused]] T const& object,
+                           std::index_sequence<Bases...> /*bases*/,
+                           std::index_sequence<Members...> /*members*/) noexcept {
+    [[maybe_unused]] constexpr std::meta::info type = ^^T;
+    (detail::hash_part_<Offset + base_image_offset_at(type, Bases)>(state, detail::base_at_<Bases>(object)), ...);
+    (detail::hash_part_<Offset + member_image_offset_at(type, Members)>(state, detail::member_at_<Members>(object)),
+     ...);
+}
+
+// The elements at Indexes of an array of elements of Step bytes, from first,
+// each at its offset in the image.
+template <std::size_t Offset, std::size_t Step, class Element, std::size_t... Indexes>
+constexpr void hash_elements_([[maybe_unused]] HashState& state, [[maybe_unused]] Element const* first,
+                              std::index_sequence<Indexes...> /*indexes*/) noexcept {
+    (detail::hash_part_<Offset + Indexes * Step>(state, first[Indexes]), ...);
+}
+
+// The leaves of one full block, from first, which start the block.
+template <std::size_t Step, class Element, std::size_t... Lanes>
+constexpr void fill_block_(HashState& state, Element const* first, std::index_sequence<Lanes...> /*lanes*/) noexcept {
+    (detail::put_in_block_<Lanes * Step, Step>(state, static_cast<std::uint64_t>(detail::leaf_word_(first[Lanes]))),
+     ...);
+}
+
+// True for a leaf: a part that is no array and no class of the family.
+template <class T>
+inline constexpr bool is_hash_leaf_ = !std::is_array_v<T> && !is_fixed_array_at(^^T) && !derives_protocol_at(^^T);
+
+// The fold of Count elements from first, at the byte Offset of the image.
+// A short array folds each element at its offset.  A long array of leaves
+// whose first leaf starts at a multiple of its size folds its leaves block
+// by block in a loop.  Each other long array writes the image of each
+// element and folds its bytes at a position that the loop holds.
+// Complexity: one step for each byte of the image of the array.
+template <std::size_t Offset, class Element, std::size_t Count>
+constexpr void hash_array_(HashState& state, Element const* first) noexcept {
+    constexpr std::size_t step = image_bytes_at(^^Element);
+    if constexpr (Count <= hash_unroll_limit) {
+        detail::hash_elements_<Offset, step>(state, first, std::make_index_sequence<Count>{});
+    } else if constexpr (is_hash_leaf_<Element> && hash_block_bytes % step == 0 && Offset % step == 0) {
+        constexpr std::size_t per_block = hash_block_bytes / step;
+        constexpr std::size_t head = (hash_block_bytes - Offset % hash_block_bytes) % hash_block_bytes / step;
+        constexpr std::size_t blocks = (Count - head) / per_block;
+        constexpr std::size_t tail_first = head + blocks * per_block;
+        detail::hash_elements_<Offset, step>(state, first, std::make_index_sequence<head>{});
+        for (std::size_t block = 0; block < blocks; ++block) {
+            detail::fill_block_<step>(state, first + head + block * per_block, std::make_index_sequence<per_block>{});
+            state.fold_block();
+        }
+        detail::hash_elements_<Offset + tail_first * step, step>(state, first + tail_first,
+                                                                 std::make_index_sequence<Count - tail_first>{});
+    } else {
+        std::size_t position = Offset % hash_block_bytes;
+        for (std::size_t index = 0; index < Count; ++index) {
+            FixedArray<std::byte, step> image{};
+            detail::encode_part_(first[index], first_of_(detail::ViewDoor::key(), image.view()));
+            for (std::byte const byte : image.view()) {
+                detail::put_byte_(state, position, byte);
+            }
+        }
+    }
+}
+
+// The fold of one part at the byte Offset of the image (THE HASH).
+template <std::size_t Offset, class T>
+constexpr void hash_part_(HashState& state, T const& part) noexcept {
+    using Bare = std::remove_cv_t<T>;
+    if constexpr (std::is_array_v<Bare>) {
+        detail::hash_array_<Offset, std::remove_extent_t<Bare>, std::extent_v<Bare>>(state, part);
+    } else if constexpr (is_fixed_array_at(^^Bare)) {
+        detail::hash_array_<Offset, typename[:fixed_array_element_at(^^Bare):], fixed_array_count_at(^^Bare)>(
+            state, first_of_(detail::ViewDoor::key(), part.view()));
+    } else if constexpr (derives_protocol_at(^^Bare)) {
+        constexpr std::meta::info type = std::meta::dealias(^^Bare);
+        detail::hash_parts_<Offset>(state, part, std::make_index_sequence<base_count(type)>{},
+                                    image_member_sequence_<Bare>{});
+    } else {
+        detail::put_leaf_<Offset, sizeof(Bare)>(state, static_cast<std::uint64_t>(detail::leaf_word_(part)));
+    }
+}
+
+// The fold of count elements from first as one image, and then one block
+// with the count in its low word (THE HASH of a run).  An element whose
+// image holds a whole number of blocks folds at the start of its block.
+// When 16 is a multiple of the size of an image, each group of elements
+// that fills a block folds with the offsets of its elements.  Each other
+// element writes its image and folds its bytes at a position that the loop
+// holds.  Complexity: one fold for each 16 bytes of the images, and one more.
+template <class T>
+constexpr void hash_run_(HashState& state, T const* first, std::size_t count) noexcept {
+    constexpr std::size_t step = image_bytes_at(^^T);
+    if constexpr (step != 0) {
+        std::size_t index = 0;
+        if constexpr (step % hash_block_bytes == 0) {
+            for (; index < count; ++index) {
+                detail::hash_part_<0>(state, first[index]);
+            }
+        } else if constexpr (hash_block_bytes % step == 0) {
+            constexpr std::size_t per_block = hash_block_bytes / step;
+            for (; index + per_block <= count; index += per_block) {
+                detail::hash_elements_<0, step>(state, first + index, std::make_index_sequence<per_block>{});
+            }
+        }
+        std::size_t position = 0;
+        for (; index < count; ++index) {
+            FixedArray<std::byte, step> image{};
+            detail::encode_part_(first[index], first_of_(detail::ViewDoor::key(), image.view()));
+            for (std::byte const byte : image.view()) {
+                detail::put_byte_(state, position, byte);
+            }
+        }
+        if (position != 0) state.fold_block();
+    }
+    state.low = static_cast<std::uint64_t>(count);
+    state.fold_block();
+}
+
 // ── The format ──────────────────────────────────────────────────────────
 
 // The name of the member at Index, with static storage.
@@ -655,10 +821,13 @@ template <Encodable T>
 inline constexpr std::size_t encoded_size_v = detail::image_bytes_at(^^T);
 
 // The hash of the value (THE HASH): 64 bits with no key, the same on each
-// target.  Complexity: one pass over the parts.
+// target.  Complexity: one fold for each 16 bytes of the image.
 template <Encodable T>
 [[nodiscard]] constexpr Digest<T> hash(T const& value) noexcept {
-    return Digest<T>{detail::hash_part_(value)};
+    detail::HashState state{};
+    detail::hash_part_<0>(state, value);
+    if constexpr (encoded_size_v<T> % detail::hash_block_bytes != 0) state.fold_block();
+    return Digest<T>{state.accumulator};
 }
 
 // Writes the image of the value into out (THE IMAGE).  Complexity: one pass
@@ -666,6 +835,18 @@ template <Encodable T>
 template <Encodable T>
 constexpr void encode(T const& value, View<std::byte, encoded_size_v<T>> out) noexcept {
     detail::encode_part_(value, first_of_(detail::ViewDoor::key(), out));
+}
+
+// The hash of a run of values (THE HASH of a run): the fold of the images of
+// the elements one after the other as one image, and then of one block with
+// the count of the elements.  The count keeps two runs apart when one is the
+// other with zero values after it.  The order of the elements takes part.
+// Complexity: one fold for each 16 bytes of the images, and one more.
+template <Encodable T>
+[[nodiscard]] constexpr Digest<View<T const>> hash(View<T const> run) noexcept {
+    detail::HashState state{};
+    detail::hash_run_(state, first_of_(detail::ViewDoor::key(), run), run.size());
+    return Digest<View<T const>>{state.accumulator};
 }
 
 // The T of an image, or the first fault of the image (THE CODEC).
