@@ -35,6 +35,8 @@ static_assert(!std::is_copy_constructible_v<ReadFile> && !std::is_copy_assignabl
 static_assert(std::is_nothrow_move_constructible_v<ReadFile> && std::is_nothrow_move_assignable_v<ReadFile>);
 static_assert(!std::is_constructible_v<ReadFile, int>, "a public constructor would close a descriptor of a caller");
 static_assert(!std::is_trivially_copyable_v<ReadFile>, "std::bit_cast must not build a handle");
+static_assert(std::is_default_constructible_v<ReadFile>, "the empty handle claims nothing, so it stays reachable");
+static_assert(sizeof(ReadFile) == sizeof(int), "a handle is the descriptor and no more");
 static_assert(ReadFile::rights == kReadSeek && std::is_same_v<ReadFile::kind_type, kind::File>);
 
 // THE BORROW: a borrow of the base, with no right that its handle lacks.

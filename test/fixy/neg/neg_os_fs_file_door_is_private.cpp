@@ -1,4 +1,4 @@
-// A public static factory on OwnedFd would open a descriptor with no
+// A public static factory on a Handle would open a descriptor with no
 // context and no gate: an unsanitized path, raw O_* flags, a socket of
 // any triple.  The calls live in door classes whose members are private,
 // and only the gated mints are friends.  A direct call to the file door

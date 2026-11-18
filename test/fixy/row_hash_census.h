@@ -420,6 +420,7 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy::handle,
     ^^::fixy::io,
     ^^::fixy::fs,
+    ^^::fixy::os,
     ^^::fixy::numa,
     ^^::fixy::net,
     ^^::fixy::perf,
@@ -515,7 +516,8 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
                     "settings of the process, which carry no claim to fold"},
     {^^::fixy::check, "the test language: the source of the inputs of a property and its runner, which only a test "
                       "holds, and which carry no claim to fold"},
-    {^^::fixy::os, "the arguments of main: a view of argv and its cursor, which carry no claim to fold"},
+    {^^::fixy::os::kind, "the kinds of a handle: empty tags that a Handle names at compile time, and none of them "
+                         "is a value"},
     {^^::fixy::sanitize::path_traversal, kGradeVocabulary},
     {^^::fixy::session::check, "abandonment policies, a property of the build and not of the claim"},
     {^^::fixy::session::side, "the roles of the two tiers of a persistence event: empty tags that a Side names at "
@@ -1455,9 +1457,13 @@ inline constexpr StatedZero kZeros[] = {
 
     {^^::fixy::io::IoUringRing, kDescriptor},
     {^^::fixy::io::IoRingDoor, kDescriptorDoor},
-    {^^::fixy::fs::OwnedFd, kDescriptor},
     {^^::fixy::os::Handle, kDescriptor},
     {^^::fixy::os::HandleRef, kDescriptor},
+    {^^::fixy::os::Args, "the arguments of main: a view of argv, which carries no claim to fold"},
+    {^^::fixy::os::ArgsCursor, "the cursor of the arguments of main, which carries no claim to fold"},
+    {^^::fixy::net::ForeignSocketRef, kDescriptor},
+    {^^::fixy::net::SocketIdentityTag,
+     "the tag of the identity of a socket: an incomplete class that an Id names, and never a value"},
     {^^::fixy::fs::FileDoor, kDescriptorDoor},
     {^^::fixy::numa::PageNodeCensus, kPayload},
     {^^::fixy::NumaNodeMask, kPayload},

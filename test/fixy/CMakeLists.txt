@@ -5407,9 +5407,9 @@ fixy_neg_compile_test(neg_owned_mmap_foreign_prot_row
 
 # ── A descriptor comes only from a gated mint ────────────────────────
 #
-# OwnedFd had three public static factories, and each opened a descriptor
-# with no context and no gate.  The calls moved into door classes whose
-# members are private, and only the gated mints are friends.
+# A public static factory on the owner of a descriptor would open a
+# descriptor with no context and no gate.  The calls are in door classes
+# whose members are private, and only the gated mints are friends.
 fixy_neg_compile_test(neg_os_fs_file_door_is_private
   "is private within this context"
   "fixy::fs::FileDoor::open_path_\\(const char\\*, int, fixy::fs::FileMode\\)")

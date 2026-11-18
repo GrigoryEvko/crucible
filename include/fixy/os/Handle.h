@@ -72,6 +72,18 @@ namespace fixy::fs {
 class FileDoor;
 }  // namespace fixy::fs
 
+namespace fixy::net {
+class SocketDoor;
+}  // namespace fixy::net
+
+namespace fixy::time {
+class PtpDeviceDoor;
+}  // namespace fixy::time
+
+namespace fixy::perf {
+class PerfEventDoor;
+}  // namespace fixy::perf
+
 namespace fixy::os {
 
 // The rights of a handle.  Each named value is one bit, and none is the

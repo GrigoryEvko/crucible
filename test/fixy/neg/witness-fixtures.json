@@ -657,11 +657,6 @@
       "constructor": "\\bFileDoor\\("
     },
     {
-      "name": "neg_witness_fs_ownedfd_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bOwnedFd\\("
-    },
-    {
       "name": "neg_witness_io_ioringdoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "\\bIoRingDoor\\("
@@ -1852,10 +1847,6 @@
     {
       "type": "fixy::io::IoRingDoor",
       "header": "fixy/os/Io.h"
-    },
-    {
-      "type": "fixy::fs::OwnedFd",
-      "header": "fixy/os/Fd.h"
     },
     {
       "type": "fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>",

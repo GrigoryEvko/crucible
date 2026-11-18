@@ -979,7 +979,6 @@ witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{{
 # The door of a ring.  No object of it exists, its member is private, and
 # its one friend is mint_io_uring_ring, which sets up the ring.
 witness <fixy/os/Io.h> deleted | fixy::io::IoRingDoor | fixy::io::IoRingDoor{}
-witness <fixy/os/Fd.h> private | fixy::fs::OwnedFd | fixy::fs::OwnedFd{3}
 # A Handle claims one descriptor with the rights of its type, and a borrow
 # names the descriptor of a Handle.  The constructor of each is private, and
 # the friends of a Handle are the door classes that open a descriptor.
