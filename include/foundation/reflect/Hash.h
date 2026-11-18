@@ -686,4 +686,133 @@ using canonicalize_pack_t = typename canonicalize_pack<Ts...>::type;
     return detail::hash_name(std::meta::display_string_of(detail::pointer_of_key(key)));
 }
 
+// ── The layout digest ────────────────────────────────────────────────
+//
+// The digest of the layout of a type: one word that two shared libraries
+// compare before they share values of the type.  Two units that compile one
+// type from one text give one digest, and a change of the size, the
+// alignment, the place, the name or the type of a part changes it.  The
+// fold reads, for the type and for each part that the type holds by value:
+//
+//   * the size and the alignment, and the stable id of the type when it
+//     has a stable identity.  A type with no stable identity, such as an
+//     anonymous union, folds its layout and no name
+//   * of a class or a union: each base with its offset, and each
+//     non-static data member with its offset in bits, its width in bits,
+//     its name when it has one, and the fold of its type
+//   * of an array: the extent and the fold of the element
+//   * of a pointer or a reference: the stable id of the pointee when it has
+//     one.  The fold does not follow a pointer, because a value does not
+//     hold the object that it points to
+//   * of a function type: its stable id, or no name
+//
+// A class cannot hold itself by value, so the recursion ends.  The fold
+// visits a type again each time that a part holds it, so its cost is linear
+// in the parts of the tree of values.  The digest reads no address, so each
+// host gives the same value.
+//
+// c_entry_digest<Scope>(prefix) folds the name and the type of each function
+// of the namespace Scope with C linkage whose name starts with prefix, in the
+// order of the declarations: the C entries of a library, which a foreign
+// caller declares again with its own types.
+
+namespace detail {
+
+// The seed and the marks of the layout fold: "layout!!", and one mark for
+// each kind of part, so a part of one kind never folds as a part of another.
+inline constexpr std::uint64_t layout_seed = 0x6c61796f75742121ULL;
+inline constexpr std::uint64_t layout_mark_pointer = 1;
+inline constexpr std::uint64_t layout_mark_reference = 2;
+inline constexpr std::uint64_t layout_mark_function = 3;
+inline constexpr std::uint64_t layout_mark_array = 4;
+inline constexpr std::uint64_t layout_mark_base = 5;
+inline constexpr std::uint64_t layout_mark_member = 6;
+inline constexpr std::uint64_t layout_mark_value = 7;
+inline constexpr std::uint64_t layout_mark_no_name = 8;
+inline constexpr std::uint64_t layout_mark_entry = 9;
+
+// The stable id of a type, or the mark of no name.
+[[nodiscard]] consteval std::uint64_t layout_name_of(std::meta::info type) {
+    return has_stable_identity(type) ? stable_type_id(type) : layout_mark_no_name;
+}
+
+// The fold of one type into state.  Complexity: linear in the parts that the
+// type holds by value.
+[[nodiscard]] consteval std::uint64_t fold_layout(std::uint64_t state, std::meta::info type) {
+    const std::meta::info plain = std::meta::dealias(std::meta::remove_cv(std::meta::dealias(type)));
+    if (std::meta::is_reference_type(plain)) {
+        state = combine_ids(state, layout_mark_reference);
+        return combine_ids(state, layout_name_of(std::meta::remove_reference(plain)));
+    }
+    if (std::meta::is_pointer_type(plain)) {
+        state = combine_ids(state, layout_mark_pointer);
+        return combine_ids(state, layout_name_of(std::meta::remove_pointer(plain)));
+    }
+    if (std::meta::is_function_type(plain)) {
+        state = combine_ids(state, layout_mark_function);
+        return combine_ids(state, layout_name_of(plain));
+    }
+    if (std::meta::is_array_type(plain)) {
+        state = combine_ids(state, layout_mark_array);
+        state = combine_ids(state, std::meta::extent(plain));
+        return fold_layout(state, std::meta::remove_extent(plain));
+    }
+    state = combine_ids(state, layout_mark_value);
+    state = combine_ids(state, std::meta::size_of(plain));
+    state = combine_ids(state, std::meta::alignment_of(plain));
+    state = combine_ids(state, layout_name_of(plain));
+    if (!std::meta::is_class_type(plain) && !std::meta::is_union_type(plain)) return state;
+    const auto unchecked = std::meta::access_context::unchecked();
+    for (const std::meta::info base : std::meta::bases_of(plain, unchecked)) {
+        state = combine_ids(state, layout_mark_base);
+        state = combine_ids(state, static_cast<std::uint64_t>(std::meta::offset_of(base).total_bits()));
+        state = fold_layout(state, std::meta::type_of(base));
+    }
+    for (const std::meta::info member : std::meta::nonstatic_data_members_of(plain, unchecked)) {
+        state = combine_ids(state, layout_mark_member);
+        state = combine_ids(state, static_cast<std::uint64_t>(std::meta::offset_of(member).total_bits()));
+        state = combine_ids(state, std::meta::is_bit_field(member) ? std::meta::bit_size_of(member) : 0);
+        state = combine_ids(state, std::meta::has_identifier(member) ? hash_name(std::meta::identifier_of(member))
+                                                                     : layout_mark_no_name);
+        state = fold_layout(state, std::meta::type_of(member));
+    }
+    return state;
+}
+
+}  // namespace detail
+
+// The layout digest of a type.  Complexity: linear in the parts that the
+// type holds by value.
+[[nodiscard]] consteval std::uint64_t layout_digest(std::meta::info type) {
+    return detail::fold_layout(detail::layout_seed, type);
+}
+
+// The layout digest of each type of Ts, in order.  Two lists of the same
+// types in another order give two digests.
+template <typename... Ts>
+[[nodiscard]] consteval std::uint64_t layout_digest_of() {
+    std::uint64_t state = detail::layout_seed;
+    ((state = combine_ids(state, layout_digest(^^Ts))), ...);
+    return state;
+}
+
+// The digest of the C entries of the namespace Scope whose names start with
+// prefix, such as c_entry_digest<^^::>("crucible_").  Scope is a template
+// argument, so only a unit that names the digest walks the namespace.
+// Complexity: linear in the members of the namespace.
+template <std::meta::info Scope>
+[[nodiscard]] consteval std::uint64_t c_entry_digest(std::string_view prefix) {
+    std::uint64_t state = detail::layout_seed;
+    const auto unchecked = std::meta::access_context::unchecked();
+    for (const std::meta::info member : std::meta::members_of(Scope, unchecked)) {
+        if (!std::meta::is_function(member) || !std::meta::has_c_language_linkage(member)) continue;
+        const std::string_view name = std::meta::identifier_of(member);
+        if (!name.starts_with(prefix)) continue;
+        state = combine_ids(state, detail::layout_mark_entry);
+        state = combine_ids(state, detail::hash_name(name));
+        state = combine_ids(state, detail::layout_name_of(std::meta::type_of(member)));
+    }
+    return state;
+}
+
 }  // namespace foundation::reflect

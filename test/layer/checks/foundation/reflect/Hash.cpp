@@ -298,6 +298,108 @@ static_assert(identity_of_type(^^identity_test::Box<identity_test::Box<decltype(
               == std::meta::dealias(std::meta::remove_cv(^^decltype(identity_test::plain_closure))));
 static_assert(identity_of_type(^^decltype(identity_test::plain_closure)).fault == identity_fault::no_declared_name);
 
+// ── The layout digest ────────────────────────────────────────────────
+//
+// Each member of Shapes is an unnamed struct, which has no stable identity,
+// so its digest folds its layout and the names of its members only.  Two
+// such structs that differ in one fact of one member give two digests, and
+// two with the same members give one digest.
+namespace layout_test {
+
+struct Inner {
+    std::uint32_t low = 0;
+    std::uint32_t high = 0;
+};
+struct InnerSigned {
+    std::int32_t low = 0;
+    std::uint32_t high = 0;
+};
+
+struct Shapes {
+    struct {
+        std::uint32_t low;
+        std::uint32_t high;
+    } base;
+    struct {
+        std::uint32_t low;
+        std::uint32_t high;
+    } same;
+    struct {
+        std::uint32_t first;
+        std::uint32_t high;
+    } renamed;
+    struct {
+        std::int32_t low;
+        std::uint32_t high;
+    } retyped;
+    struct {
+        std::uint32_t low;
+        std::uint64_t high;
+    } moved;
+    struct {
+        Inner inner;
+    } holds_inner;
+    struct {
+        InnerSigned inner;
+    } holds_changed_inner;
+    struct {
+        Inner* link;
+    } points_to_inner;
+    struct {
+        InnerSigned* link;
+    } points_to_changed_inner;
+    struct {
+        std::uint8_t bytes[3];
+    } three_bytes;
+    struct {
+        std::uint8_t bytes[4];
+    } four_bytes;
+    struct {
+        std::uint32_t low : 3;
+        std::uint32_t high : 5;
+    } narrow_bits;
+    struct {
+        std::uint32_t low : 4;
+        std::uint32_t high : 4;
+    } other_bits;
+};
+
+[[nodiscard]] consteval std::uint64_t digest_of_member(std::meta::info member) {
+    return layout_digest(std::meta::type_of(member));
+}
+
+extern "C" int layout_test_entry_first(int value) noexcept;
+extern "C" int layout_test_entry_second(double value) noexcept;
+
+}  // namespace layout_test
+
+static_assert(layout_digest(^^layout_test::Inner) == layout_digest(^^layout_test::Inner));
+static_assert(layout_test::digest_of_member(^^layout_test::Shapes::base)
+              == layout_test::digest_of_member(^^layout_test::Shapes::same));
+// The name, the type and the offset of one member.
+static_assert(layout_test::digest_of_member(^^layout_test::Shapes::base)
+              != layout_test::digest_of_member(^^layout_test::Shapes::renamed));
+static_assert(layout_test::digest_of_member(^^layout_test::Shapes::base)
+              != layout_test::digest_of_member(^^layout_test::Shapes::retyped));
+static_assert(layout_test::digest_of_member(^^layout_test::Shapes::base)
+              != layout_test::digest_of_member(^^layout_test::Shapes::moved));
+// A change inside a member held by value, the pointee of a pointer, the
+// extent of an array and the width of a bit-field.
+static_assert(layout_test::digest_of_member(^^layout_test::Shapes::holds_inner)
+              != layout_test::digest_of_member(^^layout_test::Shapes::holds_changed_inner));
+static_assert(layout_test::digest_of_member(^^layout_test::Shapes::points_to_inner)
+              != layout_test::digest_of_member(^^layout_test::Shapes::points_to_changed_inner));
+static_assert(layout_test::digest_of_member(^^layout_test::Shapes::three_bytes)
+              != layout_test::digest_of_member(^^layout_test::Shapes::four_bytes));
+static_assert(layout_test::digest_of_member(^^layout_test::Shapes::narrow_bits)
+              != layout_test::digest_of_member(^^layout_test::Shapes::other_bits));
+// The order of a list of types, and the C entries of a namespace.
+static_assert(layout_digest_of<layout_test::Inner, layout_test::InnerSigned>()
+              != layout_digest_of<layout_test::InnerSigned, layout_test::Inner>());
+static_assert(c_entry_digest<^^layout_test>("layout_test_entry_")
+              != c_entry_digest<^^layout_test>("layout_test_entry_first"));
+static_assert(c_entry_digest<^^layout_test>("layout_test_none_") == c_entry_digest<^^layout_test>("no_entry_"));
+
 }  // namespace detail::stable_name_self_test
 
 }  // namespace foundation::reflect
