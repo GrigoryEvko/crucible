@@ -20,5 +20,5 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-- | x86_64-debug-asan-v3 | 10573755725473 | fixtures | the owner decision of 2026-11-17 moves the default build to x86-64-v3, so the baseline moves to the configuration x86_64-debug-asan-v3.  At x86-64-v3 the compiler emits the AVX2 arms of the SIMD family and of each kernel
-- | x86_64-debug-asan-v3 | 22099510794217 | objects | the owner decision of 2026-11-17 moves the default build to x86-64-v3, so the baseline moves to the configuration x86_64-debug-asan-v3.  At x86-64-v3 the compiler emits the AVX2 arms of the SIMD family and of each kernel
+- | x86_64-debug-asan-v3 | 11220213933281 | fixtures | the Protocol family joins fixy/Core.h, so each unit that includes Core.h also parses Equatable.h and Protocol.h, about 0.17 G instructions more for each unit.  The rest of the growth since the baseline of 2026-11-17 comes from the commits of main
+- | x86_64-debug-asan-v3 | 23342009221125 | objects | the Protocol family joins fixy/Core.h, so each unit that includes Core.h also parses Equatable.h and Protocol.h, about 0.17 G instructions more for each unit.  The rest of the growth since the baseline of 2026-11-17 comes from the commits of main

@@ -90,7 +90,7 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
 @build/test/fuzz/generated/ | std-object | 14 | - | -
 bench/ | c-array-object | 68 | - | -
-bench/ | c-library-call | 426 | - | -
+bench/ | c-library-call | 423 | - | -
 bench/ | c-library-object | 10 | - | -
 bench/ | compiler-builtin | 12 | - | -
 bench/ | door-header | 2 | - | -
@@ -296,7 +296,7 @@ src/perf/ | c-library-object | 2 | - | -
 src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | raw-pointer-object | 2 | - | -
 test/ | c-array-object | 149 | - | -
-test/ | c-library-call | 723 | - | -
+test/ | c-library-call | 721 | - | -
 test/ | c-library-object | 9 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 8 | - | -
@@ -477,6 +477,7 @@ test/foundation/ | opted-out | 45 | PROBE: a violation report blocks on a full p
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 6 | PROBE: the address of a body or an object tells which unit of the link holds it | -
 test/foundation/ | opted-out | 6 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/foundation/ | opted-out | 2 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | raw-function-pointer | 13 | - | -
 test/foundation/ | raw-new-delete | 2 | - | -
 test/foundation/ | raw-pointer-object | 32 | - | -
@@ -501,6 +502,7 @@ test/foundation/ | region | 1 | PROBE: a violation report blocks on a full pipe,
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | region | 5 | PROBE: the address of a body or an object tells which unit of the link holds it | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/foundation/ | region | 1 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | replace-pending:<limits> | 52 | - | -
 test/foundation/ | replace-pending:std::bit_cast | 8 | - | -
 test/foundation/ | replace-pending:std::source_location | 8 | - | -
@@ -645,7 +647,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 8 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
-test/shape/ | opted-out | 213 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 233 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -
 test/tensor_neg/ | raw-pointer-object | 1 | - | -
@@ -653,7 +655,6 @@ test/trace_neg/ | replace-pending:<limits> | 1 | - | -
 test/tsan/ | c-library-call | 1 | - | -
 test/tsan/ | std-entity | 32 | - | -
 test/tsan/ | std-object | 13 | - | -
-test/types_neg/ | raw-function-pointer | 1 | - | -
 test/vessel_neg/ | c-array-object | 1 | - | -
 test/vigil_neg/ | c-array-object | 1 | - | -
 test/vigil_neg/ | raw-pointer-object | 2 | - | -
