@@ -101,6 +101,7 @@ bench/ | opted-out | 9 | MEASURE: the pinned fluxsort is the stable reference of
 bench/ | opted-out | 12 | MEASURE: the pinned x86-simd-sort is the speed roof of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 9 | MEASURE: the plain sort of Kahn and the plain union-find are the references | the plain sort of Kahn and the plain union-find in bench_net_checks are the references of the run-time net checks, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 25 | MEASURE: the raw forms of the state of the art are the references of the containers | the raw forms of the state of the art are the reference rows of bench_core_containers: a raw bitmap, a raw heap bitmap, the generational table of the slotmap crate of Rust and the push_back of llvm::SmallVector, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | opted-out | 29 | MEASURE: the raw loop and the ranges form are the references of each walk | -
 bench/ | opted-out | 3 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
 bench/ | opted-out | 3 | MEASURE: the raw loop over two strides is the baseline of the strided walk | a raw loop over two strides that it reads at run time is the baseline of the strided walk in bench_core_strided, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | opted-out | 24 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
@@ -114,6 +115,7 @@ bench/ | region | 1 | MEASURE: the pinned fluxsort is the stable reference of th
 bench/ | region | 2 | MEASURE: the pinned x86-simd-sort is the speed roof of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the plain sort of Kahn and the plain union-find are the references | the plain sort of Kahn and the plain union-find in bench_net_checks are the references of the run-time net checks, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the raw forms of the state of the art are the references of the containers | the raw forms of the state of the art are the reference rows of bench_core_containers: a raw bitmap, a raw heap bitmap, the generational table of the slotmap crate of Rust and the push_back of llvm::SmallVector, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
+bench/ | region | 1 | MEASURE: the raw loop and the ranges form are the references of each walk | -
 bench/ | region | 1 | MEASURE: the raw loop of the add is the reference of the parallel walk | -
 bench/ | region | 1 | MEASURE: the raw loop over two strides is the baseline of the strided walk | a raw loop over two strides that it reads at run time is the baseline of the strided walk in bench_core_strided, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | region | 1 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
@@ -402,7 +404,7 @@ test/fixy/ | std-entity | 2529 | - | -
 test/fixy/ | std-object | 912 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
-test/fixy/neg/ | detail-use | 288 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
+test/fixy/neg/ | detail-use | 287 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -515,7 +517,7 @@ test/foundation/ | std-entity | 424 | - | -
 test/foundation/ | std-object | 143 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
-test/foundation/neg/ | detail-use | 117 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges
+test/foundation/neg/ | detail-use | 116 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type or a range or a cursor that the fixture forges
 test/foundation/neg/ | door-use | 2 | - | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
 test/foundation/neg/ | lifetime-start | 11 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/ | opted-out | 1 | PROBE: a forged OneOf shows that a sum slot names no OneOf as a friend | the route probes of a sum slot and of a niche key define a class template of the base in a PROBE region, and the witness of the key of a sum slot names the key
@@ -652,7 +654,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 8 | - | -
 test/session_oracle/ | std-entity | 26 | - | -
 test/session_oracle/ | std-object | 1383 | - | -
-test/shape/ | opted-out | 238 | ORACLE: the raw form that the shape of each family probe is compared with | -
+test/shape/ | opted-out | 258 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/swiss_table_neg/ | replace-pending:<limits> | 1 | - | -
 test/tensor_neg/ | raw-pointer-object | 1 | - | -
