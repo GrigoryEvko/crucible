@@ -24,12 +24,18 @@ THE RUN
     lines to the record of that section.  Only one run occurs at a time,
     because two runs at the same time change the times of the two.
       * A run counts when its status is 0, the host was quiet, the cores lost
-        no time to steal, no report has a pause over the bound of the
-        harness (THE PAUSE CHECK of bench/bench_harness.h), and the
-        coefficient of variation of each report is at most MAX_CV.  The host is quiet at QUIET_OTHERS_PCT of
-        assay.loop.history.  The run adds one sample of the quantity 1.  A
-        bench that does not use the reports of the harness prints no JSON
-        tail.  Its run counts on a quiet host.
+        no time to steal, and no report has a pause over the bound of the
+        harness (THE PAUSE CHECK of bench/bench_harness.h).  The host is
+        quiet at QUIET_OTHERS_PCT of assay.loop.history.  The run adds one
+        sample of the quantity 1.  A bench that does not use the reports of
+        the harness prints no JSON tail.  Its run counts on a quiet host.
+      * A run that counts gets the mark AGAIN_MARK in the fact `mark` when a
+        report has a coefficient of variation or a spread of its windows
+        above RERUN_BOUND.  The fact `again` gives the reason.  Such a
+        variation tells the reader to run the bench again before a claim
+        that rests on a smaller difference.  It does not make the run
+        invalid, so the run still counts.  The facts `cv` and `spread` keep
+        the largest of each over the reports.
       * A run that does not count adds one sample of the quantity 0, with
         the reason in the fact `skip`.  Its wall time stays in the record.
         An entry then knows the time of a run of the bench on this host.
@@ -76,8 +82,10 @@ from assay.loop.evidence import store as evidence_store
 from assay.readers import bench as bench_reader
 from assay.readers import cmake as cmake_reader
 
-# The largest coefficient of variation of a report of a run that counts (THE RUN).
-MAX_CV = 0.05
+# The largest coefficient of variation and the largest spread of the windows of a report of a run with no mark, and the
+# mark of a run above it (THE RUN).
+RERUN_BOUND = 0.05
+AGAIN_MARK = "run again"
 # The time of one run of a bench with no sample.  The time limit of a run is a multiple of the time of one run, with a
 # floor (THE BUDGET).
 FIRST_RUN_S = 60.0
@@ -208,8 +216,9 @@ def judged(ran: Ran, core_facts: Sequence[tuple[str, str]]) -> Judged:
     except bench_reader.BenchError as problem:
         return Judged(0.0, facts, str(problem))
     largest = max((report.cv for report in found or ()), default=0.0)
+    spread = max((report.window_spread for report in found or ()), default=0.0)
     paused = [report for report in found or () if report.is_paused]
-    facts = (*facts, ("cv", f"{largest:.4f}"), ("reports", str(len(found or ()))))
+    facts = (*facts, ("cv", f"{largest:.4f}"), ("spread", f"{spread:.4f}"), ("reports", str(len(found or ()))))
     quiet_pct = loop_history.QUIET_OTHERS_PCT
     if ran.others_pct is None:
         reason = "the host gave no busy time"
@@ -222,11 +231,26 @@ def judged(ran: Ran, core_facts: Sequence[tuple[str, str]]) -> Judged:
             f"the report {paused[0].name} lost {paused[0].pause_ns / 1e6:.2f} ms to a pause, more than the bound of "
             "the pause check of the harness"
         )
-    elif largest > MAX_CV:
-        reason = f"the largest coefficient of variation is {largest:.4f}, more than {MAX_CV:g}"
     else:
-        return Judged(1.0, facts)
+        return Judged(1.0, (*facts, *again_facts(largest, spread)))
     return Judged(0.0, (*facts, ("skip", reason)))
+
+
+def again_facts(largest_cv: float, spread: float) -> tuple[tuple[str, str], ...]:
+    """Return the facts of the mark AGAIN_MARK of a run that counts, or no fact (THE RUN).
+
+    Args:
+        largest_cv: The largest coefficient of variation of the reports of the run
+        spread: The largest spread of the windows of the reports of the run
+    """
+    reasons = [
+        f"the {name} {value:.4f} is more than {RERUN_BOUND:g}"
+        for name, value in (("largest coefficient of variation", largest_cv), ("largest spread of the windows", spread))
+        if value > RERUN_BOUND
+    ]
+    if not reasons:
+        return ()
+    return (("mark", AGAIN_MARK), ("again", ", and ".join(reasons)))
 
 
 def record_run(store: evidence_store.EvidenceStore, measured: Measured, ran: Ran, verdict: Judged) -> bool:
@@ -334,12 +358,14 @@ def run_benches(
         measured.runs_now += 1
         runs += 1
         counted += int(verdict.quantity > 0)
-        skip = dict(verdict.facts).get("skip", "")
+        facts = dict(verdict.facts)
+        skip, again = facts.get("skip", ""), facts.get("again", "")
         if record_run(store, measured, ran, verdict):
             failures.append(measured.name)
         check_report.write_line(
             f"{PROGRAM}: {measured.name} ran for {ran.wall_s:.1f} s"
             + (f", and the run does not count: {skip}" if skip else "")
+            + (f", and the run counts with the mark {AGAIN_MARK}: {again}" if again else "")
         )
     return Outcome(runs, counted, tuple(failures), reason)
 

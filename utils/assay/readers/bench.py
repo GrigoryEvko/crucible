@@ -21,7 +21,11 @@ THE REPORT
     program built before that check gives none: pause_ns, the time that the
     measuring thread lost, and paused, 1 when a thread of the run lost more
     than the bound of the harness (THE PAUSE CHECK of bench/bench_harness.h).
-    A report with no such field reads as a report with no pause.
+    A report with no such field reads as a report with no pause.  The field
+    window_spread is optional for the same reason: the spread of the p50 of
+    the windows of the run, (largest - smallest) / median (THE WINDOWS of
+    bench/bench_harness.h).  A report with no such field reads as a report
+    with no spread.
 
 `guard selftest tests.readers.test_bench` does a test of the module.
 """
@@ -35,7 +39,7 @@ MARKER = "=== json ==="
 # The fields of a report that the reader keeps, each a number (THE REPORT).
 NUMBERS = ("n", "p50", "p99", "max", "cv", "wall_ns", "drift_pct")
 # The optional fields of a report, each a number, and zero when the report does not give it (THE REPORT).
-OPTIONAL_NUMBERS = ("pause_ns", "paused")
+OPTIONAL_NUMBERS = ("pause_ns", "paused", "window_spread")
 
 
 class BenchError(ValueError):
@@ -44,8 +48,8 @@ class BenchError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Report:
-    """One report of a bench: its name, its samples, its percentiles, its variation, its wall time, its drift and its
-    pause."""
+    """One report of a bench: its name, its samples, its percentiles, its variation, its wall time, its drift, its
+    pause and the spread of its windows."""
 
     name: str
     n: float
@@ -57,6 +61,7 @@ class Report:
     drift_pct: float
     pause_ns: float = 0.0
     paused: float = 0.0
+    window_spread: float = 0.0
 
     @property
     def is_paused(self) -> bool:

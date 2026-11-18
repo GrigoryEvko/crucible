@@ -34,9 +34,9 @@ def completed(status: int, out: str = "") -> proc.Completed:
     return proc.Completed(command, status << 8, out.encode(), b"planted error\n", 1.0, 1.0, 0.0, 0)
 
 
-def tail(cv: float) -> str:
-    """Return the output of a planted bench with one report of a coefficient of variation."""
-    return f"try_push: p50=7 ns\n{bench_reader.MARKER}\n{json.dumps([dict(REPORT, cv=cv)])}\n"
+def tail(cv: float, spread: float = 0.0) -> str:
+    """Return the output of a planted bench with one report of a coefficient of variation and a spread of windows."""
+    return f"try_push: p50=7 ns\n{bench_reader.MARKER}\n{json.dumps([dict(REPORT, cv=cv, window_spread=spread)])}\n"
 
 
 def judged_cases(expect: testing.Expect) -> None:
@@ -48,17 +48,35 @@ def judged_cases(expect: testing.Expect) -> None:
     counted = judge(completed(0, tail(0.01)), 2.0)
     facts = dict(counted.facts)
     expect(
-        "a quiet run with a small variation counts, with its variation, its share and its core",
+        "a quiet run with a small variation counts, with its variation, its spread, its share and its core, and no "
+        "mark",
         counted.quantity == 1.0
         and not counted.failure
         and facts.get("cv") == "0.0100"
+        and facts.get("spread") == "0.0000"
         and facts.get("others_pct") == "2.0"
-        and facts.get("cores") == "0",
+        and facts.get("cores") == "0"
+        and "mark" not in facts,
     )
+    for name, result, word in (
+        ("a coefficient of variation", completed(0, tail(0.2)), "coefficient of variation 0.2000"),
+        ("a spread of the windows", completed(0, tail(0.01, 0.08)), "spread of the windows 0.0800"),
+    ):
+        again = judge(result, 2.0)
+        again_facts = dict(again.facts)
+        expect(
+            f"a quiet run with {name} above 5 % counts, with the mark {measurement.AGAIN_MARK} and its reason, and "
+            "keeps its spread, because such a variation asks for a second run and does not refuse the run",
+            again.quantity == 1.0
+            and not again.failure
+            and again_facts.get("mark") == measurement.AGAIN_MARK
+            and word in again_facts.get("again", "")
+            and "skip" not in again_facts
+            and again_facts.get("spread") == f"{0.08 if 'spread' in name else 0.0:.4f}",
+        )
     for name, result, share, word in (
         ("a busy host", completed(0, tail(0.01)), 50.0, "other processes"),
         ("a host with no busy time", completed(0, tail(0.01)), None, "no busy time"),
-        ("a large variation", completed(0, tail(0.2)), 2.0, "coefficient of variation"),
     ):
         verdict = judge(result, share)
         expect(
