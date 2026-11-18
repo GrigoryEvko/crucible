@@ -939,7 +939,7 @@ witness <fixy/os/Time.h> private | fixy::time::ClockReader<foundation::algebra::
 # A PTP reader stamps what clock_gettime returned on its descriptor.  Its
 # one door is mint_ptp_clock_reader, which opens /dev/ptpN itself, so a
 # forger who holds another descriptor cannot build a reader over it.
-witness <fixy/os/Time.h> private | fixy::time::PtpClockReader | fixy::time::PtpClockReader{forge::rvalue<fixy::fs::OwnedFd>()}
+witness <fixy/os/Time.h> private | fixy::time::PtpClockReader | fixy::time::PtpClockReader{forge::rvalue<fixy::time::PtpClockHandle>()}
 # A child report claims that a wait read the output and the end of a real
 # child.  Its default constructor is private, and only the child door of
 # src/fixy/os/Process.cpp builds one, after the wait.

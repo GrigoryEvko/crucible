@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::time::PtpClockReader{forge::rvalue<fixy::fs::OwnedFd>()};
+    [[maybe_unused]] auto forged = fixy::time::PtpClockReader{forge::rvalue<fixy::time::PtpClockHandle>()};
     return 0;
 }

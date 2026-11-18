@@ -122,7 +122,8 @@ using BackgroundFsCtx =
 static_assert(std::is_same_v<PtpClockReader::result_type, sf::PtpHwClockBytes<std::uint64_t>>);
 static_assert(!PtpClockReader::is_clamped);
 static_assert(!std::is_default_constructible_v<PtpClockReader>);
-static_assert(!std::is_constructible_v<PtpClockReader, ::fixy::fs::OwnedFd>);
+static_assert(!std::is_constructible_v<PtpClockReader, PtpClockHandle>);
+static_assert(!std::is_constructible_v<PtpClockHandle, int>, "the handle of a device comes only from its door.");
 static_assert(!std::is_copy_constructible_v<PtpClockReader>);
 static_assert(std::is_nothrow_move_constructible_v<PtpClockReader>);
 static_assert(CtxFitsPtpClockReaderMint<BackgroundFsCtx>);

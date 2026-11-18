@@ -22,6 +22,7 @@
 #include <fixy/os/ClockSource.h>
 #include <fixy/os/CpuPinned.h>
 #include <fixy/os/Fd.h>
+#include <fixy/os/Handle.h>
 #include <fixy/os/MonotonicClock.h>
 #include <foundation/Lifetime.h>
 #include <foundation/NoObject.h>
@@ -491,7 +492,14 @@ namespace detail {
 
 }  // namespace detail
 
-// The reader of one PTP hardware clock.  It owns the descriptor of the
+// The rights of a PTP clock device: the read of its time, and the family of
+// the PTP ioctls.
+inline constexpr ::fixy::os::RightSet ptp_clock_rights = ::fixy::os::RightSet::read | ::fixy::os::RightSet::ioctl_ptp;
+
+// The handle of a /dev/ptpN device.
+using PtpClockHandle = ::fixy::os::Handle<::fixy::os::kind::PtpClock, ptp_clock_rights>;
+
+// The reader of one PTP hardware clock.  It owns the handle of the
 // device.  The clock id that it reads through then names a descriptor
 // that is still open.  A move takes the descriptor, and each call of the
 // reader that the move emptied gives ebadf.
@@ -519,11 +527,12 @@ struct PtpClockReader final {
     [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno>
     read(eff::cap::Nondet) const noexcept {
         using Reading = ::foundation::core::Result<result_type, ::foundation::os::Errno>;
-        return detail::read_ptp_clock_nanos(fd_.get()).match(
-            [](std::uint64_t nanos) noexcept -> Reading {
-                return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
-            },
-            [](::foundation::os::Errno error) noexcept -> Reading { return ::foundation::core::err(error); });
+        return detail::read_ptp_clock_nanos(::fixy::os::detail::HandleDoor::descriptor_of(device_.ref()))
+            .match(
+                [](std::uint64_t nanos) noexcept -> Reading {
+                    return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
+                },
+                [](::foundation::os::Errno error) noexcept -> Reading { return ::foundation::core::err(error); });
     }
 
     // The capabilities of the clock, as PTP_CLOCK_GETCAPS2 reports them, or
@@ -531,27 +540,27 @@ struct PtpClockReader final {
     // query names a device that is still open.  A reader that a move emptied
     // gives ebadf and makes no query.
     [[nodiscard]] ::foundation::core::Result<PtpClockCaps, ::foundation::os::Errno> caps() const noexcept {
-        if (!fd_.is_open()) [[unlikely]] {
+        if (!device_.is_open()) [[unlikely]] {
             return ::foundation::core::err(::foundation::os::Errno::ebadf);
         }
-        return detail::read_ptp_caps_(fd_.get());
+        return detail::read_ptp_caps_(::fixy::os::detail::HandleDoor::descriptor_of(device_.ref()));
     }
 
 private:
-    // One door.  PtpDeviceDoor opens the device and gives the descriptor to
+    // One door.  PtpDeviceDoor opens the device and gives its handle to
     // this constructor.  The door is the only friend.  A Result of a reader
     // needs the complete class, so the door, which comes after the class,
     // builds the reader.
-    explicit PtpClockReader(::fixy::fs::OwnedFd fd) noexcept : fd_{std::move(fd)} {}
+    explicit PtpClockReader(PtpClockHandle device) noexcept : device_{std::move(device)} {}
 
     friend class PtpDeviceDoor;
 
-    ::fixy::fs::OwnedFd fd_;
+    PtpClockHandle device_;
 };
 
 // The door to the open of a /dev/ptpN node.  No object of it exists.  Its
 // member is private, and its one friend is mint_ptp_clock_reader.
-// fixy::fs::OwnedFd and PtpClockReader befriend this class, so a
+// A Handle and PtpClockReader befriend this class, so a
 // descriptor of a PTP device and its reader come only from that mint,
 // after its gate.  The door builds the device path from the index itself,
 // so a caller cannot point it at a file that is not a PTP device node.
@@ -584,7 +593,7 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
         using Opened = ::foundation::core::Result<PtpClockReader, ::foundation::os::Errno>;
         return ::fixy::fs::detail::open_descriptor_(
                    path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0)
-            .match([](int descriptor) noexcept -> Opened { return PtpClockReader{::fixy::fs::OwnedFd{descriptor}}; },
+            .match([](int descriptor) noexcept -> Opened { return PtpClockReader{PtpClockHandle{descriptor}}; },
                    [](::foundation::os::Errno error) noexcept -> Opened { return ::foundation::core::err(error); });
     }
 };
