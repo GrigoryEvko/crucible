@@ -2,7 +2,7 @@
 //
 // MUST fail to compile.  An argument that inverts the canonical wrapper
 // order fails the `ArgsCanonicallyOrdered` requires-clause on
-// `federation_key` (and on `federation_content_hash` and
+// `federation_key` (and on `computation_identity` and
 // `serialize_computation_cache_federation_entry`).
 //
 // Stale has canonical_layer_index 8 and Tagged has index 9.  Stale inside
@@ -32,9 +32,13 @@ inline void target(int) noexcept {}
 // The inverted wrapper stack: Tagged (9) wrapping Stale (8).
 using InvertedStack = ::fixy::Tagged<::fixy::Stale<int>, ::fixy::tags::source::FromUser>;
 
+// The key of the federation of the fixture: 32 zero bytes.
+constexpr ::foundation::core::FixedArray<std::byte, 32> key_bytes{};
+constexpr fed::FederationHashKey hash_key{key_bytes.view()};
+
 // Force instantiation of the constrained projection at TU scope.  The
 // ArgsCanonicallyOrdered<InvertedStack> requires-clause is unsatisfied,
 // so this call is ill-formed — the fixture passes by failing to compile.
-constexpr auto bad_key = fed::federation_key<&target, eff::Row<>, InvertedStack>();
+constexpr auto bad_key = fed::federation_key<&target, eff::Row<>, InvertedStack>(hash_key);
 
 static_assert(!bad_key.is_zero());

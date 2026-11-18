@@ -305,8 +305,8 @@ src/perf/ | c-library-call | 1 | - | -
 src/perf/ | c-library-object | 2 | - | -
 src/perf/ | compiler-builtin | 1 | - | -
 src/perf/ | raw-pointer-object | 2 | - | -
-test/ | c-array-object | 149 | - | -
-test/ | c-library-call | 721 | - | -
+test/ | c-array-object | 148 | - | -
+test/ | c-library-call | 720 | - | -
 test/ | c-library-object | 9 | - | -
 test/ | compiler-builtin | 1 | - | -
 test/ | door-header | 8 | - | -
@@ -323,10 +323,10 @@ test/ | region | 1 | PROBE: a traced child shows the directory of each sync of t
 test/ | region | 4 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
 test/ | region | 1 | PROBE: the entry hook of -finstrument-functions counts the calls that a loop runs | -
 test/ | region | 1 | PROBE: the test sets the current directory, the modes and the links of a root | the test of the root of the Cipher sets its current directory, the mode of a directory and symbolic links through the C library, because the base has no door that changes the current directory or the mode of a directory or makes a link, and the root must open in an unreadable current directory, under a search-only parent and under a linked parent
-test/ | replace-pending:<limits> | 12 | - | -
+test/ | replace-pending:<limits> | 11 | - | -
 test/ | replace-pending:std::bit_cast | 77 | - | -
-test/ | std-entity | 1454 | - | -
-test/ | std-object | 523 | - | -
+test/ | std-entity | 1449 | - | -
+test/ | std-object | 522 | - | -
 test/cipher_neg/ | raw-function-pointer | 2 | - | -
 test/cipher_neg/ | raw-pointer-object | 2 | - | -
 test/cipher_neg/ | std-entity | 3 | - | -

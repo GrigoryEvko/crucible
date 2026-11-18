@@ -711,7 +711,7 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
         ++position;
     }
     const ContentHash hash = session_event_batch_hash(payload.view());
-    const KernelCacheKey key{hash, SESSION_EVENT_FEDERATION_ROW_HASH};
+    const cipher::federation::FederationKey key = session_event_batch_key(payload.view());
 
     // The entry fills its buffer: the header and then the payload.
     ::fixy::HeapArray<std::byte> encoded =
@@ -829,9 +829,8 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
                                .map_err([](cipher::federation::FederationError) noexcept {
                                    return LoadError::batch_entry_malformed;
                                }));
-        const bool has_named_hashes = view.header.content_hash == hash
-                                   && view.header.row_hash == SESSION_EVENT_FEDERATION_ROW_HASH
-                                   && session_event_batch_hash(view.payload) == hash;
+        const bool has_named_hashes =
+            session_event_batch_hash(view.payload) == hash && view.header.key == session_event_batch_key(view.payload);
         if (!has_named_hashes) return ::fixy::err(LoadError::batch_hash_mismatch);
         if ((view.payload.size() % sizeof(SessionEvent)) != 0u || view.payload.size() / sizeof(SessionEvent) != count) {
             return ::fixy::err(LoadError::batch_count_mismatch);
@@ -953,6 +952,30 @@ ContentHash Cipher::session_event_batch_hash(::fixy::View<std::byte const> bytes
     if (h == 0u) h = 0x53455353494f4e45ULL;
     if (h == ::fixy::max_of<uint64_t>) --h;
     return ContentHash{h};
+}
+
+namespace {
+
+// The text whose 32 bytes are the key of the session-event batches.
+constexpr ::fixy::TextView kSessionEventBatchKeyText{"crucible cipher session events 2"};
+static_assert(kSessionEventBatchKeyText.size() == 32, "a key of keyed_hash holds 32 bytes");
+
+[[nodiscard]] consteval ::foundation::core::KeyedHashKeyBytes session_event_batch_hash_key_() noexcept {
+    ::fixy::FixedArray<std::byte, 32> bytes{};
+    auto cursor = bytes.begin();
+    for (char const letter : kSessionEventBatchKeyText) {
+        *cursor = static_cast<std::byte>(letter);
+        ++cursor;
+    }
+    return ::foundation::core::KeyedHashKeyBytes{bytes.view()};
+}
+
+constexpr ::foundation::core::KeyedHashKeyBytes kSessionEventBatchHashKey = session_event_batch_hash_key_();
+
+}  // namespace
+
+cipher::federation::FederationKey Cipher::session_event_batch_key(::fixy::View<std::byte const> bytes) noexcept {
+    return cipher::federation::FederationKey{::foundation::core::keyed_hash(kSessionEventBatchHashKey, bytes)};
 }
 
 ContentHash Cipher::latest_committed_head() const noexcept {

@@ -74,12 +74,13 @@
 // toolchains disjoint by construction.
 //
 // The toolchain stays out of row_hash_contribution, and the reason is
-// the row specialisation rather than any hash already published. The
-// live federation key reaches that specialisation alone, because
-// crucible/cipher/ComputationCacheFederation.h constrains its row half
-// to an effect row. That value is portable today. To fold the toolchain
-// in unconditionally would make the one portable half non-portable, in
-// exchange for a guarantee the caller already takes per key.
+// the row specialisation rather than any hash already published. That
+// value is portable. To fold the toolchain in unconditionally would make
+// the one portable half non-portable, in exchange for a guarantee the
+// caller already takes per key.  A key that crosses a process boundary
+// reads no hash of this header: the federation key of
+// crucible/cipher/ComputationCacheFederation.h is a keyed hash of the
+// stable names, the canonical row among them.
 //
 // A cross-build witness covers the rest. utils/tools/dump_row_hashes.cpp prints
 // this fold from a separate binary and CI diffs the output against a

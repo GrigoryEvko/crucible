@@ -115,7 +115,7 @@ inline void run_cipher_store(std::span<const std::uint8_t> bytes) {
         ::fixy::HeapArray<std::byte> entry = ::fixy::mint_heap_array(
             test_alloc(), cipher::federation::FEDERATION_HEADER_BYTES + records.size(), std::byte{0});
         auto written = cipher::federation::serialize_federation_entry(
-            entry.view(), KernelCacheKey{batch_hash, Cipher::SESSION_EVENT_FEDERATION_ROW_HASH}, records.view());
+            entry.view(), Cipher::session_event_batch_key(records.view()), records.view());
         if (written.is_ok()) {
             std::vector<std::uint8_t> entry_file;
             for (const std::byte byte : entry.view()) {

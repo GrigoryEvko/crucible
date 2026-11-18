@@ -657,13 +657,11 @@ concept IsFamilyB = std::is_same_v<hash_family_of_t<HashT>, hash_family::FamilyB
 // this type into that slot. Three static_assert statements pin the slot at 24
 // bytes (MerkleDag.h:706-708).
 //
-// Every consumer of this type puts a key on the federation wire:
-//   - ComputationCacheFederation.h:130 builds one from a function and a row
-//   - FederationProtocol.h:226 writes one, and :303 reads one back
-//   - Cipher::persist_session_events (Cipher.h) builds one for a session event.
-//
-// The in-process cache and the wire want opposite properties from the row
-// half. The difference decides the effect of a row collision.
+// No key of this type crosses a process boundary.  The federation wire and
+// the session-event batches of the Cipher carry a FederationKey
+// (crucible/cipher/FederationProtocol.h): a keyed hash of 32 bytes.  A peer
+// that chooses its input can find two inputs of one 64-bit hash, so the two
+// 64-bit halves of this key stay inside one process.
 //
 // For the cache the row half is the discriminator, and it must be unique.
 // MerkleDag.h:1381 supplies a row-blind region content hash and a row, so one
@@ -673,18 +671,10 @@ concept IsFamilyB = std::is_same_v<hash_family_of_t<HashT>, hash_family::FamilyB
 // continues the probe and ends at a miss, which is the intent. A row collision
 // returns the kernel of another discipline, which is a defect.
 //
-// For the wire the row half repeats what the content half already holds.
-// ComputationCache.h:144 folds the row into the content hash. The purpose of
-// that fold is family separation and not discrimination
-// (ComputationCache.h:130-131, :141-143). A row collision alone causes no
-// damage there, because the content halves already differ.
-//
-// The fail directions differ too. The content half has a check after the match
-// on both paths. The cache refuses a zero content hash (MerkleDag.h:897) and
-// reserves UINT64_MAX (MerkleDag.h:932-934). The wire hashes the payload again
-// and compares the content half (FederationProtocol.h:20-22, :272-273).
-// Nothing checks the row half after a match on either path. The row half rests
-// on injectivity alone.
+// The content half has a check after the match. The cache refuses a zero
+// content hash (MerkleDag.h:897) and reserves UINT64_MAX (MerkleDag.h:932-934).
+// Nothing checks the row half after a match. The row half rests on
+// injectivity alone.
 //
 // test_row_hash_distinctness.cpp supplies that injectivity at compile time. It
 // asserts pairwise distinctness across a 44-entry wrapper by stance matrix, it
@@ -709,12 +699,9 @@ concept IsFamilyB = std::is_same_v<hash_family_of_t<HashT>, hash_family::FamilyB
 // shape: 128 rows for one content hash form one probe chain, because the slot
 // index uses the content alone.
 //
-// The zero refusal of the wire does not cover the row half. is_zero() below
-// needs both halves at zero. So an entry with a non-zero content hash and
-// RowHash{0} passes the refusal on write (FederationProtocol.h:231-233) and on
-// read (FederationProtocol.h:307-309). This is correct. RowHash{0} is the
-// bare-type baseline and a valid key (MerkleDag.h:672-673), and it is the row
-// value with the most traffic in the shipped code (MerkleDag.h:1381).
+// is_zero() below needs both halves at zero. RowHash{0} is the bare-type
+// baseline and a valid key (MerkleDag.h:672-673), and it is the row value with
+// the most traffic in the shipped code (MerkleDag.h:1381).
 struct KernelCacheKey {
     ContentHash content_hash{};
     RowHash row_hash{};

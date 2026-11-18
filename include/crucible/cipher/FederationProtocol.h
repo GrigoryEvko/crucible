@@ -4,47 +4,63 @@
 // layout, the magic, the version stamp, and the rules every transport
 // applies before it trusts an entry.
 //
-// Little-endian throughout, a 32-byte header, payload immediately
+// The header is the encode image of FederationEntryHeader
+// (foundation/core/Protocol.h), 48 bytes, with the payload immediately
 // after it:
 //
 //  Offset Size  Field
 //   0      4    magic                 'CFED' as a little-endian word
-//   4      2    protocol_version
+//   4      2    protocol_version      2
 //   6      2    universe_cardinality  the sender's effect-atom count
-//   8      8    content_hash
-//  16      8    row_hash
-//  24      4    payload_size          bytes following the header
-//  28      4    reserved              zero
-//  32+   ...    payload               opaque bytes
+//   8      4    payload_size          bytes following the header
+//  12      1    key kind              1: BLAKE3 in its keyed mode
+//  13      1    key width             32: the bytes of the digest
+//  14     32    key digest
+//  46      2    reserved              zero
+//  48+   ...    payload               opaque bytes
+//
+// THE KEY.  A federation key is the keyed hash of its content under the
+// key of the federation: BLAKE3 in its keyed mode, with its native output
+// of 32 bytes (foundation/core/KeyedHash.h).  A federation spans
+// organizations, so a member can be hostile, and a member holds the key of
+// the federation.  Under a known key a hash keeps only its collision
+// resistance, and the birthday bound gives 2^(n/2) of it for n bits.  So
+// the key takes 256 bits and not 128: 128 bits give 64 bits of resistance,
+// which a member with resources can reach, and 256 bits give 128.  An id
+// inside one process stays a 64-bit hash, because no peer chooses its
+// input there.
+//
+// The kind and the width are part of the key, and decode refuses each
+// other value of the two.  So a later change of the hash is a new kind or
+// a new width that this reader refuses, never a silent collision of two
+// hashes in one slot.
 //
 // The integrity of the payload is the receiver's business. This layer
 // never sees the payload in raw form, so a receiver hashes the bytes
-// itself and compares the result against the content hash.
+// itself and compares the result against the key.
 //
 // The cardinality stamp carries the append-only rule for effect atoms
 // onto the wire. An atom's value never moves and a new atom takes the
 // next free position. So a stamp at or below the receiver's own count
 // means the receiver knows every atom the sender used. A stamp above
-// it means the sender used atoms this receiver cannot interpret, the
-// row hash then depends on values the receiver does not know, and the
-// entry is refused rather than allowed to collide with a stale row
-// hash.
+// it means the sender used atoms this receiver cannot interpret, and
+// the entry is refused rather than read under a meaning that the
+// receiver does not hold.
 //
-// Two key values never travel. A sentinel key is the empty-slot
-// marker of an open-addressed table, and accepting one lets a peer
-// poison its own lookup termination. A zero key means the sender left
-// it unset, and accepting one aims traffic at the most vulnerable
-// bucket on the far side. Both are refused on write and on read.
+// Two key values never travel. A sentinel key, each byte of its digest
+// 0xFF, is the empty-slot marker of an open-addressed table, and accepting
+// one lets a peer poison its own lookup termination. A zero digest means
+// the sender left the key unset, and accepting one aims traffic at the
+// most vulnerable bucket on the far side. Both are refused on write and
+// on read.
 //
 // The reserved word is written as zero and any other value is
 // refused. That is what makes a later revision safe. A reader of this
-// version rejects newer traffic outright instead of reading four
+// version rejects newer traffic outright instead of reading two
 // bytes as something they are not.
 //
-// Every multi-byte field is little-endian, which matches every
-// supported platform, so the codec copies bytes straight in and out
-// with no swapping. A big-endian port needs explicit swaps. The
-// layout itself does not change.
+// Each multi-byte field is little-endian in the image on each target, so
+// the layout does not change with the host.
 //
 // The session protocol at the end of this header fixes the legal order
 // of the messages around one entry.
@@ -52,10 +68,12 @@
 #include <crucible/Types.h>
 #include <fixy/Core.h>
 #include <fixy/Federation.h>
+#include <fixy/Protocol.h>
 #include <fixy/Tagged.h>
 #include <fixy/session/ContentAddressed.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/Protocol.h>
+#include <foundation/core/KeyedHash.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 
@@ -70,9 +88,8 @@ namespace crucible::cipher::federation {
 inline constexpr std::uint32_t FEDERATION_MAGIC = 0x44454643u;
 
 // A version is compared for equality and never fallen back from. A
-// later header read under this layout would take four bytes of the
-// reserved word for something else.
-inline constexpr std::uint16_t FEDERATION_PROTOCOL_V1 = 1u;
+// header of another version is refused before the reader reads its key.
+inline constexpr std::uint16_t FEDERATION_PROTOCOL_V2 = 2u;
 
 // The count of effect atoms of this build: the stamp that a sender writes,
 // and the count that a receiver of this build states.  The check file of
@@ -80,17 +97,128 @@ inline constexpr std::uint16_t FEDERATION_PROTOCOL_V1 = 1u;
 inline constexpr std::uint16_t FEDERATION_UNIVERSE_CARDINALITY =
     static_cast<std::uint16_t>(::foundation::effects::effect_count);
 
-struct FederationEntryHeader {
+// The hash of a federation key.
+enum class FederationHashKind : std::uint8_t {
+    // BLAKE3 in its keyed mode (foundation/core/KeyedHash.h).
+    blake3_keyed = 1,
+};
+
+// The count of bytes of the digest of a federation key.
+enum class FederationKeyWidth : std::uint8_t {
+    bytes_32 = 32,
+};
+
+inline constexpr std::size_t FEDERATION_DIGEST_BYTES = 32;
+
+// The key of the keyed hash of one federation, which each member holds.
+// The key gives no secrecy against a member, because a member holds it.
+// It keeps the keys of two federations apart, and an outsider who does
+// not hold it cannot compute a key of the federation.
+class FederationHashKey final {
+public:
+    constexpr explicit FederationHashKey(::fixy::View<std::byte const, FEDERATION_DIGEST_BYTES> bytes) noexcept {
+        auto cursor = bytes.begin();
+        for (std::byte& byte : bytes_) {
+            byte = *cursor;
+            ++cursor;
+        }
+    }
+
+    // The key of the keyed hash.  Complexity: one read of the 32 bytes.
+    [[nodiscard]] constexpr ::foundation::core::KeyedHashKeyBytes keyed_hash_key() const noexcept {
+        return ::foundation::core::KeyedHashKeyBytes{bytes_.view()};
+    }
+
+private:
+    ::fixy::FixedArray<std::byte, FEDERATION_DIGEST_BYTES> bytes_{};
+};
+
+// The identity of an entry on the wire: the kind and the width of its
+// hash, and the digest.  A default key has a zero digest, which no entry
+// carries.  The digest is bytes, so the key has no padding and its image
+// is its 34 bytes in memory.
+class[[= ::fixy::derive_protocol{}]] FederationKey final {
+public:
+    constexpr FederationKey() noexcept = default;
+
+    // The key of a digest of keyed_hash.
+    constexpr explicit FederationKey(::foundation::core::Hash256 digest) noexcept : digest_{digest.bytes()} {}
+
+    [[nodiscard]] constexpr FederationHashKind kind() const noexcept { return kind_; }
+    [[nodiscard]] constexpr FederationKeyWidth width() const noexcept { return width_; }
+    [[nodiscard]] constexpr ::fixy::View<std::byte const, FEDERATION_DIGEST_BYTES> digest() const noexcept {
+        return digest_.view();
+    }
+
+    // Each byte of the digest is zero: the sender left the key unset.
+    [[nodiscard]] constexpr bool is_zero() const noexcept { return has_each_byte_(std::byte{0}); }
+
+    // Each byte of the digest is 0xFF: the empty-slot marker of a table.
+    [[nodiscard]] constexpr bool is_sentinel() const noexcept { return has_each_byte_(std::byte{0xFF}); }
+
+    [[nodiscard]] static constexpr FederationKey sentinel() noexcept {
+        FederationKey key{};
+        for (std::byte& byte : key.digest_) {
+            byte = std::byte{0xFF};
+        }
+        return key;
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(FederationKey const& left, FederationKey const& right) noexcept {
+        return left.kind_ == right.kind_ && left.width_ == right.width_ && ::fixy::equal(left.digest_, right.digest_);
+    }
+
+private:
+    [[nodiscard]] constexpr bool has_each_byte_(std::byte value) const noexcept {
+        for (std::byte const byte : digest_) {
+            if (byte != value) return false;
+        }
+        return true;
+    }
+
+    FederationHashKind kind_ = FederationHashKind::blake3_keyed;
+    FederationKeyWidth width_ = FederationKeyWidth::bytes_32;
+    ::fixy::FixedArray<std::byte, FEDERATION_DIGEST_BYTES> digest_{};
+};
+
+// The federation key of the bytes of a content under the key of the
+// federation.  Complexity: one compression for each 64 bytes of the
+// content (foundation/core/KeyedHash.h).
+[[nodiscard]] constexpr FederationKey federation_key_of_bytes(FederationHashKey const& hash_key,
+                                                              ::fixy::View<std::byte const> content) noexcept {
+    return FederationKey{::foundation::core::keyed_hash(hash_key.keyed_hash_key(), content)};
+}
+
+// The federation key of a value: the keyed hash of its encode image.  The
+// image holds no padding and has the same bytes on each target.
+template <::fixy::Encodable T>
+[[nodiscard]] constexpr FederationKey federation_key_of(FederationHashKey const& hash_key, T const& value) noexcept {
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<T>> image{};
+    ::fixy::encode(value, image.view());
+    return federation_key_of_bytes(hash_key, ::fixy::View<std::byte const>{image.view()});
+}
+
+// The part of the header that each version keeps: a reader reads it first,
+// and it refuses a header of another version before it reads the rest.
+struct[[= ::fixy::derive_protocol{}]] FederationEntryStamp {
     std::uint32_t magic = 0;
     std::uint16_t protocol_version = 0;
     std::uint16_t universe_cardinality = 0;
-    ContentHash content_hash{};
-    RowHash row_hash{};
-    std::uint32_t payload_size = 0;
-    std::uint32_t reserved = 0;
 };
 
-inline constexpr std::size_t FEDERATION_HEADER_BYTES = sizeof(FederationEntryHeader);
+struct[[= ::fixy::derive_protocol{}]] FederationEntryHeader {
+    FederationEntryStamp stamp{};
+    std::uint32_t payload_size = 0;
+    FederationKey key{};
+    [[= ::fixy::pad_part{}]] std::uint16_t reserved = 0;
+};
+
+inline constexpr std::size_t FEDERATION_STAMP_BYTES = ::fixy::encoded_size_v<FederationEntryStamp>;
+inline constexpr std::size_t FEDERATION_HEADER_BYTES = ::fixy::encoded_size_v<FederationEntryHeader>;
+
+// The offsets of the two bytes of the key that decode can refuse.
+inline constexpr std::uint32_t FEDERATION_KEY_KIND_OFFSET = FEDERATION_STAMP_BYTES + 4;
+inline constexpr std::uint32_t FEDERATION_KEY_WIDTH_OFFSET = FEDERATION_KEY_KIND_OFFSET + 1;
 
 enum class FederationError : std::uint8_t {
     None = 0,
@@ -103,6 +231,8 @@ enum class FederationError : std::uint8_t {
     TruncatedHeader = 7,
     TruncatedPayload = 8,
     OutputBufferTooSmall = 9,
+    UnsupportedHashKind = 10,
+    UnsupportedKeyWidth = 11,
 };
 
 // The name is the enumerator's identifier, read by reflection, so a new
@@ -112,13 +242,23 @@ enum class FederationError : std::uint8_t {
     return ::foundation::core::enum_name_text(e);
 }
 
+// The error of a header that decode refuses.  Three parts of the header
+// can hold no value: the kind and the width of the key, and the reserved
+// word.
+[[nodiscard]] inline constexpr FederationError federation_error_of_fault(::fixy::DecodeFault fault) noexcept {
+    if (fault.refusal() == ::fixy::DecodeRefusal::pad_byte) return FederationError::ReservedNonZero;
+    if (fault.offset() == FEDERATION_KEY_KIND_OFFSET) return FederationError::UnsupportedHashKind;
+    CRUCIBLE_FATAL_INVARIANT(fault.offset() == FEDERATION_KEY_WIDTH_OFFSET);
+    return FederationError::UnsupportedKeyWidth;
+}
+
 // The rejection rules are checked in the body and reported, rather
 // than asserted as preconditions. A caller that hands over a buffer
 // too small, or a key it forgot to fill in, deserves an error it can
 // route, not a terminated process.
 
 [[nodiscard]] inline ::fixy::Result<std::size_t, FederationError>
-serialize_federation_entry(::fixy::View<std::byte> out_buf, const KernelCacheKey& key,
+serialize_federation_entry(::fixy::View<std::byte> out_buf, FederationKey const& key,
                            ::fixy::View<std::byte const> payload) noexcept {
     if (key.is_sentinel()) {
         return ::fixy::err(FederationError::SentinelKey);
@@ -137,24 +277,22 @@ serialize_federation_entry(::fixy::View<std::byte> out_buf, const KernelCacheKey
     }
 
     const FederationEntryHeader hdr{
-        .magic = FEDERATION_MAGIC,
-        .protocol_version = FEDERATION_PROTOCOL_V1,
-        .universe_cardinality = FEDERATION_UNIVERSE_CARDINALITY,
-        .content_hash = key.content_hash,
-        .row_hash = key.row_hash,
+        .stamp =
+            FederationEntryStamp{
+                .magic = FEDERATION_MAGIC,
+                .protocol_version = FEDERATION_PROTOCOL_V2,
+                .universe_cardinality = FEDERATION_UNIVERSE_CARDINALITY,
+            },
         .payload_size = payload_size,
+        .key = key,
         .reserved = 0,
     };
-
-    // A byte codec copies the bytes of the header. Starting a lifetime
-    // at the address is the tool for arena type-punning and would be
-    // wrong here.
-    ::fixy::copy(out_buf.window<FEDERATION_HEADER_BYTES>(0).expect("the size check puts the header inside the buffer"),
-                 ::fixy::bytes(hdr));
+    ::fixy::encode(
+        hdr, out_buf.window<FEDERATION_HEADER_BYTES>(0).expect("the size check puts the header inside the buffer"));
 
     // An entry with no payload bytes is valid and meaningful. It
-    // announces the pair of hashes, and the receiver looks the
-    // artifact up in its own store from the content hash.
+    // announces the key, and the receiver looks the artifact up in its
+    // own store from the key.
     if (payload.size() != 0) {
         ::fixy::copy(out_buf.window(FEDERATION_HEADER_BYTES, payload.size())
                          .expect("the size check puts the payload inside the buffer"),
@@ -170,42 +308,41 @@ serialize_federation_entry(::fixy::View<std::byte> out_buf, const KernelCacheKey
 // older peer.
 //
 // The caller reads the payload itself and checks that it hashes to
-// the content hash in the returned header.
+// the key in the returned header.
 
 [[nodiscard]] inline ::fixy::Result<FederationEntryHeader, FederationError>
 deserialize_federation_header(::fixy::View<std::byte const> in_buf, std::uint16_t receiver_cardinality) noexcept {
     CRUCIBLE_TRY(header_bytes, in_buf.window<FEDERATION_HEADER_BYTES>(0).ok_or(FederationError::TruncatedHeader));
 
-    // Each bit pattern of the header is a value, so the copy of its bytes
-    // cannot fail.  The checks below read the fields.
-    ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES> image{};
-    ::fixy::copy(image.view(), header_bytes);
-    const FederationEntryHeader hdr = ::fixy::bit_cast<FederationEntryHeader>(image);
+    // Each bit pattern of the stamp is a value, so its decode cannot
+    // fail.  The stamp comes first, so a header of another version is
+    // refused for its version and not for a byte of its key.
+    const FederationEntryStamp stamp =
+        ::fixy::decode<FederationEntryStamp>(
+            header_bytes.window<FEDERATION_STAMP_BYTES>(0).expect("the stamp is the start of the header"))
+            .expect("each bit pattern of the stamp is a value");
 
-    if (hdr.magic != FEDERATION_MAGIC) {
+    if (stamp.magic != FEDERATION_MAGIC) {
         return ::fixy::err(FederationError::BadMagic);
     }
 
-    if (hdr.protocol_version != FEDERATION_PROTOCOL_V1) {
+    if (stamp.protocol_version != FEDERATION_PROTOCOL_V2) {
         return ::fixy::err(FederationError::UnsupportedVersion);
     }
 
-    if (hdr.reserved != 0u) {
-        return ::fixy::err(FederationError::ReservedNonZero);
-    }
+    CRUCIBLE_TRY(hdr, ::fixy::decode<FederationEntryHeader>(header_bytes).map_err(federation_error_of_fault));
 
     // A sender at or below this count used only atoms this receiver
     // already knows, which is the safe direction of the append-only
     // rule.
-    if (hdr.universe_cardinality > receiver_cardinality) {
+    if (hdr.stamp.universe_cardinality > receiver_cardinality) {
         return ::fixy::err(FederationError::UniverseCardinalityTooHigh);
     }
 
-    const KernelCacheKey key{hdr.content_hash, hdr.row_hash};
-    if (key.is_sentinel()) {
+    if (hdr.key.is_sentinel()) {
         return ::fixy::err(FederationError::SentinelKey);
     }
-    if (key.is_zero()) {
+    if (hdr.key.is_zero()) {
         return ::fixy::err(FederationError::ZeroKey);
     }
 
@@ -298,13 +435,13 @@ struct AnyFederationKey {};
 template <typename KeyTag = AnyFederationKey>
 struct Ack {
     using key_tag = KeyTag;
-    ::crucible::KernelCacheKey key{};
+    FederationKey key{};
 };
 
 template <typename KeyTag = AnyFederationKey>
 struct PullRequest {
     using key_tag = KeyTag;
-    ::crucible::KernelCacheKey key{};
+    FederationKey key{};
 };
 
 template <typename KeyTag = AnyFederationKey>

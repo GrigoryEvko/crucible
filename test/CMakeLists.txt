@@ -962,7 +962,7 @@ target_include_directories(neg_bench_rdtsc_pinned_mint_tag_access
 # (Tagged<Stale<int>>) is rejected at federation_key, not silently mapped to
 # a divergent cache slot.
 crucible_neg_compile_test(neg_federation_key_noncanonical_args
-  "no matching function for call to .federation_key<target, foundation::effects::Row<>, InvertedStack>\\(\\)."
+  "no matching function for call to .federation_key<target, foundation::effects::Row<>, InvertedStack>\\(const crucible::cipher::federation::FederationHashKey&\\)."
     "required for the satisfaction of .ArgsCanonicallyOrdered<Args ...>. .with Args = .fixy::Tagged<fixy::Stale<int>, fixy::tags::source::FromUser>..")
 
 # The consistency gates of lower_fence in mimic/Fence.h.  Four fixtures
@@ -3725,14 +3725,14 @@ crucible_neg_compile_test(neg_cipher_persist_session_events_compile_ctx
 # bridge does not silently pass non-Row / non-Fn args through to a
 # row-blind federation key.
 crucible_neg_compile_test(neg_computation_cache_federation_non_row
-  "no matching function for call to .federation_key<cacheable_fn, int, double>\\(\\)."
+  "no matching function for call to .federation_key<cacheable_fn, int, double>\\(const crucible::cipher::federation::FederationHashKey&\\)."
   "required for the satisfaction of .IsEffectRow<Row>. .with Row = int.")
 crucible_neg_compile_test(neg_computation_cache_federation_non_fn
-  "no matching function for call to .federation_key<42, foundation::effects::Row<>, int>\\(\\)."
+  "no matching function for call to .federation_key<42, foundation::effects::Row<>, int>\\(const crucible::cipher::federation::FederationHashKey&\\)."
   "required for the satisfaction of .IsCacheableFunction<FnPtr>. .with FnPtr = 42.")
 crucible_neg_compile_test(neg_computation_cache_federation_without_local_permission
   "no matching function for call to .serialize_computation_cache_federation_entry<neg_payload, foundation::effects::Row<>, int>\\("
-  "serialize_computation_cache_federation_entry\\(LocalCipherPermission<Brand>&, foundation::core::View<std::byte>")
+  "serialize_computation_cache_federation_entry\\(LocalCipherPermission<Brand>&, const FederationHashKey&, foundation::core::View<std::byte>")
 
 # ─── The row gates of MetaLog and TraceRing ─────────────────────────
 # MetaLog::try_append_pure, TraceRing::try_append_pure and

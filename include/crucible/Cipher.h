@@ -42,7 +42,6 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
-#include <foundation/diag/RowHash.h>
 #include <foundation/effects/Capability.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -68,6 +67,10 @@ struct RegionNode;
 class Cipher;
 
 namespace cipher {
+
+namespace federation {
+class FederationKey;
+}  // namespace federation
 
 template <typename T>
 class ContentAddressedPayload;
@@ -165,10 +168,6 @@ public:
 
     using persist_session_events_required_row = ::crucible::CipherSessionEventPersistenceRow;
 
-    inline static constexpr RowHash SESSION_EVENT_FEDERATION_ROW_HASH{
-        ::foundation::diag::row_hash_contribution_v<persist_session_events_required_row>};
-
-    static_assert(static_cast<bool>(SESSION_EVENT_FEDERATION_ROW_HASH));
     static_assert(sizeof(SessionEvent) == ::fixy::session::session_event_size && sizeof(SessionEvent) == 72,
                   "Cipher session-event persistence is pinned to the SessionEvent cold-tier wire size.");
 
@@ -522,6 +521,14 @@ public:
     // only which bytes a batch holds, and the loader checks each record
     // after it.  Complexity: linear in the payload size.
     [[nodiscard]] static ContentHash session_event_batch_hash(::fixy::View<std::byte const> bytes) noexcept;
+
+    // The federation key in the header of a session-event batch: the keyed
+    // hash of the payload under the key of the batches.  That key is a
+    // constant of the store and names no secret.  It keeps a batch apart
+    // from each other kind of entry, so an entry of another kind does not
+    // load as a batch.  Complexity: linear in the payload size.
+    [[nodiscard]] static cipher::federation::FederationKey
+    session_event_batch_key(::fixy::View<std::byte const> bytes) noexcept;
 
 private:
     using LogEntry = ::fixy::session::SessionEvent;

@@ -30,9 +30,9 @@ inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundati
             *body.get(count).expect("a seed payload fits 16 bytes") = static_cast<std::byte>(character);
             ++count;
         }
-        ::foundation::core::FixedArray<std::byte, 64> entry{};
+        ::foundation::core::FixedArray<std::byte, fed::FEDERATION_HEADER_BYTES + 16> entry{};
         auto written = fed::serialize_federation_entry(
-            entry.view(), KernelCacheKey{ContentHash{0x1234}, RowHash{0x5678}},
+            entry.view(), fed::FederationKey{::foundation::core::Hash256{0x1234, 0x5678, 0x9abc, 0xdef0}},
             ::fixy::View<std::byte const>{body.view()}.window(0, count).expect("the payload is inside its buffer"));
         const std::size_t written_bytes = std::move(written).expect("the seed entry fits its buffer");
         std::vector<std::uint8_t> seed;
@@ -60,9 +60,11 @@ inline void run_federation(std::span<const std::uint8_t> bytes) {
     if (decoded.is_err()) return;
     const fed::FederationEntryView view = std::move(decoded).expect("the entry decoded");
 
-    const KernelCacheKey key{view.header.content_hash, view.header.row_hash};
+    const fed::FederationKey key = view.header.key;
     CRUCIBLE_FUZZ_CLAIM("federation", !key.is_zero() && !key.is_sentinel());
-    CRUCIBLE_FUZZ_CLAIM("federation", view.header.universe_cardinality <= receiver_cardinality);
+    CRUCIBLE_FUZZ_CLAIM("federation", key.kind() == fed::FederationHashKind::blake3_keyed
+                                          && key.width() == fed::FederationKeyWidth::bytes_32);
+    CRUCIBLE_FUZZ_CLAIM("federation", view.header.stamp.universe_cardinality <= receiver_cardinality);
     CRUCIBLE_FUZZ_CLAIM("federation", view.payload.size() == view.header.payload_size);
     // The payload lies inside the input, from the first byte after the
     // header.
@@ -81,8 +83,7 @@ inline void run_federation(std::span<const std::uint8_t> bytes) {
     auto read_again = fed::deserialize_untrusted_federation_entry(out.view(), kReceiverAtomCount);
     CRUCIBLE_FUZZ_CLAIM("federation", read_again.is_ok());
     const fed::FederationEntryView again = std::move(read_again).expect("the written entry reads back");
-    CRUCIBLE_FUZZ_CLAIM("federation", again.header.content_hash == view.header.content_hash);
-    CRUCIBLE_FUZZ_CLAIM("federation", again.header.row_hash == view.header.row_hash);
+    CRUCIBLE_FUZZ_CLAIM("federation", again.header.key == view.header.key);
     CRUCIBLE_FUZZ_CLAIM("federation", ::fixy::equal(again.payload, view.payload));
 }
 

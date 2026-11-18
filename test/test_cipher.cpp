@@ -1,6 +1,8 @@
 #include <crucible/Cipher.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
+#include <crucible/cipher/FederationProtocol.h>
+#include <foundation/core/KeyedHash.h>
 
 #include <memory>
 #include <fixy/Core.h>
@@ -679,6 +681,22 @@ int main() {
                == crucible::ContentHash{0x1a51e80700eac78fULL});
         assert(crucible::Cipher::session_event_batch_hash(::fixy::View<std::byte const>{})
                == crucible::ContentHash{0x35c3cb3b6b06b0e2ULL});
+
+        // The federation key in the header of a batch is the keyed BLAKE3 of
+        // the payload under the key "crucible cipher session events 2".  Each
+        // value is the output of the official BLAKE3 C at the commit
+        // 657284b1, as four little-endian words.
+        using ::crucible::cipher::federation::FederationKey;
+        using ::foundation::core::Hash256;
+        const FederationKey counting_key{
+            Hash256{0x78b117643bdd5d63ULL, 0x637360a4b51fa722ULL, 0xe7fd70a65a9f030dULL, 0xd95da61236d8f887ULL}};
+        const FederationKey repeated_key{
+            Hash256{0x87b6a87e3ca535d0ULL, 0x482bd9e3290213c7ULL, 0x8f9efe6225b472a0ULL, 0x9e74f9b92b0cf626ULL}};
+        const FederationKey empty_key{
+            Hash256{0x8017e8ac3fb85a68ULL, 0xe1668b978596f805ULL, 0x0379df74210974b3ULL, 0x9960f40a5d09d12dULL}};
+        assert(crucible::Cipher::session_event_batch_key(counting.view()) == counting_key);
+        assert(crucible::Cipher::session_event_batch_key(repeated.view()) == repeated_key);
+        assert(crucible::Cipher::session_event_batch_key(::fixy::View<std::byte const>{}) == empty_key);
     }
 
     // The cache of object bytes holds at most 64 entries, and it removes the

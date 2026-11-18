@@ -24,7 +24,7 @@ crucible/Types.cpp | 0.2 | ::crucible
 crucible/cipher/CipherDurable.cpp | unmeasured | unknown
 crucible/cipher/CipherTierPromotion.cpp | 0.3 | ::fixy::session::combinators, unknown
 crucible/cipher/ComputationCache.cpp | 0.1 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
-crucible/cipher/ComputationCacheFederation.cpp | 0.8 | ::fixy::session::combinators, ::fixy::tags::admitted_retags, ::foundation::effects::resource, ::foundation::permissions::permission_rows
+crucible/cipher/ComputationCacheFederation.cpp | 0.8 | ::fixy::session::combinators, ::fixy::tags::admitted_retags
 crucible/cipher/FederationProtocol.cpp | 0.5 | ::fixy::session::combinators
 crucible/cntp/Backpressure.cpp | 0.3 | ::fixy::tags::admitted_retags
 crucible/cntp/ConnectionPool.cpp | 0.5 | ::fixy::tags::admitted_retags
