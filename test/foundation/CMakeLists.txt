@@ -2529,6 +2529,9 @@ foundation_test(test_core_protocol)
 # keyed_hash against the vectors of the official BLAKE3, at run time and in a
 # constant evaluation.
 foundation_test(test_core_keyed_hash)
+# The stable identity image: the stable names of a function and of a list of
+# types, each after its count of bytes.
+foundation_test(test_core_stable_identity)
 foundation_neg_compile_test(neg_core_protocol_equal_bit_field
   "no matching function for call to .equal\\(const HoldsBitField&, const HoldsBitField&\\)."
   "required for the satisfaction of .Equatable<T>. \\[with T = HoldsBitField\\]")

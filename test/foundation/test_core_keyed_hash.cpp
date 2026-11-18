@@ -122,6 +122,28 @@ void test_vectors() {
 
 void test_constant_arm() { static_assert(constant_arm_gives_the_vectors()); }
 
+// The bytes of an output are the bytes of the vector, in the order of the
+// hex digits: the digits 2i and 2i + 1 are the byte i.
+constexpr bool bytes_follow_the_vector() noexcept {
+    Vector const& vector = kVectors.at(::foundation::core::index<1>());
+    FixedArray<std::byte, 32> const bytes = hash_of_hex(vector.hex).bytes();
+    auto cursor = bytes.begin();
+    std::uint64_t high = 0;
+    bool is_high_digit = true;
+    for (char const letter : vector.hex) {
+        if (is_high_digit) {
+            high = digit_of(letter);
+        } else {
+            if (static_cast<std::uint64_t>(*cursor) != ((high << 4) | digit_of(letter))) return false;
+            ++cursor;
+        }
+        is_high_digit = !is_high_digit;
+    }
+    return true;
+}
+
+void test_bytes_of_an_output() { static_assert(bytes_follow_the_vector()); }
+
 // Two keys give two hashes, and so do two messages that differ in one byte.
 void test_key_and_message_take_part() {
     static VectorInput<kLongest> input{};
@@ -142,6 +164,7 @@ void test_key_and_message_take_part() {
 int main() {
     test_vectors();
     test_constant_arm();
+    test_bytes_of_an_output();
     test_key_and_message_take_part();
     return 0;
 }

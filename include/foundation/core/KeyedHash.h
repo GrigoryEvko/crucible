@@ -87,6 +87,19 @@ public:
     // The word at index: the bytes 8 * index to 8 * index + 7 of the output.
     [[nodiscard]] constexpr std::uint64_t word(Index<4> index) const noexcept { return words_.at(index); }
 
+    // The 32 bytes of the output, in the byte order of the reference.
+    [[nodiscard]] constexpr FixedArray<std::byte, 32> bytes() const noexcept {
+        FixedArray<std::byte, 32> out{};
+        auto cursor = out.begin();
+        for (std::uint64_t const word : words_) {
+            for (int shift = 0; shift < 64; shift += 8) {
+                *cursor = static_cast<std::byte>(static_cast<std::uint8_t>(word >> shift));
+                ++cursor;
+            }
+        }
+        return out;
+    }
+
     [[nodiscard]] friend constexpr bool operator==(Hash256 const& left, Hash256 const& right) noexcept = default;
     [[nodiscard]] friend constexpr std::strong_ordering operator<=>(Hash256 const& left,
                                                                     Hash256 const& right) noexcept = default;
