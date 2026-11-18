@@ -170,6 +170,17 @@ crucible_script_test(NAME harness_output
           $<TARGET_FILE:harness_probe_report> $<TARGET_FILE:harness_probe_diag> ${_harness_emulator}
   COMMAND_EXPAND_LISTS)
 
+# The compile ceilings of the heavy compile-time gates of the base.  Each probe
+# of test/compile_cost/ runs one gate on a fixed input, and the check compiles
+# it with the flags of a test of the session layer and the quarantine plugin.
+# A probe whose count of compiler instructions is more than twice the count in
+# the probe fails, such as a gate that loses its cache.  The probes hold their
+# counts, so the check has no ledger.  A host with no exact instruction counter
+# gives a skip (test/compile_cost/check_ceilings.py).
+crucible_script_test(NAME compile_ceilings
+  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/compile_cost/check_ceilings.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR})
+set_tests_properties(compile_ceilings PROPERTIES SKIP_RETURN_CODE 77)
+
 # A regression test for the constant-evaluator defect that the patch
 # series in utils/toolchain/gcc fixes: memchr, strchr, strrchr and strstr from
 # an offset pointer.  A compiler without the fix cannot compile it.
