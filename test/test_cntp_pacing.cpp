@@ -4,6 +4,7 @@
 #include <foundation/effects/Effect.h>
 
 #include <array>
+#include "tcp_socket.h"
 #include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
@@ -11,8 +12,6 @@
 #include <type_traits>
 
 #include <net/if.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
 namespace cntp = crucible::cntp;
 
@@ -29,36 +28,6 @@ concept HasWritableLengthMember = requires(T value) { value.size = static_cast<s
 
 template <typename T>
 concept HasReadableByteMember = requires(T value) { value.bytes; };
-
-class TestSocket {
-public:
-    explicit TestSocket(int fd) noexcept : fd_{fd} {}
-    TestSocket(TestSocket const&) = delete;
-    TestSocket& operator=(TestSocket const&) = delete;
-    TestSocket(TestSocket&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
-    TestSocket& operator=(TestSocket&& other) noexcept {
-        if (this != &other) {
-            close();
-            fd_ = other.fd_;
-            other.fd_ = -1;
-        }
-        return *this;
-    }
-    ~TestSocket() noexcept { close(); }
-
-    [[nodiscard]] int raw() const noexcept { return fd_; }
-    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
-
-private:
-    int fd_ = -1;
-
-    void close() noexcept {
-        if (fd_ >= 0) {
-            ::close(fd_);
-            fd_ = -1;
-        }
-    }
-};
 
 // The value of a call that succeeds in this test.
 template <class Value>
@@ -217,16 +186,15 @@ void test_mint_and_rate_surfaces() {
 }
 
 void test_live_socket_pacing_if_available() {
-    TestSocket socket{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
-    assert(socket.valid());
-
-    cntp::SocketFd const fd = cntp::admit_socket_fd(socket.raw()).expect("an open socket has a descriptor");
-
-    cntp::PositivePacingRate const rate = take(cntp::admit_pacing_rate(1000000));
-
     // The rate is a socket option, and the test runner context carries the
     // IO and Block that the socket option gate asks for.
     ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
+    crucible::test::TcpSocket const socket = crucible::test::open_tcp_socket(test_ctx);
+    assert(socket.is_open());
+
+    cntp::SocketFd const fd = ::fixy::net::share_socket(socket.ref());
+
+    cntp::PositivePacingRate const rate = take(cntp::admit_pacing_rate(1000000));
     assert(cntp::set_socket_pacing_rate(test_ctx, fd, rate).is_ok());
 
     crucible::test::pass("  test_live_socket_pacing_if_available: PASSED\n");

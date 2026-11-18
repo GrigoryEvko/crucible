@@ -2448,7 +2448,7 @@ crucible_neg_compile_test(neg_observe_mint_canopy_metrics_reader_int_channel
 #   * neg_congestion_control_custom_invalid_name: that name must also be
 #     a valid kernel name, which has no uppercase letter.
 crucible_neg_compile_test(neg_congestion_control_raw_algorithm_apply
-  "no matching function for call to .set_cc_for_socket\\(fixy::InitLoadCtx&, fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>&, crucible::cntp::CcAlgorithm\\)."
+  "no matching function for call to .set_cc_for_socket\\(fixy::InitLoadCtx&, crucible::cntp::SocketFd&, crucible::cntp::CcAlgorithm\\)."
   "cannot convert .crucible::cntp::CcAlgorithm::Cubic. \\(type .crucible::cntp::CcAlgorithm.\\) to type .crucible::cntp::DeclaredCcChoice.")
 crucible_neg_compile_test(neg_congestion_control_dctcp_cross_dc
   "no matching function for call to .mint_cc_choice<crucible::cntp::CcAlgorithm::Dctcp, crucible::cntp::LinkClass::CrossDatacenter>\\(\\)."
@@ -2557,7 +2557,7 @@ crucible_neg_compile_test(neg_pacing_bbr_pfifo_config
   "no matching function for call to .mint_bbr_qdisc_config<crucible::cntp::Qdisc::Pfifo>\\(crucible::cntp::NicInterfaceName&\\)."
   "required for the satisfaction of .BbrCompatibleQdisc<Required>. .with Required = crucible::cntp::Qdisc::Pfifo.")
 crucible_neg_compile_test(neg_pacing_raw_rate
-  "no matching function for call to .set_socket_pacing_rate\\(fixy::TestRunnerCtx&, fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>&, long long unsigned int\\)."
+  "no matching function for call to .set_socket_pacing_rate\\(fixy::TestRunnerCtx&, crucible::cntp::SocketFd&, long long unsigned int\\)."
   "cannot convert .1000000. \\(type .long long unsigned int.\\) to type .crucible::cntp::PositivePacingRate.")
 crucible_neg_compile_test(neg_pacing_raw_config_ensure
   "no matching function for call to .ensure_fq_active\\(fixy::TestRunnerCtx&, crucible::cntp::QdiscConfig&\\)."
@@ -2632,7 +2632,7 @@ crucible_neg_compile_test(neg_path_swap_commit_pointer_resource
 #     constructor is private, so the mint is the only door.
 crucible_neg_compile_test(neg_congestion_telemetry_raw_fd_harvest
   "no matching function for call to .harvest_socket\\(fixy::TestRunnerCtx&, int\\)."
-  "cannot convert .3. \\(type .int.\\) to type .crucible::cntp::SocketFd. \\{aka .fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>.\\}")
+  "cannot convert .3. \\(type .int.\\) to type .crucible::cntp::SocketFd.")
 crucible_neg_compile_test(neg_congestion_telemetry_raw_state_aggregate
   "could not convert .samples.foundation::core::FixedArray<crucible::topology::CongestionSample, 1>::view\\(\\)."
   "to .View<const fixy::Tagged<crucible::topology::CongestionSample, fixy::tags::source::TcpInfo>,")
@@ -2663,9 +2663,9 @@ crucible_neg_compile_test(neg_congestion_telemetry_worker_direct_construct
 #   * neg_incast_credit_fg_ctx: credit mutation is Bg-row work.
 crucible_neg_compile_test(neg_incast_raw_fd_configure
   "no matching function for call to .crucible::cntp::IncastController<1>::configure_socket\\(fixy::InitLoadCtx&, int,"
-  "cannot convert .3. \\(type .int.\\) to type .crucible::cntp::SocketFd. .aka .fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>.")
+  "cannot convert .3. \\(type .int.\\) to type .crucible::cntp::SocketFd.")
 crucible_neg_compile_test(neg_incast_raw_config_configure
-  "no matching function for call to .crucible::cntp::IncastController<1>::configure_socket\\(fixy::InitLoadCtx&, fixy::Refinement<fixy::IsNonNegative\\(\\), int, false>&, crucible::cntp::IncastConfig\\)."
+  "no matching function for call to .crucible::cntp::IncastController<1>::configure_socket\\(fixy::InitLoadCtx&, crucible::cntp::SocketFd&, crucible::cntp::IncastConfig\\)."
   "\\(type .crucible::cntp::IncastConfig.\\) to type .crucible::cntp::DeclaredIncastConfig.")
 crucible_neg_compile_test(neg_incast_credit_fg_ctx
   "constraints.*not satisfied"

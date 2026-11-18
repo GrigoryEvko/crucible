@@ -8,7 +8,7 @@
 
 int main() {
     ::fixy::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
-    auto fd = crucible::cntp::admit_socket_fd(0).expect("0 is not negative");
+    crucible::cntp::SocketFd fd{};
     auto result = crucible::cntp::set_socket_pacing_rate(test_ctx, fd, 1000000ULL);
     (void)result;
     return 0;

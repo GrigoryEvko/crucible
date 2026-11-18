@@ -63,7 +63,7 @@ using ResourceLimitPpm = ::fixy::Refined<resource_limit_ppm, std::uint32_t>;
 // Every field is already a checked type, so each request built from them
 // is a valid request.
 struct ConnectionRequest {
-    SocketFd socket;
+    SocketIdentity socket;
     PositiveBackpressureBytes initial_credit = ::fixy::mint_refined<::fixy::positive>(std::uint32_t{1});
 };
 
@@ -140,7 +140,7 @@ class ResourceDoor {
 
 struct AdmissionDecision {
     AdmissionDecisionKind kind = AdmissionDecisionKind::Accepted;
-    SocketFd socket;
+    SocketIdentity socket;
     ::foundation::effects::ResourceKind limiting_resource = ::foundation::effects::ResourceKind::NicQ;
     ResourcePressurePpm observed_ppm = ::fixy::mint_refined<resource_pressure_ppm>(std::uint32_t{0});
     ResourceLimitPpm threshold_ppm = ::fixy::mint_refined<resource_limit_ppm>(kPpmFull);

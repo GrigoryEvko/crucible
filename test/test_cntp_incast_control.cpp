@@ -3,48 +3,17 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
+#include "tcp_socket.h"
 #include "test_assert.h"
+#include <cstdint>
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
-
-#include <sys/socket.h>
-#include <unistd.h>
 
 namespace cntp = crucible::cntp;
 namespace fe = ::foundation::effects;
 
 namespace {
-
-class TestSocket {
-public:
-    explicit TestSocket(int fd) noexcept : fd_{fd} {}
-    TestSocket(TestSocket const&) = delete;
-    TestSocket& operator=(TestSocket const&) = delete;
-    TestSocket(TestSocket&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
-    TestSocket& operator=(TestSocket&& other) noexcept {
-        if (this != &other) {
-            close();
-            fd_ = other.fd_;
-            other.fd_ = -1;
-        }
-        return *this;
-    }
-    ~TestSocket() noexcept { close(); }
-
-    [[nodiscard]] int raw() const noexcept { return fd_; }
-    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
-
-private:
-    int fd_ = -1;
-
-    void close() noexcept {
-        if (fd_ >= 0) {
-            ::close(fd_);
-            fd_ = -1;
-        }
-    }
-};
 
 // The value of a call that succeeds in this test.
 template <class Value>
@@ -105,9 +74,11 @@ void test_credit_pacing_state() {
     ::fixy::BgDrainCtx bg{fe::testing::bg()};
     auto controller = cntp::mint_incast_controller<2>(init);
 
-    cntp::SocketFd const fd0 = cntp::admit_socket_fd(10).expect("10 is not negative");
-    cntp::SocketFd const fd1 = cntp::admit_socket_fd(11).expect("11 is not negative");
-    cntp::SocketFd const fd2 = cntp::admit_socket_fd(12).expect("12 is not negative");
+    // The credit flows key their sockets by identity, and no call of this
+    // test reaches the kernel.
+    cntp::SocketIdentity const fd0{std::uint32_t{10}};
+    cntp::SocketIdentity const fd1{std::uint32_t{11}};
+    cntp::SocketIdentity const fd2{std::uint32_t{12}};
     cntp::PositiveCreditBytes const initial = take(cntp::admit_credit_bytes(4096));
     cntp::PositiveCreditBytes const extra = take(cntp::admit_credit_bytes(1024));
 
@@ -115,7 +86,7 @@ void test_credit_pacing_state() {
     assert(take(controller.outstanding_credit(fd0)).value() == 4096);
 
     cntp::IncastCreditGrant const grant = take(controller.issue_credit(bg, fd0, extra, 7));
-    assert(grant.fd.value() == fd0.value());
+    assert(grant.socket == fd0);
     assert(grant.bytes.value() == extra.value());
     assert(grant.sequence == 7);
 
@@ -129,7 +100,7 @@ void test_credit_pacing_state() {
     // accepted and then ignored reads as a working timeout to every
     // caller.  Naming the exact member type is what pins it.
     using ConsumeFn = ::fixy::Result<cntp::PositiveCreditBytes, cntp::IncastError> (cntp::IncastController<2>::*)(
-        ::fixy::BgDrainCtx const&, cntp::SocketFd) noexcept;
+        ::fixy::BgDrainCtx const&, cntp::SocketIdentity) noexcept;
     static_cast<void>(static_cast<ConsumeFn>(&cntp::IncastController<2>::try_consume_credit<::fixy::BgDrainCtx>));
 
     assert(controller.start_credit_flow(init, fd1, initial).is_ok());
@@ -139,15 +110,14 @@ void test_credit_pacing_state() {
 }
 
 void test_live_rto_if_available() {
-    TestSocket socket{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
-    assert(socket.valid());
-
-    cntp::SocketFd const fd = cntp::admit_socket_fd(socket.raw()).expect("an open socket has a descriptor");
-    cntp::PositiveRtoMinUsec const rto = take(cntp::admit_rto_min_usec(10000));
-
     // The timeout is a socket option, and the test runner context carries
     // the IO and Block that the socket option gate asks for.
     ::fixy::TestRunnerCtx test_ctx{fe::testing::test()};
+    crucible::test::TcpSocket const socket = crucible::test::open_tcp_socket(test_ctx);
+    assert(socket.is_open());
+
+    cntp::SocketFd const fd = ::fixy::net::share_socket(socket.ref());
+    cntp::PositiveRtoMinUsec const rto = take(cntp::admit_rto_min_usec(10000));
     auto set = cntp::set_socket_rto_min_usec(test_ctx, fd, rto);
     if (set.is_err()) {
         cntp::IncastError const refusal = error_of(std::move(set));

@@ -25,6 +25,7 @@ enum class TransportClass : std::uint8_t {
 
 enum class PoolError : std::uint8_t {
     InvalidRemoteCog,
+    ClosedSocket,
     InvalidPoolSize,
     InvalidIdleTimeout,
     InvalidConnectionId,
@@ -90,8 +91,10 @@ mint_connection(SocketFd socket, cog::CogIdentity const& remote, PositiveConnect
 
 // The identity of one established connection: its socket, the Cog at the far
 // end and the id its owner gave it.  The constructor is private and
-// mint_connection is its only caller, so every connection names a remote
-// whose UUID is not zero.  A copy of a connection is the same connection.
+// mint_connection is its only caller, so every connection holds an open
+// socket and names a remote whose UUID is not zero.  The owner of the socket
+// keeps it open while the connection lives (THE FOREIGN SOCKET of
+// fixy/os/Socket.h).  A copy of a connection is the same connection.
 // Health is pool state, so it lives in the pool slot and not here.
 template <TransportClass T>
     requires PoolTransportClass<T>
@@ -119,6 +122,9 @@ template <TransportClass T>
     requires PoolTransportClass<T>
 [[nodiscard]] constexpr ::fixy::Result<LinearConnection<T>, PoolError>
 mint_connection(SocketFd socket, cog::CogIdentity const& remote, PositiveConnectionId connection_id) noexcept {
+    if (!socket.is_open()) {
+        return ::fixy::err(PoolError::ClosedSocket);
+    }
     if (!is_valid_remote(remote)) {
         return ::fixy::err(PoolError::InvalidRemoteCog);
     }
@@ -129,7 +135,7 @@ struct PoolEvent {
     PoolEventKind kind = PoolEventKind::Added;
     TransportClass transport = TransportClass::Tcp;
     cog::Uuid remote_uuid{};
-    SocketFd socket = ::fixy::mint_refined<::fixy::non_negative>(0);
+    SocketFd socket{};
     std::uint64_t connection_id = 0;
     std::uint64_t sequence = 0;
 };

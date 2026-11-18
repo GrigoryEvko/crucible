@@ -5,7 +5,8 @@
 // the mint returns is a socket of the kind the tag names, that it does not
 // survive execve, that a netlink request gets its reply through the door,
 // that each TCP option of the door reaches the TCP option of the kernel,
-// that the timestamp calls reach the kernel, and that a send and a full
+// that the timestamp calls reach the kernel, that a shared ref of a socket
+// reaches the same socket, and that a send and a full
 // write of the file door to a socket with no connection give an error and no
 // signal.  The check file of the
 // header holds the walk of the control data of each kind of message.
@@ -86,15 +87,37 @@ using IoBlockCtx =
 // True when the test runs under the emulator of a cross build, qemu user mode.
 constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
-[[nodiscard]] bool socket_option_is(int fd, int option, int expected) noexcept {
+using NetlinkSocket = fixy::net::SocketHandle<fixy::net::socket_kind::NetlinkRoute>;
+using TcpSocket = fixy::net::SocketHandle<fixy::net::socket_kind::TcpStream>;
+using TcpRef = fixy::net::SocketRef<fixy::net::socket_kind::TcpStream, fixy::net::socket_rights>;
+using SharedTcp = fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::net::socket_rights>;
+
+}  // namespace
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test reads the state that the doors gave a socket from the kernel")
+namespace {
+
+// True when the option of the level SOL_SOCKET of the socket of borrow holds
+// expected.
+template <class Kind, fixy::os::RightSet Rights>
+[[nodiscard]] bool socket_option_is(fixy::net::SocketRef<Kind, Rights> borrow, int option, int expected) noexcept {
     int value = -1;
     ::socklen_t length = sizeof(value);
-    if (::getsockopt(fd, SOL_SOCKET, option, &value, &length) != 0) return false;
+    if (::getsockopt(borrow.abi_descriptor(), SOL_SOCKET, option, &value, &length) != 0) return false;
     return value == expected;
 }
 
-using NetlinkSocket = fixy::net::SocketHandle<fixy::net::socket_kind::NetlinkRoute>;
-using TcpSocket = fixy::net::SocketHandle<fixy::net::socket_kind::TcpStream>;
+// True when the descriptor of borrow has the flag FD_CLOEXEC.
+template <class Kind, fixy::os::RightSet Rights>
+[[nodiscard]] bool is_close_on_exec(fixy::net::SocketRef<Kind, Rights> borrow) noexcept {
+    const int descriptor_flags = ::fcntl(borrow.abi_descriptor(), F_GETFD);
+    return descriptor_flags >= 0 && (descriptor_flags & FD_CLOEXEC) != 0;
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+namespace {
 
 // The socket of a mint, or an empty handle when the open failed.
 template <class Socket>
@@ -107,11 +130,10 @@ template <class Socket>
     IoBlockCtx ctx{eff::testing::test()};
     NetlinkSocket const handle = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
     if (!handle.is_open()) return 2;
-    if (!socket_option_is(handle.ref().abi_descriptor(), SO_DOMAIN, AF_NETLINK)) return 3;
-    if (!socket_option_is(handle.ref().abi_descriptor(), SO_TYPE, SOCK_RAW)) return 4;
-    if (!socket_option_is(handle.ref().abi_descriptor(), SO_PROTOCOL, NETLINK_ROUTE)) return 5;
-    const int descriptor_flags = ::fcntl(handle.ref().abi_descriptor(), F_GETFD);
-    if (descriptor_flags < 0 || (descriptor_flags & FD_CLOEXEC) == 0) return 6;
+    if (!socket_option_is(handle.ref(), SO_DOMAIN, AF_NETLINK)) return 3;
+    if (!socket_option_is(handle.ref(), SO_TYPE, SOCK_RAW)) return 4;
+    if (!socket_option_is(handle.ref(), SO_PROTOCOL, NETLINK_ROUTE)) return 5;
+    if (!is_close_on_exec(handle.ref())) return 6;
     return 0;
 }
 
@@ -152,7 +174,7 @@ struct LinkDumpRequest final {
     IoBlockCtx ctx{eff::testing::test()};
     TcpSocket const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!tcp.is_open()) return 21;
-    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.ref().abi_descriptor());
+    TcpRef const socket = tcp.ref();
     if (fixy::net::set_tcp_congestion(ctx, socket, "reno").is_err()) return 22;
     auto read = fixy::net::read_tcp_congestion(ctx, socket);
     if (read.is_err()) return 23;
@@ -188,16 +210,47 @@ struct LinkDumpRequest final {
     IoBlockCtx ctx{eff::testing::test()};
     TcpSocket const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!tcp.is_open()) return 31;
-    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.ref().abi_descriptor());
     // qemu user mode has no SO_TIMESTAMPING, and the door gives its refusal.
-    auto const stamping = fixy::net::set_socket_timestamping(ctx, socket);
+    auto const stamping = fixy::net::set_socket_timestamping(ctx, tcp.ref());
     if (kIsUnderEmulator && stamping.err().value_or(foundation::os::Errno{}) == foundation::os::Errno::enoprotoopt) {
         return 0;
     }
     if (stamping.is_err()) return 32;
     int const flags = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE
                     | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_TSONLY;
-    if (!socket_option_is(tcp.ref().abi_descriptor(), SO_TIMESTAMPING, flags)) return 33;
+    if (!socket_option_is(tcp.ref(), SO_TIMESTAMPING, flags)) return 33;
+    return 0;
+}
+
+// share_socket gives a ref by value of the socket of a Handle.  The doors take
+// it as they take the borrow of the Handle, so an option that the shared ref
+// sets reads back through the borrow.  Two shares of one socket are equal and
+// have one identity.  The empty ref and the share of an empty Handle are
+// equal, and a door gives ebadf for them.
+[[nodiscard]] int check_shared_socket() noexcept {
+    IoBlockCtx ctx{eff::testing::test()};
+    TcpSocket const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    TcpSocket const other = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    if (!tcp.is_open() || !other.is_open()) return 61;
+    SharedTcp const shared = fixy::net::share_socket(tcp.ref());
+    if (!shared.is_open()) return 62;
+    if (fixy::net::set_tcp_congestion(ctx, shared, "reno").is_err()) return 63;
+    auto read = fixy::net::read_tcp_congestion(ctx, tcp.ref());
+    if (read.is_err()) return 64;
+    auto const name = std::move(read).expect("the read gave the name");
+    if (!(name.view() == fixy::TextView{"reno"})) return 65;
+    if (!(fixy::net::share_socket(tcp.ref()) == shared)) return 66;
+    if (fixy::net::share_socket(other.ref()) == shared) return 67;
+    if (!(fixy::net::share_socket(tcp.ref()).identity() == shared.identity())) return 68;
+    if (fixy::net::share_socket(other.ref()).identity() == shared.identity()) return 69;
+    SharedTcp const empty{};
+    TcpSocket const closed{};
+    if (empty.is_open() || !(fixy::net::share_socket(closed.ref()) == empty)) return 70;
+    if (fixy::net::set_tcp_congestion(ctx, empty, "reno").err().value_or(foundation::os::Errno::eio)
+        != foundation::os::Errno::ebadf) {
+        return 71;
+    }
+    if (!fixy::net::share_socket(tcp.ref()).restrict<fixy::os::RightSet::ioctl_socket>().is_open()) return 72;
     return 0;
 }
 
@@ -210,7 +263,7 @@ struct LinkDumpRequest final {
     IoBlockCtx ctx{eff::testing::test()};
     TcpSocket const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!tcp.is_open()) return 41;
-    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.ref().abi_descriptor());
+    TcpRef const socket = tcp.ref();
     auto const loopback = fixy::net::set_hardware_timestamping(ctx, socket, "lo");
     if (loopback.is_ok()) return 42;
     Errno const refusal = loopback.err().value_or(Errno::eio);
@@ -236,15 +289,14 @@ struct LinkDumpRequest final {
     if (!handle.is_open()) return 51;
     auto const netlink = handle.ref();
     if (fixy::net::bind_netlink(ctx, netlink).is_err()) return 52;
-    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(netlink.abi_descriptor());
     foundation::core::FixedArray<std::byte, 8192> reply{};
-    if (fixy::net::receive_with_timestamps(ctx, socket, reply.view()).err().value_or(foundation::os::Errno::eio)
+    if (fixy::net::receive_with_timestamps(ctx, netlink, reply.view()).err().value_or(foundation::os::Errno::eio)
         != foundation::os::Errno::eagain) {
         return 53;
     }
     LinkDumpRequest const request{};
     if (fixy::net::send_bytes(ctx, netlink, foundation::core::bytes(request)).value_or(0) != sizeof(request)) return 54;
-    auto received = fixy::net::receive_with_timestamps(ctx, socket, reply.view());
+    auto received = fixy::net::receive_with_timestamps(ctx, netlink, reply.view());
     if (received.is_err()) return 55;
     fixy::net::TimestampedReceive const message = std::move(received).expect("the receive gave a message");
     if (message.count < 16 || message.count > reply.size()) return 56;
@@ -300,6 +352,7 @@ int main() {
     if (failed == 0) failed = check_netlink_calls();
     if (failed == 0) failed = check_tcp_options();
     if (failed == 0) failed = check_socket_timestamping();
+    if (failed == 0) failed = check_shared_socket();
     if (failed == 0) failed = check_hardware_timestamping();
     if (failed == 0) failed = check_receive_with_timestamps();
     if (failed == 0) failed = check_send_raises_no_signal();

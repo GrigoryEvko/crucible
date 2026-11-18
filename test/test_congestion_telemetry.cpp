@@ -314,7 +314,7 @@ void test_live_tcp_info() {
     eff::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
     TcpSocket const tcp = descriptor_of(::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(test_ctx));
     assert(tcp.is_open());
-    cntp::SocketFd const fd = ::fixy::mint_refined<::fixy::non_negative>(tcp.ref().abi_descriptor());
+    cntp::SocketFd const fd = ::fixy::net::share_socket(tcp.ref());
     // Reno is part of each kernel, so the harvest reads no fields of BBR or
     // of DCTCP.
     assert(::fixy::net::set_tcp_congestion(test_ctx, fd, "reno").is_ok());

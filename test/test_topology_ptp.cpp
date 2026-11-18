@@ -282,8 +282,7 @@ static void test_socket_calls() {
         [](::fixy::Linear<TcpSocket> opened) -> TcpSocket { return std::move(opened).consume(); },
         [](::foundation::os::Errno) -> TcpSocket { return TcpSocket{}; });
     assert(tcp.is_open());
-    crucible::cntp::SocketFd const sock_fd =
-        crucible::cntp::admit_socket_fd(tcp.ref().abi_descriptor()).expect("an open socket has a descriptor");
+    crucible::cntp::SocketFd const sock_fd = ::fixy::net::share_socket(tcp.ref());
     assert(topology::enable_socket_timestamping(bg_fs, sock_fd).is_ok());
 
     crucible::cntp::NicInterfaceName const lo =

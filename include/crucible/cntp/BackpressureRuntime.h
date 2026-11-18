@@ -66,12 +66,15 @@ class CreditFlowControl : public ::foundation::Pinned<CreditFlowControl<MaxFlows
     // cannot be published into two slots at once.
     ::fixy::spin::BlockingLock<StartGateTag> start_gate_{};
 
-    [[nodiscard]] static constexpr std::uint32_t fd_key(SocketFd fd) noexcept {
-        return static_cast<std::uint32_t>(fd.value());
+    // The key of a flow is the number of the descriptor of its socket, at
+    // most max_of<int>, so it never meets kEmptyFd or kReservedFd.
+    [[nodiscard]] static constexpr std::uint32_t fd_key(SocketIdentity socket) noexcept {
+        CRUCIBLE_PRE(socket.raw() <= static_cast<std::uint32_t>(::fixy::max_of<int>));
+        return socket.raw();
     }
 
     // The slot of the flow of fd, or no value when no flow of fd started.
-    [[nodiscard]] ::fixy::Option<FlowIndex> find(SocketFd fd) const noexcept {
+    [[nodiscard]] ::fixy::Option<FlowIndex> find(SocketIdentity fd) const noexcept {
         const std::uint32_t key = fd_key(fd);
         for (FlowIndex index : flows_.indices()) {
             if (flows_.at(index).fd_bits.load_acquire() == key) {
@@ -98,7 +101,7 @@ public:
     template <class Ctx>
         requires CtxFitsBackpressureStart<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, BackpressureError>
-    start_flow(Ctx const& ctx, SocketFd fd, PositiveBackpressureBytes initial_credit) noexcept {
+    start_flow(Ctx const& ctx, SocketIdentity fd, PositiveBackpressureBytes initial_credit) noexcept {
         auto proof = ::foundation::permissions::mint_permission_root<StartGateTag>();
         ::fixy::spin::GateGuard guard{ctx, start_gate_, proof};
 
@@ -121,7 +124,7 @@ public:
     template <class Ctx>
         requires CtxFitsBackpressureRuntime<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, BackpressureError>
-    grant_credit(Ctx const&, SocketFd fd, PositiveBackpressureBytes bytes) noexcept {
+    grant_credit(Ctx const&, SocketIdentity fd, PositiveBackpressureBytes bytes) noexcept {
         CRUCIBLE_TRY(index, find(fd).ok_or(BackpressureError::CreditFlowNotStarted));
         FlowSlot& flow = flows_.at(index);
 
@@ -139,7 +142,7 @@ public:
     template <class Ctx>
         requires CtxFitsBackpressureRuntime<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, BackpressureError>
-    consume_credit(Ctx const&, SocketFd fd, PositiveBackpressureBytes bytes) noexcept {
+    consume_credit(Ctx const&, SocketIdentity fd, PositiveBackpressureBytes bytes) noexcept {
         CRUCIBLE_TRY(index, find(fd).ok_or(BackpressureError::CreditFlowNotStarted));
         FlowSlot& flow = flows_.at(index);
 
@@ -155,7 +158,7 @@ public:
     }
 
     [[nodiscard]] ::fixy::Result<PositiveBackpressureBytes, BackpressureError>
-    current_credit(SocketFd fd) const noexcept {
+    current_credit(SocketIdentity fd) const noexcept {
         CRUCIBLE_TRY(index, find(fd).ok_or(BackpressureError::CreditFlowNotStarted));
         const std::uint32_t credit = flows_.at(index).credit_bytes.load_acquire();
         if (credit == 0) {
@@ -190,7 +193,7 @@ class AdmissionController : public ::foundation::Pinned<AdmissionController<MaxC
     ::fixy::Atomic<std::uint16_t> live_connections_{0};
     ::fixy::Atomic<std::uint64_t> sequence_{0};
 
-    [[nodiscard]] DeclaredAdmissionDecision decision(AdmissionDecisionKind kind, SocketFd socket,
+    [[nodiscard]] DeclaredAdmissionDecision decision(AdmissionDecisionKind kind, SocketIdentity socket,
                                                      ::foundation::effects::ResourceKind resource,
                                                      ResourcePressurePpm observed, ResourceLimitPpm threshold,
                                                      std::uint32_t retry_after_ms) noexcept {

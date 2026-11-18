@@ -3,7 +3,9 @@
 #include <fixy/Ctx.h>
 
 #include <atomic>
+#include "tcp_socket.h"
 #include "test_assert.h"
+#include <cstddef>
 #include <cstdio>
 #include <string_view>
 #include <thread>
@@ -22,9 +24,25 @@ namespace {
     return id;
 }
 
+// One TCP socket for each number below 256 that a case names.  The bank
+// opens the socket of a number at its first use and keeps it open to the end
+// of the process, so the pool never holds the shared ref of a closed socket.
+// Two numbers give two sockets, and one number gives one socket each time.
+[[nodiscard]] cntp::SocketFd test_socket(int number) {
+    static ::foundation::core::FixedArray<crucible::test::TcpSocket, 256> bank{};
+    crucible::test::TcpSocket& socket =
+        *bank.get(static_cast<std::size_t>(number)).expect("the number of a test socket is below 256");
+    if (!socket.is_open()) {
+        ::fixy::TestRunnerCtx const ctx{fe::testing::test()};
+        socket = crucible::test::open_tcp_socket(ctx);
+        assert(socket.is_open());
+    }
+    return ::fixy::net::share_socket(socket.ref());
+}
+
 [[nodiscard]] cntp::LinearConnection<cntp::TransportClass::MtlsTcp> connection(int fd, cog::CogIdentity const& id,
                                                                                std::uint64_t connection_id) {
-    cntp::SocketFd const socket = cntp::admit_socket_fd(fd).expect("the descriptor of the test is not negative");
+    cntp::SocketFd const socket = test_socket(fd);
     auto cid = cntp::admit_connection_id(connection_id);
     assert(cid.is_ok());
     auto conn = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(
@@ -91,13 +109,18 @@ void test_admission_and_names() {
     auto const admitted_id = std::move(id).expect("77 is positive");
 
     cog::CogIdentity empty{};
-    auto socket = cntp::admit_socket_fd(100).expect("100 is not negative");
+    cntp::SocketFd const socket = test_socket(100);
     auto bad = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(socket, empty, admitted_id);
     assert(error_of(std::move(bad)) == cntp::PoolError::InvalidRemoteCog);
 
+    // A connection holds an open socket, so the empty ref is refused.
+    auto closed = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(cntp::SocketFd{}, remote(9), admitted_id);
+    assert(error_of(std::move(closed)) == cntp::PoolError::ClosedSocket);
+
     auto good = cntp::mint_connection<cntp::TransportClass::MtlsTcp>(socket, remote(9), admitted_id);
     MtlsConnection made = take(std::move(good));
-    assert(made.peek().socket().value() == 100);
+    assert(made.peek().socket() == socket);
+    assert(!(made.peek().socket() == test_socket(101)));
     assert(made.peek().remote_uuid() == remote(9).uuid);
     assert(made.peek().connection_id().value() == 77);
     drop(std::move(made));
@@ -120,7 +143,7 @@ void test_lease_return_and_capacity() {
         auto lease = take(pool.lease(bg, id, 200));
         assert(static_cast<bool>(lease));
         assert((*lease).remote_uuid() == id.uuid);
-        assert(lease->socket().value() == 10);
+        assert(lease->socket() == test_socket(10));
         static_assert(std::is_const_v<std::remove_reference_t<decltype(*lease)>>,
                       "a lease reads its connection and cannot rewrite it");
         assert(pool.available_count(bg, id) == 1);
@@ -159,7 +182,7 @@ void test_unhealthy_idle_and_quarantine_eviction() {
     auto id = remote(2);
     auto pool = cntp::mint_connection_pool<cntp::TransportClass::MtlsTcp, 2, 2>(init, config(2, 50));
 
-    auto fd20 = cntp::admit_socket_fd(20).expect("20 is not negative");
+    cntp::SocketFd const fd20 = test_socket(20);
     assert(pool.add_connection(bg, connection(20, id, 20), 10).is_ok());
     assert(pool.add_connection(bg, connection(21, id, 21), 10).is_ok());
     pool.mark_unhealthy(bg, id, fd20);
@@ -291,7 +314,7 @@ void test_distinct_remote_counter_parity() {
 
     // Evicting one unhealthy connection leaves the remote with its
     // other one, so the count does not move.
-    auto fd50 = cntp::admit_socket_fd(50).expect("50 is not negative");
+    cntp::SocketFd const fd50 = test_socket(50);
     pool.mark_unhealthy(bg, first, fd50);
     pool.evict_unhealthy(bg, first);
     assert(pool.distinct_remote_count(bg) == 3u);
@@ -310,7 +333,7 @@ void test_distinct_remote_counter_parity() {
     // A connection marked unhealthy while leased is drained when the
     // lease comes back, and it was the remote's only one.
     auto lease = take(pool.lease(bg, third, 0));
-    auto fd70 = cntp::admit_socket_fd(70).expect("70 is not negative");
+    cntp::SocketFd const fd70 = test_socket(70);
     pool.mark_unhealthy(bg, third, fd70);
     lease.reset();
     assert(pool.distinct_remote_count(bg) == 1u);

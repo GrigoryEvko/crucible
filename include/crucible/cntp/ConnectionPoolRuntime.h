@@ -95,9 +95,7 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
         return lhs.hi == rhs.hi && lhs.lo == rhs.lo;
     }
 
-    [[nodiscard]] static constexpr bool same_socket(SocketFd lhs, SocketFd rhs) noexcept {
-        return lhs.value() == rhs.value();
-    }
+    [[nodiscard]] static constexpr bool same_socket(SocketFd lhs, SocketFd rhs) noexcept { return lhs == rhs; }
 
     [[nodiscard]] static constexpr bool holds_remote(Slot const& slot, cog::Uuid remote) noexcept {
         for (Connection<T> const& connection : slot.connection) {

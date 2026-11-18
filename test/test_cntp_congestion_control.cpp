@@ -4,48 +4,16 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
+#include "tcp_socket.h"
 #include "test_assert.h"
 #include <cstdio>
 #include <type_traits>
 #include <utility>
 
-#include <sys/socket.h>
-#include <unistd.h>
-
 namespace cntp = crucible::cntp;
 namespace fe = ::foundation::effects;
 
 namespace {
-
-class TestSocket {
-public:
-    explicit TestSocket(int fd) noexcept : fd_{fd} {}
-    TestSocket(TestSocket const&) = delete;
-    TestSocket& operator=(TestSocket const&) = delete;
-    TestSocket(TestSocket&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
-    TestSocket& operator=(TestSocket&& other) noexcept {
-        if (this != &other) {
-            close();
-            fd_ = other.fd_;
-            other.fd_ = -1;
-        }
-        return *this;
-    }
-    ~TestSocket() noexcept { close(); }
-
-    [[nodiscard]] int raw() const noexcept { return fd_; }
-    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
-
-private:
-    int fd_ = -1;
-
-    void close() noexcept {
-        if (fd_ >= 0) {
-            ::close(fd_);
-            fd_ = -1;
-        }
-    }
-};
 
 struct UserCc {
     static consteval ::fixy::TextView congestion_control_name() noexcept { return "user_cc"; }
@@ -77,8 +45,6 @@ void test_name_admission() {
     cntp::KernelCcName const longest = take(cntp::KernelCcName::from("0123456789abcde"));
     assert(longest.view().size() == cntp::KernelCcName::max_bytes - 1);
     assert(error_of(cntp::KernelCcName::from("0123456789abcdef")) == cntp::CcError::InvalidAlgorithmName);
-
-    assert(error_of(cntp::admit_socket_fd(-1)) == cntp::CcError::InvalidSocketFd);
 
     crucible::test::pass("  test_name_admission:                     PASSED\n");
 }
@@ -145,12 +111,12 @@ void test_mint_surfaces() {
 }
 
 void test_live_socket_roundtrip_if_available() {
-    TestSocket socket{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
-    assert(socket.valid());
-
-    cntp::SocketFd const fd = take(cntp::admit_socket_fd(socket.raw()));
-
     ::fixy::InitLoadCtx load{fe::testing::init()};
+    crucible::test::TcpSocket const socket = crucible::test::open_tcp_socket(load);
+    assert(socket.is_open());
+
+    cntp::SocketFd const fd = ::fixy::net::share_socket(socket.ref());
+
     auto availability = cntp::read_available_congestion_control(load);
     if (availability.is_err()) {
         ::fixy::report(::fixy::Sink::Out, "  test_live_socket_roundtrip_if_available: SKIPPED\n");
@@ -178,10 +144,10 @@ void test_live_socket_roundtrip_if_available() {
 }
 
 // Each gated form reaches the kernel and reports the failure of its own
-// call.  Admission requires only a non-negative descriptor, so this value
-// passes it, and the kernel then refuses the descriptor.
+// call.  The empty ref passes the type, and the kernel then refuses its
+// descriptor.
 void test_gated_forms_report_kernel_refusal() {
-    cntp::SocketFd const fd = take(cntp::admit_socket_fd(/*invalid*/ 0xFFFE));
+    cntp::SocketFd const fd{};
 
     auto choice = cntp::mint_cc_choice<cntp::CcAlgorithm::Cubic, cntp::LinkClass::CrossDatacenter>();
 

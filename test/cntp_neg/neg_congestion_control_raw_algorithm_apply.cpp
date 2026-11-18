@@ -11,7 +11,7 @@ int main() {
     namespace cntp = crucible::cntp;
 
     ::fixy::InitLoadCtx load{::foundation::effects::testing::init()};
-    auto fd = cntp::admit_socket_fd(0).expect("0 is not negative");
+    cntp::SocketFd fd{};
     auto result = cntp::set_cc_for_socket(load, fd, cntp::CcAlgorithm::Cubic);
     (void)result;
     return 0;

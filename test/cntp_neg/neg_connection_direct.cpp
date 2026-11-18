@@ -10,7 +10,7 @@ namespace cog = crucible::cog;
 int main() {
     cog::CogIdentity remote{};
     remote.uuid = cog::Uuid{1, 2};
-    auto socket = cntp::admit_socket_fd(3).expect("3 is not negative");
+    cntp::SocketFd const socket{};
     auto id = cntp::admit_connection_id(4).expect("4 is positive");
     auto minted = cntp::mint_connection<cntp::TransportClass::Tcp>(socket, remote, id);
     (void)minted;

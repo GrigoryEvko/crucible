@@ -24,16 +24,21 @@
 #include <fixy/os/Fd.h>
 #include <fixy/os/Handle.h>
 #include <fixy/os/SocketCalls.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Id.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 #include <foundation/os/Errno.h>
+#include <foundation/reflect/Instance.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -97,8 +102,8 @@ using socket_row_t = eff::lift_row_t<::fixy::atom::syscall::per<::fixy::atom::sy
 template <typename Ctx, typename Kind>
 concept CtxFitsSocketMint = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, socket_row_t> && MappedSocketKind<Kind>;
 
-// The rights of a socket: a read and a write of its bytes, and the family of
-// the ioctls of a socket.
+// The rights of a socket: a read and a write of its bytes, and the control
+// calls of a socket (ioctl_socket): its ioctls and its options.
 inline constexpr ::fixy::os::RightSet socket_rights =
     ::fixy::os::RightSet::read | ::fixy::os::RightSet::write | ::fixy::os::RightSet::ioctl_socket;
 
@@ -108,6 +113,153 @@ using SocketHandle = ::fixy::os::Handle<::fixy::os::kind::Socket<Kind>, socket_r
 
 template <typename Kind, ::fixy::os::RightSet Rights>
 using SocketRef = ::fixy::os::HandleRef<::fixy::os::kind::Socket<Kind>, Rights>;
+
+// The identity of a socket: the number of its descriptor.  A table that only
+// keys or compares sockets holds the identity, and no door takes it.  The
+// kernel gives the number of a closed socket to its next socket, so an
+// identity names a socket only while the socket is open.
+using SocketIdentity = ::foundation::core::Id<struct SocketIdentityTag, std::uint32_t>;
+
+// THE FOREIGN SOCKET
+//   A ForeignSocketRef is the borrow of a socket by value.  A table that
+//   stores, compares or keys a socket that it gives back to a door holds
+//   one, because a HandleRef holds the address of the descriptor of its
+//   Handle and cannot outlive the frame of that Handle.  Two doors make one:
+//   share_socket, from the borrow of a Handle of the base, and
+//   admit_foreign_socket, from the descriptor of a socket that a C library
+//   opened.  Each ref carries one promise of the code that made it: the
+//   owner of the socket keeps it open for the life of each copy of the ref.
+//   No type holds that promise.  A ref that outlives its socket gives a door
+//   a closed number, or the number of a later socket of the process.
+//   The default ref is empty, and a door gives ebadf for it.
+template <typename Kind, ::fixy::os::RightSet Rights>
+    requires MappedSocketKind<Kind>
+class ForeignSocketRef;
+
+namespace detail {
+
+// The door of the base to the descriptor of a foreign socket.  No object of
+// it exists.  admit makes a ref, and descriptor_of reads it.
+struct ForeignSocketDoor final : ::foundation::NoObject<ForeignSocketDoor> {
+    template <typename Kind, ::fixy::os::RightSet Rights>
+    [[nodiscard]] static constexpr ForeignSocketRef<Kind, Rights> admit(int descriptor) noexcept;
+
+    template <typename Kind, ::fixy::os::RightSet Rights>
+    [[nodiscard]] static constexpr int descriptor_of(ForeignSocketRef<Kind, Rights> borrow) noexcept;
+};
+
+}  // namespace detail
+
+template <typename Kind, ::fixy::os::RightSet Rights>
+    requires MappedSocketKind<Kind>
+class [[nodiscard]] ForeignSocketRef final {
+    // The descriptor of the socket, or -1 for the empty ref.
+    int descriptor_ = -1;
+    // No copy of bytes builds a ref, so a number becomes a ref only through
+    // a door (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    explicit constexpr ForeignSocketRef(int descriptor) noexcept : descriptor_{descriptor} {}
+
+    template <typename OtherKind, ::fixy::os::RightSet OtherRights>
+        requires MappedSocketKind<OtherKind>
+    friend class ForeignSocketRef;
+
+    friend struct detail::ForeignSocketDoor;
+
+public:
+    // The kind of the borrow, the same kind as that of a SocketRef.
+    using kind_type = ::fixy::os::kind::Socket<Kind>;
+    static constexpr ::fixy::os::RightSet rights = Rights;
+
+    // The empty ref.
+    constexpr ForeignSocketRef() noexcept = default;
+
+    // A ref with the rights Fewer, which this ref holds.
+    template <::fixy::os::RightSet Fewer>
+        requires ::fixy::os::HoldsRights<Rights, Fewer>
+    [[nodiscard]] constexpr ForeignSocketRef<Kind, Fewer> restrict() const noexcept {
+        return ForeignSocketRef<Kind, Fewer>{descriptor_};
+    }
+
+    // False for the empty ref.
+    [[nodiscard]] constexpr bool is_open() const noexcept { return descriptor_ >= 0; }
+
+    // The identity of the socket of an open ref.
+    [[nodiscard]] constexpr SocketIdentity identity() const noexcept {
+        CRUCIBLE_PRE(is_open());
+        return SocketIdentity{static_cast<std::uint32_t>(descriptor_)};
+    }
+
+    // The raw descriptor, for a call of a C ABI only (THE ABI DESCRIPTOR of
+    // fixy/os/Handle.h).  The descriptor of the empty ref is -1.
+    [[nodiscard]] constexpr int abi_descriptor() const noexcept { return descriptor_; }
+
+    // Two refs are equal when they hold one descriptor.
+    [[nodiscard]] friend constexpr bool operator==(ForeignSocketRef left, ForeignSocketRef right) noexcept {
+        return left.descriptor_ == right.descriptor_;
+    }
+};
+
+template <typename Kind, ::fixy::os::RightSet Rights>
+constexpr ForeignSocketRef<Kind, Rights> detail::ForeignSocketDoor::admit(int descriptor) noexcept {
+    return ForeignSocketRef<Kind, Rights>{descriptor};
+}
+
+template <typename Kind, ::fixy::os::RightSet Rights>
+constexpr int detail::ForeignSocketDoor::descriptor_of(ForeignSocketRef<Kind, Rights> borrow) noexcept {
+    return borrow.descriptor_;
+}
+
+// The ref of a socket that a C library opened, with the kind Kind and the
+// rights Rights that the caller states.  The caller keeps the socket open for
+// the life of each copy of the ref (THE FOREIGN SOCKET).  Each call is inside
+// an opt-out region of the class ABI (THE ABI DESCRIPTOR of fixy/os/Handle.h).
+template <typename Kind, ::fixy::os::RightSet Rights>
+    requires MappedSocketKind<Kind>
+[[nodiscard]] constexpr ForeignSocketRef<Kind, Rights> admit_foreign_socket(NonNegative<int> descriptor) noexcept {
+    return detail::ForeignSocketDoor::admit<Kind, Rights>(descriptor.value());
+}
+
+// The ref by value of the socket of a Handle, for a table that stores the
+// socket.  The caller keeps the Handle open for the life of each copy of the
+// ref (THE FOREIGN SOCKET).  The borrow of an empty Handle gives the empty
+// ref.
+template <typename Kind, ::fixy::os::RightSet Rights>
+    requires MappedSocketKind<Kind>
+[[nodiscard]] ForeignSocketRef<Kind, Rights> share_socket(SocketRef<Kind, Rights> const& socket) noexcept {
+    return detail::ForeignSocketDoor::admit<Kind, Rights>(::fixy::os::detail::HandleDoor::descriptor_of(socket));
+}
+
+// A borrow of a socket: a SocketRef or a ForeignSocketRef.
+template <typename Borrow>
+concept SocketBorrow = ::foundation::reflect::IsInstanceOf<Borrow, ^^ForeignSocketRef>
+                    || (::foundation::reflect::IsInstanceOf<Borrow, ^^::fixy::os::HandleRef>
+                        && ::foundation::reflect::IsInstanceOf<typename Borrow::kind_type, ^^::fixy::os::kind::Socket>);
+
+// A borrow of a socket that holds the rights Needed.
+template <typename Borrow, ::fixy::os::RightSet Needed>
+concept SocketBorrowWith = SocketBorrow<Borrow> && ::fixy::os::HoldsRights<Borrow::rights, Needed>;
+
+// A borrow of a TCP stream socket that holds the rights Needed.
+template <typename Borrow, ::fixy::os::RightSet Needed>
+concept TcpBorrowWith = SocketBorrowWith<Borrow, Needed>
+                     && std::same_as<typename Borrow::kind_type, ::fixy::os::kind::Socket<socket_kind::TcpStream>>;
+
+namespace detail {
+
+// The descriptor of a borrow of a socket, for a door of the base.
+template <typename Kind, ::fixy::os::RightSet Rights>
+[[nodiscard]] inline int socket_descriptor_of(SocketRef<Kind, Rights> socket) noexcept {
+    return ::fixy::os::detail::HandleDoor::descriptor_of(socket);
+}
+
+template <typename Kind, ::fixy::os::RightSet Rights>
+[[nodiscard]] constexpr int socket_descriptor_of(ForeignSocketRef<Kind, Rights> socket) noexcept {
+    return ForeignSocketDoor::descriptor_of(socket);
+}
+
+}  // namespace detail
 
 // The Kind parameter precedes Ctx because the caller names it explicitly
 // and Ctx deduces from the argument.
@@ -155,8 +307,10 @@ mint_socket(Ctx const&) noexcept {
 }
 
 // THE SOCKET CALLS
-//   Each call takes the descriptor of a socket: the NonNegative<int> of a
-//   socket that the caller holds, or the borrow of a socket of mint_socket.
+//   Each call takes the borrow of a socket.  A call of the bytes takes a
+//   SocketRef, and a call of the options or the stamps takes a SocketRef or a
+//   ForeignSocketRef (SocketBorrow) with the right ioctl_socket, or read for
+//   a receive.  A TCP option needs a borrow of a TcpStream socket.
 //   The door file src/fixy/os/Socket.cpp issues each call
 //   with the raw primitive (fixy/os/SocketCalls.h), and gives the error of
 //   the kernel in a Result.  A call that a signal interrupts runs again.
@@ -194,29 +348,29 @@ struct NetlinkAddress final {
 
 // Sets the congestion control of a TCP socket to name (TCP_CONGESTION).  A
 // name of more than congestion_name_bytes characters gives enametoolong.
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <eff::IsExecCtx Ctx, typename Borrow>
+    requires CtxFitsSocketCall<Ctx> && TcpBorrowWith<Borrow, ::fixy::os::RightSet::ioctl_socket>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-set_tcp_congestion(Ctx const&, NonNegative<int> socket, ::foundation::core::TextView name) noexcept {
+set_tcp_congestion(Ctx const&, Borrow socket, ::foundation::core::TextView name) noexcept {
     if (name.size() > congestion_name_bytes) return ::foundation::core::err(::foundation::os::Errno::enametoolong);
     ::foundation::core::FixedText<congestion_name_bytes + 1> bytes{};
     bytes.append(name).expect("the name fits below the capacity");
     bytes.append('\0').expect("the zero fits after the name");
-    return detail::set_tcp_option_(socket.value(), TcpOption::congestion,
+    return detail::set_tcp_option_(detail::socket_descriptor_of(socket), TcpOption::congestion,
                                    ::foundation::core::detail::text_first_(bytes.view()),
                                    static_cast<std::uint32_t>(bytes.size()));
 }
 
 // The name of the congestion control of a TCP socket (TCP_CONGESTION).
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <eff::IsExecCtx Ctx, typename Borrow>
+    requires CtxFitsSocketCall<Ctx> && TcpBorrowWith<Borrow, ::fixy::os::RightSet::ioctl_socket>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::FixedText<congestion_name_bytes>,
                                                 ::foundation::os::Errno>
-read_tcp_congestion(Ctx const&, NonNegative<int> socket) noexcept {
+read_tcp_congestion(Ctx const&, Borrow socket) noexcept {
     using Read =
         ::foundation::core::Result<::foundation::core::FixedText<congestion_name_bytes>, ::foundation::os::Errno>;
     char bytes[congestion_name_bytes + 1]{};
-    return detail::read_tcp_option_(socket.value(), TcpOption::congestion, bytes, sizeof(bytes))
+    return detail::read_tcp_option_(detail::socket_descriptor_of(socket), TcpOption::congestion, bytes, sizeof(bytes))
         .match(
             [&bytes](std::size_t length) -> Read {
                 std::size_t count = 0;
@@ -236,34 +390,34 @@ read_tcp_congestion(Ctx const&, NonNegative<int> socket) noexcept {
 // gives as a fixed struct, such as tcp_info (TcpOption::info) or
 // tcp_cc_info (TcpOption::congestion_info), reads into a buffer of its
 // size, and a kernel with a shorter struct writes fewer bytes.
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <eff::IsExecCtx Ctx, typename Borrow>
+    requires CtxFitsSocketCall<Ctx> && TcpBorrowWith<Borrow, ::fixy::os::RightSet::ioctl_socket>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-read_tcp_option(Ctx const&, NonNegative<int> socket, TcpOption option,
-                ::foundation::core::View<std::byte> buffer) noexcept {
+read_tcp_option(Ctx const&, Borrow socket, TcpOption option, ::foundation::core::View<std::byte> buffer) noexcept {
     std::size_t const size = buffer.size();
     std::uint32_t const capacity = size < 0xFFFFFFFFU ? static_cast<std::uint32_t>(size) : 0xFFFFFFFFU;
-    return detail::read_tcp_option_(socket.value(), option,
+    return detail::read_tcp_option_(detail::socket_descriptor_of(socket), option,
                                     first_of_(::foundation::core::detail::ViewDoor::key(), buffer), capacity);
 }
 
 // Sets the least retransmission timeout of a TCP socket in microseconds
 // (TCP_RTO_MIN_US).  A kernel with no such option gives enoprotoopt.
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <eff::IsExecCtx Ctx, typename Borrow>
+    requires CtxFitsSocketCall<Ctx> && TcpBorrowWith<Borrow, ::fixy::os::RightSet::ioctl_socket>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-set_tcp_rto_min(Ctx const&, NonNegative<int> socket, std::uint32_t microseconds) noexcept {
-    return detail::set_tcp_option_(socket.value(), TcpOption::rto_min_us, &microseconds, sizeof(microseconds));
+set_tcp_rto_min(Ctx const&, Borrow socket, std::uint32_t microseconds) noexcept {
+    return detail::set_tcp_option_(detail::socket_descriptor_of(socket), TcpOption::rto_min_us, &microseconds,
+                                   sizeof(microseconds));
 }
 
 // Sets the largest pacing rate of a socket in bytes per second
 // (SO_MAX_PACING_RATE).
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <eff::IsExecCtx Ctx, typename Borrow>
+    requires CtxFitsSocketCall<Ctx> && SocketBorrowWith<Borrow, ::fixy::os::RightSet::ioctl_socket>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-set_max_pacing_rate(Ctx const&, NonNegative<int> socket, std::uint64_t bytes_per_second) noexcept {
-    return detail::set_option_(socket.value(), detail::socket_level, detail::max_pacing_rate_option, &bytes_per_second,
-                               sizeof(bytes_per_second));
+set_max_pacing_rate(Ctx const&, Borrow socket, std::uint64_t bytes_per_second) noexcept {
+    return detail::set_option_(detail::socket_descriptor_of(socket), detail::socket_level,
+                               detail::max_pacing_rate_option, &bytes_per_second, sizeof(bytes_per_second));
 }
 
 // A socket call that needs the rights Needed of a socket with the rights
@@ -311,13 +465,13 @@ inline constexpr std::size_t interface_name_bytes = detail::interface_name_capac
 // stamp of the kernel, and the raw stamp of the hardware clock of the NIC
 // when the NIC takes one.  receive_with_timestamps gives the stamps of each
 // datagram.
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <eff::IsExecCtx Ctx, typename Borrow>
+    requires CtxFitsSocketCall<Ctx> && SocketBorrowWith<Borrow, ::fixy::os::RightSet::ioctl_socket>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-set_socket_timestamping(Ctx const&, NonNegative<int> socket) noexcept {
+set_socket_timestamping(Ctx const&, Borrow socket) noexcept {
     std::uint32_t const flags = detail::receive_timestamping_flags;
-    return detail::set_option_(socket.value(), detail::socket_level, detail::timestamping_option, &flags,
-                               sizeof(flags));
+    return detail::set_option_(detail::socket_descriptor_of(socket), detail::socket_level, detail::timestamping_option,
+                               &flags, sizeof(flags));
 }
 
 // Turns on the hardware stamps of the NIC of the network interface
@@ -325,11 +479,11 @@ set_socket_timestamping(Ctx const&, NonNegative<int> socket) noexcept {
 // received packet.  The kernel needs CAP_NET_ADMIN for the call, and a NIC
 // with no hardware clock refuses it.  A name of more than
 // interface_name_bytes characters gives enametoolong.
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <eff::IsExecCtx Ctx, typename Borrow>
+    requires CtxFitsSocketCall<Ctx> && SocketBorrowWith<Borrow, ::fixy::os::RightSet::ioctl_socket>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-set_hardware_timestamping(Ctx const&, NonNegative<int> socket, ::foundation::core::TextView interface_name) noexcept {
-    return detail::set_hardware_timestamping_(socket.value(), interface_name);
+set_hardware_timestamping(Ctx const&, Borrow socket, ::foundation::core::TextView interface_name) noexcept {
+    return detail::set_hardware_timestamping_(detail::socket_descriptor_of(socket), interface_name);
 }
 
 // Receives one datagram into buffer with the stamps of its control data
@@ -337,11 +491,11 @@ set_hardware_timestamping(Ctx const&, NonNegative<int> socket, ::foundation::cor
 // wrote into buffer, at most its size.  It does not wait: a socket with no
 // datagram gives eagain.  The control data holds no stamp when the socket
 // has no SO_TIMESTAMPING (set_socket_timestamping).
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <eff::IsExecCtx Ctx, typename Borrow>
+    requires CtxFitsSocketCall<Ctx> && SocketBorrowWith<Borrow, ::fixy::os::RightSet::read>
 [[nodiscard]] inline ::foundation::core::Result<TimestampedReceive, ::foundation::os::Errno>
-receive_with_timestamps(Ctx const&, NonNegative<int> socket, ::foundation::core::View<std::byte> buffer) noexcept {
-    return detail::receive_with_timestamps_(socket.value(),
+receive_with_timestamps(Ctx const&, Borrow socket, ::foundation::core::View<std::byte> buffer) noexcept {
+    return detail::receive_with_timestamps_(detail::socket_descriptor_of(socket),
                                             first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
                                             buffer.size(), detail::no_wait_flag);
 }

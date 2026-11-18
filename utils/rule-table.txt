@@ -985,6 +985,10 @@ witness <fixy/os/Fd.h> private | fixy::fs::OwnedFd | fixy::fs::OwnedFd{3}
 # the friends of a Handle are the door classes that open a descriptor.
 witness <fixy/os/Handle.h> private | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{3}
 witness <fixy/os/Handle.h> private | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<int>()}
+# A foreign ref names the descriptor of a socket that a Handle owns or that
+# a C library opened.  Its constructor from a number is private, and its
+# one friend is the door that share_socket and admit_foreign_socket call.
+witness <fixy/os/Socket.h> private | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read> | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>{forge::rvalue<int>()}
 # The four doors of a descriptor handle.  No object of a door exists, its
 # members are private, and its friends are the gated mints that open a
 # descriptor.

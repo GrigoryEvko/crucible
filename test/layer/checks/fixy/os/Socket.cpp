@@ -41,6 +41,32 @@ static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_cons
                   && !std::is_move_constructible_v<SocketDoor>,
               "No object of the socket door exists.  Its private member is the only call to socket(2).");
 
+// THE FOREIGN SOCKET: a ref by value of one int, which no number converts
+// to, and which the doors take beside the borrow of a Handle.
+using TcpForeign = ForeignSocketRef<socket_kind::TcpStream, socket_rights>;
+using NetlinkForeign = ForeignSocketRef<socket_kind::NetlinkRoute, socket_rights>;
+using TcpBorrow = SocketRef<socket_kind::TcpStream, socket_rights>;
+static_assert(sizeof(TcpForeign) == sizeof(int) && std::is_trivially_copy_constructible_v<TcpForeign>);
+static_assert(!std::is_trivially_copyable_v<TcpForeign>, "std::bit_cast must not build a ref from a number.");
+static_assert(!std::is_constructible_v<TcpForeign, int>, "a number becomes a ref only through a door.");
+static_assert(!std::is_constructible_v<TcpForeign, NonNegative<int>>, "a number becomes a ref only through a door.");
+static_assert(!std::is_constructible_v<TcpForeign, NetlinkForeign>, "a ref keeps the kind of its socket.");
+static_assert(!TcpForeign{}.is_open() && TcpForeign{}.abi_descriptor() == -1);
+static_assert(std::is_same_v<TcpForeign::kind_type, TcpBorrow::kind_type> && TcpForeign::rights == socket_rights);
+static_assert(std::is_same_v<decltype(TcpForeign{}.restrict<::fixy::os::RightSet::read>()),
+                             ForeignSocketRef<socket_kind::TcpStream, ::fixy::os::RightSet::read>>);
+static_assert(SocketBorrow<TcpForeign> && SocketBorrow<TcpBorrow> && SocketBorrow<NetlinkForeign>);
+static_assert(!SocketBorrow<int> && !SocketBorrow<NonNegative<int>>);
+static_assert(!SocketBorrow<::fixy::os::HandleRef<::fixy::os::kind::File, ::fixy::os::RightSet::read>>,
+              "the borrow of a file is no socket.");
+static_assert(TcpBorrowWith<TcpForeign, ::fixy::os::RightSet::ioctl_socket>
+              && TcpBorrowWith<TcpBorrow, ::fixy::os::RightSet::ioctl_socket>);
+static_assert(!TcpBorrowWith<NetlinkForeign, ::fixy::os::RightSet::ioctl_socket>, "a TCP option needs a TCP socket.");
+static_assert(SocketBorrowWith<NetlinkForeign, ::fixy::os::RightSet::read>);
+static_assert(!SocketBorrowWith<ForeignSocketRef<socket_kind::TcpStream, ::fixy::os::RightSet::read>,
+                                ::fixy::os::RightSet::ioctl_socket>,
+              "a ref with fewer rights reaches no door of the rights that it lacks.");
+
 // THE KERNEL WORDS of fixy/os/SocketCalls.h are the words of the system
 // headers.
 static_assert(socket_level == SOL_SOCKET);

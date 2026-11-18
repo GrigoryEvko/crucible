@@ -46,11 +46,12 @@
 //   A call of a C ABI, such as a call of libbpf that takes a descriptor,
 //   reads the raw descriptor of a borrow with abi_descriptor().  A C ABI that
 //   takes the ownership of a descriptor gets it with release_to_abi(), which
-//   empties the Handle.  Each such call is inside an opt-out region of the
-//   class ABI, or of the class PROBE for a test of raw behavior, which states
-//   the reason.  No rule of the tree keeps the two members inside such a
-//   region, so a review of each new use keeps that limit.  Each other caller
-//   uses a door of the base.
+//   empties the Handle.  A socket that a C library opened comes in through
+//   admit_foreign_socket of fixy/os/Socket.h.  Each such call is inside an
+//   opt-out region of the class ABI, or of the class PROBE for a test of raw
+//   behavior, which states the reason.  No rule of the tree keeps these
+//   members and admit_foreign_socket inside such a region, so a review of
+//   each new use keeps that limit.  Each other caller uses a door of the base.
 
 #include <fixy/os/Fd.h>
 #include <foundation/ByteSeal.h>

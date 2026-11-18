@@ -42,7 +42,6 @@ enum class LinkClass : std::uint8_t {
 };
 
 enum class CcError : std::uint8_t {
-    InvalidSocketFd,
     InvalidAlgorithmName,
     UnknownAlgorithm,
     AlgorithmUnavailable,
@@ -54,7 +53,11 @@ enum class CcError : std::uint8_t {
 [[nodiscard]] ::fixy::TextView cc_algorithm_name(CcAlgorithm algorithm) noexcept;
 [[nodiscard]] ::fixy::TextView link_class_name(LinkClass link) noexcept;
 
-using SocketFd = ::fixy::NonNegative<int>;
+// A TCP socket of the tables of cntp, which store it by value (THE FOREIGN
+// SOCKET of fixy/os/Socket.h), and the identity of a socket for a table that
+// only keys or compares sockets.
+using SocketFd = ::fixy::net::ForeignSocketRef<::fixy::net::socket_kind::TcpStream, ::fixy::net::socket_rights>;
+using SocketIdentity = ::fixy::net::SocketIdentity;
 using CcAlgorithmMask = ::fixy::Bits<CcAlgorithm>;
 
 // The name of a congestion control module of the kernel.  from() checks each
@@ -123,10 +126,6 @@ concept CcCompatible = Algorithm != CcAlgorithm::Custom
 template <class Module>
 concept CustomCcModule = requires { Module::congestion_control_name(); }
                       && requires { requires KernelCcName::from(Module::congestion_control_name()).is_ok(); };
-
-[[nodiscard]] constexpr ::fixy::Result<SocketFd, CcError> admit_socket_fd(int fd) noexcept {
-    return ::fixy::admit_refined<::fixy::non_negative>(fd, CcError::InvalidSocketFd);
-}
 
 [[nodiscard]] constexpr ::fixy::Result<KernelCcName, CcError> kernel_name_for(CcAlgorithm algorithm) noexcept {
     // The in-tree "bbr" module is BBRv1, so Bbr1 owns that literal name.

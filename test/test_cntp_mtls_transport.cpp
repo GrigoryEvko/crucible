@@ -158,7 +158,9 @@ void test_policy_and_peer_admission() {
             .err()
         == ::fixy::some(cntp::MtlsError::CertificatePinMismatch));
 
-    cntp::SocketFd const fd = cntp::admit_socket_fd(3).expect("3 is not negative");
+    // The stub refuses each connect before it touches the socket, so the
+    // empty ref serves.
+    cntp::SocketFd const fd{};
     assert(cntp::connect_mtls(fd, config, allowed, pin).err() == ::fixy::some(cntp::MtlsError::BackendUnavailable));
 
     crucible::test::pass("  test_policy_and_peer_admission: PASSED\n");
@@ -229,7 +231,9 @@ void test_data_plane_is_stub() {
     auto config = cntp::mint_mtls_config(std::move(ca), std::move(cert), std::move(key), policy);
     assert(cntp::validate_mtls_config(config).is_ok());
 
-    cntp::SocketFd const fd = cntp::admit_socket_fd(7).expect("7 is not negative");
+    // The stub refuses each connect before it touches the socket, so the
+    // empty ref serves.
+    cntp::SocketFd const fd{};
     assert(cntp::connect_mtls(fd, config, peer_dns, pin).err() == ::fixy::some(cntp::MtlsError::BackendUnavailable));
 
     // A peer that fails policy is refused for that reason, not for
