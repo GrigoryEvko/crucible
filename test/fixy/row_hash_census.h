@@ -81,6 +81,7 @@
 #include <fixy/os/Sched.h>
 #include <fixy/os/SchedClass.h>
 #include <fixy/os/Socket.h>
+#include <fixy/os/SpinBudget.h>
 #include <fixy/os/SpinLock.h>
 #include <fixy/os/ThreadName.h>
 #include <fixy/os/Time.h>
@@ -1457,6 +1458,10 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::time::TscReader, kFactory},
     {^^::fixy::time::PtpClockReader, kFactory},
     {^^::fixy::time::BoundedSleeper, kFactory},
+    {^^::fixy::time::TickRate, kPayload},
+    {^^::fixy::time::SpinDeadline,
+     "the end of one spin as a value of the counter: it gives only has_passed(), it makes no claim, and it is never a "
+     "template argument of a kernel signature"},
     {^^::fixy::sched::SchedProofDoor,
      "a door of the scheduling proof mints: it has static members only, no object of it exists, and it is never a "
      "value"},

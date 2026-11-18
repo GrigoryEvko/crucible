@@ -7,7 +7,11 @@
 // foreground path makes replay diverge across machines.  fixy/os/Time.h gives
 // the readers and the sleeper that code outside the base mints with a
 // context, and they call read_clock_ and sleep_monotonic_.  Each read of a
-// clock goes through a reader, so each read takes the tag of Nondet.
+// clock goes through a reader, so each read takes the tag of Nondet.  The one
+// other caller is the start-up hook of src/fixy/os/SpinBudget.cpp, which has
+// no context.  It calibrates the counter of the core, and its readings leave
+// the hook only as the rate of the spin budget.  Each deadline of that budget
+// takes the tag of Nondet.
 //
 // This header is in the layer X3_os of utils/rule-table.txt.  The door file
 // is src/fixy/os/MonotonicClock.cpp, the one includer of <time.h>.

@@ -5718,6 +5718,19 @@ fixy_neg_compile_test(neg_timing_sink_span_copy
 # word that does not change.
 fixy_test(test_os_spin_hint)
 
+# test_os_spin_budget computes the rate of a counter from fixed counts, and it
+# converts a budget to ticks with no overflow.  A budget of zero and the
+# largest budget give the same values of one stream, bit for bit.  A deadline
+# reads the counter, so it takes the bare tag of Nondet, and only a context
+# whose row holds Nondet gives the tag.
+fixy_test(test_os_spin_budget)
+fixy_neg_compile_test(neg_spin_deadline_from_the_foreground
+  "no matching function for call to .extract_bare_from_ctx<foundation::effects::Effect::Nondet>\\("
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, E>.")
+fixy_neg_compile_test(neg_spin_deadline_read_in_a_kernel
+  "no matching function for call to .extract_bare_from_ctx<foundation::effects::Effect::Nondet>\\("
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, E>.")
+
 # test_os_sanitizer_routes closes a descriptor through the door in one
 # thread, and closes the next descriptor with the same number through the C
 # library in a second thread.  It also unmaps a region through the door in
