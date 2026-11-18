@@ -139,9 +139,12 @@ template <typename Row, std::size_t N>
     return N;
 }
 
+// The two lookups below name row_index with its namespace.  Then
+// argument-dependent lookup adds no overload of another file to the call,
+// and a gate that reads them reads only this header.
 template <typename Row, std::size_t N>
 [[nodiscard]] consteval bool has_row(Row const (&table)[N], std::meta::info tag) noexcept {
-    return row_index(table, tag) < N;
+    return ::fixy::atom_pack::row_index(table, tag) < N;
 }
 
 // The value of the row of a closed table for a tag.  For a tag with no
@@ -149,7 +152,7 @@ template <typename Row, std::size_t N>
 // expression, so a call for a tag with no row fails the build.
 template <typename Row, std::size_t N>
 [[nodiscard]] consteval auto value_for(Row const (&table)[N], std::meta::info tag) noexcept {
-    return table[row_index(table, tag)].value;
+    return table[::fixy::atom_pack::row_index(table, tag)].value;
 }
 
 // Whether a list of tag reflections names the tag.  A set of tags with no
