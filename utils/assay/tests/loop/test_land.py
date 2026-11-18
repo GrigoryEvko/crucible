@@ -2706,6 +2706,39 @@ def claim_cases(expect: testing.Expect, work: Path, root: Path) -> None:
             "the holder of the first lane takes the request of an earlier copy",
             first_lane and land.read_decision(queue, first.number, first.token) is not None,
         )
+    deferred_claim_cases(expect, work)
+
+
+def deferred_claim_cases(expect: testing.Expect, work: Path) -> None:
+    """Hold the claim of a request that waits for the next batch: the holder frees it at the cut (THE LANES).
+
+    The planted gate reads the claim of the second request while the run of the first batch goes on, as the holder of
+    a different lane reads it.
+    """
+    root = work / "repo-deferred"
+    head = planted_repository(root)
+    queue = land.queue_of(work, root)
+    seen: list[tuple[gate.Candidate, bool]] = []
+    claimed_in_run: list[bool] = []
+    first_request = request_of(("Change one",), (land.Edit("lib.cpp", land.REPLACE, "one\n", "uno\n"),))
+    second_request = request_of(("Change two",), (land.Edit("lib.cpp", land.REPLACE, "two\n", "dos\n"),))
+    with waiting(queue, root, first_request) as first, waiting(queue, root, second_request) as second:
+
+        def reads_claim() -> None:
+            """Keep if a holder claims the second request during the run of the first batch."""
+            claimed_in_run.append(land.is_claimed(queue, second.number))
+
+        took, printed = testing.captured(lambda: land.hold(work, queue, passing(seen, reads_claim), no_pause, 1))
+        expect(
+            "a holder frees the claim of a request that waits for the next batch at the cut, so the holder of a "
+            "different lane can take it while the first batch runs, and the first batch gives it no verdict",
+            took
+            and "wait for the next batch" in printed
+            and claimed_in_run == [False]
+            and land.read_decision(queue, first.number, first.token) is not None
+            and land.read_decision(queue, second.number, second.token) is None
+            and subjects_since(root, head) == ["Change one"],
+        )
 
 
 def hold_drop_cases(expect: testing.Expect, work: Path, root: Path) -> None:

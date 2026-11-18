@@ -163,10 +163,14 @@ THE LANES
     Up to LANES holders run at the same time, each in the warm tree of
     its lane (THE LANES of assay.loop.gate).  A holder claims each request of
     its batch with an exclusive lock of flock(2) on the file NUMBER.claim of
-    the queue, with no wait (claimed()).  A different holder takes no request
+    the queue, with no wait (Claims.take()).  A different holder takes no request
     with a claim, so no request lands two times.  The kernel frees the claims
-    of a holder that ends.  The holder frees each claim at the end of its
-    batch, so a request that waits for the next batch goes to the next holder.
+    of a holder that ends.  The holder frees the claim of a request that
+    waits for the next batch (THE BATCH) at the cut, and each other claim at
+    the end of its batch.  A holder of a different lane can then take a
+    request that waits for the next batch while the search of the first batch
+    runs.  The holder gives no verdict to such a request, so the two holders
+    never give one request two verdicts.
 
     Two lanes race only at the compare-and-swap.  The lane that loses
     composes its requests again on the new commit of the branch, and its gate
@@ -968,6 +972,8 @@ type Check = Callable[[gate.Candidate, bool], gate.Verdict]
 type Decide = Callable[[Queued, Decision], None]
 # The check that tells if the process of a request holds its lock (THE COMPARE-AND-SWAP).
 type IsAlive = Callable[[Queued], bool]
+# The function that frees the claim of a request that waits for the next batch (THE LANES).
+type Release = Callable[[Queued], None]
 # The holder of the tree of a lane: it takes the work directory, the queue and the lane, and it tells if a batch was
 # there (THE WAIT, THE LANES).
 type Holder = Callable[[Path, Path, int], bool]
@@ -2075,6 +2081,7 @@ class BatchLanding:
         "noise",
         "pause",
         "refused_by",
+        "release",
         "repository",
         "right",
         "runs",
@@ -2091,13 +2098,15 @@ class BatchLanding:
         journal: Journal | None = None,
         right: RightOfWay | None = None,
         stack: Stack | None = None,
+        release: Release | None = None,
     ) -> None:
-        """Keep the gate, the receiver of the verdicts, the pause, the check of the processes, the journal, the right
-        and the stack.
+        """Keep the gate, the receiver of the verdicts, the pause, the check of the processes, the journal, the right,
+        the stack and the release of a claim.
 
         The first request gives the shared git directory and the branch (THE HOLDER).  With no check of the processes,
         each request stays in the batch.  With no right of way, the batch neither takes one nor waits for one.  With no
-        stack, the batch composes on the branch, and it writes no entry (THE STACK).
+        stack, the batch composes on the branch, and it writes no entry (THE STACK).  With no release, a request that
+        waits for the next batch keeps its claim until the end of the batch (THE LANES).
         """
         self.repository = repository_of(batch[0])
         self.branch = batch[0].branch or branch_of(batch[0].root)
@@ -2109,6 +2118,7 @@ class BatchLanding:
         self.right = right
         self.is_check = batch[0].options.is_check
         self.stack = None if self.is_check else stack
+        self.release: Release = release if release is not None else (lambda _queued: None)
         self.is_publishing = False
         self.is_stack_stuck = False
         self.is_cut = False
@@ -2370,6 +2380,8 @@ class BatchLanding:
             return pending, links
         later = [link.queued for link in links[kept:]]
         self.deferred += later
+        for queued in later:
+            self.release(queued)
         check_report.write_line(
             f"loop land: {len(later)} request(s) from {later[0].name} change a C++ file of an earlier request of the "
             f"batch, and wait for the next batch"
@@ -3130,24 +3142,49 @@ def is_claimed(queue: Path, number: int) -> bool:
     return heavy.is_held(queue_file(queue, number, CLAIM_SUFFIX))
 
 
-def claimed(stack: contextlib.ExitStack, queue: Path, batch: Sequence[Queued]) -> list[Queued]:
-    """Take the claim of each request of a batch with no wait, keep each claim in the stack, and give the claimed ones.
+class Claims:
+    """The claims of the requests of one batch, with the descriptor of the lock of each claim (THE LANES).
 
-    A request whose claim a different holder took between the read of the queue and the claim drops out of the batch
-    (THE LANES).
+    The holder of the batch is the one owner.  free_all() frees each claim that the batch still holds.
     """
-    found: list[Queued] = []
-    for queued in batch:
-        claim = queue_file(queue, queued.number, CLAIM_SUFFIX)
-        descriptor = os.open(claim, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+
+    __slots__ = ("descriptors", "queue")
+
+    def __init__(self, queue: Path) -> None:
+        """Keep the queue, with no claim."""
+        self.queue = queue
+        self.descriptors: dict[int, int] = {}
+
+    def take(self, batch: Sequence[Queued]) -> list[Queued]:
+        """Take the claim of each request of a batch with no wait, and give the claimed ones.
+
+        A request whose claim a different holder took between the read of the queue and the claim drops out of the
+        batch.  Complexity: one open and one lock for each request.
+        """
+        found: list[Queued] = []
+        for queued in batch:
+            claim = queue_file(self.queue, queued.number, CLAIM_SUFFIX)
+            descriptor = os.open(claim, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o644)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                os.close(descriptor)
+                continue
+            self.descriptors[queued.number] = descriptor
+            found.append(queued)
+        return found
+
+    def free(self, queued: Queued) -> None:
+        """Free the claim of one request, so the holder of a different lane can take it.  A free claim stays free."""
+        descriptor = self.descriptors.pop(queued.number, -1)
+        if descriptor >= 0:
             os.close(descriptor)
-            continue
-        stack.callback(os.close, descriptor)
-        found.append(queued)
-    return found
+
+    def free_all(self) -> None:
+        """Free each claim that the batch still holds."""
+        for descriptor in self.descriptors.values():
+            os.close(descriptor)
+        self.descriptors.clear()
 
 
 def has_journal_verdict(queue: Path, queued: Queued) -> bool:
@@ -3317,23 +3354,35 @@ def hold(work: Path, queue: Path, check: Check | None = None, pause: heavy.Pause
     It holds the session of the gate, which goes before each other heavy step (THE PRIORITY OF THE GATE of
     assay.loop.heavy).  Each run of the gate writes its logs into a directory of its own.
     """
-    with contextlib.ExitStack() as claims:
+    claims = Claims(queue)
+    try:
         try:
             found = waiting_requests(queue, pause)
             if lane > 0 and not all(item.is_claiming for item in found):
                 return False
-            batch = claimed(claims, queue, batch_of(found))
+            batch = claims.take(batch_of(found))
         except Exception as problem:  # noqa: BLE001
             return refused_queue(queue, problem)
         if not batch:
             return False
-        return held_batch(work, queue, batch, check, pause, lane)
+        return held_batch(work, queue, batch, check, pause, lane, claims.free)
+    finally:
+        claims.free_all()
 
 
 def held_batch(
-    work: Path, queue: Path, batch: Sequence[Queued], check: Check | None, pause: heavy.Pause, lane: int
+    work: Path,
+    queue: Path,
+    batch: Sequence[Queued],
+    check: Check | None,
+    pause: heavy.Pause,
+    lane: int,
+    release: Release | None = None,
 ) -> bool:
-    """Land a claimed batch as the holder of the warm tree of a lane, write the records, and give True (THE HOLDER)."""
+    """Land a claimed batch as the holder of the warm tree of a lane, write the records, and give True (THE HOLDER).
+
+    `release` frees the claim of a request that waits for the next batch (THE LANES).
+    """
     decided: set[int] = set()
 
     def decide(queued: Queued, decision: Decision) -> None:
@@ -3353,7 +3402,7 @@ def held_batch(
             right = RightOfWay(queue, batch[0].number, pause)
             stack = Stack(queue, batch[0].number)
             alive = functools.partial(is_alive, queue)
-            landing = BatchLanding(batch, gated, decide, pause, alive, Journal(queue), right, stack)
+            landing = BatchLanding(batch, gated, decide, pause, alive, Journal(queue), right, stack, release)
             landing.land(batch)
     except Exception as problem:  # noqa: BLE001
         failure = stopped_batch(problem)
