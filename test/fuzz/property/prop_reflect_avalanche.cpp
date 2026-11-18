@@ -7,10 +7,11 @@
 // follow ~N(32, sqrt(64*0.5*0.5)) = ~N(32, 4) per Webster & Tavares.
 //
 // Catches:
-//   - reflect_hash regressions that lose entropy on specific input
-//     patterns (e.g., all-zeros / all-FFs / power-of-two padding)
-//   - hash_field type-conditional dispatch bugs (a future enum-handling
-//     change that maps multiple input bytes to the same hash output)
+//   - regressions of the hash of the Protocol family that lose entropy
+//     on specific input patterns (e.g., all-zeros / all-FFs /
+//     power-of-two padding)
+//   - leaf dispatch bugs (a future enum-handling change that maps
+//     multiple input bytes to the same hash output)
 //   - fmix64 mixing regressions that show up only on rare bit patterns
 //
 // Strategy: per iteration generate random AvalancheSpec, flip random
@@ -25,7 +26,7 @@
 #include "property_runner.h"
 #include "random_input.h"
 
-#include <crucible/Reflect.h>
+#include <fixy/Core.h>
 
 #include <atomic>
 #include <cstdio>
@@ -33,7 +34,7 @@
 namespace {
 
 // 32-byte spec — enough fields to give the avalanche room to spread.
-struct AvalancheSpec {
+struct[[= ::fixy::derive_protocol{}]] AvalancheSpec {
     uint64_t a;
     uint64_t b;
     uint64_t c;
@@ -62,7 +63,7 @@ int main(int argc, char** argv) {
     static int64_t samples = 0;
 
     int rc = run(
-        "reflect_hash avalanche statistics", cfg,
+        "hash avalanche statistics", cfg,
         [](Rng& rng) {
             PerturbedPair p{};
             p.base.a = rng.next64();
@@ -76,8 +77,8 @@ int main(int argc, char** argv) {
             return p;
         },
         [](const PerturbedPair& p) {
-            const uint64_t h_base = reflect_hash(p.base);
-            const uint64_t h_pert = reflect_hash(p.perturbed);
+            const uint64_t h_base = ::fixy::hash(p.base).raw();
+            const uint64_t h_pert = ::fixy::hash(p.perturbed).raw();
             const uint64_t diff = h_base ^ h_pert;
             const int popcount = __builtin_popcountll(static_cast<unsigned long long>(diff));
             total_flips += popcount;
@@ -104,7 +105,7 @@ int main(int argc, char** argv) {
         if (mean < 30.0 || mean > 34.0) {
             std::fprintf(stderr,
                          "FAIL: mean flip-count %.3f outside [30, 34]; "
-                         "reflect_hash avalanche degraded.\n",
+                         "hash avalanche degraded.\n",
                          mean);
             return 1;
         }

@@ -1,30 +1,30 @@
 // ═══════════════════════════════════════════════════════════════════
-// prop_guard_hash_invariants — Guard::hash() invariants at scale.
+// prop_guard_hash_invariants — invariants of the hash of a Guard at scale.
 //
 // Guard is the branch-discriminator at every BranchNode in the Merkle
 // DAG: its hash is the primary key for routing to compiled arms.  A
 // hash-function regression here corrupts the entire guard system —
 // two semantically-distinct guards colliding leads to WRONG-ARM
 // dispatch, which produces silently wrong answers in compiled mode.
-// This file drives the Guard::hash() surface at stress volume.
+// This file drives the hash of a Guard at stress volume.
 //
 // Guard is 12 bytes, laid out (see MerkleDag.h:302–332):
 //
 //     Guard::Kind    kind      (1B, 5 variants)
-//     FixedArray<uint8_t, 3> pad (3B — STILL hashed by reflect_hash, as its elements)
+//     FixedArray<uint8_t, 3> pad (3B — STILL hashed, as its elements)
 //     OpIndex        op_index  (4B, default UINT32_MAX)
 //     uint16_t       arg_index (2B)
 //     uint16_t       dim_index (2B)
 //
-// Guard::hash() delegates to reflect_hash(*this), which walks every
-// non-static data member at compile time and folds via fmix64.  The
+// fixy::hash of the Protocol family walks every non-static data member
+// of the Guard at compile time and folds via fmix64.  The
 // documented safety claim is "adding a field is a hash-format break
 // caught by CDAG_VERSION" — this fuzzer enforces the same claim at
 // the value level: every existing field MUST contribute entropy.
 //
 // ── Properties checked per random Guard ─────────────────────────────
 //
-//   P1. DETERMINISM      — g.hash() is a pure function; 8 back-to-back
+//   P1. DETERMINISM      — hash(g) is a pure function; 8 back-to-back
 //                          invocations on the same Guard all equal.
 //   P2. FIELD-DISAMBIG   — perturbing EXACTLY one field (kind / pad[i]
 //                          / op_index / arg_index / dim_index) changes
@@ -35,14 +35,14 @@
 //                          guards COULD collide at ~2⁻⁶⁴ probability;
 //                          we treat any collision as a real bug since
 //                          100K iterations × 5e-15 → negligible.)
-//   P4. NONZERO OUTPUT   — Guard::hash() of a non-default Guard is
+//   P4. NONZERO OUTPUT   — the hash of a non-default Guard is
 //                          overwhelmingly non-zero.  A stuck-zero
 //                          output (e.g., refactor folding all fields
 //                          via XOR with no seed) is caught directly.
 //
 // ── Bug classes this catches ────────────────────────────────────────
 //
-//   - A future Guard refactor that drops a field from reflect_hash's
+//   - A future Guard refactor that drops a field from the hash's
 //     iteration set (e.g., marks kind as [[no_unique_address]] and
 //     P2996 then excludes it — silent collision of SHAPE_DIM and
 //     SCALAR_VALUE guards sharing the remaining fields).
@@ -50,7 +50,7 @@
 //     paths: two Guards constructed via different ctors with the
 //     same semantic fields produce DIFFERENT hashes (a false branch
 //     miss on replay).
-//   - A change to fmix64 or the reflect_hash seed that stuck-zeros
+//   - A change to fmix64 or the hash seed that stuck-zeros
 //     some inputs.
 //   - Adding a new Guard::Kind without bumping CDAG_VERSION — the
 //     property P4 fires when the new variant's default-pad Guards
@@ -75,7 +75,7 @@ using crucible::Guard;
 using crucible::OpIndex;
 
 // Number of Guard::Kind variants, read from the enumerators.
-// reflect_hash iterates the enum as an integer, so any out-of-range
+// The hash folds the enum as an integer, so any out-of-range
 // value is still HASHABLE; we stay in-range for P2 field-disambiguation
 // to be statistically sound (two out-of-range enums would collide on
 // the same underlying uint8_t, and the "different field → different
@@ -90,7 +90,7 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 // ─── Guard generator ───────────────────────────────────────────────
 //
 // Generates every Guard field with random in-range values.  pad[3] is
-// RANDOMIZED (not zero-filled) because reflect_hash treats those 3
+// RANDOMIZED (not zero-filled) because the hash treats those 3
 // bytes as hashed members — a future bug that fails to zero pad[]
 // would produce different hashes for two Guards intended to be equal,
 // which is the exact class P3 enforces.  We intentionally drive the
@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
     const Config cfg = parse_args(::fixy::os::args(argc, argv));
 
     return run(
-        "Guard::hash() invariants", cfg,
+        "hash of a Guard invariants", cfg,
         [](Rng& rng) {
             Payload p{};
             p.base = random_guard(rng);
@@ -217,7 +217,7 @@ int main(int argc, char** argv) {
             return p;
         },
         [](const Payload& p) {
-            // Volatile barrier: the constexpr/gnu::pure hash() could
+            // Volatile barrier: the constexpr hash could
             // otherwise be constant-folded at compile time for a
             // particular Guard the optimizer proves constant — forcing
             // a runtime load through a volatile pointer matches the
@@ -227,9 +227,9 @@ int main(int argc, char** argv) {
 
             // P1. Determinism — 8 back-to-back invocations on `base`
             //                  all produce identical output.
-            const uint64_t h0 = bp->hash();
+            const uint64_t h0 = ::fixy::hash(*bp).raw();
             for (int k = 0; k < 7; ++k) {
-                if (bp->hash() != h0) return false;
+                if (::fixy::hash(*bp).raw() != h0) return false;
             }
 
             // P2. Field-disambiguation — perturbed differs in EXACTLY
@@ -237,7 +237,7 @@ int main(int argc, char** argv) {
             //     (A collision here at ~2⁻⁶⁴ per iter is statistically
             //     impossible at 10⁵ iters; any observed failure is a
             //     real entropy-loss bug, not a random collision.)
-            const uint64_t hp = pp->hash();
+            const uint64_t hp = ::fixy::hash(*pp).raw();
             if (h0 == hp) return false;
 
             // P3. Equality concordance — a fresh Guard byte-identical
@@ -248,9 +248,9 @@ int main(int argc, char** argv) {
             Guard copy{};
             std::memcpy(&copy, bp, sizeof(Guard));
             const Guard* volatile cp = &copy;
-            if (cp->hash() != h0) return false;
+            if (::fixy::hash(*cp).raw() != h0) return false;
 
-            // P4. Non-zero output — Guard::hash() stuck-at-zero is
+            // P4. Non-zero output — a hash of a Guard stuck at zero is
             //     a degenerate fold.  Random Guards hash to zero at
             //     ~2⁻⁶⁴ probability; treat any observation as a bug.
             //     (The default-constructed all-zero Guard is NOT

@@ -14,8 +14,8 @@
 //
 // Catches:
 //   - Future refactor that includes `hash` in compute_recipe_hash's
-//     fold (e.g., "use reflect_hash<NumericalRecipe>" without a
-//     local Spec exclusion)
+//     fold (e.g., "use fixy::hash of the whole NumericalRecipe"
+//     without a local Spec exclusion)
 //   - Padding-byte leakage that varies between fresh and re-hashed
 //   - Compiler reorderings that perturb the computation between
 //     successive calls

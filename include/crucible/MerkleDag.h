@@ -4,7 +4,6 @@
 #include <crucible/DimHash.h>
 #include <crucible/Expr.h>
 #include <crucible/NumericalRecipe.h>
-#include <crucible/Reflect.h>
 #include <crucible/StorageNbytes.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
@@ -31,7 +30,10 @@ namespace crucible {
 
 struct CompiledKernel;
 
-struct TensorSlot {
+// One slot of a memory plan.  The byte codec of the Protocol family writes
+// its 40 bytes in the image of a region: each field in declaration order,
+// with each pad byte zero.
+struct[[= ::fixy::derive_protocol{}]] TensorSlot {
     uint64_t offset_bytes = 0;
     uint64_t nbytes = 0;
     OpIndex birth_op;
@@ -41,9 +43,9 @@ struct TensorSlot {
     int8_t device_idx = -1;
     Layout layout = Layout::Strided;
     bool is_external = false;
-    ::foundation::core::FixedArray<uint8_t, 3> pad{};
+    [[= ::fixy::pad_part{}]] ::foundation::core::FixedArray<uint8_t, 3> pad{};
     SlotId slot_id;
-    ::foundation::core::FixedArray<uint8_t, 4> pad2{};
+    [[= ::fixy::pad_part{}]] ::foundation::core::FixedArray<uint8_t, 4> pad2{};
 };
 
 // External slots keep the allocations they already have: they are counted in
@@ -240,8 +242,12 @@ private:
     }
 };
 
-// The condition a BranchNode checks to select an arm.
-struct Guard {
+// The condition a BranchNode checks to select an arm.  The hash of the
+// Protocol family folds each field, the pad too, so a Guard that grows a
+// field changes each guard hash.  That is a hash-format break: the merkle
+// hash of each branch folds the guard hash, and the store keeps it.  The byte
+// codec writes its 12 bytes in the image of a branch.
+struct[[= ::fixy::derive_protocol{}]] Guard {
     enum class Kind : uint8_t {
         SHAPE_DIM,
         SCALAR_VALUE,
@@ -251,17 +257,11 @@ struct Guard {
     };
 
     Kind kind = Kind::SHAPE_DIM;
-    // reflect_hash folds a FixedArray as its elements, the same as a C
-    // array, so the pad keeps the hash of each guard.
-    ::foundation::core::FixedArray<uint8_t, 3> pad{};
+    // The hash folds a FixedArray as its elements, the same as a C array.
+    [[= ::fixy::pad_part{}]] ::foundation::core::FixedArray<uint8_t, 3> pad{};
     OpIndex op_index;
     uint16_t arg_index = 0;  // SHAPE_DIM, DTYPE, DEVICE
     uint16_t dim_index = 0;  // SHAPE_DIM
-
-    // Folds every non-static data member, so a Guard that grows a field
-    // changes every guard hash.  That is a hash-format break: stored hashes
-    // computed by an earlier layout no longer compare equal.
-    CRUCIBLE_PURE uint64_t hash() const noexcept { return crucible::reflect_hash(*this); }
 };
 
 enum class TraceNodeKind : uint8_t {
@@ -487,7 +487,7 @@ struct BranchNode : TraceNode {
 
 // Carries one of the loop body's outputs back to one of its inputs for the
 // next iteration.
-struct FeedbackEdge {
+struct[[= ::fixy::derive_protocol{}]] FeedbackEdge {
     uint16_t output_idx = 0;
     uint16_t input_idx = 0;
 
@@ -575,7 +575,7 @@ CRUCIBLE_PURE inline uint64_t feedback_signature(::fixy::View<const FeedbackEdge
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;  // "feedbaks"
     uint64_t signature_state = kSeed;
     for (const auto& edge : edges) {
-        signature_state = detail::combine_ids(signature_state, reflect_hash(edge));
+        signature_state = detail::combine_ids(signature_state, ::fixy::hash(edge).raw());
     }
     signature_state = detail::combine_ids(signature_state, edges.size());
     return signature_state;
@@ -583,15 +583,15 @@ CRUCIBLE_PURE inline uint64_t feedback_signature(::fixy::View<const FeedbackEdge
 
 // The local Spec is the explicit projection onto the fields that carry
 // termination identity.  Hashing the whole LoopNode instead would double
-// count the body and the feedback edges, which are hashed on their own.
+// count the body and the feedback edges, which are hashed on their own.  The
+// hash of the Protocol family reads the epsilon by its bits.
 CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
-    struct Spec {
+    struct[[= ::fixy::derive_protocol{}]] Spec {
         LoopTermKind term_kind;
         uint32_t repeat_count;
         float epsilon;
     };
-    constexpr uint64_t kSeed = 0x7465726D696E6174ULL;  // "terminat"
-    return reflect_fmix_fold<kSeed>(Spec{ln.term_kind, ln.repeat_count, ln.epsilon});
+    return ::fixy::hash(Spec{ln.term_kind, ln.repeat_count, ln.epsilon}).raw();
 }
 
 // Pure is sound despite the pointer chase: the chain reachable through body
@@ -895,7 +895,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
             break;
         case TraceNodeKind::BRANCH: {
             const ::fixy::Ref<BranchNode> branch = node.expect_branch();
-            merkle_hash_state = detail::fmix64(branch->guard.hash());
+            merkle_hash_state = detail::fmix64(::fixy::hash(branch->guard).raw());
             for (const BranchNode::Arm& arm : branch->arms) {
                 merkle_hash_state ^= detail::fmix64(arm.resolved_target().merkle_hash.raw());
                 merkle_hash_state *= 0x9E3779B97F4A7C15ULL;
@@ -930,7 +930,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
 // Content hash for one kernel that fuses every arm of a branch.  Pure is
 // sound: the guard and the arms' content hashes are fixed at construction.
 [[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode const& branch) noexcept {
-    uint64_t branched_hash_state = detail::fmix64(branch.guard.hash());
+    uint64_t branched_hash_state = detail::fmix64(::fixy::hash(branch.guard).raw());
     for (const BranchNode::Arm& arm : branch.arms) {
         for (const ::fixy::Ref<RegionNode>& region : arm.resolved_target().as_region()) {
             branched_hash_state ^= detail::fmix64(region->content_hash.raw());
@@ -1324,7 +1324,7 @@ struct DagDiff {
         if (node_a->kind == TraceNodeKind::BRANCH) {
             const ::fixy::Ref<BranchNode> ba = node_a->expect_branch();
             const ::fixy::Ref<BranchNode> bb = node_b->expect_branch();
-            if (ba->guard.hash() != bb->guard.hash() || ba->arms.size() != bb->arms.size())
+            if (!::fixy::equal(ba->guard, bb->guard) || ba->arms.size() != bb->arms.size())
                 return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
             for (auto [arm_a, arm_b] :
                  ::fixy::zip(ba->arms, bb->arms).expect("the two branches hold one count of arms")) {

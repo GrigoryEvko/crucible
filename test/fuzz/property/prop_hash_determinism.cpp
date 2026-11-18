@@ -20,7 +20,6 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
-#include <crucible/Reflect.h>
 
 int main(int argc, char** argv) {
     using namespace crucible;

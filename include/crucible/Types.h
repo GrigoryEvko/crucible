@@ -207,11 +207,13 @@ enum class TrainingPhase : uint8_t {
 // which makes every place one index is derived from another one visible.
 // The check file of this header finds each class that this macro and
 // CRUCIBLE_STRONG_HASH write, and it holds each one to the size of its word.
+// Each class takes the hash, the byte codec and the format of the Protocol
+// family from its one word (fixy::derive_protocol).
 //
 // Word is an unsigned integer type.  Its largest value is the none value.
 
 #define CRUCIBLE_STRONG_ID(Name, Word)                                                         \
-    struct Name {                                                                              \
+    struct[[= ::fixy::derive_protocol{}]] Name {                                               \
     private:                                                                                   \
         /* Private, so the explicit constructor is the only way in. A public */                \
         /* field would let a plain assignment bypass it and rewrite an */                      \
@@ -484,7 +486,7 @@ private:
 // Arithmetic is absent for the same reason as on the index types above.
 
 #define CRUCIBLE_STRONG_HASH(Name)                                                                \
-    struct Name {                                                                                 \
+    struct[[= ::fixy::derive_protocol{}]] Name {                                                  \
     private:                                                                                      \
         uint64_t v;                                                                               \
                                                                                                   \

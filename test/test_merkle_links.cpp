@@ -110,7 +110,7 @@ namespace {
     // the order of the arms, and then the hash of the continuation.  The
     // format is the same as when the target was a raw pointer.
     crucible::recompute_merkle(branch);
-    uint64_t expected = crucible::detail::fmix64(branch.guard.hash());
+    uint64_t expected = crucible::detail::fmix64(::fixy::hash(branch.guard).raw());
     expected ^= crucible::detail::fmix64(region_a.merkle_hash.raw());
     expected *= 0x9E3779B97F4A7C15ULL;
     expected ^= crucible::detail::fmix64(region_b.merkle_hash.raw());

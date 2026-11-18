@@ -1,6 +1,10 @@
-#include <crucible/Reflect.h>
+// The hash of the Protocol family (foundation/core/Protocol.h) on the types of
+// the product and on the shapes that a class can have: a base, a private
+// member, a C array and a FixedArray.  The hash of a Guard is pinned, because
+// the merkle hash of each branch folds it and the store keeps that hash.
+
 #include <crucible/MerkleDag.h>
-#include <crucible/NumericalRecipe.h>
+#include <fixy/Core.h>
 #include <foundation/Platform.h>
 #include "test_assert.h"
 #include <cinttypes>
@@ -8,7 +12,7 @@
 #include <cstring>
 #include <unordered_set>
 
-struct Point {
+struct[[= ::fixy::derive_protocol{}]] Point {
     int32_t x;
     int32_t y;
     float z;
@@ -16,59 +20,69 @@ struct Point {
 
 // Covers the array-member case, which the fold has to walk element by
 // element rather than hash whole.
-struct Dims {
+struct[[= ::fixy::derive_protocol{}]] Dims {
     int64_t values[4];
     uint8_t count;
 };
 
-// The fields of Dims, with the values in a FixedArray.  A FixedArray keeps
-// its elements in a private base, so a walk of its own fields finds none.
-struct FixedDims {
+// The fields of Dims, with the values in a FixedArray.
+struct[[= ::fixy::derive_protocol{}]] FixedDims {
     ::foundation::core::FixedArray<int64_t, 4> values{};
     uint8_t count = 0;
 };
 
 // Classes with a base.  Each base holds a field that the class does not
 // repeat, so a fold that skips a base gives one hash for two values.
-struct LowWord {
+struct[[= ::fixy::derive_protocol{}]] LowWord {
     uint32_t low;
 };
-struct HighWord {
+struct[[= ::fixy::derive_protocol{}]] HighWord {
     uint32_t high;
 };
-struct WithBase : LowWord {
+struct[[= ::fixy::derive_protocol{}]] WithBase : LowWord {
     uint32_t own;
 };
-struct WithTwoBases : LowWord, HighWord {
+struct[[= ::fixy::derive_protocol{}]] WithTwoBases : LowWord, HighWord {
     uint32_t own;
 };
 // The fields of WithBase, with the base as a member.
-struct WithLeadingMember {
+struct[[= ::fixy::derive_protocol{}]] WithLeadingMember {
     LowWord low;
     uint32_t own;
 };
 // A private base keeps its value in a private field, as a strong id does.
-class PrivateWord {
+// The annotation consents to the walk of the private state.
+class[[= ::fixy::derive_protocol{}]] PrivateWord {
 public:
     constexpr explicit PrivateWord(uint32_t word) noexcept : word_{word} {}
 
 private:
     uint32_t word_ = 0;
 };
-struct WithPrivateBase : private PrivateWord {
+struct[[= ::fixy::derive_protocol{}]] WithPrivateBase : private PrivateWord {
     constexpr WithPrivateBase(uint32_t word, uint32_t tail) noexcept : PrivateWord{word}, own{tail} {}
 
     uint32_t own = 0;
 };
+
+struct[[= ::fixy::derive_protocol{}]] AvalancheSpec {
+    uint64_t a, b, c, d;
+};
+
+// The raw hash of a value.
+template <class T>
+[[nodiscard]] uint64_t hash_of(T const& value) noexcept {
+    return ::fixy::hash(value).raw();
+}
 
 int main() {
     Point p1{10, 20, 3.14f};
     Point p2{10, 20, 3.14f};
     Point p3{10, 21, 3.14f};
 
-    uint64_t h1 = crucible::reflect_hash(p1);
-    uint64_t h2 = crucible::reflect_hash(p2);
-    uint64_t h3 = crucible::reflect_hash(p3);
+    uint64_t h1 = hash_of(p1);
+    uint64_t h2 = hash_of(p2);
+    uint64_t h3 = hash_of(p3);
 
     assert(h1 == h2);
     // Distinct inputs colliding is possible in principle.  The mixing
@@ -80,8 +94,8 @@ int main() {
     Dims d2{{1, 2, 3, 4}, 4};
     Dims d3{{1, 2, 3, 5}, 4};
 
-    assert(crucible::reflect_hash(d1) == crucible::reflect_hash(d2));
-    assert(crucible::reflect_hash(d1) != crucible::reflect_hash(d3));
+    assert(hash_of(d1) == hash_of(d2));
+    assert(hash_of(d1) != hash_of(d3));
 
     // The hash of a Guard is a part of the merkle hash of each branch, and
     // the store keeps that hash.  So these values are frozen: a change of the
@@ -102,61 +116,50 @@ int main() {
         by_all.op_index = crucible::OpIndex{7};
         by_all.arg_index = 3;
         by_all.dim_index = 2;
-        assert(crucible::Guard{}.hash() == 0x037FC81E2E2231FCULL);
-        assert(by_kind.hash() == 0x17DFDFC26EEFC973ULL);
-        assert(by_op.hash() == 0x20E09BB3247F17AFULL);
-        assert(by_arg.hash() == 0x5911F28FFD72AA41ULL);
-        assert(by_dim.hash() == 0x3763183160C197F5ULL);
-        assert(by_all.hash() == 0x2553193CAB394B89ULL);
+        assert(hash_of(crucible::Guard{}) == 0x037FC81E2E2231FCULL);
+        assert(hash_of(by_kind) == 0x17DFDFC26EEFC973ULL);
+        assert(hash_of(by_op) == 0x20E09BB3247F17AFULL);
+        assert(hash_of(by_arg) == 0x5911F28FFD72AA41ULL);
+        assert(hash_of(by_dim) == 0x3763183160C197F5ULL);
+        assert(hash_of(by_all) == 0x2553193CAB394B89ULL);
     }
 
     // A FixedArray field folds as its elements, with the reduction of a C
-    // array field, so the two layouts give one hash in each fold.  Two values
-    // that differ in one element give two hashes.
+    // array field, so the two layouts give one hash.  Two values that differ
+    // in one element give two hashes.
     {
-        constexpr uint64_t kSeed = 0x4649584544415252ULL;  // "FIXEDARR"
         const FixedDims f1{{1, 2, 3, 4}, 4};
         const FixedDims f3{{1, 2, 3, 5}, 4};
-        assert(crucible::reflect_hash(f1) != crucible::reflect_hash(f3));
-        assert(crucible::reflect_fmix_fold<kSeed>(f1) != crucible::reflect_fmix_fold<kSeed>(f3));
-        assert(crucible::reflect_hash(f1) == crucible::reflect_hash(d1));
-        assert(crucible::reflect_hash(f3) == crucible::reflect_hash(d3));
-        assert(crucible::reflect_fmix_fold<kSeed>(f1) == crucible::reflect_fmix_fold<kSeed>(d1));
-        assert(crucible::reflect_fmix_fold<kSeed>(f3) == crucible::reflect_fmix_fold<kSeed>(d3));
+        assert(hash_of(f1) != hash_of(f3));
+        assert(hash_of(f1) == hash_of(d1));
+        assert(hash_of(f3) == hash_of(d3));
     }
 
-    // Two values that differ only in a field of a base give two hashes in
-    // each fold.  The bases fold first, in the order of their declarations,
-    // and then the own fields.  So a value that moves from one base to the
-    // other gives a different hash, and a base folds as a leading member of
-    // its type.
+    // Two values that differ only in a field of a base give two hashes.  The
+    // bases fold first, in the order of their declarations, and then the own
+    // fields.  So a value that moves from one base to the other gives a
+    // different hash, and a base folds as a leading member of its type.
     {
-        constexpr uint64_t kSeed = 0x42415345434C4153ULL;  // "BASECLAS"
         const WithBase low_one{{1}, 7};
         const WithBase low_two{{2}, 7};
-        assert(crucible::reflect_hash(low_one) != crucible::reflect_hash(low_two));
-        assert(crucible::reflect_fmix_fold<kSeed>(low_one) != crucible::reflect_fmix_fold<kSeed>(low_two));
+        assert(hash_of(low_one) != hash_of(low_two));
 
         const WithTwoBases high_two{{1}, {2}, 7};
         const WithTwoBases high_three{{1}, {3}, 7};
         const WithTwoBases swapped{{2}, {1}, 7};
-        assert(crucible::reflect_hash(high_two) != crucible::reflect_hash(high_three));
-        assert(crucible::reflect_fmix_fold<kSeed>(high_two) != crucible::reflect_fmix_fold<kSeed>(high_three));
-        assert(crucible::reflect_hash(high_two) != crucible::reflect_hash(swapped));
-        assert(crucible::reflect_fmix_fold<kSeed>(high_two) != crucible::reflect_fmix_fold<kSeed>(swapped));
+        assert(hash_of(high_two) != hash_of(high_three));
+        assert(hash_of(high_two) != hash_of(swapped));
 
         const WithPrivateBase private_one{1, 7};
         const WithPrivateBase private_two{2, 7};
-        assert(crucible::reflect_hash(private_one) != crucible::reflect_hash(private_two));
-        assert(crucible::reflect_fmix_fold<kSeed>(private_one) != crucible::reflect_fmix_fold<kSeed>(private_two));
+        assert(hash_of(private_one) != hash_of(private_two));
 
         const WithLeadingMember member_one{{1}, 7};
-        assert(crucible::reflect_hash(low_one) == crucible::reflect_hash(member_one));
-        assert(crucible::reflect_fmix_fold<kSeed>(low_one) == crucible::reflect_fmix_fold<kSeed>(member_one));
+        assert(hash_of(low_one) == hash_of(member_one));
     }
 
-    // The remaining cases use production types rather than fixtures,
-    // so the walk is exercised over real field layouts.
+    // The remaining cases use production types rather than fixtures, so the
+    // walk is exercised over real field layouts.
     crucible::Guard g1{};
     g1.kind = crucible::Guard::Kind::SHAPE_DIM;
     g1.op_index = crucible::OpIndex{42};
@@ -167,57 +170,27 @@ int main() {
     crucible::Guard g3 = g1;
     g3.dim_index = 4;
 
-    assert(crucible::reflect_hash(g1) == crucible::reflect_hash(g2));
-    assert(crucible::reflect_hash(g1) != crucible::reflect_hash(g3));
+    assert(hash_of(g1) == hash_of(g2));
+    assert(hash_of(g1) != hash_of(g3));
+    assert(::fixy::equal(g1, g2) && !::fixy::equal(g1, g3));
 
-    // A recipe holds enums, a flag set and a strong hash, and no pointer.
-    crucible::NumericalRecipe r1{};
-    r1.accum_dtype = crucible::ScalarType::Float;
-    r1.out_dtype = crucible::ScalarType::Half;
-    r1.reduction_algo = crucible::ReductionAlgo::KAHAN;
+    // A slot of a memory plan holds strong ids, enumerations, a bool and two
+    // pads, and no pointer.
+    crucible::TensorSlot s1{};
+    s1.nbytes = 64;
+    s1.dtype = crucible::ScalarType::Float;
+    s1.slot_id = crucible::SlotId{3};
+    crucible::TensorSlot s2 = s1;
+    crucible::TensorSlot s3 = s1;
+    s3.is_external = true;
+    assert(hash_of(s1) == hash_of(s2));
+    assert(hash_of(s1) != hash_of(s3));
 
-    crucible::NumericalRecipe r2 = r1;
-    crucible::NumericalRecipe r3 = r1;
-    r3.rounding = ::foundation::core::RoundingMode::RZ;
-
-    assert(crucible::reflect_hash(r1) == crucible::reflect_hash(r2));
-    assert(crucible::reflect_hash(r1) != crucible::reflect_hash(r3));
-
-    // The trait holds for each class.  It reads only the signature of
-    // reflect_hash, so a pointer field shows only at the call.
-    static_assert(crucible::has_reflected_hash<Point>);
-    static_assert(crucible::has_reflected_hash<Dims>);
-    static_assert(crucible::has_reflected_hash<crucible::Guard>);
-
-    // A non-class type has no members to walk, so the trait rejects
-    // it outright rather than hashing the object representation.
-    static_assert(!crucible::has_reflected_hash<int>);
-    static_assert(!crucible::has_reflected_hash<float>);
-    static_assert(!crucible::has_reflected_hash<int*>);
-
-    // The seed separates domains: the same input under two seeds must
-    // not land on the same hash, or two unrelated uses of the fold
-    // would share a key space.
-    {
-        constexpr uint64_t kSeedA = 0xDEADBEEFCAFEBABEULL;
-        constexpr uint64_t kSeedB = 0x0123456789ABCDEFULL;
-
-        const Point p_a{1, 2, 3.0f};
-        const Point p_b{1, 2, 3.0f};
-        const Point p_c{1, 3, 3.0f};
-
-        const auto h_a = crucible::reflect_fmix_fold<kSeedA>(p_a);
-        const auto h_b = crucible::reflect_fmix_fold<kSeedA>(p_b);
-        const auto h_c = crucible::reflect_fmix_fold<kSeedA>(p_c);
-
-        assert(h_a == h_b);
-        assert(h_a != h_c);
-
-        const auto h_a2 = crucible::reflect_fmix_fold<kSeedB>(p_a);
-        assert(h_a != h_a2);
-
-        assert(h_a != 0);
-    }
+    // The gates.  A non-class type has no parts to walk, so the hash takes
+    // it only as a part of a class.
+    static_assert(::fixy::Encodable<Point> && ::fixy::Encodable<Dims> && ::fixy::Encodable<crucible::Guard>);
+    static_assert(::fixy::Encodable<crucible::TensorSlot> && ::fixy::Decodable<crucible::TensorSlot>);
+    static_assert(!::fixy::Encodable<int> && !::fixy::Encodable<float> && !::fixy::Encodable<int*>);
 
     // Under the strict avalanche criterion, flipping any one input bit
     // flips about half the output bits.  The mixing function has that
@@ -229,16 +202,13 @@ int main() {
     // the result is not a statistical test.  It does catch a gross
     // failure, such as one field never reaching part of the output.
     {
-        struct AvalancheSpec {
-            uint64_t a, b, c, d;
-        };
         const AvalancheSpec base{
             0xCAFEBABE12345678ULL,
             0xDEADBEEFFEEDFACEULL,
             0xABCDEF0123456789ULL,
             0x1122334455667788ULL,
         };
-        const uint64_t base_h = crucible::reflect_hash(base);
+        const uint64_t base_h = hash_of(base);
 
         int total_flips = 0;
         int min_flips = 64;
@@ -248,7 +218,7 @@ int main() {
             uint64_t* fields[4] = {&perturbed.a, &perturbed.b, &perturbed.c, &perturbed.d};
             const auto bit_idx = static_cast<unsigned>(bit % 64);
             *fields[bit / 64] ^= (uint64_t{1} << bit_idx);
-            const uint64_t perturbed_h = crucible::reflect_hash(perturbed);
+            const uint64_t perturbed_h = hash_of(perturbed);
             const uint64_t diff = base_h ^ perturbed_h;
             // The cast is explicit only to keep the implicit
             // promotion from tripping the sign-conversion warning.
@@ -273,9 +243,6 @@ int main() {
     // unlikely, so one here means the fold is structurally wrong
     // rather than unlucky.
     {
-        struct AvalancheSpec {
-            uint64_t a, b, c, d;
-        };
         std::unordered_set<uint64_t> seen;
         constexpr int N = 1024;
         for (int i = 0; i < N; ++i) {
@@ -286,55 +253,20 @@ int main() {
                 iu ^ uint64_t{0xDEADBEEFCAFEBABEULL},
                 ~iu,
             };
-            const auto [it, inserted] = seen.insert(crucible::reflect_hash(s));
-            assert(inserted && "reflect_hash collision in 1024-input grid");
+            const auto [it, inserted] = seen.insert(hash_of(s));
+            assert(inserted && "hash collision in 1024-input grid");
         }
         assert(seen.size() == N);
     }
 
-    // The emitted code is fixed at compile time, so a pinned input
-    // under a pinned seed gives the same bytes on every build and
-    // every run.  The value below is that constant.  Changing the
-    // mixing scheme changes it, which is the point.
-    //
-    // Replace it only after deciding the change is intended, and only
-    // after checking that nothing persisted holds the old value.
-    {
-        constexpr uint64_t kSeed = 0x9E3779B97F4A7C15ULL;
-        struct GoldenSpec {
-            uint8_t a;
-            uint16_t b;
-            uint32_t c;
-            uint64_t d;
-        };
-        constexpr GoldenSpec spec{0xAB, 0xCDEF, 0x12345678U, 0x9ABCDEF012345678ULL};
-        const uint64_t actual = crucible::reflect_fmix_fold<kSeed>(spec);
-
-        constexpr uint64_t EXPECTED = 0xf03145ef4f0efa55ULL;
-        if (actual != EXPECTED) {
-            std::fprintf(stderr,
-                         "reflect_fmix_fold golden DRIFT: "
-                         "expected 0x%016" PRIx64 ", got 0x%016" PRIx64 "\n"
-                         "  → update EXPECTED constant in test_reflect.cpp\n"
-                         "  → audit any persisted consumer of reflect_fmix_fold\n",
-                         EXPECTED, actual);
-            assert(false && "reflect_fmix_fold golden mismatch");
-        }
-    }
-
-    // Both folds are pure, so a fixed input gives identical bytes on
-    // every call.  A thousand calls is far more than the property
-    // needs, but it would expose hidden state in a static local or a
-    // shared generator.
+    // The hash is pure, so a fixed input gives identical bytes on every
+    // call.  A thousand calls is far more than the property needs, but it
+    // would expose hidden state in a static local or a shared generator.
     {
         const Point p{42, -7, 3.14159f};
-        const uint64_t h0 = crucible::reflect_hash(p);
+        const uint64_t h0 = hash_of(p);
         for (int i = 0; i < 1000; ++i) {
-            assert(crucible::reflect_hash(p) == h0);
-        }
-        const uint64_t h0_fold = crucible::reflect_fmix_fold<0xABCDULL>(p);
-        for (int i = 0; i < 1000; ++i) {
-            assert(crucible::reflect_fmix_fold<0xABCDULL>(p) == h0_fold);
+            assert(hash_of(p) == h0);
         }
     }
 

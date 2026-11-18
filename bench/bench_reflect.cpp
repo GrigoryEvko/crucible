@@ -1,41 +1,44 @@
-// reflect_hash runtime cost vs hand-rolled FNV over the same fields.
+// The cost of the operations of the Protocol family (foundation/core/Protocol.h)
+// against the hand forms that they replace and against a state-of-the-art
+// reference.
 //
-// P2996 reflection emits a per-field hash chain at compile time; the
-// runtime code is identical in principle to a hand-written fmix64 loop.
-// The bench confirms the abstraction has zero steady-state cost — the
-// Mann-Whitney A/B at the end should come out "indistinguishable" on a
-// clean machine.
+//   hash<Small>, hash<Wide>   the fold of the family, against the hand fold of
+//                             the same fields and against foldhash-f
+//   encode, decode            the byte codec of a slot of a memory plan (40
+//                             bytes), against a copy of its 40 bytes
+//   feedback_signature,       the product folds on the hash of the family,
+//   loopterm_hash             against their packed forms
 //
-// Extended (post REFL-1..4) — three new side-by-side comparisons that
-// directly answer "did the refactors regress performance?":
-//
-//   • feedback_signature: new (reflection) vs old (packed bit-shift)
-//   • loopterm_hash:      new (reflection) vs old (packed bit-shift)
-//   • compute_recipe_hash: actual (packed)  vs hypothetical (reflection)
-//                           — proves the refactor avoided a real cost
+// THE REFERENCE.  foldhash-f of Orson Peters (2024, the default hasher of
+// hashbrown and of the Rust standard tables) packs the fields into a 128-bit
+// sponge and runs one folded 64x64 multiply for each 16 bytes.  The bench
+// holds a port of its integer path with a fixed seed, so a run is
+// deterministic.  The fold of the family keeps the scheme that the store
+// pins (the hash of each guard is in the merkle hash of each branch), so a
+// ratio above 1 against the reference is the cost of that pin.
 
 #include <cstdint>
 #include <cstdio>
 #include <utility>
 
 #include <crucible/Expr.h>  // detail::fmix64
-#include <crucible/MerkleDag.h>  // FeedbackEdge, LoopTermKind, NumericalRecipe
+#include <crucible/MerkleDag.h>  // FeedbackEdge, LoopTermKind, NumericalRecipe, TensorSlot
 #include <crucible/NumericalRecipe.h>
-#include <crucible/Reflect.h>
 #include <fixy/Bits.h>
+#include <fixy/Core.h>
 
 #include "bench_harness.h"
 
 namespace {
 
-struct Small {
+struct[[= ::fixy::derive_protocol{}]] Small {
     uint32_t id;
     uint16_t kind;
     uint16_t flags;
     int64_t payload;
 };
 
-struct Wide {
+struct[[= ::fixy::derive_protocol{}]] Wide {
     uint64_t schema;
     uint64_t shape;
     uint64_t scope;
@@ -56,12 +59,84 @@ uint64_t manual_hash_small(const Small& s) noexcept {
     return crucible::detail::fmix64(h);
 }
 
-// ── Pre-REFL-2 implementation of feedback_signature ──────────────
+// ── The reference: the integer path of foldhash-f ────────────────────
 //
-// Preserved here with the same steps so the bench can A/B the manual packed
-// pattern against the reflection-driven version that ships in
-// MerkleDag.h.  Real callers see only the new version; this baseline
-// exists only inside this TU.
+// folded_multiply is the low and the high word of the full product, xored.
+// write packs each integer into the sponge, and a sponge that would pass 128
+// bits folds into the accumulator first.  finish folds a sponge that holds
+// bits.  The seeds are fixed constants of the reference.
+// The sponge of 128 bits is two words, the low word first.  A value of bits
+// bits goes in at the count of bits that the sponge holds.
+class FoldhashReference {
+public:
+    void write(uint64_t value, unsigned bits) noexcept {
+        if (sponge_bits_ + bits > 128) {
+            accumulator_ = folded_multiply_(sponge_low_ ^ accumulator_, sponge_high_ ^ kSeed0);
+            sponge_low_ = value;
+            sponge_high_ = 0;
+            sponge_bits_ = bits;
+            return;
+        }
+        if (sponge_bits_ < 64) {
+            sponge_low_ |= value << sponge_bits_;
+            if (sponge_bits_ != 0 && sponge_bits_ + bits > 64) sponge_high_ |= value >> (64 - sponge_bits_);
+        } else {
+            sponge_high_ |= value << (sponge_bits_ - 64);
+        }
+        sponge_bits_ += bits;
+    }
+
+    [[nodiscard]] uint64_t finish() const noexcept {
+        if (sponge_bits_ == 0) return accumulator_;
+        return folded_multiply_(sponge_low_ ^ accumulator_, sponge_high_ ^ kSeed0);
+    }
+
+private:
+    static constexpr uint64_t kSeed0 = 0x243f6a8885a308d3ULL;
+    static constexpr uint64_t kPerHasherSeed = 0x13198a2e03707344ULL;
+
+    [[nodiscard]] static uint64_t folded_multiply_(uint64_t left, uint64_t right) noexcept {
+        const auto product = ::fixy::widening_mul(left, right);
+        return product.low ^ product.high;
+    }
+
+    uint64_t accumulator_ = kPerHasherSeed;
+    uint64_t sponge_low_ = 0;
+    uint64_t sponge_high_ = 0;
+    unsigned sponge_bits_ = 0;
+};
+
+uint64_t reference_hash_small(const Small& s) noexcept {
+    FoldhashReference hasher{};
+    hasher.write(s.id, 32);
+    hasher.write(s.kind, 16);
+    hasher.write(s.flags, 16);
+    hasher.write(static_cast<uint64_t>(s.payload), 64);
+    return hasher.finish();
+}
+
+uint64_t reference_hash_wide(const Wide& w) noexcept {
+    FoldhashReference hasher{};
+    hasher.write(w.schema, 64);
+    hasher.write(w.shape, 64);
+    hasher.write(w.scope, 64);
+    hasher.write(w.callsite, 64);
+    hasher.write(w.num_inputs, 32);
+    hasher.write(w.num_outputs, 32);
+    hasher.write(w.op_flags, 8);
+    for (const uint8_t byte : w.pad) {
+        hasher.write(byte, 8);
+    }
+    for (const int64_t scalar : w.scalars) {
+        hasher.write(static_cast<uint64_t>(scalar), 64);
+    }
+    return hasher.finish();
+}
+
+// ── The packed form of feedback_signature ──────────────────────────
+//
+// One shift and one or for each edge, and one fmix64 for each edge.  The
+// product fold takes the hash of the family of each edge instead.
 uint64_t feedback_signature_packed(::fixy::View<const crucible::FeedbackEdge> edges) noexcept {
     if (edges.size() == 0) return 0;
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;
@@ -74,11 +149,10 @@ uint64_t feedback_signature_packed(::fixy::View<const crucible::FeedbackEdge> ed
     return h;
 }
 
-// ── Pre-REFL-3 implementation of loopterm_hash ───────────────────
+// ── The packed form of loopterm_hash ───────────────────────────────
 //
-// Manual packing pattern: term_kind (1 byte) + repeat_count (4 bytes)
-// folded into one u64 word, epsilon bit_cast to u32 then xored with
-// a separate salt + fmix64.  Two fmix64 calls total.
+// term_kind (1 byte) and repeat_count (4 bytes) in one word, and epsilon by
+// its bits with a separate salt: two fmix64 calls in total.
 uint64_t loopterm_hash_packed(crucible::LoopTermKind term_kind, uint32_t repeat_count, float epsilon) noexcept {
     constexpr uint64_t kTermSalt = 0x7465726D696E6174ULL;
     constexpr uint64_t kEpsSalt = 0x65707369006C6F6EULL;
@@ -88,15 +162,12 @@ uint64_t loopterm_hash_packed(crucible::LoopTermKind term_kind, uint32_t repeat_
     return h;
 }
 
-// ── Hypothetical reflection version of compute_recipe_hash ───────
+// ── The family hash of the fields of a recipe ──────────────────────
 //
-// To answer "what would the perf be if we had refactored
-// compute_recipe_hash to use reflection?" — apply reflect_fmix_fold
-// to a Spec struct (the loopterm_hash pattern).  Bit pattern would
-// shift; goldens would all need updating.  Bench measures whether
-// the perf difference is significant enough to justify keeping
-// the manual version.
-struct RecipeSpec {
+// compute_recipe_hash packs the eight one-byte fields into one word and
+// mixes it one time.  The hash of the family takes one fmix64 for each
+// field, so the row measures the cost that the packed form keeps away.
+struct[[= ::fixy::derive_protocol{}]] RecipeSpec {
     crucible::ScalarType accum_dtype;
     crucible::ScalarType out_dtype;
     crucible::ReductionAlgo reduction_algo;
@@ -108,9 +179,9 @@ struct RecipeSpec {
 };
 
 uint64_t compute_recipe_hash_reflected(const crucible::NumericalRecipe& r) noexcept {
-    constexpr uint64_t kSeed = 0x9E3779B97F4A7C15ULL;
-    return crucible::reflect_fmix_fold<kSeed>(RecipeSpec{r.accum_dtype, r.out_dtype, r.reduction_algo, r.rounding,
-                                                         r.scale_policy, r.softmax, r.determinism, r.flags.raw()});
+    return ::fixy::hash(RecipeSpec{r.accum_dtype, r.out_dtype, r.reduction_algo, r.rounding, r.scale_policy, r.softmax,
+                                   r.determinism, r.flags.raw()})
+        .raw();
 }
 
 }  // namespace
@@ -121,11 +192,11 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    std::printf("=== reflect ===\n\n");
+    std::printf("=== protocol hash ===\n\n");
 
-    // All three Runs use volatile-seeded inputs so the compiler can't
-    // hoist the hash computation out of the body. The seeds live in the
-    // outer scope so the IIFE-lambdas can capture by reference.
+    // Each Run uses volatile-seeded inputs so the compiler can't hoist the
+    // hash computation out of the body. The seeds live in the outer scope so
+    // the IIFE-lambdas can capture by reference.
     volatile uint32_t vid = 42;
     volatile uint16_t vkind = 7;
     volatile uint16_t vflags = 0x3F;
@@ -141,11 +212,25 @@ int main() {
         return s;
     };
 
-    ::fixy::FixedArray<bench::Report, 3> reports{
-        bench::run("reflect_hash<Small>  (4 fields)",
+    auto make_wide = [&]() noexcept {
+        Wide w{};
+        w.schema = vschema;
+        w.shape = vschema ^ 1;
+        w.scope = vschema ^ 2;
+        w.callsite = vschema ^ 3;
+        w.num_inputs = 2;
+        w.num_outputs = 1;
+        w.op_flags = 0x1;
+        w.scalars[0] = 1;
+        w.scalars[1] = 2;
+        return w;
+    };
+
+    ::fixy::FixedArray<bench::Report, 5> reports{
+        bench::run("hash<Small>          (4 fields)",
                    [&] {
                        Small s = make_small();
-                       auto h = crucible::reflect_hash(s);
+                       auto h = ::fixy::hash(s).raw();
                        bench::do_not_optimize(h);
                    }),
         bench::run("manual fmix64 chain  (same 4)",
@@ -154,73 +239,73 @@ int main() {
                        auto h = manual_hash_small(s);
                        bench::do_not_optimize(h);
                    }),
-        bench::run("reflect_hash<Wide>  (19 fields)",
+        bench::run("foldhash-f reference (same 4)",
                    [&] {
-                       Wide w{};
-                       w.schema = vschema;
-                       w.shape = vschema ^ 1;
-                       w.scope = vschema ^ 2;
-                       w.callsite = vschema ^ 3;
-                       w.num_inputs = 2;
-                       w.num_outputs = 1;
-                       w.op_flags = 0x1;
-                       w.scalars[0] = 1;
-                       w.scalars[1] = 2;
-                       auto h = crucible::reflect_hash(w);
+                       Small s = make_small();
+                       auto h = reference_hash_small(s);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("hash<Wide>           (19 fields)",
+                   [&] {
+                       Wide w = make_wide();
+                       auto h = ::fixy::hash(w).raw();
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("foldhash-f reference (same 19)",
+                   [&] {
+                       Wide w = make_wide();
+                       auto h = reference_hash_wide(w);
                        bench::do_not_optimize(h);
                    }),
     };
 
     bench::emit_reports_text(reports.view());
 
-    // The core claim: reflect_hash<Small> and manual_hash_small produce
-    // statistically indistinguishable timings on a clean machine. If
-    // this goes [REGRESS], reflection's emitted code has drifted from
-    // the hand-rolled form.
+    // The hash of the family and the hand fold of the same fields are one
+    // scheme, so they must be indistinguishable on a clean machine.  The
+    // reference rows give the ratio to the state of the art.  Each line of a
+    // compare names its two rows.
     std::printf("\n=== compare ===\n");
     bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())).print_text();
+    bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())).print_text();
+    bench::compare(reports.at(::fixy::index<3>()), reports.at(::fixy::index<4>())).print_text();
 
     // ═══════════════════════════════════════════════════════════════
-    // Post-REFL refactor comparisons.  Each pair measures the actual
-    // perf delta of the reflection refactor against its pre-refactor
-    // packed-manual baseline (preserved verbatim above).  These answer
-    // the "did we leave perf on the table?" question with concrete
-    // numbers.
+    // The product folds on the hash of the family, against their packed
+    // forms, and the byte codec of a slot of a memory plan.  The reference
+    // of the codec is a copy of the 40 bytes of the slot, which is the image
+    // when no part needs a check: the slot has no padding byte that the
+    // codec skips.
     // ═══════════════════════════════════════════════════════════════
-    std::printf("\n=== reflect refactor comparisons ===\n\n");
+    std::printf("\n=== product folds and codec ===\n\n");
 
-    // ── feedback_signature: reflection vs packed (REFL-2) ──────────
-    //
+    volatile uint64_t vbytes = 4096;
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::TensorSlot>> image{};
+    crucible::TensorSlot slot{};
+    slot.nbytes = 64;
+    slot.dtype = crucible::ScalarType::Float;
+    slot.slot_id = crucible::SlotId{3};
+    ::fixy::encode(slot, image.view());
+
     // Tiny FeedbackEdge (2 × u16 = 4 B); span of 8 edges per call.
-    // Reflection version walks edges and applies reflect_hash(e) +
-    // outer fmix64 fold; packed version applies one shift+OR per edge
-    // + outer fmix64 fold.
     ::foundation::core::FixedArray<crucible::FeedbackEdge, 8> edges_buf{{0, 1}, {1, 2}, {2, 3}, {3, 4},
                                                                         {4, 5}, {5, 6}, {6, 7}, {7, 0}};
     volatile uint16_t bump = 0;  // prevents constant-fold
 
-    ::fixy::FixedArray<bench::Report, 6> refactor_reports{
-        bench::run("feedback_signature  (reflection, 8 edges)",
+    ::fixy::FixedArray<bench::Report, 9> refactor_reports{
+        bench::run("feedback_signature  (family, 8 edges)",
                    [&] {
                        edges_buf.at(::fixy::index<0>()).output_idx = bump;  // perturb each iter
                        auto h = crucible::feedback_signature(edges_buf.view());
                        bench::do_not_optimize(h);
                    }),
-        bench::run("feedback_signature  (packed,     8 edges)",
+        bench::run("feedback_signature  (packed, 8 edges)",
                    [&] {
                        edges_buf.at(::fixy::index<0>()).output_idx = bump;
                        auto h = feedback_signature_packed(edges_buf.view());
                        bench::do_not_optimize(h);
                    }),
-
-        // ── loopterm_hash: reflection vs packed (REFL-3) ───────────
-        //
-        // Three fields (LoopTermKind + uint32_t + float).  Reflection
-        // does 3 fmix64 calls (one per field via reflect_fmix_fold);
-        // packed does 1 fmix64 on combined word + 1 fmix64 on epsilon
-        // = 2 fmix64 calls total.  Expected reflection ~1.5× the
-        // packed cost.
-        bench::run("loopterm_hash       (reflection)",
+        bench::run("loopterm_hash       (family)",
                    [&] {
                        crucible::LoopNode ln{};
                        ln.term_kind = crucible::LoopTermKind::REPEAT;
@@ -234,13 +319,6 @@ int main() {
                        auto h = loopterm_hash_packed(crucible::LoopTermKind::REPEAT, 100u + bump, 1.0e-6f);
                        bench::do_not_optimize(h);
                    }),
-
-        // ── compute_recipe_hash: packed (actual) vs reflection (hyp.)
-        //
-        // 8 single-byte semantic fields packing perfectly into one
-        // uint64_t — actual implementation does 1 pack + 1 fmix64.
-        // Reflection hypothetical does 8 fmix64 calls (~6× slower);
-        // bench measures the cost we AVOIDED by keeping it manual.
         bench::run("compute_recipe_hash (packed actual)",
                    [&] {
                        crucible::NumericalRecipe r{};
@@ -250,7 +328,7 @@ int main() {
                        auto h = crucible::compute_recipe_hash(r);
                        bench::do_not_optimize(h);
                    }),
-        bench::run("compute_recipe_hash (reflection hypothetical)",
+        bench::run("compute_recipe_hash (family hypothetical)",
                    [&] {
                        crucible::NumericalRecipe r{};
                        r.accum_dtype = crucible::ScalarType::Float;
@@ -259,21 +337,37 @@ int main() {
                        auto h = compute_recipe_hash_reflected(r);
                        bench::do_not_optimize(h);
                    }),
+        bench::run("encode<TensorSlot>   (40 bytes)",
+                   [&] {
+                       slot.offset_bytes = vbytes;
+                       ::fixy::encode(slot, image.view());
+                       bench::do_not_optimize(image);
+                   }),
+        bench::run("copy of 40 bytes     (reference)",
+                   [&] {
+                       slot.offset_bytes = vbytes;
+                       image = ::fixy::bit_cast<::fixy::FixedArray<std::byte, sizeof(crucible::TensorSlot)>>(slot);
+                       bench::do_not_optimize(image);
+                   }),
+        bench::run("decode<TensorSlot>   (40 bytes)",
+                   [&] {
+                       const auto& read = image;
+                       auto back = ::fixy::decode<crucible::TensorSlot>(read.view());
+                       bench::do_not_optimize(back);
+                   }),
     };
 
     bench::emit_reports_text(refactor_reports.view());
 
-    std::printf("\n=== refactor compares ===\n");
-    std::printf("\nfeedback_signature: reflection vs packed\n");
+    std::printf("\n=== product fold and codec compares ===\n");
     bench::compare(refactor_reports.at(::fixy::index<0>()), refactor_reports.at(::fixy::index<1>())).print_text();
-    std::printf("\nloopterm_hash: reflection vs packed\n");
     bench::compare(refactor_reports.at(::fixy::index<2>()), refactor_reports.at(::fixy::index<3>())).print_text();
-    std::printf("\ncompute_recipe_hash: packed-actual vs reflection-hypothetical\n");
     bench::compare(refactor_reports.at(::fixy::index<4>()), refactor_reports.at(::fixy::index<5>())).print_text();
+    bench::compare(refactor_reports.at(::fixy::index<6>()), refactor_reports.at(::fixy::index<7>())).print_text();
 
     // One JSON tail holds the rows of the two groups, because the reader
     // reads only the last tail of the output.
-    ::fixy::FixedList<bench::Report, 9> all_reports{};
+    ::fixy::FixedList<bench::Report, 14> all_reports{};
     for (bench::Report& report : reports)
         bench::add_report(all_reports, std::move(report));
     for (bench::Report& report : refactor_reports)
