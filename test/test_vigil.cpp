@@ -13,7 +13,9 @@
 
 #include <crucible/Cipher.h>
 #include <crucible/Vigil.h>
+#include <fixy/check/Check.h>
 #include <fixy/os/Process.h>
+#include <foundation/Quarantine.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include <cstddef>
@@ -196,6 +198,52 @@ static void test_region_of_other_numerics_does_not_replay(::fixy::TextView direc
     crucible::test::pass("  region_of_other_numerics_does_not_replay: PASSED\n");
 }
 
+// The live heap bytes of the allocator of a sanitizer, or none in a build
+// with no sanitizer.  The allocator of AddressSanitizer and of
+// ThreadSanitizer defines the function, and the weak reference is null in
+// each other build.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the allocator of a sanitizer gives the live heap bytes of the process")
+extern "C" [[gnu::weak]] std::size_t __sanitizer_get_current_allocated_bytes();
+
+[[nodiscard]] static ::fixy::Option<uint64_t> live_heap_bytes() {
+    if (&__sanitizer_get_current_allocated_bytes == nullptr) return ::fixy::none;
+    return ::fixy::some(uint64_t{__sanitizer_get_current_allocated_bytes()});
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// Repeated loads of one head keep only the regions that the foreground can
+// still read.  Each load puts its region in an arena of its own, and the
+// next load ends each arena whose region no holder names.  The old Vigil put
+// each loaded region in one arena that never ended its bytes, so its live
+// heap grew by the bytes of a region at each load.  The first loads fill the
+// slots of the arenas that the holders name, so the count starts after them.
+// The store of test_region_of_other_numerics_does_not_replay holds the head.
+static void test_repeated_loads_keep_a_bounded_heap(::fixy::TextView directory) {
+    constexpr uint32_t kWarmLoads = 16;
+    constexpr uint32_t kLoads = 2000;
+    constexpr uint64_t kGrowthBound = uint64_t{1} << 20;
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    crucible::Vigil loader{config_with_store(directory, crucible::NumericsPolicy{})};
+    for (uint32_t load = 0; load < kWarmLoads; ++load) {
+        CRUCIBLE_TEST_ASSERT(ctx, loader.load(ctx, ctx.cap().alloc));
+    }
+    ::fixy::Option<uint64_t> before = live_heap_bytes();
+    for (uint32_t load = 0; load < kLoads; ++load) {
+        CRUCIBLE_TEST_ASSERT(ctx, loader.load(ctx, ctx.cap().alloc));
+    }
+    CRUCIBLE_TEST_ASSERT(ctx, loader.context().is_compiled());
+    ::fixy::Option<uint64_t> after = live_heap_bytes();
+    if (before.is_none() || after.is_none()) {
+        crucible::test::pass("  repeated_loads_keep_a_bounded_heap: SKIPPED (no allocator of a sanitizer)\n");
+        return;
+    }
+    const uint64_t growth = ::fixy::saturating_sub(std::move(after).expect("the test above found a count"),
+                                                   std::move(before).expect("the test above found a count"));
+    ::fixy::report(::fixy::Sink::Out, "  {} loads grew the live heap by {} bytes\n", kLoads, growth);
+    CRUCIBLE_TEST_ASSERT(ctx, growth < kGrowthBound);
+    crucible::test::pass("  repeated_loads_keep_a_bounded_heap: PASSED\n");
+}
+
 // A change of the eager word stops the replay of the region of the old word,
 // counts one divergence, and the pipeline cuts the next region under the new
 // word, which replays.  The dispatch that activates a region and the
@@ -289,6 +337,7 @@ int main() {
     cfg.cipher_path.with_view([](::fixy::TextView path) {
         test_refused_load_reports_its_reason(path);
         test_region_of_other_numerics_does_not_replay(path);
+        test_repeated_loads_keep_a_bounded_heap(path);
     });
     crucible::Vigil vigil(std::move(cfg));
 

@@ -552,17 +552,25 @@ public:
     // false, and the Vigil reports the reason to standard error.  The
     // activation is foreground state, so this runs on the producer thread.
     // The row is the row that an open view of the store requires.
+    //
+    // Each load puts its region in an arena of its own.  Before the load, the
+    // Vigil ends the arena of each earlier load whose region no holder of the
+    // foreground names (release_unheld_loads_).  So repeated loads keep only
+    // the regions that the foreground can still read.
     template <class Ctx>
         requires ::foundation::effects::CtxAdmits<Ctx, ::crucible::CipherSessionEventPersistenceRow>
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, ::foundation::effects::Alloc a) {
         return cipher_.with_mut(
             [this, &ctx, a](auto cipher) noexcept {
                 const VigilFgCtx fg = assert_producer_thread_();
-                const ::fixy::Option<::fixy::Ref<RegionNode>> loaded = load_head_(ctx, a, **cipher);
+                release_unheld_loads_();
+                ::fixy::Box<::fixy::BumpArena> arena = ::fixy::mint_box<::fixy::BumpArena>(a, LOAD_BLOCK_BYTES);
+                const ::fixy::Option<::fixy::Ref<RegionNode>> loaded = load_head_(ctx, a, **cipher, *arena);
                 for (const ::fixy::Ref<RegionNode> region : loaded) {
                     // Each region cut before the load holds ops that ran before it.
                     bg_.request_mark(ring_total_produced());
                     adopt_region_(fg, *region);
+                    keep_load_(std::move(arena), ::fixy::WeakRef<const RegionNode>{*region});
                     return true;
                 }
                 return false;
@@ -798,12 +806,12 @@ private:
 
     template <class Ctx, class Store>
     [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> load_head_(Ctx const& ctx, ::foundation::effects::Alloc a,
-                                                                     Store& store) {
+                                                                     Store& store, ::fixy::BumpArena& arena) {
         if (store.empty()) return ::fixy::none;
         auto open_view = store.mint_open_view(ctx);
         // A refusal gives no region, and the report tells the person why the
         // store gave no region of its head.
-        const auto loaded = store.load_content_addressed(ctx, open_view, a, store.head(), load_arena_);
+        const auto loaded = store.load_content_addressed(ctx, open_view, a, store.head(), arena);
         return loaded.match(
             [](auto const& payload) -> ::fixy::Option<::fixy::Ref<RegionNode>> {
                 return ::fixy::Option<::fixy::Ref<RegionNode>>::some(payload.get());
@@ -876,6 +884,46 @@ private:
             }
             CRUCIBLE_SPIN_PAUSE;
         }
+    }
+
+    // True when a cell of held_regions_ names region.  The producer thread
+    // writes the cells at the end of each cold path that changes a holder,
+    // so on that thread the cells name each region that the foreground
+    // holds.  Complexity: O(HeldRegions::CAP).
+    [[nodiscard]] bool is_held_by_foreground_(::fixy::WeakRef<const RegionNode> region) const noexcept {
+        for (const ::fixy::Atomic<::fixy::WeakRef<const RegionNode>>& cell : held_regions_.cells) {
+            if (cell.load_acquire() == region) return true;
+        }
+        return false;
+    }
+
+    // Ends the arena of each load whose region no holder of the foreground
+    // names.  Runs on the producer thread before each load.  Complexity:
+    // O(LOAD_SLOTS * HeldRegions::CAP).
+    [[gnu::cold]] void release_unheld_loads_() noexcept {
+        for (::fixy::Option<LoadedRegion>& load : loads_) {
+            bool is_unheld = false;
+            for (const LoadedRegion& kept : load) {
+                is_unheld = !is_held_by_foreground_(kept.region);
+            }
+            if (is_unheld) load = ::fixy::none;
+        }
+    }
+
+    // Keeps the arena of a load beside its region, in a free slot.  The
+    // holders name at most HeldRegions::CAP regions, and the release before
+    // the load left a slot only for a region that a holder names.  So one
+    // slot of LOAD_SLOTS is free for the new load.
+    [[gnu::cold]] void keep_load_(::fixy::Box<::fixy::BumpArena>&& arena,
+                                  ::fixy::WeakRef<const RegionNode> region) noexcept {
+        for (::fixy::Option<LoadedRegion>& load : loads_) {
+            if (load.is_some()) continue;
+            load = ::fixy::some(LoadedRegion{.arena = std::move(arena), .region = region});
+            return;
+        }
+        ::fixy::fatal(
+            "a load of a Vigil found no free slot for its arena, although the holders name at most {} regions",
+            HeldRegions::CAP);
     }
 
     // One read of an external slot by an op of the active region.  An input
@@ -1434,7 +1482,23 @@ private:
     // production route to a foreground context.
     ::foundation::effects::host::ProducerClaim<Vigil> producer_claim_;
     ::fixy::AtomicMonotonic<uint64_t> step_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
-    ::fixy::BumpArena load_arena_{};
+
+    // The arena of one load, and the region that the load put in it.  The
+    // arena holds each byte of the region.
+    struct LoadedRegion {
+        ::fixy::Box<::fixy::BumpArena> arena;
+        ::fixy::WeakRef<const RegionNode> region{};
+    };
+    // The bytes of the first block of the arena of a load.  A larger region
+    // takes a block of its own size.
+    static constexpr size_t LOAD_BLOCK_BYTES = size_t{1} << 16;
+    // The holders of the foreground (HeldRegions below) name at most this
+    // count minus one regions, so a load always finds a free slot.
+    static constexpr uint32_t LOAD_SLOTS = 3 + RegionCache::CAP + 1;
+    // The arenas of the loads whose region a holder of the foreground named
+    // at the last load.  Only the producer thread reads or writes them.  The
+    // member stands before the holders of the regions, so it ends after them.
+    ::fixy::FixedArray<::fixy::Option<LoadedRegion>, LOAD_SLOTS> loads_{};
 
     // The publication slot: the region that the publish stage gave to the
     // foreground and that the foreground did not take yet.  The store is
@@ -1578,6 +1642,8 @@ private:
         ::fixy::Atomic<uint64_t> sequence{};
         ::fixy::FixedArray<::fixy::Atomic<::fixy::WeakRef<const RegionNode>>, CAP> cells{};
     };
+    static_assert(LOAD_SLOTS == HeldRegions::CAP + 1,
+                  "Vigil::LOAD_SLOTS must exceed the count of regions that the holders name by one");
     HeldRegions held_regions_;
 
     // senses_ must precede wd_, which holds a borrow of it, so that reverse
