@@ -31,6 +31,7 @@ void test_mark_keeps_an_unapplied_restart();
 void test_reset_skips_the_stale_backlog();
 void test_published_regions_keep_their_hashes();
 void test_long_run_keeps_its_scratch();
+void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test);
 
 // The release of the metadata log, and the copy of its records that a built
 // graph holds (test_background_thread_run_in_row_meta.cpp).

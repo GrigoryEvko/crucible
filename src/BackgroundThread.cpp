@@ -407,12 +407,28 @@ struct BackgroundThread::Pipeline {
 };
 
 // ignore_regions_ comes before region_ready_ in the class, so it is built
-// before the Ref of it.
-BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation)
-    : region_ready_{::fixy::to(ignore_regions_)}, pipeline_{::fixy::mint_box<Pipeline>(allocation)} {}
+// before the Ref of it.  The region store holds one empty slot for each
+// region of the limits.
+BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, PipelineLimits const& limits)
+    : region_ready_{::fixy::to(ignore_regions_)},
+      region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, limits.region_store.raw(),
+                                                               [](size_t) noexcept { return RegionMemory{}; })},
+      uncompiled_regions{allocation, limits.uncompiled_queue},
+      pipeline_{::fixy::mint_box<Pipeline>(allocation)} {
+    build_scratch_.set_retained_limit(limits.scratch_retained);
+    publish_scratch_.set_retained_limit(limits.scratch_retained);
+}
 
-BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready)
-    : region_ready_{::fixy::to(on_region_ready)}, pipeline_{::fixy::mint_box<Pipeline>(allocation)} {}
+BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready,
+                                   PipelineLimits const& limits)
+    : region_ready_{::fixy::to(on_region_ready)},
+      region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, limits.region_store.raw(),
+                                                               [](size_t) noexcept { return RegionMemory{}; })},
+      uncompiled_regions{allocation, limits.uncompiled_queue},
+      pipeline_{::fixy::mint_box<Pipeline>(allocation)} {
+    build_scratch_.set_retained_limit(limits.scratch_retained);
+    publish_scratch_.set_retained_limit(limits.scratch_retained);
+}
 
 ::fixy::Box<BackgroundThread::BgBuildWork> BackgroundThread::make_commit_work(::foundation::effects::Alloc alloc,
                                                                               uint32_t count) {
@@ -564,18 +580,18 @@ void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_floor
 // no free slot discards the region, as a reset discards a stale region.
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                                       StreamPoint reset_point) {
-    ::fixy::Option<RegionStoreSlot> free_slot{};
-    for (const RegionStoreSlot slot : region_store_.indices()) {
-        if (region_store_.at(slot).node.size() == 0) {
-            free_slot = ::fixy::Option<RegionStoreSlot>::some(slot);
+    ::fixy::WeakRef<RegionMemory> free_slot{};
+    for (RegionMemory& slot : region_store_) {
+        if (slot.node.size() == 0) {
+            free_slot = ::fixy::WeakRef<RegionMemory>{slot};
             break;
         }
     }
-    if (free_slot.is_none()) [[unlikely]] {
+    if (!free_slot.has_value()) [[unlikely]] {
         ++regions_dropped_full_;
         return;
     }
-    RegionMemory& memory = region_store_.at(std::move(free_slot).expect("the test above found a free slot"));
+    RegionMemory& memory = free_slot.get();
     memory = RegionMemory{
         .parts = std::move(parts),
         .node = ::fixy::mint_heap_array_with<RegionNode>(bg.alloc, 1, [](size_t) noexcept { return RegionNode{}; }),

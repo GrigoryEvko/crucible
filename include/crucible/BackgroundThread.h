@@ -36,6 +36,35 @@
 
 namespace crucible {
 
+// The limits of the memory of a background pipeline.  The owner gives them at
+// construction, and they stay for the life of the pipeline.  Vigil::Config
+// holds one, with these defaults.
+//
+//   scratch_retained  the bytes of blocks that each of the two scratch arenas
+//                     keeps when an epoch ends.  An arena that holds more
+//                     gives back each block but the first
+//                     (BumpArena::set_retained_limit)
+//   region_store      the count of regions that the region store holds.  A
+//                     publish into a full store discards its region and
+//                     counts it.  A store of zero regions discards each region
+//   uncompiled_queue  the count of published regions that the uncompiled
+//                     queue keeps.  A push into a full queue drops the oldest
+//                     region.  A queue of zero regions keeps none and only
+//                     counts
+//
+// With the default limits, the holders of the regions name at most 64 + 16 +
+// 11 + 2 regions: the uncompiled queue, the transaction log of a Vigil, the
+// holders of its foreground, and the last published region with the handed
+// region.  The store of 128 regions keeps a margin above that count.
+struct PipelineLimits {
+    static constexpr uint32_t DEFAULT_REGION_STORE = 128;
+    static constexpr uint32_t DEFAULT_UNCOMPILED_QUEUE = 64;
+
+    ::fixy::Quantity<::fixy::unit::Byte, size_t> scratch_retained{::fixy::BumpArena::default_retained_bytes_limit};
+    ::fixy::Quantity<::fixy::unit::Element, uint32_t> region_store{DEFAULT_REGION_STORE};
+    ::fixy::Quantity<::fixy::unit::Element, uint32_t> uncompiled_queue{DEFAULT_UNCOMPILED_QUEUE};
+};
+
 // Drains the ring buffer, detects iteration boundaries and builds a trace
 // graph per iteration.
 //
@@ -487,22 +516,22 @@ private:
 
     // The arena of the trace graph and its CSR arrays.  Only the build stage
     // uses it, and an epoch covers one work item: the build stage ends it
-    // after it moves the parts of the region into the message.
+    // after it moves the parts of the region into the message.  The
+    // constructor sets its retained limit (PipelineLimits::scratch_retained).
     ::fixy::BumpArena build_scratch_{size_t{1} << 20};
 
     // The arena of the sweep of each memory plan.  Only the publish stage
-    // uses it, and an epoch covers one publish.
+    // uses it, and an epoch covers one publish.  The constructor sets its
+    // retained limit.
     ::fixy::BumpArena publish_scratch_{size_t{1} << 20};
 
-    // The memory of each live region, in the slots of a fixed table.  Only
-    // the publish stage reads and writes it.  The sweep after each publish
-    // releases each region that no holder names.  The holders name at most
-    // 64 + 16 + 11 + 2 regions, so the table keeps a margin.  A foreground
-    // that never gets a region writes no holders, and its regions stay.  A
-    // publish into a full table then discards its region and counts it.
-    static constexpr uint32_t REGION_STORE_CAP = 128;
-    using RegionStoreSlot = ::fixy::Index<REGION_STORE_CAP>;
-    ::fixy::FixedArray<RegionMemory, REGION_STORE_CAP> region_store_{};
+    // The memory of each live region, in the slots of a table of
+    // PipelineLimits::region_store slots, which the constructor allocates.
+    // Only the publish stage reads and writes it.  The sweep after each
+    // publish releases each region that no holder names.  A foreground that
+    // never gets a region writes no holders, and its regions stay.  A publish
+    // into a full table then discards its region and counts it.
+    ::fixy::HeapArray<RegionMemory> region_store_;
     ::fixy::WeakRef<const RegionNode> last_published_{};
     RegionMarks owner_marks_{};
     uint64_t regions_dropped_full_ = 0;
@@ -525,21 +554,30 @@ public:
     // keeps the hand-off point while making the retention constant.
     //
     // A backend that keeps pace with the publish stage never has more than
-    // one graph-publish channel's worth of regions outstanding, so the bound
-    // is that channel's depth.  A backend further behind than that is not
-    // catching up, and the regions it missed describe shapes the model has
-    // already moved past.
+    // one graph-publish channel's worth of regions outstanding, so the
+    // default bound is that channel's depth (PipelineLimits).  A backend
+    // further behind than that is not catching up, and the regions it missed
+    // describe shapes the model has already moved past.
     //
     // The publish stage is the sole writer.  total() is safe to read from
     // any thread; at() is not, and needs the pipeline quiescent.  The region
     // store keeps each region that the queue holds, so the queue keeps at
-    // most CAP regions alive.
+    // most capacity() regions alive.
     class UncompiledRegionQueue {
     public:
-        static constexpr uint32_t CAP = 64;
+        // A queue that keeps the capacity newest regions, in slots that the
+        // allocation capability allocates.  A capacity of zero keeps no
+        // region, and push then only counts.
+        UncompiledRegionQueue(::foundation::effects::Alloc allocation,
+                              ::fixy::Quantity<::fixy::unit::Element, uint32_t> capacity) noexcept
+            : slots_{::fixy::mint_heap_array(allocation, capacity.raw(), ::fixy::WeakRef<RegionNode>{})} {}
 
         void push(RegionNode& region) noexcept {
-            slots_.at(prove_slot_(total_.peek_relaxed() % CAP)) = ::fixy::WeakRef<RegionNode>{region};
+            const uint64_t capacity = slots_.size();
+            if (capacity != 0) {
+                *slots_.get(total_.peek_relaxed() % capacity).expect("a count modulo the capacity is below it") =
+                    ::fixy::WeakRef<RegionNode>{region};
+            }
             (void)total_.bump();
         }
 
@@ -547,29 +585,31 @@ public:
         // dropped.  total() - size() is how many were dropped.
         [[nodiscard]] uint64_t total() const noexcept { return total_.get(); }
 
+        // The count of regions that the queue keeps at most.
+        [[nodiscard]] uint32_t capacity() const noexcept {
+            return ::fixy::narrow<uint32_t>(slots_.size()).expect("the capacity came from a uint32_t");
+        }
+
         [[nodiscard]] uint32_t size() const noexcept {
             const uint64_t seen = total_.get();
-            return (seen < CAP) ? static_cast<uint32_t>(seen) : CAP;
+            return (seen < capacity()) ? static_cast<uint32_t>(seen) : capacity();
         }
 
         // age 0 is the most recently published region.  The bound is size()
-        // rather than CAP so that a fresh queue cannot hand back the empty
-        // reference a never-written slot still holds.  The clause is the
+        // rather than the capacity so that a fresh queue cannot hand back the
+        // empty reference a never-written slot still holds.  The clause is the
         // in-body macro because its predicate reaches a member through
         // `this`, which a plain pre() skips when the compiler folds this body.
         [[nodiscard]] ::fixy::WeakRef<RegionNode> at(uint32_t age) const noexcept {
             CRUCIBLE_PRE(age < size());
             const uint64_t seen = total_.get();
-            return slots_.at(prove_slot_((seen + CAP - 1u - age) % CAP));
+            const uint64_t capacity = slots_.size();
+            return *slots_.get((seen + capacity - 1u - age) % capacity)
+                        .expect("a count modulo the capacity is below it");
         }
 
     private:
-        // The slot of a count modulo CAP, which the modulo keeps below CAP.
-        [[nodiscard]] static ::fixy::Index<CAP> prove_slot_(uint64_t modulo) noexcept {
-            return ::fixy::Index<CAP>::check(modulo).expect("a count modulo CAP is below CAP");
-        }
-
-        ::fixy::FixedArray<::fixy::WeakRef<RegionNode>, CAP> slots_{};
+        ::fixy::HeapArray<::fixy::WeakRef<RegionNode>> slots_;
         ::fixy::AtomicMonotonic<uint64_t, ::fixy::CounterWriters::sole> total_ =
             ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::CounterWriters::sole>(0);
     };
@@ -959,9 +999,12 @@ public:
     // complete type.  The caller gives the allocation capability of its
     // context, and the pipeline takes its storage through it.  The first
     // has no region callback.  The second borrows the callback of the
-    // caller, which outlives this BackgroundThread (region_ready_).
-    explicit BackgroundThread(::foundation::effects::Alloc allocation);
-    BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready);
+    // caller, which outlives this BackgroundThread (region_ready_).  The
+    // limits size the region store and the uncompiled queue, and set the
+    // retained limit of the two scratch arenas.
+    explicit BackgroundThread(::foundation::effects::Alloc allocation, PipelineLimits const& limits = PipelineLimits{});
+    BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready,
+                     PipelineLimits const& limits = PipelineLimits{});
     BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns the pipeline thread");
     BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns the pipeline thread");
     BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns the pipeline thread with captured this");
@@ -973,6 +1016,12 @@ public:
     // pipeline thread runs: before start() or after stop().
     [[nodiscard]] size_t scratch_retained_bytes() const noexcept {
         return ::fixy::saturating_add(build_scratch_.retained_bytes(), publish_scratch_.retained_bytes());
+    }
+
+    // The retained limit of each of the two scratch arenas
+    // (PipelineLimits::scratch_retained).
+    [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> scratch_retained_limit() const noexcept {
+        return build_scratch_.retained_limit();
     }
 
     // Gives the regions that the owner holds to the sweep of this publish.

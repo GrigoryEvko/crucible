@@ -4,6 +4,7 @@
 #include "vigil_rig.h"
 
 #include <crucible/Vigil.h>
+#include <fixy/check/Check.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include <bit>
@@ -393,7 +394,7 @@ void test_region_store_stays_bounded() {
     constexpr uint32_t CYCLES = 120;
     // The uncompiled queue, the transaction log, the cells of the foreground,
     // and the last published region with the handed region.
-    constexpr uint32_t MAX_HELD = crucible::BackgroundThread::UncompiledRegionQueue::CAP + 16 + 11 + 2;
+    constexpr uint32_t MAX_HELD = crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE + 16 + 11 + 2;
 
     crucible::Vigil vigil;
     uint32_t base = 0;
@@ -425,6 +426,26 @@ void test_region_store_stays_bounded() {
 
     crucible::test::pass("  test_region_store_stays_bounded: PASSED (published={}, stored={})\n",
                          static_cast<unsigned long long>(vigil.current_step()), stored);
+}
+
+// A Vigil gives the limits of its Config to its pipeline.  The uncompiled
+// queue holds each region that the store holds, so a store of one region
+// keeps the first region of the loop, and it discards each later region of
+// the loop and counts it.
+void test_small_region_store_discards_and_counts() {
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
+    crucible::Vigil::Config config{};
+    config.limits.region_store = ::fixy::Quantity<::fixy::unit::Element, uint32_t>{1};
+    crucible::Vigil vigil{std::move(config)};
+    for (uint32_t iter = 0; iter < 12; ++iter) {
+        for (uint32_t i = 0; i < divrig::NUM_OPS; i++)
+            record_cycle_op(vigil, 0, iter, i);
+    }
+    vigil.flush();
+    CRUCIBLE_TEST_ASSERT(test, vigil.region_store_count() == 1);
+    CRUCIBLE_TEST_ASSERT(test, vigil.region_store_drops() > 0);
+    ::fixy::check::pass(test, "  test_small_region_store_discards_and_counts: PASSED (dropped={})\n",
+                        static_cast<unsigned long long>(vigil.region_store_drops()));
 }
 
 // The active region names no region that a reset made stale.

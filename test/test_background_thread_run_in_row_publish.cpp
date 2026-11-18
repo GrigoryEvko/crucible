@@ -5,6 +5,7 @@
 
 #include <crucible/BackgroundThread.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include "test_assert.h"
 
@@ -401,9 +402,11 @@ void test_published_regions_keep_their_hashes() {
     // The queue is bounded.  This run is shorter than the bound, so the
     // assertion is on the relationship rather than on a constant.
     // test_uncompiled_queue_is_bounded drives the wrap itself.
-    assert(bt.uncompiled_regions.size() <= BackgroundThread::UncompiledRegionQueue::CAP);
-    assert(bt.uncompiled_regions.size()
-           == std::min<uint64_t>(bt.uncompiled_regions.total(), BackgroundThread::UncompiledRegionQueue::CAP));
+    const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
+    CRUCIBLE_TEST_ASSERT(test, bt.uncompiled_regions.size() <= bt.uncompiled_regions.capacity());
+    CRUCIBLE_TEST_ASSERT(test,
+                         bt.uncompiled_regions.size()
+                             == ::fixy::min(bt.uncompiled_regions.total(), uint64_t{bt.uncompiled_regions.capacity()}));
 
     crucible::test::pass("  published_regions_keep_their_hashes:       "
                          "PASSED (retained={} of {})\n",
@@ -460,13 +463,47 @@ void test_long_run_keeps_its_scratch() {
         dropped = bt.regions_dropped_full(stage);
     });
     assert(dropped == 0 && "a full region store discarded a published region");
-    assert(stored <= BackgroundThread::UncompiledRegionQueue::CAP + 1
-           && "the region store kept a region that no holder names");
+    CRUCIBLE_TEST_ASSERT(::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                         stored <= bt.uncompiled_regions.capacity() + 1);
 
     crucible::test::pass("  long_run_keeps_its_scratch:                "
                          "PASSED (regions={}, stored={}, scratch={} bytes)\n",
                          static_cast<unsigned long long>(published), stored,
                          static_cast<unsigned long long>(bt.scratch_retained_bytes()));
+}
+
+// The limits of a pipeline refuse what passes them.  The uncompiled queue
+// holds each region that the store holds, so a store of two regions holds the
+// first two, and it discards each later region and counts it.  Each scratch
+// arena takes the retained limit of the limits, and keeps only its first
+// block after an epoch above it (test_core_bump_arena pins the refusal).
+void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test) {
+    using namespace publish_rig;
+    constexpr uint32_t ITERS = 64;
+    auto witness = ::foundation::effects::testing::test();
+    crucible::PipelineLimits limits{};
+    limits.region_store = ::fixy::Quantity<::fixy::unit::Element, uint32_t>{2};
+    limits.scratch_retained = ::fixy::Quantity<::fixy::unit::Byte, size_t>{4096};
+    BackgroundThread bt{witness.alloc, limits};
+    CRUCIBLE_TEST_ASSERT(test, bt.scratch_retained_limit() == limits.scratch_retained);
+    CRUCIBLE_TEST_ASSERT(test, bt.uncompiled_regions.capacity() == crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE);
+
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(witness.alloc);
+    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(witness.alloc, witness.alloc);
+    const uint64_t queued = run_family_a(bt, *ring, *metalog, ITERS);
+
+    uint32_t stored = 0;
+    uint64_t dropped = 0;
+    bt.run_on_publish_stage([&stored, &dropped, &bt](BackgroundThread::PublishStage const& stage) noexcept {
+        stored = bt.region_count(stage);
+        dropped = bt.regions_dropped_full(stage);
+    });
+    CRUCIBLE_TEST_ASSERT(test, stored == 2);
+    CRUCIBLE_TEST_ASSERT(test, queued == 2);
+    CRUCIBLE_TEST_ASSERT(test, dropped > 0);
+    CRUCIBLE_TEST_ASSERT(test, bt.scratch_retained_bytes() <= size_t{2} << 20);
+    ::fixy::check::pass(test, "  limits_refuse_what_passes_them:            PASSED (stored={}, dropped={})\n", stored,
+                        static_cast<unsigned long long>(dropped));
 }
 
 }  // namespace test_background_thread_run_in_row

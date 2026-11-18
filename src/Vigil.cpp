@@ -30,7 +30,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
       replay_{startup.cap().alloc, compute_numerics_hash(cfg_.numerics, cfg_.eager)},
       allocation_{startup.cap().alloc},
       region_ready_{BackgroundThread::RegionReadyCall::bind<&Vigil::on_region_ready>(*this)},
-      bg_{startup.cap().alloc, region_ready_} {
+      bg_{startup.cap().alloc, region_ready_, cfg_.limits} {
     ring_->reset();
     meta_log_->reset();
 

@@ -154,6 +154,12 @@ public:
         // hash of each region folds the two (compute_numerics_hash).
         NumericsPolicy numerics{};
         EagerNumerics eager{};
+
+        // The limits of the memory of the background pipeline: the bytes that
+        // each scratch arena keeps after an epoch, the regions of the region
+        // store and the regions of the uncompiled queue.  PipelineLimits
+        // states what each limit refuses.
+        PipelineLimits limits{};
     };
 
     // Consecutive op matches required to confirm an iteration boundary

@@ -25,6 +25,7 @@
 #include <crucible/BackgroundThread.h>
 #include <crucible/Cipher.h>
 #include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -134,8 +135,9 @@ void test_cross_fence_consistency() {
 // holds a constant number of pointers rather than one per region.  Driving
 // past the bound directly is the only way to see the wrap.
 void test_uncompiled_queue_is_bounded() {
-    BackgroundThread::UncompiledRegionQueue queue;
-    constexpr uint32_t CAP = BackgroundThread::UncompiledRegionQueue::CAP;
+    constexpr uint32_t CAP = crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE;
+    BackgroundThread::UncompiledRegionQueue queue{::foundation::effects::testing::test().alloc,
+                                                  ::fixy::Quantity<::fixy::unit::Element, uint32_t>{CAP}};
 
     assert(queue.size() == 0u);
     assert(queue.total() == 0u);
@@ -169,6 +171,29 @@ void test_uncompiled_queue_is_bounded() {
                          static_cast<unsigned long long>(queue.total()), queue.size());
 }
 
+// The capacity of the queue is a limit of the pipeline.  A queue of three
+// keeps the three newest regions and drops each older one.  A queue of zero
+// keeps no region and only counts.
+void test_uncompiled_queue_refuses_past_its_capacity(::fixy::TestRunnerCtx const& test) {
+    using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+    static ::fixy::FixedArray<crucible::RegionNode, 8> regions{};
+    BackgroundThread::UncompiledRegionQueue three{::foundation::effects::testing::test().alloc, Count{3}};
+    BackgroundThread::UncompiledRegionQueue none{::foundation::effects::testing::test().alloc, Count{0}};
+    CRUCIBLE_TEST_ASSERT(test, three.capacity() == 3 && none.capacity() == 0);
+    for (uint64_t i = 0; i < 8; ++i) {
+        three.push(crucible::test::element_at(regions, i));
+        none.push(crucible::test::element_at(regions, i));
+    }
+    CRUCIBLE_TEST_ASSERT(test, three.total() == 8 && three.size() == 3);
+    for (uint32_t age = 0; age < 3; ++age) {
+        CRUCIBLE_TEST_ASSERT(
+            test, three.at(age)
+                      == ::fixy::WeakRef<crucible::RegionNode>{crucible::test::element_at(regions, uint64_t{7} - age)});
+    }
+    CRUCIBLE_TEST_ASSERT(test, none.total() == 8 && none.size() == 0);
+    ::fixy::check::pass(test, "  uncompiled_queue_refuses_past_its_capacity: PASSED\n");
+}
+
 }  // namespace
 
 }  // namespace test_background_thread_run_in_row
@@ -188,6 +213,8 @@ int main() {
     // These run last because they seal the global schema and kernel tables,
     // which every group above deliberately avoids.
     test_uncompiled_queue_is_bounded();
+    test_uncompiled_queue_refuses_past_its_capacity(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
+    test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     test_reset_drops_inflight_regions();
     test_reset_applies_at_its_point();
     test_mark_keeps_an_unapplied_restart();
@@ -202,6 +229,6 @@ int main() {
     test_build_and_release_pass_two_to_the_32();
     test_scalars_of_an_op_with_no_tensors();
 
-    crucible::test::pass("test_background_thread_run_in_row: 19 groups, all passed\n");
+    crucible::test::pass("test_background_thread_run_in_row: 21 groups, all passed\n");
     return 0;
 }

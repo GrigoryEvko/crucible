@@ -306,6 +306,7 @@ int main() {
     test_vigil::test_rollback_drops_the_region_in_the_slot();
     test_vigil::test_rollback_closes_an_open_alignment();
     test_vigil::test_region_store_stays_bounded();
+    test_vigil::test_small_region_store_discards_and_counts();
     test_vigil::test_divergence_leaves_no_stale_active_region();
     test_vigil::test_same_region_keeps_the_alignment();
     test_vigil::test_record_op_claims_the_producer_role();
