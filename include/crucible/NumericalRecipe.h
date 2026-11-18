@@ -239,8 +239,11 @@ inline constexpr uint64_t kNumericsSalt = 0x4E554D4552494353ULL;  // "NUMERICS"
     return result;
 }
 
+// Only BITEXACT_STRICT promises the same bytes on each vendor.  BITEXACT_TC
+// holds only for exact fragments, and a recipe does not record the fragment
+// kind.  Thus a BITEXACT_TC recipe is not bit-exact here.
 [[nodiscard, gnu::const]] constexpr bool is_bitexact(ReductionDeterminism d) noexcept {
-    return d == ReductionDeterminism::BITEXACT_TC || d == ReductionDeterminism::BITEXACT_STRICT;
+    return d == ReductionDeterminism::BITEXACT_STRICT;
 }
 
 [[nodiscard, gnu::const]] constexpr bool permits_tensor_cores(ReductionDeterminism d) noexcept {

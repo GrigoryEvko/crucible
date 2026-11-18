@@ -53,13 +53,14 @@ enum class ReductionDeterminism : std::uint8_t {
     BITEXACT_STRICT = 3,
 };
 
-// The two bit-exact tiers are the ones that promise the same bytes twice.
-// BITEXACT_TC constrains the fragment length and the outer reduction
-// order rather than banning tensor cores; BITEXACT_STRICT bans them.
-// Both are bit-exact, which is the only property this header reads.
+// Only BITEXACT_STRICT promises the same bytes on each vendor and each run.
+// BITEXACT_TC keeps tensor cores, and FP16 and BF16 fragments give
+// different bits on different vendors and generations.  The tier holds
+// only for exact fragments, and the spec does not record the fragment
+// kind.  Thus this header does not count BITEXACT_TC as bit-exact.
 [[nodiscard, gnu::const]]
 constexpr bool is_bitexact(ReductionDeterminism d) noexcept {
-    return d == ReductionDeterminism::BITEXACT_TC || d == ReductionDeterminism::BITEXACT_STRICT;
+    return d == ReductionDeterminism::BITEXACT_STRICT;
 }
 
 // An IEEE 754 quiet NaN with an empty payload and a clear sign bit.  The
@@ -123,10 +124,9 @@ template <CanonicalizeRecipeSpec Spec>
 [[nodiscard, gnu::const]]
 constexpr std::uint64_t canonicalize_for(double x) noexcept {
     static_assert(is_bitexact(Spec.determinism), "fixy::fp::canonicalize_for<Spec> requires "
-                                                 "ReductionDeterminism::BITEXACT_TC or BITEXACT_STRICT — "
-                                                 "merkle-hashing a double under UNORDERED/ORDERED tiers "
-                                                 "would lock content_hash to a non-portable bit pattern "
-                                                 "(cross-vendor drift exceeds 1 ULP).");
+                                                 "ReductionDeterminism::BITEXACT_STRICT. Under a different "
+                                                 "tier, a different vendor or run can give different bits, "
+                                                 "and the content hash of the value is not portable.");
     static_assert(Spec.rounding == ::foundation::core::RoundingMode::RN,
                   "fixy::fp::canonicalize_for<Spec> requires "
                   "RoundingMode::RN (round-to-nearest, ties to even) — "
@@ -140,8 +140,10 @@ template <CanonicalizeRecipeSpec Spec>
 [[nodiscard, gnu::const]]
 constexpr std::uint32_t canonicalize_for(float x) noexcept {
     static_assert(is_bitexact(Spec.determinism), "fixy::fp::canonicalize_for<Spec> requires "
-                                                 "ReductionDeterminism::BITEXACT_TC or BITEXACT_STRICT "
-                                                 "for the float overload (same rationale as double).");
+                                                 "ReductionDeterminism::BITEXACT_STRICT for the float "
+                                                 "overload. Under a different tier, a different vendor or "
+                                                 "run can give different bits, and the content hash of the "
+                                                 "value is not portable.");
     static_assert(Spec.rounding == ::foundation::core::RoundingMode::RN,
                   "fixy::fp::canonicalize_for<Spec> requires "
                   "RoundingMode::RN for the float overload (same "

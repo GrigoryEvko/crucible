@@ -3,6 +3,9 @@
 // each determinism tier, and the stability and uniqueness of its hash.
 
 #include <crucible/NumericalRecipe.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include "test_assert.h"
 #include <cinttypes>
@@ -47,15 +50,16 @@ int main() {
     // The four tiers form a ladder.  The two weakest admit tensor
     // cores and block-scaled formats and promise no bit-exactness, one
     // of them additionally bounding the error.  The third keeps tensor
-    // cores but drops block-scaled formats and promises agreement
-    // within one unit in the last place across vendors.  The strictest
-    // drops tensor cores as well and promises identical bytes on every
-    // architecture.
+    // cores but drops block-scaled formats.  FP16 and BF16 tensor-core
+    // fragments give different bits on different vendors, so the third
+    // tier is not bit-exact.  The strictest drops tensor cores as well
+    // and promises identical bytes on every architecture.
     using D = ReductionDeterminism;
+    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
 
     assert(!crucible::is_bitexact(D::UNORDERED));
     assert(!crucible::is_bitexact(D::ORDERED));
-    assert(crucible::is_bitexact(D::BITEXACT_TC));
+    CRUCIBLE_TEST_ASSERT(test, !crucible::is_bitexact(D::BITEXACT_TC));
     assert(crucible::is_bitexact(D::BITEXACT_STRICT));
 
     assert(crucible::permits_tensor_cores(D::UNORDERED));

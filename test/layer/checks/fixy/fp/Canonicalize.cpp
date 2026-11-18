@@ -30,11 +30,12 @@ static_assert(std::to_underlying(ReductionDeterminism::ORDERED) == 1);
 static_assert(std::to_underlying(ReductionDeterminism::BITEXACT_TC) == 2);
 static_assert(std::to_underlying(ReductionDeterminism::BITEXACT_STRICT) == 3);
 
-// is_bitexact answers for every value of the enum, not just the two it
-// admits.
+// is_bitexact answers for every value of the enum, not just the one it
+// admits.  BITEXACT_TC is refused, because FP16 and BF16 tensor-core
+// fragments give different bits on different vendors.
 static_assert(!is_bitexact(ReductionDeterminism::UNORDERED));
 static_assert(!is_bitexact(ReductionDeterminism::ORDERED));
-static_assert(is_bitexact(ReductionDeterminism::BITEXACT_TC));
+static_assert(!is_bitexact(ReductionDeterminism::BITEXACT_TC));
 static_assert(is_bitexact(ReductionDeterminism::BITEXACT_STRICT));
 
 // ── The projection ──────────────────────────────────────────────────
@@ -81,14 +82,16 @@ static_assert(canonicalize_for<kCanonicalSpec>(-0.0) == 0, "cell (d): canonical 
 static_assert(canonicalize_for<kCanonicalSpec>(2.5f) == std::bit_cast<std::uint32_t>(2.5f),
               "cell (d): canonical spec accepts finite float");
 
-// The other bit-exact tier is admitted too, so the gate reads the
-// property and not one value.
+// The tensor-core tier fails the gate.  The fixture
+// neg_canonicalize_for_tensor_core_spec proves that canonicalize_for
+// refuses it.
 inline constexpr CanonicalizeRecipeSpec kTensorCoreSpec{
     RoundingMode::RN,
     ReductionDeterminism::BITEXACT_TC,
 };
-static_assert(canonicalize_for<kTensorCoreSpec>(3.5) == std::bit_cast<std::uint64_t>(3.5),
-              "cell (d): BITEXACT_TC is admitted as well as BITEXACT_STRICT");
+static_assert(!is_bitexact(kTensorCoreSpec.determinism),
+              "cell (d): BITEXACT_TC must NOT satisfy the gate. FP16 and BF16 tensor-core fragments give "
+              "different bits on different vendors.");
 
 // Two specs with the same fields are the same template argument, which is
 // what makes the spec usable as a cache-key component.

@@ -55,16 +55,13 @@ namespace {
 
 inline constexpr fp::CanonicalizeRecipeSpec kStrictSpec{::foundation::core::RoundingMode::RN,
                                                         fp::ReductionDeterminism::BITEXACT_STRICT};
-inline constexpr fp::CanonicalizeRecipeSpec kTensorCoreSpec{::foundation::core::RoundingMode::RN,
-                                                            fp::ReductionDeterminism::BITEXACT_TC};
 
-// The plain projection and the two admitted gated forms answer as the
+// The plain projection and the one admitted gated form answer as the
 // oracle does for one float pattern.
 [[nodiscard]] bool float_pattern_projects(std::uint32_t bits) noexcept {
     const float value = std::bit_cast<float>(opaque32(bits));
     const std::uint32_t want = oracle32(bits);
-    const bool agrees = fp::canonicalize(value) == want && fp::canonicalize_for<kStrictSpec>(value) == want
-                     && fp::canonicalize_for<kTensorCoreSpec>(value) == want;
+    const bool agrees = fp::canonicalize(value) == want && fp::canonicalize_for<kStrictSpec>(value) == want;
     if (!agrees) std::fprintf(stderr, "float pattern 0x%08X does not project to 0x%08X\n", bits, want);
     return agrees;
 }
@@ -72,8 +69,7 @@ inline constexpr fp::CanonicalizeRecipeSpec kTensorCoreSpec{::foundation::core::
 [[nodiscard]] bool double_pattern_projects(std::uint64_t bits) noexcept {
     const double value = std::bit_cast<double>(opaque64(bits));
     const std::uint64_t want = oracle64(bits);
-    const bool agrees = fp::canonicalize(value) == want && fp::canonicalize_for<kStrictSpec>(value) == want
-                     && fp::canonicalize_for<kTensorCoreSpec>(value) == want;
+    const bool agrees = fp::canonicalize(value) == want && fp::canonicalize_for<kStrictSpec>(value) == want;
     if (!agrees) {
         std::fprintf(stderr, "double pattern 0x%016llX does not project to 0x%016llX\n",
                      static_cast<unsigned long long>(bits), static_cast<unsigned long long>(want));

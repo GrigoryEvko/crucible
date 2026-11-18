@@ -5885,7 +5885,13 @@ fixy_neg_compile_test(neg_spawn_empty_rationale
 # canonicalize_for gates on the two axes a content hash depends on.
 fixy_neg_compile_test(neg_canonicalize_for_non_bitexact_spec
   "static assertion failed: fixy::fp::canonicalize_for<Spec> requires"
-  "cross-vendor drift exceeds 1 ULP")
+  "the content hash of the value is not portable")
+
+# The tensor-core tier is not bit-exact for FP16 and BF16 fragments, so
+# the gate refuses it as well.
+fixy_neg_compile_test(neg_canonicalize_for_tensor_core_spec
+  "static assertion failed: fixy::fp::canonicalize_for<Spec> requires ReductionDeterminism::BITEXACT_STRICT for the float"
+  "the content hash of the value is not portable")
 
 fixy_neg_compile_test(neg_canonicalize_for_wrong_rounding
   "static assertion failed: fixy::fp::canonicalize_for<Spec> requires RoundingMode::RN"
