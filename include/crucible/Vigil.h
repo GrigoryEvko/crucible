@@ -695,8 +695,17 @@ public:
     [[nodiscard]] ::fixy::Stale<uint32_t> meta_log_size() const noexcept { return meta_log_->size(); }
 
     [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
-    [[nodiscard]] uint32_t bg_detector_boundaries() const { return bg_.detector.boundaries_detected.get(); }
-    [[nodiscard]] bool bg_detector_confirmed() const { return bg_.detector.confirmed; }
+    // The count of iteration boundaries that the detector reported, and true
+    // while the detector holds an accepted period.  Each value comes from the
+    // snapshot that the detect stage published after its last batch, so any
+    // thread can read it while the pipeline runs.  After flush(), it covers
+    // each op that the ring held at the call of flush.
+    [[nodiscard]] uint32_t bg_detector_boundaries() const noexcept {
+        return bg_.detector_snapshot.load_acquire().boundaries;
+    }
+    [[nodiscard]] bool bg_detector_confirmed() const noexcept {
+        return bg_.detector_snapshot.load_acquire().period == BackgroundThread::DetectorPeriod::Confirmed;
+    }
 
     // The count of regions in the region store of the pipeline, and the
     // count of published regions that a full store discarded.  Each call

@@ -370,6 +370,28 @@ public:
     // detect stage writes it, so the counter is atomic.
     alignas(64)::fixy::AtomicMonotonic<uint32_t> iterations_completed = ::fixy::mint_atomic_monotonic<uint32_t>(0);
 
+    // True while the detector holds an accepted period.
+    enum class DetectorPeriod : uint32_t {
+        Searching = 0,
+        Confirmed = 1,
+    };
+
+    // The count of iteration boundaries that the detector reported, and the
+    // state of its period.  The count goes back to zero at a restart of the
+    // detector.
+    struct DetectorSnapshot {
+        uint32_t boundaries = 0;
+        DetectorPeriod period = DetectorPeriod::Searching;
+    };
+
+    // The snapshot of the detector after the last batch of the detect stage.
+    // The detect stage writes the detector with no order, so no other thread
+    // reads the detector while the pipeline runs.  It is the one writer of
+    // this cell, and it stores the snapshot after the last reset of each
+    // batch and before the commit marker of the batch.  So after a flush, the
+    // snapshot covers each op that the ring held at the call of the flush.
+    alignas(64)::fixy::Atomic<DetectorSnapshot> detector_snapshot{};
+
     // The count of work items that the build stage built.  It skips each
     // work cut before the requested reset.  The foreground reads the count
     // for diagnostics.

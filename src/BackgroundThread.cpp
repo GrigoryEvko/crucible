@@ -757,6 +757,12 @@ void BackgroundThread::Pipeline::DetectIterationFn(TraceBatchInput&& in,
         // no ops of the trace that diverged while it waits for the next op.
         owner.apply_due_reset_();
 
+        // The snapshot goes out before the commit marker, so a flush that
+        // reads the marker reads this snapshot or a later one.
+        owner.detector_snapshot.store_release(DetectorSnapshot{
+            .boundaries = owner.detector.boundaries_detected.get(),
+            .period = owner.detector.confirmed ? DetectorPeriod::Confirmed : DetectorPeriod::Searching});
+
         push_pipeline(in.ctx(), parks.build_work, out, owner.make_commit_work(alloc, ops.count));
     }
     close_and_wake(in.ctx(), parks.build_work, std::move(out));

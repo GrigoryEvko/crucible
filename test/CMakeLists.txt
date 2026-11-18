@@ -244,6 +244,9 @@ crucible_test(test_iteration_detector)
 crucible_test(test_iteration_detector_window)
 crucible_test(test_vigil_unrepeated_prefix)
 crucible_test(test_vigil_idle_wait)
+# The values of the detector that the Vigil gives, read while the pipeline
+# runs.  The tsan preset reports a read of the detector itself as a race.
+crucible_test(test_vigil_detector_snapshot)
 crucible_test(test_background_thread_refused_ops)
 crucible_test(test_background_thread_start_stop)
 crucible_test(test_vigil_record_count)
