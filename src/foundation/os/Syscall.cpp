@@ -209,6 +209,8 @@ constexpr long kNoCall = -1;
             return __NR_newfstatat;
         case Syscall::madvise:
             return __NR_madvise;
+        case Syscall::mincore:
+            return __NR_mincore;
         case Syscall::sendfile:
             return __NR_sendfile;
         case Syscall::copy_file_range:
@@ -461,7 +463,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
 // perf_event_open came in 2.6.31, sched_setattr and sched_getattr in 3.14,
 // renameat2 in 3.15, mlock2 in 4.4, copy_file_range in 4.5, io_uring_setup in
-// 5.1 and openat2 in 5.6.  gettid, clock_gettime and clock_nanosleep came
+// 5.1 and openat2 in 5.6.  mincore, gettid, clock_gettime and clock_nanosleep came
 // before 2.6.0.  The file door opens
 // each path under a directory with openat2 and RESOLVE_BENEATH, and an open
 // with openat would follow a path out of the directory with no error.  So
@@ -522,6 +524,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::fdatasync:
         case Syscall::fstat:
         case Syscall::madvise:
+        case Syscall::mincore:
         case Syscall::sendfile:
         case Syscall::ioctl:
         case Syscall::sched_setaffinity:

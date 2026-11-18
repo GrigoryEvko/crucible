@@ -667,6 +667,13 @@ target_compile_options(test_bench_check PRIVATE -DNDEBUG)
 # process, so the quiet switch is set here and not in the test.
 crucible_test(test_warden_policy)
 set_tests_properties(test_warden_policy PROPERTIES ENVIRONMENT_MODIFICATION "CRUCIBLE_WARDEN_QUIET=set:1")
+# qemu user mode refuses the THP knob with einval, and the warden test accepts
+# that refusal only under the emulator.
+if(CMAKE_CROSSCOMPILING_EMULATOR)
+  target_compile_definitions(test_warden_policy PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=1)
+else()
+  target_compile_definitions(test_warden_policy PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=0)
+endif()
 # Each affinity change outside fixy/os goes through the recording door, so
 # an older pin proof stops being in force.
 crucible_test(test_pin_event_door)

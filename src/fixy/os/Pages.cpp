@@ -94,7 +94,24 @@ UnitResult populate_sys(void const* first, std::size_t bytes) noexcept {
     std::uintptr_t const start = __builtin_bit_cast(std::uintptr_t, first);
     std::uintptr_t const page_start = start - (start % static_cast<std::uintptr_t>(page_size));
     std::size_t const length = (start - page_start) + bytes;
-    return os::unit_of(os::raw_syscall(os::Syscall::madvise, page_start, length, os::kAdvisePopulateWrite));
+    UnitResult const advised =
+        os::unit_of(os::raw_syscall(os::Syscall::madvise, page_start, length, os::kAdvisePopulateWrite));
+    if (advised.is_err()) {
+        return advised;
+    }
+    // A kernel that takes the advice faults in each page before it returns.
+    // qemu user mode takes the advice and faults in no page, so the door reads
+    // the residency of the first page (mincore) and gives eopnotsupp when the
+    // page has no frame.  The low bit of the byte of a page is its residency.
+    unsigned char residency = 0;
+    UnitResult const queried = os::unit_of(os::raw_syscall(os::Syscall::mincore, page_start, page_size, &residency));
+    if (queried.is_err()) {
+        return queried;
+    }
+    if ((residency & 1U) == 0) {
+        return core::err(os::Errno::eopnotsupp);
+    }
+    return core::Unit{};
 }
 
 // The kernel takes the refusal as the second argument and its flags as the

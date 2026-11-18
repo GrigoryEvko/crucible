@@ -178,9 +178,9 @@ void populate_faults_in_each_page_of_the_range() {
     ::foundation::AlignedBytes const probe_block = allocate_fresh_block();
     core::View<std::byte const> const probe_page =
         core::byte_view(probe_block.view()).window(page, page).expect("the page fits in the block");
-    os::Errno const refusal = pages::populate_pages(kStartup, probe_page)
-                                  .match([](core::Unit) noexcept { return os::Errno{}; },
-                                         [](os::Errno error) noexcept { return error; });
+    os::Errno const refusal =
+        pages::populate_pages(kStartup, probe_page)
+            .match([](core::Unit) noexcept { return os::Errno{}; }, [](os::Errno error) noexcept { return error; });
     if (refusal == os::Errno::einval) {
         ::fixy::report(::fixy::Sink::Err, "populate_faults_in_each_page_of_the_range: SKIPPED (Linux before 5.14)\n");
         return;
@@ -231,7 +231,13 @@ void populate_faults_in_each_page_of_the_range() {
 // A page that the process cannot write takes no write fault, so the door
 // gives an error.  A loop that writes a byte of each page ends the process
 // on such a page with a fault of the protection.
+// qemu user mode takes the advice and makes no fault, and the page of the
+// words is in memory, so the residency check of the door finds no defect.
 void populate_refuses_a_range_with_no_write_access() {
+    if (kIsUnderEmulator) {
+        ::fixy::report(::fixy::Sink::Err, "populate_refuses_a_range_with_no_write_access: SKIPPED (qemu-user)\n");
+        return;
+    }
     CRUCIBLE_FATAL_INVARIANT(pages::populate_pages(kStartup, core::bytes(kReadOnlyWords)).is_err());
 }
 

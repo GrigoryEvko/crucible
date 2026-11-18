@@ -79,8 +79,12 @@ constexpr std::size_t kFreshBlockBytes = std::size_t{33} << 20;
         .pages_without_node();
 }
 
-// True when the kernel takes the populate advice, which needs Linux 5.14.
-// The probe is the second page of a block that no code wrote.
+// True when the test runs under the emulator of a cross build, qemu user mode.
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
+
+// True when the kernel takes the populate advice, which needs Linux 5.14, and
+// faults in the page, which qemu user mode does not do.  The probe is the
+// second page of a block that no code wrote.
 [[nodiscard]] bool kernel_populates_pages() noexcept {
     ::foundation::AlignedBytes const block = allocate_fresh_block();
     return ::fixy::pages::populate_pages(kStartup, window_of(block, page_size(), page_size())).is_ok();
@@ -617,7 +621,8 @@ void test_prefault_faults_in_each_page_of_the_range() {
     using namespace crucible::warden;
     if (!kernel_populates_pages()) {
         ::fixy::report(::fixy::Sink::Err,
-                       "test_prefault_faults_in_each_page_of_the_range: SKIPPED (Linux before 5.14)\n");
+                       "test_prefault_faults_in_each_page_of_the_range: SKIPPED (no populate: Linux before 5.14 "
+                       "or an emulator)\n");
         return;
     }
     // A huge page would give a frame to the pages around the range, so the
@@ -647,7 +652,9 @@ void test_prefault_faults_in_each_page_of_the_range() {
 void test_apply_prefaults_each_registered_region() {
     using namespace crucible::warden;
     if (!kernel_populates_pages()) {
-        ::fixy::report(::fixy::Sink::Err, "test_apply_prefaults_each_registered_region: SKIPPED (Linux before 5.14)\n");
+        ::fixy::report(::fixy::Sink::Err,
+                       "test_apply_prefaults_each_registered_region: SKIPPED (no populate: Linux before 5.14 or an "
+                       "emulator)\n");
         return;
     }
     ::fixy::pages::ThpSetting const first_thp =
@@ -688,9 +695,20 @@ void test_apply_prefaults_each_registered_region() {
 // and the revert does not allow THP for it.
 void test_revert_keeps_a_prior_thp_refusal() {
     using namespace crucible::warden;
+    ::foundation::core::Result<::fixy::pages::ThpSetting, ::foundation::os::Errno> const exchanged =
+        ::fixy::pages::exchange_thp_setting(kStartup, ::fixy::pages::ThpSetting::refused);
+    bool const is_refused_knob = exchanged.match(
+        [](::fixy::pages::ThpSetting) noexcept { return false; },
+        [](::foundation::os::Errno error) noexcept { return error == ::foundation::os::Errno::einval; });
+    if (is_refused_knob && kIsUnderEmulator) {
+        ::fixy::report(::fixy::Sink::Err, "test_revert_keeps_a_prior_thp_refusal: SKIPPED (qemu-user)\n");
+        return;
+    }
     const ::fixy::pages::ThpSetting first =
-        ::fixy::pages::exchange_thp_setting(kStartup, ::fixy::pages::ThpSetting::refused)
-            .expect("the process refuses THP before the apply");
+        exchanged.match([](::fixy::pages::ThpSetting setting) noexcept { return setting; },
+                        [](::foundation::os::Errno) noexcept -> ::fixy::pages::ThpSetting {
+                            ::fixy::fatal("the process refuses THP before the apply");
+                        });
     {
         Policy policy = Policy::dev_quiet();
         policy.disable_thp_global = true;

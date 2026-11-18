@@ -128,7 +128,8 @@ madvise_sys(void const* first, std::size_t bytes, int advice) noexcept;
 // Faults in for a write each page that holds a byte of the BYTES bytes at
 // FIRST (MADV_POPULATE_WRITE).  The range is rounded outward to whole pages,
 // with the size of a page from the auxiliary vector.  A count of zero makes
-// no system call.
+// no system call.  After the advice, mincore reads the residency of the first
+// page, and a page with no frame gives eopnotsupp.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 populate_sys(void const* first, std::size_t bytes) noexcept;
 
@@ -173,7 +174,9 @@ unlock_pages(Ctx const&, ::foundation::core::View<std::byte const> bytes) noexce
 // takes no fault.  A thread that writes the range at the same time loses no
 // write, because the kernel changes no byte.  A range that the process cannot
 // write gives einval or efault, by the release of the kernel.  An older kernel
-// than 5.14 gives einval.
+// than 5.14 gives einval.  A kernel that takes the advice and faults in no
+// page, as qemu user mode does, gives eopnotsupp, so the door claims no
+// populate that did not occur.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsPageCall<Ctx>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>

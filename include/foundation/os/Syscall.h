@@ -104,6 +104,7 @@ enum class Syscall : std::uint8_t {
     mkdirat,
     newfstatat,
     madvise,
+    mincore,
     sendfile,
     copy_file_range,
     io_uring_setup,
