@@ -285,15 +285,47 @@ namespace detail {
 template <std::size_t N>
 inline constexpr FixedArray<Comparator, sort_network_size<N>> network_of = plan_sort_network<N>();
 
+// THE SELECTS.  Each compare-exchange, merge and small sort below picks a
+// position by a mask: `left + ((right - left) & (0 - bit))` is left when the
+// bit is 0 and right when it is 1, with unsigned arithmetic that wraps.  The
+// compiler then emits an and, and no branch on an element.  A select of a
+// float element in a vector register has no cmov, so GCC makes it a branch,
+// and on random runs that branch misses on about one half of the steps.
+//
+// The bit of each select comes through select_bit_, which hides the value of
+// the bit from the optimizer.  A plain bit lets GCC turn the mask into a
+// conditional move on the compare.  Its pass isel then gives each conditional
+// move its own copy of the compare, and -fharden-compares checks each copy:
+// two compares and two checks for each step.  The hidden bit keeps one copy
+// and one check for each compare, and each mask stays arithmetic.
+
+// The bit of a select as a word whose value the optimizer does not know: an
+// empty asm reads and writes it in a register.  A constant evaluation reads
+// the plain bit.  The bit is the result of a less function, so the parameter
+// is a deduced bool.
+template <std::same_as<bool> Bit>
+[[nodiscard]] CRUCIBLE_INLINE constexpr std::size_t select_bit_(Bit bit) noexcept {
+    std::size_t word = static_cast<std::size_t>(bit);
+    if !consteval {
+        __asm__("" : "+r"(word));
+    }
+    return word;
+}
+
 // One compare-exchange.  The one compare gives the two selects, so the two
-// outputs agree also for an order that a NaN breaks.
+// outputs agree also for an order that a NaN breaks.  Each select picks the
+// position of its element by a mask (THE SELECTS), so the exchange has no
+// branch on an element.
 template <class T, class Less>
 CRUCIBLE_INLINE constexpr void compare_exchange_(T* elements, Comparator step, Less& less) noexcept {
-    T const low = elements[step.low];
-    T const high = elements[step.high];
-    bool const is_swapped = less(high, low);
-    elements[step.low] = is_swapped ? high : low;
-    elements[step.high] = is_swapped ? low : high;
+    std::size_t const low = step.low;
+    std::size_t const high = step.high;
+    std::size_t const is_swapped = select_bit_(less(elements[high], elements[low]));
+    std::size_t const shift = (high - low) & (std::size_t{0} - is_swapped);
+    T const smaller = elements[low + shift];
+    T const larger = elements[high - shift];
+    elements[low] = smaller;
+    elements[high] = larger;
 }
 
 }  // namespace detail
@@ -450,13 +482,6 @@ constexpr void insert_each_(View<T> run, Less& less) noexcept {
     }
 }
 
-// THE SELECTS.  Each merge and each small sort below picks a position by a
-// mask: `left + ((right - left) & (0 - bit))` is left when the bit is 0 and
-// right when it is 1, with unsigned arithmetic that wraps.  The compiler then
-// emits a cmov or an and, and no branch on an element.  A select of a float
-// element in a vector register has no cmov, so GCC makes it a branch, and on
-// random runs that branch misses on about one half of the steps.
-
 // Sorts the four elements of source into target, stably, with five compares:
 // sort4_stable of driftsort.  The first two compares order the pairs (0, 1)
 // and (2, 3), the next two find the minimum and the maximum, and the last one
@@ -466,14 +491,14 @@ template <class T, class Less>
 CRUCIBLE_INLINE constexpr void sort_four_(View<T const, 4> source, View<T, 4> target, Less& less) noexcept {
     T const* const from = first_of_(ViewDoor::key(), source);
     T* const to = first_of_(ViewDoor::key(), target);
-    std::size_t const first_pair = static_cast<std::size_t>(less(from[1], from[0]));
-    std::size_t const second_pair = static_cast<std::size_t>(less(from[3], from[2]));
+    std::size_t const first_pair = select_bit_(less(from[1], from[0]));
+    std::size_t const second_pair = select_bit_(less(from[3], from[2]));
     std::size_t const low_a = first_pair;
     std::size_t const high_a = first_pair ^ 1u;
     std::size_t const low_b = 2 + second_pair;
     std::size_t const high_b = 2 + (second_pair ^ 1u);
-    std::size_t const is_low_b = static_cast<std::size_t>(less(from[low_b], from[low_a]));
-    std::size_t const is_high_a = static_cast<std::size_t>(less(from[high_b], from[high_a]));
+    std::size_t const is_low_b = select_bit_(less(from[low_b], from[low_a]));
+    std::size_t const is_high_a = select_bit_(less(from[high_b], from[high_a]));
     std::size_t const smallest = low_a + ((low_b - low_a) & (std::size_t{0} - is_low_b));
     std::size_t const largest = high_b + ((high_a - high_b) & (std::size_t{0} - is_high_a));
     // The two elements between the minimum and the maximum.  The two compares
@@ -483,7 +508,7 @@ CRUCIBLE_INLINE constexpr void sort_four_(View<T const, 4> source, View<T, 4> ta
     std::size_t const inner_a = low_b + ((high_a - low_b) & (std::size_t{0} - is_low_b));
     std::size_t const unknown_left = inner_b + ((low_a - inner_b) & (std::size_t{0} - is_low_b));
     std::size_t const unknown_right = inner_a + ((high_b - inner_a) & (std::size_t{0} - is_high_a));
-    std::size_t const is_swapped = static_cast<std::size_t>(less(from[unknown_right], from[unknown_left]));
+    std::size_t const is_swapped = select_bit_(less(from[unknown_right], from[unknown_left]));
     std::size_t const middle_low = unknown_left + ((unknown_right - unknown_left) & (std::size_t{0} - is_swapped));
     std::size_t const middle_high = unknown_right + ((unknown_left - unknown_right) & (std::size_t{0} - is_swapped));
     to[0] = from[smallest];
@@ -517,12 +542,12 @@ constexpr void merge_halves_(View<T const> source, View<T> target, Less& less) n
     std::size_t right_back = count - 1;
     std::size_t out_back = count - 1;
     for (std::size_t step = 0; step < half; ++step) {
-        std::size_t const is_right = static_cast<std::size_t>(less(from[right], from[left]));
+        std::size_t const is_right = select_bit_(less(from[right], from[left]));
         to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
         ++out;
         right += is_right;
         left += 1 - is_right;
-        std::size_t const is_left = static_cast<std::size_t>(less(from[right_back], from[left_back]));
+        std::size_t const is_left = select_bit_(less(from[right_back], from[left_back]));
         to[out_back] = from[right_back + ((left_back - right_back) & (std::size_t{0} - is_left))];
         --out_back;
         left_back -= is_left;
@@ -531,7 +556,7 @@ constexpr void merge_halves_(View<T const> source, View<T> target, Less& less) n
     std::size_t const left_end = left_back + 1;
     std::size_t const right_end = right_back + 1;
     if (count % 2 != 0) {
-        std::size_t const is_left = static_cast<std::size_t>(left < left_end);
+        std::size_t const is_left = select_bit_(left < left_end);
         to[out] = from[right + ((left - right) & (std::size_t{0} - is_left))];
         left += is_left;
         right += 1 - is_left;
@@ -560,12 +585,12 @@ constexpr void merge_two_ends_(View<T const> source, SortCount middle, View<T> t
     std::size_t out_end = count;
     std::size_t const shorter = left_end < count - left_end ? left_end : count - left_end;
     for (std::size_t step = 0; step < shorter; ++step) {
-        std::size_t const is_right = static_cast<std::size_t>(less(from[right], from[left]));
+        std::size_t const is_right = select_bit_(less(from[right], from[left]));
         to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
         ++out;
         right += is_right;
         left += 1 - is_right;
-        std::size_t const is_left = static_cast<std::size_t>(less(from[right_end - 1], from[left_end - 1]));
+        std::size_t const is_left = select_bit_(less(from[right_end - 1], from[left_end - 1]));
         --out_end;
         to[out_end] = from[right_end - 1 + ((left_end - right_end) & (std::size_t{0} - is_left))];
         left_end -= is_left;
@@ -573,7 +598,7 @@ constexpr void merge_two_ends_(View<T const> source, SortCount middle, View<T> t
     }
     CRUCIBLE_FATAL_INVARIANT(left <= left_end && right <= right_end);
     while (left < left_end && right < right_end) {
-        std::size_t const is_right = static_cast<std::size_t>(less(from[right], from[left]));
+        std::size_t const is_right = select_bit_(less(from[right], from[left]));
         to[out] = from[left + ((right - left) & (std::size_t{0} - is_right))];
         ++out;
         right += is_right;
