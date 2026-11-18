@@ -656,9 +656,9 @@ using ShapeKinds =
     return word;
 }
 
-// get of a SlotMap: the compare of the index with the used slots, the load of
-// the generation, its compare with the key and the test of its low bit, and
-// the load of the value.
+// get of a SlotMap: the compare of the index with the used slots, the test of
+// the low bit of the generation of the key, the load of the generation of the
+// slot, its compare with the key, and the load of the value.
 [[gnu::used]] std::uint32_t slot_map_get(fixy::SlotMap<std::uint32_t, ShapeHandleTag> const& map,
                                          fixy::SlotKey<ShapeHandleTag> key) noexcept {
     std::uint32_t value = 0;
