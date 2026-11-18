@@ -623,7 +623,7 @@ int check_implications_against_brute_force() {
 
     ::fixy::FixedList<char, 256> cells{};
     for (int index = 0; index < 256; ++index) {
-        static_cast<void>(cells.push('\0').expect("the list holds 256 cells"));
+        static_cast<void>(cells.append('\0').expect("the list holds 256 cells"));
     }
     auto const on_addresses = [&cells](auto const& premise, auto const& conclusion) noexcept {
         if (premise(static_cast<char const*>(nullptr)) && !conclusion(static_cast<char const*>(nullptr))) return false;
