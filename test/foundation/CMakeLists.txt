@@ -3192,6 +3192,7 @@ foundation_neg_compile_test(neg_byte_view_drops_const
 foundation_test(test_core_array)
 foundation_test(test_core_algorithms)
 foundation_test(test_core_iteration)
+foundation_test(test_core_walk)
 
 # The tree reduce, the scans and the sorts have one stated order each.  The
 # tests compare each fast form with a naive form of the same order, for each
@@ -4005,7 +4006,7 @@ foreach(_death_test
     test_aligned_bytes test_core_array test_core_bit_set test_core_box test_core_branded test_core_bump_arena test_core_choice
     test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_masked_array
     test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
-    test_core_slot_map test_core_small_list test_core_sort test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
+    test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
     test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref)
   target_link_libraries(${_death_test} PRIVATE fixy)
 endforeach()
