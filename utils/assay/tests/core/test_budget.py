@@ -72,8 +72,37 @@ def verdict_cases(expect: testing.Expect) -> None:
         and cost_budget.verdict(2.5, 4.0, 6.0, 1.0) == cost_budget.NO_FINDING,
     )
     expect(
-        "the noise of a time, a memory and an instruction count is that of NOISE, and another unit has none",
-        [cost_budget.noise_of(unit) for unit in ("s", "GB", "G", "KB")] == [1.0, 0.1, 0.02, 0.0],
+        "the noise of a time, a memory, an instruction count and a size is that of NOISE, and a byte count has none",
+        [cost_budget.noise_of(unit) for unit in ("s", "GB", "G", "KB", "MB", "bytes")]
+        == [1.0, 0.1, 0.02, 0.02, 0.02, 0.0],
+    )
+    sized = check_report.Budget("object-size", 768.0, "KB", "a planted quantity", "object")
+    size_rows = cost_budget.Rows(
+        "utils/ledgers/object-size.txt", {("object", "unit.o"): cost_budget.Admission(3, 839.222, "r")}
+    )
+    shared, grown_object = (
+        cost_budget.judge("object-size", sized, cost_budget.Measure("unit.o", "u", value, "said", "object"), size_rows)
+        for value in (839.303, 856.1)
+    )
+    expect(
+        "a row of the unit KB keeps its object up to the margin of a shared header.  The measure of 2026-11-17, "
+        "0.01 % over a row that a write gave one request before, gives no finding, and a growth of 2.01 % is an error",
+        level_of(shared) == "none" and level_of(grown_object) == "error",
+    )
+    header = check_report.Budget("header-alone", 6.5, "MB", "a planted quantity", "fixy")
+    header_rows = cost_budget.Rows(
+        "utils/ledgers/header-alone.txt", {("fixy", "include/fixy/A.h"): cost_budget.Admission(3, 7.0, "r")}
+    )
+    kept_header, grown_header = (
+        cost_budget.judge(
+            "header-alone", header, cost_budget.Measure("include/fixy/A.h", "a", value, "said", "fixy"), header_rows
+        )
+        for value in (7.1, 7.15)
+    )
+    expect(
+        "a row of the unit MB keeps its header up to the same margin: a header 1.4 % over its row gives no finding, "
+        "and a header 2.1 % over its row is an error",
+        level_of(kept_header) == "none" and level_of(grown_header) == "error",
     )
     with tempfile.TemporaryDirectory(prefix="test-budget-noise-") as scratch:
         table = Path(scratch) / "registry.txt"

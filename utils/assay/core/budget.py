@@ -22,21 +22,30 @@ THE VERDICT
 
 THE NOISE
     The kept value of a row is the value of the item at the last write of the
-    row.  Two measures of one item are not always equal.  A row then keeps
-    its item up to the kept value times one plus the noise of the unit of the
-    rule (NOISE, noise_of()):
+    row.  Two measures of one item are not always equal, and a change of a
+    shared header grows each item that includes it by a small part.  A row
+    then keeps its item up to the kept value times one plus the noise of the
+    unit of the rule (NOISE, noise_of()):
       s    1.0   A wall time or a CPU time changes with the load of the host.
                  On 2026-10-09, the slow tests of five builds took up to 77 %
                  more time than their lowest time
       GB   0.1   A peak memory changes with the allocator and the sanitizer
       G    0.02  An instruction count changes by less than 0.1 % between two
-                 compiles of one unit
-    Each other unit has no noise.  The bytes of machine code and the bytes of
-    a header are the same in two builds of one tree.  A message gives a unit
-    with its display text, such as "G instructions" for G (UNIT_TEXTS, and
-    unit_text() of assay.core.report).  noise_of() reads the unit or its
-    display text.  A judge of a check_report.Budget then gets the noise of its
-    unit too.
+                 compiles of one unit.  The rest is the margin of a shared
+                 header
+      KB   0.02  The margin of a shared header.  The machine code of an
+                 object is the same in two builds of one tree, but a change
+                 of a header that many units include adds some bytes to each
+                 of them.  On 2026-11-17, such a change grew an object 0.01 %
+                 over the row that the last write gave it
+      MB   0.02  The same margin for the bytes that a header includes alone
+    Thus only a real growth of an item is more than its row keeps, not the
+    growth that an unrelated change of a shared header gives.  Each other
+    unit has no noise and no margin: a byte count of static TLS is exact.  A
+    message gives a unit with its display text, such as "G instructions" for
+    G (UNIT_TEXTS, and unit_text() of assay.core.report).  noise_of() reads
+    the unit or its display text.  A judge of a check_report.Budget then gets
+    the noise of its unit too.
 
 THE JUDGE
     judge() gives the finding of one verdict for a check of the engines: an
@@ -104,8 +113,9 @@ NO_FINDING = ""
 ERROR = "error"
 ADMITTED = "admitted"
 RISEN = "risen"
-# The noise of each unit of a measured rule, as a part of the kept value of a row (THE NOISE).
-NOISE = {"s": 1.0, "GB": 0.1, "G": 0.02}
+# The noise of each unit of a measured rule, with the margin of a shared header, as a part of the kept value of a row
+# (THE NOISE).
+NOISE = {"s": 1.0, "GB": 0.1, "G": 0.02, "KB": 0.02, "MB": 0.02}
 # The display text of a unit of a measured rule, when it is not the unit itself.  G is 10^9 instructions.
 UNIT_TEXTS = {"G": "G instructions"}
 # The directory of a build whose outputs no measured rule judges (THE SCOPE).
