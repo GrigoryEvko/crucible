@@ -587,7 +587,7 @@ public:
     // reads the thread identity and an atomic, so it is not constexpr.
     [[nodiscard]] CRUCIBLE_INLINE auto mint_producer_context() noexcept -> ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>> {
         const std::uintptr_t current_tid = detail::producer_claim::calling_thread_identity();
-        if (holder_.load(std::memory_order_relaxed) != current_tid) [[unlikely]]
+        if (holder_now_() != current_tid) [[unlikely]]
             claim_or_reject_(current_tid);
         return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{ForegroundOwner::key()};
     }
@@ -602,21 +602,21 @@ public:
     // access of the next holder, and the next holder finds the record free.
     // The release takes the lock of the registry, so it is cold.
     [[gnu::cold, gnu::noinline]] void release_claim() noexcept {
-        const std::uintptr_t holder = holder_.load(std::memory_order_relaxed);
+        const std::uintptr_t holder = holder_now_();
         if (holder == 0) return;
         // Not a contract clause, for the reason of claim_or_reject_.
         CRUCIBLE_FATAL_INVARIANT(holder == detail::producer_claim::calling_thread_identity());
         BrandRecord* const record = entered_record_;
         entered_record_ = nullptr;
         if (record != nullptr) leave_brand_(*record);
-        holder_.store(0, std::memory_order_release);
+        free_holder_();
     }
 
     // True when no thread holds the claim yet, or the calling thread
     // holds it.  Two threads that both ask before either claims both read
     // true, and the loser of the claim then ends the process.
     [[nodiscard]] bool is_claimable_by_caller() const noexcept {
-        const std::uintptr_t holder = holder_.load(std::memory_order_relaxed);
+        const std::uintptr_t holder = holder_now_();
         return holder == 0 || holder == detail::producer_claim::calling_thread_identity();
     }
 
@@ -645,8 +645,20 @@ private:
     // evaluates the initializer one time, so a refused brand gives one error.
     static constexpr std::uint64_t brand_key_ = detail::producer_claim::brand_key_of(^^Brand);
 
+    // The thread that holds the claim, or 0.  A relaxed load: each caller
+    // only compares it with its own identity, and a thread reads its own
+    // store in order.
+    [[nodiscard]] CRUCIBLE_INLINE std::uintptr_t holder_now_() const noexcept {
+        return holder_.load(std::memory_order_relaxed);
+    }
+
+    // Frees the holder with a release store, so each write of the thread that
+    // held the claim happens before each access of the next holder, whose
+    // exchange acquires.
+    CRUCIBLE_INLINE void free_holder_() noexcept { holder_.store(0, std::memory_order_release); }
+
     [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::uintptr_t current_tid) noexcept {
-        std::uintptr_t holder = holder_.load(std::memory_order_relaxed);
+        std::uintptr_t holder = holder_now_();
         if (holder == 0) {
             // The exchange acquires the release store of release_claim, so
             // the writes of the thread that gave up the claim happen before
@@ -662,7 +674,7 @@ private:
                 // Another thread holds a live claim of this brand.  The claim
                 // is undone first, so that its destructor removes no entry
                 // that it did not make.
-                holder_.store(0, std::memory_order_relaxed);
+                free_holder_();
                 CRUCIBLE_FATAL_INVARIANT(record != nullptr);
             }
         }

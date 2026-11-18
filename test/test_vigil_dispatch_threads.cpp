@@ -9,6 +9,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
@@ -172,6 +173,14 @@ void test_second_thread_cannot_claim_the_brand(::fixy::TestRunnerCtx const& test
     ::fixy::check::pass(test, "  test_second_thread_cannot_claim_the_brand: PASSED\n");
 }
 
+// Runs body on a thread of its own, and joins the thread before it returns.
+template <class Body>
+void run_on_another_thread(Body body) noexcept {
+    ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
+    bool const is_run = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, body).is_ok();
+    if (!is_run) ::fixy::fatal("the host did not start the thread of the test");
+}
+
 // A claim that its thread gives up (release_claim) leaves the record of the
 // brand, so a second thread claims the brand while the first object lives,
 // and it claims that object itself too.  A release of a claim of another
@@ -182,8 +191,7 @@ void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& 
         [] noexcept {
             ClaimBrand first;
             static_cast<void>(first.claim.mint_producer_context());
-            std::thread other([&first] { first.claim.release_claim(); });
-            other.join();
+            run_on_another_thread([&first] noexcept { first.claim.release_claim(); });
         },
         ::fixy::TextView{
             "foundation: fatal invariant failed: holder == detail::producer_claim::calling_thread_identity()"});
@@ -195,7 +203,7 @@ void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& 
     first.claim.release_claim();
     bool is_brand_claimed = false;
     bool is_first_claimed = false;
-    std::thread other([&first, &is_brand_claimed, &is_first_claimed] {
+    run_on_another_thread([&first, &is_brand_claimed, &is_first_claimed] noexcept {
         ClaimBrand second;
         static_cast<void>(second.claim.mint_producer_context());
         is_brand_claimed = second.claim.is_claimable_by_caller();
@@ -203,7 +211,6 @@ void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& 
         is_first_claimed = first.claim.is_claimable_by_caller();
         first.claim.release_claim();
     });
-    other.join();
     CRUCIBLE_TEST_ASSERT(test, is_brand_claimed && is_first_claimed && "the released claim leaves the brand free");
     CRUCIBLE_TEST_ASSERT(test, first.claim.is_claimable_by_caller() && "the other thread gave the claim up again");
 
@@ -214,12 +221,11 @@ void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& 
     static_cast<void>(crucible::test::dispatch_synthetic(vigil, op.entry, op.metas, op.n_metas));
     vigil.release_producer_claim();
     DispatchResult::Action action = DispatchResult::Action::COMPILED;
-    std::thread recorder([&vigil, &action] {
+    run_on_another_thread([&vigil, &action] noexcept {
         auto next = make_op(0, 1);
         action = crucible::test::dispatch_synthetic(vigil, next.entry, next.metas, next.n_metas).action;
         vigil.release_producer_claim();
     });
-    recorder.join();
     CRUCIBLE_TEST_ASSERT(test, action == DispatchResult::Action::RECORD);
 
     ::fixy::check::pass(test, "  test_released_claim_lets_another_thread_claim: PASSED\n");
