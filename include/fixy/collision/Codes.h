@@ -240,7 +240,8 @@ inline constexpr corpus_entry rule_corpus[] = {
     // the row, `with CT` and Fail(E), and neither is a row atom here:
     // foundation/effects/Effect.h says why at its top.  Constant time is
     // the Security grade atom::constant_time, and a failure is the payload
-    // std::expected<T, E> or the ControlFlow grade ctrl::throws<E>.
+    // Result<T, E>, Option<T> or std::expected<T, E>, or the ControlFlow
+    // grade ctrl::throws<E>.
     {"F103", Disposition::Live, "constant time x FP reassociation by an unrestricted rewrite"},
     {"F104", Disposition::Live, "constant time x an FP mode that honours denormal inputs"},
     {"F105", Disposition::Live, "constant time x an FP mode that preserves subnormal results"},
@@ -313,7 +314,7 @@ inline constexpr corpus_entry rule_corpus[] = {
      "discharged: DontNeed discards pages, so fixy/os/Mmap.h refuses it at advise and admits it only at "
      "advise_release_aware, which takes the Permission of the mapping"},
     {"M011", Disposition::Retired,
-     "discharged: a failure here is a std::expected return or a throw, and each runs every destructor in scope, so "
+     "discharged: a failure here is a Result return or a throw, and each runs every destructor in scope, so "
      "a linear value is released on the failure path; the one exit that skips destructors is longjmp, and L006 "
      "refuses it against a linear binding.  Which values are live at the failure point is a property of the body, "
      "and a binding carries no body"},

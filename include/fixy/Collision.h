@@ -54,7 +54,8 @@
 //
 // Five rules pair a grade with the payload's replay claim, which is the
 // DetSafe band the payload carries and nothing in the pack.  I002 and
-// I003 read a failure that the payload returns as std::expected<T, E>.
+// I003 read a failure that the payload returns as a Result<T, E>, an
+// Option<T> or a std::expected<T, E>.
 // So the rules take the payload as a template parameter of their own.  That is
 // the fn's FIRST template parameter, read directly from the partial
 // specialisation, and never a member of the fn: reading fn::type_t would
@@ -85,9 +86,11 @@
 #include <fixy/Secret.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Modality.h>
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Anchor.h>
+#include <foundation/reflect/Instance.h>
 
 #include <concepts>
 #include <cstddef>
@@ -696,25 +699,29 @@ template <class G>
 template <class G>
 struct can_spawn_outlive_the_frame_ : std::bool_constant<spawn_outlives_frame_<G>()> {};
 
-// ── The failure path, in the two spellings the tree has ──────────────
+// ── The failure path, in the spellings the tree has ─────────────────
 //
 // A failure is not a row atom.  foundation/effects/Effect.h says why: an
 // enumerator is one bit, and the error type is part of the failure.  The
-// tree spells a failure in the type, one of two ways, and each way is
-// the only spelling of its mechanism:
+// tree spells a failure in the type, and each spelling is the only
+// spelling of its mechanism:
 //
-//   the payload is std::expected<T, E>  — the body returns the failure
+//   the payload is Result<T, E>         — the body returns the failure and its error
+//   the payload is Option<T>            — the body returns the absence of a value
+//   the payload is std::expected<T, E>  — the std spelling of a Result
 //   ControlFlow is ctrl::throws<E>      — the body throws it
 //
 // So there is no second declaration of a failure to drift from the
 // return type: the return type IS the declaration.  A band grades a
 // payload and does not change what it holds, so the payload is read
 // through every band first.  Every other wrapper is left in place.  In
-// particular Secret<std::expected<T, E>> is not read as a failure,
-// because its discriminant and its error are both inside the secret.
+// particular Secret<Result<T, E>> is not read as a failure, because its
+// discriminant and its error are both inside the secret.
 //
-// Each reader answers two things: whether the path exists, and whether
-// its error type is fixy::Secret.  An error type the reader cannot see
+// Each reader answers three things: whether the path exists, whether the
+// path carries an error value, and whether that error type is
+// fixy::Secret.  An Option carries no error value, so only its
+// discriminant leaves the binding.  An error type the reader cannot see
 // — ctrl::any_exception, the family a bare throws<> names — is not
 // Secret, which is the answer that refuses rather than the one that
 // admits.
@@ -731,22 +738,46 @@ struct unbanded_<Payload> {
 template <class Payload>
 struct returned_failure_ {
     static constexpr bool fails = false;
+    static constexpr bool carries_error = false;
+    static constexpr bool error_is_secret = false;
+};
+// The arms of Result and Option read the template of the payload through
+// IsInstanceOf.  An arm on the pattern Option<Value> makes the gate read
+// the open template niche of Choice.h, through the constraint ChoicePayload
+// of the class template, and a unit can specialize niche.
+template <class Payload>
+    requires ::foundation::reflect::IsInstanceOf<Payload, ^^::foundation::core::Result>
+struct returned_failure_<Payload> {
+    // The error type is the second argument of the Result.
+    using Error = [:std::meta::template_arguments_of(std::meta::dealias(std::meta::remove_cvref(^^Payload)))[1]:];
+    static constexpr bool fails = true;
+    static constexpr bool carries_error = true;
+    static constexpr bool error_is_secret = ::fixy::IsSecret<Error>;
+};
+template <class Payload>
+    requires ::foundation::reflect::IsInstanceOf<Payload, ^^::foundation::core::Option>
+struct returned_failure_<Payload> {
+    static constexpr bool fails = true;
+    static constexpr bool carries_error = false;
     static constexpr bool error_is_secret = false;
 };
 template <class Value, class Error>
 struct returned_failure_<std::expected<Value, Error>> {
     static constexpr bool fails = true;
+    static constexpr bool carries_error = true;
     static constexpr bool error_is_secret = ::fixy::IsSecret<Error>;
 };
 
 template <class G>
 struct thrown_failure_ {
     static constexpr bool fails = false;
+    static constexpr bool carries_error = false;
     static constexpr bool error_is_secret = false;
 };
 template <class ExceptionFamily>
 struct thrown_failure_<::fixy::atom::ctrl::throws<ExceptionFamily>> {
     static constexpr bool fails = true;
+    static constexpr bool carries_error = true;
     static constexpr bool error_is_secret = ::fixy::IsSecret<ExceptionFamily>;
 };
 
@@ -1239,9 +1270,10 @@ struct rules_of {
     // Constant time is the Security grade atom::constant_time, read here
     // through the closed relation fixy/Atom.h declares beside the
     // Security atoms, so a new point on that axis cannot read as public.
-    // A failure is the payload std::expected<T, E> or ctrl::throws<E>,
-    // read by the two detail readers above.  Neither is in the effect
-    // row, and foundation/effects/Effect.h says why at its top.
+    // A failure is a payload Result<T, E>, Option<T> or std::expected<T,
+    // E>, or ctrl::throws<E>, read by the two detail readers above.
+    // Neither is in the effect row, and foundation/effects/Effect.h says
+    // why at its top.
     static constexpr ::fixy::atom::SecurityClass security_class =
         detail::security_class_or_refuse_<typename G::template on<Axis::Security>>();
     static constexpr bool constant_time = security_class == ::fixy::atom::SecurityClass::ConstantTime;
@@ -1261,8 +1293,9 @@ struct rules_of {
     using returned_failure = detail::returned_failure_<typename detail::unbanded_<Payload>::type>;
     using thrown_failure = detail::thrown_failure_<typename G::template on<Axis::ControlFlow>>;
     static constexpr bool fails = returned_failure::fails || thrown_failure::fails;
-    static constexpr bool fails_with_plain_error = (returned_failure::fails && !returned_failure::error_is_secret)
-                                                || (thrown_failure::fails && !thrown_failure::error_is_secret);
+    static constexpr bool fails_with_plain_error =
+        (returned_failure::carries_error && !returned_failure::error_is_secret)
+        || (thrown_failure::carries_error && !thrown_failure::error_is_secret);
 
     // F103, F104 and F105 read the FP mode against the timing claim, as
     // F101 and F102 read it against the replay claim.  F103 refuses only
@@ -1524,7 +1557,7 @@ struct rules_of {
                                "whose signature nobody names is potentially-throwing. Name the signature with "
                                "noexcept, as a function pointer type or as a member type `signature` of the tag "
                                "class, or put a noexcept trampoline in front of the call that turns the failure "
-                               "into a std::expected.");
+                               "into a Result.");
         static_assert(L003_ok, "L003: borrow x a spawn no structured join ties to the frame. A detached or "
                                "raw-cloned child shares the address space and can run after the caller's frame "
                                "has unwound, so the borrow dangles. Spawn through mint_spawn, which joins, or "

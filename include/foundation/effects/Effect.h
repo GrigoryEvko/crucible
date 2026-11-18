@@ -42,11 +42,12 @@
 //     is part of that value.  An enumerator is one bit and cannot carry
 //     the error type, so Row<Fail> would make two error types one atom,
 //     and Subrow could not tell Fail(E1) from Fail(E2).  The tree spells
-//     a failure one time, in the type: the payload std::expected<T, E>,
-//     or fixy::atom::ctrl::throws<E> for a body that throws.  Two
-//     failures compose through std::expected::and_then, which keeps the
+//     a failure one time, in the type: the payload Result<T, E> or
+//     Option<T> of foundation/core/Choice.h, its std spelling
+//     std::expected<T, E>, or fixy::atom::ctrl::throws<E> for a body that
+//     throws.  Two failures compose through CRUCIBLE_TRY, which keeps the
 //     error types apart, and never through a row.  fixy/Collision.h
-//     reads both spellings.
+//     reads each spelling.
 
 #include <foundation/core/Heap.h>
 #include <foundation/diag/RowHash.h>

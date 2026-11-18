@@ -717,6 +717,20 @@ fixy_neg_compile_test(neg_rule_i002_thrown_unseen_family
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) I002:"
   "${_fixy_tier5_member}")
+# A Result and an Option are failure paths, as the std spelling is.  An
+# Option carries no error value, so only I003 reads it.
+fixy_neg_compile_test(neg_rule_i003_ct_returned_result
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I003, I002:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_i003_ct_returned_option
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I003:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_i002_returned_result_plain_error
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) I002:"
+  "${_fixy_tier5_member}")
 
 # A declassification discharges I002 and I004 only on a channel that the
 # mask of its policy names.  No policy names the failure channel, and a

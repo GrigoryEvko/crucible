@@ -18,12 +18,14 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/atoms/Syscall.h>
 
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Row.h>
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <meta>
 #include <tuple>
@@ -953,6 +955,23 @@ static_assert(!::fixy::IsAccepted<std::expected<int, gate_error>>, "I002 on the 
 static_assert(::fixy::IsAccepted<std::expected<int, gate_error>, at::as_public>);
 static_assert(::fixy::IsAccepted<std::expected<int, ::fixy::Secret<gate_error>>>);
 static_assert(!::fixy::IsAccepted<std::expected<int, ::fixy::Secret<gate_error>>, at::constant_time>, "I003");
+
+// A Result and an Option are failure paths, as the std spelling is.  An
+// Option carries no error value, so I002 stands down for it, and its
+// discriminant alone still refuses constant time.
+enum class gate_fault : std::uint8_t {
+    refused = 1,
+};
+using GateResult = ::foundation::core::Result<int, gate_fault>;
+using GateOption = ::foundation::core::Option<int>;
+static_assert(!rules_of<GateResult>::I002_ok && rules_of<GateResult, at::as_public>::I002_ok);
+static_assert(!rules_of<GateResult, at::constant_time>::I003_ok);
+static_assert(rules_of<GateOption>::I002_ok && rules_of<GateOption>::fails);
+static_assert(!rules_of<GateOption, at::constant_time>::I003_ok);
+static_assert(!::fixy::IsAccepted<GateResult>, "I002 on the strict Security pole");
+static_assert(::fixy::IsAccepted<GateResult, at::as_public>);
+static_assert(::fixy::IsAccepted<GateOption>);
+static_assert(!::fixy::IsAccepted<GateOption, at::constant_time>, "I003");
 
 // A constant-time binding takes a cache slot of its own.  A kernel built
 // without the discipline must never be served to a caller that claims
