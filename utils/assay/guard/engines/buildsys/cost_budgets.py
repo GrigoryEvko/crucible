@@ -100,10 +100,43 @@ THE LEDGERS
 
     `guard write --rule RULE --build-dir DIR --reason TEXT` writes a row for
     each item of the build above the limit that no row keeps, through the
-    member function written of the rule (assay.core.budget, THE WRITE).  It
-    removes no row and lowers no kept value.  It gives the ledger the head
-    comment LEDGER_COMMENT (assay.core.ledger, THE HEAD COMMENT).  A ledger
-    with no row has no file.
+    member function written of the rule (assay.core.budget, THE WRITE).  Then
+    it prunes the rows (THE PRUNE).  It gives the ledger the head comment
+    LEDGER_COMMENT (assay.core.ledger, THE HEAD COMMENT).  A ledger with no
+    row has no file.
+
+THE PRUNE
+    One ledger judges the builds of each preset that runs the rule: the
+    presets of the gate, of loop nightly and of loop release.  Some items are
+    only in one build, such as the units of the vessel.  One build then
+    cannot tell that a row keeps nothing in each build, and the write keeps
+    each row that a different build can need.  It removes only the rows that
+    keep nothing in each build:
+      * A row of the object of a compile job, of object-size and of the kind
+        compile of a rule of a step, when the compile database of the build
+        does not name the object and the tree deleted its source.  The
+        object of a compile job is DIR/CMakeFiles/TARGET.dir/SOURCE.o, and
+        SOURCE is relative to DIR, with "__" for each part "..".  The source
+        is in the source tree or in the build directory (object_sources()).
+        On 2026-11-18, this relation held for each of the 17,776 compile jobs
+        of four builds of the gate.  The source is deleted when neither place
+        holds it and the git history of the tree knows its path in the
+        source tree.  No build can compile such a source.  A build generates
+        some sources, such as the BPF bytecode, only with some options, and
+        git never held them, so their rows stay.  An object path of a
+        different shape keeps its row.
+      * A row of header-alone of a header that the tree does not hold.
+      * A row of header-alone of a header whose measure in the build, with
+        the noise of the unit MB (THE NOISE of assay.core.budget), is at or
+        below the limit of its layer.  The bytes of a header are the same in
+        each build that runs the rule (the rule header-alone of the
+        registry), and the margin covers a small difference of a different
+        toolchain.  For the same reason, a row above the measure of its
+        header with that margin gets that value.
+    The write keeps each other row: a link, a test and a fixture, an object
+    that the build names, and a header that the build does not measure.  A
+    measure of an object, a compile or a test changes with the build, so no
+    row of such an item gets a lower value.
 
 
 Complexity: one read of the compile database, the code model and the records of the outputs that a rule reads.
@@ -137,6 +170,12 @@ REGISTRY_FILE = "utils/registry.txt"
 HEADER_ALONE_SENTINEL = "/layer_sentinel_"
 HEADER_ALONE_CHECK_FILES = Path("test/layer/checks")
 LINKED_TYPES = frozenset({"EXECUTABLE", "SHARED_LIBRARY", "MODULE_LIBRARY"})
+# The parts of the object path of a compile job, DIR/CMakeFiles/TARGET.dir/SOURCE.o, and the part of SOURCE that CMake
+# writes for ".." (THE PRUNE).
+OBJECT_DIRECTORY = "CMakeFiles"
+TARGET_SUFFIX = ".dir"
+OBJECT_SUFFIX = ".o"
+PARENT_PART = "__"
 # The head comment that the member function written gives each ledger.  ROWS tells the rows of the kinds of the rule.
 LEDGER_COMMENT = (
     "# The ledger of the rule {rule} of utils/registry.txt: the items that a row keeps over the limit of their kind,\n"
@@ -701,7 +740,9 @@ def ledger_rows(context: BuildContext, rule_id: str, kinds: Collection[str]) -> 
 def budget_written(
     rule_id: str, context: BuildContext, ledger: rule_ledger.Ledger, reason: str | None
 ) -> rule_ledger.Ledger:
-    """Return the ledger of a rule with a row for each item of the build that no row keeps (THE LEDGERS).
+    """Return the ledger of a rule with a row for each item of the build that no row keeps, and no stale row.
+
+    THE LEDGERS gives the rows, and THE PRUNE gives the rows that the write removes or lowers.
 
     Raises:
         NotApplicable: If the call gives no build directory, or the rule does not apply to the build
@@ -722,9 +763,100 @@ def budget_written(
     if FIXTURE_KIND in METER_KINDS.get(rule_id, ()):
         measures += [(name, value, budgets[FIXTURE_KIND]) for name, value in fixture_measures(context)]
     raised = cost_budget.raised_ledger(ledger, forms, measures, reason)
+    pruned = pruned_ledger(rule_id, context, raised, measured, budgets)
     units = " or ".join(sorted({budget.unit for budget in budgets.values()}))
     comment = LEDGER_COMMENT.format(rule=rule_id, rows=rows_text(forms), unit=units)
-    return replace(raised, comment=comment)
+    return replace(pruned, comment=comment)
+
+
+def object_sources(item: str, root: Path, build: Path) -> tuple[Path, ...]:
+    """Return the two places of the source of the object of a compile job: in the source tree and in the build directory.
+
+    THE PRUNE gives the object path.  An item of a different shape gives no place.
+
+    Args:
+        item: The object relative to the build directory, with '/' between its parts
+        root: The source root
+        build: The build directory
+    """
+    head, mark, rest = f"/{item}".partition(f"/{OBJECT_DIRECTORY}/")
+    target, _, source = rest.partition("/")
+    if not mark or not target.endswith(TARGET_SUFFIX) or not source.endswith(OBJECT_SUFFIX):
+        return ()
+    parts = [".." if part == PARENT_PART else part for part in source.removesuffix(OBJECT_SUFFIX).split("/")]
+    relative = Path(head.removeprefix("/"), *parts)
+    return tuple(Path(os.path.normpath(base / relative)) for base in (root, build))
+
+
+def is_object_kind(rule_id: str, kind: str) -> bool:
+    """Tell if the item of a kind of a rule is the object of a compile job: object-size, or a compile of a step."""
+    if rule_id == OBJECT_SIZE:
+        return True
+    spec = STEP_KINDS.get(rule_id, {}).get(kind)
+    return spec is not None and spec.step == cost_record.COMPILE
+
+
+def pruned_ledger(
+    rule_id: str,
+    context: BuildContext,
+    ledger: rule_ledger.Ledger,
+    measured: Measured,
+    budgets: Mapping[str, check_report.Budget],
+) -> rule_ledger.Ledger:
+    """Return the ledger with no row that keeps nothing in each build, and each row of header-alone at most at its measure.
+
+    THE PRUNE gives the rows.  Complexity: linear in the rows, the measures and the compile jobs, with at most two stats
+    for each row.
+
+    Raises:
+        compdb.CompdbError: If the compile database of the build cannot be read
+    """
+    build = context.require_build()
+    forms = ledger_forms(rule_id, budgets)
+    values = {(value.kind, value.item): value.value for value in measured.values}
+    configured = (
+        frozenset(build_census.shown(entry.output, build) for entry in context.entries() if entry.output)
+        if any(is_object_kind(rule_id, kind) for kind in budgets)
+        else frozenset()
+    )
+    kept: dict[rule_ledger.Key, rule_ledger.Entry] = {}
+    for key, entry in ledger.base.items():
+        form = forms.get(key.kind)
+        item = None if form is None else cost_meter.item_of(key.path, key.entity, form)
+        if item is None:
+            kept[key] = entry
+            continue
+        if rule_id == HEADER_ALONE:
+            measure = values.get((key.kind, item))
+            budget = budgets[key.kind]
+            bound = None if measure is None else measure * (1.0 + cost_budget.noise_of(budget.unit))
+            if not (context.root / item).is_file() or (bound is not None and bound <= budget.limit):
+                continue
+            if bound is not None and cost_budget.kept_value(bound) < float(entry.value):
+                entry = replace(entry, value=cost_budget.kept_value(bound))
+        elif is_object_kind(rule_id, key.kind) and item not in configured:
+            places = object_sources(item, context.root, build)
+            if places and not any(place.exists() for place in places) and is_deleted_source(context.root, places[0]):
+                continue
+        kept[key] = entry
+    return replace(ledger, base=kept)
+
+
+def is_deleted_source(root: Path, source: Path) -> bool:
+    """Tell if the git history of a tree knows a source path that the tree does not hold (THE PRUNE).
+
+    A git that cannot answer, such as in a tree with no repository, gives False, so the row stays.  Complexity: one
+    run of `git log` with the path.
+    """
+    from assay.core import git
+
+    if not source.is_relative_to(root) or source.exists():
+        return False
+    try:
+        found = git.run(root, "log", "-1", "--format=%H", "--", source.relative_to(root).as_posix())
+    except git.GitError:
+        return False
+    return bool(found.strip())
 
 
 def test_measures(context: BuildContext, rule_id: str) -> list[tuple[str, float]]:

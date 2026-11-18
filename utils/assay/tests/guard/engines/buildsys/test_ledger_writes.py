@@ -9,12 +9,13 @@ else 1.
 """
 
 import tempfile
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
+from assay.core import git, testing
 from assay.core import ledger as rule_ledger
 from assay.core import registry as rule_registry
-from assay.core import testing
 from assay.core.paths import REPO_ROOT
 from assay.guard import write as guard_write
 from assay.guard.engines.buildsys import cost_budgets, header_constexpr, held, planted
@@ -61,6 +62,45 @@ fixture neg_fast test/neg/fast.cpp user=1 system=0 instructions=1
 """
 PLANTS = REPO_ROOT / "utils" / "plants" / header_constexpr.OPS_RULE
 LIST_HEAD = "# The planted list of the headers with a higher limit.\n"
+# A build with one compile job, and the sources of the tree: the source of an object of a different build is there,
+# and the source of a deleted unit is not (THE PRUNE of cost_budgets).
+OBJECT_PRUNE_ROWS = f"""\
+format 1
+kind {KIND}
+compile CMakeFiles/lib.dir/small.cpp.o small.cpp cpu=1 instructions=1 functions=_Z1fv:1024 text=1024
+file small.cpp size=10
+file vessel/torch/register.cpp size=10
+"""
+# The object rows of the prune: a configured object, an object of a different build, a unit whose source git held and
+# the tree deleted, an object of a source that the build directory makes, an object of a source that a build with
+# other options generates and git never held, and an output of a different shape.
+CONFIGURED_OBJECT = "CMakeFiles/lib.dir/small.cpp.o"
+OTHER_BUILD_OBJECT = "vessel/torch/CMakeFiles/dispatch_1.dir/register.cpp.o"
+DELETED_SOURCE = "test/foundation/test_gone.cpp"
+DELETED_OBJECT = "test/foundation/CMakeFiles/test_gone.dir/test_gone.cpp.o"
+GENERATED_OBJECT = "gen/CMakeFiles/gen.dir/made.cpp.o"
+UNGENERATED_OBJECT = "CMakeFiles/perf.dir/sense_hub_bpf_bytecode.c.o"
+ODD_OBJECT = "odd.o"
+# A build with the sentinels of three headers of fixy: one over the limit 6.5 MB, one under it, and one under it by
+# less than the margin of the unit MB.  Two more headers of the tree have no sentinel (THE PRUNE of cost_budgets).
+HEADER_PRUNE_ROWS = f"""\
+format 1
+kind {KIND}
+file system.h size=1000
+file include/fixy/Huge.h size=7340032
+file include/fixy/Light.h size=1048576
+file include/fixy/Near.h size=6763315
+file include/fixy/Unbuilt.h size=10
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o test/layer/checks/fixy/Huge.cpp cpu=3
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Huge.cpp.o | test/layer/checks/fixy/Huge.cpp system.h \
+include/fixy/Huge.h
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Light.cpp.o test/layer/checks/fixy/Light.cpp cpu=1
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Light.cpp.o | test/layer/checks/fixy/Light.cpp system.h \
+include/fixy/Light.h
+compile test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Near.cpp.o test/layer/checks/fixy/Near.cpp cpu=1
+deps test/layer/CMakeFiles/layer_sentinel_fixy.dir/checks/fixy/Near.cpp.o | test/layer/checks/fixy/Near.cpp system.h \
+include/fixy/Near.h
+"""
 
 
 def run_write(context: BuildContext, rule_id: str, reason: str) -> tuple[int, str]:
@@ -164,6 +204,99 @@ def fixture_cases(expect: testing.Expect) -> None:
         expect("a write refuses a build with a fixture that has no record", "neg_unrun" in said)
 
 
+def planted_ledger(rule_id: str, rows: Mapping[rule_ledger.Key, float]) -> rule_ledger.Ledger:
+    """Return a ledger of a rule of the registry with one row for each key, each with its value and a planted reason."""
+    empty = rule_ledger.empty(rule_registry.load().rules[rule_id])
+    return replace(empty, base={key: rule_ledger.Entry(key, value, "a planted reason") for key, value in rows.items()})
+
+
+def output_key(item: str, kind: str) -> rule_ledger.Key:
+    """Return the key of the ledger row of an output of the build."""
+    return rule_ledger.Key(f"@build/{item}", kind, "")
+
+
+def object_prune_cases(expect: testing.Expect) -> None:
+    """Prune the object rows that keep nothing in each build, and keep each other row (THE PRUNE of cost_budgets)."""
+    with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
+        context = context_of(Path(scratch), OBJECT_PRUNE_ROWS)
+        made = context.require_build() / "gen" / "made.cpp"
+        made.parent.mkdir(parents=True)
+        made.write_text("int made;\n", encoding="utf-8")
+        deleted = context.root / DELETED_SOURCE
+        deleted.parent.mkdir(parents=True)
+        deleted.write_text("int gone;\n", encoding="utf-8")
+        git.run(context.root, "add", "--", DELETED_SOURCE)
+        git.run(context.root, "commit", "-q", "-m", "Add a unit that the tree deletes", "--", DELETED_SOURCE)
+        deleted.unlink()
+        items = (
+            CONFIGURED_OBJECT,
+            OTHER_BUILD_OBJECT,
+            DELETED_OBJECT,
+            GENERATED_OBJECT,
+            UNGENERATED_OBJECT,
+            ODD_OBJECT,
+        )
+        sized = planted_ledger("object-size", {output_key(item, "object"): 900.0 for item in items})
+        written = cost_budgets.budget_written("object-size", context, sized, None)
+        expect(
+            "the write of object-size removes the row of a unit whose source git held and the tree deleted, and "
+            "keeps the row of a configured object, of an object whose source the tree or the build holds, of a "
+            "source that git never held, which a build with other options can generate, and of an output of a "
+            "different shape",
+            set(written.base) == {output_key(item, "object") for item in items if item != DELETED_OBJECT},
+        )
+        expect(
+            "the write lowers no row of an object, because its size changes with the build",
+            written.base[output_key(CONFIGURED_OBJECT, "object")].value == 900.0,
+        )
+        counted = planted_ledger(
+            "step-cost",
+            {output_key(DELETED_OBJECT, "compile"): 150.0, output_key(OTHER_BUILD_OBJECT, "compile"): 120.0},
+        )
+        pruned = cost_budgets.budget_written("step-cost", context, counted, None)
+        expect(
+            "the write of step-cost removes the compile row of a deleted unit, and keeps the compile row of a unit of "
+            "a different build",
+            set(pruned.base) == {output_key(OTHER_BUILD_OBJECT, "compile")},
+        )
+        expect(
+            "object_sources() gives the two places of the source of an object path, with '..' for each part '__', "
+            "and no place for a path of a different shape",
+            cost_budgets.object_sources("a/CMakeFiles/t.dir/__/b/c.cpp.o", Path("/root"), Path("/build"))
+            == (Path("/root/b/c.cpp"), Path("/build/b/c.cpp"))
+            and cost_budgets.object_sources("CMakeFiles/t.dir/c.cpp.o", Path("/root"), Path("/build"))
+            == (Path("/root/c.cpp"), Path("/build/c.cpp"))
+            and cost_budgets.object_sources("lib/libx.so", Path("/root"), Path("/build")) == ()
+            and cost_budgets.object_sources("CMakeFiles/t/c.cpp.o", Path("/root"), Path("/build")) == (),
+        )
+
+
+def header_prune_cases(expect: testing.Expect) -> None:
+    """Prune the rows of header-alone with the measure of one build (THE PRUNE of cost_budgets)."""
+    with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
+        context = context_of(Path(scratch), HEADER_PRUNE_ROWS)
+        headers = ("Huge.h", "Light.h", "Near.h", "Gone.h", "Unbuilt.h")
+        keys = {name: rule_ledger.Key(f"include/fixy/{name}", "fixy", "") for name in headers}
+        rows = planted_ledger(
+            "header-alone",
+            {keys["Huge.h"]: 7.5, keys["Light.h"]: 7.0, keys["Near.h"]: 7.0, keys["Gone.h"]: 7.0},
+        )
+        rows = replace(rows, base={**rows.base, keys["Unbuilt.h"]: rule_ledger.Entry(keys["Unbuilt.h"], 7.0, "kept")})
+        written = cost_budgets.budget_written("header-alone", context, rows, None)
+        expect(
+            "the write of header-alone lowers the row of a header over the limit to its measure with the margin of "
+            "2 %, removes the row of a header under the limit by more than the margin and of a header that the tree "
+            "does not hold, keeps the row of a header under the limit by less than the margin at its measure with "
+            "the margin, and keeps the row of a header with no sentinel in the build",
+            {key.path: entry.value for key, entry in written.base.items()}
+            == {"include/fixy/Huge.h": 7.141, "include/fixy/Near.h": 6.58, "include/fixy/Unbuilt.h": 7.0},
+        )
+        expect(
+            "a lowered row keeps its reason",
+            written.base[keys["Huge.h"]].reason == "a planted reason",
+        )
+
+
 def list_text(context: BuildContext) -> str:
     """Return the text of the list of header-constexpr-ops in the tree of a context."""
     return (context.root / header_constexpr.LIST).read_text(encoding="utf-8")
@@ -237,4 +370,8 @@ def compile_cases(expect: testing.Expect) -> None:
 
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
-    return testing.run(__name__.removeprefix("assay."), argv, (record_cases, fixture_cases, list_cases, compile_cases))
+    return testing.run(
+        __name__.removeprefix("assay."),
+        argv,
+        (record_cases, fixture_cases, object_prune_cases, header_prune_cases, list_cases, compile_cases),
+    )

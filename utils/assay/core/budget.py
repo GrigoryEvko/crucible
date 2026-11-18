@@ -75,10 +75,12 @@ THE WRITE
     It writes a row only for an item above the limit that no
     row keeps: a new row, or a higher kept value of a row whose item rose
     above it with its noise (THE VERDICT).  Such a row needs the reason of
-    the call, and a call with no reason writes nothing.  The write removes
-    no row and lowers no kept value.  A build that does not hold an item,
-    or holds it with a lower value, then keeps the row of a different build.
-    A person removes a row whose item stays at or below the limit.
+    the call, and a call with no reason writes nothing.  raised_ledger()
+    removes no row and lowers no kept value.  A build that does not hold an
+    item, or holds it with a lower value, then keeps the row of a different
+    build.  The write of the rules of the engine build then removes each row
+    that keeps nothing in each build (THE PRUNE of
+    assay.guard.engines.buildsys.cost_budgets).
 
 THE STEP RULES
     The rule step-cost has the kinds compile, fixture and test, and the rule
