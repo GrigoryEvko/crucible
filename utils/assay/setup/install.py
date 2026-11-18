@@ -46,14 +46,19 @@ THE TOOLS
                  x86-simd-sort): the vector sorts that bench_core_sort takes
                  as the speed roof of a sort by a key.  --print-bin prints the
                  directory src of the source.
+    rapidhash    The source of rapidhash of Nicolas De Carli (the pin
+                 rapidhash): the hash of a short byte string of the state of
+                 the art, which the reference rows of bench_reflect measure.
+                 --print-bin prints the top directory of the source.
     No tool comes from PATH, because a program of PATH is an input that no pin
     holds.
 
 THE SOURCES OF THE BENCH
-    fluxsort and x86-simd-sort are rows of via=archive with no platform: the
-    archive of GitHub of one commit, which serves each host.  Only the bench
-    presets compile their headers (bench/CMakeLists.txt), and the product
-    links none of their code.  The row of each source names its license.
+    fluxsort, x86-simd-sort and rapidhash are rows of via=archive with no
+    platform: the archive of GitHub of one commit, which serves each host.
+    Only the bench presets compile their headers (bench/CMakeLists.txt), and
+    the product links none of their code.  The row of each source names its
+    license.
 
 THE PIP TOOLS
     mypy and ruff are rows of via=pip.  The install writes the file
@@ -800,6 +805,7 @@ SOURCE_FILES = {
     "fluxsort": ("src/fluxsort.h", "src/fluxsort.c", "src/quadsort.h", "src/quadsort.c", "LICENSE"),
     "x86-simd-sort": ("src/x86simdsort-static-incl.h", "src/xss-common-qsort.h", "src/avx2-32bit-qsort.hpp",
                       "src/avx512-32bit-qsort.hpp", "LICENSE.md"),
+    "rapidhash": ("rapidhash.h", "LICENSE"),
 }
 
 
@@ -867,6 +873,10 @@ TOOLS: dict[str, Tool] = {
         "x86-simd-sort", "x86-simd-sort", "x86-simd-sort-", {"": "source"},
         functools.partial(verify_source, SOURCE_FILES["x86-simd-sort"]), unpack_source, version_stamp,
         version_stamp_matches, lambda directory: directory / "src", False),
+    "rapidhash": Tool(
+        "rapidhash", "rapidhash", "rapidhash-", {"": "source"},
+        functools.partial(verify_source, SOURCE_FILES["rapidhash"]), unpack_source, version_stamp,
+        version_stamp_matches, lambda directory: directory, False),
 }
 
 

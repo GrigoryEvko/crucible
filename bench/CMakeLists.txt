@@ -155,6 +155,8 @@ crucible_bench(bench_perf_loader)
 crucible_bench(bench_philox)
 crucible_bench(bench_pool_allocator)
 crucible_bench(bench_reflect)
+# The reference rapidhash of the hash of the Protocol family.
+crucible_bench_reference(bench_reflect rapidhash CRUCIBLE_BENCH_RAPIDHASH bench_reflect_rapidhash.cpp)
 crucible_bench(bench_region_cache)
 crucible_bench(bench_replay_engine)
 crucible_bench(bench_safety)

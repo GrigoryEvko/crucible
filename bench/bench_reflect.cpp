@@ -1,21 +1,29 @@
 // The cost of the operations of the Protocol family (foundation/core/Protocol.h)
-// against the hand forms that they replace and against a state-of-the-art
-// reference.
+// against the hand forms that they replace and against state-of-the-art
+// references.
 //
-//   hash<Small>, hash<Wide>   the fold of the family, against the hand fold of
-//                             the same fields and against foldhash-f
+//   hash<Small>, hash<Wide>   the fold of the family, against foldhash-f and
+//                             against the pinned rapidhash
 //   encode, decode            the byte codec of a slot of a memory plan (40
 //                             bytes), against a copy of its 40 bytes
 //   feedback_signature,       the product folds on the hash of the family,
 //   loopterm_hash             against their packed forms
 //
-// THE REFERENCE.  foldhash-f of Orson Peters (2024, the default hasher of
+// THE REFERENCES.  foldhash-f of Orson Peters (2024, the default hasher of
 // hashbrown and of the Rust standard tables) packs the fields into a 128-bit
 // sponge and runs one folded 64x64 multiply for each 16 bytes.  The bench
 // holds a port of its integer path with a fixed seed, so a run is
-// deterministic.  The fold of the family keeps the scheme that the store
-// pins (the hash of each guard is in the merkle hash of each branch), so a
-// ratio above 1 against the reference is the cost of that pin.
+// deterministic.  The hash of the family runs the same step over the blocks
+// of the image, so on Small and on Wide it gives the bits of the port.  The
+// crate is Rust, and a call from C++ cannot inline it.  rapidhash v3 of
+// Nicolas De Carli (utils/pins.txt) is the hash of a short byte string of
+// the state of the art in C: rapidhashNano for a key of at most 48 bytes,
+// and rapidhash for a longer key.  It reads the bytes of each record, which
+// are the image of the record, because Small and Wide hold no padding.
+//
+// The rows of one record measure one hash of a record that a volatile word
+// changes.  The rows of a batch measure the hash of 64 records of memory,
+// and the reference rows call a door of their own unit for each batch.
 
 #include <cstdint>
 #include <cstdio>
@@ -29,6 +37,7 @@
 #include <foundation/reflect/Mix.h>
 
 #include "bench_harness.h"
+#include "bench_reflect_references.h"
 
 namespace {
 
@@ -51,13 +60,54 @@ struct[[= ::fixy::derive_protocol{}]] Wide {
     int64_t scalars[5];
 };
 
-uint64_t manual_hash_small(const Small& s) noexcept {
-    uint64_t h = 0x9E3779B97F4A7C15ULL;
-    h = h * 0x9E3779B97F4A7C15ULL ^ ::foundation::reflect::fmix64(s.id);
-    h = h * 0x9E3779B97F4A7C15ULL ^ ::foundation::reflect::fmix64(s.kind);
-    h = h * 0x9E3779B97F4A7C15ULL ^ ::foundation::reflect::fmix64(s.flags);
-    h = h * 0x9E3779B97F4A7C15ULL ^ ::foundation::reflect::fmix64(static_cast<uint64_t>(s.payload));
-    return ::foundation::reflect::fmix64(h);
+// The count of records of a batch row.
+constexpr std::size_t kBatch = 64;
+
+using SmallBatch = ::fixy::FixedArray<Small, kBatch>;
+using WideBatch = ::fixy::FixedArray<Wide, kBatch>;
+
+// The next word of a splitmix64 stream: the fields of the records of a batch.
+uint64_t next_word(uint64_t& state) noexcept {
+    state += 0x9E3779B97F4A7C15ULL;
+    return ::foundation::reflect::fmix64(state);
+}
+
+SmallBatch make_small_batch(uint64_t seed) noexcept {
+    SmallBatch batch{};
+    for (Small& s : batch) {
+        s.id = static_cast<uint32_t>(next_word(seed));
+        s.kind = static_cast<uint16_t>(next_word(seed));
+        s.flags = static_cast<uint16_t>(next_word(seed));
+        s.payload = static_cast<int64_t>(next_word(seed));
+    }
+    return batch;
+}
+
+WideBatch make_wide_batch(uint64_t seed) noexcept {
+    WideBatch batch{};
+    for (Wide& w : batch) {
+        w.schema = next_word(seed);
+        w.shape = next_word(seed);
+        w.scope = next_word(seed);
+        w.callsite = next_word(seed);
+        w.num_inputs = static_cast<uint32_t>(next_word(seed) & 0xF);
+        w.num_outputs = static_cast<uint32_t>(next_word(seed) & 0xF);
+        w.op_flags = static_cast<uint8_t>(next_word(seed));
+        for (int64_t& scalar : w.scalars) {
+            scalar = static_cast<int64_t>(next_word(seed));
+        }
+    }
+    return batch;
+}
+
+// The xor of the hash of the family of each record of a batch.
+template <class Batch>
+uint64_t family_hash_batch(Batch const& batch) noexcept {
+    uint64_t folded = 0;
+    for (auto const& record : batch) {
+        folded ^= ::fixy::hash(record).raw();
+    }
+    return folded;
 }
 
 // ── The reference: the integer path of foldhash-f ────────────────────
@@ -134,6 +184,44 @@ uint64_t reference_hash_wide(const Wide& w) noexcept {
     return hasher.finish();
 }
 
+uint64_t reference_hash_small_batch(SmallBatch const& batch) noexcept {
+    uint64_t folded = 0;
+    for (Small const& s : batch) {
+        folded ^= reference_hash_small(s);
+    }
+    return folded;
+}
+
+uint64_t reference_hash_wide_batch(WideBatch const& batch) noexcept {
+    uint64_t folded = 0;
+    for (Wide const& w : batch) {
+        folded ^= reference_hash_wide(w);
+    }
+    return folded;
+}
+
+// ── The reference: the pinned rapidhash ───────────────────────────────
+
+#if defined(CRUCIBLE_BENCH_RAPIDHASH)
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the bytes of a batch go to the door of the pinned rapidhash")
+
+static_assert(sizeof(Small) == 16 && sizeof(Wide) == 88, "the bytes of a record are its image, with no padding byte");
+
+uint64_t rapidhash_small_batch(SmallBatch const& batch) noexcept {
+    Small const& first = batch.at(::fixy::index<0>());
+    return bench_reflect_references::rapidhash_nano_16(static_cast<std::byte const*>(static_cast<void const*>(&first)),
+                                                       kBatch);
+}
+
+uint64_t rapidhash_wide_batch(WideBatch const& batch) noexcept {
+    Wide const& first = batch.at(::fixy::index<0>());
+    return bench_reflect_references::rapidhash_88(static_cast<std::byte const*>(static_cast<void const*>(&first)),
+                                                  kBatch);
+}
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+#endif
+
 // ── The packed form of feedback_signature ──────────────────────────
 //
 // One shift and one or for each edge, and one fmix64 for each edge.  The
@@ -166,8 +254,8 @@ uint64_t loopterm_hash_packed(crucible::LoopTermKind term_kind, uint32_t repeat_
 // ── The family hash of the fields of a recipe ──────────────────────
 //
 // compute_recipe_hash packs the eight one-byte fields into one word and
-// mixes it one time.  The hash of the family takes one fmix64 for each
-// field, so the row measures the cost that the packed form keeps away.
+// mixes it one time.  The hash of the family packs the eight bytes of the
+// image into one block and folds it one time.
 struct[[= ::fixy::derive_protocol{}]] RecipeSpec {
     crucible::ScalarType accum_dtype;
     crucible::ScalarType out_dtype;
@@ -227,20 +315,18 @@ int main() {
         return w;
     };
 
-    ::fixy::FixedArray<bench::Report, 5> reports{
+    volatile uint64_t vbatch_seed = 0x50524F544F434F4CULL;
+    SmallBatch small_batch = make_small_batch(vbatch_seed);
+    WideBatch wide_batch = make_wide_batch(vbatch_seed);
+
+    ::fixy::FixedArray<bench::Report, 8> reports{
         bench::run("hash<Small>          (4 fields)",
                    [&] {
                        Small s = make_small();
                        auto h = ::fixy::hash(s).raw();
                        bench::do_not_optimize(h);
                    }),
-        bench::run("manual fmix64 chain  (same 4)",
-                   [&] {
-                       Small s = make_small();
-                       auto h = manual_hash_small(s);
-                       bench::do_not_optimize(h);
-                   }),
-        bench::run("foldhash-f reference (same 4)",
+        bench::run("foldhash-f port      (same 4)",
                    [&] {
                        Small s = make_small();
                        auto h = reference_hash_small(s);
@@ -252,24 +338,72 @@ int main() {
                        auto h = ::fixy::hash(w).raw();
                        bench::do_not_optimize(h);
                    }),
-        bench::run("foldhash-f reference (same 19)",
+        bench::run("foldhash-f port      (same 19)",
                    [&] {
                        Wide w = make_wide();
                        auto h = reference_hash_wide(w);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("hash<Small> x64      (16 bytes)",
+                   [&] {
+                       bench::do_not_optimize(small_batch);
+                       auto h = family_hash_batch(small_batch);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("foldhash-f port x64  (16 bytes)",
+                   [&] {
+                       bench::do_not_optimize(small_batch);
+                       auto h = reference_hash_small_batch(small_batch);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("hash<Wide> x64       (88 bytes)",
+                   [&] {
+                       bench::do_not_optimize(wide_batch);
+                       auto h = family_hash_batch(wide_batch);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("foldhash-f port x64  (88 bytes)",
+                   [&] {
+                       bench::do_not_optimize(wide_batch);
+                       auto h = reference_hash_wide_batch(wide_batch);
                        bench::do_not_optimize(h);
                    }),
     };
 
     bench::emit_reports_text(reports.view());
 
-    // The hash of the family and the hand fold of the same fields are one
-    // scheme, so they must be indistinguishable on a clean machine.  The
-    // reference rows give the ratio to the state of the art.  Each line of a
-    // compare names its two rows.
+    // The hash of the family and the port of foldhash-f run one step over
+    // the same blocks, so the pairs of one record and of a batch must be
+    // indistinguishable on a clean machine.  Each line of a compare names its
+    // two rows.
     std::printf("\n=== compare ===\n");
     bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())).print_text();
-    bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())).print_text();
-    bench::compare(reports.at(::fixy::index<3>()), reports.at(::fixy::index<4>())).print_text();
+    bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>())).print_text();
+    bench::compare(reports.at(::fixy::index<4>()), reports.at(::fixy::index<5>())).print_text();
+    bench::compare(reports.at(::fixy::index<6>()), reports.at(::fixy::index<7>())).print_text();
+
+    // The batch rows of the pinned rapidhash give the ratio to the state of
+    // the art.  A tools directory with no rapidhash at its pin gives no row.
+#if defined(CRUCIBLE_BENCH_RAPIDHASH)
+    ::fixy::FixedArray<bench::Report, 2> rapidhash_reports{
+        bench::run("rapidhashNano x64    (16 bytes)",
+                   [&] {
+                       bench::do_not_optimize(small_batch);
+                       auto h = rapidhash_small_batch(small_batch);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("rapidhash x64        (88 bytes)",
+                   [&] {
+                       bench::do_not_optimize(wide_batch);
+                       auto h = rapidhash_wide_batch(wide_batch);
+                       bench::do_not_optimize(h);
+                   }),
+    };
+    bench::emit_reports_text(rapidhash_reports.view());
+    ::fixy::report(::fixy::Sink::Out, "\n=== compare with rapidhash ===\n");
+    bench::compare(reports.at(::fixy::index<4>()), rapidhash_reports.at(::fixy::index<0>())).print_text();
+    bench::compare(reports.at(::fixy::index<6>()), rapidhash_reports.at(::fixy::index<1>())).print_text();
+#endif
 
     // ═══════════════════════════════════════════════════════════════
     // The product folds on the hash of the family, against their packed
@@ -368,9 +502,13 @@ int main() {
 
     // One JSON tail holds the rows of the two groups, because the reader
     // reads only the last tail of the output.
-    ::fixy::FixedList<bench::Report, 14> all_reports{};
+    ::fixy::FixedList<bench::Report, 19> all_reports{};
     for (bench::Report& report : reports)
         bench::add_report(all_reports, std::move(report));
+#if defined(CRUCIBLE_BENCH_RAPIDHASH)
+    for (bench::Report& report : rapidhash_reports)
+        bench::add_report(all_reports, std::move(report));
+#endif
     for (bench::Report& report : refactor_reports)
         bench::add_report(all_reports, std::move(report));
     bench::emit_reports_json(all_reports.view(), json);
