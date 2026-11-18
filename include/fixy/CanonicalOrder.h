@@ -170,8 +170,23 @@ inline constexpr int canonical_layer_index_v = canonical_layer_index<std::remove
 // The walk descends inward and accepts only a strictly increasing run of
 // canonical positions. Strict, because the same wrapper twice in one
 // stack is a defect rather than a reordering.
+//
+// A container stops the run.  Its value_type is the type of an element,
+// and an element is a value of its own, not a deeper layer of the stack.
+// So the walk starts a new run at the element: Refined<P,
+// FixedList<Tagged<T>>> holds a refined list of tagged values, and the
+// Tagged inside the list is in order.
 
 namespace detail {
+
+// A type whose value_type names its elements: it gives a cursor to the
+// first and past the last element, as a container and a view do.
+template <typename L>
+concept HoldsElements = requires(L const& held) {
+    typename L::value_type;
+    held.begin();
+    held.end();
+};
 
 template <int Prev, typename Layer>
 struct walk_canonical {
@@ -185,6 +200,9 @@ struct walk_canonical {
             } else {
                 return true;
             }
+        } else if constexpr (HoldsElements<L>) {
+            // A container. Its element starts a run of its own.
+            return walk_canonical<-1, typename L::value_type>::eval();
         } else {
             // A wrapper with no position, or the payload. Carry Prev
             // through so it neither advances nor breaks the run.

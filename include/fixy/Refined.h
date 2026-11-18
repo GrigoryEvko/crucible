@@ -242,12 +242,31 @@ public:
     // The two assignments are user-provided, so the class is not
     // trivially copyable and no byte route builds a refined value.  The
     // constructors stay trivial.
+    //
+    // The copies follow the payload.  A refinement of a value that does not
+    // copy, such as a Linear, has deleted copies, so a copy of it never
+    // makes a second linear value.  The defaulted copy constructor is
+    // deleted through the member impl_.  The copy assignment is
+    // user-provided, so it states its own constraint.  The copy constructor
+    // states none: a constrained constructor makes GCC check the constraints
+    // of a door before the conversion of a raw argument to a refined
+    // parameter, and the diagnostic then names the context in place of the
+    // raw value.
+private:
+    static constexpr bool assigns_payload_ = __is_assignable(T&, T const&);
+
+public:
     Refinement(const Refinement&) = default;
     Refinement(Refinement&&) = default;
-    constexpr Refinement& operator=(const Refinement& other) noexcept(std::is_nothrow_copy_assignable_v<T>) {
+    constexpr Refinement& operator=(const Refinement& other) noexcept(std::is_nothrow_copy_assignable_v<T>)
+        requires assigns_payload_
+    {
         impl_ = other.impl_;
         return *this;
     }
+    Refinement& operator=(const Refinement&)
+        requires(!assigns_payload_)
+    = delete("the refined value does not copy, so its refinement does not copy either");
     constexpr Refinement& operator=(Refinement&& other) noexcept(std::is_nothrow_move_assignable_v<T>) {
         impl_ = std::move(other.impl_);
         return *this;
@@ -402,20 +421,12 @@ using CacheLineAligned = AlignedTo<64, T*>;
 template <class T>
 using HugePageAligned = AlignedTo<2 * 1024 * 1024, T*>;
 
-// The two nesting orders mean different things, so the aliases exist
-// to keep the choice deliberate rather than reorderable.
-//
-// In LinearRefined the value is refined and the wrapper is linear: the
-// predicate is about the underlying T and ownership is
-// single-consumer. This is the common case, because most resources
-// are a handle to a value satisfying an invariant.
-//
-// In RefinedLinear the wrapper is refined and the inner value is
-// linear: the predicate is about the ownership state itself, not about
-// T. This is rare.
-
-template <auto Pred, typename T>
-using LinearRefined = Linear<Refined<Pred, T>>;
+// A refined resource.  The canonical order of fixy/CanonicalOrder.h puts
+// the refinement outside the linear wrapper, so this is the stack to
+// build, and it is the common case: most resources are a handle to a
+// value that holds an invariant.  The predicate takes the Linear by
+// reference to const and reads the value through peek, its read door, so
+// the checked mint runs the predicate and takes no copy of the resource.
 
 template <auto Pred, typename T>
 using RefinedLinear = Refined<Pred, Linear<T>>;

@@ -63,8 +63,8 @@ static_assert(all_collapse_to_value<
 // claim is the untracked build's: with fixy/Qtt.h's consume tracker on,
 // Linear carries one byte of state on purpose and this collapse is the
 // thing that build gives up.
-static_assert(::fixy::qtt_consume_tracked || sizeof(LinearRefined<non_null, void*>) == sizeof(void*),
-              "LinearRefined must collapse to sizeof(T)");
+static_assert(::fixy::qtt_consume_tracked || sizeof(RefinedLinear<non_null, void*>) == sizeof(void*),
+              "RefinedLinear must collapse to sizeof(T)");
 
 // The atomic and the composed refinements alike satisfy the wrapper
 // concept, so that a future revision of a combinator that disturbs the

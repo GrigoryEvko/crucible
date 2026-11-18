@@ -43,24 +43,26 @@ namespace fixy {
 // PredicateInvocableOn at the mint instead of failing inside the body.
 //
 // Each call operator has one shape: a template over the value type that
-// takes one value of that type, by value or by reference to const.  The
+// takes one value of that type by reference to const.  So a predicate
+// reads a value that cannot be copied, such as a Linear or a Secret, and
+// the checked mint of fixy/Refined.h can mint a refinement over it.  The
 // seal below reads the specialization of that template for the value type
 // of a mint, and the checked mint refuses each other shape.
 struct IsPositive {
-    constexpr bool operator()(auto x) const noexcept
-        requires requires { x > decltype(x){0}; }
-    {
-        return x > decltype(x){0};
+    template <class V>
+        requires requires(V const& x) { x > V{0}; }
+    constexpr bool operator()(V const& x) const noexcept {
+        return x > V{0};
     }
 };
 
 inline constexpr IsPositive positive{};
 
 struct IsNonNegative {
-    constexpr bool operator()(auto x) const noexcept
-        requires requires { x >= decltype(x){0}; }
-    {
-        return x >= decltype(x){0};
+    template <class V>
+        requires requires(V const& x) { x >= V{0}; }
+    constexpr bool operator()(V const& x) const noexcept {
+        return x >= V{0};
     }
 };
 
@@ -108,7 +110,7 @@ inline constexpr IsZero is_zero{};
 struct IsNonNull {
     template <class V>
         requires std::is_pointer_v<V>
-    constexpr bool operator()(V p) const noexcept {
+    constexpr bool operator()(V const& p) const noexcept {
         return p != nullptr;
     }
 };
@@ -116,11 +118,10 @@ struct IsNonNull {
 inline constexpr IsNonNull non_null{};
 
 struct IsPowerOfTwo {
-    constexpr bool operator()(auto x) const noexcept
-        requires requires { x != decltype(x){0} && (x & (x - decltype(x){1})) == decltype(x){0}; }
-    {
-        using U = decltype(x);
-        return x != U{0} && (x & (x - U{1})) == U{0};
+    template <class V>
+        requires requires(V const& x) { x != V{0} && (x & (x - V{1})) == V{0}; }
+    constexpr bool operator()(V const& x) const noexcept {
+        return x != V{0} && (x & (x - V{1})) == V{0};
     }
 };
 
@@ -330,7 +331,7 @@ template <std::size_t Alignment>
 struct Aligned {
     template <class V>
         requires std::is_pointer_v<V>
-    constexpr bool operator()(V p) const noexcept {
+    constexpr bool operator()(V const& p) const noexcept {
         return (std::bit_cast<std::uintptr_t>(p) & (Alignment - 1)) == 0;
     }
 };
@@ -349,7 +350,7 @@ template <auto Lo, auto Hi>
 struct InRange {
     template <class V>
         requires refined::BoundFits<V, Lo> && refined::BoundFits<V, Hi>
-    constexpr bool operator()(V x) const noexcept {
+    constexpr bool operator()(V const& x) const noexcept {
         if constexpr (refined::ExactInteger<V>)
             return std::cmp_greater_equal(x, Lo) && std::cmp_less_equal(x, Hi);
         else
@@ -364,7 +365,7 @@ template <auto Max>
 struct BoundedAbove {
     template <class V>
         requires refined::BoundFits<V, Max>
-    constexpr bool operator()(V x) const noexcept {
+    constexpr bool operator()(V const& x) const noexcept {
         if constexpr (refined::ExactInteger<V>)
             return std::cmp_less_equal(x, Max);
         else
@@ -406,7 +407,7 @@ template <auto Min>
 struct BoundedBelow {
     template <class V>
         requires refined::BoundFits<V, Min>
-    constexpr bool operator()(V x) const noexcept {
+    constexpr bool operator()(V const& x) const noexcept {
         if constexpr (refined::ExactInteger<V>)
             return std::cmp_greater_equal(x, Min);
         else
@@ -427,7 +428,7 @@ struct DivisibleBy {
                                                    "zero divisor or omit the predicate.");
     template <class V>
         requires refined::ExactInteger<V> && refined::BoundFits<V, Divisor> && (std::cmp_greater(Divisor, 0))
-    constexpr bool operator()(V x) const noexcept {
+    constexpr bool operator()(V const& x) const noexcept {
         return x % static_cast<V>(Divisor) == 0;
     }
 };

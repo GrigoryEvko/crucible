@@ -112,7 +112,7 @@ test/fixy/session_crash_attack.h | detail-use | 1 | namespace-scope: foundation:
 test/fixy/session_global_attack.h | detail-use | 1 | test_session_global_attack::check_generated(test_session_global_attack::FamilyCounts&, std::string_view, uint64_t): fixy::session::detail | reads the projection check of each role
 test/fixy/session_recording.h | detail-use | 1 | namespace-scope: foundation::effects::detail | builds a background context from its witness
 test/fixy/test_armed_roster.cpp | detail-use | 1 | namespace-scope: fixy::channels::detail | names the armed predicate of the endpoint bridge
-test/fixy/test_armed_roster.cpp | detail-use | 46 | namespace-scope: fixy::collision::detail | names each armed predicate of the collision rules
+test/fixy/test_armed_roster.cpp | detail-use | 45 | namespace-scope: fixy::collision::detail | names each armed predicate of the collision rules
 test/fixy/test_armed_roster.cpp | detail-use | 26 | namespace-scope: fixy::concurrent::detail | names each armed predicate of the stages and the stage fakes
 test/fixy/test_armed_roster.cpp | detail-use | 4 | namespace-scope: fixy::corpus::detail | names each armed predicate of the corpus
 test/fixy/test_armed_roster.cpp | detail-use | 2 | namespace-scope: fixy::detail | names each armed predicate of the fixy root

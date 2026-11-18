@@ -11,7 +11,7 @@
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the probe specializes a predicate call to show that the mint refuses it")
 template <>
-constexpr bool fixy::IsPositive::operator()<int>(int) const noexcept {
+constexpr bool fixy::IsPositive::operator()<int>(int const&) const noexcept {
     return true;
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

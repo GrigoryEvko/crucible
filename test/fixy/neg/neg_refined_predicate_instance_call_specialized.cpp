@@ -11,7 +11,7 @@
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture forges the call operator of InRange<1, 9> for int")
 template <>
 template <>
-constexpr bool fixy::InRange<1, 9>::operator()<int>(int) const noexcept {
+constexpr bool fixy::InRange<1, 9>::operator()<int>(int const&) const noexcept {
     return true;
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

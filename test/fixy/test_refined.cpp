@@ -15,6 +15,7 @@
 #include <foundation/effects/Effect.h>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -37,6 +38,16 @@ struct TwoWords {
 };
 
 inline constexpr auto lo_set = [](TwoWords const& w) constexpr noexcept { return w.lo != 0; };
+
+// A predicate on a Linear<int>.  It reads the value through peek, the read
+// door of the Linear, so a check of it takes no copy of the resource.
+struct LinearHoldsPositive final {
+    constexpr bool operator()(std::same_as<fixy::Linear<int>> auto const& handle) const noexcept {
+        return handle.peek() > 0;
+    }
+};
+
+inline constexpr LinearHoldsPositive holds_positive{};
 
 // ── Storage regime 1: the grade lives in the type ────────────────────
 
@@ -85,6 +96,8 @@ static_assert(std::is_copy_constructible_v<Refined<fixy::positive, int>>);
 static_assert(std::is_nothrow_move_constructible_v<Refined<fixy::positive, int>>);
 static_assert(std::is_copy_constructible_v<SealedRefined<fixy::positive, int>>);
 static_assert(!std::is_copy_constructible_v<fixy::RefinedLinear<fixy::positive, int>>);
+static_assert(!std::is_copy_assignable_v<fixy::RefinedLinear<fixy::positive, int>>,
+              "a refinement of a value that does not copy does not copy either");
 static_assert(std::is_move_constructible_v<fixy::RefinedLinear<fixy::positive, int>>);
 static_assert(sizeof(fixy::RefinedLinear<fixy::positive, int>) == sizeof(int));
 
@@ -286,7 +299,8 @@ static_assert(rule_count() == 15, "one rule per parameterised family: four from 
 static_assert(fixy::IsRefined<Refined<fixy::positive, int>>);
 static_assert(fixy::IsRefined<SealedRefined<fixy::positive, int> const&>);
 static_assert(!fixy::IsRefined<int>);
-static_assert(!fixy::IsRefined<fixy::LinearRefined<fixy::positive, int>>, "a Linear over a Refined is a Linear");
+static_assert(!fixy::IsRefined<fixy::Linear<Refined<fixy::positive, int>>>, "a Linear over a Refined is a Linear");
+static_assert(fixy::IsRefined<fixy::RefinedLinear<fixy::positive, int>>, "a Refined over a Linear is a Refined");
 static_assert(std::is_same_v<fixy::refined_value_t<Refined<lo_set, TwoWords>>, TwoWords>);
 static_assert(std::is_same_v<fixy::refined_predicate_type_t<Refined<lo_set, TwoWords>>, rel::predicate_t<lo_set>>);
 static_assert(fixy::refined_is_sealed_v<SealedRefined<lo_set, TwoWords>>);
@@ -404,12 +418,13 @@ int check_refined_doors_and_aliases() {
     fixy::NonEmpty<std::span<int>> non_empty = fixy::mint_refined<fixy::non_empty>(sp);
     if (non_empty.value().size() != 3) return 47;
 
-    // The refinement rides inside the linear wrapper, so the proof
-    // survives the one use the wrapper allows.
-    fixy::LinearRefined<fixy::positive, int> linear =
-        fixy::mint_linear<Refined<fixy::positive, int>>(fixy::mint_refined<fixy::positive>(seed));
-    if (linear.peek().value() != 42) return 48;
-    if (std::move(linear).consume().into() != 42) return 49;
+    // The refinement sits outside the linear wrapper, in the canonical
+    // order.  The checked mint runs the predicate through the read door of
+    // the Linear and takes no copy, and the proof rides with the one use
+    // that the wrapper allows.
+    fixy::RefinedLinear<holds_positive, int> linear = fixy::mint_refined<holds_positive>(fixy::mint_linear<int>(seed));
+    if (linear.value().peek() != 42) return 48;
+    if (std::move(linear).into().consume() != 42) return 49;
 
     return 0;
 }
