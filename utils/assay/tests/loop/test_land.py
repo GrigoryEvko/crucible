@@ -95,6 +95,12 @@ MERGE_LEDGER = "utils/ledgers/demo.txt"
 MERGE_LEDGER_HEAD = "format 1\nrule demo\n"
 # The generated file that the gate writes from the build of the composed tree, for the cases of THE MERGE.
 INVENTORY = "misc/mint-inventory.md"
+# The planted entry times of two requests into the queue, in seconds since the epoch, and their ISO 8601 texts in UTC
+# (THE RECORD of assay.loop.land).
+FIRST_ENTRY_S = 1_800_000_000.0
+SECOND_ENTRY_S = 1_800_000_061.0
+FIRST_ENTRY = "2027-01-15T08:00:00Z"
+SECOND_ENTRY = "2027-01-15T08:01:01Z"
 # The time limit of a planted landing process, and of the wait for a file of a process, in seconds.
 CHILD_S = 60.0
 WAIT_S = 30.0
@@ -2478,9 +2484,11 @@ def series_cost_cases(expect: testing.Expect) -> None:
 
 
 @contextlib.contextmanager
-def waiting(queue: Path, root: Path, request: land.Request) -> Iterator[land.Queued]:
-    """Write a request into the queue as a waiting process does, and hold its lock for the block."""
-    with land.entered(queue, root, request, options()) as queued:
+def waiting(
+    queue: Path, root: Path, request: land.Request, clock: Callable[[], float] = time.time
+) -> Iterator[land.Queued]:
+    """Write a request into the queue as a waiting process does, at the time of the clock, and hold its lock."""
+    with land.entered(queue, root, request, options(), clock) as queued:
         yield queued
 
 
@@ -2608,8 +2616,8 @@ def landing_queue_cases(expect: testing.Expect, work: Path, root: Path) -> None:
     head = git.head(root)
     seen: list[tuple[gate.Candidate, bool]] = []
     with (
-        waiting(queue, root, request_of(("Add r1",), own=("r1.txt",))) as first,
-        waiting(queue, root, request_of(("Add r2",), own=("r2.txt",))) as second,
+        waiting(queue, root, request_of(("Add r1",), own=("r1.txt",)), lambda: FIRST_ENTRY_S) as first,
+        waiting(queue, root, request_of(("Add r2",), own=("r2.txt",)), lambda: SECOND_ENTRY_S) as second,
     ):
         status, printed = testing.captured(
             lambda: land.landing(
@@ -2646,6 +2654,15 @@ def landing_queue_cases(expect: testing.Expect, work: Path, root: Path) -> None:
         and records[-1]["landed"] is True
         and records[-1]["base"] is False
         and records[-1]["lane"] == 1,
+    )
+    entry_times = [item.get("queued") for item in records[-1]["requests"]]
+    expect(
+        "the record of the run gives the entry time of each request into the queue: the two times of the clocks of "
+        "the two waiting requests, and an ISO 8601 time in UTC for the own request of the holder",
+        entry_times[:2] == [FIRST_ENTRY, SECOND_ENTRY]
+        and isinstance(entry_times[2], str)
+        and len(entry_times[2]) == len(FIRST_ENTRY)
+        and entry_times[2].endswith("Z"),
     )
     hold_drop_cases(expect, work, root)
     claim_cases(expect, work, root)
@@ -3013,23 +3030,24 @@ def record_cases(expect: testing.Expect) -> None:
         work = Path(work_text)
         candidate = gate.Candidate("a" * 40, "b" * 40, ("x.txt",))
         verdict = gate.Verdict(("debug", "release"), (), 3.5, logs="/logs/run-000001")
-        run = land.Run(candidate, (1, 2), ("A subject", "B subject"), verdict)
-        base = land.Run(gate.Candidate("a" * 40, "a" * 40, ("x.txt",)), (), (), verdict)
+        run = land.Run(candidate, (1, 2), ("A subject", "B subject"), (FIRST_ENTRY, ""), verdict)
+        base = land.Run(gate.Candidate("a" * 40, "a" * 40, ("x.txt",)), (), (), (), verdict)
         land.write_records(work, "land", [land.RunRecord(run, (land.LANDED, land.REFUSED)), land.RunRecord(base, ())])
         land.write_records(work, "land", [])
         lines = (work / land.RECORDS).read_text(encoding="utf-8").splitlines()
         record = json.loads(lines[0])
         expect(
-            "a run of the gate gives one record with its commits, each request with its result, its configurations "
-            "and its logs, a run of the base gives a record with no request, and no run gives no record",
+            "a run of the gate gives one record with its commits, each request with its entry time and its result, "
+            "its configurations and its logs, a run of the base gives a record with no request, and no run gives no "
+            "record",
             len(lines) == 2
             and record["mode"] == "land"
             and record["commit"] == "b" * 40
             and record["base"] is False
             and record["requests"]
             == [
-                {"number": 1, "subject": "A subject", "result": "landed"},
-                {"number": 2, "subject": "B subject", "result": "refused"},
+                {"number": 1, "queued": FIRST_ENTRY, "subject": "A subject", "result": "landed"},
+                {"number": 2, "queued": "", "subject": "B subject", "result": "refused"},
             ]
             and record["configurations"] == ["debug", "release"]
             and record["landed"] is True

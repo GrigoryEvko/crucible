@@ -558,6 +558,15 @@ THE RECORD
     base holds no request.  It holds the commit that the gate judged last and
     the ledgers that it wrote.
 
+    Each request of the line also holds the field queued: the time of the
+    entry of the request into the queue, as ISO 8601 text in UTC.  The
+    request file holds that time from its write (entered()).  The time from
+    the queue to main is then the time of the line that lands the request
+    less that entry time, with no sampler outside the gate.  A request file
+    of an earlier copy holds no such time, and its request gets "".  The
+    request of --check gets the start of its call.  A reader of the records
+    reads a request with no field queued as a request with no entry time.
+
     It also holds the wall time, the time of each configuration in its heavy
     step and the logs.  It holds the focus of each configuration with a
     problem too.  The work directory is the directory land of the work root
@@ -843,7 +852,8 @@ class Queued:
     `branch` is the branch of HEAD of the work tree, and `common` is its shared git directory (THE HOLDER).  `token` is
     the random token of the request, and its verdict holds the same token (THE QUEUE).  `head` is the commit of HEAD of
     the work tree at the request, or "" (THE TREE).  `is_claiming` tells that the process of the request runs a copy of
-    this module that claims each request that it takes (THE LANES).
+    this module that claims each request that it takes (THE LANES).  `entry_time` is the time of the entry of the
+    request into the queue, as ISO 8601 text in UTC, or "" for a request file of an earlier copy (THE RECORD).
     """
 
     number: int
@@ -855,6 +865,7 @@ class Queued:
     token: str = ""
     head: str = ""
     is_claiming: bool = False
+    entry_time: str = ""
 
     @property
     def name(self) -> str:
@@ -930,14 +941,16 @@ class JournalEntry:
 
 @dataclass(frozen=True, slots=True)
 class Run:
-    """One run of the gate: the candidate, the number and the subject of each request of its chain, and the verdict.
+    """One run of the gate: the candidate, the number, the subject and the entry time of each request of its chain, and
+    the verdict.
 
-    A run of the base has no request (THE RUN OF THE BASE).
+    A run of the base has no request (THE RUN OF THE BASE).  The entry time of a request is Queued.entry_time.
     """
 
     candidate: gate.Candidate
     numbers: tuple[int, ...]
     subjects: tuple[str, ...]
+    entry_times: tuple[str, ...]
     verdict: gate.Verdict
 
 
@@ -2167,7 +2180,8 @@ class BatchLanding:
         if is_published and self.stack is not None and not verdict.is_accepted:
             self.stack.withdraw()
         numbers = tuple(link.queued.number for link in chain)
-        self.runs.append(Run(candidate, numbers, tuple(link.queued.request.subject for link in chain), verdict))
+        subjects = tuple(link.queued.request.subject for link in chain)
+        self.runs.append(Run(candidate, numbers, subjects, tuple(link.queued.entry_time for link in chain), verdict))
         return verdict
 
     def publish_fold(self, commit: str) -> None:
@@ -2198,7 +2212,7 @@ class BatchLanding:
         title = f"the run of the base at {self.base[:SHORT_HASH]}"
         candidate = gate.Candidate(self.base, self.base, tuple(changed), focus=tuple(focus), title=title)
         verdict = self.check(candidate, True)
-        self.runs.append(Run(candidate, (), (), verdict))
+        self.runs.append(Run(candidate, (), (), (), verdict))
         self.base_run = len(self.runs) - 1
         return verdict
 
@@ -2793,8 +2807,10 @@ def write_records(work: Path, mode: str, records: Sequence[RunRecord], lane: int
                 "commit": run.candidate.commit,
                 "landed": LANDED in record.results,
                 "requests": [
-                    {"number": number, "subject": subject, "result": result}
-                    for number, subject, result in zip(run.numbers, run.subjects, record.results, strict=True)
+                    {"number": number, "queued": entry_time, "subject": subject, "result": result}
+                    for number, entry_time, subject, result in zip(
+                        run.numbers, run.entry_times, run.subjects, record.results, strict=True
+                    )
                 ],
                 **asdict(run.verdict),
             }
@@ -2869,6 +2885,7 @@ def encoded_request(queued: Queued, patch_names: Sequence[str], part_names: Sequ
         "branch": queued.branch,
         "common": queued.common,
         "head": queued.head,
+        "queued": queued.entry_time,
         "messages": list(request.messages),
         "patches": list(patch_names),
         "edits": [asdict(edit) for edit in request.edits],
@@ -2934,6 +2951,9 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
     jobs, every = record.get("jobs"), record.get("every")
     if not isinstance(jobs, int) or not isinstance(every, bool):
         raise TypeError("the field jobs is not a number, or the field every is not a truth value")
+    entry_time = record.get("queued", "")
+    if not isinstance(entry_time, str):
+        raise TypeError("the field queued is not a text")
     if jobs < 1:
         raise ValueError(f"the field jobs is {jobs}, and a request takes a number above 0")
     parts = tuple(
@@ -2948,14 +2968,18 @@ def decoded_request(queue: Path, number: int, data: bytes) -> Queued:
         parts,
     )
     options = Options(False, False, is_every=every, jobs=jobs)
-    return Queued(number, Path(root), request, options, branch, common, token, head, record.get("claims") is True)
+    is_claiming = record.get("claims") is True
+    return Queued(number, Path(root), request, options, branch, common, token, head, is_claiming, entry_time)
 
 
 @contextlib.contextmanager
-def entered(queue: Path, root: Path, request: Request, options: Options) -> Iterator[Queued]:
+def entered(
+    queue: Path, root: Path, request: Request, options: Options, clock: Callable[[], float] = time.time
+) -> Iterator[Queued]:
     """Write a request into the queue, hold its lock for the block, give the request, and remove its files at the end.
 
-    The request of the block keeps the patches of the request.  The copy of each patch is in the queue.
+    The request of the block keeps the patches of the request.  The copy of each patch is in the queue.  `clock` gives
+    the time of the entry, in seconds since the epoch (THE RECORD).
 
     Raises:
         LandError: If HEAD of the work tree is not on a branch, or a patch cannot be read
@@ -2966,7 +2990,9 @@ def entered(queue: Path, root: Path, request: Request, options: Options) -> Iter
     head = git.head(root)
     number, descriptor = reserve(queue)
     try:
-        queued = Queued(number, root, request, options, branch, common, secrets.token_hex(TOKEN_BYTES), head)
+        token = secrets.token_hex(TOKEN_BYTES)
+        entry_time = loop_history.iso_time(clock())
+        queued = Queued(number, root, request, options, branch, common, token, head, entry_time=entry_time)
         sources = [*request.patches, *(part.patch for part in request.parts)]
         names = [f"{queued.name}{PATCH_MARK}{index}" for index in range(len(sources))]
         for name, patch in zip(names, sources, strict=True):
@@ -3437,7 +3463,8 @@ def held_heavy_lock(root: Path, environment: Mapping[str, str] = os.environ) -> 
 def checked(root: Path, request: Request, options: Options, work: Path) -> int:
     """Run the gate on the commit of a request as --check does, alone with the lock of the warm tree, and return the exit.
 
-    --check with an empty request checks HEAD itself.
+    --check with an empty request checks HEAD itself.  The entry time of the request in its record is the start of the
+    call, before the wait for the lock (THE RECORD).
 
     Raises:
         LandError: If HEAD of the work tree is not on a branch
@@ -3445,14 +3472,15 @@ def checked(root: Path, request: Request, options: Options, work: Path) -> int:
         git.GitError: If a git command fails
     """
     decisions: list[Decision] = []
+    entry_time = loop_history.iso_now()
     with gate.session(root, work, options.jobs, options.is_every) as session, heavy.gate_session(root):
         run_check = session.check_in_run
-        queued = Queued(0, root, request, options)
+        queued = Queued(0, root, request, options, entry_time=entry_time)
         if request.is_empty:
             head = git.head(root)
             candidate = gate.Candidate(head, head, ())
             verdict = run_check(candidate, False)
-            run = Run(candidate, (0,), (request.subject,), verdict)
+            run = Run(candidate, (0,), (request.subject,), (entry_time,), verdict)
             write_records(work, "check", [RunRecord(run, (ACCEPTED if verdict.is_accepted else REJECTED,))])
             if verdict.is_accepted:
                 accepted_line = Line(f"loop land: the gate accepts HEAD {head[:SHORT_HASH]}")
