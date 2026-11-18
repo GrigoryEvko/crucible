@@ -3954,7 +3954,7 @@ crucible_neg_compile_test(neg_cipher_durable_head_advancer_extras_engage_atomic_
 # the source spells it with braces.
 crucible_neg_compile_test(neg_cipher_durable_handle_direct_construction
   "is private within this context"
-  "crucible::cipher::durable::CipherDurableHandle<Stance>::CipherDurableHandle\\(fixy::fs::OwnedFd&&\\)")
+  "crucible::cipher::durable::CipherDurableHandle<Stance>::CipherDurableHandle\\(")
 
 # State-discipline: SealedView cannot satisfy the MutableView parameter
 # of register_name / register_op — the only typed registration path

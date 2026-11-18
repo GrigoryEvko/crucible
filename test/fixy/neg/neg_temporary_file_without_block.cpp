@@ -13,8 +13,8 @@ namespace {
 
 using IoOnlyCtx = fe::ExecCtx<fe::Test, fe::Row<fe::Effect::Test, fe::Effect::IO>>;
 
-[[maybe_unused]] bool opens(IoOnlyCtx const& ctx, fixy::fs::Dirfd const& dir) {
-    return fixy::fs::mint_temporary_file_at(ctx, dir).is_ok();
+[[maybe_unused]] bool opens(IoOnlyCtx const& ctx, fixy::fs::DirectoryHandle const& dir) {
+    return fixy::fs::mint_temporary_file_at(ctx, dir.ref()).is_ok();
 }
 
 }  // namespace

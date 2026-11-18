@@ -1,6 +1,6 @@
 // Each door under a directory refuses a path that escapes the directory.
 //
-// A door under a Dirfd reads its path beneath the directory of the Dirfd.
+// A door under a directory handle reads its path beneath that directory.
 // The cases give the doors four kinds of path that leave the directory:
 //
 //   - an absolute path
@@ -59,10 +59,10 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
     return fixy::sanitize_path(fixy::mint_tagged<src::External>(text)).expect("each test path passes the sanitizer");
 }
 
-// The Dirfd of the directory at path, which must open.
-[[nodiscard]] fs::Dirfd directory_at(fixy::TextView path) {
+// The handle of the directory at path, which must open.
+[[nodiscard]] fs::DirectoryHandle directory_at(fixy::TextView path) {
     IoBlockCtx const ctx{eff::testing::test()};
-    return fs::open_dirfd(ctx, sanitized(path)).expect("each directory of the test opens");
+    return fs::open_directory(ctx, sanitized(path)).expect("each directory of the test opens");
 }
 
 // The error of a result, or the zero Errno for a result that holds a value.
@@ -73,10 +73,11 @@ template <typename T>
 
 // The error of an open, or the zero Errno for an open that gave a
 // descriptor.  The match closes the descriptor of an open that succeeded.
-[[nodiscard]] Errno open_error_of(fixy::Result<fixy::Linear<fs::OwnedFd>, Errno> minted) {
+template <class File>
+[[nodiscard]] Errno open_error_of(fixy::Result<fixy::Linear<File>, Errno> minted) {
     return std::move(minted).match(
-        [](fixy::Linear<fs::OwnedFd> opened) -> Errno {
-            fs::OwnedFd const closed_on_return = std::move(opened).consume();
+        [](fixy::Linear<File> opened) -> Errno {
+            File const closed_on_return = std::move(opened).consume();
             return Errno{};
         },
         [](Errno error) -> Errno { return error; });
@@ -90,37 +91,38 @@ template <typename T>
 }
 
 // The opens of one escape: mint_file_at and read_whole_at of the file, and
-// open_dirfd_at of the directory.  Each gives expected.  It gives the count
-// of the doors that did not.
-[[nodiscard]] int opens_refuse(fixy::TextView escape, fs::Dirfd const& dir, PathBuffer const& file,
+// open_directory_at of the directory.  Each gives expected.  It gives the
+// count of the doors that did not.
+[[nodiscard]] int opens_refuse(fixy::TextView escape, fs::DirectoryHandle const& dir, PathBuffer const& file,
                                PathBuffer const& directory, Errno expected) {
     IoBlockCtx const ctx{eff::testing::test()};
     eff::Alloc const alloc = eff::testing::test().alloc;
     int failed = 0;
-    if (Errno const given = open_error_of(fs::mint_file_at<fs::read_only>(ctx, dir, file.c_text()));
+    if (Errno const given = open_error_of(fs::mint_file_at<fs::read_only>(ctx, dir.ref(), file.c_text()));
         given != expected) {
         failed += refused_badly(escape, "mint_file_at", given, expected);
     }
     foundation::core::GrowText text = foundation::core::mint_grow_text(4096);
-    if (Errno const given = error_of(fs::read_whole_at(ctx, alloc, dir, file.c_text(), text)); given != expected) {
+    if (Errno const given = error_of(fs::read_whole_at(ctx, alloc, dir.ref(), file.c_text(), text));
+        given != expected) {
         failed += refused_badly(escape, "read_whole_at", given, expected);
     }
-    if (Errno const given = error_of(fs::open_dirfd_at(ctx, dir, directory.c_text())); given != expected) {
-        failed += refused_badly(escape, "open_dirfd_at", given, expected);
+    if (Errno const given = error_of(fs::open_directory_at(ctx, dir.ref(), directory.c_text())); given != expected) {
+        failed += refused_badly(escape, "open_directory_at", given, expected);
     }
     return failed;
 }
 
 // Each open refuses each escape.  The cases run to the end, so the report
 // names each door that did not refuse an escape.  The absolute link goes
-// through /dev/fd to the descriptor of a Dirfd of /proc/sys.
+// through /dev/fd to the descriptor of the handle of /proc/sys.
 [[nodiscard]] int each_open_refuses_each_escape() {
-    fs::Dirfd const proc_sys = directory_at("/proc/sys");
-    fs::Dirfd const proc = directory_at("/proc");
-    fs::Dirfd const net = directory_at("/sys/class/net");
-    fs::Dirfd const dev = directory_at("/dev");
+    fs::DirectoryHandle const proc_sys = directory_at("/proc/sys");
+    fs::DirectoryHandle const proc = directory_at("/proc");
+    fs::DirectoryHandle const net = directory_at("/sys/class/net");
+    fs::DirectoryHandle const dev = directory_at("/dev");
     PathBuffer descriptor{};
-    descriptor.append_decimal(static_cast<std::uint64_t>(proc_sys.get())).expect("a number fits the buffer");
+    fixy::os::append_descriptor_number(descriptor, proc_sys.ref()).expect("a number fits the buffer");
     fixy::TextView const number = descriptor.c_text().view();
 
     int failed = opens_refuse("absolute", proc_sys, joined("/proc/sys/kernel/ostype"), joined("/dev"), Errno::exdev);
@@ -139,9 +141,10 @@ template <typename T>
 // there.  A commit takes the escape as its source, with the target
 // no-target, and as its target, with the source no-entry.  Each door gives
 // expected.  It gives the count of the doors that did not.
-[[nodiscard]] int entry_doors_refuse(fixy::TextView escape, fs::Dirfd const& dir, PathBuffer const& missing,
-                                     PathBuffer const& present, Errno expected) {
+[[nodiscard]] int entry_doors_refuse(fixy::TextView escape, fs::DirectoryHandle const& dir_handle,
+                                     PathBuffer const& missing, PathBuffer const& present, Errno expected) {
     IoBlockCtx const ctx{eff::testing::test()};
+    fs::DirectoryRef<fs::directory_rights> const dir = dir_handle.ref();
     using Replacing = fs::atomicity::Rename;
     using NoReplace = fs::atomicity::RenameAt2NoReplace;
     int failed = 0;
@@ -175,15 +178,15 @@ template <typename T>
 
 // Each door of one entry refuses each escape, and four more forms of a path
 // that leaves the directory: a bare "..", a ".." part at the end, a slash at
-// the end, and the name of an entry of "/".  The last form takes a Dirfd of
-// "/", because the target of the escape must be on the mount of the
+// the end, and the name of an entry of "/".  The last form takes the handle
+// of "/", because the target of the escape must be on the mount of the
 // directory.  /proc of the last form is a mount point, so a rename of it
 // gives ebusy, and no door changes it.
 [[nodiscard]] int each_entry_door_refuses_each_escape() {
-    fs::Dirfd const proc_sys = directory_at("/proc/sys");
-    fs::Dirfd const proc = directory_at("/proc");
-    fs::Dirfd const net = directory_at("/sys/class/net");
-    fs::Dirfd const root = directory_at("/");
+    fs::DirectoryHandle const proc_sys = directory_at("/proc/sys");
+    fs::DirectoryHandle const proc = directory_at("/proc");
+    fs::DirectoryHandle const net = directory_at("/sys/class/net");
+    fs::DirectoryHandle const root = directory_at("/");
 
     int failed = entry_doors_refuse("absolute", proc_sys, joined("/proc/sys/kernel/no-entry"),
                                     joined("/proc/sys/kernel/ostype"), Errno::exdev);
@@ -204,16 +207,18 @@ template <typename T>
 // /proc/self is a link to the directory of the process, in /proc.
 [[nodiscard]] int each_open_permits_a_path_inside() {
     IoBlockCtx const ctx{eff::testing::test()};
-    fs::Dirfd const proc_sys = directory_at("/proc/sys");
-    fs::Dirfd const proc = directory_at("/proc");
+    fs::DirectoryHandle const proc_sys_handle = directory_at("/proc/sys");
+    fs::DirectoryHandle const proc_handle = directory_at("/proc");
+    fs::DirectoryRef<fs::directory_rights> const proc_sys = proc_sys_handle.ref();
+    fs::DirectoryRef<fs::directory_rights> const proc = proc_handle.ref();
     if (Errno const given = open_error_of(fs::mint_file_at<fs::read_only>(ctx, proc_sys, "kernel/../kernel/ostype"));
         given != Errno{}) {
         fixy::report(fixy::Sink::Err, "mint_file_at refused kernel/../kernel/ostype with errno {}\n",
                      std::to_underlying(given));
         return 1;
     }
-    if (Errno const given = error_of(fs::open_dirfd_at(ctx, proc_sys, "kernel/..")); given != Errno{}) {
-        fixy::report(fixy::Sink::Err, "open_dirfd_at refused kernel/.. with errno {}\n", std::to_underlying(given));
+    if (Errno const given = error_of(fs::open_directory_at(ctx, proc_sys, "kernel/..")); given != Errno{}) {
+        fixy::report(fixy::Sink::Err, "open_directory_at refused kernel/.. with errno {}\n", std::to_underlying(given));
         return 1;
     }
     if (Errno const given = open_error_of(fs::mint_file_at<fs::read_only>(ctx, proc, "self/status"));
@@ -231,8 +236,10 @@ template <typename T>
 // of a missing entry reach the kernel, which gives enoent.
 [[nodiscard]] int each_entry_door_permits_a_path_inside() {
     IoBlockCtx const ctx{eff::testing::test()};
-    fs::Dirfd const proc_sys = directory_at("/proc/sys");
-    fs::Dirfd const proc = directory_at("/proc");
+    fs::DirectoryHandle const proc_sys_handle = directory_at("/proc/sys");
+    fs::DirectoryHandle const proc_handle = directory_at("/proc");
+    fs::DirectoryRef<fs::directory_rights> const proc_sys = proc_sys_handle.ref();
+    fs::DirectoryRef<fs::directory_rights> const proc = proc_handle.ref();
     bool const has_seen = fs::has_entry_at(ctx, proc_sys, "kernel/../kernel/ostype").value_or(false)
                        && fs::has_entry_at(ctx, proc, "self/status").value_or(false)
                        && fs::has_entry_at(ctx, proc, "self").value_or(false)

@@ -30,15 +30,15 @@
 //     walks over the fixy::fs namespaces check that each declared tag has
 //     a row.
 //
-//  4. The descriptor handle OwnedFd is in fixy/os/Fd.h, with the gate
-//     CtxAdmitsFs.  It has a private constructor, and three door classes
-//     make the ::open and ::socket calls: FileDoor here, SocketDoor in
-//     fixy/os/Socket.h and PtpDeviceDoor in fixy/os/Time.h.  The members
-//     of each door are private, and its friends are the gated mints that
-//     use it.  So a descriptor that is owned is a descriptor the kernel
-//     handed out to a gated mint.
+//  4. A file and a directory are Handles of fixy/os/Handle.h, with the
+//     rights of their open in the type.  The Handle has a private
+//     constructor, and FileDoor here makes each open of a path.  The members
+//     of the door are private, and its friends are the gated mints that use
+//     it.  So a file or a directory that is owned is a descriptor that the
+//     kernel handed out to a gated mint.  A call takes the borrow of a
+//     handle, and asks for the rights of its work in its constraint.
 //
-//  5. open_dirfd takes a context and a sanitized path, so the path
+//  5. open_directory takes a context and a sanitized path, so the path
 //     discipline and the effect row reach it as they reach each other
 //     call in the family.
 //
@@ -51,6 +51,7 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
 #include <fixy/os/Fd.h>
+#include <fixy/os/Handle.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
@@ -90,6 +91,37 @@ inline constexpr ::fixy::atom_pack::tag_row<int> open_mode_table[] = {
      ::foundation::os::kOpenWriteOnly | ::foundation::os::kOpenCreate | ::foundation::os::kOpenTruncate},
     {^^open_mode::ReadWrite, ::foundation::os::kOpenReadWrite | ::foundation::os::kOpenCreate},
 };
+
+// The rights of the file of each open mode (THE RIGHTS of fixy/os/Handle.h).
+// A map reads its file, so only a mode that reads gives the map right.  An
+// open for an append writes each byte at the end of the file, so it gives no
+// seek right.
+inline constexpr ::fixy::atom_pack::tag_row<::fixy::os::RightSet> open_mode_rights_table[] = {
+    {^^open_mode::ReadOnly,
+     ::fixy::os::RightSet::read | ::fixy::os::RightSet::seek | ::fixy::os::RightSet::sync | ::fixy::os::RightSet::map},
+    {^^open_mode::WriteCreate, ::fixy::os::RightSet::write | ::fixy::os::RightSet::seek | ::fixy::os::RightSet::sync},
+    {^^open_mode::WriteAppend, ::fixy::os::RightSet::write | ::fixy::os::RightSet::sync},
+    {^^open_mode::WriteTruncate, ::fixy::os::RightSet::write | ::fixy::os::RightSet::seek | ::fixy::os::RightSet::sync},
+    {^^open_mode::ReadWrite, ::fixy::os::RightSet::read | ::fixy::os::RightSet::write | ::fixy::os::RightSet::seek
+                                 | ::fixy::os::RightSet::sync | ::fixy::os::RightSet::map},
+};
+
+// The rights of a file with no name, which the door opens for reading and
+// writing (THE TEMPORARY FILE below).
+inline constexpr ::fixy::os::RightSet temporary_file_rights = ::fixy::os::RightSet::read | ::fixy::os::RightSet::write
+                                                            | ::fixy::os::RightSet::seek | ::fixy::os::RightSet::sync
+                                                            | ::fixy::os::RightSet::map;
+
+// The rights of a directory: a lookup of a path beneath it, a create and a
+// remove of an entry, and the sync that flushes its entries.
+inline constexpr ::fixy::os::RightSet directory_rights = ::fixy::os::RightSet::lookup | ::fixy::os::RightSet::create
+                                                       | ::fixy::os::RightSet::remove | ::fixy::os::RightSet::sync;
+
+// The handle of a directory.
+using DirectoryHandle = ::fixy::os::Handle<::fixy::os::kind::Directory, directory_rights>;
+
+// The handle of a file with no name.
+using TemporaryFile = ::fixy::os::Handle<::fixy::os::kind::File, temporary_file_rights>;
 
 inline constexpr ::fixy::atom_pack::tag_row<int> flag_table[] = {
     {^^flag::CloseOnExec, ::foundation::os::kOpenCloseOnExec}, {^^flag::NoFollow, ::foundation::os::kOpenNoFollow},
@@ -169,8 +201,8 @@ rename_no_replace_at_(int directory, char const* from, char const* to) noexcept;
 // RESOLVE_BENEATH and RESOLVE_NO_MAGICLINKS).  A path that leaves the
 // directory gives exdev, and a magic link of procfs gives eloop.  The door
 // gives MODE to the kernel only when FLAGS holds kOpenCreate.  It tries again
-// after eagain, as open_beneath_steps_ tells.  A door class of OwnedFd is the
-// one caller that keeps the descriptor.
+// after eagain, as open_beneath_steps_ tells.  FileDoor is the one caller
+// that keeps the descriptor.
 [[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno>
 open_beneath_(int directory, char const* path, int flags, std::uint32_t mode) noexcept;
 
@@ -225,21 +257,22 @@ open_beneath_steps_(Step step) noexcept {
 
 // THE FINAL NAME
 //   unlinkat, mkdirat and renameat take no resolve flags.  So the door of
-//   each of them opens the directory part of its path beneath the Dirfd
+//   each of them opens the directory part of its path beneath the directory
 //   (open_beneath_, with O_PATH), and it gives the call one final name under
 //   that directory.  The final name is the last part of the path, with the
 //   slashes after it, so the call keeps the meaning of a slash at the end.
 //   A path with no slash before its last part has no directory part, and
-//   the call takes the Dirfd itself.  A last part "." or "..", and a path of
-//   slashes only, name a directory and no entry of one.  For such a path the
-//   door opens the whole path beneath the Dirfd, and the final name is ".".
+//   the call takes the directory itself.  A last part "." or "..", and a path
+//   of slashes only, name a directory and no entry of one.  For such a path
+//   the door opens the whole path beneath the directory, and the final name
+//   is ".".
 //   So no final name holds a slash before its end, and no final name is
 //   "..".
 
 // The split of a path for a call of one final name (THE FINAL NAME).
 struct FinalSplit {
     // The characters of the directory part, with the slash after them.  The
-    // text is empty when the final name is under the Dirfd itself, and it is
+    // text is empty when the final name is under the directory itself, and it is
     // the whole path when is_whole is true.
     ::foundation::core::TextView parent{};
     // The offset of the final name in the path.
@@ -398,40 +431,6 @@ write_full_steps_(std::size_t count, Step step) noexcept {
 
 class FileDoor;
 
-// A descriptor that is known to be a directory, opened O_DIRECTORY and
-// O_NOFOLLOW.  sync<FsyncParentDir> takes this rather than any OwnedFd,
-// because fsync on a directory descriptor is what flushes an entry, and
-// on a file descriptor it is a different operation wearing the same
-// name.
-//
-// The constructor is private and FileDoor is its sole friend: an OwnedFd
-// is evidence of a descriptor the caller owns, not of a directory, so
-// consuming one is not enough.  The door opens the directory, and
-// open_dirfd is the gated caller of the door.  A Result of a Dirfd needs
-// the complete class, so the door, which comes after the class, gives it.
-//
-// The class gives no reference to the OwnedFd that it holds.  So no door of
-// a descriptor, such as read_full or sync<Fsync>, takes a directory.
-class [[nodiscard]] Dirfd {
-    OwnedFd fd_;
-
-    explicit Dirfd(OwnedFd&& fd) noexcept : fd_{std::move(fd)} {}
-
-    friend class FileDoor;
-
-public:
-    Dirfd() noexcept = default;
-
-    Dirfd(const Dirfd&) = delete("Dirfd holds a descriptor; copy would double-close");
-    Dirfd& operator=(const Dirfd&) = delete("Dirfd holds a descriptor; copy would double-close");
-    Dirfd(Dirfd&&) noexcept = default;
-    Dirfd& operator=(Dirfd&&) noexcept = default;
-    ~Dirfd() noexcept = default;
-
-    [[nodiscard]] int get() const noexcept { return fd_.get(); }
-    [[nodiscard]] bool is_open() const noexcept { return fd_.is_open(); }
-};
-
 namespace detail {
 
 template <typename A>
@@ -508,6 +507,25 @@ template <typename A>
 template <typename A>
 inline constexpr int atom_open_flags_v = atom_open_flags<A>();
 
+// The rights that an atom gives the file: the rights of a mode atom, and no
+// right for each other atom.
+template <typename A>
+[[nodiscard]] consteval ::fixy::os::RightSet atom_rights() noexcept {
+    if constexpr (is_mode_atom_v<A>) {
+        return ::fixy::atom_pack::value_for(open_mode_rights_table, ^^extract_mode_t<A>);
+    } else {
+        return ::fixy::os::RightSet::none;
+    }
+}
+
+// The rights of the file of a pack, which holds one mode atom.
+template <typename... Atoms>
+[[nodiscard]] consteval ::fixy::os::RightSet fold_rights() noexcept {
+    ::fixy::os::RightSet rights = ::fixy::os::RightSet::none;
+    ((rights = rights | atom_rights<Atoms>()), ...);
+    return rights;
+}
+
 // O_CLOEXEC is folded in unconditionally.  A descriptor that survives
 // execve leaks into every child process.
 template <typename... Atoms>
@@ -515,6 +533,14 @@ template <typename... Atoms>
     int acc = ::foundation::os::kOpenCloseOnExec;
     ((acc |= atom_open_flags_v<Atoms>), ...);
     return acc;
+}
+
+// The rights that an open of a pack under a directory needs of the
+// directory: a lookup, and a create when the mode makes a missing file.
+template <typename... Atoms>
+[[nodiscard]] consteval ::fixy::os::RightSet open_at_needs() noexcept {
+    bool const is_create = (fold_open_flags<Atoms...>() & ::foundation::os::kOpenCreate) != 0;
+    return is_create ? ::fixy::os::RightSet::lookup | ::fixy::os::RightSet::create : ::fixy::os::RightSet::lookup;
 }
 
 // An atom of another kind answers true, so the fold is a conjunction
@@ -530,11 +556,38 @@ inline constexpr bool all_atom_tags_known_v = (atom_tag_is_known_v<Atoms> && ...
 
 }  // namespace detail
 
+// The handle of a file that an open of the pack Atoms gives: a File with the
+// rights of the mode of the pack.
+template <typename... Atoms>
+using FileOf = ::fixy::os::Handle<::fixy::os::kind::File, detail::fold_rights<Atoms...>()>;
+
+// The borrow of a directory with the rights Rights, and the borrow of a file.
+template <::fixy::os::RightSet Rights>
+using DirectoryRef = ::fixy::os::HandleRef<::fixy::os::kind::Directory, Rights>;
+
+template <::fixy::os::RightSet Rights>
+using FileRef = ::fixy::os::HandleRef<::fixy::os::kind::File, Rights>;
+
 // The first clause reads the row off the pack, and the mode clause asks
 // for exactly one mode atom.
 template <typename Ctx, typename... Atoms>
 concept CtxFitsFileMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...> && detail::all_atom_tags_known_v<Atoms...>
                        && ::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::fs::mode, Atoms...>;
+
+// The open of a pack under a directory with the rights Held: the gate of
+// mint_file, and the rights of the open on the directory.
+template <typename Ctx, ::fixy::os::RightSet Held, typename... Atoms>
+concept CtxFitsFileMintAt =
+    CtxFitsFileMint<Ctx, Atoms...> && ::fixy::os::HoldsRights<Held, detail::open_at_needs<Atoms...>()>;
+
+// A call that needs the rights Needed of a handle with the rights Held.
+template <typename Ctx, ::fixy::os::RightSet Held, ::fixy::os::RightSet Needed>
+concept CtxFitsHandleCall = CtxAdmitsFs<Ctx> && ::fixy::os::HoldsRights<Held, Needed>;
+
+// The open of a file with no name under a directory with the rights Held,
+// which needs the create right.
+template <typename Ctx, ::fixy::os::RightSet Held>
+concept CtxFitsTemporaryMint = CtxFitsHandleCall<Ctx, Held, ::fixy::os::RightSet::create>;
 
 // sync_op::None is refused.  A caller that needs no durability does not
 // call sync at all, and a tag with no syscall behind it must not reach
@@ -542,15 +595,17 @@ concept CtxFitsFileMint = ::fixy::atom_pack::CtxAdmitsAtomRow<Ctx, Atoms...> && 
 template <typename Ctx, typename SyncOp>
 concept CtxFitsSync = CtxAdmitsFs<Ctx> && KnownSyncOp<SyncOp> && !std::is_same_v<SyncOp, sync_op::None>;
 
-// The sync of a descriptor and the sync of a directory.  FsyncParentDir
-// flushes the entries of a directory, so it takes a Dirfd and no OwnedFd.  An
-// fsync of the descriptor of a file flushes that file and no entry of its
-// directory.  Each other op takes an OwnedFd.
-template <typename Ctx, typename SyncOp>
-concept CtxFitsDescriptorSync = CtxFitsSync<Ctx, SyncOp> && !std::is_same_v<SyncOp, sync_op::FsyncParentDir>;
+// The sync of a file and the sync of a directory.  FsyncParentDir flushes
+// the entries of a directory, so it takes a directory and no file.  An fsync
+// of a file flushes that file and no entry of its directory.  Each other op
+// takes a file.  Each needs the sync right of the handle.
+template <typename Ctx, typename SyncOp, ::fixy::os::RightSet Held>
+concept CtxFitsDescriptorSync = CtxFitsSync<Ctx, SyncOp> && !std::is_same_v<SyncOp, sync_op::FsyncParentDir>
+                             && ::fixy::os::HoldsRights<Held, ::fixy::os::RightSet::sync>;
 
-template <typename Ctx, typename SyncOp>
-concept CtxFitsDirectorySync = CtxFitsSync<Ctx, SyncOp> && std::is_same_v<SyncOp, sync_op::FsyncParentDir>;
+template <typename Ctx, typename SyncOp, ::fixy::os::RightSet Held>
+concept CtxFitsDirectorySync = CtxFitsSync<Ctx, SyncOp> && std::is_same_v<SyncOp, sync_op::FsyncParentDir>
+                            && ::fixy::os::HoldsRights<Held, ::fixy::os::RightSet::sync>;
 
 // atomicity::None is refused.  It renames nothing, so a success from it
 // would say that a commit was made when none was.  A caller that needs
@@ -570,41 +625,41 @@ concept CtxFitsCommitAtomic =
 // argument belongs to this declaration.
 template <typename... Atoms, eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, Atoms...>
-[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<Linear<FileOf<Atoms...>>, ::foundation::os::Errno>
 mint_file(Ctx const&, Path<tags::source::Sanitized> const& sanitized_path,
           FileMode perms = FileMode::owner_read_write_others_read) noexcept;
 
 // Declared here and defined below FileDoor for the same reason.
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
-open_dirfd(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept;
+[[nodiscard]] ::foundation::core::Result<DirectoryHandle, ::foundation::os::Errno>
+open_directory(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept;
 
 // The opens of a path under a directory (THE CALLS UNDER A DIRECTORY below),
 // declared here and defined below FileDoor for the same reason.
-template <typename... Atoms, eff::IsExecCtx Ctx>
-    requires CtxFitsFileMint<Ctx, Atoms...>
-[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
-mint_file_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path,
+template <typename... Atoms, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsFileMintAt<Ctx, Rights, Atoms...>
+[[nodiscard]] inline ::foundation::core::Result<Linear<FileOf<Atoms...>>, ::foundation::os::Errno>
+mint_file_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path,
              FileMode perms = FileMode::owner_read_write_others_read) noexcept;
 
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
-open_dirfd_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept;
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup>
+[[nodiscard]] ::foundation::core::Result<DirectoryHandle, ::foundation::os::Errno>
+open_directory_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept;
 
 // The open of a file with no name under a directory (THE TEMPORARY FILE
 // below), declared here and defined below FileDoor for the same reason.
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
-mint_temporary_file_at(Ctx const&, Dirfd const& dir, FileMode perms = FileMode::owner_read_write) noexcept;
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsTemporaryMint<Ctx, Rights>
+[[nodiscard]] inline ::foundation::core::Result<Linear<TemporaryFile>, ::foundation::os::Errno>
+mint_temporary_file_at(Ctx const&, DirectoryRef<Rights> dir, FileMode perms = FileMode::owner_read_write) noexcept;
 
 // The door to the open of a path.  No object of it exists.  Its members
 // are private, and its friends are the gated mints that open a path:
-// mint_file, open_dirfd, mint_file_at, open_dirfd_at and
-// mint_temporary_file_at.  OwnedFd and Dirfd befriend this class, so a
-// handle over a path comes only from one of those mints, after their gates.
+// mint_file, open_directory, mint_file_at, open_directory_at and
+// mint_temporary_file_at.  A Handle befriends this class, so a handle over a
+// path comes only from one of those mints, after their gates.
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
@@ -612,27 +667,27 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     template <typename... FriendAtoms, eff::IsExecCtx FriendCtx>
         requires CtxFitsFileMint<FriendCtx, FriendAtoms...>
     friend auto mint_file(FriendCtx const&, Path<tags::source::Sanitized> const&, FileMode) noexcept
-        -> ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+        -> ::foundation::core::Result<Linear<FileOf<FriendAtoms...>>, ::foundation::os::Errno>;
 
     template <eff::IsExecCtx FriendCtx>
         requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
-    friend auto open_dirfd(FriendCtx const&, Path<tags::source::Sanitized> const&) noexcept
-        -> ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
+    friend auto open_directory(FriendCtx const&, Path<tags::source::Sanitized> const&) noexcept
+        -> ::foundation::core::Result<DirectoryHandle, ::foundation::os::Errno>;
 
-    template <typename... FriendAtoms, eff::IsExecCtx FriendCtx>
-        requires CtxFitsFileMint<FriendCtx, FriendAtoms...>
-    friend auto mint_file_at(FriendCtx const&, Dirfd const&, ::foundation::core::CText, FileMode) noexcept
-        -> ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+    template <typename... FriendAtoms, ::fixy::os::RightSet FriendRights, eff::IsExecCtx FriendCtx>
+        requires CtxFitsFileMintAt<FriendCtx, FriendRights, FriendAtoms...>
+    friend auto mint_file_at(FriendCtx const&, DirectoryRef<FriendRights>, ::foundation::core::CText, FileMode) noexcept
+        -> ::foundation::core::Result<Linear<FileOf<FriendAtoms...>>, ::foundation::os::Errno>;
 
-    template <eff::IsExecCtx FriendCtx>
-        requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
-    friend auto open_dirfd_at(FriendCtx const&, Dirfd const&, ::foundation::core::CText) noexcept
-        -> ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
+    template <::fixy::os::RightSet FriendRights, eff::IsExecCtx FriendCtx>
+        requires CtxFitsHandleCall<FriendCtx, FriendRights, ::fixy::os::RightSet::lookup>
+    friend auto open_directory_at(FriendCtx const&, DirectoryRef<FriendRights>, ::foundation::core::CText) noexcept
+        -> ::foundation::core::Result<DirectoryHandle, ::foundation::os::Errno>;
 
-    template <eff::IsExecCtx FriendCtx>
-        requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
-    friend auto mint_temporary_file_at(FriendCtx const&, Dirfd const&, FileMode) noexcept
-        -> ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+    template <::fixy::os::RightSet FriendRights, eff::IsExecCtx FriendCtx>
+        requires CtxFitsTemporaryMint<FriendCtx, FriendRights>
+    friend auto mint_temporary_file_at(FriendCtx const&, DirectoryRef<FriendRights>, FileMode) noexcept
+        -> ::foundation::core::Result<Linear<TemporaryFile>, ::foundation::os::Errno>;
 
     // The open flags of a file with no name: it reads and writes, and it
     // closes when a thread starts a program.
@@ -644,92 +699,88 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     static constexpr int directory_flags_ = ::foundation::os::kOpenDirectory | ::foundation::os::kOpenNoFollow
                                           | ::foundation::os::kOpenCloseOnExec | ::foundation::os::kOpenReadOnly;
 
-    // The handle of a descriptor that the open gave, or the error of the
-    // open.
-    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    // The handle Owned of a descriptor that the open gave, or the error of
+    // the open.
+    template <class Owned>
+    [[nodiscard]] static ::foundation::core::Result<Owned, ::foundation::os::Errno>
     own_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
+        using Opened = ::foundation::core::Result<Owned, ::foundation::os::Errno>;
         return std::move(opened).match(
-            [](int descriptor) -> ::foundation::core::Result<OwnedFd, ::foundation::os::Errno> {
-                return OwnedFd{descriptor};
-            },
-            [](::foundation::os::Errno error) -> ::foundation::core::Result<OwnedFd, ::foundation::os::Errno> {
-                return ::foundation::core::err(error);
-            });
+            [](int descriptor) -> Opened { return Owned{descriptor}; },
+            [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
+    }
+
+    // The handle Owned of the open, in a Linear, or the error of the open.
+    template <class Owned>
+    [[nodiscard]] static ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>
+    own_linear_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
+        using Minted = ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>;
+        return std::move(opened).match(
+            [](int descriptor) -> Minted { return mint_linear<Owned>(Owned{descriptor}); },
+            [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
     }
 
     // The open reads perms only when flags holds O_CREAT and ignores it
     // otherwise, so it is passed in each case.
-    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
     open_path_(const char* path, int flags, FileMode perms) noexcept {
-        return own_(detail::open_descriptor_(path, flags, std::to_underlying(perms)));
-    }
-
-    // The handle of a directory that the open gave, or the error of the
-    // open.
-    [[nodiscard]] static ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
-    own_directory_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-        using Opened = ::foundation::core::Result<Dirfd, ::foundation::os::Errno>;
-        return own_(std::move(opened))
-            .match([](OwnedFd descriptor) -> Opened { return Dirfd{std::move(descriptor)}; },
-                   [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
+        return detail::open_descriptor_(path, flags, std::to_underlying(perms));
     }
 
     // The descriptor is what a later fsync flushes the entry through.
-    [[nodiscard]] static ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
+    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
     open_directory_(const char* dir_path) noexcept {
-        return own_directory_(detail::open_descriptor_(dir_path, directory_flags_, 0));
+        return detail::open_descriptor_(dir_path, directory_flags_, 0);
     }
 
     // The opens of a path beneath the directory of the descriptor directory.
-    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
     open_path_at_(int directory, const char* path, int flags, FileMode perms) noexcept {
-        return own_(detail::open_beneath_(directory, path, flags, std::to_underlying(perms)));
+        return detail::open_beneath_(directory, path, flags, std::to_underlying(perms));
     }
 
-    [[nodiscard]] static ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
+    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
     open_directory_at_(int directory, const char* path) noexcept {
-        return own_directory_(detail::open_beneath_(directory, path, directory_flags_, 0));
+        return detail::open_beneath_(directory, path, directory_flags_, 0);
     }
 
     // The open of a file with no name in the directory of the descriptor.
-    [[nodiscard]] static ::foundation::core::Result<OwnedFd, ::foundation::os::Errno>
+    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
     open_temporary_at_(int directory, FileMode perms) noexcept {
-        return own_(detail::open_beneath_(directory, ".", temporary_flags_, std::to_underlying(perms)));
+        return detail::open_beneath_(directory, ".", temporary_flags_, std::to_underlying(perms));
     }
 };
 
 template <typename... Atoms, eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, Atoms...>
-[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<Linear<FileOf<Atoms...>>, ::foundation::os::Errno>
 mint_file(Ctx const&, Path<tags::source::Sanitized> const& sanitized_path, FileMode perms) noexcept {
-    using Minted = ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
     constexpr int flags = detail::fold_open_flags<Atoms...>();
-    return FileDoor::open_path_(::foundation::core::detail::c_text_first_(sanitized_path.value().c_text()), flags,
-                                perms)
-        .match([](OwnedFd descriptor) -> Minted { return mint_linear<OwnedFd>(std::move(descriptor)); },
-               [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
+    return FileDoor::own_linear_<FileOf<Atoms...>>(
+        FileDoor::open_path_(::foundation::core::detail::c_text_first_(sanitized_path.value().c_text()), flags, perms));
 }
 
-// Fdatasync or Fsync of a descriptor.  The gate refuses FsyncParentDir, which
-// takes a Dirfd.  The door gives EBADF for a closed handle.  Not a mint: this
-// acts on an existing handle and synthesizes nothing.
-template <typename SyncOp, eff::IsExecCtx Ctx>
-    requires CtxFitsDescriptorSync<Ctx, SyncOp>
+// Fdatasync or Fsync of a file.  The gate refuses FsyncParentDir, which
+// takes a directory, and a file with no sync right.  The door gives EBADF for
+// the borrow of an empty handle.  Not a mint: this acts on an existing handle
+// and synthesizes nothing.
+template <typename SyncOp, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsDescriptorSync<Ctx, SyncOp, Rights>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-sync(Ctx const&, const OwnedFd& handle) noexcept {
-    return std::is_same_v<SyncOp, sync_op::Fdatasync> ? detail::sync_data_(handle.get())
-                                                      : detail::sync_all_(handle.get());
+sync(Ctx const&, FileRef<Rights> file) noexcept {
+    int const descriptor = ::fixy::os::detail::HandleDoor::descriptor_of(file);
+    return std::is_same_v<SyncOp, sync_op::Fdatasync> ? detail::sync_data_(descriptor) : detail::sync_all_(descriptor);
 }
 
 // FsyncParentDir: the fsync of a directory, which flushes its entries.  It
-// takes the directory handle by its own type, so a file descriptor cannot be
-// handed in where an entry flush was meant.  The door gives EBADF for a closed
-// handle.
-template <typename SyncOp, eff::IsExecCtx Ctx>
-    requires CtxFitsDirectorySync<Ctx, SyncOp>
+// takes the borrow of a directory by its own kind, so a file cannot be
+// handed in where an entry flush was meant.  The door gives EBADF for the
+// borrow of an empty handle.
+template <typename SyncOp, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsDirectorySync<Ctx, SyncOp, Rights>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-sync(Ctx const&, const Dirfd& dir) noexcept {
-    return detail::sync_all_(dir.get());
+sync(Ctx const&, DirectoryRef<Rights> dir) noexcept {
+    return detail::sync_all_(::fixy::os::detail::HandleDoor::descriptor_of(dir));
 }
 
 // Rename uses renameat, where the last writer wins.  RenameAt2NoReplace
@@ -755,14 +806,19 @@ commit_atomic(Ctx const&, Path<tags::source::Sanitized> const& tmp,
 
 template <eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
-open_dirfd(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
-    return FileDoor::open_directory_(::foundation::core::detail::c_text_first_(dir.value().c_text()));
+[[nodiscard]] ::foundation::core::Result<DirectoryHandle, ::foundation::os::Errno>
+open_directory(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
+    return FileDoor::own_<DirectoryHandle>(
+        FileDoor::open_directory_(::foundation::core::detail::c_text_first_(dir.value().c_text())));
 }
 
 // THE CALLS UNDER A DIRECTORY
-//   Each call below takes a Dirfd and the path of an entry under it, as a
-//   CText: a literal, or the c_text() of a foundation::os::PathText.  The
+//   Each call below takes the borrow of a directory and the path of an entry
+//   under it, as a CText: a literal, or the c_text() of a
+//   foundation::os::PathText.  Each call asks for the rights of its work on
+//   the directory: an open asks for lookup, and also for create when its mode
+//   makes a missing file.  A remove asks for remove, a make for create, a
+//   rename for create and remove, and a check of an entry for lookup.  The
 //   kernel reads the path relative to the directory.  Each open folds in
 //   O_NOFOLLOW and O_CLOEXEC, so a symbolic link at the last part of the
 //   path gives eloop.  A call that a signal interrupts runs again, and each
@@ -780,36 +836,36 @@ open_dirfd(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
 //   gives eloop.  A ".." part and a symbolic link in a middle part that stay
 //   inside the directory are permitted.
 //
-//   A Dirfd that holds no descriptor, such as a Dirfd that a move emptied,
-//   gives ebadf, and the call makes no system call.  The kernel reads an
-//   absolute path with no regard to the descriptor, so the descriptor of an
-//   empty Dirfd must not reach it.
+//   The borrow of a directory handle that holds no descriptor, such as a
+//   handle that a move emptied, gives ebadf, and the call makes no system
+//   call.  The kernel reads an absolute path with no regard to the
+//   descriptor, so the descriptor -1 of an empty handle must not reach it.
 
 // Opens path under dir with the mode and the flags of Atoms, as mint_file
 // does.  The kernel reads perms only for a mode that creates the file.
-template <typename... Atoms, eff::IsExecCtx Ctx>
-    requires CtxFitsFileMint<Ctx, Atoms...>
-[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
-mint_file_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path, FileMode perms) noexcept {
-    using Minted = ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+template <typename... Atoms, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsFileMintAt<Ctx, Rights, Atoms...>
+[[nodiscard]] inline ::foundation::core::Result<Linear<FileOf<Atoms...>>, ::foundation::os::Errno>
+mint_file_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path, FileMode perms) noexcept {
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
     constexpr int flags = detail::fold_open_flags<Atoms...>() | ::foundation::os::kOpenNoFollow;
-    return FileDoor::open_path_at_(dir.get(), ::foundation::core::detail::c_text_first_(path), flags, perms)
-        .match([](OwnedFd descriptor) -> Minted { return mint_linear<OwnedFd>(std::move(descriptor)); },
-               [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
+    return FileDoor::own_linear_<FileOf<Atoms...>>(
+        FileDoor::open_path_at_(::fixy::os::detail::HandleDoor::descriptor_of(dir),
+                                ::foundation::core::detail::c_text_first_(path), flags, perms));
 }
 
 // Opens the directory at path under dir.
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] ::foundation::core::Result<Dirfd, ::foundation::os::Errno>
-open_dirfd_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept {
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup>
+[[nodiscard]] ::foundation::core::Result<DirectoryHandle, ::foundation::os::Errno>
+open_directory_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept {
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return FileDoor::open_directory_at_(dir.get(), ::foundation::core::detail::c_text_first_(path));
+    return FileDoor::own_<DirectoryHandle>(FileDoor::open_directory_at_(
+        ::fixy::os::detail::HandleDoor::descriptor_of(dir), ::foundation::core::detail::c_text_first_(path)));
 }
 
 // THE TEMPORARY FILE
@@ -818,68 +874,77 @@ open_dirfd_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noex
 //   permission bits perms.  No other process can open the file by a path,
 //   and the kernel frees it at the last close of its descriptor, also when
 //   the process ends with no close.  The file system of the directory must
-//   give O_TMPFILE: a file system that does not gives eopnotsupp.  An empty
-//   Dirfd gives ebadf, and the call makes no system call.
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
-[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
-mint_temporary_file_at(Ctx const&, Dirfd const& dir, FileMode perms) noexcept {
-    using Minted = ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>;
+//   give O_TMPFILE: a file system that does not gives eopnotsupp.  The borrow
+//   of an empty handle gives ebadf, and the call makes no system call.
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsTemporaryMint<Ctx, Rights>
+[[nodiscard]] inline ::foundation::core::Result<Linear<TemporaryFile>, ::foundation::os::Errno>
+mint_temporary_file_at(Ctx const&, DirectoryRef<Rights> dir, FileMode perms) noexcept {
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return FileDoor::open_temporary_at_(dir.get(), perms)
-        .match([](OwnedFd descriptor) -> Minted { return mint_linear<OwnedFd>(std::move(descriptor)); },
-               [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
+    return FileDoor::own_linear_<TemporaryFile>(
+        FileDoor::open_temporary_at_(::fixy::os::detail::HandleDoor::descriptor_of(dir), perms));
 }
+
+// A rename under a directory with the rights Held.  The rename makes the
+// entry of the target and removes the entry of the source, so it needs the
+// create and the remove rights.
+template <typename Ctx, typename Atomicity, ::fixy::os::RightSet Held>
+concept CtxFitsCommitAtomicAt =
+    CtxFitsCommitAtomic<Ctx, Atomicity>
+    && ::fixy::os::HoldsRights<Held, ::fixy::os::RightSet::create | ::fixy::os::RightSet::remove>;
 
 // Renames from to to, the two under dir, with the atomicity of
 // commit_atomic.  Not a mint.
-template <typename Atomicity, eff::IsExecCtx Ctx>
-    requires CtxFitsCommitAtomic<Ctx, Atomicity>
+template <typename Atomicity, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsCommitAtomicAt<Ctx, Atomicity, Rights>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-commit_atomic_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText from, ::foundation::core::CText to) noexcept {
+commit_atomic_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText from,
+                 ::foundation::core::CText to) noexcept {
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return std::is_same_v<Atomicity, atomicity::Rename> ? detail::rename_replacing_beneath_(dir.get(), from, to)
-                                                        : detail::rename_no_replace_beneath_(dir.get(), from, to);
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    return std::is_same_v<Atomicity, atomicity::Rename> ? detail::rename_replacing_beneath_(directory, from, to)
+                                                        : detail::rename_no_replace_beneath_(directory, from, to);
 }
 
 // Removes the file at path under dir.  A directory at path gives eisdir.
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::remove>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-unlink_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept {
+unlink_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept {
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::unlink_beneath_(dir.get(), path);
+    return detail::unlink_beneath_(::fixy::os::detail::HandleDoor::descriptor_of(dir), path);
 }
 
 // Makes the directory at path under dir, with the permission bits perms.
 // An entry at path gives eexist.
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::create>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-make_directory_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path,
+make_directory_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path,
                   FileMode perms = FileMode::owner_all_others_read_execute) noexcept {
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::make_directory_beneath_(dir.get(), path, std::to_underlying(perms));
+    return detail::make_directory_beneath_(::fixy::os::detail::HandleDoor::descriptor_of(dir), path,
+                                           std::to_underlying(perms));
 }
 
 // True when an entry is at path under dir, and false when no entry is
 // there.  A symbolic link is an entry, and the call does not follow it.
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup>
 [[nodiscard]] inline ::foundation::core::Result<bool, ::foundation::os::Errno>
-has_entry_at(Ctx const&, Dirfd const& dir, ::foundation::core::CText path) noexcept {
+has_entry_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept {
     if (!dir.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::has_entry_beneath_(dir.get(), path);
+    return detail::has_entry_beneath_(::fixy::os::detail::HandleDoor::descriptor_of(dir), path);
 }
 
 // True when an entry is at path, and false when no entry is there.  The
@@ -902,39 +967,44 @@ has_entry(Ctx const&, ::foundation::core::CText path) noexcept {
 // with no reader gives epipe, and the process gets no SIGPIPE.  The bytes
 // are a View of the base, or the characters of a TextView.
 //
-// Each takes an OwnedFd, and the context that the other calls in this
-// header take, because each call can park the caller on the disk.  The door
-// gives EBADF for a closed handle.
+// Each takes the borrow of a file, and the context that the other calls in
+// this header take, because each call can park the caller on the disk.  A
+// read asks for the read right of the file, and a write for the write right.
+// The door gives EBADF for the borrow of an empty handle.
 //
 // Not mints: these act on an existing handle and synthesize nothing.
-template <eff::IsExecCtx Ctx>
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires ::fixy::fs::CtxAdmitsFs<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<std::int64_t, ::foundation::os::Errno>
-file_size(Ctx const&, const OwnedFd& handle) noexcept {
-    return detail::file_size_(handle.get());
+file_size(Ctx const&, FileRef<Rights> file) noexcept {
+    return detail::file_size_(::fixy::os::detail::HandleDoor::descriptor_of(file));
 }
 
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+// A read and a write take the borrow of a handle of each kind that holds the
+// right: a file, a socket or a perf event.  A directory holds neither right.
+template <class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::read>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-read_full(Ctx const&, const OwnedFd& handle, ::foundation::core::View<std::byte> buffer) noexcept {
-    return detail::read_full_(handle.get(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
-                              buffer.size());
+read_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle, ::foundation::core::View<std::byte> buffer) noexcept {
+    return detail::read_full_(::fixy::os::detail::HandleDoor::descriptor_of(handle),
+                              first_of_(::foundation::core::detail::ViewDoor::key(), buffer), buffer.size());
 }
 
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+template <class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::write>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-write_full(Ctx const&, const OwnedFd& handle, ::foundation::core::View<std::byte const> buffer) noexcept {
-    return detail::write_full_(handle.get(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
-                               buffer.size());
+write_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle,
+           ::foundation::core::View<std::byte const> buffer) noexcept {
+    return detail::write_full_(::fixy::os::detail::HandleDoor::descriptor_of(handle),
+                               first_of_(::foundation::core::detail::ViewDoor::key(), buffer), buffer.size());
 }
 
-template <eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+template <class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::write>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-write_full(Ctx const&, const OwnedFd& handle, ::foundation::core::TextView text) noexcept {
-    return detail::write_full_(handle.get(), ::foundation::core::detail::text_first_(text), text.size());
+write_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle, ::foundation::core::TextView text) noexcept {
+    return detail::write_full_(::fixy::os::detail::HandleDoor::descriptor_of(handle),
+                               ::foundation::core::detail::text_first_(text), text.size());
 }
 
 // The read-only open, spelled once.
@@ -946,17 +1016,19 @@ using read_only = ::fixy::atom::fs::mode<open_mode::ReadOnly>;
 // the growth of text at the call.  A failed read leaves the bytes that it
 // put before the failure in text.  Complexity: linear in the size of the
 // file.
-template <class Marker, eff::IsExecCtx Ctx>
-    requires ::fixy::fs::CtxAdmitsFs<Ctx> && ::foundation::core::AllocationCapability<Marker>
+template <class Marker, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup>
+          && ::foundation::core::AllocationCapability<Marker>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-read_whole_at(Ctx const& ctx, Marker allocation, Dirfd const& dir, ::foundation::core::CText path,
+read_whole_at(Ctx const& ctx, Marker allocation, DirectoryRef<Rights> dir, ::foundation::core::CText path,
               ::foundation::core::GrowText& text) noexcept {
     using Read = ::foundation::core::Result<std::size_t, ::foundation::os::Errno>;
     return mint_file_at<read_only>(ctx, dir, path)
         .match(
-            [allocation, &text](Linear<OwnedFd> opened) -> Read {
-                OwnedFd const file = std::move(opened).consume();
-                return detail::read_all_into_(file.get(), allocation, text);
+            [allocation, &text](Linear<FileOf<read_only>> opened) -> Read {
+                FileOf<read_only> const file = std::move(opened).consume();
+                return detail::read_all_into_(::fixy::os::detail::HandleDoor::descriptor_of(file.ref()), allocation,
+                                              text);
             },
             [](::foundation::os::Errno error) -> Read { return ::foundation::core::err(error); });
 }
@@ -968,7 +1040,8 @@ template <eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, ::fixy::atom::fs::mode<open_mode::WriteTruncate>,
                              ::fixy::atom::fs::durable<sync_op::Fsync>,
                              ::fixy::atom::fs::atomic_write<atomicity::Rename>>
-[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<Linear<FileOf<::fixy::atom::fs::mode<open_mode::WriteTruncate>>>,
+                                                ::foundation::os::Errno>
 mint_durable_truncate_file(Ctx const& ctx, Path<tags::source::Sanitized> const& path,
                            FileMode perms = FileMode::owner_read_write_others_read) noexcept {
     return mint_file<::fixy::atom::fs::mode<open_mode::WriteTruncate>, ::fixy::atom::fs::durable<sync_op::Fsync>,
@@ -985,7 +1058,8 @@ mint_durable_truncate_file(Ctx const& ctx, Path<tags::source::Sanitized> const& 
 template <eff::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, ::fixy::atom::fs::mode<open_mode::WriteAppend>,
                              ::fixy::atom::fs::durable<sync_op::Fdatasync>, ::fixy::atom::fs::with_flag<flag::DataSync>>
-[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedFd>, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<Linear<FileOf<::fixy::atom::fs::mode<open_mode::WriteAppend>>>,
+                                                ::foundation::os::Errno>
 mint_durable_append_file(Ctx const& ctx, Path<tags::source::Sanitized> const& path,
                          FileMode perms = FileMode::owner_read_write_others_read) noexcept {
     return mint_file<::fixy::atom::fs::mode<open_mode::WriteAppend>, ::fixy::atom::fs::durable<sync_op::Fdatasync>,
@@ -1009,6 +1083,12 @@ static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::open_mode,
                                                           return ::fixy::atom_pack::has_row(open_mode_table, mode_tag);
                                                         }>(),
               "fixy/os/Fs.h: a tag in fixy::fs::open_mode has no row in open_mode_table.");
+static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::open_mode,
+                                                        [](std::meta::info mode_tag) consteval {
+                                                          return ::fixy::atom_pack::has_row(open_mode_rights_table,
+                                                                                            mode_tag);
+                                                        }>(),
+              "fixy/os/Fs.h: a tag in fixy::fs::open_mode has no row in open_mode_rights_table.");
 static_assert(::fixy::atom_pack::every_tag_in_satisfies<^^::fixy::fs::flag,
                                                         [](std::meta::info flag_tag) consteval {
                                                           return ::fixy::atom_pack::has_row(flag_table, flag_tag);

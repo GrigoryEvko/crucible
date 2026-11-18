@@ -248,12 +248,14 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires ::fixy::net::CtxFitsSocketMint<Ctx, ::fixy::net::socket_kind::NetlinkRoute>
 [[nodiscard]] ::fixy::Result<Qdisc, PacingError> query_active_qdisc(Ctx const& ctx, NicInterfaceName iface) noexcept {
     CRUCIBLE_TRY(interface_index, detail::read_interface_index(iface));
-    const ::fixy::fs::OwnedFd nl = ::fixy::net::mint_socket<::fixy::net::socket_kind::NetlinkRoute>(ctx).match(
-        [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd { return std::move(opened).consume(); },
-        [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
-    if (!nl.is_open()) {
+    using NetlinkSocket = ::fixy::net::SocketHandle<::fixy::net::socket_kind::NetlinkRoute>;
+    const NetlinkSocket socket = ::fixy::net::mint_socket<::fixy::net::socket_kind::NetlinkRoute>(ctx).match(
+        [](::fixy::Linear<NetlinkSocket> opened) -> NetlinkSocket { return std::move(opened).consume(); },
+        [](::foundation::os::Errno) -> NetlinkSocket { return NetlinkSocket{}; });
+    if (!socket.is_open()) {
         return ::fixy::err(PacingError::NetlinkOpenFailed);
     }
+    const auto nl = socket.ref();
 
     // The bind asks the kernel for a unique port.  With no bind, the kernel
     // takes the port from the process id, so two threads share it and can

@@ -17,7 +17,7 @@ static_assert(!CtxAdmitsFs<IoOnlyCtx>);
 // class does not befriend.
 static_assert(!std::is_constructible_v<OwnedFd, int>,
               "The constructor over a descriptor must not be public: a caller could hand it any small integer and "
-              "the destructor would close it.  Take a handle from mint_file or open_dirfd.");
+              "the destructor would close it.  Take a handle from the mint of its door.");
 static_assert(std::is_default_constructible_v<OwnedFd>, "The empty handle claims nothing, so it stays reachable.");
 static_assert(!std::is_copy_constructible_v<OwnedFd>);
 static_assert(std::is_nothrow_move_constructible_v<OwnedFd>);

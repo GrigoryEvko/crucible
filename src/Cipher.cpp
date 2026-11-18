@@ -104,12 +104,14 @@ template <class Call>
 // Routing the skip path through fdatasync either forces the flush or
 // fails, in which case B reports failure exactly as A did.
 template <class Ctx>
-[[nodiscard]] bool flush_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::CText path) noexcept {
-    return ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir, path)
+[[nodiscard]] bool flush_entry_at_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir,
+                                   ::fixy::CText path) noexcept {
+    using ReadFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;
+    return ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir.ref(), path)
         .match(
-            [&ctx](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
-                const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                return ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file).is_ok();
+            [&ctx](::fixy::Linear<ReadFile> opened) {
+                const ReadFile file = std::move(opened).consume();
+                return ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file.ref()).is_ok();
             },
             [](::foundation::os::Errno) { return false; });
 }
@@ -142,7 +144,7 @@ template <class Ctx>
 // not trip over a partial-write artifact.  Bytes is a TextView, a span of
 // bytes or a View of bytes, the buffers that write_full takes.
 template <class Ctx, class Bytes>
-[[nodiscard]] bool replace_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::TextView path,
+[[nodiscard]] bool replace_entry_at_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir, ::fixy::TextView path,
                                      Bytes bytes) noexcept {
     CRUCIBLE_PRE(::fixy::find(path, '/').is_none());
     EntryPath target{};
@@ -152,35 +154,35 @@ template <class Ctx, class Bytes>
     if (!is_named) return false;
     using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
     const bool is_renamed =
-        ::fixy::fs::mint_file_at<WriteTruncate>(ctx, dir, temporary.c_text())
+        ::fixy::fs::mint_file_at<WriteTruncate>(ctx, dir.ref(), temporary.c_text())
             .match(
-                [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
+                [&](::fixy::Linear<::fixy::fs::FileOf<WriteTruncate>> opened) {
                     // The nested scope closes the writer before the rename,
                     // which is what POSIX recommends for atomic-rename writes
                     // and keeps no extra descriptor open across the rename
                     // window.
                     bool is_durable = false;
                     {
-                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                        is_durable = ::fixy::fs::write_full(ctx, file, bytes).is_ok()
-                                  && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file).is_ok();
+                        const ::fixy::fs::FileOf<WriteTruncate> file = std::move(opened).consume();
+                        is_durable = ::fixy::fs::write_full(ctx, file.ref(), bytes).is_ok()
+                                  && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file.ref()).is_ok();
                     }
                     // Anchoring both sides of the rename at the same dirfd
                     // makes the swap immune to a concurrent rename of the
                     // parent directory.
                     is_durable = is_durable
                               && ::fixy::fs::commit_atomic_at<::fixy::fs::atomicity::Rename>(
-                                     ctx, dir, temporary.c_text(), target.c_text())
+                                     ctx, dir.ref(), temporary.c_text(), target.c_text())
                                      .is_ok();
                     if (!is_durable) {
-                        static_cast<void>(::fixy::fs::unlink_at(ctx, dir, temporary.c_text()).is_ok());
+                        static_cast<void>(::fixy::fs::unlink_at(ctx, dir.ref(), temporary.c_text()).is_ok());
                     }
                     return is_durable;
                 },
                 [](::foundation::os::Errno) { return false; });
     // dir is owned by the caller and outlives this call, so the fsync needs
     // no re-open of the parent path.
-    return is_renamed && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).is_ok();
+    return is_renamed && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir.ref()).is_ok();
 }
 
 // Atomic append for the monotonically-growing files: the event log and
@@ -206,7 +208,7 @@ template <class Ctx, class Bytes>
 // fsync reaches the directory of the file only when path is one name in
 // dir, so a path with a slash ends the process.
 template <class Ctx>
-[[nodiscard]] bool append_entry_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::CText path,
+[[nodiscard]] bool append_entry_at_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir, ::fixy::CText path,
                                     ::fixy::TextView record) noexcept {
     CRUCIBLE_PRE(::fixy::find(path.view(), '/').is_none());
     using WriteAppend = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteAppend>;
@@ -214,38 +216,43 @@ template <class Ctx>
     // outright or writes every byte.  The door writes again after a short
     // write on a signal, and each write is a fresh kernel-atomic O_APPEND
     // write.
-    const bool is_flushed = ::fixy::fs::mint_file_at<WriteAppend>(ctx, dir, path)
-                                .match(
-                                    [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
-                                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                                        return ::fixy::fs::write_full(ctx, file, record).is_ok()
-                                            && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file).is_ok();
-                                    },
-                                    [](::foundation::os::Errno) { return false; });
+    using AppendFile = ::fixy::fs::FileOf<WriteAppend>;
+    const bool is_flushed =
+        ::fixy::fs::mint_file_at<WriteAppend>(ctx, dir.ref(), path)
+            .match(
+                [&](::fixy::Linear<AppendFile> opened) {
+                    const AppendFile file = std::move(opened).consume();
+                    return ::fixy::fs::write_full(ctx, file.ref(), record).is_ok()
+                        && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file.ref()).is_ok();
+                },
+                [](::foundation::os::Errno) { return false; });
     // Makes the file's existence durable for the first record.
-    return is_flushed && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).is_ok();
+    return is_flushed && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir.ref()).is_ok();
 }
 
-// Opens the directory at path under dir, and gives a closed Dirfd when it
+// Opens the directory at path under dir, and gives an empty handle when it
 // does not open.
 template <class Ctx>
-[[nodiscard]] ::fixy::fs::Dirfd open_level_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir, ::fixy::CText path) noexcept {
-    return ::fixy::fs::open_dirfd_at(ctx, dir, path)
-        .match([](::fixy::fs::Dirfd opened) { return opened; },
-               [](::foundation::os::Errno) { return ::fixy::fs::Dirfd{}; });
+[[nodiscard]] ::fixy::fs::DirectoryHandle open_level_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir,
+                                                      ::fixy::CText path) noexcept {
+    return ::fixy::fs::open_directory_at(ctx, dir.ref(), path)
+        .match([](::fixy::fs::DirectoryHandle opened) { return opened; },
+               [](::foundation::os::Errno) { return ::fixy::fs::DirectoryHandle{}; });
 }
 
 // Makes the directory name under dir when it is missing, syncs dir, and
 // opens the directory.  A new directory is a new entry of dir, and the sync
 // of dir makes that entry durable.  The sync runs also when the directory
 // is there, because the process that made it can have ended before its own
-// sync.  A closed Dirfd stands for a directory that does not open, or for a
+// sync.  An empty handle stands for a directory that does not open, or for a
 // sync that fails.  The store owns each directory that it opens here.
 template <class Ctx>
-[[nodiscard]] ::fixy::fs::Dirfd open_durable_directory_at_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir,
-                                                           ::fixy::CText name) noexcept {
-    static_cast<void>(::fixy::fs::make_directory_at(ctx, dir, name).is_ok());
-    if (::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).is_err()) return ::fixy::fs::Dirfd{};
+[[nodiscard]] ::fixy::fs::DirectoryHandle
+open_durable_directory_at_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir, ::fixy::CText name) noexcept {
+    static_cast<void>(::fixy::fs::make_directory_at(ctx, dir.ref(), name).is_ok());
+    if (::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir.ref()).is_err()) {
+        return ::fixy::fs::DirectoryHandle{};
+    }
     return open_level_(ctx, dir, name);
 }
 
@@ -262,12 +269,12 @@ template <class Ctx>
 // slash makes the open follow a link at the last part, so a part of the root
 // that is a link opens as the directory of its target.
 template <class Ctx>
-[[nodiscard]] ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError>
+[[nodiscard]] ::fixy::Result<::fixy::fs::DirectoryHandle, Cipher::OpenError>
 open_prefix_(Ctx const& ctx, Cipher::RootPath const& prefix) noexcept {
     return ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(prefix.c_text().view()))
         .map_err([](::fixy::PathTraversalError) noexcept { return Cipher::OpenError::path_refused; })
         .and_then([&](::fixy::Path<::fixy::tags::source::Sanitized> path) noexcept {
-            return ::fixy::fs::open_dirfd(ctx, path).map_err(open_error_of_);
+            return ::fixy::fs::open_directory(ctx, path).map_err(open_error_of_);
         });
 }
 
@@ -276,14 +283,14 @@ open_prefix_(Ctx const& ctx, Cipher::RootPath const& prefix) noexcept {
 // error, so the open after it gives the reason of a name that is no
 // directory.
 template <class Ctx>
-[[nodiscard]] ::fixy::Result<::fixy::Unit, Cipher::OpenError> make_part_(Ctx const& ctx, ::fixy::fs::Dirfd const& dir,
-                                                                         ::fixy::CText name) noexcept {
+[[nodiscard]] ::fixy::Result<::fixy::Unit, Cipher::OpenError>
+make_part_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir, ::fixy::CText name) noexcept {
     using Made = ::fixy::Result<::fixy::Unit, Cipher::OpenError>;
-    return ::fixy::fs::make_directory_at(ctx, dir, name)
+    return ::fixy::fs::make_directory_at(ctx, dir.ref(), name)
         .match(
             [&](::fixy::Unit) -> Made {
-                return ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir).map_err(
-                    [](::foundation::os::Errno) noexcept { return Cipher::OpenError::open_failed; });
+                return ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir.ref())
+                    .map_err([](::foundation::os::Errno) noexcept { return Cipher::OpenError::open_failed; });
             },
             [](::foundation::os::Errno error) -> Made {
                 if (error == ::foundation::os::Errno::eexist) return ::fixy::Unit{};
@@ -292,32 +299,32 @@ template <class Ctx>
 }
 
 // True when opened holds the error reason.
-[[nodiscard]] bool holds_error_(::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError> const& opened,
+[[nodiscard]] bool holds_error_(::fixy::Result<::fixy::fs::DirectoryHandle, Cipher::OpenError> const& opened,
                                 Cipher::OpenError reason) noexcept {
     return opened.is_err_and([reason](Cipher::OpenError const& given) noexcept { return given == reason; });
 }
 
 // Opens the directory at prefix as open_prefix_ does, but a directory that
-// opens only for search gives a closed Dirfd.  The open of the root needs
+// opens only for search gives an empty handle.  The open of the root needs
 // search permission on each parent and read permission on the root alone,
 // so the walk goes on past such a parent.
 template <class Ctx>
-[[nodiscard]] ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError>
+[[nodiscard]] ::fixy::Result<::fixy::fs::DirectoryHandle, Cipher::OpenError>
 open_searchable_(Ctx const& ctx, Cipher::RootPath const& prefix) noexcept {
-    ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError> opened = open_prefix_(ctx, prefix);
-    if (holds_error_(opened, Cipher::OpenError::no_permission)) return ::fixy::fs::Dirfd{};
+    ::fixy::Result<::fixy::fs::DirectoryHandle, Cipher::OpenError> opened = open_prefix_(ctx, prefix);
+    if (holds_error_(opened, Cipher::OpenError::no_permission)) return ::fixy::fs::DirectoryHandle{};
     return opened;
 }
 
 // Opens the part at prefix, and makes it under parent when it is missing.
 // A missing part under a parent that opens only for search gives
-// no_permission, because the make needs the Dirfd of the parent.
+// no_permission, because the make needs the handle of the parent.
 template <class Ctx>
-[[nodiscard]] ::fixy::Result<::fixy::fs::Dirfd, Cipher::OpenError>
-open_part_(Ctx const& ctx, ::fixy::fs::Dirfd const& parent, Cipher::RootPath const& prefix,
+[[nodiscard]] ::fixy::Result<::fixy::fs::DirectoryHandle, Cipher::OpenError>
+open_part_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& parent, Cipher::RootPath const& prefix,
            ::fixy::CText name) noexcept {
     using OpenError = Cipher::OpenError;
-    ::fixy::Result<::fixy::fs::Dirfd, OpenError> opened = open_searchable_(ctx, prefix);
+    ::fixy::Result<::fixy::fs::DirectoryHandle, OpenError> opened = open_searchable_(ctx, prefix);
     if (!holds_error_(opened, OpenError::missing)) return opened;
     if (!parent.is_open()) return ::fixy::err(OpenError::no_permission);
     CRUCIBLE_TRY(_, make_part_(ctx, parent, name));
@@ -331,11 +338,11 @@ open_part_(Ctx const& ctx, ::fixy::fs::Dirfd const& parent, Cipher::RootPath con
 // a link at the part, such as /var/run.  The walk starts at "/" for an
 // absolute root, and at the current directory for a relative root, so an
 // absolute root does not read the current directory.  open_part_ makes a
-// missing part under the Dirfd of the part before it, and it gives a closed
-// Dirfd for a part that opens only for search.  The open of the root after
+// missing part under the handle of the part before it, and it gives an empty
+// handle for a part that opens only for search.  The open of the root after
 // the walk gives the reason of a root that does not open.  The sanitizer of
 // the root refused each ".." part.  Each name below the root still opens
-// beneath the Dirfd of the root.  The prefix adds "./" and a slash to the
+// beneath the handle of the root.  The prefix adds "./" and a slash to the
 // root, so a root within three bytes of MAX_ROOT_PATH_BYTES gives
 // path_refused.  Complexity: one or two opens of a full path for each part,
 // one make and one sync for each part that the walk makes, and one copy of
@@ -349,7 +356,7 @@ template <class Ctx>
     CRUCIBLE_TRY(
         _, prefix.append(start).map_err([](::foundation::os::Errno) noexcept { return OpenError::path_refused; }));
     CRUCIBLE_TRY(start_dir, open_searchable_(ctx, prefix));
-    ::fixy::fs::Dirfd level = std::move(start_dir);
+    ::fixy::fs::DirectoryHandle level = std::move(start_dir);
     ::fixy::TextView rest = root;
     while (rest.size() != 0) {
         const std::size_t length = ::fixy::find(rest, '/').value_or(rest.size());
@@ -363,7 +370,7 @@ template <class Ctx>
         const ::fixy::Option<OpenError> refusal =
             open_part_(ctx, level, prefix, name.c_text())
                 .match(
-                    [&level](::fixy::fs::Dirfd next_level) -> ::fixy::Option<OpenError> {
+                    [&level](::fixy::fs::DirectoryHandle next_level) -> ::fixy::Option<OpenError> {
                         level = std::move(next_level);
                         return ::fixy::none;
                     },
@@ -380,24 +387,24 @@ template <class Ctx>
 // read of the file.
 template <class Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::HeapArray<std::byte>, LoadError>
-read_batch_at_(Ctx const& ctx, ::foundation::effects::Alloc allocation, ::fixy::fs::Dirfd const& dir,
+read_batch_at_(Ctx const& ctx, ::foundation::effects::Alloc allocation, ::fixy::fs::DirectoryHandle const& dir,
                ::fixy::CText path, std::size_t maximum) noexcept {
     // The rvalue match refuses a result that holds an address, and a
     // HeapArray holds one.  So the arms give the reason or no reason, and
     // the bytes leave through the Option.
     ::fixy::Option<::fixy::HeapArray<std::byte>> read{};
     const ::fixy::Option<LoadError> refusal =
-        ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir, path)
+        ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir.ref(), path)
             .match(
-                [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::Option<LoadError> {
-                    const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                    const std::int64_t size = ::fixy::fs::file_size(ctx, file).value_or(0);
+                [&](::fixy::Linear<::fixy::fs::FileOf<::fixy::fs::read_only>> opened) -> ::fixy::Option<LoadError> {
+                    const ::fixy::fs::FileOf<::fixy::fs::read_only> file = std::move(opened).consume();
+                    const std::int64_t size = ::fixy::fs::file_size(ctx, file.ref()).value_or(0);
                     if (size <= 0 || static_cast<std::uint64_t>(size) > maximum) {
                         return ::fixy::some(LoadError::file_size);
                     }
                     ::fixy::HeapArray<std::byte> bytes =
                         ::fixy::mint_heap_array(allocation, static_cast<std::size_t>(size), std::byte{0});
-                    if (::fixy::fs::read_full(ctx, file, bytes.view()).value_or(0) != bytes.size()) {
+                    if (::fixy::fs::read_full(ctx, file.ref(), bytes.view()).value_or(0) != bytes.size()) {
                         return ::fixy::some(LoadError::file_size);
                     }
                     read = ::fixy::Option<::fixy::HeapArray<std::byte>>::some(std::move(bytes));
@@ -575,8 +582,8 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     // shard when it is missing and syncs objects, which holds the shard.
     const EntryPath shard = object_shard_(hash.raw());
     const EntryPath leaf = object_leaf_(hash.raw());
-    const ::fixy::fs::Dirfd shard_dir = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return open_durable_directory_at_(ctx, open_level_(ctx, root_dirfd_, "objects"), shard.c_text());
+    const ::fixy::fs::DirectoryHandle shard_dir = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return open_durable_directory_at_(ctx, open_level_(ctx, root_directory_, "objects"), shard.c_text());
     });
     if (!shard_dir.is_open()) return ContentHash{};
 
@@ -585,12 +592,12 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     // flushed them, and this process is about to return the hash as
     // durable.
     const bool is_present = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return ::fixy::fs::has_entry_at(ctx, shard_dir, leaf.c_text()).value_or(false);
+        return ::fixy::fs::has_entry_at(ctx, shard_dir.ref(), leaf.c_text()).value_or(false);
     });
     if (is_present) {
         const bool is_flushed = with_file_ctx_(file_ctx, [&](auto const& ctx) {
             return flush_entry_at_(ctx, shard_dir, leaf.c_text())
-                && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, shard_dir).is_ok();
+                && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, shard_dir.ref()).is_ok();
         });
         return is_flushed ? hash : ContentHash{};
     }
@@ -650,7 +657,7 @@ Cipher::LoadResult Cipher::load_content_addressed_(FileCtx const& file_ctx, Open
     // precondition still fires.
     const EntryPath object = object_entry_(content_hash.raw());
     ::fixy::Result<::fixy::HeapArray<std::byte>, LoadError> read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return read_batch_at_(ctx, a, root_dirfd_, object.c_text(), MAX_OBJECT_BYTES);
+        return read_batch_at_(ctx, a, root_directory_, object.c_text(), MAX_OBJECT_BYTES);
     });
     CRUCIBLE_TRY(image, std::move(read));
     [[maybe_unused]] const ValidatedObjectSize validated_len =
@@ -750,10 +757,10 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
     // the LoadError of its read.
     using Indexed = ::fixy::Result<::fixy::Unit, PersistError>;
     Indexed indexed = with_file_ctx_(file_ctx, [&](auto const& ctx) -> Indexed {
-        const ::fixy::fs::Dirfd session_dir = open_durable_directory_at_(
-            ctx, open_durable_directory_at_(ctx, root_dirfd_, "session_events"), session_name.c_text());
+        const ::fixy::fs::DirectoryHandle session_dir = open_durable_directory_at_(
+            ctx, open_durable_directory_at_(ctx, root_directory_, "session_events"), session_name.c_text());
         if (!session_dir.is_open()) return ::fixy::err(PersistRefusal::session_directory_failed);
-        const bool is_batch_present = ::fixy::fs::has_entry_at(ctx, session_dir, batch.c_text()).value_or(false);
+        const bool is_batch_present = ::fixy::fs::has_entry_at(ctx, session_dir.ref(), batch.c_text()).value_or(false);
         if (is_batch_present) {
             CRUCIBLE_TRY(stored, read_batch_at_(ctx, allocation, session_dir, batch.c_text(), encoded.size()));
             if (!::fixy::equal(stored.view(), encoded.view())) return ::fixy::err(PersistRefusal::stored_batch_differs);
@@ -779,17 +786,17 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
     SessionEventLoad loaded{};
     const EntryPath session_directory = session_entry_(session);
     auto opened = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return ::fixy::fs::open_dirfd_at(ctx, root_dirfd_, session_directory.c_text());
+        return ::fixy::fs::open_directory_at(ctx, root_directory_.ref(), session_directory.c_text());
     });
     if (opened.is_err()) return loaded;
-    const ::fixy::fs::Dirfd session_dir = std::move(opened).expect("the session directory opened");
+    const ::fixy::fs::DirectoryHandle session_dir = std::move(opened).expect("the session directory opened");
 
     // The index has no bound of its own, so the text takes the largest
     // count of a view.  A failed read leaves the bytes that it read in the
     // text, and the parse reads them: a torn last line fails its parse.
     ::fixy::GrowText index_text = ::fixy::mint_grow_text(::fixy::max_of<std::size_t>);
     static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return ::fixy::fs::read_whole_at(ctx, allocation, session_dir, "index", index_text).is_ok();
+        return ::fixy::fs::read_whole_at(ctx, allocation, session_dir.ref(), "index", index_text).is_ok();
     }));
     const ::fixy::HeapText index = ::fixy::freeze(std::move(index_text));
 
@@ -1020,8 +1027,8 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     ::fixy::FixedText<64> record{};
     const ::fixy::TextView log_line = ::fixy::format(record, "{},{},{}\n", step_id, hash_digits.view(), order.raw())
                                           .expect("a log record fits 64 characters");
-    const bool is_appended =
-        with_file_ctx_(file_ctx, [&](auto const& ctx) { return append_entry_at_(ctx, root_dirfd_, "log", log_line); });
+    const bool is_appended = with_file_ctx_(
+        file_ctx, [&](auto const& ctx) { return append_entry_at_(ctx, root_directory_, "log", log_line); });
     if (!is_appended) {
         return ::fixy::err(CommitError::log_append);
     }
@@ -1035,7 +1042,7 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     head_line.append(hash_digits.view()).expect("sixteen digits fit the HEAD line");
     head_line.append('\n').expect("the newline fits the HEAD line");
     const bool is_head_written = with_file_ctx_(
-        file_ctx, [&](auto const& ctx) { return replace_entry_at_(ctx, root_dirfd_, "HEAD", head_line.view()); });
+        file_ctx, [&](auto const& ctx) { return replace_entry_at_(ctx, root_directory_, "HEAD", head_line.view()); });
 
     CRUCIBLE_POST(0, head_ == content_hash);
     CRUCIBLE_POST(0, !log_.empty());
@@ -1159,13 +1166,13 @@ Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocat
     // The root opens with O_NOFOLLOW, so a root that is a link gives
     // not_a_directory: the durable-on-return contract needs a root directory
     // whose identity is stable for the life of this instance.
-    using Opened = ::fixy::Result<::fixy::fs::Dirfd, OpenError>;
+    using Opened = ::fixy::Result<::fixy::fs::DirectoryHandle, OpenError>;
     Opened opened = with_file_ctx_(file_ctx, [&](auto const& ctx) -> Opened {
         CRUCIBLE_TRY(_, make_root_directories_(ctx, root.value().c_text().view()));
-        return ::fixy::fs::open_dirfd(ctx, root).map_err(open_error_of_);
+        return ::fixy::fs::open_directory(ctx, root).map_err(open_error_of_);
     });
     CRUCIBLE_TRY(root_dir, std::move(opened));
-    root_dirfd_ = std::move(root_dir);
+    root_directory_ = std::move(root_dir);
     // The bound of the root is the bound of the path, so the path of the
     // root is a copy of the path.
     [[maybe_unused]] const bool root_set =
@@ -1174,8 +1181,9 @@ Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocat
     // The open makes objects when it is missing and syncs the root, which
     // holds it.  A store opens objects again, so a failure here shows in
     // the first store.
-    static_cast<void>(with_file_ctx_(
-        file_ctx, [&](auto const& ctx) { return open_durable_directory_at_(ctx, root_dirfd_, "objects").is_open(); }));
+    static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        return open_durable_directory_at_(ctx, root_directory_, "objects").is_open();
+    }));
 
     load_log(file_ctx, allocation);
 
@@ -1189,7 +1197,7 @@ Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocat
     }
     ::fixy::GrowText head_text = ::fixy::mint_grow_text(MAX_HEAD_BYTES);
     const bool is_head_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return ::fixy::fs::read_whole_at(ctx, allocation, root_dirfd_, "HEAD", head_text).is_ok();
+        return ::fixy::fs::read_whole_at(ctx, allocation, root_directory_.ref(), "HEAD", head_text).is_ok();
     });
     const ::fixy::HeapText head = ::fixy::freeze(std::move(head_text));
     head_ = is_head_read ? parse_head_(head.view()).value_or(ContentHash{}) : ContentHash{};
@@ -1202,7 +1210,7 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
     // and the parse reads them: a torn last line fails its parse.
     ::fixy::GrowText text = ::fixy::mint_grow_text(::fixy::max_of<std::size_t>);
     static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return ::fixy::fs::read_whole_at(ctx, allocation, root_dirfd_, "log", text).is_ok();
+        return ::fixy::fs::read_whole_at(ctx, allocation, root_directory_.ref(), "log", text).is_ok();
     }));
     const ::fixy::HeapText log_text = ::fixy::freeze(std::move(text));
     for (::fixy::TextView rest = log_text.view(); rest.size() != 0;) {

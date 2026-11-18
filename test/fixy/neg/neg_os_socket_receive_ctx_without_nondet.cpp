@@ -12,9 +12,10 @@ namespace {
 
 using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
 
-[[maybe_unused]] void attempt(IoBlockCtx const& ctx, fixy::fs::OwnedFd const& socket,
+[[maybe_unused]] void attempt(IoBlockCtx const& ctx,
+                              fixy::net::SocketHandle<fixy::net::socket_kind::NetlinkRoute> const& socket,
                               foundation::core::View<std::byte> buffer) {
-    [[maybe_unused]] auto received = fixy::net::receive_bytes(ctx, socket, buffer);
+    [[maybe_unused]] auto received = fixy::net::receive_bytes(ctx, socket.ref(), buffer);
 }
 
 }  // namespace

@@ -25,11 +25,12 @@
 //     flag::CloseOnExec, which mint_file folds in unconditionally, so
 //     naming it changes no bit.
 //
-//  4. The handle wraps fixy::fs::OwnedFd.  Its constructor is private,
-//     and the three mints are its sole friends: an OwnedFd is evidence
-//     of a descriptor the caller owns, not of the flags it was opened
-//     with, and the stance is a claim about those flags.  Only the mint
-//     that chose them can make it.
+//  4. The handle wraps the file handle of fixy/os/Fs.h with the rights of
+//     the open mode of the stance.  Its constructor is private, and the
+//     three mints are its sole friends: a file handle is evidence of a
+//     descriptor the caller owns, not of the flags it was opened with, and
+//     the stance is a claim about those flags.  Only the mint that chose
+//     them can make it.
 
 #include <fixy/Core.h>
 #include <fixy/os/Path.h>
@@ -128,11 +129,16 @@ template <typename... Extras, eff::IsExecCtx Ctx>
 mint_head_advancer(Ctx const&, Path<source::Sanitized> const&,
                    ::fixy::fs::FileMode perms = ::fixy::fs::FileMode::owner_read_write_others_read) noexcept;
 
+// The file handle that an open with the stance Stance gives: the rights of
+// its open mode.
+template <DurableStance Stance>
+using StanceFile = ::fixy::fs::FileOf<atom_fs::mode<typename Stance::mode_type>>;
+
 template <DurableStance Stance>
 class [[nodiscard]] CipherDurableHandle final {
-    ::fixy::fs::OwnedFd handle_{};
+    StanceFile<Stance> handle_{};
 
-    explicit CipherDurableHandle(::fixy::fs::OwnedFd&& fd) noexcept : handle_{std::move(fd)} {}
+    explicit CipherDurableHandle(StanceFile<Stance>&& file) noexcept : handle_{std::move(file)} {}
 
     // Each mint is a friend of every stance's handle, and each builds only
     // the one its return type names.
@@ -166,17 +172,20 @@ public:
     ~CipherDurableHandle() noexcept = default;
 
     [[nodiscard]] bool is_open() const noexcept { return handle_.is_open(); }
-    [[nodiscard]] int get() const noexcept { return handle_.get(); }
-    [[nodiscard]] const ::fixy::fs::OwnedFd& handle() const noexcept { return handle_; }
+
+    // The borrow of the file, for the writes of the caller.  The borrow names
+    // the file of this handle, so it must not outlive it.
+    [[nodiscard]] ::fixy::fs::FileRef<StanceFile<Stance>::rights> file() const& noexcept { return handle_.ref(); }
+    void file() const&& = delete("the borrow of a temporary handle dangles at the end of the full expression");
 
     // The handle holds the descriptor of a file.  The flush of the entries of
-    // a directory takes the Dirfd of that directory, so a stance whose sync
-    // op is FsyncParentDir has no sync here.  Its caller gives the Dirfd to
-    // fixy::fs::sync.
+    // a directory takes the handle of that directory, so a stance whose sync
+    // op is FsyncParentDir has no sync here.  Its caller gives the directory
+    // to fixy::fs::sync.
     template <eff::IsExecCtx Ctx>
-        requires ::fixy::fs::CtxFitsDescriptorSync<Ctx, typename Stance::sync_op_type>
+        requires ::fixy::fs::CtxFitsDescriptorSync<Ctx, typename Stance::sync_op_type, StanceFile<Stance>::rights>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> sync(Ctx const& ctx) const noexcept {
-        return ::fixy::fs::sync<typename Stance::sync_op_type>(ctx, handle_);
+        return ::fixy::fs::sync<typename Stance::sync_op_type>(ctx, handle_.ref());
     }
 
     template <eff::IsExecCtx Ctx>
@@ -196,11 +205,11 @@ namespace detail {
 // takes the result of mint_file as an rvalue, so the linear descriptor
 // reaches its consumer on the value path and no local holds it.
 template <DurableStance Stance, typename... Extras, eff::IsExecCtx Ctx>
-[[nodiscard]] inline ::fixy::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>
+[[nodiscard]] inline ::fixy::Result<StanceFile<Stance>, ::foundation::os::Errno>
 open_with_stance_(Ctx const& ctx, Path<source::Sanitized> const& path, ::fixy::fs::FileMode perms) noexcept {
     return ::fixy::fs::mint_file<atom_fs::mode<typename Stance::mode_type>,
                                  atom_fs::with_flag<typename Stance::flag_type>, Extras...>(ctx, path, perms)
-        .map([](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept { return std::move(opened).consume(); });
+        .map([](::fixy::Linear<StanceFile<Stance>> opened) noexcept { return std::move(opened).consume(); });
 }
 
 }  // namespace detail
@@ -210,9 +219,9 @@ template <typename... Extras, eff::IsExecCtx Ctx>
 [[nodiscard]] auto mint_warm_writer(Ctx const& ctx, Path<source::Sanitized> const& path,
                                     ::fixy::fs::FileMode perms) noexcept {
     return detail::open_with_stance_<warm_writer_stance, Extras...>(ctx, path, perms)
-        .map([](::fixy::fs::OwnedFd fd) noexcept {
+        .map([](StanceFile<warm_writer_stance> file) noexcept {
             return ::fixy::mint_linear<CipherDurableHandle<warm_writer_stance>>(
-                CipherDurableHandle<warm_writer_stance>{std::move(fd)});
+                CipherDurableHandle<warm_writer_stance>{std::move(file)});
         });
 }
 
@@ -221,24 +230,24 @@ template <typename... Extras, eff::IsExecCtx Ctx>
 [[nodiscard]] auto mint_cold_writer(Ctx const& ctx, Path<source::Sanitized> const& path,
                                     ::fixy::fs::FileMode perms) noexcept {
     return detail::open_with_stance_<cold_writer_stance, Extras...>(ctx, path, perms)
-        .map([](::fixy::fs::OwnedFd fd) noexcept {
+        .map([](StanceFile<cold_writer_stance> file) noexcept {
             return ::fixy::mint_linear<CipherDurableHandle<cold_writer_stance>>(
-                CipherDurableHandle<cold_writer_stance>{std::move(fd)});
+                CipherDurableHandle<cold_writer_stance>{std::move(file)});
         });
 }
 
 // This mint opens only the temporary file that becomes the new HEAD.
-// The caller opens the parent directory separately with open_dirfd and
-// calls sync on that, which is what flushes the directory entry after
-// the rename.
+// The caller opens the parent directory separately with open_directory and
+// calls sync on that, which is what flushes the directory entry after the
+// rename.
 template <typename... Extras, eff::IsExecCtx Ctx>
     requires ::crucible::cipher::durable::CtxFitsDurableMint<Ctx, head_advance_stance, Extras...>
 [[nodiscard]] auto mint_head_advancer(Ctx const& ctx, Path<source::Sanitized> const& path,
                                       ::fixy::fs::FileMode perms) noexcept {
     return detail::open_with_stance_<head_advance_stance, Extras...>(ctx, path, perms)
-        .map([](::fixy::fs::OwnedFd fd) noexcept {
+        .map([](StanceFile<head_advance_stance> file) noexcept {
             return ::fixy::mint_linear<CipherDurableHandle<head_advance_stance>>(
-                CipherDurableHandle<head_advance_stance>{std::move(fd)});
+                CipherDurableHandle<head_advance_stance>{std::move(file)});
         });
 }
 

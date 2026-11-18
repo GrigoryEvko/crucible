@@ -133,8 +133,8 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
 }
 
 // The directory of the root of cipher.
-[[nodiscard]] static ::fixy::fs::Dirfd root_dirfd_of(crucible::Cipher const& cipher) {
-    return ::fixy::fs::open_dirfd(
+[[nodiscard]] static ::fixy::fs::DirectoryHandle root_directory_of(crucible::Cipher const& cipher) {
+    return ::fixy::fs::open_directory(
                store_ctx(), ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(cipher.root()))
                                 .expect("the sanitizer passes the root of the test"))
         .expect("the root of the test opens");
@@ -159,11 +159,12 @@ static void overwrite_batch_file(crucible::Cipher const& cipher, ::fixy::session
     batch.append_hex<16>(hash.raw()).expect("the batch path fits its text");
     batch.append(::fixy::TextView{".cfed"}).expect("the batch path fits its text");
     using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
-    const ::fixy::fs::OwnedFd file =
-        ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root_dirfd_of(cipher), batch.c_text())
+    const ::fixy::fs::DirectoryHandle root = root_directory_of(cipher);
+    const ::fixy::fs::FileOf<WriteTruncate> file =
+        ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root.ref(), batch.c_text())
             .expect("the test opens the batch file to write it")
             .consume();
-    assert(::fixy::fs::write_full(store_ctx(), file, bytes).is_ok());
+    assert(::fixy::fs::write_full(store_ctx(), file.ref(), bytes).is_ok());
 }
 
 // Appends line to the index of the events of session under the root of
@@ -173,11 +174,12 @@ static void append_index_line(crucible::Cipher const& cipher, ::fixy::session::S
     ::foundation::os::PathText<64> index = session_events_path(session);
     index.append(::fixy::TextView{"index"}).expect("the index path fits its text");
     using WriteAppend = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteAppend>;
-    const ::fixy::fs::OwnedFd file =
-        ::fixy::fs::mint_file_at<WriteAppend>(store_ctx(), root_dirfd_of(cipher), index.c_text())
+    const ::fixy::fs::DirectoryHandle root = root_directory_of(cipher);
+    const ::fixy::fs::FileOf<WriteAppend> file =
+        ::fixy::fs::mint_file_at<WriteAppend>(store_ctx(), root.ref(), index.c_text())
             .expect("the test opens the index to append a line")
             .consume();
-    assert(::fixy::fs::write_full(store_ctx(), file, line).is_ok());
+    assert(::fixy::fs::write_full(store_ctx(), file.ref(), line).is_ok());
 }
 
 // The region of a load that gives one.
@@ -206,24 +208,25 @@ static crucible::LoadError reason_of(crucible::Cipher::LoadResult const& loaded)
 // stored, so the cache holds no bytes of it, and a load reads this file.
 static void write_object_file(::fixy::TextView root, crucible::ContentHash hash, ::fixy::View<const std::byte> bytes) {
     const ::fixy::TestRunnerCtx ctx = store_ctx();
-    const ::fixy::fs::Dirfd root_dir =
-        ::fixy::fs::open_dirfd(ctx, ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(root))
-                                        .expect("the root of a store is a sanitized path"))
+    const ::fixy::fs::DirectoryHandle root_dir =
+        ::fixy::fs::open_directory(ctx, ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(root))
+                                            .expect("the root of a store is a sanitized path"))
             .expect("the root of the store opens");
     ::foundation::os::PathText<64> object{};
     object.append(::fixy::TextView{"objects/"}).expect("the object path fits its text");
     object.append_hex<2>(hash.raw() >> 56U).expect("the object path fits its text");
-    static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dir, object.c_text()).is_ok());
+    static_cast<void>(::fixy::fs::make_directory_at(ctx, root_dir.ref(), object.c_text()).is_ok());
     object.append('/').expect("the object path fits its text");
     object.append_hex<14>(hash.raw()).expect("the object path fits its text");
     using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
-    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(ctx, root_dir, object.c_text())
-                                .match(
-                                    [&](::fixy::Linear<::fixy::fs::OwnedFd> opened) {
-                                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                                        return bytes.size() == 0 || ::fixy::fs::write_full(ctx, file, bytes).is_ok();
-                                    },
-                                    [](::foundation::os::Errno) { return false; });
+    const bool is_written =
+        ::fixy::fs::mint_file_at<WriteTruncate>(ctx, root_dir.ref(), object.c_text())
+            .match(
+                [&](::fixy::Linear<::fixy::fs::FileOf<WriteTruncate>> opened) {
+                    const ::fixy::fs::FileOf<WriteTruncate> file = std::move(opened).consume();
+                    return bytes.size() == 0 || ::fixy::fs::write_full(ctx, file.ref(), bytes).is_ok();
+                },
+                [](::foundation::os::Errno) { return false; });
     assert(is_written && "the test writes the file of the object");
 }
 

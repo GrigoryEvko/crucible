@@ -79,12 +79,12 @@ template <typename T>
 // each byte with the bytes that a writer put.
 [[nodiscard]] bool file_holds(const std::string& path, const Payload& expected) {
     IoBlockCtx ctx{eff::testing::test()};
-    auto reader = opened(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadOnly>>(ctx, sanitized(path)));
+    auto reader = opened(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
     if (reader.is_err()) return false;
-    fs::OwnedFd const file = std::move(reader).expect("the reader opened");
+    fs::FileOf<fs::read_only> const file = std::move(reader).expect("the reader opened");
     Payload readback{};
     // A failed read gives the count zero, so it returns false too.
-    if (fs::read_full(ctx, file, readback.view()).value_or(0) != kPayloadBytes) return false;
+    if (fs::read_full(ctx, file.ref(), readback.view()).value_or(0) != kPayloadBytes) return false;
     return readback == expected;
 }
 
@@ -105,7 +105,7 @@ template <typename T>
         return 1;
     }
     auto const writer = std::move(opened_writer).expect("the cold writer opened");
-    if (auto written = fs::write_full(ctx, writer.handle(), pattern.view()); written.is_err()) {
+    if (auto written = fs::write_full(ctx, writer.file(), pattern.view()); written.is_err()) {
         ::fixy::report(::fixy::Sink::Err, "writing through the cold writer failed (errno {})\n", errno_of(written));
         return 1;
     }
@@ -161,7 +161,7 @@ template <typename T>
         return 1;
     }
     auto const writer = std::move(opened_writer).expect("the warm writer opened");
-    if (auto written = fs::write_full(ctx, writer.handle(), pattern.view()); written.is_err()) {
+    if (auto written = fs::write_full(ctx, writer.file(), pattern.view()); written.is_err()) {
         ::fixy::report(::fixy::Sink::Err, "writing through the warm writer failed (errno {})\n", errno_of(written));
         return 1;
     }

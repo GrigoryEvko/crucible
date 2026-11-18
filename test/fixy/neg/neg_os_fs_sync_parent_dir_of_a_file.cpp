@@ -1,6 +1,6 @@
-// A Dirfd gives no reference to the descriptor that it holds.  So the sync of
-// a descriptor takes no directory, and only sync<FsyncParentDir> flushes the
-// entries of a directory: the call names a member that Dirfd does not have.
+// sync<FsyncParentDir> flushes the entries of a directory, so it takes the
+// borrow of a directory.  An fsync of a file flushes that file and no entry
+// of its directory, so the gate refuses the borrow of a file.
 
 #include <fixy/os/Fs.h>
 
@@ -14,7 +14,7 @@ using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effe
 
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
-    fs::Dirfd const dir{};
-    [[maybe_unused]] auto flushed = fs::sync<fs::sync_op::Fsync>(ctx, dir.handle());
+    fs::TemporaryFile const file{};
+    [[maybe_unused]] auto flushed = fs::sync<fs::sync_op::FsyncParentDir>(ctx, file.ref());
     return 0;
 }

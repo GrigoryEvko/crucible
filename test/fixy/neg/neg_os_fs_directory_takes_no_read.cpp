@@ -1,6 +1,5 @@
-// A Dirfd gives no reference to the descriptor that it holds.  So a door of
-// a descriptor, such as read_full, takes no directory: the call names a
-// member that Dirfd does not have.
+// A directory holds no read right (THE RIGHTS of fixy/os/Handle.h).  So the
+// full read, which asks for the read right, takes no borrow of a directory.
 
 #include <fixy/os/Fs.h>
 #include <foundation/core/Array.h>
@@ -15,8 +14,8 @@ using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effe
 
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
-    fs::Dirfd const dir{};
+    fs::DirectoryHandle const dir{};
     foundation::core::FixedArray<std::byte, 4> bytes{};
-    [[maybe_unused]] auto read = fs::read_full(ctx, dir.handle(), bytes.view());
+    [[maybe_unused]] auto read = fs::read_full(ctx, dir.ref(), bytes.view());
     return 0;
 }

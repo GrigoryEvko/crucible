@@ -36,8 +36,10 @@
 //     without a flag that the caller asked for.
 //
 //  5. The zero-copy transfer is zerocopy_transfer, not a mint, because it
-//     synthesizes nothing.  It takes two OwnedFd handles, not two ints, so
-//     it moves bytes only between descriptors that the caller owns.  It
+//     synthesizes nothing.  It takes the borrows of two handles, not two
+//     ints, so it moves bytes only between descriptors that the caller
+//     owns, from a file with the read right to a handle with the write
+//     right.  It
 //     asks again after a short transfer or EINTR, and the sendfile form
 //     takes no destination offset, which sendfile does not read.  The two
 //     offsets have two roles (side::SourceOffset and
@@ -54,6 +56,7 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
 #include <fixy/os/Fd.h>
+#include <fixy/os/Handle.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
@@ -475,36 +478,48 @@ mint_io_uring_ring(Ctx const&) noexcept {
 // It returns the count that it moved, and a count short of the length
 // means that the source ended.  Another error returns its code and not
 // the count, so after an error the destination can hold a part of the
-// bytes.  A handle that holds no descriptor gives ebadf, and the
-// transfer makes no system call.
+// bytes.  The source is a file with the read right, and the destination a
+// handle with the write right.  The borrow of a handle that holds no
+// descriptor gives ebadf, and the transfer makes no system call.
 
 // sendfile writes at the file position of the destination and moves it,
 // so this form takes no destination offset.  It reads the source from
-// source_offset and does not move the file position of the source.
-template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
-    requires CtxFitsSendfileTransfer<Ctx, Atoms...>
+// source_offset and does not move the file position of the source.  The
+// destination is a file or a socket.
+template <typename... Atoms, ::fixy::os::RightSet SourceRights, class DestinationKind,
+          ::fixy::os::RightSet DestinationRights, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsSendfileTransfer<Ctx, Atoms...> && ::fixy::os::HoldsRights<SourceRights, ::fixy::os::RightSet::read>
+          && ::fixy::os::HoldsRights<DestinationRights, ::fixy::os::RightSet::write>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
-                  std::size_t length,
+zerocopy_transfer(Ctx const&, ::fixy::os::HandleRef<::fixy::os::kind::File, SourceRights> source,
+                  ::fixy::os::HandleRef<DestinationKind, DestinationRights> destination, std::size_t length,
                   SourceOffsetOf source_offset = SourceOffsetOf{::fixy::fs::FileOffset{0}}) noexcept {
     if (!source.is_open() || !destination.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::send_file_(destination.get(), source.get(), source_offset.value().raw(), length);
+    return detail::send_file_(::fixy::os::detail::HandleDoor::descriptor_of(destination),
+                              ::fixy::os::detail::HandleDoor::descriptor_of(source), source_offset.value().raw(),
+                              length);
 }
 
 // copy_file_range reads from source_offset and writes at
-// destination_offset, and it moves neither file position.
-template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx>
+// destination_offset, and it moves neither file position.  The two ends are
+// files.
+template <typename... Atoms, ::fixy::os::RightSet SourceRights, ::fixy::os::RightSet DestinationRights,
+          ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsCopyRangeTransfer<Ctx, Atoms...>
+          && ::fixy::os::HoldsRights<SourceRights, ::fixy::os::RightSet::read>
+          && ::fixy::os::HoldsRights<DestinationRights, ::fixy::os::RightSet::write>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-zerocopy_transfer(Ctx const&, ::fixy::fs::OwnedFd const& source, ::fixy::fs::OwnedFd const& destination,
-                  std::size_t length, SourceOffsetOf source_offset = SourceOffsetOf{::fixy::fs::FileOffset{0}},
+zerocopy_transfer(Ctx const&, ::fixy::os::HandleRef<::fixy::os::kind::File, SourceRights> source,
+                  ::fixy::os::HandleRef<::fixy::os::kind::File, DestinationRights> destination, std::size_t length,
+                  SourceOffsetOf source_offset = SourceOffsetOf{::fixy::fs::FileOffset{0}},
                   DestinationOffsetOf destination_offset = DestinationOffsetOf{::fixy::fs::FileOffset{0}}) noexcept {
     if (!source.is_open() || !destination.is_open()) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::copy_file_range_(source.get(), source_offset.value().raw(), destination.get(),
+    return detail::copy_file_range_(::fixy::os::detail::HandleDoor::descriptor_of(source), source_offset.value().raw(),
+                                    ::fixy::os::detail::HandleDoor::descriptor_of(destination),
                                     destination_offset.value().raw(), length);
 }
 

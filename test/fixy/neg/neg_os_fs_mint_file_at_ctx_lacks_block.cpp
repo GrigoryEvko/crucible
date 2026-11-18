@@ -17,7 +17,7 @@ using IoOnlyCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effec
 
 int main() {
     IoOnlyCtx ctx{eff::testing::init()};
-    fs::Dirfd const dir{};
-    [[maybe_unused]] auto r = fs::mint_file_at<atom_fs::mode<fs::open_mode::ReadOnly>>(ctx, dir, "objects");
+    fs::DirectoryHandle const dir{};
+    [[maybe_unused]] auto r = fs::mint_file_at<atom_fs::mode<fs::open_mode::ReadOnly>>(ctx, dir.ref(), "objects");
     return 0;
 }

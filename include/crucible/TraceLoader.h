@@ -203,11 +203,15 @@ template <class Field, std::size_t Offset, std::size_t RecordBytes>
     return ::fixy::bit_cast<Field>(image);
 }
 
+// The trace file, open for reading only, and its borrow.
+using TraceFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;
+using TraceFileRef = ::fixy::fs::FileRef<TraceFile::rights>;
+
 // Reads the bytes of buffer from the file.  A read that ends early gives
 // ReadTruncated, and an error of the kernel gives ReadFailed.
 template <CtxFitsTraceLoad Ctx>
-[[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
-read_exact_(Ctx const& io, ::fixy::fs::OwnedFd const& file, ::fixy::View<std::byte> buffer) noexcept {
+[[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError> read_exact_(Ctx const& io, TraceFileRef file,
+                                                                              ::fixy::View<std::byte> buffer) noexcept {
     using Read = ::fixy::Result<::fixy::Unit, TraceLoadError>;
     const std::size_t wanted = buffer.size();
     return ::fixy::fs::read_full(io, file, buffer)
@@ -230,7 +234,7 @@ read_exact_(Ctx const& io, ::fixy::fs::OwnedFd const& file, ::fixy::View<std::by
 // batch.
 template <std::size_t RecordBytes, CtxFitsTraceLoad Ctx, class OnRecord>
 [[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
-read_records_(Ctx const& io, ::fixy::fs::OwnedFd const& file, uint32_t count, OnRecord&& on_record) noexcept {
+read_records_(Ctx const& io, TraceFileRef file, uint32_t count, OnRecord&& on_record) noexcept {
     ::fixy::FixedArray<std::byte, RecordBytes * kTraceRecordsPerRead> batch{};
     uint32_t index = 0;
     while (index < count) {
@@ -486,20 +490,21 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
 
     // A report names no path, because a report writes no raw text.  Each
     // caller knows the path that it gave.
-    using Opened = ::fixy::Result<::fixy::fs::OwnedFd, TraceLoadError>;
+    using Opened = ::fixy::Result<detail::TraceFile, TraceLoadError>;
     CRUCIBLE_TRY(
         trace_file,
         ::fixy::fs::mint_file<::fixy::fs::read_only>(io, path).match(
-            [](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept -> Opened { return std::move(opened).consume(); },
+            [](::fixy::Linear<detail::TraceFile> opened) noexcept -> Opened { return std::move(opened).consume(); },
             [](::foundation::os::Errno error) noexcept -> Opened {
                 ::fixy::report(::fixy::Sink::Err, "load_trace: cannot open the trace file (error {})\n",
                                ::foundation::os::error_number(error));
                 return ::fixy::err(TraceLoadError::OpenFailed);
             }));
+    const detail::TraceFileRef source = trace_file.ref();
 
     // The size of the file bounds every count in it, so it is read first.
     using Sized = ::fixy::Result<uint64_t, TraceLoadError>;
-    CRUCIBLE_TRY(file_bytes, ::fixy::fs::file_size(io, trace_file)
+    CRUCIBLE_TRY(file_bytes, ::fixy::fs::file_size(io, source)
                                  .match(
                                      [](int64_t size) noexcept -> Sized {
                                          if (size < 0) return ::fixy::err(TraceLoadError::SizeUnknown);
@@ -518,7 +523,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     }
 
     ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header{};
-    CRUCIBLE_TRY(_, detail::read_exact_(io, trace_file, header.view()));
+    CRUCIBLE_TRY(_, detail::read_exact_(io, source, header.view()));
     const ::fixy::View<std::byte const, TRACE_HEADER_BYTES> header_bytes{header.view()};
 
     if (!::fixy::equal(detail::record_block_<0, TRACE_MAGIC.size()>(header_bytes), TRACE_MAGIC.view())) {
@@ -574,7 +579,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     uint32_t meta_cursor = 0;
     CRUCIBLE_TRY(
         _, detail::read_records_<sizeof(TraceOpRecord)>(
-               io, trace_file, num_ops,
+               io, source, num_ops,
                [&trace, &meta_cursor](uint32_t i,
                                       ::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record) noexcept -> Step {
                    return detail::decode_trace_op_(op_record, i, trace, meta_cursor);
@@ -583,7 +588,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     // Each record is read into a buffer of its full length and decoded from
     // there, so no byte of the file reaches a TensorMeta unchecked.
     CRUCIBLE_TRY(_, detail::read_records_<TRACE_META_BYTES>(
-                        io, trace_file, num_metas,
+                        io, source, num_metas,
                         [&trace](uint32_t i, ::fixy::View<std::byte const, TRACE_META_BYTES> raw) noexcept -> Step {
                             return decode_trace_meta(raw).match(
                                 [&trace, i](TensorMeta meta) noexcept -> Step {
@@ -603,7 +608,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     // in the table ends the table, as a malformed tail does, and the trace
     // still loads.
     ::fixy::FixedArray<std::byte, sizeof(uint32_t)> count_bytes{};
-    const bool has_name_count = detail::read_exact_(io, trace_file, count_bytes.view()).is_ok();
+    const bool has_name_count = detail::read_exact_(io, source, count_bytes.view()).is_ok();
     const uint32_t raw_num_names =
         has_name_count
             ? read_record_field_<uint32_t, 0>(::fixy::View<std::byte const, sizeof(uint32_t)>{count_bytes.view()})
@@ -623,7 +628,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
         }
         for (uint32_t i = 0; i < num_names; i++) {
             ::fixy::FixedArray<std::byte, sizeof(uint64_t) + sizeof(uint16_t)> entry_head{};
-            if (detail::read_exact_(io, trace_file, entry_head.view()).is_err()) break;
+            if (detail::read_exact_(io, source, entry_head.view()).is_err()) break;
             const ::fixy::View<std::byte const, sizeof(uint64_t) + sizeof(uint16_t)> entry_head_bytes{
                 entry_head.view()};
             const auto schema_hash_raw = read_record_field_<uint64_t, 0>(entry_head_bytes);
@@ -636,7 +641,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
             ::fixy::FixedArray<std::byte, SCHEMA_NAME_LEN_MAX> name_bytes{};
             const ::fixy::View<std::byte> name_read =
                 name_bytes.view().window(0, name_len).expect("a name of a bounded length fits in its buffer");
-            if (detail::read_exact_(io, trace_file, name_read).is_err()) break;
+            if (detail::read_exact_(io, source, name_read).is_err()) break;
             ::fixy::FixedText<SCHEMA_NAME_LEN_MAX> name_text{};
             for (const std::byte name_byte : name_read) {
                 name_text.append(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");

@@ -100,12 +100,14 @@ void put_field(::foundation::core::FixedArray<std::byte, Size>& bytes, layout::K
                  ::fixy::bytes(value));
 }
 
-// The descriptor of a mint, or an empty handle when the open failed.
-[[nodiscard]] ::fixy::fs::OwnedFd
-descriptor_of(::fixy::Result<::fixy::Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno> minted) noexcept {
+using TcpSocket = ::fixy::net::SocketHandle<::fixy::net::socket_kind::TcpStream>;
+
+// The socket of a mint, or an empty handle when the open failed.
+[[nodiscard]] TcpSocket
+descriptor_of(::fixy::Result<::fixy::Linear<TcpSocket>, ::foundation::os::Errno> minted) noexcept {
     return std::move(minted).match(
-        [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd { return std::move(opened).consume(); },
-        [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+        [](::fixy::Linear<TcpSocket> opened) -> TcpSocket { return std::move(opened).consume(); },
+        [](::foundation::os::Errno) -> TcpSocket { return TcpSocket{}; });
 }
 
 cog::CogIdentity nic(std::uint64_t lo) {
@@ -310,10 +312,9 @@ void test_live_tcp_info() {
     // A harvest reads socket options, and the test runner context carries
     // the IO and Block that the socket option gate asks for.
     eff::TestRunnerCtx test_ctx{::foundation::effects::testing::test()};
-    ::fixy::fs::OwnedFd const tcp =
-        descriptor_of(::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(test_ctx));
+    TcpSocket const tcp = descriptor_of(::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(test_ctx));
     assert(tcp.is_open());
-    cntp::SocketFd const fd = ::fixy::mint_refined<::fixy::non_negative>(tcp.get());
+    cntp::SocketFd const fd = ::fixy::mint_refined<::fixy::non_negative>(tcp.ref().abi_descriptor());
     // Reno is part of each kernel, so the harvest reads no fields of BBR or
     // of DCTCP.
     assert(::fixy::net::set_tcp_congestion(test_ctx, fd, "reno").is_ok());

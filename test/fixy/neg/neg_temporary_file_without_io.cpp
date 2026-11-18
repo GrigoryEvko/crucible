@@ -12,8 +12,8 @@ namespace {
 
 using ForegroundCtx = fe::ExecCtx<fe::ctx_cap::Fg, fe::Row<>>;
 
-[[maybe_unused]] bool opens(ForegroundCtx const& ctx, fixy::fs::Dirfd const& dir) {
-    return fixy::fs::mint_temporary_file_at(ctx, dir).is_ok();
+[[maybe_unused]] bool opens(ForegroundCtx const& ctx, fixy::fs::DirectoryHandle const& dir) {
+    return fixy::fs::mint_temporary_file_at(ctx, dir.ref()).is_ok();
 }
 
 }  // namespace

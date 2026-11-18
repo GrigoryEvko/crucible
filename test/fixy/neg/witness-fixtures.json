@@ -652,11 +652,6 @@
       "constructor": "\\bfn\\("
     },
     {
-      "name": "neg_witness_fs_dirfd_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bDirfd\\("
-    },
-    {
       "name": "neg_witness_fs_filedoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "\\bFileDoor\\("
@@ -730,6 +725,16 @@
       "name": "neg_witness_os_guardedregion_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bGuardedRegion\\("
+    },
+    {
+      "name": "neg_witness_os_handle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bHandle\\("
+    },
+    {
+      "name": "neg_witness_os_handleref_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bHandleRef\\("
     },
     {
       "name": "neg_witness_ownedmmap_direct_construction",
@@ -1853,6 +1858,14 @@
       "header": "fixy/os/Fd.h"
     },
     {
+      "type": "fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>",
+      "header": "fixy/os/Handle.h"
+    },
+    {
+      "type": "fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>",
+      "header": "fixy/os/Handle.h"
+    },
+    {
       "type": "fixy::fs::FileDoor",
       "header": "fixy/os/Fs.h"
     },
@@ -1867,10 +1880,6 @@
     {
       "type": "fixy::perf::PerfEventDoor",
       "header": "fixy/os/PerfEvent.h"
-    },
-    {
-      "type": "fixy::fs::Dirfd",
-      "header": "fixy/os/Fs.h"
     },
     {
       "type": "fixy::concurrent::Stage<&fixy::concurrent::detail::stage_witness::stage_pass_through, fixy::HotFgCtx>",

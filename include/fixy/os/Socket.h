@@ -22,6 +22,7 @@
 #include <fixy/atoms/Syscall.h>
 #include <fixy/os/AtomPack.h>
 #include <fixy/os/Fd.h>
+#include <fixy/os/Handle.h>
 #include <fixy/os/SocketCalls.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
@@ -96,6 +97,18 @@ using socket_row_t = eff::lift_row_t<::fixy::atom::syscall::per<::fixy::atom::sy
 template <typename Ctx, typename Kind>
 concept CtxFitsSocketMint = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, socket_row_t> && MappedSocketKind<Kind>;
 
+// The rights of a socket: a read and a write of its bytes, and the family of
+// the ioctls of a socket.
+inline constexpr ::fixy::os::RightSet socket_rights =
+    ::fixy::os::RightSet::read | ::fixy::os::RightSet::write | ::fixy::os::RightSet::ioctl_socket;
+
+// The handle of a socket of the kind Kind, and its borrow.
+template <typename Kind>
+using SocketHandle = ::fixy::os::Handle<::fixy::os::kind::Socket<Kind>, socket_rights>;
+
+template <typename Kind, ::fixy::os::RightSet Rights>
+using SocketRef = ::fixy::os::HandleRef<::fixy::os::kind::Socket<Kind>, Rights>;
+
 // The Kind parameter precedes Ctx because the caller names it explicitly
 // and Ctx deduces from the argument.
 //
@@ -103,11 +116,11 @@ concept CtxFitsSocketMint = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, socket_ro
 // as its friend, and a friend must already have been declared.
 template <typename Kind, eff::IsExecCtx Ctx>
     requires CtxFitsSocketMint<Ctx, Kind>
-[[nodiscard]] inline ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>
 mint_socket(Ctx const&) noexcept;
 
 // The door to socket(2).  No object of it exists.  Its member is private,
-// and its one friend is mint_socket.  OwnedFd befriends this class, so a
+// and its one friend is mint_socket.  A Handle befriends this class, so a
 // socket handle comes only from mint_socket, after its gate.  The door
 // reads the triple of the kind, so no caller gives it a domain, a type or
 // a protocol.
@@ -115,37 +128,36 @@ class SocketDoor final : ::foundation::NoObject<SocketDoor> {
     template <typename FriendKind, eff::IsExecCtx FriendCtx>
         requires CtxFitsSocketMint<FriendCtx, FriendKind>
     friend auto mint_socket(FriendCtx const&) noexcept
-        -> ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>;
+        -> ::foundation::core::Result<Linear<SocketHandle<FriendKind>>, ::foundation::os::Errno>;
 
     // The open door of src/fixy/os/Socket.cpp adds SOCK_CLOEXEC, because a
     // descriptor that survives execve leaks into each child process.  It
     // gives the error of the kernel on failure and no handle.
     template <MappedSocketKind Kind>
-    [[nodiscard]] static ::foundation::core::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno> open_() noexcept {
-        using Opened = ::foundation::core::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>;
+    [[nodiscard]] static ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>
+    open_() noexcept {
+        using Minted = ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>;
         constexpr detail::socket_triple triple = socket_triple_of(^^Kind);
         return detail::open_socket_(triple.domain, triple.type, triple.protocol)
-            .match([](int descriptor) -> Opened { return ::fixy::fs::OwnedFd{descriptor}; },
-                   [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
+            .match(
+                [](int descriptor) -> Minted {
+                    return mint_linear<SocketHandle<Kind>>(SocketHandle<Kind>{descriptor});
+                },
+                [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
     }
 };
 
 template <typename Kind, eff::IsExecCtx Ctx>
     requires CtxFitsSocketMint<Ctx, Kind>
-[[nodiscard]] inline ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>
 mint_socket(Ctx const&) noexcept {
-    using Minted = ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>;
-    return SocketDoor::open_<Kind>().match(
-        [](::fixy::fs::OwnedFd descriptor) -> Minted {
-            return mint_linear<::fixy::fs::OwnedFd>(std::move(descriptor));
-        },
-        [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
+    return SocketDoor::open_<Kind>();
 }
 
 // THE SOCKET CALLS
 //   Each call takes the descriptor of a socket: the NonNegative<int> of a
-//   socket that the caller holds, or the OwnedFd of a netlink socket of
-//   mint_socket.  The door file src/fixy/os/Socket.cpp issues each call
+//   socket that the caller holds, or the borrow of a socket of mint_socket.
+//   The door file src/fixy/os/Socket.cpp issues each call
 //   with the raw primitive (fixy/os/SocketCalls.h), and gives the error of
 //   the kernel in a Result.  A call that a signal interrupts runs again.
 //   send_bytes, receive_bytes and receive_with_timestamps pass MSG_DONTWAIT
@@ -254,34 +266,41 @@ set_max_pacing_rate(Ctx const&, NonNegative<int> socket, std::uint64_t bytes_per
                                sizeof(bytes_per_second));
 }
 
+// A socket call that needs the rights Needed of a socket with the rights
+// Held.
+template <typename Ctx, ::fixy::os::RightSet Held, ::fixy::os::RightSet Needed>
+concept CtxFitsSocketCallWith = CtxFitsSocketCall<Ctx> && ::fixy::os::HoldsRights<Held, Needed>;
+
 // Binds a netlink socket to a port that the kernel gives, with no group.
 // Two threads of one process then get the replies of their own requests.
-template <eff::IsExecCtx Ctx>
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsSocketCall<Ctx>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-bind_netlink(Ctx const&, ::fixy::fs::OwnedFd const& socket) noexcept {
+bind_netlink(Ctx const&, SocketRef<socket_kind::NetlinkRoute, Rights> socket) noexcept {
     detail::NetlinkAddress const address{};
-    return detail::bind_address_(socket.get(), &address, sizeof(address));
+    return detail::bind_address_(::fixy::os::detail::HandleDoor::descriptor_of(socket), &address, sizeof(address));
 }
 
 // Sends the bytes of buffer, and gives the count that the kernel took.  A
 // socket with no connection gives epipe, and the process gets no SIGPIPE.
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <typename Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsSocketCallWith<Ctx, Rights, ::fixy::os::RightSet::write>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-send_bytes(Ctx const&, ::fixy::fs::OwnedFd const& socket, ::foundation::core::View<std::byte const> buffer) noexcept {
-    return detail::send_with_flags_(socket.get(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
-                                    buffer.size(), detail::no_wait_flag);
+send_bytes(Ctx const&, SocketRef<Kind, Rights> socket, ::foundation::core::View<std::byte const> buffer) noexcept {
+    return detail::send_with_flags_(::fixy::os::detail::HandleDoor::descriptor_of(socket),
+                                    first_of_(::foundation::core::detail::ViewDoor::key(), buffer), buffer.size(),
+                                    detail::no_wait_flag);
 }
 
 // Receives the bytes that the socket holds, at most the size of buffer, and
 // gives their count.  It does not wait: a socket with no bytes gives eagain.
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsSocketCall<Ctx>
+template <typename Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsSocketCallWith<Ctx, Rights, ::fixy::os::RightSet::read>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-receive_bytes(Ctx const&, ::fixy::fs::OwnedFd const& socket, ::foundation::core::View<std::byte> buffer) noexcept {
-    return detail::receive_with_flags_(socket.get(), first_of_(::foundation::core::detail::ViewDoor::key(), buffer),
-                                       buffer.size(), detail::no_wait_flag);
+receive_bytes(Ctx const&, SocketRef<Kind, Rights> socket, ::foundation::core::View<std::byte> buffer) noexcept {
+    return detail::receive_with_flags_(::fixy::os::detail::HandleDoor::descriptor_of(socket),
+                                       first_of_(::foundation::core::detail::ViewDoor::key(), buffer), buffer.size(),
+                                       detail::no_wait_flag);
 }
 
 // The longest name of a network interface of the kernel, with no zero

@@ -3,14 +3,15 @@
 // A move takes the resource of an owner and leaves the owner empty.  Each
 // door that takes the empty owner gives an error, or the empty value of the
 // accessor, and no door reads the empty owner as a resource: a descriptor of
-// -1 is no clock id, and an empty Dirfd is no anchor for an absolute path.
-// The case of each owner moves a live owner, calls each operation on the
-// empty one, and calls one operation on the owner that the move filled.  A
-// leg that the host refuses, such as a PTP device that the host does not
-// have, is skipped.
+// -1 is no clock id, and an empty directory handle is no anchor for an
+// absolute path.  The case of each owner moves a live owner, calls each
+// operation on the empty one, and calls one operation on the owner that the
+// move filled.  A leg that the host refuses, such as a PTP device that the
+// host does not have, is skipped.
 //
-// This test holds the owners of a descriptor: OwnedFd, Dirfd and
-// PtpClockReader.  The tests of the other owners of fixy/os hold the same
+// This test holds the owners of a descriptor: a file, a directory, the
+// OwnedFd of a socket and PtpClockReader.  The tests of the other owners of
+// fixy/os hold the same
 // check, on an owner that they mint: test_os_io for IoUringRing and
 // test_owned_mmap for OwnedMmap.
 //
@@ -47,23 +48,26 @@ using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effe
     return fixy::sanitize_path(fixy::mint_tagged<src::External>(text)).expect("each test path passes the sanitizer");
 }
 
-// The descriptor of a mint, or an empty handle when the open failed.
-[[nodiscard]] fs::OwnedFd descriptor_of(fixy::Result<fixy::Linear<fs::OwnedFd>, Errno> minted) {
-    return std::move(minted).match(
-        [](fixy::Linear<fs::OwnedFd> opened) -> fs::OwnedFd { return std::move(opened).consume(); },
-        [](Errno) -> fs::OwnedFd { return fs::OwnedFd{}; });
+// The handle of a mint, or an empty handle when the open failed.
+template <class Owned>
+[[nodiscard]] Owned descriptor_of(fixy::Result<fixy::Linear<Owned>, Errno> minted) {
+    return std::move(minted).match([](fixy::Linear<Owned> opened) -> Owned { return std::move(opened).consume(); },
+                                   [](Errno) -> Owned { return Owned{}; });
 }
 
 // The error of an open, or the zero Errno for an open that gave a
 // descriptor.  The match closes the descriptor of an open that succeeded.
-[[nodiscard]] Errno open_error_of(fixy::Result<fixy::Linear<fs::OwnedFd>, Errno> minted) {
+template <class Owned>
+[[nodiscard]] Errno open_error_of(fixy::Result<fixy::Linear<Owned>, Errno> minted) {
     return std::move(minted).match(
-        [](fixy::Linear<fs::OwnedFd> opened) -> Errno {
-            fs::OwnedFd const closed_on_return = std::move(opened).consume();
+        [](fixy::Linear<Owned> opened) -> Errno {
+            Owned const closed_on_return = std::move(opened).consume();
             return Errno{};
         },
         [](Errno error) -> Errno { return error; });
 }
+
+using ReadWriteFile = fs::FileOf<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>;
 
 // True when result holds the error expected.
 template <typename T>
@@ -77,60 +81,91 @@ template <typename T>
     return 1;
 }
 
-// OwnedFd: each door of the file, socket, transfer and perf headers that
-// takes a descriptor gives ebadf.
-[[nodiscard]] int moved_from_descriptor_refuses() {
+// A file: each door of the file and transfer headers that takes the borrow
+// of a file gives ebadf.  The file opens for reading and writing, so the
+// borrow holds each right of the doors.
+[[nodiscard]] int moved_from_file_refuses() {
     using Sendfile = fixy::atom::io::zerocopy<fixy::io::zerocopy::Sendfile>;
     using CopyFileRange = fixy::atom::io::zerocopy<fixy::io::zerocopy::CopyFileRange>;
-    fixy::TextView const name{"descriptor"};
+    fixy::TextView const name{"file"};
     IoBlockCtx ctx{eff::testing::test()};
-    fs::OwnedFd source = descriptor_of(fs::mint_file<fs::read_only>(ctx, sanitized("/proc/self/status")));
-    if (!source.is_open()) return answered(name, "nothing: the open of /proc/self/status failed");
-    fs::OwnedFd const live = std::move(source);
+    auto opened = fs::open_directory(ctx, sanitized("/tmp"));
+    if (opened.is_err()) return answered(name, "nothing: the open of /tmp failed");
+    fs::DirectoryHandle const temporary = std::move(opened).expect("/tmp opened");
+    fs::TemporaryFile source = descriptor_of(fs::mint_temporary_file_at(ctx, temporary.ref()));
+    if (!source.is_open()) return answered(name, "nothing: the open of a file under /tmp failed");
+    fs::TemporaryFile const live = std::move(source);
 
     foundation::core::FixedArray<std::byte, 4> bytes{};
     foundation::core::View<std::byte const> const sent{bytes.view()};
-    if (source.is_open() || source.get() >= 0) return answered(name, "is_open or get");
-    if (!refuses_with(fs::sync<fs::sync_op::Fdatasync>(ctx, source), Errno::ebadf)) return answered(name, "Fdatasync");
-    if (!refuses_with(fs::sync<fs::sync_op::Fsync>(ctx, source), Errno::ebadf)) return answered(name, "Fsync");
-    if (!refuses_with(fs::read_full(ctx, source, bytes.view()), Errno::ebadf)) return answered(name, "read_full");
-    if (!refuses_with(fs::write_full(ctx, source, sent), Errno::ebadf)) return answered(name, "write_full");
-    if (!refuses_with(fs::write_full(ctx, source, fixy::TextView{"text"}), Errno::ebadf)) {
+    if (source.is_open() || source.ref().is_open()) return answered(name, "is_open");
+    if (!refuses_with(fs::sync<fs::sync_op::Fdatasync>(ctx, source.ref()), Errno::ebadf)) {
+        return answered(name, "Fdatasync");
+    }
+    if (!refuses_with(fs::sync<fs::sync_op::Fsync>(ctx, source.ref()), Errno::ebadf)) return answered(name, "Fsync");
+    if (!refuses_with(fs::read_full(ctx, source.ref(), bytes.view()), Errno::ebadf)) {
+        return answered(name, "read_full");
+    }
+    if (!refuses_with(fs::write_full(ctx, source.ref(), sent), Errno::ebadf)) return answered(name, "write_full");
+    if (!refuses_with(fs::write_full(ctx, source.ref(), fixy::TextView{"text"}), Errno::ebadf)) {
         return answered(name, "write_full of a text");
     }
-    if (!refuses_with(fs::file_size(ctx, source), Errno::ebadf)) return answered(name, "file_size");
-    if (!refuses_with(fixy::net::send_bytes(ctx, source, sent), Errno::ebadf)) return answered(name, "send_bytes");
-    if (!refuses_with(fixy::net::receive_bytes(ctx, source, bytes.view()), Errno::ebadf)) {
-        return answered(name, "receive_bytes");
-    }
-    if (!refuses_with(fixy::net::bind_netlink(ctx, source), Errno::ebadf)) return answered(name, "bind_netlink");
-    if (!refuses_with(fixy::perf::read_count(ctx, source), Errno::ebadf)) return answered(name, "read_count");
-    if (!refuses_with(fixy::io::zerocopy_transfer<Sendfile>(ctx, source, live, 1), Errno::ebadf)
-        || !refuses_with(fixy::io::zerocopy_transfer<Sendfile>(ctx, live, source, 1), Errno::ebadf)) {
+    if (!refuses_with(fs::file_size(ctx, source.ref()), Errno::ebadf)) return answered(name, "file_size");
+    if (!refuses_with(fixy::io::zerocopy_transfer<Sendfile>(ctx, source.ref(), live.ref(), 1), Errno::ebadf)
+        || !refuses_with(fixy::io::zerocopy_transfer<Sendfile>(ctx, live.ref(), source.ref(), 1), Errno::ebadf)) {
         return answered(name, "a sendfile transfer");
     }
-    if (!refuses_with(fixy::io::zerocopy_transfer<CopyFileRange>(ctx, source, live, 1), Errno::ebadf)
-        || !refuses_with(fixy::io::zerocopy_transfer<CopyFileRange>(ctx, live, source, 1), Errno::ebadf)) {
+    if (!refuses_with(fixy::io::zerocopy_transfer<CopyFileRange>(ctx, source.ref(), live.ref(), 1), Errno::ebadf)
+        || !refuses_with(fixy::io::zerocopy_transfer<CopyFileRange>(ctx, live.ref(), source.ref(), 1), Errno::ebadf)) {
         return answered(name, "a copy_file_range transfer");
     }
-    if (source.release() >= 0) return answered(name, "release");
-    if (fs::read_full(ctx, live, bytes.view()).is_err()) return answered(name, "nothing, and its new owner refused");
+    if (fs::file_size(ctx, live.ref()).is_err()) return answered(name, "nothing, and its new owner refused");
     return 0;
 }
 
-// Dirfd: each door under a directory gives ebadf, also for an absolute path,
-// which the kernel reads with no regard to the descriptor.
+// A socket: each door of the socket header that takes the borrow of a socket
+// gives ebadf.  An empty descriptor handle gives ebadf to the perf door.
+[[nodiscard]] int moved_from_socket_refuses() {
+    using NetlinkSocket = fixy::net::SocketHandle<fixy::net::socket_kind::NetlinkRoute>;
+    fixy::TextView const name{"socket"};
+    IoBlockCtx ctx{eff::testing::test()};
+    NetlinkSocket source = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
+    if (!source.is_open()) return answered(name, "nothing: the open of a netlink socket failed");
+    NetlinkSocket const live = std::move(source);
+
+    foundation::core::FixedArray<std::byte, 4> bytes{};
+    foundation::core::View<std::byte const> const sent{bytes.view()};
+    if (source.is_open() || source.ref().is_open()) return answered(name, "is_open");
+    if (!refuses_with(fixy::net::send_bytes(ctx, source.ref(), sent), Errno::ebadf)) {
+        return answered(name, "send_bytes");
+    }
+    if (!refuses_with(fixy::net::receive_bytes(ctx, source.ref(), bytes.view()), Errno::ebadf)) {
+        return answered(name, "receive_bytes");
+    }
+    if (!refuses_with(fixy::net::bind_netlink(ctx, source.ref()), Errno::ebadf)) {
+        return answered(name, "bind_netlink");
+    }
+    if (!refuses_with(fixy::perf::read_count(ctx, fs::OwnedFd{}), Errno::ebadf)) return answered(name, "read_count");
+    if (fixy::net::bind_netlink(ctx, live.ref()).is_err()) {
+        return answered(name, "nothing, and its new owner refused");
+    }
+    return 0;
+}
+
+// A directory handle: each door under a directory gives ebadf, also for an
+// absolute path, which the kernel reads with no regard to the descriptor.
 [[nodiscard]] int moved_from_directory_refuses() {
     fixy::TextView const name{"directory"};
     IoBlockCtx ctx{eff::testing::test()};
     eff::Alloc const alloc = eff::testing::test().alloc;
-    auto opened = fs::open_dirfd(ctx, sanitized("/proc"));
+    auto opened = fs::open_directory(ctx, sanitized("/proc"));
     if (opened.is_err()) return answered(name, "nothing: the open of /proc failed");
-    fs::Dirfd source = std::move(opened).expect("/proc opened");
-    fs::Dirfd const live = std::move(source);
+    fs::DirectoryHandle source_handle = std::move(opened).expect("/proc opened");
+    fs::DirectoryHandle const live = std::move(source_handle);
+    fs::DirectoryRef<fs::directory_rights> const source = source_handle.ref();
 
     foundation::core::GrowText text = foundation::core::mint_grow_text(64);
-    if (source.is_open() || source.get() >= 0) return answered(name, "is_open or get");
+    if (source_handle.is_open() || source.is_open()) return answered(name, "is_open");
     if (!refuses_with(fs::sync<fs::sync_op::FsyncParentDir>(ctx, source), Errno::ebadf)) {
         return answered(name, "FsyncParentDir");
     }
@@ -140,7 +175,9 @@ template <typename T>
     if (open_error_of(fs::mint_file_at<fs::read_only>(ctx, source, "uptime")) != Errno::ebadf) {
         return answered(name, "mint_file_at of a relative path");
     }
-    if (!refuses_with(fs::open_dirfd_at(ctx, source, "/proc"), Errno::ebadf)) return answered(name, "open_dirfd_at");
+    if (!refuses_with(fs::open_directory_at(ctx, source, "/proc"), Errno::ebadf)) {
+        return answered(name, "open_directory_at");
+    }
     if (!refuses_with(fs::commit_atomic_at<fs::atomicity::Rename>(ctx, source, "/proc/no-entry", "/proc/no-target"),
                       Errno::ebadf)) {
         return answered(name, "commit_atomic_at");
@@ -155,7 +192,7 @@ template <typename T>
     if (!refuses_with(fs::read_whole_at(ctx, alloc, source, "/proc/self/status", text), Errno::ebadf)) {
         return answered(name, "read_whole_at");
     }
-    if (!fs::has_entry_at(ctx, live, "self").value_or(false))
+    if (!fs::has_entry_at(ctx, live.ref(), "self").value_or(false))
         return answered(name, "nothing, and its new owner refused");
     return 0;
 }
@@ -188,7 +225,8 @@ template <typename T>
 }  // namespace
 
 int main() {
-    if (int const rc = moved_from_descriptor_refuses(); rc != 0) return rc;
+    if (int const rc = moved_from_file_refuses(); rc != 0) return rc;
+    if (int const rc = moved_from_socket_refuses(); rc != 0) return rc;
     if (int const rc = moved_from_directory_refuses(); rc != 0) return rc;
     if (int const rc = moved_from_clock_reader_refuses(); rc != 0) return rc;
     return 0;

@@ -5428,11 +5428,11 @@ fixy_neg_compile_test(neg_os_ptp_device_door_is_private
 # the open can wait on the file system, so the mint asks for a context that
 # owns IO and Block.  One fixture for each missing atom.
 fixy_neg_compile_test(neg_temporary_file_without_block
-  "no matching function for call to .mint_temporary_file_at\\(const .anonymous.::IoOnlyCtx&, const fixy::fs::Dirfd&\\)"
+  "no matching function for call to .mint_temporary_file_at\\(const .anonymous.::IoOnlyCtx&, fixy::os::HandleRef<fixy::os::kind::Directory"
   "required for the satisfaction of .CtxAdmitsFs<Ctx>.")
 
 fixy_neg_compile_test(neg_temporary_file_without_io
-  "no matching function for call to .mint_temporary_file_at\\(const .anonymous.::ForegroundCtx&, const fixy::fs::Dirfd&\\)"
+  "no matching function for call to .mint_temporary_file_at\\(const .anonymous.::ForegroundCtx&, fixy::os::HandleRef<fixy::os::kind::Directory"
   "required for the satisfaction of .CtxAdmitsFs<Ctx>.")
 
 # ── The file surface ──────────────────────────────────────────────────
@@ -5536,23 +5536,38 @@ fixy_neg_compile_test(neg_os_fs_mint_file_external_path
 
 fixy_neg_compile_test(neg_os_fs_sync_none
   "no matching function for call"
-  "sync<fixy::fs::sync_op::None>\\(\\{anonymous\\}::IoBlockCtx&, fixy::fs::OwnedFd&\\)")
+  "sync<fixy::fs::sync_op::None>\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::File")
 
-# FsyncParentDir flushes the entries of a directory, so it takes a Dirfd.
-# The fsync of a file descriptor flushes no entry, so the gate of the
-# descriptor sync refuses the op.
-fixy_neg_compile_test(neg_os_fs_sync_parent_dir_owned_fd
-  "no matching function for call to .sync<fixy::fs::sync_op::FsyncParentDir>\\(\\{anonymous\\}::IoBlockCtx&, fixy::fs::OwnedFd&\\)"
+# FsyncParentDir flushes the entries of a directory, so it takes the borrow
+# of a directory.  The fsync of a file flushes no entry, so the gate of the
+# file sync refuses the op.
+fixy_neg_compile_test(neg_os_fs_sync_parent_dir_of_a_file
+  "no matching function for call to .sync<fixy::fs::sync_op::FsyncParentDir>\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::File"
   "the expression .!\\(is_same_v<SyncOp, fixy::fs::sync_op::FsyncParentDir>\\) \\[with SyncOp = fixy::fs::sync_op::FsyncParentDir\\]. evaluated to .false.")
 
-# A Dirfd gives no reference to its descriptor, so a door of a descriptor
-# takes no directory: neither the full read nor the sync of a descriptor.
-fixy_neg_compile_test(neg_os_fs_dirfd_handle_read_full
-  "has no member named .handle."
-  ".const class fixy::fs::Dirfd.")
-fixy_neg_compile_test(neg_os_fs_dirfd_handle_fsync
-  "has no member named .handle."
-  ".const class fixy::fs::Dirfd.")
+# A directory holds no read right, and its borrow is no borrow of a file, so
+# a door of a file takes no directory: neither the full read nor the sync of
+# a file.  A file of a read-only open holds no write right.
+fixy_neg_compile_test(neg_os_fs_directory_takes_no_read
+  "no matching function for call to .read_full\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::Directory"
+  "the expression .\\(.*\\) == .* \\[with Held = .*Needed = fixy::os::RightSet::read\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_fs_directory_takes_no_file_fsync
+  "no matching function for call to .sync<fixy::fs::sync_op::Fsync>\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::Directory"
+  "mismatched types .fixy::os::kind::File. and .fixy::os::kind::Directory.")
+# A borrow gives no right that its handle lacks, names no temporary handle,
+# and leaves no frame (THE BORROW of fixy/os/Handle.h).
+fixy_neg_compile_test(neg_os_handle_restrict_adds_right
+  "no matching function for call to .fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>::restrict<fixy::os::RightSet::write>\\(\\)"
+  "HoldsRights<Rights, Fewer>")
+fixy_neg_compile_test(neg_os_handle_ref_of_temporary
+  "use of deleted function"
+  "the borrow of a temporary handle dangles at the end of the full expression")
+fixy_neg_compile_test(neg_os_handle_ref_leaves_frame
+  "use of deleted function .void foundation::core::Option<T>::with_mut\\(OnSome&&, OnNone&&\\) &"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
+fixy_neg_compile_test(neg_os_fs_write_through_read_only_file
+  "no matching function for call to .write_full\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::File"
+  "the expression .\\(.*\\) == .* \\[with Held = .*Needed = fixy::os::RightSet::write\\]. evaluated to .false.")
 
 fixy_neg_compile_test(neg_os_fs_commit_atomic_external_target
   "no matching function for call"

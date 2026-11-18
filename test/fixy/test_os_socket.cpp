@@ -93,22 +93,24 @@ constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
     return value == expected;
 }
 
-// The descriptor of a mint, or an empty handle when the open failed.
-[[nodiscard]] fixy::fs::OwnedFd
-descriptor_of(fixy::Result<fixy::Linear<fixy::fs::OwnedFd>, foundation::os::Errno> minted) noexcept {
-    return std::move(minted).match(
-        [](fixy::Linear<fixy::fs::OwnedFd> opened) -> fixy::fs::OwnedFd { return std::move(opened).consume(); },
-        [](foundation::os::Errno) -> fixy::fs::OwnedFd { return fixy::fs::OwnedFd{}; });
+using NetlinkSocket = fixy::net::SocketHandle<fixy::net::socket_kind::NetlinkRoute>;
+using TcpSocket = fixy::net::SocketHandle<fixy::net::socket_kind::TcpStream>;
+
+// The socket of a mint, or an empty handle when the open failed.
+template <class Socket>
+[[nodiscard]] Socket descriptor_of(fixy::Result<fixy::Linear<Socket>, foundation::os::Errno> minted) noexcept {
+    return std::move(minted).match([](fixy::Linear<Socket> opened) -> Socket { return std::move(opened).consume(); },
+                                   [](foundation::os::Errno) -> Socket { return Socket{}; });
 }
 
 [[nodiscard]] int check_netlink_route_socket() noexcept {
     IoBlockCtx ctx{eff::testing::test()};
-    fixy::fs::OwnedFd const handle = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
+    NetlinkSocket const handle = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
     if (!handle.is_open()) return 2;
-    if (!socket_option_is(handle.get(), SO_DOMAIN, AF_NETLINK)) return 3;
-    if (!socket_option_is(handle.get(), SO_TYPE, SOCK_RAW)) return 4;
-    if (!socket_option_is(handle.get(), SO_PROTOCOL, NETLINK_ROUTE)) return 5;
-    const int descriptor_flags = ::fcntl(handle.get(), F_GETFD);
+    if (!socket_option_is(handle.ref().abi_descriptor(), SO_DOMAIN, AF_NETLINK)) return 3;
+    if (!socket_option_is(handle.ref().abi_descriptor(), SO_TYPE, SOCK_RAW)) return 4;
+    if (!socket_option_is(handle.ref().abi_descriptor(), SO_PROTOCOL, NETLINK_ROUTE)) return 5;
+    const int descriptor_flags = ::fcntl(handle.ref().abi_descriptor(), F_GETFD);
     if (descriptor_flags < 0 || (descriptor_flags & FD_CLOEXEC) == 0) return 6;
     return 0;
 }
@@ -132,8 +134,9 @@ struct LinkDumpRequest final {
 // receive, which does not wait, gets at least one message header.
 [[nodiscard]] int check_netlink_calls() noexcept {
     IoBlockCtx ctx{eff::testing::test()};
-    fixy::fs::OwnedFd const socket = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
-    if (!socket.is_open()) return 11;
+    NetlinkSocket const handle = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
+    if (!handle.is_open()) return 11;
+    auto const socket = handle.ref();
     if (fixy::net::bind_netlink(ctx, socket).is_err()) return 12;
     LinkDumpRequest const request{};
     if (fixy::net::send_bytes(ctx, socket, foundation::core::bytes(request)).value_or(0) != sizeof(request)) return 13;
@@ -147,9 +150,9 @@ struct LinkDumpRequest final {
 // the limit is refused before the kernel sees it.
 [[nodiscard]] int check_tcp_options() noexcept {
     IoBlockCtx ctx{eff::testing::test()};
-    fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    TcpSocket const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!tcp.is_open()) return 21;
-    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.get());
+    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.ref().abi_descriptor());
     if (fixy::net::set_tcp_congestion(ctx, socket, "reno").is_err()) return 22;
     auto read = fixy::net::read_tcp_congestion(ctx, socket);
     if (read.is_err()) return 23;
@@ -183,9 +186,9 @@ struct LinkDumpRequest final {
 // <linux/net_tstamp.h>.
 [[nodiscard]] int check_socket_timestamping() noexcept {
     IoBlockCtx ctx{eff::testing::test()};
-    fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    TcpSocket const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!tcp.is_open()) return 31;
-    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.get());
+    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.ref().abi_descriptor());
     // qemu user mode has no SO_TIMESTAMPING, and the door gives its refusal.
     auto const stamping = fixy::net::set_socket_timestamping(ctx, socket);
     if (kIsUnderEmulator && stamping.err().value_or(foundation::os::Errno{}) == foundation::os::Errno::enoprotoopt) {
@@ -194,7 +197,7 @@ struct LinkDumpRequest final {
     if (stamping.is_err()) return 32;
     int const flags = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE
                     | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_TSONLY;
-    if (!socket_option_is(tcp.get(), SO_TIMESTAMPING, flags)) return 33;
+    if (!socket_option_is(tcp.ref().abi_descriptor(), SO_TIMESTAMPING, flags)) return 33;
     return 0;
 }
 
@@ -205,9 +208,9 @@ struct LinkDumpRequest final {
 [[nodiscard]] int check_hardware_timestamping() noexcept {
     using foundation::os::Errno;
     IoBlockCtx ctx{eff::testing::test()};
-    fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    TcpSocket const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!tcp.is_open()) return 41;
-    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.get());
+    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(tcp.ref().abi_descriptor());
     auto const loopback = fixy::net::set_hardware_timestamping(ctx, socket, "lo");
     if (loopback.is_ok()) return 42;
     Errno const refusal = loopback.err().value_or(Errno::eio);
@@ -229,10 +232,11 @@ struct LinkDumpRequest final {
 // stamp on a netlink message, so its control data holds no stamp message.
 [[nodiscard]] int check_receive_with_timestamps() noexcept {
     IoBlockCtx ctx{eff::testing::test()};
-    fixy::fs::OwnedFd const netlink = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
-    if (!netlink.is_open()) return 51;
+    NetlinkSocket const handle = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
+    if (!handle.is_open()) return 51;
+    auto const netlink = handle.ref();
     if (fixy::net::bind_netlink(ctx, netlink).is_err()) return 52;
-    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(netlink.get());
+    fixy::NonNegative<int> const socket = fixy::mint_refined<fixy::non_negative>(netlink.abi_descriptor());
     foundation::core::FixedArray<std::byte, 8192> reply{};
     if (fixy::net::receive_with_timestamps(ctx, socket, reply.view()).err().value_or(foundation::os::Errno::eio)
         != foundation::os::Errno::eagain) {
@@ -256,11 +260,11 @@ struct LinkDumpRequest final {
 // the header.
 [[nodiscard]] int check_send_raises_no_signal() noexcept {
     IoBlockCtx ctx{eff::testing::test()};
-    fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    TcpSocket const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!tcp.is_open()) return 61;
     if (!install_pipe_marker()) return 62;
     LinkDumpRequest const request{};
-    auto const sent = fixy::net::send_bytes(ctx, tcp, foundation::core::bytes(request));
+    auto const sent = fixy::net::send_bytes(ctx, tcp.ref(), foundation::core::bytes(request));
     bool const is_restored = restore_pipe_action();
     if (sent.err().value_or(foundation::os::Errno::eio) != foundation::os::Errno::epipe) return 63;
     if (has_pipe_signal_arrived()) return 64;
@@ -275,11 +279,11 @@ struct LinkDumpRequest final {
 // after the write is the mask before it, which does not block SIGPIPE.
 [[nodiscard]] int check_write_raises_no_signal() noexcept {
     IoBlockCtx ctx{eff::testing::test()};
-    fixy::fs::OwnedFd const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    TcpSocket const tcp = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!tcp.is_open()) return 71;
     if (!install_pipe_marker()) return 72;
     LinkDumpRequest const request{};
-    auto const written = fixy::fs::write_full(ctx, tcp, foundation::core::bytes(request));
+    auto const written = fixy::fs::write_full(ctx, tcp.ref(), foundation::core::bytes(request));
     bool const is_blocked = is_pipe_signal_blocked();
     bool const is_restored = restore_pipe_action();
     if (written.err().value_or(foundation::os::Errno::eio) != foundation::os::Errno::epipe) return 73;

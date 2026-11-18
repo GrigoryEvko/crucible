@@ -77,9 +77,17 @@ void publish_relaxed(RelaxedWord& word, std::uint64_t value) noexcept {
     return __atomic_load_n(&word.value, __ATOMIC_RELAXED);
 }
 
-// Closes DESCRIPTOR with close(2) of the C library, which the sanitizer
-// intercepts.
-[[nodiscard]] bool close_through_the_c_library(int descriptor) noexcept { return ::close(descriptor) == 0; }
+// A file of /dev/null, open for reading only.
+using NullFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;
+
+// The number of the descriptor of FILE, which the kernel gave the open.
+[[nodiscard]] int number_of(NullFile const& file) noexcept { return file.ref().abi_descriptor(); }
+
+// Takes the descriptor of FILE, and closes it with close(2) of the C library,
+// which the sanitizer intercepts.  FILE is empty after the call.
+[[nodiscard]] bool close_through_the_c_library(NullFile&& file) noexcept {
+    return ::close(std::move(file).release_to_abi()) == 0;
+}
 
 }  // namespace
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -105,9 +113,9 @@ void wait_for(RelaxedWord const& word) noexcept {
     return fixy::sanitize_path(fixy::mint_tagged<src::External>(text)).expect("each test path passes the sanitizer");
 }
 
-// A descriptor of /dev/null under DEVICES, which must open.
-[[nodiscard]] fs::OwnedFd open_null(BgCtx const& ctx, fs::Dirfd const& devices) {
-    return fs::mint_file_at<fs::read_only>(ctx, devices, "null").expect("/dev/null opens for a read").consume();
+// A file of /dev/null under DEVICES, which must open.
+[[nodiscard]] NullFile open_null(BgCtx const& ctx, fs::DirectoryHandle const& devices) {
+    return fs::mint_file_at<fs::read_only>(ctx, devices.ref(), "null").expect("/dev/null opens for a read").consume();
 }
 
 // The count of the descriptors that the second thread of the close case
@@ -119,12 +127,12 @@ constexpr std::size_t kOpenTries = 64;
 // lowest free number, so a number that a different part of the process freed
 // below FIRST_NUMBER comes first.  It closes the descriptor with FIRST_NUMBER
 // through the C library, and gives true when it found and closed it.
-[[nodiscard]] bool open_again_and_close(BgCtx const& ctx, fs::Dirfd const& devices, int first_number,
+[[nodiscard]] bool open_again_and_close(BgCtx const& ctx, fs::DirectoryHandle const& devices, int first_number,
                                         std::size_t tries_left) {
     if (tries_left == 0) return false;
-    fs::OwnedFd null = open_null(ctx, devices);
-    if (null.get() == first_number) return close_through_the_c_library(null.release());
-    if (null.get() > first_number) return false;
+    NullFile null = open_null(ctx, devices);
+    if (number_of(null) == first_number) return close_through_the_c_library(std::move(null));
+    if (number_of(null) > first_number) return false;
     return open_again_and_close(ctx, devices, first_number, tries_left - 1);
 }
 
@@ -132,17 +140,17 @@ constexpr std::size_t kOpenTries = 64;
 // reports no race.
 [[nodiscard]] int check_reused_number_keeps_no_state() {
     BgCtx const ctx{eff::testing::bg()};
-    fs::Dirfd const devices = fs::open_dirfd(ctx, sanitized("/dev")).expect("/dev opens");
+    fs::DirectoryHandle const devices = fs::open_directory(ctx, sanitized("/dev")).expect("/dev opens");
     RelaxedWord closed{};
     bool has_read = false;
     bool has_closed = false;
     auto first = [&]() noexcept {
         int first_number = -1;
         {
-            fs::OwnedFd const null = open_null(ctx, devices);
-            first_number = null.get();
+            NullFile const null = open_null(ctx, devices);
+            first_number = number_of(null);
             foundation::core::FixedArray<std::byte, 8> bytes{};
-            has_read = fs::read_full(ctx, null, bytes.view()).is_ok();
+            has_read = fs::read_full(ctx, null.ref(), bytes.view()).is_ok();
         }
         publish_relaxed(closed, static_cast<std::uint64_t>(first_number) + 1U);
     };

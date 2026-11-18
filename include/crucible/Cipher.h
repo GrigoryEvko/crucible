@@ -256,7 +256,7 @@ public:
     // as mkdir -p does.  The open of the root itself folds in O_NOFOLLOW, so
     // a root that names a link gives not_a_directory.  A slash at the end of
     // the root makes the kernel follow that link.  Symlink defense lives in
-    // the doors under the root Dirfd, which src/Cipher.cpp calls.  Each door
+    // the doors under the root directory, which src/Cipher.cpp calls.  Each door
     // resolves its path beneath the root, and each open of a leaf folds in
     // O_NOFOLLOW.
     //
@@ -548,9 +548,9 @@ private:
 
     ::fixy::WriteOnce<::fixy::Tagged<RootPath, ::fixy::tags::source::Durable>> root_ =
         ::fixy::mint_write_once<::fixy::Tagged<RootPath, ::fixy::tags::source::Durable>>();
-    // Dirfd anchor for the Cipher root.  Every helper that touches the
-    // on-disk tree opens relative to this fd with O_NOFOLLOW, which buys
-    // three properties:
+    // The directory handle of the Cipher root.  Every helper that touches
+    // the on-disk tree opens relative to this handle with O_NOFOLLOW, which
+    // buys three properties:
     //
     //   (1) The root itself cannot be a symlink.  The dirfd open uses
     //       O_NOFOLLOW and fails with ELOOP.
@@ -570,7 +570,7 @@ private:
     // with such a link needs write access to the Cipher root, which is
     // outside the threat model: whoever owns this dirfd also owns the
     // root's permissions.
-    ::fixy::fs::Dirfd root_dirfd_{};
+    ::fixy::fs::DirectoryHandle root_directory_{};
     ContentHash head_{};
 
     ::fixy::OrderedAppendOnly<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess> log_ =

@@ -69,13 +69,38 @@ static_assert(!CtxFitsFileMint<IoBlockCtx, ::fixy::atom::fs::mode<NotAMode>>,
 static_assert(CtxFitsSync<IoBlockCtx, sync_op::Fdatasync>);
 static_assert(CtxFitsSync<IoBlockCtx, sync_op::FsyncParentDir>);
 static_assert(!CtxFitsSync<IoBlockCtx, sync_op::None>, "None has no syscall behind it.");
-static_assert(CtxFitsDescriptorSync<IoBlockCtx, sync_op::Fdatasync>
-              && CtxFitsDescriptorSync<IoBlockCtx, sync_op::Fsync>);
-static_assert(!CtxFitsDescriptorSync<IoBlockCtx, sync_op::FsyncParentDir>,
+using ::fixy::os::RightSet;
+static_assert(CtxFitsDescriptorSync<IoBlockCtx, sync_op::Fdatasync, RightSet::sync>
+              && CtxFitsDescriptorSync<IoBlockCtx, sync_op::Fsync, RightSet::sync>);
+static_assert(!CtxFitsDescriptorSync<IoBlockCtx, sync_op::FsyncParentDir, RightSet::sync>,
               "the fsync of a file descriptor flushes no entry of a directory.");
-static_assert(CtxFitsDirectorySync<IoBlockCtx, sync_op::FsyncParentDir>);
-static_assert(!CtxFitsDirectorySync<IoBlockCtx, sync_op::Fsync> && !CtxFitsDirectorySync<IoBlockCtx, sync_op::None>);
+static_assert(!CtxFitsDescriptorSync<IoBlockCtx, sync_op::Fsync, RightSet::read>,
+              "a file with no sync right takes no fsync.");
+static_assert(CtxFitsDirectorySync<IoBlockCtx, sync_op::FsyncParentDir, directory_rights>);
+static_assert(!CtxFitsDirectorySync<IoBlockCtx, sync_op::Fsync, directory_rights>
+              && !CtxFitsDirectorySync<IoBlockCtx, sync_op::None, directory_rights>);
 static_assert(!CtxFitsSync<IoOnlyCtx, sync_op::Fsync>);
+
+// The rights of each open mode (THE RIGHTS of fixy/os/Handle.h).  A map
+// reads its file, so the map right goes only with the read right, and an
+// open for an append has no seek right.
+using A_Append = ::fixy::atom::fs::mode<open_mode::WriteAppend>;
+using A_ReadWrite = ::fixy::atom::fs::mode<open_mode::ReadWrite>;
+static_assert(fold_rights<A_RO>() == (RightSet::read | RightSet::seek | RightSet::sync | RightSet::map));
+static_assert(fold_rights<A_Trunc, A_NoFollow, A_Fsync>() == (RightSet::write | RightSet::seek | RightSet::sync));
+static_assert(fold_rights<A_Append>() == (RightSet::write | RightSet::sync));
+static_assert(fold_rights<A_ReadWrite>()
+              == (RightSet::read | RightSet::write | RightSet::seek | RightSet::sync | RightSet::map));
+static_assert(open_at_needs<A_RO>() == RightSet::lookup);
+static_assert(open_at_needs<A_Trunc>() == (RightSet::lookup | RightSet::create));
+static_assert(CtxFitsFileMintAt<IoBlockCtx, directory_rights, A_Trunc>);
+static_assert(!CtxFitsFileMintAt<IoBlockCtx, RightSet::lookup, A_Trunc>,
+              "an open that makes a missing file needs the create right of the directory.");
+static_assert(CtxFitsFileMintAt<IoBlockCtx, RightSet::lookup, A_RO>);
+static_assert(!CtxFitsHandleCall<IoBlockCtx, FileOf<A_RO>::rights, RightSet::write>,
+              "a file of a read-only open takes no write.");
+static_assert(!CtxFitsHandleCall<IoBlockCtx, FileOf<A_Append>::rights, RightSet::read>,
+              "a file of an append takes no read.");
 struct NotASyncOp final {};
 static_assert(!KnownSyncOp<NotASyncOp> && !CtxFitsSync<IoBlockCtx, NotASyncOp>);
 
@@ -86,10 +111,11 @@ static_assert(!CtxFitsCommitAtomic<IoOnlyCtx, atomicity::Rename>);
 struct NotAnAtomicity final {};
 static_assert(!KnownAtomicity<NotAnAtomicity> && !CtxFitsCommitAtomic<IoBlockCtx, NotAnAtomicity>);
 
-static_assert(!std::is_constructible_v<Dirfd, OwnedFd&&>,
-              "An OwnedFd is evidence of a descriptor, not of a directory; open_dirfd is the only door.");
-static_assert(std::is_default_constructible_v<Dirfd>);
-static_assert(!std::is_copy_constructible_v<Dirfd>);
+static_assert(!std::is_constructible_v<DirectoryHandle, TemporaryFile&&>,
+              "A file is no directory.  open_directory is the door of a directory.");
+static_assert(!std::is_constructible_v<DirectoryHandle, int>, "The handle of a descriptor comes only from a door.");
+static_assert(std::is_default_constructible_v<DirectoryHandle>);
+static_assert(!std::is_copy_constructible_v<DirectoryHandle>);
 static_assert(!std::is_default_constructible_v<FileDoor> && !std::is_copy_constructible_v<FileDoor>
                   && !std::is_move_constructible_v<FileDoor>,
               "No object of the file door exists.  Its private members are the only calls to ::open.");
@@ -115,19 +141,18 @@ static_assert(splits("a/..", "a/..", 0, true));
 static_assert(splits("a/./", "a/./", 0, true));
 static_assert(splits("///", "///", 0, true));
 
-// Each door takes one kind of handle by a const reference to its class: a
-// door of a descriptor takes an OwnedFd, and a door under a directory takes a
-// Dirfd.  No conversion joins the two classes, and a Dirfd gives no
-// reference to the OwnedFd that it holds, so no door takes the other kind of
-// handle.  The two checks cover each door of fixy/os/Fs.h, fixy/os/Socket.h,
-// fixy/os/Io.h and fixy/os/PerfEvent.h at one time.  The fixtures
-// neg_os_fs_dirfd_handle_read_full and neg_os_fs_dirfd_handle_fsync hold the
-// absence of the reference.  The sync door is a template over the op, so the
-// gates above and the fixture neg_os_fs_sync_parent_dir_owned_fd hold the op
-// of each kind.
-static_assert(!std::is_convertible_v<Dirfd const&, OwnedFd const&> && !std::is_constructible_v<OwnedFd, Dirfd const&>,
-              "a door of a descriptor must not take a Dirfd.");
-static_assert(!std::is_convertible_v<OwnedFd const&, Dirfd const&> && !std::is_constructible_v<Dirfd, OwnedFd const&>,
-              "a door under a directory must not take an OwnedFd.");
+// Each door takes the borrow of one kind of handle: a door of a file takes
+// the borrow of a File, and a door under a directory the borrow of a
+// Directory.  No conversion joins the borrows of two kinds, so no door takes
+// the other kind.  The fixtures neg_os_fs_dirfd_handle_read_full and
+// neg_os_fs_dirfd_handle_fsync hold a call with the wrong kind.  The sync
+// door is a template over the op, so the gates above and the fixture
+// neg_os_fs_sync_parent_dir_owned_fd hold the op of each kind.
+static_assert(!std::is_convertible_v<DirectoryRef<directory_rights>, FileRef<directory_rights>>
+                  && !std::is_constructible_v<FileRef<directory_rights>, DirectoryRef<directory_rights>>,
+              "a door of a file must not take a directory.");
+static_assert(!std::is_convertible_v<FileRef<temporary_file_rights>, DirectoryRef<temporary_file_rights>>
+                  && !std::is_constructible_v<DirectoryRef<temporary_file_rights>, FileRef<temporary_file_rights>>,
+              "a door under a directory must not take a file.");
 
 }  // namespace fixy::fs::detail::fs_surface_invariants

@@ -277,12 +277,13 @@ static void test_linux_boundaries_if_available() {
 // wait.
 static void test_socket_calls() {
     BgFsCtx const bg_fs{::foundation::effects::testing::bg()};
-    ::fixy::fs::OwnedFd const tcp = ::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(bg_fs).match(
-        [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd { return std::move(opened).consume(); },
-        [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
+    using TcpSocket = ::fixy::net::SocketHandle<::fixy::net::socket_kind::TcpStream>;
+    TcpSocket const tcp = ::fixy::net::mint_socket<::fixy::net::socket_kind::TcpStream>(bg_fs).match(
+        [](::fixy::Linear<TcpSocket> opened) -> TcpSocket { return std::move(opened).consume(); },
+        [](::foundation::os::Errno) -> TcpSocket { return TcpSocket{}; });
     assert(tcp.is_open());
     crucible::cntp::SocketFd const sock_fd =
-        crucible::cntp::admit_socket_fd(tcp.get()).expect("an open socket has a descriptor");
+        crucible::cntp::admit_socket_fd(tcp.ref().abi_descriptor()).expect("an open socket has a descriptor");
     assert(topology::enable_socket_timestamping(bg_fs, sock_fd).is_ok());
 
     crucible::cntp::NicInterfaceName const lo =

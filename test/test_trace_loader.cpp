@@ -261,19 +261,20 @@ static void test_encoders_round_trip_through_the_loader() {
         return ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(text))
             .expect("a plain relative path passes the check");
     };
-    const ::fixy::fs::Dirfd here =
-        ::fixy::fs::open_dirfd(kTestIo, checked(::fixy::TextView{"."})).expect("the working directory opens");
+    const ::fixy::fs::DirectoryHandle here =
+        ::fixy::fs::open_directory(kTestIo, checked(::fixy::TextView{"."})).expect("the working directory opens");
     using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
-    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(kTestIo, here, kFileName)
+    using TraceFile = ::fixy::fs::FileOf<WriteTruncate>;
+    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(kTestIo, here.ref(), kFileName)
                                 .match(
-                                    [&image](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept {
-                                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                                        return ::fixy::fs::write_full(kTestIo, file, image.view()).is_ok();
+                                    [&image](::fixy::Linear<TraceFile> opened) noexcept {
+                                        const TraceFile file = std::move(opened).consume();
+                                        return ::fixy::fs::write_full(kTestIo, file.ref(), image.view()).is_ok();
                                     },
                                     [](::foundation::os::Errno) noexcept { return false; });
     assert(is_written);
     const LoadedTrace trace = load_trace(kTestIo, checked(kFileName.view())).expect("an encoded trace loads");
-    assert(::fixy::fs::unlink_at(kTestIo, here, kFileName).is_ok());
+    assert(::fixy::fs::unlink_at(kTestIo, here.ref(), kFileName).is_ok());
 
     assert(trace.num_ops == 1);
     assert(trace.num_metas == 1);
@@ -326,19 +327,20 @@ static ::fixy::Result<LoadedTrace, TraceLoadError> load_one_op(TraceOpRecord con
         return ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(text))
             .expect("a plain relative path passes the check");
     };
-    const ::fixy::fs::Dirfd here =
-        ::fixy::fs::open_dirfd(kTestIo, checked(::fixy::TextView{"."})).expect("the working directory opens");
+    const ::fixy::fs::DirectoryHandle here =
+        ::fixy::fs::open_directory(kTestIo, checked(::fixy::TextView{"."})).expect("the working directory opens");
     using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
-    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(kTestIo, here, kFileName)
+    using TraceFile = ::fixy::fs::FileOf<WriteTruncate>;
+    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(kTestIo, here.ref(), kFileName)
                                 .match(
-                                    [&image](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept {
-                                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                                        return ::fixy::fs::write_full(kTestIo, file, image.view()).is_ok();
+                                    [&image](::fixy::Linear<TraceFile> opened) noexcept {
+                                        const TraceFile file = std::move(opened).consume();
+                                        return ::fixy::fs::write_full(kTestIo, file.ref(), image.view()).is_ok();
                                     },
                                     [](::foundation::os::Errno) noexcept { return false; });
     assert(is_written);
     ::fixy::Result<LoadedTrace, TraceLoadError> loaded = load_trace(kTestIo, checked(kFileName.view()));
-    assert(::fixy::fs::unlink_at(kTestIo, here, kFileName).is_ok());
+    assert(::fixy::fs::unlink_at(kTestIo, here.ref(), kFileName).is_ok());
     return loaded;
 }
 

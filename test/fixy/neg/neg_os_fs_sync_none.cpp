@@ -27,7 +27,7 @@ using IoOnlyCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effec
 
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
-    fs::OwnedFd closed{};
-    [[maybe_unused]] auto r = fs::sync<fs::sync_op::None>(ctx, closed);
+    fs::TemporaryFile closed{};
+    [[maybe_unused]] auto r = fs::sync<fs::sync_op::None>(ctx, closed.ref());
     return 0;
 }

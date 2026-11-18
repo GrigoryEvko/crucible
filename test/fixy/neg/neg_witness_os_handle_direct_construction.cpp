@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// fixy::fs::Dirfd in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// fixy::fs::Dirfd attests to a fact that it cannot see.  The expression below is
+// fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -10,7 +10,7 @@
 // parentheses.  The source spells it with braces, so the text of the fixture
 // cannot match it.
 
-#include <fixy/os/Fs.h>
+#include <fixy/os/Handle.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::fs::Dirfd{forge::rvalue<fixy::fs::OwnedFd>()};
+    [[maybe_unused]] auto forged = fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{3};
     return 0;
 }

@@ -1,6 +1,6 @@
-// sync<FsyncParentDir> flushes the entries of a directory, so it takes a
-// Dirfd.  An fsync of the descriptor of a file flushes that file and no entry
-// of its directory, so the gate refuses an OwnedFd.
+// The sync of a file takes the borrow of a file, and only
+// sync<FsyncParentDir> flushes the entries of a directory.  The borrow of a
+// directory is no borrow of a file, so the fsync of a file does not take it.
 
 #include <fixy/os/Fs.h>
 
@@ -14,7 +14,7 @@ using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effe
 
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
-    fs::OwnedFd file{};
-    [[maybe_unused]] auto flushed = fs::sync<fs::sync_op::FsyncParentDir>(ctx, file);
+    fs::DirectoryHandle const dir{};
+    [[maybe_unused]] auto flushed = fs::sync<fs::sync_op::Fsync>(ctx, dir.ref());
     return 0;
 }

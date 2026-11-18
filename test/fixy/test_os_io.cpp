@@ -68,23 +68,27 @@ using crucible::test::ScratchDir;
 // The prefix of the scratch directories of this test under /tmp.
 inline constexpr std::string_view kScratchPrefix = "fixy-io-test";
 
+using ReadWriteFile = fs::FileOf<fixy::atom::fs::mode<fs::open_mode::ReadWrite>>;
+using ReadOnlyFile = fs::FileOf<fs::read_only>;
+
 // The source and the destination of one transfer: two files in a scratch
 // directory, the source filled with a pattern.
 struct TransferFiles final {
-    fs::OwnedFd source;
-    fs::OwnedFd destination;
+    ReadWriteFile source;
+    ReadWriteFile destination;
 };
 
-using MadeFd = fixy::Result<fs::OwnedFd, foundation::os::Errno>;
 using MadeFiles = fixy::Result<TransferFiles, foundation::os::Errno>;
 using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
 
-// The descriptor of a mint, or the Errno of the open that failed.  The door
-// gives the Errno in its Result and does not set errno.
-[[nodiscard]] MadeFd descriptor_of(fixy::Result<fixy::Linear<fs::OwnedFd>, foundation::os::Errno> minted) {
-    return std::move(minted).match(
-        [](fixy::Linear<fs::OwnedFd> opened) -> MadeFd { return std::move(opened).consume(); },
-        [](foundation::os::Errno error) -> MadeFd { return fixy::err(error); });
+// The file of a mint, or the Errno of the open that failed.  The door gives
+// the Errno in its Result and does not set errno.
+template <class File>
+[[nodiscard]] fixy::Result<File, foundation::os::Errno>
+descriptor_of(fixy::Result<fixy::Linear<File>, foundation::os::Errno> minted) {
+    using Made = fixy::Result<File, foundation::os::Errno>;
+    return std::move(minted).match([](fixy::Linear<File> opened) -> Made { return std::move(opened).consume(); },
+                                   [](foundation::os::Errno error) -> Made { return fixy::err(error); });
 }
 
 // The ring of a mint, out of its Linear, or the Errno of the setup.
@@ -100,7 +104,7 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
     using ReadWrite = fixy::atom::fs::mode<fs::open_mode::ReadWrite>;
     CRUCIBLE_TRY(source, descriptor_of(fs::mint_file<ReadWrite>(ctx, sanitized(scratch.file("src")))));
     CRUCIBLE_TRY(destination, descriptor_of(fs::mint_file<ReadWrite>(ctx, sanitized(scratch.file("dst")))));
-    CRUCIBLE_TRY(_, fs::write_full(ctx, source, fixy::bytes(pattern)));
+    CRUCIBLE_TRY(_, fs::write_full(ctx, source.ref(), fixy::bytes(pattern)));
     return TransferFiles{std::move(source), std::move(destination)};
 }
 
@@ -108,22 +112,15 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
 // offset, read through a second descriptor of the file door, equal expected.
 [[nodiscard]] bool destination_holds_at(IoBlockCtx const& ctx, ScratchDir const& scratch, std::size_t offset,
                                         fixy::View<std::byte const> expected) {
-    MadeFd opened = descriptor_of(fs::mint_file<fs::read_only>(ctx, sanitized(scratch.file("dst"))));
+    fixy::Result<ReadOnlyFile, foundation::os::Errno> opened =
+        descriptor_of(fs::mint_file<fs::read_only>(ctx, sanitized(scratch.file("dst"))));
     if (opened.is_err()) return false;
-    fs::OwnedFd const reader = std::move(opened).expect("the destination opened for a read");
+    ReadOnlyFile const reader = std::move(opened).expect("the destination opened for a read");
     fixy::FixedArray<std::byte, 5 * kPayloadBytes> whole{};
-    std::size_t const count = fs::read_full(ctx, reader, whole.view()).value_or(0);
+    std::size_t const count = fs::read_full(ctx, reader.ref(), whole.view()).value_or(0);
     if (count < offset + expected.size()) return false;
     return fixy::equal(whole.view().window(offset, expected.size()).expect("the window is inside the bytes read"),
                        expected);
-}
-
-// Whether the destination holds the pattern at its start.
-[[nodiscard]] bool destination_holds(fs::OwnedFd const& destination, std::span<const std::uint8_t> pattern) {
-    std::uint8_t readback[kPayloadBytes];
-    const auto count = static_cast<::ssize_t>(pattern.size());
-    return ::pread(destination.get(), readback, pattern.size(), 0) == count
-        && std::memcmp(readback, pattern.data(), pattern.size()) == 0;
 }
 
 [[nodiscard]] int ring_setup_hands_back_a_mapped_ring() {
@@ -234,7 +231,7 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
     }
     TransferFiles files = std::move(made).expect("the doors made the two transfer files");
 
-    auto moved = fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source, files.destination, kPayloadBytes);
+    auto moved = fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source.ref(), files.destination.ref(), kPayloadBytes);
     if (moved.is_err()) {
         fixy::report(fixy::Sink::Err, "sendfile failed (errno {})\n", foundation::os::error_number_of(moved));
         return 1;
@@ -244,14 +241,15 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
         fixy::report(fixy::Sink::Err, "sendfile moved {} bytes of the {} asked for\n", moved_count, kPayloadBytes);
         return 1;
     }
-    if (!destination_holds(files.destination, pattern)) {
-        std::fprintf(stderr, "the destination does not hold the source bytes\n");
+    if (!destination_holds_at(ctx, scratch, 0, fixy::bytes(pattern))) {
+        fixy::report(fixy::Sink::Err, "the destination does not hold the source bytes\n");
         return 1;
     }
 
     // A length past the end of the source moves the whole source and
     // stops there.  The count says where the source ended.
-    auto past_end = fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source, files.destination, 2 * kPayloadBytes);
+    auto past_end =
+        fixy::io::zerocopy_transfer<Sendfile>(ctx, files.source.ref(), files.destination.ref(), 2 * kPayloadBytes);
     if (std::move(past_end).value_or(0) != kPayloadBytes) {
         std::fprintf(stderr, "a transfer past the end of the source did not stop at the end\n");
         return 1;
@@ -261,7 +259,7 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
     // middle of the source moves the bytes of its second half.
     std::size_t const half = kPayloadBytes / 2;
     auto from_middle = fixy::io::zerocopy_transfer<Sendfile>(
-        ctx, files.source, files.destination, kPayloadBytes,
+        ctx, files.source.ref(), files.destination.ref(), kPayloadBytes,
         fixy::io::SourceOffsetOf{fs::FileOffset{static_cast<std::int64_t>(half)}});
     if (std::move(from_middle).value_or(0) != half) {
         fixy::report(fixy::Sink::Err, "a transfer from the middle of the source did not stop at its end\n");
@@ -297,7 +295,8 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
     }
     TransferFiles files = std::move(made).expect("the doors made the two transfer files");
 
-    auto moved = fixy::io::zerocopy_transfer<CopyFileRange>(ctx, files.source, files.destination, kPayloadBytes);
+    auto moved =
+        fixy::io::zerocopy_transfer<CopyFileRange>(ctx, files.source.ref(), files.destination.ref(), kPayloadBytes);
     if (moved.is_err()) {
         // copy_file_range refuses some filesystem pairs outright, and
         // which pairs it refuses has changed across kernels.
@@ -311,8 +310,8 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
                      kPayloadBytes);
         return 1;
     }
-    if (!destination_holds(files.destination, pattern)) {
-        std::fprintf(stderr, "the destination does not hold the source bytes\n");
+    if (!destination_holds_at(ctx, scratch, 0, fixy::bytes(pattern))) {
+        fixy::report(fixy::Sink::Err, "the destination does not hold the source bytes\n");
         return 1;
     }
 
@@ -321,7 +320,7 @@ using MadeRing = fixy::Result<fixy::io::IoUringRing, foundation::os::Errno>;
     std::size_t const half = kPayloadBytes / 2;
     std::size_t const placed_at = 4 * kPayloadBytes;
     auto placed = fixy::io::zerocopy_transfer<CopyFileRange>(
-        ctx, files.source, files.destination, half,
+        ctx, files.source.ref(), files.destination.ref(), half,
         fixy::io::SourceOffsetOf{fs::FileOffset{static_cast<std::int64_t>(half)}},
         fixy::io::DestinationOffsetOf{fs::FileOffset{static_cast<std::int64_t>(placed_at)}});
     if (std::move(placed).value_or(0) != half) {

@@ -980,13 +980,18 @@ witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{{
 # its one friend is mint_io_uring_ring, which sets up the ring.
 witness <fixy/os/Io.h> deleted | fixy::io::IoRingDoor | fixy::io::IoRingDoor{}
 witness <fixy/os/Fd.h> private | fixy::fs::OwnedFd | fixy::fs::OwnedFd{3}
-# The four doors of OwnedFd.  No object of a door exists, its members
-# are private, and its friends are the gated mints that open a descriptor.
+# A Handle claims one descriptor with the rights of its type, and a borrow
+# names the descriptor of a Handle.  The constructor of each is private, and
+# the friends of a Handle are the door classes that open a descriptor.
+witness <fixy/os/Handle.h> private | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{3}
+witness <fixy/os/Handle.h> private | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<int>()}
+# The four doors of a descriptor handle.  No object of a door exists, its
+# members are private, and its friends are the gated mints that open a
+# descriptor.
 witness <fixy/os/Fs.h> deleted | fixy::fs::FileDoor | fixy::fs::FileDoor{}
 witness <fixy/os/Socket.h> deleted | fixy::net::SocketDoor | fixy::net::SocketDoor{}
 witness <fixy/os/Time.h> deleted | fixy::time::PtpDeviceDoor | fixy::time::PtpDeviceDoor{}
 witness <fixy/os/PerfEvent.h> deleted | fixy::perf::PerfEventDoor | fixy::perf::PerfEventDoor{}
-witness <fixy/os/Fs.h> private | fixy::fs::Dirfd | fixy::fs::Dirfd{forge::rvalue<fixy::fs::OwnedFd>()}
 
 # The five doors of the pipeline.  Each class exists only as the
 # product of its mint, and the mint is what weighs the payload rows

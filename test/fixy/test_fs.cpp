@@ -48,18 +48,24 @@ using IoBlockCtx =
 
 using crucible::test::ScratchDir;
 
-// The descriptor of a mint, or an empty handle and the error number of the
-// open.  The match gives the linear handle to its consumer on each path.
+// The file of a mint, or an empty handle and the error number of the open.
+// The match gives the linear handle to its consumer on each path.
+template <class File>
 struct Opened final {
-    fs::OwnedFd file;
+    File file;
     int error_number = 0;
 };
 
-[[nodiscard]] Opened opened_of(fixy::Result<fixy::Linear<fs::OwnedFd>, foundation::os::Errno> minted) {
+template <class File>
+[[nodiscard]] Opened<File> opened_of(fixy::Result<fixy::Linear<File>, foundation::os::Errno> minted) {
     return std::move(minted).match(
-        [](fixy::Linear<fs::OwnedFd> opened) -> Opened { return Opened{std::move(opened).consume(), 0}; },
-        [](foundation::os::Errno error) -> Opened { return Opened{fs::OwnedFd{}, std::to_underlying(error)}; });
+        [](fixy::Linear<File> opened) -> Opened<File> { return Opened<File>{std::move(opened).consume(), 0}; },
+        [](foundation::os::Errno error) -> Opened<File> { return Opened<File>{File{}, std::to_underlying(error)}; });
 }
+
+using ReadOnlyFile = fs::FileOf<fs::read_only>;
+using WriteCreate = fixy::atom::fs::mode<fs::open_mode::WriteCreate>;
+using WriteTruncate = fixy::atom::fs::mode<fs::open_mode::WriteTruncate>;
 
 // The error number of a result, or zero when it holds a value.
 template <typename T>
@@ -75,24 +81,14 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     }
 }
 
-[[nodiscard]] bool write_all(int fd, const std::uint8_t* bytes) {
-    std::size_t done = 0;
-    while (done < kPayloadBytes) {
-        const ::ssize_t n = ::write(fd, bytes + done, kPayloadBytes - done);
-        if (n <= 0) return false;
-        done += static_cast<std::size_t>(n);
-    }
-    return true;
-}
-
 // Reads a file back through a second descriptor of the file door, opened
 // for a read, so the write and the read meet at the byte level.
 [[nodiscard]] bool file_holds(const std::string& path, const std::uint8_t (&expected)[kPayloadBytes]) {
     IoBlockCtx const ctx{eff::testing::test()};
-    Opened in = opened_of(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
+    Opened<ReadOnlyFile> in = opened_of(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
     if (in.error_number != 0) return false;
     fixy::FixedArray<std::byte, kPayloadBytes> readback{};
-    if (fs::read_full(ctx, in.file, readback.view()).value_or(0) != kPayloadBytes) {
+    if (fs::read_full(ctx, in.file.ref(), readback.view()).value_or(0) != kPayloadBytes) {
         return false;
     }
     return fixy::equal(readback.view(), foundation::core::bytes(expected));
@@ -106,7 +102,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     const std::string tmp = scratch.file("plain.tmp");
     const std::string target = scratch.file("plain");
 
-    Opened opened = opened_of(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::WriteCreate>>(ctx, sanitized(tmp)));
+    Opened<fs::FileOf<WriteCreate>> opened = opened_of(fs::mint_file<WriteCreate>(ctx, sanitized(tmp)));
     if (opened.error_number != 0) {
         std::fprintf(stderr, "mint_file WriteCreate failed (errno %d)\n", opened.error_number);
         return 1;
@@ -115,17 +111,17 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         std::fprintf(stderr, "a successful mint handed back a closed descriptor\n");
         return 1;
     }
-    if (!write_all(opened.file.get(), pattern)) {
-        std::fprintf(stderr, "writing through the minted descriptor failed (errno %d)\n", errno);
+    if (auto written = fs::write_full(ctx, opened.file.ref(), foundation::core::bytes(pattern)); written.is_err()) {
+        fixy::report(fixy::Sink::Err, "writing through the minted descriptor failed (errno {})\n", errno_of(written));
         return 1;
     }
-    if (auto synced = fs::sync<fs::sync_op::Fdatasync>(ctx, opened.file); synced.is_err()) {
+    if (auto synced = fs::sync<fs::sync_op::Fdatasync>(ctx, opened.file.ref()); synced.is_err()) {
         std::fprintf(stderr, "fdatasync failed (errno %d)\n", errno_of(synced));
         return 1;
     }
     // The empty handle closes the descriptor, and the commit renames the
     // closed file into place.
-    opened.file = fs::OwnedFd{};
+    opened.file = fs::FileOf<WriteCreate>{};
 
     if (auto committed = fs::commit_atomic<fs::atomicity::Rename>(ctx, sanitized(tmp), sanitized(target));
         committed.is_err()) {
@@ -148,30 +144,32 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 [[nodiscard]] int dirfd_opens_and_flushes_the_entry(const ScratchDir& scratch) {
     IoBlockCtx ctx{eff::testing::test()};
 
-    auto opened_dir = fs::open_dirfd(ctx, sanitized(scratch.path()));
+    auto opened_dir = fs::open_directory(ctx, sanitized(scratch.path()));
     if (opened_dir.is_err()) {
-        std::fprintf(stderr, "open_dirfd on the scratch directory failed (errno %d)\n", errno_of(opened_dir));
+        fixy::report(fixy::Sink::Err, "open_directory on the scratch directory failed (errno {})\n",
+                     errno_of(opened_dir));
         return 1;
     }
-    fs::Dirfd const dir = std::move(opened_dir).expect("the scratch directory opened");
+    fs::DirectoryHandle const dir = std::move(opened_dir).expect("the scratch directory opened");
     if (!dir.is_open()) {
-        std::fprintf(stderr, "a successful open_dirfd handed back a closed handle\n");
+        fixy::report(fixy::Sink::Err, "a successful open_directory handed back a closed handle\n");
         return 1;
     }
-    if (auto flushed = fs::sync<fs::sync_op::FsyncParentDir>(ctx, dir); flushed.is_err()) {
-        std::fprintf(stderr, "fsync on the directory descriptor failed (errno %d)\n", errno_of(flushed));
+    if (auto flushed = fs::sync<fs::sync_op::FsyncParentDir>(ctx, dir.ref()); flushed.is_err()) {
+        fixy::report(fixy::Sink::Err, "fsync on the directory descriptor failed (errno {})\n", errno_of(flushed));
         return 1;
     }
 
     // A regular file is refused by O_DIRECTORY, so the door only opens
     // onto what the type claims.
-    auto not_a_dir = fs::open_dirfd(ctx, sanitized(scratch.file("plain")));
+    auto not_a_dir = fs::open_directory(ctx, sanitized(scratch.file("plain")));
     if (not_a_dir.is_ok()) {
-        std::fprintf(stderr, "open_dirfd opened a regular file as a directory\n");
+        fixy::report(fixy::Sink::Err, "open_directory opened a regular file as a directory\n");
         return 1;
     }
     if (errno_of(not_a_dir) != ENOTDIR) {
-        std::fprintf(stderr, "open_dirfd on a file failed with errno %d rather than ENOTDIR\n", errno_of(not_a_dir));
+        fixy::report(fixy::Sink::Err, "open_directory on a file failed with errno {} rather than ENOTDIR\n",
+                     errno_of(not_a_dir));
         return 1;
     }
     return 0;
@@ -186,28 +184,28 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     fill_pattern(pattern, 4);
     const std::string path = scratch.file("full");
 
-    Opened writer = opened_of(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::WriteTruncate>>(ctx, sanitized(path)));
+    Opened<fs::FileOf<WriteTruncate>> writer = opened_of(fs::mint_file<WriteTruncate>(ctx, sanitized(path)));
     if (writer.error_number != 0) {
         std::fprintf(stderr, "mint_file WriteTruncate failed (errno %d)\n", writer.error_number);
         return 1;
     }
-    if (auto written = fs::write_full(ctx, writer.file, foundation::core::bytes(pattern)); written.is_err()) {
+    if (auto written = fs::write_full(ctx, writer.file.ref(), foundation::core::bytes(pattern)); written.is_err()) {
         std::fprintf(stderr, "write_full failed (errno %d)\n", errno_of(written));
         return 1;
     }
-    if (fs::file_size(ctx, writer.file).value_or(-1) != static_cast<std::int64_t>(kPayloadBytes)) {
+    if (fs::file_size(ctx, writer.file.ref()).value_or(-1) != static_cast<std::int64_t>(kPayloadBytes)) {
         std::fprintf(stderr, "file_size did not report the bytes that write_full put\n");
         return 1;
     }
-    writer.file = fs::OwnedFd{};
+    writer.file = fs::FileOf<WriteTruncate>{};
 
-    Opened const reader = opened_of(fs::mint_file<fixy::atom::fs::mode<fs::open_mode::ReadOnly>>(ctx, sanitized(path)));
+    Opened<ReadOnlyFile> const reader = opened_of(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
     if (reader.error_number != 0) {
         std::fprintf(stderr, "mint_file ReadOnly failed (errno %d)\n", reader.error_number);
         return 1;
     }
     fixy::FixedArray<std::byte, kPayloadBytes * 2> readback{};
-    if (fs::read_full(ctx, reader.file, readback.view()).value_or(0) != kPayloadBytes) {
+    if (fs::read_full(ctx, reader.file.ref(), readback.view()).value_or(0) != kPayloadBytes) {
         std::fprintf(stderr, "read_full did not stop at the end of the file\n");
         return 1;
     }
@@ -217,18 +215,18 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         return 1;
     }
 
-    const fs::OwnedFd empty{};
-    const auto refused = fs::read_full(ctx, empty, readback.view());
+    const fs::TemporaryFile empty{};
+    const auto refused = fs::read_full(ctx, empty.ref(), readback.view());
     if (refused.is_ok() || errno_of(refused) != EBADF) {
         std::fprintf(stderr, "read_full on an empty handle was not refused with EBADF\n");
         return 1;
     }
-    const auto refused_write = fs::write_full(ctx, empty, foundation::core::bytes(pattern));
+    const auto refused_write = fs::write_full(ctx, empty.ref(), foundation::core::bytes(pattern));
     if (refused_write.is_ok() || errno_of(refused_write) != EBADF) {
         std::fprintf(stderr, "write_full on an empty handle was not refused with EBADF\n");
         return 1;
     }
-    const auto refused_size = fs::file_size(ctx, empty);
+    const auto refused_size = fs::file_size(ctx, empty.ref());
     if (refused_size.is_ok() || errno_of(refused_size) != EBADF) {
         std::fprintf(stderr, "file_size on an empty handle was not refused with EBADF\n");
         return 1;
@@ -366,12 +364,14 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     IoBlockCtx ctx{eff::testing::test()};
     eff::Alloc const alloc = eff::testing::test().alloc;
 
-    auto opened_root = fs::open_dirfd(ctx, sanitized(scratch.path()));
+    auto opened_root = fs::open_directory(ctx, sanitized(scratch.path()));
     if (opened_root.is_err()) {
-        fixy::report(fixy::Sink::Err, "open_dirfd on the scratch directory failed (errno {})\n", errno_of(opened_root));
+        fixy::report(fixy::Sink::Err, "open_directory on the scratch directory failed (errno {})\n",
+                     errno_of(opened_root));
         return 1;
     }
-    fs::Dirfd const root = std::move(opened_root).expect("the scratch directory opened");
+    fs::DirectoryHandle const root_handle = std::move(opened_root).expect("the scratch directory opened");
+    fs::DirectoryRef<fs::directory_rights> const root = root_handle.ref();
     if (auto made = fs::make_directory_at(ctx, root, "objects"); made.is_err()) {
         fixy::report(fixy::Sink::Err, "make_directory_at failed (errno {})\n", errno_of(made));
         return 1;
@@ -380,31 +380,31 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         fixy::report(fixy::Sink::Err, "a second make_directory_at did not give EEXIST\n");
         return 1;
     }
-    auto opened_objects = fs::open_dirfd_at(ctx, root, "objects");
+    auto opened_objects = fs::open_directory_at(ctx, root, "objects");
     if (opened_objects.is_err()) {
-        fixy::report(fixy::Sink::Err, "open_dirfd_at failed (errno {})\n", errno_of(opened_objects));
+        fixy::report(fixy::Sink::Err, "open_directory_at failed (errno {})\n", errno_of(opened_objects));
         return 1;
     }
-    fs::Dirfd const objects = std::move(opened_objects).expect("the objects directory opened");
+    fs::DirectoryHandle const objects_handle = std::move(opened_objects).expect("the objects directory opened");
+    fs::DirectoryRef<fs::directory_rights> const objects = objects_handle.ref();
 
-    Opened writer =
-        opened_of(fs::mint_file_at<fixy::atom::fs::mode<fs::open_mode::WriteTruncate>>(ctx, objects, "ab.tmp"));
+    Opened<fs::FileOf<WriteTruncate>> writer = opened_of(fs::mint_file_at<WriteTruncate>(ctx, objects, "ab.tmp"));
     if (writer.error_number != 0) {
         fixy::report(fixy::Sink::Err, "mint_file_at WriteTruncate failed (errno {})\n", writer.error_number);
         return 1;
     }
     core::FixedArray<std::byte, 3> bytes{};
     core::fill(bytes.view(), std::byte{'x'});
-    if (fs::write_full(ctx, writer.file, bytes.view()).is_err()
-        || fs::write_full(ctx, writer.file, core::TextView{"yz"}).is_err()) {
+    if (fs::write_full(ctx, writer.file.ref(), bytes.view()).is_err()
+        || fs::write_full(ctx, writer.file.ref(), core::TextView{"yz"}).is_err()) {
         fixy::report(fixy::Sink::Err, "a write_full of a View or of a TextView failed\n");
         return 1;
     }
-    if (fs::sync<fs::sync_op::Fdatasync>(ctx, writer.file).is_err()) {
+    if (fs::sync<fs::sync_op::Fdatasync>(ctx, writer.file.ref()).is_err()) {
         fixy::report(fixy::Sink::Err, "the fdatasync of the file under the directory failed\n");
         return 1;
     }
-    writer.file = fs::OwnedFd{};
+    writer.file = fs::FileOf<WriteTruncate>{};
     if (auto committed = fs::commit_atomic_at<fs::atomicity::Rename>(ctx, objects, "ab.tmp", "ab");
         committed.is_err()) {
         fixy::report(fixy::Sink::Err, "commit_atomic_at<Rename> failed (errno {})\n", errno_of(committed));
@@ -444,13 +444,12 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         fixy::report(fixy::Sink::Err, "make_directory_at of objects/inner/ did not make the directory\n");
         return 1;
     }
-    Opened nested =
-        opened_of(fs::mint_file_at<fixy::atom::fs::mode<fs::open_mode::WriteCreate>>(ctx, root, "objects/moved.tmp"));
+    Opened<fs::FileOf<WriteCreate>> nested = opened_of(fs::mint_file_at<WriteCreate>(ctx, root, "objects/moved.tmp"));
     if (nested.error_number != 0) {
         fixy::report(fixy::Sink::Err, "mint_file_at of objects/moved.tmp failed (errno {})\n", nested.error_number);
         return 1;
     }
-    nested.file = fs::OwnedFd{};
+    nested.file = fs::FileOf<WriteCreate>{};
     if (fs::commit_atomic_at<fs::atomicity::RenameAt2NoReplace>(ctx, root, "objects/moved.tmp", "objects/inner/moved")
             .is_err()
         || !fs::has_entry_at(ctx, objects, "inner/moved").value_or(false)
@@ -467,12 +466,13 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 // and gives ELOOP.  The link is an entry of its directory.
 [[nodiscard]] int open_under_a_directory_refuses_a_symbolic_link() {
     IoBlockCtx ctx{eff::testing::test()};
-    auto opened_proc = fs::open_dirfd(ctx, sanitized("/proc"));
+    auto opened_proc = fs::open_directory(ctx, sanitized("/proc"));
     if (opened_proc.is_err()) {
-        fixy::report(fixy::Sink::Err, "open_dirfd on /proc failed (errno {})\n", errno_of(opened_proc));
+        fixy::report(fixy::Sink::Err, "open_directory on /proc failed (errno {})\n", errno_of(opened_proc));
         return 1;
     }
-    fs::Dirfd const proc = std::move(opened_proc).expect("/proc opened");
+    fs::DirectoryHandle const proc_handle = std::move(opened_proc).expect("/proc opened");
+    fs::DirectoryRef<fs::directory_rights> const proc = proc_handle.ref();
     if (opened_of(fs::mint_file_at<fs::read_only>(ctx, proc, "self")).error_number != ELOOP) {
         fixy::report(fixy::Sink::Err, "mint_file_at followed the symbolic link /proc/self\n");
         return 1;

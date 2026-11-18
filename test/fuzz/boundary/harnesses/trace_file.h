@@ -68,13 +68,12 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
         std::move(sanitized_path).expect("the scratch path passes the check");
     {
         // The descriptor closes at the end of this block, before the load.
-        const ::fixy::fs::OwnedFd file =
-            ::fixy::fs::mint_file<::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>>(ctx, path).match(
-                [](::fixy::Linear<::fixy::fs::OwnedFd> opened) -> ::fixy::fs::OwnedFd {
-                    return std::move(opened).consume();
-                },
-                [](::foundation::os::Errno) -> ::fixy::fs::OwnedFd { return ::fixy::fs::OwnedFd{}; });
-        if (!file.is_open() || ::fixy::fs::write_full(ctx, file, image).is_err()) return;
+        using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+        using TraceFile = ::fixy::fs::FileOf<WriteTruncate>;
+        const TraceFile file = ::fixy::fs::mint_file<WriteTruncate>(ctx, path).match(
+            [](::fixy::Linear<TraceFile> opened) -> TraceFile { return std::move(opened).consume(); },
+            [](::foundation::os::Errno) -> TraceFile { return TraceFile{}; });
+        if (!file.is_open() || ::fixy::fs::write_full(ctx, file.ref(), image).is_err()) return;
     }
     // The load registers the names of the trace into the global table, so a
     // second name of one hash reaches the refusal of a collision.  The table

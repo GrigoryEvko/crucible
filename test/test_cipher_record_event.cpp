@@ -84,8 +84,8 @@ static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view,
 }
 
 // The directory of the root of cipher.
-[[nodiscard]] static ::fixy::fs::Dirfd root_dirfd_of(Cipher const& cipher) {
-    return ::fixy::fs::open_dirfd(
+[[nodiscard]] static ::fixy::fs::DirectoryHandle root_directory_of(Cipher const& cipher) {
+    return ::fixy::fs::open_directory(
                store_ctx(), ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(cipher.root()))
                                 .expect("the sanitizer passes the root of the test"))
         .expect("the root of the test opens");
@@ -94,7 +94,8 @@ static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view,
 // The whole text of the log of cipher.
 [[nodiscard]] static ::fixy::HeapText log_text_of(Cipher const& cipher) {
     ::fixy::GrowText text = ::fixy::mint_grow_text(Cipher::MAX_OBJECT_BYTES);
-    assert(::fixy::fs::read_whole_at(store_ctx(), store_ctx().cap().alloc, root_dirfd_of(cipher), "log", text).is_ok());
+    const ::fixy::fs::DirectoryHandle root = root_directory_of(cipher);
+    assert(::fixy::fs::read_whole_at(store_ctx(), store_ctx().cap().alloc, root.ref(), "log", text).is_ok());
     return ::fixy::freeze(std::move(text));
 }
 
@@ -102,10 +103,12 @@ static void record(Cipher& cipher, Ctx const& ctx, Cipher::OpenView const& view,
 // the write reads the text.
 static void write_log_of(Cipher const& cipher, ::fixy::TextView text) {
     using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
-    const ::fixy::fs::OwnedFd file = ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root_dirfd_of(cipher), "log")
-                                         .expect("the test opens the log to write it")
-                                         .consume();
-    assert(::fixy::fs::write_full(store_ctx(), file, text).is_ok());
+    const ::fixy::fs::DirectoryHandle root = root_directory_of(cipher);
+    const ::fixy::fs::FileOf<WriteTruncate> file =
+        ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root.ref(), "log")
+            .expect("the test opens the log to write it")
+            .consume();
+    assert(::fixy::fs::write_full(store_ctx(), file.ref(), text).is_ok());
 }
 
 static void test_t01_required_row_pinned() {

@@ -636,9 +636,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         [&io, file_image](const Sanitized& checked) noexcept {
             return ::fixy::fs::mint_file<WriteTruncate>(io, checked)
                 .match(
-                    [&io, file_image](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept {
-                        const ::fixy::fs::OwnedFd file = std::move(opened).consume();
-                        return ::fixy::fs::write_full(io, file, file_image).is_ok();
+                    [&io, file_image](::fixy::Linear<::fixy::fs::FileOf<WriteTruncate>> opened) noexcept {
+                        const ::fixy::fs::FileOf<WriteTruncate> file = std::move(opened).consume();
+                        return ::fixy::fs::write_full(io, file.ref(), file_image).is_ok();
                     },
                     [](::foundation::os::Errno) noexcept { return false; });
         },

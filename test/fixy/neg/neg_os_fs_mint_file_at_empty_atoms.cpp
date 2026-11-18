@@ -16,7 +16,7 @@ using IoBlockCtx =
 
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
-    fs::Dirfd const dir{};
-    [[maybe_unused]] auto r = fs::mint_file_at<>(ctx, dir, "objects");
+    fs::DirectoryHandle const dir{};
+    [[maybe_unused]] auto r = fs::mint_file_at<>(ctx, dir.ref(), "objects");
     return 0;
 }

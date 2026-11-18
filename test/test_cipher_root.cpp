@@ -93,12 +93,12 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
 }
 
 // Makes the empty file name under dir, and closes it.
-[[nodiscard]] bool make_file(fixy::TestRunnerCtx const& ctx, fixy::fs::Dirfd const& dir, fixy::CText name) {
+[[nodiscard]] bool make_file(fixy::TestRunnerCtx const& ctx, fixy::fs::DirectoryHandle const& dir, fixy::CText name) {
     using WriteTruncate = fixy::atom::fs::mode<fixy::fs::open_mode::WriteTruncate>;
-    return fixy::fs::mint_file_at<WriteTruncate>(ctx, dir, name)
+    return fixy::fs::mint_file_at<WriteTruncate>(ctx, dir.ref(), name)
         .match(
-            [](fixy::Linear<fixy::fs::OwnedFd> opened) {
-                fixy::fs::OwnedFd const file = std::move(opened).consume();
+            [](fixy::Linear<fixy::fs::FileOf<WriteTruncate>> opened) {
+                fixy::fs::FileOf<WriteTruncate> const file = std::move(opened).consume();
                 return file.is_open();
             },
             [](foundation::os::Errno) { return false; });
@@ -127,8 +127,9 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
     fixy::Path<fixy::tags::source::Sanitized> const scratch_path =
         fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(text_of(scratch)))
             .expect("the scratch path passes the sanitizer");
-    fixy::fs::Dirfd const scratch_dir = fixy::fs::open_dirfd(ctx, scratch_path).expect("the scratch directory opens");
-    if (fixy::fs::make_directory_at(ctx, scratch_dir, "unreadable").is_err()) {
+    fixy::fs::DirectoryHandle const scratch_dir =
+        fixy::fs::open_directory(ctx, scratch_path).expect("the scratch directory opens");
+    if (fixy::fs::make_directory_at(ctx, scratch_dir.ref(), "unreadable").is_err()) {
         fixy::report(fixy::Sink::Err, "the unreadable directory was not made\n");
         return 1;
     }
@@ -176,8 +177,10 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
     fixy::Path<fixy::tags::source::Sanitized> const scratch_path =
         fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(text_of(scratch)))
             .expect("the scratch path passes the sanitizer");
-    fixy::fs::Dirfd const scratch_dir = fixy::fs::open_dirfd(ctx, scratch_path).expect("the scratch directory opens");
-    if (fixy::fs::make_directory_at(ctx, scratch_dir, "target").is_err() || !make_link(scratch, "target", "linked")) {
+    fixy::fs::DirectoryHandle const scratch_dir =
+        fixy::fs::open_directory(ctx, scratch_path).expect("the scratch directory opens");
+    if (fixy::fs::make_directory_at(ctx, scratch_dir.ref(), "target").is_err()
+        || !make_link(scratch, "target", "linked")) {
         fixy::report(fixy::Sink::Err, "the test did not make the linked parent\n");
         return 1;
     }
@@ -234,7 +237,8 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
     fixy::Path<fixy::tags::source::Sanitized> const scratch_path =
         fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(text_of(scratch)))
             .expect("the scratch path passes the sanitizer");
-    fixy::fs::Dirfd const scratch_dir = fixy::fs::open_dirfd(ctx, scratch_path).expect("the scratch directory opens");
+    fixy::fs::DirectoryHandle const scratch_dir =
+        fixy::fs::open_directory(ctx, scratch_path).expect("the scratch directory opens");
 
     // A part of the path is a link to a name that does not exist.
     if (!make_link(scratch, "absent", "dangling")) return 1;
@@ -251,7 +255,7 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
     }
 
     // The root itself is a link.
-    if (fixy::fs::make_directory_at(ctx, scratch_dir, "real_root").is_err()
+    if (fixy::fs::make_directory_at(ctx, scratch_dir.ref(), "real_root").is_err()
         || !make_link(scratch, "real_root", "root_link")) {
         return 1;
     }
@@ -268,7 +272,8 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
 
     // The process may not make a name in the parent.  The root user may.
     if (!is_root_user()) {
-        if (fixy::fs::make_directory_at(ctx, scratch_dir, "locked").is_err() || !set_mode(scratch, "locked", 0500)) {
+        if (fixy::fs::make_directory_at(ctx, scratch_dir.ref(), "locked").is_err()
+            || !set_mode(scratch, "locked", 0500)) {
             return 1;
         }
         const bool is_refused = refuses_with(open_below(scratch, "/locked/store"), Cipher::OpenError::no_permission);
@@ -288,9 +293,10 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
     fixy::Path<fixy::tags::source::Sanitized> const scratch_path =
         fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(text_of(scratch)))
             .expect("the scratch path passes the sanitizer");
-    fixy::fs::Dirfd const scratch_dir = fixy::fs::open_dirfd(ctx, scratch_path).expect("the scratch directory opens");
-    if (fixy::fs::make_directory_at(ctx, scratch_dir, "escape_root").is_err()
-        || fixy::fs::make_directory_at(ctx, scratch_dir, "outside").is_err()
+    fixy::fs::DirectoryHandle const scratch_dir =
+        fixy::fs::open_directory(ctx, scratch_path).expect("the scratch directory opens");
+    if (fixy::fs::make_directory_at(ctx, scratch_dir.ref(), "escape_root").is_err()
+        || fixy::fs::make_directory_at(ctx, scratch_dir.ref(), "outside").is_err()
         || !make_link(scratch, "outside", "escape_root/objects")) {
         fixy::report(fixy::Sink::Err, "the test did not make the escaping link\n");
         return 1;
