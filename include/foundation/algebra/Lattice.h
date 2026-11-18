@@ -27,6 +27,15 @@
 // functions, so the two cannot disagree about what a law says.
 //
 // Semiring<S> is gated the same way, at S's own zero() and one().
+//
+// PartialCommutativeMonoid<M> is the algebra of separation logic: the
+// fractional shares of a permission, credits and resource rows.  Its add is
+// partial.  M::is_sum_defined(a, b) gives the domain, and M::add(a, b) is
+// total on it.  The laws hold where each sum in them is defined.  The gate
+// evaluates them at M's own zero(), which is the one element that each such
+// monoid names.  A monoid claims the laws at its own witnesses with
+// verify_partial_commutative_monoid_over, and cancellativity, an optional
+// refinement, with verify_cancellative_over.
 
 #include <foundation/algebra/Modality.h>
 
@@ -92,6 +101,18 @@ concept SemiringShape = requires { typename S::element_type; } && requires(Latti
     { S::zero() } -> std::same_as<LatticeElement<S>>;
     { S::one() } -> std::same_as<LatticeElement<S>>;
 };
+
+// The signature of a partial commutative monoid: a domain predicate, an add
+// that is total on the domain, a unit, and equality.
+template <typename M>
+concept PartialMonoidShape =
+    requires { typename M::element_type; } && requires(LatticeElement<M> a, LatticeElement<M> b) {
+        { M::is_sum_defined(a, b) } -> std::convertible_to<bool>;
+        { M::add(a, b) } -> std::same_as<LatticeElement<M>>;
+        { a == b } -> std::convertible_to<bool>;
+    } && requires {
+        { M::zero() } -> std::same_as<LatticeElement<M>>;
+    };
 
 // One function per law, over the signature probes.  The concepts below
 // evaluate them at the extremes, and each public verify_* helper is one
@@ -259,6 +280,51 @@ template <SemiringShape S>
         && semiring_axioms_at<S>(zero, one, one) && semiring_axioms_at<S>(one, zero, zero);
 }
 
+// The laws of a partial commutative monoid.  Each law reads add only on a
+// pair whose sum is defined, so a law never evaluates a refused add.
+
+// zero is the unit: each sum with zero is defined, and it is the element.
+template <PartialMonoidShape M>
+[[nodiscard]] consteval bool partial_unit(LatticeElement<M> a) noexcept {
+    return M::is_sum_defined(M::zero(), a) && M::is_sum_defined(a, M::zero()) && M::add(M::zero(), a) == a
+        && M::add(a, M::zero()) == a;
+}
+
+// The domain is symmetric, and two orders of one defined sum agree.
+template <PartialMonoidShape M>
+[[nodiscard]] consteval bool partial_commutative(LatticeElement<M> a, LatticeElement<M> b) noexcept {
+    const bool is_defined = M::is_sum_defined(a, b);
+    if (is_defined != M::is_sum_defined(b, a)) return false;
+    return !is_defined || M::add(a, b) == M::add(b, a);
+}
+
+// (a + b) + c is defined exactly when a + (b + c) is, and then the two
+// agree.
+template <PartialMonoidShape M>
+[[nodiscard]] consteval bool partial_associative(LatticeElement<M> a, LatticeElement<M> b,
+                                                 LatticeElement<M> c) noexcept {
+    const bool is_left_defined = M::is_sum_defined(a, b) && M::is_sum_defined(M::add(a, b), c);
+    const bool is_right_defined = M::is_sum_defined(b, c) && M::is_sum_defined(a, M::add(b, c));
+    if (is_left_defined != is_right_defined) return false;
+    return !is_left_defined || M::add(M::add(a, b), c) == M::add(a, M::add(b, c));
+}
+
+// Two defined sums with one summand agree only when the other summands
+// agree.
+template <PartialMonoidShape M>
+[[nodiscard]] consteval bool partial_cancellative(LatticeElement<M> a, LatticeElement<M> b,
+                                                  LatticeElement<M> c) noexcept {
+    if (!M::is_sum_defined(a, b) || !M::is_sum_defined(a, c)) return true;
+    return !(M::add(a, b) == M::add(a, c)) || b == c;
+}
+
+template <PartialMonoidShape M>
+[[nodiscard]] consteval bool partial_monoid_axioms_at(LatticeElement<M> a, LatticeElement<M> b,
+                                                      LatticeElement<M> c) noexcept {
+    return partial_unit<M>(a) && partial_unit<M>(b) && partial_unit<M>(c) && partial_commutative<M>(a, b)
+        && partial_commutative<M>(a, c) && partial_commutative<M>(b, c) && partial_associative<M>(a, b, c);
+}
+
 }  // namespace detail::lattice_laws
 
 template <typename L>
@@ -286,6 +352,18 @@ concept UnboundedLattice = Lattice<L> && !BoundedBelowLattice<L> && !BoundedAbov
 // zero that does not annihilate fails the concept.
 template <typename S>
 concept Semiring = SemiringShape<S> && detail::lattice_laws::semiring_laws_hold<S>();
+
+// The laws at M's own zero(): the sum of zero and zero is defined, and it is
+// zero.  At one element commutativity holds, and associativity follows from
+// the unit, so these two facts are each law at zero.  A zero that is no unit,
+// or a domain that refuses the sum of zero and zero, fails the concept.  A
+// break between two other elements is invisible to the gate, so a monoid
+// claims the laws at its own witnesses with
+// verify_partial_commutative_monoid_over.  The gate reads only the members
+// of M, so no specialization of a template changes what it admits.
+template <typename M>
+concept PartialCommutativeMonoid = PartialMonoidShape<M> && static_cast<bool>(M::is_sum_defined(M::zero(), M::zero()))
+                                && static_cast<bool>(M::add(M::zero(), M::zero()) == M::zero());
 
 // A row is the powerset order over a finite set of named atoms: bottom
 // is the empty row, top is every atom, join is union and meet is
@@ -460,6 +538,56 @@ template <Semiring S>
 [[nodiscard]] consteval bool verify_semiring_axioms_at(LatticeElement<S> a, LatticeElement<S> b,
                                                        LatticeElement<S> c) noexcept {
     return detail::lattice_laws::semiring_axioms_at<S>(a, b, c);
+}
+
+template <PartialCommutativeMonoid M>
+[[nodiscard]] consteval bool verify_partial_monoid_axioms_at(LatticeElement<M> a, LatticeElement<M> b,
+                                                             LatticeElement<M> c) noexcept {
+    return detail::lattice_laws::partial_monoid_axioms_at<M>(a, b, c);
+}
+
+template <PartialCommutativeMonoid M>
+[[nodiscard]] consteval bool verify_partial_cancellative_at(LatticeElement<M> a, LatticeElement<M> b,
+                                                            LatticeElement<M> c) noexcept {
+    return detail::lattice_laws::partial_cancellative<M>(a, b, c);
+}
+
+namespace detail::lattice_laws {
+
+template <PartialCommutativeMonoid M, typename... Witnesses>
+[[nodiscard]] consteval bool partial_monoid_holds_for_pair(LatticeElement<M> a, LatticeElement<M> b,
+                                                           Witnesses... witnesses) noexcept {
+    return (partial_monoid_axioms_at<M>(a, b, witnesses) && ...);
+}
+
+template <PartialCommutativeMonoid M, typename... Witnesses>
+[[nodiscard]] consteval bool partial_cancellative_holds_for_pair(LatticeElement<M> a, LatticeElement<M> b,
+                                                                 Witnesses... witnesses) noexcept {
+    return (partial_cancellative<M>(a, b, witnesses) && ...);
+}
+
+}  // namespace detail::lattice_laws
+
+// The claim of a partial commutative monoid: the laws at each ordered triple
+// of the witnesses.  Complexity: cubic in the witnesses, at compile time.
+template <PartialCommutativeMonoid M, typename... Witnesses>
+    requires(std::same_as<Witnesses, LatticeElement<M>> && ...)
+[[nodiscard]] consteval bool verify_partial_commutative_monoid_over(Witnesses... witnesses) noexcept {
+    const auto holds_for_first = [](LatticeElement<M> a, Witnesses... each) consteval noexcept {
+        return (detail::lattice_laws::partial_monoid_holds_for_pair<M>(a, each, each...) && ...);
+    };
+    return (holds_for_first(witnesses, witnesses...) && ...);
+}
+
+// The optional refinement: cancellativity at each ordered triple of the
+// witnesses.  Complexity: cubic in the witnesses, at compile time.
+template <PartialCommutativeMonoid M, typename... Witnesses>
+    requires(std::same_as<Witnesses, LatticeElement<M>> && ...)
+[[nodiscard]] consteval bool verify_cancellative_over(Witnesses... witnesses) noexcept {
+    const auto holds_for_first = [](LatticeElement<M> a, Witnesses... each) consteval noexcept {
+        return (detail::lattice_laws::partial_cancellative_holds_for_pair<M>(a, each, each...) && ...);
+    };
+    return (holds_for_first(witnesses, witnesses...) && ...);
 }
 
 namespace detail {

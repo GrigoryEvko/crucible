@@ -174,7 +174,7 @@ void fractional_lattice_refuses_outside_its_domain(TestRunnerCtx const& test) {
     // The sum of 1/2 and 3/4 is above one.
     ::fixy::check::expect_dies(
         test, [half, three_quarters] noexcept { (void)FractionalLattice::add(half, three_quarters); },
-        ::fixy::TextView{"foundation: contract violation: is_sum_at_most_one(a, b)"});
+        ::fixy::TextView{"foundation: contract violation: is_sum_defined(a, b)"});
 
     // The reduced denominator of 1/(2^31 - 1) + 1/2^31 is above the bound.
     ::fixy::check::expect_dies(

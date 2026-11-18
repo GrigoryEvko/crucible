@@ -2,9 +2,10 @@
 
 // The fractional permissions of Boyland 2003 and of O'Hearn 2007, as the
 // rationals in the unit interval.  They carry a bounded lattice, and a
-// partial commutative monoid under add, as in separation logic.  add is
-// partial: two shares whose sum is above one have no sum in the carrier, and
-// add refuses them.  So the shares are no semiring.  A share is per-instance
+// cancellative PartialCommutativeMonoid (Lattice.h) under add, as in
+// separation logic.  add is partial: two shares whose sum is above one have
+// no sum in the carrier, is_sum_defined is false for them, and add refuses
+// them.  So the shares are no semiring.  A share is per-instance
 // runtime state, so a carrier graded on this lattice pays for it and cannot
 // collapse to its payload the way a carrier over an empty grade does.
 //
@@ -134,9 +135,15 @@ struct FractionalLattice {
     [[nodiscard]] static constexpr element_type zero() noexcept { return Rational{0, 1}; }
     [[nodiscard]] static constexpr element_type one() noexcept { return Rational{1, 1}; }
 
-    // True when the sum of two shares is at most one, the domain of add.  The
-    // compare is exact in the wide type.
-    [[nodiscard]] static constexpr bool is_sum_at_most_one(element_type a, element_type b) noexcept {
+    // The domain of add: true when the sum of two shares is at most one.  The
+    // compare is exact in the wide type.  The representation has a second
+    // limit: add ends the process when the reduced denominator of a sum in
+    // the domain is above the bound.  The predicate does not hold that limit,
+    // because a domain with the bound breaks associativity: for 1/65537,
+    // 1/65539 and 65537/131078, one order of the sum is in the bound and the
+    // other is not.  So the laws of the monoid hold at each sum whose reduced
+    // denominator stays in the bound.
+    [[nodiscard]] static constexpr bool is_sum_defined(element_type a, element_type b) noexcept {
         using W = Rational::wide_signed;
         return static_cast<W>(a.num) * b.den + static_cast<W>(b.num) * a.den <= static_cast<W>(a.den) * b.den;
     }
@@ -147,7 +154,7 @@ struct FractionalLattice {
     // denominator is above the bound, such as 1/(2^31 - 1) + 1/2^31.
     [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept {
         CRUCIBLE_PRE(a.is_well_formed() && b.is_well_formed());
-        CRUCIBLE_PRE(is_sum_at_most_one(a, b));
+        CRUCIBLE_PRE(is_sum_defined(a, b));
         using W = Rational::wide_signed;
         const W num128 = static_cast<W>(a.num) * b.den + static_cast<W>(b.num) * a.den;
         const W den128 = static_cast<W>(a.den) * b.den;

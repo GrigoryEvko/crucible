@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
             // ── add ──
             const W sum_num = an * bd + bn * ad;
             const W sum_den = ad * bd;
-            if (FractionalLattice::is_sum_at_most_one(a, b) != (sum_num <= sum_den)) return false;
+            if (FractionalLattice::is_sum_defined(a, b) != (sum_num <= sum_den)) return false;
             if (is_in_domain(sum_num, sum_den)) {
                 const Rational s = FractionalLattice::add(a, b);
                 if (!s.is_well_formed()) return false;

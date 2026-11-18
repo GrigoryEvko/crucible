@@ -95,6 +95,99 @@ static_assert(!verify_bounded_lattice_axioms_at<InteriorDisagreement>(1, 2, 3));
 static_assert(SemiringShape<SubtractionSemiring>);
 static_assert(!Semiring<SubtractionSemiring>);
 
+// ── Partial commutative monoids ─────────────────────────────────────
+
+// An element of a monoid of small counts, from a literal.  The witnesses of
+// a claim have the element type exactly.
+template <typename M>
+[[nodiscard]] consteval LatticeElement<M> element_of(int value) noexcept {
+    return static_cast<LatticeElement<M>>(value);
+}
+
+// The counts 0 to 15, with a sum only when it stays at most 15: a
+// cancellative partial commutative monoid.
+struct NibbleCount {
+    using element_type = unsigned char;
+    [[nodiscard]] static constexpr element_type zero() noexcept { return 0; }
+    [[nodiscard]] static constexpr bool is_sum_defined(element_type a, element_type b) noexcept { return a + b <= 15; }
+    [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept {
+        return static_cast<element_type>(a + b);
+    }
+};
+static_assert(PartialMonoidShape<NibbleCount> && PartialCommutativeMonoid<NibbleCount>);
+static_assert(verify_partial_commutative_monoid_over<NibbleCount>(
+    element_of<NibbleCount>(0), element_of<NibbleCount>(1), element_of<NibbleCount>(7), element_of<NibbleCount>(8),
+    element_of<NibbleCount>(15)));
+static_assert(verify_cancellative_over<NibbleCount>(element_of<NibbleCount>(0), element_of<NibbleCount>(3),
+                                                    element_of<NibbleCount>(12), element_of<NibbleCount>(15)));
+
+// Or on a bool: a sum is always defined, and true absorbs, so the monoid is
+// no cancellative one.
+struct OrMonoid {
+    using element_type = bool;
+    [[nodiscard]] static constexpr element_type zero() noexcept { return false; }
+    [[nodiscard]] static constexpr bool is_sum_defined(element_type, element_type) noexcept { return true; }
+    [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept { return a || b; }
+};
+static_assert(PartialCommutativeMonoid<OrMonoid> && verify_partial_commutative_monoid_over<OrMonoid>(false, true));
+static_assert(!verify_cancellative_over<OrMonoid>(false, true));
+static_assert(!verify_partial_cancellative_at<OrMonoid>(true, false, true));
+
+// The left choice: the first summand that is not zero.  zero is its unit,
+// and it is associative, but not commutative.  The gate at zero cannot see
+// it, and the claim at two witnesses refuses it.
+struct LeftChoice {
+    using element_type = unsigned char;
+    [[nodiscard]] static constexpr element_type zero() noexcept { return 0; }
+    [[nodiscard]] static constexpr bool is_sum_defined(element_type, element_type) noexcept { return true; }
+    [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept { return a != 0 ? a : b; }
+};
+static_assert(PartialCommutativeMonoid<LeftChoice>);
+static_assert(!verify_partial_commutative_monoid_over<LeftChoice>(element_of<LeftChoice>(0), element_of<LeftChoice>(1),
+                                                                  element_of<LeftChoice>(2)));
+static_assert(detail::lattice_laws::partial_associative<LeftChoice>(1, 2, 3));
+static_assert(!detail::lattice_laws::partial_commutative<LeftChoice>(1, 2));
+
+// A domain that is not symmetric: a sum is defined only in one order.
+struct OneWayDomain {
+    using element_type = unsigned char;
+    [[nodiscard]] static constexpr element_type zero() noexcept { return 0; }
+    [[nodiscard]] static constexpr bool is_sum_defined(element_type a, element_type b) noexcept {
+        return a == 0 || b == 0 || a < b;
+    }
+    [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept {
+        return static_cast<element_type>(a + b);
+    }
+};
+static_assert(PartialCommutativeMonoid<OneWayDomain>);
+static_assert(!verify_partial_monoid_axioms_at<OneWayDomain>(1, 2, 0));
+
+// A zero that is no unit fails the gate.
+struct ZeroIsNoUnit {
+    using element_type = unsigned char;
+    [[nodiscard]] static constexpr element_type zero() noexcept { return 1; }
+    [[nodiscard]] static constexpr bool is_sum_defined(element_type, element_type) noexcept { return true; }
+    [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept {
+        return static_cast<element_type>(a + b);
+    }
+};
+static_assert(PartialMonoidShape<ZeroIsNoUnit> && !PartialCommutativeMonoid<ZeroIsNoUnit>);
+
+// A domain that refuses a sum with zero fails the gate.
+struct ZeroOutsideDomain {
+    using element_type = unsigned char;
+    [[nodiscard]] static constexpr element_type zero() noexcept { return 0; }
+    [[nodiscard]] static constexpr bool is_sum_defined(element_type a, element_type b) noexcept { return a != b; }
+    [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept {
+        return static_cast<element_type>(a + b);
+    }
+};
+static_assert(PartialMonoidShape<ZeroOutsideDomain> && !PartialCommutativeMonoid<ZeroOutsideDomain>);
+
+// A total semiring has no domain predicate, so it is no partial monoid by
+// signature, and a lattice has no add.
+static_assert(!PartialMonoidShape<TrivialBoolSemiring> && !PartialMonoidShape<TrivialBoolLattice>);
+
 }  // namespace detail::lattice_self_test
 
 }  // namespace foundation::algebra

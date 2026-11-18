@@ -345,7 +345,7 @@ void fractional_lattice_runs_at_run_time() {
     // formed.
     expect(!Rational{opaque(std::int64_t{3}), opaque(std::int64_t{2})}.is_well_formed());
     expect(Rational{opaque(std::int64_t{2}), opaque(std::int64_t{2})}.is_well_formed());
-    expect(FractionalLattice::is_sum_at_most_one(a, b) && !FractionalLattice::is_sum_at_most_one(b, Rational{3, 4}));
+    expect(FractionalLattice::is_sum_defined(a, b) && !FractionalLattice::is_sum_defined(b, Rational{3, 4}));
 
     // Only the comparison is exercised at the bound.  Adding or multiplying two
     // shares this large produces an unreduced denominator past the bound even

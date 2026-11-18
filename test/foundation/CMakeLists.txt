@@ -211,6 +211,15 @@ foundation_neg_compile_test(neg_semiring_subtraction_for_add
 foundation_neg_compile_test(neg_semiring_zero_does_not_annihilate
   "no matching function for call to .verify_semiring_axioms_at<\\{anonymous\\}::MaxMax>"
   "the expression .\\(semiring_laws_hold<S>\\)\\(\\) \\[with S = <unnamed>::MaxMax\\]. evaluated to .false.")
+# Two shapes that are no partial commutative monoid: an add that is not
+# commutative, which the claim at its witnesses refuses, and a carrier with
+# no unit, which the signature of the claim refuses.
+foundation_neg_compile_test(neg_partial_monoid_not_commutative
+  "use of invalid variable template .is_claimed<\\{anonymous\\}::LeftChoice>."
+  "the expression .\\(verify_partial_commutative_monoid_over<Monoid>\\)\\(<unnamed>::kNone, <unnamed>::kFirst, <unnamed>::kSecond\\) \\[with Monoid = <unnamed>::LeftChoice\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_partial_monoid_no_unit
+  "no matching function for call to .verify_partial_commutative_monoid_over<\\{anonymous\\}::PositiveCount>"
+  "required for the satisfaction of .PartialMonoidShape<M>. \\[with M = <unnamed>::PositiveCount\\]")
 
 # A grade outside the lattice's order is rejected during constant
 # evaluation by the in-body CRUCIBLE_PRE: a stored grade at the keyed
