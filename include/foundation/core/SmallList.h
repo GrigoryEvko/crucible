@@ -126,9 +126,11 @@ public:
 namespace owner {
 
 // The fields of a SmallList.  The heap storage holds capacity elements, or it
-// is null while the elements are inline, and then the capacity is Inline.  A
-// moved-from list keeps its maximum.  The lend count is that of a GrowList
-// (THE LEND COUNT of foundation/core/Grow.h).
+// is null while the elements are inline, and then the capacity is the smaller
+// of Inline and the maximum.  So the capacity is never above the maximum, and
+// an append with room makes one compare.  A moved-from list keeps its
+// maximum.  The lend count is that of a GrowList (THE LEND COUNT of
+// foundation/core/Grow.h).
 template <class T, std::size_t Inline>
 struct SmallListState {
     using owner_state_mark = OwnerStateMark;
@@ -136,14 +138,21 @@ struct SmallListState {
     SmallSlots<T, Inline> slots{};
     T* heap = nullptr;
     std::size_t count = 0;
-    std::size_t capacity = Inline;
+    std::size_t capacity = 0;
     std::size_t maximum = 0;
     mutable unsigned char lend_count = 0;
     FixedArray<unsigned char, 7> padding_{};
 
+    // The capacity of the inline slots of a list of at most maximum
+    // elements: the smaller of Inline and the maximum.
+    [[nodiscard]] static constexpr std::size_t inline_capacity_(Quantity<unit::Element, std::size_t> maximum) noexcept {
+        return maximum.raw() < Inline ? maximum.raw() : Inline;
+    }
+
     [[nodiscard]] static constexpr SmallListState emptied(SmallListState const& state) noexcept {
         refuse_lent_owner_change_(state.lend_count);
         SmallListState empty{};
+        empty.capacity = inline_capacity_(Quantity<unit::Element, std::size_t>{state.maximum});
         empty.maximum = state.maximum;
         return empty;
     }
@@ -188,9 +197,9 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] SmallList
     }
 
     // Moves each element into heap storage of the next capacity, and gives
-    // the old heap storage back.  The count is below the maximum.  The
-    // elements are trivially copyable, so one copy of bytes moves them.
-    // Complexity: one allocation and O(size()) bytes.
+    // the old heap storage back.  The count is the capacity, and it is below
+    // the maximum.  The elements are trivially copyable, so one copy of bytes
+    // moves them.  Complexity: one allocation and O(size()) bytes.
     [[gnu::cold, gnu::noinline]] void grow_() noexcept {
         State& state = this->state_;
         std::size_t const count = state.count;
@@ -209,6 +218,7 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] SmallList
     // The empty list of at most maximum elements.  Only mint_small_list
     // calls it.
     constexpr explicit SmallList(Quantity<unit::Element, std::size_t> maximum) noexcept : Core{} {
+        this->state_.capacity = State::inline_capacity_(maximum);
         this->state_.maximum = maximum.raw();
     }
 
@@ -233,18 +243,20 @@ public:
     [[nodiscard]] constexpr bool is_empty() const noexcept { return this->state_.count == 0; }
 
     // Puts value after the last element, or gives Full<T> when the list
-    // holds maximum elements.  Three compares, and a growth when the storage
-    // is full.  An append below Inline elements allocates nothing.  A lent
-    // list ends the process (THE LEND COUNT).
+    // holds maximum elements.  The capacity is never above the maximum, so an
+    // append with room compares the count with the capacity only.  A full
+    // storage then compares the count with the maximum, and grows below it.
+    // An append below Inline elements allocates nothing.  A lent list ends
+    // the process (THE LEND COUNT).
     template <class Marker>
         requires AllocationCapability<Marker>
     [[nodiscard]] constexpr Result<Unit, Full<T>> append(Marker /*allocation*/, T value) & noexcept {
         State& state = this->state_;
         detail::refuse_lent_owner_change_(state.lend_count);
-        if (state.count == state.maximum) [[unlikely]] {
-            return err(Full<T>{});
-        }
         if (state.count == state.capacity) [[unlikely]] {
+            if (state.count == state.maximum) {
+                return err(Full<T>{});
+            }
             grow_();
         }
         ::new(static_cast<void*>(first_() + state.count)) T(value);

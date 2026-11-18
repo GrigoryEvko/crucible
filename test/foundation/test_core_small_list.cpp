@@ -147,7 +147,10 @@ void test_inline_moves() {
 
 // The list that a call gives back by reference.  The rule use-after-move does
 // not read through it, so a test reaches a moved-from list.
-[[nodiscard]] SmallList<std::uint64_t, 2>& through(SmallList<std::uint64_t, 2>& list) noexcept { return list; }
+template <std::size_t Inline>
+[[nodiscard]] SmallList<std::uint64_t, Inline>& through(SmallList<std::uint64_t, Inline>& list) noexcept {
+    return list;
+}
 
 // A list on the heap moves its storage, and the moved-from list is empty with
 // its maximum.
@@ -218,6 +221,32 @@ void test_full_at_the_maximum() {
     CRUCIBLE_FATAL_INVARIANT(list.append(allocation(), 6).is_err() && list.size() == 5 && sum_of(list) == 15);
     SmallList<std::uint64_t, 4> none = mint_small_list<std::uint64_t, 4>(Maximum{0});
     CRUCIBLE_FATAL_INVARIANT(none.append(allocation(), 1).is_err() && none.is_empty());
+}
+
+// The appends of a list whose maximum is below its inline slots.
+[[nodiscard]] bool takes_four_of_eight(SmallList<std::uint64_t, 8>& list) noexcept {
+    for (std::uint64_t value = 1; value <= 4; ++value) {
+        if (list.append(allocation(), value).is_err()) {
+            return false;
+        }
+    }
+    return list.append(allocation(), 5).is_err() && list.size() == 4 && sum_of(list) == 10;
+}
+
+// A maximum below the inline slots holds: the fifth append of a list of 8
+// inline slots and a maximum of 4 gives Full, also after a clear, and also on
+// the list that a move leaves.
+void test_full_below_the_inline_slots() {
+    std::size_t const takes_before = allocator_takes;
+    SmallList<std::uint64_t, 8> list = mint_small_list<std::uint64_t, 8>(Maximum{4});
+    CRUCIBLE_FATAL_INVARIANT(takes_four_of_eight(list));
+    list.clear();
+    CRUCIBLE_FATAL_INVARIANT(takes_four_of_eight(list));
+    SmallList<std::uint64_t, 8> moved{std::move(through(list))};
+    CRUCIBLE_FATAL_INVARIANT(moved.size() == 4 && sum_of(moved) == 10);
+    SmallList<std::uint64_t, 8>& left = through(list);
+    CRUCIBLE_FATAL_INVARIANT(left.is_empty() && takes_four_of_eight(left));
+    CRUCIBLE_FATAL_INVARIANT(allocator_takes == takes_before);
 }
 
 // ── The lend count ─────────────────────────────────────────────────────────
@@ -349,6 +378,7 @@ int main() {
     test_take_last_and_clear();
     test_frame_doors();
     test_full_at_the_maximum();
+    test_full_below_the_inline_slots();
     test_lent_list_refuses_changes(test);
     test_list_agrees_with_the_model();
     return 0;
