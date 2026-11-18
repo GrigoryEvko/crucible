@@ -752,6 +752,13 @@ static_assert(merge_kinds.kinds[1].merge.is_open() && !merge_kinds.kinds[0].merg
 static_assert(merge_kinds.kinds[1].merge.reason() == NetName{"the items come in their push order"});
 static_assert(MergeDoor{}.reason().is_empty());
 
+// The merge door belongs to the form of a kind (THE CANONICAL FORM).  The two
+// nets have the same agents and wires, and only the doors of their consumers
+// differ, so they are two nets with two hashes.
+static_assert(!is_same_net(merged_items, ordered_items) && !is_same_net(ordered_items, merged_items));
+static_assert(find_canonical_form(merged_items).hash != find_canonical_form(ordered_items).hash);
+static_assert(!find_canonical_form(merged_items).fault.is_fault() && is_same_net(merged_items, merged_items));
+
 // A boundary kind that opens the merge door.
 inline constexpr NetSignature<1, 1> merging_boundary{.type_names = {"Item"},
                                                      .kinds = {{.name = "drain",
@@ -807,6 +814,117 @@ static_assert(is_same_net(sum_of_three, renumbered_sum) && is_same_net(renumbere
 static_assert(!is_same_net(sum_of_three, swapped_sum));
 inline constexpr NetVerdict swapped_dataflow = check_dataflow(swapped_sum);
 static_assert(swapped_dataflow.is_admitted(), swapped_dataflow);
+
+// The form of a kind is its content.  Each variant below changes one part of
+// the form of add, or the polarity of each port, and keeps each index.
+using SumNet = Net<1, 5, 6, 5>;
+
+// The sum of three with other kinds at the same indexes.
+[[nodiscard]] consteval SumNet sum_with_kinds(NetSignature<1, 5> const& kinds) noexcept {
+    SumNet sum = sum_of_three;
+    sum.signature = kinds;
+    return sum;
+}
+
+// Two wired nets of one type are two nets with two hashes.  The two arguments
+// can change places with no change of meaning.
+[[nodiscard]] consteval bool are_two_nets(SumNet const& one, SumNet const& other) noexcept {
+    return !find_wiring_fault(one).is_fault() && !find_wiring_fault(other).is_fault() && !is_same_net(one, other)
+        && !is_same_net(other, one) && find_canonical_form(one).hash != find_canonical_form(other).hash;
+}
+
+inline constexpr SumNet plus_sum = sum_with_kinds([] consteval {
+    NetSignature<1, 5> kinds = sum_kinds;
+    kinds.kinds[1].name = "plus";
+    return kinds;
+}());
+inline constexpr SumNet renamed_port_sum = sum_with_kinds([] consteval {
+    NetSignature<1, 5> kinds = sum_kinds;
+    kinds.kinds[1].port_names[0] = "first";
+    return kinds;
+}());
+inline constexpr SumNet number_sum = sum_with_kinds([] consteval {
+    NetSignature<1, 5> kinds = sum_kinds;
+    kinds.type_names[0] = "Number";
+    return kinds;
+}());
+inline constexpr SumNet reversed_sum = sum_with_kinds([] consteval {
+    NetSignature<1, 5> kinds = sum_kinds;
+    for (AgentKind& kind : kinds.kinds) {
+        for (PortType& type : kind.port_types)
+            type = dual_of(type);
+    }
+    return kinds;
+}());
+inline constexpr SumNet open_result_sum = sum_with_kinds([] consteval {
+    NetSignature<1, 5> kinds = sum_kinds;
+    kinds.kinds[2].is_boundary = false;
+    return kinds;
+}());
+inline constexpr SumNet principal_sum = sum_with_kinds([] consteval {
+    NetSignature<1, 5> kinds = sum_kinds;
+    kinds.kinds[1].principal = 2;
+    return kinds;
+}());
+inline constexpr SumNet par_sum = sum_with_kinds([] consteval {
+    NetSignature<1, 5> kinds = sum_kinds;
+    kinds.kinds[1].principal = 2;
+    kinds.kinds[1].par_ports = 0b011;
+    return kinds;
+}());
+inline constexpr SumNet left_first_sum = sum_with_kinds([] consteval {
+    NetSignature<1, 5> kinds = sum_kinds;
+    kinds.kinds[1].merge = allow_merge("the left operand first");
+    return kinds;
+}());
+inline constexpr SumNet right_first_sum = sum_with_kinds([] consteval {
+    NetSignature<1, 5> kinds = sum_kinds;
+    kinds.kinds[1].merge = allow_merge("the right operand first");
+    return kinds;
+}());
+
+static_assert(are_two_nets(sum_of_three, plus_sum));
+static_assert(are_two_nets(sum_of_three, renamed_port_sum));
+static_assert(are_two_nets(sum_of_three, number_sum));
+static_assert(are_two_nets(sum_of_three, reversed_sum));
+static_assert(are_two_nets(sum_of_three, open_result_sum));
+static_assert(are_two_nets(sum_of_three, principal_sum));
+static_assert(are_two_nets(principal_sum, par_sum));
+static_assert(are_two_nets(sum_of_three, left_first_sum));
+static_assert(are_two_nets(left_first_sum, right_first_sum));
+static_assert(is_same_net(left_first_sum, sum_with_kinds(left_first_sum.signature)));
+
+// The same kinds and types in another order, with a type that no port has.
+// The two nets are the same net, and their hash is the hash of sum_of_three,
+// whose signature has one type.
+inline constexpr TypeId value_after_spare{1};
+inline constexpr NetSignature<2, 5> listed_sum_kinds{
+    .type_names = {"Value", "Spare"},
+    .kinds = {sum_kinds.kinds[0], sum_kinds.kinds[1], sum_kinds.kinds[2], sum_kinds.kinds[3], sum_kinds.kinds[4]}};
+inline constexpr NetSignature<2, 5> permuted_sum_kinds{
+    .type_names = {"Spare", "Value"},
+    .kinds = {
+        {.name = "drop", .port_names = {"in"}, .port_types = {take(value_after_spare)}},
+        {.name = "result", .port_names = {"in"}, .port_types = {take(value_after_spare)}, .is_boundary = true},
+        {.name = "add",
+         .port_names = {"left", "right", "sum"},
+         .port_types = {take(value_after_spare), take(value_after_spare), give(value_after_spare)}},
+        {.name = "input", .port_names = {"value"}, .port_types = {give(value_after_spare)}, .is_boundary = true},
+        {.name = "num", .port_names = {"value"}, .port_types = {give(value_after_spare)}},
+    }};
+inline constexpr Net<2, 5, 6, 5> listed_sum{
+    .signature = listed_sum_kinds,
+    .agents = {KindId{0}, KindId{0}, KindId{0}, KindId{1}, KindId{1}, KindId{2}},
+    .wires = {join_ports(0, 0, 3, 0), join_ports(1, 0, 3, 1), join_ports(3, 2, 4, 0), join_ports(2, 0, 4, 1),
+              join_ports(4, 2, 5, 0)}};
+inline constexpr Net<2, 5, 6, 5> permuted_sum{
+    .signature = permuted_sum_kinds,
+    .agents = {KindId{3}, KindId{3}, KindId{3}, KindId{2}, KindId{2}, KindId{1}},
+    .wires = {join_ports(0, 0, 3, 0), join_ports(1, 0, 3, 1), join_ports(3, 2, 4, 0), join_ports(2, 0, 4, 1),
+              join_ports(4, 2, 5, 0)}};
+static_assert(is_same_net(listed_sum, permuted_sum) && is_same_net(permuted_sum, listed_sum));
+static_assert(find_canonical_form(listed_sum).hash == sum_form.hash
+              && find_canonical_form(permuted_sum).hash == sum_form.hash);
 
 // A num and a drop wired to each other have no path to the input or the
 // result, so the net has no canonical form.

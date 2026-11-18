@@ -122,10 +122,20 @@
 //   agent in that order, with the ports of each agent in port order, and it
 //   gives each inner agent the next number at its first visit.  The walk
 //   reads only the kinds, the ports and the numbers, so two same nets get
-//   the same numbers.  The canonical form lists, for each number, the kind
-//   of its agent, and the number and the port of the peer of each port.  An
-//   inner agent with no path to a boundary agent gets no number, so a net
-//   with such an agent, or with no boundary agent, has no canonical form.
+//   the same numbers.  The canonical form lists, for each number, the form
+//   of the kind of its agent, and the number and the port of the peer of
+//   each port.  An inner agent with no path to a boundary agent gets no
+//   number, so a net with such an agent, or with no boundary agent, has no
+//   canonical form.
+//
+//   The form of a kind is its content, and not its index in the signature:
+//   the name of the kind, the name, the type and the polarity of each port,
+//   the principal port, the par group, the boundary flag, and the merge door
+//   with its reason.  A type is its name, and not its index.  So two kinds of
+//   one name with other merge doors are two kinds, and a net with a merge
+//   kind is never the same net as a net with no merge.  A signature that
+//   lists the same kinds and types in another order gives the same form, and
+//   a kind or a type that no agent has is not part of the form.
 //
 //   find_canonical_form gives the hash of the form.  is_same_net compares
 //   the two forms entry by entry, so a collision of two hashes does not make
@@ -190,7 +200,8 @@
 //     check_dataflow    O(A + W), the topological sort of Kahn
 //     determinism_of    O(A)
 //     find_canonical_form, is_same_net
-//                       O(A + W), a walk with an explicit stack
+//                       O(A + W), a walk with an explicit stack, and the names
+//                       of the K kinds one time
 //   Each check reads arrays, because a read of an array costs less in constant
 //   evaluation than a read through a pointer.  The body of each check is a
 //   template on the capacity of its arrays, and it reads the first agents and
@@ -1743,13 +1754,79 @@ enum class FormWord : std::uint64_t {
     return NetHash{mixed ^ (mixed >> 31u)};
 }
 
+// The hash after one more name of the form: the count of its characters,
+// and then its characters, eight in each word.  Complexity: O(the size of
+// the name).
+[[nodiscard]] constexpr NetHash fold_name_(NetHash hash, NetName name) noexcept {
+    hash = fold_word(hash, FormWord{name.size()});
+    for (std::size_t first = 0; first < name.size(); first += 8u) {
+        std::uint64_t word = 0;
+        for (std::uint32_t offset = 0; offset < 8u; ++offset) {
+            word |= std::uint64_t{static_cast<unsigned char>(name.at(first + offset))} << (8u * offset);
+        }
+        hash = fold_word(hash, FormWord{word});
+    }
+    return hash;
+}
+
+// The form of a kind (THE CANONICAL FORM): the kind, and the name of the
+// type of each of its ports.  A form reads no index of its signature.
+struct KindForm {
+    AgentKind kind{};
+    NetName port_type_names[max_agent_ports]{};
+
+    // Two forms hold the same name, the same ports with the same names, type
+    // names and polarities, the same principal port, par group and boundary
+    // flag, and the same merge door with the same reason.  A closed door has
+    // the empty reason.  The ports past the count of the kind are not part
+    // of the form.  Complexity: O(the names of the kind).
+    [[nodiscard]] friend constexpr bool operator==(KindForm const& left, KindForm const& right) noexcept {
+        std::uint32_t const count = port_count_of(left.kind);
+        if (!(left.kind.name == right.kind.name) || count != port_count_of(right.kind)) return false;
+        for (std::uint32_t port = 0; port < count; ++port) {
+            if (!(left.kind.port_names[port] == right.kind.port_names[port])) return false;
+            if (!(left.port_type_names[port] == right.port_type_names[port])) return false;
+            if (left.kind.port_types[port].polarity != right.kind.port_types[port].polarity) return false;
+        }
+        return left.kind.principal == right.kind.principal && left.kind.par_ports == right.kind.par_ports
+            && left.kind.is_boundary == right.kind.is_boundary && left.kind.merge.reason() == right.kind.merge.reason();
+    }
+};
+
+// The form of the kind at an index of a signature that check_signature
+// admitted.  Complexity: O(1).
+template <std::size_t Types, std::size_t Kinds>
+[[nodiscard]] constexpr KindForm form_of_kind_(NetSignature<Types, Kinds> const& signature, KindId kind) noexcept {
+    KindForm form{.kind = signature.kinds[index_of(kind)]};
+    std::uint32_t const count = port_count_of(form.kind);
+    for (std::uint32_t port = 0; port < count; ++port)
+        form.port_type_names[port] = type_name_at_(signature, form.kind.port_types[port]);
+    return form;
+}
+
+// The hash of the form of a kind: each part that operator== reads, in its
+// order.  Complexity: O(the names of the kind).
+[[nodiscard]] constexpr NetHash hash_kind_form_(KindForm const& form) noexcept {
+    NetHash hash = fold_name_(NetHash{}, form.kind.name);
+    std::uint32_t const count = port_count_of(form.kind);
+    hash = fold_word(hash, FormWord{count});
+    for (std::uint32_t port = 0; port < count; ++port) {
+        hash = fold_name_(hash, form.kind.port_names[port]);
+        hash = fold_name_(hash, form.port_type_names[port]);
+        hash = fold_word(hash, FormWord{static_cast<std::uint64_t>(form.kind.port_types[port].polarity)});
+    }
+    std::uint64_t const shape = std::uint64_t{form.kind.principal} | (std::uint64_t{form.kind.par_ports} << 8u)
+                              | (std::uint64_t{form.kind.is_boundary} << 16u);
+    return fold_name_(fold_word(hash, FormWord{shape}), form.kind.merge.reason());
+}
+
 }  // namespace detail
 
 // The canonical form of a net: the first fault of its wiring, the fault
 // AgentWithoutBoundaryPath, or the hash of its form (THE CANONICAL FORM).
-// The hash folds the count of the agents, and for each number the kind of
-// its agent and the number and the port of the peer of each port.
-// Complexity: O(K + A + W).
+// The hash folds the count of the agents, and for each number the hash of
+// the form of the kind of its agent and the number and the port of the peer
+// of each port.  Complexity: O(A + W), and the names of the K kinds.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
 [[nodiscard]] constexpr CanonicalNet find_canonical_form(Net<Types, Kinds, Agents, Wires> const& graph) noexcept {
     NetFault const wiring = find_wiring_fault(graph);
@@ -1761,10 +1838,14 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
         if (order.number_of[agent] != detail::no_index) continue;
         return CanonicalNet{.fault = NetFault{.code = NetFaultCode::AgentWithoutBoundaryPath, .agent = AgentId{agent}}};
     }
+    NetHash kind_hash[Kinds]{};
+    for (std::uint32_t kind = 0; kind < Kinds; ++kind)
+        kind_hash[kind] = detail::hash_kind_form_(detail::form_of_kind_(graph.signature, KindId{kind}));
     NetHash hash = detail::fold_word(NetHash{}, detail::FormWord{Agents});
     for (std::uint32_t number = 0; number < Agents; ++number) {
         std::uint32_t const agent = order.agent_at[number];
-        hash = detail::fold_word(hash, detail::FormWord{index_of(graph.agents[agent])});
+        auto const kind_word = static_cast<std::uint64_t>(kind_hash[index_of(graph.agents[agent])]);
+        hash = detail::fold_word(hash, detail::FormWord{kind_word});
         std::uint32_t const count = detail::port_count_of(detail::kind_of_(graph, AgentId{agent}));
         for (std::uint32_t port = 0; port < count; ++port) {
             hash = detail::fold_word(hash, detail::FormWord{order.number_of[order.peer_agent[agent * ports + port]]});
@@ -1782,10 +1863,11 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
 
 // Two nets of one type are the same net (THE CANONICAL FORM): each has a
 // canonical form, and the two forms are equal entry by entry.  A net with no
-// form is the same as no net.  The kinds compare by their index in the
-// signature, so the two nets share the signature of their type.  The two
+// form is the same as no net.  The kinds compare by their forms, so the two
+// signatures can list the kinds and the types in other orders.  The two
 // arguments can change places with no change of meaning.
-// Complexity: O(K + A + W).
+// Complexity: O(K + A + W), and the names of each pair of kinds that two
+// agents of one number have.
 template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t Wires>
 [[nodiscard]] constexpr bool is_same_net(Net<Types, Kinds, Agents, Wires> const& left,
                                          Net<Types, Kinds, Agents, Wires> const& right) noexcept {
@@ -1796,10 +1878,21 @@ template <std::size_t Types, std::size_t Kinds, std::size_t Agents, std::size_t 
     detail::write_canonical_order_(left, one);
     detail::write_canonical_order_(right, other);
     if (one.count != Agents || other.count != Agents) return false;
+    // A kind of the left net, and a kind of the right net with the same form.
+    std::uint32_t same_kind[Kinds]{};
+    for (std::uint32_t& match : same_kind)
+        match = detail::no_index;
     for (std::uint32_t number = 0; number < Agents; ++number) {
         std::uint32_t const first = one.agent_at[number];
         std::uint32_t const second = other.agent_at[number];
-        if (left.agents[first] != right.agents[second]) return false;
+        std::uint32_t const first_kind = index_of(left.agents[first]);
+        if (same_kind[first_kind] != index_of(right.agents[second])) {
+            if (!(detail::form_of_kind_(left.signature, left.agents[first])
+                  == detail::form_of_kind_(right.signature, right.agents[second]))) {
+                return false;
+            }
+            if (same_kind[first_kind] == detail::no_index) same_kind[first_kind] = index_of(right.agents[second]);
+        }
         std::uint32_t const count = detail::port_count_of(detail::kind_of_(left, AgentId{first}));
         for (std::uint32_t port = 0; port < count; ++port) {
             std::uint32_t const at_first = first * ports + port;
