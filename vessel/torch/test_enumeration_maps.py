@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import torch  # noqa: E402
 
 import crucible_mode  # noqa: E402
+import crucible_native  # noqa: E402
 
 # The largest ordinal of crucible::ScalarType, crucible::DeviceType and
 # crucible::Layout in include/crucible/Types.h.  The unnamed byte must be
@@ -72,7 +73,7 @@ def check_fill_meta() -> list[str]:
     """Return one line when _fill_meta records a quantized tensor with a crucible element type."""
     source = torch.arange(1, 9, dtype=torch.float32)
     quantized = torch.quantize_per_tensor(source, 0.1, 0, torch.qint8)
-    meta = crucible_mode._VesselLib.Meta()
+    meta = crucible_native.CrucibleMeta()
     crucible_mode.CrucibleMode._fill_meta(meta, quantized)
     if meta.dtype != crucible_mode._UNNAMED_ORDINAL:
         return [f"_fill_meta records a qint8 tensor with the element type byte {meta.dtype}"]

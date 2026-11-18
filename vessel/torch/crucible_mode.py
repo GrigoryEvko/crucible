@@ -31,7 +31,15 @@ import struct
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
-from crucible_native import DispatchAction, DispatchStatus, SchemaNameResult, _DispatchLib, load_vessel_library
+from crucible_native import (
+    CrucibleDispatchResult,
+    CrucibleMeta,
+    DispatchAction,
+    DispatchStatus,
+    SchemaNameResult,
+    _DispatchLib,
+    load_vessel_library,
+)
 
 
 # ─── ctypes bindings ────────────────────────────────────────────────
@@ -39,41 +47,13 @@ from crucible_native import DispatchAction, DispatchStatus, SchemaNameResult, _D
 class _VesselLib:
     """Thin ctypes wrapper around libcrucible_vessel.so."""
 
-    class Meta(ctypes.Structure):
-        _fields_ = [
-            ("sizes", ctypes.c_int64 * 8),
-            ("strides", ctypes.c_int64 * 8),
-            ("data_ptr", ctypes.c_void_p),
-            ("ndim", ctypes.c_uint8),
-            ("dtype", ctypes.c_int8),
-            ("device_type", ctypes.c_int8),
-            ("device_idx", ctypes.c_int8),
-            ("layout", ctypes.c_int8),
-            ("requires_grad", ctypes.c_uint8),
-            ("flags", ctypes.c_uint8),
-            ("output_nr", ctypes.c_uint8),
-            ("storage_offset", ctypes.c_int64),
-            ("version", ctypes.c_uint32),
-            ("pad0", ctypes.c_uint32),
-            ("storage_nbytes", ctypes.c_uint64),
-            ("grad_fn_hash", ctypes.c_uint64),
-        ]
-
-    class DispatchResult(ctypes.Structure):
-        _fields_ = [
-            ("action", ctypes.c_uint8),
-            ("status", ctypes.c_uint8),
-            ("enters_region", ctypes.c_uint8),
-            ("pad", ctypes.c_uint8),
-            ("op_index", ctypes.c_uint32),
-        ]
-
     def __init__(self, lib_path: str | None = None) -> None:
-        """Load the vessel library after the check of its ABI stamp.
+        """Load the vessel library once its layout is the layout of its build.
 
-        The layout of Meta and DispatchResult below is the layout of one ABI
-        version, so a library of a different version is refused before any
-        dispatch (crucible_native.load_vessel_library).
+        CrucibleMeta and CrucibleDispatchResult of crucible_native mirror the
+        structs of the C ABI, and the loader compares them and the layout note
+        of the library with the layout table of the build before the load
+        (crucible_native.load_vessel_library).
         """
         self._lib = load_vessel_library(lib_path)
         self._setup_signatures()
@@ -109,13 +89,13 @@ class _VesselLib:
 
         # The thunk computes the guard word of the op from the records and the
         # scalars, so the call gives no guard word.
-        lib.crucible_dispatch_op_ex.restype = self.DispatchResult
+        lib.crucible_dispatch_op_ex.restype = CrucibleDispatchResult
         lib.crucible_dispatch_op_ex.argtypes = [
             ctypes.c_void_p,                  # handle
             ctypes.c_uint64,                  # schema_hash
             ctypes.c_uint16,                  # num_inputs
             ctypes.c_uint16,                  # num_outputs
-            ctypes.POINTER(self.Meta),        # metas
+            ctypes.POINTER(CrucibleMeta),     # metas
             ctypes.c_uint32,                  # n_metas
             ctypes.POINTER(ctypes.c_int64),   # scalar_values
             ctypes.c_uint16,                  # num_scalars
@@ -385,11 +365,11 @@ class CrucibleMode(TorchDispatchMode):
         all_tensors = input_tensors + output_tensors
         n_metas = len(all_tensors)
         if n_metas > 0:
-            MetaArray = _VesselLib.Meta * n_metas
+            MetaArray = CrucibleMeta * n_metas
             metas = MetaArray()
             for i, t in enumerate(all_tensors):
                 self._fill_meta(metas[i], t)
-            metas_ptr = ctypes.cast(metas, ctypes.POINTER(_VesselLib.Meta))
+            metas_ptr = ctypes.cast(metas, ctypes.POINTER(CrucibleMeta))
         else:
             metas_ptr = None
 

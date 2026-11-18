@@ -1,5 +1,32 @@
-add_library(crucible_vessel SHARED vessel_api.cpp level_note.cpp)
+add_library(crucible_vessel SHARED vessel_api.cpp level_note.cpp layout_note.cpp)
 target_link_libraries(crucible_vessel PRIVATE crucible)
+
+# ── The layout table of the vessel libraries ─────────────────────────
+#
+# Each vessel library compiles layout_note.cpp, so it carries an ELF note with
+# the layout digest of the types and the C entries that the two libraries
+# share (THE NOTE of layout_note.h).  The host tool crucible_layout_digest
+# compiles the same unit, and writes the layout table of the build beside the
+# libraries: the digest, and the size and the member offsets of each struct of
+# the C ABI that ctypes mirrors (THE TABLE of layout_table.cpp).  The loader
+# of the vessel refuses a library whose note differs from the table, and a
+# ctypes Structure whose layout differs from it.  Each vessel library depends
+# on the table, so a build of one library writes the table of its build.  A
+# cross build cannot run the tool on the build host, and it has no table: no
+# loader of the build host loads its libraries.
+set(_crucible_layout_table "${CMAKE_BINARY_DIR}/lib/crucible_layout_digest.txt")
+if(NOT CMAKE_CROSSCOMPILING)
+    add_executable(crucible_layout_digest layout_table.cpp layout_note.cpp)
+    target_link_libraries(crucible_layout_digest PRIVATE crucible)
+    add_custom_command(OUTPUT "${_crucible_layout_table}"
+        COMMAND sh -c "$<TARGET_FILE:crucible_layout_digest> > ${_crucible_layout_table}.tmp"
+        COMMAND ${CMAKE_COMMAND} -E rename "${_crucible_layout_table}.tmp" "${_crucible_layout_table}"
+        DEPENDS crucible_layout_digest
+        COMMENT "Writing the layout table of the vessel libraries"
+        VERBATIM)
+    add_custom_target(crucible_layout_table DEPENDS "${_crucible_layout_table}")
+    add_dependencies(crucible_vessel crucible_layout_table)
+endif()
 
 # ── The x86-64 level of the vessel libraries ─────────────────────────
 #
@@ -31,6 +58,10 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
             COMPILE_DEFINITIONS CRUCIBLE_X86_LEVEL_EXACT=${_crucible_level_number})
         install(TARGETS crucible_vessel LIBRARY
             DESTINATION lib/crucible/x86-64-${CRUCIBLE_X86_LEVEL} COMPONENT vessel)
+        if(TARGET crucible_layout_table)
+            install(FILES "${_crucible_layout_table}"
+                DESTINATION lib/crucible/x86-64-${CRUCIBLE_X86_LEVEL} COMPONENT vessel)
+        endif()
     endif()
     add_library(crucible_level SHARED level_probe.cpp ${CRUCIBLE_HANDLER_SOURCES})
     target_include_directories(crucible_level PRIVATE ${CMAKE_SOURCE_DIR}/include)
@@ -88,7 +119,7 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     # backward-window thread_local, and the metadata bridge in record_kernel.h.
     # Splitting them would give each .so its own copy of the header-only
     # Crucible and its own backward-window counter.
-    add_library(crucible_dispatch SHARED crucible_fallback.cpp storage_generation.cpp level_note.cpp)
+    add_library(crucible_dispatch SHARED crucible_fallback.cpp storage_generation.cpp level_note.cpp layout_note.cpp)
 
     # PyTorch headers from the built fork.
     #
@@ -186,6 +217,9 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
     endif()
     if(TARGET crucible_level)
         add_dependencies(crucible_dispatch crucible_level)
+    endif()
+    if(TARGET crucible_layout_table)
+        add_dependencies(crucible_dispatch crucible_layout_table)
     endif()
 
     message(STATUS "Crucible: building native dispatch library (TORCH_DIR=${TORCH_DIR})")

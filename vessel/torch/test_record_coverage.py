@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import torch  # noqa: E402
 
 import crucible_mode  # noqa: E402
-from crucible_native import CrucibleNative  # noqa: E402
+from crucible_native import CrucibleMeta, CrucibleNative  # noqa: E402
 
 # One intra-op thread and one inter-op thread.  The instruction count of the
 # test is then the same in each run, and the budgets of the test launcher hold.
@@ -63,11 +63,11 @@ HEADER = struct.Struct("<4sIII")
 # depth, the tags of the scalar values, the data slots, and three bytes of pad.
 OP_RECORD = struct.Struct("<QQQQ5qHHHBBHHB3x")
 NAME_HEAD = struct.Struct("<QH")
-META_SIZE = ctypes.sizeof(crucible_mode._VesselLib.Meta)
-META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset
-META_DTYPE_OFFSET = crucible_mode._VesselLib.Meta.dtype.offset
-META_STORAGE_NBYTES_OFFSET = crucible_mode._VesselLib.Meta.storage_nbytes.offset
-META_DATA_PTR_OFFSET = crucible_mode._VesselLib.Meta.data_ptr.offset
+META_SIZE = ctypes.sizeof(CrucibleMeta)
+META_NDIM_OFFSET = CrucibleMeta.ndim.offset
+META_DTYPE_OFFSET = CrucibleMeta.dtype.offset
+META_STORAGE_NBYTES_OFFSET = CrucibleMeta.storage_nbytes.offset
+META_DATA_PTR_OFFSET = CrucibleMeta.data_ptr.offset
 
 # A storage of 98 GiB.  A tensor of the meta device has a storage size and
 # no memory, so the test allocates nothing.

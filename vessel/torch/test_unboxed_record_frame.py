@@ -43,9 +43,8 @@ from pathlib import Path
 # on the import path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import crucible_mode  # noqa: E402
 import torch  # noqa: E402
-from crucible_native import CrucibleNative, DispatchAction  # noqa: E402
+from crucible_native import CrucibleDispatchResult, CrucibleMeta, CrucibleNative, DispatchAction  # noqa: E402
 from torch.utils._python_dispatch import TorchDispatchMode  # noqa: E402
 
 # The import sets one intra-op thread and one inter-op thread, so the
@@ -53,7 +52,7 @@ from torch.utils._python_dispatch import TorchDispatchMode  # noqa: E402
 # second set of the inter-op threads, so this file does not set them again.
 from test_record_coverage import MAX_ITERATIONS, TraceOp, read_trace, schema_hash  # noqa: E402
 
-Meta = crucible_mode._VesselLib.Meta
+Meta = CrucibleMeta
 
 # The most inputs and the most outputs of one operation (kMaxOpInputs and
 # kMaxOpOutputs of crucible/ValidatedOp.h).  An operation with each of them
@@ -159,7 +158,7 @@ def wide_metas() -> ctypes.Array:
 def bind_dispatch_op(ctx: CrucibleNative):
     """Return crucible_dispatch_op of the vessel library of ctx, with its C signature."""
     function = ctx._vessel._lib.crucible_dispatch_op
-    function.restype = crucible_mode._VesselLib.DispatchResult
+    function.restype = CrucibleDispatchResult
     function.argtypes = [
         ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
     ]

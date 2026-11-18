@@ -74,20 +74,6 @@ _FNV_PRIME  = 0x100000001B3
 _MASK64     = (1 << 64) - 1
 
 
-# =====================================================================
-# C ABI version stamp
-# =====================================================================
-#
-# Mirrors `CRUCIBLE_VESSEL_ABI_VERSION` in vessel/torch/vessel_api.h.
-# Bumped together with the C ABI surface; the loader compares this
-# constant against the value returned by `crucible_abi_version()` on
-# the loaded .so and refuses construction on mismatch.  Catches the
-# ".py was redeployed but libcrucible_vessel.so is stale" failure
-# before any dispatch runs.
-
-EXPECTED_ABI_VERSION = 10
-
-
 class SchemaNameResult(enum.IntEnum):
     """The result of crucible_register_schema_name (CRUCIBLE_SCHEMA_NAME_* of vessel_api.h)."""
 
@@ -101,13 +87,6 @@ class SchemaNameResult(enum.IntEnum):
     FULL = 3
 
 
-# Mirrors kDispatchAbiVersion in vessel/torch/crucible_fallback.cpp, which
-# libcrucible_dispatch.so reports through crucible_dispatch_abi_version().
-# The value names the C ABI of the dispatch library: its TLS accessors, its
-# schema accessors, its doors of the generation allocator and the ordinals of
-# c10::CrucibleMode.
-EXPECTED_DISPATCH_ABI_VERSION = 4
-
 # The top bit of the word of a storage generation (crucible::StorageGeneration
 # in include/crucible/Types.h).  A word with the bit holds the period of the
 # allocator for a storage that the generation allocator did not make.  Zero is
@@ -116,7 +95,12 @@ STORAGE_GENERATION_UNKNOWN_BIT = 1 << 31
 
 
 class AbiStamp(NamedTuple):
-    """The ABI stamp of one Crucible library, and the version that this module reads."""
+    """The ABI stamp of the level probe, and the version that this module reads.
+
+    The two vessel libraries carry a layout note in place of a stamp (THE
+    LAYOUT OF A LIBRARY).  The probe keeps its stamp, because the test
+    launcher of the gate reads it too (utils/assay/core/x86level.py).
+    """
 
     library: str  # the file name of the library, for the message
     symbol: str  # the C function that gives the stamp
@@ -185,10 +169,44 @@ class BoundScalar(NamedTuple):
     bits: int
 
 
-VESSEL_STAMP = AbiStamp("libcrucible_vessel.so", "crucible_abi_version", EXPECTED_ABI_VERSION,
-                        "  cmake --build --preset release")
-DISPATCH_STAMP = AbiStamp("libcrucible_dispatch.so", "crucible_dispatch_abi_version",
-                          EXPECTED_DISPATCH_ABI_VERSION, "  cmake --build --preset vessel")
+class CrucibleMeta(ctypes.Structure):
+    """The record of one tensor of an op, in the layout of CrucibleMeta of vessel_api.h."""
+
+    _fields_ = [
+        ("sizes", ctypes.c_int64 * 8),
+        ("strides", ctypes.c_int64 * 8),
+        ("data_ptr", ctypes.c_void_p),
+        ("ndim", ctypes.c_uint8),
+        ("dtype", ctypes.c_int8),
+        ("device_type", ctypes.c_int8),
+        ("device_idx", ctypes.c_int8),
+        ("layout", ctypes.c_int8),
+        ("requires_grad", ctypes.c_uint8),
+        ("flags", ctypes.c_uint8),
+        ("output_nr", ctypes.c_uint8),
+        ("storage_offset", ctypes.c_int64),
+        ("version", ctypes.c_uint32),
+        ("pad0", ctypes.c_uint32),
+        ("storage_nbytes", ctypes.c_uint64),
+        ("grad_fn_hash", ctypes.c_uint64),
+    ]
+
+
+class CrucibleDispatchResult(ctypes.Structure):
+    """The answer of a dispatch, in the layout of CrucibleDispatchResult of vessel_api.h."""
+
+    _fields_ = [
+        ("action", ctypes.c_uint8),
+        ("status", ctypes.c_uint8),
+        ("enters_region", ctypes.c_uint8),
+        ("pad", ctypes.c_uint8),
+        ("op_index", ctypes.c_uint32),
+    ]
+
+
+# The library names of the two vessel libraries, and their build commands.
+VESSEL_LIBRARY = "libcrucible_vessel.so"
+DISPATCH_LIBRARY = "libcrucible_dispatch.so"
 
 
 class DispatchAction(enum.IntEnum):
@@ -211,10 +229,14 @@ class DispatchStatus(enum.IntEnum):
 
 
 class CrucibleAbiMismatchError(RuntimeError):
-    """Raised when a loaded Crucible library has no ABI stamp, or a stamp
-    that is not the version of this module (AbiStamp.expected).  Usually
-    the library needs a rebuild, or the .py file is stale.  The message
-    names the library and the observed and the expected versions."""
+    """Raised before the load of a Crucible library whose layout is not the layout of the build.
+
+    The layout note of a vessel library differs from the layout table of its
+    build, or the library has no note, or a ctypes Structure of this package
+    differs from the table (THE LAYOUT OF A LIBRARY).  The level probe has an
+    ABI stamp, and a probe whose stamp is not AbiStamp.expected raises it
+    too.  The message names the library and the build command.
+    """
 
 
 def _fnv1a(data: bytes) -> int:
@@ -456,8 +478,16 @@ def _is_x86_64() -> bool:
     return platform.machine() in ("x86_64", "AMD64")
 
 
-def level_note(path: str) -> LevelNote | None:
-    """Read the level note of the ELF library at PATH, or give None for a library with no note.
+class CrucibleNote(NamedTuple):
+    """One note of the owner Crucible in an ELF library: its type, its descriptor, and the offset of the descriptor."""
+
+    note_type: int
+    descriptor: bytes
+    offset: int
+
+
+def crucible_notes(path: str) -> list[CrucibleNote]:
+    """Read each note of the owner Crucible of the ELF library at PATH, in the order of the file.
 
     The read takes the ELF header, the section headers and each note
     section, and no other byte of the file.  Complexity: O(sections + bytes
@@ -465,8 +495,9 @@ def level_note(path: str) -> LevelNote | None:
 
     Raises:
         RuntimeError: If the file is not a 64-bit little-endian ELF object,
-            or if it holds a malformed level note
+            or if a note runs past the end of its section
     """
+    found: list[CrucibleNote] = []
     with open(path, "rb") as image:
         header = image.read(_ELF64_HEADER)
         if header[:4] != b"\x7fELF" or header[4] != 2 or header[5] != 1:
@@ -484,22 +515,18 @@ def level_note(path: str) -> LevelNote | None:
             size = int.from_bytes(sections[at + 32:at + 40], "little")
             alignment = max(4, int.from_bytes(sections[at + 48:at + 56], "little"))
             image.seek(offset)
-            found = _level_in_notes(image.read(size), offset, alignment, path)
-            if found is not None:
-                return found
-    return None
+            found.extend(_notes_of_section(image.read(size), offset, alignment, path))
+    return found
 
 
-def _level_in_notes(notes: bytes, base: int, alignment: int, path: str) -> LevelNote | None:
-    """Give the level note among the notes of one section, or None when the section holds none.
+def _notes_of_section(notes: bytes, base: int, alignment: int, path: str) -> list[CrucibleNote]:
+    """Give the notes of the owner Crucible among the notes of one section.
 
     BASE is the offset of the section in the file, and ALIGNMENT is the
     alignment of its notes, 4 or 8.
 
     Raises:
-        RuntimeError: If a note runs past the end of the section, or if the
-            level note holds a size, a level or a kind that THE NOTE does not
-            give
+        RuntimeError: If a note runs past the end of the section
     """
     def aligned(offset: int) -> int:
         """Round the OFFSET in the section up to the alignment of the notes.
@@ -509,6 +536,7 @@ def _level_in_notes(notes: bytes, base: int, alignment: int, path: str) -> Level
         """
         return (offset + alignment - 1) // alignment * alignment
 
+    found: list[CrucibleNote] = []
     at = 0
     while at + 12 <= len(notes):
         name_size = int.from_bytes(notes[at:at + 4], "little")
@@ -518,14 +546,29 @@ def _level_in_notes(notes: bytes, base: int, alignment: int, path: str) -> Level
         end = aligned(descriptor_at + descriptor_size)
         if end > len(notes):
             raise RuntimeError(f"{path} holds a note that runs past the end of its section")
-        if note_type == _NOTE_TYPE_LEVEL and notes[at + 12:at + 12 + name_size] == _NOTE_OWNER:
-            level, kind = notes[descriptor_at], notes[descriptor_at + 1]
-            if descriptor_size != _NOTE_DESCRIPTOR_SIZE or level not in _LEVELS or kind not in _KINDS:
-                raise RuntimeError(f"{path} holds a level note with the size {descriptor_size}, the level {level} "
-                                   f"and the kind {kind}, and THE NOTE of vessel/torch/level_note.h gives none of "
-                                   f"them")
-            return LevelNote(level, LevelKind(kind), base + descriptor_at)
+        if notes[at + 12:at + 12 + name_size] == _NOTE_OWNER:
+            found.append(CrucibleNote(note_type, notes[descriptor_at:descriptor_at + descriptor_size],
+                                      base + descriptor_at))
         at = end
+    return found
+
+
+def level_note(path: str) -> LevelNote | None:
+    """Read the level note of the ELF library at PATH, or give None for a library with no note.
+
+    Raises:
+        RuntimeError: If the file is not a 64-bit little-endian ELF object,
+            or if it holds a malformed note, or a level note with a size, a
+            level or a kind that THE NOTE does not give
+    """
+    for note in crucible_notes(path):
+        if note.note_type != _NOTE_TYPE_LEVEL:
+            continue
+        level, kind = (note.descriptor[0], note.descriptor[1]) if len(note.descriptor) >= 2 else (0, 0)
+        if len(note.descriptor) != _NOTE_DESCRIPTOR_SIZE or level not in _LEVELS or kind not in _KINDS:
+            raise RuntimeError(f"{path} holds a level note with the size {len(note.descriptor)}, the level {level} "
+                               f"and the kind {kind}, and THE NOTE of vessel/torch/level_note.h gives none of them")
+        return LevelNote(level, LevelKind(kind), note.offset)
     return None
 
 
@@ -685,8 +728,204 @@ def check_abi_stamp(library: Any, path: str, stamp: AbiStamp) -> None:
             f"{stamp.rebuild}")
 
 
+# =====================================================================
+# The layout of a library
+# =====================================================================
+#
+# THE LAYOUT OF A LIBRARY.  The two vessel libraries compile the header-only
+# Vigil, and each one reads values that the other one made.  Each vessel
+# library carries an ELF note with the layout digest of the types and the C
+# entries that the two share (THE NOTE of vessel/torch/layout_note.h).  The
+# build writes the layout table beside the libraries (THE TABLE of
+# vessel/torch/layout_table.cpp): the digest of the build, and the size and
+# the member offsets of each struct of the C ABI that a ctypes Structure of
+# this package mirrors (MIRRORS).
+#
+# The loader reads the table and the note from the file before dlopen.  So a
+# refused library runs no global constructor and registers no kernel, and the
+# process can load a rebuilt library after the refusal.  It refuses a library
+# with no note, or with a note that differs from the table of its directory,
+# and a mirror whose size or field offsets differ from the table.  After the
+# load, the library gives its digest through its C entry, and the loader
+# compares it with the table again, as the second guard.
+
+LAYOUT_TABLE = "crucible_layout_digest.txt"
+_NOTE_TYPE_LAYOUT = 2
+_LAYOUT_DESCRIPTOR_SIZE = 8
+
+# The ctypes Structures of this package, by the name of the C struct that
+# each one mirrors.
+MIRRORS: dict[str, type[ctypes.Structure]] = {
+    "CrucibleMeta": CrucibleMeta,
+    "CrucibleDispatchResult": CrucibleDispatchResult,
+    "CrucibleSlot": CrucibleSlot,
+    "CrucibleBoundScalar": CrucibleBoundScalar,
+}
+
+# The enums of this package, by the prefix of the C constants of vessel_api.h
+# that each one mirrors: the member REFUSED of DispatchAction mirrors
+# CRUCIBLE_ACTION_REFUSED.
+MIRRORED_CONSTANTS: dict[str, type[enum.IntEnum]] = {
+    "CRUCIBLE_ACTION_": DispatchAction,
+    "CRUCIBLE_STATUS_": DispatchStatus,
+    "CRUCIBLE_SCHEMA_NAME_": SchemaNameResult,
+}
+
+
+class LayoutTable(NamedTuple):
+    """The layout table of a build: the digest, the layout of each mirrored struct, and the C constants."""
+
+    digest: int
+    sizes: dict[str, int]
+    offsets: dict[str, dict[str, int]]
+    constants: dict[str, int]
+
+
+class LayoutNote(NamedTuple):
+    """The layout note of one library, and the offset of its descriptor in the file."""
+
+    digest: int
+    offset: int
+
+
+def read_layout_table(folder: Path) -> LayoutTable:
+    """Read the layout table of the build of the libraries in FOLDER.
+
+    Raises:
+        CrucibleAbiMismatchError: If FOLDER holds no table, or a line of the
+            table is no line of THE TABLE
+    """
+    path = folder / LAYOUT_TABLE
+    if not path.exists():
+        raise CrucibleAbiMismatchError(f"{folder} holds no layout table {LAYOUT_TABLE}, and the loader compares the "
+                                       f"layout note of each vessel library with it.  Build the libraries with:\n"
+                                       f"{VESSEL_BUILD}")
+    digest: int | None = None
+    sizes: dict[str, int] = {}
+    offsets: dict[str, dict[str, int]] = {}
+    constants: dict[str, int] = {}
+    for line in path.read_text(encoding="ascii").splitlines():
+        words = line.split()
+        if len(words) == 2 and words[0] == "digest":
+            digest = int(words[1])
+        elif len(words) == 3 and words[0] == "struct":
+            sizes[words[1]] = int(words[2])
+            offsets.setdefault(words[1], {})
+        elif len(words) == 4 and words[0] == "field":
+            offsets.setdefault(words[1], {})[words[2]] = int(words[3])
+        elif len(words) == 3 and words[0] == "constant":
+            constants[words[1]] = int(words[2])
+        else:
+            raise CrucibleAbiMismatchError(f"{path} holds the line {line!r}, which is no line of THE TABLE of "
+                                           f"vessel/torch/layout_table.cpp")
+    if digest is None:
+        raise CrucibleAbiMismatchError(f"{path} holds no digest line")
+    return LayoutTable(digest, sizes, offsets, constants)
+
+
+def layout_note(path: str) -> LayoutNote | None:
+    """Read the layout note of the ELF library at PATH, or give None for a library with no note.
+
+    Raises:
+        RuntimeError: If the file is not a 64-bit little-endian ELF object,
+            or if it holds a malformed note, or a layout note of a size other
+            than 8 bytes
+    """
+    for note in crucible_notes(path):
+        if note.note_type != _NOTE_TYPE_LAYOUT:
+            continue
+        if len(note.descriptor) != _LAYOUT_DESCRIPTOR_SIZE:
+            raise RuntimeError(f"{path} holds a layout note of {len(note.descriptor)} bytes, and THE NOTE of "
+                               f"vessel/torch/layout_note.h gives 8")
+        return LayoutNote(int.from_bytes(note.descriptor, "little"), note.offset)
+    return None
+
+
+def check_layout(path: str, rebuild: str) -> LayoutTable:
+    """Refuse the library at PATH before its load when its layout is not the layout of its build.
+
+    The table comes from the directory of the library.  REBUILD is the build
+    command that the message names.  Gives the table, for the second guard
+    after the load.
+
+    Raises:
+        CrucibleAbiMismatchError: If the directory holds no table, if the
+            library has no layout note or a note that differs from the
+            table, or if a mirror differs from the table (check_mirrors)
+    """
+    table = read_layout_table(Path(path).parent)
+    note = layout_note(path)
+    if note is None or note.digest != table.digest:
+        observed = "none" if note is None else str(note.digest)
+        raise CrucibleAbiMismatchError(
+            f"{Path(path).name} has a layout that is not the layout of its build:\n"
+            f"  library       : {path}\n"
+            f"  layout note   : {observed}\n"
+            f"  layout table  : {table.digest} ({Path(path).parent / LAYOUT_TABLE})\n"
+            f"The two vessel libraries share the layout of the Vigil and of the C ABI.  Rebuild the libraries:\n"
+            f"{rebuild}")
+    check_mirrors(table)
+    return table
+
+
+def check_mirrors(table: LayoutTable) -> None:
+    """Refuse each ctypes Structure of MIRRORS whose size or field offsets differ from the layout table.
+
+    Complexity: O(fields of the mirrors).
+
+    Raises:
+        CrucibleAbiMismatchError: If the table names no such struct, or if
+            the size, the names or the offsets of the fields differ
+    """
+    for name, mirror in MIRRORS.items():
+        if name not in table.sizes:
+            raise CrucibleAbiMismatchError(f"the layout table names no struct {name}, which {mirror.__name__} of "
+                                           f"crucible_native.py mirrors.  Rebuild the libraries:\n{VESSEL_BUILD}")
+        expected = table.offsets[name]
+        observed = {field: getattr(mirror, field).offset for field, *_ in mirror._fields_}
+        if ctypes.sizeof(mirror) != table.sizes[name] or observed != expected:
+            raise CrucibleAbiMismatchError(
+                f"{mirror.__name__} of crucible_native.py does not mirror {name} of vessel_api.h:\n"
+                f"  ctypes size and offsets : {ctypes.sizeof(mirror)} {observed}\n"
+                f"  C size and offsets      : {table.sizes[name]} {expected}\n"
+                f"Make the fields of the Structure the fields of the struct, in their order and types.")
+    for prefix, mirror_enum in MIRRORED_CONSTANTS.items():
+        expected_values = {name[len(prefix):]: value for name, value in table.constants.items()
+                           if name.startswith(prefix)}
+        observed_values = {member.name: int(member.value) for member in mirror_enum}
+        if observed_values != expected_values:
+            raise CrucibleAbiMismatchError(
+                f"{mirror_enum.__name__} of crucible_native.py does not mirror the constants {prefix}* of "
+                f"vessel_api.h:\n"
+                f"  Python values : {observed_values}\n"
+                f"  C values      : {expected_values}\n"
+                f"Give the enum the names and the values of the C constants.")
+
+
+def check_loaded_layout(library: Any, symbol: str, path: str, table: LayoutTable) -> None:
+    """Refuse a loaded library whose layout entry gives a digest other than the digest of the table.
+
+    The second guard of THE LAYOUT OF A LIBRARY, after the check of the note.
+
+    Raises:
+        CrucibleAbiMismatchError: If the library has no SYMBOL, or it gives a
+            different digest
+    """
+    try:
+        reader = getattr(library, symbol)
+    except AttributeError:
+        raise CrucibleAbiMismatchError(f"{path} has no {symbol}, which gives the layout digest of the library.  "
+                                       f"Rebuild the libraries:\n{VESSEL_BUILD}") from None
+    reader.restype = ctypes.c_uint64
+    reader.argtypes = []
+    observed = int(reader())
+    if observed != table.digest:
+        raise CrucibleAbiMismatchError(f"{path} gives the layout digest {observed} after the load, and its layout "
+                                       f"table holds {table.digest}.  Rebuild the libraries:\n{VESSEL_BUILD}")
+
+
 def load_vessel_library(lib_path: str | None = None) -> ctypes.CDLL:
-    """Load libcrucible_vessel.so, and return it once its ABI stamp agrees.
+    """Load libcrucible_vessel.so, and return it once its layout is the layout of its build.
 
     LIB_PATH names the library, or None to search the build directories
     (_find_lib).  Each wrapper of the vessel library loads it through this
@@ -695,39 +934,36 @@ def load_vessel_library(lib_path: str | None = None) -> ctypes.CDLL:
     Raises:
         RuntimeError: If no library is found, or if it needs a sanitizer
             runtime that the process does not hold (checked_lib_path).
-        CrucibleAbiMismatchError: If the ABI stamp of the library is not
-            EXPECTED_ABI_VERSION (check_abi_stamp).
+        CrucibleAbiMismatchError: If the layout of the library or of a
+            mirror is not the layout of the build (check_layout)
     """
-    path = checked_lib_path(VESSEL_STAMP.library, lib_path, RELEASE_BUILD)
+    path = checked_lib_path(VESSEL_LIBRARY, lib_path, RELEASE_BUILD)
+    table = check_layout(path, RELEASE_BUILD)
     library = ctypes.CDLL(path)
-    check_abi_stamp(library, path, VESSEL_STAMP)
+    check_loaded_layout(library, "crucible_layout_digest", path, table)
     return library
 
 
 def load_dispatch_library(lib_path: str | None = None) -> ctypes.CDLL:
-    """Load libcrucible_dispatch.so, and return it once its ABI stamp agrees.
+    """Load libcrucible_dispatch.so, and return it once its layout is the layout of its build.
 
     LIB_PATH names the library, or None to search the build directories
     (_find_lib).  The wrapper of the dispatch library loads it through this
-    function.
-
-    The load runs the global constructors of the library first, and they
-    register its kernels and its fallback for DispatchKey::Crucible.  No
-    check can come before them.  A kernel of the key runs only on a thread
-    that includes the key, and CrucibleNative includes it only after this
-    function returns.  So no kernel of a refused library runs.  Its kernels
-    stay registered for the life of the process, so load the rebuilt library
-    in a new process.
+    function.  The load runs the global constructors of the library, and
+    they register its kernels and its fallback for DispatchKey::Crucible.
+    The check of the layout reads the file before the load, so a refused
+    library registers no kernel, and the process can load a rebuilt library.
 
     Raises:
         RuntimeError: If no library is found, or if it needs a sanitizer
             runtime that the process does not hold (checked_lib_path).
-        CrucibleAbiMismatchError: If the ABI stamp of the library is not
-            EXPECTED_DISPATCH_ABI_VERSION (check_abi_stamp).
+        CrucibleAbiMismatchError: If the layout of the library or of a
+            mirror is not the layout of the build (check_layout)
     """
-    path = checked_lib_path(DISPATCH_STAMP.library, lib_path, VESSEL_BUILD)
+    path = checked_lib_path(DISPATCH_LIBRARY, lib_path, VESSEL_BUILD)
+    table = check_layout(path, VESSEL_BUILD)
     library = ctypes.CDLL(path)
-    check_abi_stamp(library, path, DISPATCH_STAMP)
+    check_loaded_layout(library, "crucible_dispatch_layout_digest", path, table)
     return library
 
 
@@ -739,7 +975,7 @@ class _VesselLib:
     """Ctypes wrapper for libcrucible_vessel.so — Vigil lifecycle + queries."""
 
     def __init__(self, lib_path: str | None = None) -> None:
-        """Load the vessel library after the check of its ABI stamp."""
+        """Load the vessel library once its layout is the layout of its build (load_vessel_library)."""
         self._lib = load_vessel_library(lib_path)
         self._setup()
 
@@ -895,7 +1131,7 @@ class _DispatchLib:
     """Ctypes wrapper for libcrucible_dispatch.so — TLS state + scope."""
 
     def __init__(self, lib_path: str | None = None) -> None:
-        """Load the dispatch library after the check of its ABI stamp."""
+        """Load the dispatch library once its layout is the layout of its build (load_dispatch_library)."""
         # Ensure torch._C is loaded first (provides libc10 symbols).
         import torch._C  # noqa: F401
         # The load registers the C++ fallback (load_dispatch_library).

@@ -33,14 +33,15 @@
 //                               post-validation pointer from raw FFI
 //                               input.
 //
-// ── ABI version stamp ────────────────────────────────────────────────
+// ── The layout of the library ────────────────────────────────────────
 //
-// `crucible_abi_version()` returns a uint64_t that identifies the wire
-// layout of CrucibleMeta + CrucibleDispatchResult + the function
-// signatures below.  Python loaders compare the value against the
-// constant baked into crucible_native.py at startup; mismatched .so
-// vs .py refuses to construct the controller.  Bump the constant when
-// adding/removing functions or changing struct layout.
+// The layout note of the library holds the digest of the layout of the
+// structs and of the function types below, and of the Vigil (THE NOTE of
+// layout_note.h).  The build writes the digest and the layout of each struct
+// below into the layout table beside the library, and the loader of
+// crucible_native.py compares the note and its ctypes Structures with that
+// table before the load (THE LAYOUT OF A LIBRARY).  No version is written by
+// hand.
 
 #pragma once
 
@@ -149,23 +150,14 @@ typedef struct {
     uint32_t op_index;  // the position of the op in the region for COMPILED, zero for another action
 } CrucibleDispatchResult;
 
-// ── ABI version ──────────────────────────────────────────────────────
+// ── Layout digest ────────────────────────────────────────────────────
 
-// CRUCIBLE_VESSEL_ABI_VERSION — identifies the wire layout of every
-// extern "C" symbol declared in this header AND the byte layout of
-// CrucibleMeta / CrucibleDispatchResult.  Increment on any of:
-//   * Adding / removing / renaming a function.
-//   * Changing argument types or counts.
-//   * Re-laying-out CrucibleMeta or CrucibleDispatchResult.
-// Python ctypes consumers cross-check via crucible_abi_version() at
-// load.  The constant is also exposed as a #define so C consumers can
-// bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 10ULL
-
-// Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
-// Never aborts — pure constant return.  Used by crucible_native.py
-// __init__ to guard against .so/.py drift.
-CRUCIBLE_VESSEL_API uint64_t crucible_abi_version(void) CRUCIBLE_VESSEL_NOEXCEPT;
+// The layout digest of the library: the digest of the layout of the types and
+// of the C entries that the two vessel libraries share, which the layout note
+// of the library holds too (THE NOTE of layout_note.h).  The loader reads the
+// note before the load, and calls this entry after the load as its second
+// guard.  A constant return.
+CRUCIBLE_VESSEL_API uint64_t crucible_layout_digest(void) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Lifecycle ────────────────────────────────────────────────────────
 

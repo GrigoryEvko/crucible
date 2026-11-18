@@ -42,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import crucible_mode  # noqa: E402
 import torch  # noqa: E402
+import crucible_native  # noqa: E402
 from crucible_native import DispatchAction  # noqa: E402
 
 # One intra-op thread and one inter-op thread.  The instruction count of the
@@ -49,8 +50,8 @@ from crucible_native import DispatchAction  # noqa: E402
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
 
-Meta = crucible_mode._VesselLib.Meta
-DispatchResult = crucible_mode._VesselLib.DispatchResult
+Meta = crucible_native.CrucibleMeta
+DispatchResult = crucible_native.CrucibleDispatchResult
 
 # The slots of the record stack of a Vigil (kMaxOpRecords of
 # crucible/ValidatedOp.h).

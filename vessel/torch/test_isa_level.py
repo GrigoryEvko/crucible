@@ -59,8 +59,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import crucible_native  # noqa: E402
 from crucible_native import LevelKind  # noqa: E402
 
-VESSEL = crucible_native.VESSEL_STAMP.library
-DISPATCH = crucible_native.DISPATCH_STAMP.library
+VESSEL = crucible_native.VESSEL_LIBRARY
+DISPATCH = crucible_native.DISPATCH_LIBRARY
 PROBE = crucible_native.PROBE_STAMP.library
 
 # The flags of /proc/cpuinfo of each feature of v2, v3 and v4.  Linux clears

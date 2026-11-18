@@ -39,7 +39,9 @@ namespace crucible::vessel {
 namespace {
 
 // The ABI stamp of the probe.  Change it with each change of THE C ABI, and
-// change EXPECTED_LEVEL_ABI_VERSION of crucible_native.py with it.
+// change EXPECTED_LEVEL_ABI_VERSION of crucible_native.py and PROBE_ABI_VERSION
+// of utils/assay/core/x86level.py with it.  The probe carries no layout note:
+// the test launcher of the gate loads it too, and reads this stamp.
 constexpr std::uint64_t kLevelProbeAbiVersion = 1;
 
 [[gnu::section(".note.crucible"), gnu::used, gnu::retain]] alignas(kLevelNoteAlignment) constinit LevelNote const

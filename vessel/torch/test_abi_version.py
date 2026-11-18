@@ -1,28 +1,27 @@
 #!/usr/bin/env python3
-"""Each wrapper of a vessel library refuses a library of a different ABI version.
+"""The loader refuses a vessel library whose layout is not the layout of its build.
 
-libcrucible_vessel.so reports CRUCIBLE_VESSEL_ABI_VERSION through
-crucible_abi_version(), and crucible_native.EXPECTED_ABI_VERSION is the version
-that the Python side reads.  A library of a different version has a different
-layout of CrucibleMeta or CrucibleDispatchResult, and a read of it gives wrong
-results.  libcrucible_dispatch.so reports kDispatchAbiVersion through
-crucible_dispatch_abi_version(), and crucible_native.EXPECTED_DISPATCH_ABI_VERSION
-is its version.  Each wrapper loads its library through a door of
-crucible_native, which checks the stamp first:
+Each vessel library carries a layout note with the layout digest of the types
+and the C entries that the two libraries share, and the build writes the
+layout table beside them (THE LAYOUT OF A LIBRARY of crucible_native.py).  The
+loader reads the table and the note from the file before dlopen, and compares
+its ctypes Structures with the table.
 
-    crucible_native._VesselLib    the wrapper of the native controller
-    crucible_mode._VesselLib      the wrapper of the dispatch mode
-    crucible_native._DispatchLib  the wrapper of the dispatch library
+The checks run in child processes, so each child loads the dispatch library
+at most once:
 
-The checks, through each wrapper:
-
-    built       the library of the build has the expected stamp, and it loads
-    planted     a library with a different stamp is refused, and the message
-                names the two versions
-    no stamp    a library with no stamp symbol is refused
-
-A planted library takes the place of ctypes.CDLL for one load.  It holds a
-function for each symbol of the C API, and its stamp gives the planted value.
+    built      the note of each library of the build is the digest of the
+               table, and each wrapper loads its library
+    planted    a copy of the dispatch library with a changed note is refused
+               before dlopen: the process maps no byte of it, and the
+               dispatcher of PyTorch holds no kernel of the key Crucible.  The
+               library of the build then loads in the same process, and its
+               kernel is there
+    no note    a copy of the vessel library whose note has another type is
+               refused, and the message names the library
+    mirror     a ctypes Structure with a field of another type is refused, and
+               the message names the Structure.  An enum whose values differ
+               from the C constants is refused, and the message names the enum
 
 Usage:
     python test_abi_version.py
@@ -32,122 +31,142 @@ Exit 0 when each check passes, 1 otherwise.
 
 from __future__ import annotations
 
-import ctypes
+import os
+import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, NamedTuple
-from unittest import mock
 
 # A caller starts this file by its path, so the vessel directory is not always
 # on the import path.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+VESSEL_DIRECTORY = Path(__file__).resolve().parent
 
-import crucible_mode  # noqa: E402
-import crucible_native  # noqa: E402
+PRELUDE = """
+import ctypes
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import torch
+import crucible_native
+from crucible_native import CrucibleAbiMismatchError
 
+def built_path(name):
+    return crucible_native.checked_lib_path(name, None, crucible_native.VESSEL_BUILD)
 
-class PlantedFunction:
-    """A symbol of a planted library: it holds a restype and argtypes, and a call gives result."""
+def planted_copy(name, folder, change):
+    source = Path(built_path(name))
+    copy = Path(folder) / name
+    shutil.copyfile(source, copy)
+    # The loader reads the layout table and the level probe beside the library.
+    for beside in (crucible_native.LAYOUT_TABLE, crucible_native.PROBE_STAMP.library):
+        shutil.copyfile(source.parent / beside, Path(folder) / beside)
+    image = bytearray(copy.read_bytes())
+    change(image, crucible_native.layout_note(str(copy)))
+    copy.write_bytes(bytes(image))
+    return str(copy)
 
-    def __init__(self, result: int) -> None:
-        """Hold the value that each call gives."""
-        self.restype: Any = None
-        self.argtypes: list[Any] = []
-        self._result = result
+def has_crucible_kernel():
+    return torch._C._dispatch_has_kernel_for_dispatch_key("aten::add.Tensor", "Crucible")
+"""
 
-    def __call__(self, *args: Any) -> int:
-        """Give the planted value."""
-        return self._result
+BUILT = PRELUDE + """
+import crucible_mode
+for name in (crucible_native.VESSEL_LIBRARY, crucible_native.DISPATCH_LIBRARY):
+    path = built_path(name)
+    table = crucible_native.read_layout_table(Path(path).parent)
+    note = crucible_native.layout_note(path)
+    print(f"{name} note matches: {note is not None and note.digest == table.digest}", flush=True)
+crucible_native._VesselLib()
+crucible_mode._VesselLib()
+crucible_native._DispatchLib()
+print("each wrapper loads", flush=True)
+"""
 
+PLANTED = PRELUDE + """
+def flip(image, note):
+    image[note.offset] ^= 0xFF
+with tempfile.TemporaryDirectory() as folder:
+    copy = planted_copy(crucible_native.DISPATCH_LIBRARY, folder, flip)
+    try:
+        crucible_native._DispatchLib(copy)
+        print("the planted library loads", flush=True)
+    except CrucibleAbiMismatchError as refusal:
+        print(f"refused, naming the library: {crucible_native.DISPATCH_LIBRARY in str(refusal)}", flush=True)
+    mapped = copy in Path("/proc/self/maps").read_text()
+    print(f"mapped after the refusal: {mapped}", flush=True)
+    print(f"kernel after the refusal: {has_crucible_kernel()}", flush=True)
+crucible_native._DispatchLib()
+print(f"kernel after the built load: {has_crucible_kernel()}", flush=True)
+"""
 
-class PlantedLibrary:
-    """A loaded library with a function for each symbol of a C API of the vessel.
+NO_NOTE = PRELUDE + """
+def retype(image, note):
+    # The type is the third word of the header, and the name of three words
+    # comes between it and the descriptor.
+    image[note.offset - 16] = 9
+with tempfile.TemporaryDirectory() as folder:
+    copy = planted_copy(crucible_native.VESSEL_LIBRARY, folder, retype)
+    print(f"no note read: {crucible_native.layout_note(copy) is None}", flush=True)
+    try:
+        crucible_native._VesselLib(copy)
+        print("the library with no note loads", flush=True)
+    except CrucibleAbiMismatchError as refusal:
+        print(f"refused, naming the library: {crucible_native.VESSEL_LIBRARY in str(refusal)}", flush=True)
+"""
 
-    STAMP_SYMBOL is the name of the stamp function of the library.  STAMP is
-    its value, or None for a library with no such symbol.  Each other symbol
-    of the C API gives zero.
-    """
+MIRROR = PRELUDE + """
+class StaleSlot(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_uint64 if name == "slot_id" else kind)
+                for name, kind in crucible_native.CrucibleSlot._fields_]
+built_slot = crucible_native.MIRRORS["CrucibleSlot"]
+crucible_native.MIRRORS["CrucibleSlot"] = StaleSlot
+try:
+    crucible_native._VesselLib()
+    print("the stale mirror loads", flush=True)
+except CrucibleAbiMismatchError as refusal:
+    print(f"refused, naming the Structure: {'StaleSlot' in str(refusal)}", flush=True)
+crucible_native.MIRRORS["CrucibleSlot"] = built_slot
 
-    def __init__(self, stamp_symbol: str, stamp: int | None) -> None:
-        """Hold the name and the value of the planted stamp."""
-        self._stamp_symbol = stamp_symbol
-        self._stamp = stamp
+import enum
+class StaleAction(enum.IntEnum):
+    REFUSED = 0
+    RECORD = 2
+    COMPILED = 1
+crucible_native.MIRRORED_CONSTANTS["CRUCIBLE_ACTION_"] = StaleAction
+try:
+    crucible_native._VesselLib()
+    print("the stale enum loads", flush=True)
+except CrucibleAbiMismatchError as refusal:
+    print(f"refused, naming the enum: {'StaleAction' in str(refusal)}", flush=True)
+"""
 
-    def __getattr__(self, name: str) -> PlantedFunction:
-        """Give the function of a symbol, as ctypes.CDLL does, or raise AttributeError for no symbol."""
-        if not name.startswith("crucible_"):
-            raise AttributeError(name)
-        if name == self._stamp_symbol:
-            if self._stamp is None:
-                raise AttributeError(name)
-            return PlantedFunction(self._stamp)
-        return PlantedFunction(0)
-
-
-class Wrapper(NamedTuple):
-    """One wrapper of a vessel library, and the stamp of its library."""
-
-    name: str
-    load: Callable[[str], Any]
-    stamp: crucible_native.AbiStamp
-
-
-WRAPPERS: tuple[Wrapper, ...] = (
-    Wrapper("crucible_native._VesselLib", crucible_native._VesselLib, crucible_native.VESSEL_STAMP),
-    Wrapper("crucible_mode._VesselLib", crucible_mode._VesselLib, crucible_native.VESSEL_STAMP),
-    Wrapper("crucible_native._DispatchLib", crucible_native._DispatchLib, crucible_native.DISPATCH_STAMP),
+CHECKS = (
+    ("built", BUILT, ("libcrucible_vessel.so note matches: True", "libcrucible_dispatch.so note matches: True",
+                      "each wrapper loads")),
+    ("planted", PLANTED, ("refused, naming the library: True", "mapped after the refusal: False",
+                          "kernel after the refusal: False", "kernel after the built load: True")),
+    ("no note", NO_NOTE, ("no note read: True", "refused, naming the library: True")),
+    ("mirror", MIRROR, ("refused, naming the Structure: True", "refused, naming the enum: True")),
 )
 
 
-def refusal_of(wrapper: Wrapper, path: str, stamp: int | None) -> str | None:
-    """Load the planted library of STAMP through WRAPPER, and return the message of the refusal, or None."""
-    planted = PlantedLibrary(wrapper.stamp.symbol, stamp)
-    with mock.patch.object(crucible_native.ctypes, "CDLL", lambda *args, **kwargs: planted):
-        try:
-            wrapper.load(path)
-        except crucible_native.CrucibleAbiMismatchError as refusal:
-            return str(refusal)
-    return None
-
-
-def built_stamp_of(path: str, stamp: crucible_native.AbiStamp) -> int:
-    """Return the stamp of the library of the build at PATH, read with no wrapper."""
-    built = ctypes.CDLL(path)
-    reader = getattr(built, stamp.symbol)
-    reader.restype = ctypes.c_uint64
-    reader.argtypes = []
-    return int(reader())
-
-
-def check_wrapper(wrapper: Wrapper) -> list[str]:
-    """Run the three checks through WRAPPER, and return the text of each failure."""
-    problems: list[str] = []
-    stamp = wrapper.stamp
-    path = crucible_native.checked_lib_path(stamp.library, None, crucible_native.VESSEL_BUILD)
-    observed = built_stamp_of(path, stamp)
-    if observed != stamp.expected:
-        problems.append(f"{stamp.library} of the build reports {observed}, not {stamp.expected}")
-    try:
-        wrapper.load(path)
-    except crucible_native.CrucibleAbiMismatchError as refusal:
-        problems.append(f"{wrapper.name} refuses the library of the build: {refusal}")
-    # A version that no library of this tree reports.
-    planted_version = stamp.expected + 1
-    planted = refusal_of(wrapper, path, planted_version)
-    if planted is None:
-        problems.append(f"{wrapper.name} loads a library with the stamp {planted_version}")
-    elif str(planted_version) not in planted or str(stamp.expected) not in planted:
-        problems.append(f"{wrapper.name} refuses the stamp {planted_version} with a message that does not "
-                        f"name the two versions: {planted}")
-    if refusal_of(wrapper, path, None) is None:
-        problems.append(f"{wrapper.name} loads a library with no {stamp.symbol} symbol")
-    return problems
+def run_child(code: str) -> subprocess.CompletedProcess[str]:
+    """Run CODE in a child interpreter with the vessel directory, and give its result."""
+    return subprocess.run([sys.executable, "-E", "-B", "-c", code, str(VESSEL_DIRECTORY)], env=dict(os.environ),
+                          capture_output=True, text=True, timeout=600, check=False)
 
 
 def main() -> int:
-    """Run each check through each wrapper and report."""
-    problems = [problem for wrapper in WRAPPERS for problem in check_wrapper(wrapper)]
+    """Run each check in its own child and report."""
+    problems: list[str] = []
+    for name, code, markers in CHECKS:
+        child = run_child(code)
+        if child.returncode != 0:
+            problems.append(f"{name}: the child ends with {child.returncode}: {child.stderr[-2000:]!r}")
+        for marker in markers:
+            if marker not in child.stdout:
+                problems.append(f"{name}: the child does not print {marker!r}: {child.stdout!r}")
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:

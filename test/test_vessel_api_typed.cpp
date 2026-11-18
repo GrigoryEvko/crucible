@@ -583,14 +583,6 @@ void test_schema_name_full_code() {
     crucible::late_schema_table().clear(::foundation::effects::testing::test());
 }
 
-void test_abi_version_constant() {
-    // The shared library's version accessor returns this same macro, so
-    // checking the macro covers the translation unit.  Cross-checking the
-    // built library happens at load time.
-    static_assert(CRUCIBLE_VESSEL_ABI_VERSION != 0, "ABI version must be non-zero (zero is reserved)");
-    EXPECT(CRUCIBLE_VESSEL_ABI_VERSION >= 1, "ABI version must be a positive integer");
-}
-
 void test_handle_distinct_pointers() {
     // Two storage blocks give two pointers, and the wrapper must keep
     // them apart rather than collapse or reuse a value.
@@ -753,7 +745,6 @@ int main() {
     test_schema_name_typed();
     test_schema_name_registration_codes();
     test_schema_name_full_code();
-    test_abi_version_constant();
     test_handle_distinct_pointers();
     test_ladder_refuses_unnamed_enumerations();
     test_ladder_refuses_a_count_that_disagrees_with_the_entry();

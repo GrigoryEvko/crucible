@@ -14,7 +14,9 @@
 // Loaded via torch.ops.load_library() -- the TORCH_LIBRARY_IMPL registration
 // fires on dlopen, no explicit init needed.
 
+#include "dispatch_api.h"
 #include "eager_numerics.h"
+#include "layout_note.h"
 #include "record_kernel.h"
 #include "storage_generation.h"
 
@@ -972,49 +974,18 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // set the Vigil handle and mode without additional fork modifications.
 // =====================================================================
 
-// The ABI stamp of this library: the version of the C ABI of the block below
-// and of the ordinals of c10::CrucibleMode that Python writes through it.
-// crucible_native.EXPECTED_DISPATCH_ABI_VERSION holds the same value, and the
-// loader of crucible_native.py refuses a library with a different stamp or
-// with no stamp.  Increment the two values together when a function of the
-// block or an ordinal of c10::CrucibleMode changes.
-constexpr uint64_t kDispatchAbiVersion = 4;
-
+// The C entries of dispatch_api.h, which is the whole C ABI of this library.
+// The layout note of the library holds the digest of their types
+// (layout_note.cpp).
 extern "C" {
 
 // The C entries take and give the raw pointers of ctypes, and they read and
 // write the TLS state of PyTorch, so the block is in an ABI region.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C entries give ctypes the TLS state of PyTorch and the names of the schemas")
 
-// Prototypes first. These are the whole C ABI of libcrucible_dispatch.so,
-// and crucible_native.py binds every one of them by name through ctypes.
-// Nothing compiles against a header, so without this block each definition
-// is its own first declaration and -Wmissing-declarations fires on all of
-// them. Stating the ABI once, in one place, is what silences it: a symbol
-// Python calls but this block does not name is a symbol nobody declared.
-CRUCIBLE_API uint64_t crucible_dispatch_abi_version();
-CRUCIBLE_API void crucible_dispatch_set_tls_mode(uint8_t mode);
-CRUCIBLE_API void crucible_dispatch_set_tls_context(void* ctx);
-CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode();
-CRUCIBLE_API void* crucible_dispatch_get_tls_context();
-CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash);
-CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope();
-CRUCIBLE_API void crucible_dispatch_backward_enter();
-CRUCIBLE_API void crucible_dispatch_backward_exit();
-CRUCIBLE_API uint32_t crucible_dispatch_backward_depth();
-CRUCIBLE_API uint32_t crucible_dispatch_schema_count();
-CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name);
-CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics();
-CRUCIBLE_API uint32_t crucible_dispatch_attach_allocator();
-CRUCIBLE_API void crucible_dispatch_detach_allocator();
-CRUCIBLE_API uint64_t crucible_dispatch_cpu_allocator();
-CRUCIBLE_API uint64_t crucible_dispatch_generation_allocator();
-CRUCIBLE_API uint64_t crucible_dispatch_inner_allocator();
-CRUCIBLE_API uint32_t crucible_dispatch_storage_generation(void* storage);
-
-// A constant return.  Python reads it after the load and before it declares
-// any other symbol.
-CRUCIBLE_API uint64_t crucible_dispatch_abi_version() { return kDispatchAbiVersion; }
+// The layout digest of the library, which its layout note holds too.  The
+// loader calls it after the load, as the second guard of the note.
+CRUCIBLE_API uint64_t crucible_dispatch_layout_digest() { return crucible::vessel::library_layout_digest(); }
 
 // The eager word of the calling thread (EagerNumerics of
 // crucible/NumericalRecipe.h): the bits that read_eager_numerics of

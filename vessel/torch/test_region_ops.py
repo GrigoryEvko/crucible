@@ -55,8 +55,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 
-import crucible_mode  # noqa: E402
-from crucible_native import attach  # noqa: E402
+from crucible_native import CrucibleMeta, attach  # noqa: E402
 
 # The import sets one intra-op thread and one inter-op thread, so that each run
 # takes the same kernels of PyTorch and gives the same operations.  PyTorch
@@ -77,9 +76,9 @@ OUT_FEATURES = 4
 SEED = 0
 LEARNING_RATE = 0.01
 
-META_SIZES_OFFSET = crucible_mode._VesselLib.Meta.sizes.offset
-META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset
-META_DTYPE_OFFSET = crucible_mode._VesselLib.Meta.dtype.offset
+META_SIZES_OFFSET = CrucibleMeta.sizes.offset
+META_NDIM_OFFSET = CrucibleMeta.ndim.offset
+META_DTYPE_OFFSET = CrucibleMeta.dtype.offset
 
 PHASE_SHIFT = 2
 PHASE_LETTERS = "FBOX"

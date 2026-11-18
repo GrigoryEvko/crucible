@@ -56,9 +56,8 @@ from pathlib import Path
 # on the import path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import crucible_mode  # noqa: E402
 import torch  # noqa: E402
-from crucible_native import CrucibleNative, DispatchAction  # noqa: E402
+from crucible_native import CrucibleDispatchResult, CrucibleMeta, CrucibleNative, DispatchAction  # noqa: E402
 
 # The import sets one intra-op thread and one inter-op thread, so the
 # instruction count of the test is the same in each run.  PyTorch refuses a
@@ -80,8 +79,8 @@ FAILURES = 8
 MAX_OP_INPUTS = 64
 MAX_OP_OUTPUTS = 64
 
-META_SIZES_OFFSET = crucible_mode._VesselLib.Meta.sizes.offset
-META_NDIM_OFFSET = crucible_mode._VesselLib.Meta.ndim.offset
+META_SIZES_OFFSET = CrucibleMeta.sizes.offset
+META_NDIM_OFFSET = CrucibleMeta.ndim.offset
 
 # The crucible ordinal of float32.
 FLOAT = 6
@@ -149,7 +148,7 @@ for deep_level in range(DEPTH):
 
 def full_record_metas() -> ctypes.Array:
     """Return the C records of an operation with MAX_OP_INPUTS inputs and MAX_OP_OUTPUTS outputs."""
-    metas = (crucible_mode._VesselLib.Meta * (MAX_OP_INPUTS + MAX_OP_OUTPUTS))()
+    metas = (CrucibleMeta * (MAX_OP_INPUTS + MAX_OP_OUTPUTS))()
     for meta in metas:
         meta.ndim = 1
         meta.sizes[0] = FULL_RECORD[0]
@@ -162,13 +161,13 @@ def full_record_metas() -> ctypes.Array:
 def bind_dispatch_op(ctx: CrucibleNative):
     """Return crucible_dispatch_op of the vessel library of ctx, with its C signature."""
     function = ctx._vessel._lib.crucible_dispatch_op
-    function.restype = crucible_mode._VesselLib.DispatchResult
+    function.restype = CrucibleDispatchResult
     function.argtypes = [
         ctypes.c_void_p,
         ctypes.c_uint64,
         ctypes.c_uint16,
         ctypes.c_uint16,
-        ctypes.POINTER(crucible_mode._VesselLib.Meta),
+        ctypes.POINTER(CrucibleMeta),
         ctypes.c_uint32,
     ]
     return function

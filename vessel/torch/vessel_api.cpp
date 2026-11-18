@@ -20,6 +20,7 @@
 // crossing site in O(1).
 
 #include "entry_slots.h"
+#include "layout_note.h"
 #include "vessel_api.h"
 #include "vessel_api_typed.h"
 
@@ -183,14 +184,7 @@ static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 
 extern "C" {
 
-uint64_t crucible_abi_version(void) noexcept {
-    // ABI version stamp — mirrors the constant declared in
-    // vessel_api.h.  Python `crucible_native.py` calls this at load
-    // and refuses to construct the controller on mismatch.  Bump the
-    // header constant when the C ABI surface changes; the Python side
-    // ships the same constant in EXPECTED_ABI_VERSION.
-    return CRUCIBLE_VESSEL_ABI_VERSION;
-}
+uint64_t crucible_layout_digest(void) noexcept { return crucible::vessel::library_layout_digest(); }
 
 CrucibleHandle crucible_create(uint32_t eager_numerics) noexcept {
     const crucible::EagerNumerics eager{.bits = eager_numerics};
