@@ -173,6 +173,16 @@ static_assert(ends_with_zero(enum_name_text(static_cast<Lane>(9))));
 static_assert(ends_with_zero(enum_words_text<Lane, '_'>(Lane::CopyHostToDevice)));
 static_assert(ends_with_zero(enum_words_text<Lane, '_'>(static_cast<Lane>(9))));
 
+// The search of an enumerator by its identifier.  An alias gives the value of
+// the enumerator that it names, and a name of no enumerator, also a prefix of
+// one, gives no value.  An enum of no enumerators gives no value.
+enum class NoLane : std::uint8_t {
+};
+static_assert(enumerator_named<Lane>("CopyHostToDevice").expect("Lane declares it") == Lane::CopyHostToDevice);
+static_assert(enumerator_named<Lane>("Alias").expect("Lane declares it") == Lane::Send);
+static_assert(enumerator_named<Lane>("Copy").is_none() && enumerator_named<Lane>("").is_none());
+static_assert(enumerator_named<Lane>("send").is_none() && enumerator_named<NoLane>("Send").is_none());
+
 }  // namespace detail::text_checks
 
 }  // namespace foundation::core

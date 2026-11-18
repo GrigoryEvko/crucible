@@ -62,6 +62,28 @@ consteval void copy_enumerators(std::meta::info enumeration, std::meta::info* ta
         target[index] = source[index];
 }
 
+// The position of the enumerator of the enum that `enumeration` reflects
+// whose identifier is the `size` characters at `first`, or the count of the
+// enumerators when the enum declares no such enumerator.  The function is
+// not a template, so each search of each enum shares one body.  The text
+// comes as a pointer and a count, so this header names no type of the core.
+// foundation/core/Text.h gives the search a TextView (enumerator_named).
+// Complexity: linear in the enumerators and the characters of the name.
+consteval std::size_t enumerator_position(std::meta::info enumeration, char const* first, std::size_t size) {
+    const std::vector<std::meta::info> found = std::meta::enumerators_of(enumeration);
+    const std::string_view name{first, size};
+    for (std::size_t index = 0; index < found.size(); ++index) {
+        if (std::meta::identifier_of(found[index]) == name) return index;
+    }
+    return found.size();
+}
+
+// The enumerator of E at a position that enumerator_position gave.
+template <ScopedEnum E>
+[[nodiscard]] consteval E enumerator_at(std::size_t position) {
+    return std::meta::extract<E>(std::meta::enumerators_of(^^E)[position]);
+}
+
 }  // namespace detail
 
 template <ScopedEnum E, typename F>

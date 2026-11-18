@@ -55,7 +55,9 @@
 //   foundation/reflect/EnumName.h as a TextView.  That header is on a lower
 //   layer than this one, so it cannot name a TextView itself.  Each text has
 //   static storage and a zero after its last character, so the view never
-//   dangles.
+//   dangles.  enumerator_named<E>(name) is the search in the other direction:
+//   at compile time, the enumerator of E whose identifier is name, or no
+//   value.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
@@ -413,6 +415,18 @@ template <::foundation::reflect::ScopedEnum E, char Separator>
     ::foundation::reflect::detail::NameChars const words =
         ::foundation::reflect::detail::enum_words_chars<E, Separator>(value);
     return detail::c_text_over_(words.first, words.size).view();
+}
+
+// The enumerator of E whose identifier is name, or no value when E declares
+// no such enumerator, such as an enumerator that a patch of a foreign header
+// removes.  The search runs at compile time only.  Complexity: linear in the
+// enumerators and the characters of the name.
+template <::foundation::reflect::ScopedEnum E>
+[[nodiscard]] consteval Option<E> enumerator_named(TextView name) noexcept {
+    std::size_t const position =
+        ::foundation::reflect::detail::enumerator_position(^^E, detail::text_first_(name), name.size());
+    if (position == ::foundation::reflect::enum_count<E>) return Option<E>{none};
+    return Option<E>::some(::foundation::reflect::detail::enumerator_at<E>(position));
 }
 
 }  // namespace foundation::core

@@ -44,8 +44,6 @@
 
 #include <bit>
 #include <cstdint>
-#include <meta>
-#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -62,8 +60,9 @@ namespace {
 // stays the same.  The compiler reads the patched enum here, so a re-indented
 // header or an explicit enumerator value cannot hide a change.
 //
-// The checks read the enum of PyTorch through reflection, so they are in an
-// ABI region.  The reflection gives the identifiers as std::string_view.
+// The checks name the enum of PyTorch, so they are in an ABI region.  The
+// search of an enumerator by its identifier is the reflection door of the
+// base (enumerator_named of foundation/core/Text.h).
 // =====================================================================
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the checks read the dispatch keys that the PyTorch fork declares")
@@ -73,22 +72,13 @@ static_assert(std::to_underlying(c10::DispatchKey::Crucible) + 1
               "recorder no longer has the top dispatch priority.  Move Crucible in "
               "patches/pytorch-crucible-integration.patch.");
 
-// True when c10::DispatchKey declares an enumerator with this name.
-consteval bool dispatch_key_has_enumerator(std::string_view name) {
-    for (std::meta::info key : std::meta::enumerators_of(^^c10::DispatchKey)) {
-        if (std::meta::identifier_of(key) == name) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// The positive control: a lookup that never finds a name would pass the next
+// The positive control: a search that never finds a name would pass the next
 // assertion for the wrong reason.
-static_assert(dispatch_key_has_enumerator("Crucible") && dispatch_key_has_enumerator("EndOfFunctionalityKeys"),
-              "the enumerator lookup over c10::DispatchKey finds no known key, so it proves nothing");
+static_assert(::fixy::enumerator_named<c10::DispatchKey>("Crucible").is_some()
+                  && ::fixy::enumerator_named<c10::DispatchKey>("EndOfFunctionalityKeys").is_some(),
+              "the search of an enumerator of c10::DispatchKey finds no known key, so it proves nothing");
 
-static_assert(!dispatch_key_has_enumerator("DeferredInit"),
+static_assert(::fixy::enumerator_named<c10::DispatchKey>("DeferredInit").is_none(),
               "DispatchKey::DeferredInit survived the patch: the removal hunk did not apply, so Crucible widened "
               "the key budget instead of reusing the dead slot.  Repair "
               "patches/pytorch-crucible-integration.patch.");
