@@ -149,8 +149,10 @@ inline constexpr std::size_t kL3ResidentMaxFactor = 4;
 // start and join in 151.4 to 151.7 us, so 75.7 us for each thread.  The
 // raw loop of the add over 12 MiB in L3 takes 314 to 316 us, so one core
 // walks 39.8 bytes in a ns.  The product is 3.01 MB, rounded to 3 MiB.  4
-// and 8 threads cost 69 to 93 us for each thread.  A pool whose workers
-// start once makes this cost near zero.
+// and 8 threads cost 69 to 93 us for each thread.  The constant is a
+// measure of the VM, and it holds only until the walk runs on a pool of
+// workers.  Such a pool starts its workers once, so the cost of a start
+// then leaves the rule, and the pool replaces this constant.
 inline constexpr std::size_t kThreadStartBytes = std::size_t{3} << 20;
 
 // Rounds down, so a request between two ladder entries under-spawns.
