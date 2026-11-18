@@ -490,13 +490,14 @@ template <class T>
 
 // The radix sort of Ascending and the comparator form of the same order as a
 // function of the caller give the same bits, for counts below and above
-// stable_sort_radix_count.
+// stable_sort_radix_count, and on each side of radix_wide_digit_count, where
+// a key of four bytes takes digits of 11 bits.
 template <class T>
 void check_radix_against_merge(::crucible::test::PhiloxStream& stream) noexcept {
     auto const by_order = [](T const& left, T const& right) noexcept {
         return ::foundation::core::Ascending{}(left, right);
     };
-    ::fixy::FixedArray<std::size_t, 8> const counts{1, 255, 256, 257, 300, 1000, 4097, 20000};
+    ::fixy::FixedArray<std::size_t, 10> const counts{1, 255, 256, 257, 300, 1000, 4095, 4096, 4097, 20000};
     for (std::size_t const count : counts) {
         HeapArray<T> radix = ::foundation::core::mint_heap_array(test_alloc(), count, T{});
         for (T& value : radix) {
@@ -606,7 +607,7 @@ void check_order_by_key(HeapArray<KeyedRecord> const& input, Order order, Compar
 // short key of a function.
 void test_order_by_key_agrees_with_the_comparator_form() {
     ::crucible::test::PhiloxStream stream{0x50470007u};
-    ::fixy::FixedArray<std::size_t, 6> const counts{1, 255, 256, 1000, 4097, 65536};
+    ::fixy::FixedArray<std::size_t, 8> const counts{1, 255, 256, 1000, 4095, 4096, 4097, 65536};
     for (std::size_t const count : counts) {
         HeapArray<KeyedRecord> input = ::foundation::core::mint_heap_array(test_alloc(), count, KeyedRecord{});
         std::uint32_t position = 0;
