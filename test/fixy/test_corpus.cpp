@@ -168,8 +168,10 @@ static_assert(!corpus::classified_io_without_declassify::matches<int, at::as_pub
 static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::park>(),
               "a park lifts Block, which is emitted code");
 static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, FutexCall>());
-static_assert(!corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::spin_pause>(),
-              "a spin lifts the empty row");
+static_assert(corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::spin_pause>(),
+              "a spin with no exit lifts Div, which is observable");
+static_assert(!corpus::ghost_runtime_observable::matches<int, at::ghost, at::as_public, at::sync::bounded_spin>(),
+              "a bounded spin lifts Nondet, which elision can drop");
 
 // ---------------------------------------------------------------------
 // Staleness: the discharge must match the axis.  A value declassified

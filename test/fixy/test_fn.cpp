@@ -308,8 +308,12 @@ static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, ProcessStateBindin
 static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, FutexBinding>, "the compile context lacks Block");
 static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgDrainCtx, ProcessStateBinding>, "the drain context lacks IO");
 static_assert(!::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, ParkBinding>);
-static_assert(::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, fn<int, ::fixy::atom::sync::spin_pause>>,
-              "a spin lifts the empty row, so the foreground context admits it");
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, fn<int, ::fixy::atom::sync::spin_pause>>,
+              "a spin on a pause has no exit, so it lifts Div, and the foreground context refuses it");
+static_assert(::fixy::CtxAdmitsBinding<::fixy::BgLoadCtx, fn<int, ::fixy::atom::sync::spin_pause>>,
+              "the load context holds Div, so it admits a spin with no exit");
+static_assert(!::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, fn<int, ::fixy::atom::sync::bounded_spin>>,
+              "a bounded spin reports a give-up, so it lifts Nondet, and the foreground context refuses it");
 
 // A stdio write lifts IO and Block.  The fixture
 // neg_fn_stdio_row_under_block_ctx takes the same binding to a context

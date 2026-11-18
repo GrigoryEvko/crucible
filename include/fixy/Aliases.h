@@ -31,11 +31,14 @@ using ::foundation::effects::Subrow;
 // serves for each: a second alias would be the same type.
 using PureRow = Row<>;
 
-// Block is the atom for a wait with no guaranteed bound, which is how
-// divergence is spelled here.
-using DivRow = Row<Effect::Block>;
+// Div is the atom of a body that can run with no end, which is how
+// divergence is spelled here.  Block is a wait in the kernel, a different
+// fact.
+using DivRow = Row<Effect::Div>;
 
-using STRow = Row<Effect::Block, Effect::Alloc, Effect::IO>;
+// ST holds the state atoms, the kernel wait and the divergence, so DivRow
+// is a subrow of it.
+using STRow = Row<Effect::Div, Effect::Block, Effect::Alloc, Effect::IO>;
 
 // The row of every atom that the Effect enum declares.  Row.h derives it
 // from the enumerators, so a new atom is in it with no edit here.

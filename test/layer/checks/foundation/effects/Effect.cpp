@@ -147,6 +147,12 @@ static_assert(sizeof(cap::Nondet) == 1);
 static_assert(!is_observable<Effect::Nondet>());
 static_assert(is_observable<Effect::IO>());
 
+// Div is observable: a drop of a body that can run with no end changes
+// whether the program ends.  It has no token, so no door takes a bare tag
+// of it.
+static_assert(is_observable<Effect::Div>());
+static_assert(!HasBareTag<Effect::Div>);
+
 // Each context holds the bare tag of Nondet, so a context of a full row
 // lends it, and a door that takes the tag takes it from such a context.
 static_assert(std::is_same_v<decltype(testing::bg().nondet), cap::Nondet>);
@@ -166,6 +172,7 @@ static_assert(effect_name(Effect::Bg) == "Bg");
 static_assert(effect_name(Effect::Init) == "Init");
 static_assert(effect_name(Effect::Test) == "Test");
 static_assert(effect_name(Effect::Nondet) == "Nondet");
+static_assert(effect_name(Effect::Div) == "Div");
 static_assert(effect_name(static_cast<Effect>(200)) == "<unknown Effect>",
               "A value outside the catalog must reach the unknown-atom sentinel, so a corrupt byte "
               "prints as one rather than as an empty name.");
@@ -186,6 +193,7 @@ static_assert(static_cast<std::uint8_t>(Effect::Test) == 5,
               "The value of Effect::Test changed, which invalidates federation cache keys.");
 static_assert(static_cast<std::uint8_t>(Effect::Nondet) == 6,
               "The value of Effect::Nondet changed, which invalidates federation cache keys.");
+static_assert(Effect::Div == Effect{7}, "The value of Effect::Div changed, which invalidates federation cache keys.");
 
 // Widening the underlying type is invisible to the row hash, which
 // reads only the value, but it changes the layout of every struct that
@@ -200,6 +208,7 @@ static_assert(IsEffect<Effect::Bg>);
 static_assert(IsEffect<Effect::Init>);
 static_assert(IsEffect<Effect::Test>);
 static_assert(IsEffect<Effect::Nondet>);
+static_assert(IsEffect<Effect::Div>);
 
 [[nodiscard]] consteval std::size_t count_accepted_effects_() noexcept {
     static constexpr auto enums = std::define_static_array(std::meta::enumerators_of(^^Effect));
@@ -219,7 +228,7 @@ static_assert(count_accepted_effects_() == effect_count, "IsEffect rejects an at
 // underlying type admits 0 through 255.  The gate must still reject it.
 static_assert(!IsEffect<static_cast<Effect>(99)>);
 static_assert(!IsEffect<static_cast<Effect>(255)>);
-static_assert(!IsEffect<static_cast<Effect>(7)>);
+static_assert(!IsEffect<static_cast<Effect>(8)>);
 
 static_assert(!effect_name(Effect::Alloc).empty());
 static_assert(!effect_name(Effect::IO).empty());

@@ -118,7 +118,10 @@ static_assert(live_rules<at::ghost, at::sync::park>::failing_codes() == "P010",
               "P002 reads the Stdio and SyscallSurface axes, and a park engages neither");
 static_assert(!live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::futex>>::P010_ok);
 static_assert(!live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::getpid>>::P010_ok);
-static_assert(live_rules<at::ghost, at::sync::spin_pause>::P010_ok, "a spin lifts the empty row");
+static_assert(!live_rules<at::ghost, at::sync::spin_pause>::P010_ok,
+              "a spin with no exit lifts Div, and a drop of it changes whether the program ends");
+static_assert(live_rules<at::ghost, at::sync::bounded_spin>::P010_ok,
+              "a bounded spin lifts Nondet, an atom of input that elision can drop");
 static_assert(live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>::P010_ok
               && !live_rules<at::ghost, at::syscall::per<at::syscall::SyscallId::clock_gettime>>::P002_ok);
 static_assert(live_rules<at::sync::park>::P010_ok, "not ghost, so a park is ordinary");
@@ -399,13 +402,14 @@ static_assert(live_rules<at::with<Eff::Bg>, at::sync::park>::W002_ok);
 static_assert(live_rules<at::sync::spin_pause>::W002_ok, "a foreground spin is the intended hot-path wait");
 
 // The lift, read through the same atoms.  A kernel wait carries
-// Effect::Block into the row a context has to admit; a spin carries
-// nothing.  This is what makes the two rules and the context gates agree
-// rather than merely coexist.
+// Effect::Block into the row a context has to admit.  A spin never carries
+// Block: a spin with a give-up carries Nondet, and a spin with no exit
+// carries Div.  This is what makes the two rules and the context gates
+// agree rather than merely coexist.
 static_assert(std::is_same_v<fe::lift_row_t<at::sync::block>, fe::Row<Eff::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<at::sync::acquire_wait>, fe::Row<Eff::Block>>);
-static_assert(std::is_same_v<fe::lift_row_t<at::sync::spin_pause>, fe::Row<>>);
-static_assert(std::is_same_v<fe::lift_row_t<at::sync::umwait_c01>, fe::Row<>>);
+static_assert(std::is_same_v<fe::lift_row_t<at::sync::spin_pause>, fe::Row<Eff::Div>>);
+static_assert(std::is_same_v<fe::lift_row_t<at::sync::umwait_c01>, fe::Row<Eff::Nondet>>);
 
 // Neither rule fires on a binding that names no strategy, which is what
 // keeps the Synchronization strict pole from meaning "spins".

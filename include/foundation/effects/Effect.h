@@ -4,7 +4,11 @@
 //
 //   Alloc   heap allocation and arena allocation
 //   IO      file and socket traffic
-//   Block   mutex, sleep, futex, spin-wait
+//   Block   a wait in the kernel: a futex wait, a sleep, a blocking system
+//           call.  A spin never carries Block.  A spin whose fallback is a
+//           kernel wait carries Block through the fallback
+//   Div     a body that can run with no end: a spin with no exit until the
+//           value arrives, a loop with no bound
 //   Bg      the background-thread context, which holds the value atoms
 //   Init    the initialization context
 //   Test    the test-driver context
@@ -18,8 +22,18 @@
 // type.  Nondet is an atom of input, not of output: a clock read changes
 // nothing outside the process, so ghost-code elision can drop it.
 //
-// The catalog is closed at these seven.  Four further atoms were
-// considered and rejected:
+// The effect of a wait follows what its caller can observe.  A spin that
+// can report a give-up to its caller, such as an expired budget of time or
+// of turns, carries Nondet, because the outcome depends on the timing of
+// another thread.  A spin with no exit carries Div.  A kernel wait carries
+// Block.
+//
+// The catalog is closed at these eight.  Div is the eighth: a body that
+// can run with no end is a fact of its own, apart from a kernel wait.  The
+// hot path spins, and a kernel, foreground or replay context must still
+// refuse a body that can hang.  So Div is not Block, and DivRow of
+// fixy/Aliases.h is Row<Div>.  Four further atoms were considered and
+// rejected:
 //
 //   Async — coroutine reentrancy is a property of how a function
 //     suspends, not a capability it exercises.  It is tracked on the
@@ -79,9 +93,10 @@ enum class Effect : std::uint8_t {
     Init = 4,
     Test = 5,
     Nondet = 6,
+    Div = 7,
 };
 
-inline constexpr std::size_t effect_count = 7;
+inline constexpr std::size_t effect_count = 8;
 
 // The name of an atom is the identifier its enumerator already
 // declares, read by reflection, so a new atom is named the moment it is
@@ -117,9 +132,10 @@ concept IsEffect = is_effect_atom(E);
 
 // An atom is observable when ghost-code elision may not silently drop
 // a binding tagged with it.  Alloc, IO, Block and Bg reach the outside
-// world; Init and Test are scoped to compile time and to the test
-// harness.  Nondet reads the outside world and writes nothing there, so
-// a ghost binding that only reads a clock can go.
+// world.  Div is observable too: a drop of a body that can run with no end
+// changes whether the program ends.  Init and Test are scoped to compile
+// time and to the test harness.  Nondet reads the outside world and writes
+// nothing there, so a ghost binding that only reads a clock can go.
 namespace detail {
 
 // The build requires a default arm on every switch, so the switch
@@ -134,6 +150,7 @@ template <Effect E>
         case Effect::IO:
         case Effect::Block:
         case Effect::Bg:
+        case Effect::Div:
             return true;
         case Effect::Init:
         case Effect::Test:
@@ -237,7 +254,7 @@ using Nondet = cap::Nondet;
 // reach theirs without an arm written here.  The identifier is load-bearing:
 // a new value atom gets a bare tag by declaring a type of the same name
 // in cap, and a type in cap whose name matches no atom is reached by
-// nothing.  The three thread atoms declare no such type, and the
+// nothing.  The three thread atoms and Div declare no such type, and the
 // reflection is then not a type.
 namespace detail {
 
@@ -444,8 +461,8 @@ namespace detail {
 
 // The value atom a context holds, under the field name a caller spells:
 // `bg.alloc`, `bg.io`, `bg.block`, `bg.nondet`.  Only the four value atoms
-// have a field, so a context that lists a thread atom as a holding fails
-// to compile on an incomplete base.  A field takes its atom from the owner
+// have a field, and Div has an empty holding, so a context that lists a
+// thread atom as a holding fails to compile on an incomplete base.  A field takes its atom from the owner
 // of the atoms, which only a context builds.
 template <Effect E>
 struct AtomField;
@@ -479,6 +496,13 @@ struct AtomField<Effect::Nondet> {
     constexpr explicit AtomField(host::AtomOwner const& owner) noexcept : nondet{owner.mint_atom<cap::Nondet>()} {}
 
     [[no_unique_address]] cap::Nondet nondet;
+};
+
+// Div has no token: a body that can run with no end takes nothing from the
+// context.  The holding puts Div in the row that the context permits.
+template <>
+struct AtomField<Effect::Div> {
+    constexpr explicit AtomField(host::AtomOwner const& /*owner*/) noexcept {}
 };
 
 // What the three contexts share.  A context is its own atom, the value
@@ -528,9 +552,10 @@ private:
 // A context names the atoms a thread or scope may exercise.  Init holds
 // Block, because process startup waits in the kernel, for example while
 // the verifier examines a BPF program.  Each of the three holds Nondet,
-// because startup, the background stages and the tests read clocks.  The
-// hot path stays free of Block and of Nondet, because the foreground
-// source permits no atom.  Test is not a superset
+// because startup, the background stages and the tests read clocks.  Each
+// of the three holds Div, because a background stage and a test can wait
+// with no bound.  The hot path stays free of Block, Nondet and Div, because
+// the foreground source permits no atom.  Test is not a superset
 // of Bg or Init: a fixture that must drive a background or
 // initialization path constructs that context explicitly rather than
 // passing a Test one.
@@ -549,7 +574,7 @@ private:
 // during constant evaluation.
 
 class Bg final : public detail::ContextBase<Bg, detail::ctx_mint::bg_key, Effect::Bg, Effect::Alloc, Effect::IO,
-                                            Effect::Block, Effect::Nondet> {
+                                            Effect::Block, Effect::Nondet, Effect::Div> {
     constexpr Bg() noexcept : ContextBase(host::AtomOwner{}) {}
 
     template <class Ctx, class Key>
@@ -558,7 +583,7 @@ class Bg final : public detail::ContextBase<Bg, detail::ctx_mint::bg_key, Effect
 };
 
 class Init final : public detail::ContextBase<Init, detail::ctx_mint::init_key, Effect::Init, Effect::Alloc, Effect::IO,
-                                              Effect::Block, Effect::Nondet> {
+                                              Effect::Block, Effect::Nondet, Effect::Div> {
     constexpr Init() noexcept : ContextBase(host::AtomOwner{}) {}
 
     template <class Ctx, class Key>
@@ -567,7 +592,7 @@ class Init final : public detail::ContextBase<Init, detail::ctx_mint::init_key, 
 };
 
 class Test final : public detail::ContextBase<Test, detail::ctx_mint::test_key, Effect::Test, Effect::Alloc, Effect::IO,
-                                              Effect::Block, Effect::Nondet> {
+                                              Effect::Block, Effect::Nondet, Effect::Div> {
     constexpr Test() noexcept : ContextBase(host::AtomOwner{}) {}
 
     template <class Ctx, class Key>
@@ -609,7 +634,7 @@ struct InitOwner final {
 //
 // Only the entry function of a background thread calls the door, on that
 // thread, before the thread enters its loop.  A background context permits
-// Bg, Alloc, IO, Block and Nondet, so the foreground thread must never hold
+// Bg, Alloc, IO, Block, Nondet and Div, so the foreground thread must never hold
 // one: its hot path would then claim the right to block.  The door is a static
 // member, so the name of the owner is in each call, and the rule
 // owners of the quarantine plugin rejects a call outside the thread

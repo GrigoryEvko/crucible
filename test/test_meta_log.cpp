@@ -344,7 +344,7 @@ static void test_try_append_pure() {
     // negative-compile fixture flipping.
     static_assert(eff::IsPure<eff::Row<>>);
     static_assert(eff::IsPure<eff::PureRow>);
-    static_assert(!eff::IsPure<eff::DivRow>);  // carries Block
+    static_assert(!eff::IsPure<eff::DivRow>);  // carries Div
     static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
     static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
 

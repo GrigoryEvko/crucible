@@ -1,7 +1,7 @@
-// A cold init context owns Alloc and IO, and it owns no Bg.  A holder
-// under it could allocate or make a system call while other threads spin
-// on the gate, so the spin guard refuses it.  The blocking guard is the
-// gate for such work.
+// A cold init context owns IO and no Div.  A holder under it could make a
+// system call while other threads spin on the gate, and the wait has no
+// exit that the context permits, so the spin guard refuses it.  The
+// blocking guard is the gate for such work.
 
 #include <fixy/Ctx.h>
 #include <fixy/os/SpinLock.h>

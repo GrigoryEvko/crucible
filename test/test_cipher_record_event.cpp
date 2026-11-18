@@ -244,10 +244,9 @@ static void test_t06_bg_superset_row(const char* base_dir) {
     auto view = cipher.mint_open_view(store_ctx());
 
     const ::fixy::BgLoadCtx bg_ctx{::foundation::effects::testing::bg()};
-    static_assert(
-        std::is_same_v<
-            typename ::fixy::BgLoadCtx::row_type,
-            eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Nondet>>);
+    static_assert(std::is_same_v<typename ::fixy::BgLoadCtx::row_type,
+                                 eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block,
+                                          eff::Effect::Nondet, eff::Effect::Div>>);
 
     constexpr ContentHash kHash{0x123456789ABCDEF0ULL};
     record(cipher, bg_ctx, view, kHash, 1u);

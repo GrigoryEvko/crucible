@@ -22,9 +22,9 @@ namespace spin = fixy::spin;
 
 namespace {
 
-// The shape a foreground caller has: a context that exists and owns none
-// of Bg, Alloc, IO and Block.
-using ForegroundCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>;
+// The shape a spinner has: a context that owns Div, because the wait has no
+// exit until the release, and owns neither IO nor Block.
+using SpinnerCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Div>>;
 
 // The shape background work that may wait has: it owns Block.
 using BackgroundBlockCtx =
@@ -38,7 +38,7 @@ struct GateTag {
 struct SpinCase {
     using gate_type = spin::SpinLock<GateTag>;
     static constexpr const char* name = "spin";
-    [[nodiscard]] static ForegroundCtx context() noexcept { return ForegroundCtx{eff::testing::test()}; }
+    [[nodiscard]] static SpinnerCtx context() noexcept { return SpinnerCtx{eff::testing::test()}; }
 };
 
 struct BlockingCase {

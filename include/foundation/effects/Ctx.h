@@ -944,11 +944,14 @@ namespace detail::ctx_witnesses {
 using FgWitness = ExecCtx<ctx_cap::Fg, Row<>>;
 using BgWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc>>;
 using BgIoWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>;
-using BgBlockWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>;
+using BgBlockWitness =
+    ExecCtx<Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet, Effect::Div>>;
 using BgNondetWitness = ExecCtx<Bg, Row<Effect::Bg, Effect::Nondet>>;
 using InitWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>;
-using InitBlockWitness = ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>;
-using TestWitnessCtx = ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>;
+using InitBlockWitness =
+    ExecCtx<Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet, Effect::Div>>;
+using TestWitnessCtx =
+    ExecCtx<Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet, Effect::Div>>;
 
 // The eight named contexts.  Each has two axes, the capability source
 // and the row.  Each is one witness above.  The check file of this

@@ -76,16 +76,23 @@ static_assert(!std::is_copy_constructible_v<UnwitnessedBlockingLock>
 // Design note 2 as cells: each clause admits the contexts its wait allows
 // and refuses the rest.  The contexts are built here, the way the sibling
 // os headers build theirs.
+using SpinnerCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Div>>;
 using ForegroundCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>;
 using BackgroundCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
+using BackgroundSpinCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::Div>>;
 using BackgroundBlockCtx =
     eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
-static_assert(CtxMayAcquire<ForegroundCtx, WaitStrategy::BoundedSpin>,
-              "a context without Bg must be able to spin: that is the shape a foreground caller has.");
+static_assert(CtxMayAcquire<SpinnerCtx, WaitStrategy::BoundedSpin>,
+              "a context that owns Div and neither IO nor Block must be able to spin on a gate.");
+static_assert(!CtxMayAcquire<ForegroundCtx, WaitStrategy::BoundedSpin>,
+              "a context without Div must NOT spin on a gate: the wait has no exit until the release, and the hot "
+              "path owns no Div.");
+static_assert(CtxMayAcquire<BackgroundSpinCtx, WaitStrategy::BoundedSpin>,
+              "a context that owns Bg and Alloc may spin when it owns Div: an allocation inside the section is no "
+              "system call and no sleep.");
 static_assert(!CtxMayAcquire<BackgroundCtx, WaitStrategy::BoundedSpin>,
-              "a context that owns Bg must NOT spin. A background context may also allocate, syscall or block, "
-              "and none of the three belongs inside a section another thread spins on.");
+              "a background context without Div must NOT spin on a gate.");
 static_assert(CtxMayAcquire<BackgroundBlockCtx, WaitStrategy::AcquireWait>,
               "a context that owns Block may sleep on a blocking gate: that is the shape background work has.");
 static_assert(!CtxMayAcquire<BackgroundCtx, WaitStrategy::AcquireWait>,
@@ -95,16 +102,18 @@ static_assert(!CtxMayAcquire<ForegroundCtx, WaitStrategy::AcquireWait>,
 static_assert(!CtxMayAcquire<int, WaitStrategy::BoundedSpin> && !CtxMayAcquire<int, WaitStrategy::AcquireWait>,
               "a non-context must not pass for one.");
 
-// A cold init context owns Alloc and IO, and a test runner owns Block.
-// Neither may spin, and each may take the blocking gate when it owns Block.
-using ColdInitShape = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Alloc, eff::Effect::IO>>;
-using AllocOnlyShape = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc>>;
-using TestRunnerShape =
-    eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
-static_assert(!CtxMayAcquire<ColdInitShape, WaitStrategy::BoundedSpin>,
+// An init context that owns IO and a test runner that owns Block may not
+// spin, even with Div, and each may take the blocking gate when it owns
+// Block.  A context that owns Alloc and Div may spin.
+using InitIoDivShape =
+    eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Div>>;
+using AllocDivShape = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::Div>>;
+using TestRunnerShape = eff::ExecCtx<
+    eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Div>>;
+static_assert(!CtxMayAcquire<InitIoDivShape, WaitStrategy::BoundedSpin>,
               "a context that owns IO must NOT spin: the holder could make a system call inside the section.");
-static_assert(!CtxMayAcquire<AllocOnlyShape, WaitStrategy::BoundedSpin>,
-              "a context that owns Alloc must NOT spin: the holder could enter the allocator inside the section.");
+static_assert(CtxMayAcquire<AllocDivShape, WaitStrategy::BoundedSpin>,
+              "a context that owns Alloc and Div may spin: an allocation is no system call and no sleep.");
 static_assert(!CtxMayAcquire<TestRunnerShape, WaitStrategy::BoundedSpin>
               && CtxMayAcquire<TestRunnerShape, WaitStrategy::AcquireWait>);
 

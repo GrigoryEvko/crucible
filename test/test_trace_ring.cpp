@@ -260,7 +260,7 @@ void pure_facade_cases() {
 
         static_assert(eff::IsPure<eff::Row<>>);
         static_assert(eff::IsPure<eff::PureRow>);
-        static_assert(!eff::IsPure<eff::DivRow>);  // Block
+        static_assert(!eff::IsPure<eff::DivRow>);  // Div
         static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
         static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
         static_assert(!eff::IsPure<eff::Row<eff::Effect::Alloc>>);

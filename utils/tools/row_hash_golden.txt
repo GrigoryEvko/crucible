@@ -2,7 +2,7 @@
 # format-version:  1
 # matrix-size:     56
 # fold-seed:       0xf0117a11eda11a5e
-# fold-anchor:     0xe989b136520e9d3a
+# fold-anchor:     0x45b8cbf7694b815f
 # toolchain-tag:   0x531f2bb4b45652c8
 # (a diff means a row_hash_contribution specialisation moved. Name the ceremony in the commit message and recapture this golden.)
 # (the R** lines fold no reflected name and are portable across toolchains. Every other line is not.)
@@ -59,6 +59,6 @@ P05_GuardIo              0xb29fcfc679f3df57
 P06_PoolIo               0xa8856cffab822da3
 P07_ReadViewIo           0x38684fc2b90e4632
 P08_PermSetPair          0x712c12ba2cab812c
-X01_ContextBg            0x4c2663f4c6ce06db
+X01_ContextBg            0x85de6a6a300ccdd3
 X02_ExecCtxBg            0xd33fb5bec9128501
 X03_CapabilityAllocBg    0xfcad65b6f8868d9b

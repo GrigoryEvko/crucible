@@ -5846,6 +5846,19 @@ fixy_test(test_os_sanitizer_routes)
 fixy_neg_compile_test(neg_futex_wait_from_the_foreground
   "no matching function for call to .wait"
   "required for the satisfaction of .CtxMayUseFutex<Ctx>.")
+# Block is a wait in the kernel only.  A futex wait carries it, so a context
+# that owns Nondet and no Block cannot wait.  A spin never carries Block: a
+# spin that ends at a budget carries Nondet, and a spin with no exit
+# carries Div.
+fixy_neg_compile_test(neg_futex_wait_under_nondet_ctx
+  "no matching function for call to .wait"
+  "required for the satisfaction of .CtxMayUseFutex<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Nondet> >\\]")
+fixy_neg_compile_test(neg_fn_bounded_spin_row_under_foreground_ctx
+  "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
+  "R1 = foundation::effects::Row<foundation::effects::Effect::Nondet>. R2 = foundation::effects::Row<>")
+fixy_neg_compile_test(neg_fn_spin_pause_row_under_nondet_ctx
+  "required for the satisfaction of .CtxAdmits<Ctx, fixy::binding_row_t<F> >."
+  "R1 = foundation::effects::Row<foundation::effects::Effect::Div>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Nondet>")
 fixy_neg_compile_test(neg_futex_wake_from_the_foreground
   "no matching function for call to .wake_all"
   "required for the satisfaction of .CtxMayUseFutex<Ctx>.")
@@ -5906,18 +5919,17 @@ fixy_neg_compile_test(neg_spin_unlock_door_is_private
   "is private within this context"
   "fixy::spin::Gate<Tag, Strategy>::unlock\\(\\) \\[with Tag = \\{anonymous\\}::GateTag. foundation::algebra::lattices::WaitStrategy Strategy = foundation::algebra::lattices::WaitStrategy::BoundedSpin\\]")
 
-# Deviation 2, the spin side: a background context may also allocate,
-# syscall or block.  The context in the fixture owns Block as well, so
-# owning Block does not open the spin gate to background work.  A cold
-# init context owns no Bg, but it owns Alloc and IO, and the spin gate
-# refuses it as well.
+# Deviation 2, the spin side: a holder must not make a system call or
+# sleep inside the section.  The background context in the fixture owns
+# Div, so only its IO and Block close the spin gate.  A cold init context
+# owns IO and no Div, and the spin gate refuses it as well.
 fixy_neg_compile_test(neg_spin_guard_under_init_ctx
   "no operand of the disjunction is satisfied"
   "required for the satisfaction of .CtxMayAcquire<Ctx, Strategy>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<")
 
 fixy_neg_compile_test(neg_spin_guard_under_bg_ctx
   "no operand of the disjunction is satisfied"
-  "required for the satisfaction of .CtxMayAcquire<Ctx, Strategy>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block> >; Strategy = foundation::algebra::lattices::WaitStrategy::BoundedSpin\\]")
+  "required for the satisfaction of .CtxMayAcquire<Ctx, Strategy>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Div> >; Strategy = foundation::algebra::lattices::WaitStrategy::BoundedSpin\\]")
 
 fixy_neg_compile_test(neg_spin_lock_without_permission
   "no matching function for call to .fixy::spin::GateGuard<\\{anonymous\\}::GateTag, foundation::algebra::lattices::WaitStrategy::BoundedSpin, foundation::brand::DefaultBrand>::GateGuard\\("

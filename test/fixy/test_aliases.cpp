@@ -34,7 +34,8 @@ struct MoveOnlyValue {
 // The rows are the budgets a caller row is checked against.
 static_assert(fixy::IsPure<Row<>>);
 static_assert(!fixy::IsPure<Row<Effect::Block>>);
-static_assert(fixy::IsDiv<Row<Effect::Block>>);
+static_assert(fixy::IsDiv<Row<Effect::Div>>);
+static_assert(!fixy::IsDiv<Row<Effect::Block>>, "a kernel wait is not divergence");
 static_assert(fixy::IsST<Row<Effect::Alloc, Effect::IO>>);
 static_assert(!fixy::IsST<Row<Effect::Bg>>);
 static_assert(fixy::IsAll<Row<Effect::Bg, Effect::Init, Effect::Test>>);

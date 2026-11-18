@@ -267,7 +267,7 @@ concept Subrow = is_subrow(^^R1, ^^R2);
 // includer walks the enum.  The check file of this header derives the row
 // from the enum and pins this list to it, so a new atom cannot stay out.
 using every_effect_row =
-    Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test, Effect::Nondet>;
+    Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test, Effect::Nondet, Effect::Div>;
 
 struct EffectRowLattice {
     using element_type = std::uint64_t;

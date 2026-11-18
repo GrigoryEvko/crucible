@@ -61,8 +61,8 @@ static_assert(std::is_same_v<typename decltype(ctx1)::row_type, Row<>>);
 
 // A context built from the source claims what the source permits, and
 // it narrows its row twice.
-constexpr fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>> ctx2{
-    fe::testing::bg()};
+constexpr fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet, Effect::Div>>
+    ctx2{fe::testing::bg()};
 constexpr auto ctx3 = ctx2.in_row<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
 static_assert(std::is_same_v<typename decltype(ctx3)::row_type, Row<Effect::Bg, Effect::Alloc, Effect::IO>>);
 static_assert(std::is_same_v<typename decltype(ctx3)::cap_type, fe::Bg>);
@@ -115,7 +115,7 @@ void every_operation_runs_at_run_time() {
 
     // The capability member is reachable through the borrowing accessor,
     // from a context that claims every atom of it, and nowhere else.
-    fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>> load{
+    fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet, Effect::Div>> load{
         fe::testing::bg()};
     [[maybe_unused]] fe::Bg const& held = load.cap();
     [[maybe_unused]] fe::cap::Alloc alloc_tag = held.alloc;
@@ -139,7 +139,7 @@ int main() {
     if (needs_bg_and_alloc(bg) != 99) return 3;
 
     // The borrowed capability is the source's own member, not a copy.
-    fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>> load{
+    fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet, Effect::Div>> load{
         fe::testing::bg()};
     fe::Bg const& held = load.cap();
     [[maybe_unused]] fe::cap::Block block = held.block;

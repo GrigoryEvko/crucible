@@ -54,7 +54,7 @@ struct PureFunctionViolation : tag_base {
                                                     "contains at least one Effect atom.  PureRow encodes the EMPTY "
                                                     "effect row — pure functions have no observable effects in "
                                                     "F*.  Adding "
-                                                    "Alloc, IO, Block, Bg, Init, or Test to a pure function's row "
+                                                    "Alloc, IO, Block, Div, Bg, Init, or Test to a pure function's row "
                                                     "structurally violates F*'s PURE effect class.  Distinct from "
                                                     "EffectRowMismatch (Category 0) because the bound is the F* "
                                                     "lattice bottom, not an arbitrary caller-imposed row.";
@@ -62,8 +62,8 @@ struct PureFunctionViolation : tag_base {
                                                     "(replace allocation with stack storage; replace I/O with "
                                                     "in-memory data; replace blocking call with a non-blocking "
                                                     "alternative), OR lift the function's declaration up the F* "
-                                                    "lattice — IsPure → IsDiv (admits Block) → IsST (admits Block "
-                                                    "+ Alloc + IO) → IsAll (admits anything).  Use the most "
+                                                    "lattice — IsPure → IsDiv (admits Div) → IsST (admits Div + "
+                                                    "Block + Alloc + IO) → IsAll (admits anything).  Use the most "
                                                     "restrictive predicate that the function actually needs; the "
                                                     "F* substitution principle (every IsPure function automatically "
                                                     "satisfies IsDiv / IsST / IsAll) propagates the looser bound "
@@ -75,7 +75,7 @@ struct PureFunctionViolation : tag_base {
         "anchors at PURE — the empty row PureRow — as its bottom.  A "
         "function whose row satisfies IsPure promises NO observable "
         "effects: no Alloc, no IO, "
-        "no Block, no Bg / Init / Test context tags.  Admitting any "
+        "no Block, no Div, no Bg / Init / Test context tags.  Admitting any "
         "Effect atom turns a pure projection into a stateful operation "
         "that downstream callers (KernelCache content-addressing, "
         "deterministic replay, MAP-Elites cost-model fingerprinting) "
@@ -102,14 +102,14 @@ struct DivergenceBudgetViolation : tag_base {
     static constexpr tag_text_literal name = "DivergenceBudgetViolation";
     static constexpr tag_text_literal description = "A function declared as IsDiv<R> was called with a row R "
                                                     "containing a state-effect atom (Alloc or IO).  DivRow = "
-                                                    "Row<Block> — the F* DIV effect class extends PURE only with "
+                                                    "Row<Div> — the F* DIV effect class extends PURE only with "
                                                     "non-termination, NOT with state mutation or external "
                                                     "observable effects.  In F*, ST is strictly above DIV in the "
                                                     "effect lattice; using state effects forces the function to "
                                                     "be lifted at least to IsST.";
     static constexpr tag_text_literal remediation = "Either remove the Alloc / IO operation from the function "
                                                     "body, OR lift the function's declaration to IsST (admits "
-                                                    "Block + Alloc + IO) or higher.  The F* lattice is "
+                                                    "Div + Block + Alloc + IO) or higher.  The F* lattice is "
                                                     "Pure ⊑ Div ⊑ ST ⊑ All — moving up admits more effects but "
                                                     "narrows the call sites that can use the function (only callers "
                                                     "that already permit ST can pass arguments).  See "
@@ -118,7 +118,7 @@ struct DivergenceBudgetViolation : tag_base {
     static constexpr Severity severity = Severity::Error;
     static constexpr tag_text_literal why_this_matters =
         "The F* DIV effect class (DivRow in fixy/Aliases.h) extends PURE only "
-        "with potential-non-termination (Block) — NOT with state mutation "
+        "with potential-non-termination (Div) — NOT with state mutation "
         "or external observable effects.  This narrow widening is "
         "load-bearing for fixed-point iterators, convergence loops, and "
         "LoopNode bodies that must terminate eventually but cannot be "
@@ -133,12 +133,12 @@ struct DivergenceBudgetViolation : tag_base {
         "the body grows a scratchpad allocation across iterations.  Or "
         "when a 'log progress' fprintf is added inside a loop body whose "
         "row satisfies IsDiv.  The diagnostic names the function's DivRow = "
-        "Row<Block> requirement and the offending atom (Alloc or IO).  "
-        "Remediation: lift the declaration to IsST (admits Block + "
+        "Row<Div> requirement and the offending atom (Alloc or IO).  "
+        "Remediation: lift the declaration to IsST (admits Div + Block + "
         "Alloc + IO) or eliminate the allocation by reusing a "
         "caller-provided arena via a Pure helper signature.";
     static constexpr tag_text_literal correct_example =
-        "Computation<DivRow, int> fixed_point(int x);  // Block only — terminates eventually";
+        "Computation<DivRow, int> fixed_point(int x);  // Div only — terminates eventually";
     static constexpr tag_text_literal violating_example =
         "Computation<DivRow, int> fixed_point(int x) { void* p = std::malloc(64); ... }  // Alloc";
 };
@@ -147,7 +147,7 @@ struct StateBudgetViolation : tag_base {
     static constexpr tag_text_literal name = "StateBudgetViolation";
     static constexpr tag_text_literal description = "A function declared as IsST<R> was called with a row R "
                                                     "containing a context-tag atom (Bg, Init, or Test).  STRow = "
-                                                    "Row<Block, Alloc, IO> — the F* ST effect class admits state "
+                                                    "Row<Div, Block, Alloc, IO> — the F* ST effect class admits state "
                                                     "mutation and divergence but NOT context-bound capabilities.  "
                                                     "Bg / Init / Test are dispatch hints, not state effects; they "
                                                     "carry caller-side capability that ST cannot accept "
@@ -178,8 +178,8 @@ struct StateBudgetViolation : tag_base {
         "code into stateful code and the author reaches for IsST<T> as "
         "'the catch-all', then realizes the function also takes an "
         "effects::Bg / Init / Test parameter for context-bound dispatch.  "
-        "The diagnostic names the function's STRow = Row<Block, Alloc, "
-        "IO> requirement and the context-tag atom that violates it.  "
+        "The diagnostic names the function's STRow = Row<Div, Block, "
+        "Alloc, IO> requirement and the context-tag atom that violates it.  "
         "Remediation: lift to IsAll (admits AllRow including context "
         "atoms), OR remove the cap-tag parameter if the function is "
         "genuinely state-only and the context is caller-provided.";

@@ -48,12 +48,21 @@ static_assert(every_lift_matches_the_division_(),
               "line, or a kernel wait reaches a context that never admitted Block.");
 
 // Every atom here lifts, and the spins lift too.  An atom with no lift is
-// invisible to the effect gates, and one that lifts to the empty row is
-// visible and requires nothing.  The head of this file says why the spins
-// want the second.
+// invisible to the effect gates.
 static_assert(every_roster_member_lifts_<sync_atom_roster>(),
               "fixy/atoms/Sync.h: every synchronization atom must declare lifts_to, the spins included.  An "
               "atom with no lift is skipped by the effect gates rather than admitted by them.");
+
+// A spin never carries Block.  Its row follows what its caller can observe:
+// UMWAIT and a bounded spin report a give-up, so each lifts to Row<Nondet>,
+// and a spin on a pause has no exit, so it lifts to Row<Div>.
+template <class Atom, class Expected>
+inline constexpr bool lifts_exactly_ =
+    fe::Subrow<fe::lift_row_t<Atom>, Expected> && fe::Subrow<Expected, fe::lift_row_t<Atom>>;
+static_assert(lifts_exactly_<sync::umwait_c01, fe::Row<fe::Effect::Nondet>>);
+static_assert(lifts_exactly_<sync::bounded_spin, fe::Row<fe::Effect::Nondet>>);
+static_assert(lifts_exactly_<sync::spin_pause, fe::Row<fe::Effect::Div>>);
+static_assert(lifts_exactly_<sync::acquire_wait, fe::Row<fe::Effect::Block>>);
 
 // The two predicates classify, and they are not complements: UMWAIT is
 // neither a kernel wait nor a core burner, which is the grade that makes

@@ -41,16 +41,13 @@ static_assert(std::is_same_v<HotFgCtx, fe::ExecCtx<fe::ctx_cap::Fg, Row<>>>);
 static_assert(std::is_same_v<BgDrainCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc>>>);
 static_assert(std::is_same_v<BgCompileCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO>>>);
 static_assert(std::is_same_v<ColdInitCtx, fe::ExecCtx<fe::Init, Row<Effect::Init, Effect::Alloc, Effect::IO>>>);
-static_assert(
-    std::is_same_v<TestRunnerCtx,
-                   fe::ExecCtx<fe::Test, Row<Effect::Test, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>>);
-static_assert(
-    std::is_same_v<BgLoadCtx,
-                   fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>>);
+static_assert(std::is_same_v<TestRunnerCtx, fe::ExecCtx<fe::Test, Row<Effect::Test, Effect::Alloc, Effect::IO,
+                                                                      Effect::Block, Effect::Nondet, Effect::Div>>>);
+static_assert(std::is_same_v<BgLoadCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Alloc, Effect::IO, Effect::Block,
+                                                                Effect::Nondet, Effect::Div>>>);
 static_assert(std::is_same_v<::fixy::BgObserveCtx, fe::ExecCtx<fe::Bg, Row<Effect::Bg, Effect::Nondet>>>);
-static_assert(
-    std::is_same_v<InitLoadCtx,
-                   fe::ExecCtx<fe::Init, Row<Effect::Init, Effect::Alloc, Effect::IO, Effect::Block, Effect::Nondet>>>);
+static_assert(std::is_same_v<InitLoadCtx, fe::ExecCtx<fe::Init, Row<Effect::Init, Effect::Alloc, Effect::IO,
+                                                                    Effect::Block, Effect::Nondet, Effect::Div>>>);
 
 // Only a row that names Nondet admits Nondet, and the hot path never does.
 static_assert(!fe::CtxAdmits<HotFgCtx, Row<Effect::Nondet>>, "The hot path never reads a clock or a merge.");

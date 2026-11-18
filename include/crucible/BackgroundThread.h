@@ -1212,19 +1212,20 @@ public:
     // The drain loop runs in the background context, allocates region
     // memory and grows the trace buffers, and fires the region callback as
     // its only externally observable side effect.  The callback can do I/O
-    // and can block, so the row keeps those two atoms.  The caller hands a
-    // context whose row admits all four, and a context that admits fewer is
-    // a compile error.
+    // and can block, so the row keeps those two atoms.  The loop runs until
+    // the stop, with no bound, so the row keeps Div.  The caller hands a
+    // context whose row admits each atom, and a context that admits fewer
+    // is a compile error.
     using run_required_row =
         ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc,
                                    ::foundation::effects::Effect::IO, ::foundation::effects::Effect::Block,
-                                   ::foundation::effects::Effect::Nondet>;
+                                   ::foundation::effects::Effect::Nondet, ::foundation::effects::Effect::Div>;
 
     // The row is exactly the background load context's row, so the entry of
     // the pipeline thread builds that context and no wider one exists.
     static_assert(std::is_same_v<run_required_row, typename ::fixy::BgLoadCtx::row_type>,
-                  "BackgroundThread::run_required_row must be exactly Row<Bg, Alloc, IO, Block, Nondet>, the row of "
-                  "fixy::BgLoadCtx.  Adding or removing an atom changes the context every site that runs "
+                  "BackgroundThread::run_required_row must be exactly Row<Bg, Alloc, IO, Block, Nondet, Div>, the "
+                  "row of fixy::BgLoadCtx.  Adding or removing an atom changes the context every site that runs "
                   "this thread must hand in.");
 
     // The context is the evidence for the row.  It comes from the door of

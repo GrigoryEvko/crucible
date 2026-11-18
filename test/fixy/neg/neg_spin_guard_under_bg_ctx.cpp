@@ -1,9 +1,8 @@
-// A background context may also allocate, syscall or block, and none of
-// the three belongs inside a section another thread is spinning on.  The
-// context here owns Block as well, so it could wait on the blocking gate:
-// owning Block does not open the spin gate to it.  The guard's
-// constructor carries the clause so the diagnostic lands at the
-// construction rather than one layer down.
+// A background context that owns IO or Block could make a system call or
+// sleep inside a section another thread is spinning on.  The context here
+// owns Div, so the spin itself is permitted, and only its IO and Block
+// close the spin gate.  The guard's constructor carries the clause so the
+// diagnostic lands at the construction rather than one layer down.
 
 #include <fixy/os/SpinLock.h>
 #include <foundation/permissions/Permission.h>
@@ -14,7 +13,9 @@ namespace {
 struct GateTag {
     using permission_row = ::foundation::effects::Row<>;
 };
-using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
+using BgCtx =
+    eff::ExecCtx<eff::Bg,
+                 eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Div>>;
 }  // namespace
 
 int main() {

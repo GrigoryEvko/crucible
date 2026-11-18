@@ -93,6 +93,17 @@ void test_a_deadline_after_a_budget(::fixy::BgLoadCtx const& ctx) {
     CRUCIBLE_FATAL_INVARIANT(!SpinDeadline::after(nondet, kLargestBudget).has_passed(nondet));
 }
 
+// A spin that ends at a time budget carries Nondet and no Block, so a
+// context that owns only its own atom and Nondet runs it.
+void test_a_spin_under_a_nondet_row() {
+    using NondetCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Nondet>>;
+    NondetCtx const ctx{eff::testing::test()};
+    eff::cap::Nondet const nondet = eff::extract_bare_from_ctx<eff::Effect::Nondet>(ctx);
+    SpinDeadline const passed = SpinDeadline::after(nondet, SpinBudget{0});
+    CRUCIBLE_FATAL_INVARIANT(spin::spin_until(nondet, passed, []() noexcept { return true; }));
+    CRUCIBLE_FATAL_INVARIANT(!spin::spin_until(nondet, passed, []() noexcept { return false; }));
+}
+
 // Each form ends at the change or at the deadline.  A predicate that holds
 // gives true also with a deadline that passed.
 void test_the_two_forms(::fixy::BgLoadCtx const& ctx) {
@@ -189,6 +200,7 @@ int main() {
     test_the_rate_of_fixed_counts();
     test_the_process_has_a_rate(ctx);
     test_a_deadline_after_a_budget(ctx);
+    test_a_spin_under_a_nondet_row();
     test_the_two_forms(ctx);
     test_the_budget_does_not_change_the_result(ctx);
     return 0;

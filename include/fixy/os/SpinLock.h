@@ -18,9 +18,11 @@
 //  2. The context rule is read off the wait strategy, and WaitLattice
 //     splits the strategies at the kernel.  A spin wait stays in user
 //     space and burns the waiter's core for as long as the holder takes.
-//     So a spin gate refuses a context that owns Bg, Alloc, IO or Block:
-//     each of the four lets the holder allocate, make a system call or
-//     sleep inside a section that another thread spins on.  A kernel wait
+//     The waiter has no exit until the holder releases, so a spin gate
+//     requires a context that owns Effect::Div, and the hot path, which
+//     owns no Div, cannot take one.  A spin gate refuses a context that
+//     owns IO or Block: each of the two lets the holder make a system call
+//     or sleep inside a section that another thread spins on.  A kernel wait
 //     puts the waiter to sleep until the holder releases, so a blocking
 //     gate requires a context that owns Effect::Block: waiting on the gate
 //     is a block.  Background work that needs mutual exclusion takes the
@@ -238,15 +240,15 @@ struct gate_substrate<WaitStrategy::AcquireWait> {
 
 }  // namespace detail
 
-// A context that may wait on a spin gate: one that exists and owns none of
-// Bg, Alloc, IO and Block.  Each of the four lets the holder allocate,
-// make a system call or sleep inside the section, and the waiters spin
-// for all of it.  A cold init context owns Alloc and IO, so it takes the
-// blocking gate.
+// A context that may wait on a spin gate: one that owns Div, because the
+// wait has no exit until the release, and owns neither IO nor Block.  Each
+// of the two lets the holder make a system call or sleep inside the
+// section, and the waiters spin for all of it.  A context that owns IO
+// takes the blocking gate, or narrows its row before it takes the spin
+// gate.
 template <typename Ctx>
-concept CtxMayAcquireSpin =
-    eff::IsExecCtx<Ctx>
-    && !eff::CtxOwnsAnyOf<Ctx, eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>;
+concept CtxMayAcquireSpin = eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Div>
+                         && !eff::CtxOwnsAnyOf<Ctx, eff::Effect::IO, eff::Effect::Block>;
 
 // A context that may wait on a blocking gate: one that owns Block.
 template <typename Ctx>

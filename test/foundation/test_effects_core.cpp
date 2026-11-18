@@ -92,14 +92,14 @@ static_assert(std::is_same_v<fe::Bg::key_type, fe::detail::ctx_mint::bg_key>);
 static_assert(std::is_same_v<fe::Init::key_type, fe::detail::ctx_mint::init_key>);
 static_assert(std::is_same_v<fe::Test::key_type, fe::detail::ctx_mint::test_key>);
 static_assert(
-    std::is_same_v<fe::Bg::permitted_as<RowProbe>,
-                   RowProbe<fe::Effect::Bg, fe::Effect::Alloc, fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
+    std::is_same_v<fe::Bg::permitted_as<RowProbe>, RowProbe<fe::Effect::Bg, fe::Effect::Alloc, fe::Effect::IO,
+                                                            fe::Effect::Block, fe::Effect::Nondet, fe::Effect::Div>>);
 static_assert(
     std::is_same_v<fe::Init::permitted_as<RowProbe>, RowProbe<fe::Effect::Init, fe::Effect::Alloc, fe::Effect::IO,
-                                                              fe::Effect::Block, fe::Effect::Nondet>>);
+                                                              fe::Effect::Block, fe::Effect::Nondet, fe::Effect::Div>>);
 static_assert(
     std::is_same_v<fe::Test::permitted_as<RowProbe>, RowProbe<fe::Effect::Test, fe::Effect::Alloc, fe::Effect::IO,
-                                                              fe::Effect::Block, fe::Effect::Nondet>>);
+                                                              fe::Effect::Block, fe::Effect::Nondet, fe::Effect::Div>>);
 
 // The fields are the holdings and nothing else.  Each of the three
 // contexts has a block to give to a function that waits, because process

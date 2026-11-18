@@ -29,9 +29,12 @@
 // A kernel wait IS an operation: the body reaches the scheduler and may
 // not come back promptly, which is exactly Effect::Block.  So the three
 // lowest atoms lift to Row<Block> and a context whose row does not admit
-// Block cannot host them.  The three highest lift to the empty row: a
-// spin performs no operation the context has to permit, it only burns
-// cycles.
+// Block cannot host them.  A spin never carries Block.  Its row follows
+// what its caller can observe.  UMWAIT and a bounded spin end at a
+// deadline or a budget and report the give-up to the caller, so the
+// outcome depends on the timing of another thread: they lift to
+// Row<Nondet>.  A spin on a pause has no exit until the value arrives, so
+// it lifts to Row<Div>.
 //
 // That is the difference from fixy/atoms/Regime.h, which lifts nothing.
 // Regime declares a BUDGET, and a budget forbids operations rather than
@@ -40,9 +43,9 @@
 // The empty-row lift is not the same as no lift.  An atom with no
 // `lifts_to` is invisible to foundation/effects/Lift.h and to every gate
 // built on it; an atom that lifts to Row<> is visible and says "nothing
-// required".  The spin atoms want the second, so that a context gate
-// folding a pack's rows sees them and admits them, rather than skipping
-// them and admitting by omission.
+// required".  Each atom here lifts to a row, so that a context gate
+// folding a pack's rows sees it, rather than skipping it and admitting by
+// omission.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -84,20 +87,23 @@ struct acquire_wait final : atom_of<Axis::Synchronization> {
 
 // UMWAIT halts the core in C0.1 or C0.2 rather than spinning it, so it
 // is a user-space wait that does NOT burn the core.  That is why W002
-// below refuses the two spins and not this one.
+// below refuses the two spins and not this one.  It ends at a deadline of
+// the time-stamp counter, and the caller sees the give-up.
 struct umwait_c01 final : atom_of<Axis::Synchronization> {
     static constexpr fal::WaitStrategy strategy = fal::WaitStrategy::UmwaitC01;
-    static constexpr auto lifts_to = fe::Row<>{};
+    static constexpr auto lifts_to = fe::Row<fe::Effect::Nondet>{};
 };
 
+// The spin ends at its budget, and the caller sees the give-up.
 struct bounded_spin final : atom_of<Axis::Synchronization> {
     static constexpr fal::WaitStrategy strategy = fal::WaitStrategy::BoundedSpin;
-    static constexpr auto lifts_to = fe::Row<>{};
+    static constexpr auto lifts_to = fe::Row<fe::Effect::Nondet>{};
 };
 
+// The spin has no exit until the value arrives.
 struct spin_pause final : atom_of<Axis::Synchronization> {
     static constexpr fal::WaitStrategy strategy = fal::WaitStrategy::SpinPause;
-    static constexpr auto lifts_to = fe::Row<>{};
+    static constexpr auto lifts_to = fe::Row<fe::Effect::Div>{};
 };
 
 // Whether a strategy reaches the kernel or the scheduler.  The division

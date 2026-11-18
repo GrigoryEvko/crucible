@@ -21,12 +21,14 @@ static_assert(!IsPure<Row<Effect::Alloc>>);
 static_assert(!IsPure<Row<Effect::Block>>);
 
 static_assert(IsDiv<PureRow>);
-static_assert(IsDiv<Row<Effect::Block>>);
+static_assert(IsDiv<Row<Effect::Div>>);
+static_assert(!IsDiv<Row<Effect::Block>>, "a kernel wait is not divergence");
 static_assert(!IsDiv<Row<Effect::Alloc>>);
 static_assert(!IsDiv<Row<Effect::IO>>);
-static_assert(!IsDiv<Row<Effect::Block, Effect::Alloc>>);
+static_assert(!IsDiv<Row<Effect::Div, Effect::Alloc>>);
 
 static_assert(IsST<PureRow>);
+static_assert(IsST<Row<Effect::Div>>);
 static_assert(IsST<Row<Effect::Block>>);
 static_assert(IsST<Row<Effect::Alloc>>);
 static_assert(IsST<Row<Effect::IO>>);
