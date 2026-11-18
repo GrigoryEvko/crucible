@@ -257,7 +257,7 @@ include/foundation/diag/ | replace-pending:<string> | 1 | - | -
 include/foundation/diag/ | replace-pending:<string_view> | 6 | - | -
 include/foundation/diag/ | replace-pending:<tuple> | 1 | - | -
 include/foundation/diag/ | replace-pending:<vector> | 3 | - | -
-include/foundation/effects/ | base-std-entity | 78 | - | -
+include/foundation/effects/ | base-std-entity | 76 | - | -
 include/foundation/effects/ | base-std-object | 20 | - | -
 include/foundation/effects/ | replace-pending:<array> | 3 | - | -
 include/foundation/effects/ | replace-pending:<atomic> | 1 | - | -
