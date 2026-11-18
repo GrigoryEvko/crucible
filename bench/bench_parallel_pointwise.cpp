@@ -28,6 +28,21 @@
 //   bytes of one pass, its speedup over the row of one shard at the median,
 //   and its ratio to the reference.
 //
+// THE ROW OF THE RULE
+//   The rows of 1 to 8 shards wait on each other, so each shard has a thread
+//   of its own, and the parallelism rule does not decide their threads.  The
+//   last row of each size has 8 independent shards, so the rule of
+//   fixy/concurrent/ParallelismRule.h gives its threads, as in a walk that
+//   ships.  A line gives the threads that the rule gives for the bytes of the
+//   walk, and the ratio of the row to the reference.
+//
+// THE START COST
+//   The last three rows start and join 2, 4 and 8 threads of
+//   mint_parallel_for with an empty body, with the placement of the walk.  A
+//   line gives the median of each and the cost of one more thread from 2 to 8
+//   threads.  mint_parallel_for starts its threads in each call, so this cost
+//   is in each parallel row, and the parallelism rule reads its measure.
+//
 // THE REFERENCE
 //   The first row of each size is the raw loop of the add over the three
 //   runs, on the measuring core: the loop that the compiler vectorizes at the
@@ -77,9 +92,9 @@ using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc
 constexpr std::size_t kShardThreads = 8;
 constexpr std::size_t kClaimedCores = kShardThreads + 1;
 constexpr std::size_t kWallMs = 3000;
-// The rows of the harness of the two sizes: the reference and four counts of
-// shards each.
-constexpr std::size_t kRows = 10;
+// The rows of the harness: the reference, four counts of shards and the row of
+// the rule for each of the two sizes, and the three rows of the start cost.
+constexpr std::size_t kRows = 15;
 // The CPU of a shard of the probe that did not read its CPU.
 constexpr std::uint64_t kNoCpu = ~std::uint64_t{0};
 
@@ -92,13 +107,14 @@ struct Level {
     [[nodiscard]] constexpr std::size_t pass_bytes() const noexcept { return 3 * sizeof(float) * count(); }
 };
 
-// The names of the five rows of one size, one literal each.
+// The names of the six rows of one size, one literal each.
 struct RowNames {
     bench::Run reference;
     bench::Run one;
     bench::Run two;
     bench::Run four;
     bench::Run eight;
+    bench::Run rule;
 };
 
 // The cores of the claim, the core of the measuring thread, and whether the
@@ -160,23 +176,32 @@ struct Walk {
 
 // The walk of one row.  Out is the unique view of a frame, so the kernel is a
 // template, and each instance is one symbol.
-template <std::size_t Shards, class Out>
+template <BodyCoupling Coupling, std::size_t Shards, class Out>
 [[gnu::noinline]] void parallel_add(Walk const& walk, Out& out) noexcept {
     BgCtx const ctx{eff::testing::bg()};
     ::fixy::TestRunnerCtx const test{eff::testing::test()};
-    bool const is_written =
-        ::fixy::concurrent::write_pointwise_in_parallel_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
-            ctx, test, options_of<Shards>(walk.placement), out, AddOp{}, walk.left, walk.right)
-            .is_ok();
+    bool const is_written = ::fixy::concurrent::write_pointwise_in_parallel_with_thread_options<Coupling, Shards>(
+                                ctx, test, options_of<Shards>(walk.placement), out, AddOp{}, walk.left, walk.right)
+                                .is_ok();
     if (!is_written) ::fixy::fatal("the three planes of the bench have one shape");
 }
 
-// Measures the row of Shards shards.
-template <std::size_t Shards, class Out>
+// Measures the row of Shards shards of a coupling.
+template <BodyCoupling Coupling, std::size_t Shards, class Out>
 [[nodiscard]] bench::Report measure_shards(bench::Run run, Walk const& walk, Out& out) {
     return run.core(walk.placement.measuring_core).batch(1).warmup(16).max_wall_ms(kWallMs).measure([&walk, &out] {
-        parallel_add<Shards>(walk, out);
+        parallel_add<Coupling, Shards>(walk, out);
     });
+}
+
+// The threads that the parallelism rule gives the 8 independent shards of a
+// walk of one size, for the bytes of one pass (THE ROW OF THE RULE).
+[[nodiscard]] std::size_t rule_threads_of(Level const& level) noexcept {
+    std::size_t const plane_bytes = sizeof(float) * level.count();
+    ::fixy::concurrent::WorkBudget const budget{
+        .read_bytes = 2 * plane_bytes, .write_bytes = plane_bytes, .item_count = level.count()};
+    return ::fixy::spawn::choose_parallel_for_threads(
+        BodyCoupling::Independent, ::fixy::concurrent::ParallelismRule::host_facts(), budget, kShardThreads);
 }
 
 // The medians that each line of a row compares with: the row of one shard and
@@ -258,8 +283,49 @@ void print_one_shard_core(Placement const& placement) noexcept {
                    bench::read_l3_group(bench::CpuId{placement.measuring_core}).first().value_or(-1));
 }
 
-// The five rows of one size: the rows of the harness, then the line of each
-// count of shards.  The rows go to all, for the JSON tail of the bench.
+// Measures the start and the join of Shards threads of mint_parallel_for with
+// an empty body, one thread for each shard, with the options of the walk
+// (THE START COST).
+template <std::size_t Shards>
+[[nodiscard]] bench::Report measure_starts(bench::Run run, Placement const& placement) {
+    ::fixy::thread::ThreadOptions const options = options_of<Shards>(placement);
+    return run.core(placement.measuring_core).batch(1).warmup(16).max_wall_ms(kWallMs).measure([&options] {
+        BgCtx const ctx{eff::testing::bg()};
+        ::fixy::TestRunnerCtx const test{eff::testing::test()};
+        auto whole = ::fixy::spawn::mint_parallel_for_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
+            ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64},
+            ::fixy::mint_owned_region<std::uint32_t>(
+                nullptr, std::size_t{0}, ::foundation::permissions::mint_permission_root<ShardProbeCells>()),
+            [](auto& shard) noexcept { static_cast<void>(shard); }, options);
+        ::foundation::linear::drop(std::move(whole));
+    });
+}
+
+// The three rows of THE START COST, then a line with the median of each and the
+// cost of one more thread from 2 to 8 threads.  The rows go to all.
+void run_starts(Placement const& placement, ::fixy::FixedList<bench::Report, kRows>& all) {
+    bench::Report two = measure_starts<2>(bench::Run{"start and join of 2 threads [empty shards]"}, placement);
+    bench::Report four = measure_starts<4>(bench::Run{"start and join of 4 threads [empty shards]"}, placement);
+    bench::Report eight = measure_starts<8>(bench::Run{"start and join of 8 threads [empty shards]"}, placement);
+    two.print_text();
+    four.print_text();
+    eight.print_text();
+    bench::detail::flush_standard_output();
+    double const each = (eight.pct.p50 - two.pct.p50) / 6.0;
+    ::fixy::report(::fixy::Sink::Out,
+                   "  start and join with an empty body: p50 {} ns for 2 threads, {} ns for 4, {} ns for 8, and {} ns "
+                   "for each thread from 2 to 8\n",
+                   static_cast<std::uint64_t>(two.pct.p50 + 0.5), static_cast<std::uint64_t>(four.pct.p50 + 0.5),
+                   static_cast<std::uint64_t>(eight.pct.p50 + 0.5),
+                   static_cast<std::uint64_t>(each > 0.0 ? each + 0.5 : 0.0));
+    bench::add_report(all, std::move(two));
+    bench::add_report(all, std::move(four));
+    bench::add_report(all, std::move(eight));
+}
+
+// The six rows of one size: the rows of the harness, then the line of each
+// count of shards and of the row of the rule.  The rows go to all, for the
+// JSON tail of the bench.
 void run_level(Level const& level, RowNames names, Placement const& placement,
                ::fixy::FixedList<bench::Report, kRows>& all) {
     auto const alloc = eff::testing::test().alloc;
@@ -283,16 +349,19 @@ void run_level(Level const& level, RowNames names, Placement const& placement,
                 bench::do_not_optimize(out);
             });
 
+    constexpr BodyCoupling kWaiting = BodyCoupling::WaitOnEachOther;
     ::fixy::FixedList<bench::Report, 4> reports{};
+    bench::Report rule{};
     out = ::fixy::with_mut(std::move(out), [&](auto run) noexcept {
         ::fixy::FixedArray<std::size_t, 2> const sizes{level.side, level.side};
         ::fixy::FixedArray<std::size_t, 2> const strides{level.side, 1};
         auto unique = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
                           .expect("a dense plane has no overlap");
-        static_cast<void>(reports.append(measure_shards<1>(std::move(names.one), walk, unique)));
-        static_cast<void>(reports.append(measure_shards<2>(std::move(names.two), walk, unique)));
-        static_cast<void>(reports.append(measure_shards<4>(std::move(names.four), walk, unique)));
-        static_cast<void>(reports.append(measure_shards<8>(std::move(names.eight), walk, unique)));
+        static_cast<void>(reports.append(measure_shards<kWaiting, 1>(std::move(names.one), walk, unique)));
+        static_cast<void>(reports.append(measure_shards<kWaiting, 2>(std::move(names.two), walk, unique)));
+        static_cast<void>(reports.append(measure_shards<kWaiting, 4>(std::move(names.four), walk, unique)));
+        static_cast<void>(reports.append(measure_shards<kWaiting, 8>(std::move(names.eight), walk, unique)));
+        rule = measure_shards<BodyCoupling::Independent, kShardThreads>(std::move(names.rule), walk, unique);
     });
 
     reference.print_text();
@@ -309,10 +378,20 @@ void run_level(Level const& level, RowNames names, Placement const& placement,
         print_line(basis, level, measured);
         basis.shards *= 2;
     }
+    rule.print_text();
+    bench::detail::flush_standard_output();
+    auto const rule_ratio = static_cast<std::uint64_t>(basis.reference_p50_ns / rule.pct.p50 * 100.0 + 0.5);
+    ::fixy::report(::fixy::Sink::Out,
+                   "  {}x{}, {} independent shards: the rule gives {} threads for {} bytes, p50 {} ns, {}.{}{} of the "
+                   "raw loop\n",
+                   level.side, level.side, kShardThreads, rule_threads_of(level), level.pass_bytes(),
+                   static_cast<std::uint64_t>(rule.pct.p50 + 0.5), rule_ratio / 100, rule_ratio % 100 / 10,
+                   rule_ratio % 10);
     bench::add_report(all, std::move(reference));
     for (bench::Report& measured : reports) {
         bench::add_report(all, std::move(measured));
     }
+    bench::add_report(all, std::move(rule));
 }
 
 }  // namespace
@@ -349,15 +428,18 @@ int main() {
                        .one = bench::Run{"parallel add 1024x1024 [1 shard]"},
                        .two = bench::Run{"parallel add 1024x1024 [2 shards]"},
                        .four = bench::Run{"parallel add 1024x1024 [4 shards]"},
-                       .eight = bench::Run{"parallel add 1024x1024 [8 shards]"}},
+                       .eight = bench::Run{"parallel add 1024x1024 [8 shards]"},
+                       .rule = bench::Run{"parallel add 1024x1024 [8 independent shards, the rule]"}},
               placement, reports);
     run_level(Level{.side = 4096},
               RowNames{.reference = bench::Run{"raw loop add 4096x4096 [reference]"},
                        .one = bench::Run{"parallel add 4096x4096 [1 shard]"},
                        .two = bench::Run{"parallel add 4096x4096 [2 shards]"},
                        .four = bench::Run{"parallel add 4096x4096 [4 shards]"},
-                       .eight = bench::Run{"parallel add 4096x4096 [8 shards]"}},
+                       .eight = bench::Run{"parallel add 4096x4096 [8 shards]"},
+                       .rule = bench::Run{"parallel add 4096x4096 [8 independent shards, the rule]"}},
               placement, reports);
+    run_starts(placement, reports);
     bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
 }
