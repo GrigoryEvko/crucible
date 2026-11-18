@@ -107,6 +107,7 @@ crucible_bench(bench_core_atomic)
 crucible_bench(bench_thread_local_ref)
 crucible_bench(bench_core_containers)
 crucible_bench(bench_core_region)
+crucible_bench(bench_core_walk)
 crucible_bench(bench_core_reduce)
 crucible_bench(bench_core_sort)
 # The stable reference fluxsort, and on x86-64 the vector roof x86-simd-sort:
