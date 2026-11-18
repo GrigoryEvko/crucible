@@ -29,10 +29,9 @@
 //
 //     The owner keeps its fields in the order of foundation/core/Owner.h: a
 //     move reads the source and then empties it, and an end empties the owner
-//     before it joins.  The owner does not derive from OwnerCore, because the
-//     state of an OwnerCore is a member of foundation::core::detail::owner,
-//     and the roster of that namespace is a probe of foundation that reads no
-//     header of fixy.
+//     before it joins.  The owner does not derive from OwnerCore, so the
+//     roster of the owner probe, which reads only the states of the core,
+//     does not hold it.
 //
 // THE GATE
 //     The mint takes a context that owns Bg or Init, the authority to start

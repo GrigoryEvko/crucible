@@ -48,6 +48,8 @@ namespace core::detail::owner {
 // no allocation.
 template <typename SlotPtr>
 struct SwissTableBufferState {
+    using owner_state_mark = OwnerStateMark;
+
     // The alignment of the allocation: one cache line for the first group of
     // control bytes.
     static constexpr std::size_t alignment = 64;

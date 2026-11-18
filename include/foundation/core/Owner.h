@@ -33,20 +33,46 @@
 // address: step 3 reads the emptied state of step 2, so step 5 releases
 // nothing, and step 4 gives the value back.
 //
+// THE MARKER
+// A state opts in to the core with the member
+//
+//   using owner_state_mark = ::foundation::core::OwnerStateMark;
+//
+// The core refuses a state with no marker, so a record with the two
+// functions does not become a state by accident.  The namespace of a state
+// is no part of the gate, so each layer keeps its states in its own
+// namespace.
+//
 // THE ROSTER
-// Each state type is a member of the namespace detail::owner, and the core
-// refuses a state of each other namespace.  The probe of the owners,
-// test/foundation/test_core_owner_probe.cpp, reads that namespace through
-// count_owner_roster_gaps, so a new owner on the core is in its roster at
-// once.
+// Each layer keeps its states in one home namespace: detail::owner of
+// foundation::core, and fixy::detail::owner.  The probe of the owners,
+// test/foundation/test_core_owner_probe.cpp, names each home in an
+// OwnerHomes list and reads the homes through count_owner_roster_gaps, so a
+// new owner on the core is in its roster at once.
 
 #include <cstddef>
 #include <meta>
 #include <type_traits>
 
+namespace foundation::core {
+
+// The marker of an owner state.  It has no value, so the member type costs
+// no byte.
+struct OwnerStateMark final {};
+
+// The home namespaces of a roster of owner states.
+template <std::meta::info... Homes>
+struct OwnerHomes final {
+    // The last entry is a sentinel, so an empty list gives an array.
+    static constexpr std::meta::info homes[sizeof...(Homes) + 1] = {Homes..., std::meta::info{}};
+    static constexpr std::size_t count = sizeof...(Homes);
+};
+
+}  // namespace foundation::core
+
 namespace foundation::core::detail {
 
-// The home of each state type of an owner.
+// The home of each state type of an owner of foundation.
 namespace owner {}
 
 // The class or the class template that a type names: a specialization gives
@@ -56,14 +82,24 @@ namespace owner {}
     return std::meta::has_template_arguments(bare) ? std::meta::template_of(bare) : bare;
 }
 
-// The fields of an owner, with the two functions of the core.  The state is
-// a member of detail::owner, so the roster of the probe holds it.
+// The state opts in to the core with the marker.  Each clause is its own
+// concept, so a refusal names the clause that failed.
 template <class State>
-concept OwnerState = std::is_trivially_copyable_v<State> && std::is_nothrow_default_constructible_v<State>
-                  && requires(State const& state) {
-                         { State::emptied(state) } noexcept -> std::same_as<State>;
-                         { State::release(state) } noexcept -> std::same_as<void>;
-                     } && std::meta::parent_of(owner_entity_of_(^^State)) == ^^owner;
+concept MarksOwnerState = std::same_as<typename State::owner_state_mark, OwnerStateMark>;
+
+// The core reads a state by a copy, writes the default state, and calls the
+// two functions.
+template <class State>
+concept GivesOwnerOperations = std::is_trivially_copyable_v<State> && std::is_nothrow_default_constructible_v<State>
+                            && requires(State const& state) {
+                                   { State::emptied(state) } noexcept -> std::same_as<State>;
+                                   { State::release(state) } noexcept -> std::same_as<void>;
+                               };
+
+// The fields of an owner, with the marker and the two functions of the core,
+// in a namespace of each layer.
+template <class State>
+concept OwnerState = MarksOwnerState<State> && GivesOwnerOperations<State>;
 
 template <OwnerState State>
 class OwnerCore {
@@ -141,14 +177,37 @@ struct OwnerRosterVerdict {
     return false;
 }
 
-// Compares the members of the namespace Home with the owners that a probe
+// True when the namespace is one of the homes of the list.
+template <class HomeList>
+[[nodiscard]] consteval bool is_owner_home_(std::meta::info space) {
+    for (std::size_t index = 0; index < HomeList::count; ++index) {
+        if (HomeList::homes[index] == space) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A specialization of OwnerHomes.
+template <class HomeList>
+inline constexpr bool is_owner_homes_ = false;
+
+template <std::meta::info... Homes>
+inline constexpr bool is_owner_homes_<OwnerHomes<Homes...>> = true;
+
+template <class HomeList>
+concept OwnerHomeList = is_owner_homes_<HomeList>;
+
+// Compares the members of the home namespaces with the owners that a probe
 // runs.  An owner covers the state of its base Core when it writes no move
 // of its own.  A member that an owner covers counts one time.  An owner with
-// no such base, with a move of its own, with a state outside Home, or with
-// the state of an earlier owner is stale.  count_owner_roster_gaps calls it
-// with detail::owner and OwnerCore, and the stand-in roster of the check file
-// with a home and a core of its own.  Complexity: O(members * owners).
-template <std::meta::info Home, std::meta::info Core, class... Owners>
+// no such base, with a move of its own, with a state outside each home, or
+// with the state of an earlier owner is stale.  count_owner_roster_gaps
+// calls it with the homes of its caller and OwnerCore, and the stand-in
+// roster of the check file with homes and a core of its own.
+// Complexity: O((members + owners) * owners), with O(homes) for each home
+// test.
+template <OwnerHomeList HomeList, std::meta::info Core, class... Owners>
 [[nodiscard]] consteval OwnerRosterVerdict verdict_of_owner_roster() {
     // The last entry is a sentinel, so an empty pack gives an array.
     std::meta::info const owners[] = {^^Owners..., std::meta::info{}};
@@ -158,7 +217,7 @@ template <std::meta::info Home, std::meta::info Core, class... Owners>
         std::meta::info const state = owner_state_of_(owners[index], Core);
         bool is_stale = state == std::meta::info{} || has_own_move_(owners[index]);
         std::meta::info const entity = is_stale ? std::meta::info{} : owner_entity_of_(state);
-        is_stale = is_stale || std::meta::parent_of(entity) != Home;
+        is_stale = is_stale || !is_owner_home_<HomeList>(std::meta::parent_of(entity));
         for (std::size_t earlier = 0; !is_stale && earlier < index; ++earlier) {
             is_stale = covered[earlier] == entity;
         }
@@ -168,20 +227,22 @@ template <std::meta::info Home, std::meta::info Core, class... Owners>
             covered[index] = entity;
         }
     }
-    auto const members = std::meta::members_of(Home, std::meta::access_context::current());
-    for (std::size_t position = 0; position < members.size(); ++position) {
-        std::meta::info const member = members[position];
-        bool const is_class =
-            std::meta::is_class_template(member)
-            || (std::meta::is_type(member) && !std::meta::is_type_alias(member) && std::meta::is_class_type(member));
-        if (!is_class) {
-            continue;
-        }
-        ++verdict.roster;
-        for (std::size_t index = 0; index < sizeof...(Owners); ++index) {
-            if (covered[index] == member) {
-                ++verdict.covered;
-                break;
+    for (std::size_t home = 0; home < HomeList::count; ++home) {
+        auto const members = std::meta::members_of(HomeList::homes[home], std::meta::access_context::current());
+        for (std::size_t position = 0; position < members.size(); ++position) {
+            std::meta::info const member = members[position];
+            bool const is_class = std::meta::is_class_template(member)
+                               || (std::meta::is_type(member) && !std::meta::is_type_alias(member)
+                                   && std::meta::is_class_type(member));
+            if (!is_class) {
+                continue;
+            }
+            ++verdict.roster;
+            for (std::size_t index = 0; index < sizeof...(Owners); ++index) {
+                if (covered[index] == member) {
+                    ++verdict.covered;
+                    break;
+                }
             }
         }
     }
@@ -192,16 +253,20 @@ template <std::meta::info Home, std::meta::info Core, class... Owners>
 
 namespace foundation::core {
 
-// The gaps of a probe of the owners: the number of states of detail::owner
-// that no owner of the list covers, plus the number of owners of the list
-// that are stale.  An owner is stale when it does not derive from OwnerCore,
-// writes a move of its own, or has the state of an earlier owner.  Zero means
-// that each owner state has a probe and that no probe is stale.  The probe of
-// the owners asserts zero.  Complexity: O(members * owners).
-template <class... Owners>
+// The gaps of a probe of the owners: the number of states of the homes that
+// no owner of the list covers, plus the number of owners of the list that
+// are stale.  An owner is stale when it does not derive from OwnerCore,
+// writes a move of its own, has a state outside each home, or has the state
+// of an earlier owner.  Zero means that each owner state has a probe and
+// that no probe is stale.  The probe of the owners asserts zero.
+// Complexity: O((members + owners) * owners).
+// The home of the owner states of foundation, for an OwnerHomes list.
+inline constexpr std::meta::info owner_state_home = ^^detail::owner;
+
+template <detail::OwnerHomeList HomeList, class... Owners>
 [[nodiscard]] consteval std::size_t count_owner_roster_gaps() {
     detail::OwnerRosterVerdict const verdict =
-        detail::verdict_of_owner_roster<^^detail::owner, ^^detail::OwnerCore, Owners...>();
+        detail::verdict_of_owner_roster<HomeList, ^^detail::OwnerCore, Owners...>();
     return (verdict.roster - verdict.covered) + verdict.stale;
 }
 

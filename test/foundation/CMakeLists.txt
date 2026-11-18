@@ -3323,6 +3323,16 @@ foundation_test(test_core_masked_array)
 foundation_test(test_core_owner_probe)
 target_link_libraries(test_core_owner_probe PRIVATE fixy)
 
+# The core takes a state from each namespace when the state has the marker
+# and the operations of the core.  A record with no marker, and a marked
+# record with no release, do not compile as the state of an owner.
+foundation_neg_compile_test(neg_core_owner_state_no_mark
+  "template constraint failure for .template<class State>  requires  OwnerState<State> class foundation::core::detail::OwnerCore."
+  "required for the satisfaction of .MarksOwnerState<State>. \\[with State = <unnamed>::RecordWithNoMark\\]")
+foundation_neg_compile_test(neg_core_owner_state_mark_no_release
+  "template constraint failure for .template<class State>  requires  OwnerState<State> class foundation::core::detail::OwnerCore."
+  "required for the satisfaction of .GivesOwnerOperations<State>. \\[with State = <unnamed>::MarkedRecordWithNoRelease\\]")
+
 # A FixedList holds at most N elements, and a push into a full list gives
 # Full, which holds the value of a linear element.  Each element ends one
 # time, and the model of a FixedArray and a count agrees with each step.

@@ -119,6 +119,8 @@ namespace core::detail::owner {
 // The fields of an AlignedBytes: the first byte, the count of bytes and the
 // alignment, or null and zeros when it holds no block.
 struct AlignedBytesState {
+    using owner_state_mark = OwnerStateMark;
+
     std::uint8_t* first = nullptr;
     std::size_t bytes = 0;
     std::size_t alignment = 0;

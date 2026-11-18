@@ -178,6 +178,8 @@ namespace owner {
 // stack holds free_count indexes.  live is the count of the values.
 template <class T, class Generation>
 struct SlotMapState {
+    using owner_state_mark = OwnerStateMark;
+
     T* values = nullptr;
     std::uint32_t* free_stack = nullptr;
     Generation* generations = nullptr;

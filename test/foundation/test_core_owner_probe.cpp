@@ -31,22 +31,25 @@
 // lost tail or a second end shows as a wrong count.
 //
 // THE ROSTER
-// Each owner keeps its fields in a state of the namespace detail::owner, and
-// the core of foundation/core/Owner.h refuses a state of each other
-// namespace.  count_owner_roster_gaps compares that namespace with the
-// owners of the probes below.  Each state needs exactly one probe, and a
-// probe whose owner has no core, writes a move of its own, or repeats the
-// state of an earlier probe is stale.  So a new owner on the core fails this
-// unit until it has a probe, and a probe of an owner off the core fails it
-// too.  The check file of foundation/core/Owner.h proves with a stand-in
-// roster that the count can go red.
+// Each owner keeps its fields in a state with the marker of the core of
+// foundation/core/Owner.h, in the home of its layer: detail::owner of
+// foundation::core, or fixy::detail::owner.  count_owner_roster_gaps
+// compares the two homes with the owners of the probes below.  An owner
+// with a state outside the two homes is stale.  Each state needs exactly
+// one probe, and a probe whose owner has no core, writes a move of its own,
+// or repeats the state of an earlier probe is stale.  So a new owner on the
+// core fails this unit until it has a probe, and a probe of an owner off the
+// core fails it too.  The check file of foundation/core/Owner.h proves with
+// a stand-in roster that the count can go red.
 //
 // What the roster cannot see: it sees only the headers that this unit
 // includes, which are the headers of the probed owners.  An owner on the core
 // in a header that this unit does not include stays out of the roster until
-// this unit includes that header.  An owner that writes its own moves and
-// never names the core has no state in detail::owner, so the roster cannot
-// see it at all.  The check finds such an owner only when a probe names it.
+// this unit includes that header.  The core takes a state with the marker
+// from each namespace, so a state outside the two homes stays out of the
+// roster until a probe names its owner.  An owner that writes its own moves
+// and never names the core has no state in a home, so the roster cannot see
+// it at all.  The check finds such an owner only when a probe names it.
 
 #include <fixy/os/OwnedMmap.h>
 #include <foundation/AlignedBytes.h>
@@ -970,7 +973,8 @@ void run_probe() {
 // that the count can go above zero.
 template <class... Probes>
 struct ProbeList {
-    static constexpr auto gaps = ::foundation::core::count_owner_roster_gaps<typename Probes::Owner...>();
+    using Homes = ::foundation::core::OwnerHomes<::foundation::core::owner_state_home, ::fixy::owner_state_home>;
+    static constexpr auto gaps = ::foundation::core::count_owner_roster_gaps<Homes, typename Probes::Owner...>();
 
     static void run() { (run_probe<Probes>(), ...); }
 };

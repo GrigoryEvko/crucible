@@ -197,6 +197,8 @@ namespace owner {
 // release refuse a lent list.
 template <class T>
 struct GrowListState {
+    using owner_state_mark = OwnerStateMark;
+
     void* storage = nullptr;
     std::size_t count = 0;
     std::size_t capacity = 0;
@@ -239,6 +241,8 @@ struct GrowListState {
 // zero.  A moved-from text keeps its maximum.  The lend count is that of the
 // state of a GrowList.
 struct GrowTextState {
+    using owner_state_mark = OwnerStateMark;
+
     char* first = nullptr;
     std::size_t size = 0;
     std::size_t capacity = 0;
@@ -264,6 +268,8 @@ struct GrowTextState {
 // characters are null when the capacity is zero.  The HeapText gives only
 // const borrows of them.
 struct HeapTextState {
+    using owner_state_mark = OwnerStateMark;
+
     char* first = nullptr;
     std::size_t size = 0;
     std::size_t capacity = 0;

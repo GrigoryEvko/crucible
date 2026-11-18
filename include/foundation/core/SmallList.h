@@ -131,6 +131,8 @@ namespace owner {
 // (THE LEND COUNT of foundation/core/Grow.h).
 template <class T, std::size_t Inline>
 struct SmallListState {
+    using owner_state_mark = OwnerStateMark;
+
     SmallSlots<T, Inline> slots{};
     T* heap = nullptr;
     std::size_t count = 0;

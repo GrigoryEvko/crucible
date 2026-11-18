@@ -170,13 +170,16 @@ using mapping_row_t =
 
 }  // namespace fixy::mmap
 
-namespace foundation::core::detail::owner {
+namespace fixy::detail::owner {
 
 // The fields of an OwnedMmap: the address and the length of the mapping, or
 // null and zero when it holds no mapping.  The state is a member of the home
-// of the owner states of foundation/core/Owner.h, so the probe of the owners
-// holds it in its roster.  The unmap takes the length that the map took.
+// of the owner states of fixy, which THE ROSTER of foundation/core/Owner.h
+// names, so the probe of the owners holds it in its roster.  The unmap takes
+// the length that the map took.
 struct MappingState {
+    using owner_state_mark = ::foundation::core::OwnerStateMark;
+
     void* address = nullptr;
     std::size_t length = 0;
 
@@ -192,9 +195,13 @@ struct MappingState {
     }
 };
 
-}  // namespace foundation::core::detail::owner
+}  // namespace fixy::detail::owner
 
 namespace fixy {
+
+// The home of the owner states of fixy, for an OwnerHomes list of the probe
+// of the owners.
+inline constexpr std::meta::info owner_state_home = ^^detail::owner;
 
 // The claims the carriers in this header make that no lattice grades.
 // foundation/diag/RowHash.h folds each identity, so every carrier here
@@ -257,8 +264,8 @@ concept MappingViewElement =
 // read before the unmap.
 template <typename Tag, typename Prot, typename Share, typename Brand = ::foundation::brand::DefaultBrand>
 class [[nodiscard]] OwnedMmap final
-    : public ::foundation::core::detail::OwnerCore<::foundation::core::detail::owner::MappingState> {
-    using State = ::foundation::core::detail::owner::MappingState;
+    : public ::foundation::core::detail::OwnerCore<::fixy::detail::owner::MappingState> {
+    using State = ::fixy::detail::owner::MappingState;
     using Core = ::foundation::core::detail::OwnerCore<State>;
 
     static_assert(::foundation::brand::IsBrand<Brand>,

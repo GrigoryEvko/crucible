@@ -362,6 +362,8 @@ namespace owner {
 // zero when it holds no storage.
 template <class T, std::size_t Align>
 struct HeapArrayState {
+    using owner_state_mark = OwnerStateMark;
+
     T* first = nullptr;
     std::size_t count = 0;
 
@@ -378,6 +380,8 @@ struct HeapArrayState {
 // null and zeros when it holds no storage.
 template <class T, std::size_t Align>
 struct MaskedArrayState {
+    using owner_state_mark = OwnerStateMark;
+
     T* first = nullptr;
     std::size_t count = 0;
     std::size_t mask = 0;

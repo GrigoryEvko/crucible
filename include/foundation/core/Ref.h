@@ -592,6 +592,8 @@ namespace owner {
 // The field of a Box: its object, or null when it holds none.
 template <BoxPayload T>
 struct BoxState {
+    using owner_state_mark = OwnerStateMark;
+
     T* object = nullptr;
 
     [[nodiscard]] static constexpr BoxState emptied(BoxState const& /*state*/) noexcept { return BoxState{}; }
@@ -619,6 +621,8 @@ struct BoxState {
 // The field of a Hole: its storage, or null when it holds none.
 template <std::size_t Size, std::size_t Align>
 struct HoleState {
+    using owner_state_mark = OwnerStateMark;
+
     void* storage = nullptr;
 
     [[nodiscard]] static constexpr HoleState emptied(HoleState const& /*state*/) noexcept { return HoleState{}; }

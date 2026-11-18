@@ -273,6 +273,8 @@ namespace owner {
 // are null when the count is zero.  The release gives the words back with
 // the bytes of their allocation.
 struct HeapBitSetState {
+    using owner_state_mark = OwnerStateMark;
+
     std::uint64_t* words = nullptr;
     std::uint32_t count = 0;
     std::uint32_t padding_ = 0;
