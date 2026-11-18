@@ -22,7 +22,7 @@ namespace {
 
 static_assert(alignof(h::OneShotFlag) >= 64 && sizeof(h::OneShotFlag) >= 64);
 static_assert(!std::is_copy_constructible_v<h::OneShotFlag> && !std::is_move_constructible_v<h::OneShotFlag>);
-static_assert(std::is_same_v<decltype(std::declval<h::OneShotFlag&>().peek_acquire()), bool>);
+static_assert(std::is_same_v<decltype(std::declval<h::OneShotFlag&>().peek()), bool>);
 
 [[nodiscard]] bool a_raise_runs_the_body_once() noexcept {
     h::OneShotFlag flag;
@@ -78,7 +78,7 @@ static_assert(std::is_same_v<decltype(std::declval<h::OneShotFlag&>().peek_acqui
     int payload = 0;
     int seen = 0;
     std::thread consumer([&] {
-        while (!flag.peek_acquire()) {}
+        while (!flag.peek()) {}
         seen = payload;
     });
     payload = 42;

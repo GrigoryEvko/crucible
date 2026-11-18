@@ -122,11 +122,11 @@ public:
 
     [[nodiscard]] CRUCIBLE_INLINE T* observe() const noexcept { return slot_.load(std::memory_order_acquire); }
 
-    // This load is relaxed, so a true result carries no ordering.  A
-    // caller that goes on to dereference must reach the pointer through
-    // observe.
+    // Any thread asks, and the publisher is a different thread, so the load
+    // takes acquire order.  A caller that goes on to dereference reaches the
+    // pointer through observe.
     [[nodiscard]] CRUCIBLE_INLINE bool is_published() const noexcept {
-        return slot_.load(std::memory_order_relaxed) != nullptr;
+        return slot_.load(std::memory_order_acquire) != nullptr;
     }
 };
 
@@ -164,8 +164,10 @@ public:
 
     [[nodiscard]] CRUCIBLE_INLINE T* consume() noexcept { return slot_.exchange(nullptr, std::memory_order_acq_rel); }
 
+    // Any thread asks, and a publisher or a consumer on a different thread
+    // changes the slot, so the load takes acquire order.
     [[nodiscard]] CRUCIBLE_INLINE bool has_pending() const noexcept {
-        return slot_.load(std::memory_order_relaxed) != nullptr;
+        return slot_.load(std::memory_order_acquire) != nullptr;
     }
 };
 

@@ -40,20 +40,20 @@ public:
 
     CRUCIBLE_INLINE void signal() noexcept { flag_.store(true, std::memory_order_release); }
 
-    // This load is relaxed by design, unlike the one in peek_acquire.  A
-    // true result is a hint.  Acting on it needs the producer release
-    // paired, which this accessor alone does not do.
-    [[nodiscard]] CRUCIBLE_INLINE bool peek() const noexcept { return flag_.load(std::memory_order_relaxed); }
+    // A consumer reads a flag that the producer stores, so the load takes
+    // acquire order.  On x86_64 it is the same plain load as a relaxed load.
+    [[nodiscard]] CRUCIBLE_INLINE bool peek() const noexcept { return flag_.load(std::memory_order_acquire); }
 
-    // The relaxed load keeps the path that finds no signal to one load and
-    // one branch.  The exchange takes the flag down before the body runs,
-    // and its acquire half pairs with the release in signal, so the body
-    // sees every write the producer made before its signal.  Two signals
-    // that arrive before one check run the body once.
+    // The first load keeps the path that finds no signal to one load and
+    // one branch.  It reads a flag of the producer, so it takes acquire
+    // order.  The exchange takes the flag down before the body runs, and its
+    // acquire half pairs with the release in signal, so the body sees every
+    // write the producer made before its signal.  Two signals that arrive
+    // before one check run the body once.
     template <typename F>
         requires std::is_invocable_v<F>
     [[nodiscard]] CRUCIBLE_INLINE bool check_and_run(F&& body) noexcept(std::is_nothrow_invocable_v<F>) {
-        if (!flag_.load(std::memory_order_relaxed)) [[likely]]
+        if (!flag_.load(std::memory_order_acquire)) [[likely]]
             return false;
         if (!flag_.exchange(false, std::memory_order_acq_rel)) return false;
         std::forward<F>(body)();
@@ -69,12 +69,9 @@ public:
         explicit QuiescenceProof() = default;
     };
 
+    // The caller of the reset is the one thread that reaches the flag at
+    // the time of the reset, so its relaxed store races with no read.
     void reset_in_quiescent_context(QuiescenceProof) noexcept { flag_.store(false, std::memory_order_relaxed); }
-
-    // This load is acquire where peek is relaxed.  It pairs with the
-    // release in signal, so a true result is safe to act on with no
-    // fence at the call site.  The divergence from peek is deliberate.
-    [[nodiscard]] CRUCIBLE_INLINE bool peek_acquire() const noexcept { return flag_.load(std::memory_order_acquire); }
 };
 
 }  // namespace fixy::handle
