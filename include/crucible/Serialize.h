@@ -139,6 +139,20 @@ struct Writer {
             write_word(uint8_t{0});
         }
     }
+
+    // The image of a record of the Protocol family: each field in
+    // declaration order, the low byte first, with no padding byte.
+    // Complexity: O(encoded_size_v<T>).
+    template <::fixy::Encodable T>
+    void write_image(T const& value) {
+        constexpr size_t bytes = ::fixy::encoded_size_v<T>;
+        image.template window<bytes>(pos).match(
+            [this, &value](::fixy::View<std::byte, bytes> window) noexcept {
+                ::fixy::encode(value, window);
+                pos += bytes;
+            },
+            [this] noexcept { has_room = false; });
+    }
 };
 
 // The reader of an image.  It reads each value from its bytes, the low byte
@@ -265,6 +279,29 @@ struct Reader {
         }
     }
 
+    // A record of the Protocol family from its image.  decode refuses a
+    // bool byte other than 0 and 1, a value that names no enumerator and a
+    // pad byte that is not zero, each as field_out_of_range, and an image
+    // cut short is truncated.  A refused read gives valid_substitute, as
+    // read_gated does.  Complexity: O(encoded_size_v<T>).
+    template <::fixy::Decodable T>
+    [[nodiscard]] T read_image(T const& valid_substitute) {
+        constexpr size_t bytes = ::fixy::encoded_size_v<T>;
+        return image.template window<bytes>(pos).match(
+            [this, &valid_substitute](::fixy::View<const std::byte, bytes> window) noexcept {
+                pos += bytes;
+                return ::fixy::decode<T>(window).match([](T value) noexcept { return value; },
+                                                       [this, &valid_substitute](::fixy::DecodeFault) noexcept {
+                                                           refuse(LoadError::field_out_of_range);
+                                                           return valid_substitute;
+                                                       });
+            },
+            [this, &valid_substitute] noexcept {
+                refuse(LoadError::truncated);
+                return valid_substitute;
+            });
+    }
+
     [[nodiscard]] size_t remaining() const noexcept { return (pos <= image.size()) ? (image.size() - pos) : 0; }
 
     // Ask before growing the arena for count elements of element_bytes each.
@@ -347,65 +384,13 @@ inline TensorMeta read_meta(Reader& r) {
     return m;
 }
 
-// A plan slot, field by field in declaration order.  The 40 bytes on the
-// wire are the bytes of the struct, which has no implicit padding, and the
-// pad fields go out as zero.
-inline void write_slot(Writer& w, const TensorSlot& slot) {
-    w.w(slot.offset_bytes);
-    w.w(slot.nbytes);
-    w.w(slot.birth_op.raw());
-    w.w(slot.death_op.raw());
-    w.w(slot.dtype);
-    w.w(slot.device_type);
-    w.w(slot.device_idx);
-    w.w(slot.layout);
-    w.w(static_cast<uint8_t>(slot.is_external ? 1 : 0));
-    w.write_zero_pad<sizeof(slot.pad)>();
-    w.w(slot.slot_id.raw());
-    w.write_zero_pad<sizeof(slot.pad2)>();
-}
-
-// The reader of write_slot.  Each enum, the bool and each pad byte is judged
-// before it becomes a field, so a slot holds only values of its field types.
-inline TensorSlot read_slot(Reader& r) {
-    TensorSlot slot{};
-    slot.offset_bytes = r.r<uint64_t>();
-    slot.nbytes = r.r<uint64_t>();
-    slot.birth_op = OpIndex{r.r<uint32_t>()};
-    slot.death_op = OpIndex{r.r<uint32_t>()};
-    slot.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(r.read_gated<int8_t>(valid_scalar_type)));
-    slot.device_type =
-        make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
-    slot.device_idx = r.r<int8_t>();
-    slot.layout = make_layout(::fixy::mint_refined<valid_layout>(r.read_gated<int8_t>(valid_layout)));
-    slot.is_external = r.read_bool();
-    r.read_zero_pad<sizeof(slot.pad)>();
-    slot.slot_id = SlotId{r.r<uint32_t>()};
-    r.read_zero_pad<sizeof(slot.pad2)>();
-    return slot;
-}
-
-inline void write_guard(Writer& w, const Guard& guard) {
-    w.w(guard.kind);
-    w.write_zero_pad<sizeof(guard.pad)>();
-    w.w(guard.op_index.raw());
-    w.w(guard.arg_index);
-    w.w(guard.dim_index);
-}
-
-// A guard kind outside the enumeration would reach the replay switch on the
-// kind, so the kind is read as an enumerator.
-inline Guard read_guard(Reader& r) {
-    Guard guard{};
-    guard.kind = r.read_enumerator<Guard::Kind>(Guard::Kind::SHAPE_DIM);
-    r.read_zero_pad<sizeof(guard.pad)>();
-    guard.op_index = OpIndex{r.r<uint32_t>()};
-    guard.arg_index = r.r<uint16_t>();
-    guard.dim_index = r.r<uint16_t>();
-    return guard;
-}
-
-inline constexpr size_t kTensorSlotWireBytes = 40;
+// A plan slot and a guard go on the wire as their images of the Protocol
+// family (Writer::write_image, Reader::read_image): each field in declaration
+// order, the low byte first, with each pad byte zero.  The reader judges each
+// enumerator, the bool and each pad byte before it becomes a field, so a slot
+// and a guard hold only values of their field types.  A guard kind outside
+// the enumeration would reach the replay switch on the kind.
+inline constexpr size_t kTensorSlotWireBytes = ::fixy::encoded_size_v<TensorSlot>;
 
 // The zero bytes between the node kind and the merkle hash of a header.
 inline constexpr size_t kHeaderPadBytes = 7;
@@ -498,7 +483,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t serialize_region(SerializedRegion regi
         w.w(plan.rank);
         w.w(plan.world_size);
         for (const TensorSlot& slot : plan.slots) {
-            write_slot(w, slot);
+            w.write_image(slot);
         }
     }
 
@@ -614,7 +599,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         }
         loaded_plan->slots = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
         for (TensorSlot& slot : loaded_plan->slots) {
-            slot = read_slot(r);
+            slot = r.read_image(TensorSlot{});
             // The pool allocator aborts on a slot it cannot serve, so a
             // loaded plan holds only slots that it can serve.
             if (!::crucible::PoolAllocator::can_serve_slot(slot, loaded_plan->pool_bytes)) [[unlikely]] {
@@ -789,7 +774,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         []() noexcept { return MerkleHash{}; });
     write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash, ContentHash{cont_hash.raw()});
 
-    write_guard(w, branch->guard);
+    w.write_image(branch->guard);
 
     w.w(branch->num_arms());
     for (const BranchNode::Arm& arm : branch->arms) {
@@ -822,7 +807,7 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         return ::fixy::err(fault);
     // The header's content-hash field holds the continuation's merkle hash.
 
-    const Guard guard = read_guard(r);
+    const Guard guard = r.read_image(Guard{});
 
     const uint32_t num_arms = r.r<uint32_t>();
     if (num_arms > CDAG_MAX_BRANCH_ARMS) return ::fixy::err(r.reason_or(LoadError::count_above_limit));

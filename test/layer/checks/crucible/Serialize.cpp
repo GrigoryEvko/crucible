@@ -13,11 +13,14 @@ static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
 
 namespace detail_ser {
 
-static_assert(sizeof(Guard) == 12,
-              "write_guard and read_guard move every field of Guard.  A new field needs a line in each.");
+// The image of a guard and of a slot holds each field, and the format of
+// the store pins its size.  A new field changes the image, which needs a new
+// CDAG_VERSION.
+static_assert(::fixy::encoded_size_v<Guard> == 12 && sizeof(Guard) == 12,
+              "the image of a Guard is its 12 bytes.  A new field changes the format of the store.");
 
-static_assert(sizeof(TensorSlot) == kTensorSlotWireBytes,
-              "write_slot and read_slot move every field of TensorSlot.  A new field needs a line in each.");
+static_assert(kTensorSlotWireBytes == 40 && sizeof(TensorSlot) == kTensorSlotWireBytes,
+              "the image of a TensorSlot is its 40 bytes.  A new field changes the format of the store.");
 
 }  // namespace detail_ser
 
