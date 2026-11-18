@@ -2214,6 +2214,13 @@ else()
   set_property(TEST test_session_handle_attacks PROPERTY ENVIRONMENT
     "ASAN_OPTIONS=${_attacks_signal_options}" "UBSAN_OPTIONS=${_attacks_signal_options}")
 endif()
+# qemu user mode runs no handler of the base on an overflowed thread of the
+# thread door, and the attack test accepts that only under the emulator.
+if(CMAKE_CROSSCOMPILING_EMULATOR)
+  target_compile_definitions(test_session_handle_attacks PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=1)
+else()
+  target_compile_definitions(test_session_handle_attacks PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=0)
+endif()
 
 # Delegation moves a live handle into a message and keeps its watch
 # record live.  The keys of the private surfaces have the sealed shape of

@@ -68,6 +68,15 @@ struct ChildStart {
 // the child and the read end.  On an error of the pipe or of the fork, the
 // parent gets the error and keeps no descriptor.
 //
+// THE CORE DUMP
+//   A child of the door dies by design, as a death test or an attack, so the
+//   child makes itself not dumpable (PR_SET_DUMPABLE 0), and the kernel
+//   writes no core dump of it on any host.  A core limit does not do that.
+//   A core pattern that pipes to a handler, such as systemd-coredump, ignores
+//   a limit of 0.  qemu-user sets its own limit before it ends on the signal
+//   of the guest, so a limit of 1 byte does not hold there.  A debugger that
+//   is not root then cannot attach to the child.
+//
 // The child of a process with threads has only the thread that called the
 // start.  A lock that a different thread held at the fork stays held in the
 // child.  So the code that the child runs must use only what is safe after a

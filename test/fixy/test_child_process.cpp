@@ -1,5 +1,6 @@
 // The child door of fixy/os/Process.h: a child that exits with a code, a
-// child whose body returns, a child that aborts, a child whose output is
+// child whose body returns, a child that aborts, a child that is not
+// dumpable, a child whose output is
 // larger than the report and than a pipe, a Child that no wait takes, the
 // decode of a wait, and the empty Child.
 // The report holds the end of the child and the last bytes of its standard
@@ -11,11 +12,14 @@
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Abort.h>
 #include <foundation/os/ChildProcess.h>
+#include <foundation/Quarantine.h>
 
 #include "../test_assert.h"
 
 #include <cstdint>
 #include <utility>
+
+#include <sys/prctl.h>
 
 namespace {
 
@@ -32,6 +36,20 @@ constexpr ::fixy::TextView kLongLine{
 // The child with no wait writes two times as many, more than a pipe of 64 KiB
 // holds.
 constexpr int kLongLines = 400;
+
+}  // namespace
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test reads the dumpable flag that the child door gave the child")
+namespace {
+
+// The dumpable flag of the calling process (PR_GET_DUMPABLE): 0 when the
+// kernel writes no core dump of it, or 1 when it does.
+[[nodiscard]] int dumpable_flag_of_this_process() noexcept { return ::prctl(PR_GET_DUMPABLE, 0, 0, 0, 0); }
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+namespace {
 
 template <class Body>
 [[nodiscard]] fp::ChildReport run_child(::fixy::TestRunnerCtx const& test, Body&& body) {
@@ -60,6 +78,18 @@ void child_aborts(::fixy::TestRunnerCtx const& test) {
     fp::ChildReport const report = run_child(test, [] noexcept { ::fixy::fatal("the child ends here"); });
     assert(report.is_signaled_by(::foundation::os::kAbortSignal));
     assert(::fixy::find(report.output(), ::fixy::TextView{"the child ends here"}).is_some());
+    // THE CORE DUMP of foundation/os/ChildProcess.h: the kernel writes no
+    // core dump of a child of the door, also with no core limit.
+    assert(!report.end().has_core_dump);
+}
+
+// A child of the door is not dumpable, so no host writes a core dump of it
+// (THE CORE DUMP of foundation/os/ChildProcess.h).  The child exits with the
+// dumpable flag that the kernel gives it.
+void child_is_not_dumpable(::fixy::TestRunnerCtx const& test) {
+    fp::ChildReport const report = run_child(
+        test, [&test] noexcept { fp::exit_now(test, static_cast<std::uint8_t>(dumpable_flag_of_this_process())); });
+    assert(report.is_exit_with(0));
 }
 
 void child_writes_more_than_the_report(::fixy::TestRunnerCtx const& test) {
@@ -89,9 +119,9 @@ void child_with_no_wait(::fixy::TestRunnerCtx const& test) {
 
 // The decode of a status word of waitpid gives the end of a wait.  On Linux,
 // the bits 8 to 15 of the word hold the exit code, the low seven bits hold
-// the signal, and the bit 0x80 tells that the kernel wrote a core dump.  The
-// launcher of the tests sets a soft core limit of 1 byte, so no child of a
-// test writes a core dump, and only the decode of a word shows the bit.
+// the signal, and the bit 0x80 tells that the kernel wrote a core dump.  No
+// child of the door writes a core dump, so only the decode of a word shows
+// the bit.
 void decode_tells_the_core_dump() {
     namespace os = ::foundation::os;
     os::ChildEnd const exited = os::decode_child_end(0x0300);
@@ -131,6 +161,7 @@ int main() {
     child_exits_with_its_code(test);
     child_body_returns(test);
     child_aborts(test);
+    child_is_not_dumpable(test);
     child_writes_more_than_the_report(test);
     child_with_no_wait(test);
     decode_tells_the_core_dump();

@@ -1053,11 +1053,16 @@ volatile std::uint64_t overflow_limit = ~std::uint64_t{0};
 // sanitizer options of the test in test/fixy/CMakeLists.txt keep the deadly
 // signal handlers of the sanitizers out, so the previous action of SIGSEGV is
 // the default action in each build.
+// is_reported_under_emulator is false for a case whose report qemu user mode
+// does not give: it ends an overflowed thread of the thread door with SIGSEGV
+// and runs no handler of the base there.  Under the emulator such a case then
+// expects no report.  On a real kernel each case expects its report.
 struct signal_case {
     ::fixy::TextView name;
     bool expects_report;
     int expected_signal;
     void (*run)();
+    bool is_reported_under_emulator = true;
 };
 
 constexpr signal_case kSignalCases[] = {
@@ -1066,9 +1071,13 @@ constexpr signal_case kSignalCases[] = {
     {"leak_then_bus_error", true, 0, leak_then_bus_error},
     {"leak_then_floating_point_error", true, 0, leak_then_floating_point_error},
     {"live_session_then_stack_overflow", true, SIGSEGV, live_session_then_stack_overflow},
-    {"live_session_then_stack_overflow_on_base_thread", true, SIGSEGV, live_session_then_stack_overflow_on_base_thread},
+    {"live_session_then_stack_overflow_on_base_thread", true, SIGSEGV, live_session_then_stack_overflow_on_base_thread,
+     false},
     {"abort_with_no_live_session", false, 0, abort_with_no_live_session},
 };
+
+// True when the test runs under the emulator of a cross build, qemu user mode.
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
 constexpr ::fixy::TextView kSignalReport{"LIVE PROTOCOL AT A FATAL SIGNAL"};
 
@@ -1080,7 +1089,8 @@ constexpr ::fixy::TextView kSignalReport{"LIVE PROTOCOL AT A FATAL SIGNAL"};
         const int end_signal = end_signal_of(report);
         const bool has_report = output_holds(report, kSignalReport) && output_holds(report, "live endpoint");
         const bool has_expected_end = entry.expected_signal == 0 || end_signal == entry.expected_signal;
-        const bool is_expected = !report.is_exit_with(0) && has_report == entry.expects_report && has_expected_end;
+        const bool expects_report = entry.expects_report && (entry.is_reported_under_emulator || !kIsUnderEmulator);
+        const bool is_expected = !report.is_exit_with(0) && has_report == expects_report && has_expected_end;
         ::fixy::report(::fixy::Sink::Err, "[signal] {} report {} signal {} {}\n", entry.name, yes_or_no(has_report),
                        end_signal, is_expected ? ::fixy::TextView{"as expected"} : ::fixy::TextView{"UNEXPECTED"});
         if (!is_expected) {

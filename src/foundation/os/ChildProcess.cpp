@@ -23,6 +23,13 @@ namespace {
 // The descriptor of the standard error of a process.
 constexpr std::int32_t kStandardError = 2;
 
+// The option of prctl that sets the dumpable flag of the process
+// (PR_SET_DUMPABLE), and the value of the flag that refuses each core dump.
+// <linux/prctl.h> gives them, and no door owns that header.  The test of the
+// child door reads the flag in a child, so a wrong value fails it.
+constexpr int kSetDumpable = 4;
+constexpr int kNotDumpable = 0;
+
 // The two ends of a pipe, as pipe2 writes them: the read end, then the write
 // end.
 struct PipeEnds {
@@ -57,7 +64,9 @@ core::Result<ChildStart, Errno> start_child_() noexcept {
         long const moved = raw_syscall(Syscall::dup3, ends.write_end, kStandardError, 0);
         close_descriptor(ends.read_end);
         close_descriptor(ends.write_end);
-        if (moved < 0) {
+        // THE CORE DUMP of foundation/os/ChildProcess.h.
+        long const undumped = raw_syscall(Syscall::prctl, kSetDumpable, kNotDumpable);
+        if (moved < 0 || undumped < 0) {
             exit_process(kChildSetupFailed);
         }
         return ChildStart{0, -1};
