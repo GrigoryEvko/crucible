@@ -1,8 +1,8 @@
 // Two values at one version are one event only when their payloads are
-// the same, and the equality derived from the members decides that.  A
-// payload whose operator== is hand-written is refused: one that holds for
-// values a reader tells apart would let a conflict at one version pass as
-// one event.
+// the same, and equal of the Protocol family decides that over a payload
+// whose equality comes from its parts.  A payload whose operator== is
+// hand-written is refused: one that holds for values a reader tells apart
+// would let a conflict at one version pass as one event.
 
 #include <fixy/EpochVersioned.h>
 

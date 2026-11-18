@@ -197,6 +197,24 @@ void attack_is_at_least_matches_the_numeric_order() {
 
 // ── Moved-from values that keep a claim ─────────────────────────────
 
+// A payload whose equality comes from its part, with a move that changes
+// its source, so it is not trivially copyable.
+struct[[= ::foundation::core::derive_protocol{}]] MovedLabel {
+    int label = 0;
+
+    MovedLabel() = default;
+    explicit MovedLabel(int value) noexcept : label{value} {}
+    MovedLabel(MovedLabel const&) = default;
+    MovedLabel& operator=(MovedLabel const&) = default;
+    MovedLabel(MovedLabel&& other) noexcept : label{other.label} { other.label = -1; }
+    MovedLabel& operator=(MovedLabel&& other) noexcept {
+        label = other.label;
+        other.label = -1;
+        return *this;
+    }
+    ~MovedLabel() = default;
+};
+
 void attack_moved_from_version() {
     std::uint64_t const s = g_seed;
     EpochVersioned<std::string> source{std::string(64, 'x'), stamp_at(s + 5, s)};
@@ -211,11 +229,12 @@ void attack_moved_from_version() {
     expect(!taken.is_at_least(EpochBound{1}, GenerationBound{0}), "the moved-from assignment source drops to genesis");
 
     // The rvalue selector moves the winner out, and the winner's source
-    // drops to genesis.
-    EpochVersioned<std::string> older{std::string("older"), stamp_at(2, 2)};
-    EpochVersioned<std::string> newer{std::string("newer"), stamp_at(3, 3)};
+    // drops to genesis.  The payload takes its equality from its parts and
+    // is not trivially copyable, so a move leaves its source.
+    EpochVersioned<MovedLabel> older{MovedLabel{1}, stamp_at(2, 2)};
+    EpochVersioned<MovedLabel> newer{MovedLabel{2}, stamp_at(3, 3)};
     auto picked = fixy::select_fresher(std::move(older), std::move(newer));
-    expect(picked.has_value() && picked->peek() == "newer", "the rvalue selector picks the newer value");
+    expect(picked.has_value() && picked->peek().label == 2, "the rvalue selector picks the newer value");
     expect(!newer.is_at_least(EpochBound{1}, GenerationBound{0}), "the moved winner leaves genesis behind");
 
     // A trivially copyable payload is copied by a move, so the source
@@ -375,11 +394,12 @@ void attack_payload_owns_what_it_reaches() {
 
 // ── Equal versions ──────────────────────────────────────────────────
 
-// A payload with no operator== compares by its members, so it can show
-// that two values at one version are one event.  A payload whose
-// operator== is hand-written is refused: that equality can hold for values
-// a reader tells apart.
-struct NoEquality {
+// A payload whose equality comes from its parts (a class with the
+// annotation derive_protocol) compares by equal of the Protocol family, so
+// it can show that two values at one version are one event.  A payload
+// whose operator== is hand-written is refused: that equality can hold for
+// values a reader tells apart.
+struct[[= ::foundation::core::derive_protocol{}]] NoEquality {
     int v = 0;
     double weight = 0.0;
 };
@@ -402,29 +422,28 @@ template <typename T>
 concept can_select_moves =
     requires(EpochVersioned<T>&& a, EpochVersioned<T>&& b) { fixy::select_fresher(std::move(a), std::move(b)); };
 static_assert(can_select_copies<NoEquality> && can_select_moves<NoEquality>,
-              "a payload with no equality compares by its members");
-static_assert(can_select_copies<std::string> && can_select_moves<std::string>);
+              "a payload whose equality comes from its parts compares by equal of the Protocol family");
 static_assert(!can_select_copies<EqualToEverything> && !can_select_moves<EqualToEverything>,
               "a hand-written operator== is refused");
-static_assert(!can_select_copies<HoldsEqualToEverything>, "a hand-written operator== in a member is refused too");
+static_assert(!can_select_copies<HoldsEqualToEverything>, "a class with no annotation is refused");
 static_assert(!can_select_copies<FriendDefaultedEquality>,
-              "an operator== that reflection cannot see as defaulted is refused, which errs toward safety");
-static_assert(std::is_same_v<fixy::uncomparable_part_t<HoldsEqualToEverything>, EqualToEverything>,
-              "the refusal names the part whose equality is hand-written");
+              "a defaulted operator== of a class with no annotation is refused, which errs toward safety");
+static_assert(::foundation::core::Equatable<EqualToEverything> && !fixy::ObservablyEquatable<EqualToEverything>,
+              "the one equality takes the own == of a class, and the payload gate refuses it");
 
 void attack_equal_versions_compare_payloads() {
     std::uint64_t const s = g_seed;
-    EpochVersioned<std::string> const left{std::string("same"), stamp_at(s, s)};
-    EpochVersioned<std::string> const agrees{std::string("same"), stamp_at(s, s)};
-    EpochVersioned<std::string> const differs{std::string("other"), stamp_at(s, s)};
+    EpochVersioned<NoEquality> const left{NoEquality{7, 0.5}, stamp_at(s, s)};
+    EpochVersioned<NoEquality> const agrees{NoEquality{7, 0.5}, stamp_at(s, s)};
+    EpochVersioned<NoEquality> const differs{NoEquality{8, 0.5}, stamp_at(s, s)};
     auto const one_event = fixy::select_fresher(left, agrees);
-    expect(one_event.has_value() && one_event->peek() == "same", "agreeing payloads at one version are one event");
+    expect(one_event.has_value() && one_event->peek().v == 7, "agreeing payloads at one version are one event");
     auto const conflict = fixy::select_fresher(left, differs);
     expect(!conflict && conflict.error() == VersionConflict::Divergent, "differing payloads at one version conflict");
-    auto const moved = fixy::select_fresher(EpochVersioned<std::string>{differs}, EpochVersioned<std::string>{left});
+    auto const moved = fixy::select_fresher(EpochVersioned<NoEquality>{differs}, EpochVersioned<NoEquality>{left});
     expect(!moved && moved.error() == VersionConflict::Divergent, "the moving form refuses the same conflict");
 
-    // The derived equality reads every member, the bits of a double
+    // The equality from the parts reads every member, the bits of a double
     // included, so a payload that differs in one member conflicts.
     EpochVersioned<NoEquality> const first{NoEquality{1, 0.5}, stamp_at(s, s)};
     EpochVersioned<NoEquality> const second{NoEquality{1, 0.25}, stamp_at(s, s)};

@@ -272,11 +272,11 @@ public:
     ~Budgeted() = default;
 
     // Two values are equal when their grades are equal and their payloads
-    // are equal by their members.
+    // are equal by their parts (ObservablyEquatable of SelfContained.h).
     [[nodiscard]] friend constexpr bool operator==(Budgeted const& a, Budgeted const& b) noexcept
-        requires EqualityByMembers<T>
+        requires ObservablyEquatable<T>
     {
-        return a.budget() == b.budget() && equal_by_members(a.peek(), b.peek());
+        return a.budget() == b.budget() && ::foundation::core::equal(a.peek(), b.peek());
     }
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }

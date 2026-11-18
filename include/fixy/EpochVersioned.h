@@ -36,8 +36,9 @@
 //     select_fresher() below returns the operand whose own version is the
 //     higher one, together with that version, and refuses an incomparable
 //     pair.  Two equal versions are one event only when the two payloads
-//     are the same, and the payloads are compared by the equality derived
-//     from their members (SelfContained.h).  A hand-written operator== is
+//     are the same, and equal of the Protocol family compares them.  The
+//     payload is ObservablyEquatable (SelfContained.h): its equality comes
+//     from its parts all the way down.  A hand-written operator== is
 //     refused, because one that holds for values a reader tells apart
 //     would hide a conflict at one version.
 //
@@ -291,11 +292,11 @@ public:
     ~EpochVersioned() = default;
 
     // Two values are equal when their versions are equal and their payloads
-    // are equal by their members.
+    // are equal by their parts.
     [[nodiscard]] friend constexpr bool operator==(EpochVersioned const& a, EpochVersioned const& b) noexcept
-        requires EqualityByMembers<T>
+        requires ObservablyEquatable<T>
     {
-        return a.version() == b.version() && equal_by_members(a.peek(), b.peek());
+        return a.version() == b.version() && ::foundation::core::equal(a.peek(), b.peek());
     }
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
@@ -323,13 +324,13 @@ public:
 
 // The operand whose own version is at or above the other one, with its
 // payload and that version.  Equal versions with payloads equal by their
-// members are one event, and the left operand stands for it.  Equal
+// parts are one event, and the left operand stands for it.  Equal
 // versions with different payloads are Divergent.  An incomparable pair
 // has no fresher operand, so the result is Incomparable.
 //
 // In the dual order, "a is at or above b" is leq(a, b).
 template <typename T>
-    requires std::copy_constructible<T> && EqualityByMembers<T>
+    requires std::copy_constructible<T> && ObservablyEquatable<T>
 [[nodiscard]] constexpr std::expected<EpochVersioned<T>, VersionConflict>
 select_fresher(EpochVersioned<T> const& a,
                EpochVersioned<T> const& b) noexcept(std::is_nothrow_copy_constructible_v<T>) {
@@ -337,7 +338,7 @@ select_fresher(EpochVersioned<T> const& a,
     bool const a_at_or_above_b = L::leq(a.version(), b.version());
     bool const b_at_or_above_a = L::leq(b.version(), a.version());
     if (a_at_or_above_b && b_at_or_above_a) {
-        if (!equal_by_members(a.peek(), b.peek())) return std::unexpected(VersionConflict::Divergent);
+        if (!::foundation::core::equal(a.peek(), b.peek())) return std::unexpected(VersionConflict::Divergent);
         return a;
     }
     if (a_at_or_above_b) return a;
@@ -345,14 +346,14 @@ select_fresher(EpochVersioned<T> const& a,
     return std::unexpected(VersionConflict::Incomparable);
 }
 
-template <EqualityByMembers T>
+template <ObservablyEquatable T>
 [[nodiscard]] constexpr std::expected<EpochVersioned<T>, VersionConflict>
 select_fresher(EpochVersioned<T>&& a, EpochVersioned<T>&& b) noexcept(std::is_nothrow_move_constructible_v<T>) {
     using L = EpochVersionLattice;
     bool const a_at_or_above_b = L::leq(a.version(), b.version());
     bool const b_at_or_above_a = L::leq(b.version(), a.version());
     if (a_at_or_above_b && b_at_or_above_a) {
-        if (!equal_by_members(a.peek(), b.peek())) return std::unexpected(VersionConflict::Divergent);
+        if (!::foundation::core::equal(a.peek(), b.peek())) return std::unexpected(VersionConflict::Divergent);
         return std::move(a);
     }
     if (a_at_or_above_b) return std::move(a);

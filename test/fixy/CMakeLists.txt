@@ -1773,16 +1773,16 @@ fixy_neg_compile_test(neg_budgeted_substrate_weaken_below
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 
 # Two values at one version are one event only when their payloads are
-# the same, and the equality derived from the members decides that.  A
-# payload whose operator== is hand-written is refused, in the payload or in
-# a member of it, and the diagnostic names the part.  The moving form fails
-# the same constraint in both candidates.
+# the same, and equal of the Protocol family decides that over a payload
+# whose equality comes from its parts.  A payload whose operator== is
+# hand-written is refused, in the payload or in a member of it.  The moving
+# form fails the same constraint in both candidates.
 fixy_neg_compile_test(neg_epoch_versioned_select_hand_written_equality
   "no matching function for call to .select_fresher\\(const fixy::EpochVersioned<Reading>&, const fixy::EpochVersioned<Reading>&\\)."
-  "is_same_v<Part, fixy::detail::self_contained::every_part_compares> .with Part = Reading.. evaluated to .false.")
+  "required for the satisfaction of .ObservablyEquatable<T>. \\[with T = Reading\\]")
 fixy_neg_compile_test(neg_epoch_versioned_select_rvalue_hand_written_equality
   "no matching function for call to .select_fresher\\(std::remove_reference<fixy::EpochVersioned<Reading>&>::type, std::remove_reference<fixy::EpochVersioned<Reading>&>::type\\)."
-  "(?s)is_same_v<Part, fixy::detail::self_contained::every_part_compares> .with Part = Celsius.. evaluated to .false..*is_same_v<Part, fixy::detail::self_contained::every_part_compares> .with Part = Celsius.. evaluated to .false.")
+  "(?s)required for the satisfaction of .ObservablyEquatable<T>. \\[with T = Reading\\].*required for the satisfaction of .ObservablyEquatable<T>. \\[with T = Reading\\]")
 
 # No producer states a claim.  A version comes only from a stamp of a
 # source, and a budget only from a grant of an authority.  A stamp has a

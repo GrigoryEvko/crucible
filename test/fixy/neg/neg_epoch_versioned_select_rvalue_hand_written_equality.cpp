@@ -1,6 +1,7 @@
 // The moving form of select_fresher has the same rule as the copying
 // form.  A payload whose operator== is hand-written is refused, here where
-// the operator== sits in a member of the payload.
+// the operator== sits in a member of a payload that takes its equality from
+// its parts.
 
 #include <fixy/EpochVersioned.h>
 
@@ -11,7 +12,7 @@ struct Celsius {
     [[nodiscard]] constexpr bool operator==(Celsius const&) const noexcept { return true; }
 };
 
-struct Reading {
+struct[[= ::foundation::core::derive_protocol{}]] Reading {
     int sensor = 0;
     Celsius temperature{};
 };

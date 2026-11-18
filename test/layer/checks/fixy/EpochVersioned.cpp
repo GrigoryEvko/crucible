@@ -60,10 +60,11 @@ static_assert(v_genesis.generation() == GenerationLattice::bottom());
 static_assert(!v_genesis.is_at_least(EpochBound{1}, GenerationBound{0}));
 static_assert(v_genesis.is_at_least(EpochBound{0}, GenerationBound{0}));
 
-// A payload with no equality compares by its members.  A payload whose
-// operator== is hand-written is refused, because that equality can hold
-// for values a reader tells apart.
-struct NoEquality {
+// A payload whose equality comes from its parts compares by equal of the
+// Protocol family: a leaf, or a class with the annotation derive_protocol.
+// A payload whose operator== is hand-written is refused, because that
+// equality can hold for values a reader tells apart.
+struct[[= ::foundation::core::derive_protocol{}]] NoEquality {
     int v{0};
 };
 struct HandWrittenEquality {
@@ -77,6 +78,8 @@ template <typename T>
 concept can_select_lvalues = requires(EpochVersioned<T> const& a, EpochVersioned<T> const& b) { select_fresher(a, b); };
 static_assert(can_select_rvalues<NoEquality> && can_select_lvalues<NoEquality> && can_select_rvalues<int>);
 static_assert(!can_select_rvalues<HandWrittenEquality> && !can_select_lvalues<HandWrittenEquality>);
+static_assert(::foundation::core::Equatable<HandWrittenEquality> && !ObservablyEquatable<HandWrittenEquality>,
+              "the one equality takes the own == of a class, and the payload gate refuses it");
 
 struct MoveOnly {
     int v{0};
