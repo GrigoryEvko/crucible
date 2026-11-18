@@ -162,6 +162,9 @@ crucible_bench(bench_schema_table)
 crucible_bench(bench_serialize)
 crucible_bench(bench_simd)
 crucible_bench(bench_smoke)
+# A waiter and a writer on two cores: the wake latency of each spin wait and
+# the cost of a spin for the writer of its line.
+crucible_bench(bench_spin_wake CORES 2)
 crucible_bench(bench_swiss_table)
 crucible_bench(bench_trace_ring)
 crucible_bench(bench_concurrent_queues)
