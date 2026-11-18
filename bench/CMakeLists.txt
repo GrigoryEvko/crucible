@@ -166,6 +166,10 @@ crucible_bench(bench_smoke)
 # A waiter and a writer on two cores: the wake latency of each spin wait and
 # the cost of a spin for the writer of its line.
 crucible_bench(bench_spin_wake CORES 2)
+# The cell of 128 bits beside libatomic of the compiler, the reference of
+# each atomic operation of 16 bytes, which GCC does not put in line.
+crucible_bench(bench_wide_atomic CORES 2)
+target_link_libraries(bench_wide_atomic PRIVATE atomic)
 crucible_bench(bench_swiss_table)
 crucible_bench(bench_trace_ring)
 crucible_bench(bench_concurrent_queues)

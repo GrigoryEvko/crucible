@@ -18,6 +18,7 @@ format 1
 rule artifacts
 @build/benches | needed | 1 | ld-linux-x86-64.so.2 | a new toolchain: each link runs the pinned mold 3.0.0
 @build/benches | needed | 1 | libasan.so.8 | a new build kind or target
+@build/benches | needed | 1 | libatomic.so.1 | a reference of a bench: bench_wide_atomic measures the cell of 128 bits beside libatomic of GCC 16, which each std::atomic of 16 bytes calls
 @build/benches | needed | 1 | libbpf.so.1 | a new build kind or target
 @build/benches | needed | 1 | libc.so.6 | a new build kind or target
 @build/benches | needed | 1 | libgcc_s.so.1 | a new build kind or target

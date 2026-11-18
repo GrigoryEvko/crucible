@@ -2961,6 +2961,16 @@ foundation_neg_compile_test(neg_core_atomic_count_store
   ".class foundation::core::Atomic<long unsigned int, foundation::core::Counter>. has no member named .store_release."
   "has no member named .store_release.")
 
+# The cell of 128 bits of foundation/os/WideAtomic.h holds a value of 16
+# bytes with one bit pattern for each value, as its compare-and-swap compares
+# the bits of the value.
+foundation_neg_compile_test(neg_os_wide_atomic_twelve_bytes
+  "required for the satisfaction of .WideAtomicValue<T>. \\[with T = .*ThreeWords\\]"
+  "the expression .sizeof \\(T\\) == 16 \\[with T = .*ThreeWords\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_os_wide_atomic_padded_value
+  "required for the satisfaction of .WideAtomicValue<T>. \\[with T = .*AddressAndTag\\]"
+  "the expression .has_unique_object_representations_v<T> \\[with T = .*AddressAndTag\\]. evaluated to .false.")
+
 # ── The Scalar family: decode and enum_from ───────────────────────────
 #
 # decode gives a value only when each bool byte is 0 or 1 and each

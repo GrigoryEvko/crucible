@@ -5712,6 +5712,9 @@ fixy_test(test_os_thread_tasks)
 fixy_test(test_os_owned_thread)
 fixy_test(test_concurrent_permission_fork)
 fixy_test(test_core_atomic)
+# test_os_wide_atomic runs the two forms of the cell of 128 bits alone,
+# against a plain model and on four threads.
+fixy_test(test_os_wide_atomic)
 
 # The door starts threads only for a context that owns Bg or Init, and a
 # thread name is a literal of 1 to 15 characters.

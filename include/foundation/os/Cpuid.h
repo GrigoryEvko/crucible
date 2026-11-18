@@ -6,7 +6,9 @@
 // CPUID gives the features of the core and the rate of its time-stamp
 // counter.  The spin-hint door of foundation/os/SpinHint.h reads the wait
 // features, and the spin budget of fixy/os/SpinBudget.h reads the vendor, the
-// hypervisor bit and the rate of the counter.  The level door of
+// hypervisor bit and the rate of the counter.  The cell of 128 bits of
+// foundation/os/WideAtomic.h reads the bits AVX and CMPXCHG16B and the
+// vendor, to know if a vector move of 16 bytes is one access.  The level door of
 // foundation/os/X86Level.h reads the features of each x86-64 level, and the
 // word XCR0 of XGETBV, which tells the register states that the OS saves.
 // The two instructions need no system header and no system call.  On aarch64

@@ -435,6 +435,7 @@ add_library(foundation STATIC
   src/foundation/os/ReportSink.cpp
   src/foundation/os/SpinHint.cpp
   src/foundation/os/Syscall.cpp
+  src/foundation/os/WideAtomic.cpp
 )
 target_include_directories(foundation PUBLIC include/)
 target_link_libraries(foundation PUBLIC crucible_dialect)
