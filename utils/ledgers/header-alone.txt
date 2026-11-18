@@ -1,8 +1,0 @@
-# The ledger of the rule header-alone of utils/registry.txt: the items that a row keeps over the limit of their kind,
-# one row for each kind and item, and each row judges each build.  A row is 'FILE | KIND | VALUE | - | REASON' with KIND foundation or fixy or crucible.  VALUE is the kept value, in
-# MB.  A row keeps its item up to VALUE with the noise of its unit (THE NOISE of utils/assay/core/budget.py).
-# `python3 utils/bin/guard explain header-alone` tells the rule, and `python3 utils/bin/guard write --rule header-alone
-# --build-dir DIR --reason TEXT` writes a new row or a higher VALUE.
-format 1
-rule header-alone
-include/fixy/channels/EndpointMint.h | fixy | 6.501 | - | The owner decided on 2026-11-15 that a correct change that fails only on a size limit raises the limit, and that the size is optimized later. The closure of this header holds fixy/session/Recording.h, which includes CrashTransport.h and Checkpoint.h.
