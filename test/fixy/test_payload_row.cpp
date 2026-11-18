@@ -40,7 +40,7 @@ int g_failures = 0;
 
 // The rosters, pinned.  A new family is one roster line plus one pin
 // here, which is what puts it in front of a reviewer.  The three rosters
-// hold eighteen entries, because one Graded entry stands for every band
+// hold nineteen entries, because one Graded entry stands for every band
 // spelling.
 static_assert(std::size(c::detail::row_carrying_payload_families) == 2,
               "Two families carry a row of their own: a Computation carries the row it was produced under, "

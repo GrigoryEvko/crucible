@@ -670,9 +670,9 @@ utils/tools/ | std-entity | 15 | - | -
 utils/tools/ | std-object | 1 | - | -
 utils/tools/lsp_code_action_plugin/ | std-entity | 97 | - | -
 utils/tools/lsp_code_action_plugin/ | std-object | 27 | - | -
-vessel/torch/ | opted-out | 43 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
+vessel/torch/ | opted-out | 44 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | opted-out | 9 | ABI: the helpers give a type to the handle and the meta array of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
-vessel/torch/ | opted-out | 60 | C-HEADER: a C caller and ctypes read these declarations, so they hold only C types | vessel_api.h is a header that a C compiler and ctypes read, so its declarations hold only C types
+vessel/torch/ | opted-out | 62 | C-HEADER: a C caller and ctypes read these declarations, so they hold only C types | vessel_api.h is a header that a C compiler and ctypes read, so its declarations hold only C types
 vessel/torch/ | region | 10 | ABI: a C entry takes and gives the raw pointers of the C caller | the C entries of the vessel and the helpers that type their handle and meta array take and give the raw pointers of the C ABI, which ctypes passes
 vessel/torch/ | region | 1 | ABI: ctypes reads the name as a C text up to its zero | -
 vessel/torch/ | region | 1 | ABI: the C caller gives the name as a pointer, and strnlen gave its length | -
