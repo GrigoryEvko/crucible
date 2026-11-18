@@ -20,13 +20,16 @@
 // object for the process.  A process-wide registry gives each (Tag, T) one
 // index of the table at its first use, the same index in each library.
 //
-// THE KEY.  The key of the registry has 128 bits: the stable type id of the
-// handle type (foundation/reflect/Hash.h) and the stable type id of a
-// wrapper of it, whose hash walk reads the name of the handle type from
-// another state.  A key that meets the type id of a different second key
-// ends the process at its first use, so no two handles share a cell
-// silently.  A tag with no stable identity, such as a class with internal
-// linkage, is a different type in each unit, so the handle refuses it.
+// THE KEY.  The key of the registry has 128 bits, two independent words of
+// the stable name of the handle type: its stable type id (FNV-1a and fmix64,
+// foundation/reflect/Hash.h), and its SipHash-2-4 under a fixed public key
+// (foundation/core/SipHash.h).  The registry is inside one process and no
+// peer chooses its input, so the second word guards against an accident
+// and needs no secret key.  A key that meets the type id of a different
+// second key ends the process at its first use, so no two handles share a
+// cell silently.  A tag with no stable identity, such as a class with
+// internal linkage, is a different type in each unit, so the handle refuses
+// it.
 //
 // THE STEADY PATH.  Each handle type keeps its index in a cache of its own,
 // which holds thread_local_cell_count until the first use.  After the first
@@ -45,6 +48,8 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Report.h>
+#include <foundation/core/SipHash.h>
+#include <foundation/core/StableIdentity.h>
 #include <foundation/reflect/Hash.h>
 
 #include <cstddef>
@@ -100,15 +105,35 @@ struct ThreadLocalTypeIds {
     std::uint64_t name_hash = 0;
 };
 
-// The second key of a handle type is the stable type id of this wrapper of
-// it.  The stable name of the wrapper is the name of the handle type with
-// the name of the wrapper in front, so the second key is the same FNV-1a
-// function as the first, from another start state.  It catches an
-// accidental collision of the first key at the first use.  When the base
-// has a keyed hash of 128 bits, the key moves to it.  The class is only
-// declared, and nothing builds one.
+// The fixed public key of the second key: the 16 characters of the text
+// "ThreadLocalRef 2", one byte each.
+[[nodiscard]] consteval ::foundation::core::SipKeyBytes thread_local_second_key_() noexcept {
+    constexpr ::foundation::core::TextView text{"ThreadLocalRef 2"};
+    ::foundation::core::SipKeyBytes key{};
+    auto letter = text.begin();
+    for (std::byte& byte : key) {
+        byte = static_cast<std::byte>(*letter);
+        ++letter;
+    }
+    return key;
+}
+
+// The second key of a handle type: the SipHash-2-4 of its stable name under
+// the fixed key, as one little-endian word.  It is a function of the name
+// that is independent of the first key, so it catches an accidental
+// collision of the first key at the first use.
 template <typename Handle>
-struct ThreadLocalSecondId;
+[[nodiscard]] consteval std::uint64_t thread_local_second_id_() noexcept {
+    ::foundation::core::SipTag const tag =
+        ::foundation::core::sip_hash(thread_local_second_key_(), ::foundation::core::stable_name_text<Handle>());
+    std::uint64_t word = 0;
+    int shift = 0;
+    for (std::byte const byte : tag) {
+        word |= static_cast<std::uint64_t>(static_cast<std::uint8_t>(byte)) << shift;
+        shift += 8;
+    }
+    return word;
+}
 
 // The index of the cell of one handle type, or thread_local_cell_count before
 // its first use.  The cache is a copy in each library, and the registry gives
@@ -164,7 +189,7 @@ public:
 private:
     static constexpr detail::ThreadLocalTypeIds key_{
         .type_id = ::foundation::reflect::stable_type_id(^^ThreadLocalRef<Tag, T>),
-        .name_hash = ::foundation::reflect::stable_type_id(^^detail::ThreadLocalSecondId<ThreadLocalRef<Tag, T>>),
+        .name_hash = detail::thread_local_second_id_<ThreadLocalRef<Tag, T>>(),
     };
 
     [[nodiscard, gnu::always_inline]] static std::uint32_t index_() noexcept {
@@ -185,6 +210,9 @@ private:
 public:
     // Constructing a handle does not claim a cell.  The first access does.
     constexpr ThreadLocalRef() noexcept = default;
+
+    // The two words of the key of the cell of this handle type (THE KEY).
+    [[nodiscard]] static consteval detail::ThreadLocalTypeIds cell_ids() noexcept { return key_; }
 
     constexpr ThreadLocalRef(ThreadLocalRef const&) noexcept = default;
     constexpr ThreadLocalRef(ThreadLocalRef&&) noexcept = default;

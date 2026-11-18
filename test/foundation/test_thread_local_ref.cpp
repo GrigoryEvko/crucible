@@ -7,7 +7,10 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/core/SipHash.h>
+#include <foundation/core/StableIdentity.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/Hash.h>
 
 #include <bit>
 #include <cstdint>
@@ -109,6 +112,34 @@ void the_key_after_the_last_cell_ends_the_process(::fixy::TestRunnerCtx const& t
         ::fixy::TextView{"finds no free cell: the process already has thread_local_cell_count "
                          "cells.  Raise thread_local_cell_count"});
 }
+
+// The oracle of the second word of a key: the SipHash-2-4 of a name under
+// the key of the 16 characters "ThreadLocalRef 2", as a little-endian word.
+[[nodiscard]] constexpr std::uint64_t second_word_of_name(::foundation::core::TextView name) noexcept {
+    constexpr ::foundation::core::TextView key_text{"ThreadLocalRef 2"};
+    ::foundation::core::SipKeyBytes key{};
+    auto letter = key_text.begin();
+    for (std::byte& byte : key) {
+        byte = static_cast<std::byte>(*letter);
+        ++letter;
+    }
+    std::uint64_t word = 0;
+    int shift = 0;
+    for (std::byte const byte : ::foundation::core::sip_hash(key, name)) {
+        word |= static_cast<std::uint64_t>(static_cast<std::uint8_t>(byte)) << shift;
+        shift += 8;
+    }
+    return word;
+}
+
+// The two words of the key of a cell are the stable type id of the handle
+// type and the SipHash of its stable name, two independent functions of
+// one name.
+static_assert(IntCounter::cell_ids().type_id == ::foundation::reflect::stable_type_id(^^IntCounter));
+static_assert(IntCounter::cell_ids().name_hash
+              == second_word_of_name(::foundation::core::stable_name_text<IntCounter>()));
+static_assert(IntCounter::cell_ids().name_hash != IntAccumulator::cell_ids().name_hash);
+static_assert(IntCounter::cell_ids().name_hash != IntCounter::cell_ids().type_id);
 
 }  // namespace
 
