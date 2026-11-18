@@ -192,17 +192,24 @@ void test_compare() {
     // A Record of no part equals each other Record of no part.
     CRUCIBLE_FATAL_INVARIANT(Record<>{} == Record<>{} && std::is_eq(Record<>{} <=> Record<>{}));
 
-    // A floating part gives no ==, and <=> gives a partial order.  A NaN
-    // part makes the two Records unordered: no order and no equivalence.
+    // A floating part compares by its bits and orders by the totalOrder of
+    // IEEE 754, so == and <=> agree.  A NaN with one set of bits equals
+    // itself, where the partial IEEE order gives no order and no
+    // equivalence.  -0 and +0 differ, and -0 orders first, where the IEEE
+    // order gives equivalence.
     double const huge = 1e308;
     double const infinity = huge * huge;
     double const not_a_number = infinity - infinity;
     Record<int, double> const holds_nan{1, not_a_number};
-    static_assert(std::is_same_v<decltype(holds_nan <=> holds_nan), std::partial_ordering>);
-    std::partial_ordering const order = holds_nan <=> holds_nan;
-    CRUCIBLE_FATAL_INVARIANT(!std::is_lt(order) && !std::is_eq(order) && !std::is_gt(order));
+    static_assert(std::is_same_v<decltype(holds_nan <=> holds_nan), std::strong_ordering>);
+    CRUCIBLE_FATAL_INVARIANT(holds_nan == holds_nan && std::is_eq(holds_nan <=> holds_nan));
+    Record<int, double> const negative_zero{1, -0.0};
+    Record<int, double> const positive_zero{1, 0.0};
+    CRUCIBLE_FATAL_INVARIANT(negative_zero != positive_zero && std::is_lt(negative_zero <=> positive_zero));
     Record<int, double> const ordered{1, 2.5};
+    CRUCIBLE_FATAL_INVARIANT((ordered == Record<int, double>{1, 2.5}));
     CRUCIBLE_FATAL_INVARIANT(std::is_eq(ordered <=> Record<int, double>{1, 2.5}));
+    CRUCIBLE_FATAL_INVARIANT(std::is_lt(ordered <=> holds_nan) || std::is_gt(ordered <=> holds_nan));
 }
 
 void test_pinned_part() {

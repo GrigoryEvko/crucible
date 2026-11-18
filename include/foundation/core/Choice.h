@@ -399,15 +399,6 @@ template <class T>
 concept PlainPayload =
     std::is_trivially_copy_constructible_v<T> && (std::is_trivially_copyable_v<T> || detail::TrivialCopyShape<T>);
 
-// A part that the compare of a sum reads: its == gives exactly bool and
-// does not throw.  A floating-point part is refused, because NaN is not
-// equal to itself, and -Werror=float-equal refuses == of two floats.  A
-// compare of floats compares their bits, or a type of its own.
-template <class T>
-concept ComparablePart = !std::is_floating_point_v<T> && requires(T const& left, T const& right) {
-    { left == right } noexcept -> std::same_as<bool>;
-};
-
 // The value of a Result of an operation that gives no value.
 struct Unit final {
     [[nodiscard]] friend constexpr bool operator==(Unit, Unit) noexcept = default;
@@ -1202,13 +1193,14 @@ public:
     void end() const&& = delete("a cursor of a temporary Option points into an object that the full expression ends");
 
     // Two Options of one type are equal when both are empty, or when both
-    // hold equal payloads.  A payload is read only when both hold one.  The
-    // cost is one test of each state and one compare of the payloads.
+    // hold equal payloads.  A payload is read only when both hold one, and
+    // equal of the Protocol family compares the payloads.  The cost is one
+    // test of each state and one compare of the payloads.
     [[nodiscard]] friend constexpr bool operator==(Option const& left, Option const& right) noexcept
-        requires ComparablePart<T>
+        requires Equatable<T>
     {
         return left.slot_.same_state_(right.slot_)
-            && (!left.slot_.holds_() || left.slot_.payload_() == right.slot_.payload_());
+            && (!left.slot_.holds_() || ::foundation::core::equal(left.slot_.payload_(), right.slot_.payload_()));
     }
 
     // Each other operand, such as none, a payload, or an Option of a
@@ -2112,14 +2104,15 @@ public:
         delete("a frame door of a temporary Result writes a part that the full expression ends: name the Result");
 
     // Two Results of one type are equal when both hold equal values, or
-    // when both hold equal errors.  The cost is one test of each state and
-    // one compare of the active parts.
+    // when both hold equal errors.  equal of the Protocol family compares
+    // the active parts.  The cost is one test of each state and one compare
+    // of the active parts.
     [[nodiscard]] friend constexpr bool operator==(Result const& left, Result const& right) noexcept
-        requires ComparablePart<T> && ComparablePart<E>
+        requires Equatable<T> && Equatable<E>
     {
         if (!left.slot_.same_state_(right.slot_)) return false;
-        if (left.slot_.holds_()) return left.slot_.value_() == right.slot_.value_();
-        return left.slot_.error_() == right.slot_.error_();
+        if (left.slot_.holds_()) return ::foundation::core::equal(left.slot_.value_(), right.slot_.value_());
+        return ::foundation::core::equal(left.slot_.error_(), right.slot_.error_());
     }
 
     // Each other operand, such as a value, an Err, or a Result of different

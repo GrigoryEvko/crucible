@@ -59,6 +59,7 @@
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Equatable.h>
 
 #include <concepts>
 #include <cstddef>
@@ -166,45 +167,9 @@ template <class E>
     return std::meta::is_enum_type(type) && !std::meta::enumerators_of(type).empty();
 }
 
-// The type and the byte offset of each base subobject and of each
-// non-static data member of a class, by index.  The walks see each private
-// part too, because a private bool or pointer is as much a part of the
-// bytes as a public one.  No function gives its caller the reflection of a
-// member, only its type, its offset and its kind.  The walks index the
-// lists, so they make no static list.
-[[nodiscard]] consteval std::size_t base_count(std::meta::info type) {
-    return std::meta::bases_of(type, std::meta::access_context::unchecked()).size();
-}
-
-[[nodiscard]] consteval std::meta::info base_type_at(std::meta::info type, std::size_t index) {
-    return std::meta::type_of(std::meta::bases_of(type, std::meta::access_context::unchecked())[index]);
-}
-
-// An offset is never negative.
-[[nodiscard]] consteval std::size_t base_offset_at(std::meta::info type, std::size_t index) {
-    return static_cast<std::size_t>(
-        std::meta::offset_of(std::meta::bases_of(type, std::meta::access_context::unchecked())[index]).bytes);
-}
-
-[[nodiscard]] consteval std::size_t member_count(std::meta::info type) {
-    return std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked()).size();
-}
-
-[[nodiscard]] consteval std::meta::info member_type_at(std::meta::info type, std::size_t index) {
-    return std::meta::type_of(
-        std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())[index]);
-}
-
-[[nodiscard]] consteval std::size_t member_offset_at(std::meta::info type, std::size_t index) {
-    return static_cast<std::size_t>(
-        std::meta::offset_of(std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())[index])
-            .bytes);
-}
-
-[[nodiscard]] consteval bool member_is_bit_field_at(std::meta::info type, std::size_t index) {
-    return std::meta::is_bit_field(
-        std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())[index]);
-}
+// The walks read the parts of a class with the index functions of
+// foundation/core/Equatable.h: base_count, base_type_at, base_offset_at,
+// member_count, member_type_at, member_offset_at and member_is_bit_field_at.
 
 // Calls visit with the non-static data member at Index of object, the
 // private members too.  The member goes into the call directly, so a

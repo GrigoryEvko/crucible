@@ -271,7 +271,11 @@ concept Compares = requires(Left const& left, Right const& right) { left == righ
 static_assert(Compares<OneOf<int, Code8>, OneOf<int, Code8>>);
 static_assert(!Compares<OneOf<int, Code8>, int> && !Compares<int, OneOf<int, Code8>>);
 static_assert(!Compares<OneOf<int, Code8>, OneOf<int, Code32>>);
-static_assert(!Compares<OneOf<Owner, int>, OneOf<Owner, int>> && !Compares<OneOf<double, int>, OneOf<double, int>>);
+// A double alternative compares by its bits, and a long double has no
+// compare.
+static_assert(!Compares<OneOf<Owner, int>, OneOf<Owner, int>> && Compares<OneOf<double, int>, OneOf<double, int>>);
+static_assert(!Compares<OneOf<long double, int>, OneOf<long double, int>>);
+static_assert(OneOf<double, int>{-0.0} != OneOf<double, int>{0.0});
 
 // The closed surface: a OneOf gives only the shared verbs, the language
 // protocols, and the names of the family list of plan section 11.2 that

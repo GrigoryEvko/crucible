@@ -59,8 +59,9 @@ static_assert(equal(numbers.view(), view_of(same_numbers)));
 static_assert(equal(TextView{"queue"}, TextView{"queue"}));
 static_assert(!equal(TextView{"queue"}, TextView{"quell"}));
 
-// equal takes two Views of one element type, with an == that gives a bool
-// and does not throw.
+// equal takes two Views of one Equatable element type: a leaf, or a class
+// with an == that gives a bool and does not throw.  A float compares by its
+// bits, so a run of floats takes one memcmp.
 template <class Left, class Right>
 constexpr bool equal_accepts = requires(Left left, Right right) { equal(left, right); };
 static_assert(equal_accepts<View<int>, View<int const>>);
@@ -68,7 +69,25 @@ static_assert(equal_accepts<View<int const, 4>, View<int>>);
 static_assert(!equal_accepts<View<int>, View<long>>);
 static_assert(!equal_accepts<View<ThrowingCompare>, View<ThrowingCompare>>);
 static_assert(BytewiseEqualElement<int> && BytewiseEqualElement<Shade> && BytewiseEqualElement<std::byte>);
-static_assert(!BytewiseEqualElement<float> && !BytewiseEqualElement<Record>);
+static_assert(BytewiseEqualElement<float> && BytewiseEqualElement<double> && !BytewiseEqualElement<Record>);
+
+// The float rule over a View: -0 and +0 differ, and the canonical NaN equals
+// itself.
+constexpr FixedArray<double, 1> positive_zero{0.0};
+constexpr FixedArray<double, 1> negative_zero{-0.0};
+constexpr FixedArray<double, 1> canonical_nan{quiet_nan_of<double>};
+static_assert(!equal(positive_zero.view(), negative_zero.view()));
+static_assert(equal(canonical_nan.view(), canonical_nan.view()));
+
+// order is lexicographic, and a prefix orders first.  A float orders by the
+// totalOrder of IEEE 754, so -0 orders before +0.
+constexpr FixedArray<unsigned char, 3> low_bytes{1, 2, 3};
+constexpr FixedArray<unsigned char, 3> high_bytes{1, 2, 4};
+static_assert(std::is_lt(order(low_bytes.view(), high_bytes.view())));
+static_assert(std::is_lt(order(low_bytes.view().window(0, 2).expect("two bytes fit"), low_bytes.view())));
+static_assert(std::is_eq(order(low_bytes.view(), low_bytes.view())));
+static_assert(std::is_lt(order(negative_zero.view(), positive_zero.view())));
+static_assert(std::is_lt(order(view_of(numbers), view_of(other_numbers))));
 
 // find gives the first position, or no value.
 static_assert(find(view_of(numbers), 15).expect("15 is in the run") == 2);

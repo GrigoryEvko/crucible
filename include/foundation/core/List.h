@@ -401,11 +401,20 @@ public:
     chunks() const&& = delete("a loop over a temporary FixedList points into an object that the full expression ends");
 
     // Two lists are equal when they hold the same count of elements, and each
-    // element equals the element at the same position of the other.
+    // element equals the element at the same position of the other.  They
+    // order as the first pair of elements that differ, or as their counts
+    // when one is a prefix of the other.  equal and order of the Protocol
+    // family compare the elements.
     [[nodiscard]] friend constexpr bool operator==(FixedList const& left, FixedList const& right) noexcept
-        requires detail::ComparableElement<T>
+        requires Equatable<T>
     {
-        return equal(left.view(), right.view());
+        return ::foundation::core::equal(left.view(), right.view());
+    }
+    [[nodiscard]] friend constexpr std::strong_ordering operator<=>(FixedList const& left,
+                                                                    FixedList const& right) noexcept
+        requires Orderable<T>
+    {
+        return ::foundation::core::order(left.view(), right.view());
     }
 };
 

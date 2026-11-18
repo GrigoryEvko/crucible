@@ -125,6 +125,40 @@ static_assert(push_take_get() == 1 + 2 + 3 + 2 + (1 + 2));
 }
 static_assert(copy_and_move_each_element() == 3 + 30 + 4);
 
+// Two lists order as the first pair of elements that differ, and a prefix
+// orders first.  A double element orders by the totalOrder of IEEE 754, so
+// -0.0 orders before +0.0, and the two lists are not equal.
+[[nodiscard]] consteval bool orders_by_elements() noexcept {
+    FixedList<double, 3> prefix;
+    static_cast<void>(prefix.push(1.0).expect("the list has room"));
+    FixedList<double, 3> longer;
+    static_cast<void>(longer.push(1.0).expect("the list has room"));
+    static_cast<void>(longer.push(2.0).expect("the list has room"));
+    FixedList<double, 3> smaller_first;
+    static_cast<void>(smaller_first.push(0.5).expect("the list has room"));
+    static_cast<void>(smaller_first.push(9.0).expect("the list has room"));
+    FixedList<double, 3> negative_zero;
+    static_cast<void>(negative_zero.push(-0.0).expect("the list has room"));
+    FixedList<double, 3> positive_zero;
+    static_cast<void>(positive_zero.push(0.0).expect("the list has room"));
+    return prefix < longer && longer > prefix && smaller_first < prefix && negative_zero < positive_zero
+        && negative_zero != positive_zero;
+}
+static_assert(orders_by_elements());
+
+// An element with an equality and no order gives a list with an equality
+// and no order.
+struct EqualOnly final {
+    int value = 0;
+    [[nodiscard]] constexpr bool operator==(EqualOnly const&) const noexcept = default;
+};
+template <class List>
+concept OrdersLists = requires(List const& list) { list <=> list; };
+template <class List>
+concept EqualsLists = requires(List const& list) { list == list; };
+static_assert(OrdersLists<FixedList<int, 2>> && EqualsLists<FixedList<int, 2>>);
+static_assert(EqualsLists<FixedList<EqualOnly, 2>> && !OrdersLists<FixedList<EqualOnly, 2>>);
+
 }  // namespace detail::list_checks
 
 }  // namespace foundation::core

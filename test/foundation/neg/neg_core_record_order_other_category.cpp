@@ -1,5 +1,6 @@
-// <=> of a Record takes only parts whose <=> gives a strong or a partial
-// order.  A part whose <=> gives a different type gives the Record no <=>.
+// <=> of a Record takes only Orderable parts: a leaf, or a class whose <=>
+// gives a strong order.  A part whose <=> gives a different type gives the
+// Record no <=>.
 
 #include <foundation/core/Record.h>
 

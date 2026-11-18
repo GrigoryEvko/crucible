@@ -114,7 +114,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     template <std::size_t Index>
     [[nodiscard]] constexpr bool equal_from_(OneOf const& other) const noexcept {
         if (index_() == Index) {
-            return alternative_<Index>() == other.template alternative_<Index>();
+            return ::foundation::core::equal(alternative_<Index>(), other.template alternative_<Index>());
         }
         if constexpr (Index + 1 == sizeof...(Ts)) {
             detail::report_forged_one_of_tag_();
@@ -345,7 +345,7 @@ public:
     // in each, with equal values.  The cost is one compare of the tags and
     // the walk of equal_from_.
     [[nodiscard]] friend constexpr bool operator==(OneOf const& left, OneOf const& right) noexcept
-        requires(ComparablePart<Ts> && ...)
+        requires(Equatable<Ts> && ...)
     {
         return left.index_() == right.index_() && left.template equal_from_<0>(right);
     }

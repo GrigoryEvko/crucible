@@ -106,6 +106,15 @@ using ::foundation::reflect::pack_index_of_v;
 using ::foundation::reflect::pack_size_v;
 using ::foundation::reflect::pack_unique_v;
 
+// The Protocol family.  equal of a View, of a text and of a value is one
+// overload set, as is order.
+using ::foundation::core::derive_protocol;
+using ::foundation::core::Equatable;
+using ::foundation::core::local_part;
+using ::foundation::core::order;
+using ::foundation::core::Orderable;
+using ::foundation::core::pad_part;
+
 using ::foundation::core::Box;
 using ::foundation::core::box_word_key;
 using ::foundation::core::BoxWord;

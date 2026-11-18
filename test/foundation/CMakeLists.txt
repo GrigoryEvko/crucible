@@ -2446,9 +2446,9 @@ foundation_neg_compile_test(neg_core_option_compare_none
 foundation_neg_compile_test(neg_core_option_compare_other_type
   "use of deleted function .bool foundation::core::operator==\\(const Option<T>&, const Other&\\) \\[with Other = Option<long int>. T = int\\]."
   "an Option compares only with an Option of its own payload type")
-foundation_neg_compile_test(neg_core_option_compare_float
-  "no match for .operator==. \\(operand types are .const foundation::core::Option<double>. and .const foundation::core::Option<double>.\\)"
-  "the expression .!\\(is_floating_point_v<T>\\) \\[with T = double\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_option_compare_long_double
+  "no match for .operator==. \\(operand types are .const foundation::core::Option<long double>. and .const foundation::core::Option<long double>.\\)"
+  "the expression .compares_at\\(.*\\) \\[with T = long double\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_result_compare_value
   "use of deleted function .bool foundation::core::operator==\\(const Result<T, E>&, const Other&\\) \\[with Other = int. T = int. E = Code\\]."
   "a Result compares only with a Result of its own value and error types")
@@ -2532,16 +2532,16 @@ foundation_neg_compile_test(neg_core_record_binding_count
   "neg_core_record_binding_count.cpp:8")
 foundation_neg_compile_test(neg_core_record_equal_needs_equal
   "no match for .operator==. \\(operand types are .const foundation::core::Record<int, NoEquality>. and .const foundation::core::Record<int, NoEquality>.\\)"
-  "the expression .\\(RecordEqualPart<Ts> && ...\\) \\[with Ts = \\{int, NoEquality\\}\\]. evaluated to .false.")
-foundation_neg_compile_test(neg_core_record_equal_floating_part
-  "no match for .operator==. \\(operand types are .const foundation::core::Record<int, double>. and .const foundation::core::Record<int, double>.\\)"
-  "the expression .\\(RecordEqualPart<Ts> && ...\\) \\[with Ts = \\{int, double\\}\\]. evaluated to .false.")
+  "the expression .\\(Equatable<Ts> && ...\\) \\[with Ts = \\{int, NoEquality\\}\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_record_equal_long_double_part
+  "no match for .operator==. \\(operand types are .const foundation::core::Record<int, long double>. and .const foundation::core::Record<int, long double>.\\)"
+  "the expression .\\(Equatable<Ts> && ...\\) \\[with Ts = \\{int, long double\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_record_equal_other_types
   "no match for .operator==. \\(operand types are .const foundation::core::Record<int, int>. and .const foundation::core::Record<long int, long int>.\\)"
   "neg_core_record_equal_other_types.cpp:9")
 foundation_neg_compile_test(neg_core_record_order_other_category
   "no match for .operator<=>. \\(operand types are .const foundation::core::Record<int, SignedOrder>. and .const foundation::core::Record<int, SignedOrder>.\\)"
-  "the expression .\\(RecordOrderedPart<Ts> && ...\\) \\[with Ts = \\{int, SignedOrder\\}\\]. evaluated to .false.")
+  "the expression .\\(Orderable<Ts> && ...\\) \\[with Ts = \\{int, SignedOrder\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_record_at_of_rvalue
   "use of deleted function .void foundation::core::Record<Ts>::at\\(foundation::core::StaticIndex<I>\\) && \\[with long unsigned int I = 0. Ts = \\{int, long int\\}\\].: write auto \\[first, second\\] = std::move\\(record\\), because a move of one part drops the others"
   "neg_core_record_at_of_rvalue.cpp:11")

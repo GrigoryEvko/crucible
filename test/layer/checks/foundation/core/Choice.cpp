@@ -4,6 +4,7 @@
 
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/core/Number.h>
 #include <foundation/core/Verbs.h>
 
 #include <cstdint>
@@ -972,10 +973,18 @@ static_assert(NamesItsOption::has_assignable_option());
 
 // ── Equality ──────────────────────────────────────────────────────────
 
-// A compare reads a part with an == that gives bool and does not throw,
-// and not a floating-point part.
-static_assert(ComparablePart<int> && ComparablePart<Code> && ComparablePart<Unit>);
-static_assert(!ComparablePart<double> && !ComparablePart<float> && !ComparablePart<Owner>);
+// A compare reads an Equatable part: a leaf, or a class with an == that
+// gives bool and does not throw.  A float and a double compare by their bits
+// (the float rule of foundation/core/Equatable.h), so an Option of a float
+// has ==.  A long double holds padding bits and is refused.
+static_assert(Equatable<int> && Equatable<Code> && Equatable<Unit>);
+static_assert(Equatable<double> && Equatable<float> && !Equatable<long double> && !Equatable<Owner>);
+
+// The float rule: +0 and -0 differ, and the canonical NaN equals itself.
+static_assert(Option<double>::some(0.0) != Option<double>::some(-0.0));
+static_assert(Option<double>::some(quiet_nan_of<double>) == Option<double>::some(quiet_nan_of<double>));
+static_assert(Option<float>::some(quiet_nan_of<float>) == Option<float>::some(quiet_nan_of<float>));
+static_assert(Option<float>::some(1.5f) == Option<float>::some(1.5f));
 
 // Two sums of one type compare their states and their active parts.
 static_assert(Option<int>::some(3) == Option<int>::some(3));
@@ -1039,7 +1048,8 @@ static_assert(builds_trusted<3> && !builds_trusted<0xFFFFFFFFu>);
 
 // A sum compares only with a sum of its own type.  The implicit
 // constructors make no compare with none, a payload, an Err or a sum of a
-// different type, and a floating-point payload has no compare.
+// different type.  A payload with no compare gives the sum no compare, and a
+// double payload compares by its bits.
 template <class Left, class Right>
 concept Compares = requires(Left const& left, Right const& right) { left == right; };
 static_assert(Compares<Option<int>, Option<int>> && Compares<Result<int, Code>, Result<int, Code>>);
@@ -1047,7 +1057,8 @@ static_assert(!Compares<Option<int>, NoValue> && !Compares<NoValue, Option<int>>
 static_assert(!Compares<Option<int>, int> && !Compares<Option<int>, Option<long>>);
 static_assert(!Compares<Result<int, Code>, int> && !Compares<Result<int, Code>, Err<Code>>);
 static_assert(!Compares<Result<int, Code>, Result<long, Code>>);
-static_assert(!Compares<Option<double>, Option<double>> && !Compares<Option<Owner>, Option<Owner>>);
+static_assert(Compares<Option<double>, Option<double>> && !Compares<Option<Owner>, Option<Owner>>);
+static_assert(!Compares<Option<long double>, Option<long double>>);
 
 // ── A lookup that a payload type cannot steer ─────────────────────────
 

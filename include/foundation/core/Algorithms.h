@@ -6,6 +6,8 @@
 //   equal(a, b)                two Views of one element type, or two texts:
 //                              the same count and the same elements in the
 //                              same order
+//   order(a, b)                two Views of one element type: the
+//                              lexicographic order of their elements
 //   find(view, value)          the position of the first element equal to
 //                              value, or no value
 //   find(text, c), find(text, needle)
@@ -28,10 +30,12 @@
 // throw, and a scan calls each one time for each element, in order.
 
 #include <foundation/core/Choice.h>
+#include <foundation/core/Equatable.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
 
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
@@ -40,19 +44,17 @@ namespace foundation::core {
 
 namespace detail {
 
-// An element that equal and find compare: == gives a bool and does not
-// throw.
-template <class T>
-concept ComparableElement = requires(T const& left, T const& right) {
-    { left == right } noexcept -> std::same_as<bool>;
-};
-
-// An element whose == is the compare of its bytes: an integer or an
-// enumeration with no padding bit.  equal compares a run of such elements
-// with one memcmp.
+// An element whose equal is the compare of its bytes: an integer or an
+// enumeration with no padding bit, or a float or a double, which compares by
+// its bits.  equal compares a run of such elements with one memcmp.
 template <class T>
 concept BytewiseEqualElement =
-    (std::is_integral_v<T> || std::is_enum_v<T>) && std::has_unique_object_representations_v<T>;
+    ((std::is_integral_v<T> || std::is_enum_v<T>) && std::has_unique_object_representations_v<T>) || Float<T>;
+
+// An element whose order is the order of its bytes: a byte with no sign.
+// order compares a run of such elements with one memcmp.
+template <class T>
+concept BytewiseOrderedElement = std::same_as<T, unsigned char> || std::same_as<T, std::byte>;
 
 // A predicate of a scan: it takes an element as a const reference, gives a
 // bool and does not throw.
@@ -74,12 +76,12 @@ concept KeyOf = std::is_nothrow_invocable_v<Key&, T const&> && TotalKey<std::inv
 }  // namespace detail
 
 // True when the two Views hold the same count of elements, and each
-// element equals the element at the same position of the other View.  An
-// integer or an enumeration takes one memcmp, which is the compare of the
-// raw form.  Complexity: O(n).
+// element equals the element at the same position of the other View, by
+// equal of the Protocol family (foundation/core/Equatable.h).  A float
+// compares by its bits.  An integer, an enumeration, a float and a double
+// take one memcmp, which is the compare of the raw form.  Complexity: O(n).
 template <class T, std::size_t LeftExtent, class U, std::size_t RightExtent>
-    requires std::same_as<std::remove_const_t<T>, std::remove_const_t<U>>
-          && detail::ComparableElement<std::remove_const_t<T>>
+    requires std::same_as<std::remove_const_t<T>, std::remove_const_t<U>> && Equatable<std::remove_const_t<T>>
 [[nodiscard]] constexpr bool equal(View<T, LeftExtent> left, View<U, RightExtent> right) noexcept {
     using Element = std::remove_const_t<T>;
     std::size_t const count = left.size();
@@ -93,9 +95,39 @@ template <class T, std::size_t LeftExtent, class U, std::size_t RightExtent>
         }
     }
     for (std::size_t index = 0; index < count; ++index) {
-        if (!(first[index] == second[index])) return false;
+        if (!::foundation::core::equal(first[index], second[index])) return false;
     }
     return true;
+}
+
+// The lexicographic order of the two Views, by order of the Protocol
+// family: the order of the first pair of elements that differ, or, when one
+// View is a prefix of the other, the order of the counts.  A float orders by
+// the totalOrder of IEEE 754.  A run of unsigned bytes takes one memcmp.
+// Complexity: O(n) for the shorter count n.
+template <class T, std::size_t LeftExtent, class U, std::size_t RightExtent>
+    requires std::same_as<std::remove_const_t<T>, std::remove_const_t<U>> && Orderable<std::remove_const_t<T>>
+[[nodiscard]] constexpr std::strong_ordering order(View<T, LeftExtent> left, View<U, RightExtent> right) noexcept {
+    using Element = std::remove_const_t<T>;
+    std::size_t const left_count = left.size();
+    std::size_t const right_count = right.size();
+    std::size_t const common = left_count < right_count ? left_count : right_count;
+    Element const* const first = first_of_(detail::ViewDoor::key(), left);
+    Element const* const second = first_of_(detail::ViewDoor::key(), right);
+    if constexpr (detail::BytewiseOrderedElement<Element>) {
+        if !consteval {
+            if (common != 0) {
+                int const bytes_order = __builtin_memcmp(first, second, common);
+                if (bytes_order != 0) return bytes_order <=> 0;
+            }
+            return left_count <=> right_count;
+        }
+    }
+    for (std::size_t index = 0; index < common; ++index) {
+        std::strong_ordering const step = ::foundation::core::order(first[index], second[index]);
+        if (std::is_neq(step)) return step;
+    }
+    return left_count <=> right_count;
 }
 
 // True when the two texts hold the same characters in the same order.
@@ -104,12 +136,12 @@ template <class T, std::size_t LeftExtent, class U, std::size_t RightExtent>
 // The position of the first element equal to value, or no value.
 // Complexity: O(n).
 template <class T, std::size_t Extent>
-    requires detail::ComparableElement<std::remove_const_t<T>>
+    requires Equatable<std::remove_const_t<T>>
 [[nodiscard]] constexpr Option<std::size_t> find(View<T, Extent> view,
                                                  std::type_identity_t<std::remove_const_t<T>> const& value) noexcept {
     std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
     for (std::size_t index = 0; index < view.size(); ++index) {
-        if (first[index] == value) return Option<std::size_t>::some(index);
+        if (::foundation::core::equal(first[index], value)) return Option<std::size_t>::some(index);
     }
     return none;
 }

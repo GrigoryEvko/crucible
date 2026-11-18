@@ -54,13 +54,15 @@
 // struct with the same members, where only an empty member has
 // [[no_unique_address]].  The check file asserts this for twelve shapes.
 //
-// == and <=> are lexicographic, on two Records of one type only.  == exists
-// when each part has == that gives bool, and no part is a floating value.
-// <=> exists when each part has <=> that gives std::strong_ordering or
-// std::partial_ordering.  Its category is strong when each part is strong,
-// and partial in each other case.
+// == and <=> are lexicographic, on two Records of one type only.  They
+// compare each part with equal and order of the Protocol family
+// (foundation/core/Equatable.h).  == exists when each part is Equatable, and
+// <=> exists when each part is Orderable.  <=> gives std::strong_ordering.  A
+// float part compares by its bits and orders by the totalOrder of IEEE 754,
+// so == and <=> agree on each value, a NaN and -0 too.
 
 #include <foundation/Linear.h>
+#include <foundation/core/Equatable.h>
 #include <foundation/reflect/TypeList.h>
 
 #include <compare>
@@ -86,32 +88,6 @@ template <std::size_t I>
 struct StaticIndex;
 
 namespace detail {
-
-// A part whose == gives bool.  The == of a floating value is not an
-// equality: a NaN differs from itself, and the tree refuses it with
-// -Werror=float-equal.  So a floating part gives no ==, and a Record with
-// one compares through <=>.
-template <class T>
-concept RecordEqualPart = !std::is_floating_point_v<T> && requires(T const& left, T const& right) {
-    { left == right } -> std::same_as<bool>;
-};
-
-// A part whose <=> gives a strong order.
-template <class T>
-concept RecordStrongPart = requires(T const& left, T const& right) {
-    { left <=> right } -> std::same_as<std::strong_ordering>;
-};
-
-// A part whose <=> gives a strong or a partial order.
-template <class T>
-concept RecordOrderedPart = RecordStrongPart<T> || requires(T const& left, T const& right) {
-    { left <=> right } -> std::same_as<std::partial_ordering>;
-};
-
-// The category of the <=> of a Record of the parts Ts.  The declaration of
-// each <=> names it also for a part with no <=>, so it never fails.
-template <class... Ts>
-using record_order_t = std::conditional_t<(RecordStrongPart<Ts> && ...), std::strong_ordering, std::partial_ordering>;
 
 // The cell of the part at index I.  The index keeps two parts of one type
 // in two distinct bases.  A part with a default constructor gets its value
@@ -198,24 +174,25 @@ struct Record : detail::RecordCells<std::index_sequence_for<Ts...>, Ts...> {
     // A Record of no part reads no parameter.
     [[nodiscard]] friend constexpr bool operator==([[maybe_unused]] Record const& left,
                                                    [[maybe_unused]] Record const& right) noexcept
-        requires(detail::RecordEqualPart<Ts> && ...)
+        requires(Equatable<Ts> && ...)
     {
         return [&]<std::size_t... Is>(std::index_sequence<Is...>) noexcept {
-            return ((static_cast<detail::RecordCell<Is, Ts> const&>(left).part
-                     == static_cast<detail::RecordCell<Is, Ts> const&>(right).part)
+            return (::foundation::core::equal(static_cast<detail::RecordCell<Is, Ts> const&>(left).part,
+                                              static_cast<detail::RecordCell<Is, Ts> const&>(right).part)
                     && ...);
         }(std::index_sequence_for<Ts...>{});
     }
-    [[nodiscard]] friend constexpr detail::record_order_t<Ts...>
-    operator<=>([[maybe_unused]] Record const& left, [[maybe_unused]] Record const& right) noexcept
-        requires(detail::RecordOrderedPart<Ts> && ...)
+    [[nodiscard]] friend constexpr std::strong_ordering operator<=>([[maybe_unused]] Record const& left,
+                                                                    [[maybe_unused]] Record const& right) noexcept
+        requires(Orderable<Ts> && ...)
     {
-        detail::record_order_t<Ts...> result = std::strong_ordering::equal;
+        std::strong_ordering result = std::strong_ordering::equal;
         [&]<std::size_t... Is>(std::index_sequence<Is...>) noexcept {
-            static_cast<void>(((result = static_cast<detail::RecordCell<Is, Ts> const&>(left).part
-                                     <=> static_cast<detail::RecordCell<Is, Ts> const&>(right).part,
-                                std::is_eq(result))
-                               && ...));
+            static_cast<void>(
+                ((result = ::foundation::core::order(static_cast<detail::RecordCell<Is, Ts> const&>(left).part,
+                                                     static_cast<detail::RecordCell<Is, Ts> const&>(right).part),
+                  std::is_eq(result))
+                 && ...));
         }(std::index_sequence_for<Ts...>{});
         return result;
     }

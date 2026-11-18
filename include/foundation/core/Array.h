@@ -300,11 +300,21 @@ public:
     chunks() const&& = delete("a loop over a temporary FixedArray points into an object that the full expression ends");
 
     // Two arrays are equal when each element equals the element at the same
-    // position of the other array.
+    // position of the other array, and they order as the first pair of
+    // elements that differ.  equal and order of the Protocol family compare
+    // the elements, so a float element compares by its bits.
     [[nodiscard]] friend constexpr bool operator==(FixedArray const& left, FixedArray const& right) noexcept
-        requires detail::ComparableElement<T>
+        requires Equatable<T>
     {
-        return equal(left.view(), right.view());
+        return ::foundation::core::equal(left.view(), right.view());
+    }
+    [[nodiscard]] friend constexpr std::strong_ordering operator<=>(FixedArray const& left,
+                                                                    FixedArray const& right) noexcept
+        requires Orderable<T>
+    {
+        // Two arrays of one type hold one count, so the order is the order of
+        // the C arrays, with no compare of the counts.
+        return ::foundation::core::order(left.elements_, right.elements_);
     }
 };
 
@@ -749,10 +759,19 @@ public:
 
     // Two arrays are equal when they hold the same count of elements, and
     // each element equals the element at the same position of the other.
+    // They order as the first pair of elements that differ, or as their
+    // counts when one is a prefix of the other.  equal and order of the
+    // Protocol family compare the elements.
     [[nodiscard]] friend constexpr bool operator==(HeapArray const& left, HeapArray const& right) noexcept
-        requires detail::ComparableElement<T>
+        requires Equatable<T>
     {
-        return equal(left.view(), right.view());
+        return ::foundation::core::equal(left.view(), right.view());
+    }
+    [[nodiscard]] friend constexpr std::strong_ordering operator<=>(HeapArray const& left,
+                                                                    HeapArray const& right) noexcept
+        requires Orderable<T>
+    {
+        return ::foundation::core::order(left.view(), right.view());
     }
 };
 

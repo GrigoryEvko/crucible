@@ -174,6 +174,23 @@ void test_equality() {
     CRUCIBLE_FATAL_INVARIANT(!(left == right));
 }
 
+// Two arrays order as the first pair of elements that differ, and a prefix
+// orders first.  A double element orders by the totalOrder of IEEE 754, so
+// -0.0 orders before +0.0, and the two arrays are not equal.
+void test_order() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    HeapArray<int> const prefix = mint_heap_array(alloc, 3, 2);
+    HeapArray<int> longer = mint_heap_array(alloc, 4, 2);
+    CRUCIBLE_FATAL_INVARIANT(prefix < longer);
+    CRUCIBLE_FATAL_INVARIANT(longer > prefix);
+    *longer.get(0).expect("the position is below the count") = 1;
+    CRUCIBLE_FATAL_INVARIANT(longer < prefix);
+    HeapArray<double> const negative_zero = mint_heap_array(alloc, 2, -0.0);
+    HeapArray<double> const positive_zero = mint_heap_array(alloc, 2, 0.0);
+    CRUCIBLE_FATAL_INVARIANT(negative_zero < positive_zero);
+    CRUCIBLE_FATAL_INVARIANT(!(negative_zero == positive_zero));
+}
+
 // A count whose View would be longer than the largest View ends the process
 // before the allocation.  The mint runs in a child through expect_dies of the
 // Check family.
@@ -435,6 +452,7 @@ int main() {
     test_sealed_element();
     test_destruction_counts();
     test_equality();
+    test_order();
     test_too_long_aborts(test);
     test_agrees_with_plain_model();
     test_with_builds_in_place();

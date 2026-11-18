@@ -244,7 +244,12 @@ static_assert(Record<int, int>{1, 2} == Record<int, int>{1, 2});
 static_assert(Record<int, int>{1, 2} != Record<int, int>{1, 3});
 static_assert(std::is_lt(Record<int, int>{1, 2} <=> Record<int, int>{2, 0}));
 static_assert(std::is_same_v<decltype(Record<int>{} <=> Record<int>{}), std::strong_ordering>);
-static_assert(std::is_same_v<decltype(Record<int, float>{} <=> Record<int, float>{}), std::partial_ordering>);
+// A float part orders by the totalOrder of IEEE 754, a strong order.  The
+// partial IEEE order gives -0 and +0 equivalence, and the totalOrder puts -0
+// first.
+static_assert(std::is_same_v<decltype(Record<int, float>{} <=> Record<int, float>{}), std::strong_ordering>);
+static_assert(std::is_lt(Record<int, float>{1, -0.0f} <=> Record<int, float>{1, 0.0f}));
+static_assert(Record<int, float>{1, -0.0f} != Record<int, float>{1, 0.0f});
 static_assert(std::is_same_v<decltype(Record<>{} <=> Record<>{}), std::strong_ordering>);
 
 // The part types of a Record are a Pack of foundation/reflect/TypeList.h,
