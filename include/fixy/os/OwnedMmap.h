@@ -26,11 +26,24 @@
 // identity of that permission.  fixy::mmap::advise_release_aware, the one
 // door that discards pages, admits only a permission of that identity.
 //
-// The constructor over an address is private, and mint_region is its only
-// caller.  mint_region performs the ::mmap itself, so a region exists only
-// over an address that the kernel returned.  Its gate asks for a context
-// that owns IO and Block, because a mapping can park the caller.  The
-// atom-pack mints of fixy/os/Mmap.h build their regions through this door.
+// The constructor over an address is private, and the map doors are its
+// only callers.  Each door performs the ::mmap itself, so a region exists
+// only over an address that the kernel returned.  Its gate asks for a
+// context that owns IO and Block, because a mapping can park the caller.
+// The atom-pack mints of fixy/os/Mmap.h build their regions through these
+// doors.
+//
+// THE SOURCE OF A MAP
+//   mint_region has two forms.  A region of the share Anonymous maps no
+//   file and takes no descriptor.  A region of a file takes the borrow of
+//   the Handle of the file, which holds the right map, and also read and
+//   write for a shared map that writes (file_map_rights).  The open mode of
+//   the file gives those rights, so a map of a file that the open cannot
+//   read does not compile.  map_foreign_region maps a descriptor that a C
+//   library opened, such as the map of a BPF object.  It takes the int of
+//   the C library and refuses a negative one with ebadf.  Each call of the
+//   product code is inside an opt-out region of the class ABI (THE ABI
+//   DESCRIPTOR of fixy/os/Handle.h).
 //
 // The address a mapping lands at is randomized by the kernel and is
 // deliberately not reproducible.  No replay path may observe it.
@@ -38,6 +51,7 @@
 #include <fixy/atoms/Os.h>
 #include <fixy/os/AtomPack.h>
 #include <fixy/os/Fd.h>
+#include <fixy/os/Handle.h>
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
@@ -245,6 +259,34 @@ concept CtxFitsRegionMint =
     MappedProt<Prot> && PrimaryShare<Share> && (RegionModifier<Modifiers> && ...) && ModifiersAreDistinct<Modifiers...>
     && ExecIsLicensed<Prot, Modifiers...> && CtxAdmitsMapping<Ctx, Prot, Share, Modifiers...>;
 
+// The rights that a map of a file needs from the handle of the file: map,
+// and also read and write for a shared map that writes, because its stores
+// reach the file (THE SOURCE OF A MAP).
+template <typename Prot, typename Share>
+    requires MappedProt<Prot>
+[[nodiscard]] consteval ::fixy::os::RightSet file_map_rights() noexcept {
+    bool const is_shared_write =
+        std::is_same_v<Share, share::Shared> && (prot_bits_of(^^Prot) & ::foundation::os::kProtectWrite) != 0;
+    return is_shared_write ? ::fixy::os::RightSet::map | ::fixy::os::RightSet::read | ::fixy::os::RightSet::write
+                           : ::fixy::os::RightSet::map;
+}
+
+// The gate of the map of no file: a region of the share Anonymous.
+template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
+concept CtxFitsAnonRegionMint =
+    CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...> && std::is_same_v<Share, share::Anonymous>;
+
+// The gate of the map of a file through a handle with the rights Held.
+template <typename Ctx, typename Prot, typename Share, ::fixy::os::RightSet Held, typename... Modifiers>
+concept CtxFitsFileRegionMint =
+    CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...> && !std::is_same_v<Share, share::Anonymous>
+    && ::fixy::os::HoldsRights<Held, file_map_rights<Prot, Share>()>;
+
+// The gate of the map of a descriptor that a C library opened.
+template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
+concept CtxFitsForeignRegionMap =
+    CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...> && !std::is_same_v<Share, share::Anonymous>;
+
 // The gate of OwnedMmap::view.  The view starts the lifetime of its
 // elements over the bytes of the mapping, so each subobject of an element
 // is an implicit-lifetime type.  A page is aligned to at least 4096 bytes,
@@ -283,6 +325,26 @@ class [[nodiscard]] OwnedMmap final
     // claimed over.
     explicit OwnedMmap(void* address, std::size_t length) noexcept : Core{State{address, length}} {}
 
+    // The map of the doors below.  It maps with the bits of Prot, Share and
+    // the modifiers, and it builds a region only from an address the kernel
+    // returned.  On failure it returns the error of the kernel and builds no
+    // region.  The map reads the file of descriptor from the byte at offset,
+    // and an anonymous map takes the descriptor -1 and the offset 0.  The
+    // body deduces the return type Result<OwnedMmap, Errno>, for the reason
+    // that the doors below give.
+    template <typename... Modifiers>
+    [[nodiscard]] static auto map_(int descriptor, std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
+        using Mapped = ::foundation::core::Result<OwnedMmap, ::foundation::os::Errno>;
+        constexpr int protection = mmap::prot_bits_of(^^Prot);
+        constexpr int flags = (mmap::share_flags_of(^^Share) | ... | mmap::detail::modifier_flags<Modifiers>());
+        ::foundation::core::Result<void*, ::foundation::os::Errno> mapped =
+            mmap::detail::map_region_(length, protection, flags, descriptor, offset.raw());
+        for (::foundation::os::Errno const error : mapped.err()) {
+            return Mapped{::foundation::core::err(error)};
+        }
+        return Mapped{OwnedMmap{std::move(mapped).expect("the map door gave the address of the map"), length}};
+    }
+
 public:
     using tag_type = Tag;
     using prot_type = Prot;
@@ -295,10 +357,8 @@ public:
     // nothing, so it stays public.
     OwnedMmap() noexcept = default;
 
-    // The one door.  It maps with the bits of Prot, Share and the
-    // modifiers, and it builds a region only from an address the kernel
-    // returned.  On failure it returns the error of the kernel and builds
-    // no region.  The map reads the file of fd from the byte at offset.
+    // The map of no file: a region of the share Anonymous (THE SOURCE OF A
+    // MAP).
     //
     // The permission is read and not consumed.  The caller keeps it, and
     // presents it again to fixy::mmap::advise_release_aware.
@@ -307,19 +367,41 @@ public:
     // A declaration of a member is part of the class, so a Result of the
     // class in the declaration names a class that is not yet complete.
     template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx>
-        requires mmap::CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...>
+        requires mmap::CtxFitsAnonRegionMint<Ctx, Prot, Share, Modifiers...>
     [[nodiscard]] static auto mint_region(Ctx const&,
-                                          ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/, int fd,
+                                          ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
+                                          std::size_t length) noexcept {
+        return map_<Modifiers...>(-1, length, ::fixy::fs::FileOffset{0});
+    }
+
+    // The map of the file of a handle from the byte at offset.  The handle
+    // holds the rights that file_map_rights names (THE SOURCE OF A MAP).
+    // The borrow of an empty handle gives ebadf.  The permission is read as
+    // in the anonymous form.
+    template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx, ::fixy::os::RightSet Rights>
+        requires mmap::CtxFitsFileRegionMint<Ctx, Prot, Share, Rights, Modifiers...>
+    [[nodiscard]] static auto mint_region(Ctx const&,
+                                          ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
+                                          ::fixy::os::HandleRef<::fixy::os::kind::File, Rights> file,
                                           std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
+        return map_<Modifiers...>(::fixy::os::detail::HandleDoor::descriptor_of(file), length, offset);
+    }
+
+    // The map of a descriptor that a C library opened, such as the map of a
+    // BPF object, from the byte at offset (THE SOURCE OF A MAP).  The
+    // descriptor is the int of the C library, and a negative descriptor
+    // gives ebadf with no call to the kernel.  The permission is read as in
+    // the anonymous form.
+    template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx>
+        requires mmap::CtxFitsForeignRegionMap<Ctx, Prot, Share, Modifiers...>
+    [[nodiscard]] static auto
+    map_foreign_region(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
+                       int abi_descriptor, std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
         using Mapped = ::foundation::core::Result<OwnedMmap, ::foundation::os::Errno>;
-        constexpr int protection = mmap::prot_bits_of(^^Prot);
-        constexpr int flags = (mmap::share_flags_of(^^Share) | ... | mmap::detail::modifier_flags<Modifiers>());
-        ::foundation::core::Result<void*, ::foundation::os::Errno> mapped =
-            mmap::detail::map_region_(length, protection, flags, fd, offset.raw());
-        for (::foundation::os::Errno const error : mapped.err()) {
-            return Mapped{::foundation::core::err(error)};
+        if (abi_descriptor < 0) {
+            return Mapped{::foundation::core::err(::foundation::os::Errno::ebadf)};
         }
-        return Mapped{OwnedMmap{std::move(mapped).expect("the map door gave the address of the map"), length}};
+        return map_<Modifiers...>(abi_descriptor, length, offset);
     }
 
     OwnedMmap(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");

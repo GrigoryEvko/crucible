@@ -23,6 +23,6 @@ int main() {
     auto const owner = foundation::permissions::mint_permission_root<Region>();
     using Brand = std::remove_cvref_t<decltype(owner)>::brand_type;
     using AnonRegion = fixy::OwnedMmap<Region, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, Brand>;
-    [[maybe_unused]] auto refused = AnonRegion::mint_region<fixy::mmap::share::Shared>(ctx, owner, -1, 4096, 0);
+    [[maybe_unused]] auto refused = AnonRegion::mint_region<fixy::mmap::share::Shared>(ctx, owner, 4096);
     return 0;
 }

@@ -5,6 +5,7 @@
 //
 // The descriptor is -1, and nothing here is ever run.
 
+#include <fixy/os/Fs.h>
 #include <fixy/os/Mmap.h>
 
 namespace eff = foundation::effects;
@@ -21,6 +22,7 @@ using Shared = fixy::atom::mmap::with_share<fixy::mmap::share::Shared>;
 int main() {
     auto const token = eff::testing::test();
     auto const owner = perm::mint_permission_root<FileRegion>();
-    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared>(token, owner, -1, 4096);
+    fixy::fs::TemporaryFile const file{};
+    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared>(token, owner, file.ref(), 4096);
     return 0;
 }

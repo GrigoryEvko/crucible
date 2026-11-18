@@ -228,12 +228,22 @@ template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
 inline constexpr bool region_mint_admits_v<Ctx, Prot, Share, region_modifiers<Modifiers...>> =
     CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...>;
 
-template <typename Region, typename... Modifiers, typename Ctx, typename Owner>
+// The region of a map through the door form of OwnedMmap::mint_region that
+// the source arguments name: the length alone for a map of no file, or the
+// borrow of a file, the length and the offset.
+template <typename Region, typename... Modifiers, typename Ctx, typename Owner, typename... Source>
 [[nodiscard]] ::foundation::core::Result<Region, ::foundation::os::Errno>
-mint_region_with_(region_modifiers<Modifiers...>, Ctx const& ctx, Owner const& owner, int fd, std::size_t length,
-                  ::fixy::fs::FileOffset offset) noexcept {
-    return Region::template mint_region<Modifiers...>(ctx, owner, fd, length, offset);
+mint_region_with_(region_modifiers<Modifiers...>, Ctx const& ctx, Owner const& owner, Source... source) noexcept {
+    return Region::template mint_region<Modifiers...>(ctx, owner, source...);
 }
+
+// The gate of the map of a file, read over the modifier list of a pack, as
+// region_mint_admits_v reads the gate of a region.
+template <typename Ctx, typename Prot, typename Share, ::fixy::os::RightSet Held, typename List>
+inline constexpr bool file_region_mint_admits_v = false;
+template <typename Ctx, typename Prot, typename Share, ::fixy::os::RightSet Held, typename... Modifiers>
+inline constexpr bool file_region_mint_admits_v<Ctx, Prot, Share, Held, region_modifiers<Modifiers...>> =
+    CtxFitsFileRegionMint<Ctx, Prot, Share, Held, Modifiers...>;
 
 // The Linear of the region of a map, or the error of the map.  The region
 // holds an address, so the step is a test of the error and not a match,
@@ -276,6 +286,15 @@ concept CtxFitsMmapMint =
 
 template <typename Ctx, typename... Atoms>
 concept CtxFitsAnonMmapMint = CtxFitsMmapMint<Ctx, Atoms...> && detail::pack_has_anonymous_v<Atoms...>;
+
+// The gate of the map of a file through a handle with the rights Held: the
+// gate of the pack, no anonymous share, and the rights that
+// file_map_rights of fixy/os/OwnedMmap.h names.
+template <typename Ctx, ::fixy::os::RightSet Held, typename... Atoms>
+concept CtxFitsFileMmapMint =
+    CtxFitsMmapMint<Ctx, Atoms...> && !detail::pack_has_anonymous_v<Atoms...>
+    && detail::file_region_mint_admits_v<Ctx, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Held,
+                                         detail::region_modifiers_t<Atoms...>>;
 
 // The advice tags lift nothing, so these two gates name the row the
 // madvise call itself needs rather than deriving it.  Both calls reach
@@ -325,15 +344,17 @@ concept CtxFitsReleaseAwareAdvise = CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice
 // permission has the identity of that permission, and the exclusive of
 // that identity covers each of them.
 //
-// The descriptor is a plain int rather than an owning handle type, so
-// that a descriptor from any source reaches this without a conversion.
-// The map reads the file from the byte at offset.
-template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand>
-    requires CtxFitsMmapMint<Ctx, Atoms...>
+// The file is the borrow of the Handle of the file, with the right map,
+// and also read and write for a shared map that writes (THE SOURCE OF A MAP
+// of fixy/os/OwnedMmap.h).  The map reads the file from the byte at offset.
+template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand,
+          ::fixy::os::RightSet Rights>
+    requires CtxFitsFileMmapMint<Ctx, Rights, Atoms...>
 [[nodiscard]] inline ::foundation::core::Result<
     Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>,
     ::foundation::os::Errno>
-mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> const& owner, int fd, std::size_t length,
+mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> const& owner,
+          ::fixy::os::HandleRef<::fixy::os::kind::File, Rights> file, std::size_t length,
           ::fixy::fs::FileOffset offset = ::fixy::fs::FileOffset{0}) noexcept {
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
     // The syscall lives with the region's only constructor, in
@@ -341,11 +362,10 @@ mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> cons
     // region, and its bits come from the region type.  What this mint
     // adds is the atom pack: which atoms, and the row they lift to.
     return detail::linear_region_<Region>(
-        detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, fd, length, offset));
+        detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, file, length, offset));
 }
 
-// An anonymous mapping takes a descriptor of -1 and an offset of 0,
-// which is the convention mmap(2) states.  The permission is read as in
+// An anonymous mapping maps no file.  The permission is read as in
 // mint_mmap.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand>
     requires CtxFitsAnonMmapMint<Ctx, Atoms...>
@@ -355,8 +375,8 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag,
 mint_mmap_anon(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> const& owner,
                std::size_t length) noexcept {
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
-    return detail::linear_region_<Region>(detail::mint_region_with_<Region>(
-        detail::region_modifiers_t<Atoms...>{}, ctx, owner, -1, length, ::fixy::fs::FileOffset{0}));
+    return detail::linear_region_<Region>(
+        detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, length));
 }
 
 // The advice gives the unit, or the error of the kernel.  The door gives

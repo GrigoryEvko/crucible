@@ -100,6 +100,27 @@ static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::s
               "a repeated modifier names nothing new.");
 static_assert(!mmap::CtxFitsRegionMint<IoBlockCtx, int, mmap::share::Private>, "a prot tag with no bits is refused.");
 
+// THE SOURCE OF A MAP: the rights of the handle of a file, one form for
+// each source.
+using os::RightSet;
+static_assert(mmap::file_map_rights<mmap::prot::ReadOnly, mmap::share::Shared>() == RightSet::map);
+static_assert(mmap::file_map_rights<mmap::prot::ReadWrite, mmap::share::Private>() == RightSet::map,
+              "the stores of a private map reach no file");
+static_assert(mmap::file_map_rights<mmap::prot::ReadWrite, mmap::share::Shared>()
+                  == (RightSet::map | RightSet::read | RightSet::write),
+              "the stores of a shared map reach the file");
+static_assert(mmap::CtxFitsFileRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Shared, RightSet::map>);
+static_assert(!mmap::CtxFitsFileRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Shared, RightSet::write>,
+              "a handle with no map right maps nothing.");
+static_assert(!mmap::CtxFitsFileRegionMint<IoBlockCtx, mmap::prot::ReadWrite, mmap::share::Shared, RightSet::map>,
+              "a shared map that writes needs the read and the write right.");
+static_assert(!mmap::CtxFitsFileRegionMint<IoBlockCtx, mmap::prot::WriteCopy, mmap::share::Anonymous, RightSet::map>,
+              "an anonymous map takes no file.");
+static_assert(mmap::CtxFitsAnonRegionMint<IoBlockCtx, mmap::prot::WriteCopy, mmap::share::Anonymous>);
+static_assert(!mmap::CtxFitsAnonRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Private>);
+static_assert(mmap::CtxFitsForeignRegionMap<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Shared>);
+static_assert(!mmap::CtxFitsForeignRegionMap<IoBlockCtx, mmap::prot::WriteCopy, mmap::share::Anonymous>);
+
 // A tag with no row is refused, and so is a tag with a cv-qualifier,
 // which is another type.  An alias of a tag is the tag.
 struct NotAProt final {};

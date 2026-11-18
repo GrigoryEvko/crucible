@@ -3,6 +3,7 @@
 // word from the type, so an executable page comes only from a region
 // typed prot::Exec, and that type asks for the licence.
 
+#include <fixy/os/Fs.h>
 #include <fixy/os/OwnedMmap.h>
 #include <foundation/permissions/Permission.h>
 
@@ -22,6 +23,7 @@ int main() {
     auto const owner = foundation::permissions::mint_permission_root<Region>();
     using Brand = std::remove_cvref_t<decltype(owner)>::brand_type;
     using ExecRegion = fixy::OwnedMmap<Region, fixy::mmap::prot::Exec, fixy::mmap::share::Private, Brand>;
-    [[maybe_unused]] auto refused = ExecRegion::mint_region(ctx, owner, -1, 4096, 0);
+    fixy::fs::TemporaryFile const file{};
+    [[maybe_unused]] auto refused = ExecRegion::mint_region(ctx, owner, file.ref(), 4096, fixy::fs::FileOffset{0});
     return 0;
 }

@@ -314,8 +314,11 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
     const ::foundation::permissions::Permission<bpf_map_region<Tag>> owner =
         ::foundation::permissions::permission_erase_brand(
             ::foundation::permissions::mint_permission_root<bpf_map_region<Tag>>());
+    // The map door refuses a negative descriptor with ebadf.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: libbpf opened the descriptor of the BPF map, and the map door maps it")
     ::fixy::Result<ReadOnlyMapping<Tag>, ::foundation::os::Errno> mapped =
-        ReadOnlyMapping<Tag>::mint_region(ctx, owner, map_descriptor.value(), length, ::fixy::fs::FileOffset{0});
+        ReadOnlyMapping<Tag>::map_foreign_region(ctx, owner, map_descriptor.value(), length, ::fixy::fs::FileOffset{0});
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     for (::foundation::os::Errno const error : mapped.err()) {
         report_unavailable(facade, map_name.text,
                            "mmap failed (apply CAP_BPF; BPF_F_MMAPABLE needs CAP_BPF or kernel 5.5 or later)",

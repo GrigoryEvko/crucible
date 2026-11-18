@@ -5251,6 +5251,11 @@ fixy_neg_compile_test(neg_os_mmap_ctx_lacks_io
   "required for the satisfaction of .CtxFitsMmapMint<Ctx, Atoms ...>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block> >"
   "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block>.. evaluated to .false.")
 
+fixy_neg_compile_test(neg_os_mmap_file_lacks_map_right
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::IoBlockCtx&, "
+  "required for the satisfaction of .CtxFitsFileMmapMint<Ctx, Rights, Atoms ...>."
+  "the expression .file_region_mint_admits_v<Ctx, ")
+
 fixy_neg_compile_test(neg_os_mmap_non_ctx
   "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(const foundation::effects::Test&"
   "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = foundation::effects::Test.")

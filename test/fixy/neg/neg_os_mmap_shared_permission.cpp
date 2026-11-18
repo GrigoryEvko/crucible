@@ -9,6 +9,7 @@
 // The descriptor is -1.  The fixture is compiled and never run, so the
 // pool never ends with the share still out.
 
+#include <fixy/os/Fs.h>
 #include <fixy/os/Mmap.h>
 #include <foundation/permissions/SharedPermission.h>
 
@@ -29,6 +30,7 @@ int main() {
     perm::SharedPermissionPool pool{perm::mint_permission_root<FileRegion>()};
     const eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Nondet>> pool_ctx{eff::testing::test()};
     auto guard = pool.lend(pool_ctx).expect("an idle pool lends a share");
-    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, guard, -1, 4096);
+    fixy::fs::TemporaryFile const file{};
+    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, guard, file.ref(), 4096);
     return 0;
 }

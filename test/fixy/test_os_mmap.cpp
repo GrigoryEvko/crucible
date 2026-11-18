@@ -16,11 +16,12 @@
 // last share ends.
 
 #include <fixy/Core.h>
+#include <fixy/os/Fs.h>
 #include <fixy/os/Mmap.h>
+#include <fixy/os/Path.h>
 #include <foundation/permissions/SharedPermission.h>
 
 #include <sys/mman.h>
-#include <unistd.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -137,38 +138,40 @@ region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
 [[nodiscard]] int file_mapping_shows_the_file_bytes() {
     IoBlockCtx ctx{eff::testing::test()};
 
-    const int fd = ::memfd_create("fixy-mmap-test", 0);
-    if (fd < 0) {
-        std::fprintf(stderr, "[skipped] memfd_create is unavailable here (errno %d)\n", errno);
+    // A file with no name under /tmp, which the kernel removes at its last
+    // close.
+    auto const tmp = fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(fixy::TextView{"/tmp"}))
+                         .expect("/tmp passes the check");
+    fixy::fs::DirectoryHandle const directory = fixy::fs::open_directory(ctx, tmp).expect("/tmp opens");
+    fixy::fs::TemporaryFile file =
+        fixy::fs::mint_temporary_file_at(ctx, directory.ref())
+            .match([](fixy::Linear<fixy::fs::TemporaryFile> opened) { return std::move(opened).consume(); },
+                   [](foundation::os::Errno) { return fixy::fs::TemporaryFile{}; });
+    if (!file.is_open()) {
+        fixy::report(fixy::Sink::Out, "[skipped] the file system of /tmp has no file with no name\n");
         return 0;
     }
+
     // The file holds two pages, and the second page holds a different
     // pattern, so a map at offset zero does not show it.
-    if (::ftruncate(fd, static_cast<::off_t>(2 * kPageBytes)) != 0) {
-        std::fprintf(stderr, "ftruncate on the memfd failed (errno %d)\n", errno);
-        ::close(fd);
-        return 1;
-    }
-
     std::uint8_t pattern[2 * kPageBytes];
     for (std::size_t index = 0; index < 2 * kPageBytes; ++index) {
         pattern[index] = static_cast<std::uint8_t>((index * 7u + (index / kPageBytes) * 3u) & 0xFFu);
     }
-    if (::pwrite(fd, pattern, 2 * kPageBytes, 0) != static_cast<::ssize_t>(2 * kPageBytes)) {
-        std::fprintf(stderr, "pwrite of the pattern failed (errno %d)\n", errno);
-        ::close(fd);
+    if (fixy::fs::write_full(ctx, file.ref(), fixy::bytes(pattern)).is_err()) {
+        fixy::report(fixy::Sink::Err, "the write of the pattern into the file failed\n");
         return 1;
     }
 
     const auto owner = perm::mint_permission_root<FileRegion>();
-    auto mapped = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, owner, fd, kPageBytes));
+    auto mapped = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, owner, file.ref(), kPageBytes));
     auto second = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(
-        ctx, owner, fd, kPageBytes, fixy::fs::FileOffset{static_cast<std::int64_t>(kPageBytes)}));
-    // The descriptor is not needed once the mapping exists: the mapping
-    // holds its own reference to the file.
-    ::close(fd);
+        ctx, owner, file.ref(), kPageBytes, fixy::fs::FileOffset{static_cast<std::int64_t>(kPageBytes)}));
+    // The file is not needed once the mapping exists: the mapping holds its
+    // own reference to the file.
+    file = fixy::fs::TemporaryFile{};
     if (mapped.is_err() || second.is_err()) {
-        fixy::report(fixy::Sink::Err, "a shared read-only mapping of the memfd failed (errno {}, {})\n",
+        fixy::report(fixy::Sink::Err, "a shared read-only mapping of the file failed (errno {}, {})\n",
                      foundation::os::error_number_of(mapped), foundation::os::error_number_of(second));
         return 1;
     }

@@ -46,8 +46,7 @@ using MapCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::
 template <typename Prot, typename Brand>
 [[nodiscard]] auto map_pages(perm::Permission<PageTag, Brand> const& owner, std::size_t length) {
     MapCtx ctx{eff::testing::test()};
-    return ::fixy::OwnedMmap<PageTag, Prot, mm::share::Anonymous, Brand>::mint_region(ctx, owner, -1, length,
-                                                                                      ::fixy::fs::FileOffset{0});
+    return ::fixy::OwnedMmap<PageTag, Prot, mm::share::Anonymous, Brand>::mint_region(ctx, owner, length);
 }
 
 static_assert(!std::is_copy_constructible_v<Region>);
@@ -192,9 +191,23 @@ int check_view_at(Mapping& region, std::size_t len) {
     return 0;
 }
 
+// The foreign map refuses a negative descriptor with ebadf, before the
+// kernel sees it.  The case takes the permission of check_live_mapping.
+template <typename Brand>
+int check_the_foreign_map_refuses_a_negative_descriptor(perm::Permission<PageTag, Brand> const& owner,
+                                                        std::size_t len) {
+    MapCtx ctx{eff::testing::test()};
+    auto const refused = ::fixy::OwnedMmap<PageTag, mm::prot::ReadOnly, mm::share::Shared, Brand>::map_foreign_region(
+        ctx, owner, -1, len, ::fixy::fs::FileOffset{0});
+    if (refused.is_ok()) return 60;
+    if (refused.err().value_or(::foundation::os::Errno{}) != ::foundation::os::Errno::ebadf) return 61;
+    return 0;
+}
+
 int check_live_mapping() {
     const std::size_t len = page_bytes();
     auto const owner = perm::mint_permission_root<PageTag>();
+    if (int rc = check_the_foreign_map_refuses_a_negative_descriptor(owner, len); rc != 0) return rc;
     auto mapped = map_pages<mm::prot::WriteCopy>(owner, len);
     if (mapped.is_err()) return 0;  // mapping unavailable; nothing to check
 
