@@ -4,8 +4,9 @@
 //
 // A walk is a value: a nest of stages over a View, with no allocation and no
 // type erasure.  view.walk() gives the head of a chain, and an owner gives
-// its walk through view().walk().  Each adapter gives a new walk, and a
-// terminal gives the result:
+// its walk through view().walk().  The iteration verbs reverse(),
+// windows<W>(), chunks<W>() and enumerate() of a View and of an owner give a
+// walk too.  Each adapter gives a new walk, and a terminal gives the result:
 //
 //   map(fn)            each element through fn
 //   filter(keep)       the elements that keep accepts
@@ -26,6 +27,8 @@
 //   any_of(holds)      true when holds accepts an element
 //   all_of(holds)      true when holds accepts each element
 //   for (x : walk)     the cursor loop
+//   rest()             the View of the elements after the last run of a walk
+//                      of chunks<W>(), which no run holds
 //
 // Each adapter and each terminal takes the walk through &&, so a chain reads
 // as one expression, and a named walk moves into its next step.  The walk of
@@ -71,8 +74,9 @@
 //   walk_filter_count_cursor shows a scalar loop with a branch for each
 //   element, where filter(keep).count() gives the vector loop.  That loop is
 //   for a body with a side effect.  A flat_map walk has no cursor: its
-//   terminals push through the nest.  A cursor borrows its walk, so the
-//   cursor of a temporary walk is refused.
+//   terminals push through the nest.  A cursor of a map, a filter or a zip
+//   points into its walk, so the cursor of such a temporary walk is refused.
+//   A cursor of a root stage holds only places of the run.
 //
 // THE STAGES
 //   A stage is a value of detail that gives its elements in two ways:
@@ -87,7 +91,8 @@
 //   extent, which is dynamic_extent unless the type proves the count.  An
 //   exact stage also gives size_(), at_(position), and the smaller stages
 //   limited_(count) and skipped_(count).  A stage with a cursor gives
-//   begin_() and end_().  The root stages of the Region family are in
+//   begin_() and end_(), and cursor_borrows_stage states whether its cursor
+//   points into the stage.  The root stages of the Region family are in
 //   foundation/core/Region.h.
 
 #include <foundation/Brand.h>
@@ -168,6 +173,7 @@ public:
     using element_reference = std::invoke_result_t<Fn const&, InnerElement>;
     static constexpr bool is_exact = Inner::is_exact;
     static constexpr std::size_t extent = Inner::extent;
+    static constexpr bool cursor_borrows_stage = true;
 
     constexpr MapStage(Inner inner, Fn fn) noexcept : inner_{static_cast<Inner&&>(inner)}, fn_{static_cast<Fn&&>(fn)} {}
 
@@ -256,6 +262,7 @@ public:
     using element_reference = typename Inner::element_reference;
     static constexpr bool is_exact = false;
     static constexpr std::size_t extent = dynamic_extent;
+    static constexpr bool cursor_borrows_stage = true;
 
     constexpr FilterStage(Inner inner, Keep keep) noexcept
         : inner_{static_cast<Inner&&>(inner)}, keep_{static_cast<Keep&&>(keep)} {}
@@ -335,6 +342,7 @@ public:
     using element_reference = typename Inner::element_reference;
     static constexpr bool is_exact = false;
     static constexpr std::size_t extent = dynamic_extent;
+    static constexpr bool cursor_borrows_stage = Inner::cursor_borrows_stage;
 
     constexpr LimitStage(Inner inner, std::size_t count) noexcept
         : inner_{static_cast<Inner&&>(inner)}, count_{count} {}
@@ -458,6 +466,7 @@ public:
     using element_reference = Record<FirstPart, SecondPart>;
     static constexpr bool is_exact = true;
     static constexpr std::size_t extent = First::extent != dynamic_extent ? First::extent : Second::extent;
+    static constexpr bool cursor_borrows_stage = true;
 
     constexpr ZipStage(First first, Second second) noexcept
         : first_{static_cast<First&&>(first)}, second_{static_cast<Second&&>(second)} {}
@@ -557,6 +566,7 @@ public:
     using element_reference = typename decltype(std::declval<Expanded&>().stage_)::element_reference;
     static constexpr bool is_exact = false;
     static constexpr std::size_t extent = dynamic_extent;
+    static constexpr bool cursor_borrows_stage = true;
 
     constexpr FlatMapStage(Inner inner, Fn fn) noexcept
         : inner_{static_cast<Inner&&>(inner)}, fn_{static_cast<Fn&&>(fn)} {}
@@ -754,6 +764,14 @@ public:
         requires is_exact_
     = delete("an exact walk knows its count: size() gives it with no walk of the elements");
 
+    // The View of the elements after the last run of a walk of chunks<W>() of
+    // a View, which no run holds.  O(1).
+    [[nodiscard]] constexpr auto rest() const noexcept
+        requires requires(Stage const& stage) { stage.rest_(); }
+    {
+        return stage_.rest_();
+    }
+
     // True when holds accepts an element.  The walk stops at the first such
     // element, and an empty walk gives false.  O(n) calls of holds.
     template <class Holds>
@@ -790,8 +808,29 @@ public:
         return stage_.end_();
     }
 
-    void begin() const&& = delete("a cursor of a temporary walk points into an object that the full expression ends");
-    void end() const&& = delete("a cursor of a temporary walk points into an object that the full expression ends");
+    // A cursor of a root stage holds only places of the run, so a temporary
+    // walk gives it too, such as view.reverse().end().
+    [[nodiscard]] constexpr auto begin() const&& noexcept
+        requires detail::CursorStage<Stage> && (!Stage::cursor_borrows_stage)
+    {
+        return stage_.begin_();
+    }
+
+    [[nodiscard]] constexpr auto end() const&& noexcept
+        requires detail::CursorStage<Stage> && (!Stage::cursor_borrows_stage)
+    {
+        return stage_.end_();
+    }
+
+    void begin() const&& noexcept
+        requires detail::CursorStage<Stage>&& Stage::cursor_borrows_stage
+    = delete(
+        "a cursor of a map, a filter or a zip points into its walk, and the full expression ends a temporary walk");
+
+    void end() const&& noexcept
+        requires detail::CursorStage<Stage>&& Stage::cursor_borrows_stage
+    = delete(
+        "a cursor of a map, a filter or a zip points into its walk, and the full expression ends a temporary walk");
 };
 
 }  // namespace foundation::core

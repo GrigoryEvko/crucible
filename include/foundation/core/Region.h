@@ -66,6 +66,10 @@
 //                       view.walk().map(fn).fold(init, step).  Each step of
 //                       the root stage detail::ViewStage gives T&, in the
 //                       counted loop of the View
+//   reverse(), windows<W>(), chunks<W>(), enumerate()
+//                       the iteration verbs: each gives a walk whose root
+//                       stage is in this header, so `for (x : view.reverse())`
+//                       and view.reverse().map(fn).fold(init, step) both work
 // Walk.h is below this header, and it gives dynamic_extent and
 // LengthMismatch.
 //
@@ -207,23 +211,24 @@ template <::foundation::brand::IsBrand Brand, class T>
     return Option<Ref<T, Brand>>::some(RefDoor::lend<Brand>(first[position]));
 }
 
-// The loops of the iteration verbs reverse(), windows<W>(), chunks<W>(),
-// enumerate() and zip(first, second) of a View, and their cursors.  View
-// names the ranges as friends, and this header defines each of them.
+// The root stages of the walks of the iteration verbs reverse(),
+// windows<W>(), chunks<W>() and enumerate() of a View, and their cursors,
+// and the loop of zip(first, second).  View names the zip range as a friend,
+// and this header defines each of them.
 template <class Element>
-class ReverseRange;
+class ReverseStage;
 template <class Element>
 class ReverseCursor;
 template <class Element, std::size_t Width>
-class WindowRange;
+class WindowStage;
 template <class Element, std::size_t Width>
 class WindowCursor;
 template <class Element, std::size_t Width>
-class ChunkRange;
+class ChunkStage;
 template <class Element, std::size_t Width>
 class ChunkCursor;
-template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand>
-class EnumerateRange;
+template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+class EnumerateStage;
 template <class Element, std::size_t Count, class Brand>
 class EnumerateCursor;
 template <class First, class Second, ::foundation::brand::IsBrand Brand>
@@ -249,20 +254,7 @@ class View {
     friend class View;
 
     friend struct niche<View>;
-    // The ranges of the iteration verbs read the pointer member of their View
-    // directly.
-    template <class Element>
-    friend class detail::ReverseRange;
-    template <class Element, std::size_t Width>
-    friend class detail::WindowRange;
-    template <class Element, std::size_t Width>
-    friend class detail::WindowCursor;
-    template <class Element, std::size_t Width>
-    friend class detail::ChunkCursor;
-    template <class Element, std::size_t Width>
-    friend class detail::ChunkRange;
-    template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand>
-    friend class detail::EnumerateRange;
+    // The range of zip reads the pointer member of its Views directly.
     template <class First, class Second, ::foundation::brand::IsBrand Brand>
     friend class detail::ZipRange;
 
@@ -377,40 +369,44 @@ public:
         return detail::element_at_<Fresh>(first_, size(), position);
     }
 
-    // The loop `for (auto [index, element] : view.enumerate())` reads each
-    // element with its proven index, in order.  Each step gives a Record of
-    // the Index<Extent> of indices() and a Ref to the element, and each Ref
-    // of one call has the fresh brand of that call.  Only a View of a fixed
-    // extent has indices(), so only that View has enumerate().  The pack
-    // refuses each explicit argument.
+    // The walk of each element with its proven index, in order:
+    // `for (auto [index, element] : view.enumerate())`.  Each step gives a
+    // Record of the Index<Extent> of indices() and a Ref to the element, and
+    // each Ref of one call has the fresh brand of that call.  Only a View of a
+    // fixed extent has indices(), so only that View has enumerate().  A limit
+    // or a skip of the walk keeps the index of each element in the View.  The
+    // pack refuses each explicit argument.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0 && Extent != dynamic_extent)
     [[nodiscard]] constexpr auto enumerate() const noexcept {
-        return detail::EnumerateRange<T, Extent, Fresh>{*this};
+        using Stage = detail::EnumerateStage<T, Extent, Fresh, Extent>;
+        return Walk<Stage>{Stage{*this, 0}};
     }
 
-    // The loop `for (T& element : view.reverse())` reads each element one
-    // time, from the last element.
-    [[nodiscard]] constexpr auto reverse() const noexcept { return detail::ReverseRange<T>{View<T>{*this}}; }
+    // The walk of each element one time, from the last element:
+    // `for (T& element : view.reverse())`.
+    [[nodiscard]] constexpr auto reverse() const noexcept {
+        return Walk<detail::ReverseStage<T>>{detail::ReverseStage<T>{View<T>{*this}}};
+    }
 
-    // The loop `for (View<T, Width> run : view.windows<Width>())` reads each
-    // run of Width consecutive elements, with a step of one element.  A View
-    // of fewer than Width elements gives no run.  A View of a fixed extent
+    // The walk of each run of Width consecutive elements, with a step of one
+    // element: `for (View<T, Width> run : view.windows<Width>())`.  A View of
+    // fewer than Width elements gives no run.  A View of a fixed extent
     // refuses a Width past its extent at compile time.
     template <std::size_t Width>
         requires ViewExtent<T, Width> && (Width != dynamic_extent) && (Extent == dynamic_extent || Width <= Extent)
     [[nodiscard]] constexpr auto windows() const noexcept {
-        return detail::WindowRange<T, Width>{View<T>{*this}};
+        return Walk<detail::WindowStage<T, Width>>{detail::WindowStage<T, Width>{View<T>{*this}}};
     }
 
-    // The loop `for (View<T, Width> run : view.chunks<Width>())` reads each
-    // run of Width elements, with a step of Width elements.  rest() of the
-    // range gives the View of the last size() % Width elements, which no
-    // run holds.
+    // The walk of each run of Width elements, with a step of Width elements:
+    // `for (View<T, Width> run : view.chunks<Width>())`.  rest() of the walk
+    // gives the View of the elements after its last run: the last
+    // size() % Width elements.
     template <std::size_t Width>
         requires ViewExtent<T, Width> && (Width != dynamic_extent) && (Extent == dynamic_extent || Width <= Extent)
     [[nodiscard]] constexpr auto chunks() const noexcept {
-        return detail::ChunkRange<T, Width>{View<T>{*this}};
+        return Walk<detail::ChunkStage<T, Width>>{detail::ChunkStage<T, Width>{View<T>{*this}}};
     }
 
     // The count elements from offset, or no value when they do not fit.
@@ -512,6 +508,7 @@ public:
     using element_reference = T&;
     static constexpr bool is_exact = true;
     static constexpr std::size_t extent = Extent;
+    static constexpr bool cursor_borrows_stage = false;
 
     constexpr explicit ViewStage(View<T, Extent> elements) noexcept : elements_{elements} {}
 
@@ -973,13 +970,14 @@ template <class T>
 
 namespace detail {
 
-// The cursors of the iteration verbs obey the rule of a ViewCursor: each
-// cursor knows the end of its loop, a read or a step at the end ends the
-// process in each build, and the optimizer removes the two checks in a loop
-// that compares the cursor with the end first.  A cursor comes only from
-// its range, and the seal refuses std::bit_cast and a lifetime start over
-// bytes.  A range comes only from a View, so it holds a run that a View
-// proves.
+// The root stages of the iteration verbs give the walks of THE STAGES of
+// foundation/core/Walk.h.  Each stage comes only from a View, so it holds a
+// run that a View proves.  The cursors of the stages obey the rule of a
+// ViewCursor: each cursor knows the end of its loop, a read or a step at the
+// end ends the process in each build, and the optimizer removes the two
+// checks in a loop that compares the cursor with the end first.  A cursor
+// comes only from its stage, and the seal refuses std::bit_cast and a
+// lifetime start over bytes.
 
 // The position of a reverse loop: the place after the next element to read,
 // and the first element of the View, which is the end of the loop.
@@ -989,7 +987,7 @@ class ReverseCursor {
     Element* first_ = nullptr;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    friend class ReverseRange<Element>;
+    friend class ReverseStage<Element>;
 
     constexpr ReverseCursor(Element* after, Element* first) noexcept : after_{after}, first_{first} {}
 
@@ -1014,20 +1012,67 @@ public:
     }
 };
 
-// The elements of a View, from the last element.
+// The root stage of reverse(): the elements of a View, from the last
+// element.  The loop is the backward loop of a pointer.
 template <class Element>
-class ReverseRange {
+class ReverseStage final {
     View<Element> elements_;
 
-public:
-    constexpr explicit ReverseRange(View<Element> elements) noexcept : elements_{elements} {}
+    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), elements_); }
 
-    [[nodiscard]] constexpr ReverseCursor<Element> begin() const noexcept {
-        Element* const first = elements_.first_;
+public:
+    using element_reference = Element&;
+    static constexpr bool is_exact = true;
+    static constexpr std::size_t extent = dynamic_extent;
+    static constexpr bool cursor_borrows_stage = false;
+
+    constexpr explicit ReverseStage(View<Element> elements) noexcept : elements_{elements} {}
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
+        Element* const first = first_();
+        for (Element* after = first + elements_.size(); after != first; --after) {
+            sink(after[-1]);
+        }
+    }
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
+        Element* const first = first_();
+        for (Element* after = first + elements_.size(); after != first; --after) {
+            if (sink(after[-1]) == Flow::stop) return Flow::stop;
+        }
+        return Flow::go;
+    }
+
+    [[nodiscard]] constexpr std::size_t size_() const noexcept { return elements_.size(); }
+
+    // The element at position from the last element, which the caller proves
+    // below size_().
+    [[nodiscard]] constexpr Element& at_(std::size_t position) const noexcept {
+        return first_()[elements_.size() - 1 - position];
+    }
+
+    // The last count elements, or each element when count is larger.
+    [[nodiscard]] constexpr ReverseStage limited_(std::size_t count) && noexcept {
+        std::size_t const size = elements_.size();
+        std::size_t const kept = count < size ? count : size;
+        return ReverseStage{View<Element>{ViewDoor::key(), first_() + (size - kept), kept}};
+    }
+
+    // The elements before the last count, or none when count is larger.
+    [[nodiscard]] constexpr ReverseStage skipped_(std::size_t count) && noexcept {
+        std::size_t const size = elements_.size();
+        std::size_t const dropped = count < size ? count : size;
+        return ReverseStage{View<Element>{ViewDoor::key(), first_(), size - dropped}};
+    }
+
+    [[nodiscard]] constexpr ReverseCursor<Element> begin_() const noexcept {
+        Element* const first = first_();
         return ReverseCursor<Element>{first + elements_.size(), first};
     }
-    [[nodiscard]] constexpr ReverseCursor<Element> end() const noexcept {
-        Element* const first = elements_.first_;
+    [[nodiscard]] constexpr ReverseCursor<Element> end_() const noexcept {
+        Element* const first = first_();
         return ReverseCursor<Element>{first, first};
     }
 };
@@ -1041,7 +1086,7 @@ class WindowCursor {
     Element* end_ = nullptr;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    friend class WindowRange<Element, Width>;
+    friend class WindowStage<Element, Width>;
 
     constexpr WindowCursor(Element* at, Element* end) noexcept : at_{at}, end_{end} {}
 
@@ -1050,7 +1095,7 @@ public:
         if (at_ == end_) [[unlikely]] {
             fatal("a read through the end cursor of a loop over the windows of a View");
         }
-        return View<Element, Width>{at_};
+        return View<Element, Width>{ViewDoor::key(), at_};
     }
 
     constexpr WindowCursor& operator++() noexcept {
@@ -1066,27 +1111,80 @@ public:
     }
 };
 
-// Each run of Width consecutive elements of a View, with a step of one.  A
-// View of size n holds n - Width + 1 runs, and a View of fewer than Width
-// elements holds no run.
+// The root stage of windows<Width>(): each run of Width consecutive elements
+// of a View, with a step of one.  A View of size n holds n - Width + 1 runs,
+// and a View of fewer than Width elements holds no run.
 template <class Element, std::size_t Width>
-class WindowRange {
+class WindowStage final {
     View<Element> elements_;
 
-    [[nodiscard]] constexpr Element* end_() const noexcept {
-        Element* const first = elements_.first_;
+    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), elements_); }
+
+    [[nodiscard]] constexpr std::size_t runs_() const noexcept {
+        std::size_t const size = elements_.size();
+        return size < Width ? 0 : size - Width + 1;
+    }
+
+    // The place after the first element of the last run.  The select of two
+    // places is the code of the raw loop, where a select of two counts and an
+    // add gave the probe view_windows_sum one more instruction.
+    [[nodiscard]] constexpr Element* end_of_runs_() const noexcept {
+        Element* const first = first_();
         std::size_t const size = elements_.size();
         return size < Width ? first : first + (size - Width + 1);
     }
 
 public:
-    constexpr explicit WindowRange(View<Element> elements) noexcept : elements_{elements} {}
+    using element_reference = View<Element, Width>;
+    static constexpr bool is_exact = true;
+    static constexpr std::size_t extent = dynamic_extent;
+    static constexpr bool cursor_borrows_stage = false;
 
-    [[nodiscard]] constexpr WindowCursor<Element, Width> begin() const noexcept {
-        return WindowCursor<Element, Width>{elements_.first_, end_()};
+    constexpr explicit WindowStage(View<Element> elements) noexcept : elements_{elements} {}
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
+        Element* const end = end_of_runs_();
+        for (Element* at = first_(); at != end; ++at) {
+            sink(View<Element, Width>{ViewDoor::key(), at});
+        }
     }
-    [[nodiscard]] constexpr WindowCursor<Element, Width> end() const noexcept {
-        Element* const end = end_();
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
+        Element* const end = end_of_runs_();
+        for (Element* at = first_(); at != end; ++at) {
+            if (sink(View<Element, Width>{ViewDoor::key(), at}) == Flow::stop) return Flow::stop;
+        }
+        return Flow::go;
+    }
+
+    [[nodiscard]] constexpr std::size_t size_() const noexcept { return runs_(); }
+
+    // The run at position, which the caller proves below size_().
+    [[nodiscard]] constexpr View<Element, Width> at_(std::size_t position) const noexcept {
+        return View<Element, Width>{ViewDoor::key(), first_() + position};
+    }
+
+    // The first count runs, or each run when count is larger.
+    [[nodiscard]] constexpr WindowStage limited_(std::size_t count) && noexcept {
+        std::size_t const runs = runs_();
+        std::size_t const kept = count < runs ? count : runs;
+        return WindowStage{View<Element>{ViewDoor::key(), first_(), kept == 0 ? 0 : kept + Width - 1}};
+    }
+
+    // The runs after the first count, or none when count is larger.
+    [[nodiscard]] constexpr WindowStage skipped_(std::size_t count) && noexcept {
+        std::size_t const runs = runs_();
+        std::size_t const dropped = count < runs ? count : runs;
+        return WindowStage{View<Element>{ViewDoor::key(), first_() + dropped, elements_.size() - dropped}};
+    }
+
+    [[nodiscard]] constexpr WindowCursor<Element, Width> begin_() const noexcept {
+        return WindowCursor<Element, Width>{first_(), end_of_runs_()};
+    }
+    [[nodiscard]] constexpr WindowCursor<Element, Width> end_() const noexcept {
+        Element* const end = end_of_runs_();
         return WindowCursor<Element, Width>{end, end};
     }
 };
@@ -1100,7 +1198,7 @@ class ChunkCursor {
     Element* end_ = nullptr;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    friend class ChunkRange<Element, Width>;
+    friend class ChunkStage<Element, Width>;
 
     constexpr ChunkCursor(Element* at, Element* end) noexcept : at_{at}, end_{end} {}
 
@@ -1109,7 +1207,7 @@ public:
         if (at_ == end_) [[unlikely]] {
             fatal("a read through the end cursor of a loop over the chunks of a View");
         }
-        return View<Element, Width>{at_};
+        return View<Element, Width>{ViewDoor::key(), at_};
     }
 
     constexpr ChunkCursor& operator++() noexcept {
@@ -1125,30 +1223,83 @@ public:
     }
 };
 
-// Each run of Width elements of a View, with a step of Width, and the rest:
-// the last size() % Width elements, which no run holds.
+// The root stage of chunks<Width>(): each run of Width elements of a View,
+// with a step of Width, and the rest: the elements after the last run of the
+// walk.  The stage holds the elements from its first run to the end of the
+// View, and the count of its runs.  A chunk walk of a View has size() /
+// Width runs, so its rest is the last size() % Width elements.  A limit
+// keeps the run of the View and gives fewer runs, so its rest grows.  A skip
+// drops the first runs, and the rest stays.
 template <class Element, std::size_t Width>
-class ChunkRange {
+class ChunkStage final {
     View<Element> elements_;
+    std::size_t runs_ = 0;
 
-    [[nodiscard]] constexpr Element* end_() const noexcept {
-        return elements_.first_ + (elements_.size() / Width) * Width;
-    }
+    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), elements_); }
+
+    constexpr ChunkStage(View<Element> elements, std::size_t runs) noexcept : elements_{elements}, runs_{runs} {}
 
 public:
-    constexpr explicit ChunkRange(View<Element> elements) noexcept : elements_{elements} {}
+    using element_reference = View<Element, Width>;
+    static constexpr bool is_exact = true;
+    static constexpr std::size_t extent = dynamic_extent;
+    static constexpr bool cursor_borrows_stage = false;
 
-    [[nodiscard]] constexpr ChunkCursor<Element, Width> begin() const noexcept {
-        return ChunkCursor<Element, Width>{elements_.first_, end_()};
+    constexpr explicit ChunkStage(View<Element> elements) noexcept
+        : elements_{elements}, runs_{elements.size() / Width} {}
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
+        Element* const first = first_();
+        Element* const end = first + runs_ * Width;
+        for (Element* at = first; at != end; at += Width) {
+            sink(View<Element, Width>{ViewDoor::key(), at});
+        }
     }
-    [[nodiscard]] constexpr ChunkCursor<Element, Width> end() const noexcept {
-        Element* const end = end_();
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
+        Element* const first = first_();
+        Element* const end = first + runs_ * Width;
+        for (Element* at = first; at != end; at += Width) {
+            if (sink(View<Element, Width>{ViewDoor::key(), at}) == Flow::stop) return Flow::stop;
+        }
+        return Flow::go;
+    }
+
+    [[nodiscard]] constexpr std::size_t size_() const noexcept { return runs_; }
+
+    // The run at position, which the caller proves below size_().
+    [[nodiscard]] constexpr View<Element, Width> at_(std::size_t position) const noexcept {
+        return View<Element, Width>{ViewDoor::key(), first_() + position * Width};
+    }
+
+    // The first count runs, or each run when count is larger.
+    [[nodiscard]] constexpr ChunkStage limited_(std::size_t count) && noexcept {
+        return ChunkStage{elements_, count < runs_ ? count : runs_};
+    }
+
+    // The runs after the first count, or none when count is larger.
+    [[nodiscard]] constexpr ChunkStage skipped_(std::size_t count) && noexcept {
+        std::size_t const dropped = count < runs_ ? count : runs_;
+        std::size_t const offset = dropped * Width;
+        return ChunkStage{View<Element>{ViewDoor::key(), first_() + offset, elements_.size() - offset},
+                          runs_ - dropped};
+    }
+
+    // The View of the elements after the last run of the walk.
+    [[nodiscard]] constexpr View<Element> rest_() const noexcept {
+        std::size_t const offset = runs_ * Width;
+        return View<Element>{ViewDoor::key(), first_() + offset, elements_.size() - offset};
+    }
+
+    [[nodiscard]] constexpr ChunkCursor<Element, Width> begin_() const noexcept {
+        Element* const first = first_();
+        return ChunkCursor<Element, Width>{first, first + runs_ * Width};
+    }
+    [[nodiscard]] constexpr ChunkCursor<Element, Width> end_() const noexcept {
+        Element* const end = first_() + runs_ * Width;
         return ChunkCursor<Element, Width>{end, end};
-    }
-
-    // The View of the elements after the last whole run.
-    [[nodiscard]] constexpr View<Element> rest() const noexcept {
-        return View<Element>{end_(), elements_.size() % Width};
     }
 };
 
@@ -1159,8 +1310,9 @@ public:
 // range, and the seal refuses std::bit_cast and a lifetime start over bytes.
 
 // The position of a loop over the elements of a View<Element, Count> with
-// their indexes: the first element, and the position of the next element.
-// The read compares the position with Count first, so the Index of each
+// their indexes: the first element of the View, the position of the next
+// element, and the position of the end of the loop, which is at most Count.
+// The read compares the position with the end first, so the Index of each
 // step is an index of indices(), and the type of the View proves the read
 // below its count.  The position is a full word, also when the Index holds
 // a 32-bit word, so the loop needs one loop variable: the position and the
@@ -1168,27 +1320,32 @@ public:
 // the door of Index.h, because the compare before it proves the position
 // below Count.  Index<Count>::check there gave the loop of the probe
 // view_enumerate_sum one more instruction on each target.  Each Ref has the
-// brand of the call of enumerate() that made the range.
+// brand of the call of enumerate() that made the walk.
 template <class Element, std::size_t Count, class Brand>
 class EnumerateCursor {
     Element* first_ = nullptr;
     std::size_t at_ = 0;
+    std::size_t end_ = 0;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    friend class EnumerateRange<Element, Count, Brand>;
+    template <class Other, std::size_t OtherCount, ::foundation::brand::IsBrand OtherBrand, std::size_t Extent>
+    friend class EnumerateStage;
 
-    constexpr EnumerateCursor(Element* first, std::size_t at) noexcept : first_{first}, at_{at} {}
+    // The cursor at the first element of run, which starts at the position
+    // start of the View.  The loop ends after the last element of run.
+    constexpr EnumerateCursor(View<Element> run, std::size_t start) noexcept
+        : first_{first_of_(ViewDoor::key(), run) - start}, at_{start}, end_{start + run.size()} {}
 
 public:
     [[nodiscard]] constexpr Record<Index<Count>, Ref<Element, Brand>> operator*() const noexcept {
-        if (at_ >= Count) [[unlikely]] {
+        if (at_ >= end_) [[unlikely]] {
             fatal("a read through the end cursor of an enumerate loop over a View");
         }
         return {Index<Count>{IndexDoor::key(), at_}, RefDoor::lend<Brand>(first_[at_])};
     }
 
     constexpr EnumerateCursor& operator++() noexcept {
-        if (at_ >= Count) [[unlikely]] {
+        if (at_ >= end_) [[unlikely]] {
             fatal("a step past the end cursor of an enumerate loop over a View");
         }
         ++at_;
@@ -1200,19 +1357,78 @@ public:
     }
 };
 
-// The elements of a View of the fixed extent Count, each with its index.
-template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand>
-class EnumerateRange {
-    Element* first_ = nullptr;
+// The root stage of enumerate(): the elements of a View of the fixed extent
+// Count, each with its index.  The stage holds the run that it walks and the
+// position of its first element in the View, so a limit or a skip keeps the
+// index of each element.  The root has the extent Count, and a limit or a
+// skip gives a dynamic extent.
+template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+class EnumerateStage final {
+    View<Element, Extent> run_;
+    std::size_t start_ = 0;
+
+    [[nodiscard]] constexpr Element* first_() const noexcept { return first_of_(ViewDoor::key(), run_); }
+
+    [[nodiscard]] constexpr Record<Index<Count>, Ref<Element, Brand>> pair_(std::size_t position) const noexcept {
+        return {Index<Count>{IndexDoor::key(), start_ + position}, RefDoor::lend<Brand>(first_()[position])};
+    }
 
 public:
-    constexpr explicit EnumerateRange(View<Element, Count> elements) noexcept : first_{elements.first_} {}
+    using element_reference = Record<Index<Count>, Ref<Element, Brand>>;
+    static constexpr bool is_exact = true;
+    static constexpr std::size_t extent = Extent;
+    static constexpr bool cursor_borrows_stage = false;
 
-    [[nodiscard]] constexpr EnumerateCursor<Element, Count, Brand> begin() const noexcept {
-        return EnumerateCursor<Element, Count, Brand>{first_, 0};
+    // The run from the position start of a View of Count elements.
+    constexpr EnumerateStage(View<Element, Extent> run, std::size_t start) noexcept : run_{run}, start_{start} {}
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
+        std::size_t const count = run_.size();
+        for (std::size_t position = 0; position < count; ++position) {
+            sink(pair_(position));
+        }
     }
-    [[nodiscard]] constexpr EnumerateCursor<Element, Count, Brand> end() const noexcept {
-        return EnumerateCursor<Element, Count, Brand>{first_, Count};
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
+        std::size_t const count = run_.size();
+        for (std::size_t position = 0; position < count; ++position) {
+            if (sink(pair_(position)) == Flow::stop) return Flow::stop;
+        }
+        return Flow::go;
+    }
+
+    [[nodiscard]] constexpr std::size_t size_() const noexcept { return run_.size(); }
+
+    // The element at position with its index, which the caller proves below
+    // size_().
+    [[nodiscard]] constexpr element_reference at_(std::size_t position) const noexcept { return pair_(position); }
+
+    // The first count elements, or each element when count is larger.
+    [[nodiscard]] constexpr auto limited_(std::size_t count) && noexcept {
+        std::size_t const size = run_.size();
+        return EnumerateStage<Element, Count, Brand, dynamic_extent>{
+            View<Element>{ViewDoor::key(), first_(), count < size ? count : size}, start_};
+    }
+
+    // The elements after the first count, or none when count is larger.
+    [[nodiscard]] constexpr auto skipped_(std::size_t count) && noexcept {
+        std::size_t const size = run_.size();
+        std::size_t const dropped = count < size ? count : size;
+        return EnumerateStage<Element, Count, Brand, dynamic_extent>{
+            View<Element>{ViewDoor::key(), first_() + dropped, size - dropped}, start_ + dropped};
+    }
+
+    // The cursor reads the View from its first element, at the positions of
+    // this run.  The end cursor is the cursor of the empty run after it.
+    [[nodiscard]] constexpr EnumerateCursor<Element, Count, Brand> begin_() const noexcept {
+        return EnumerateCursor<Element, Count, Brand>{View<Element>{run_}, start_};
+    }
+    [[nodiscard]] constexpr EnumerateCursor<Element, Count, Brand> end_() const noexcept {
+        std::size_t const size = run_.size();
+        return EnumerateCursor<Element, Count, Brand>{View<Element>{ViewDoor::key(), first_() + size, 0},
+                                                      start_ + size};
     }
 };
 

@@ -487,9 +487,6 @@ CRUCIBLE_CLOSED_SURFACE(region_names, BrandedIndex<SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, BrandedView<int, SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, ViewMut<int, SurfaceBrand>);
 CRUCIBLE_CLOSED_SURFACE(region_names, LengthMismatch);
-CRUCIBLE_CLOSED_SURFACE(region_names, detail::ReverseRange<int>);
-CRUCIBLE_CLOSED_SURFACE(region_names, detail::WindowRange<int const, 2>);
-CRUCIBLE_CLOSED_SURFACE(region_names, detail::ChunkRange<int, 3>);
 
 // The cursors of the loops take the cursor protocol, and no other type of
 // the family takes a dereference.

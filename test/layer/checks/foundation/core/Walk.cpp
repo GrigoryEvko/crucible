@@ -263,17 +263,75 @@ template <class W, class Fn>
 constexpr bool expands = requires(Fn fn) { std::declval<W>().flat_map(fn); };
 static_assert(!expands<IntWalk, Twice>);
 
-// The cursor of a temporary walk is refused: it would point into an object
-// that the full expression ends.  A flat_map walk has no cursor.
+// The cursor of a temporary walk of a map, a filter or a zip is refused: it
+// would point into an object that the full expression ends.  A cursor of a
+// root stage holds only places of the run.  A flat_map walk has no cursor.
+using MapWalk = Walk<MapStage<ViewStage<int const, 4>, Twice>>;
+using FlatWalk = decltype(view_of(lengths).walk().flat_map(
+    [](int const&) noexcept { return lengths.view().window(0, 1).expect("one element fits").walk(); }));
 template <class W>
 constexpr bool begins_temporary = requires { std::declval<W>().begin(); };
 template <class W>
 constexpr bool begins_named = requires(W const& walk) { walk.begin(); };
-static_assert(begins_named<IntWalk> && !begins_temporary<IntWalk>);
-static_assert(begins_named<FilterWalk>);
+static_assert(begins_named<IntWalk> && begins_temporary<IntWalk>);
+static_assert(begins_named<FilterWalk> && !begins_temporary<FilterWalk>);
+static_assert(begins_named<MapWalk> && !begins_temporary<MapWalk>);
+static_assert(!begins_named<FlatWalk> && !begins_temporary<FlatWalk>);
+
+// The iteration verbs of a View give a walk.  A limit or a skip of a walk of
+// enumerate() keeps the index of each element in the View.
+[[nodiscard]] consteval int verb_digits() {
+    int digits = 0;
+    for (int const value : view_of(left_numbers).reverse()) {
+        digits = digits * 10 + value;
+    }
+    digits = digits * 10 + view_of(numbers).reverse().skip(ElementCount{4}).fold(0, Digits{});
+    digits = digits * 10
+           + view_of(numbers)
+                 .windows<4>()
+                 .map([](View<int const, 4> run) noexcept { return run.at(index<3>()); })
+                 .fold(0, Digits{});
+    return digits;
+}
+static_assert(verb_digits() == ((321 * 10 + 21) * 10 + 456));
+static_assert(view_of(numbers).windows<4>().size() == 3 && view_of(numbers).windows<9>().size() == 0);
+static_assert(view_of(numbers)
+                  .windows<4>()
+                  .limit(ElementCount{2})
+                  .fold(0, [](int sum, View<int const, 4> run) noexcept { return sum + run.at(index<0>()); })
+              == 1 + 2);
+static_assert(view_of(numbers).chunks<4>().size() == 1 && view_of(numbers).chunks<4>().rest().size() == 2);
+static_assert(view_of(numbers).chunks<2>().limit(ElementCount{1}).rest().size() == 4);
+static_assert(view_of(numbers).chunks<2>().skip(ElementCount{1}).rest().size() == 0);
+static_assert(view_of(numbers).chunks<2>().skip(ElementCount{1}).fold(0, [](int sum, View<int const, 2> run) noexcept {
+    return sum * 10 + run.at(index<1>());
+}) == 46);
+static_assert(numbers.view()
+                  .enumerate()
+                  .skip(ElementCount{2})
+                  .limit(ElementCount{2})
+                  .fold(std::size_t{0},
+                        [](std::size_t sum, auto const& pair) noexcept {
+                            auto const& [position, element] = pair;
+                            return sum * 100 + position.raw() * 10 + static_cast<std::size_t>(*element);
+                        })
+              == 23 * 100 + 34);
+[[nodiscard]] consteval std::size_t enumerate_cursor() {
+    std::size_t positions = 0;
+    for (auto const [position, element] : numbers.view().enumerate().skip(ElementCount{4})) {
+        positions = positions * 10 + position.raw() + static_cast<std::size_t>(*element);
+    }
+    return positions;
+}
+static_assert(enumerate_cursor() == 9 * 10 + 11);
 
 // The closed surface: the shared verbs and the names of the family list.
-inline constexpr TextView walk_names{"map filter limit skip zip try_zip flat_map fold count any_of all_of"};
+// rest is the View after the last run of a chunk walk.
+inline constexpr TextView walk_names{"map filter limit skip zip try_zip flat_map fold count any_of all_of rest"};
+CRUCIBLE_CLOSED_SURFACE(walk_names, Walk<ReverseStage<int>>);
+CRUCIBLE_CLOSED_SURFACE(walk_names, Walk<WindowStage<int const, 2>>);
+CRUCIBLE_CLOSED_SURFACE(walk_names, Walk<ChunkStage<int, 3>>);
+CRUCIBLE_CLOSED_SURFACE(walk_names, Walk<EnumerateStage<int, 4, ZipBrand, 4>>);
 CRUCIBLE_CLOSED_SURFACE(walk_names, IntWalk);
 CRUCIBLE_CLOSED_SURFACE(walk_names, FixedWalk);
 CRUCIBLE_CLOSED_SURFACE(walk_names, FilterWalk);

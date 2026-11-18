@@ -256,12 +256,14 @@ public:
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto enumerate() & noexcept {
-        return detail::EnumerateRange<T, N, Fresh>{view()};
+        using Stage = detail::EnumerateStage<T, N, Fresh, N>;
+        return Walk<Stage>{Stage{view(), 0}};
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto enumerate() const& noexcept {
-        return detail::EnumerateRange<T const, N, Fresh>{view()};
+        using Stage = detail::EnumerateStage<T const, N, Fresh, N>;
+        return Walk<Stage>{Stage{view(), 0}};
     }
     void enumerate() const&& =
         delete("a loop over a temporary FixedArray points into an object that the full expression ends");

@@ -3296,8 +3296,8 @@ foundation_neg_compile_test(neg_core_text_view_cursor_member_forged
   "redefinition of .constexpr foundation::core::ViewCursor<const char> foundation::core::TextView::begin\\(\\) const."
   "foundation::core::TextView::begin\\(\\) const. previously defined here")
 foundation_neg_compile_test(neg_core_view_enumerate_range_forged
-  "redefinition of .class foundation::core::detail::EnumerateRange<Element, Count, Brand>."
-  "previous definition of .class foundation::core::detail::EnumerateRange<Element, Count, Brand>.")
+  "redefinition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>."
+  "previous definition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>.")
 foundation_neg_compile_test(neg_core_view_zip_range_forged
   "redefinition of .class foundation::core::detail::ZipRange<First, Second, Brand>."
   "previous definition of .class foundation::core::detail::ZipRange<First, Second, Brand>.")
