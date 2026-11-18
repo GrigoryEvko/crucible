@@ -20,11 +20,17 @@
 //
 // THE KEYS OF A BitSet
 //   The key type is the index type of the domain of the set, so a set of the
-//   scalar slots of an op refuses an argument position.  Three kinds of key
+//   scalar slots of an op refuses an argument position.  Four kinds of key
 //   pass, and the key is Index<N> when the set names none:
 //   Index<N>            the type proves the key below N, so no verb checks it.
 //                       An Index<M> with M < N converts to an Index<N>, and an
 //                       Index<M> with M > N does not
+//   Side<Tag, Index<N>> the Index<N> in the role Tag (foundation/core/Side.h).
+//                       The Index proves the key below N, so no verb checks
+//                       it, and a Side converts to no Side of another tag.  So
+//                       the sets of two domains of one count, or of two counts
+//                       where the smaller Index converts, take keys that never
+//                       mix
 //   a scoped enum       each enumerator must lie below N, which the check
 //                       reads by reflection.  A value of the enum that no
 //                       enumerator names can still exist, so each verb compares
@@ -109,6 +115,7 @@
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
+#include <foundation/core/Side.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -230,6 +237,15 @@ struct BitKeyKind<Index<M>> {
     [[nodiscard]] static constexpr std::size_t position_of_(Index<M> key) noexcept { return key.raw(); }
 };
 
+template <class Tag, std::size_t M>
+struct BitKeyKind<Side<Tag, Index<M>>> {
+    static constexpr bool is_proven = true;
+
+    [[nodiscard]] static constexpr std::size_t position_of_(Side<Tag, Index<M>> const& key) noexcept {
+        return key.value().raw();
+    }
+};
+
 template <class Tag, UnsignedInteger Word>
 struct BitKeyKind<Id<Tag, Word>> {
     static constexpr bool is_proven = false;
@@ -295,14 +311,20 @@ struct HeapBitSetState {
 
 }  // namespace detail
 
-// A key of a BitSet of N positions (THE KEYS OF A BitSet): Index<N>, a scoped
-// enum whose word holds each position below N, or an Id whose word holds each
-// position below N.  The gate reads no template that a unit can specialize.
-// The class of the set reads the enumerators of an enum key.
+// A key of a role: the Index<N> of a set in the role of a tag.  A key with no
+// member tag_type is no Side, and the atomic constraint is then false.
+template <class Key, std::size_t N>
+concept RoleIndexKey = std::is_same_v<Key, Side<typename Key::tag_type, Index<N>>>;
+
+// A key of a BitSet of N positions (THE KEYS OF A BitSet): Index<N>, the Side
+// of an Index<N>, a scoped enum whose word holds each position below N, or an
+// Id whose word holds each position below N.  The gate reads no template that
+// a unit can specialize.  The class of the set reads the enumerators of an
+// enum key.
 template <class Key, std::size_t N>
 concept BitSetKey =
-    std::is_same_v<Key, Index<N>> || (std::is_scoped_enum_v<Key> && detail::word_holds_positions_(^^Key, N))
-    || detail::is_id_of_positions_(^^Key, N);
+    std::is_same_v<Key, Index<N>> || RoleIndexKey<Key, N>
+    || (std::is_scoped_enum_v<Key> && detail::word_holds_positions_(^^Key, N)) || detail::is_id_of_positions_(^^Key, N);
 
 template <std::size_t N, class Key = Index<N>>
     requires IndexCount<N> && BitSetKey<Key, N>
@@ -378,6 +400,9 @@ public:
         std::size_t const position = word_ * detail::bits_in_<Word> + static_cast<std::size_t>(countr_zero(bits_));
         if constexpr (std::is_scoped_enum_v<Member>) {
             return static_cast<Member>(position);
+        } else if constexpr (requires { typename Member::tag_type; }) {
+            using Proven = typename Member::value_type;
+            return Member{Proven{detail::IndexDoor::key(), position}};
         } else if constexpr (detail::BitKeyKind<Member>::is_proven) {
             return Member{detail::IndexDoor::key(), position};
         } else {

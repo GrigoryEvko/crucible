@@ -224,6 +224,27 @@ void test_domain_keys_and_words() {
     CRUCIBLE_FATAL_INVARIANT(slots.bits() == 0x08u);
 }
 
+// A set keyed by an Index in a role: the walk gives each key in its role and
+// in order, and its word goes out and comes back.
+struct SlotRole final {};
+using SlotKey = ::foundation::core::Side<SlotRole, Index<5>>;
+
+void test_role_keys_and_words() {
+    BitSet<5, SlotKey> slots{};
+    slots.set(SlotKey{index_of<5>(3)});
+    slots.set(SlotKey{index_of<5>(0)});
+    CRUCIBLE_FATAL_INVARIANT(slots.size() == 2 && slots.test(SlotKey{index_of<5>(3)})
+                             && !slots.test(SlotKey{index_of<5>(4)}));
+    std::size_t walked = 0;
+    for (SlotKey const slot : slots) {
+        CRUCIBLE_FATAL_INVARIANT(slot.value().raw() == (walked == 0 ? 0u : 3u));
+        ++walked;
+    }
+    BitSet<5, SlotKey> const back =
+        mint_bit_set_from_bits<5, SlotKey>(slots.bits()).expect("the word holds no bit past 5");
+    CRUCIBLE_FATAL_INVARIANT(walked == 2 && back == slots && slots.bits() == 0x09u);
+}
+
 // ── The property test ──────────────────────────────────────────────────────
 
 // The model of a set: one flag for each index below the count.
@@ -417,6 +438,7 @@ int main() {
     test_heap_set_moves();
     test_refusals(test);
     test_domain_keys_and_words();
+    test_role_keys_and_words();
     test_sets_agree_with_the_model();
     return 0;
 }

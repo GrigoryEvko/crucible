@@ -16,6 +16,12 @@ namespace detail::bit_set_checks {
 struct SlotTag final {};
 struct OpTag final {};
 
+// Two roles of an Index: the slots of an op and the arguments of a schema.
+struct SlotRole final {};
+struct ArgumentRole final {};
+using SlotKey = Side<SlotRole, Index<5>>;
+using ArgumentKey = Side<ArgumentRole, Index<32>>;
+
 // The scalar slots of an op and the argument positions of a schema: two
 // domains of keys.
 enum class ScalarSlot : std::uint8_t {
@@ -72,6 +78,13 @@ static_assert(BitSetKey<Id<OpTag, std::uint64_t>, 1000> && BitSetKey<Signed, 4>)
 static_assert(enumerators_below_<ScalarSlot>(5) && !enumerators_below_<ScalarSlot>(4));
 static_assert(!enumerators_below_<Signed>(4) && enumerators_below_<Index<8>>(8));
 
+// A Side of the Index<N> of the set is a key of a role.  The Index proves its
+// bound, and the tag keeps the keys of two roles apart.  A Side of an Index of
+// a different N, or of a number, is no key.
+static_assert(BitSetKey<SlotKey, 5> && BitSetKey<ArgumentKey, 32> && !BitSetKey<SlotKey, 6>);
+static_assert(!BitSetKey<Side<SlotRole, std::size_t>, 5> && !BitSetKey<Side<SlotRole, Index<4>>, 5>);
+static_assert(BitKeyKind<SlotKey>::is_proven && sizeof(BitSet<5, SlotKey>) == 1);
+
 // A fixed set takes its key, an Index of a smaller count, and no number.  An
 // index of a larger set and a key of a different domain do not convert.
 template <class Set, class Key>
@@ -86,6 +99,13 @@ static_assert(Tests<BitSet<5, ScalarSlot>, ScalarSlot> && !Tests<BitSet<5, Scala
 static_assert(!Tests<BitSet<5, ScalarSlot>, Index<5>> && !Tests<BitSet<5>, ScalarSlot>);
 static_assert(!Sets<BitSet<5, ScalarSlot>, std::uint8_t>
               && Sets<BitSet<16, Id<OpTag, std::uint8_t>>, Id<OpTag, std::uint8_t>>);
+// A set of a role takes the key of its role, and no key of another role, no
+// bare Index of either count and no number.  The Index of a smaller count
+// converts to the Index of a larger one, and the tag stops that conversion.
+static_assert(Tests<BitSet<5, SlotKey>, SlotKey> && Tests<BitSet<32, ArgumentKey>, ArgumentKey>);
+static_assert(!Tests<BitSet<32, ArgumentKey>, SlotKey> && !Tests<BitSet<5, SlotKey>, ArgumentKey>);
+static_assert(!Tests<BitSet<32, ArgumentKey>, Index<5>> && !Tests<BitSet<32, ArgumentKey>, Index<32>>);
+static_assert(!Sets<BitSet<5, SlotKey>, Side<ArgumentRole, Index<5>>> && !Sets<BitSet<5, SlotKey>, std::uint8_t>);
 
 // A heap set takes the id of its own domain, and no id of a different domain
 // and no number.
@@ -134,6 +154,7 @@ CRUCIBLE_CLOSED_SURFACE(bit_set_names, BitSet<5, ScalarSlot>);
 CRUCIBLE_CLOSED_SURFACE(bit_set_names, HeapBitSet<SlotTag>);
 CRUCIBLE_CLOSED_SURFACE(bit_set_names, BitCursor<Index<64>, std::uint64_t>, CursorProtocol);
 CRUCIBLE_CLOSED_SURFACE(bit_set_names, BitCursor<ScalarSlot, std::uint8_t>, CursorProtocol);
+CRUCIBLE_CLOSED_SURFACE(bit_set_names, BitCursor<SlotKey, std::uint8_t>, CursorProtocol);
 CRUCIBLE_CLOSED_SURFACE(bit_set_names, BitCursor<BitId<SlotTag>, std::uint64_t>, CursorProtocol);
 
 // The set of the indexes at the positions of a list, with the extent N.
@@ -224,6 +245,23 @@ static_assert(two_set_operations());
         && !back.test(ScalarSlot::first) && is_refused && is_full_word && ops.bits() == 0x8000u;
 }
 static_assert(domain_keys_and_words());
+
+// A set of a role: its walk gives the keys of the role in order, and its word
+// goes out and comes back.
+[[nodiscard]] consteval bool role_keys_and_words() noexcept {
+    BitSet<5, SlotKey> slots{};
+    slots.set(SlotKey{index<4>()});
+    slots.set(SlotKey{index<1>()});
+    std::size_t sum = 0;
+    for (SlotKey const slot : slots) {
+        sum = sum * 10 + slot.value().raw();
+    }
+    BitSet<5, SlotKey> const back =
+        mint_bit_set_from_bits<5, SlotKey>(slots.bits()).expect("a word of the set holds no bit past it");
+    return sum == 14 && slots.bits() == 0x12u && back == slots && back.test(SlotKey{index<1>()})
+        && !back.test(SlotKey{index<0>()}) && mint_bit_set_from_bits<5, SlotKey>(std::uint8_t{0x20}).is_none();
+}
+static_assert(role_keys_and_words());
 
 }  // namespace detail::bit_set_checks
 
