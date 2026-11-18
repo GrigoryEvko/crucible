@@ -141,6 +141,7 @@ namespace {
 using ::foundation::core::address_of;
 using ::foundation::core::Atomic;
 using ::foundation::core::CacheLine;
+using ::foundation::core::Counter;
 using ::foundation::core::mint_sole_writer;
 using ::foundation::core::Tally;
 using ::foundation::core::to;
@@ -267,6 +268,66 @@ void test_read_modify_write_operations() {
     Atomic<Phase> phase{Phase::idle};
     CRUCIBLE_FATAL_INVARIANT(phase.exchange_acq_rel(Phase::done) == Phase::idle);
     CRUCIBLE_FATAL_INVARIANT(phase.load_acquire() == Phase::done);
+}
+
+// A weak compare-and-swap can fail when the cell holds the expected value, so
+// the swap runs in a loop.  A refusal of a different value is never spurious,
+// and it reads the value of the cell.
+void test_weak_cas_and_xor() {
+    Atomic<std::uint64_t> cell{4};
+    std::uint64_t seen = 4;
+    for (;;) {
+        auto const outcome = cell.cas_weak_acq_rel(seen, 11);
+        if (outcome.is_ok()) break;
+        seen = observed_by(outcome, seen);
+    }
+    CRUCIBLE_FATAL_INVARIANT(seen == 4 && cell.load_acquire() == 11);
+    auto const refused = cell.cas_weak_acq_rel(4, 30);
+    CRUCIBLE_FATAL_INVARIANT(refused.is_err() && observed_by(refused, std::uint64_t{4}) == 11);
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire() == 11);
+
+    Atomic<Phase> phase{Phase::idle};
+    while (phase.cas_weak_acq_rel(Phase::idle, Phase::busy).is_err()) {}
+    CRUCIBLE_FATAL_INVARIANT(phase.load_acquire() == Phase::busy);
+
+    Atomic<std::uint32_t> bits{0b0110u};
+    CRUCIBLE_FATAL_INVARIANT(bits.fetch_xor_acq_rel(0b0011u) == 0b0110u);
+    CRUCIBLE_FATAL_INVARIANT(bits.load_acquire() == 0b0101u);
+    CRUCIBLE_FATAL_INVARIANT(bits.fetch_xor_acq_rel(0b0101u) == 0b0101u);
+    CRUCIBLE_FATAL_INVARIANT(bits.load_acquire() == 0u);
+    Atomic<std::uint8_t> small{0xF0u};
+    CRUCIBLE_FATAL_INVARIANT(small.fetch_xor_acq_rel(0xFFu) == 0xF0u);
+    CRUCIBLE_FATAL_INVARIANT(small.load_acquire() == 0x0Fu);
+}
+
+// A count adds, subtracts and keeps a bound with relaxed order.  Unsigned
+// and signed arithmetic wrap, as in the cell of each thread.
+void test_count_single_thread() {
+    Atomic<std::uint64_t, Counter> count{};
+    CRUCIBLE_FATAL_INVARIANT(count.load_acquire() == 0);
+    CRUCIBLE_FATAL_INVARIANT(count.fetch_add_relaxed(5) == 0);
+    CRUCIBLE_FATAL_INVARIANT(count.fetch_sub_relaxed(2) == 5);
+    CRUCIBLE_FATAL_INVARIANT(count.load_acquire() == 3);
+    CRUCIBLE_FATAL_INVARIANT(count.fetch_max_relaxed(2) == 3);
+    CRUCIBLE_FATAL_INVARIANT(count.load_acquire() == 3);
+    CRUCIBLE_FATAL_INVARIANT(count.fetch_max_relaxed(9) == 3);
+    CRUCIBLE_FATAL_INVARIANT(count.load_acquire() == 9);
+    CRUCIBLE_FATAL_INVARIANT(count.fetch_min_relaxed(10) == 9);
+    CRUCIBLE_FATAL_INVARIANT(count.load_acquire() == 9);
+    CRUCIBLE_FATAL_INVARIANT(count.fetch_min_relaxed(1) == 9);
+    CRUCIBLE_FATAL_INVARIANT(count.load_acquire() == 1);
+
+    Atomic<std::uint8_t, Counter> small{std::uint8_t{255}};
+    CRUCIBLE_FATAL_INVARIANT(small.fetch_add_relaxed(1) == 255);
+    CRUCIBLE_FATAL_INVARIANT(small.load_acquire() == 0);
+    CRUCIBLE_FATAL_INVARIANT(small.fetch_sub_relaxed(1) == 0);
+    CRUCIBLE_FATAL_INVARIANT(small.load_acquire() == 255);
+
+    Atomic<std::int32_t, Counter> signed_count{-3};
+    CRUCIBLE_FATAL_INVARIANT(signed_count.fetch_add_relaxed(5) == -3);
+    CRUCIBLE_FATAL_INVARIANT(signed_count.fetch_min_relaxed(-10) == 2);
+    CRUCIBLE_FATAL_INVARIANT(signed_count.fetch_max_relaxed(-20) == -10);
+    CRUCIBLE_FATAL_INVARIANT(signed_count.load_acquire() == -10);
 }
 
 // Two words with no padding, so a cell holds the pair as one word.
@@ -679,6 +740,67 @@ void test_tally_under_contention() {
     CRUCIBLE_FATAL_INVARIANT(tally->read() == 4 * steps_per_worker);
 }
 
+// Each change of a count is one atomic operation, so no change is lost with
+// the relaxed order.  The join of the threads orders each change before the
+// reads of the test.
+void test_count_under_contention() {
+    CacheLine<Atomic<std::uint64_t, Counter>> added{};
+    CacheLine<Atomic<std::uint64_t, Counter>> remaining{std::uint64_t{4 * steps_per_worker}};
+    CacheLine<Atomic<std::int64_t, Counter>> highest{std::int64_t{-1}};
+    CacheLine<Atomic<std::int64_t, Counter>> lowest{std::int64_t{1}};
+    Atomic<std::uint64_t> next_worker{};
+    run_on_four_threads([&] {
+        std::int64_t const signed_worker = static_cast<std::int64_t>(next_worker.fetch_add_acq_rel(1));
+        for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
+            static_cast<void>(added->fetch_add_relaxed(1));
+            static_cast<void>(remaining->fetch_sub_relaxed(1));
+            std::int64_t const signed_step = static_cast<std::int64_t>(step);
+            static_cast<void>(highest->fetch_max_relaxed(signed_step * 4 + signed_worker));
+            static_cast<void>(lowest->fetch_min_relaxed(-(signed_step * 4 + signed_worker)));
+        }
+    });
+    CRUCIBLE_FATAL_INVARIANT(added->load_acquire() == 4 * steps_per_worker);
+    CRUCIBLE_FATAL_INVARIANT(remaining->load_acquire() == 0);
+    std::int64_t const last_signed_step = static_cast<std::int64_t>(steps_per_worker - 1);
+    CRUCIBLE_FATAL_INVARIANT(highest->load_acquire() == last_signed_step * 4 + 3);
+    CRUCIBLE_FATAL_INVARIANT(lowest->load_acquire() == -(last_signed_step * 4 + 3));
+}
+
+// Each worker flips its own bits of one shared word two times in each step,
+// so each flip finds the bit that the last flip of the same worker left.
+void test_fetch_xor_under_contention() {
+    Atomic<std::uint64_t> bits{};
+    Atomic<std::uint64_t> next_worker{};
+    CacheLine<Tally> wrong_bits{};
+    run_on_four_threads([&] {
+        std::uint64_t const worker = next_worker.fetch_add_acq_rel(1);
+        for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
+            std::uint64_t const own_bit = std::uint64_t{1} << (worker * 16 + step % 16);
+            if ((bits.fetch_xor_acq_rel(own_bit) & own_bit) != 0) wrong_bits->add(1);
+            if ((bits.fetch_xor_acq_rel(own_bit) & own_bit) == 0) wrong_bits->add(1);
+        }
+    });
+    CRUCIBLE_FATAL_INVARIANT(wrong_bits->read() == 0);
+    CRUCIBLE_FATAL_INVARIANT(bits.load_acquire() == 0);
+}
+
+// A weak compare-and-swap in a loop gives each worker its own steps, as the
+// strong form does.
+void test_weak_cas_under_contention() {
+    Atomic<std::uint64_t> counter{};
+    run_on_four_threads([&counter] {
+        for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
+            std::uint64_t seen = counter.load_acquire();
+            for (;;) {
+                auto const outcome = counter.cas_weak_acq_rel(seen, seen + 1);
+                if (outcome.is_ok()) break;
+                seen = observed_by(outcome, seen);
+            }
+        }
+    });
+    CRUCIBLE_FATAL_INVARIANT(counter.load_acquire() == 4 * steps_per_worker);
+}
+
 // A release store publishes the plain writes before it, and an acquire
 // load that reads the stored value sees them.  ThreadSanitizer reports a
 // race on the plain payload if either order is missing.  One thread
@@ -1009,6 +1131,8 @@ void test_sole_writer_moves_through_a_join() {
 int main() {
     test_single_thread_operations();
     test_read_modify_write_operations();
+    test_weak_cas_and_xor();
+    test_count_single_thread();
     test_class_value();
     test_niche_option_cell();
     test_word_cell();
@@ -1023,6 +1147,9 @@ int main() {
     test_cas_under_contention();
     test_read_modify_write_under_contention();
     test_tally_under_contention();
+    test_count_under_contention();
+    test_fetch_xor_under_contention();
+    test_weak_cas_under_contention();
     test_release_publishes_to_acquire();
     test_fence_orders_a_store_before_a_load();
     test_fetch_and_under_contention();

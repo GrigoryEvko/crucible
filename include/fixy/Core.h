@@ -158,6 +158,7 @@ using ::foundation::core::atomic_word_key;
 using ::foundation::core::AtomicWordProtocol;
 using ::foundation::core::CacheLine;
 using ::foundation::core::CasRefusal;
+using ::foundation::core::Counter;
 using ::foundation::core::fence_seq_cst;
 using ::foundation::core::mint_sole_writer;
 using ::foundation::core::SoleWriter;

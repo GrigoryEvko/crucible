@@ -9,11 +9,15 @@
 //
 // Each line gives the percentiles of one operation in picoseconds, and the
 // coefficient of variation in thousandths.  The Report family writes
-// integers only, so the bench writes no fraction of a nanosecond.
+// integers only, so the bench writes no fraction of a nanosecond.  The rows
+// of the weak compare-and-swap, the xor and the count stand beside the same
+// operation of std::atomic, with the ratio of the two medians.
 
 #include <fixy/Core.h>
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
 
+#include <atomic>
 #include <cstdint>
 #include <utility>
 
@@ -37,7 +41,166 @@ void print_row(fixy::TextView name, bench::Report const& measured) noexcept {
                  picoseconds(measured.pct.max), static_cast<std::uint64_t>(measured.pct.cv * 1000.0 + 0.5));
 }
 
+// Writes the rows of an operation and of its reference, and the ratio of
+// their medians in thousandths.  A ratio above 1000 is slower than the
+// reference.
+void print_pair(fixy::TextView name, bench::Report const& measured, fixy::TextView reference_name,
+                bench::Report const& reference) noexcept {
+    print_row(name, measured);
+    print_row(reference_name, reference);
+    std::uint64_t const ratio =
+        reference.pct.p50 > 0.0 ? static_cast<std::uint64_t>(measured.pct.p50 * 1000.0 / reference.pct.p50 + 0.5) : 0;
+    fixy::report(fixy::Sink::Out, "{}  ratio to the reference: p50 {} permille\n", name, ratio);
+}
+
 }  // namespace
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: std::atomic is the reference of the weak swap, the xor and the count")
+namespace {
+
+using Cell = fixy::Atomic<std::uint64_t>;
+using Count = fixy::Atomic<std::uint64_t, fixy::Counter>;
+using ReferenceCell = std::atomic<std::uint64_t>;
+
+// THE LAYOUT
+//   Each operation of a pair is one call to a function of its own, aligned
+//   to 64 bytes and never inlined, so the code around the operation does not
+//   move one side of a pair against the other.  With the operation inlined in
+//   its loop, the count load and the relaxed load of std::atomic differed by
+//   12%, with the same instructions.  The value that a row carries from one
+//   sample to the next is a member of its lambda, so it can stay in a
+//   register.
+
+[[gnu::noinline, gnu::aligned(64)]] bool weak_swap_once(Cell& cell, std::uint64_t expected) noexcept {
+    return cell.cas_weak_acq_rel(expected, expected + 1).is_ok();
+}
+
+[[gnu::noinline, gnu::aligned(64)]] bool reference_weak_swap_once(ReferenceCell& cell,
+                                                                  std::uint64_t expected) noexcept {
+    return cell.compare_exchange_weak(expected, expected + 1, std::memory_order_acq_rel, std::memory_order_acquire);
+}
+
+[[gnu::noinline, gnu::aligned(64)]] std::uint64_t xor_once(Cell& cell, std::uint64_t bits) noexcept {
+    return cell.fetch_xor_acq_rel(bits);
+}
+
+[[gnu::noinline, gnu::aligned(64)]] std::uint64_t reference_xor_once(ReferenceCell& cell, std::uint64_t bits) noexcept {
+    return cell.fetch_xor(bits, std::memory_order_acq_rel);
+}
+
+[[gnu::noinline, gnu::aligned(64)]] std::uint64_t add_once(Count& count, std::uint64_t delta) noexcept {
+    return count.fetch_add_relaxed(delta);
+}
+
+[[gnu::noinline, gnu::aligned(64)]] std::uint64_t reference_add_once(ReferenceCell& cell,
+                                                                     std::uint64_t delta) noexcept {
+    return cell.fetch_add(delta, std::memory_order_relaxed);
+}
+
+[[gnu::noinline, gnu::aligned(64)]] std::uint64_t read_once(Count const& count) noexcept {
+    return count.load_acquire();
+}
+
+[[gnu::noinline, gnu::aligned(64)]] std::uint64_t reference_read_once(ReferenceCell const& cell) noexcept {
+    return cell.load(std::memory_order_relaxed);
+}
+
+[[gnu::noinline, gnu::aligned(64)]] std::uint64_t max_once(Count& count, std::uint64_t value) noexcept {
+    return count.fetch_max_relaxed(value);
+}
+
+[[gnu::noinline, gnu::aligned(64)]] std::uint64_t reference_max_once(ReferenceCell& cell,
+                                                                     std::uint64_t value) noexcept {
+    return cell.fetch_max(value, std::memory_order_relaxed);
+}
+
+// The rows of the weak compare-and-swap, the xor and the count, each beside
+// the same operation of std::atomic.  Only this thread touches the cells,
+// and each cell is alone on its cache line.
+void report_reference_pairs() noexcept {
+    fixy::CacheLine<Cell> cell{std::uint64_t{1}};
+    fixy::CacheLine<Count> count{};
+    fixy::CacheLine<ReferenceCell> reference_cell{std::uint64_t{1}};
+    constexpr std::uint64_t kOperand = 3;
+    // A bound above each count of the rows, so each bound of a rising value
+    // stores.
+    constexpr std::uint64_t kBoundBase = std::uint64_t{1} << 40;
+
+    bench::Report const weak =
+        bench::run("Atomic::cas_weak_acq_rel stores", [&cell, expected = std::uint64_t{1}]() mutable {
+            bool const stored = weak_swap_once(*cell, expected);
+            expected += stored ? 1 : 0;
+            bench::do_not_optimize(stored);
+        });
+    bench::Report const reference_weak = bench::run(
+        "std::atomic::compare_exchange_weak stores", [&reference_cell, expected = std::uint64_t{1}]() mutable {
+            bool const stored = reference_weak_swap_once(*reference_cell, expected);
+            expected += stored ? 1 : 0;
+            bench::do_not_optimize(stored);
+        });
+    print_pair("Atomic::cas_weak_acq_rel stores", weak, "std::atomic::compare_exchange_weak stores", reference_weak);
+
+    bench::Report const flips = bench::run("Atomic::fetch_xor_acq_rel", [&cell] {
+        std::uint64_t const before = xor_once(*cell, kOperand);
+        bench::do_not_optimize(before);
+    });
+    bench::Report const reference_flips = bench::run("std::atomic::fetch_xor", [&reference_cell] {
+        std::uint64_t const before = reference_xor_once(*reference_cell, kOperand);
+        bench::do_not_optimize(before);
+    });
+    print_pair("Atomic::fetch_xor_acq_rel", flips, "std::atomic::fetch_xor", reference_flips);
+
+    bench::Report const adds = bench::run("Atomic<Counter>::fetch_add_relaxed", [&count] {
+        std::uint64_t const before = add_once(*count, kOperand);
+        bench::do_not_optimize(before);
+    });
+    bench::Report const reference_adds = bench::run("std::atomic::fetch_add relaxed", [&reference_cell] {
+        std::uint64_t const before = reference_add_once(*reference_cell, kOperand);
+        bench::do_not_optimize(before);
+    });
+    print_pair("Atomic<Counter>::fetch_add_relaxed", adds, "std::atomic::fetch_add relaxed", reference_adds);
+
+    bench::Report const reads = bench::run("Atomic<Counter>::load_acquire", [&count] {
+        std::uint64_t const value = read_once(*count);
+        bench::do_not_optimize(value);
+    });
+    bench::Report const reference_reads = bench::run("std::atomic::load relaxed", [&reference_cell] {
+        std::uint64_t const value = reference_read_once(*reference_cell);
+        bench::do_not_optimize(value);
+    });
+    print_pair("Atomic<Counter>::load_acquire", reads, "std::atomic::load relaxed", reference_reads);
+
+    bench::Report const bounds =
+        bench::run("Atomic<Counter>::fetch_max_relaxed stores", [&count, rising = kBoundBase]() mutable {
+            rising += 1;
+            std::uint64_t const before = max_once(*count, rising);
+            bench::do_not_optimize(before);
+        });
+    bench::Report const reference_bounds =
+        bench::run("std::atomic::fetch_max relaxed stores", [&reference_cell, rising = kBoundBase]() mutable {
+            rising += 1;
+            std::uint64_t const before = reference_max_once(*reference_cell, rising);
+            bench::do_not_optimize(before);
+        });
+    print_pair("Atomic<Counter>::fetch_max_relaxed stores", bounds, "std::atomic::fetch_max relaxed stores",
+               reference_bounds);
+
+    // A bound below the count keeps the count.  The count then writes
+    // nothing, and the std::atomic form still runs its lock cmpxchg.
+    bench::Report const kept = bench::run("Atomic<Counter>::fetch_max_relaxed keeps", [&count] {
+        std::uint64_t const before = max_once(*count, 0);
+        bench::do_not_optimize(before);
+    });
+    bench::Report const reference_kept = bench::run("std::atomic::fetch_max relaxed keeps", [&reference_cell] {
+        std::uint64_t const before = reference_max_once(*reference_cell, 0);
+        bench::do_not_optimize(before);
+    });
+    print_pair("Atomic<Counter>::fetch_max_relaxed keeps", kept, "std::atomic::fetch_max relaxed keeps",
+               reference_kept);
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     bench::elevate_priority();
@@ -158,5 +321,7 @@ int main() {
               }));
 
     ::foundation::linear::drop(std::move(writer));
+
+    report_reference_pairs();
     return 0;
 }

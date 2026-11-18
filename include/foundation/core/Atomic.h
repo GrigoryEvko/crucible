@@ -13,16 +13,20 @@
 //   exchange_acq_rel(v)            stores v, and gives the value before
 //   cas_acq_rel(e, d)              stores d if the cell holds e, strong, and
 //                                  gives a Result with the value it read
+//   cas_weak_acq_rel(e, d)         the same, but it can fail when the cell
+//                                  holds e, so a caller runs it in a loop
 //   fetch_add_acq_rel(d)           adds d, for an integer
 //   fetch_sub_acq_rel(d)           subtracts d, for an integer
 //   fetch_or_acq_rel(b)            sets the bits b, for an unsigned integer
 //   fetch_and_acq_rel(b)           keeps only the bits b, for an unsigned integer
+//   fetch_xor_acq_rel(b)           flips the bits b, for an unsigned integer
 //   fetch_max_acq_rel(v)           stores v if v is larger, for an integer
 //   fetch_min_acq_rel(v)           stores v if v is smaller, for an integer
 //
 // The type has no operator and no conversion, so no operation takes the
-// sequentially consistent order without a name that says so.  Only the
-// writer of a cell of one writer takes the relaxed order (below).
+// sequentially consistent order without a name that says so.  Only two cells
+// take the relaxed order: the writer of a cell of one writer reads with it,
+// and each thread adds to a count with it (below).
 //
 // A value of a class type is admitted when it has one bit pattern for each
 // value.  The cell holds it as the unsigned integer of its size, and the
@@ -85,13 +89,32 @@
 //   compare and one branch to a cold call at each read and each write of the
 //   writer.
 //
+// THE COUNT
+//   Atomic<T, Counter> is a count that each thread adds to, for an integer
+//   that is not bool.  No thread reads other data through it, so a change
+//   of the count needs no order:
+//
+//     load_acquire()             the count, with acquire order
+//     fetch_add_relaxed(d)       adds d, with relaxed order
+//     fetch_sub_relaxed(d)       subtracts d, with relaxed order
+//     fetch_max_relaxed(v)       stores v if v is larger, with relaxed order
+//     fetch_min_relaxed(v)       stores v if v is smaller, with relaxed order
+//
+//   Each change is one atomic read-modify-write, so no addition is lost.  A
+//   read takes the acquire order, as a read of each other cell does, because
+//   a relaxed read is only for a value of the own thread.  On x86-64 a relaxed
+//   and an acq_rel addition are the same locked instruction, and an acquire
+//   load is a plain mov.  On aarch64 a relaxed addition has no barrier.  The
+//   cell has no store and no compare-and-swap, so no thread can publish data
+//   through it.
+//
 // CacheLine<T> aligns a cell to 64 bytes and pads it to a multiple of 64
 // bytes, so the type states that no other data shares its cache line.
 // *line and line->member borrow the cell.
 //
-// Tally is a statistics counter.  add() is a fetch-add with acq_rel order,
-// which is the same locked instruction on x86-64, and read() is an acquire
-// load.  A value of a Tally orders no other data.
+// Tally is a statistics counter of 64 bits over a count (THE COUNT).  add()
+// is a relaxed fetch-add, and read() is an acquire load.  A value of a Tally
+// orders no other data.
 //
 // THE FENCE
 //   fence_seq_cst() is a fence with the sequentially consistent order.  It
@@ -107,6 +130,16 @@
 //   lets the core run a load before a store of the same thread to a
 //   different cell.  The x86-64 code is a locked OR of zero to the top of
 //   the stack (lock orq $0, (%rsp)), and the aarch64 code is dmb ish.
+//
+// THE WAIT
+//   A cell has no wait and no notify of its own.  This header is in
+//   foundation/core and cannot include a door of the kernel.  A thread waits
+//   for a change of an Atomic<std::uint32_t> through the futex door of
+//   fixy/os/Futex.h: wait, wake_one and wake_all, under the Block gate.  A
+//   thread waits for each other condition through the event count of
+//   fixy/concurrent/EventCount.h, and the cell of 64 bits is one of them,
+//   because the futex of Linux reads only 32 bits.  Do not add a second wait
+//   form.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
@@ -229,7 +262,9 @@ template <class T>
 concept AtomicBits = AtomicCount<T> && std::unsigned_integral<T>;
 
 // The error of a compare-and-swap that stored nothing: the value that the
-// cell held, which was not the expected value.
+// cell held.  After a strong compare-and-swap it is not the expected value.
+// A weak compare-and-swap can also fail when the cell holds the expected
+// value, and the error then holds the expected value.
 template <class T>
 struct CasRefusal final {
     T observed;
@@ -237,6 +272,9 @@ struct CasRefusal final {
 
 template <AtomicValue T, class Writer = void>
 class Atomic;
+
+// The writer of a count that each thread adds to with no order (THE COUNT).
+struct Counter final {};
 
 namespace detail {
 
@@ -446,12 +484,14 @@ private:
     static void operator delete[](void*) = delete;
 };
 
-// The writer of a cell: void for a cell that each thread can write, or a
-// SoleWriter for a cell of one writer.
+// The writer of a cell: void for a cell that each thread can write, Counter
+// for a count that each thread adds to, or a SoleWriter for a cell of one
+// writer.
 template <AtomicValue T, class Writer>
 class Atomic : ::foundation::Pinned<Atomic<T, Writer>> {
-    static_assert(std::is_void_v<Writer>, "Atomic<T, Writer>: the writer is void, for a cell that each thread can "
-                                          "write, or SoleWriter<Role, Brand>, for a cell of one writer.");
+    static_assert(std::is_void_v<Writer>,
+                  "Atomic<T, Writer>: the writer is void, for a cell that each thread can write, Counter, for a "
+                  "count that each thread adds to, or SoleWriter<Role, Brand>, for a cell of one writer.");
 
     using codec_type = detail::atomic_codec<T>;
     using storage_type = typename detail::atomic_storage<T>::type;
@@ -495,6 +535,19 @@ public:
         return err(CasRefusal<T>{from_storage_(observed)});
     }
 
+    // A weak compare-and-swap: it can fail when the cell holds expected, so
+    // a caller runs it in a loop that reads the cell again.  On x86-64 it is
+    // the same lock cmpxchg as the strong form.  On aarch64 it is one pair of
+    // exclusive load and store, with no loop of its own.
+    [[nodiscard]] Result<Unit, CasRefusal<T>> cas_weak_acq_rel(T expected, T desired) noexcept {
+        storage_type observed = to_storage_(expected);
+        if (__atomic_compare_exchange_n(&value_, &observed, to_storage_(desired), true, __ATOMIC_ACQ_REL,
+                                        __ATOMIC_ACQUIRE)) {
+            return Unit{};
+        }
+        return err(CasRefusal<T>{from_storage_(observed)});
+    }
+
     // Unsigned arithmetic wraps, and signed arithmetic of an atomic
     // operation wraps too.
     [[nodiscard]] T fetch_add_acq_rel(T delta) noexcept
@@ -519,6 +572,12 @@ public:
         requires AtomicBits<T>
     {
         return __atomic_fetch_and(&value_, bits, __ATOMIC_ACQ_REL);
+    }
+
+    [[nodiscard]] T fetch_xor_acq_rel(T bits) noexcept
+        requires AtomicBits<T>
+    {
+        return __atomic_fetch_xor(&value_, bits, __ATOMIC_ACQ_REL);
     }
 
     // GCC has no builtin for a maximum or a minimum, so each one is a loop
@@ -633,6 +692,47 @@ public:
     }
 };
 
+// The cell of a count (THE COUNT).  An integer is its own word, so the cell
+// holds the value with no codec.
+template <AtomicValue T>
+class Atomic<T, Counter> : ::foundation::Pinned<Atomic<T, Counter>> {
+    static_assert(AtomicCount<T>, "Atomic<T, Counter>: a count is an integer that is not bool, because only an "
+                                  "integer has an addition.");
+
+    alignas(sizeof(T)) T value_{};
+
+public:
+    using value_type = T;
+
+    constexpr Atomic() noexcept = default;
+
+    explicit constexpr Atomic(T initial) noexcept : value_{initial} {}
+
+    [[nodiscard]] T load_acquire() const noexcept { return __atomic_load_n(&value_, __ATOMIC_ACQUIRE); }
+
+    // Unsigned arithmetic wraps, and signed arithmetic of an atomic
+    // operation wraps too.
+    [[nodiscard]] T fetch_add_relaxed(T delta) noexcept { return __atomic_fetch_add(&value_, delta, __ATOMIC_RELAXED); }
+
+    [[nodiscard]] T fetch_sub_relaxed(T delta) noexcept { return __atomic_fetch_sub(&value_, delta, __ATOMIC_RELAXED); }
+
+    // A loop of weak compare-and-swap operations, as fetch_max_acq_rel is.
+    // A value that does not change the count writes nothing.
+    [[nodiscard]] T fetch_max_relaxed(T value) noexcept {
+        T observed = __atomic_load_n(&value_, __ATOMIC_RELAXED);
+        while (observed < value
+               && !__atomic_compare_exchange_n(&value_, &observed, value, true, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {}
+        return observed;
+    }
+
+    [[nodiscard]] T fetch_min_relaxed(T value) noexcept {
+        T observed = __atomic_load_n(&value_, __ATOMIC_RELAXED);
+        while (value < observed
+               && !__atomic_compare_exchange_n(&value_, &observed, value, true, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {}
+        return observed;
+    }
+};
+
 // A cell alone on its cache lines.  The platform floor of
 // foundation/Platform.h holds the line at 64 bytes.
 template <class T>
@@ -665,16 +765,14 @@ public:
 };
 
 class Tally : ::foundation::Pinned<Tally> {
-    alignas(8) std::uint64_t count_ = 0;
+    Atomic<std::uint64_t, Counter> count_{};
 
 public:
     constexpr Tally() noexcept = default;
 
-    void add(std::uint64_t amount) noexcept {
-        static_cast<void>(__atomic_fetch_add(&count_, amount, __ATOMIC_ACQ_REL));
-    }
+    void add(std::uint64_t amount) noexcept { static_cast<void>(count_.fetch_add_relaxed(amount)); }
 
-    [[nodiscard]] std::uint64_t read() const noexcept { return __atomic_load_n(&count_, __ATOMIC_ACQUIRE); }
+    [[nodiscard]] std::uint64_t read() const noexcept { return count_.load_acquire(); }
 };
 
 // The fence of the store-load order (THE FENCE).

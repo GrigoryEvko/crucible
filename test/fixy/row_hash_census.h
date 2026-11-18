@@ -981,6 +981,7 @@ inline constexpr StatedZero kZeros[] = {
      "and it is never a value in a kernel signature"},
     {^^::foundation::core::CacheLine, "a layout wrapper: it aligns its cell and makes no claim about the cell"},
     {^^::foundation::core::Tally, kDescriptor},
+    {^^::foundation::core::Counter, "the writer of a count, a tag in the type of a cell: it holds nothing"},
     {^^::foundation::core::View,
      "a borrow of a run of elements: it owns nothing and makes no claim about what the elements hold"},
     {^^::foundation::core::ViewCursor,

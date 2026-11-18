@@ -2947,8 +2947,19 @@ foundation_neg_compile_test(neg_core_sole_writer_exchange
   ".class foundation::core::Atomic<long unsigned int, foundation::core::SoleWriter<.*HeadRole, .*> >. has no member named .exchange_acq_rel."
   "has no member named .exchange_acq_rel.")
 foundation_neg_compile_test(neg_core_atomic_writer_not_sole_writer
-  "the writer is void, for a cell that each thread can write, or SoleWriter<Role, Brand>, for a cell of one writer"
+  "the writer is void, for a cell that each thread can write, Counter, for a count that each thread adds to, or SoleWriter<Role, Brand>, for a cell of one writer"
   "static assertion failed")
+# Only a count adds with relaxed order.  A count holds an integer that is
+# not bool, and it has no store, so no thread publishes data through it.
+foundation_neg_compile_test(neg_core_atomic_fetch_add_relaxed_shared
+  ".class foundation::core::Atomic<long unsigned int>. has no member named .fetch_add_relaxed."
+  "has no member named .fetch_add_relaxed.")
+foundation_neg_compile_test(neg_core_atomic_count_of_bool
+  "Atomic<T, Counter>: a count is an integer that is not bool, because only an integer has an addition"
+  "static assertion failed")
+foundation_neg_compile_test(neg_core_atomic_count_store
+  ".class foundation::core::Atomic<long unsigned int, foundation::core::Counter>. has no member named .store_release."
+  "has no member named .store_release.")
 
 # ── The Scalar family: decode and enum_from ───────────────────────────
 #

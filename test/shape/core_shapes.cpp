@@ -146,6 +146,24 @@ struct NetError8 final {
     return cell.fetch_min_acq_rel(value);
 }
 
+[[gnu::used]] bool atomic_cas_weak(fixy::Atomic<std::uint64_t>& cell, std::uint64_t expected,
+                                   std::uint64_t desired) noexcept {
+    return cell.cas_weak_acq_rel(expected, desired).is_ok();
+}
+
+[[gnu::used]] std::uint64_t atomic_fetch_xor(fixy::Atomic<std::uint64_t>& cell, std::uint64_t bits) noexcept {
+    return cell.fetch_xor_acq_rel(bits);
+}
+
+[[gnu::used]] std::uint64_t count_fetch_add(fixy::Atomic<std::uint64_t, fixy::Counter>& count,
+                                            std::uint64_t delta) noexcept {
+    return count.fetch_add_relaxed(delta);
+}
+
+[[gnu::used]] std::uint64_t count_load(fixy::Atomic<std::uint64_t, fixy::Counter> const& count) noexcept {
+    return count.load_acquire();
+}
+
 [[gnu::used]] void tally_add(fixy::Tally& tally, std::uint64_t amount) noexcept { tally.add(amount); }
 
 [[gnu::used]] std::uint64_t tally_read(fixy::Tally const& tally) noexcept { return tally.read(); }
@@ -1387,6 +1405,24 @@ struct RawColumn final {
 
 [[gnu::used]] std::uint64_t atomic_fetch_min_raw(std::atomic<std::uint64_t>& cell, std::uint64_t value) noexcept {
     return cell.fetch_min(value, std::memory_order_acq_rel);
+}
+
+[[gnu::used]] bool atomic_cas_weak_raw(std::atomic<std::uint64_t>& cell, std::uint64_t expected,
+                                       std::uint64_t desired) noexcept {
+    return cell.compare_exchange_weak(expected, desired, std::memory_order_acq_rel, std::memory_order_acquire);
+}
+
+[[gnu::used]] std::uint64_t atomic_fetch_xor_raw(std::atomic<std::uint64_t>& cell, std::uint64_t bits) noexcept {
+    return cell.fetch_xor(bits, std::memory_order_acq_rel);
+}
+
+// A count replaces a relaxed counter of std::atomic.
+[[gnu::used]] std::uint64_t count_fetch_add_raw(std::atomic<std::uint64_t>& counter, std::uint64_t delta) noexcept {
+    return counter.fetch_add(delta, std::memory_order_relaxed);
+}
+
+[[gnu::used]] std::uint64_t count_load_raw(std::atomic<std::uint64_t> const& counter) noexcept {
+    return counter.load(std::memory_order_relaxed);
 }
 
 // A statistics counter that a Tally replaces is a relaxed counter.

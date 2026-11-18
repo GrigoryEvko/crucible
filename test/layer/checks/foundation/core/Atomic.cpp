@@ -158,6 +158,16 @@ static_assert(SetsBits<Atomic<std::uint32_t>> && SetsBits<Atomic<std::uint8_t>>)
 static_assert(!SetsBits<Atomic<int>> && !SetsBits<Atomic<bool>> && !SetsBits<Atomic<Phase>>);
 static_assert(Exchanges<Atomic<int>> && Exchanges<Atomic<bool>> && Exchanges<Atomic<Phase>> && Exchanges<Atomic<Pair>>);
 
+// The weak compare-and-swap takes each value, as the strong form does.  The
+// xor of bits takes an unsigned integer, as the other bitwise operations do.
+template <class A>
+concept SwapsWeak = requires(A& cell) { cell.cas_weak_acq_rel(typename A::value_type{}, typename A::value_type{}); };
+template <class A>
+concept FlipsBits = requires(A& cell) { cell.fetch_xor_acq_rel(typename A::value_type{}); };
+static_assert(SwapsWeak<Atomic<int>> && SwapsWeak<Atomic<bool>> && SwapsWeak<Atomic<Phase>> && SwapsWeak<Atomic<Pair>>);
+static_assert(FlipsBits<Atomic<std::uint32_t>> && FlipsBits<Atomic<std::uint8_t>>);
+static_assert(!FlipsBits<Atomic<int>> && !FlipsBits<Atomic<bool>> && !FlipsBits<Atomic<Phase>>);
+
 // A CacheLine always holds its cell, so the dereference borrows it from an
 // lvalue.  A borrow of a temporary CacheLine is refused.  No member named
 // get borrows with no key.
@@ -181,10 +191,11 @@ static_assert(!HasGet<CacheLine<int>> && !HasGet<CacheLine<int> const>);
 // The four members of a word protocol belong to each specialization of
 // atomic_word, and the list names them for the specializations of the base.
 inline constexpr TextView atomic_names{
-    "Atomic AtomicValue AtomicCount AtomicBits AtomicWordProtocol CasRefusal SoleWriter CacheLine Tally atomic_word "
-    "atomic_word_key load_acquire store_release exchange_acq_rel cas_acq_rel fetch_add_acq_rel fetch_sub_acq_rel "
-    "fetch_or_acq_rel fetch_and_acq_rel fetch_max_acq_rel fetch_min_acq_rel load_owned add read value_type observed "
-    "brand_type word_type empty_word to_word from_word"};
+    "Atomic AtomicValue AtomicCount AtomicBits AtomicWordProtocol CasRefusal Counter SoleWriter CacheLine Tally "
+    "atomic_word atomic_word_key load_acquire store_release exchange_acq_rel cas_acq_rel cas_weak_acq_rel "
+    "fetch_add_acq_rel fetch_sub_acq_rel fetch_or_acq_rel fetch_and_acq_rel fetch_xor_acq_rel fetch_max_acq_rel "
+    "fetch_min_acq_rel fetch_add_relaxed fetch_sub_relaxed fetch_max_relaxed fetch_min_relaxed load_owned add read "
+    "value_type observed brand_type word_type empty_word to_word from_word"};
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<int>);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<std::uint64_t>);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<Pair>);
@@ -193,6 +204,8 @@ CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<Option<NicheSlot>>);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, sole_writer_key);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, CasRefusal<int>);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, Tally);
+CRUCIBLE_CLOSED_SURFACE(atomic_names, Counter);
+CRUCIBLE_CLOSED_SURFACE(atomic_names, Atomic<std::uint64_t, Counter>);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, CacheLine<int>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, CacheLine<Atomic<std::uint64_t>>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(atomic_names, CacheLine<Tally>, DereferenceProtocol);
@@ -223,6 +236,27 @@ template <class Cell>
 concept LoadsAcquire = requires(Cell const& cell) { cell.load_acquire(); };
 template <class Cell>
 concept Swaps = requires(Cell& cell) { cell.cas_acq_rel(typename Cell::value_type{}, typename Cell::value_type{}); };
+
+// A count adds with relaxed order and reads with acquire order.  It has no
+// store and no compare-and-swap, so no thread publishes data through it.  No
+// other cell adds with relaxed order.
+template <class A>
+concept AddsRelaxed = requires(A& cell) {
+    cell.fetch_add_relaxed(typename A::value_type{});
+    cell.fetch_sub_relaxed(typename A::value_type{});
+    cell.fetch_max_relaxed(typename A::value_type{});
+    cell.fetch_min_relaxed(typename A::value_type{});
+};
+static_assert(AddsRelaxed<Atomic<std::uint64_t, Counter>> && AddsRelaxed<Atomic<std::int32_t, Counter>>);
+static_assert(AddsRelaxed<Atomic<std::uint8_t, Counter>> && !AddsRelaxed<Atomic<std::uint64_t>>);
+static_assert(LoadsAcquire<Atomic<std::uint64_t, Counter>>);
+static_assert(!StoresWithoutProof<Atomic<std::uint64_t, Counter>> && !Swaps<Atomic<std::uint64_t, Counter>>);
+static_assert(!Adds<Atomic<std::uint64_t, Counter>> && !Exchanges<Atomic<std::uint64_t, Counter>>);
+static_assert(!SwapsWeak<Atomic<std::uint64_t, Counter>> && !SetsBits<Atomic<std::uint64_t, Counter>>);
+static_assert(sizeof(Atomic<std::uint64_t, Counter>) == 8 && alignof(Atomic<std::uint64_t, Counter>) == 8);
+static_assert(sizeof(Atomic<std::uint8_t, Counter>) == 1);
+static_assert(!std::is_copy_constructible_v<Atomic<std::uint64_t, Counter>>
+              && !std::is_move_constructible_v<Atomic<std::uint64_t, Counter>>);
 
 // The checks of the cell of one writer.  A fresh brand stays in the scope
 // that made it, so the aliases of the writers and of the cells are in the
