@@ -16,6 +16,7 @@
 #include <crucible/TraceRing.h>
 #include <fixy/Borrowed.h>
 #include <fixy/Core.h>
+#include <fixy/Protocol.h>
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>

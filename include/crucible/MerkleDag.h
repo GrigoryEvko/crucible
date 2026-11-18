@@ -10,6 +10,7 @@
 #include <fixy/Bands.h>
 #include <fixy/Core.h>
 #include <fixy/Mutation.h>
+#include <fixy/Protocol.h>
 #include <fixy/Refined.h>
 #include <fixy/Saturated.h>
 #include <fixy/handle/PublishOnce.h>

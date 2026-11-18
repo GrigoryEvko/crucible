@@ -27,6 +27,7 @@
 #include "random_input.h"
 
 #include <fixy/Core.h>
+#include <fixy/Protocol.h>
 
 #include <atomic>
 #include <cstdio>

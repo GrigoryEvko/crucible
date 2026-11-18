@@ -2,6 +2,7 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
+#include <fixy/Protocol.h>
 #include "test_assert.h"
 
 #include <cstddef>

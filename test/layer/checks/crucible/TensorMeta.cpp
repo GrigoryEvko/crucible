@@ -1,6 +1,7 @@
 // The compile-time checks of crucible/TensorMeta.h.
 
 #include <crucible/TensorMeta.h>
+#include <fixy/Protocol.h>
 
 namespace crucible {
 

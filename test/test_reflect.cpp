@@ -5,6 +5,7 @@
 
 #include <crucible/MerkleDag.h>
 #include <fixy/Core.h>
+#include <fixy/Protocol.h>
 #include <foundation/Platform.h>
 #include "test_assert.h"
 #include <cinttypes>

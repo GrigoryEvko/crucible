@@ -64,6 +64,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Types.h>
 #include <fixy/Core.h>
+#include <fixy/Protocol.h>
 
 #include <cstdint>
 #include <cstring>

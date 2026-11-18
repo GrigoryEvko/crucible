@@ -26,6 +26,7 @@
 #include <crucible/NumericalRecipe.h>
 #include <fixy/Bits.h>
 #include <fixy/Core.h>
+#include <fixy/Protocol.h>
 
 #include "bench_harness.h"
 

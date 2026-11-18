@@ -24,6 +24,7 @@
 // hand match that it replaces, beside it, and the match has its own pair.
 
 #include <fixy/Core.h>
+#include <fixy/Protocol.h>
 #include <fixy/Qtt.h>
 #include <foundation/Quarantine.h>
 #include <foundation/contracts/Post.h>
