@@ -3298,9 +3298,6 @@ foundation_neg_compile_test(neg_core_text_view_cursor_member_forged
 foundation_neg_compile_test(neg_core_view_enumerate_range_forged
   "redefinition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>."
   "previous definition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>.")
-foundation_neg_compile_test(neg_core_view_zip_range_forged
-  "redefinition of .class foundation::core::detail::ZipRange<First, Second, Brand>."
-  "previous definition of .class foundation::core::detail::ZipRange<First, Second, Brand>.")
 foundation_neg_compile_test(neg_core_index_enumerate_cursor_forged
   "constexpr foundation::core::Index<Count>::Index\\(Word\\) \\[with long unsigned int Count = 4; Word = unsigned int\\]. is private within this context"
   "In instantiation of .static constexpr foundation::core::Index<Count> foundation::core::detail::EnumerateCursor<Element, Count, Brand>::past_the_end\\(\\)")
@@ -3843,17 +3840,17 @@ foundation_neg_compile_test(neg_core_fixed_list_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) const &")
 foundation_neg_compile_test(neg_core_zip_fixed_brand_from_target_type
-  "invalid .static_cast. from type .<unresolved overloaded function type>. to type .Pick."
-  "foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held> \\(\\*\\)\\(foundation::core::View<int, 4>, foundation::core::View<int, 4>\\) noexcept")
+  "no matches converting function .zip. to type .using Pick = using Pairs = class foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 4>, foundation::core::detail::ViewStage<int, 4>, \\{anonymous\\}::Held> >"
+  "foundation::core::Walk<foundation::core::detail::ZipStage<Stage, Other, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::Walk<Stage>::zip")
 foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_target_type
-  "invalid .static_cast. from type .<unresolved overloaded function type>. to type .Pick."
-  "foundation::core::Result<foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held>, foundation::core::LengthMismatch> \\(\\*\\)\\(foundation::core::View<int>, foundation::core::View<int, 4>\\) noexcept")
+  "no matches converting function .try_zip. to type .using Pick = using Pairs = class foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 18446744073709551615>, foundation::core::detail::ViewStage<int, 4>, \\{anonymous\\}::Held> >"
+  "foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<Stage, Other, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> >, foundation::core::LengthMismatch> foundation::core::Walk<Stage>::try_zip")
 foundation_neg_compile_test(neg_core_zip_fixed_brand_from_specialization
-  "template-id .zip<>. for .constexpr foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held> foundation::core::zip\\(View<int, 4>, View<int, 4>\\). does not match any template declaration"
-  "foundation::core::detail::ZipRange<First, Second, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> foundation::core::zip")
+  "template-id .zip<>. for .constexpr foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 4>, foundation::core::detail::ViewStage<int, 4>, \\{anonymous\\}::Held> > foundation::core::Walk<foundation::core::detail::ViewStage<int, 4> >::zip\\([^)]*&&\\) &&. does not match any template declaration"
+  "foundation::core::Walk<foundation::core::detail::ZipStage<Stage, Other, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::Walk<Stage>::zip")
 foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_specialization
-  "template-id .zip<>. for .constexpr foundation::core::Result<foundation::core::detail::ZipRange<int, int, \\{anonymous\\}::Held>, foundation::core::LengthMismatch> foundation::core::zip\\(View<int, 18446744073709551615>, View<int, 4>\\). does not match any template declaration"
-  "foundation::core::Result<foundation::core::detail::ZipRange<First, Second, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type>, foundation::core::LengthMismatch>")
+  "template-id .try_zip<>. for .constexpr foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 18446744073709551615>, foundation::core::detail::ViewStage<int, 4>, \\{anonymous\\}::Held> >, foundation::core::LengthMismatch> foundation::core::Walk<foundation::core::detail::ViewStage<int, 18446744073709551615> >::try_zip\\([^)]*&&\\) &&. does not match any template declaration"
+  "foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<Stage, Other, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> >, foundation::core::LengthMismatch> foundation::core::Walk<Stage>::try_zip")
 
 # enumerate() needs the proven indexes of indices(), so a View of a dynamic
 # extent has none.  zip of two Views of different fixed extents is refused
@@ -3862,9 +3859,9 @@ foundation_neg_compile_test(neg_core_view_enumerate_dynamic_extent
   "no matching function for call to .foundation::core::View<const int>::enumerate\\(\\) const."
   "the expression .Extent != foundation::core::dynamic_extent \\[with Extent = 18446744073709551615\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_zip_different_fixed_extents
-  "use of deleted function .void foundation::core::zip\\("
-  "\\[with First = const int; long unsigned int FirstExtent = 4; Second = const int; long unsigned int SecondExtent = 5\\]"
-  "two Views of different fixed extents have different counts, so the longer View has elements with no pair")
+  "use of deleted function .void foundation::core::Walk<Stage>::zip\\(foundation::core::Walk<Other>&&\\) &&"
+  "\\[with Other = foundation::core::detail::ViewStage<const int, 5>; Stage = foundation::core::detail::ViewStage<const int, 4>\\]"
+  "two walks of different fixed extents have different counts, so the longer walk has elements with no pair")
 foundation_neg_compile_test(neg_core_fixed_array_enumerate_of_temporary
   "use of deleted function .void foundation::core::FixedArray<T, N>::enumerate\\(\\) const && \\[with T = int; long unsigned int N = 4\\]."
   "a loop over a temporary FixedArray points into an object that the full expression ends")

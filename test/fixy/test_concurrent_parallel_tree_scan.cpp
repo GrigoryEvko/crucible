@@ -69,7 +69,7 @@ void test_scans_on_each_thread_count() {
 // output bits of the scan of one thread: the canonical NaN for a NaN (THE
 // VALUES OUTSIDE THE BOUND of foundation/core/Reduce.h).
 void check_canonical_outputs(View<float const> parallel, View<float const> single) noexcept {
-    for (auto const [left, right] : ::fixy::zip(parallel, single).expect("the two runs have one count")) {
+    for (auto const [left, right] : parallel.walk().try_zip(single.walk()).expect("the two runs have one count")) {
         assert(::crucible::test::float_bits(*left) == ::crucible::test::output_bits(*right));
         assert(::crucible::test::float_bits(*right) == ::crucible::test::output_bits(*right));
     }

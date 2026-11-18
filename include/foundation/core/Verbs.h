@@ -11,8 +11,9 @@
 //                     consume, the iteration verbs enumerate, reverse,
 //                     windows, chunks and walk, and begin and end, the
 //                     members that `for (x : c)` calls.
-//                     zip and the mints are free functions, so no member
-//                     takes their names
+//                     The mints are free functions, so no member takes
+//                     their names.  zip is a name of the family list of
+//                     Walk (foundation/core/Walk.h)
 //   a language protocol
 //                     a constructor, the destructor, an assignment, and the
 //                     compare operators == and <=>.  The dereference

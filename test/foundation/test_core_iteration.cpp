@@ -1,7 +1,7 @@
 // Tests of the iteration verbs of the Region family: enumerate(), reverse(),
-// windows<W>() and chunks<W>() of a View and of a FixedArray, and zip of two
-// Views.  Each property compares a verb with a loop over the proven indexes
-// of the same array, which is the model.
+// windows<W>() and chunks<W>() of a View and of a FixedArray, and zip and
+// try_zip of two walks of Views.  Each property compares a verb with a loop
+// over the proven indexes of the same array, which is the model.
 
 #include <foundation/core/Array.h>
 
@@ -22,7 +22,6 @@ using ::foundation::core::Index;
 using ::foundation::core::index;
 using ::foundation::core::LengthMismatch;
 using ::foundation::core::View;
-using ::foundation::core::zip;
 
 constexpr std::size_t run_size = 64;
 
@@ -93,12 +92,12 @@ void test_zip_of_one_fixed_extent() {
     FixedArray<int, 4> const left{1, 2, 3, 4};
     FixedArray<int, 4> const right{10, 20, 30, 40};
     int total = 0;
-    for (auto const [first, second] : zip(left.view(), right.view())) {
+    for (auto const [first, second] : left.view().walk().zip(right.view().walk())) {
         total += *first * *second;
     }
     assert(total == 10 + 40 + 90 + 160);
     FixedArray<int, 4> target{};
-    for (auto const [destination, source] : zip(target.view(), left.view())) {
+    for (auto const [destination, source] : target.view().walk().zip(left.view().walk())) {
         *destination = *source + 1;
     }
     assert(target == (FixedArray<int, 4>{2, 3, 4, 5}));
@@ -109,9 +108,9 @@ void test_zip_of_a_dynamic_extent_compares_the_counts() {
     View<int const> const head = values.view().window(0, 3).expect("three elements fit");
     View<int const> const tail = values.view().window(3, 3).expect("three elements fit");
     View<int const> const longer = values.view().window(1, 4).expect("four elements fit");
-    assert(zip(head, longer).is_err());
-    assert(zip(values.view(), head).is_err());
-    auto const pairs = zip(head, tail).expect("the two windows hold three elements");
+    assert(head.walk().try_zip(longer.walk()).is_err());
+    assert(values.view().walk().try_zip(head.walk()).is_err());
+    auto const pairs = head.walk().try_zip(tail.walk()).expect("the two windows hold three elements");
     assert(pairs.size() == 3);
     int total = 0;
     for (auto const [first, second] : pairs) {
@@ -120,10 +119,10 @@ void test_zip_of_a_dynamic_extent_compares_the_counts() {
     }
     assert(total == 1 + 2 + 3);
     bool const mismatch_matched =
-        zip(head, longer).match([](auto) { return false; }, [](LengthMismatch) { return true; });
+        head.walk().try_zip(longer.walk()).match([](auto) { return false; }, [](LengthMismatch) { return true; });
     assert(mismatch_matched);
     View<int const> const empty{};
-    assert(zip(empty, empty).expect("two empty Views hold zero elements").size() == 0);
+    assert(empty.walk().try_zip(empty.walk()).expect("two empty Views hold zero elements").size() == 0);
 }
 
 // The property: for random runs and random counts, reverse() visits the
@@ -177,14 +176,15 @@ void test_verbs_agree_with_the_index_model() {
         View<std::uint64_t const> const shifted =
             run.view().window(shift, size).expect("the shifted window is inside the run");
         std::size_t paired = 0;
-        for (auto const [first, second] : zip(elements, shifted).expect("the two windows hold size elements")) {
+        for (auto const [first, second] :
+             elements.walk().try_zip(shifted.walk()).expect("the two windows hold size elements")) {
             assert(*first == element_at(run, paired) && *second == element_at(run, shift + paired));
             ++paired;
         }
         assert(paired == size);
         if (size != 0) {
             View<std::uint64_t const> const shorter = elements.window(1, size - 1).expect("the tail of a window fits");
-            assert(zip(elements, shorter).is_err());
+            assert(elements.walk().try_zip(shorter.walk()).is_err());
         }
     }
 }
@@ -238,15 +238,20 @@ void test_cursors_at_the_end_abort(::fixy::TestRunnerCtx const& test) {
         },
         ::fixy::TextView{"foundation: fatal: a step past the end cursor of an enumerate loop over a View"});
     expect_dies(
-        test, [&values] noexcept { static_cast<void>(*zip(values.view(), values.view()).end()); },
-        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a zip loop over two Views"});
+        test,
+        [&values] noexcept {
+            auto const pairs = values.view().walk().zip(values.view().walk());
+            static_cast<void>(*pairs.end());
+        },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a zip walk"});
     expect_dies(
         test,
         [&values] noexcept {
-            auto cursor = zip(values.view(), values.view()).end();
+            auto const pairs = values.view().walk().zip(values.view().walk());
+            auto cursor = pairs.end();
             ++cursor;
         },
-        ::fixy::TextView{"foundation: fatal: a step past the end cursor of a zip loop over two Views"});
+        ::fixy::TextView{"foundation: fatal: a step past the end cursor of a zip walk"});
 }
 
 }  // namespace

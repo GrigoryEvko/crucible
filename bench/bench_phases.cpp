@@ -86,7 +86,7 @@ void print_phase_table(PhaseTiming* phases, uint32_t n, double total_ns, uint64_
 // build_trace gives an op with no metadata no arrays and zero tensor counts.
 // The copy of its loop in the P2a phase does the same.
 void check_ops_without_metas(::fixy::View<const TraceEntry> ops, ::fixy::View<const MetaIndex> meta_data) {
-    for (const auto [op, meta_start] : ::fixy::zip(ops, meta_data).expect("each op has a metadata start")) {
+    for (const auto [op, meta_start] : ops.walk().try_zip(meta_data.walk()).expect("each op has a metadata start")) {
         if (meta_start->is_valid()) continue;
         const TraceEntry& op_record = *op;
         CRUCIBLE_BENCH_CHECK(op_record.input_metas().size() == 0 && op_record.output_metas().size() == 0);
@@ -349,8 +349,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         bench::refill_meta_log(meta_log, trace);
         uint64_t max_meta_end = 0;
         MetaIndex first_meta = MetaIndex::none();
-        for (const auto [entry, meta_start] :
-             ::fixy::zip(trace.entries.view(), trace.meta_starts.view()).expect("the arrays of a trace are parallel")) {
+        for (const auto [entry, meta_start] : trace.entries.view()
+                                                  .walk()
+                                                  .try_zip(trace.meta_starts.view().walk())
+                                                  .expect("the arrays of a trace are parallel")) {
             const MetaIndex ms = *meta_start;
             if (ms.is_valid()) {
                 if (!first_meta.is_valid()) first_meta = ms;
@@ -380,8 +382,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         uint64_t max_meta_end = 0;
         MetaIndex first_meta = MetaIndex::none();
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
-        for (const auto [entry, meta_start] :
-             ::fixy::zip(trace.entries.view(), trace.meta_starts.view()).expect("the arrays of a trace are parallel")) {
+        for (const auto [entry, meta_start] : trace.entries.view()
+                                                  .walk()
+                                                  .try_zip(trace.meta_starts.view().walk())
+                                                  .expect("the arrays of a trace are parallel")) {
             const MetaIndex ms = *meta_start;
             const TraceRing::Entry& re = *entry;
             if (ms.is_valid()) {

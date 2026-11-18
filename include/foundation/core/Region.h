@@ -95,20 +95,19 @@
 //                       proven index: a Record<Index<N>, Ref<T>>.  A View of
 //                       a dynamic extent has no indices(), so it has no
 //                       enumerate()
-//   zip(first, second)  each pair of the elements at one position of two
-//                       Views: a Record<Ref<A>, Ref<B>>.  Two Views of one
-//                       fixed extent give the loop, because the type proves
-//                       the counts equal.  Two Views of different fixed
-//                       extents do not compile.  When a View has a dynamic
-//                       extent, zip gives a Result, with LengthMismatch when
-//                       the counts differ
+//   first.walk().zip(second.walk()), first.walk().try_zip(second.walk())
+//                       each pair of the elements at one position of two
+//                       Views: a Record<Ref<A>, Ref<B>> (foundation/core/Walk.h).
+//                       Two walks of one fixed extent give the loop, because
+//                       the type proves the counts equal.  When a walk has a
+//                       dynamic extent, try_zip gives a Result, with
+//                       LengthMismatch when the counts differ
 //
 // A Record refuses a reference part, so a pair borrows each element through
 // a Ref, which is never null and has the size of a pointer.  The binding
 // `auto [index, element] = pair;` gives the parts, and *element reaches the
-// element.  This header includes the Record family and defines the ranges
-// and the cursors of the pairs, so each friend of View has its definition
-// here.
+// element.  This header includes the Record family and defines the stage and
+// the cursor of enumerate().
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
@@ -212,9 +211,8 @@ template <::foundation::brand::IsBrand Brand, class T>
 }
 
 // The root stages of the walks of the iteration verbs reverse(),
-// windows<W>(), chunks<W>() and enumerate() of a View, and their cursors,
-// and the loop of zip(first, second).  View names the zip range as a friend,
-// and this header defines each of them.
+// windows<W>(), chunks<W>() and enumerate() of a View, and their cursors.
+// This header defines each of them.
 template <class Element>
 class ReverseStage;
 template <class Element>
@@ -231,10 +229,6 @@ template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand, 
 class EnumerateStage;
 template <class Element, std::size_t Count, class Brand>
 class EnumerateCursor;
-template <class First, class Second, ::foundation::brand::IsBrand Brand>
-class ZipRange;
-template <class First, class Second, class Brand>
-class ZipCursor;
 
 // The root stage of the walk of a View.
 template <class T, std::size_t Extent>
@@ -254,9 +248,6 @@ class View {
     friend class View;
 
     friend struct niche<View>;
-    // The range of zip reads the pointer member of its Views directly.
-    template <class First, class Second, ::foundation::brand::IsBrand Brand>
-    friend class detail::ZipRange;
 
     constexpr View(T* first, std::size_t count) noexcept
         requires(Extent == dynamic_extent)
@@ -1303,12 +1294,6 @@ public:
     }
 };
 
-// The cursors of enumerate() and zip obey the rule of a ViewCursor: each
-// cursor knows the end of its loop, a read or a step at the end ends the
-// process in each build, and the optimizer removes the two checks in a loop
-// that compares the cursor with the end first.  A cursor comes only from its
-// range, and the seal refuses std::bit_cast and a lifetime start over bytes.
-
 // The position of a loop over the elements of a View<Element, Count> with
 // their indexes: the first element of the View, the position of the next
 // element, and the position of the end of the loop, which is at most Count.
@@ -1431,115 +1416,6 @@ public:
                                                       start_ + size};
     }
 };
-
-// The position of a loop over the pairs of two Views of one count: the
-// next element and the end of the first View, and the next element of the
-// second View.  The range proved the two counts equal, so the end of the
-// first View is the end of the loop, and the second pointer never passes
-// the end of its View.  Each Ref has the brand of the call of zip that made
-// the range.
-template <class First, class Second, class Brand>
-class ZipCursor {
-    First* first_at_ = nullptr;
-    First* first_end_ = nullptr;
-    Second* second_at_ = nullptr;
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
-
-    friend class ZipRange<First, Second, Brand>;
-
-    constexpr ZipCursor(First* first_at, First* first_end, Second* second_at) noexcept
-        : first_at_{first_at}, first_end_{first_end}, second_at_{second_at} {}
-
-public:
-    [[nodiscard]] constexpr Record<Ref<First, Brand>, Ref<Second, Brand>> operator*() const noexcept {
-        if (first_at_ == first_end_) [[unlikely]] {
-            fatal("a read through the end cursor of a zip loop over two Views");
-        }
-        return {RefDoor::lend<Brand>(*first_at_), RefDoor::lend<Brand>(*second_at_)};
-    }
-
-    constexpr ZipCursor& operator++() noexcept {
-        if (first_at_ == first_end_) [[unlikely]] {
-            fatal("a step past the end cursor of a zip loop over two Views");
-        }
-        ++first_at_;
-        ++second_at_;
-        return *this;
-    }
-
-    [[nodiscard]] friend constexpr bool operator==(ZipCursor const& left, ZipCursor const& right) noexcept {
-        return left.first_at_ == right.first_at_;
-    }
-};
-
-// The pairs of the elements of two Views of one count.  The constructor
-// compares the two counts, and two counts that differ end the process in
-// each build.  zip compares them first, or the types of the Views prove
-// them equal, so the optimizer removes this compare.
-template <class First, class Second, ::foundation::brand::IsBrand Brand>
-class ZipRange {
-    View<First> first_;
-    Second* second_ = nullptr;
-
-public:
-    constexpr ZipRange(View<First> first, View<Second> second) noexcept : first_{first}, second_{second.first_} {
-        if (first.size() != second.size()) [[unlikely]] {
-            fatal("a zip of two Views of {} and {} elements", first.size(), second.size());
-        }
-    }
-
-    // The count of pairs: the count of each View.
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return first_.size(); }
-
-    [[nodiscard]] constexpr ZipCursor<First, Second, Brand> begin() const noexcept {
-        First* const first = first_.first_;
-        return ZipCursor<First, Second, Brand>{first, first + first_.size(), second_};
-    }
-    [[nodiscard]] constexpr ZipCursor<First, Second, Brand> end() const noexcept {
-        First* const end = first_.first_ + first_.size();
-        return ZipCursor<First, Second, Brand>{end, end, second_ + first_.size()};
-    }
-};
-
-}  // namespace detail
-
-// The pairs of two Views of one fixed extent.  The type proves the counts
-// equal, so the loop needs no compare before its first step.  Each Ref of
-// one call has the fresh brand of that call, and the pack refuses each
-// explicit argument.  The result type holds the brand in
-// undeducible_brand_t, so neither a target type nor the declared type of a
-// specialization sets it (foundation/Brand.h).
-template <class... Refused, class First, class Second, std::size_t Extent,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-    requires(sizeof...(Refused) == 0 && Extent != dynamic_extent)
-[[nodiscard]] constexpr detail::ZipRange<First, Second, ::foundation::brand::undeducible_brand_t<Fresh>>
-zip(View<First, Extent> first, View<Second, Extent> second) noexcept {
-    return detail::ZipRange<First, Second, Fresh>{first, second};
-}
-
-// Two Views of different fixed extents have no pair for each element of the
-// longer View, and the types show it at compile time.
-template <class First, std::size_t FirstExtent, class Second, std::size_t SecondExtent>
-    requires(FirstExtent != dynamic_extent && SecondExtent != dynamic_extent && FirstExtent != SecondExtent)
-void zip(View<First, FirstExtent>, View<Second, SecondExtent>) =
-    delete("two Views of different fixed extents have different counts, so the longer View has elements with no pair");
-
-// The pairs of two Views when a View has a dynamic extent: the loop, or
-// LengthMismatch when the counts differ.  One compare.  Each Ref of one call
-// has the fresh brand of that call, and deduction cannot set it.
-template <class... Refused, class First, std::size_t FirstExtent, class Second, std::size_t SecondExtent,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-    requires(sizeof...(Refused) == 0 && (FirstExtent == dynamic_extent || SecondExtent == dynamic_extent))
-[[nodiscard]] constexpr Result<detail::ZipRange<First, Second, ::foundation::brand::undeducible_brand_t<Fresh>>,
-                               LengthMismatch>
-zip(View<First, FirstExtent> first, View<Second, SecondExtent> second) noexcept {
-    if (first.size() != second.size()) {
-        return err(LengthMismatch{});
-    }
-    return detail::ZipRange<First, Second, Fresh>{first, second};
-}
-
-namespace detail {
 
 // The largest copy of a fixed extent, in bytes, that copy() does with the
 // words of copy_small_.  GCC expands a memmove builtin of a constant size

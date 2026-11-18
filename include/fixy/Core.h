@@ -220,7 +220,6 @@ using ::foundation::core::Walk;
 using ::foundation::core::with_mut;
 using ::foundation::core::write_each;
 using ::foundation::core::WriteLease;
-using ::foundation::core::zip;
 
 using ::foundation::core::BrandedStridedView;
 using ::foundation::core::dynamic_rank;

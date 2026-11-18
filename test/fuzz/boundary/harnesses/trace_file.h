@@ -93,8 +93,10 @@ inline void run_trace_file(std::span<const std::uint8_t> bytes) {
     CRUCIBLE_FUZZ_CLAIM("trace_file", trace.depths.size() == trace.num_ops);
     for (const TensorMeta& meta : trace.metas)
         claim_meta_in_range("trace_file", meta);
-    for (const auto [entry, meta_start] :
-         ::fixy::zip(trace.entries.view(), trace.meta_starts.view()).expect("the arrays of a trace are parallel")) {
+    for (const auto [entry, meta_start] : trace.entries.view()
+                                              .walk()
+                                              .try_zip(trace.meta_starts.view().walk())
+                                              .expect("the arrays of a trace are parallel")) {
         const std::uint32_t tensors = std::uint32_t{entry->num_inputs} + std::uint32_t{entry->num_outputs};
         if (tensors == 0) continue;
         const MetaIndex start = *meta_start;

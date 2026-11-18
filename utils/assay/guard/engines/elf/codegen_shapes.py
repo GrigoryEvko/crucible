@@ -614,15 +614,14 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
-        "view_zip_fixed_sum", "a zip loop over two Views of one fixed extent is the counted loop of two raw pointers"
+        "view_zip_fixed_sum",
+        "the cursor loop over the zip of two walks of one fixed extent is the counted loop of two raw pointers.  The "
+        "cursor compares its position with the end, the same compare as the loop, so the optimizer removes its check",
     ),
     Probe(
         "view_zip_sum",
-        "a zip loop over two Views of a dynamic extent is the compare of the two counts and the loop of two raw "
-        "pointers, with no call.  The family side tests an empty loop with a compare of two pointers, and the raw side "
-        "tests the count.  At -O1, the match of the Result of zip reads the checked tag, and GCC then gives the path "
-        "of an empty loop a jump to the shared return",
-        branches=True,
+        "try_zip and fold of two walks of a dynamic extent is the compare of the two counts and the index loop of the "
+        "raw form, with no call",
     ),
     Probe(
         "walk_map_fold_f32",

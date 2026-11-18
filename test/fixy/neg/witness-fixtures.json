@@ -352,11 +352,6 @@
       "constructor": "\\bWindowCursor\\("
     },
     {
-      "name": "neg_witness_core_detail_zipcursor_direct_construction",
-      "reason": "is private within this context",
-      "constructor": "\\bZipCursor\\("
-    },
-    {
       "name": "neg_witness_core_growlist_direct_construction",
       "reason": "no matching function for call",
       "constructor": "\\bGrowList\\("
@@ -1642,10 +1637,6 @@
     },
     {
       "type": "foundation::core::detail::EnumerateCursor<int, 4, forge::brand>",
-      "header": "foundation/core/Region.h"
-    },
-    {
-      "type": "foundation::core::detail::ZipCursor<int, int, forge::brand>",
       "header": "foundation/core/Region.h"
     },
     {

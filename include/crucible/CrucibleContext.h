@@ -337,7 +337,7 @@ private:
             // the region pair is corrupt.
             CRUCIBLE_FATAL_INVARIANT(old_te.num_outputs() == new_te.num_outputs());
 
-            for (auto [old_id, new_id] : ::fixy::zip(old_ids, new_ids).expect("the output counts are equal")) {
+            for (auto [old_id, new_id] : old_ids.walk().try_zip(new_ids.walk()).expect("the output counts are equal")) {
                 const SlotId old_sid = *old_id;
                 const SlotId new_sid = *new_id;
 

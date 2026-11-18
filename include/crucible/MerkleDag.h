@@ -1328,7 +1328,7 @@ struct DagDiff {
             if (!::fixy::equal(ba->guard, bb->guard) || ba->arms.size() != bb->arms.size())
                 return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
             for (auto [arm_a, arm_b] :
-                 ::fixy::zip(ba->arms, bb->arms).expect("the two branches hold one count of arms")) {
+                 ba->arms.walk().try_zip(bb->arms.walk()).expect("the two branches hold one count of arms")) {
                 if (arm_a->value != arm_b->value) return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
                 DagDiff arm_diff = dag_diff(arm_a->target, arm_b->target, depth + 1);
                 if (arm_diff.kind != DagDiff::Kind::IDENTICAL) return arm_diff;

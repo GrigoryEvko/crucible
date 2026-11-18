@@ -52,7 +52,7 @@ using BgCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc
 [[nodiscard]] inline bool same_runs(::foundation::core::View<float const> left,
                                     ::foundation::core::View<float const> right) noexcept {
     if (left.size() != right.size()) return false;
-    for (auto const [first, second] : ::fixy::zip(left, right).expect("the two runs have one count")) {
+    for (auto const [first, second] : left.walk().try_zip(right.walk()).expect("the two runs have one count")) {
         if (!same_bits(*first, *second)) return false;
     }
     return true;

@@ -1,4 +1,4 @@
-// An explicit specialization of zip of two Views of one fixed extent does
+// An explicit specialization of zip of two walks of one fixed extent does
 // not choose the brand of the Refs.  The rules of the base refuse such a
 // specialization, and this probe writes it in an opt-out region.  The brand
 // of the return type is in a context that deduction does not read, so the
@@ -14,17 +14,38 @@ namespace {
 
 struct Held final {};
 
+// The result type of a member function that takes no argument.
+template <class Fn>
+struct ResultOf;
+template <class R, class C>
+struct ResultOf<R (C::*)() const noexcept> {
+    using type = R;
+};
+
+// The stage of a walk.
+template <class W>
+struct StageOf;
+template <class S>
+struct StageOf<::foundation::core::Walk<S>> {
+    using type = S;
+};
+
+using Fixed = ResultOf<decltype(&::foundation::core::View<int, 4>::walk)>::type;
+using Root = StageOf<Fixed>::type;
+
 }  // namespace
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a forged zip of one fixed extent shows that a declared type sets no brand")
 template <>
-constexpr foundation::core::detail::ZipRange<int, int, Held>
-foundation::core::zip(foundation::core::View<int, 4> first, foundation::core::View<int, 4> second) noexcept {
-    return foundation::core::detail::ZipRange<int, int, Held>{first, second};
+template <>
+constexpr foundation::core::Walk<foundation::core::detail::ZipStage<Root, Root, Held>>
+Fixed::zip<>(Fixed&& second) && noexcept {
+    static_cast<void>(second);
+    foundation::core::fatal("a forged zip gives no walk");
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     ::foundation::core::FixedArray<int, 4> values{1, 2, 3, 4};
-    return static_cast<int>(::foundation::core::zip(values.view(), values.view()).size());
+    return static_cast<int>(values.view().walk().zip(values.view().walk()).size());
 }

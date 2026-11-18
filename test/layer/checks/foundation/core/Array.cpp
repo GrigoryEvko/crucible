@@ -205,15 +205,15 @@ template <class R>
 using ref_target_t = typename RefTargetOf<R>::type;
 
 // The aliases are local to the body, so no fresh brand leaves the scope of
-// its call.  zip of two Views of one fixed extent gives the loop, and a pair
-// holds two pointers.  When a View has a dynamic extent, zip gives a Result
-// (enumerate_and_zip).  The fixture neg_core_zip_different_fixed_extents
-// holds the refusal of two different fixed extents, because a concept that
-// reads the function template zip is an open read.
+// its call.  zip of two walks of one fixed extent gives the loop, and a pair
+// holds two pointers.  When a walk has a dynamic extent, try_zip gives a
+// Result (enumerate_and_zip).  The fixture neg_core_zip_different_fixed_extents
+// holds the refusal of two different fixed extents.
 [[nodiscard]] consteval bool pairs_hold_an_index_and_refs() noexcept {
     using ConstEnumeratedPair = decltype(*std::declval<FixedArray<int, 4> const&>().enumerate().begin());
     using EnumeratedPair = decltype(*std::declval<View<int, 4>>().enumerate().begin());
-    using ZippedPair = decltype(*zip(std::declval<View<int, 4>>(), std::declval<View<long const, 4>>()).begin());
+    using Zipped = decltype(std::declval<View<int, 4>>().walk().zip(std::declval<View<long const, 4>>().walk()));
+    using ZippedPair = decltype(*std::declval<Zipped const&>().begin());
     using ::foundation::reflect::pack_at_t;
     return std::is_same_v<pack_at_t<0, typename ConstEnumeratedPair::types>, Index<4>>
         && std::is_same_v<ref_target_t<pack_at_t<1, typename ConstEnumeratedPair::types>>, int const>
@@ -232,11 +232,11 @@ static_assert(pairs_hold_an_index_and_refs());
         *element = static_cast<int>(position.raw()) + 10;
     }
     int total = 0;
-    for (auto const [weight, value] : zip(weights.view(), values.view())) {
+    for (auto const [weight, value] : weights.view().walk().zip(values.view().walk())) {
         total += *weight * *value;
     }
     View<int const> const head = values.view().window(0, 2).expect("two elements fit");
-    return total + (zip(head, weights.view()).is_err() ? 1 : 0);
+    return total + (head.walk().try_zip(weights.view().walk()).is_err() ? 1 : 0);
 }
 static_assert(enumerate_and_zip() == 1 * 10 + 2 * 11 + 3 * 12 + 4 * 13 + 1);
 
@@ -246,8 +246,8 @@ static_assert(enumerate_and_zip() == 1 * 10 + 2 * 11 + 3 * 12 + 4 * 13 + 1);
     FixedArray<int, 2> const values{1, 2};
     auto const first_loop = values.enumerate();
     auto const second_loop = values.enumerate();
-    auto const first_pairs = zip(values.view(), values.view());
-    auto const second_pairs = zip(values.view(), values.view());
+    auto const first_pairs = values.view().walk().zip(values.view().walk());
+    auto const second_pairs = values.view().walk().zip(values.view().walk());
     return !std::same_as<decltype(first_loop), decltype(second_loop)>
         && !std::same_as<decltype(first_pairs), decltype(second_pairs)>;
 }

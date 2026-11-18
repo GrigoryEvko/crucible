@@ -98,16 +98,17 @@ int main() {
                   bench::do_not_optimize(sum);
               }));
 
-    print_row("zip of two fixed Views, 4096 pairs", bench::run("zip of two fixed Views", [&] {
+    print_row("zip of two walks of one fixed extent, 4096 pairs", bench::run("zip of two fixed walks", [&] {
                   std::uint32_t sum = 0;
-                  for (auto const [first, second] : fixy::zip(values.view(), same_values.view())) {
+                  for (auto const [first, second] : values.view().walk().zip(same_values.view().walk())) {
                       sum += *first * *second;
                   }
                   bench::do_not_optimize(sum);
               }));
 
-    print_row("zip of two dynamic Views, 4096 pairs", bench::run("zip of two dynamic Views", [&] {
-                  std::uint32_t const sum = fixy::zip(run, same_run)
+    print_row("try_zip of two walks of a dynamic extent, 4096 pairs", bench::run("try_zip of two walks", [&] {
+                  std::uint32_t const sum = run.walk()
+                                                .try_zip(same_run.walk())
                                                 .match(
                                                     [](auto pairs) noexcept {
                                                         std::uint32_t total = 0;

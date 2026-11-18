@@ -1,9 +1,9 @@
-// An explicit specialization of zip with a View of a dynamic extent does not
-// choose the brand of the Refs.  The rules of the base refuse such a
-// specialization, and this probe writes it in an opt-out region.  The brand
-// of the return type is in a context that deduction does not read, so the
-// brand parameter keeps its default, the fresh brand.  A declaration with a
-// different brand then matches no template.
+// An explicit specialization of try_zip of two walks when one has a dynamic
+// extent does not choose the brand of the Refs.  The rules of the base refuse
+// such a specialization, and this probe writes it in an opt-out region.  The
+// brand of the return type is in a context that deduction does not read, so
+// the brand parameter keeps its default, the fresh brand.  A declaration with
+// a different brand then matches no template.
 
 #include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
@@ -14,18 +14,41 @@ namespace {
 
 struct Held final {};
 
+// The result type of a member function that takes no argument.
+template <class Fn>
+struct ResultOf;
+template <class R, class C>
+struct ResultOf<R (C::*)() const noexcept> {
+    using type = R;
+};
+
+// The stage of a walk.
+template <class W>
+struct StageOf;
+template <class S>
+struct StageOf<::foundation::core::Walk<S>> {
+    using type = S;
+};
+
+using Dynamic = ResultOf<decltype(&::foundation::core::View<int>::walk)>::type;
+using Fixed = ResultOf<decltype(&::foundation::core::View<int, 4>::walk)>::type;
+
 }  // namespace
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a forged zip of a dynamic extent shows that a declared type sets no brand")
 template <>
-constexpr foundation::core::Result<foundation::core::detail::ZipRange<int, int, Held>, foundation::core::LengthMismatch>
-foundation::core::zip(foundation::core::View<int> first, foundation::core::View<int, 4> second) noexcept {
-    return foundation::core::detail::ZipRange<int, int, Held>{first, second};
+template <>
+constexpr foundation::core::Result<
+    foundation::core::Walk<foundation::core::detail::ZipStage<StageOf<Dynamic>::type, StageOf<Fixed>::type, Held>>,
+    foundation::core::LengthMismatch>
+Dynamic::try_zip<>(Fixed&& second) && noexcept {
+    static_cast<void>(second);
+    foundation::core::fatal("a forged try_zip gives no walk");
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     ::foundation::core::FixedArray<int, 4> values{1, 2, 3, 4};
-    ::foundation::core::View<int> const run = values.view().window(0, 4).expect("the window holds the four elements");
-    return static_cast<int>(::foundation::core::zip(run, values.view()).is_ok());
+    ::foundation::core::View<int> const dynamic = values.view();
+    return dynamic.walk().try_zip(values.view().walk()).is_ok() ? 0 : 1;
 }

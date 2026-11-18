@@ -822,7 +822,6 @@ witness <foundation/core/SlotMap.h> private | foundation::core::SlotCursor<int, 
 # A cursor of enumerate() or zip comes only from its range, so no position
 # that a caller holds becomes an index, and no pointer becomes a pair.
 witness <foundation/core/Region.h> private | foundation::core::detail::EnumerateCursor<int, 4, forge::brand> | foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<foundation::core::View<int>>(), forge::rvalue<unsigned long>()}
-witness <foundation/core/Region.h> private | foundation::core::detail::ZipCursor<int, int, forge::brand> | foundation::core::detail::ZipCursor<int, int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<int*>(), forge::rvalue<int*>()}
 # A branded view, its indexes, its ranges and its cursors come only from
 # mint_branded_scope, so no number becomes an index of a scope.
 witness <foundation/core/Branded.h> private | foundation::core::BrandedIndex<forge::brand> | foundation::core::BrandedIndex<forge::brand>{forge::rvalue<unsigned int>()}

@@ -1355,8 +1355,8 @@ private:
             for (uint32_t i = 0; i < region.num_ops() && data.is_none(); i++) {
                 const auto& te = region.op_at(i);
                 // An op with no slot ids or no metadata of its inputs has no
-                // pair of the two, and the zip gives an error.
-                for (auto const& pairs : ::fixy::zip(te.input_slot_ids(), te.input_metas()).ok()) {
+                // pair of the two, and try_zip gives an error.
+                for (auto const& pairs : te.input_slot_ids().walk().try_zip(te.input_metas().walk()).ok()) {
                     for (auto [slot_id, meta] : pairs) {
                         if (*slot_id == target) {
                             data = storage_address(*meta);

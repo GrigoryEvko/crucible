@@ -49,7 +49,7 @@ using ::foundation::core::View;
 
 [[nodiscard]] bool same_runs(View<float const> left, View<float const> right) noexcept {
     if (left.size() != right.size()) return false;
-    for (auto const [first, second] : ::fixy::zip(left, right).expect("the two runs have one count")) {
+    for (auto const [first, second] : left.walk().try_zip(right.walk()).expect("the two runs have one count")) {
         if (!same_bits(*first, *second)) return false;
     }
     return true;
@@ -516,7 +516,7 @@ void test_large_plans_agree_with_the_scans() {
 // position: the canonical NaN for a NaN, and the bits of want for each other
 // value.
 void check_scan_outputs(View<float const> want, View<float const> out) noexcept {
-    for (auto const [model, output] : ::fixy::zip(want, out).expect("the two runs have one count")) {
+    for (auto const [model, output] : want.walk().try_zip(out.walk()).expect("the two runs have one count")) {
         assert(::crucible::test::float_bits(*output) == ::crucible::test::output_bits(*model));
     }
 }

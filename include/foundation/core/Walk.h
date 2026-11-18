@@ -515,27 +515,29 @@ public:
                                                             static_cast<Second&&>(second_).skipped_(count)};
     }
 
-    // The cursor of `for (auto [x, y] : walk)`: the position of the next
-    // pair.  A read or a step at the end ends the process in each build, and
-    // the optimizer removes the two checks in a loop that compares the cursor
-    // with the end first.
+    // The cursor of `for (auto [x, y] : walk)`: the position of the next pair
+    // and the count of the pairs, which is the position of the end.  A read
+    // or a step at the end ends the process in each build.  The check is the
+    // compare of the loop with the end cursor, so the optimizer removes it.
     class Cursor final {
         ZipStage const* stage_ = nullptr;
         std::size_t at_ = 0;
+        std::size_t end_ = 0;
         [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     public:
-        constexpr Cursor(ZipStage const* stage, std::size_t at) noexcept : stage_{stage}, at_{at} {}
+        constexpr Cursor(ZipStage const* stage, std::size_t at) noexcept
+            : stage_{stage}, at_{at}, end_{stage->size_()} {}
 
         [[nodiscard]] constexpr element_reference operator*() const noexcept {
-            if (at_ >= stage_->size_()) [[unlikely]] {
+            if (at_ == end_) [[unlikely]] {
                 fatal("a read through the end cursor of a zip walk");
             }
             return stage_->at_(at_);
         }
 
         constexpr Cursor& operator++() noexcept {
-            if (at_ >= stage_->size_()) [[unlikely]] {
+            if (at_ == end_) [[unlikely]] {
                 fatal("a step past the end cursor of a zip walk");
             }
             ++at_;

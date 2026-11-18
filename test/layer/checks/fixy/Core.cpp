@@ -52,14 +52,16 @@ static_assert(std::is_same_v<::fixy::CasRefusal<int>, ::foundation::core::CasRef
 static_assert(std::is_same_v<::fixy::Result<::fixy::Unit, ::fixy::LengthMismatch>,
                              ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::LengthMismatch>>);
 static_assert(std::is_same_v<decltype(::fixy::err(::fixy::LengthMismatch{})), ::fixy::Err<::fixy::LengthMismatch>>);
-// fixy::zip is the zip of the Region family.  Each call gives a fresh
-// brand, so the check counts the pairs of one call.
+// fixy::Walk and fixy::ElementCount are the walk and the count of the Region
+// family.  Each zip gives a fresh brand, so the check counts the pairs of
+// one call.
+static_assert(std::is_same_v<::fixy::ElementCount, ::foundation::core::ElementCount>);
 [[nodiscard]] consteval std::size_t fixy_zip_pairs() noexcept {
     ::foundation::core::FixedArray<int, 3> const left{1, 2, 3};
     ::foundation::core::FixedArray<int, 3> const right{4, 5, 6};
-    return ::fixy::zip(left.view(), right.view()).size();
+    return left.view().walk().zip(right.view().walk()).limit(::fixy::ElementCount{2}).size();
 }
-static_assert(fixy_zip_pairs() == 3);
+static_assert(fixy_zip_pairs() == 2);
 static_assert(std::is_same_v<::fixy::Tally, ::foundation::core::Tally>);
 static_assert(::fixy::AtomicValue<int> && ::fixy::AtomicCount<int> && ::fixy::AtomicBits<unsigned>);
 static_assert(!::fixy::AtomicValue<float> && !::fixy::AtomicCount<bool> && !::fixy::AtomicBits<int>);

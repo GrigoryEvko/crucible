@@ -268,7 +268,8 @@ CRUCIBLE_HOT void xor_bytes_simd(::fixy::View<std::byte> dst, ::fixy::View<std::
         simd::for_each_register_run<KernelBytes>(dst, src, [](auto target, auto source) noexcept {
             simd::store(simd::load<KernelBytes>(target) ^ simd::load<KernelBytes>(source), target);
         });
-    for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
+    for (auto [target, source] :
+         target_rest.walk().try_zip(source_rest.walk()).expect("the two rests have one count")) {
         *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
     }
 }
@@ -304,7 +305,8 @@ CRUCIBLE_HOT void mul_xor_simd(::fixy::View<std::byte> dst, ::fixy::View<std::by
             const KernelBytes prod = simd::lookup_nibbles(lo_table, bytes) ^ simd::lookup_nibbles(hi_table, high);
             simd::store(simd::load<KernelBytes>(target) ^ prod, target);
         });
-    for (auto [target, source] : ::fixy::zip(target_rest, source_rest).expect("the two rests have one count")) {
+    for (auto [target, source] :
+         target_rest.walk().try_zip(source_rest.walk()).expect("the two rests have one count")) {
         *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
     }
 }
@@ -313,7 +315,7 @@ CRUCIBLE_HOT void mul_xor_simd(::fixy::View<std::byte> dst, ::fixy::View<std::by
 #endif
 
 CRUCIBLE_HOT void xor_bytes_scalar(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
-    for (auto [target, source] : ::fixy::zip(dst, src).expect("the two shards have one count")) {
+    for (auto [target, source] : dst.walk().try_zip(src.walk()).expect("the two shards have one count")) {
         *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
     }
 }
@@ -334,7 +336,7 @@ CRUCIBLE_HOT void mul_xor(::fixy::View<std::byte> dst, ::fixy::View<std::byte co
         xor_bytes_scalar(dst, src);
         return;
     }
-    for (auto [target, source] : ::fixy::zip(dst, src).expect("the two shards have one count")) {
+    for (auto [target, source] : dst.walk().try_zip(src.walk()).expect("the two shards have one count")) {
         *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
     }
 #endif

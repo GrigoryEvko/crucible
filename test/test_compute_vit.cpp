@@ -152,7 +152,7 @@ int main() {
     };
 
     ::foundation::core::FixedArray<TraceEntry, N_OPS> ops{};
-    for (auto [op, def] : ::fixy::zip(ops.view(), defs.view())) {
+    for (auto [op, def] : ops.view().walk().zip(defs.view().walk())) {
         op->schema_hash = def->schema;
         op->shape_hash = def->shape;
         crucible::test::set_input_slots(test.alloc, runs, *op, def->in);

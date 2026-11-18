@@ -362,29 +362,31 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
     return sum;
 }
 
-// The pairs of two Views of one fixed extent: the type proves the counts
+// The pairs of two walks of one fixed extent: the type proves the counts
 // equal, so the loop has no compare before its first step.
 [[gnu::used]] std::uint32_t view_zip_fixed_sum(fixy::View<std::uint32_t const, 64> left,
                                                fixy::View<std::uint32_t const, 64> right) noexcept {
     std::uint32_t sum = 0;
-    for (auto const [first, second] : fixy::zip(left, right)) {
+    for (auto const [first, second] : left.walk().zip(right.walk())) {
         sum += *first * *second;
     }
     return sum;
 }
 
-// The pairs of two Views of a dynamic extent: the compare of the counts, and
-// the loop over the pairs.
+// The pairs of two walks of a dynamic extent: the compare of the counts, and
+// the fold over the pairs.  The fold pushes each pair through the walk.  The
+// cursor loop of a zip has the pair view_zip_fixed_sum.
 [[gnu::used]] std::uint32_t view_zip_sum(fixy::View<std::uint32_t const> left,
                                          fixy::View<std::uint32_t const> right) noexcept {
-    return fixy::zip(left, right)
+    return left.walk()
+        .try_zip(right.walk())
         .match(
             [](auto pairs) noexcept {
-                std::uint32_t sum = 0;
-                for (auto const [first, second] : pairs) {
-                    sum += *first * *second;
-                }
-                return sum;
+                return static_cast<decltype(pairs)&&>(pairs).fold(std::uint32_t{0},
+                                                                  [](std::uint32_t sum, auto const& pair) noexcept {
+                                                                      auto const& [first, second] = pair;
+                                                                      return sum + *first * *second;
+                                                                  });
             },
             [](fixy::LengthMismatch) noexcept { return std::uint32_t{0}; });
 }
@@ -1564,10 +1566,8 @@ struct RawColumn final {
     if (left_count != right_count) {
         return sum;
     }
-    std::uint32_t const* other = right;
-    for (std::uint32_t const* cursor = left; cursor != left + left_count; ++cursor) {
-        sum += *cursor * *other;
-        ++other;
+    for (std::size_t index = 0; index < left_count; ++index) {
+        sum += left[index] * right[index];
     }
     return sum;
 }

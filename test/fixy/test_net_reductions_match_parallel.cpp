@@ -76,7 +76,7 @@ template <class T, std::size_t Count>
 template <class T>
 [[nodiscard]] bool has_same_run_bits(View<T const> left, View<T const> right) noexcept {
     if (left.size() != right.size()) return false;
-    for (auto const [first, second] : ::fixy::zip(left, right).expect("the two runs have one count")) {
+    for (auto const [first, second] : left.walk().try_zip(right.walk()).expect("the two runs have one count")) {
         if (!has_same_bits(*first, *second)) return false;
     }
     return true;
