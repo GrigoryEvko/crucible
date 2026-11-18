@@ -25,6 +25,8 @@ test/fixy/neg/neg_os_numa_placement_foreground_ctx.cpp | erased-brand | 1 | fixy
 test/fixy/neg/neg_os_numa_placement_io_only_ctx.cpp | erased-brand | 1 | fixy::NumaBindableRegion | -
 test/fixy/neg/neg_os_numa_placement_shared_region.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/fixy/neg/neg_os_numa_placement_start_as_array.cpp | erased-brand | 1 | fixy::NumaPlacement | -
+test/fixy/neg/neg_os_numa_policy_foreground_ctx.cpp | erased-brand | 1 | fixy::NumaBindableRegion | the fixture or the check spells the region and the proof as its sibling of NumaPlacement does, and the brand does not reach the refusal that it probes
+test/fixy/neg/neg_os_numa_policy_io_only_ctx.cpp | erased-brand | 1 | fixy::NumaBindableRegion | the fixture or the check spells the region and the proof as its sibling of NumaPlacement does, and the brand does not reach the refusal that it probes
 test/fixy/neg/neg_owned_mmap_forged_address.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/fixy/neg/neg_owned_mmap_forged_through_mint_linear.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/fixy/neg/neg_owned_mmap_release_without_leak_atom.cpp | erased-brand | 1 | fixy::OwnedMmap | -
@@ -45,6 +47,8 @@ test/fixy/neg/neg_witness_borrowedref_direct_construction.cpp | erased-brand | 1
 test/fixy/neg/neg_witness_disjoint_direct_construction.cpp | erased-brand | 1 | fixy::Disjoint | -
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | erased-brand | 1 | fixy::NumaBindableRegion | -
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | erased-brand | 1 | fixy::NumaPlacement | -
+test/fixy/neg/neg_witness_numapolicyplacement_direct_construction.cpp | erased-brand | 1 | fixy::NumaBindableRegion | the fixture or the check spells the region and the proof as its sibling of NumaPlacement does, and the brand does not reach the refusal that it probes
+test/fixy/neg/neg_witness_numapolicyplacement_direct_construction.cpp | erased-brand | 1 | fixy::NumaPolicyPlacement | the fixture or the check spells the region and the proof as its sibling of NumaPlacement does, and the brand does not reach the refusal that it probes
 test/fixy/neg/neg_witness_ownedmmap_direct_construction.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/fixy/neg/neg_witness_ownedregion_direct_construction.cpp | erased-brand | 1 | fixy::OwnedRegion | -
 test/fixy/neg/neg_witness_ownedregion_direct_construction.cpp | erased-brand | 1 | foundation::permissions::Permission | -
@@ -153,6 +157,7 @@ test/layer/checks/fixy/ScopedView.cpp | erased-brand | 6 | fixy::ScopedView | -
 test/layer/checks/fixy/SharedRegion.cpp | erased-brand | 1 | fixy::SharedRead | -
 test/layer/checks/fixy/os/Mmap.cpp | erased-brand | 1 | fixy::OwnedMmap | -
 test/layer/checks/fixy/os/NumaPlacement.cpp | erased-brand | 1 | fixy::NumaPlacement | -
+test/layer/checks/fixy/os/NumaPlacement.cpp | erased-brand | 1 | fixy::NumaPolicyPlacement | the fixture or the check spells the region and the proof as its sibling of NumaPlacement does, and the brand does not reach the refusal that it probes
 test/layer/checks/foundation/core/Ref.cpp | erased-brand | 2 | foundation::core::Ref | the check of the one conversion to the erased brand
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 32 | foundation::permissions::Permission | -
 test/layer/checks/foundation/permissions/Permission.cpp | erased-brand | 12 | foundation::permissions::SharedPermission | -
