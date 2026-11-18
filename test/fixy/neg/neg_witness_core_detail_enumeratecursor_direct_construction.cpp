@@ -28,6 +28,6 @@ struct brand {};
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()};
+    [[maybe_unused]] auto forged = foundation::core::detail::EnumerateCursor<int, 4, forge::brand>{forge::rvalue<foundation::core::View<int>>(), forge::rvalue<unsigned long>()};
     return 0;
 }
