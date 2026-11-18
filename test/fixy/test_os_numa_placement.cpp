@@ -216,12 +216,124 @@ struct AddressPolicy {
     return 0;
 }
 
+// The nodes that the cpuset of the process allows.  Each process may use one
+// node at least.
+[[nodiscard]] fixy::NumaNodeMask allowed_nodes(BgCtx const& ctx) noexcept {
+    return fixy::numa::read_allowed_numa_nodes(ctx).match(
+        [](fixy::NumaNodeMask nodes) noexcept { return nodes; },
+        [](fixy::numa::NumaQueryError) noexcept { return fixy::NumaNodeMask{}; });
+}
+
+// The census of the pages of a region after the test wrote each byte.  The
+// region leaves its proof, and the kernel keeps the policy of the range.
+template <class Proof>
+[[nodiscard]] fixy::numa::PageNodeCensus census_of(BgCtx const& ctx, Proof&& placement) noexcept {
+    auto region = std::move(placement).consume().consume();
+    fixy::View<std::byte> const bytes = region.template view<std::byte>().expect("the region is whole pages");
+    fixy::fill(bytes, std::byte{0x5a});
+    return fixy::numa::census_page_nodes(ctx, bytes).expect("the kernel answers the census of a mapped range");
+}
+
+[[nodiscard]] int the_allowed_nodes_are_not_empty() {
+    BgCtx ctx{eff::testing::bg()};
+    if (allowed_nodes(ctx).is_empty()) {
+        fixy::report(fixy::Sink::Err, "the process has no allowed node, or the status gave none\n");
+        return 1;
+    }
+    return 0;
+}
+
+// An interleave over the allowed nodes puts the pages of a region on each of
+// them in turn, so each allowed node holds a page, and no page is off the
+// nodes of the mask.
+[[nodiscard]] int an_interleaved_region_spreads_over_its_nodes() {
+    BgCtx ctx{eff::testing::bg()};
+    fixy::NumaNodeMask const nodes = allowed_nodes(ctx);
+    auto placed = fixy::numa::mint_numa_policy<fixy::NumaPolicy::interleave>(ctx, map_two_pages(ctx), nodes);
+    if (placed.is_err()) {
+        if (is_machine_refusal(error_of(placed))) return kSkip;
+        fixy::report(fixy::Sink::Err, "an interleave over the allowed nodes failed (errno {})\n",
+                     foundation::os::error_number_of(placed));
+        return 1;
+    }
+    auto placement = std::move(placed).expect("the interleave succeeded");
+    if (!(placement.nodes() == nodes)) {
+        fixy::report(fixy::Sink::Err, "the interleave proof states a mask that the mint was not given\n");
+        return 1;
+    }
+    fixy::numa::PageNodeCensus const census = census_of(ctx, std::move(placement));
+    std::size_t on_mask = 0;
+    std::size_t nodes_with_a_page = 0;
+    for (fixy::NumaNodeMask::Slot const slot : nodes.slots()) {
+        std::size_t const pages = census.pages_on(fixy::numa_node_of_slot(slot));
+        on_mask += pages;
+        nodes_with_a_page += pages != 0 ? 1 : 0;
+    }
+    std::size_t const expected_nodes = nodes.size() < 2 ? nodes.size() : 2;
+    if (on_mask != census.pages() || nodes_with_a_page != expected_nodes) {
+        fixy::report(fixy::Sink::Err, "an interleave put {} of {} pages on its {} nodes, and pages on {} of them\n",
+                     on_mask, census.pages(), nodes.size(), nodes_with_a_page);
+        return 1;
+    }
+    return 0;
+}
+
+// A preferred policy over one allowed node puts each page on that node while
+// the node has free memory, which a region of two pages does not exhaust.
+[[nodiscard]] int a_preferred_region_is_on_its_node() {
+    BgCtx ctx{eff::testing::bg()};
+    fixy::NumaNodeMask const allowed = allowed_nodes(ctx);
+    if (allowed.is_empty()) return 1;
+    fixy::NumaNodeId node = fixy::NumaNodeId::None;
+    for (fixy::NumaNodeMask::Slot const slot : allowed.slots()) {
+        node = fixy::numa_node_of_slot(slot);
+    }
+    fixy::NumaNodeMask const one_node = fixy::make_numa_node_mask(node).expect("an allowed node is concrete");
+    auto placed = fixy::numa::mint_numa_policy<fixy::NumaPolicy::preferred>(ctx, map_two_pages(ctx), one_node);
+    if (placed.is_err()) {
+        if (is_machine_refusal(error_of(placed))) return kSkip;
+        fixy::report(fixy::Sink::Err, "a preferred policy over node {} failed (errno {})\n",
+                     std::size_t{std::to_underlying(node)}, foundation::os::error_number_of(placed));
+        return 1;
+    }
+    fixy::numa::PageNodeCensus const census = census_of(ctx, std::move(placed).expect("the policy was set"));
+    if (!census.is_all_on(node)) {
+        fixy::report(fixy::Sink::Err, "a preferred region has {} of its {} pages off node {}\n", census.pages_off(node),
+                     census.pages(), std::size_t{std::to_underlying(node)});
+        return 1;
+    }
+    return 0;
+}
+
+// The policy mint refuses an empty mask and a preferred policy over two
+// nodes before it calls the kernel.
+[[nodiscard]] int the_policy_mint_refuses_a_bad_mask() {
+    BgCtx ctx{eff::testing::bg()};
+    auto const empty =
+        fixy::numa::mint_numa_policy<fixy::NumaPolicy::interleave>(ctx, map_two_pages(ctx), fixy::NumaNodeMask{});
+    fixy::NumaNodeMask two_nodes{};
+    two_nodes.insert(fixy::NumaNodeId{0}).expect("node 0 is concrete");
+    two_nodes.insert(fixy::NumaNodeId{1}).expect("node 1 is concrete");
+    auto const preferred =
+        fixy::numa::mint_numa_policy<fixy::NumaPolicy::preferred>(ctx, map_two_pages(ctx), two_nodes);
+    if (error_of(empty) != Errno::einval || error_of(preferred) != Errno::einval) {
+        fixy::report(fixy::Sink::Err, "the policy mint did not refuse an empty mask or two preferred nodes\n");
+        return 1;
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     int const refusals = the_mint_refuses_a_sentinel_node() + the_mint_refuses_an_empty_region()
-                       + the_mint_refuses_a_node_the_machine_lacks();
+                       + the_mint_refuses_a_node_the_machine_lacks() + the_policy_mint_refuses_a_bad_mask()
+                       + the_allowed_nodes_are_not_empty();
     if (refusals != 0) return 1;
+    int const interleaved = an_interleaved_region_spreads_over_its_nodes();
+    if (interleaved != 0 && interleaved != kSkip) return 1;
+    int const preferred = a_preferred_region_is_on_its_node();
+    if (preferred != 0 && preferred != kSkip) return 1;
 
     int const bound = a_bound_region_is_on_its_node();
     if (bound == kSkip) return 0;

@@ -697,6 +697,11 @@
       "constructor": "\\bNumaPlacement\\("
     },
     {
+      "name": "neg_witness_numapolicyplacement_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bNumaPolicyPlacement\\("
+    },
+    {
       "name": "neg_witness_observe_timingsink_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bTimingSink\\("
@@ -1777,6 +1782,10 @@
     },
     {
       "type": "fixy::NumaPlacement<fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy>",
+      "header": "fixy/os/NumaPlacement.h"
+    },
+    {
+      "type": "fixy::NumaPolicyPlacement<fixy::NumaPolicy::interleave, fixy::detail::numa_placement_witness::ProbeRegion, fixy::mmap::prot::WriteCopy>",
       "header": "fixy/os/NumaPlacement.h"
     },
     {

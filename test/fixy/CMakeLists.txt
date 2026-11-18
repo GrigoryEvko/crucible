@@ -5299,6 +5299,15 @@ fixy_neg_compile_test(neg_os_numa_placement_foreground_ctx
   "no matching function for call to .mint_numa_placement\\("
   "required for the satisfaction of .CtxFitsNumaBind<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 
+# The policy mint has the gate of the bind mint, and the same two contexts.
+fixy_neg_compile_test(neg_os_numa_policy_io_only_ctx
+  "no matching function for call to .mint_numa_policy<fixy::NumaPolicy::interleave>\\("
+  "required for the satisfaction of .CtxFitsNumaBind<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >\\]")
+
+fixy_neg_compile_test(neg_os_numa_policy_foreground_ctx
+  "no matching function for call to .mint_numa_policy<fixy::NumaPolicy::preferred>\\("
+  "required for the satisfaction of .CtxFitsNumaBind<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+
 # ── OwnedMmap has one door, and it is the one that maps ──────────────
 #
 # The constructor over an address is private, and OwnedMmap::mint_region

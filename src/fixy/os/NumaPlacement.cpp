@@ -10,8 +10,10 @@
 #include <fixy/os/NumaPlacement.h>
 
 #include <foundation/core/Choice.h>
+#include <foundation/core/Text.h>
 #include <foundation/os/Auxiliary.h>
 #include <foundation/os/Errno.h>
+#include <foundation/os/File.h>
 #include <foundation/os/MemoryPolicyWords.h>
 #include <foundation/os/Syscall.h>
 
@@ -32,6 +34,21 @@ constexpr int kCallingProcess = 0;
 
 // The flags of a query of move_pages: none.
 constexpr int kNoFlags = 0;
+
+// The policy word of mbind for a policy.  A value that no enumerator names
+// gives -1, which the kernel refuses with einval.
+[[nodiscard]] constexpr int policy_word(NumaPolicy policy) noexcept {
+    switch (policy) {
+        case NumaPolicy::bind:
+            return ::foundation::os::kMemoryPolicyBind;
+        case NumaPolicy::interleave:
+            return ::foundation::os::kMemoryPolicyInterleave;
+        case NumaPolicy::preferred:
+            return ::foundation::os::kMemoryPolicyPreferred;
+        default:
+            return -1;
+    }
+}
 
 // The result of one query of move_pages.  A query moves nothing, so a count
 // of pages that did not move is not a possible answer, and the door refuses
@@ -55,16 +72,22 @@ query_of(long answer) noexcept {
 }  // namespace
 
 // The kernel decrements the node count that it receives before it reads
-// the mask, so the call passes one more than the width of the mask.
+// the mask, so the call passes one more than the width of the mask.  The
+// walk of the slots of the mask is linear in the count of its words and its
+// nodes.
 ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-mbind_sys(void* address, std::size_t length, NumaNodeId node) noexcept {
+mbind_sys(void* address, std::size_t length, NumaPolicy policy, NumaNodeMask const& nodes) noexcept {
+    if (nodes.is_empty()) {
+        return ::foundation::core::err(::foundation::os::Errno::einval);
+    }
     unsigned long mask[numa_mask_bits / numa_mask_word_bits]{};
-    std::size_t const bit = static_cast<std::size_t>(node);
-    mask[bit / numa_mask_word_bits] = 1UL << (bit % numa_mask_word_bits);
+    for (NumaNodeMask::Slot const slot : nodes.slots()) {
+        std::size_t const bit = slot.raw();
+        mask[bit / numa_mask_word_bits] |= 1UL << (bit % numa_mask_word_bits);
+    }
     return ::foundation::os::unit_of(::foundation::os::raw_syscall(
-        ::foundation::os::Syscall::mbind, address, length, ::foundation::os::kMemoryPolicyBind,
-        static_cast<void const*>(mask), numa_mask_bits + 1,
-        ::foundation::os::kMemoryPolicyStrict | ::foundation::os::kMemoryPolicyMove));
+        ::foundation::os::Syscall::mbind, address, length, policy_word(policy), static_cast<void const*>(mask),
+        numa_mask_bits + 1, ::foundation::os::kMemoryPolicyStrict | ::foundation::os::kMemoryPolicyMove));
 }
 
 // move_pages(2) with no target nodes moves nothing, and it writes the node
@@ -110,6 +133,19 @@ census_page_nodes_(void const* first, std::size_t bytes, numa::PageNodeCensus& c
         done += count;
     }
     return ::foundation::core::Unit{};
+}
+
+// The status of a process holds about 1.5 KB, and the masks of the CPUs grow
+// with the count of the CPUs that the kernel can have.  16 KB hold the
+// status of a kernel of 8192 CPUs.
+Result<NumaNodeMask, numa::NumaQueryError> read_allowed_numa_nodes_() noexcept {
+    constexpr std::size_t status_bytes = 16384;
+    FixedText<status_bytes> status{};
+    for (::foundation::os::Errno const error : ::foundation::os::read_file("/proc/self/status", status).err()) {
+        return err(numa::NumaQueryError{numa::NumaQueryStep::AllowedRead, ::foundation::os::error_number(error)});
+    }
+    return numa::allowed_numa_nodes_of_status(status.view())
+        .ok_or(numa::NumaQueryError{numa::NumaQueryStep::AllowedFormat, 0});
 }
 
 }  // namespace fixy::detail

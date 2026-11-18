@@ -702,6 +702,8 @@ using CpuPinnedWitness =
     ::fixy::CpuPinned<::fixy::AffinityMask::single(0), ::fixy::PinningPosture::PinnedExplicit, int>;
 struct NumaProbeRegion final {};
 using NumaPlacementWitness = ::fixy::NumaPlacement<NumaProbeRegion, ::fixy::mmap::prot::WriteCopy, PureRegionBrand>;
+using NumaPolicyWitness = ::fixy::NumaPolicyPlacement<::fixy::NumaPolicy::interleave, NumaProbeRegion,
+                                                      ::fixy::mmap::prot::WriteCopy, PureRegionBrand>;
 
 // The decorators of a session handle, each over one plain handle at End.
 using PlainHandle = ::fixy::session::SessionHandle<::fixy::session::End, int>;
@@ -797,6 +799,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::Tagged, ^^::fixy::Tagged<int, ::fixy::tags::trust::Verified>},
     {^^::fixy::CpuPinned, ^^CpuPinnedWitness},
     {^^::fixy::NumaPlacement, ^^NumaPlacementWitness},
+    {^^::fixy::NumaPolicyPlacement, ^^NumaPolicyWitness},
     {^^::fixy::SchedClass, ^^::fixy::sched_class::Batch<int>},
     {^^::fixy::ThreadNamed, ^^::fixy::ThreadNamed<"census">},
     {^^::fixy::Machine, ^^::fixy::Machine<MachineState>},
@@ -1456,6 +1459,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::fs::Dirfd, kDescriptor},
     {^^::fixy::fs::FileDoor, kDescriptorDoor},
     {^^::fixy::numa::PageNodeCensus, kPayload},
+    {^^::fixy::NumaNodeMask, kPayload},
     {^^::fixy::numa::NodeAllocationCounters, kPayload},
     {^^::fixy::numa::NumaQueryError, kPayload},
     {^^::fixy::net::SocketDoor, kDescriptorDoor},

@@ -111,6 +111,10 @@ static_assert(kLockOnFault == MLOCK_ONFAULT, "kLockOnFault is not MLOCK_ONFAULT 
 // The argument words of foundation/os/MemoryPolicyWords.h are the words of the
 // kernel header.
 static_assert(kMemoryPolicyBind == MPOL_BIND, "kMemoryPolicyBind is not MPOL_BIND of <linux/mempolicy.h>");
+static_assert(kMemoryPolicyPreferred == MPOL_PREFERRED,
+              "kMemoryPolicyPreferred is not MPOL_PREFERRED of <linux/mempolicy.h>");
+static_assert(kMemoryPolicyInterleave == MPOL_INTERLEAVE,
+              "kMemoryPolicyInterleave is not MPOL_INTERLEAVE of <linux/mempolicy.h>");
 static_assert(kMemoryPolicyStrict == MPOL_MF_STRICT,
               "kMemoryPolicyStrict is not MPOL_MF_STRICT of <linux/mempolicy.h>");
 static_assert(kMemoryPolicyMove == MPOL_MF_MOVE, "kMemoryPolicyMove is not MPOL_MF_MOVE of <linux/mempolicy.h>");

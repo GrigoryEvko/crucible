@@ -52,6 +52,7 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/lattices/NumaNodeLattice.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Values.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
@@ -75,6 +76,9 @@ using ::foundation::algebra::lattices::NumaNodeLattice;
 namespace row_discipline {
 template <typename Prot>
 struct numa_placement;
+// The claim of a policy proof: the policy, which is a part of its type.
+template <auto Policy, typename Prot>
+struct numa_policy_placement;
 }  // namespace row_discipline
 
 template <typename Tag, typename Prot, typename Brand = ::foundation::brand::DefaultBrand>
@@ -84,6 +88,85 @@ class NumaPlacement;
 // keeps a binding for an anonymous private range only.
 template <typename Tag, typename Prot, typename Brand = ::foundation::brand::DefaultBrand>
 using NumaBindableRegion = OwnedMmap<Tag, Prot, mmap::share::Anonymous, Brand>;
+
+// The count of the concrete nodes: NumaNodeId names the nodes 0 thru 253.
+inline constexpr std::size_t numa_concrete_node_count = static_cast<std::size_t>(NumaNodeId::None);
+
+// A set of concrete NUMA nodes: the node mask of a memory policy of mbind(2).
+// A sentinel node, None or Any, names no node of the machine, so the mask
+// holds none, and insert refuses it with einval.  The slot of a node is its
+// id, so a walk of slots() gives the nodes in the order of their ids.
+class NumaNodeMask final {
+public:
+    using Slot = Index<numa_concrete_node_count>;
+
+    // The empty mask.
+    constexpr NumaNodeMask() noexcept = default;
+
+    // Puts NODE into the mask.  A sentinel node gives einval and changes
+    // nothing.
+    [[nodiscard]] constexpr Result<Unit, ::foundation::os::Errno> insert(NumaNodeId node) & noexcept {
+        for (Slot const slot : Slot::check(static_cast<std::size_t>(node))) {
+            slots_.set(slot);
+            return Unit{};
+        }
+        return err(::foundation::os::Errno::einval);
+    }
+
+    // True when the mask holds NODE.  A sentinel node is never in a mask.
+    [[nodiscard]] constexpr bool contains(NumaNodeId node) const noexcept {
+        for (Slot const slot : Slot::check(static_cast<std::size_t>(node))) {
+            return slots_.test(slot);
+        }
+        return false;
+    }
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return slots_.size(); }
+    [[nodiscard]] constexpr bool is_empty() const noexcept { return slots_.is_empty(); }
+
+    // The slots of the nodes of the mask.  numa_node_of_slot gives the node
+    // of a slot.
+    [[nodiscard]] constexpr BitSet<numa_concrete_node_count> const& slots() const& noexcept { return slots_; }
+    void slots() const&& = delete("the slots of a temporary mask end with the full expression");
+
+    [[nodiscard]] friend constexpr bool operator==(NumaNodeMask const& left, NumaNodeMask const& right) noexcept {
+        return left.slots_ == right.slots_;
+    }
+
+private:
+    BitSet<numa_concrete_node_count> slots_{};
+};
+
+// The node of a slot of a NumaNodeMask.  A slot is below the count of the
+// concrete nodes, so its node is concrete.
+[[nodiscard]] constexpr NumaNodeId numa_node_of_slot(NumaNodeMask::Slot slot) noexcept {
+    return static_cast<NumaNodeId>(slot.raw());
+}
+
+// The mask of the one node NODE, or no value for a sentinel node.  The
+// function is not a member of NumaNodeMask, because an Option of a class
+// needs the whole class.
+[[nodiscard]] constexpr Option<NumaNodeMask> make_numa_node_mask(NumaNodeId node) noexcept {
+    NumaNodeMask mask{};
+    return mask.insert(node).match(
+        [&mask](Unit) noexcept -> Option<NumaNodeMask> { return Option<NumaNodeMask>::some(mask); },
+        [](::foundation::os::Errno) noexcept -> Option<NumaNodeMask> { return none; });
+}
+
+// The memory policy of a range (mbind(2)), over a node mask.
+enum class NumaPolicy : std::uint8_t {
+    // Each page on a node of the mask, and on no other node (MPOL_BIND).
+    bind,
+    // The pages on the nodes of the mask in turn, one page on each node
+    // (MPOL_INTERLEAVE).
+    interleave,
+    // Each page on the one node of the mask, or on another node when that
+    // node is low on free memory (MPOL_PREFERRED).
+    preferred,
+};
+
+template <NumaPolicy Policy, typename Tag, typename Prot, typename Brand = ::foundation::brand::DefaultBrand>
+class NumaPolicyPlacement;
 
 namespace numa {
 
@@ -102,6 +185,13 @@ template <typename Tag, typename Prot, typename Brand, ::foundation::effects::Is
 mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot, Brand>>&& region,
                     NumaNodeId node) noexcept;
 
+// Declared here and defined below its class, for the same reason.
+template <NumaPolicy Policy, typename Tag, typename Prot, typename Brand, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsNumaBind<Ctx>
+[[nodiscard]] ::foundation::core::Result<::fixy::NumaPolicyPlacement<Policy, Tag, Prot, Brand>, ::foundation::os::Errno>
+mint_numa_policy(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot, Brand>>&& region,
+                 NumaNodeMask const& nodes) noexcept;
+
 }  // namespace numa
 
 namespace detail {
@@ -119,14 +209,16 @@ inline constexpr std::size_t numa_mask_word_bits = sizeof(unsigned long) * CHAR_
 // call NAME out of line has the name NAME_sys (THE AFFINITY DOOR of
 // fixy/os/CpuPinned.h).
 
-// Binds the pages of the range to one concrete node, and moves the pages
-// that the range holds.
+// Sets the policy POLICY over the nodes of NODES for the pages of the range,
+// and moves the pages that the range holds (MPOL_MF_STRICT and MPOL_MF_MOVE).
+// An empty mask gives einval and makes no system call.
 //
-// This helper is reachable, and that is deliberate: a call binds memory
-// and gives back a result.  It mints nothing.  mint_numa_placement builds
-// the proof on the success of this helper, and nothing else builds one.
+// This helper is reachable, and that is deliberate: a call sets a policy
+// and gives back a result.  It mints nothing.  mint_numa_placement and
+// mint_numa_policy build the proof on the success of this helper, and
+// nothing else builds one.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-mbind_sys(void* address, std::size_t length, NumaNodeId node) noexcept;
+mbind_sys(void* address, std::size_t length, NumaPolicy policy, NumaNodeMask const& nodes) noexcept;
 
 }  // namespace detail
 
@@ -198,6 +290,86 @@ public:
     }
 };
 
+// Proof that an anonymous memory region has the memory policy Policy over a
+// node mask: each page on a node of the mask (bind), the pages on the nodes
+// of the mask in turn (interleave), or each page on the one node of the mask
+// while that node has free memory (preferred).
+//
+// The proof owns the region, as NumaPlacement does.  Every constructor that
+// builds one is private, and the sole friend is
+// fixy::numa::mint_numa_policy, which builds a proof only after mbind(2)
+// succeeded for the region and the mask.  The policy is a part of the type,
+// and the mask is a value of each proof.  A move carries the region and the
+// mask, and the source then covers no node.
+template <NumaPolicy Policy, typename Tag, typename Prot, typename Brand>
+class [[nodiscard]] NumaPolicyPlacement {
+public:
+    using region_type = NumaBindableRegion<Tag, Prot, Brand>;
+    using row_discipline = ::fixy::row_discipline::numa_policy_placement<Policy, Prot>;
+    using row_payload = ::foundation::diag::row_payloads<>;
+    static constexpr NumaPolicy policy = Policy;
+
+private:
+    region_type region_;
+    NumaNodeMask nodes_{};
+
+    // The only constructor that builds a proof, and it is private.
+    NumaPolicyPlacement(region_type region, NumaNodeMask const& nodes) noexcept
+        : region_{std::move(region)}, nodes_{nodes} {}
+
+    // The sole friend, and the whole gate.  It builds a proof only after
+    // detail::mbind_sys succeeded for this region and this mask.  The
+    // trailing return type is necessary: fixy/os/CpuPinned.h gives the parse
+    // reason.
+    template <NumaPolicy FriendPolicy, typename FriendTag, typename FriendProt, typename FriendBrand,
+              ::foundation::effects::IsExecCtx FriendCtx>
+        requires ::fixy::numa::CtxFitsNumaBind<FriendCtx>
+    friend auto ::fixy::numa::mint_numa_policy(
+        FriendCtx const&, ::fixy::Linear<::fixy::NumaBindableRegion<FriendTag, FriendProt, FriendBrand>>&&,
+        NumaNodeMask const&) noexcept
+        -> ::foundation::core::Result<::fixy::NumaPolicyPlacement<FriendPolicy, FriendTag, FriendProt, FriendBrand>,
+                                      ::foundation::os::Errno>;
+
+public:
+    NumaPolicyPlacement() = delete("a default-constructed policy proof would claim a policy that nobody set.  Take "
+                                   "one from fixy::numa::mint_numa_policy, which returns it only after mbind "
+                                   "succeeded.");
+    NumaPolicyPlacement(const NumaPolicyPlacement&) =
+        delete("a policy proof owns its region, and a copy would unmap it twice.");
+    NumaPolicyPlacement& operator=(const NumaPolicyPlacement&) = delete("a policy proof owns its region.");
+
+    // User-provided, so the class is neither trivially copyable nor an
+    // implicit-lifetime type, and the source of a move covers no node.
+    NumaPolicyPlacement(NumaPolicyPlacement&& other) noexcept
+        : region_{std::move(other.region_)}, nodes_{::foundation::core::exchange(other.nodes_, NumaNodeMask{})} {}
+
+    NumaPolicyPlacement& operator=(NumaPolicyPlacement&& other) noexcept {
+        if (this != &other) {
+            region_ = std::move(other.region_);
+            nodes_ = ::foundation::core::exchange(other.nodes_, NumaNodeMask{});
+        }
+        return *this;
+    }
+
+    ~NumaPolicyPlacement() = default;
+
+    // The nodes of the policy.  The empty mask after a move.
+    [[nodiscard]] NumaNodeMask const& nodes() const& noexcept { return nodes_; }
+    void nodes() const&& = delete("the mask of a temporary proof ends with the full expression");
+
+    // A borrow.  The proof keeps the region, so the caller must not unmap
+    // the returned address.
+    [[nodiscard]] void* data() const noexcept { return region_.data(); }
+    [[nodiscard]] std::size_t size() const noexcept { return region_.size(); }
+
+    // Gives the region back and ends the claim.  The kernel keeps the
+    // policy on the range, but no proof states it after this call.
+    [[nodiscard]] Linear<region_type> consume() && noexcept {
+        nodes_ = NumaNodeMask{};
+        return mint_linear<region_type>(std::move(region_));
+    }
+};
+
 namespace numa {
 
 template <typename Tag, typename Prot, typename Brand, ::foundation::effects::IsExecCtx Ctx>
@@ -210,15 +382,42 @@ mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, P
     // into the proof.  A node that is not concrete and a region with no
     // mapping give einval, and the mint makes no system call.
     ::fixy::NumaBindableRegion<Tag, Prot, Brand> owned = std::move(region).consume();
-    if (!is_concrete_numa_node(node) || !owned.is_mapped()) {
+    Option<NumaNodeMask> one_node = make_numa_node_mask(node);
+    if (one_node.is_none() || !owned.is_mapped()) {
         return ::foundation::core::err(::foundation::os::Errno::einval);
     }
+    NumaNodeMask const nodes = std::move(one_node).expect("the test above found a concrete node");
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> const bound =
-        ::fixy::detail::mbind_sys(owned.data(), owned.size(), node);
+        ::fixy::detail::mbind_sys(owned.data(), owned.size(), NumaPolicy::bind, nodes);
     for (::foundation::os::Errno const error : bound.err()) {
         return ::foundation::core::err(error);
     }
     return ::fixy::NumaPlacement<Tag, Prot, Brand>{std::move(owned), node};
+}
+
+// Sets the policy Policy over nodes for the region, and moves the pages that
+// the region holds to the nodes of the policy.  An empty mask, a preferred
+// policy over more than one node and a region with no mapping give einval,
+// and the mint makes no system call.  A node that the cpuset of the process
+// does not allow, or that the machine does not have, gives the error of the
+// kernel.
+template <NumaPolicy Policy, typename Tag, typename Prot, typename Brand, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsNumaBind<Ctx>
+[[nodiscard]] ::foundation::core::Result<::fixy::NumaPolicyPlacement<Policy, Tag, Prot, Brand>, ::foundation::os::Errno>
+mint_numa_policy(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot, Brand>>&& region,
+                 NumaNodeMask const& nodes) noexcept {
+    // The region leaves the Linear first, as in mint_numa_placement.
+    ::fixy::NumaBindableRegion<Tag, Prot, Brand> owned = std::move(region).consume();
+    bool const is_one_node_policy = Policy == NumaPolicy::preferred;
+    if (nodes.is_empty() || (is_one_node_policy && nodes.size() != 1) || !owned.is_mapped()) {
+        return ::foundation::core::err(::foundation::os::Errno::einval);
+    }
+    ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> const set =
+        ::fixy::detail::mbind_sys(owned.data(), owned.size(), Policy, nodes);
+    for (::foundation::os::Errno const error : set.err()) {
+        return ::foundation::core::err(error);
+    }
+    return ::fixy::NumaPolicyPlacement<Policy, Tag, Prot, Brand>{std::move(owned), nodes};
 }
 
 // ── The census of the pages of a range ─────────────────────────────────
@@ -230,6 +429,8 @@ enum class NumaQueryStep : std::uint8_t {
     CounterRead = 2,  // the file door does not read the counter file: the open or a read failed
     CounterFormat = 3,  // the counter file does not hold each counter
     NodeNotConcrete = 4,  // the node is None or Any, which name no counter file
+    AllowedRead = 5,  // the file door does not read /proc/self/status
+    AllowedFormat = 6,  // the status holds no node list of the allowed nodes
 };
 
 // The refusal of a NUMA query: the step that failed, and the errno that
@@ -355,6 +556,102 @@ template <typename T, std::size_t Extent, ::foundation::effects::IsExecCtx Ctx>
         return err(NumaQueryError{NumaQueryStep::PageQuery, error});
     }
     return census;
+}
+
+// ── The nodes that the process may use ─────────────────────────────────
+
+// The nodes of a node list of the kernel, such as "0-1,4": each range
+// FIRST-LAST and each single node, between commas, up to the end of the text
+// or the first newline.  An empty list, a part that is no number, a range
+// that runs backward and a node past 253 give no value.  Complexity: linear
+// in the text and in the nodes of its ranges.
+[[nodiscard]] constexpr Option<NumaNodeMask> parse_numa_node_list(TextView text) noexcept {
+    NumaNodeMask nodes{};
+    std::size_t value = 0;
+    std::size_t range_first = 0;
+    bool has_digit = false;
+    bool is_range = false;
+    bool is_refused = false;
+    // Puts the part that a comma or the end closes into the mask.
+    auto const put_part = [&]() noexcept {
+        std::size_t const first = is_range ? range_first : value;
+        if (!has_digit || first > value || value >= numa_concrete_node_count) {
+            is_refused = true;
+            return;
+        }
+        for (std::size_t node = first; node <= value; ++node) {
+            nodes.insert(static_cast<NumaNodeId>(node)).expect("a node below 254 is concrete");
+        }
+        value = 0;
+        has_digit = false;
+        is_range = false;
+    };
+    for (char const character : text) {
+        if (character == '\n' || is_refused) {
+            break;
+        }
+        if (character >= '0' && character <= '9') {
+            value = value * 10 + static_cast<std::size_t>(character - '0');
+            has_digit = true;
+            is_refused = value >= numa_concrete_node_count;
+        } else if (character == '-' && has_digit && !is_range) {
+            range_first = value;
+            value = 0;
+            has_digit = false;
+            is_range = true;
+        } else if (character == ',') {
+            put_part();
+        } else {
+            is_refused = true;
+        }
+    }
+    if (!is_refused) {
+        put_part();
+    }
+    if (is_refused) {
+        return none;
+    }
+    return Option<NumaNodeMask>::some(nodes);
+}
+
+// The nodes of the line Mems_allowed_list of the text of /proc/self/status:
+// the nodes that the cpuset of the process allows.  A status with no such
+// line, or with a list that parse_numa_node_list refuses, gives no value.
+// Complexity: linear in the text.
+[[nodiscard]] constexpr Option<NumaNodeMask> allowed_numa_nodes_of_status(TextView status) noexcept {
+    constexpr TextView key{"\nMems_allowed_list:"};
+    for (std::size_t const at : find(status, key)) {
+        TextView rest =
+            status.window(at + key.size(), status.size() - at - key.size()).expect("the key is inside the status");
+        while (rest.size() != 0 && (starts_with(rest, TextView{"\t"}) || starts_with(rest, TextView{" "}))) {
+            rest = rest.window(1, rest.size() - 1).expect("a text that is not empty has a tail");
+        }
+        return parse_numa_node_list(rest);
+    }
+    return none;
+}
+
+}  // namespace numa
+
+namespace detail {
+
+// Reads /proc/self/status, and gives the nodes of its line
+// Mems_allowed_list, or the step that failed.  The body is in
+// src/fixy/os/NumaPlacement.cpp.  read_allowed_numa_nodes is its caller.
+[[nodiscard]] Result<NumaNodeMask, numa::NumaQueryError> read_allowed_numa_nodes_() noexcept;
+
+}  // namespace detail
+
+namespace numa {
+
+// The nodes that the cpuset of the process allows.  An mbind to a node
+// outside the set fails, so a caller that chooses the nodes of a policy reads
+// this set first.  The read changes nothing.  Not a mint: it reads the kernel
+// and synthesizes no authority.  The gate is the gate of the other queries.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsNumaQuery<Ctx>
+[[nodiscard]] Result<NumaNodeMask, NumaQueryError> read_allowed_numa_nodes(Ctx const&) noexcept {
+    return ::fixy::detail::read_allowed_numa_nodes_();
 }
 
 }  // namespace numa

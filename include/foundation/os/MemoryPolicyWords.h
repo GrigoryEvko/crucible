@@ -1,7 +1,7 @@
 #pragma once
 
 // The argument words of the memory policy door of fixy/os/NumaPlacement.h:
-// the policy that binds a range to its nodes, and the flags of mbind.
+// the policies of a range, and the flags of mbind.
 //
 // The values are the values of <linux/mempolicy.h> on x86_64 and aarch64.  The
 // door file src/foundation/os/Syscall.cpp compares each one with that header,
@@ -11,8 +11,17 @@
 
 namespace foundation::os {
 
+// The policy that takes each page of a range from the node of the mask, and
+// from another node when that node is low on free memory (MPOL_PREFERRED).
+// The mask holds one node.
+inline constexpr int kMemoryPolicyPreferred = 1;
+
 // The policy that puts each page of a range on a node of the mask (MPOL_BIND).
 inline constexpr int kMemoryPolicyBind = 2;
+
+// The policy that puts the pages of a range on the nodes of the mask in turn,
+// one page on each node (MPOL_INTERLEAVE).
+inline constexpr int kMemoryPolicyInterleave = 3;
 
 // The flag of mbind that fails the call when a page of the range is not on a
 // node of the policy after the call (MPOL_MF_STRICT).
