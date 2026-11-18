@@ -21,6 +21,7 @@
 #include <fixy/concurrent/Stage.h>
 #include <fixy/os/Futex.h>
 #include <fixy/os/OwnedThread.h>
+#include <fixy/os/SpinBudget.h>
 #include <fixy/os/Time.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Lifetime.h>
@@ -60,8 +61,12 @@ struct GraphPublishTag {};
     return ::foundation::permissions::mint_permission_root<::fixy::concurrent::spsc_tag::Whole<GraphPublishTag>>();
 }
 
-// The idle wait of a stage.  A stage with no work polls SPIN_ROUNDS times,
-// and then it parks until work comes.  The foreground puts ops into the trace
+// The idle wait of a stage.  A stage with no work polls for SPIN_BUDGET, and
+// then it parks until work comes.  The budget is a time, so it is the same on
+// each core: a PAUSE takes from about 10 cycles to about 140 cycles across
+// x86_64 cores.  80 microseconds are about 2048 pauses of an AMD Zen 4 core.
+// The end of the spin decides only when the stage parks, and each item comes
+// out of its channel in the same order.  The foreground puts ops into the trace
 // ring with no system call, so no thread wakes the drain stage.  It sleeps
 // with a bound, and it polls the ring again after each sleep.  Each later
 // stage parks on the wait word of its input channel, and the stage before it
@@ -81,7 +86,7 @@ struct GraphPublishTag {};
 // no mark in the ring, so the stream that the detect stage reads has a gap.
 // The pipeline builds no region that holds the gap, and the whole iterations
 // after it give regions again (test_background_thread_refused_ops).
-inline constexpr uint32_t SPIN_ROUNDS = 2048;
+inline constexpr ::fixy::time::SpinBudget SPIN_BUDGET{80000};
 inline constexpr uint64_t MIN_SLEEP_NANOS = 50000;
 // The longest sleep of the drain stage, and of a producer that waits for a
 // free cell of a channel.
@@ -150,22 +155,22 @@ struct ChannelParks {
     ChannelPark graph_publish{};
 };
 
-// The idle state of one stage: the polls since the last work, the bound of
-// the next sleep, and the longest sleep.
+// The idle state of one stage: the end of the spin since the last work, the
+// bound of the next sleep, and the longest sleep.
 class StageIdle {
 public:
     explicit StageIdle(uint64_t max_sleep_nanos) noexcept : max_sleep_nanos_{max_sleep_nanos} {}
 
     // The stage found work.
     void reset() noexcept {
-        rounds_ = 0;
+        is_spinning_ = false;
         sleep_nanos_ = MIN_SLEEP_NANOS;
     }
 
     // A poll found no work in the ring or no free cell in a channel.  The
     // stage spins, and then it sleeps for the bound.
     void pause_or_sleep(::fixy::BgLoadCtx const& ctx) noexcept {
-        if (should_spin_()) return;
+        if (should_spin_(ctx)) return;
         const ::fixy::futex::FutexWord sleep_word{0};
         (void)::fixy::futex::wait(ctx, sleep_word, 0, deadline_after(ctx, next_sleep_nanos_()))
             .expect("the kernel parks a stage of the pipeline on its own word");
@@ -175,14 +180,22 @@ public:
     // parks on the word of the channel.  A timed park ends at the bound.
     template <class Input>
     void pause_or_park(::fixy::BgLoadCtx const& ctx, ChannelPark& park, Input const& input, bool is_timed) noexcept {
-        if (should_spin_()) return;
+        if (should_spin_(ctx)) return;
         park.park(ctx, input, is_timed ? deadline_after(ctx, next_sleep_nanos_()) : ::fixy::none);
     }
 
 private:
-    [[nodiscard]] bool should_spin_() noexcept {
-        if (rounds_ == SPIN_ROUNDS) return false;
-        ++rounds_;
+    // The first empty poll after work starts the spin budget.  Each empty
+    // poll after the end of the budget parks or sleeps, until the stage finds
+    // work again.
+    [[nodiscard]] bool should_spin_(::fixy::BgLoadCtx const& ctx) noexcept {
+        const ::foundation::effects::cap::Nondet nondet =
+            ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx);
+        if (!is_spinning_) {
+            spin_end_ = ::fixy::time::SpinDeadline::after(nondet, SPIN_BUDGET);
+            is_spinning_ = true;
+        }
+        if (spin_end_.has_passed(nondet)) return false;
         CRUCIBLE_SPIN_PAUSE;
         return true;
     }
@@ -193,7 +206,8 @@ private:
         return nanos;
     }
 
-    uint32_t rounds_ = 0;
+    bool is_spinning_ = false;
+    ::fixy::time::SpinDeadline spin_end_ = ::fixy::time::SpinDeadline::passed();
     uint64_t sleep_nanos_ = MIN_SLEEP_NANOS;
     uint64_t max_sleep_nanos_ = MIN_SLEEP_NANOS;
 };
