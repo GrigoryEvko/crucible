@@ -41,9 +41,12 @@
 // fixy/atoms/Os.h makes the same decision for its mmap atoms.
 //
 // syscall_nondet_calls names each call whose result can change from run
-// to run with the same inputs, and each such call lifts Nondet.  A family
-// lifts Nondet when one of its calls does, so a family atom covers each
-// call of its family.
+// to run with the same inputs, and each such call lifts Nondet.
+//
+// A family atom names each call of its family and of each family below it
+// on the chain.  So its row is the union of the rows of those calls: the
+// IO, the Block and the Nondet of each family from the bottom of the chain
+// to its own.  A wider family never lifts less than a family below it.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -64,7 +67,7 @@ namespace fixy::atom::syscall {
 inline constexpr atom_seal atom_namespace_seal{};
 
 // A chain.  Each family stands for a wider kernel surface than the
-// family below it.
+// family below it, and the atom of a family names each call below it too.
 enum class SyscallFamily : std::uint8_t {
     NoSyscall = 0,  // no kernel transition at all
     VdsoOnly = 1,  // clock_gettime and getcpu through the vDSO, still no kernel transition
@@ -322,9 +325,8 @@ inline constexpr sc::SyscallId syscall_nondet_calls[] = {
     return false;
 }
 
-// True when a call of the family lifts Nondet.  A family atom covers each
-// call of its family, so such a family lifts Nondet too.  Complexity: the
-// product of the list and the table of the calls.
+// True when a call of the family lifts Nondet.  Complexity: the product of
+// the list and the table of the calls.
 [[nodiscard]] consteval bool has_nondet_call_(sc::SyscallFamily family) noexcept {
     for (const sc::SyscallId listed : syscall_nondet_calls) {
         if (syscall_family_of_(listed) == family) return true;
@@ -332,27 +334,76 @@ inline constexpr sc::SyscallId syscall_nondet_calls[] = {
     return false;
 }
 
+// The family one step below a family on the chain.  NoSyscall is the
+// bottom, and it answers itself.  A family that a new enumerator appends
+// with no case here answers NoSyscall, and the check file of this header
+// then finds a family whose row is no superset of the row below it.
+[[nodiscard]] consteval sc::SyscallFamily family_below_(sc::SyscallFamily family) noexcept {
+    switch (family) {
+        case sc::SyscallFamily::VdsoOnly:
+            return sc::SyscallFamily::NoSyscall;
+        case sc::SyscallFamily::ReadOnlyState:
+            return sc::SyscallFamily::VdsoOnly;
+        case sc::SyscallFamily::FileMutation:
+            return sc::SyscallFamily::ReadOnlyState;
+        case sc::SyscallFamily::MemoryMapping:
+            return sc::SyscallFamily::FileMutation;
+        case sc::SyscallFamily::ThreadSync:
+            return sc::SyscallFamily::MemoryMapping;
+        case sc::SyscallFamily::NetworkIo:
+            return sc::SyscallFamily::ThreadSync;
+        case sc::SyscallFamily::ProcessControl:
+            return sc::SyscallFamily::NetworkIo;
+        case sc::SyscallFamily::Privilege:
+            return sc::SyscallFamily::ProcessControl;
+        default:
+            return sc::SyscallFamily::NoSyscall;
+    }
+}
+
+// The effects of a family atom.  The atom names each call of its family
+// and of each family below it on the chain, so it lifts the union of their
+// effects: a family that names a wider kernel surface never lifts less.
+// Complexity: the depth of the chain times the table of the families.
+[[nodiscard]] consteval syscall_family_effects syscall_chain_effects_of_(sc::SyscallFamily family) noexcept {
+    const syscall_family_effects own = syscall_family_effects_of_(family);
+    if (family == sc::SyscallFamily::NoSyscall) return own;
+    const syscall_family_effects lower = syscall_chain_effects_of_(family_below_(family));
+    return {.needs_io = own.needs_io || lower.needs_io, .needs_block = own.needs_block || lower.needs_block};
+}
+
+// True when a call of the family, or of a family below it on the chain,
+// lifts Nondet.  Complexity: the depth of the chain times that of
+// has_nondet_call_.
+[[nodiscard]] consteval bool has_nondet_call_on_chain_(sc::SyscallFamily family) noexcept {
+    if (has_nondet_call_(family)) return true;
+    return family != sc::SyscallFamily::NoSyscall && has_nondet_call_on_chain_(family_below_(family));
+}
+
 template <bool IsNondet>
 using nondet_row_t = std::conditional_t<IsNondet, ::foundation::effects::Row<::foundation::effects::Effect::Nondet>,
                                         ::foundation::effects::Row<>>;
 
-template <sc::SyscallFamily F>
-using syscall_family_row_t = ::foundation::effects::row_union_t<
-    ::foundation::effects::row_union_t<
-        std::conditional_t<syscall_family_effects_of_(F).needs_io,
-                           ::foundation::effects::Row<::foundation::effects::Effect::IO>, ::foundation::effects::Row<>>,
-        std::conditional_t<syscall_family_effects_of_(F).needs_block,
-                           ::foundation::effects::Row<::foundation::effects::Effect::Block>,
-                           ::foundation::effects::Row<>>>,
-    nondet_row_t<has_nondet_call_(F)>>;
+// The IO and the Block of a set of effects.
+template <syscall_family_effects Effects>
+using io_block_row_t = ::foundation::effects::row_union_t<
+    std::conditional_t<Effects.needs_io, ::foundation::effects::Row<::foundation::effects::Effect::IO>,
+                       ::foundation::effects::Row<>>,
+    std::conditional_t<Effects.needs_block, ::foundation::effects::Row<::foundation::effects::Effect::Block>,
+                       ::foundation::effects::Row<>>>;
 
-// The row of one call: the IO and Block of its family, and Nondet when the
-// call itself lifts it.
+// The row of a family atom: the union of the rows of each call that it
+// names, on its family and on each family below it.
+template <sc::SyscallFamily F>
+using syscall_family_row_t = ::foundation::effects::row_union_t<io_block_row_t<syscall_chain_effects_of_(F)>,
+                                                                nondet_row_t<has_nondet_call_on_chain_(F)>>;
+
+// The row of one call: the IO and Block of its own family, and Nondet when
+// the call itself lifts it.
 template <sc::SyscallId Id>
-using syscall_call_row_t = ::foundation::effects::row_union_t<
-    ::foundation::effects::row_difference_t<syscall_family_row_t<syscall_family_of_(Id)>,
-                                            ::foundation::effects::Row<::foundation::effects::Effect::Nondet>>,
-    nondet_row_t<is_nondet_call_(Id)>>;
+using syscall_call_row_t =
+    ::foundation::effects::row_union_t<io_block_row_t<syscall_family_effects_of_(syscall_family_of_(Id))>,
+                                       nondet_row_t<is_nondet_call_(Id)>>;
 
 // A value of SyscallId that names a call of the catalog.  A cast from an
 // integer can make any value of the underlying type, and such a value

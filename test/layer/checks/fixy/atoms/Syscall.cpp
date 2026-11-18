@@ -162,16 +162,40 @@ static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::bpf>>, fe::Row<fe::
 static_assert(std::is_same_v<fe::lift_row_t<syscall::family<SF::NoSyscall>>, fe::Row<>>);
 
 // The row of each family, in the canonical form that a hand-written row
-// has, so that a lifted row and a stated row are one type.  A family
-// lifts Nondet when one of its calls does, so a family atom covers each
-// call of its family.
+// has, so that a lifted row and a stated row are one type.  A family atom
+// names each call of its family and of each family below it, so it lifts
+// each effect of those calls.  The reads of the clock lift Nondet at the
+// bottom of the chain, and the file calls lift IO and Block.
+using IoBlockNondet = fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>;
 static_assert(std::is_same_v<syscall_family_row_t<SF::VdsoOnly>, fe::Row<fe::Effect::Nondet>>);
 static_assert(std::is_same_v<syscall_family_row_t<SF::ReadOnlyState>, fe::Row<fe::Effect::IO, fe::Effect::Nondet>>);
-static_assert(std::is_same_v<syscall_family_row_t<SF::FileMutation>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<syscall_family_row_t<SF::MemoryMapping>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<syscall_family_row_t<SF::ThreadSync>, fe::Row<fe::Effect::Block, fe::Effect::Nondet>>);
-static_assert(std::is_same_v<syscall_family_row_t<SF::NetworkIo>,
-                             fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::FileMutation>, IoBlockNondet>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::MemoryMapping>, IoBlockNondet>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::ThreadSync>, IoBlockNondet>,
+              "the family of the waits names the calls below it, and the file calls lift IO");
+static_assert(std::is_same_v<syscall_family_row_t<SF::NetworkIo>, IoBlockNondet>);
+
+// A wider family lifts each effect of each family below it.  The walk takes
+// each pair of enumerators, so a new family cannot lift less unseen.
+// Complexity: quadratic in the enumerators.
+[[nodiscard]] consteval bool each_family_row_holds_the_rows_below_() noexcept {
+    bool is_superset = true;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto higher : std::define_static_array(std::meta::enumerators_of(^^SF))) {
+        template for (constexpr auto lower : std::define_static_array(std::meta::enumerators_of(^^SF))) {
+            constexpr SF wide = [:higher:];
+            constexpr SF narrow = [:lower:];
+            if constexpr (narrow <= wide) {
+                is_superset =
+                    is_superset && fe::is_subrow(^^syscall_family_row_t<narrow>, ^^syscall_family_row_t<wide>);
+            }
+        }
+    }
+#pragma GCC diagnostic pop
+    return is_superset;
+}
+static_assert(each_family_row_holds_the_rows_below_());
 
 // A family covers each of its calls.
 [[nodiscard]] consteval bool every_call_row_in_its_family_row_() noexcept {
@@ -187,8 +211,8 @@ static_assert(std::is_same_v<syscall_family_row_t<SF::NetworkIo>,
     return is_covered;
 }
 static_assert(every_call_row_in_its_family_row_());
-static_assert(std::is_same_v<syscall_family_row_t<SF::ProcessControl>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
-static_assert(std::is_same_v<syscall_family_row_t<SF::Privilege>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::ProcessControl>, IoBlockNondet>);
+static_assert(std::is_same_v<syscall_family_row_t<SF::Privilege>, IoBlockNondet>);
 
 // A call and a family are distinct atoms, and two calls are distinct.
 static_assert(!std::is_same_v<syscall::per<SI::write>, syscall::per<SI::pwrite>>);

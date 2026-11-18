@@ -135,7 +135,8 @@ static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::family<fa::syscall::Sys
 static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::family<fa::syscall::SyscallFamily::NetworkIo>>,
                              fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::syscall::family<fa::syscall::SyscallFamily::FileMutation>>,
-                             fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+                             fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>,
+              "the family of the file calls names the reads of the clock below it on the chain");
 static_assert(std::is_same_v<fe::lift_row_t<fa::io::engine<::fixy::io::engine::IoUring>>,
                              fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::fs::mode<::fixy::fs::open_mode::ReadOnly>>,

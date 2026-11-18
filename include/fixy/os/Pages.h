@@ -51,8 +51,16 @@ enum class ThpSetting : std::uint32_t {
     refused = 1,
 };
 
-using page_call_row_t =
-    eff::lift_row_t<::fixy::atom::syscall::family<::fixy::atom::syscall::SyscallFamily::MemoryMapping>>;
+// The row of the page calls of this header: mlock, mlock2, munlock and
+// madvise.  Each is a call of the mapping family, so each lifts IO and
+// Block.  The family atom of the mappings also names each call of the
+// families below it on the chain, a read of the clock among them, and it
+// lifts their Nondet, which no page call has.
+using page_call_row_t = eff::row_union_t<
+    eff::row_union_t<eff::lift_row_t<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mlock>>,
+                     eff::lift_row_t<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::mlock2>>>,
+    eff::row_union_t<eff::lift_row_t<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::munlock>>,
+                     eff::lift_row_t<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::madvise>>>>;
 
 template <typename Ctx>
 concept CtxFitsPageCall = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, page_call_row_t>;
