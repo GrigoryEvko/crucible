@@ -3,7 +3,8 @@
 // values of 32 bits of each sign and over the limits.  A conversion to a
 // finer unit and back gives the number again.  The arithmetic of two
 // quantities and of a quantity and a plain number agrees with the
-// arithmetic of their numbers, and keeps the unit.
+// arithmetic of their numbers, and keeps the unit or gives the product or
+// the quotient of the units.
 
 #include <foundation/core/Array.h>
 #include <foundation/core/Quantity.h>
@@ -32,16 +33,27 @@ template <class UnitTag, class Rep>
                            [marker] { return marker; });
 }
 
+// The number of nanoseconds in one unit of time: 1000^power.
+template <class UnitTag>
+[[nodiscard]] constexpr std::int64_t nanoseconds_in() noexcept {
+    std::int64_t ratio = 1;
+    for (int step = 0; step < UnitTag::scale.power; ++step)
+        ratio *= 1000;
+    return ratio;
+}
+
 // The model: the number of From in To, or the marker when it overflows Rep
 // or is no whole number of To.
 template <class To, class From, class Rep>
 [[nodiscard]] std::int64_t model_convert(Rep value, std::int64_t marker) noexcept {
     auto const number = static_cast<std::int64_t>(value);
+    constexpr std::int64_t from_ratio = nanoseconds_in<From>();
+    constexpr std::int64_t to_ratio = nanoseconds_in<To>();
     std::int64_t result = 0;
-    if (From::ratio >= To::ratio) {
-        result = number * static_cast<std::int64_t>(From::ratio / To::ratio);
+    if (from_ratio >= to_ratio) {
+        result = number * (from_ratio / to_ratio);
     } else {
-        auto const divisor = static_cast<std::int64_t>(To::ratio / From::ratio);
+        auto const divisor = to_ratio / from_ratio;
         if (number % divisor != 0) return marker;
         result = number / divisor;
     }
@@ -135,11 +147,44 @@ void test_arithmetic_keeps_the_unit() {
     CRUCIBLE_FATAL_INVARIANT(core::checked_div(Bytes{opaque(std::uint64_t{9})}, 2).expect("a divisor of 2").raw() == 4);
 }
 
+// The number of a checked integer operation, or the marker.
+[[nodiscard]] std::int64_t number_or(core::Option<std::int32_t> result, std::int64_t marker) {
+    return result.match([](std::int32_t value) { return std::int64_t{value}; }, [marker] { return marker; });
+}
+
+// The product and the quotient of two integer quantities agree with the
+// arithmetic of their numbers.
+void test_products_of_two_quantities() {
+    using Rate = core::Quantity<unit::BytePerSecond, std::int32_t>;
+    using Seconds = core::Quantity<unit::Second, std::int32_t>;
+    using Bytes = core::Quantity<unit::Byte, std::int32_t>;
+    constexpr std::int64_t marker = std::int64_t{1} << 40;
+    ::crucible::test::PhiloxStream stream{83};
+    for (int index = 0; index < 100000; ++index) {
+        auto const left = static_cast<std::int32_t>(stream.next_word());
+        // A shift of the draw reaches the small divisors and 0.
+        auto const right = static_cast<std::int32_t>(stream.next_word() >> stream.below(32));
+        Rate const rate{opaque(left)};
+        Bytes const bytes{opaque(left)};
+        Seconds const seconds{opaque(right)};
+        CRUCIBLE_FATAL_INVARIANT(number_of(core::checked_mul(rate, seconds), marker)
+                                 == number_or(core::checked_mul(left, right), marker));
+        CRUCIBLE_FATAL_INVARIANT(core::wrapping_mul(rate, seconds).raw() == core::wrapping_mul(left, right));
+        CRUCIBLE_FATAL_INVARIANT(core::saturating_mul(rate, seconds).raw() == core::saturating_mul(left, right));
+        CRUCIBLE_FATAL_INVARIANT(number_of(core::checked_div(bytes, seconds), marker)
+                                 == number_or(core::checked_div(left, right), marker));
+    }
+    Bytes const lowest{opaque(core::min_of<std::int32_t>)};
+    CRUCIBLE_FATAL_INVARIANT(core::checked_div(lowest, Seconds{opaque(std::int32_t{-1})}).is_none());
+    CRUCIBLE_FATAL_INVARIANT(core::checked_div(lowest, Seconds{opaque(std::int32_t{0})}).is_none());
+}
+
 }  // namespace
 
 int main() {
     test_convert_agrees_with_the_model();
     test_convert_round_trips();
     test_arithmetic_keeps_the_unit();
+    test_products_of_two_quantities();
     return 0;
 }

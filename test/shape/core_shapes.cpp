@@ -1087,6 +1087,12 @@ scalar_quantity_to_coarser(fixy::Quantity<fixy::unit::Millisecond, std::uint32_t
     return fixy::convert<fixy::unit::Second>(value);
 }
 
+[[gnu::used]] fixy::Option<ProbeBytes>
+scalar_quantity_product(fixy::Quantity<fixy::unit::BytePerSecond, std::uint32_t> rate,
+                        fixy::Quantity<fixy::unit::Second, std::uint32_t> seconds) noexcept {
+    return checked_mul(rate, seconds);
+}
+
 [[gnu::used]] std::uint32_t scalar_philox_generate(std::uint64_t offset, std::uint64_t key) noexcept {
     fixy::Philox4x32::Counter const block = fixy::Philox4x32::generate(offset, key);
     return block.at(fixy::index<0>()) ^ block.at(fixy::index<1>()) ^ block.at(fixy::index<2>())
@@ -1884,6 +1890,13 @@ struct RawBounds final {
 [[gnu::used]] std::optional<std::uint32_t> scalar_quantity_to_coarser_raw(std::uint32_t value) noexcept {
     if (value % 1000u != 0) return std::nullopt;
     return value / 1000u;
+}
+
+[[gnu::used]] std::optional<std::uint32_t> scalar_quantity_product_raw(std::uint32_t rate,
+                                                                       std::uint32_t seconds) noexcept {
+    std::uint32_t product = 0;
+    if (__builtin_mul_overflow(rate, seconds, &product)) return std::nullopt;
+    return product;
 }
 
 // The ten rounds of Philox4x32-10 over a std::array counter and key, with

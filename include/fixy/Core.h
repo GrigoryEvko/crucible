@@ -353,7 +353,7 @@ using ::foundation::core::Philox4x32;
 
 // The arithmetic of a Quantity is a set of overloads of checked_*, wrapping_*
 // and saturating_* in foundation::core, which argument-dependent lookup
-// finds.  The units keep their namespace unit.
+// finds.  The units, Product and Quotient keep their namespace unit.
 using ::foundation::core::convert;
 using ::foundation::core::Quantity;
 using ::foundation::core::QuantityUnit;

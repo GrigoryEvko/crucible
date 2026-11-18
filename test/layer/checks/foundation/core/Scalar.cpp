@@ -365,8 +365,9 @@ inline constexpr TextView scalar_names{
     "countl_zero countr_zero countl_one countr_one bit_width has_single_bit bit_floor bit_ceil rotl rotr low_mask "
     "byteswap bit_cast decode for_each_field for_each_base is_nan is_inf is_finite is_normal sign_bit abs copy_sign sqrt fma total_key exchange "
     "swap Philox4x32 generate Counter Key multiplier0 multiplier1 weyl_step0 weyl_step1 Id raw Digest Quantity "
-    "QuantityUnit convert dimension ratio Byte Element Nanosecond Microsecond Millisecond Second Cycle Memory Count "
-    "Time Clock"};
+    "QuantityUnit convert dimension scale Dimension memory count time work clock Scale power Derived Product "
+    "Quotient Byte Element Nanosecond Microsecond Millisecond Second Cycle Flop BytePerSecond FlopPerSecond "
+    "FlopPerByte"};
 
 CRUCIBLE_CLOSED_SURFACE(scalar_names, WideProduct<std::uint8_t>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, WideProduct<std::uint64_t>);
@@ -375,7 +376,9 @@ CRUCIBLE_CLOSED_SURFACE(scalar_names, Bounds<double>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, Quantity<unit::Byte, std::uint64_t>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, Quantity<unit::Second, std::int8_t>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, unit::Second);
-CRUCIBLE_CLOSED_SURFACE(scalar_names, unit::Memory);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, unit::Dimension);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, unit::Scale);
+CRUCIBLE_CLOSED_SURFACE(scalar_names, unit::Product<unit::Byte, unit::Byte>);
 struct SurfaceTag;
 CRUCIBLE_CLOSED_SURFACE(scalar_names, Id<SurfaceTag, std::uint32_t>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, Digest<SurfaceTag>);

@@ -1009,6 +1009,11 @@ PROBES: tuple[Probe, ...] = (
         branches=True,
     ),
     Probe(
+        "scalar_quantity_product",
+        "checked_mul of two quantities of four bytes is the multiply and the overflow flag of the raw form, the unit "
+        "of the product costs no instruction, and the Option comes back in one register",
+    ),
+    Probe(
         "scalar_philox_generate",
         "Philox4x32::generate is the ten rounds of the std::array form, two 64-bit products and four xor operations "
         "in each round, and the at() reads of a FixedArray block are the subscripts of the raw form",

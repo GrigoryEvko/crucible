@@ -3102,15 +3102,22 @@ foundation_neg_compile_test(neg_core_scalar_id_default
   "neg_core_scalar_id_default.cpp:11:")
 
 # A Quantity holds an Integer in one unit of namespace unit.  Two units do
-# not meet in one operation, and a conversion keeps the dimension.
+# not meet in a sum or a compare, a product has the product of the units,
+# and a conversion keeps the dimension.
 foundation_test(test_core_scalar_quantity)
 
 foundation_neg_compile_test(neg_core_scalar_quantity_not_a_unit
   "template constraint failure for .template<class UnitTag, class Rep>  requires \\(QuantityUnit<UnitTag>\\) && \\(Integer<Rep>\\) class foundation::core::Quantity."
-  "required for the satisfaction of .QuantityUnit<UnitTag>. \\[with UnitTag = Kibibyte\\]")
+  "required for the satisfaction of .QuantityUnit<UnitTag>. \\[with UnitTag = Kilobyte\\]")
 foundation_neg_compile_test(neg_core_scalar_quantity_float_rep
   "template constraint failure for .template<class UnitTag, class Rep>  requires \\(QuantityUnit<UnitTag>\\) && \\(Integer<Rep>\\) class foundation::core::Quantity."
   "required for the satisfaction of .Integer<Rep>. \\[with Rep = double\\]")
+foundation_neg_compile_test(neg_core_scalar_quantity_product_plus_seconds
+  "no matching function for call to .checked_add\\(const foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>&, const foundation::core::Quantity<foundation::core::unit::Second, long unsigned int>&\\)."
+  "deduced conflicting types for parameter .UnitTag. \\(.foundation::core::unit::Byte. and .foundation::core::unit::Second.\\)")
+foundation_neg_compile_test(neg_core_scalar_quantity_rate_compare
+  "no match for .operator==. \\(operand types are .const foundation::core::Quantity<foundation::core::unit::BytePerSecond, long unsigned int>. and .const foundation::core::Quantity<foundation::core::unit::FlopPerSecond, long unsigned int>.\\)"
+  "constexpr bool foundation::core::operator==\\(Quantity<unit::FlopPerSecond, long unsigned int>, Quantity<unit::FlopPerSecond, long unsigned int>\\)")
 foundation_neg_compile_test(neg_core_scalar_quantity_two_units
   "no matching function for call to .checked_add\\(const foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>&, const foundation::core::Quantity<foundation::core::unit::Element, long unsigned int>&\\)."
   "deduced conflicting types for parameter .UnitTag. \\(.foundation::core::unit::Byte. and .foundation::core::unit::Element.\\)")
