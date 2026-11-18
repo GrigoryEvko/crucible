@@ -381,10 +381,10 @@ void test_format_names_each_part() {
         "scale = 0, lanes = [0, 0, 9], pairs = [0, 0], ticket = {word_ = 7}}"};
     bool const is_expected = format(out, sample)
                                  .match([&expected](TextView text) noexcept { return text == expected; },
-                                        [](::foundation::core::Truncated) noexcept { return false; });
+                                        [](::foundation::core::Full<char>) noexcept { return false; });
     CRUCIBLE_FATAL_INVARIANT(is_expected);
 
-    // A short buffer gives Truncated.
+    // A short buffer gives Full<char>.
     FixedText<16> short_out{};
     CRUCIBLE_FATAL_INVARIANT(format(short_out, sample).is_err());
 }

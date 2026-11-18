@@ -12,7 +12,7 @@
 //   decode<T>(bytes)    the T of an image, or the DecodeFault of the first
 //                       part that holds no value
 //   format(out, value)  writes each part of the value with its name into a
-//                       FixedText, and gives the text or Truncated
+//                       FixedText, and gives the text or Full<char>
 //
 // foundation/core/Equatable.h gives equal and order, the annotations
 // derive_protocol, local_part and pad_part, and the rules of the walk: the
@@ -681,12 +681,12 @@ template <Decodable T>
 }
 
 // Writes each part of the value with its name into out, from its start
-// (THE FORMAT).  Gives the text, or Truncated when the text needs more than
-// the capacity of out.  On Truncated, out holds a prefix of the text.
+// (THE FORMAT).  Gives the text, or Full<char> when the text needs more than
+// the capacity of out.  On Full<char>, out holds a prefix of the text.
 template <std::size_t Capacity, Encodable T>
-[[nodiscard]] Result<TextView, Truncated> format(FixedText<Capacity>& out, T const& value) noexcept {
+[[nodiscard]] Result<TextView, Full<char>> format(FixedText<Capacity>& out, T const& value) noexcept {
     detail::text_resize_(out, 0);
-    if (!detail::put_part_(out, value)) return err(Truncated{});
+    if (!detail::put_part_(out, value)) return err(Full<char>{});
     return out.view();
 }
 

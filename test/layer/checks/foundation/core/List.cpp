@@ -135,17 +135,17 @@ static_assert(copy_and_move_each_element() == 3 + 30 + 4);
 // -0.0 orders before +0.0, and the two lists are not equal.
 [[nodiscard]] consteval bool orders_by_elements() noexcept {
     FixedList<double, 3> prefix;
-    static_cast<void>(prefix.push(1.0).expect("the list has room"));
+    static_cast<void>(prefix.append(1.0).expect("the list has room"));
     FixedList<double, 3> longer;
-    static_cast<void>(longer.push(1.0).expect("the list has room"));
-    static_cast<void>(longer.push(2.0).expect("the list has room"));
+    static_cast<void>(longer.append(1.0).expect("the list has room"));
+    static_cast<void>(longer.append(2.0).expect("the list has room"));
     FixedList<double, 3> smaller_first;
-    static_cast<void>(smaller_first.push(0.5).expect("the list has room"));
-    static_cast<void>(smaller_first.push(9.0).expect("the list has room"));
+    static_cast<void>(smaller_first.append(0.5).expect("the list has room"));
+    static_cast<void>(smaller_first.append(9.0).expect("the list has room"));
     FixedList<double, 3> negative_zero;
-    static_cast<void>(negative_zero.push(-0.0).expect("the list has room"));
+    static_cast<void>(negative_zero.append(-0.0).expect("the list has room"));
     FixedList<double, 3> positive_zero;
-    static_cast<void>(positive_zero.push(0.0).expect("the list has room"));
+    static_cast<void>(positive_zero.append(0.0).expect("the list has room"));
     return prefix < longer && longer > prefix && smaller_first < prefix && negative_zero < positive_zero
         && negative_zero != positive_zero;
 }
