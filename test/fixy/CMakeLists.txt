@@ -598,7 +598,18 @@ fixy_neg_compile_test(neg_rule_f101_replay_reassociate
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) F101:"
   "${_fixy_tier5_member}")
-fixy_neg_compile_test(neg_rule_f101_replay_under_hot_path
+# A fine grade of the payload claims no more than the row.  A Stack grade
+# with Alloc in the row trips A001, and a SpinPause grade with Block in the
+# row trips W004.
+fixy_neg_compile_test(neg_rule_a001_stack_grade_with_alloc_row
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) A001:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_w004_spin_grade_with_block_row
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) W004:"
+  "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_f101_replay_under_another_band
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) F101:"
   "${_fixy_tier5_member}")
@@ -1862,14 +1873,14 @@ fixy_test(test_aliases)
 fixy_test(test_canonical_order)
 
 # A stack must nest its canonical wrappers at strictly increasing
-# positions.  Linear outside HotPath runs the positions downward, and a
-# HotPath inside a HotPath repeats one position.
+# positions.  Linear outside DetSafe runs the positions downward, and a
+# DetSafe inside a DetSafe repeats one position.
 fixy_neg_compile_test(neg_canonical_order_inverted_two_layer
   "no matching function for call to .accept_canonical_stack<"
   "satisfaction of .CanonicallyOrdered<Stack>. .with Stack = fixy::Qtt<foundation::algebra::lattices::QttGrade::One, foundation::algebra::Graded<")
 fixy_neg_compile_test(neg_canonical_order_duplicate_layer
   "no matching function for call to .accept_canonical_stack<"
-  "satisfaction of .CanonicallyOrdered<Stack>. .with Stack = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::HotPathLattice::At<foundation::algebra::lattices::HotPathTier::Hot>, foundation::algebra::Graded<")
+  "satisfaction of .CanonicallyOrdered<Stack>. .with Stack = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::DetSafeLattice::At<foundation::algebra::lattices::DetSafeTier::Pure>, foundation::algebra::Graded<")
 
 # relax moves down the chain only.  Both relax overloads are rejected
 # because the leq gate in their requires clause evaluates to false for

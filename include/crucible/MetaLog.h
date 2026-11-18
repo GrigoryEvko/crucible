@@ -218,13 +218,6 @@ struct CRUCIBLE_OWNER MetaLog {
         return result;
     }
 
-    // The same body, with the tier declared in the return type so a consumer
-    // that demands a hot-tier producer can be checked at compile time.
-    [[nodiscard]] CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>
-    try_append_pinned(::fixy::View<const TensorMeta> metas) CRUCIBLE_NO_THREAD_SAFETY {
-        return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, MetaIndex>>(try_append(metas));
-    }
-
     // Preferred at new call sites: appending touches memory only, so the row
     // of the context of the caller must be empty.  A context that allocates,
     // blocks, performs I/O, or runs at init or test time is rejected here

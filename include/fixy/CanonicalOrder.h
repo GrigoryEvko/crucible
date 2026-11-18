@@ -35,7 +35,6 @@ namespace fixy::canonical_order {
 // first, and it is the one place that states the order: the position of
 // a layer and the count of layers are both read from it.
 namespace layer {
-struct hot_path {};
 struct det_safe {};
 struct numerical_tier {};
 struct vendor {};
@@ -51,10 +50,9 @@ struct linear {};
 struct computation {};
 }  // namespace layer
 
-using canonical_layers =
-    std::tuple<layer::hot_path, layer::det_safe, layer::numerical_tier, layer::vendor, layer::residency_heat,
-               layer::cipher_tier, layer::alloc_class, layer::wait, layer::stale, layer::tagged, layer::refined,
-               layer::secret, layer::linear, layer::computation>;
+using canonical_layers = std::tuple<layer::det_safe, layer::numerical_tier, layer::vendor, layer::residency_heat,
+                                    layer::cipher_tier, layer::alloc_class, layer::wait, layer::stale, layer::tagged,
+                                    layer::refined, layer::secret, layer::linear, layer::computation>;
 
 inline constexpr int kCanonicalLayerCount = static_cast<int>(std::tuple_size_v<canonical_layers>);
 
@@ -87,11 +85,6 @@ inline constexpr int layer_position_v = detail::layer_position<Layer, canonical_
 
 template <typename W>
 struct canonical_layer_index;
-
-template <auto Tier, typename T>
-struct canonical_layer_index<::fixy::HotPath<Tier, T>> {
-    static constexpr int value = layer_position_v<layer::hot_path>;
-};
 
 template <auto Tier, typename T>
 struct canonical_layer_index<::fixy::DetSafe<Tier, T>> {

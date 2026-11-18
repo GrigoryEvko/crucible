@@ -67,11 +67,8 @@ void test_concurrent_spsc_drain() {
         e.schema_hash = crucible::SchemaHash{0x1000ULL + i};
         e.shape_hash = crucible::ShapeHash{0x2000ULL + i};
         // The push side has a fence of its own, which is not what is under
-        // test here, so this goes through the untyped append.  That append
-        // returns a wrapped bool, which peek unwraps for the predicate.
-        while (
-            !ring->try_append_pinned(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})
-                 .peek()) {
+        // test here, so this goes through the untyped append.
+        while (!ring->try_append(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
             CRUCIBLE_SPIN_PAUSE;
         }
     }
@@ -112,9 +109,7 @@ void test_large_batch_drain() {
         crucible::TraceRing::Entry e{};
         e.schema_hash = crucible::SchemaHash{0xABCD0001ULL + i};
         e.shape_hash = crucible::ShapeHash{0xDEAD0001ULL + i};
-        while (
-            !ring->try_append_pinned(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})
-                 .peek()) {
+        while (!ring->try_append(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
             CRUCIBLE_SPIN_PAUSE;
         }
     }
@@ -163,9 +158,8 @@ void test_rearm_cycle() {
             // two cycles together into one signature.
             e.schema_hash = crucible::SchemaHash{0x10000ULL + (cycle << 16) + i};
             e.shape_hash = crucible::ShapeHash{0x20000ULL + i};
-            while (!ring->try_append_pinned(e, crucible::MetaIndex::none(), crucible::ScopeHash{0},
-                                            crucible::CallsiteHash{0})
-                        .peek()) {
+            while (
+                !ring->try_append(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
                 CRUCIBLE_SPIN_PAUSE;
             }
         }

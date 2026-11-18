@@ -12,7 +12,7 @@ using MonoInt = DetSafe<DetSafeTier_v::MonotonicClockRead, int>;
 using NdsInt = DetSafe<DetSafeTier_v::NonDeterministicSyscall, int>;
 
 static_assert(sizeof(PureInt) == sizeof(int));
-static_assert(sizeof(hot_path::Hot<double>) == sizeof(double));
+static_assert(sizeof(cipher_tier::Hot<double>) == sizeof(double));
 static_assert(sizeof(RecipeSpec<int>) >= sizeof(int) + 2);
 
 static_assert(IsBand<PureInt>);
@@ -31,7 +31,7 @@ static_assert(!IsBand<PinnedConf>, "relax and satisfies_v need an outer order th
 static_assert(!IsBand<RecipeSpec<int>>, "the grade of a RecipeSpec is stored, not pinned");
 
 static_assert(IsBandOf<DetSafeLattice, PureInt>);
-static_assert(!IsBandOf<HotPathLattice, PureInt>);
+static_assert(!IsBandOf<CipherTierLattice, PureInt>);
 static_assert(is_band_of_v<LifetimeLattice, opaque_lifetime::PerRequest<int>>);
 
 static_assert(std::is_same_v<band_value_t<PureInt>, int>);
@@ -221,8 +221,6 @@ static_assert(every_tier_has_an_alias<^^::fixy::det_safe, std::meta::dealias(^^D
               "fixy/Bands.h: a DetSafeTier enumerator has no alias in fixy::det_safe.");
 static_assert(every_tier_has_an_alias<^^::fixy::alloc_class, std::meta::dealias(^^AllocClassTag_v)>(),
               "fixy/Bands.h: an AllocClassTag enumerator has no alias in fixy::alloc_class.");
-static_assert(every_tier_has_an_alias<^^::fixy::hot_path, std::meta::dealias(^^HotPathTier_v)>(),
-              "fixy/Bands.h: a HotPathTier enumerator has no alias in fixy::hot_path.");
 static_assert(every_tier_has_an_alias<^^::fixy::cipher_tier, std::meta::dealias(^^CipherTierTag_v)>(),
               "fixy/Bands.h: a CipherTierTag enumerator has no alias in fixy::cipher_tier.");
 static_assert(every_tier_has_an_alias<^^::fixy::wait, std::meta::dealias(^^WaitStrategy_v)>(),
@@ -248,6 +246,17 @@ static_assert(every_tier_has_an_alias<^^::fixy::residency_heat, std::meta::deali
 static_assert(!every_tier_has_an_alias<^^::fixy::det_safe, std::meta::dealias(^^HotPathTier_v)>(),
               "fixy/Bands.h: the alias walk must answer no for an enum whose tiers the namespace does not name, "
               "or the assertions above prove nothing.");
+
+// The tier of the hot path is a view of the row.  Nondet and the atom of a
+// context leave a row hot, Alloc makes it warm, and IO, Block or Div make
+// it cold.
+namespace fe_ = ::foundation::effects;
+static_assert(hot_path_tier_v<fe_::Row<>> == HotPathTier_v::Hot);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Nondet, fe_::Effect::Bg>> == HotPathTier_v::Hot);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Bg, fe_::Effect::Alloc>> == HotPathTier_v::Warm);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Alloc, fe_::Effect::IO>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Block>> == HotPathTier_v::Cold);
+static_assert(hot_path_tier_v<fe_::Row<fe_::Effect::Div>> == HotPathTier_v::Cold);
 
 }  // namespace detail::bands_self_test
 

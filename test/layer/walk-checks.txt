@@ -56,7 +56,7 @@ crucible/topology/Ptp.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/topology/Telemetry.cpp | 0.6 | ::fixy::tags::admitted_retags
 crucible/warden/Quarantine.cpp | 0.5 | ::foundation::permissions::permission_rows
 fixy/Atom.cpp | 2.2 | unknown
-fixy/Bands.cpp | 1.6 | ::fixy::alloc_class, ::fixy::cipher_tier, ::fixy::det_safe, ::fixy::hot_path, ::fixy::numerical_tier, ::fixy::opaque_lifetime, ::fixy::residency_heat, ::fixy::scoped_fence, ::fixy::vendor, ::fixy::wait
+fixy/Bands.cpp | 1.6 | ::fixy::alloc_class, ::fixy::cipher_tier, ::fixy::det_safe, ::fixy::numerical_tier, ::fixy::opaque_lifetime, ::fixy::residency_heat, ::fixy::scoped_fence, ::fixy::vendor, ::fixy::wait
 fixy/CanonicalOrder.cpp | 0.2 | ::fixy::tags::admitted_retags
 fixy/Collision.cpp | 13.1 | unknown
 fixy/Corpus.cpp | 1.8 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown

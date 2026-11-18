@@ -363,9 +363,9 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_replay_de
     using accepts =
         witnesses<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>,
                   ::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>,
-                  ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>>;
+                  ::fixy::Vendor<::fixy::VendorBackend_v::NV, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>>;
     using refuses = witnesses<int, void, ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>,
-                              ::fixy::HotPath<::fixy::HotPathTier_v::Hot, int>>;
+                              ::fixy::Vendor<::fixy::VendorBackend_v::NV, int>>;
 };
 
 // The shared bottom and the shared top of the scope lattice pin no trunk.

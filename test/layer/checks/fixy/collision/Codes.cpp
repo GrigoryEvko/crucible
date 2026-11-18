@@ -25,13 +25,14 @@ namespace collision {
 // would discard a theorem that has its own remedy, and the codes are
 // stable API precisely so that cannot happen quietly.
 //
-// R004 and W003 are the other two.  R004 refuses a continuation that
-// captures a live session handle in a frame that is not linear, and W003
-// refuses a hot binding that holds one and states no wait.
-static_assert(rule_corpus_size == 57,
+// R004 and W003 are two more.  R004 refuses a continuation that captures a
+// live session handle in a frame that is not linear, and W003 refuses a
+// hot binding that holds one and states no wait.  A001 and W004 hold a
+// fine grade of the payload to the row.
+static_assert(rule_corpus_size == 59,
               "fixy/collision/Codes.h: the rule corpus must account for the 54 codes of the specification, plus "
-              "B002, R004 and W003, which this file adds.  A code dropped from this list stops being reported "
-              "as absent.");
+              "B002, R004, W003, A001 and W004, which this file adds.  A code dropped from this list stops being "
+              "reported as absent.");
 
 namespace detail {
 

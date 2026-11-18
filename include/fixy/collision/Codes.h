@@ -95,6 +95,10 @@ enum class RuleCode : std::uint8_t {
     // A code that this file adds.  It reads the same live handle as
     // R004, against the regime and a stated wait strategy.
     W003,
+    // Two codes that hold a fine grade of the payload to the row: an
+    // AllocClass band against Alloc, and a Wait band against Block.
+    A001,
+    W004,
 };
 
 // ---------------------------------------------------------------------
@@ -256,6 +260,8 @@ inline constexpr corpus_entry rule_corpus[] = {
     // session handle, against a suspension.
     {"R004", Disposition::Live, "a suspension x a live session handle x a frame that is not linear"},
     {"W003", Disposition::Live, "hot x a live session handle x no stated wait"},
+    {"A001", Disposition::Live, "a no-allocation grade of AllocClass x Alloc in the row"},
+    {"W004", Disposition::Live, "a user-space wait grade of Wait x Block in the row"},
 
     // Nothing waits on an atom.  pending_rules above is empty and says why
     // in two parts, and the rest of this list is the second part.

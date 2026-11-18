@@ -371,17 +371,6 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         head.advance_sole_writer_from(h, h + 1);
     }
 
-    // Same body, with the tier declared in the return type so a consumer that
-    // demands a hot-tier producer can be checked at compile time. A change to
-    // try_append that made it unfit for the hot path would have to weaken the
-    // tier here, and every fenced consumer would then reject the call.
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE ::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>
-    try_append_pinned(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
-                      CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Hot, bool>>(
-            try_append(e, meta_start, scope_hash, callsite_hash, depth));
-    }
-
     // Preferred at new call sites: appending touches memory only, so the row
     // of the context of the caller must be empty.  A context that allocates,
     // blocks, performs I/O, or runs at init or test time is rejected here
@@ -492,16 +481,6 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         CRUCIBLE_POST(count, count <= out.size());
         // The count came from a 32-bit difference, so it fits the result.
         return static_cast<uint32_t>(count);
-    }
-
-    // Warm rather than hot: the caller may allocate and copies large buffers,
-    // so a consumer fenced to the hot tier rejects a value from here.
-    [[nodiscard, gnu::hot]] ::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>
-    drain_pinned(::fixy::View<Entry> out, ::fixy::View<MetaIndex> out_meta_starts = {},
-                 ::fixy::View<ScopeHash> out_scope_hashes = {}, ::fixy::View<CallsiteHash> out_callsite_hashes = {},
-                 ::fixy::View<OpDepth> out_depths = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return ::fixy::mint_band<::fixy::HotPath<::fixy::HotPathTier_v::Warm, uint32_t>>(
-            drain(out, out_meta_starts, out_scope_hashes, out_callsite_hashes, out_depths));
     }
 
     // The consumer counterpart of try_append_pure. A drain touches memory

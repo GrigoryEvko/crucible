@@ -98,8 +98,7 @@ static void push(crucible::TraceRing& ring, uint64_t family, uint32_t op) {
     crucible::TraceRing::Entry e{};
     e.schema_hash = crucible::SchemaHash{family | op};
     e.shape_hash = crucible::ShapeHash{0x5000ULL + op};
-    while (!ring.try_append_pinned(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})
-                .peek()) {
+    while (!ring.try_append(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
         CRUCIBLE_SPIN_PAUSE;
     }
 }

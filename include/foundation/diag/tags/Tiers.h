@@ -12,16 +12,18 @@ namespace foundation::diag {
 
 struct HotPathViolation : tag_base {
     static constexpr tag_text_literal name = "HotPathViolation";
-    static constexpr tag_text_literal description = "A function declared as HotPath<Hot, T> (the foreground recording "
-                                                    "path: zero allocation, zero syscall, zero block) invoked a "
-                                                    "callee whose HotPath grade is Warm (alloc OK, no syscall) or "
-                                                    "Cold (block + IO OK).  The hot path's per-op latency budget is "
+    static constexpr tag_text_literal description = "A function whose effect row gives the tier Hot (the foreground "
+                                                    "recording path: no Alloc, IO, Block or Div in the row) invoked "
+                                                    "a callee whose row gives Warm (Alloc) or Cold (IO, Block or "
+                                                    "Div).  The tier is hot_path_tier_v of fixy/Bands.h, a view of "
+                                                    "the row.  The hot path's per-op latency budget is "
                                                     "shape-dependent; admitting Warm/Cold callees breaks the budget "
                                                     "structurally.  Crucible discipline per CLAUDE.md §IX.";
     static constexpr tag_text_literal remediation = "Either move the offending operation off the hot path (drain "
                                                     "to bg thread via SPSC ring; defer to a Warm-tier helper), OR "
-                                                    "if the operation IS hot-path-safe, give its declaration a "
-                                                    "HotPath<Hot, T> wrapper to admit it under the gate.  The "
+                                                    "if the operation IS hot-path-safe, give it a row with no "
+                                                    "Alloc, IO, Block or Div, so the empty row of the foreground "
+                                                    "admits it.  The "
                                                     "common refactor: a printf for debugging is Cold; replace with "
                                                     "atomic counter increment (Hot) and drain to a bg formatter.";
 
@@ -31,13 +33,13 @@ struct HotPathViolation : tag_base {
                                                          "(CLAUDE.md §IX latency hierarchy).  Admitting a Warm callee "
                                                          "(allocation, ~50-200 ns) or Cold callee (block / IO, "
                                                          "~10-100 us) on a 5 ns recording path is a 10x to 10000x "
-                                                         "slowdown.  HotPath<Hot, T> is the type system's promise that "
+                                                         "slowdown.  The empty row is the type system's promise that "
                                                          "the recorded code path stays within the latency floor; the "
                                                          "rejection here proves a regression would have shipped.";
     static constexpr tag_text_literal symptom_pattern = "Almost always surfaces after adding logging, asserting, or "
                                                         "instrumentation to a previously-clean hot-path TU.  The new "
                                                         "fprintf / std::cout / std::format call is Cold-tier; the "
-                                                        "containing function's HotPath<Hot> declaration rejects the "
+                                                        "containing function's empty row rejects the "
                                                         "transitive call at compile time, before the regression can "
                                                         "ship.  Less commonly: an inline-friendly helper that grew a "
                                                         "vector<T>::push_back over time.";

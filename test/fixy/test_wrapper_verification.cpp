@@ -143,10 +143,10 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(alloc_class::Arena, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(alloc_class::Arena, int*);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(alloc_class::Arena, TwoWords);
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(hot_path::Hot, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(hot_path::Hot, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(hot_path::Hot, int*);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(hot_path::Hot, TwoWords);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(vendor::Nv, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(vendor::Nv, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(vendor::Nv, int*);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(vendor::Nv, TwoWords);
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(cipher_tier::Warm, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(cipher_tier::Warm, double);
@@ -202,8 +202,7 @@ static_assert(sizeof(RecipeSpec<int>) >= sizeof(int) + 2);
 static_assert(!std::is_same_v<Stale<Tagged<int, FromUser>>, Tagged<Stale<int>, FromUser>>);
 static_assert(!std::is_same_v<Refined<positive_local, Linear<int>>, Linear<Refined<positive_local, int>>>);
 static_assert(!std::is_same_v<Secret<Tagged<int, FromUser>>, Tagged<Secret<int>, FromUser>>);
-static_assert(
-    !std::is_same_v<hot_path::Hot<numerical_tier::Bitexact<int>>, numerical_tier::Bitexact<hot_path::Hot<int>>>);
+static_assert(!std::is_same_v<vendor::Nv<numerical_tier::Bitexact<int>>, numerical_tier::Bitexact<vendor::Nv<int>>>);
 static_assert(!std::is_same_v<cipher_tier::Hot<det_safe::Pure<int>>, det_safe::Pure<cipher_tier::Hot<int>>>);
 
 // ── The diagnostic surface ──────────────────────────────────────────
@@ -260,7 +259,6 @@ static_assert(fa::GradedWrapper<Stale<int>>);
 static_assert(!fa::GradedWrapper<det_safe::Pure<int>>);
 static_assert(fa::IsGraded<det_safe::Pure<int>> && IsBand<det_safe::Pure<int>>);
 static_assert(fa::IsGraded<alloc_class::Arena<int>> && IsBand<alloc_class::Arena<int>>);
-static_assert(fa::IsGraded<hot_path::Hot<int>> && IsBand<hot_path::Hot<int>>);
 static_assert(fa::IsGraded<cipher_tier::Warm<int>> && IsBand<cipher_tier::Warm<int>>);
 static_assert(fa::IsGraded<wait::SpinPause<int>> && IsBand<wait::SpinPause<int>>);
 static_assert(fa::IsGraded<numerical_tier::Bitexact<int>> && IsBand<numerical_tier::Bitexact<int>>);
@@ -268,7 +266,7 @@ static_assert(fa::IsGraded<opaque_lifetime::PerFleet<int>> && IsBand<opaque_life
 static_assert(fa::IsGraded<vendor::Nv<int>> && IsBand<vendor::Nv<int>>);
 static_assert(fa::IsGraded<residency_heat::Warm<int>> && IsBand<residency_heat::Warm<int>>);
 static_assert(fa::IsGraded<RecipeSpec<int>> && IsRecipeSpec<RecipeSpec<int>> && !IsBand<RecipeSpec<int>>);
-static_assert(IsBandOf<DetSafeLattice, det_safe::Pure<int>> && !IsBandOf<HotPathLattice, det_safe::Pure<int>>);
+static_assert(IsBandOf<DetSafeLattice, det_safe::Pure<int>> && !IsBandOf<VendorLattice, det_safe::Pure<int>>);
 
 // The variable form tracks the concept, so two spot checks are enough.
 static_assert(fa::is_graded_wrapper_v<Linear<int>>);
@@ -327,9 +325,6 @@ static_assert(AppendOnly<int>::lattice_name() == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name() == "StalenessSemiring");
 static_assert(det_safe::Pure<int>::lattice_name() == det_safe::Pure<double>::lattice_name());
 static_assert(det_safe::Pure<int>::lattice_name() != det_safe::PhiloxRng<int>::lattice_name());
-static_assert(hot_path::Hot<int>::lattice_name() != cipher_tier::Hot<int>::lattice_name(),
-              "Two tier axes that spell the same tier must keep distinct lattice names, or a diagnostic "
-              "cannot tell an execution budget from a storage tier.");
 static_assert(residency_heat::Hot<int>::lattice_name() != cipher_tier::Hot<int>::lattice_name(),
               "Residency heat and cipher tier spell the same three tiers, and a diagnostic must still tell "
               "a cache level from a storage tier.");
@@ -381,17 +376,17 @@ static_assert(sizeof(PureOverLinear) == sizeof(int));
 static_assert(!std::is_copy_constructible_v<PureOverLinear>);
 static_assert(std::is_move_constructible_v<PureOverLinear>);
 
-using HotOverStale = hot_path::Hot<Stale<int>>;
-static_assert(sizeof(HotOverStale) == sizeof(Stale<int>),
-              "HotPath<Stale<T>> must collapse the HotPath grade only: Stale carries a runtime grade "
+using VendorOverStale = vendor::Nv<Stale<int>>;
+static_assert(sizeof(VendorOverStale) == sizeof(Stale<int>),
+              "Vendor<Stale<T>> must collapse the Vendor grade only: Stale carries a runtime grade "
               "beside T.");
-static_assert(IsBand<HotOverStale>);
+static_assert(IsBand<VendorOverStale>);
 
-using StaleOverHot = Stale<hot_path::Hot<int>>;
-static_assert(sizeof(StaleOverHot) == sizeof(Stale<int>),
-              "Stale<HotPath<T>> must equal sizeof(Stale<T>): the band is byte-equivalent to T at the "
+using StaleOverVendor = Stale<vendor::Nv<int>>;
+static_assert(sizeof(StaleOverVendor) == sizeof(Stale<int>),
+              "Stale<Vendor<T>> must equal sizeof(Stale<T>): the band is byte-equivalent to T at the "
               "inner layer, so Stale's storage shape is unchanged.");
-static_assert(fa::GradedWrapper<StaleOverHot>);
+static_assert(fa::GradedWrapper<StaleOverVendor>);
 
 using TaggedRecipeSpec = Tagged<RecipeSpec<int>, FromUser>;
 static_assert(sizeof(TaggedRecipeSpec) == sizeof(RecipeSpec<int>));
@@ -404,33 +399,33 @@ static_assert(IsBand<WaitOverRecipeSpec>);
 // does not imply collapse at any depth, so the stack adds one band at a
 // time until every band is in it.  Both orders of a pair are pinned
 // where the pair is what a consumer writes.
-using TwoBands = hot_path::Hot<det_safe::Pure<int>>;
+using TwoBands = vendor::Nv<det_safe::Pure<int>>;
 static_assert(sizeof(TwoBands) == sizeof(int));
-static_assert(IsBandOf<HotPathLattice, TwoBands>);
+static_assert(IsBandOf<VendorLattice, TwoBands>);
 
-using TwoBandsReversed = det_safe::Pure<hot_path::Hot<int>>;
+using TwoBandsReversed = det_safe::Pure<vendor::Nv<int>>;
 static_assert(sizeof(TwoBandsReversed) == sizeof(int));
 static_assert(IsBandOf<DetSafeLattice, TwoBandsReversed>);
 
-using ThreeBands = hot_path::Hot<det_safe::Pure<numerical_tier::Bitexact<int>>>;
+using ThreeBands = vendor::Nv<det_safe::Pure<numerical_tier::Bitexact<int>>>;
 static_assert(sizeof(ThreeBands) == sizeof(int));
 static_assert(IsBand<ThreeBands>);
 
-using ThreeHotsAtTop = hot_path::Hot<cipher_tier::Hot<alloc_class::Arena<int>>>;
+using ThreeHotsAtTop = residency_heat::Hot<cipher_tier::Hot<alloc_class::Arena<int>>>;
 static_assert(sizeof(ThreeHotsAtTop) == sizeof(int), "Three tier axes that spell structurally identical "
                                                      "lattices must compose orthogonally.  If this fires, "
                                                      "cross-lattice identity collapsed.");
 static_assert(IsBand<ThreeHotsAtTop>);
 
-using SevenBands = hot_path::Hot<wait::SpinPause<
+using SevenBands = vendor::Nv<wait::SpinPause<
     alloc_class::Arena<cipher_tier::Hot<opaque_lifetime::PerFleet<det_safe::Pure<numerical_tier::Bitexact<int>>>>>>>;
 static_assert(sizeof(SevenBands) == sizeof(int), "Every band stacked over one int must still cost one int: "
                                                  "seven regime-1 wrappers over seven distinct lattices.  If "
                                                  "this fires, one band stopped collapsing.");
 static_assert(alignof(SevenBands) == alignof(int));
-static_assert(IsBandOf<HotPathLattice, SevenBands>);
+static_assert(IsBandOf<VendorLattice, SevenBands>);
 
-using SevenBandsOverStale = hot_path::Hot<wait::SpinPause<alloc_class::Arena<
+using SevenBandsOverStale = vendor::Nv<wait::SpinPause<alloc_class::Arena<
     cipher_tier::Hot<opaque_lifetime::PerFleet<det_safe::Pure<numerical_tier::Bitexact<Stale<int>>>>>>>>;
 static_assert(sizeof(SevenBandsOverStale) == sizeof(Stale<int>),
               "Seven bands over a Stale must collapse to the Stale: the one runtime grade at the root is "

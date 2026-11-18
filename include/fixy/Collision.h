@@ -364,9 +364,10 @@ struct row_admits_observable_
 // that primary.
 //
 // A band of another lattice grades the payload and does not change it, so
-// the claim is read through it.  The canonical order puts HotPath outside
-// DetSafe, and HotPath<Hot, DetSafe<Pure, T>> claims replay as fully as
-// DetSafe<Pure, T> does.  The outermost DetSafe band decides.
+// the claim is read through it.  The canonical order puts DetSafe outside
+// each other band, and a stack in another order, such as
+// Vendor<V, DetSafe<Pure, T>>, claims replay as fully as DetSafe<Pure, T>
+// does.  The outermost DetSafe band decides.
 template <class Payload>
 struct is_replay_deterministic_ : std::false_type {};
 template <class Payload>
@@ -378,6 +379,33 @@ template <class Payload>
     requires ::fixy::IsBand<Payload>
           && (!::fixy::is_band_of_v<::foundation::algebra::lattices::DetSafeLattice, Payload>)
 struct is_replay_deterministic_<Payload> : is_replay_deterministic_<::fixy::band_value_t<Payload>> {};
+
+// The fine grades of the payload against the row.  The row is the one
+// source of the coarse fact, and a band of AllocClass or Wait refines it.
+// A Pool or a Stack grade claims that no allocator ran.  A UmwaitC01,
+// BoundedSpin or SpinPause grade claims that the wait stayed out of the
+// kernel.  Each claim is read through the bands of other lattices, as the
+// replay claim is, and the outermost band of the lattice decides.
+template <class Payload>
+inline constexpr bool claims_no_allocation_v_ = false;
+template <class Payload>
+    requires ::fixy::is_band_of_v<::foundation::algebra::lattices::AllocClassLattice, Payload>
+inline constexpr bool claims_no_allocation_v_<Payload> = ::foundation::algebra::lattices::AllocClassLattice::leq(
+    ::foundation::algebra::lattices::AllocClassTag::Pool, ::fixy::band_tier_v<Payload>);
+template <class Payload>
+    requires ::fixy::IsBand<Payload>
+              && (!::fixy::is_band_of_v<::foundation::algebra::lattices::AllocClassLattice, Payload>)
+inline constexpr bool claims_no_allocation_v_<Payload> = claims_no_allocation_v_<::fixy::band_value_t<Payload>>;
+
+template <class Payload>
+inline constexpr bool claims_user_space_wait_v_ = false;
+template <class Payload>
+    requires ::fixy::is_band_of_v<::foundation::algebra::lattices::WaitLattice, Payload>
+inline constexpr bool claims_user_space_wait_v_<Payload> = ::foundation::algebra::lattices::WaitLattice::leq(
+    ::foundation::algebra::lattices::WaitStrategy::UmwaitC01, ::fixy::band_tier_v<Payload>);
+template <class Payload>
+    requires ::fixy::IsBand<Payload> && (!::fixy::is_band_of_v<::foundation::algebra::lattices::WaitLattice, Payload>)
+inline constexpr bool claims_user_space_wait_v_<Payload> = claims_user_space_wait_v_<::fixy::band_value_t<Payload>>;
 
 // The Observability row, extracted from its grade.
 //
@@ -1050,7 +1078,7 @@ struct rules_of {
     // of the allocator.
     static constexpr bool H003_ok = !(hot && row_alloc_or_io);
 
-    // H010 is not covered by H001 or H003: a HotPath x Bg binding with
+    // H010 is not covered by H001 or H003: a hot regime x Bg binding with
     // cost::Constant and no Alloc or IO row passes both of those and is
     // still a context contradiction, because the two name different
     // threads.
@@ -1091,6 +1119,15 @@ struct rules_of {
     // spinning it, so a background body may use it.  That grade is the
     // whole reason the atom header carries two predicates instead of one.
     static constexpr bool W002_ok = !(row_bg && core_burning_spin);
+
+    // A001 and W004 hold the fine grades of the payload to the row.  The
+    // row is the one source of the coarse fact, so a band that claims more
+    // than the row is false: a Pool or Stack grade with Alloc in the row,
+    // or a user-space wait grade with Block in the row.
+    static constexpr bool allocates =
+        ::foundation::effects::row_contains(^^binding_row, ::foundation::effects::Effect::Alloc);
+    static constexpr bool A001_ok = !(detail::claims_no_allocation_v_<Payload> && allocates);
+    static constexpr bool W004_ok = !(detail::claims_user_space_wait_v_<Payload> && blocks);
 
     // ── The observability family, live since fixy/atoms/Observe.h ─────
     //
@@ -1605,6 +1642,15 @@ struct rules_of {
                          "futex at 1-5 us against a budget of 10-40 ns. State the wait strategy with a "
                          "fixy::atom::sync atom, a spin such as sync::spin_pause, or close the session before the "
                          "hot path."},
+            rule_verdict{A001_ok, "A001",
+                         "A001: a no-allocation grade x Alloc in the row. A Pool or Stack grade of AllocClass "
+                         "claims that no allocator ran, and the row of the binding allocates. The row is the one "
+                         "source of the fact. Give the band the grade of the allocator, or remove the allocation."},
+            rule_verdict{W004_ok, "W004",
+                         "W004: a user-space wait grade x Block in the row. A UmwaitC01, BoundedSpin or SpinPause "
+                         "grade of Wait claims that the wait stays out of the kernel, and the row of the binding "
+                         "blocks. The row is the one source of the fact. Give the band a kernel wait grade, or "
+                         "remove the kernel wait."},
         };
     }
 

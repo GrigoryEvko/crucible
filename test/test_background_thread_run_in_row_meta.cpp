@@ -272,7 +272,7 @@ void test_pipeline_releases_after_overflow() {
         entry.schema_hash = crucible::SchemaHash{0x9000ULL + op};
         entry.shape_hash = crucible::ShapeHash{0xA000ULL + op};
         entry.num_outputs = num_outputs;
-        while (!ring->try_append_pinned(entry, index, crucible::ScopeHash{0}, crucible::CallsiteHash{0}).peek()) {
+        while (!ring->try_append(entry, index, crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
             CRUCIBLE_SPIN_PAUSE;
         }
     };

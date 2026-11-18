@@ -850,7 +850,7 @@ static_assert(col::pending_axis_count == axes_without_an_atom(),
 static_assert(!col::axis_has_an_atom<Axis::Type>, "an atom names Axis::Type, and fixy::fn ignores such an atom");
 
 // ---------------------------------------------------------------------
-// The corpus accounts for all 57 codes.
+// The corpus accounts for all 59 codes.
 //
 // The count below is the one number worth stating here, and it is stated
 // against the catalog rather than against the roster.  A pin of
@@ -862,10 +862,11 @@ static_assert(!col::axis_has_an_atom<Axis::Type>, "an atom names Axis::Type, and
 // trap, and B002 is the containment of the observability row in the
 // effect row.  B001 keeps its theorem, because the codes are stable API.
 // R004 covers a continuation that holds a live session handle, and W003
-// covers a hot binding that holds one and states no wait.
+// covers a hot binding that holds one and states no wait.  A001 and W004
+// hold a fine grade of the payload to the row.
 
-static_assert(col::rule_corpus_size == 57);
-static_assert(col::live_rule_count == 43);
+static_assert(col::rule_corpus_size == 59);
+static_assert(col::live_rule_count == 45);
 
 [[nodiscard]] consteval std::size_t corpus_entries_with(col::Disposition wanted) noexcept {
     std::size_t found = 0;
@@ -874,7 +875,7 @@ static_assert(col::live_rule_count == 43);
     }
     return found;
 }
-static_assert(corpus_entries_with(col::Disposition::Live) == 43);
+static_assert(corpus_entries_with(col::Disposition::Live) == 45);
 static_assert(corpus_entries_with(col::Disposition::Pending) == 0);
 static_assert(corpus_entries_with(col::Disposition::Absent) == 6);
 static_assert(corpus_entries_with(col::Disposition::Retired) == 8);
@@ -1015,27 +1016,44 @@ static_assert(::foundation::diag::row_hash_contribution_v<::fixy::fn<int, at::co
 // ---------------------------------------------------------------------
 // The replay claim is read through bands of other lattices.
 //
-// The canonical order puts HotPath outside DetSafe.  A payload whose
-// DetSafe band sits under another band still claims replay, so each replay
-// rule refuses its pair for it.  The outermost DetSafe band decides.
+// A payload whose DetSafe band sits under another band still claims
+// replay, so each replay rule refuses its pair for it.  The outermost
+// DetSafe band decides.
 
-using PureUnderHotPath = ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
+using PureUnderVendor = ::fixy::Vendor<::fixy::VendorBackend_v::NV, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
 using PureUnderArena = ::fixy::alloc_class::Arena<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
-using ClockUnderHotPath =
-    ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>>;
+using ClockUnderVendor =
+    ::fixy::Vendor<::fixy::VendorBackend_v::NV, ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, int>>;
 using ClockOverPure =
     ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
 
-static_assert(col::detail::is_replay_deterministic_<PureUnderHotPath>::value);
+static_assert(col::detail::is_replay_deterministic_<PureUnderVendor>::value);
 static_assert(col::detail::is_replay_deterministic_<PureUnderArena>::value);
-static_assert(!col::detail::is_replay_deterministic_<ClockUnderHotPath>::value);
+static_assert(!col::detail::is_replay_deterministic_<ClockUnderVendor>::value);
 static_assert(!col::detail::is_replay_deterministic_<ClockOverPure>::value,
               "the outermost DetSafe band is the claim, and a weaker outer band takes the claim back");
-static_assert(!col::detail::is_replay_deterministic_<::fixy::HotPath<::fixy::HotPathTier_v::Hot, int>>::value);
+static_assert(!col::detail::is_replay_deterministic_<::fixy::Vendor<::fixy::VendorBackend_v::NV, int>>::value);
 
-static_assert(!rules_of<PureUnderHotPath, at::fp::mode<at::fp::FpReassociate::UnrestrictedRewrite>>::F101_ok);
+static_assert(!rules_of<PureUnderVendor, at::fp::mode<at::fp::FpReassociate::UnrestrictedRewrite>>::F101_ok);
 static_assert(!rules_of<PureUnderArena, at::simd::avx2>::V101_ok);
-static_assert(rules_of<ClockUnderHotPath, at::simd::avx2>::V101_ok);
+static_assert(rules_of<ClockUnderVendor, at::simd::avx2>::V101_ok);
+
+// A fine grade claims no more than the row.  A001 refuses a Pool or Stack
+// grade with Alloc in the row, and admits an Arena grade there.  W004
+// refuses a user-space wait grade with Block in the row, and admits a
+// kernel wait grade there.  Each reads the band through other bands.
+static_assert(!rules_of<::fixy::alloc_class::Stack<int>, at::with<Eff::Alloc>>::A001_ok);
+static_assert(!rules_of<::fixy::alloc_class::Pool<int>, at::with<Eff::Alloc>>::A001_ok);
+static_assert(rules_of<::fixy::alloc_class::Arena<int>, at::with<Eff::Alloc>>::A001_ok);
+static_assert(rules_of<::fixy::alloc_class::Stack<int>>::A001_ok, "a Stack grade with no Alloc in the row is true");
+static_assert(!rules_of<::fixy::Vendor<::fixy::VendorBackend_v::NV, ::fixy::alloc_class::Stack<int>>,
+                        at::with<Eff::Alloc>>::A001_ok);
+static_assert(!rules_of<::fixy::wait::SpinPause<int>, at::with<Eff::Block>>::W004_ok);
+static_assert(!rules_of<::fixy::wait::UmwaitC01<int>, at::with<Eff::Block>>::W004_ok);
+static_assert(rules_of<::fixy::wait::AcquireWait<int>, at::with<Eff::Block>>::W004_ok);
+static_assert(rules_of<::fixy::wait::SpinPause<int>>::W004_ok, "a spin grade with no Block in the row is true");
+static_assert(live_rules<at::with<Eff::Alloc>>::A001_ok && live_rules<at::with<Eff::Block>>::W004_ok,
+              "the pack-only view claims no band");
 
 // ---------------------------------------------------------------------
 // The grade readers under attack.
@@ -1115,7 +1133,7 @@ static_assert(!live_rules<at::dispatch::indirect_call<signature_is_itself>>::D00
 [[nodiscard]] static int check_runtime_paths() {
     if (col::pending_axis_count != axes_without_an_atom()) return 1;
     if (col::pending_rule_count != 0) return 2;
-    if (col::live_rule_count != 43) return 3;
+    if (col::live_rule_count != 45) return 3;
 
     std::size_t seen = 0;
     for (const col::pending_rule& rule : col::pending_rules) {
@@ -1148,9 +1166,9 @@ static_assert(!live_rules<at::dispatch::indirect_call<signature_is_itself>>::D00
                 return 8;
         }
     }
-    if (live != 43 || pending != 0 || absent != 6 || retired != 8) return 9;
+    if (live != 45 || pending != 0 || absent != 6 || retired != 8) return 9;
     if (live + pending + absent + retired != col::rule_corpus_size) return 10;
-    if (col::rule_corpus_size != 57) return 11;
+    if (col::rule_corpus_size != 59) return 11;
 
     // The binding the rules admit still carries its value.
     const auto bound = ::fixy::mint_fn<int, at::borrow>(11);

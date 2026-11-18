@@ -71,7 +71,7 @@ namespace fd = ::foundation::diag;
 using fd::row_hash_contribution_v;
 
 // One wrapper per shape the tree uses. Tagged, Secret, Qtt, Stale and
-// Monotonic are classes over graded_facade. DetSafe and HotPath are
+// Monotonic are classes over graded_facade. DetSafe and CipherTier are
 // aliases for Graded. Both halves must land somewhere other than zero.
 
 using TaggedVerified = ::fixy::Tagged<int, ::fixy::tags::trust::Verified>;
@@ -81,7 +81,7 @@ using LinearInt = ::fixy::Linear<int>;
 using AffineInt = ::fixy::Affine<int>;
 using StaleInt = ::fixy::Stale<int>;
 using PureInt = ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>;
-using HotInt = ::fixy::HotPath<::fixy::HotPathTier_v::Hot, int>;
+using HotInt = ::fixy::cipher_tier::Hot<int>;
 
 // Nothing falls through.
 static_assert(row_hash_contribution_v<TaggedVerified> != 0, "Tagged falls through the fold and shares a slot with "

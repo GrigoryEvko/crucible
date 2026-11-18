@@ -97,7 +97,6 @@ template <typename L, template <auto, class> class Band>
 
 static_assert(every_tier_is_a_band<fixy::DetSafeLattice, fixy::DetSafe>());
 static_assert(every_tier_is_a_band<fixy::AllocClassLattice, fixy::AllocClass>());
-static_assert(every_tier_is_a_band<fixy::HotPathLattice, fixy::HotPath>());
 static_assert(every_tier_is_a_band<fixy::CipherTierLattice, fixy::CipherTier>());
 static_assert(every_tier_is_a_band<fixy::WaitLattice, fixy::Wait>());
 static_assert(every_tier_is_a_band<fixy::ToleranceLattice, fixy::NumericalTier>());
@@ -125,7 +124,6 @@ static_assert(std::is_same_v<fixy::vendor::Trn<int>, fixy::Vendor<fixy::VendorBa
 static_assert(std::is_same_v<fixy::vendor::Cer<int>, fixy::Vendor<fixy::VendorBackend_v::CER, int>>);
 static_assert(std::is_same_v<fixy::vendor::Portable<int>, fixy::Vendor<fixy::VendorBackend_v::Portable, int>>);
 static_assert(std::is_same_v<fixy::alloc_class::Arena<void*>, fixy::AllocClass<fixy::AllocClassTag_v::Arena, void*>>);
-static_assert(std::is_same_v<fixy::hot_path::Hot<bool>, fixy::HotPath<fixy::HotPathTier_v::Hot, bool>>);
 static_assert(std::is_same_v<fixy::cipher_tier::Warm<int>, fixy::CipherTier<fixy::CipherTierTag_v::Warm, int>>);
 static_assert(std::is_same_v<fixy::wait::Block<int>, fixy::Wait<fixy::WaitStrategy_v::Block, int>>);
 static_assert(std::is_same_v<fixy::numerical_tier::Bitexact<int>, fixy::NumericalTier<fixy::Tolerance::BITEXACT, int>>);
@@ -138,13 +136,12 @@ static_assert(
 // Two bands over one payload at different tiers, or over different
 // lattices at the same ordinal, are different types.
 static_assert(!std::is_same_v<fixy::det_safe::Pure<int>, fixy::det_safe::PhiloxRng<int>>);
-static_assert(!std::is_same_v<fixy::hot_path::Hot<int>, fixy::cipher_tier::Hot<int>>);
 static_assert(!std::is_same_v<fixy::residency_heat::Hot<int>, fixy::cipher_tier::Hot<int>>);
 static_assert(!std::is_same_v<fixy::vendor::Nv<int>, fixy::vendor::Amd<int>>);
 
 // One query answers the band question for every band.
 static_assert(fixy::is_band_of_v<fixy::DetSafeLattice, fixy::det_safe::Pure<int>>);
-static_assert(!fixy::is_band_of_v<fixy::DetSafeLattice, fixy::hot_path::Hot<int>>);
+static_assert(!fixy::is_band_of_v<fixy::DetSafeLattice, fixy::cipher_tier::Hot<int>>);
 static_assert(!fixy::is_band_v<int>);
 static_assert(!fixy::is_band_v<fixy::RecipeSpec<int>>);
 
@@ -247,7 +244,6 @@ template <typename L, template <auto, class> class Band>
 
 static_assert(tiers_stay_apart<fixy::DetSafeLattice, fixy::DetSafe>());
 static_assert(tiers_stay_apart<fixy::AllocClassLattice, fixy::AllocClass>());
-static_assert(tiers_stay_apart<fixy::HotPathLattice, fixy::HotPath>());
 static_assert(tiers_stay_apart<fixy::CipherTierLattice, fixy::CipherTier>());
 static_assert(tiers_stay_apart<fixy::WaitLattice, fixy::Wait>());
 static_assert(tiers_stay_apart<fixy::ToleranceLattice, fixy::NumericalTier>());
@@ -314,8 +310,8 @@ int main() {
         return 1;
     }
 
-    auto from_bottom = fixy::mint_band<fixy::hot_path::Hot<TwoWords>>(TwoWords{1, 2});
-    auto weakened = from_bottom.weaken(fixy::hot_path::Hot<TwoWords>::lattice_type::top());
+    auto from_bottom = fixy::mint_band<fixy::cipher_tier::Hot<TwoWords>>(TwoWords{1, 2});
+    auto weakened = from_bottom.weaken(fixy::cipher_tier::Hot<TwoWords>::lattice_type::top());
     if (!(weakened.peek() == TwoWords{1, 2})) {
         std::fprintf(stderr, "test_bands: weaken on the singleton changed the value\n");
         return 1;

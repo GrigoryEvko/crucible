@@ -593,8 +593,9 @@ struct Cheat48_DerivedFromAllocClass : fixy::alloc_class::Arena<int> {};
 static_assert(!fixy::IsBand<Cheat48_DerivedFromAllocClass>,
               "[CHEAT 48 ADMITTED] derived-from-AllocClass passed IsBand");
 
-struct Cheat49_DerivedFromHotPath : fixy::hot_path::Hot<int> {};
-static_assert(!fixy::IsBand<Cheat49_DerivedFromHotPath>, "[CHEAT 49 ADMITTED] derived-from-HotPath passed IsBand");
+struct Cheat49_DerivedFromResidencyHeat : fixy::residency_heat::Hot<int> {};
+static_assert(!fixy::IsBand<Cheat49_DerivedFromResidencyHeat>,
+              "[CHEAT 49 ADMITTED] derived-from-ResidencyHeat passed IsBand");
 
 struct Cheat50_DerivedFromCipherTier : fixy::cipher_tier::Hot<int> {};
 static_assert(!fixy::IsBand<Cheat50_DerivedFromCipherTier>,

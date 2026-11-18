@@ -1,6 +1,6 @@
-// MUST fail to compile: Linear outside HotPath inverts the canonical
-// nesting order.  HotPath holds position 0 and Linear holds position 12,
-// so a Linear that wraps a HotPath runs the positions downward.  Such a
+// MUST fail to compile: Linear outside DetSafe inverts the canonical
+// nesting order.  DetSafe holds position 0 and Linear holds position 11,
+// so a Linear that wraps a DetSafe runs the positions downward.  Such a
 // stack addresses a different federation cache slot than the canonical
 // one, and a site that requires CanonicallyOrdered must refuse it.
 
@@ -15,7 +15,7 @@ constexpr int accept_canonical_stack() {
     return 0;
 }
 
-using InvertedStack = ::fixy::Linear<::fixy::HotPath<::fixy::HotPathTier_v::Hot, int>>;
+using InvertedStack = ::fixy::Linear<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>>;
 
 }  // namespace
 

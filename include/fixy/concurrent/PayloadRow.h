@@ -120,7 +120,7 @@ inline constexpr std::meta::info row_carrying_payload_families[] = {
 };
 
 inline constexpr std::meta::info transparent_payload_families[] = {
-    ^^::foundation::algebra::Graded,  // every band: DetSafe, HotPath, AllocClass, Wait, ...
+    ^^::foundation::algebra::Graded,  // every band: DetSafe, AllocClass, Wait, CipherTier, ...
     ^^::fixy::Refinement,  // Refined and SealedRefined are one template
     ^^::fixy::Tagged,
     ^^::fixy::Secret,

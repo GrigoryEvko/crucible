@@ -25,36 +25,35 @@ using BoundedInt = fx::Refined<fx::bounded_above<int{8}>, int>;
 // consteval-versus-runtime divergence would show.
 
 bool test_canonical_layer_index_runtime() {
-    if (co::canonical_layer_index_v<fx::HotPath<fx::HotPathTier_v::Hot, int>> != 0) return false;
-    if (co::canonical_layer_index_v<fx::DetSafe<fx::DetSafeTier_v::Pure, int>> != 1) return false;
-    if (co::canonical_layer_index_v<fx::NumericalTier<fx::Tolerance::BITEXACT, int>> != 2) return false;
-    if (co::canonical_layer_index_v<fx::Vendor<fx::VendorBackend_v::NV, int>> != 3) return false;
-    if (co::canonical_layer_index_v<fx::ResidencyHeat<fx::ResidencyHeatTag_v::Hot, int>> != 4) return false;
-    if (co::canonical_layer_index_v<fx::CipherTier<fx::CipherTierTag_v::Hot, int>> != 5) return false;
-    if (co::canonical_layer_index_v<fx::AllocClass<fx::AllocClassTag_v::Arena, int>> != 6) return false;
-    if (co::canonical_layer_index_v<fx::Wait<fx::WaitStrategy_v::SpinPause, int>> != 7) return false;
-    if (co::canonical_layer_index_v<fx::Stale<int>> != 8) return false;
-    if (co::canonical_layer_index_v<fx::Tagged<int, FromUser>> != 9) return false;
-    if (co::canonical_layer_index_v<BoundedInt> != 10) return false;
-    if (co::canonical_layer_index_v<fx::Secret<int>> != 11) return false;
-    if (co::canonical_layer_index_v<fx::Linear<int>> != 12) return false;
-    if (co::canonical_layer_index_v<fe::Computation<fe::Row<>, int>> != 13) return false;
+    if (co::canonical_layer_index_v<fx::DetSafe<fx::DetSafeTier_v::Pure, int>> != 0) return false;
+    if (co::canonical_layer_index_v<fx::NumericalTier<fx::Tolerance::BITEXACT, int>> != 1) return false;
+    if (co::canonical_layer_index_v<fx::Vendor<fx::VendorBackend_v::NV, int>> != 2) return false;
+    if (co::canonical_layer_index_v<fx::ResidencyHeat<fx::ResidencyHeatTag_v::Hot, int>> != 3) return false;
+    if (co::canonical_layer_index_v<fx::CipherTier<fx::CipherTierTag_v::Hot, int>> != 4) return false;
+    if (co::canonical_layer_index_v<fx::AllocClass<fx::AllocClassTag_v::Arena, int>> != 5) return false;
+    if (co::canonical_layer_index_v<fx::Wait<fx::WaitStrategy_v::SpinPause, int>> != 6) return false;
+    if (co::canonical_layer_index_v<fx::Stale<int>> != 7) return false;
+    if (co::canonical_layer_index_v<fx::Tagged<int, FromUser>> != 8) return false;
+    if (co::canonical_layer_index_v<BoundedInt> != 9) return false;
+    if (co::canonical_layer_index_v<fx::Secret<int>> != 10) return false;
+    if (co::canonical_layer_index_v<fx::Linear<int>> != 11) return false;
+    if (co::canonical_layer_index_v<fe::Computation<fe::Row<>, int>> != 12) return false;
     return true;
 }
 
 bool test_canonically_ordered_concept() {
     static_assert(co::CanonicallyOrdered<int>);
     static_assert(co::CanonicallyOrdered<fx::Linear<int>>);
-    static_assert(co::CanonicallyOrdered<fx::HotPath<fx::HotPathTier_v::Hot, fx::Linear<int>>>);
+    static_assert(co::CanonicallyOrdered<fx::DetSafe<fx::DetSafeTier_v::Pure, fx::Linear<int>>>);
 
-    static_assert(!co::CanonicallyOrdered<fx::Linear<fx::HotPath<fx::HotPathTier_v::Hot, int>>>);
+    static_assert(!co::CanonicallyOrdered<fx::Linear<fx::DetSafe<fx::DetSafeTier_v::Pure, int>>>);
     return true;
 }
 
 bool test_inverted_stacks_runtime() {
-    using BadA = fx::Linear<fx::HotPath<fx::HotPathTier_v::Hot, int>>;
+    using BadA = fx::Linear<fx::DetSafe<fx::DetSafeTier_v::Pure, int>>;
     using BadB = fx::Refined<fx::bounded_above<int{8}>, fx::Tagged<fx::Stale<int>, FromUser>>;
-    using BadC = fx::HotPath<fx::HotPathTier_v::Hot, fx::HotPath<fx::HotPathTier_v::Cold, int>>;
+    using BadC = fx::DetSafe<fx::DetSafeTier_v::Pure, fx::DetSafe<fx::DetSafeTier_v::PhiloxRng, int>>;
     if (co::is_canonically_ordered_v<BadA>) return false;
     if (co::is_canonically_ordered_v<BadB>) return false;
     if (co::is_canonically_ordered_v<BadC>) return false;
@@ -62,16 +61,16 @@ bool test_inverted_stacks_runtime() {
 }
 
 bool test_canonical_full_stack_runtime() {
-    using Good = fx::HotPath<
-        fx::HotPathTier_v::Hot,
-        fx::DetSafe<fx::DetSafeTier_v::Pure,
-                    fx::NumericalTier<fx::Tolerance::BITEXACT,
-                                      fx::Vendor<fx::VendorBackend_v::NV, fe::Computation<fe::Row<>, int>>>>>;
+    using Good = fx::DetSafe<
+        fx::DetSafeTier_v::Pure,
+        fx::NumericalTier<fx::Tolerance::BITEXACT,
+                          fx::Vendor<fx::VendorBackend_v::NV,
+                                     fx::CipherTier<fx::CipherTierTag_v::Hot, fe::Computation<fe::Row<>, int>>>>>;
     return co::is_canonically_ordered_v<Good>;
 }
 
 bool test_off_tree_neutrality() {
-    // Stale, Tagged and Refined sit at layers 8, 9 and 10, so that nesting
+    // Stale, Tagged and Refined sit at layers 7, 8 and 9, so that nesting
     // is canonical. A wrapper that is off the tree must not disrupt the
     // descent when it sits in the middle of one. The lifetime band has no
     // canonical position, so it is off the tree.

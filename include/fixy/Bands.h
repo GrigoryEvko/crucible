@@ -59,6 +59,8 @@
 #include <foundation/algebra/lattices/ToleranceLattice.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
 #include <foundation/algebra/lattices/WaitLattice.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/effects/Row.h>
 #include <foundation/reflect/Anchor.h>
 
 #include <array>
@@ -225,11 +227,6 @@ template <AllocClassTag_v Tag, class T>
 using AllocClass =
     ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, AllocClassLattice::At<Tag>, T>;
 
-// Which work budget produced the value.  The tighter budget is higher.
-template <HotPathTier_v Tier, class T>
-using HotPath =
-    ::foundation::algebra::Graded<::foundation::algebra::ModalityKind::Absolute, HotPathLattice::At<Tier>, T>;
-
 // Where the persisted bytes live.  Faster recovery is higher.
 template <CipherTierTag_v Tier, class T>
 using CipherTier =
@@ -329,15 +326,6 @@ using Mmap = AllocClass<AllocClassTag_v::Mmap, T>;
 template <typename T>
 using HugePage = AllocClass<AllocClassTag_v::HugePage, T>;
 }  // namespace alloc_class
-
-namespace hot_path {
-template <typename T>
-using Hot = HotPath<HotPathTier_v::Hot, T>;
-template <typename T>
-using Warm = HotPath<HotPathTier_v::Warm, T>;
-template <typename T>
-using Cold = HotPath<HotPathTier_v::Cold, T>;
-}  // namespace hot_path
 
 namespace cipher_tier {
 template <typename T>
@@ -492,7 +480,36 @@ template <std::meta::info Ns, std::meta::info EnumInfo>
     return true;
 }
 
+// The tier that the row R gives.  Complexity: three reads of the mask of
+// the row.
+template <class R>
+[[nodiscard]] consteval HotPathTier_v hot_path_tier_of_() noexcept {
+    namespace fe = ::foundation::effects;
+    const bool waits_or_does_io = fe::row_contains(^^R, fe::Effect::IO) || fe::row_contains(^^R, fe::Effect::Block)
+                               || fe::row_contains(^^R, fe::Effect::Div);
+    if (waits_or_does_io) return HotPathTier_v::Cold;
+    if (fe::row_contains(^^R, fe::Effect::Alloc)) return HotPathTier_v::Warm;
+    return HotPathTier_v::Hot;
+}
+
 }  // namespace detail
+
+// ── The tier of the hot path ────────────────────────────────────────
+//
+// The tier is a view of the effect row, and no value stores it.  The row
+// gates each real call, so the row is the one source of the fact, and the
+// tier only reads it:
+//
+//   Hot    the row holds none of Alloc, IO, Block and Div
+//   Warm   the row holds Alloc and none of IO, Block and Div
+//   Cold   the row holds IO, Block or Div
+//
+// Nondet and the atom of a context do not change the tier.  A clock read
+// costs no allocation and no wait, and the atom of a context names the
+// thread that runs the body.
+template <class R>
+    requires ::foundation::effects::IsEffectRow<R>
+inline constexpr HotPathTier_v hot_path_tier_v = detail::hot_path_tier_of_<R>();
 
 // ── RecipeSpec ──────────────────────────────────────────────────────
 //

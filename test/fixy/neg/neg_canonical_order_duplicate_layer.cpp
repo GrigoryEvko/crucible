@@ -1,6 +1,6 @@
 // MUST fail to compile: one canonical layer twice in one stack.  The
-// canonical order requires strictly increasing positions, so a HotPath
-// inside a HotPath is a defect and not a reordering.  A gate that
+// canonical order requires strictly increasing positions, so a DetSafe
+// inside a DetSafe is a defect and not a reordering.  A gate that
 // accepted it would let two stacks with one meaning take two cache
 // slots.
 
@@ -15,7 +15,8 @@ constexpr int accept_canonical_stack() {
     return 0;
 }
 
-using DuplicateStack = ::fixy::HotPath<::fixy::HotPathTier_v::Hot, ::fixy::HotPath<::fixy::HotPathTier_v::Cold, int>>;
+using DuplicateStack =
+    ::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, ::fixy::DetSafe<::fixy::DetSafeTier_v::PhiloxRng, int>>;
 
 }  // namespace
 
