@@ -62,7 +62,9 @@ void* BumpArena::bump_slow_(std::size_t bytes, std::size_t alignment) noexcept {
 }
 
 // Block k holds at least block_size << k bytes, which bounds the count of
-// blocks.  Complexity: O(max_blocks).
+// blocks.  A new block is poisoned, so each of its bytes that the bump did
+// not give out is not addressable, also before the first epoch ends.  A block
+// of an earlier epoch is poisoned already.  Complexity: O(max_blocks).
 void BumpArena::enter_block_(std::uint32_t first_index, std::size_t needed) noexcept {
     std::uint32_t index = first_index;
     while (index < block_count_ && block_bytes_[index] < needed) {
@@ -78,6 +80,7 @@ void BumpArena::enter_block_(std::uint32_t first_index, std::size_t needed) noex
         block_bytes_[index] = wanted;
         block_count_ = index + 1;
         retained_bytes_ += wanted;
+        ::foundation::os::poison_bytes(blocks_[index], wanted);
     }
     cur_index_ = index;
     cur_block_ = blocks_[index];

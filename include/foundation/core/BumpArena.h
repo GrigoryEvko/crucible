@@ -46,11 +46,11 @@
 //
 // That capture is the one route that stays open: a body can write a borrow
 // into the epoch to a variable that it captures.  A View has no brand, so
-// no type refuses it there.  The check of that route is at run time: in a
-// build with AddressSanitizer, the end of an epoch poisons each block, and
-// each allocation unpoisons only the bytes that it gives
-// (foundation/os/Poison.h).  A read through a View of an ended epoch then
-// ends the process with a report.
+// no type refuses it there.  The check of that route is at run time: with
+// AddressSanitizer, a new block and the end of an epoch poison each block,
+// and each allocation unpoisons only the bytes that it gives
+// (foundation/os/Poison.h).  A read of an ended epoch, or past the bytes of
+// an allocation, then ends the process with a report.
 //
 // The cold path, the end of an epoch and the end of the arena are in
 // src/foundation/os/BumpArena.cpp, which calls the allocation door and the
