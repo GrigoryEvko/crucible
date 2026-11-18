@@ -318,6 +318,10 @@ static_assert(std::equality_comparable<AddressKey>);
 static_assert(!std::totally_ordered<AddressKey>);
 static_assert(std::is_same_v<decltype(std::declval<AddressKey const&>().hash()), std::uint64_t>);
 
+// The key of the null address is a constant, which a constinit table holds.
+// Its hash is zero, as the hash of each key of a null pointer is.
+static_assert(AddressKey::of_null() == AddressKey::of_null() && AddressKey::of_null().hash() == 0);
+
 // A key comes from a pointer to an object or a void pointer, and not from a
 // pointer to a function.
 static_assert(AddressKeyTarget<int>);
@@ -416,7 +420,7 @@ static_assert(std::is_same_v<decltype(mint_hole(std::declval<Box<std::uint64_t>>
 inline constexpr TextView ref_names{
     "Ref to as_ref same_object downcast KindFamily KindTagged Box mint_box BumpArena make "
     "array copy_text Slot emplace clear FnRef CallRef Address address_of is_aligned "
-    "AddressKey mint_address_key hash lower_by Hole mint_hole BoxWord box_word_key "
+    "AddressKey mint_address_key of_null hash lower_by Hole mint_hole BoxWord box_word_key "
     "release_to_word claim_box is_empty"};
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const, CheckBrand>, DereferenceProtocol);

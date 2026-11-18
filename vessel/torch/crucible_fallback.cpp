@@ -160,22 +160,19 @@ using crucible::vessel::phase_flag_bits;
 // caller, so two operators that Python calls at one stack depth give one
 // handle address.
 //
-// The key is wrapped in `Tagged<const void*, source::External>` to thread
-// the FFI provenance into the type system.  It is identity-only here
-// (compared, never dereferenced).  The wrapper is regime-1 EBO collapse,
-// so the slot stays at 32B and the cache stays L1-resident.  The alias, the
-// empty key and mint_external_op_key keep the spelling in one place, so the
-// declaration and the assignment below cannot drift apart.
-using ExternalOpKey = ::fixy::Tagged<const void*, ::fixy::tags::source::External>;
-
-// The key of an empty slot.  No operator name has the address zero.
-inline constexpr ExternalOpKey kEmptyOpKey =
-    ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<const void*>(nullptr));
+// The key is the AddressKey of the operator name (operator_key_of).  A key
+// compares and gives a hash, and no pointer comes back from it, so the cache
+// never reads through the address.  A slot holds the full key and a lookup
+// compares it.  An empty slot holds the key of the null address
+// (AddressKey::of_null), and no operator name has the address zero.  Each
+// address is a key, so an AddressKey has no niche, and an Option of it would
+// add a word to the slot.  The constant keeps the slot at 32 bytes, so the
+// cache stays in the first-level cache.
 
 // The key of an operator: the address of its operator name.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the address of the operator name of PyTorch keys the cache")
-[[nodiscard]] constexpr ExternalOpKey mint_external_op_key(const c10::OperatorName& name) noexcept {
-    return ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<const void*>(&name));
+[[nodiscard]] static ::fixy::AddressKey operator_key_of(const c10::OperatorName& name) noexcept {
+    return ::fixy::mint_address_key(&name);
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
@@ -194,14 +191,13 @@ static constexpr uint32_t FLAG_DATA_ARGUMENTS_SHIFT = 32;
 
 struct SchemaHashSlot {
     ::fixy::Atomic<uint64_t> state{SLOT_EMPTY};
-    ExternalOpKey key = kEmptyOpKey;
+    ::fixy::AddressKey key = ::fixy::AddressKey::of_null();
     crucible::SchemaHash hash;
     uint64_t flags = 0;
 };
 
-static_assert(sizeof(SchemaHashSlot) == 32, "SchemaHashSlot holds four words and no padding.  "
-                                            "Tagged<const void*, source::External> is regime-1 EBO collapse "
-                                            "so its sizeof equals sizeof(const void*).");
+static_assert(sizeof(SchemaHashSlot) == 32, "SchemaHashSlot holds four words and no padding.  An AddressKey "
+                                            "holds one word.");
 
 static constexpr uint32_t SCHEMA_CACHE_CAP = 2048;
 static constexpr uint32_t SCHEMA_CACHE_MASK = SCHEMA_CACHE_CAP - 1;
@@ -216,12 +212,12 @@ static constinit ::fixy::FixedArray<SchemaHashSlot, SCHEMA_CACHE_CAP> schema_cac
                                .expect("a masked probe is below SCHEMA_CACHE_CAP"));
 }
 
-// The first slot of the probe window of a key.  The hash of the AddressKey of
-// the address mixes each bit of the address into the low bits, and the mask
-// takes them.  Each reader compares the key itself, and no integer of the
-// address leaves the AddressKey.
-[[nodiscard]] static uint64_t home_probe(ExternalOpKey key) noexcept {
-    return ::fixy::mint_address_key(key.value()).hash() & SCHEMA_CACHE_MASK;
+// The first slot of the probe window of a key.  The hash of the key mixes
+// each bit of the address into the low bits, and the mask takes them.  Each
+// reader compares the key itself, and no integer of the address leaves the
+// AddressKey.
+[[nodiscard]] static uint64_t home_probe(::fixy::AddressKey const& key) noexcept {
+    return key.hash() & SCHEMA_CACHE_MASK;
 }
 
 struct SchemaInfo {
@@ -255,7 +251,7 @@ struct SchemaInfo {
 // the name is on its stack only.  Complexity: the length of the name.
 CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fixy::TextView base_name,
                                                    ::fixy::TextView overload, bool mutable_op,
-                                                   DataArguments data_by_type, ExternalOpKey key, uint64_t idx) {
+                                                   DataArguments data_by_type, ::fixy::AddressKey const& key) {
     // FNV-1a over "namespace::name.overload".
     uint64_t hash = fnv1a_text(base_name);
     if (overload.size() != 0) hash = fnv1a_text(overload, fnv1a_step(hash, static_cast<uint8_t>('.')));
@@ -290,10 +286,7 @@ CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fix
     // claim succeeds is the one writer of the slot.  Two threads that miss the
     // same operator at one time can fill two slots, and each slot holds the
     // same facts.
-    //
-    // The key carries source::External: the operator name crossed the
-    // boxed-fallback boundary.  The copy into the slot costs nothing at run
-    // time.
+    const uint64_t idx = home_probe(key);
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
         SchemaHashSlot& slot = get_schema_slot(idx + probe);
         if (slot.state.cas_acq_rel(SLOT_EMPTY, SLOT_CLAIMED).is_ok()) {
@@ -342,7 +335,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
                                                                const c10::FunctionSchema& schema) {
     // The address of the operator name is the cache key.
     const c10::OperatorName& name = op.operator_name();
-    const ExternalOpKey key = mint_external_op_key(name);
+    const ::fixy::AddressKey key = operator_key_of(name);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     const uint64_t idx = home_probe(key);
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
@@ -352,7 +345,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
         // Two operators whose keys give one index take two slots of the
         // window, and neither one reads the facts of the other.  A retired
         // slot of this key is not ready, so the lookup passes it.
-        if (state == SLOT_READY && slot.key.value() == key.value()) [[likely]]
+        if (state == SLOT_READY && slot.key == key) [[likely]]
             return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0,
                     DataArguments::from_bits(static_cast<uint32_t>(slot.flags >> FLAG_DATA_ARGUMENTS_SHIFT))};
         if (state == SLOT_EMPTY) break;
@@ -369,7 +362,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
     const bool mutable_op = schema.is_mutable();
     const DataArguments data_by_type = data_arguments_of(schema);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    return record_schema_miss(vigil, base_name, overload, mutable_op, data_by_type, key, idx);
+    return record_schema_miss(vigil, base_name, overload, mutable_op, data_by_type, key);
 }
 
 // Retires each ready slot of the key, so no lookup reads its facts again.
@@ -381,13 +374,13 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
 // only when the slot is ready, so it reads no key that a writer writes.  A
 // writer that fills a slot of this key at the same time runs the operator
 // while the dispatcher removes its schema, which PyTorch does not permit.
-static void retire_schema_slots(ExternalOpKey key) noexcept {
+static void retire_schema_slots(::fixy::AddressKey const& key) noexcept {
     const uint64_t idx = home_probe(key);
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
         SchemaHashSlot& slot = get_schema_slot(idx + probe);
         const uint64_t state = slot.state.load_acquire();
         if (state == SLOT_EMPTY) break;
-        if (state == SLOT_READY && slot.key.value() == key.value()) slot.state.store_release(SLOT_RETIRED);
+        if (state == SLOT_READY && slot.key == key) slot.state.store_release(SLOT_RETIRED);
     }
 }
 
@@ -402,7 +395,7 @@ class SchemaCacheListener final : public c10::OpRegistrationListener {
 public:
     void onOperatorRegistered(const c10::OperatorHandle&) override {}
     void onOperatorDeregistered(const c10::OperatorHandle& op) override {
-        retire_schema_slots(mint_external_op_key(op.operator_name()));
+        retire_schema_slots(operator_key_of(op.operator_name()));
     }
 };
 

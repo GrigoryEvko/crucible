@@ -206,6 +206,8 @@ void test_address_key() {
     CRUCIBLE_FATAL_INVARIANT(of_null == mint_address_key(static_cast<void const*>(nullptr)));
     CRUCIBLE_FATAL_INVARIANT(!(of_null == of_pair));
     CRUCIBLE_FATAL_INVARIANT(of_null.hash() == 0);
+    // The constant of the null address is the key of a null pointer.
+    CRUCIBLE_FATAL_INVARIANT(of_null == AddressKey::of_null() && !(AddressKey::of_null() == of_pair));
 
     // A key reads no object, so the pointer one past the end of an object
     // gives a key too, and it differs from the key of each member.

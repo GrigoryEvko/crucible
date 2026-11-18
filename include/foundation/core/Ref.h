@@ -25,8 +25,9 @@
 // mint_address_key(pointer) gives the AddressKey of an address, such as the
 // address of a buffer that a foreign allocator gives.  A key answers == and
 // hash() for a lookup, and it has no order.  lower_by(bytes) gives the key of
-// the address some bytes lower.  No pointer and no integer comes back from a
-// key.
+// the address some bytes lower.  AddressKey::of_null() gives the key of the
+// null address as a constant, for a table that the compiler builds.  No
+// pointer and no integer comes back from a key.
 //
 // prefetch<Access, Locality>(object) asks the cache for the line of one
 // object, and prefetch_byte<Access, Locality, Offset>(object) asks for the
@@ -354,6 +355,13 @@ class AddressKey {
     constexpr explicit AddressKey(std::uintptr_t value) noexcept : value_{value} {}
 
 public:
+    // The key of the address zero as a constant: the key that
+    // mint_address_key gives for a null pointer.  A table that the compiler
+    // builds, such as a constinit cache, holds it in each empty slot.  A key
+    // has no default constructor, so each key of a slot names its address on
+    // purpose, and the null address has this one name.
+    [[nodiscard]] static consteval AddressKey of_null() noexcept { return AddressKey{0}; }
+
     // The hash of the address.  The multiply by the odd constant
     // 0x9E3779B97F4A7C15, 2^64 divided by the golden ratio, mixes the bits of
     // the address into the high half of the product.  The fold then adds the
