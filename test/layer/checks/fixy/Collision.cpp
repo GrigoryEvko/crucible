@@ -128,6 +128,9 @@ static_assert(::fixy::collision::detail::protocol_reading_(^^::fixy::atom::copy)
               "an atom on another axis has no Protocol reading");
 static_assert(!live_rules<::fixy::atom::dispatch::recurses<4>>::indirect_call_may_throw,
               "a recursion is no call through a pointer");
+static_assert(!live_rules<::fixy::atom::dispatch::recurses_unbounded, ::fixy::atom::cost_linear<4>>::
+                  indirect_call_may_throw,
+              "a recursion with no depth bound is no call through a pointer either");
 
 // The observable reader of P010 reads the row of an Effect grade through
 // the closed relation of fixy/Atom.h.  A stated with<IO> answers as the row

@@ -536,11 +536,6 @@ struct is_longjmp_unsafe_ : std::false_type {};
 template <auto Reason>
 struct is_longjmp_unsafe_<::fixy::atom::ctrl::longjmp_unsafe<Reason>> : std::true_type {};
 
-template <class G>
-struct is_recursing_ : std::false_type {};
-template <std::size_t MaxDepth>
-struct is_recursing_<::fixy::atom::dispatch::recurses<MaxDepth>> : std::true_type {};
-
 // The function type a call family names, read in one structural step.
 // References and cv are stripped first.  A function type names itself,
 // and a pointer to a function or a pointer to a member names its pointee.
@@ -611,13 +606,15 @@ struct is_signature_noexcept_ : std::bool_constant<names_noexcept_signature_<Fam
 // CallShape atom of the roster.
 enum class CallShapeReading : std::uint8_t {
     Unread = 0,  // the relation does not name the grade
-    NoIndirectCall = 1,  // the strict pole and recurses<N>: no call through a pointer
+    NoIndirectCall = 1,  // the strict pole, recurses<N> and recurses_unbounded: no call through a pointer
     IndirectCall = 2,  // indirect_call<Family>: a call through a pointer that the family names
 };
 
 [[nodiscard]] consteval CallShapeReading call_shape_reading_(std::meta::info grade) noexcept {
     const std::meta::info named = std::meta::dealias(grade);
-    if (named == ^^::fixy::pole::Unconstrained<Axis::CallShape>) return CallShapeReading::NoIndirectCall;
+    if (named == ^^::fixy::pole::Unconstrained<Axis::CallShape> || named == ^^::fixy::atom::dispatch::recurses_unbounded) {
+        return CallShapeReading::NoIndirectCall;
+    }
     const std::meta::info declared = std::meta::has_template_arguments(named) ? std::meta::template_of(named) : named;
     if (declared == ^^::fixy::atom::dispatch::indirect_call) return CallShapeReading::IndirectCall;
     if (declared == ^^::fixy::atom::dispatch::recurses) return CallShapeReading::NoIndirectCall;
@@ -635,7 +632,7 @@ template <class G>
                   "fixy/Collision.h: the CallShape grade of this binding has no reading in "
                   "fixy::collision::detail::call_shape_reading_, so D001 cannot tell whether the binding calls "
                   "through a pointer whose callee can throw. Name the atom in the closed relation beside "
-                  "indirect_call and recurses.");
+                  "indirect_call, recurses and recurses_unbounded.");
     if constexpr (reading == CallShapeReading::IndirectCall) {
         using Family = [:std::meta::template_arguments_of(std::meta::dealias(^^G))[0]:];
         return !is_signature_noexcept_<Family>::value;
@@ -970,7 +967,18 @@ struct rules_of {
         detail::is_thread_local_<typename G::template on<Axis::GlobalState>>::value;
     static constexpr bool longjmp_unsafe =
         detail::is_longjmp_unsafe_<typename G::template on<Axis::ControlFlow>>::value;
-    static constexpr bool recurses = detail::is_recursing_<typename G::template on<Axis::CallShape>>::value;
+    // A recursion with a proven depth bound has a bounded stack, so D002
+    // reads only the recursion that states no depth bound.
+    static constexpr bool recurses_unbounded =
+        std::is_same_v<typename G::template on<Axis::CallShape>, ::fixy::atom::dispatch::recurses_unbounded>;
+
+    // A store that a thread-local slot publishes past its own thread has a
+    // reader on another thread, such as a monitor of a per-thread counter.
+    // The scope of the binding states how far the store reaches, and the
+    // scope thread, the shared bottom, reaches no other thread.
+    static constexpr bool publishes_past_the_thread =
+        G::template mentions<Axis::MemoryScope>
+        && !std::is_same_v<typename G::template on<Axis::MemoryScope>, ::fixy::atom::scope::thread>;
 
     // A binding says nothing about Usage when it takes the strict pole,
     // which on this axis is the linear grade: consumed exactly once.
@@ -994,8 +1002,8 @@ struct rules_of {
     static constexpr bool R002_ok = !(coroutine && borrow);
     static constexpr bool R003_ok = !(coroutine && row_bg);
     static constexpr bool L006_ok = !(linear && longjmp_unsafe);
-    static constexpr bool G002_ok = !(thread_local_state && atomic_repr);
-    static constexpr bool D002_ok = !(recurses && unbounded_cost);
+    static constexpr bool G002_ok = !(thread_local_state && atomic_repr && !publishes_past_the_thread);
+    static constexpr bool D002_ok = !(recurses_unbounded && (unbounded_cost || !G::template mentions<Axis::Complexity>));
 
     // ── The regime family, live since fixy/atoms/Regime.h ────────────
     //
@@ -1470,10 +1478,15 @@ struct rules_of {
                                "lifetime.");
         static_assert(L006_ok, "L006: linear x longjmp. A longjmp past a linear value's scope skips its consumption, "
                                "so the resource leaks with no diagnostic.");
-        static_assert(G002_ok, "G002: thread-local x atomic representation. Thread-local storage is private to one "
-                               "thread, so an atomic carrier inside it pays for synchronization nobody can observe.");
-        static_assert(D002_ok, "D002: unbounded recursion x unbounded cost. Recursion with neither a depth bound nor "
-                               "a cost bound is a stack overflow the type system could have refused.");
+        static_assert(G002_ok, "G002: thread-local x atomic representation x no reader on another thread. A "
+                               "thread-local slot whose stores reach no other thread is private to one thread, so an "
+                               "atomic carrier inside it pays for synchronization nobody can observe. Drop the atomic "
+                               "representation, or state the scope that the stores reach and the fence that "
+                               "publishes them, such as scope::system with barrier::acq_rel for a per-thread counter "
+                               "that a monitor thread reads.");
+        static_assert(D002_ok, "D002: unbounded recursion x an unbounded or unstated cost. A recursion with neither a "
+                               "depth bound nor a cost bound is a stack overflow the type system could have refused. "
+                               "State the proven depth with dispatch::recurses<N>, or bound the cost of the binding.");
         static_assert(P002_ok, "P002: ghost x an emitting surface. A ghost binding is erased at codegen, and a "
                                "stdio write or a syscall is emitted code by definition. P010 catches the atoms "
                                "that lift an effect through the row of the binding. A call through the vDSO lifts "

@@ -22,7 +22,8 @@ inline constexpr atom_seal atom_namespace_seal{};
 template <class GlobalTag>
 struct singleton final : atom_of<Axis::GlobalState> {};
 
-// Rule G002 reads a thread-local slot together with its representation.
+// Rule G002 reads a thread-local slot together with its representation
+// and the scope that its stores reach.
 template <class TLSTag>
 struct thread_local_ final : atom_of<Axis::GlobalState> {};
 

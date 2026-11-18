@@ -142,13 +142,34 @@ static_assert(live_rules<at::coroutine>::R002_ok);
 static_assert(!live_rules<at::coroutine, at::with<Eff::Bg>>::R003_ok);
 static_assert(live_rules<at::coroutine>::R003_ok);
 
-// G002 thread-local x atomic representation
-static_assert(!live_rules<at::global::thread_local_<tls_tag>, at::repr<::fixy::pole::ReprKind::Atomic>>::G002_ok);
+// G002 thread-local x atomic representation x no reader on another thread.
+// A per-thread counter that a monitor thread reads states the scope that
+// its stores reach, and the rule admits it.  The scope thread reaches no
+// other thread, so the rule still refuses it.
+using AtomicRepr = at::repr<::fixy::pole::ReprKind::Atomic>;
+static_assert(!live_rules<at::global::thread_local_<tls_tag>, AtomicRepr>::G002_ok);
+static_assert(!live_rules<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::thread>::G002_ok);
+static_assert(live_rules<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::inner>::G002_ok,
+              "a per-thread counter that a monitor thread reads is observed");
+static_assert(::fixy::IsAccepted<int, at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::inner>);
+// The scope also meets V401 and V402.  The host shareability scopes are the
+// ARM trunk, so an x86 binding states the system scope, and the system
+// scope reaches past a cluster, so it states a fence at acq_rel.
+static_assert(!live_rules<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::inner, at::simd::sse2>::V402_ok);
+static_assert(!live_rules<at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::system>::V401_ok);
+static_assert(::fixy::IsAccepted<int, at::global::thread_local_<tls_tag>, AtomicRepr, at::scope::system,
+                                 at::barrier::acq_rel, at::simd::sse2>,
+              "the remedy of G002 holds for a binding that pins an x86 ISA");
 static_assert(live_rules<at::global::thread_local_<tls_tag>>::G002_ok);
-static_assert(live_rules<at::repr<::fixy::pole::ReprKind::Atomic>>::G002_ok);
+static_assert(live_rules<AtomicRepr>::G002_ok);
 
-// D002 unbounded recursion x unbounded cost
-static_assert(!live_rules<at::dispatch::recurses<0>, at::cost_unbounded>::D002_ok);
+// D002 unbounded recursion x an unbounded or unstated cost.  A proven depth
+// bounds the stack, so the rule admits it with each cost.
+static_assert(!live_rules<at::dispatch::recurses_unbounded, at::cost_unbounded>::D002_ok);
+static_assert(!live_rules<at::dispatch::recurses_unbounded>::D002_ok, "an unstated cost bounds nothing");
+static_assert(live_rules<at::dispatch::recurses_unbounded, at::cost_linear<4>>::D002_ok);
+static_assert(live_rules<at::dispatch::recurses<64>, at::cost_unbounded>::D002_ok,
+              "a bounded recursion has a bounded stack");
 static_assert(live_rules<at::dispatch::recurses<0>>::D002_ok);
 static_assert(live_rules<at::cost_unbounded>::D002_ok);
 static_assert(live_rules<at::dispatch::recurses<0>, at::cost_linear<4>>::D002_ok);

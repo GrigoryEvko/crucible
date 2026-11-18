@@ -394,6 +394,10 @@ fixy_neg_compile_test(neg_rule_d002_recursion_unbounded_cost
   "${_fixy_tier5_reason}"
   "Collision rule\\(s\\) D002:"
   "${_fixy_tier5_member}")
+fixy_neg_compile_test(neg_rule_d002_recursion_unstated_cost
+  "${_fixy_tier5_reason}"
+  "Collision rule\\(s\\) D002:"
+  "${_fixy_tier5_member}")
 
 # ── The regime family ─────────────────────────────────────────────────
 #

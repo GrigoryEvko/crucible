@@ -38,8 +38,8 @@ enum class RuleCode : std::uint8_t {
     R002,  // coroutine x borrow
     R003,  // coroutine x Bg row
     L006,  // linear x longjmp
-    G002,  // thread-local x atomic representation
-    D002,  // unbounded recursion x unbounded cost
+    G002,  // thread-local x atomic representation x no reader on another thread
+    D002,  // unbounded recursion x an unbounded or unstated cost
     P002,  // ghost x an emitting surface other than the effect row
     // The codes from here to F102 read an axis family.  Each is a live rule,
     // so pending_rules below is empty.
@@ -173,8 +173,8 @@ inline constexpr corpus_entry rule_corpus[] = {
     {"R002", Disposition::Live, "coroutine x borrow"},
     {"R003", Disposition::Live, "coroutine x Row<Bg>"},
     {"L006", Disposition::Live, "linear x longjmp"},
-    {"G002", Disposition::Live, "thread-local x atomic representation"},
-    {"D002", Disposition::Live, "unbounded recursion x unbounded cost"},
+    {"G002", Disposition::Live, "thread-local x atomic representation x no reader on another thread"},
+    {"D002", Disposition::Live, "unbounded recursion x an unbounded or unstated cost"},
 
     // The regime family, which reads the three HotPathTier atoms of
     // fixy/atoms/Regime.h.

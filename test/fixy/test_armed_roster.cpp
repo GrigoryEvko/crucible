@@ -326,12 +326,6 @@ struct foundation::contracts::armed_cell<::fixy::collision::detail::is_longjmp_u
     using refuses = witnesses<int, at::ctrl::abort<"setjmp island">>;
 };
 
-template <>
-struct foundation::contracts::armed_cell<::fixy::collision::detail::is_recursing_> {
-    using accepts = witnesses<at::dispatch::recurses<8>>;
-    using refuses = witnesses<int, void>;
-};
-
 // protocol<proto::None> writes the strict pole out, so it names no session.
 template <>
 struct foundation::contracts::armed_cell<::fixy::collision::detail::is_session_protocol_> {

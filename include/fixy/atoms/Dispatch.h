@@ -21,9 +21,15 @@ template <class FnPtrFamily>
 struct indirect_call final : atom_of<Axis::CallShape> {};
 
 // MaxDepth is a proven worst-case self-recursion depth, not an estimate.
-// Rule D002 reads it together with the cost of the binding.
+// The depth bounds the stack of the recursion, so rule D002 admits it
+// with each cost.
 template <std::size_t MaxDepth>
 struct recurses final : atom_of<Axis::CallShape> {};
+
+// A self-recursion with no proven depth bound.  Only a bound on the cost
+// can then bound the depth, so rule D002 reads it together with the cost
+// of the binding.
+struct recurses_unbounded final : atom_of<Axis::CallShape> {};
 
 }  // namespace fixy::atom::dispatch
 
@@ -31,7 +37,7 @@ namespace fixy::atom::detail {
 
 struct dispatch_sample_family final {};
 
-using dispatch_atom_roster =
-    std::tuple<dispatch::indirect_call<dispatch_sample_family>, dispatch::recurses<32>, dispatch::recurses<0>>;
+using dispatch_atom_roster = std::tuple<dispatch::indirect_call<dispatch_sample_family>, dispatch::recurses<32>,
+                                        dispatch::recurses<0>, dispatch::recurses_unbounded>;
 
 }  // namespace fixy::atom::detail

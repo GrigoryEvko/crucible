@@ -1,7 +1,9 @@
-// G002: thread-local x atomic representation.  Thread-local storage is
-// private to one thread, so an atomic carrier inside it pays for
-// synchronization nobody can observe: the lock prefix, the store-buffer
-// drain and the cache-line transfer are all bought and none is needed.
+// G002: thread-local x atomic representation x no reader on another
+// thread.  The binding states no scope, so its stores reach no other
+// thread, and the slot is private to one thread.  An atomic carrier inside
+// it pays for synchronization nobody can observe: the lock prefix, the
+// store-buffer drain and the cache-line transfer are all bought and none
+// is needed.
 //
 // The pack trips G002 alone.  M012 also reads the atomic representation,
 // but as the premise that RESCUES a monotonic concurrent binding rather
