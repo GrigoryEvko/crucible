@@ -46,9 +46,10 @@ THE CROSS COMPILER
     The sysroot is the directory of CrossTarget.sysroot below PREFIX, and GCC
     finds the binutils in PREFIX/usr/aarch64-linux-gnu/bin.  An unpack uses
     rpm2cpio and cpio.  The configuration is CROSS_CONFIGURE.
-    A parse of the tree reads no library of the sanitizers, of OpenMP, of the
-    transactional memory or of quadmath.  The cross build makes none of these
-    libraries.
+    The cross build makes the libraries of the sanitizers, because the
+    preset aarch64 runs its tests under qemu-user with UBSan.  A parse of the
+    tree reads no library of OpenMP, of the transactional memory or of
+    quadmath, and the cross build makes none of these libraries.
 
     The install holds the plugin headers of the cross compiler.  A plugin of
     that compiler is code of the host.  The patched g++ of the host compiles
@@ -93,8 +94,8 @@ CONFIGURE = ("--program-suffix=-16p", "--enable-languages=c,c++,lto", "--disable
 # COMPILER).  An explicit suffix stops the prefix TRIPLET- that configure gives the programs of a cross build by
 # default.  configure_words() then gives the prefix and the suffix.
 CROSS_CONFIGURE = ("--program-suffix=-16p", "--enable-languages=c,c++,lto", "--disable-multilib",
-                   "--enable-checking=release", "--with-system-zlib", "--disable-libsanitizer", "--disable-libgomp",
-                   "--disable-libitm", "--disable-libquadmath", "--disable-libssp", "--disable-libvtv")
+                   "--enable-checking=release", "--with-system-zlib", "--disable-libgomp", "--disable-libitm",
+                   "--disable-libquadmath", "--disable-libssp", "--disable-libvtv")
 COMPILER = Path("usr") / "bin" / "g++-16p"
 # The install prefix of the patched GCC below the home directory, when the environment names none.
 HOME_PREFIX = Path(".local") / "gcc16-patched"

@@ -180,14 +180,15 @@
     {
       "name": "aarch64",
       "inherits": "default",
-      "displayName": "Cross GCC 16 for aarch64 with no sanitizer: the release entry runs the tests under qemu-user",
+      "displayName": "Cross GCC 16 for aarch64 with the full UBSan set: the release entry runs the tests under qemu-user",
       "binaryDir": "${sourceDir}/build-aarch64",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/Toolchain-gcc16-aarch64.cmake",
-        "_comment_sanitizers": "The cross install of the patched GCC has no libasan, libubsan or libtsan for aarch64. The build then links no sanitizer runtime",
+        "_comment_sanitizers": "The cross install of the patched GCC holds libubsan for aarch64, and UBSan needs no shadow memory, so the tests run under qemu-user with the UBSan set of the preset ubsan-strict. A probe under qemu-user 10.2 found that ASan does not run: qemu-user puts the guest stack below 2^47 and loads a position-independent program at 0xaaaaaaaa0000, ASan takes the layout of its shadow from the address of the stack, and its start then stops on the globals of the program (asan_globals.cpp, AddrIsInMem), also with -R of the whole space of 48 bits. A program at a fixed address runs, but LeakSanitizer then ends it with a fatal error, because qemu-user gives it no ptrace. ThreadSanitizer also needs a fixed layout of the address space",
         "_comment_bpf": "include/crucible/perf/bpf/vmlinux.h holds the kernel types of x86_64, and clang cannot compile a BPF program of aarch64 with it",
         "CRUCIBLE_SANITIZE": "OFF",
         "CRUCIBLE_TSAN": "OFF",
+        "CRUCIBLE_UBSAN_STRICT": "ON",
         "CRUCIBLE_HAVE_BPF": "OFF"
       },
       "vendor": { "crucible": { "tier": "release" } }
