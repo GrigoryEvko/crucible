@@ -3,7 +3,9 @@
 // The keyed hash of the base: BLAKE3 in its keyed mode (O'Connor, Aumasson,
 // Neves and Wilcox-O'Hearn, 2020), with its native output of 32 bytes.
 //
-//   KeyedHashKey          the 32 bytes of a key, as 8 little-endian words
+//   KeyedHashKeyBytes     the 32 bytes of a key, as 8 little-endian words.  It
+//                         is a value and no passkey, so its name does not end
+//                         with Key
 //   Hash256               the 32 bytes of an output, as 4 words of 64 bits,
 //                         each little-endian, the first bytes in word 0
 //   keyed_hash(key, m)    the Hash256 of the bytes m under the key
@@ -54,11 +56,11 @@
 namespace foundation::core {
 
 // The 32 bytes of a key of keyed_hash.
-class KeyedHashKey final {
+class KeyedHashKeyBytes final {
 public:
     // The key of 32 bytes, in the byte order of the reference: each 4 bytes
     // are one little-endian word.
-    constexpr explicit KeyedHashKey(View<std::byte const, 32> bytes) noexcept {
+    constexpr explicit KeyedHashKeyBytes(View<std::byte const, 32> bytes) noexcept {
         std::byte const* const first = first_of_(detail::ViewDoor::key(), bytes);
         for (std::size_t index = 0; index < 32; ++index) {
             words_[index / 4] |= static_cast<std::uint32_t>(static_cast<std::uint8_t>(first[index]))
@@ -781,7 +783,7 @@ inline constexpr std::size_t blake3_batch_chunks = 64;
 // The keyed hash of count bytes from first, at run time.  A message of one
 // chunk runs in the rows.  A longer message runs its chunks in the lanes, and
 // the full blocks of its last chunk run in a lane beside them.
-[[nodiscard]] inline Hash256 blake3_keyed_hash_rows_(KeyedHashKey const& key, std::byte const* first,
+[[nodiscard]] inline Hash256 blake3_keyed_hash_rows_(KeyedHashKeyBytes const& key, std::byte const* first,
                                                      std::size_t count) noexcept {
     std::uint32_t key_words[8] = {};
     for (auto const index : IndexRange<8>{}) {
@@ -921,7 +923,7 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 // The keyed hash of the bytes of message under the key (THE ALGORITHM):
 // BLAKE3 in its keyed mode, with 32 bytes of output.  Complexity: one
 // compression for each 64 bytes of the message and one for each parent.
-[[nodiscard]] constexpr Hash256 keyed_hash(KeyedHashKey const& key, View<std::byte const> message) noexcept {
+[[nodiscard]] constexpr Hash256 keyed_hash(KeyedHashKeyBytes const& key, View<std::byte const> message) noexcept {
     std::byte const* const first = first_of_(detail::ViewDoor::key(), message);
     std::size_t const count = message.size();
     if !consteval {

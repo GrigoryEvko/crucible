@@ -1119,7 +1119,7 @@ inline constexpr StatedZero kZeros[] = {
      "a value in a role: the role is a part of its type, and it makes no claim that a grade carries"},
     {^^::foundation::core::Digest, "a hash whose kind is its tag: a value, which makes no claim that a grade carries"},
     {^^::foundation::core::Hash256, "the 32 bytes of a keyed hash: a value, which makes no claim that a grade carries"},
-    {^^::foundation::core::KeyedHashKey,
+    {^^::foundation::core::KeyedHashKeyBytes,
      "the 32 bytes of the key of a keyed hash: a value, which makes no claim that a grade carries"},
     {^^::foundation::core::StorageFloatOf,
      "the bits of a value of a storage format of a float: a number, which makes no claim that a grade carries"},

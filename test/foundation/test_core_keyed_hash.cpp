@@ -18,7 +18,7 @@ using ::foundation::core::FixedArray;
 using ::foundation::core::Hash256;
 using ::foundation::core::Index;
 using ::foundation::core::keyed_hash;
-using ::foundation::core::KeyedHashKey;
+using ::foundation::core::KeyedHashKeyBytes;
 using ::foundation::core::TextView;
 using ::foundation::core::View;
 
@@ -39,7 +39,7 @@ struct VectorInput final {
 // The longest input of the vectors that one constant evaluation hashes.
 constexpr std::size_t kConstantLongest = 2049;
 
-constexpr KeyedHashKey vector_key() noexcept {
+constexpr KeyedHashKeyBytes vector_key() noexcept {
     constexpr TextView text{"whats the Elvish word for friend"};
     FixedArray<std::byte, 32> bytes{};
     std::size_t index = 0;
@@ -47,7 +47,7 @@ constexpr KeyedHashKey vector_key() noexcept {
         bytes.at(Index<32>::check(index).expect("the key has 32 letters")) = static_cast<std::byte>(letter);
         ++index;
     }
-    return KeyedHashKey{bytes.view()};
+    return KeyedHashKeyBytes{bytes.view()};
 }
 
 // The value of one hex digit.
@@ -127,7 +127,7 @@ void test_key_and_message_take_part() {
     static VectorInput<kLongest> input{};
     FixedArray<std::byte, 32> other_key_bytes{};
     other_key_bytes.at(::foundation::core::index<0>()) = std::byte{1};
-    KeyedHashKey const other_key{other_key_bytes.view()};
+    KeyedHashKeyBytes const other_key{other_key_bytes.view()};
     View<std::byte const> const message = input.bytes.view().window(0, 200).expect("200 bytes");
     CRUCIBLE_FATAL_INVARIANT(keyed_hash(vector_key(), message) != keyed_hash(other_key, message));
     Hash256 const before = keyed_hash(vector_key(), message);
