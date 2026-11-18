@@ -2,7 +2,8 @@
 
 // The shared part of test_owned_region: the two permission tags, the bump
 // arena, the split of every total into one shard count, and the tests of
-// each other source file.  test_owned_region.cpp lists the source files of
+// each other source file.  owned_region_unchecked_arena.h gives the
+// allocator with no constraint of its own.  test_owned_region.cpp lists the source files of
 // the test.  Each test takes the test context, and each check is
 // CRUCIBLE_TEST_ASSERT of the Check family.
 
@@ -10,6 +11,8 @@
 #include <fixy/OwnedRegion.h>
 #include <fixy/check/Check.h>
 #include <foundation/Lifetime.h>
+
+#include "owned_region_unchecked_arena.h"
 
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>

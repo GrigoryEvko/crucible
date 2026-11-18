@@ -150,22 +150,6 @@ static_assert(!ArrayArena<BumpArena, ::foundation::permissions::Permission<test_
 static_assert(!ArrayArena<BumpArena, HoldsPermission>,
               "the arena must not start the lifetime of an aggregate that holds a proof type");
 
-// An allocator that puts no constraint on its element.  The door itself
-// refuses a proof type, so the refusal does not rest on the allocator.
-class UncheckedArena {
-public:
-    template <typename T>
-    [[nodiscard]] T* alloc_array(::foundation::effects::Alloc, std::size_t) noexcept {
-        return nullptr;
-    }
-};
-static_assert(ArrayArena<UncheckedArena, int>);
-static_assert(!ArrayArena<UncheckedArena, ::foundation::permissions::Permission<test_tag_a>>,
-              "the door must refuse a proof type also for an allocator that puts no constraint on it");
-static_assert(!ArrayArena<UncheckedArena, HoldsPermission>,
-              "the door must refuse an aggregate that holds a proof type also for an allocator that puts no "
-              "constraint on it");
-
 // A region minted from a branded permission carries that brand and its
 // borrow carries it.  The split and the recombine are not constexpr, so
 // the brand of a shard is pinned at runtime in test/fixy/test_owned_region.cpp.

@@ -44,6 +44,18 @@ static_assert(::fixy::ArrayArena<Arena, float>);
 static_assert(!::fixy::ArrayArena<Arena, ::foundation::permissions::Permission<DataA>>,
               "the arena must not start the lifetime of a proof type over its bytes");
 
+// The door refuses a proof type, and an aggregate that holds one, also for an
+// allocator that puts no constraint on its element.
+struct HoldsPermission {
+    ::foundation::permissions::Permission<DataA> proof;
+};
+static_assert(::fixy::ArrayArena<UncheckedArena, float>);
+static_assert(!::fixy::ArrayArena<UncheckedArena, ::foundation::permissions::Permission<DataA>>,
+              "the door must refuse a proof type also for an allocator that puts no constraint on it");
+static_assert(!::fixy::ArrayArena<UncheckedArena, HoldsPermission>,
+              "the door must refuse an aggregate that holds a proof type also for an allocator that puts no "
+              "constraint on it");
+
 namespace {
 
 using ::fixy::check::expect_dies;
