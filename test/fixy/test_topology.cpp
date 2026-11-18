@@ -489,6 +489,28 @@ void test_split_l3_group_refuses_the_packages() {
     assert(topo.packages().size() == 0);
 }
 
+// The CPU mask of a node of the planted tree of two sockets: the CPUs of the
+// node that the affinity mask holds.  The node 2 is not in the tree, and a
+// sentinel node names no node, so each gives the empty mask.
+void test_node_cpu_mask_of_two_sockets() {
+    using ::foundation::algebra::lattices::AffinityMask;
+    using ::foundation::algebra::lattices::NumaNodeId;
+    const auto ctx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>{eff::testing::test()};
+    const auto topo = Topology::probe_tree(ctx, TWO_PACKAGE_SYSFS_ROOT);
+    AffinityMask const every_cpu = AffinityMask::range(0, 7);
+
+    CRUCIBLE_FATAL_INVARIANT(::fixy::topology::node_cpu_mask(topo, NumaNodeId{0}, every_cpu)
+                             == AffinityMask::range(0, 1));
+    CRUCIBLE_FATAL_INVARIANT(::fixy::topology::node_cpu_mask(topo, NumaNodeId{3}, every_cpu)
+                             == AffinityMask::range(4, 5));
+    CRUCIBLE_FATAL_INVARIANT(::fixy::topology::node_cpu_mask(topo, NumaNodeId{1}, AffinityMask::single(3))
+                             == AffinityMask::single(3));
+    CRUCIBLE_FATAL_INVARIANT(::fixy::topology::node_cpu_mask(topo, NumaNodeId{1}, AffinityMask::single(0))
+                             == AffinityMask{});
+    CRUCIBLE_FATAL_INVARIANT(::fixy::topology::node_cpu_mask(topo, NumaNodeId{2}, every_cpu) == AffinityMask{});
+    CRUCIBLE_FATAL_INVARIANT(::fixy::topology::node_cpu_mask(topo, NumaNodeId::None, every_cpu) == AffinityMask{});
+}
+
 }  // namespace
 
 int main() {
@@ -520,6 +542,7 @@ int main() {
     test_packages_cover_the_host();
     test_packages_of_two_sockets();
     test_split_l3_group_refuses_the_packages();
-    pass(test, "test_topology: 25 groups, ALL PASSED\n");
+    test_node_cpu_mask_of_two_sockets();
+    pass(test, "test_topology: 26 groups, ALL PASSED\n");
     return 0;
 }

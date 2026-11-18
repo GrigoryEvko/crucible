@@ -19,6 +19,8 @@
 #include <fixy/Core.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/algebra/lattices/AffinityLattice.h>
+#include <foundation/algebra/lattices/NumaNodeLattice.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
@@ -316,5 +318,38 @@ private:
 
     void probe_linux_(std::string_view sysfs_root) noexcept;
 };
+
+// The CPUs of the node NODE of the topology that the affinity mask ALLOWED
+// holds.  apply_affinity_to_mask of fixy/os/Sched.h pins a thread to the
+// result, so the thread runs on the whole node, and on no CPU that its
+// cpuset refuses.  A sentinel node, a node that the topology does not name
+// and a CPU past the largest core of a mask add no CPU, and an empty result
+// asks apply_affinity_to_mask for no pin.  The walk asks numa_node_of_cpu for
+// each core that ALLOWED holds, so it reads no range of the standard library.
+// Complexity: the cores of ALLOWED times the CPUs of the host, on the cold
+// path of a pin.
+[[nodiscard]] inline ::foundation::algebra::lattices::AffinityMask
+node_cpu_mask(Topology const& topology, ::foundation::algebra::lattices::NumaNodeId node,
+              ::foundation::algebra::lattices::AffinityMask allowed) noexcept {
+    using ::foundation::algebra::lattices::AffinityLattice;
+    using ::foundation::algebra::lattices::AffinityMask;
+    AffinityMask cpus{};
+    if (!::foundation::algebra::lattices::is_concrete_numa_node(node)) {
+        return cpus;
+    }
+    int const node_id = static_cast<int>(node);
+    for (std::size_t index = 0; index <= AffinityMask::kMaxCore; ++index) {
+        auto const core = static_cast<std::uint16_t>(index);
+        bool const is_on_node =
+            allowed.contains(core)
+            && topology.numa_node_of_cpu(static_cast<int>(core)).is_some_and([node_id](int id) noexcept {
+                   return id == node_id;
+               });
+        if (is_on_node) {
+            cpus = AffinityLattice::join(cpus, AffinityMask::single(core));
+        }
+    }
+    return cpus;
+}
 
 }  // namespace fixy::topology
