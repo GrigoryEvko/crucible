@@ -20,6 +20,8 @@
 //                                with the same unit, or two quantities, with
 //                                the product or the quotient of their units
 //   round_to_float<F>(quantity)  the quantity with the Float Rep F
+//   ElementCount                 a count of elements:
+//                                Quantity<unit::Element, std::size_t>
 //
 // The float set, for a Float Rep:
 //
@@ -109,6 +111,7 @@
 
 #include <compare>
 #include <concepts>
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -358,6 +361,10 @@ public:
         return left.value_ >= right.value_;
     }
 };
+
+// A count of elements of a run, such as the count of limit and skip of a
+// walk (foundation/core/Walk.h).
+using ElementCount = Quantity<unit::Element, std::size_t>;
 
 namespace detail {
 

@@ -216,6 +216,7 @@ using ::foundation::core::StaticIndex;
 using ::foundation::core::View;
 using ::foundation::core::ViewMut;
 using ::foundation::core::ViewMutChunks;
+using ::foundation::core::Walk;
 using ::foundation::core::with_mut;
 using ::foundation::core::write_each;
 using ::foundation::core::WriteLease;
@@ -356,6 +357,7 @@ using ::foundation::core::Philox4x32;
 // saturating_* for an Integer Rep, and add, subtract, multiply and divide for
 // a Float Rep.  The units, Product and Quotient keep their namespace unit.
 using ::foundation::core::convert;
+using ::foundation::core::ElementCount;
 using ::foundation::core::Quantity;
 using ::foundation::core::QuantityUnit;
 using ::foundation::core::round_to_float;

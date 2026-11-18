@@ -60,6 +60,15 @@
 // The loop of a View gives the cursor of foundation/core/Cursor.h, which a
 // TextView of foundation/core/Text.h gives too.
 //
+// THE WALK
+//   view.walk()         the head of a lazy chain of adapters and terminals of
+//                       foundation/core/Walk.h, such as
+//                       view.walk().map(fn).fold(init, step).  Each step of
+//                       the root stage detail::ViewStage gives T&, in the
+//                       counted loop of the View
+// Walk.h is below this header, and it gives dynamic_extent and
+// LengthMismatch.
+//
 // THE FOREIGN DOORS
 //   mint_foreign_view(first, count)   the read-only View of a run that a
 //                       foreign ABI gives, such as the bytes of the fuzz
@@ -108,6 +117,7 @@
 #include <foundation/core/Report.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/core/Text.h>
+#include <foundation/core/Walk.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -116,9 +126,6 @@
 #include <type_traits>
 
 namespace foundation::core {
-
-// The extent of a View whose count is a value and not a part of its type.
-inline constexpr std::size_t dynamic_extent = ~std::size_t{0};
 
 // The element of a View: an object type that is not an array and not
 // volatile.  A const element gives a read-only View.
@@ -224,6 +231,10 @@ class ZipRange;
 template <class First, class Second, class Brand>
 class ZipCursor;
 
+// The root stage of the walk of a View.
+template <class T, std::size_t Extent>
+class ViewStage;
+
 }  // namespace detail
 
 template <class T, std::size_t Extent>
@@ -322,6 +333,14 @@ public:
     }
     [[nodiscard]] constexpr ViewCursor<T> end() const noexcept {
         return ViewCursor<T>{detail::ViewCursorDoor::key(), first_ + size(), first_ + size()};
+    }
+
+    // The walk of the elements of this View, in order: the head of a chain of
+    // foundation/core/Walk.h, such as view.walk().map(fn).fold(init, step).
+    // Each step gives T&, and a View of a fixed extent gives a walk of that
+    // extent.
+    [[nodiscard]] constexpr Walk<detail::ViewStage<T, Extent>> walk() const noexcept {
+        return Walk<detail::ViewStage<T, Extent>>{detail::ViewStage<T, Extent>{*this}};
     }
 
     // The element at a proven index of a View of a fixed extent.  The type
@@ -480,6 +499,69 @@ template <std::size_t Extent, class T>
     }
     return View<T, Extent>{ViewDoor::key(), first};
 }
+
+// The root stage of the walk of a View (THE STAGES of foundation/core/Walk.h):
+// the counted loop over the elements, by reference.  A View of a fixed
+// extent keeps the count in the type of the stage, and a limit or a skip
+// gives a stage of a dynamic extent.
+template <class T, std::size_t Extent>
+class ViewStage final {
+    View<T, Extent> elements_;
+
+public:
+    using element_reference = T&;
+    static constexpr bool is_exact = true;
+    static constexpr std::size_t extent = Extent;
+
+    constexpr explicit ViewStage(View<T, Extent> elements) noexcept : elements_{elements} {}
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
+        T* const first = first_of_(ViewDoor::key(), elements_);
+        std::size_t const count = elements_.size();
+        for (std::size_t position = 0; position < count; ++position) {
+            sink(first[position]);
+        }
+    }
+
+    // The loop of a walk that can stop is the pointer loop of the cursor of a
+    // View: one compare of the pointer with the end, and no count to keep.
+    template <class Sink>
+    [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
+        T* const first = first_of_(ViewDoor::key(), elements_);
+        T* const end = first + elements_.size();
+        for (T* at = first; at != end; ++at) {
+            if (sink(*at) == Flow::stop) return Flow::stop;
+        }
+        return Flow::go;
+    }
+
+    [[nodiscard]] constexpr std::size_t size_() const noexcept { return elements_.size(); }
+
+    // The element at position, which the caller proves below size_().
+    [[nodiscard]] constexpr T& at_(std::size_t position) const noexcept {
+        return first_of_(ViewDoor::key(), elements_)[position];
+    }
+
+    // The first count elements, or each element when count is larger.
+    [[nodiscard]] constexpr ViewStage<T, dynamic_extent> limited_(std::size_t count) && noexcept {
+        std::size_t const size = elements_.size();
+        return ViewStage<T, dynamic_extent>{
+            View<T>{ViewDoor::key(), first_of_(ViewDoor::key(), elements_), count < size ? count : size}};
+    }
+
+    // The elements after the first count, or none when count is larger.
+    [[nodiscard]] constexpr ViewStage<T, dynamic_extent> skipped_(std::size_t count) && noexcept {
+        std::size_t const size = elements_.size();
+        std::size_t const dropped = count < size ? count : size;
+        return ViewStage<T, dynamic_extent>{
+            View<T>{ViewDoor::key(), first_of_(ViewDoor::key(), elements_) + dropped, size - dropped}};
+    }
+
+    // The cursor of `for (x : walk)`: the cursor of the View.
+    [[nodiscard]] constexpr ViewCursor<T> begin_() const noexcept { return elements_.begin(); }
+    [[nodiscard]] constexpr ViewCursor<T> end_() const noexcept { return elements_.end(); }
+};
 
 }  // namespace detail
 
@@ -1204,10 +1286,6 @@ public:
 };
 
 }  // namespace detail
-
-// The error of a copy between two Views of a dynamic extent whose counts
-// differ.
-struct LengthMismatch final {};
 
 // The pairs of two Views of one fixed extent.  The type proves the counts
 // equal, so the loop needs no compare before its first step.  Each Ref of

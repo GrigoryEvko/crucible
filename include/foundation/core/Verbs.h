@@ -8,8 +8,9 @@
 // one of these three:
 //
 //   a shared verb     match, expect, get, at, view, size, push, append,
-//                     consume, enumerate, reverse, windows and chunks, and
-//                     begin and end, the members that `for (x : c)` calls.
+//                     consume, the iteration verbs enumerate, reverse,
+//                     windows, chunks and walk, and begin and end, the
+//                     members that `for (x : c)` calls.
 //                     zip and the mints are free functions, so no member
 //                     takes their names
 //   a language protocol
@@ -52,7 +53,7 @@ namespace foundation::core {
 
 // The names of the shared verbs that a member can take.
 inline constexpr TextView shared_verbs{
-    "match expect get at view size push append consume enumerate reverse windows chunks begin end"};
+    "match expect get at view size push append consume enumerate reverse windows chunks walk begin end"};
 
 // The grant of the dereference: operator* and operator->.  Only a type with
 // no empty state takes it, such as Ref, Box and CacheLine.
