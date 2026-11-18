@@ -557,8 +557,9 @@ private:
 };
 
 // The one production route to a foreground context.  The first thread
-// that asks for a context holds the claim for the life of this object.
-// A request from any other thread ends the process.
+// that asks for a context holds the claim until it gives the claim up
+// (release_claim) or this object ends.  A request from any other thread
+// while the claim is held ends the process.
 //
 // Only the brand builds its claim, and the context names the brand.  The
 // single-producer state S holds a ProducerClaim<S>, so a context branded
@@ -589,6 +590,26 @@ public:
         if (holder_.load(std::memory_order_relaxed) != current_tid) [[unlikely]]
             claim_or_reject_(current_tid);
         return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{ForegroundOwner::key()};
+    }
+
+    // Gives up the claim of the calling thread.  The next request for a
+    // context claims again, from any thread.  With no claim, nothing changes.
+    // A claim of another thread ends the process in each build.
+    //
+    // The release leaves the record of the brand first, and then frees the
+    // holder with a release store.  A claim reads the free holder with an
+    // acquire exchange, so each write of the last holder happens before each
+    // access of the next holder, and the next holder finds the record free.
+    // The release takes the lock of the registry, so it is cold.
+    [[gnu::cold, gnu::noinline]] void release_claim() noexcept {
+        const std::uintptr_t holder = holder_.load(std::memory_order_relaxed);
+        if (holder == 0) return;
+        // Not a contract clause, for the reason of claim_or_reject_.
+        CRUCIBLE_FATAL_INVARIANT(holder == detail::producer_claim::calling_thread_identity());
+        BrandRecord* const record = entered_record_;
+        entered_record_ = nullptr;
+        if (record != nullptr) leave_brand_(*record);
+        holder_.store(0, std::memory_order_release);
     }
 
     // True when no thread holds the claim yet, or the calling thread
@@ -627,10 +648,12 @@ private:
     [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::uintptr_t current_tid) noexcept {
         std::uintptr_t holder = holder_.load(std::memory_order_relaxed);
         if (holder == 0) {
-            // Relaxed is enough: the claim synchronizes nothing, it only
-            // records which thread arrived first.  A failed exchange leaves
-            // the winner's id in `holder`, which the check below reports.
-            if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_relaxed)) {
+            // The exchange acquires the release store of release_claim, so
+            // the writes of the thread that gave up the claim happen before
+            // each access of this thread.  A failed exchange leaves the
+            // winner's id in `holder`, which the check below reports.
+            if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_acquire,
+                                                std::memory_order_relaxed)) {
                 BrandRecord* const record = enter_brand_(current_tid);
                 if (record != nullptr) {
                     entered_record_ = record;

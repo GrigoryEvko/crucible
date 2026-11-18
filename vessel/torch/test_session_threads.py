@@ -19,6 +19,14 @@ The checks run in child processes, because a refusal ends the process:
               closed replays its loop, and the child exits with 0
     nested    a session in a session on one thread replays its loop, and the
               child exits with 0
+    mode      a CrucibleMode gives up the claim of its thread at its exit
+              (crucible_release_claim).  A session on a second thread, while
+              the mode object of the main thread lives in a reference cycle,
+              replays its loop.  Then the mode records on the main thread
+              again, and the child exits with 0
+    held      a session on a second thread, while a CrucibleMode of the main
+              thread is inside its context, ends the child with SIGABRT before
+              the session opens
 
 Usage:
     python test_session_threads.py
@@ -101,6 +109,37 @@ with CrucibleNative():
 print(f"the nested session replays: {replays}", flush=True)
 """
 
+# The mode records one op, and the reference cycle keeps the mode object alive
+# after its name goes, as a frame or a closure can keep it.
+MODE = PRELUDE + """
+from crucible_mode import CrucibleMode
+mode = CrucibleMode()
+with mode:
+    torch.relu(torch.ones(16) * 2.0 + 1.0)
+first_count = mode._op_count
+mode.cycle = mode
+results = []
+def later():
+    with CrucibleNative() as ctx:
+        results.append(give_loop(ctx))
+run_on_a_thread(later)
+print(f"the session after the exit of a live mode replays: {results == [True]}", flush=True)
+with mode:
+    torch.relu(torch.ones(16) * 2.0 + 1.0)
+print(f"the mode records again: {mode._op_count > first_count > 0}", flush=True)
+"""
+
+HELD = PRELUDE + """
+from crucible_mode import CrucibleMode
+with CrucibleMode():
+    torch.relu(torch.ones(16) * 2.0 + 1.0)
+    def second():
+        with CrucibleNative():
+            print("the second session opened", flush=True)
+    run_on_a_thread(second)
+print("the child ended", flush=True)
+"""
+
 # The text of the refusal of a second producer thread of the Vigils, and of a
 # write of the state of the sessions on a thread that holds no Vigil claim.
 SECOND_CLAIM_REFUSAL = "foundation: fatal invariant failed: record != nullptr"
@@ -124,13 +163,14 @@ def check_refused(problems: list[str], name: str, code: str, refusal: str, marke
         problems.append(f"{name}: the child printed {marker!r} before the refusal")
 
 
-def check_admitted(problems: list[str], name: str, code: str, marker: str) -> None:
-    """Expect the child of CODE to exit with 0 and to print MARKER."""
+def check_admitted(problems: list[str], name: str, code: str, *markers: str) -> None:
+    """Expect the child of CODE to exit with 0 and to print each of MARKERS."""
     child = run_child(code)
     if child.returncode != 0:
         problems.append(f"{name}: the child ends with {child.returncode}: {child.stderr[-2000:]!r}")
-    if marker not in child.stdout:
-        problems.append(f"{name}: the child does not print {marker!r}: {child.stdout!r}")
+    for marker in markers:
+        if marker not in child.stdout:
+            problems.append(f"{name}: the child does not print {marker!r}: {child.stdout!r}")
 
 
 def main() -> int:
@@ -140,6 +180,9 @@ def main() -> int:
     check_refused(problems, "attach", ATTACH, ATTACH_REFUSAL, "the second attach returned")
     check_admitted(problems, "later", LATER, "the later session replays: True")
     check_admitted(problems, "nested", NESTED, "the nested session replays: True")
+    check_admitted(problems, "mode", MODE, "the session after the exit of a live mode replays: True",
+                   "the mode records again: True")
+    check_refused(problems, "held", HELD, SECOND_CLAIM_REFUSAL, "the second session opened")
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:

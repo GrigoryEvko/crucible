@@ -149,6 +149,7 @@ int main() {
     test_second_producer_is_rejected(test);
     test_cold_gates_reject_a_context_on_another_thread(test);
     test_second_thread_cannot_claim_the_brand(test);
+    test_released_claim_lets_another_thread_claim(test);
     test_dispatch_basic();
     test_dispatch_divergence();
     test_dispatch_recovery();

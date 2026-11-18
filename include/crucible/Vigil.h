@@ -377,6 +377,13 @@ public:
     // a program with no defined producer, and this query cannot repair it.
     [[nodiscard]] bool is_producer_thread() const noexcept { return producer_claim_.is_claimable_by_caller(); }
 
+    // Gives up the producer claim of the calling thread (release_claim of
+    // ProducerClaim).  The next op claims this Vigil again, from any thread.
+    // With no claim, nothing changes.  A claim of another thread ends the
+    // process.  The front end calls it where its session leaves the thread,
+    // such as the exit of CrucibleMode of the vessel.
+    void release_producer_claim() noexcept { producer_claim_.release_claim(); }
+
     // The context of the thread that holds this Vigil's producer claim.  The
     // first call claims the calling thread, and a call from any other thread
     // then ends the process, as dispatch_op does.  The output, input and

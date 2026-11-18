@@ -210,6 +210,10 @@ void crucible_destroy(CrucibleHandle h) noexcept {
     delete handle.value();
 }
 
+void crucible_release_claim(CrucibleHandle h) noexcept {
+    crucible::vessel::as_vigil_typed(h).value()->release_producer_claim();
+}
+
 uint64_t crucible_hash_string(const char* s) noexcept {
     if (!s) return 0;
     uint64_t h = FNV_OFFSET;

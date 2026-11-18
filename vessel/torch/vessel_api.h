@@ -160,7 +160,7 @@ typedef struct {
 // Python ctypes consumers cross-check via crucible_abi_version() at
 // load.  The constant is also exposed as a #define so C consumers can
 // bake it into their own startup checks.
-#define CRUCIBLE_VESSEL_ABI_VERSION 9ULL
+#define CRUCIBLE_VESSEL_ABI_VERSION 10ULL
 
 // Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
 // Never aborts — pure constant return.  Used by crucible_native.py
@@ -184,6 +184,13 @@ CRUCIBLE_VESSEL_API CrucibleHandle crucible_create(uint32_t eager_numerics) CRUC
 
 // Destroy a Vigil instance. Joins the background thread.
 CRUCIBLE_VESSEL_API void crucible_destroy(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+
+// The calling thread gives up its producer claim of the Vigil.  The next op,
+// on any thread, claims the Vigil again.  With no claim, nothing changes.  A
+// call while another thread holds the claim ends the process.  CrucibleMode
+// calls it at the exit of the mode, so a live mode object outside its context
+// holds no claim.
+CRUCIBLE_VESSEL_API void crucible_release_claim(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Hashing ──────────────────────────────────────────────────────────
 

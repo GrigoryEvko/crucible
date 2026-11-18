@@ -90,6 +90,9 @@ class _VesselLib:
         lib.crucible_destroy.restype = None
         lib.crucible_destroy.argtypes = [ctypes.c_void_p]
 
+        lib.crucible_release_claim.restype = None
+        lib.crucible_release_claim.argtypes = [ctypes.c_void_p]
+
         lib.crucible_active_num_ops.restype = ctypes.c_uint32
         lib.crucible_active_num_ops.argtypes = [ctypes.c_void_p]
 
@@ -302,6 +305,21 @@ class CrucibleMode(TorchDispatchMode):
         # The names of the data arguments of each operator (_data_arguments).
         self._data_argument_cache = {}
         self._prev_compiled = False
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Leave the mode, and give up the producer claim of this thread.
+
+        The create of the Vigil and each op claim the thread of the mode
+        (crucible_create).  The exit gives the claim up (crucible_release_claim),
+        so a mode object that lives on after its context, such as in a
+        reference cycle, holds no claim, and a session of another thread can
+        start.  The next op of the mode claims the Vigil again.
+        """
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            if self._handle:
+                self._vessel.crucible_release_claim(self._handle)
 
     def __del__(self):
         if hasattr(self, "_handle") and self._handle:
