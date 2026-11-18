@@ -7,7 +7,7 @@ the tag and the role of each scalar, and the value of each structural scalar.
 A data scalar is an argument of the type Scalar or float in the schema, such as
 an alpha or a step size.  The guard word does not read its value, and the
 replay binds the value of the live op (ScalarRole of crucible/Types.h).  Each
-check runs under CrucibleNative:
+check runs under CrucibleNative, and the check wrapped runs under CrucibleMode:
 
     alpha value  aten::add.Tensor replays with alpha=1, then runs with alpha=2.
                  alpha is a data scalar, so the loop replays with no divergence,
@@ -45,6 +45,10 @@ check runs under CrucibleNative:
                  PyTorch, and the list names each of its rows
     fused        AdamW with the fused kernel gives it constant scalars and reads
                  the step from a tensor, so the loop replays
+    wrapped      under CrucibleMode, a Python float in a position of the type
+                 Tensor, such as the divisor of div.Tensor, is a wrapped
+                 number and data: a loop whose divisor changes replays with no
+                 divergence.  A changed int index of select still diverges
 
 Each check of a structural change needs a divergence after the change.  The
 loops replay with no divergence before the change.  The tests compare no value
@@ -99,7 +103,7 @@ def double_bits(value: float) -> int:
     return struct.unpack("<q", struct.pack("<d", value))[0]
 
 
-def pump_until_replaying(ctx: CrucibleNative, step, limit: int = MAX_ITERATIONS) -> bool:
+def pump_until_replaying(ctx: CrucibleNative | crucible_mode.CrucibleMode, step, limit: int = MAX_ITERATIONS) -> bool:
     """Run step until the Vigil replays REPLAYED_BEFORE_CHANGE iterations of a region, and give True when it does.
 
     The loop runs step at most limit times.
@@ -330,6 +334,46 @@ def check_fused_step() -> list[str]:
     return []
 
 
+def check_wrapped_number_under_mode() -> list[str]:
+    """Give one line for each problem of CrucibleMode with a wrapped number, which must replay, and an int.
+
+    A Python float in a position of the type Tensor is a wrapped number, and
+    the mode makes it data, as the native vessel records its tensor as an
+    input.  So a loop whose divisor changes at each iteration replays with no
+    divergence.  An int of the schema stays structural, so a changed index of
+    select diverges.
+    """
+    problems = []
+    source = torch.ones(16)
+    divisor = [1.0]
+    index = [1]
+
+    def divide() -> None:
+        divisor[0] += 0.5
+        torch.relu(source / divisor[0])
+
+    def select() -> None:
+        torch.relu(source.select(0, index[0]))
+
+    with crucible_mode.CrucibleMode() as mode:
+        if not pump_until_replaying(mode, divide, MAX_UPDATE_ITERATIONS):
+            return [f"wrapped: the loop of a new divisor at each iteration does not replay under CrucibleMode after "
+                    f"{MAX_UPDATE_ITERATIONS} iterations"]
+        for _ in range(CHANGED_ITERATIONS):
+            divide()
+        if mode.diverged_count() != 0:
+            problems.append(f"wrapped: the loop diverged {mode.diverged_count()} times")
+    with crucible_mode.CrucibleMode() as mode:
+        if not pump_until_replaying(mode, select):
+            return problems + [f"wrapped: the loop of select does not replay after {MAX_ITERATIONS} iterations"]
+        index[0] = 2
+        for _ in range(CHANGED_ITERATIONS):
+            select()
+        if mode.diverged_count() == 0:
+            problems.append("wrapped: a changed int index of select replays as a match under CrucibleMode")
+    return problems
+
+
 def main() -> int:
     """Run each check and report."""
     problems = []
@@ -341,6 +385,7 @@ def main() -> int:
     problems += check_boxed_path()
     problems += check_structural_rows()
     problems += check_fused_step()
+    problems += check_wrapped_number_under_mode()
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:

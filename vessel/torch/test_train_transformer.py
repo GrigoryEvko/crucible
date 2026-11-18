@@ -10,12 +10,13 @@ spectrum of training ops:
   - dropout (no-op in eval, random in train)
   - in-place add (residual connections)
   - cross-entropy loss + autograd backward
-  - AdamW optimizer step, with the fused kernel
+  - AdamW optimizer step, with no fused kernel and no foreach kernel
 
 Usage:
     python test_train_transformer.py [--verbose]
 
-Exit 0 when the Vigil replays at least one iteration, 1 when it does not.
+Exit 0 when the Vigil replays the loop with a region of one whole iteration,
+1 when it does not.
 """
 
 import sys
@@ -160,21 +161,27 @@ def main():
     # ── Phase 2: Training through Crucible ───────────────────
     print("Phase 2: Training through Crucible...")
 
-    # Reset model for clean test.  The loop trains with the fused AdamW.  With
-    # no fused kernel, the update of each parameter is a block of ops, and two
-    # parameters of one shape repeat the block.  Under this mode that loop did
-    # not replay in 200 iterations, and the detector cut a region of 10 ops
-    # again and again.  The native vessel replays the same loop from its fifth
-    # iteration (test_guard_divergence.py checks the step size of AdamW there).
+    # Reset model for clean test.  The loop trains with the AdamW of one tensor
+    # at a time, the default on the CPU: the update of each parameter is a
+    # block of 10 ops.  The divisor of div.Tensor in each block is a wrapped
+    # number, the square root of the bias correction, which changes at each
+    # step.  This mode gets it as a Python float in a position of the type
+    # Tensor, and it is data (_is_data_type of crucible_mode.py).  If the mode
+    # folds its value into the guard word, no whole iteration repeats, and the
+    # detector cuts a region of the one block that two parameters of one shape
+    # repeat in one step.  So the test requires a region of the ops of one
+    # whole iteration.
     model = MiniGPT(VOCAB, D_MODEL, N_HEADS, N_LAYERS, D_FF, MAX_SEQ)
     model.train()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, fused=True)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, fused=False, foreach=False)
     torch.manual_seed(42)
 
     losses = []
+    ops_of_last_iteration = 0
 
     with CrucibleMode(verbose=verbose) as mode:
         for i in range(N_ITERS):
+            ops_before = mode._op_count
             optimizer.zero_grad()
             logits = model(x)
             loss = F.cross_entropy(logits.view(-1, VOCAB), target.view(-1))
@@ -183,6 +190,7 @@ def main():
 
             loss_val = loss.item()
             losses.append(loss_val)
+            ops_of_last_iteration = mode._op_count - ops_before
 
             compiled = mode.is_compiled()
             status = "COMPILED" if compiled else "RECORDING"
@@ -208,6 +216,7 @@ def main():
         ops_per_iter = total_ops // N_ITERS
         compiled_iters = mode.compiled_iterations()
         diverged = mode.diverged_count()
+        region_ops = mode.active_num_ops()
 
         print("Final status:")
         print(f"  compiled:       {mode.is_compiled()}")
@@ -215,6 +224,7 @@ def main():
         print(f"  divergences:    {diverged}")
         print(f"  total ops:      {total_ops}")
         print(f"  ops/iter:       ~{ops_per_iter}")
+        print(f"  region ops:     {region_ops} (the last iteration ran {ops_of_last_iteration})")
         print()
 
         # Verify loss decreased
@@ -233,6 +243,12 @@ def main():
         else:
             print("  FAIL: Did not reach COMPILED mode")
 
+        holds_one_iteration = region_ops == ops_of_last_iteration
+        if holds_one_iteration:
+            print("  PASS: the region holds the ops of one whole iteration")
+        else:
+            print(f"  FAIL: the region holds {region_ops} ops, and one iteration runs {ops_of_last_iteration}")
+
         if diverged == 0:
             print("  PASS: Zero divergences!")
         else:
@@ -242,7 +258,7 @@ def main():
     print("=" * 60)
     print("Test complete.")
     print("=" * 60)
-    return 0 if compiled_iters > 0 else 1
+    return 0 if compiled_iters > 0 and holds_one_iteration else 1
 
 
 if __name__ == "__main__":

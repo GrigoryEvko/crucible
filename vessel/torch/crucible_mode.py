@@ -90,6 +90,9 @@ class _VesselLib:
         lib.crucible_destroy.restype = None
         lib.crucible_destroy.argtypes = [ctypes.c_void_p]
 
+        lib.crucible_active_num_ops.restype = ctypes.c_uint32
+        lib.crucible_active_num_ops.argtypes = [ctypes.c_void_p]
+
         lib.crucible_hash_string.restype = ctypes.c_uint64
         lib.crucible_hash_string.argtypes = [ctypes.c_char_p]
 
@@ -240,16 +243,25 @@ def _scalar_tag(val):
 
 
 def _is_data_type(argument_type) -> bool:
-    """True for the schema type Scalar or float, an optional of one, or a list of one.
+    """True for a schema type whose Python scalar fills a data slot.
 
-    A slot of such an argument is a data slot (ScalarRole of crucible/Types.h),
-    unless crucible_is_structural_scalar names the argument.  The type comes
-    from the schema of the operator, as on the native recording paths.
+    The type Scalar or float, an optional of one, or a list of one, is data
+    (ScalarRole of crucible/Types.h), unless crucible_is_structural_scalar
+    names the argument.  The type comes from the schema of the operator, as on
+    the native recording paths.
+
+    A Python scalar in a position of the type Tensor is a wrapped number.
+    PyTorch makes a tensor of rank zero from the number, and it gives this mode
+    the number again, such as the float divisor of div.Tensor in the step of
+    the AdamW with no fused kernel.  The native vessel records that tensor as
+    an input, and its guard reads no value of an input.  So the value of a
+    wrapped number is data here too, and a loop whose wrapped number changes
+    at each iteration keeps its period.
     """
     kind = argument_type.kind()
     if kind in ("OptionalType", "ListType"):
         return _is_data_type(argument_type.getElementType())
-    return kind in ("NumberType", "FloatType")
+    return kind in ("NumberType", "FloatType", "TensorType")
 
 
 def _scalar_to_int64(val):
@@ -300,6 +312,10 @@ class CrucibleMode(TorchDispatchMode):
 
     def is_compiled(self):
         return bool(self._vessel.crucible_is_compiled(self._handle))
+
+    def active_num_ops(self) -> int:
+        """Return the count of the ops of the active region, or 0 with no active region."""
+        return self._vessel.crucible_active_num_ops(self._handle)
 
     def compiled_iterations(self):
         return self._vessel.crucible_compiled_iterations(self._handle)
@@ -536,7 +552,7 @@ class CrucibleMode(TorchDispatchMode):
         return []
 
     def _data_arguments(self, func, op_name, schema_hash):
-        """Return the names of the arguments of the operator whose slots are data.
+        """Return the names of the arguments of the operator whose Python scalars are data.
 
         The type of an argument in the schema gives its role (_is_data_type),
         and the list of the vessel makes some of them structural
