@@ -15,7 +15,8 @@ int main() {
     // The size instantiates the class, and a band payload has no default
     // constructor.  So the size and not a default binding is the use, and
     // the refusal of the class body is the only error.
-    static_cast<void>(sizeof(::fixy::fn<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>,
-                                        ::fixy::atom::capability_usage, ::fixy::atom::trust_verified>));
+    static_cast<void>(
+        sizeof(::fixy::fn<::fixy::DetSafe<::fixy::DetSafeTier_v::Pure, int>, ::fixy::atom::capability_usage,
+                          ::fixy::atom::trust<::fixy::tags::trust::Verified>>));
     return 0;
 }

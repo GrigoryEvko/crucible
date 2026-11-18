@@ -44,6 +44,7 @@ namespace {
 
 namespace at = ::fixy::atom;
 namespace source = ::fixy::tags::source;
+namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
 using Effect = ::foundation::effects::Effect;
 
@@ -104,7 +105,7 @@ using BackendEmitter = ::fixy::fn<Emitter,
                                   at::with<Effect::Bg, Effect::Alloc, Effect::IO>,  // plus IO for the driver ioctls
                                   at::as_public,  // the pointer holds no secret
                                   at::from_source<source::FromInternal>,  // Crucible wrote the backend
-                                  at::trust_verified,  // the planned CI against the CPU oracle checks it
+                                  at::trust<trust_level::Verified>,  // the planned CI against the CPU oracle checks it
                                   at::cost_linear<0>,  // O(N) in the node count of the IR
                                   at::mut_mutable,  // the emitter writes compiled bytes into the arena
                                   at::reentrant,  // the planned compile pool emits kernels in parallel
@@ -130,7 +131,7 @@ static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgDrainCtx, BoundMimicNvEmit>);
 // Emission can run in parallel.  Forge phases share one arena and are not
 // reentrant.
 static_assert(std::is_same_v<BoundMimicNvEmit::grade_on<Axis::Reentrancy>, at::reentrant>);
-static_assert(std::is_same_v<BoundMimicNvEmit::grade_on<Axis::Trust>, at::trust_verified>);
+static_assert(std::is_same_v<BoundMimicNvEmit::grade_on<Axis::Trust>, at::trust<trust_level::Verified>>);
 
 // The generation of the IR of the backend moves at its own pace,
 // separately from the IR002 version of Forge.

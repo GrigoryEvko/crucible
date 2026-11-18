@@ -15,6 +15,7 @@
 #include <fixy/Fn.h>
 
 int main() {
-    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::capability_usage, ::fixy::atom::trust_unverified> refused{};
+    [[maybe_unused]] ::fixy::fn<int, ::fixy::atom::capability_usage,
+                                ::fixy::atom::trust<::fixy::tags::trust::Unverified>> refused{};
     return 0;
 }

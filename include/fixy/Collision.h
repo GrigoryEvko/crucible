@@ -865,51 +865,48 @@ struct control_flow_has_suspension_<::fixy::atom::ctrl::coroutine<SuspensionPoli
 }  // namespace detail
 
 // ---------------------------------------------------------------------
-// What a Trust grade says, as one closed relation.
+// What a Trust grade says: its level, one tag of fixy/Tags.h.
 //
 // T001 asks one question of the Trust grade: did anything verify the
-// provenance of the binding?  The strict pole of Trust is
-// tags::trust::Unverified, and trust_unverified names that pole, so the
-// two give the same answer.  A binding that says nothing about Trust is
-// unverified, and T001 reads it so.
+// provenance of the binding?  The strict pole of Trust is the level
+// tags::trust::Unverified itself, and the atom trust<tags::trust::Unverified>
+// names that level, so the two give the same answer.  A binding that says
+// nothing about Trust is unverified, and T001 reads it so.
 //
 // The relation is a function over reflections and not a template, so no
 // other file can add a grade to it.  A Trust grade that it does not name
-// has no class, and T001 stops the build on that grade.  The walk in the
+// has no level, and T001 stops the build on that grade.  The walk in the
 // check file of this header makes sure that every Trust atom of the
-// roster has a class.
-enum class TrustClass : std::uint8_t {
-    Unverified = 0,  // the strict pole, trust_unverified: nothing verified the provenance
-    Tested = 1,  // trust_tested: a test shows it, and no proof does
-    Verified = 2,  // trust_verified: the binding discharged the proof
-    Assumed = 3,  // trust_assumed<Rationale>: a named assumption, with a rationale for the audit
-    External = 4,  // trust_external: a foreign source states it
-};
-
+// roster has a level.
 namespace detail {
 
-[[nodiscard]] consteval std::optional<TrustClass> trust_class_of_(std::meta::info grade) noexcept {
+// The level of the grade, or the null reflection when the relation names
+// no level.  A template argument is a type and never an alias.
+[[nodiscard]] consteval std::meta::info trust_level_of_(std::meta::info grade) {
     const std::meta::info named = std::meta::dealias(grade);
-    if (named == std::meta::dealias(^^typename axis_traits<Axis::Trust>::strict)
-        || named == ^^::fixy::atom::trust_unverified) {
-        return TrustClass::Unverified;
+    if (named == std::meta::dealias(^^typename axis_traits<Axis::Trust>::strict)) return named;
+    if (std::meta::has_template_arguments(named)) {
+        const auto primary = std::meta::template_of(named);
+        if (primary == ^^::fixy::atom::trust) return std::meta::template_arguments_of(named)[0];
+        if (primary == ^^::fixy::atom::trust_assumed) return ^^::fixy::tags::trust::Assumed;
     }
-    if (named == ^^::fixy::atom::trust_tested) return TrustClass::Tested;
-    if (named == ^^::fixy::atom::trust_verified) return TrustClass::Verified;
-    if (named == ^^::fixy::atom::trust_external) return TrustClass::External;
-    if (std::meta::has_template_arguments(named) && std::meta::template_of(named) == ^^::fixy::atom::trust_assumed) {
-        return TrustClass::Assumed;
-    }
-    return std::nullopt;
+    return {};
 }
 
 }  // namespace detail
 
 template <class Grade>
-concept IsTrustGrade = detail::trust_class_of_(^^Grade).has_value();
+concept IsTrustGrade = detail::trust_level_of_(^^Grade) != decltype(^^Grade){};
 
+// The level of a Trust grade, as a reflection of its tag.  A grade that the
+// relation does not name has no level, and a read of it stops the build.
 template <IsTrustGrade Grade>
-inline constexpr TrustClass trust_class_of_v = *detail::trust_class_of_(^^Grade);
+inline constexpr auto trust_level_of_v = detail::trust_level_of_(^^Grade);
+
+// The Trust grade has the level Level of fixy/Tags.h.  A template argument
+// is a type and never an alias, so ^^Level needs no dealias.
+template <class Grade, class Level>
+concept HasTrustLevel = IsTrustGrade<Grade> && ::fixy::tags::IsTrustLevel<Level> && trust_level_of_v<Grade> == ^^Level;
 
 // ---------------------------------------------------------------------
 // The live rules.
@@ -946,7 +943,8 @@ struct rules_of {
         std::is_same_v<typename G::template on<Axis::Reentrancy>, ::fixy::atom::coroutine>;
     static constexpr bool monotonic =
         std::is_same_v<typename G::template on<Axis::Mutation>, ::fixy::atom::mut_monotonic>;
-    static constexpr bool unverified = trust_class_of_v<typename G::template on<Axis::Trust>> == TrustClass::Unverified;
+    static constexpr bool unverified =
+        trust_level_of_v<typename G::template on<Axis::Trust>> == ^^::fixy::tags::trust::Unverified;
     static constexpr bool unbounded_cost =
         std::is_same_v<typename G::template on<Axis::Complexity>, ::fixy::atom::cost_unbounded>;
 

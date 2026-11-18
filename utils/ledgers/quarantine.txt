@@ -131,11 +131,11 @@ include/crucible/ | opted-out | 1 | ABI: the front end gave the data pointer of 
 include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the tensor at the record of the op | the data pointer of a TensorMeta came from the front end, and data_address gives it a RunAddress through the foreign mint, which stands only at the edge of a foreign ABI
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
-include/fixy/ | base-std-entity | 347 | - | -
-include/fixy/ | base-std-object | 197 | - | -
+include/fixy/ | base-std-entity | 318 | - | -
+include/fixy/ | base-std-object | 192 | - | -
 include/fixy/ | replace-pending:<array> | 6 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
-include/fixy/ | replace-pending:<bit> | 4 | - | -
+include/fixy/ | replace-pending:<bit> | 3 | - | -
 include/fixy/ | replace-pending:<expected> | 2 | - | -
 include/fixy/ | replace-pending:<functional> | 1 | - | -
 include/fixy/ | replace-pending:<limits> | 2 | - | -
@@ -145,7 +145,6 @@ include/fixy/ | replace-pending:<span> | 6 | - | -
 include/fixy/ | replace-pending:<string> | 5 | - | -
 include/fixy/ | replace-pending:<string_view> | 12 | - | -
 include/fixy/ | replace-pending:<tuple> | 4 | - | -
-include/fixy/ | replace-pending:<variant> | 1 | - | -
 include/fixy/ | replace-pending:<vector> | 11 | - | -
 include/fixy/atoms/ | base-std-entity | 46 | - | -
 include/fixy/atoms/ | base-std-object | 10 | - | -
@@ -399,8 +398,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
 test/fixy/ | replace-pending:std::source_location | 7 | - | -
-test/fixy/ | std-entity | 2540 | - | -
-test/fixy/ | std-object | 917 | - | -
+test/fixy/ | std-entity | 2529 | - | -
+test/fixy/ | std-object | 912 | - | -
 test/fixy/neg/ | c-array-object | 57 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 288 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor or the context witness

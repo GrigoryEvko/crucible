@@ -38,6 +38,7 @@ namespace {
 
 namespace at = ::fixy::atom;
 namespace source = ::fixy::tags::source;
+namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
 using ::fixy::axis_traits;
 using Effect = ::foundation::effects::Effect;
@@ -76,7 +77,7 @@ using UserBgOptimizer = ::fixy::fn<Step,
                                    at::with<Effect::Bg, Effect::Alloc>,  // the background thread, and scratch memory
                                    at::as_public,  // the pointer holds no secret
                                    at::from_source<source::FromUser>,  // the user supplied the step
-                                   at::trust_tested,  // the user has tests, and no proof
+                                   at::trust<trust_level::Tested>,  // the user has tests, and no proof
                                    at::cost_linear<0>,  // O(N) in the parameter count
                                    at::precision_f32,  // the step computes in FP32
                                    at::space_bounded<3>,  // three persistent buffers: p, m and v

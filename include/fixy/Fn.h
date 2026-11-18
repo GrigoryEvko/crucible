@@ -556,17 +556,17 @@ struct lattice_canonical_id<::fixy::atom::as_classified> {
         lattice_canonical_id_v<typename ::fixy::axis_traits<::fixy::Axis::Security>::strict>;
 };
 
-// `trust_unverified` and the strict Trust pole are one claim under two
-// spellings, as `as_classified` and the strict Security pole are.  The
-// consumer that establishes it is rule T001 in fixy/Collision.h, the one
-// rule that reads the Trust axis.  It reads the grade through the closed
-// relation `trust_class_of_`, which gives the two spellings the class
-// Unverified.  The other Trust atoms keep their own slots, because each
-// of them admits a capability that the pole refuses.
-template <>
-struct lattice_canonical_id<::fixy::atom::trust_unverified> {
-    static constexpr std::uint64_t value =
-        lattice_canonical_id_v<typename ::fixy::axis_traits<::fixy::Axis::Trust>::strict>;
+// A Trust atom names its level of fixy/Tags.h, and the atom and its level
+// are one claim, so the atom takes the identity of its level.  The strict
+// Trust pole is the level tags::trust::Unverified, so
+// `trust<tags::trust::Unverified>` and the pole reach one slot, as
+// `as_classified` and the strict Security pole do.  The consumer is rule
+// T001 in fixy/Collision.h, the one rule that reads the Trust axis, through
+// `trust_level_of_v`.  Each other level is its own slot, because each one
+// admits a capability that the pole refuses.
+template <class Level>
+struct lattice_canonical_id<::fixy::atom::trust<Level>> {
+    static constexpr std::uint64_t value = lattice_canonical_id_v<Level>;
 };
 
 template <class Type, class... Atoms>

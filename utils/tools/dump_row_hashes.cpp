@@ -224,9 +224,9 @@ using B02_FnClassified = ::fixy::fn<int, ::fixy::atom::as_classified>;
 using B03_FnSecret = ::fixy::fn<int, ::fixy::atom::as_secret>;
 using B04_FnInternal = ::fixy::fn<int, ::fixy::atom::as_internal>;
 using B05_FnPublic = ::fixy::fn<int, ::fixy::atom::as_public>;
-using B06_FnUnverified = ::fixy::fn<int, ::fixy::atom::trust_unverified>;
+using B06_FnUnverified = ::fixy::fn<int, ::fixy::atom::trust<::fixy::tags::trust::Unverified>>;
 using B07_FnDoublePayload = ::fixy::fn<double>;
-using B08_FnVerified = ::fixy::fn<int, ::fixy::atom::trust_verified>;
+using B08_FnVerified = ::fixy::fn<int, ::fixy::atom::trust<::fixy::tags::trust::Verified>>;
 
 // ── The role compositions ──────────────────────────────────────────
 //
@@ -353,7 +353,7 @@ inline constexpr std::size_t kEntryCount = kEntries.size();
 // order, or in any single hash moves this value and reddens the build
 // before the golden diff runs, with the ceremony named in the message.
 inline constexpr std::uint64_t kFoldSeed = 0xF0117A11EDA11A5EULL;
-inline constexpr std::uint64_t kFoldAnchor = 0x6a7a8a566d476d89ULL;
+inline constexpr std::uint64_t kFoldAnchor = 0xe989b136520e9d3aULL;
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
@@ -402,9 +402,9 @@ static_assert(row_hash_contribution_v<B01_FnStrictPole> != row_hash_contribution
 // The Trust pole and the atom that spells it out are one claim too, and
 // a verified grade is another claim.
 static_assert(row_hash_contribution_v<B01_FnStrictPole> == row_hash_contribution_v<B06_FnUnverified>,
-              "the strict Trust pole and trust_unverified must take one slot");
+              "the strict Trust pole and trust<Unverified> must take one slot");
 static_assert(row_hash_contribution_v<B01_FnStrictPole> != row_hash_contribution_v<B08_FnVerified>,
-              "T001 separates trust_verified from the strict Trust pole, so the two must take two slots");
+              "T001 separates trust<Verified> from the strict Trust pole, so the two must take two slots");
 
 // A carrier does not collapse over a payload that carries a row.
 static_assert(row_hash_contribution_v<C03_CompNested> != row_hash_contribution_v<C02_CompBg>,

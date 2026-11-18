@@ -46,6 +46,7 @@ namespace {
 
 namespace at = ::fixy::atom;
 namespace source = ::fixy::tags::source;
+namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
 using ::fixy::axis_traits;
 
@@ -106,17 +107,17 @@ using CntpFrame = ::fixy::fn<Header,
                              at::sized_at<sizeof(Header)>,  // a fixed observation depth
                              at::version<cntp_version>>;  // the version of the wire protocol
 
-// The frame as it comes from the wire.  trust_unverified names the strict
+// The frame as it comes from the wire.  trust<Unverified> names the strict
 // pole of Trust, and the two spellings take one cache slot.
 template <class Header>
-using UnvalidatedFrame = CntpFrame<Header, source::External, at::trust_unverified>;
+using UnvalidatedFrame = CntpFrame<Header, source::External, at::trust<trust_level::Unverified>>;
 
 // The frame after validation.  In production a refinement predicate also
 // gates this state, with at::refined_with<ValidCntpFrame>, and its check
 // runs the checksum and the structural test at construction.  The example
 // leaves the predicate out, so that the contrast stays on two axes.
 template <class Header>
-using ValidatedFrame = CntpFrame<Header, source::Sanitized, at::trust_tested>;
+using ValidatedFrame = CntpFrame<Header, source::Sanitized, at::trust<trust_level::Tested>>;
 
 // The two states are different types.  A function that asks for a
 // validated frame cannot take an unvalidated one, and the type system
@@ -136,8 +137,8 @@ static_assert(
     std::is_same_v<ValidatedFrame<CntpHeader>::grade_on<Axis::Provenance>, at::from_source<source::Sanitized>>);
 
 // So does the Trust axis.
-static_assert(std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Trust>, at::trust_unverified>);
-static_assert(std::is_same_v<ValidatedFrame<CntpHeader>::grade_on<Axis::Trust>, at::trust_tested>);
+static_assert(std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Trust>, at::trust<trust_level::Unverified>>);
+static_assert(std::is_same_v<ValidatedFrame<CntpHeader>::grade_on<Axis::Trust>, at::trust<trust_level::Tested>>);
 
 // The Representation axis agrees with [[gnu::packed]].
 static_assert(std::is_same_v<UnvalidatedFrame<CntpHeader>::grade_on<Axis::Representation>,

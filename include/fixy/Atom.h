@@ -756,18 +756,23 @@ struct from_source final : atom_of<Axis::Provenance> {};
 // from a deliberate choice of that value, which is the one thing an audit
 // of these sites needs to tell apart.
 template <auto Rationale>
-struct trust_assumed final : atom_of<Axis::Trust> {};
+struct trust_assumed final : atom_of<Axis::Trust> {
+    using level = ::fixy::tags::trust::Assumed;
+};
 
-// One atom per remaining trust level.  `trust_verified` names the
-// Verified level.  The strict pole in fixy/Axis.h is Unverified, so a
-// binding names this atom only after it has discharged the proof.
-// `trust_external` delegates the claim to a foreign source such as a vendor
-// library or firmware, and a binding that takes it has to confirm that
-// claim through some channel of its own.
-struct trust_verified final : atom_of<Axis::Trust> {};
-struct trust_tested final : atom_of<Axis::Trust> {};
-struct trust_unverified final : atom_of<Axis::Trust> {};
-struct trust_external final : atom_of<Axis::Trust> {};
+// The atom of each other trust level names its level of fixy/Tags.h, so the
+// tags are the one vocabulary of trust.  trust<tags::trust::Verified> states
+// that the binding discharged the proof.  The strict pole in fixy/Axis.h is
+// Unverified, so a binding names Verified only after the proof.
+// trust<tags::trust::External> delegates the claim to a foreign source, such
+// as a vendor library or firmware, and a binding that takes it confirms that
+// claim through a channel of its own.  The level Assumed has no such atom,
+// because trust_assumed carries the rationale of the assumption.
+template <class Level>
+    requires(::fixy::tags::IsTrustLevel<Level> && !__is_same(Level, ::fixy::tags::trust::Assumed))
+struct trust final : atom_of<Axis::Trust> {
+    using level = Level;
+};
 
 template <::fixy::pole::ReprKind Kind>
 struct repr final : atom_of<Axis::Representation> {};
@@ -1119,7 +1124,8 @@ using core_atom_roster =
                as_classified, as_secret, constant_time, protocol<atom_axis_witness_proto>,
                protocol<::fixy::pole::proto::None>, in_region<0>, from_source<atom_axis_witness_source>,
                from_source<::fixy::tags::source::FromUser>, from_source<::fixy::tags::source::ForgePhase<'F'>>,
-               trust_assumed<0>, trust_verified, trust_tested, trust_unverified, trust_external,
+               trust_assumed<0>, trust<::fixy::tags::trust::Verified>, trust<::fixy::tags::trust::Tested>,
+               trust<::fixy::tags::trust::Unverified>, trust<::fixy::tags::trust::External>,
                repr<::fixy::pole::ReprKind::C>, cost_constant, cost_linear<1>, cost_quadratic<1>, cost_unbounded,
                precision_f32, precision_f64, precision_higham<1>, space_bounded<1>, space_unbounded, overflow_wrap,
                overflow_saturate, overflow_widen, mut_mutable, mut_append, mut_monotonic, reentrant, coroutine,

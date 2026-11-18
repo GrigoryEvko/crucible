@@ -35,7 +35,8 @@ static_assert(!IsAccepted<void>);
 static_assert(IsAccepted<int, ::fixy::atom::borrow>);
 static_assert(IsAccepted<int, ::fixy::atom::coroutine>);
 static_assert(!IsAccepted<int, ::fixy::atom::borrow, ::fixy::atom::coroutine>, "R002 and L002 refuse this pair");
-static_assert(!IsAccepted<int, ::fixy::atom::capability_usage, ::fixy::atom::trust_unverified>, "T001 refuses it");
+static_assert(!IsAccepted<int, ::fixy::atom::capability_usage, ::fixy::atom::trust<::fixy::tags::trust::Unverified>>,
+              "T001 refuses it");
 
 // The corpus reaches the gate through the same tier.  An IO row with
 // no Security atom is a classified value on an observable channel, and

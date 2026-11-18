@@ -27,7 +27,7 @@ inline constexpr bool is_move_only_binding =
 
 static_assert(is_move_only_binding<fn<int>>, "the strict pole of the Usage axis is the linear grade");
 static_assert(is_move_only_binding<fn<int, atom::affine>>);
-static_assert(is_move_only_binding<fn<int, atom::capability_usage, atom::trust_verified>>);
+static_assert(is_move_only_binding<fn<int, atom::capability_usage, atom::trust<tags::trust::Verified>>>);
 static_assert(!fn<int>::admits_copy && !fn<int, atom::affine>::admits_copy);
 static_assert(!std::is_copy_constructible_v<Linear<int>> && !std::is_copy_constructible_v<Affine<int>>);
 

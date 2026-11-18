@@ -55,12 +55,31 @@ static_assert(live_rules<::fixy::atom::ghost>::P010_ok);
 
 // A binding that says nothing about Trust sits at the strict pole, which is
 // unverified, so T001 refuses a capability alone, as it refuses the pack
-// with trust_unverified.  A trust grade that is not Unverified admits it.
-static_assert(!live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust_unverified>::T001_ok);
+// with trust<tags::trust::Unverified>.  A trust grade that is not Unverified
+// admits it.
+namespace trust_level = ::fixy::tags::trust;
+static_assert(!live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust<trust_level::Unverified>>::T001_ok);
 static_assert(!live_rules<::fixy::atom::capability_usage>::T001_ok);
-static_assert(live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust_verified>::T001_ok);
-static_assert(live_rules<::fixy::atom::trust_unverified>::T001_ok);
+static_assert(live_rules<::fixy::atom::capability_usage, ::fixy::atom::trust<trust_level::Verified>>::T001_ok);
+static_assert(live_rules<::fixy::atom::trust<trust_level::Unverified>>::T001_ok);
 static_assert(live_rules<>::T001_ok);
+
+// The level of a Trust grade is a tag of fixy/Tags.h: the level that a trust
+// atom names, Assumed for trust_assumed, and Unverified for the strict pole.
+using ::fixy::collision::HasTrustLevel;
+static_assert(HasTrustLevel<::fixy::atom::trust<trust_level::Tested>, trust_level::Tested>);
+static_assert(HasTrustLevel<::fixy::atom::trust<trust_level::External>, trust_level::External>);
+static_assert(!HasTrustLevel<::fixy::atom::trust<trust_level::External>, trust_level::Tested>);
+static_assert(HasTrustLevel<::fixy::atom::trust_assumed<0>, trust_level::Assumed>);
+static_assert(HasTrustLevel<typename axis_traits<Axis::Trust>::strict, trust_level::Unverified>);
+static_assert(!HasTrustLevel<::fixy::atom::copy, trust_level::Unverified>);
+
+// The atom trust takes a level of the tags, and not Assumed, because
+// trust_assumed carries the rationale of an assumption.
+template <class Level>
+concept NamesTrustAtom = requires { typename ::fixy::atom::trust<Level>; };
+static_assert(NamesTrustAtom<trust_level::Verified> && !NamesTrustAtom<trust_level::Assumed>);
+static_assert(!NamesTrustAtom<int> && !NamesTrustAtom<::fixy::tags::access::RO>);
 
 // Every Trust, CallShape and Protocol atom of the roster has an answer in
 // the closed relation of its axis.  The walk names each atom that its
@@ -81,7 +100,7 @@ static_assert(live_rules<>::T001_ok);
         bool is_answered = true;
         if constexpr (Atom::axis == Axis::Trust) {
             ++trust_seen;
-            is_answered = !!cd::trust_class_of_(member);
+            is_answered = ::fixy::collision::IsTrustGrade<Atom>;
         } else if constexpr (Atom::axis == Axis::CallShape) {
             ++call_shape_seen;
             is_answered = cd::call_shape_reading_(member) != cd::CallShapeReading::Unread;
@@ -104,12 +123,12 @@ static_assert(atoms_without_an_answer_().empty(),
               std::string_view{std::define_static_string(
                   "fixy/Collision.h: these atoms have no answer in the closed relation of their axis: "
                   + atoms_without_an_answer_()
-                  + ".  Name each one in trust_class_of_, call_shape_reading_ or protocol_reading_, and decide "
+                  + ".  Name each one in trust_level_of_, call_shape_reading_ or protocol_reading_, and decide "
                     "how T001, D001 or L003 reads it.")});
 static_assert(::fixy::collision::IsTrustGrade<typename axis_traits<Axis::Trust>::strict>,
-              "the strict Trust pole must have a class, because a binding that says nothing about Trust reads it");
-static_assert(!::fixy::collision::IsTrustGrade<int>, "a type that is not a Trust grade has no class");
-static_assert(!::fixy::collision::IsTrustGrade<::fixy::atom::copy>, "an atom on another axis has no Trust class");
+              "the strict Trust pole must have a level, because a binding that says nothing about Trust reads it");
+static_assert(!::fixy::collision::IsTrustGrade<int>, "a type that is not a Trust grade has no level");
+static_assert(!::fixy::collision::IsTrustGrade<::fixy::atom::copy>, "an atom on another axis has no Trust level");
 
 // The CallShape relation and the Protocol relation name the strict pole of
 // fixy/Axis.h by its type, and these pins hold the two to that pole.  A

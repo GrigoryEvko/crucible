@@ -33,6 +33,7 @@ namespace {
 
 namespace at = ::fixy::atom;
 namespace source = ::fixy::tags::source;
+namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
 using ::fixy::axis_traits;
 
@@ -78,7 +79,7 @@ using UserBgKernel = ::fixy::fn<Kernel,
                                 at::with_bg,  // the kernel runs on the background thread only
                                 at::as_public,  // the pointer holds no secret
                                 at::from_source<source::FromUser>,  // the user supplied the kernel
-                                at::trust_tested,  // the user has tests, and no proof
+                                at::trust<trust_level::Tested>,  // the user has tests, and no proof
                                 at::precision_f32,  // the kernel accumulates in FP32
                                 at::space_bounded<0>,  // the kernel writes C in place and allocates nothing
                                 at::mut_mutable,  // the kernel writes the output buffer C
@@ -98,7 +99,7 @@ static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Usage>, at::copy>);
 static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Effect>, at::with_bg>);
 static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Security>, at::as_public>);
 static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Provenance>, at::from_source<source::FromUser>>);
-static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Trust>, at::trust_tested>);
+static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Trust>, at::trust<trust_level::Tested>>);
 static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Precision>, at::precision_f32>);
 static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Mutation>, at::mut_mutable>);
 static_assert(std::is_same_v<BoundGemm::grade_on<Axis::Reentrancy>, at::reentrant>);

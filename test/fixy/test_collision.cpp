@@ -39,6 +39,7 @@ namespace collision_test {
 
 namespace col = ::fixy::collision;
 namespace at = ::fixy::atom;
+namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
 using ::fixy::axis_traits;
 using col::grades;
@@ -129,12 +130,12 @@ static_assert(live_rules<at::with<Eff::Bg>>::L007_ok);
 
 // T001 capability x unverified provenance.  The strict Trust pole is
 // unverified, so the rule refuses a capability with no trust grade.
-static_assert(!live_rules<at::capability_usage, at::trust_unverified>::T001_ok);
+static_assert(!live_rules<at::capability_usage, at::trust<trust_level::Unverified>>::T001_ok);
 static_assert(!live_rules<at::capability_usage>::T001_ok);
-static_assert(live_rules<at::trust_unverified>::T001_ok);
-static_assert(live_rules<at::capability_usage, at::trust_verified>::T001_ok);
-static_assert(live_rules<at::capability_usage, at::trust_tested>::T001_ok);
-static_assert(live_rules<at::capability_usage, at::trust_external>::T001_ok);
+static_assert(live_rules<at::trust<trust_level::Unverified>>::T001_ok);
+static_assert(live_rules<at::capability_usage, at::trust<trust_level::Verified>>::T001_ok);
+static_assert(live_rules<at::capability_usage, at::trust<trust_level::Tested>>::T001_ok);
+static_assert(live_rules<at::capability_usage, at::trust<trust_level::External>>::T001_ok);
 
 // R002 / R003 coroutine x borrow, coroutine x Bg row
 static_assert(!live_rules<at::coroutine, at::borrow>::R002_ok);
@@ -758,16 +759,17 @@ static_assert(rules_of<det<DetTier::Pure>, fp_mode<>>::valid);
 // S011 a capability x a replay-deterministic payload.  Both replay tiers
 // trip it, and a payload below the replay floor, or with no band, does
 // not.  The trust grade keeps T001 out of every cell.
-static_assert(!rules_of<det<DetTier::Pure>, at::capability_usage, at::trust_verified>::S011_ok);
-static_assert(!rules_of<det<DetTier::PhiloxRng>, at::capability_usage, at::trust_verified>::S011_ok);
-static_assert(rules_of<det<DetTier::MonotonicClockRead>, at::capability_usage, at::trust_verified>::S011_ok,
+using TrustVerified = at::trust<trust_level::Verified>;
+static_assert(!rules_of<det<DetTier::Pure>, at::capability_usage, TrustVerified>::S011_ok);
+static_assert(!rules_of<det<DetTier::PhiloxRng>, at::capability_usage, TrustVerified>::S011_ok);
+static_assert(rules_of<det<DetTier::MonotonicClockRead>, at::capability_usage, TrustVerified>::S011_ok,
               "a payload that reads the clock claims no replay, so a capability costs it nothing");
-static_assert(rules_of<int, at::capability_usage, at::trust_verified>::valid,
+static_assert(rules_of<int, at::capability_usage, TrustVerified>::valid,
               "a capability with no replay claim and a verified trust trips nothing");
 static_assert(rules_of<det<DetTier::Pure>, at::copy>::valid, "a replay payload that holds no capability");
-static_assert(rules_of<det<DetTier::Pure>, at::capability_usage, at::trust_verified>::T001_ok,
+static_assert(rules_of<det<DetTier::Pure>, at::capability_usage, TrustVerified>::T001_ok,
               "S011 must be the rule that catches this pack, not T001");
-static_assert(live_rules<at::capability_usage, at::trust_verified>::S011_ok, "the pack-only view claims no replay");
+static_assert(live_rules<at::capability_usage, TrustVerified>::S011_ok, "the pack-only view claims no replay");
 
 // D001 an indirect call whose family names no noexcept signature.  A free
 // function pointer, a function type and a member function pointer each
@@ -943,7 +945,7 @@ static_assert(every_pending_rule_waits_on_a_pending_axis());
 static_assert(::fixy::IsAccepted<int, at::borrow>);
 static_assert(::fixy::IsAccepted<int, at::coroutine>);
 static_assert(!::fixy::IsAccepted<int, at::borrow, at::coroutine>);
-static_assert(!::fixy::IsAccepted<int, at::capability_usage, at::trust_unverified>);
+static_assert(!::fixy::IsAccepted<int, at::capability_usage, at::trust<trust_level::Unverified>>);
 static_assert(col::rules_of<int, at::copy>::valid);
 static_assert(!col::rules_of<int, at::borrow, at::coroutine>::valid);
 

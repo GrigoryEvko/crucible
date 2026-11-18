@@ -19,7 +19,8 @@
 // callable, from the user and tested.  The phase is internal, from
 // Crucible and verified.  In the design, the cross-vendor numerics CI of
 // MIMIC.md section 41 checks each Forge phase.  A consumer that asks for
-// trust_verified then accepts a Forge phase and refuses a user kernel.
+// trust<tags::trust::Verified> then accepts a Forge phase and refuses a user
+// kernel.
 //
 // Two axes need no atom.  The strict pole of Mutation refuses in-place
 // mutation, and the strict pole of Reentrancy refuses a self-call.  So a
@@ -41,6 +42,7 @@ namespace {
 
 namespace at = ::fixy::atom;
 namespace source = ::fixy::tags::source;
+namespace trust_level = ::fixy::tags::trust;
 using ::fixy::Axis;
 using ::fixy::axis_traits;
 using Effect = ::foundation::effects::Effect;
@@ -96,7 +98,7 @@ using ForgePhaseBinding = ::fixy::fn<Phase,
                                      at::with<Effect::Bg, Effect::Alloc>,  // the background thread, and the arena
                                      at::as_public,  // the pointer holds no secret
                                      at::from_source<source::FromInternal>,  // Crucible wrote the phase
-                                     at::trust_verified,  // the cross-vendor numerics CI is its check
+                                     at::trust<trust_level::Verified>,  // the cross-vendor numerics CI is its check
                                      at::cost_linear<0>,  // O(N) in the node count of the IR
                                      at::version<2>>;  // the phase lowers to IR002
 
@@ -112,7 +114,7 @@ static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Mutation>, axis_tra
               "a Forge phase does no in-place mutation on its input");
 static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Reentrancy>, axis_traits<Axis::Reentrancy>::strict>,
               "the phases share one arena, so two calls at the same time race on the bump cursor");
-static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Trust>, at::trust_verified>,
+static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Trust>, at::trust<trust_level::Verified>>,
               "in the design, the cross-vendor numerics CI checks each Forge phase");
 static_assert(std::is_same_v<BoundForgePhase::grade_on<Axis::Provenance>, at::from_source<source::FromInternal>>,
               "Crucible wrote the phase, and the user did not supply it");

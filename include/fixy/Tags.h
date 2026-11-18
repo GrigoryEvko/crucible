@@ -259,6 +259,14 @@ struct Assumed {};  // axiom / mathematical assumption
 struct External {};  // trust delegated to outside source
 }  // namespace trust
 
+// A level of trust.  These five tags are the one vocabulary of trust: each
+// Trust atom of fixy/Atom.h names one of them as its level, and the strict
+// Trust pole of fixy/Axis.h is trust::Unverified.
+template <class Level>
+concept IsTrustLevel =
+    __is_same(Level, trust::Verified) || __is_same(Level, trust::Tested) || __is_same(Level, trust::Unverified)
+    || __is_same(Level, trust::Assumed) || __is_same(Level, trust::External);
+
 namespace access {
 struct RW {};  // unrestricted
 struct RO {};  // read-only (writes rejected)
