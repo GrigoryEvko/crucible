@@ -1,4 +1,5 @@
-// fixy/SipHash.h against the published SipHash-2-4 test vectors.
+// foundation/core/SipHash.h and fixy/SipHash.h against the published
+// SipHash-2-4 test vectors.
 //
 // The vectors are the 64 rows of vectors.h in the reference implementation
 // by Aumasson and Bernstein: key 00..0f, message 00..len-1 for each length
@@ -7,108 +8,134 @@
 
 #include <fixy/SipHash.h>
 
-#include <array>
+#include <foundation/core/SipHash.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <type_traits>
 #include <utility>
 
 namespace {
 
 namespace sh = ::fixy::siphash;
+namespace fc = ::foundation::core;
+using fc::SipKeyBytes;
+using fc::SipTag;
 using ::fixy::mint_secret;
 using ::fixy::Secret;
 
 inline constexpr std::size_t kVectorCount = 64;
 
-inline constexpr std::array<std::array<std::uint8_t, sh::tag_bytes>, kVectorCount> kReferenceTags{{
-    {0x31, 0x0e, 0x0e, 0xdd, 0x47, 0xdb, 0x6f, 0x72}, {0xfd, 0x67, 0xdc, 0x93, 0xc5, 0x39, 0xf8, 0x74},
-    {0x5a, 0x4f, 0xa9, 0xd9, 0x09, 0x80, 0x6c, 0x0d}, {0x2d, 0x7e, 0xfb, 0xd7, 0x96, 0x66, 0x67, 0x85},
-    {0xb7, 0x87, 0x71, 0x27, 0xe0, 0x94, 0x27, 0xcf}, {0x8d, 0xa6, 0x99, 0xcd, 0x64, 0x55, 0x76, 0x18},
-    {0xce, 0xe3, 0xfe, 0x58, 0x6e, 0x46, 0xc9, 0xcb}, {0x37, 0xd1, 0x01, 0x8b, 0xf5, 0x00, 0x02, 0xab},
-    {0x62, 0x24, 0x93, 0x9a, 0x79, 0xf5, 0xf5, 0x93}, {0xb0, 0xe4, 0xa9, 0x0b, 0xdf, 0x82, 0x00, 0x9e},
-    {0xf3, 0xb9, 0xdd, 0x94, 0xc5, 0xbb, 0x5d, 0x7a}, {0xa7, 0xad, 0x6b, 0x22, 0x46, 0x2f, 0xb3, 0xf4},
-    {0xfb, 0xe5, 0x0e, 0x86, 0xbc, 0x8f, 0x1e, 0x75}, {0x90, 0x3d, 0x84, 0xc0, 0x27, 0x56, 0xea, 0x14},
-    {0xee, 0xf2, 0x7a, 0x8e, 0x90, 0xca, 0x23, 0xf7}, {0xe5, 0x45, 0xbe, 0x49, 0x61, 0xca, 0x29, 0xa1},
-    {0xdb, 0x9b, 0xc2, 0x57, 0x7f, 0xcc, 0x2a, 0x3f}, {0x94, 0x47, 0xbe, 0x2c, 0xf5, 0xe9, 0x9a, 0x69},
-    {0x9c, 0xd3, 0x8d, 0x96, 0xf0, 0xb3, 0xc1, 0x4b}, {0xbd, 0x61, 0x79, 0xa7, 0x1d, 0xc9, 0x6d, 0xbb},
-    {0x98, 0xee, 0xa2, 0x1a, 0xf2, 0x5c, 0xd6, 0xbe}, {0xc7, 0x67, 0x3b, 0x2e, 0xb0, 0xcb, 0xf2, 0xd0},
-    {0x88, 0x3e, 0xa3, 0xe3, 0x95, 0x67, 0x53, 0x93}, {0xc8, 0xce, 0x5c, 0xcd, 0x8c, 0x03, 0x0c, 0xa8},
-    {0x94, 0xaf, 0x49, 0xf6, 0xc6, 0x50, 0xad, 0xb8}, {0xea, 0xb8, 0x85, 0x8a, 0xde, 0x92, 0xe1, 0xbc},
-    {0xf3, 0x15, 0xbb, 0x5b, 0xb8, 0x35, 0xd8, 0x17}, {0xad, 0xcf, 0x6b, 0x07, 0x63, 0x61, 0x2e, 0x2f},
-    {0xa5, 0xc9, 0x1d, 0xa7, 0xac, 0xaa, 0x4d, 0xde}, {0x71, 0x65, 0x95, 0x87, 0x66, 0x50, 0xa2, 0xa6},
-    {0x28, 0xef, 0x49, 0x5c, 0x53, 0xa3, 0x87, 0xad}, {0x42, 0xc3, 0x41, 0xd8, 0xfa, 0x92, 0xd8, 0x32},
-    {0xce, 0x7c, 0xf2, 0x72, 0x2f, 0x51, 0x27, 0x71}, {0xe3, 0x78, 0x59, 0xf9, 0x46, 0x23, 0xf3, 0xa7},
-    {0x38, 0x12, 0x05, 0xbb, 0x1a, 0xb0, 0xe0, 0x12}, {0xae, 0x97, 0xa1, 0x0f, 0xd4, 0x34, 0xe0, 0x15},
-    {0xb4, 0xa3, 0x15, 0x08, 0xbe, 0xff, 0x4d, 0x31}, {0x81, 0x39, 0x62, 0x29, 0xf0, 0x90, 0x79, 0x02},
-    {0x4d, 0x0c, 0xf4, 0x9e, 0xe5, 0xd4, 0xdc, 0xca}, {0x5c, 0x73, 0x33, 0x6a, 0x76, 0xd8, 0xbf, 0x9a},
-    {0xd0, 0xa7, 0x04, 0x53, 0x6b, 0xa9, 0x3e, 0x0e}, {0x92, 0x59, 0x58, 0xfc, 0xd6, 0x42, 0x0c, 0xad},
-    {0xa9, 0x15, 0xc2, 0x9b, 0xc8, 0x06, 0x73, 0x18}, {0x95, 0x2b, 0x79, 0xf3, 0xbc, 0x0a, 0xa6, 0xd4},
-    {0xf2, 0x1d, 0xf2, 0xe4, 0x1d, 0x45, 0x35, 0xf9}, {0x87, 0x57, 0x75, 0x19, 0x04, 0x8f, 0x53, 0xa9},
-    {0x10, 0xa5, 0x6c, 0xf5, 0xdf, 0xcd, 0x9a, 0xdb}, {0xeb, 0x75, 0x09, 0x5c, 0xcd, 0x98, 0x6c, 0xd0},
-    {0x51, 0xa9, 0xcb, 0x9e, 0xcb, 0xa3, 0x12, 0xe6}, {0x96, 0xaf, 0xad, 0xfc, 0x2c, 0xe6, 0x66, 0xc7},
-    {0x72, 0xfe, 0x52, 0x97, 0x5a, 0x43, 0x64, 0xee}, {0x5a, 0x16, 0x45, 0xb2, 0x76, 0xd5, 0x92, 0xa1},
-    {0xb2, 0x74, 0xcb, 0x8e, 0xbf, 0x87, 0x87, 0x0a}, {0x6f, 0x9b, 0xb4, 0x20, 0x3d, 0xe7, 0xb3, 0x81},
-    {0xea, 0xec, 0xb2, 0xa3, 0x0b, 0x22, 0xa8, 0x7f}, {0x99, 0x24, 0xa4, 0x3c, 0xc1, 0x31, 0x57, 0x24},
-    {0xbd, 0x83, 0x8d, 0x3a, 0xaf, 0xbf, 0x8d, 0xb7}, {0x0b, 0x1a, 0x2a, 0x32, 0x65, 0xd5, 0x1a, 0xea},
-    {0x13, 0x50, 0x79, 0xa3, 0x23, 0x1c, 0xe6, 0x60}, {0x93, 0x2b, 0x28, 0x46, 0xe4, 0xd7, 0x06, 0x66},
-    {0xe1, 0x91, 0x5f, 0x5c, 0xb1, 0xec, 0xa4, 0x6c}, {0xf3, 0x25, 0x96, 0x5c, 0xa1, 0x6d, 0x62, 0x9f},
-    {0x57, 0x5f, 0xf2, 0x8e, 0x60, 0x38, 0x1b, 0xe5}, {0x72, 0x45, 0x06, 0xeb, 0x4c, 0x32, 0x8a, 0x95},
-}};
+inline constexpr fc::FixedArray<std::uint64_t, kVectorCount> kReferenceTags{
+    0x726fdb47dd0e0e31ULL, 0x74f839c593dc67fdULL, 0x0d6c8009d9a94f5aULL, 0x85676696d7fb7e2dULL, 0xcf2794e0277187b7ULL,
+    0x18765564cd99a68dULL, 0xcbc9466e58fee3ceULL, 0xab0200f58b01d137ULL, 0x93f5f5799a932462ULL, 0x9e0082df0ba9e4b0ULL,
+    0x7a5dbbc594ddb9f3ULL, 0xf4b32f46226bada7ULL, 0x751e8fbc860ee5fbULL, 0x14ea5627c0843d90ULL, 0xf723ca908e7af2eeULL,
+    0xa129ca6149be45e5ULL, 0x3f2acc7f57c29bdbULL, 0x699ae9f52cbe4794ULL, 0x4bc1b3f0968dd39cULL, 0xbb6dc91da77961bdULL,
+    0xbed65cf21aa2ee98ULL, 0xd0f2cbb02e3b67c7ULL, 0x93536795e3a33e88ULL, 0xa80c038ccd5ccec8ULL, 0xb8ad50c6f649af94ULL,
+    0xbce192de8a85b8eaULL, 0x17d835b85bbb15f3ULL, 0x2f2e6163076bcfadULL, 0xde4daaaca71dc9a5ULL, 0xa6a2506687956571ULL,
+    0xad87a3535c49ef28ULL, 0x32d892fad841c342ULL, 0x7127512f72f27cceULL, 0xa7f32346f95978e3ULL, 0x12e0b01abb051238ULL,
+    0x15e034d40fa197aeULL, 0x314dffbe0815a3b4ULL, 0x027990f029623981ULL, 0xcadcd4e59ef40c4dULL, 0x9abfd8766a33735cULL,
+    0x0e3ea96b5304a7d0ULL, 0xad0c42d6fc585992ULL, 0x187306c89bc215a9ULL, 0xd4a60abcf3792b95ULL, 0xf935451de4f21df2ULL,
+    0xa9538f0419755787ULL, 0xdb9acddff56ca510ULL, 0xd06c98cd5c0975ebULL, 0xe612a3cb9ecba951ULL, 0xc766e62cfcadaf96ULL,
+    0xee64435a9752fe72ULL, 0xa192d576b245165aULL, 0x0a8787bf8ecb74b2ULL, 0x81b3e73d20b49b6fULL, 0x7fa8220ba3b2eceaULL,
+    0x245731c13ca42499ULL, 0xb78dbfaf3a8d83bdULL, 0xea1ad565322a1a0bULL, 0x60e61c23a3795013ULL, 0x6606d7e446282b93ULL,
+    0x6ca4ecb15c5f91e1ULL, 0x9f626da15c9625f3ULL, 0xe51b38608ef25f57ULL, 0x958a324ceb064572ULL,
+};
 
-[[nodiscard]] constexpr sh::Key reference_key() noexcept {
-    sh::Key key{};
-    for (std::size_t i = 0; i < key.size(); ++i)
-        key[i] = static_cast<std::byte>(i);
+[[nodiscard]] constexpr SipKeyBytes reference_key() noexcept {
+    SipKeyBytes key{};
+    std::uint8_t next = 0;
+    for (std::byte& byte : key) {
+        byte = static_cast<std::byte>(next);
+        ++next;
+    }
     return key;
 }
 
-[[nodiscard]] constexpr std::array<std::byte, kVectorCount> reference_message() noexcept {
-    std::array<std::byte, kVectorCount> message{};
-    for (std::size_t i = 0; i < message.size(); ++i)
-        message[i] = static_cast<std::byte>(i);
+[[nodiscard]] constexpr fc::FixedArray<std::byte, kVectorCount> reference_message() noexcept {
+    fc::FixedArray<std::byte, kVectorCount> message{};
+    std::uint8_t next = 0;
+    for (std::byte& byte : message) {
+        byte = static_cast<std::byte>(next);
+        ++next;
+    }
     return message;
 }
 
-[[nodiscard]] constexpr sh::Tag expected_tag(std::size_t length) noexcept {
-    sh::Tag tag{};
-    for (std::size_t i = 0; i < tag.size(); ++i)
-        tag[i] = static_cast<std::byte>(kReferenceTags[length][i]);
+// The tag of the vector at length: its word, as eight little-endian bytes.
+[[nodiscard]] constexpr SipTag expected_tag(std::size_t length) noexcept {
+    std::uint64_t const word = kReferenceTags.at(fc::Index<kVectorCount>::check(length).expect("a vector length"));
+    SipTag tag{};
+    int shift = 0;
+    for (std::byte& byte : tag) {
+        byte = static_cast<std::byte>(static_cast<std::uint8_t>(word >> shift));
+        shift += 8;
+    }
     return tag;
 }
 
-[[nodiscard]] constexpr sh::Tag tag_of(std::size_t length) noexcept {
-    std::array<std::byte, kVectorCount> const message = reference_message();
-    auto signed_message =
-        sh::sign(mint_secret<sh::Key>(reference_key()), std::span<const std::byte>{message}.first(length));
+[[nodiscard]] constexpr bool same_tag(SipTag const& left, SipTag const& right) noexcept {
+    return ::foundation::core::equal(left, right);
+}
+
+[[nodiscard]] constexpr fc::View<std::byte const> prefix(fc::FixedArray<std::byte, kVectorCount> const& message,
+                                                         std::size_t length) noexcept {
+    return fc::View<std::byte const>{message.view()}.window(0, length).expect("the length is inside the message");
+}
+
+[[nodiscard]] constexpr SipTag tag_of(std::size_t length) noexcept {
+    fc::FixedArray<std::byte, kVectorCount> const message = reference_message();
+    return fc::sip_hash(reference_key(), prefix(message, length));
+}
+
+[[nodiscard]] constexpr SipTag signed_tag_of(std::size_t length) noexcept {
+    fc::FixedArray<std::byte, kVectorCount> const message = reference_message();
+    auto signed_message = sh::sign(mint_secret<SipKeyBytes>(reference_key()), prefix(message, length));
     return signed_message.second;
 }
 
 // The hash runs at compile time, so the empty message, the worked example of
-// the paper and the longest message are checked by the compiler.
-static_assert(tag_of(0) == expected_tag(0));
-static_assert(tag_of(15) == expected_tag(15));
-static_assert(tag_of(kVectorCount - 1) == expected_tag(kVectorCount - 1));
+// the paper and the longest message are checked by the compiler, through the
+// raw hash and through the message authentication code.
+static_assert(same_tag(tag_of(0), expected_tag(0)));
+static_assert(same_tag(tag_of(15), expected_tag(15)));
+static_assert(same_tag(tag_of(kVectorCount - 1), expected_tag(kVectorCount - 1)));
+static_assert(same_tag(signed_tag_of(15), expected_tag(15)));
+
+// The tag of a text is the tag of its characters as bytes.
+constexpr bool text_gives_the_bytes_tag() noexcept {
+    constexpr fc::TextView text{"a text of nineteen."};
+    fc::FixedArray<std::byte, 19> bytes{};
+    auto cursor = bytes.begin();
+    for (char const letter : text) {
+        *cursor = static_cast<std::byte>(letter);
+        ++cursor;
+    }
+    return text.size() == 19
+        && same_tag(fc::sip_hash(reference_key(), text),
+                    fc::sip_hash(reference_key(), fc::View<std::byte const>{bytes.view()}));
+}
+static_assert(text_gives_the_bytes_tag());
 
 // A key reaches an operation only by a move, so a caller cannot keep a
 // second copy of it by accident.
-static_assert(!std::is_invocable_v<decltype(&sh::sign), Secret<sh::Key>&, std::span<const std::byte>>);
-static_assert(std::is_invocable_v<decltype(&sh::sign), Secret<sh::Key>&&, std::span<const std::byte>>);
+static_assert(!std::is_invocable_v<decltype(&sh::sign), Secret<SipKeyBytes>&, fc::View<std::byte const>>);
+static_assert(std::is_invocable_v<decltype(&sh::sign), Secret<SipKeyBytes>&&, fc::View<std::byte const>>);
 static_assert(
-    !std::is_invocable_v<decltype(&sh::verify), Secret<sh::Key>&, std::span<const std::byte>, sh::Tag const&>);
+    !std::is_invocable_v<decltype(&sh::verify), Secret<SipKeyBytes>&, fc::View<std::byte const>, SipTag const&>);
 
 // ── Runtime cells ───────────────────────────────────────────────────
 
 // Every published vector, at run time, through the key that each call
 // gives back.
 int check_every_vector() {
-    std::array<std::byte, kVectorCount> const message = reference_message();
-    Secret<sh::Key> key = mint_secret<sh::Key>(reference_key());
+    fc::FixedArray<std::byte, kVectorCount> const message = reference_message();
+    Secret<SipKeyBytes> key = mint_secret<SipKeyBytes>(reference_key());
     for (std::size_t length = 0; length < kVectorCount; ++length) {
-        auto [kept, tag] = sh::sign(std::move(key), std::span<const std::byte>{message}.first(length));
-        if (tag != expected_tag(length)) return 10;
-        auto [checked, accepted] = sh::verify(std::move(kept), std::span<const std::byte>{message}.first(length), tag);
+        if (!same_tag(fc::sip_hash(reference_key(), prefix(message, length)), expected_tag(length))) return 9;
+        auto [kept, tag] = sh::sign(std::move(key), prefix(message, length));
+        if (!same_tag(tag, expected_tag(length))) return 10;
+        auto [checked, accepted] = sh::verify(std::move(kept), prefix(message, length), tag);
         if (!accepted) return 11;
         key = std::move(checked);
     }
@@ -117,13 +144,14 @@ int check_every_vector() {
 
 // A tag with any one bit changed does not authenticate the message.
 int check_each_forged_bit() {
-    std::array<std::byte, kVectorCount> const message = reference_message();
-    std::span<const std::byte> const longest = std::span<const std::byte>{message}.first(kVectorCount - 1);
-    sh::Tag const good = expected_tag(kVectorCount - 1);
-    Secret<sh::Key> key = mint_secret<sh::Key>(reference_key());
-    for (std::size_t bit = 0; bit < sh::tag_bytes * 8; ++bit) {
-        sh::Tag forged = good;
-        forged[bit / 8] ^= static_cast<std::byte>(1U << (bit % 8));
+    fc::FixedArray<std::byte, kVectorCount> const message = reference_message();
+    fc::View<std::byte const> const longest = prefix(message, kVectorCount - 1);
+    SipTag const good = expected_tag(kVectorCount - 1);
+    Secret<SipKeyBytes> key = mint_secret<SipKeyBytes>(reference_key());
+    for (std::size_t bit = 0; bit < fc::sip_tag_bytes * 8; ++bit) {
+        SipTag forged = good;
+        forged.at(fc::Index<fc::sip_tag_bytes>::check(bit / 8).expect("a byte of the tag")) ^=
+            static_cast<std::byte>(1U << (bit % 8));
         auto [kept, accepted] = sh::verify(std::move(key), longest, forged);
         if (accepted) return 20;
         key = std::move(kept);
@@ -134,19 +162,19 @@ int check_each_forged_bit() {
 // The right tag does not authenticate a changed message, and it does not
 // authenticate the message under a different key.
 int check_other_message_and_key() {
-    std::array<std::byte, kVectorCount> changed = reference_message();
-    changed[0] ^= std::byte{1};
-    std::span<const std::byte> const longest = std::span<const std::byte>{changed}.first(kVectorCount - 1);
-    sh::Tag const good = expected_tag(kVectorCount - 1);
+    fc::FixedArray<std::byte, kVectorCount> changed = reference_message();
+    changed.at(fc::index<0>()) ^= std::byte{1};
+    SipTag const good = expected_tag(kVectorCount - 1);
 
-    auto [kept, accepted_changed] = sh::verify(mint_secret<sh::Key>(reference_key()), longest, good);
+    auto [kept, accepted_changed] =
+        sh::verify(mint_secret<SipKeyBytes>(reference_key()), prefix(changed, kVectorCount - 1), good);
     if (accepted_changed) return 30;
 
-    std::array<std::byte, kVectorCount> const message = reference_message();
-    sh::Key other = reference_key();
-    other[0] ^= std::byte{1};
+    fc::FixedArray<std::byte, kVectorCount> const message = reference_message();
+    SipKeyBytes other = reference_key();
+    other.at(fc::index<0>()) ^= std::byte{1};
     auto [other_kept, accepted_other_key] =
-        sh::verify(mint_secret<sh::Key>(other), std::span<const std::byte>{message}.first(kVectorCount - 1), good);
+        sh::verify(mint_secret<SipKeyBytes>(other), prefix(message, kVectorCount - 1), good);
     if (accepted_other_key) return 31;
     return 0;
 }

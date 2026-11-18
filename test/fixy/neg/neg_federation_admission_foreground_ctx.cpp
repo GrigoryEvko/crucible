@@ -19,7 +19,7 @@ namespace {
 
 using ForegroundCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>>;
 
-[[maybe_unused]] void attempt(ForegroundCtx const& foreground, fixy::Secret<fixy::siphash::Key>&& key) {
+[[maybe_unused]] void attempt(ForegroundCtx const& foreground, fixy::Secret<foundation::core::SipKeyBytes>&& key) {
     [[maybe_unused]] auto admission =
         fp::FederationAdmission<NegFederationOrg>::mint_federation_admission<fed::policy::admit_orgs<NegFederationOrg>>(
             foreground, std::move(key));

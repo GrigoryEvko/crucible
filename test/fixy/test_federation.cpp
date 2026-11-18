@@ -27,18 +27,20 @@ namespace {
 namespace eff = ::foundation::effects;
 namespace fp = ::foundation::permissions;
 namespace fed = ::fixy::federation;
-namespace sh = ::fixy::siphash;
 using ::fixy::mint_secret;
 using ::fixy::Secret;
+using ::foundation::core::SipKeyBytes;
 
 using IoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO>>;
 using Admission = fp::FederationAdmission<FederationTestOrg>;
 using TestPolicy = fed::policy::admit_orgs<FederationTestOrg>;
 
-[[nodiscard]] constexpr sh::Key test_key(std::uint8_t first) noexcept {
-    sh::Key key{};
-    for (std::size_t i = 0; i < key.size(); ++i) {
-        key[i] = static_cast<std::byte>(static_cast<std::uint8_t>(first + i));
+[[nodiscard]] constexpr SipKeyBytes test_key(std::uint8_t first) noexcept {
+    SipKeyBytes key{};
+    std::uint8_t next = first;
+    for (std::byte& byte : key) {
+        byte = static_cast<std::byte>(next);
+        ++next;
     }
     return key;
 }
@@ -66,7 +68,7 @@ static_assert(fed::policy_admits(^^fed::policy::admit_orgs<FederationOtherOrg, F
 // and the identity on the wire, refuse a type that is not a class and a
 // class that holds state.
 template <typename Org>
-concept SignsHandshakeFor = requires(Secret<sh::Key>&& key) {
+concept SignsHandshakeFor = requires(Secret<SipKeyBytes>&& key) {
     fed::sign_handshake<Org>(std::move(key), fed::PeerKeyFingerprint{1}, fed::Nonce{1});
 };
 template <typename Org>
@@ -76,11 +78,13 @@ static_assert(!SignsHandshakeFor<int> && !HasOrgId<int>);
 static_assert(!SignsHandshakeFor<FederationStatefulOrg> && !HasOrgId<FederationStatefulOrg>);
 
 // The message is the domain word and the three fields, little-endian.
-static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3})[0] == std::byte{'c'});
-static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3})[7] == std::byte{'1'});
-static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3})[8] == std::byte{1});
-static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3})[16] == std::byte{2});
-static_assert(fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3})[24] == std::byte{3});
+inline constexpr fed::HandshakeMessage kSampleMessage =
+    fed::handshake_message(fed::OrgId{1}, fed::PeerKeyFingerprint{2}, fed::Nonce{3});
+static_assert(kSampleMessage.at(::foundation::core::index<0>()) == std::byte{'c'});
+static_assert(kSampleMessage.at(::foundation::core::index<7>()) == std::byte{'1'});
+static_assert(kSampleMessage.at(::foundation::core::index<8>()) == std::byte{1});
+static_assert(kSampleMessage.at(::foundation::core::index<16>()) == std::byte{2});
+static_assert(kSampleMessage.at(::foundation::core::index<24>()) == std::byte{3});
 
 // Each field is a type of its own.  No word converts into another word or
 // comes from a raw integer, so a call that swaps two fields names no
@@ -161,7 +165,7 @@ struct Fixture {
 };
 
 [[nodiscard]] Admission open_test_admission(Fixture const& fixture) noexcept {
-    return Admission::mint_federation_admission<TestPolicy>(fixture.ctx, mint_secret<sh::Key>(test_key(1)));
+    return Admission::mint_federation_admission<TestPolicy>(fixture.ctx, mint_secret<SipKeyBytes>(test_key(1)));
 }
 
 // One admittance.  The token of the local cipher goes in, and it comes
@@ -211,7 +215,7 @@ int check_admits_once() {
     Fixture fixture;
     Admission admission = open_test_admission(fixture);
     auto local_cipher = fp::mint_permission_root<fed::LocalCipherTag>(fixture.ctx);
-    auto [peer_key, handshake] = fed::sign_handshake<FederationTestOrg>(mint_secret<sh::Key>(test_key(1)),
+    auto [peer_key, handshake] = fed::sign_handshake<FederationTestOrg>(mint_secret<SipKeyBytes>(test_key(1)),
                                                                         fed::PeerKeyFingerprint{42}, fed::Nonce{1});
     auto admitted = admit(admission, local_cipher, handshake);
     static_assert(std::is_same_v<typename decltype(value_type_of(admitted))::tag_type,
@@ -232,7 +236,7 @@ int check_each_refusal() {
     Fixture fixture;
     Admission admission = open_test_admission(fixture);
     auto local_cipher = fp::mint_permission_root<fed::LocalCipherTag>(fixture.ctx);
-    auto [peer_key, honest] = fed::sign_handshake<FederationTestOrg>(mint_secret<sh::Key>(test_key(1)),
+    auto [peer_key, honest] = fed::sign_handshake<FederationTestOrg>(mint_secret<SipKeyBytes>(test_key(1)),
                                                                      fed::PeerKeyFingerprint{42}, fed::Nonce{9});
 
     fed::FederationHandshake wrong_org = honest;
@@ -277,7 +281,7 @@ int check_other_key() {
     Fixture fixture;
     Admission admission = open_test_admission(fixture);
     auto local_cipher = fp::mint_permission_root<fed::LocalCipherTag>(fixture.ctx);
-    auto [stranger_key, handshake] = fed::sign_handshake<FederationTestOrg>(mint_secret<sh::Key>(test_key(2)),
+    auto [stranger_key, handshake] = fed::sign_handshake<FederationTestOrg>(mint_secret<SipKeyBytes>(test_key(2)),
                                                                             fed::PeerKeyFingerprint{42}, fed::Nonce{1});
     auto refused = admit(admission, local_cipher, handshake);
     if (!refused_with(std::move(refused), fed::AdmittanceError::BadMac)) return 30;
@@ -290,7 +294,7 @@ int check_too_old() {
     Fixture fixture;
     Admission admission = open_test_admission(fixture);
     auto local_cipher = fp::mint_permission_root<fed::LocalCipherTag>(fixture.ctx);
-    auto [peer_key, late] = fed::sign_handshake<FederationTestOrg>(mint_secret<sh::Key>(test_key(1)),
+    auto [peer_key, late] = fed::sign_handshake<FederationTestOrg>(mint_secret<SipKeyBytes>(test_key(1)),
                                                                    fed::PeerKeyFingerprint{42}, fed::Nonce{100});
     if (!was_admitted(admit(admission, local_cipher, late))) return 40;
     auto [kept, early] =

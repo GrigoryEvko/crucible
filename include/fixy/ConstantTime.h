@@ -15,6 +15,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Region.h>
 
 #include <concepts>
 #include <cstddef>
@@ -125,6 +126,23 @@ template <detail::ByteElement A, detail::ByteElement B, std::size_t N>
         [&]<std::size_t... I>(std::index_sequence<I...>) {
             ((acc |= static_cast<std::uint64_t>(a[words * word_bytes + I] ^ b[words * word_bytes + I])), ...);
         }(std::make_index_sequence<N % word_bytes>{});
+    }
+    return detail::is_zero_without_compare(acc);
+}
+
+// Equality of two byte views of one static extent, such as two tags of a
+// keyed hash.  It ORs the difference of each pair of bytes and reads the
+// accumulator once, so its timing depends only on the extent, which is
+// public.  Two views of different extents give no candidate of this form.
+template <std::size_t N>
+    requires(N != ::foundation::core::dynamic_extent)
+[[nodiscard]] constexpr bool eq(::foundation::core::View<std::byte const, N> a,
+                                ::foundation::core::View<std::byte const, N> b) noexcept {
+    std::uint64_t acc = 0;
+    auto cursor = b.begin();
+    for (std::byte const byte : a) {
+        acc |= static_cast<std::uint64_t>(byte ^ *cursor);
+        ++cursor;
     }
     return detail::is_zero_without_compare(acc);
 }

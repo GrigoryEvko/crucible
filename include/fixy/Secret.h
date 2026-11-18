@@ -23,6 +23,7 @@
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/ConfLattice.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Zeroize.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/reflect/Instance.h>
 
@@ -139,24 +140,6 @@ concept SecretTransformer = std::invocable<F, T&&> && TransformReturnsByValue<F,
 
 template <typename T>
 class Secret;
-
-// Writes zero to each byte of object.  The writes are volatile, so the
-// optimizer cannot drop a clear whose result no read uses.  The cast chain
-// adds the volatile qualifier by implicit conversion and then narrows through
-// a volatile void pointer, which keeps the qualifier all the way down without
-// reinterpreting or casting away a qualifier.  A constant evaluation writes
-// nothing, because its bytes never reach memory that a later read can see.
-// Complexity: one write for each byte of T.
-template <typename T>
-    requires std::is_trivially_copyable_v<T>
-constexpr void zeroize_bytes(T& object) noexcept {
-    if !consteval {
-        volatile T* const target = __builtin_addressof(object);
-        volatile auto* const bytes = static_cast<volatile unsigned char*>(static_cast<volatile void*>(target));
-        for (std::size_t index = 0; index < sizeof(T); ++index)
-            bytes[index] = 0;
-    }
-}
 
 // The constructors are private, so this is the door.
 template <typename T, typename... Args>
@@ -423,7 +406,7 @@ public:
     constexpr void zeroize() noexcept
         requires std::is_trivially_copyable_v<T>
     {
-        ::fixy::zeroize_bytes(impl_.peek_mut(key_{}));
+        ::foundation::core::zeroize_bytes(impl_.peek_mut(key_{}));
     }
 };
 

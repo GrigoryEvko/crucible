@@ -18,16 +18,16 @@ int main() {
     namespace fe = ::foundation::effects;
     namespace fp = ::foundation::permissions;
     namespace door = ::fixy::federation;
-    namespace sh = ::fixy::siphash;
+    using ::foundation::core::SipKeyBytes;
     using IoCtx = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::IO>>;
     using Admission = fp::FederationAdmission<OrgA>;
 
     const IoCtx ctx{fe::testing::bg()};
-    sh::Key shared_key{};
+    SipKeyBytes shared_key{};
     Admission admission = Admission::mint_federation_admission<door::policy::admit_orgs<OrgA>>(
-        ctx, ::fixy::mint_secret<sh::Key>(shared_key));
+        ctx, ::fixy::mint_secret<SipKeyBytes>(shared_key));
     auto local_cipher = fp::mint_permission_root<door::LocalCipherTag>(ctx);
-    auto [peer_key, handshake] = door::sign_handshake<OrgA>(::fixy::mint_secret<sh::Key>(shared_key),
+    auto [peer_key, handshake] = door::sign_handshake<OrgA>(::fixy::mint_secret<SipKeyBytes>(shared_key),
                                                             door::PeerKeyFingerprint{0xDEADBEEFULL}, door::Nonce{1});
     auto [returned_cipher, admitted] = admission.mint_federation_admittance(std::move(local_cipher), handshake);
     (void)peer_key;

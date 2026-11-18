@@ -21,7 +21,7 @@ struct AnyPolicy {
 
 using IoCtx = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::IO>>;
 
-[[maybe_unused]] void attempt(IoCtx const& ctx, fixy::Secret<fixy::siphash::Key>&& key) {
+[[maybe_unused]] void attempt(IoCtx const& ctx, fixy::Secret<foundation::core::SipKeyBytes>&& key) {
     [[maybe_unused]] auto admission =
         fp::FederationAdmission<NegAnyPolicyOrg>::mint_federation_admission<AnyPolicy>(ctx, std::move(key));
 }

@@ -1024,20 +1024,23 @@ static void test_permissioned_decode_tags_the_view() {
     namespace fe = ::foundation::effects;
     namespace fp = ::foundation::permissions;
     namespace door = ::fixy::federation;
-    namespace sh = ::fixy::siphash;
+    using ::foundation::core::SipKeyBytes;
     using IoCtx = fe::ExecCtx<fe::Bg, fe::Row<fe::Effect::Bg, fe::Effect::IO>>;
     using Admission = fp::FederationAdmission<FederationProtocolTestOrg>;
     using Policy = door::policy::admit_orgs<FederationProtocolTestOrg>;
 
     const IoCtx ctx{fe::testing::bg()};
-    sh::Key shared_key{};
-    for (std::size_t i = 0; i < shared_key.size(); ++i) {
-        shared_key[i] = static_cast<std::byte>(static_cast<std::uint8_t>(i + 1));
+    SipKeyBytes shared_key{};
+    std::uint8_t next = 1;
+    for (std::byte& byte : shared_key) {
+        byte = static_cast<std::byte>(next);
+        ++next;
     }
-    Admission admission = Admission::mint_federation_admission<Policy>(ctx, ::fixy::mint_secret<sh::Key>(shared_key));
+    Admission admission =
+        Admission::mint_federation_admission<Policy>(ctx, ::fixy::mint_secret<SipKeyBytes>(shared_key));
     auto local_cipher = fp::mint_permission_root<door::LocalCipherTag>(ctx);
     auto [peer_key [[maybe_unused]], handshake] = door::sign_handshake<FederationProtocolTestOrg>(
-        ::fixy::mint_secret<sh::Key>(shared_key), door::PeerKeyFingerprint{42}, door::Nonce{1});
+        ::fixy::mint_secret<SipKeyBytes>(shared_key), door::PeerKeyFingerprint{42}, door::Nonce{1});
     auto [returned_cipher [[maybe_unused]], admitted] =
         admission.mint_federation_admittance(std::move(local_cipher), handshake);
     auto peer = std::move(admitted).expect("the shared key verifies the handshake");

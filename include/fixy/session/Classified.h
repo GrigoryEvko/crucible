@@ -34,6 +34,7 @@
 
 #include <fixy/ConstantTime.h>
 #include <fixy/Secret.h>
+#include <foundation/core/Zeroize.h>
 
 #include <cstddef>
 #include <meta>
@@ -106,17 +107,19 @@ public:
     CTPayload(const CTPayload&) = delete("CTPayload holds a constant-time value. A copy is a second copy of it");
     CTPayload&
     operator=(const CTPayload&) = delete("CTPayload holds a constant-time value. A copy is a second copy of it");
-    constexpr CTPayload(CTPayload&& other) noexcept : value_{other.value_} { ::fixy::zeroize_bytes(other.value_); }
+    constexpr CTPayload(CTPayload&& other) noexcept : value_{other.value_} {
+        ::foundation::core::zeroize_bytes(other.value_);
+    }
     constexpr CTPayload& operator=(CTPayload&& other) noexcept
         requires std::is_copy_assignable_v<T>
     {
         if (this != &other) {
             value_ = other.value_;
-            ::fixy::zeroize_bytes(other.value_);
+            ::foundation::core::zeroize_bytes(other.value_);
         }
         return *this;
     }
-    constexpr ~CTPayload() { ::fixy::zeroize_bytes(value_); }
+    constexpr ~CTPayload() { ::foundation::core::zeroize_bytes(value_); }
 
     bool operator==(const CTPayload&) const =
         delete("a CTPayload compares only through fixy::session::eq, whose time does not depend on the content");

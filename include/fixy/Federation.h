@@ -27,7 +27,6 @@
 #include <foundation/permissions/Permission.h>
 #include <foundation/reflect/Hash.h>
 
-#include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -158,43 +157,39 @@ enum class AdmittanceError : std::uint8_t {
 inline constexpr std::uint64_t handshake_domain = 0x31766465666e7263ULL;
 inline constexpr std::size_t handshake_message_bytes = 32;
 
-using HandshakeMessage = std::array<std::byte, handshake_message_bytes>;
-
-namespace detail {
-
-inline constexpr std::size_t word_bytes = 8;
-
-constexpr void store_le64(HandshakeMessage& message, std::size_t offset, std::uint64_t word) noexcept {
-    for (std::size_t i = 0; i < word_bytes; ++i) {
-        message[offset + i] = static_cast<std::byte>(static_cast<std::uint8_t>(word >> (8 * i)));
-    }
-}
-
-}  // namespace detail
+using HandshakeMessage = ::foundation::core::FixedArray<std::byte, handshake_message_bytes>;
 
 [[nodiscard]] constexpr HandshakeMessage handshake_message(OrgId org_id, PeerKeyFingerprint peer_key_fingerprint,
                                                            Nonce nonce) noexcept {
     HandshakeMessage message{};
-    detail::store_le64(message, 0, handshake_domain);
-    detail::store_le64(message, 8, org_id.raw());
-    detail::store_le64(message, 16, peer_key_fingerprint.raw());
-    detail::store_le64(message, 24, nonce.raw());
+    ::foundation::core::FixedArray<std::uint64_t, 4> const words{handshake_domain, org_id.raw(),
+                                                                 peer_key_fingerprint.raw(), nonce.raw()};
+    std::size_t at = 0;
+    for (std::byte& byte : message) {
+        std::uint64_t const word = words.at(::foundation::core::Index<4>::check(at / 8).expect("four words"));
+        byte = static_cast<std::byte>(static_cast<std::uint8_t>(word >> (8 * (at % 8))));
+        ++at;
+    }
     return message;
 }
 
 // A tag and a MAC word are the same eight bytes, read little-endian.
-[[nodiscard]] constexpr HandshakeMac mac_of(siphash::Tag const& tag) noexcept {
+[[nodiscard]] constexpr HandshakeMac mac_of(::foundation::core::SipTag const& tag) noexcept {
     std::uint64_t word = 0;
-    for (std::size_t i = 0; i < siphash::tag_bytes; ++i) {
-        word |= static_cast<std::uint64_t>(std::to_integer<std::uint8_t>(tag[i])) << (8 * i);
+    int shift = 0;
+    for (std::byte const byte : tag) {
+        word |= static_cast<std::uint64_t>(static_cast<std::uint8_t>(byte)) << shift;
+        shift += 8;
     }
     return HandshakeMac{word};
 }
 
-[[nodiscard]] constexpr siphash::Tag tag_of(HandshakeMac mac) noexcept {
-    siphash::Tag tag{};
-    for (std::size_t i = 0; i < siphash::tag_bytes; ++i) {
-        tag[i] = static_cast<std::byte>(static_cast<std::uint8_t>(mac.raw() >> (8 * i)));
+[[nodiscard]] constexpr ::foundation::core::SipTag tag_of(HandshakeMac mac) noexcept {
+    ::foundation::core::SipTag tag{};
+    int shift = 0;
+    for (std::byte& byte : tag) {
+        byte = static_cast<std::byte>(static_cast<std::uint8_t>(mac.raw() >> shift));
+        shift += 8;
     }
     return tag;
 }
@@ -203,11 +198,12 @@ constexpr void store_le64(HandshakeMessage& message, std::size_t offset, std::ui
 // shares with the local organization.  The key comes back beside it.
 template <typename Org>
     requires FederationOrgTag<Org>
-[[nodiscard]] constexpr std::pair<Secret<siphash::Key>, FederationHandshake>
-sign_handshake(Secret<siphash::Key>&& key, PeerKeyFingerprint peer_key_fingerprint, Nonce nonce) noexcept {
+[[nodiscard]] constexpr std::pair<Secret<::foundation::core::SipKeyBytes>, FederationHandshake>
+sign_handshake(Secret<::foundation::core::SipKeyBytes>&& key, PeerKeyFingerprint peer_key_fingerprint,
+               Nonce nonce) noexcept {
     OrgId const org_id = federation_org_id<Org>;
     HandshakeMessage const message = handshake_message(org_id, peer_key_fingerprint, nonce);
-    auto [kept, tag] = siphash::sign(std::move(key), message);
+    auto [kept, tag] = siphash::sign(std::move(key), ::foundation::core::View<std::byte const>{message.view()});
     return {std::move(kept),
             FederationHandshake{
                 .org_id = org_id, .peer_key_fingerprint = peer_key_fingerprint, .nonce = nonce, .mac = mac_of(tag)}};
@@ -309,7 +305,7 @@ public:
     template <typename Policy, typename Ctx>
         requires ::fixy::federation::CtxFitsFederationAdmission<Ctx, Org, Policy>
     [[nodiscard]] static constexpr FederationAdmission
-    mint_federation_admission(Ctx const&, ::fixy::Secret<::fixy::siphash::Key>&& key) noexcept {
+    mint_federation_admission(Ctx const&, ::fixy::Secret<::foundation::core::SipKeyBytes>&& key) noexcept {
         return FederationAdmission{std::move(key)};
     }
 
@@ -336,7 +332,7 @@ public:
     }
 
 private:
-    constexpr explicit FederationAdmission(::fixy::Secret<::fixy::siphash::Key>&& key) noexcept
+    constexpr explicit FederationAdmission(::fixy::Secret<::foundation::core::SipKeyBytes>&& key) noexcept
         : admission_key_{std::move(key)} {}
 
     // The checks of the public fields and of the window come first, and
@@ -367,8 +363,9 @@ private:
         }
         ::fixy::federation::HandshakeMessage const message =
             ::fixy::federation::handshake_message(handshake.org_id, handshake.peer_key_fingerprint, handshake.nonce);
-        auto [kept, verified] =
-            ::fixy::siphash::verify(std::move(admission_key_), message, ::fixy::federation::tag_of(handshake.mac));
+        auto [kept, verified] = ::fixy::siphash::verify(std::move(admission_key_),
+                                                        ::foundation::core::View<std::byte const>{message.view()},
+                                                        ::fixy::federation::tag_of(handshake.mac));
         admission_key_ = std::move(kept);
         if (!verified) {
             return ::fixy::err(AdmittanceError::BadMac);
@@ -377,6 +374,6 @@ private:
         return ::fixy::Unit{};
     }
 
-    ::fixy::Secret<::fixy::siphash::Key> admission_key_;
+    ::fixy::Secret<::foundation::core::SipKeyBytes> admission_key_;
     ::fixy::federation::ReplayWindow admission_window_{};
 };
