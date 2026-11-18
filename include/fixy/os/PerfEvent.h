@@ -22,6 +22,7 @@
 #include <fixy/Qtt.h>
 #include <fixy/atoms/Syscall.h>
 #include <fixy/os/Fd.h>
+#include <fixy/os/Handle.h>
 #include <fixy/os/Process.h>
 #include <foundation/NoObject.h>
 #include <foundation/core/Choice.h>
@@ -179,29 +180,39 @@ using perf_event_row_t = eff::lift_row_t<::fixy::atom::syscall::per<::fixy::atom
 template <typename Ctx>
 concept CtxFitsPerfEventMint = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, perf_event_row_t>;
 
+// The rights of an event: the read of its count, and the family of the
+// ioctls of a perf event.
+inline constexpr ::fixy::os::RightSet perf_event_rights = ::fixy::os::RightSet::read | ::fixy::os::RightSet::ioctl_perf;
+
+// The handle of an event, and its borrow.
+using PerfEventHandle = ::fixy::os::Handle<::fixy::os::kind::PerfEvent, perf_event_rights>;
+
+template <::fixy::os::RightSet Rights>
+using PerfEventRef = ::fixy::os::HandleRef<::fixy::os::kind::PerfEvent, Rights>;
+
 // Declared here and defined below PerfEventDoor, because PerfEventDoor names
 // it as its friend, and a friend must already have been declared.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsPerfEventMint<Ctx>
-[[nodiscard]] inline ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<Linear<PerfEventHandle>, ::foundation::os::Errno>
 mint_perf_event(Ctx const&, Event event, std::uint64_t period, Task task) noexcept;
 
 // The door to perf_event_open.  No object of it exists.  Its member is
-// private, and its one friend is mint_perf_event.  OwnedFd befriends this
+// private, and its one friend is mint_perf_event.  A Handle befriends this
 // class, so the handle of an event comes only from mint_perf_event, after
 // its gate.
 class PerfEventDoor final : ::foundation::NoObject<PerfEventDoor> {
     template <eff::IsExecCtx FriendCtx>
         requires CtxFitsPerfEventMint<FriendCtx>
     friend auto mint_perf_event(FriendCtx const&, Event, std::uint64_t, Task) noexcept
-        -> ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>;
+        -> ::foundation::core::Result<Linear<PerfEventHandle>, ::foundation::os::Errno>;
 
     // Returns the error of the kernel on failure and no handle.
-    [[nodiscard]] static ::foundation::core::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>
+    [[nodiscard]] static ::foundation::core::Result<PerfEventHandle, ::foundation::os::Errno>
     open_(Event event, std::uint64_t period, Task task) noexcept {
-        using Opened = ::foundation::core::Result<::fixy::fs::OwnedFd, ::foundation::os::Errno>;
+        using Opened = ::foundation::core::Result<PerfEventHandle, ::foundation::os::Errno>;
         return detail::open_event_(detail::user_sample_attributes(event, period, task.children()), task.id())
-            .match([](int descriptor) -> Opened { return ::fixy::fs::OwnedFd{descriptor}; },
+            .match([](int descriptor) -> Opened { return PerfEventHandle{descriptor}; },
                    [](::foundation::os::Errno error) -> Opened { return ::foundation::core::err(error); });
     }
 };
@@ -215,15 +226,12 @@ class PerfEventDoor final : ::foundation::NoObject<PerfEventDoor> {
 // no perf events.
 template <eff::IsExecCtx Ctx>
     requires CtxFitsPerfEventMint<Ctx>
-[[nodiscard]] inline ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<Linear<PerfEventHandle>, ::foundation::os::Errno>
 mint_perf_event(Ctx const&, Event event, std::uint64_t period, Task task) noexcept {
-    using Minted = ::foundation::core::Result<Linear<::fixy::fs::OwnedFd>, ::foundation::os::Errno>;
+    using Minted = ::foundation::core::Result<Linear<PerfEventHandle>, ::foundation::os::Errno>;
     return PerfEventDoor::open_(event, period, task)
-        .match(
-            [](::fixy::fs::OwnedFd descriptor) -> Minted {
-                return mint_linear<::fixy::fs::OwnedFd>(std::move(descriptor));
-            },
-            [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
+        .match([](PerfEventHandle handle) -> Minted { return mint_linear<PerfEventHandle>(std::move(handle)); },
+               [](::foundation::os::Errno error) -> Minted { return ::foundation::core::err(error); });
 }
 
 // The read of a count is a read of a descriptor, which the catalog puts in the
@@ -235,13 +243,13 @@ template <typename Ctx>
 concept CtxFitsPerfCountRead = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, perf_count_row_t>;
 
 // The count of a counter that mint_perf_event opened with a period of zero:
-// the events of its task in user space since the open.  A closed handle
-// gives ebadf.
-template <eff::IsExecCtx Ctx>
-    requires CtxFitsPerfCountRead<Ctx>
+// the events of its task in user space since the open.  The borrow of an
+// empty handle gives ebadf.
+template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsPerfCountRead<Ctx> && ::fixy::os::HoldsRights<Rights, ::fixy::os::RightSet::read>
 [[nodiscard]] inline ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno>
-read_count(Ctx const&, ::fixy::fs::OwnedFd const& counter) noexcept {
-    return detail::read_count_(counter.get());
+read_count(Ctx const&, PerfEventRef<Rights> counter) noexcept {
+    return detail::read_count_(::fixy::os::detail::HandleDoor::descriptor_of(counter));
 }
 
 }  // namespace fixy::perf

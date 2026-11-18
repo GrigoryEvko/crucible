@@ -16,7 +16,7 @@ using IoOnlyCtx = eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init, eff::Effec
 
 int main() {
     IoOnlyCtx ctx{eff::testing::init()};
-    fixy::fs::OwnedFd const counter{};
-    [[maybe_unused]] auto count = perf::read_count(ctx, counter);
+    perf::PerfEventHandle const counter{};
+    [[maybe_unused]] auto count = perf::read_count(ctx, counter.ref());
     return 0;
 }

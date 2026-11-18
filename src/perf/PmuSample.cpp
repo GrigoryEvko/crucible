@@ -8,6 +8,7 @@
 #include <fixy/os/PerfEvent.h>
 #include <fixy/os/Process.h>
 #include <foundation/Pinned.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
 #include <foundation/os/File.h>
 
@@ -221,34 +222,36 @@ namespace {
         // invocation entirely.  The event follows the first thread of the
         // process on every CPU that the kernel schedules it on.
         const uint64_t effective_period = resolve_period(event.period_class, event.sample_period);
-        ::fixy::fs::OwnedFd descriptor =
+        ::fixy::perf::PerfEventHandle descriptor =
             ::fixy::perf::mint_perf_event(ctx, perf_event, effective_period, process)
                 .match(
-                    [](::fixy::Linear<::fixy::fs::OwnedFd> opened) noexcept -> ::fixy::fs::OwnedFd {
+                    [](::fixy::Linear<::fixy::perf::PerfEventHandle> opened) noexcept -> ::fixy::perf::PerfEventHandle {
                         return std::move(opened).consume();
                     },
-                    [&event](::foundation::os::Errno error) noexcept -> ::fixy::fs::OwnedFd {
+                    [&event](::foundation::os::Errno error) noexcept -> ::fixy::perf::PerfEventHandle {
                         if (verbose()) {
                             ::fixy::report(::fixy::Sink::Err,
                                            "[crucible::perf] pmu_sample {} perf_event_open failed (error {})\n",
                                            event.friendly_name, std::to_underlying(error));
                         }
-                        return ::fixy::fs::OwnedFd{};
+                        return ::fixy::perf::PerfEventHandle{};
                     });
         if (!descriptor.is_open()) {
             loaded.object.settle(nullptr);
             continue;
         }
 
-        bpf_link* const link = bpf_program__attach_perf_event(prog, descriptor.get());
-        const int error = detail::libbpf_errno(link);
         // A live link owns the descriptor: libbpf closes it when the object
         // destroys the link, also when settle() refuses the link.  The handle
         // then gives the descriptor up.  The handle of a failed attach closes
         // the descriptor at the end of the iteration.
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: libbpf attaches a program to the raw descriptor of a perf event")
+        bpf_link* const link = bpf_program__attach_perf_event(prog, descriptor.ref().abi_descriptor());
+        const int error = detail::libbpf_errno(link);
         if (link != nullptr && error == 0) {
-            static_cast<void>(descriptor.release());
+            static_cast<void>(std::move(descriptor).release_to_abi());
         }
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         if (!loaded.object.settle(link)) {
             if (verbose()) {
                 ::fixy::report(::fixy::Sink::Err, "[crucible::perf] pmu_sample {} attach failed (error {})\n",

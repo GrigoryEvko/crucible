@@ -90,8 +90,8 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: the kernel header and the C library are t
 }
 
 // True when the descriptor does not survive execve.
-[[nodiscard]] bool closes_on_exec(fixy::fs::OwnedFd const& handle) noexcept {
-    int const descriptor_flags = ::fcntl(handle.get(), F_GETFD);
+[[nodiscard]] bool closes_on_exec(perf::PerfEventRef<perf::perf_event_rights> handle) noexcept {
+    int const descriptor_flags = ::fcntl(handle.abi_descriptor(), F_GETFD);
     return descriptor_flags >= 0 && (descriptor_flags & FD_CLOEXEC) != 0;
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -133,10 +133,10 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     perf::Event const migrations = perf::software_event(perf::SoftwareEvent::cpu_migrations);
     return perf::mint_perf_event(ctx, migrations, 1, process::current_process(ctx))
         .match(
-            [](fixy::Linear<fixy::fs::OwnedFd> opened) -> int {
-                fixy::fs::OwnedFd const handle = std::move(opened).consume();
+            [](fixy::Linear<perf::PerfEventHandle> opened) -> int {
+                perf::PerfEventHandle const handle = std::move(opened).consume();
                 if (!handle.is_open()) return 21;
-                if (!closes_on_exec(handle)) return 22;
+                if (!closes_on_exec(handle.ref())) return 22;
                 return 0;
             },
             [](Errno error) -> int { return is_refusal(error) ? 0 : 23; });
@@ -151,8 +151,9 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     perf::Event const instructions = perf::hardware_event(perf::HardwareEvent::instructions);
     return perf::mint_perf_event(ctx, instructions, 0, process::current_thread(ctx))
         .match(
-            [&ctx](fixy::Linear<fixy::fs::OwnedFd> opened) -> int {
-                fixy::fs::OwnedFd const counter = std::move(opened).consume();
+            [&ctx](fixy::Linear<perf::PerfEventHandle> opened) -> int {
+                perf::PerfEventHandle const handle = std::move(opened).consume();
+                auto const counter = handle.ref();
                 std::uint64_t const before = perf::read_count(ctx, counter).value_or(0);
                 std::uint64_t volatile sum = 0;
                 for (std::uint64_t step = 0; step < 100000; ++step) {
@@ -183,8 +184,8 @@ constexpr std::uint64_t kChildSteps = 10000000;
     perf::Event const instructions = perf::hardware_event(perf::HardwareEvent::instructions);
     return perf::mint_perf_event(ctx, instructions, 0, perf::Task{process::current_thread(ctx), children})
         .match(
-            [&ctx](fixy::Linear<fixy::fs::OwnedFd> opened) -> Count {
-                fixy::fs::OwnedFd const counter = std::move(opened).consume();
+            [&ctx](fixy::Linear<perf::PerfEventHandle> opened) -> Count {
+                perf::PerfEventHandle const counter = std::move(opened).consume();
                 auto child = []() noexcept {
                     std::uint64_t volatile sum = 0;
                     for (std::uint64_t step = 0; step < kChildSteps; ++step) {
@@ -193,7 +194,7 @@ constexpr std::uint64_t kChildSteps = 10000000;
                 };
                 fixy::thread::run_joined(ctx, fixy::thread::ThreadOptions{}, child)
                     .expect("the thread door starts the child thread");
-                return perf::read_count(ctx, counter).expect("the read of the counter gave its count");
+                return perf::read_count(ctx, counter.ref()).expect("the read of the counter gave its count");
             },
             [](Errno error) -> Count { return foundation::core::err(error); });
 }
@@ -212,11 +213,11 @@ constexpr std::uint64_t kChildSteps = 10000000;
             [](Errno error) -> int { return is_refusal(error) ? 0 : 61; });
 }
 
-// A closed handle has no count.
+// The borrow of an empty handle has no count.
 [[nodiscard]] int check_read_of_a_closed_handle() noexcept {
     IoBlockCtx ctx{eff::testing::test()};
-    fixy::fs::OwnedFd const closed{};
-    return perf::read_count(ctx, closed).err().value_or(Errno{}) == Errno::ebadf ? 0 : 51;
+    perf::PerfEventHandle const closed{};
+    return perf::read_count(ctx, closed.ref()).err().value_or(Errno{}) == Errno::ebadf ? 0 : 51;
 }
 
 // No PMU of a host has the largest type, so each host refuses the event:
@@ -227,7 +228,7 @@ constexpr std::uint64_t kChildSteps = 10000000;
     perf::Event const unknown{.type = 0x7FFFFFFFU, .config = 0};
     return perf::mint_perf_event(ctx, unknown, 1, process::current_process(ctx))
         .match(
-            [](fixy::Linear<fixy::fs::OwnedFd> opened) -> int {
+            [](fixy::Linear<perf::PerfEventHandle> opened) -> int {
                 drop(std::move(opened));
                 return 31;
             },

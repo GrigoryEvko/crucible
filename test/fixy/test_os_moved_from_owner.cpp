@@ -9,8 +9,9 @@
 // move filled.  A leg that the host refuses, such as a PTP device that the
 // host does not have, is skipped.
 //
-// This test holds the owners of a descriptor: a file, a directory, the
-// OwnedFd of a socket and PtpClockReader.  The tests of the other owners of
+// This test holds the owners of a descriptor: the Handle of a file, of a
+// directory, of a socket and of a perf event, and PtpClockReader.  The tests
+// of the other owners of
 // fixy/os hold the same
 // check, on an owner that they mint: test_os_io for IoUringRing and
 // test_owned_mmap for OwnedMmap.
@@ -145,7 +146,9 @@ template <typename T>
     if (!refuses_with(fixy::net::bind_netlink(ctx, source.ref()), Errno::ebadf)) {
         return answered(name, "bind_netlink");
     }
-    if (!refuses_with(fixy::perf::read_count(ctx, fs::OwnedFd{}), Errno::ebadf)) return answered(name, "read_count");
+    fixy::perf::PerfEventHandle const empty_event{};
+    if (!refuses_with(fixy::perf::read_count(ctx, empty_event.ref()), Errno::ebadf))
+        return answered(name, "read_count");
     if (fixy::net::bind_netlink(ctx, live.ref()).is_err()) {
         return answered(name, "nothing, and its new owner refused");
     }

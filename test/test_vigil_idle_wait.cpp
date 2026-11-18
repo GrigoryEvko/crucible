@@ -130,7 +130,8 @@ void wait_for_pipeline(BackgroundThread& bt, TraceRing& ring) {
 // Starts the pipeline after the open of counter, gives it the ops of some
 // iterations, and counts the instructions of the process in a fixed number
 // of sleeps of the test thread.
-void check_idle_count(fixy::TestRunnerCtx const& runner, fixy::fs::OwnedFd const& counter) {
+void check_idle_count(fixy::TestRunnerCtx const& runner,
+                      fixy::perf::PerfEventRef<fixy::perf::perf_event_rights> counter) {
     TraceRing& ring = test_ring();
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, test_log());
@@ -159,9 +160,9 @@ void test_idle_pipeline_runs_few_instructions() {
     const fixy::perf::Task process{fixy::process::current_thread(runner), fixy::perf::Children::included};
     fixy::perf::mint_perf_event(runner, instructions, 0, process)
         .match(
-            [&runner](fixy::Linear<fixy::fs::OwnedFd> opened) noexcept {
-                const fixy::fs::OwnedFd counter = std::move(opened).consume();
-                check_idle_count(runner, counter);
+            [&runner](fixy::Linear<fixy::perf::PerfEventHandle> opened) noexcept {
+                const fixy::perf::PerfEventHandle counter = std::move(opened).consume();
+                check_idle_count(runner, counter.ref());
             },
             [](foundation::os::Errno error) noexcept {
                 assert(is_refusal(error) && "the kernel refused the counter for a cause that is not a host setting");

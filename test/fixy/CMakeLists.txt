@@ -5500,7 +5500,7 @@ fixy_neg_compile_test(neg_os_perf_event_ctx_lacks_io
 # The read of a count needs a context that admits the row of a read.
 fixy_neg_compile_test(neg_os_perf_event_read_count_ctx_lacks_block
   "no matching function for call"
-  "read_count\\(\\{anonymous\\}::IoOnlyCtx&, const fixy::fs::OwnedFd&\\)")
+  "read_count\\(\\{anonymous\\}::IoOnlyCtx&, fixy::os::HandleRef<fixy::os::kind::PerfEvent, ")
 
 # The environment door reads each switch that the test sets before the
 # start of the process, and an absent switch.
