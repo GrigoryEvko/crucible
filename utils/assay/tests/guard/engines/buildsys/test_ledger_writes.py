@@ -200,8 +200,18 @@ def fixture_cases(expect: testing.Expect) -> None:
         expect("a write from a build with no such fixture keeps its row", gone_key in kept.base)
     with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
         context = context_of(Path(scratch), FIXTURE_ROWS + "fixture neg_unrun test/neg/unrun.cpp record=no\n")
-        said = raised(lambda: cost_budgets.budget_written("step-cost", context, empty, None))
-        expect("a write refuses a build with a fixture that has no record", "neg_unrun" in said)
+        unrun_key = rule_ledger.Key("", "fixture", "neg_unrun")
+        with_unrun = replace(empty, base={unrun_key: rule_ledger.Entry(unrun_key, 70.0, "a row of a fixture")})
+        partial, said = testing.captured(
+            lambda: cost_budgets.budget_written("step-cost", context, with_unrun, "a planted reason")
+        )
+        expect(
+            "a write from a build with a fixture that has no record names the count of such fixtures, writes the "
+            "rows of the fixtures with a record, and keeps the row of the fixture with no record",
+            "1 fixtures have no record that counts, such as neg_unrun" in said
+            and partial.base.get(unrun_key) == with_unrun.base[unrun_key]
+            and rule_ledger.Key("", "fixture", "neg_heavy") in partial.base,
+        )
 
 
 def planted_ledger(rule_id: str, rows: Mapping[rule_ledger.Key, float]) -> rule_ledger.Ledger:

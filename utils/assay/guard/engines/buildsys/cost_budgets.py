@@ -897,11 +897,14 @@ def test_measures(context: BuildContext, rule_id: str) -> list[tuple[str, float]
 def fixture_measures(context: BuildContext) -> list[tuple[str, float]]:
     """Return the name and the instruction count of the last compile of each fixture of the build, in G.
 
-    A fixture with no count gives no measure.  Complexity: linear in the tests of the build and in the records of the
-    fixtures.
+    A fixture with no count gives no measure.  A fixture with no record that counts, such as a fixture that did not
+    run after the build, gives no measure either, and one line names the count of such fixtures.  The write then gives
+    such a fixture no new row, and it keeps its row, because the write removes no row of a fixture.  So a write after
+    the build of a change needs no run of each fixture of the build.  Complexity: linear in the tests of the build and
+    in the records of the fixtures.
 
     Raises:
-        rule_ledger.LedgerError: If the tests do not read, or a fixture has no record that counts
+        rule_ledger.LedgerError: If the tests do not read
     """
     from assay.guard.engines.buildsys import held
     from assay.readers import ctest as ctest_reader
@@ -925,9 +928,9 @@ def fixture_measures(context: BuildContext) -> list[tuple[str, float]]:
         if record.instructions is not None:
             found.append((name, record.instructions / GIGA))
     if unread:
-        raise rule_ledger.LedgerError(
-            f"{len(unread)} fixtures have no record that counts, such as {unread[0]}.  Run each fixture of the build, "
-            f"then the write"
+        check_report.write_line(
+            f"guard write: {len(unread)} fixtures have no record that counts, such as {unread[0]}.  The write gives "
+            f"them no new row and keeps each of their rows.  Run the fixtures, then the write, to write their rows"
         )
     return found
 
