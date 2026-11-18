@@ -471,6 +471,7 @@ test/foundation/ | opted-out | 1 | PROBE: a bit copy of zero bytes into a Ref, a
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
+test/foundation/ | opted-out | 1 | PROBE: a read of the bytes after an allocation, which the arena did not give out | the test of the poison of a new block reads the bytes after the first allocation of a BumpArena, which the arena does not give out, through a raw pointer in a PROBE region
 test/foundation/ | opted-out | 45 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
 test/foundation/ | opted-out | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag reads an Option through a member of a local union in a PROBE region
 test/foundation/ | opted-out | 45 | PROBE: a violation report blocks on a full pipe, and the wait has a bound | -
@@ -496,6 +497,7 @@ test/foundation/ | region | 1 | PROBE: a bit copy of zero bytes into a Ref, as a
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
+test/foundation/ | region | 1 | PROBE: a read of the bytes after an allocation, which the arena did not give out | the test of the poison of a new block reads the bytes after the first allocation of a BumpArena, which the arena does not give out, through a raw pointer in a PROBE region
 test/foundation/ | region | 1 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
 test/foundation/ | region | 1 | PROBE: a union member reads the bytes of a different member as an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: a violation report blocks on a full pipe, and the wait has a bound | -
