@@ -4947,6 +4947,13 @@ fixy_neg_compile_test(neg_os_ptp_clock_reader_ctx_lacks_block
   "Es = \\{foundation::effects::Effect::IO, foundation::effects::Effect::Block\\}\\]. evaluated to .false.")
 fixy_test(test_os_sched)
 fixy_test(test_os_pages)
+# qemu-user has no mlock2, and it refuses the THP options of prctl with
+# einval.  The page test accepts those two refusals only under the emulator.
+if(CMAKE_CROSSCOMPILING_EMULATOR)
+  target_compile_definitions(test_os_pages PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=1)
+else()
+  target_compile_definitions(test_os_pages PRIVATE CRUCIBLE_TEST_UNDER_EMULATOR=0)
+endif()
 
 # A SCHED_DEADLINE class carries its CBS budget in the type.  A budget
 # that the kernel does not admit fails the class-body static_assert at the

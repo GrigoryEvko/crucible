@@ -73,6 +73,12 @@ constexpr core::FixedArray<std::uint64_t, 4096> kReadOnlyWords = make_read_only_
 
 constexpr std::size_t kPageBytes = 4096;
 
+// True when the test runs under qemu-user (test/fixy/CMakeLists.txt sets the
+// definition).  The emulator has no mlock2, and it refuses the THP options of
+// prctl.  A kernel of the floor 5.6 has each of them, so on a kernel these
+// refusals are failures.
+constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
+
 // More bytes than the limit RLIMIT_MEMLOCK of an unprivileged process on a
 // usual host, which is 8 MiB.
 constexpr std::size_t kPastTheLockLimit = std::size_t{16} * 1024 * 1024;
@@ -84,9 +90,11 @@ constexpr std::size_t kPastTheLockLimit = std::size_t{16} * 1024 * 1024;
 }
 
 // A lock and an unlock of one page need no privilege under the limit.  The
-// lock on fault needs Linux 4.4.  A lock of more bytes than the limit gives
-// enomem to an unprivileged process, and a privileged process gets the lock.
-// An unlock of the page then works in each case.
+// lock on fault needs mlock2, and qemu-user has no mlock2.  The emulator
+// gives enosys, and the case then skips the lock on fault.  A lock of more
+// bytes than the limit gives enomem to an unprivileged process, and a
+// privileged process gets the lock.  An unlock of the page then works in
+// each case.
 void lock_and_unlock_reach_the_kernel() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     core::HeapArray<std::byte, kPageBytes> page =
@@ -95,8 +103,16 @@ void lock_and_unlock_reach_the_kernel() {
 
     pages::lock_pages(kStartup, bytes).expect("a lock of one page fits below the limit");
     pages::unlock_pages(kStartup, bytes).expect("the unlock of the locked page works");
-    pages::lock_pages_on_fault(kStartup, bytes).expect("a lock on fault of one page fits below the limit");
-    pages::unlock_pages(kStartup, bytes).expect("the unlock of the page locked on fault works");
+    core::Result<core::Unit, os::Errno> const locked_on_fault = pages::lock_pages_on_fault(kStartup, bytes);
+    bool const has_no_mlock2 = locked_on_fault.match(
+        [](core::Unit) noexcept { return false; }, [](os::Errno error) noexcept { return error == os::Errno::enosys; });
+    if (has_no_mlock2) {
+        CRUCIBLE_FATAL_INVARIANT(kIsUnderEmulator);
+        ::fixy::report(::fixy::Sink::Err, "lock_and_unlock_reach_the_kernel: the lock on fault SKIPPED (qemu-user)\n");
+    } else {
+        CRUCIBLE_FATAL_INVARIANT(locked_on_fault.is_ok());
+        pages::unlock_pages(kStartup, bytes).expect("the unlock of the page locked on fault works");
+    }
 
     core::HeapArray<std::byte, kPageBytes> large =
         core::mint_heap_array<std::byte, kPageBytes>(alloc, kPastTheLockLimit, std::byte{0});
@@ -154,13 +170,33 @@ void huge_page_advice_covers_the_whole_huge_pages() {
 // the range reaches only the first.  An empty range makes no call, and the
 // door writes no byte.  The advice needs Linux 5.14.  A whole page at a page
 // boundary is the probe of the advice, so an einval after the probe works is
-// the error of the door and not of an older kernel.
+// the error of the door and not of an older kernel.  qemu user mode takes the
+// advice and faults in no page, and the door then gives eopnotsupp.  The
+// emulator also refuses the THP knob, so the probe comes before the knob.
 void populate_faults_in_each_page_of_the_range() {
+    std::size_t const page = page_size();
+    ::foundation::AlignedBytes const probe_block = allocate_fresh_block();
+    core::View<std::byte const> const probe_page =
+        core::byte_view(probe_block.view()).window(page, page).expect("the page fits in the block");
+    os::Errno const refusal = pages::populate_pages(kStartup, probe_page)
+                                  .match([](core::Unit) noexcept { return os::Errno{}; },
+                                         [](os::Errno error) noexcept { return error; });
+    if (refusal == os::Errno::einval) {
+        ::fixy::report(::fixy::Sink::Err, "populate_faults_in_each_page_of_the_range: SKIPPED (Linux before 5.14)\n");
+        return;
+    }
+    if (refusal == os::Errno::eopnotsupp) {
+        CRUCIBLE_FATAL_INVARIANT(kIsUnderEmulator);
+        ::fixy::report(::fixy::Sink::Err,
+                       "populate_faults_in_each_page_of_the_range: SKIPPED (the emulator faults in no page)\n");
+        return;
+    }
+    CRUCIBLE_FATAL_INVARIANT(refusal == os::Errno{});
+    CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(probe_page) == 0);
     // A huge page would give a frame to the pages around a range, so the
     // process refuses huge pages in this case.
     pages::ThpSetting const first_thp =
         pages::exchange_thp_setting(kStartup, pages::ThpSetting::refused).expect("the process refuses THP");
-    std::size_t const page = page_size();
     ::foundation::AlignedBytes block = allocate_fresh_block();
     core::View<std::byte> const bytes = core::byte_view(block.view());
     core::View<std::byte const> const four_pages = bytes.window(page, 4 * page).expect("the pages fit in the block");
@@ -172,15 +208,7 @@ void populate_faults_in_each_page_of_the_range() {
     pages::populate_pages(kStartup, core::View<std::byte const>{}).expect("an empty range makes no call");
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(four_pages) == 4);
 
-    core::Result<core::Unit, os::Errno> const probe = pages::populate_pages(kStartup, window(3 * page, page));
-    bool const is_older_kernel = probe.match([](core::Unit) noexcept { return false; },
-                                             [](os::Errno error) noexcept { return error == os::Errno::einval; });
-    if (is_older_kernel) {
-        ::fixy::report(::fixy::Sink::Err, "populate_faults_in_each_page_of_the_range: SKIPPED (Linux before 5.14)\n");
-        static_cast<void>(pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
-        return;
-    }
-    CRUCIBLE_FATAL_INVARIANT(probe.is_ok());
+    pages::populate_pages(kStartup, window(3 * page, page)).expect("the kernel faults in the last page");
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(3 * page, page)) == 0);
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(0, 3 * page)) == 3);
 
@@ -234,9 +262,21 @@ void storage_of_gives_the_bytes_of_an_object_and_of_a_run() {
 // The exchange gives the setting before the call.  A second exchange with
 // the same setting gives that setting back, so the set and the read reach
 // the right options of prctl.  The last exchange puts the first setting back.
+// qemu-user refuses the two options of prctl with einval, and the case then
+// skips.  On a kernel, einval is a wrong option, and the case fails.
 void thp_exchange_reads_and_sets_the_setting() {
-    pages::ThpSetting const first =
-        pages::exchange_thp_setting(kStartup, pages::ThpSetting::refused).expect("the process refuses THP");
+    core::Result<pages::ThpSetting, os::Errno> const exchanged =
+        pages::exchange_thp_setting(kStartup, pages::ThpSetting::refused);
+    bool const is_refused_option = exchanged.match([](pages::ThpSetting) noexcept { return false; },
+                                                   [](os::Errno error) noexcept { return error == os::Errno::einval; });
+    if (is_refused_option) {
+        CRUCIBLE_FATAL_INVARIANT(kIsUnderEmulator);
+        ::fixy::report(::fixy::Sink::Err, "thp_exchange_reads_and_sets_the_setting: SKIPPED (qemu-user)\n");
+        return;
+    }
+    CRUCIBLE_FATAL_INVARIANT(exchanged.is_ok());
+    pages::ThpSetting const first = exchanged.match([](pages::ThpSetting setting) noexcept { return setting; },
+                                                    [](os::Errno) noexcept { return pages::ThpSetting::allowed; });
     pages::ThpSetting const refused =
         pages::exchange_thp_setting(kStartup, pages::ThpSetting::refused).expect("the process reads the refusal");
     CRUCIBLE_FATAL_INVARIANT(refused == pages::ThpSetting::refused);
