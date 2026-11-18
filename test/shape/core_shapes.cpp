@@ -926,6 +926,53 @@ struct TokenB final {};
     return tokens;
 }
 
+// ── Protocol ────────────────────────────────────────────────────────────────
+
+// A record that derives its operations from its parts: 16 bytes, in the
+// order of their sizes, with no padding byte.
+struct[[= fixy::derive_protocol{}]] ProtocolRecord final {
+    std::uint64_t key = 0;
+    std::uint32_t count = 0;
+    std::uint16_t lane = 0;
+    Kind kind = Kind::first;
+    bool flag = false;
+};
+
+// equal compares each part in declaration order.
+[[gnu::used]] bool protocol_equal(ProtocolRecord const& left, ProtocolRecord const& right) noexcept {
+    return fixy::equal(left, right);
+}
+
+// order compares the parts in declaration order, and it stops at the first
+// part that differs.
+[[gnu::used]] bool protocol_order(ProtocolRecord const& left, ProtocolRecord const& right) noexcept {
+    return std::is_lt(fixy::order(left, right));
+}
+
+// hash folds each part with fmix64.
+[[gnu::used]] std::uint64_t protocol_hash(ProtocolRecord const& value) noexcept { return fixy::hash(value).raw(); }
+
+// encode writes each part as its bytes.
+[[gnu::used]] void protocol_encode(ProtocolRecord const& value, fixy::View<std::byte, 16> out) noexcept {
+    fixy::encode(value, out);
+}
+
+// decode reads each part, and it refuses an enumeration value that names no
+// enumerator and a bool byte other than 0 and 1.
+[[gnu::used]] fixy::Result<ProtocolRecord, fixy::DecodeFault>
+protocol_decode(fixy::View<std::byte const, 16> image) noexcept {
+    return fixy::decode<ProtocolRecord>(image);
+}
+
+// equal of a double compares its bits.
+[[gnu::used]] bool protocol_equal_double(double left, double right) noexcept { return fixy::equal(left, right); }
+
+// <=> of a FixedArray is lexicographic over its elements.
+[[gnu::used]] bool fixed_array_order(fixy::FixedArray<std::uint32_t, 4> const& left,
+                                     fixy::FixedArray<std::uint32_t, 4> const& right) noexcept {
+    return std::is_lt(left <=> right);
+}
+
 // ── Scalar ──────────────────────────────────────────────────────────────────
 
 [[gnu::used]] fixy::Option<std::uint32_t> scalar_checked_add(std::uint32_t left, std::uint32_t right) noexcept {
@@ -1620,6 +1667,76 @@ struct RawTokens final {
 [[gnu::used]] bool record_order_raw(RawPair32 left, RawPair32 right) noexcept { return std::is_lt(left <=> right); }
 
 [[gnu::used]] RawTokens record_pass_tokens_raw(RawTokens tokens) noexcept { return tokens; }
+
+struct RawProtocolRecord final {
+    std::uint64_t key = 0;
+    std::uint32_t count = 0;
+    std::uint16_t lane = 0;
+    Kind kind = Kind::first;
+    bool flag = false;
+
+    friend std::strong_ordering operator<=>(RawProtocolRecord const&, RawProtocolRecord const&) noexcept = default;
+};
+
+// The reason of a refused image, as a hand reader gives it.
+struct RawDecodeFault final {
+    std::uint32_t offset = 0;
+    std::uint8_t reason = 0;
+};
+
+[[gnu::used]] bool protocol_equal_raw(RawProtocolRecord const& left, RawProtocolRecord const& right) noexcept {
+    return left.key == right.key && left.count == right.count && left.lane == right.lane && left.kind == right.kind
+        && left.flag == right.flag;
+}
+
+[[gnu::used]] bool protocol_order_raw(RawProtocolRecord const& left, RawProtocolRecord const& right) noexcept {
+    return std::is_lt(left <=> right);
+}
+
+[[gnu::used]] std::uint64_t protocol_hash_raw(RawProtocolRecord const& value) noexcept {
+    constexpr std::uint64_t seed = 0x9E3779B97F4A7C15ULL;
+    std::uint64_t state = seed;
+    state = state * seed ^ foundation::reflect::fmix64(value.key);
+    state = state * seed ^ foundation::reflect::fmix64(value.count);
+    state = state * seed ^ foundation::reflect::fmix64(value.lane);
+    state = state * seed ^ foundation::reflect::fmix64(static_cast<std::uint64_t>(value.kind));
+    state = state * seed ^ foundation::reflect::fmix64(value.flag ? 1U : 0U);
+    return foundation::reflect::fmix64(state);
+}
+
+[[gnu::used]] void protocol_encode_raw(RawProtocolRecord const& value, std::byte* out) noexcept {
+    std::uint8_t const flag = value.flag ? 1 : 0;
+    std::memcpy(out, &value.key, 8);
+    std::memcpy(out + 8, &value.count, 4);
+    std::memcpy(out + 12, &value.lane, 2);
+    std::memcpy(out + 14, &value.kind, 1);
+    std::memcpy(out + 15, &flag, 1);
+}
+
+[[gnu::used]] std::expected<RawProtocolRecord, RawDecodeFault> protocol_decode_raw(std::byte const* image) noexcept {
+    RawProtocolRecord value{};
+    std::uint8_t kind = 0;
+    std::uint8_t flag = 0;
+    std::memcpy(&value.key, image, 8);
+    std::memcpy(&value.count, image + 8, 4);
+    std::memcpy(&value.lane, image + 12, 2);
+    std::memcpy(&kind, image + 14, 1);
+    if (kind > 3) return std::unexpected(RawDecodeFault{14, 1});
+    std::memcpy(&flag, image + 15, 1);
+    if (flag > 1) return std::unexpected(RawDecodeFault{15, 0});
+    value.kind = static_cast<Kind>(kind);
+    value.flag = flag == 1;
+    return value;
+}
+
+[[gnu::used]] bool protocol_equal_double_raw(double left, double right) noexcept {
+    return std::bit_cast<std::uint64_t>(left) == std::bit_cast<std::uint64_t>(right);
+}
+
+[[gnu::used]] bool fixed_array_order_raw(std::array<std::uint32_t, 4> const& left,
+                                         std::array<std::uint32_t, 4> const& right) noexcept {
+    return std::is_lt(left <=> right);
+}
 
 [[gnu::used]] std::optional<std::uint32_t> scalar_checked_add_raw(std::uint32_t left, std::uint32_t right) noexcept {
     std::uint32_t sum = 0;

@@ -862,6 +862,25 @@ PROBES: tuple[Probe, ...] = (
         "defaulted <=> of a struct of the same members does",
     ),
     Probe("record_pass_tokens", "a Record of two empty parts takes one byte, and a pass moves no byte"),
+    Probe("protocol_equal", "equal of a class of the Protocol family compares each part, as a hand compare does"),
+    Probe(
+        "protocol_order",
+        "order of a class of the Protocol family stops at the first part that differs, and gives the order of the "
+        "last part, as a defaulted <=> does.  At -O1, GCC gives the block of the 16-bit part a je and a jmp where the "
+        "defaulted <=> has one jne, so the targets of its branches are different.  At -O2 and -O3 the family side is "
+        "shorter",
+        branches=True,
+    ),
+    Probe("protocol_hash", "hash of the Protocol family is the fmix64 fold of the parts that a hand fold writes"),
+    Probe("protocol_encode", "encode of the Protocol family writes each part with one store, as memcpy does"),
+    Probe(
+        "protocol_decode",
+        "decode of the Protocol family reads each part with one load and tests the enumeration and the bool, as a "
+        "hand reader does.  The order of the tests and of the blocks of the error can differ",
+        branches=True,
+    ),
+    Probe("protocol_equal_double", "equal of a double compares its bits, as a compare of the bit_cast words does"),
+    Probe("fixed_array_order", "<=> of a FixedArray is lexicographic, as <=> of a std::array is"),
     # The Scalar family.
     Probe(
         "scalar_checked_add",
