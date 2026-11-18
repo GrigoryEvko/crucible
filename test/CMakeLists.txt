@@ -4295,6 +4295,17 @@ crucible_neg_compile_test(neg_vessel_meta_records_are_not_tensor_meta
     "no matching function for call to .raw_grad_fn_hash\\(const CrucibleMeta&\\)."
     "neg_vessel_meta_records_are_not_tensor_meta.cpp:22")
 
+# The data slots of an op and the data arguments of a schema key their bit
+# sets by the Side of their own role.  An Index<5> converts to an Index<32>, and
+# the two roles keep a scalar slot out of the set of the arguments and a
+# position out of the set of the slots.
+crucible_neg_compile_test(neg_vessel_data_arguments_take_no_scalar_slot
+    "cannot convert .Side<crucible::side::InlineScalarSlot,Index<5>>. to .Side<crucible::vessel::side::SchemaArgument,Index<32>>."
+    "initializing argument 1 of .constexpr crucible::vessel::DataArguments crucible::vessel::DataArguments::with_data\\(crucible::vessel::ArgumentPosition\\) const.")
+crucible_neg_compile_test(neg_vessel_data_slots_take_no_argument_position
+    "cannot convert .Side<crucible::vessel::side::SchemaArgument,Index<32>>. to .Side<crucible::side::InlineScalarSlot,Index<5>>."
+    "initializing argument 1 of .constexpr crucible::DataSlots crucible::DataSlots::with\\(crucible::ScalarSlot, crucible::ScalarRole\\) const.")
+
 # ─── Vessel typed-accessor provenance fences ──────────────────────
 #
 # data_ptr_typed returns Tagged<void*, source::External>; refusing

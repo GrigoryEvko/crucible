@@ -363,15 +363,16 @@ template <class VigilType>
 //     BackgroundThread asserts the same bound when it drains the ring,
 //     so a larger count reaches a contract violation rather than the
 //     pipeline; the adapter rejects the operation here instead.
-//   - each data slot below num_scalar_args, because the replay binds the
-//     value of each data slot from Entry::scalar_values.
+//   - each data slot below num_scalar_args, and no bit of the word past the
+//     inline slots, because the replay binds the value of each data slot
+//     from Entry::scalar_values.
 [[nodiscard]] CRUCIBLE_HOT constexpr bool entry_is_well_formed(const crucible::TraceRing::Entry& entry) noexcept {
     if (entry.schema_hash.raw() == 0) return false;
     if (entry.num_inputs > crucible::kMaxOpInputs) return false;
     if (entry.num_outputs > crucible::kMaxOpOutputs) return false;
     for (const crucible::ScalarCount stored : crucible::ScalarCount::check(entry.num_scalar_args)) {
-        const crucible::DataSlots data = entry.data_slots();
-        return data.first(stored) == data;
+        for (const crucible::DataSlots data : entry.data_slots())
+            return data.first(stored) == data;
     }
     return false;
 }

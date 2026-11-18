@@ -107,9 +107,27 @@ inline constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
 // The position of an argument in the schema of an operator.  The unboxed
 // kernels and the boxed fallback count the arguments in the same order.  An
 // operator of the table of aten_op_table.h has at most 32 arguments, and an
-// argument at a later position is structural on the two paths.
+// argument at a later position is structural on the two paths.  The position
+// is an Index in the role of an argument, so the inline scalar slot of an op
+// (crucible::ScalarSlot), whose Index<5> converts to an Index<32>, is no
+// position.
 inline constexpr uint32_t kMaxSchemaArguments = 32;
-using ArgumentPosition = ::fixy::Index<kMaxSchemaArguments>;
+
+namespace side {
+
+// The role of the index of an argument of a schema.
+struct SchemaArgument final {};
+
+}  // namespace side
+
+using ArgumentPosition = ::fixy::Side<side::SchemaArgument, ::fixy::Index<kMaxSchemaArguments>>;
+
+// The position at a number, or no value past the last position.  One compare.
+[[nodiscard]] constexpr ::fixy::Option<ArgumentPosition> argument_position_at(size_t position) noexcept {
+    for (const ::fixy::Index<kMaxSchemaArguments> index : ::fixy::Index<kMaxSchemaArguments>::check(position))
+        return ::fixy::Option<ArgumentPosition>::some(ArgumentPosition{index});
+    return ::fixy::Option<ArgumentPosition>{::fixy::none};
+}
 
 // One argument of the type Scalar or float that is structural.
 struct StructuralScalar {
@@ -149,7 +167,7 @@ inline constexpr ::fixy::FixedArray<StructuralScalar, 16> kStructuralScalars{
 [[nodiscard]] constexpr bool is_structural_scalar(crucible::SchemaHash schema_hash,
                                                   ArgumentPosition position) noexcept {
     for (const StructuralScalar& row : kStructuralScalars) {
-        if (fnv1a_text(row.schema) == schema_hash.raw() && row.position == position.raw()) return true;
+        if (fnv1a_text(row.schema) == schema_hash.raw() && row.position == position.value().raw()) return true;
     }
     return false;
 }
@@ -180,7 +198,7 @@ public:
     // The role of the argument at position, and structural past the last
     // position.
     [[nodiscard]] constexpr crucible::ScalarRole role(size_t position) const noexcept {
-        for (const ArgumentPosition argument : ArgumentPosition::check(position))
+        for (const ArgumentPosition argument : argument_position_at(position))
             return positions_.test(argument) ? crucible::ScalarRole::DATA : crucible::ScalarRole::STRUCTURAL;
         return crucible::ScalarRole::STRUCTURAL;
     }
@@ -210,9 +228,12 @@ struct StoredScalars {
     uint16_t tags = 0;
     crucible::DataSlots data{};
 
+    // The check of the slot reads an Option of the Index, whose niche keeps
+    // the record of each scalar at one compare.  The role goes on after it.
     void push(int64_t value, crucible::ScalarType2 tag, crucible::ScalarRole role) noexcept {
-        for (const ScalarSlot slot : ScalarSlot::check(stored)) {
-            values.at(slot) = value;
+        for (const ::fixy::Index<crucible::kScalarSlots> index : ::fixy::Index<crucible::kScalarSlots>::check(stored)) {
+            const ScalarSlot slot{index};
+            values.at(index) = value;
             tags = static_cast<uint16_t>(tags | (static_cast<uint32_t>(tag) << (crucible::kScalarTypeBits * stored)));
             data = data.with(slot, role);
             ++stored;
@@ -359,7 +380,8 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
         uint64_t digest = ::foundation::reflect::combine_ids(scalars.digest, scalars.count);
         digest = ::foundation::reflect::combine_ids(digest, inputs.digest);
         digest = ::foundation::reflect::combine_ids(digest, inputs.count);
-        entry.scalar_values.at(ScalarSlot::check(digest_slot).expect("the digest slot is the last slot or before it")) =
+        entry.scalar_values.at(
+            crucible::scalar_slot_at(digest_slot).expect("the digest slot is the last slot or before it").take()) =
             static_cast<int64_t>(digest);
         entry.num_scalar_args = static_cast<uint8_t>(digest_slot + 1);
         // The digest slot holds an integer, so its tag is INT, and it is

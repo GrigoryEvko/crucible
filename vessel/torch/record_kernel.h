@@ -692,7 +692,7 @@ template <std::size_t Position, class T>
     if constexpr (Position >= kMaxSchemaArguments) {
         return crucible::ScalarRole::STRUCTURAL;
     } else {
-        const ArgumentPosition position = ArgumentPosition::check(Position).expect("the test above bounds Position");
+        const ArgumentPosition position = argument_position_at(Position).expect("the test above bounds Position");
         if (is_structural_scalar(schema_hash, position)) return crucible::ScalarRole::STRUCTURAL;
         return role_of_kind<T>();
     }

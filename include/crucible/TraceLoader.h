@@ -263,18 +263,21 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
     const auto data_bits = read_record_field_<uint8_t, offsetof(TraceOpRecord, data_slots)>(op_record);
     // An entry holds at most kScalarSlots scalars, and a data slot is one of
     // them.  The build of a region ends the process on a larger count, so
-    // the load refuses it first.
-    const DataSlots data = DataSlots::from_bits(data_bits);
+    // the load refuses it first, and a data slot past the inline slots or
+    // past the count.
     bool is_well_formed = false;
-    for (const ScalarCount stored : ScalarCount::check(num_scalars))
-        is_well_formed = data.bits() == data_bits && data.first(stored) == data;
+    for (const DataSlots data : DataSlots::from_bits(data_bits)) {
+        for (const ScalarCount stored : ScalarCount::check(num_scalars)) {
+            is_well_formed = data.first(stored) == data;
+            entry.set_data_slots(data);
+        }
+    }
     if (!is_well_formed) [[unlikely]]
         return ::fixy::err(TraceLoadError::OpCorrupt);
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
     // The check above keeps the count at most kScalarSlots.
     entry.num_scalar_args = static_cast<uint8_t>(num_scalars);
-    entry.set_data_slots(data);
     // The whole packed set of flags, despite the name of the field.
     entry.op_flags = read_record_field_<uint8_t, offsetof(TraceOpRecord, inference_mode)>(op_record);
     if (grad_enabled != 0) {

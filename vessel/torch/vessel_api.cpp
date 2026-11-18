@@ -325,8 +325,12 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     // refuses each claim past the inline slots.  The ladder refuses a data
     // slot past the claim too, and a bit past the inline slots.
     entry.num_scalar_args = static_cast<uint8_t>(::fixy::min(num_scalars, uint16_t{UINT8_MAX}));
-    entry.set_data_slots(crucible::DataSlots::from_bits(data_slots));
-    if (entry.data_slot_bits != data_slots) return refused_dispatch_result();
+    bool is_slot_word = false;
+    for (const crucible::DataSlots data : crucible::DataSlots::from_bits(data_slots)) {
+        entry.set_data_slots(data);
+        is_slot_word = true;
+    }
+    if (!is_slot_word) return refused_dispatch_result();
     uint8_t flags = 0;
     if (inference_mode != 0) flags |= crucible::op_flag::INFERENCE_MODE;
     if (grad_enabled != 0) flags |= crucible::op_flag::GRAD_ENABLED;
@@ -384,7 +388,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
 // The position of the C caller is a number, and a position past the
 // arguments of a schema is no structural scalar.
 int crucible_is_structural_scalar(uint64_t schema_hash, uint32_t position) noexcept {
-    for (const crucible::vessel::ArgumentPosition at : crucible::vessel::ArgumentPosition::check(position)) {
+    for (const crucible::vessel::ArgumentPosition at : crucible::vessel::argument_position_at(position)) {
         return crucible::vessel::is_structural_scalar(crucible::SchemaHash{schema_hash}, at) ? 1 : 0;
     }
     return 0;
@@ -688,8 +692,9 @@ uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out, uint
     uint32_t written = 0;
     for (const crucible::Vigil::BoundScalar& source : bound) {
         if (written == capacity) break;
-        out[written] = CrucibleBoundScalar{
-            .op_index = source.op.raw(), .slot = static_cast<uint32_t>(source.slot.raw()), .value = source.value};
+        out[written] = CrucibleBoundScalar{.op_index = source.op.raw(),
+                                           .slot = static_cast<uint32_t>(source.slot.value().raw()),
+                                           .value = source.value};
         ++written;
     }
     return ::fixy::narrow<uint32_t>(bound.size()).expect("a region holds fewer data slots than 2^32");

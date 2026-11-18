@@ -106,7 +106,8 @@ void fill_random_entry(crucible::fuzz::prop::Rng& rng, TraceRing::Entry& e) noex
     e.num_inputs = static_cast<uint16_t>(rng.next32() & 0xFFFFu);
     e.num_outputs = static_cast<uint16_t>(rng.next32() & 0xFFFFu);
     e.num_scalar_args = static_cast<uint8_t>(rng.next32() & 0xFFu);
-    e.set_data_slots(crucible::DataSlots::from_bits(static_cast<uint8_t>(rng.next32() & 0xFFu)));
+    e.set_data_slots(crucible::DataSlots::from_bits(static_cast<uint8_t>(rng.next32() & 0x1Fu))
+                         .expect("five bits name only the inline slots"));
     e.scalar_types = static_cast<uint8_t>(rng.next32() & 0xFFu);
     e.op_flags = static_cast<uint8_t>(rng.next32() & 0xFFu);
     for (auto& v : e.scalar_values)

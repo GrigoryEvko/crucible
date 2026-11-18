@@ -630,7 +630,7 @@ public:
     // and the value that the replay bound to it last.
     struct BoundScalar {
         OpIndex op{};
-        ScalarSlot slot = ::fixy::index<0>();
+        ScalarSlot slot{::fixy::index<0>()};
         int64_t value = 0;
     };
 
@@ -997,7 +997,7 @@ private:
         while (next_bound_scalar_ < scalars.size()) {
             BoundScalar& bound = *scalars.get(next_bound_scalar_).expect("the test above bounds the cursor");
             if (bound.op.raw() > matched) break;
-            if (bound.op.raw() == matched) bound.value = op.entry().scalar_values.at(bound.slot);
+            if (bound.op.raw() == matched) bound.value = op.entry().scalar_values.at(bound.slot.value());
             ++next_bound_scalar_;
         }
         if (status == ReplayStatus::COMPLETE) {
@@ -1427,7 +1427,7 @@ private:
                 if (!data.has_data()) continue;
                 uint32_t position = 0;
                 for (const int64_t value : te.scalar_args()) {
-                    for (const ScalarSlot slot : ScalarSlot::check(position)) {
+                    for (const ScalarSlot slot : scalar_slot_at(position)) {
                         if (data.role(slot) == ScalarRole::DATA) on_slot(BoundScalar{OpIndex{i}, slot, value});
                     }
                     ++position;

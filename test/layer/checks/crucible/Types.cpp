@@ -150,4 +150,21 @@ static_assert(StorageGeneration::unknown(AllocatorEpoch{1}) != StorageGeneration
 static_assert(StorageGeneration::unknown(AllocatorEpoch{1}) != StorageGeneration::known(AllocationCount{1}));
 static_assert(StorageGeneration::unknown(AllocatorEpoch{0}) != StorageGeneration{});
 
+// The door of the data slots from a word refuses a bit past the five inline
+// slots, and the door of the kinds refuses the bit above the data slots.  Each
+// other word comes back as it went in.
+static_assert(DataSlots::from_bits(uint8_t{0x20}).is_none() && DataSlots::from_bits(uint8_t{0x80}).is_none());
+static_assert(DataSlots::from_bits(uint8_t{0x1F}).expect("five bits").bits() == 0x1F);
+static_assert(ScalarSlotKinds::from_bits(uint16_t{0x8000}).is_none());
+static_assert(ScalarSlotKinds::from_bits(uint16_t{0x7FFF}).expect("fifteen bits").bits() == 0x7FFF);
+static_assert(sizeof(ScalarSlotKinds) == 2 && std::is_trivially_copyable_v<ScalarSlotKinds>);
+static_assert(ScalarSlotKinds::of(uint16_t{0x3FF}, DataSlots{}).bits() == 0x3FF
+              && ScalarSlotKinds::of(uint16_t{0xFFFF}, DataSlots{}).tags() == 0x3FF);
+
+// A slot of an op is an Index<5> in its role, and a slot at a position past
+// the inline slots does not exist.
+static_assert(scalar_slot_at(4).is_some() && scalar_slot_at(5).is_none());
+static_assert(!std::is_convertible_v<::fixy::Index<kScalarSlots>, ScalarSlot>);
+static_assert(sizeof(ScalarSlot) == sizeof(::fixy::Index<kScalarSlots>));
+
 }  // namespace crucible

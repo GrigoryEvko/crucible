@@ -672,6 +672,25 @@ void test_ladder_refuses_a_count_that_disagrees_with_the_entry() {
            "no record for an entry with an input and an output is refused");
 }
 
+// The word of the data slots of an entry holds one bit for each inline slot.
+// The ladder refuses a bit past the five slots also when the entry holds five
+// scalars, so no entry with a data slot that the entry does not have reaches
+// the Vigil.
+void test_ladder_refuses_a_data_slot_past_the_inline_slots() {
+    crucible::TraceRing::Entry entry{};
+    entry.schema_hash = crucible::SchemaHash{0x71};
+    entry.num_scalar_args = 5;
+    entry.data_slot_bits = 0x11;
+    EXPECT(crucible::vessel::entry_is_well_formed(entry), "data slots below the count of five are well formed");
+    entry.data_slot_bits = 0x21;
+    EXPECT(!crucible::vessel::entry_is_well_formed(entry), "a data slot past the five inline slots is refused");
+    entry.data_slot_bits = 0x80;
+    EXPECT(!crucible::vessel::entry_is_well_formed(entry), "the high bit of the word is refused");
+    entry.num_scalar_args = 2;
+    entry.data_slot_bits = 0x04;
+    EXPECT(!crucible::vessel::entry_is_well_formed(entry), "a data slot past the count is refused");
+}
+
 // Each decoder gives the crucible enumerator of the same name, and no value
 // for an ordinal that crucible does not name.  The layouts of c10 and of
 // crucible have different ordinals from SparseCsc on, so the layout decoder
@@ -738,6 +757,7 @@ int main() {
     test_handle_distinct_pointers();
     test_ladder_refuses_unnamed_enumerations();
     test_ladder_refuses_a_count_that_disagrees_with_the_entry();
+    test_ladder_refuses_a_data_slot_past_the_inline_slots();
     test_c10_decoders_map_by_name();
     test_ffi_records_reuse_the_slots_of_the_producer();
 

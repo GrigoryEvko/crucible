@@ -663,9 +663,12 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
                 ScalarCount::check(::fixy::min(std::size_t{num_scalar_args}, std::size_t{kScalarSlots}))
                     .expect("the minimum is a count of the slots");
             const uint16_t kinds = r.read_gated<uint16_t>([tagged](uint16_t word) noexcept {
-                return ScalarSlotKinds::from_bits(word).first(tagged).bits() == word;
+                for (const ScalarSlotKinds read : ScalarSlotKinds::from_bits(word))
+                    return read.first(tagged).bits() == word;
+                return false;
             });
-            te.scalar_kinds = ScalarSlotKinds::from_bits(kinds);
+            te.scalar_kinds = ScalarSlotKinds::from_bits(kinds).expect(
+                "the gate refuses a word past the data slots, and a refused word reads as zero");
         }
 
         const ::fixy::View<TensorMeta> input_metas = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});

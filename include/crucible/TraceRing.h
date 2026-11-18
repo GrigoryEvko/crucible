@@ -174,19 +174,25 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                 static_cast<uint8_t>((op_flags & ~op_flag::SCALAR4_TYPE_MASK) | (slot4 << op_flag::SCALAR4_TYPE_SHIFT));
         }
 
-        // The data slots of the entry, from their word.
-        [[nodiscard, gnu::pure]] constexpr DataSlots data_slots() const noexcept {
+        // The data slots of the entry, from their word, or no value when the
+        // word holds a bit past the inline slots.  The checks of an entry of
+        // a foreign caller refuse such a word (entry_is_well_formed of
+        // vessel/torch/vessel_api_typed.h), and set_data_slots writes none.
+        [[nodiscard, gnu::pure]] constexpr ::fixy::Option<DataSlots> data_slots() const noexcept {
             return DataSlots::from_bits(data_slot_bits);
         }
 
         constexpr void set_data_slots(const DataSlots& data) noexcept { data_slot_bits = data.bits(); }
 
         // The tags and the data slots of the stored slots, in the word that
-        // an op of a region keeps.  The bits of a slot past the count go.
+        // an op of a region keeps.  The bits of a slot past the count go.  An
+        // entry of the ring passed the checks of its recording path, so its
+        // word of the data slots names only inline slots.
         [[nodiscard, gnu::pure]] constexpr ScalarSlotKinds scalar_kinds() const noexcept {
             const ScalarCount stored = ScalarCount::check(::fixy::min(uint32_t{num_scalar_args}, kScalarSlots))
                                            .expect("the minimum is a count");
-            return ScalarSlotKinds::of(packed_scalar_types(), data_slots()).first(stored);
+            const DataSlots data = data_slots().expect("an entry of the ring holds no data slot past the inline slots");
+            return ScalarSlotKinds::of(packed_scalar_types(), data).first(stored);
         }
     };
 

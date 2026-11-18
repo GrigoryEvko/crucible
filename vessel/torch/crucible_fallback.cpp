@@ -110,6 +110,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // the three paths.
 // =====================================================================
 
+using crucible::vessel::argument_position_at;
 using crucible::vessel::ArgumentPosition;
 using crucible::vessel::DataArguments;
 using crucible::vessel::fnv1a_step;
@@ -248,7 +249,7 @@ struct SchemaInfo {
                                                               DataArguments by_type) noexcept {
     DataArguments kept{};
     for (uint32_t position = 0; position < kMaxSchemaArguments; ++position) {
-        for (const ArgumentPosition at : ArgumentPosition::check(position)) {
+        for (const ArgumentPosition at : argument_position_at(position)) {
             if (by_type.role(position) == crucible::ScalarRole::DATA && !is_structural_scalar(schema_hash, at))
                 kept = kept.with_data(at);
         }
@@ -333,7 +334,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the role reads the argument types of the sch
         if (const auto list = type->cast<c10::ListType>()) type = list->getElementType();
         const bool is_data = type->kind() == c10::TypeKind::NumberType || type->kind() == c10::TypeKind::FloatType;
         if (!is_data) continue;
-        for (const ArgumentPosition at : ArgumentPosition::check(position))
+        for (const ArgumentPosition at : argument_position_at(position))
             data = data.with_data(at);
     }
     return data;

@@ -282,23 +282,50 @@ private:
 // bits for each slot, slot 0 in the low bits.
 inline constexpr uint32_t kScalarTypeBits = 2;
 
-// The inline scalar slots of an op, the index of one slot, and a count of
-// slots, which is at most kScalarSlots.
+// The inline scalar slots of an op, and a count of slots, which is at most
+// kScalarSlots.
 inline constexpr uint32_t kScalarSlots = 5;
-using ScalarSlot = ::fixy::Index<kScalarSlots>;
 using ScalarCount = ::fixy::Index<kScalarSlots + 1>;
+
+// The roles of an index and the fields of a packed word of this header.
+namespace side {
+
+// The role of an index of the inline scalar slots of an op.  The bit set of
+// the data slots of an op takes a key of this role, and the bit set of the
+// data arguments of a schema takes a key of the role of an argument
+// (vessel/torch/entry_slots.h).  An Index<5> converts to an Index<32>, and
+// the two roles keep a slot out of the set of the arguments.
+struct InlineScalarSlot final {};
+
+// The two fields of the word of ScalarSlotKinds.
+struct ScalarTagsField final {};
+struct DataSlotsField final {};
+
+}  // namespace side
+
+// The index of one inline scalar slot of an op, in its role.
+using ScalarSlot = ::fixy::Side<side::InlineScalarSlot, ::fixy::Index<kScalarSlots>>;
+
+// The slot at a position, or no value past the inline slots.  One compare.
+[[nodiscard]] constexpr ::fixy::Option<ScalarSlot> scalar_slot_at(std::size_t position) noexcept {
+    for (const ::fixy::Index<kScalarSlots> index : ::fixy::Index<kScalarSlots>::check(position))
+        return ::fixy::Option<ScalarSlot>::some(ScalarSlot{index});
+    return ::fixy::Option<ScalarSlot>{::fixy::none};
+}
 
 // The role of a scalar slot.  The type of the argument in the schema of the
 // op gives the role, and the value does not.
 //
 // A data slot holds a value that the computation reads at run time: an
 // argument of the type Scalar, float or double, or an element of a list of
-// them.  The guard and the content hash read the tag of a data slot but not
-// its value, so a loop whose step size changes at each iteration keeps one
-// region.  The replay binds the value of each data slot at each iteration, as
-// it binds an external tensor.  A kernel takes the value as an argument at run
-// time, so no lowering folds it into a constant, and the bound of its recipe
-// holds for each value.
+// them.  A wrapped number that the dispatch mode of Python gives as a scalar
+// in a position of the type Tensor is data too, because the native vessel
+// records its tensor as an input.  The guard and the content hash read the
+// tag of a data slot but not its value, so a loop whose step size changes at
+// each iteration keeps one region.  The replay binds the value of each data
+// slot at each iteration, as it binds an external tensor.  A kernel takes the
+// value as an argument at run time, so no lowering folds it into a constant,
+// and the bound of its recipe holds for each value.
 //
 // A structural slot holds a value that picks the computation: an int, a bool,
 // an enumerator, an element of a list of ints, an absent optional, or the
@@ -312,23 +339,29 @@ enum class ScalarRole : uint8_t {
 
 // The data slots of an op: the set of the slots that hold a data scalar.  The
 // slots past the count of the stored scalars are not in the set.  The set is a
-// BitSet of one byte, keyed by the slot.  A packed record, such as an entry of
-// the ring, keeps the word of the set (bits()), and from_bits gives the set
-// back.
+// BitSet of one byte, keyed by the slot in its role.  A packed record, such as
+// an entry of the ring, keeps the word of the set (bits()), and from_bits gives
+// the set back.
 class DataSlots {
 public:
     constexpr DataSlots() noexcept = default;
 
-    // The door from the word of a record.  The bits past the inline slots go.
-    [[nodiscard]] static constexpr DataSlots from_bits(uint8_t bits) noexcept {
-        return DataSlots{
-            ::fixy::mint_bit_set_from_bits<kScalarSlots, ScalarSlot>(static_cast<uint8_t>(bits & kSlotBits))
-                .expect("the mask keeps only the bits of the inline slots")};
+    // The door from the word of a record, or no value when the word holds a
+    // bit past the inline slots.  One compare.  The result is an
+    // Option<DataSlots>.  The return type is deduced, so the Option is named
+    // only where this class is complete.
+    [[nodiscard]] static constexpr auto from_bits(uint8_t bits) noexcept {
+        using Result = ::fixy::Option<DataSlots>;
+        for (const Slots slots : ::fixy::mint_bit_set_from_bits<kScalarSlots, ScalarSlot>(bits))
+            return Result::some(DataSlots{slots});
+        return Result{::fixy::none};
     }
 
     // The data slots of the first count slots, with each later slot taken out.
     [[nodiscard]] constexpr DataSlots first(ScalarCount count) const noexcept {
-        return from_bits(static_cast<uint8_t>(uint32_t{bits()} & ((uint32_t{1} << count.raw()) - 1)));
+        const auto kept = static_cast<uint8_t>(uint32_t{bits()} & ((uint32_t{1} << count.raw()) - 1));
+        return DataSlots{::fixy::mint_bit_set_from_bits<kScalarSlots, ScalarSlot>(kept).expect(
+            "a mask of the word of a set keeps only the bits of its slots")};
     }
 
     // The same slots with slot set to role.
@@ -356,33 +389,45 @@ public:
 private:
     using Slots = ::fixy::BitSet<kScalarSlots, ScalarSlot>;
 
-    static constexpr uint8_t kSlotBits = static_cast<uint8_t>((1u << kScalarSlots) - 1);
-
     constexpr explicit DataSlots(const Slots& slots) noexcept : slots_{slots} {}
 
     Slots slots_{};
 };
 
-// The kinds of the inline scalar slots of an op in one word: the tag of each
-// slot in the bits 0 to 9, two bits for each slot with slot 0 in the low bits,
-// and the data slots in the bits 10 to 14.  The bits of a slot past the count
-// of the stored scalars are zero.  An op of a region keeps this word, so a
-// TraceEntry stays 96 bytes.
+// The kinds of the inline scalar slots of an op in one PackedWord of 16 bits
+// with two fields: the tag of each slot in the bits 0 to 9, two bits for each
+// slot with slot 0 in the low bits, and the data slots in the bits 10 to 14.
+// Bit 15 is zero.  The bits of a slot past the count of the stored scalars are
+// zero.  An op of a region keeps this word, so a TraceEntry stays 96 bytes.
 class ScalarSlotKinds {
+    using Word = ::fixy::PackedWord<uint16_t, ::fixy::BitField<side::ScalarTagsField, kScalarTypeBits * kScalarSlots>,
+                                    ::fixy::BitField<side::DataSlotsField, kScalarSlots>>;
+
 public:
+    // The first bit of the data slots in the word, after the tags of the
+    // inline slots.  The guard word of the vessel places its bits by it.
     static constexpr uint32_t kDataShift = kScalarTypeBits * kScalarSlots;
 
     constexpr ScalarSlotKinds() noexcept = default;
 
-    // The door from the word of a record.  The bits past the data slots go.
-    [[nodiscard]] static constexpr ScalarSlotKinds from_bits(uint16_t bits) noexcept {
-        return ScalarSlotKinds{static_cast<uint16_t>(bits & kKindBits)};
+    // The door from the word of a record, or no value when the word holds the
+    // bit above the data slots.  One compare.  The result is an
+    // Option<ScalarSlotKinds>.  The return type is deduced, so the Option is
+    // named only where this class is complete.
+    [[nodiscard]] static constexpr auto from_bits(uint16_t bits) noexcept {
+        using Result = ::fixy::Option<ScalarSlotKinds>;
+        for (const Word word : Word::from_bits(bits))
+            return Result::some(ScalarSlotKinds{word});
+        return Result{::fixy::none};
     }
 
     // The word of the packed tags and the data slots.  The bits of the tags
     // past the inline slots go.
     [[nodiscard]] static constexpr ScalarSlotKinds of(uint16_t tags, DataSlots data) noexcept {
-        return from_bits(static_cast<uint16_t>((tags & kTagBits) | (uint32_t{data.bits()} << kDataShift)));
+        const auto kept_tags = static_cast<uint16_t>(tags & ((1u << kDataShift) - 1));
+        const Word tagged = Word{}.with<side::ScalarTagsField>(kept_tags).expect("the mask keeps the bits of the tags");
+        return ScalarSlotKinds{tagged.with<side::DataSlotsField>(data.bits())
+                                   .expect("a set of the data slots holds only the bits of the inline slots")};
     }
 
     // The kinds of the first count slots, with each bit of a later slot
@@ -393,21 +438,19 @@ public:
     }
 
     // The tags, two bits for each slot, slot 0 in the low bits.
-    [[nodiscard]] constexpr uint16_t tags() const noexcept { return static_cast<uint16_t>(bits_ & kTagBits); }
+    [[nodiscard]] constexpr uint16_t tags() const noexcept { return word_.get<side::ScalarTagsField>(); }
     [[nodiscard]] constexpr DataSlots data_slots() const noexcept {
-        return DataSlots::from_bits(static_cast<uint8_t>(bits_ >> kDataShift));
+        return DataSlots::from_bits(word_.get<side::DataSlotsField>())
+            .expect("the field of the data slots holds the bits of the inline slots only");
     }
-    [[nodiscard]] constexpr uint16_t bits() const noexcept { return bits_; }
+    [[nodiscard]] constexpr uint16_t bits() const noexcept { return word_.bits(); }
 
     friend constexpr bool operator==(ScalarSlotKinds, ScalarSlotKinds) noexcept = default;
 
 private:
-    static constexpr uint16_t kTagBits = static_cast<uint16_t>((1u << kDataShift) - 1);
-    static constexpr uint16_t kKindBits = static_cast<uint16_t>((1u << (kDataShift + kScalarSlots)) - 1);
+    constexpr explicit ScalarSlotKinds(Word word) noexcept : word_{word} {}
 
-    constexpr explicit ScalarSlotKinds(uint16_t bits) noexcept : bits_{bits} {}
-
-    uint16_t bits_ = 0;
+    Word word_{};
 };
 
 struct AllocationCountTag {};

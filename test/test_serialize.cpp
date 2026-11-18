@@ -84,8 +84,9 @@ with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> imag
         op.depth = crucible::OpDepth{static_cast<uint16_t>(NUM_OPS - 1 - i)};
         // The one scalar of op i has the tag i: an integer, a double, a bool.
         // The double of op 1 is a data scalar.
-        const crucible::DataSlots data = crucible::DataSlots{}.with(
-            ::fixy::index<0>(), i == 1 ? crucible::ScalarRole::DATA : crucible::ScalarRole::STRUCTURAL);
+        const crucible::DataSlots data =
+            crucible::DataSlots{}.with(crucible::ScalarSlot{::fixy::index<0>()},
+                                       i == 1 ? crucible::ScalarRole::DATA : crucible::ScalarRole::STRUCTURAL);
         op.scalar_kinds = crucible::ScalarSlotKinds::of(static_cast<uint16_t>(i), data);
 
         crucible::TensorMeta large_input = make_meta(4, 8);

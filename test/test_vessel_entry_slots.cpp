@@ -44,6 +44,14 @@ using crucible::vessel::write_scalar_slots;
 constexpr ScalarRole kStructural = ScalarRole::STRUCTURAL;
 constexpr ScalarRole kData = ScalarRole::DATA;
 
+// The role of the inline slot Slot of an entry.
+template <std::size_t Slot>
+[[nodiscard]] ScalarRole role_of(TraceRing::Entry const& entry) {
+    return entry.data_slots()
+        .expect("a written entry holds only inline data slots")
+        .role(crucible::ScalarSlot{::fixy::index<Slot>()});
+}
+
 // The entry of an operation whose scalars are the integers 1, 2, ... count,
 // with the last scalar replaced by last of the tag last_tag and the role
 // last_role.  O(count).
@@ -157,8 +165,8 @@ void test_absent_optional_takes_a_slot() {
     assert(first.num_scalar_args == 2 && second.num_scalar_args == 2);
     assert(second.scalar_values.at(::fixy::index<0>()) == 0);
     assert(second.get_scalar_type(0) == ScalarType2::NONE);
-    assert(second.data_slots().role(::fixy::index<0>()) == kStructural && "an absent optional is structural");
-    assert(second.data_slots().role(::fixy::index<1>()) == kData);
+    assert(role_of<0>(second) == kStructural && "an absent optional is structural");
+    assert(role_of<1>(second) == kData);
     assert(!same_slots(first, second));
 }
 
@@ -207,7 +215,7 @@ void test_input_past_the_limit_reaches_the_digest() {
     crucible::TraceEntry& op = ops.at(::fixy::index<0>());
     op.schema_hash = crucible::SchemaHash{42};
     op.set_scalar_args(scalars.view());
-    op.scalar_kinds = crucible::ScalarSlotKinds::from_bits(scalar_kinds);
+    op.scalar_kinds = crucible::ScalarSlotKinds::from_bits(scalar_kinds).expect("the test gives a word of the kinds");
     return crucible::compute_content_hash(ops.view());
 }
 
@@ -224,7 +232,7 @@ void test_content_hash_folds_the_tags() {
 // The word of the one slot of an op: the tag, and the bit of the data slot.
 [[nodiscard]] uint16_t kinds_of_slot(ScalarType2 tag, ScalarRole role) {
     return crucible::ScalarSlotKinds::of(static_cast<uint16_t>(tag),
-                                         crucible::DataSlots{}.with(::fixy::index<0>(), role))
+                                         crucible::DataSlots{}.with(crucible::ScalarSlot{::fixy::index<0>()}, role))
         .bits();
 }
 
@@ -535,8 +543,8 @@ void test_overflow_keeps_the_first_data_slots() {
     const TraceRing::Entry first = entry_with_data_first(kCount, 100);
     const TraceRing::Entry second = entry_with_data_first(kCount, 200);
     CRUCIBLE_FATAL_INVARIANT(first.num_scalar_args == kInlineScalars);
-    CRUCIBLE_FATAL_INVARIANT(first.data_slots().role(::fixy::index<0>()) == kData);
-    CRUCIBLE_FATAL_INVARIANT(first.data_slots().role(::fixy::index<4>()) == kStructural && "the digest is structural");
+    CRUCIBLE_FATAL_INVARIANT(role_of<0>(first) == kData);
+    CRUCIBLE_FATAL_INVARIANT(role_of<4>(first) == kStructural && "the digest is structural");
     CRUCIBLE_FATAL_INVARIANT(first.scalar_values.at(::fixy::index<4>()) == second.scalar_values.at(::fixy::index<4>())
                              && "the digest folds no value of the first data slots");
     CRUCIBLE_FATAL_INVARIANT(guard_word_of(first) == guard_word_of(second)
@@ -571,7 +579,7 @@ void test_overflow_keeps_the_first_data_slots() {
     write_scalar_slots(fits_entry, fits, InputOverflow{});
     write_scalar_slots(bounded_entry, bounded);
     CRUCIBLE_FATAL_INVARIANT(same_slots(fits_entry, bounded_entry));
-    CRUCIBLE_FATAL_INVARIANT(fits_entry.data_slots().role(::fixy::index<4>()) == kData);
+    CRUCIBLE_FATAL_INVARIANT(role_of<4>(fits_entry) == kData);
 }
 
 // is_structural_scalar finds each row of kStructuralScalars, and no other
@@ -582,15 +590,17 @@ void test_is_structural_scalar_reads_each_row() {
     for (const crucible::vessel::StructuralScalar& row : crucible::vessel::kStructuralScalars) {
         const crucible::SchemaHash schema_hash{crucible::vessel::fnv1a_text(row.schema)};
         const crucible::vessel::ArgumentPosition position =
-            crucible::vessel::ArgumentPosition::check(row.position).expect("a row names a position of the schema");
+            crucible::vessel::argument_position_at(row.position).expect("a row names a position of the schema");
         CRUCIBLE_FATAL_INVARIANT(crucible::vessel::is_structural_scalar(schema_hash, position));
     }
 
     const crucible::SchemaHash pow{crucible::vessel::fnv1a_text("aten::pow.Tensor_Scalar")};
     const crucible::SchemaHash add{crucible::vessel::fnv1a_text("aten::add.Tensor")};
-    CRUCIBLE_FATAL_INVARIANT(!crucible::vessel::is_structural_scalar(pow, ::fixy::index<0>()));
-    CRUCIBLE_FATAL_INVARIANT(!crucible::vessel::is_structural_scalar(add, ::fixy::index<2>())
-                             && "the alpha of add is data");
+    CRUCIBLE_FATAL_INVARIANT(
+        !crucible::vessel::is_structural_scalar(pow, crucible::vessel::ArgumentPosition{::fixy::index<0>()}));
+    CRUCIBLE_FATAL_INVARIANT(
+        !crucible::vessel::is_structural_scalar(add, crucible::vessel::ArgumentPosition{::fixy::index<2>()})
+        && "the alpha of add is data");
 }
 
 // Each fact of a tensor that changes the elements that an op reads moves the

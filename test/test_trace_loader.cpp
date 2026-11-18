@@ -291,7 +291,11 @@ static void test_encoders_round_trip_through_the_loader() {
     assert(entry.packed_scalar_types() == record.scalar_types);
     assert(entry.get_scalar_type(0) == ScalarType2::FLOAT && entry.get_scalar_type(4) == ScalarType2::NONE);
     assert((entry.op_flags & op_flag::GRAD_ENABLED) != 0 && "the tag of slot 4 keeps the other op flags");
-    assert(entry.data_slots().role(::fixy::index<0>()) == crucible::ScalarRole::DATA && "the loader keeps the role");
+    assert(entry.data_slots()
+                   .expect("the loader keeps a word of the inline slots")
+                   .role(crucible::ScalarSlot{::fixy::index<0>()})
+               == crucible::ScalarRole::DATA
+           && "the loader keeps the role");
 
     const TensorMeta& loaded = *trace.metas.get(0).expect("the trace holds one meta");
     assert(loaded.ndim == 2);
@@ -359,7 +363,10 @@ static void test_op_with_scalars_past_the_slots_is_refused() {
     const LoadedTrace trace = load_one_op(record).expect("a data slot below the count loads");
     const TraceRing::Entry& entry = *trace.entries.get(0).expect("the trace holds one op");
     assert(entry.num_scalar_args == 1);
-    assert(entry.data_slots().role(::fixy::index<0>()) == crucible::ScalarRole::DATA);
+    assert(entry.data_slots()
+               .expect("the loader keeps a word of the inline slots")
+               .role(crucible::ScalarSlot{::fixy::index<0>()})
+           == crucible::ScalarRole::DATA);
     crucible::test::pass("  test_op_scalars_past_the_slots: PASSED\n");
 }
 
