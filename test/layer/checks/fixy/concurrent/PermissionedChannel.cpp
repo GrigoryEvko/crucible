@@ -72,6 +72,19 @@ static_assert(is_merge_consumer_handle_v<Merge::ConsumerHandle>);
 static_assert(std::is_same_v<producer_handle_value_t<Merge::ProducerHandle>, int>
               && std::is_same_v<consumer_handle_value_t<Wire::ConsumerHandle>, int>);
 
+// The one scoped-access verb takes the whole and gives the ring to its body
+// in each form.  Only a merge has a pool, so only a merge has the doors of its
+// producer root.
+template <typename Channel>
+concept GivesRecombinedAccess = requires(
+    Channel& channel, ::foundation::permissions::Permission<typename Channel::whole_tag, WitnessBrand>&& whole) {
+    channel.with_recombined_access(std::move(whole), [](typename Channel::ring_type&) noexcept {});
+};
+template <typename Channel>
+concept HasRootDoors = requires(Channel& channel) { channel.try_withdraw_producer_root(); };
+static_assert(GivesRecombinedAccess<Wire> && GivesRecombinedAccess<Merge>);
+static_assert(HasRootDoors<Merge> && !HasRootDoors<Wire>);
+
 // Each handle states the capacity of its channel, so a check of the waits
 // reads it from the type of the handle.
 static_assert(Wire::ProducerHandle::channel_capacity == 8 && Wire::ConsumerHandle::channel_capacity == 8);

@@ -105,6 +105,30 @@ void second_mpsc_consumer() {
     [[maybe_unused]] auto second = channel.consumer(std::move(second_consumer));
 }
 
+// A recombined access of a merge channel needs the root of this channel out of
+// its pool.  The whole of a second root of the same site proves nothing about
+// the producers of this channel.
+void merge_recombined_access_with_its_root_in_the_pool() {
+    auto [producer_root, consumer_perm] = mpsc_halves();
+    ::foundation::linear::drop(std::move(consumer_perm));
+    Mpsc channel{std::move(producer_root)};
+    ::foundation::linear::drop(channel.with_recombined_access(mpsc_root(), [](Mpsc::ring_type&) noexcept {}));
+}
+
+// The deposit of a second root of the same site during a recombined access
+// would let the pool lend a producer while the body owns the ring.
+void deposit_during_a_recombined_access() {
+    auto [producer_root, consumer_perm] = mpsc_halves();
+    Mpsc channel{std::move(producer_root)};
+    auto root = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
+    auto whole = perm::mint_permission_combine<Mpsc::whole_tag>(std::move(root), std::move(consumer_perm));
+    ::foundation::linear::drop(channel.with_recombined_access(std::move(whole), [&channel](Mpsc::ring_type&) noexcept {
+        auto [second_root, second_consumer] = mpsc_halves();
+        ::foundation::linear::drop(std::move(second_consumer));
+        channel.deposit_producer_root(std::move(second_root));
+    }));
+}
+
 void second_swmr_writer() {
     Swmr session{reader_root(), 0};
     [[maybe_unused]] auto held = ses::mint_swmr_writer<Swmr>(session, writer_root());
@@ -160,11 +184,18 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
                                ::fixy::TextView{"recombined access to a wire channel while its producer handle lives"});
     ::fixy::check::expect_dies(test, second_mpsc_consumer,
                                ::fixy::TextView{"two live consumer handles of one channel"});
+    ::fixy::check::expect_dies(
+        test, merge_recombined_access_with_its_root_in_the_pool,
+        ::fixy::TextView{"recombined access to a merge channel whose producer root is in its pool"});
+    ::fixy::check::expect_dies(
+        test, deposit_during_a_recombined_access,
+        ::fixy::TextView{
+            "a deposit of the producer root of a merge channel while a recombined access or a drain runs"});
     ::fixy::check::expect_dies(test, second_swmr_writer, kSecondSwmrWriter);
     ::fixy::check::expect_dies(test, writer_move_keeps_the_source_claim, kSecondSwmrWriter);
     ::fixy::check::expect_dies(test, pipeline_joins_two_links_of_one_type,
                                ::fixy::TextView{"a pipeline joins two channels of one type"});
-    ::fixy::check::pass(test, "  7 attacks refused\n");
+    ::fixy::check::pass(test, "  9 attacks refused\n");
 }
 
 // A claim comes back when its handle ends, so a handle made later from a

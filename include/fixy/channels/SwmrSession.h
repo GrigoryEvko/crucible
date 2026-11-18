@@ -232,18 +232,22 @@ public:
         return ::fixy::some(ReaderHandle{*this, std::move(lent).expect("SwmrSession::reader: the pool lent a share")});
     }
 
-    // Runs the body with every reader out, and returns false when readers
-    // were still out and the body did not run.  The body gets no snapshot,
-    // because the writer handle is still alive and publishes into the same
-    // bytes: the body acts through the handles it holds.
-    template <typename Body>
-        requires std::is_invocable_v<Body>
-    bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
-        auto upgrade = ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(reader_pool_);
-        if (upgrade.is_none()) return false;
-        std::forward<Body>(body)();
-        reader_pool_.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
-        return true;
+    // Takes the reader root out of the pool when no reader handle lives, or
+    // gives no value while one lives.  While the root is out, the pool lends no
+    // share, so no reader loads: the writer can reset the value with no read at
+    // the same time.  deposit_reader_root gives the root back, and the pool
+    // lends again.  These are the doors of the producer root of a merge channel
+    // of fixy/concurrent/PermissionedChannel.h, for the pooled side of this
+    // session.
+    [[nodiscard]] ::fixy::Option<::foundation::permissions::Permission<reader_tag, reader_brand>>
+    try_withdraw_reader_root() noexcept {
+        return ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(reader_pool_);
+    }
+
+    // Gives the reader root back to the pool.  A deposit while the root is in
+    // the pool ends the process (SharedPermissionPool::deposit_exclusive).
+    void deposit_reader_root(::foundation::permissions::Permission<reader_tag, reader_brand>&& root) noexcept {
+        reader_pool_.deposit_exclusive(std::move(root));
     }
 
     [[nodiscard]] std::uint64_t outstanding_readers() const noexcept { return reader_pool_.outstanding(); }

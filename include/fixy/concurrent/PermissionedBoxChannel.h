@@ -328,13 +328,22 @@ public:
         return ConsumerHandle{cells_.consumer(std::move(perm))};
     }
 
-    // Runs the body with every producer of a merge out, as the inner channel
-    // does.  Returns false when producers were still out and the body did not
-    // run.
-    template <typename Body>
-        requires(Form == ChannelForm::merge) && std::is_invocable_v<Body>
-    bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
-        return cells_.with_drained_access(std::forward<Body>(body));
+    // The two doors of the producer root of a merge, as the inner channel gives
+    // them.  While the root is out, the pool lends no share, so no Box lands.
+    // The Box channel gives no recombined access, because a body with the ring
+    // of the words could pop a word and lose it, and a lost word leaks its
+    // object.
+    [[nodiscard]] ::foundation::core::Option<::foundation::permissions::Permission<producer_tag, Brand>>
+    try_withdraw_producer_root() noexcept
+        requires(Form == ChannelForm::merge)
+    {
+        return cells_.try_withdraw_producer_root();
+    }
+
+    void deposit_producer_root(::foundation::permissions::Permission<producer_tag, Brand>&& root) noexcept
+        requires(Form == ChannelForm::merge)
+    {
+        cells_.deposit_producer_root(std::move(root));
     }
 
     [[nodiscard]] std::uint64_t outstanding_producers() const noexcept

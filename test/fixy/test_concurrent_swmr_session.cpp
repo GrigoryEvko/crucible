@@ -114,6 +114,17 @@ void test_writer_publish_reader_loads_latest() {
     CRUCIBLE_REQUIRE(swmr.version() == writer.version());
 }
 
+// True when the reader root came out of the pool of the session.  The root
+// goes back to the pool at once.
+[[nodiscard]] bool can_withdraw_reader_root(Swmr& swmr) noexcept {
+    return swmr.try_withdraw_reader_root().match(
+        [&swmr](auto root) noexcept {
+            swmr.deposit_reader_root(std::move(root));
+            return true;
+        },
+        []() noexcept { return false; });
+}
+
 void test_multiple_readers_track_pool_lifetime() {
     Swmr swmr{reader_root(), 1};
 
@@ -123,7 +134,7 @@ void test_multiple_readers_track_pool_lifetime() {
     CRUCIBLE_REQUIRE(r1.is_some());
     CRUCIBLE_REQUIRE(r2.is_some());
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 2);
-    CRUCIBLE_REQUIRE(!swmr.with_drained_access([] {}));
+    CRUCIBLE_REQUIRE(!can_withdraw_reader_root(swmr));
 
     r1 = ::fixy::none;
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 1);
@@ -131,9 +142,16 @@ void test_multiple_readers_track_pool_lifetime() {
     r2 = ::fixy::none;
     CRUCIBLE_REQUIRE(swmr.outstanding_readers() == 0);
 
-    bool ran = false;
-    CRUCIBLE_REQUIRE(swmr.with_drained_access([&ran] { ran = true; }));
-    CRUCIBLE_REQUIRE(ran);
+    // With no reader out, the root comes out, and the pool lends no reader
+    // while it is out.
+    auto root = swmr.try_withdraw_reader_root().expect("the root comes out with no reader out");
+    bool const is_root_out = swmr.is_exclusive_active();
+    bool const is_lend_refused = ses::mint_swmr_reader<Swmr>(swmr).is_none();
+    swmr.deposit_reader_root(std::move(root));
+    CRUCIBLE_REQUIRE(is_root_out);
+    CRUCIBLE_REQUIRE(is_lend_refused);
+    CRUCIBLE_REQUIRE(!swmr.is_exclusive_active());
+    CRUCIBLE_REQUIRE(ses::mint_swmr_reader<Swmr>(swmr).is_some());
 }
 
 void test_late_reader_observes_latest_publish() {

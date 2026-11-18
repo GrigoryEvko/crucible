@@ -123,17 +123,25 @@ void test_exclusive_drain_waits_for_readers() {
         ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(make_metrics(0.0), steps)};
 
-    bool drained = false;
     {
         auto reader = observe::mint_keeper_metrics_reader(channel);
         CRUCIBLE_REQUIRE(reader.is_some());
-        CRUCIBLE_REQUIRE(!channel.with_drained_access([&] { drained = true; }));
-        CRUCIBLE_REQUIRE(!drained);
+        // The reader root stays in the pool while a reader lives.
+        bool const is_refused = channel.try_withdraw_reader_root().match(
+            [&channel](auto root) noexcept {
+                channel.deposit_reader_root(std::move(root));
+                return false;
+            },
+            []() noexcept { return true; });
+        CRUCIBLE_REQUIRE(is_refused);
     }
 
-    // The end of the scope gives the share of the reader back.
-    CRUCIBLE_REQUIRE(channel.with_drained_access([&] { drained = true; }));
-    CRUCIBLE_REQUIRE(drained);
+    // The end of the scope gives the share of the reader back, so the root
+    // comes out.
+    auto root = channel.try_withdraw_reader_root().expect("the root comes out with no reader out");
+    bool const is_root_out = channel.is_exclusive_active();
+    channel.deposit_reader_root(std::move(root));
+    CRUCIBLE_REQUIRE(is_root_out);
 }
 
 void test_runtime_observation_snapshot() {

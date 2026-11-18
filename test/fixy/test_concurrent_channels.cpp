@@ -226,6 +226,48 @@ template <class Channel, class Producer, class Consumer>
 
 // ── Runtime: the MPSC pool ───────────────────────────────────────────
 
+// True when the producer root came out of the pool of the channel.  The root
+// goes back to the pool at once.
+template <class Channel>
+[[nodiscard]] bool can_withdraw_root(Channel& channel) noexcept {
+    return channel.try_withdraw_producer_root().match(
+        [&channel](auto root) noexcept {
+            channel.deposit_producer_root(std::move(root));
+            return true;
+        },
+        []() noexcept { return false; });
+}
+
+// The one scoped-access verb of a merge channel.  The producer root out of the
+// pool and the consumer token combine into the whole, and the body reaches the
+// ring.  The whole splits again, the root goes back to the pool, and the
+// consumer pops what the body pushed.
+[[nodiscard]] int mpsc_recombined_access() {
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(meta_root());
+    Mpsc channel{std::move(producer_root)};
+    auto root = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
+    auto whole = perm::mint_permission_combine<Mpsc::whole_tag>(std::move(root), std::move(consumer_perm));
+    auto returned = channel.with_recombined_access(
+        std::move(whole), [](Mpsc::ring_type& ring) noexcept { static_cast<void>(ring.try_push(41)); });
+    auto [root_again, consumer_again] =
+        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(std::move(returned));
+    channel.deposit_producer_root(std::move(root_again));
+    auto consumer = channel.consumer(std::move(consumer_again));
+    const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
+    int const popped = consumer.try_pop(merge).value_or(-1);
+    ::foundation::linear::drop(std::move(consumer));
+    if (popped != 41) {
+        std::fprintf(stderr, "the body of with_recombined_access did not reach the ring of a merge channel\n");
+        return 1;
+    }
+    if (channel.is_exclusive_active() || channel.producer().is_none()) {
+        std::fprintf(stderr, "the pool of a merge channel did not lend after the deposit of its root\n");
+        return 1;
+    }
+    return 0;
+}
+
 [[nodiscard]] int mpsc_pool_accounting() {
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(meta_root());
@@ -252,15 +294,9 @@ template <class Channel, class Producer, class Consumer>
             return 1;
         }
 
-        // Draining is what exclusive access means, and it cannot
-        // succeed while a share is out.
-        bool body_ran = false;
-        if (channel.with_drained_access([&body_ran] { body_ran = true; })) {
-            std::fprintf(stderr, "with_drained_access ran while producers were still out\n");
-            return 1;
-        }
-        if (body_ran) {
-            std::fprintf(stderr, "the drained body ran after the upgrade was refused\n");
+        // The producer root comes out of the pool only when no share is out.
+        if (can_withdraw_root(channel)) {
+            std::fprintf(stderr, "the producer root came out while producers were still out\n");
             return 1;
         }
 
@@ -275,18 +311,18 @@ template <class Channel, class Producer, class Consumer>
         return 1;
     }
 
-    bool body_ran = false;
-    if (!channel.with_drained_access([&body_ran] { body_ran = true; })) {
-        std::fprintf(stderr, "with_drained_access refused with no producers out\n");
-        return 1;
-    }
-    if (!body_ran) {
-        std::fprintf(stderr, "with_drained_access returned true without running the body\n");
+    // With no share out, the root comes out, and the pool lends no share
+    // while it is out.
+    auto root = channel.try_withdraw_producer_root().expect("the root comes out with no producer out");
+    bool const is_lent_while_out = channel.producer().is_some();
+    channel.deposit_producer_root(std::move(root));
+    if (is_lent_while_out) {
+        std::fprintf(stderr, "the pool lent a share while its root was out\n");
         return 1;
     }
 
-    // The pool lends again once the body returns, which is what makes
-    // the exclusive window scoped rather than terminal.
+    // The pool lends again once the root is back, which is what makes the
+    // exclusive window scoped rather than terminal.
     {
         auto after = channel.producer();
         if (after.is_none()) {
@@ -387,6 +423,7 @@ template <class Channel, class Producer, class Consumer>
 int main() {
     if (const int rc = spsc_split_and_run(); rc != 0) return rc;
     if (const int rc = mpsc_pool_accounting(); rc != 0) return rc;
+    if (const int rc = mpsc_recombined_access(); rc != 0) return rc;
     if (const int rc = mpsc_many_producer_threads(); rc != 0) return rc;
     return 0;
 }

@@ -132,7 +132,7 @@ template <class Handle>
 
 // The last of two producers closes the channel.  A producer that ends while
 // a different producer lives leaves it open.  A lend after the end opens it
-// again, and a drained access keeps the state.
+// again, and a withdrawal and a deposit of the producer root keep the state.
 [[nodiscard]] int mpsc_last_producer_closes() noexcept {
     auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::merge, MpscTag>>();
     using Mpsc = cc::channel_t<int, 8, decltype(root)>;
@@ -156,12 +156,9 @@ template <class Handle>
     }
     failures += expect_code("a channel after its last producer", code_of(consumer.try_receive(merge)), kClosed);
 
-    bool has_run = false;
-    if (!channel.with_drained_access([&has_run] { has_run = true; }) || !has_run) {
-        ::fixy::report(::fixy::Sink::Err, "the drained access did not run with no producer out\n");
-        ++failures;
-    }
-    failures += expect_code("a closed channel after a drained access", code_of(consumer.try_receive(merge)), kClosed);
+    channel.deposit_producer_root(
+        channel.try_withdraw_producer_root().expect("the root comes out with no producer out"));
+    failures += expect_code("a closed channel after the root came back", code_of(consumer.try_receive(merge)), kClosed);
     {
         auto later = lend(channel);
         failures += expect_code("a channel that a later lend opened", code_of(consumer.try_receive(merge)), kEmpty);

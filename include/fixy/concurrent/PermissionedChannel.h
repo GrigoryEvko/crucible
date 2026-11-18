@@ -123,19 +123,23 @@ struct Consumer {
 
 namespace detail {
 
+// The pool of a wire channel: none.  The claim of the producer role is the
+// whole producer side of a wire.
+struct no_producer_pool {};
+
 // What a form chooses: the ring, the share that a producer handle holds, the
-// state of the producer side in the channel, the row disciplines, and the
-// cache lines of one call of each handle.
+// pool of the producer side, the row disciplines, and the cache lines of one
+// call of each handle.
 template <ChannelForm Form, RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand>
 struct channel_form_parts;
 
 template <RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand>
 struct channel_form_parts<ChannelForm::wire, T, Capacity, ProducerTag, Brand> {
     using ring_type = SpscRing<T, Capacity>;
-    // The producer handle holds the linear token.
+    // The producer handle holds the linear token, and the claim of the
+    // producer role keeps one live producer handle.
     using producer_share = ::foundation::permissions::Permission<ProducerTag, Brand>;
-    // The channel holds the claim of the producer role.
-    using producer_side = ::foundation::EndpointClaim;
+    using producer_pool = no_producer_pool;
     using channel_discipline = ::fixy::row_discipline::spsc_channel;
     using producer_discipline = ::fixy::row_discipline::spsc_producer;
     using consumer_discipline = ::fixy::row_discipline::spsc_consumer;
@@ -149,10 +153,10 @@ struct channel_form_parts<ChannelForm::wire, T, Capacity, ProducerTag, Brand> {
 template <RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand>
 struct channel_form_parts<ChannelForm::merge, T, Capacity, ProducerTag, Brand> {
     using ring_type = MpscRing<T, Capacity>;
-    // The producer handle holds one share of the pool.
+    // The producer handle holds one share of the pool, which parks the
+    // producer token.
     using producer_share = ::foundation::permissions::SharedPermissionGuard<ProducerTag, Brand>;
-    // The channel holds the pool, which parks the producer token.
-    using producer_side = ::foundation::permissions::SharedPermissionPool<ProducerTag, Brand>;
+    using producer_pool = ::foundation::permissions::SharedPermissionPool<ProducerTag, Brand>;
     using channel_discipline = ::fixy::row_discipline::mpsc_channel;
     using producer_discipline = ::fixy::row_discipline::mpsc_producer;
     using consumer_discipline = ::fixy::row_discipline::mpsc_consumer;
@@ -245,7 +249,7 @@ public:
     // builds a merge channel with an empty pool.
     explicit PermissionedChannel(::foundation::permissions::Permission<producer_tag, Brand>&& producer_root) noexcept
         requires(Form == ChannelForm::merge)
-        : producer_side_{std::move(producer_root)} {}
+        : producer_pool_{std::move(producer_root)} {}
 
     class[[= ::foundation::linear::linear_when<Form == ChannelForm::wire>]] ProducerHandle {
         // The move clears the binding, so a moved-from handle cannot push: a
@@ -426,20 +430,20 @@ public:
     [[nodiscard]] ProducerHandle producer(::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept
         requires(Form == ChannelForm::wire)
     {
-        producer_side_.take("two live producer handles of one wire channel. One call site minted the root of the "
-                            "channel two times.");
+        producer_claim_.take("two live producer handles of one wire channel. One call site minted the root of the "
+                             "channel two times.");
         producers_.add_producer();
         return ProducerHandle{*this, std::move(perm)};
     }
 
     // The producer door of a merge channel.  It lends a pool share, and it
-    // refuses while an exclusive transition is in flight.  Several producer
+    // refuses while the producer root is out of the pool.  Several producer
     // handles coexist, which is the point of the fractional side.  A lent
     // handle opens the channel.
     [[nodiscard]] ::foundation::core::Option<ProducerHandle> producer() noexcept
         requires(Form == ChannelForm::merge)
     {
-        auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(producer_side_);
+        auto lent = ::foundation::permissions::detail::ChannelPoolDoor::lend(producer_pool_);
         if (lent.is_none()) return ::foundation::core::none;
         producers_.add_producer();
         return ::foundation::core::Option<ProducerHandle>::some(
@@ -454,59 +458,82 @@ public:
         return ConsumerHandle{*this, std::move(perm)};
     }
 
-    // Scoped exclusive access to the ring of a wire channel.  The whole
-    // permission of this brand is the type-level proof that no handle of its
-    // root is alive.  A second root of the same call site has the same brand,
-    // so the body also holds the two claims: a live handle ends the process
-    // here, and no handle can start while the body runs.  The body gets the
-    // ring: it can fill it before the first session or drain what the last
-    // one left.  The whole permission comes back so the caller can split it
-    // again for the next session.
+    // Scoped exclusive access to the ring, the one scoped-access verb of each
+    // form.  The whole permission of this brand is the type-level proof that
+    // no handle of its root is alive: the producer token of a wire, or the
+    // producer root that try_withdraw_producer_root took out of the pool of a
+    // merge, combined with the consumer token.  A second root of the same call
+    // site has the same brand, so the body also holds the claim of each
+    // role: a live handle ends the process here, and no handle can start and
+    // no root can come back to the pool while the body runs.  A merge also
+    // checks that its own root is out of its pool, so no producer handle of
+    // this channel lives.  The body gets the ring: it can fill it before the
+    // first session or drain what the last one left.  The whole permission
+    // comes back so the caller can split it again for the next session.
     template <typename Body>
-        requires(Form == ChannelForm::wire) && std::is_invocable_v<Body, ring_type&>
+        requires std::is_invocable_v<Body, ring_type&>
     [[nodiscard]] ::foundation::permissions::Permission<whole_tag, Brand>
     with_recombined_access(::foundation::permissions::Permission<whole_tag, Brand>&& whole,
                            Body&& body) noexcept(std::is_nothrow_invocable_v<Body, ring_type&>) {
-        producer_side_.take("recombined access to a wire channel while its producer handle lives.");
-        consumer_claim_.take("recombined access to a wire channel while its consumer handle lives.");
+        if constexpr (Form == ChannelForm::wire) {
+            producer_claim_.take("recombined access to a wire channel while its producer handle lives.");
+        } else {
+            producer_claim_.take("recombined access to a merge channel while a drain or a deposit of its producer "
+                                 "root runs.");
+            if (!producer_pool_.is_exclusive_out()) [[unlikely]] {
+                ::foundation::core::fatal("recombined access to a merge channel whose producer root is in its pool. "
+                                          "Withdraw the root first.");
+            }
+        }
+        consumer_claim_.take("recombined access to a channel while its consumer handle lives.");
         std::forward<Body>(body)(ring_);
         consumer_claim_.release();
-        producer_side_.release();
+        producer_claim_.release();
         return std::move(whole);
     }
 
-    // Runs the body with every producer of a merge channel out.  Returns false
-    // when producers were still out and the body did not run.  A producer can
-    // be lent again once the body returns.  The body gets no ring, because
-    // the consumer handle is still alive and pops from the same cells: the
-    // body acts through the handles it holds.  For example, the consumer
-    // drains the ring to empty, and no push lands at the same time.
-    template <typename Body>
-        requires(Form == ChannelForm::merge) && std::is_invocable_v<Body>
-    bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
-        auto upgrade = ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(producer_side_);
-        if (upgrade.is_none()) return false;
-        std::forward<Body>(body)();
-        producer_side_.deposit_exclusive(std::move(upgrade).expect("the test above found the exclusive"));
-        return true;
+    // Takes the producer root of a merge channel out of its pool when no
+    // producer handle lives, or gives no value while one lives.  While the
+    // root is out, the pool lends no share, so no push lands: a live consumer
+    // can drain the ring to empty with no push at the same time.  The root
+    // and the consumer token combine into the whole of with_recombined_access.
+    // deposit_producer_root gives the root back, and the pool lends again.
+    [[nodiscard]] ::foundation::core::Option<::foundation::permissions::Permission<producer_tag, Brand>>
+    try_withdraw_producer_root() noexcept
+        requires(Form == ChannelForm::merge)
+    {
+        return ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(producer_pool_);
+    }
+
+    // Gives the producer root back to the pool of a merge channel.  The call
+    // takes the claim of the producer side, so a deposit while a recombined
+    // access or a drain runs ends the process.  A deposit while the root is
+    // in the pool ends the process too (SharedPermissionPool::deposit_exclusive).
+    void deposit_producer_root(::foundation::permissions::Permission<producer_tag, Brand>&& root) noexcept
+        requires(Form == ChannelForm::merge)
+    {
+        producer_claim_.take("a deposit of the producer root of a merge channel while a recombined access or a drain "
+                             "runs.");
+        producer_pool_.deposit_exclusive(std::move(root));
+        producer_claim_.release();
     }
 
     // Gives each item that the ring still holds to drop, the oldest first.
     // The call takes the exclusive of each role: the claims of a wire, and the
-    // exclusive of the pool and the claim of the consumer of a merge.  So a
-    // live handle of each role ends the process here, and no handle starts
-    // while the call runs.  Each producer handle of a merge set the ready bit
-    // of each of its items before its end, and the upgrade reads that end
-    // with acquire order, so the drain finds each item.  The order of the
-    // items of a merge reads the merge, so its drop holds no state, as the
-    // drain of the MPSC ring asks.  An owner of items that end only through a
-    // door, such as the words of a Box channel, calls it at its own end.
-    // Complexity: linear in the count of the items.
+    // exclusive of the pool and the claims of a merge.  So a live handle of
+    // each role ends the process here, and no handle starts while the call
+    // runs.  Each producer handle of a merge set the ready bit of each of its
+    // items before its end, and the upgrade reads that end with acquire order,
+    // so the drain finds each item.  The order of the items of a merge reads
+    // the merge, so its drop holds no state, as the drain of the MPSC ring
+    // asks.  An owner of items that end only through a door, such as the
+    // words of a Box channel, calls it at its own end.  Complexity: linear in
+    // the count of the items.
     template <typename Drop>
         requires(Form == ChannelForm::wire || __is_empty(__remove_cvref(Drop))) && std::is_nothrow_invocable_v<Drop&, T>
     void drain(Drop&& drop) noexcept {
         if constexpr (Form == ChannelForm::wire) {
-            producer_side_.take("a drain of a wire channel while its producer handle lives.");
+            producer_claim_.take("a drain of a wire channel while its producer handle lives.");
             consumer_claim_.take("a drain of a wire channel while its consumer handle lives.");
             for (;;) {
                 ::foundation::core::Option<T> item = ring_.try_pop();
@@ -514,16 +541,18 @@ public:
                 drop(std::move(item).expect("the test above found an item"));
             }
             consumer_claim_.release();
-            producer_side_.release();
+            producer_claim_.release();
         } else {
-            auto exclusive = ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(producer_side_);
+            auto exclusive = ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(producer_pool_);
             if (exclusive.is_none()) [[unlikely]] {
                 ::foundation::core::fatal("a drain of a merge channel while a producer handle lives.");
             }
+            producer_claim_.take("a drain of a merge channel while a recombined access or a deposit runs.");
             consumer_claim_.take("a drain of a merge channel while its consumer handle lives.");
             ring_.drain(std::forward<Drop>(drop));
             consumer_claim_.release();
-            producer_side_.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
+            producer_claim_.release();
+            producer_pool_.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
         }
     }
 
@@ -532,7 +561,7 @@ public:
     [[nodiscard]] std::uint64_t outstanding_producers() const noexcept
         requires(Form == ChannelForm::merge)
     {
-        return producer_side_.outstanding();
+        return producer_pool_.outstanding();
     }
 
     // Always false for a wire channel, which has no pool: the linear
@@ -543,11 +572,11 @@ public:
         return false;
     }
 
-    // True while the exclusive of the pool of a merge channel is out.
+    // True while the producer root of a merge channel is out of its pool.
     [[nodiscard]] bool is_exclusive_active() const noexcept
         requires(Form == ChannelForm::merge)
     {
-        return producer_side_.is_exclusive_out();
+        return producer_pool_.is_exclusive_out();
     }
 
     [[nodiscard]] bool empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
@@ -570,7 +599,7 @@ private:
     // call in place of the loop of the roster.
     CRUCIBLE_COLD void end_producer_() noexcept {
         producers_.end_producer();
-        if constexpr (Form == ChannelForm::wire) producer_side_.release();
+        if constexpr (Form == ChannelForm::wire) producer_claim_.release();
     }
 
     // The release door of a wire producer: the channel stays open.  It is cold
@@ -579,7 +608,7 @@ private:
         requires(Form == ChannelForm::wire)
     {
         producers_.release_producer();
-        producer_side_.release();
+        producer_claim_.release();
     }
 
     // The receive after a pop that found the ring empty.  The read of the
@@ -602,7 +631,11 @@ private:
     }
 
     ring_type ring_;
-    typename parts::producer_side producer_side_;
+    // The claim of the producer side.  A wire producer handle holds it for its
+    // life.  On a merge, the recombined access, the drain and the deposit of
+    // the producer root hold it, so two of them never overlap.
+    ::foundation::EndpointClaim producer_claim_;
+    [[no_unique_address]] typename parts::producer_pool producer_pool_;
     ::foundation::EndpointClaim consumer_claim_;
     ProducerRoster producers_;
 };
