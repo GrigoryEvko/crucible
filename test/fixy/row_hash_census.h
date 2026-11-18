@@ -38,6 +38,7 @@
 #include <fixy/Collision.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/ChaseLevDeque.h>
+#include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PayloadRow.h>
@@ -1461,6 +1462,13 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::fp::CanonicalizeRecipeSpec, kPayload},
     {^^::fixy::fp::ReduceResult, kPayload},
 
+    {^^::fixy::concurrent::EventCount, kDescriptor},
+    {^^::fixy::concurrent::EventWait,
+     "the entry of one waiter in an event count: it lives in one frame, its destructor leaves the count, and it is "
+     "never a template argument of a kernel signature"},
+    {^^::fixy::concurrent::Spin, "a wait policy: a tag that names how a consumer waits, and it is never a value"},
+    {^^::fixy::concurrent::SpinThenPark,
+     "a wait policy: a tag that names the spin budget of a consumer before its park, and it is never a value"},
     {^^::fixy::spin::UnwitnessedSpinLock, kDescriptor},
     {^^::fixy::spin::UnwitnessedBlockingLock, kDescriptor},
     {^^::fixy::spin::try_acquire_t, "the tag that selects the guard that tries a gate one time: it holds no value and "

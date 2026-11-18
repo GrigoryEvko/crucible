@@ -4294,6 +4294,26 @@ fixy_neg_compile_test(neg_recording_endpoint_wrong_log_type
   "no matching function for call to .mint_recording_endpoint"
   "cannot convert .not_a_log. .type .int.. to type .fixy::session::SessionEventWriter.")
 
+# ── The event count and the wait policies ─────────────────────────────
+#
+# test_concurrent_event_count holds the entry of a waiter, the wait that a
+# notify or a deadline ends, and no lost wake in 3000 rounds with random
+# delays of a Philox stream, for one waiter and for two.  A foreground context
+# takes Spin.  It takes no policy that parks and no notify, because each of
+# them makes a system call, and a context with no Nondet takes no policy that
+# parks, because the spin before the park reads the counter of the core.
+fixy_test(test_concurrent_event_count)
+set_tests_properties(test_concurrent_event_count PROPERTIES PROCESSORS 3)
+fixy_neg_compile_test(neg_event_count_park_from_the_foreground
+  "no matching function for call to .wait_for"
+  "required for the satisfaction of .CtxFitsWaitPolicy<")
+fixy_neg_compile_test(neg_event_count_park_without_nondet
+  "no matching function for call to .wait_for"
+  "required for the satisfaction of .CtxFitsWaitPolicy<")
+fixy_neg_compile_test(neg_event_count_notify_from_the_foreground
+  "no matching function for call to .*notify_one"
+  "required for the satisfaction of .CtxMayUseFutex<Ctx>.")
+
 # ── The snapshot and the single-writer many-reader channel ────────────
 #
 # A seqlock snapshot publishes one value to many readers, and the channel
