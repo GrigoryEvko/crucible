@@ -610,11 +610,11 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "slot_map_get",
-        "get of a SlotMap is the compare of the index with the used slots, the load of the generation, its compare "
-        "with the key and the test of its low bit, and the load of the value, as the lookup of a raw generational "
-        "table, with the same count of instructions.  The loop over the Option puts the path of a found value after "
-        "the compare of the generation, and the raw form puts the path of no value there, so the targets of the "
-        "branches are different",
+        "get of a SlotMap is the compare of the index with the used slots, the test of the low bit of the generation "
+        "of the key, the load of the generation of the slot, its compare with the key, and the load of the value, as "
+        "the lookup of a raw generational table.  The raw form tests the low bit of the loaded generation after the "
+        "compare.  The loop over the Option puts the path of a found value after the compare of the generation, and "
+        "the raw form puts the path of no value there, so the targets of the branches are different",
         branches=True,
     ),
     Probe(

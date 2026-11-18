@@ -335,19 +335,23 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
     mint_slot_map(Marker allocation, Quantity<unit::Element, std::uint32_t> capacity) noexcept;
 
     // True when the slot of key holds the value of key: the index is below
-    // the used slots, and the generation of the key is the odd generation of
-    // the slot.  Two compares and one test of a bit.  Each test is its own
-    // branch, so -fharden-compares adds no second compare of a value.
+    // the used slots, the generation of the key is odd, and it is the
+    // generation of the slot.  Two compares and one test of a bit.  The test
+    // of the bit reads the key, and it comes before the load of the
+    // generation.  So each test is its own branch, and -fharden-compares adds
+    // no second compare.  A test of the bit of the loaded generation after
+    // the compare makes GCC join the two tests into one value, and the flag
+    // then computes the compare two times.
     [[nodiscard]] constexpr bool holds_(std::uint64_t key) const noexcept {
         std::uint32_t const index = detail::slot_index_of_(key);
+        std::uint64_t const claimed = detail::slot_generation_of_(key);
         if (index >= this->state_.used) {
             return false;
         }
-        Generation const generation = this->state_.generations[index];
-        if (detail::slot_generation_of_(key) != std::uint64_t{generation}) {
+        if ((claimed & 1u) == 0) {
             return false;
         }
-        return detail::holds_value_(generation);
+        return claimed == this->state_.generations[index];
     }
 
     // The value of a slot that holds_ admitted.  The used slots are above
