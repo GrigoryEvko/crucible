@@ -29,7 +29,6 @@
 
 #include "bench_harness.h"
 
-#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <type_traits>
@@ -101,8 +100,9 @@ int main() {
     bench::emit_reports_text(reports.view());
 
     std::printf("\n=== permission set: pair delta ===\n");
-    const std::array compares{bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>()))};
-    bench::emit_compares(compares);
+    ::fixy::FixedArray<bench::Compare, 1> const compares{
+        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>()))};
+    bench::emit_compares(compares.view());
 
     std::printf("\n  The static_assert carries the claim.  The timed pair is for inspection only.\n");
     bench::emit_reports_json(reports.view(), bench::env_json());

@@ -3217,10 +3217,11 @@ inline void emit_reports_text(::fixy::View<const Report> reports) noexcept {
         report.print_text();
 }
 
-// Emit the one-line summary of every Compare, in the order given.
-inline void emit_compares(std::span<const Compare> compares, FILE* out = stdout) noexcept {
-    for (const auto& c : compares)
-        c.print_text(out);
+// Writes the one-line summary of each Compare to standard output, in the
+// order of the view.
+inline void emit_compares(::fixy::View<const Compare> compares) noexcept {
+    for (Compare const& compare : compares)
+        compare.print_text(stdout);
 }
 
 // Writes the line "=== json ===" and the JSON array of the reports to

@@ -223,17 +223,17 @@ int main() {
 
     // ── Pair-by-pair comparison ───────────────────────────────────────
     std::printf("\n=== zero-cost claim — pair deltas ===\n");
-    bench::Compare cmps[] = {
+    ::fixy::FixedArray<bench::Compare, 3> const compares{
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),
         bench::compare(reports.at(::fixy::index<2>()), reports.at(::fixy::index<3>())),
         bench::compare(reports.at(::fixy::index<4>()), reports.at(::fixy::index<5>())),
     };
-    bench::emit_compares(cmps);
+    bench::emit_compares(compares.view());
 
     // ── Headline verdict ──────────────────────────────────────────────
     std::printf("\n=== verdict ===\n");
     int regressions = 0;
-    for (const auto& c : cmps) {
+    for (const auto& c : compares) {
         if (c.is_regression()) {
             std::printf("  REGRESS: %s → %s  Δp99=%+.2f%%\n", c.a_name.c_str(), c.b_name.c_str(), c.delta_p99_pct);
             ++regressions;

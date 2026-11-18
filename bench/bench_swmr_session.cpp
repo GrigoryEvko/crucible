@@ -19,7 +19,6 @@
 
 #include "bench_harness.h"
 
-#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -147,13 +146,13 @@ int main() {
     bench::emit_reports_text(reports.view());
 
     std::puts("\n=== comparisons ===");
-    const std::array compares{
+    ::fixy::FixedArray<bench::Compare, 4> const compares{
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),  // the writer handle
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),  // the writer session
         bench::compare(reports.at(::fixy::index<3>()), reports.at(::fixy::index<4>())),  // the reader handle
         bench::compare(reports.at(::fixy::index<5>()), reports.at(::fixy::index<6>())),  // the reader session
     };
-    bench::emit_compares(compares);
+    bench::emit_compares(compares.view());
     bench::emit_reports_json(reports.view(), bench::env_json());
     return EXIT_SUCCESS;
 }

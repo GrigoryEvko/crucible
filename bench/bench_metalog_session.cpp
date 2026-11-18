@@ -136,11 +136,11 @@ int main() {
     bench::emit_reports_text(reports.view());
 
     std::printf("\n=== MetaLogSession deltas ===\n");
-    const bench::Compare cmps[] = {
+    ::fixy::FixedArray<bench::Compare, 2> const compares{
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),
         bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),
     };
-    bench::emit_compares(cmps);
+    bench::emit_compares(compares.view());
 
     std::printf("\n=== verdict (TIER A — structural) ===\n");
     std::printf("  PermissionedMetaLog handles are pointer-sized.\n");
