@@ -13,6 +13,7 @@
 #include <foundation/diag/Tag.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Mix.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -93,15 +94,6 @@ concept CtxFitsSdcRun =
     && ::foundation::effects::CtxAdmits<Ctx, ::foundation::effects::Row<::foundation::effects::Effect::Bg>>;
 
 namespace detail {
-
-[[nodiscard]] constexpr std::uint64_t mix_sequence(std::uint64_t value) noexcept {
-    value ^= value >> 30u;
-    value *= 0xbf58476d1ce4e5b9ull;
-    value ^= value >> 27u;
-    value *= 0x94d049bb133111ebull;
-    value ^= value >> 31u;
-    return value;
-}
 
 template <SdcComparableResult T>
 [[nodiscard]] constexpr bool bitwise_equal(T const& a, T const& b) noexcept {
@@ -240,7 +232,7 @@ public:
     [[nodiscard]] std::size_t active_cog_count() const noexcept { return active_cogs_; }
 
     [[nodiscard]] constexpr bool should_sample(std::uint64_t sequence) const noexcept {
-        std::uint64_t const bucket = detail::mix_sequence(sequence) % 1000000ull;
+        std::uint64_t const bucket = ::foundation::reflect::fmix64(sequence) % 1000000ull;
         return bucket < config_.sampling_rate_ppm.value();
     }
 

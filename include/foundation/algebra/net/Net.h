@@ -216,7 +216,8 @@
 //   on the copy, so the compiler keeps one result for each net that some
 //   checks read.  explain_fault is a template on the capacity class too, and
 //   it puts each name through helpers that are no templates.
-//   This header includes no other header of the base and no <meta>, so a
+//   This header includes one header of the base, the mixer
+//   foundation/reflect/Mix.h, which includes no other, and no <meta>.  So a
 //   light header can include it.
 //
 // SOURCES
@@ -225,6 +226,8 @@
 //   of multiplicatives, 1989, and the contraction criterion of Danos 1990.
 //   Jacobs, Hinrichsen and Krebbers, Deadlock-free separation logic, POPL
 //   2024, for the forest condition.
+
+#include <foundation/reflect/Mix.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -1744,14 +1747,12 @@ constexpr void write_canonical_order_(Net<Types, Kinds, Agents, Wires> const& gr
 enum class FormWord : std::uint64_t {
 };
 
-// The hash after one more word of the form: the finalizer of splitmix64 over
-// the sum of the hash, a constant and the word.  Each bit of the result
+// The hash after one more word of the form: the step combine_ids of the one
+// mixer of the tree (foundation/reflect/Mix.h).  Each bit of the result
 // depends on each bit of the two, and the order of the words counts.
 [[nodiscard]] constexpr NetHash fold_word(NetHash hash, FormWord word) noexcept {
-    std::uint64_t mixed = static_cast<std::uint64_t>(hash) + 0x9e3779b97f4a7c15u + static_cast<std::uint64_t>(word);
-    mixed = (mixed ^ (mixed >> 30u)) * 0xbf58476d1ce4e5b9u;
-    mixed = (mixed ^ (mixed >> 27u)) * 0x94d049bb133111ebu;
-    return NetHash{mixed ^ (mixed >> 31u)};
+    return NetHash{
+        ::foundation::reflect::combine_ids(static_cast<std::uint64_t>(hash), static_cast<std::uint64_t>(word))};
 }
 
 // The hash after one more name of the form: the count of its characters,

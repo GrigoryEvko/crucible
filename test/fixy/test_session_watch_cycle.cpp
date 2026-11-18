@@ -26,6 +26,7 @@
 
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/Mix.h>
 
 #include <cstdint>
 #include <utility>
@@ -53,8 +54,9 @@ constexpr std::uint32_t kIdleSlot = w::thread_capacity;
 // The generation of the idle slot in the first cycle of the family.
 constexpr std::uint32_t kFirstGeneration = 7;
 
-// The constants of the mix of the digest (detail::mix_digest): the two
-// factors of the finalizer of MurmurHash3, and the constant it adds.
+// The constants of the step of the digest (combine_ids of
+// foundation/reflect/Mix.h): the two factors of the finalizer of MurmurHash3,
+// and the constant it adds.
 constexpr std::uint64_t kFirstFactor = 0xFF51AFD7ED558CCDULL;
 constexpr std::uint64_t kSecondFactor = 0xC4CEB9FE1A85EC53ULL;
 constexpr std::uint64_t kAddend = 0x9E3779B97F4A7C15ULL;
@@ -87,8 +89,8 @@ static_assert(kSecondFactor * inverse_of(kSecondFactor) == 1);
     return (unfinalize(target) ^ state) - kAddend - (state << 6) - (state >> 2);
 }
 
-static_assert(wd::mix_digest(12345, word_between(12345, 678)) == 678,
-              "the test inverts the mix of the digest of Watch.h");
+static_assert(::foundation::reflect::combine_ids(12345, word_between(12345, 678)) == 678,
+              "the test inverts combine_ids, the step of the digest of Watch.h");
 
 // The four endpoints of the cycle.  The test thread waits on `waited` and
 // holds `held`.  The idle slot holds `waited_peer` and waits on `idle_waits`.
@@ -165,17 +167,19 @@ void install(const Cycle& cycle, Member member) noexcept {
 // The state of the digest of the cycle before the holder of its first link,
 // in the order of the words of detail::cycle_digest.
 [[nodiscard]] std::uint64_t state_before_holder(const Cycle& cycle) noexcept {
-    std::uint64_t state = wd::mix_digest(0, 2);
-    state = wd::mix_digest(state, (std::uint64_t{index_of(cycle.waited)} << 32) | w::record_generation(cycle.waited));
-    return wd::mix_digest(state, index_of(cycle.waited_peer));
+    std::uint64_t state = ::foundation::reflect::combine_ids(0, 2);
+    state = ::foundation::reflect::combine_ids(state, (std::uint64_t{index_of(cycle.waited)} << 32)
+                                                          | w::record_generation(cycle.waited));
+    return ::foundation::reflect::combine_ids(state, index_of(cycle.waited_peer));
 }
 
 // The member of `generation` whose digest state after the first link is the
 // state of `first` there.  The words after it are the same in each member.
 [[nodiscard]] Member member_like(std::uint64_t before_holder, Member first, std::uint32_t generation) noexcept {
-    const std::uint64_t target =
-        wd::mix_digest(wd::mix_digest(before_holder, wd::pack(kIdleSlot, first.generation)), first.wait_epoch);
-    const std::uint64_t after_holder = wd::mix_digest(before_holder, wd::pack(kIdleSlot, generation));
+    const std::uint64_t target = ::foundation::reflect::combine_ids(
+        ::foundation::reflect::combine_ids(before_holder, wd::pack(kIdleSlot, first.generation)), first.wait_epoch);
+    const std::uint64_t after_holder =
+        ::foundation::reflect::combine_ids(before_holder, wd::pack(kIdleSlot, generation));
     return Member{.generation = generation, .wait_epoch = word_between(after_holder, target)};
 }
 

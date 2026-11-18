@@ -139,6 +139,7 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/Mix.h>
 
 #include <array>
 #include <cstddef>
@@ -477,33 +478,22 @@ struct wait_chain {
 /// src/fixy/session/Watch.cpp holds the body.
 [[noreturn, gnu::cold]] void report_deadlock(const wait_chain& chain, std::uint64_t self) noexcept;
 
-/// One step of the digest of a cycle: the finalizer of MurmurHash3 over
-/// the state and the word.  The finalizer is a permutation of the 64-bit
-/// words.
-[[nodiscard]] constexpr std::uint64_t mix_digest(std::uint64_t state, std::uint64_t word) noexcept {
-    std::uint64_t value = state ^ (word + 0x9E3779B97F4A7C15ULL + (state << 6) + (state >> 2));
-    value ^= value >> 33;
-    value *= 0xFF51AFD7ED558CCDULL;
-    value ^= value >> 33;
-    value *= 0xC4CEB9FE1A85EC53ULL;
-    value ^= value >> 33;
-    return value;
-}
-
 /// The digest of a cycle of waits, or zero for a chain that is no cycle.
-/// Two traces of one cycle give one digest.  Two different cycles can also
-/// give one digest, so a digest only filters: repeats_suspect compares two
-/// chains of one digest link for link.  Complexity: linear in the links of
-/// the chain.
+/// Each step is combine_ids of foundation/reflect/Mix.h, whose finalizer is
+/// a permutation of the 64-bit words.  Two traces of one cycle give one
+/// digest.  Two different cycles can also give one digest, so a digest only
+/// filters: repeats_suspect compares two chains of one digest link for link.
+/// Complexity: linear in the links of the chain.
 [[nodiscard]] inline std::uint64_t cycle_digest(const wait_chain& chain) noexcept {
+    using ::foundation::reflect::combine_ids;
     if (!chain.is_cycle) return 0;
-    std::uint64_t digest = mix_digest(0, chain.count);
+    std::uint64_t digest = combine_ids(0, chain.count);
     for (std::size_t index = 0; index < chain.count; ++index) {
         const chain_link& link = chain.links[index];
-        digest = mix_digest(digest, (std::uint64_t{link.endpoint} << 32) | link.endpoint_generation);
-        digest = mix_digest(digest, link.peer);
-        digest = mix_digest(digest, link.holder);
-        digest = mix_digest(digest, link.holder_epoch);
+        digest = combine_ids(digest, (std::uint64_t{link.endpoint} << 32) | link.endpoint_generation);
+        digest = combine_ids(digest, link.peer);
+        digest = combine_ids(digest, link.holder);
+        digest = combine_ids(digest, link.holder_epoch);
     }
     return digest | 1;
 }

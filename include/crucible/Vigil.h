@@ -56,6 +56,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Mix.h>
 
 #include <atomic>
 #include <cstddef>
@@ -706,7 +707,7 @@ public:
     [[gnu::cold]] CRUCIBLE_NOINLINE void give_unrecorded_nest(OpDepth depth) {
         TraceRing::Entry entry{};
         entry.schema_hash = kUnrecordedNestSchema;
-        entry.shape_hash = ShapeHash{detail::combine_ids(kUnrecordedNestSchema.raw(), depth.raw())};
+        entry.shape_hash = ShapeHash{::foundation::reflect::combine_ids(kUnrecordedNestSchema.raw(), depth.raw())};
         // This code builds each field of the entry, so the entry is valid by
         // construction, as the comment of TraceRing::ValidatedEntryPtr states.
         const ValidatedOp op = mint_validated_op(mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),

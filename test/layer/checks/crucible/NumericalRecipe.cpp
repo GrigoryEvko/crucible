@@ -40,9 +40,11 @@ static_assert(::fixy::decode<NumericalRecipe>(RecipeImage{.low = kSentinelStandI
               "a recipe packs to the stand-in word of the sentinel, and two recipes share a hash");
 
 // The hash of a stand-in is not a reserved value.
-static_assert(detail_recipe::fmix64(kZeroStandIn) != 0 && detail_recipe::fmix64(kZeroStandIn) != kSentinel,
+static_assert(::foundation::reflect::fmix64(kZeroStandIn) != 0
+                  && ::foundation::reflect::fmix64(kZeroStandIn) != kSentinel,
               "the hash of the stand-in of the result 0 is a reserved value");
-static_assert(detail_recipe::fmix64(kSentinelStandIn) != 0 && detail_recipe::fmix64(kSentinelStandIn) != kSentinel,
+static_assert(::foundation::reflect::fmix64(kSentinelStandIn) != 0
+                  && ::foundation::reflect::fmix64(kSentinelStandIn) != kSentinel,
               "the hash of the stand-in of the sentinel is a reserved value");
 
 // The low byte of the packed word of a policy is its determinism tier, at most

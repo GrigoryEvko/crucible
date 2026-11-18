@@ -21,7 +21,7 @@ THE RULE
                                second owner can make each context (the class
                                owner)
       combine-outside-home     the definition of combine_ids outside
-                               foundation/reflect/Hash.h (the class combine)
+                               foundation/reflect/Mix.h (the class combine)
       second-body              a function named combine_ids in a different
                                scope, or a function or a lambda with the salt
                                0x9e3779b97f4a7c15, a shift left by 6, a shift

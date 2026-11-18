@@ -38,6 +38,7 @@
 #include <crucible/TraceRing.h>
 #include <fixy/Ctx.h>
 #include <foundation/Lifetime.h>
+#include <foundation/reflect/Mix.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -495,13 +496,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
             uint64_t content_h = 0x9E3779B97F4A7C15ULL;
             for (const TraceEntry& te : ref_ops) {
-                content_h = detail::combine_ids(content_h, te.schema_hash.raw());
+                content_h = ::foundation::reflect::combine_ids(content_h, te.schema_hash.raw());
                 for (const TensorMeta& m : te.input_metas()) {
                     const uint64_t dim_h = detail::dim_hash_scalar(m);
                     const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(m.dtype))
                                                | (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8)
                                                | (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
-                    content_h = detail::combine_ids(content_h, dim_h ^ meta_packed);
+                    content_h = ::foundation::reflect::combine_ids(content_h, dim_h ^ meta_packed);
                 }
                 // The pipeline stores at most five scalars of an op.
                 uint16_t folded = 0;

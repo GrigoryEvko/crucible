@@ -2,7 +2,6 @@
 
 #include <crucible/CKernelId.h>
 #include <crucible/DimHash.h>
-#include <crucible/Expr.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/StorageNbytes.h>
 #include <crucible/TensorMeta.h>
@@ -19,6 +18,7 @@
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/Mix.h>
 
 #include <array>
 #include <bit>
@@ -576,9 +576,9 @@ CRUCIBLE_PURE inline uint64_t feedback_signature(::fixy::View<const FeedbackEdge
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;  // "feedbaks"
     uint64_t signature_state = kSeed;
     for (const auto& edge : edges) {
-        signature_state = detail::combine_ids(signature_state, ::fixy::hash(edge).raw());
+        signature_state = ::foundation::reflect::combine_ids(signature_state, ::fixy::hash(edge).raw());
     }
-    signature_state = detail::combine_ids(signature_state, edges.size());
+    signature_state = ::foundation::reflect::combine_ids(signature_state, edges.size());
     return signature_state;
 }
 
@@ -603,10 +603,10 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     while (walk.is_some()) {
         const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
         for (const ::fixy::Ref<RegionNode>& region : node->as_region())
-            body_hash_state = detail::combine_ids(body_hash_state, region->content_hash.raw());
+            body_hash_state = ::foundation::reflect::combine_ids(body_hash_state, region->content_hash.raw());
         walk = node->next;
     }
-    return ContentHash{detail::fmix64(body_hash_state)};
+    return ContentHash{::foundation::reflect::fmix64(body_hash_state)};
 }
 
 // The word of one tensor in the content hash of a region.  It folds each fact
@@ -707,7 +707,7 @@ public:
     explicit ContentHashFold(const NumericalRecipe& recipe) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe.hash));
         CRUCIBLE_PRE(!recipe.hash.is_sentinel());
-        state_ = detail::combine_ids(state_, recipe.hash.raw());
+        state_ = ::foundation::reflect::combine_ids(state_, recipe.hash.raw());
     }
 
     // The fold of a region that the background pipeline records: the hash of
@@ -718,13 +718,13 @@ public:
     explicit ContentHashFold(NumericsHash numerics) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(numerics));
         CRUCIBLE_PRE(!numerics.is_sentinel());
-        state_ = detail::combine_ids(state_, numerics.raw());
+        state_ = ::foundation::reflect::combine_ids(state_, numerics.raw());
     }
 
     [[gnu::always_inline]] void fold(const TraceEntry& op_record) noexcept { fold_entry_(state_, op_record); }
 
     [[nodiscard, gnu::always_inline]] ContentHash finish() const noexcept {
-        return ContentHash{detail::fmix64(state_)};
+        return ContentHash{::foundation::reflect::fmix64(state_)};
     }
 
 private:
@@ -742,7 +742,7 @@ private:
     // because wymix collapsed on a zero second operand and each site worked
     // around it separately.  fmix64 is a permutation and has no absorbing
     // value, so there is nothing left to work around and one spelling covers
-    // the whole fold.  See the fmix64 doc-block in Expr.h.
+    // the whole fold.  See the fmix64 doc-block in foundation/reflect/Mix.h.
     //
     // The count folds unconditionally, before the values, so that N arguments
     // differ from M even when the first min(N, M) agree, and so an op with
@@ -774,25 +774,25 @@ private:
     // The arrays of the inputs hold one count (TraceEntry::set_inputs), so
     // one index reads the two.
     [[gnu::always_inline]] static void fold_entry_(uint64_t& content_hash_state, const TraceEntry& op_record) noexcept {
-        content_hash_state = detail::combine_ids(content_hash_state, op_record.schema_hash.raw());
-        content_hash_state = detail::combine_ids(content_hash_state, (uint64_t{op_record.depth.raw()} << 32)
-                                                                         | (uint64_t{op_record.num_outputs()} << 16)
-                                                                         | uint64_t{op_record.num_inputs()});
+        content_hash_state = ::foundation::reflect::combine_ids(content_hash_state, op_record.schema_hash.raw());
+        content_hash_state = ::foundation::reflect::combine_ids(
+            content_hash_state, (uint64_t{op_record.depth.raw()} << 32) | (uint64_t{op_record.num_outputs()} << 16)
+                                    | uint64_t{op_record.num_inputs()});
 
         const ::fixy::View<const TensorMeta> input_metas = op_record.input_metas();
         const ::fixy::View<const OpIndex> producers = op_record.input_trace_indices();
         for (std::size_t input = 0; input < input_metas.size(); ++input) {
             const TensorMeta& input_meta =
                 *input_metas.get(input).expect("the input arrays of an entry hold one count");
-            content_hash_state = detail::combine_ids(
+            content_hash_state = ::foundation::reflect::combine_ids(
                 content_hash_state, pack_tensor_word(input_meta, detail::dim_hash_simd_det(input_meta)));
-            content_hash_state = detail::combine_ids(
+            content_hash_state = ::foundation::reflect::combine_ids(
                 content_hash_state,
                 uint64_t{producers.get(input).expect("the input arrays of an entry hold one count")->raw()});
         }
 
         for (const TensorMeta& output_meta : op_record.output_metas()) {
-            content_hash_state = detail::combine_ids(
+            content_hash_state = ::foundation::reflect::combine_ids(
                 content_hash_state, pack_tensor_word(output_meta, detail::dim_hash_simd_det(output_meta)));
         }
 
@@ -800,7 +800,7 @@ private:
         // the value at run time (ScalarRole of Types.h).  A slot past the
         // inline slots has no role, and its value folds.
         content_hash_state =
-            detail::combine_ids(content_hash_state, static_cast<uint64_t>(op_record.num_scalar_args()));
+            ::foundation::reflect::combine_ids(content_hash_state, static_cast<uint64_t>(op_record.num_scalar_args()));
         // The mask of a slot is each bit for a structural slot and no bit for
         // a data slot, so the fold has no branch.  The data bits run out
         // after the inline slots.
@@ -808,7 +808,7 @@ private:
         for (const int64_t scalar : op_record.scalar_args()) {
             const uint64_t structural_mask = uint64_t{data_left & 1u} - 1;
             content_hash_state =
-                detail::combine_ids(content_hash_state, static_cast<uint64_t>(scalar) & structural_mask);
+                ::foundation::reflect::combine_ids(content_hash_state, static_cast<uint64_t>(scalar) & structural_mask);
             data_left >>= 1;
         }
         // The tags and the data slots, one step for the op.  Only the bits of
@@ -818,8 +818,8 @@ private:
         const ScalarCount tagged =
             ScalarCount::check(::fixy::min(std::size_t{op_record.num_scalar_args()}, std::size_t{kScalarSlots}))
                 .expect("the minimum is a count of the slots");
-        content_hash_state =
-            detail::combine_ids(content_hash_state, uint64_t{op_record.scalar_kinds.first(tagged).bits()});
+        content_hash_state = ::foundation::reflect::combine_ids(content_hash_state,
+                                                                uint64_t{op_record.scalar_kinds.first(tagged).bits()});
     }
 
     // The golden-ratio constant, matching the seed every other fold in this
@@ -896,9 +896,9 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
             break;
         case TraceNodeKind::BRANCH: {
             const ::fixy::Ref<BranchNode> branch = node.expect_branch();
-            merkle_hash_state = detail::fmix64(::fixy::hash(branch->guard).raw());
+            merkle_hash_state = ::foundation::reflect::fmix64(::fixy::hash(branch->guard).raw());
             for (const BranchNode::Arm& arm : branch->arms) {
-                merkle_hash_state ^= detail::fmix64(arm.resolved_target().merkle_hash.raw());
+                merkle_hash_state ^= ::foundation::reflect::fmix64(arm.resolved_target().merkle_hash.raw());
                 merkle_hash_state *= 0x9E3779B97F4A7C15ULL;
             }
             break;
@@ -911,8 +911,8 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
             // and has no absorbing value.
             constexpr uint64_t kLoopSalt = 0x4C4F4F504E4F4445ULL;  // "LOOPNODE"
             constexpr uint64_t kFbSalt = 0x6665656462616B00ULL;  // "feedbak\0"
-            merkle_hash_state = detail::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
-            merkle_hash_state ^= detail::fmix64(feedback_signature(loop->feedback_edges) ^ kFbSalt);
+            merkle_hash_state = ::foundation::reflect::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
+            merkle_hash_state ^= ::foundation::reflect::fmix64(feedback_signature(loop->feedback_edges) ^ kFbSalt);
             merkle_hash_state ^= loopterm_hash(*loop);
             break;
         }
@@ -923,7 +923,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
     }
 
     for (const ::fixy::Ref<TraceNode>& continuation : node.next)
-        merkle_hash_state = detail::fmix64(merkle_hash_state ^ continuation->merkle_hash.raw());
+        merkle_hash_state = ::foundation::reflect::fmix64(merkle_hash_state ^ continuation->merkle_hash.raw());
 
     return MerkleHash{merkle_hash_state};
 }
@@ -931,14 +931,14 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
 // Content hash for one kernel that fuses every arm of a branch.  Pure is
 // sound: the guard and the arms' content hashes are fixed at construction.
 [[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode const& branch) noexcept {
-    uint64_t branched_hash_state = detail::fmix64(::fixy::hash(branch.guard).raw());
+    uint64_t branched_hash_state = ::foundation::reflect::fmix64(::fixy::hash(branch.guard).raw());
     for (const BranchNode::Arm& arm : branch.arms) {
         for (const ::fixy::Ref<RegionNode>& region : arm.resolved_target().as_region()) {
-            branched_hash_state ^= detail::fmix64(region->content_hash.raw());
+            branched_hash_state ^= ::foundation::reflect::fmix64(region->content_hash.raw());
             branched_hash_state *= 0x9E3779B97F4A7C15ULL;
         }
     }
-    return ContentHash{detail::fmix64(branched_hash_state)};
+    return ContentHash{::foundation::reflect::fmix64(branched_hash_state)};
 }
 
 // The ops array is stored, not copied: the caller keeps it alive for as long

@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <utility>
 
-#include <crucible/Expr.h>
 #include <crucible/Types.h>
 #include <fixy/Core.h>
 #include <fixy/Mutation.h>
@@ -11,6 +10,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/Mix.h>
 
 namespace crucible {
 
@@ -276,7 +276,8 @@ private:
     }
 
     [[nodiscard]] static constexpr uint64_t key_of_(SchemaHash schema_hash, ShapeHash shape_hash) noexcept {
-        return detail::fmix64(schema_hash.raw() ^ detail::fmix64(shape_hash.raw() + POLY_BASE));
+        return ::foundation::reflect::fmix64(schema_hash.raw()
+                                             ^ ::foundation::reflect::fmix64(shape_hash.raw() + POLY_BASE));
     }
 
     // The ring holds the ops from held_from_() up to pos_.
@@ -344,7 +345,7 @@ private:
         const uint64_t sum_before = prefix_sum_before_(pos_);
         keys_.at_masked(pos_) = key;
         prefix_polys_.at_masked(pos_) = poly_before * POLY_BASE + key;
-        prefix_sums_.at_masked(pos_) = sum_before + detail::fmix64(key ^ SUM_SALT);
+        prefix_sums_.at_masked(pos_) = sum_before + ::foundation::reflect::fmix64(key ^ SUM_SALT);
         earlier_links_.at_masked(pos_) = 0;
     }
 
@@ -384,7 +385,7 @@ private:
     [[nodiscard]] uint64_t table_mask_() const noexcept { return table_.size() - 1; }
 
     [[nodiscard]] uint64_t home_slot_(uint64_t fingerprint) const noexcept {
-        return detail::fmix64(fingerprint) & table_mask_();
+        return ::foundation::reflect::fmix64(fingerprint) & table_mask_();
     }
 
     // Records start as the newest window of its fingerprint, and returns the

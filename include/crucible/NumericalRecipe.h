@@ -11,6 +11,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/core/FpMode.h>
+#include <foundation/reflect/Mix.h>
 
 #include <cstdint>
 #include <utility>
@@ -115,17 +116,6 @@ struct alignas(16) NumericalRecipe {
 // members would include the hash field and break idempotence.
 
 namespace detail_recipe {
-// This finalizer is duplicated rather than shared, which keeps this header a
-// leaf. Both copies must produce identical bits for identical inputs.
-[[nodiscard, gnu::const]] constexpr uint64_t fmix64(uint64_t k) noexcept {
-    k ^= k >> 33;
-    k *= 0xff51afd7ed558ccdULL;
-    k ^= k >> 33;
-    k *= 0xc4ceb9fe1a85ec53ULL;
-    k ^= k >> 33;
-    return k;
-}
-
 // ScalarType::Undefined is -1. Casting it straight to uint64_t sign-extends
 // and overwrites every other field in the packed word. Reinterpreting the one
 // byte first keeps the value at 0xFF.
@@ -152,9 +142,9 @@ inline constexpr uint64_t kReservedSalt = 0x5245434950454944ULL;  // "RECIPEID"
                           | (uint64_t(enum_byte(r.reduction_algo)) << 16) | (uint64_t(enum_byte(r.rounding)) << 24)
                           | (uint64_t(enum_byte(r.scale_policy)) << 32) | (uint64_t(enum_byte(r.softmax)) << 40)
                           | (uint64_t(enum_byte(r.determinism)) << 48) | (uint64_t(r.flags.raw()) << 56);
-    const uint64_t mixed = detail_recipe::fmix64(packed);
+    const uint64_t mixed = ::foundation::reflect::fmix64(packed);
     const bool is_reserved = mixed == 0 || mixed == RecipeHash::sentinel().raw();
-    const RecipeHash result{is_reserved ? detail_recipe::fmix64(mixed ^ detail_recipe::kReservedSalt) : mixed};
+    const RecipeHash result{is_reserved ? ::foundation::reflect::fmix64(mixed ^ detail_recipe::kReservedSalt) : mixed};
     CRUCIBLE_POST(result, ::foundation::decide::is_non_zero(result) && ::foundation::decide::not_sentinel_hash(result));
     return result;
 }
@@ -232,9 +222,10 @@ inline constexpr uint64_t kNumericsSalt = 0x4E554D4552494353ULL;  // "NUMERICS"
                           | (uint64_t(enum_byte(policy.accum_16bit)) << 8)
                           | (uint64_t(enum_byte(policy.accum_8bit)) << 16) | (uint64_t(policy.flags.raw()) << 24)
                           | (uint64_t(eager.bits) << 32);
-    const uint64_t mixed = detail_recipe::fmix64(packed ^ detail_recipe::kNumericsSalt);
+    const uint64_t mixed = ::foundation::reflect::fmix64(packed ^ detail_recipe::kNumericsSalt);
     const bool is_reserved = mixed == 0 || mixed == NumericsHash::sentinel().raw();
-    const NumericsHash result{is_reserved ? detail_recipe::fmix64(mixed ^ detail_recipe::kReservedSalt) : mixed};
+    const NumericsHash result{is_reserved ? ::foundation::reflect::fmix64(mixed ^ detail_recipe::kReservedSalt)
+                                          : mixed};
     CRUCIBLE_POST(result, ::foundation::decide::is_non_zero(result) && !result.is_sentinel());
     return result;
 }

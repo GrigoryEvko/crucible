@@ -33,6 +33,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Mix.h>
 
 namespace crucible {
 
@@ -1135,7 +1136,7 @@ private:
     // address key and its generation.  The address changes from run to run,
     // so the map gives no order.
     [[nodiscard, gnu::const]] static uint32_t hash_ptr(PtrMapKey key) noexcept {
-        return static_cast<uint32_t>(detail::combine_ids(key.address.hash(), key.generation.raw()));
+        return static_cast<uint32_t>(::foundation::reflect::combine_ids(key.address.hash(), key.generation.raw()));
     }
 
     // The entry of key in the map, or no entry when the map does not hold

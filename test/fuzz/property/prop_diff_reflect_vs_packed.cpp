@@ -27,8 +27,8 @@
 #include "property_runner.h"
 #include "random_input.h"
 
-#include <crucible/Expr.h>
 #include <crucible/MerkleDag.h>
+#include <foundation/reflect/Mix.h>
 
 #include <array>
 #include <span>
@@ -43,9 +43,9 @@ uint64_t feedback_signature_packed(::fixy::View<const crucible::FeedbackEdge> ed
     uint64_t h = kSeed;
     for (const auto& e : edges) {
         const uint64_t packed = (static_cast<uint64_t>(e.output_idx) << 16) | e.input_idx;
-        h = crucible::detail::fmix64(h ^ packed);
+        h = ::foundation::reflect::fmix64(h ^ packed);
     }
-    h = crucible::detail::fmix64(h ^ edges.size());
+    h = ::foundation::reflect::fmix64(h ^ edges.size());
     return h;
 }
 

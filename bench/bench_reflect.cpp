@@ -21,12 +21,12 @@
 #include <cstdio>
 #include <utility>
 
-#include <crucible/Expr.h>  // detail::fmix64
 #include <crucible/MerkleDag.h>  // FeedbackEdge, LoopTermKind, NumericalRecipe, TensorSlot
 #include <crucible/NumericalRecipe.h>
 #include <fixy/Bits.h>
 #include <fixy/Core.h>
 #include <fixy/Protocol.h>
+#include <foundation/reflect/Mix.h>
 
 #include "bench_harness.h"
 
@@ -53,11 +53,11 @@ struct[[= ::fixy::derive_protocol{}]] Wide {
 
 uint64_t manual_hash_small(const Small& s) noexcept {
     uint64_t h = 0x9E3779B97F4A7C15ULL;
-    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(s.id);
-    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(s.kind);
-    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(s.flags);
-    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(static_cast<uint64_t>(s.payload));
-    return crucible::detail::fmix64(h);
+    h = h * 0x9E3779B97F4A7C15ULL ^ ::foundation::reflect::fmix64(s.id);
+    h = h * 0x9E3779B97F4A7C15ULL ^ ::foundation::reflect::fmix64(s.kind);
+    h = h * 0x9E3779B97F4A7C15ULL ^ ::foundation::reflect::fmix64(s.flags);
+    h = h * 0x9E3779B97F4A7C15ULL ^ ::foundation::reflect::fmix64(static_cast<uint64_t>(s.payload));
+    return ::foundation::reflect::fmix64(h);
 }
 
 // ── The reference: the integer path of foldhash-f ────────────────────
@@ -144,9 +144,9 @@ uint64_t feedback_signature_packed(::fixy::View<const crucible::FeedbackEdge> ed
     uint64_t h = kSeed;
     for (const auto& e : edges) {
         uint64_t packed = (static_cast<uint64_t>(e.output_idx) << 16) | e.input_idx;
-        h = crucible::detail::fmix64(h ^ packed);
+        h = ::foundation::reflect::fmix64(h ^ packed);
     }
-    h = crucible::detail::fmix64(h ^ edges.size());
+    h = ::foundation::reflect::fmix64(h ^ edges.size());
     return h;
 }
 
@@ -158,8 +158,8 @@ uint64_t loopterm_hash_packed(crucible::LoopTermKind term_kind, uint32_t repeat_
     constexpr uint64_t kTermSalt = 0x7465726D696E6174ULL;
     constexpr uint64_t kEpsSalt = 0x65707369006C6F6EULL;
     uint64_t packed = static_cast<uint64_t>(std::to_underlying(term_kind)) | (static_cast<uint64_t>(repeat_count) << 8);
-    uint64_t h = crucible::detail::fmix64(packed ^ kTermSalt);
-    h ^= crucible::detail::fmix64(static_cast<uint64_t>(std::bit_cast<uint32_t>(epsilon)) ^ kEpsSalt);
+    uint64_t h = ::foundation::reflect::fmix64(packed ^ kTermSalt);
+    h ^= ::foundation::reflect::fmix64(static_cast<uint64_t>(std::bit_cast<uint32_t>(epsilon)) ^ kEpsSalt);
     return h;
 }
 

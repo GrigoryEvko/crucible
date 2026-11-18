@@ -15,16 +15,16 @@
 #include <cstdio>
 #include <vector>
 
-#include <crucible/Expr.h>
 #include <crucible/SwissTable.h>
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/Mix.h>
 
 #include "bench_harness.h"
 
 using crucible::detail::BitMask;
 using crucible::detail::CtrlGroup;
-using crucible::detail::fmix64;
+using ::foundation::reflect::fmix64;
 using crucible::detail::h2_tag;
 using crucible::detail::kEmpty;
 

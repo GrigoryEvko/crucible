@@ -9,7 +9,6 @@
 // rather than derived from the target, so lane d is dimension d everywhere,
 // and each term is an exact integer product.
 
-#include <crucible/Expr.h>
 #include <crucible/TensorMeta.h>
 #include <fixy/Bands.h>
 #include <fixy/Tagged.h>

@@ -10,6 +10,7 @@
 #include <crucible/cipher/FederationProtocol.h>
 #include <fixy/os/Fs.h>
 #include <foundation/os/PathText.h>
+#include <foundation/reflect/Mix.h>
 
 #include <cstring>
 #include <span>
@@ -948,11 +949,7 @@ ContentHash Cipher::session_event_batch_hash(::fixy::View<std::byte const> bytes
         h ^= static_cast<uint64_t>(byte);
         h *= 0x100000001b3ULL;
     }
-    h ^= h >> 33;
-    h *= 0xff51afd7ed558ccdULL;
-    h ^= h >> 33;
-    h *= 0xc4ceb9fe1a85ec53ULL;
-    h ^= h >> 33;
+    h = ::foundation::reflect::fmix64(h);
     if (h == 0u) h = 0x53455353494f4e45ULL;
     if (h == ::fixy::max_of<uint64_t>) --h;
     return ContentHash{h};

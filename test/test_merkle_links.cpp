@@ -3,6 +3,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 #include <fixy/Protocol.h>
+#include <foundation/reflect/Mix.h>
 #include "test_assert.h"
 
 #include <cstddef>
@@ -111,12 +112,12 @@ namespace {
     // the order of the arms, and then the hash of the continuation.  The
     // format is the same as when the target was a raw pointer.
     crucible::recompute_merkle(branch);
-    uint64_t expected = crucible::detail::fmix64(::fixy::hash(branch.guard).raw());
-    expected ^= crucible::detail::fmix64(region_a.merkle_hash.raw());
+    uint64_t expected = ::foundation::reflect::fmix64(::fixy::hash(branch.guard).raw());
+    expected ^= ::foundation::reflect::fmix64(region_a.merkle_hash.raw());
     expected *= 0x9E3779B97F4A7C15ULL;
-    expected ^= crucible::detail::fmix64(region_b.merkle_hash.raw());
+    expected ^= ::foundation::reflect::fmix64(region_b.merkle_hash.raw());
     expected *= 0x9E3779B97F4A7C15ULL;
-    expected = crucible::detail::fmix64(expected ^ uint64_t{0});  // the continuation is TERMINAL, of hash zero
+    expected = ::foundation::reflect::fmix64(expected ^ uint64_t{0});  // the continuation is TERMINAL, of hash zero
     assert(region_a.merkle_hash.raw() != 0 && region_b.merkle_hash.raw() != 0);
     assert(branch.merkle_hash.raw() == expected);
     // The store keeps the merkle hash of a branch, so the value of this
