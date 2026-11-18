@@ -10,8 +10,11 @@ target_link_libraries(crucible_vessel PRIVATE crucible)
 # libraries: the digest, and the size and the member offsets of each struct of
 # the C ABI that ctypes mirrors (THE TABLE of layout_table.cpp).  The loader
 # of the vessel refuses a library whose note differs from the table, and a
-# ctypes Structure whose layout differs from it.  Each vessel library depends
-# on the table, so a build of one library writes the table of its build.  A
+# ctypes Structure whose layout differs from it.  The link of each vessel
+# library takes the table as an input (LINK_DEPENDS), so a build of one library
+# writes the table of its build, and no compile of a library waits for the
+# link of the tool.  The command reads only the tool, so it takes
+# DEPENDS_EXPLICIT_ONLY: it then waits for no archive that the tool links.  A
 # cross build cannot run the tool on the build host, and it has no table: no
 # loader of the build host loads its libraries.
 set(_crucible_layout_table "${CMAKE_BINARY_DIR}/lib/crucible_layout_digest.txt")
@@ -21,11 +24,12 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_custom_command(OUTPUT "${_crucible_layout_table}"
         COMMAND sh -c "$<TARGET_FILE:crucible_layout_digest> > ${_crucible_layout_table}.tmp"
         COMMAND ${CMAKE_COMMAND} -E rename "${_crucible_layout_table}.tmp" "${_crucible_layout_table}"
-        DEPENDS crucible_layout_digest
+        DEPENDS "$<TARGET_FILE:crucible_layout_digest>"
+        DEPENDS_EXPLICIT_ONLY
         COMMENT "Writing the layout table of the vessel libraries"
         VERBATIM)
     add_custom_target(crucible_layout_table DEPENDS "${_crucible_layout_table}")
-    add_dependencies(crucible_vessel crucible_layout_table)
+    set_property(TARGET crucible_vessel APPEND PROPERTY LINK_DEPENDS "${_crucible_layout_table}")
 endif()
 
 # ── The x86-64 level of the vessel libraries ─────────────────────────
@@ -219,7 +223,7 @@ if(TORCH_DIR AND EXISTS "${TORCH_DIR}/torch/include")
         add_dependencies(crucible_dispatch crucible_level)
     endif()
     if(TARGET crucible_layout_table)
-        add_dependencies(crucible_dispatch crucible_layout_table)
+        set_property(TARGET crucible_dispatch APPEND PROPERTY LINK_DEPENDS "${_crucible_layout_table}")
     endif()
 
     message(STATUS "Crucible: building native dispatch library (TORCH_DIR=${TORCH_DIR})")

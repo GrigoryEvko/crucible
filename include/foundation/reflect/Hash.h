@@ -807,8 +807,9 @@ template <typename... Ts>
 template <std::meta::info Scope, std::size_t Size>
 [[nodiscard]] consteval std::uint64_t c_entry_digest(char const (&prefix)[Size]) {
     std::uint64_t state = detail::layout_seed;
-    const auto unchecked = std::meta::access_context::unchecked();
-    for (const std::meta::info member : std::meta::members_of(Scope, unchecked)) {
+    // A namespace has no access control, so the current context sees each
+    // member.
+    for (const std::meta::info member : std::meta::members_of(Scope, std::meta::access_context::current())) {
         if (!std::meta::is_function(member) || !std::meta::has_c_language_linkage(member)) continue;
         if (!std::meta::identifier_of(member).starts_with({prefix, Size - 1})) continue;
         state = combine_ids(state, detail::layout_mark_entry);

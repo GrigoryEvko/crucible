@@ -38,12 +38,13 @@ namespace {
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the tool reads the layout of the C structs that ctypes mirrors")
 
 // The lines of one struct of the C ABI: its size, and the offset of each
-// member in the order of the declarations.
+// member in the order of the declarations.  A C struct has only public
+// members, so the current context sees each of them.
 template <class Struct>
 void write_struct(::fixy::TextView name) noexcept {
     ::fixy::report(::fixy::Sink::Out, "struct {} {}\n", name, sizeof(Struct));
-    static constexpr auto members = std::define_static_array(
-        std::meta::nonstatic_data_members_of(^^Struct, std::meta::access_context::unchecked()));
+    static constexpr auto members =
+        std::define_static_array(std::meta::nonstatic_data_members_of(^^Struct, std::meta::access_context::current()));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr std::meta::info member : members) {
