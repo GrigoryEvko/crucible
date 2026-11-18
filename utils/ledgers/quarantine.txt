@@ -273,8 +273,8 @@ include/foundation/permissions/ | replace-pending:<optional> | 1 | - | -
 include/foundation/permissions/ | replace-pending:<string_view> | 3 | - | -
 include/foundation/permissions/ | replace-pending:<tuple> | 2 | - | -
 include/foundation/permissions/ | replace-pending:<vector> | 3 | - | -
-include/foundation/reflect/ | base-std-entity | 134 | - | -
-include/foundation/reflect/ | base-std-object | 54 | - | -
+include/foundation/reflect/ | base-std-entity | 139 | - | -
+include/foundation/reflect/ | base-std-object | 56 | - | -
 include/foundation/reflect/ | replace-pending:<array> | 3 | - | -
 include/foundation/reflect/ | replace-pending:<bit> | 1 | - | -
 include/foundation/reflect/ | replace-pending:<string> | 2 | - | -
