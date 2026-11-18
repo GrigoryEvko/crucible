@@ -97,6 +97,11 @@
       "constructor": "\\bClockSource\\("
     },
     {
+      "name": "neg_witness_concurrent_eventwait_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bEventWait\\("
+    },
+    {
       "name": "neg_witness_concurrent_mpmcstage_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bMpmcStage\\("
@@ -1182,6 +1187,10 @@
     {
       "type": "fixy::time::SpinDeadline",
       "header": "fixy/os/SpinBudget.h"
+    },
+    {
+      "type": "fixy::concurrent::EventWait",
+      "header": "fixy/concurrent/EventCount.h"
     },
     {
       "type": "foundation::os::FpScope<foundation::core::kFpModeIeee>",
