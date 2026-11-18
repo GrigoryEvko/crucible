@@ -6,6 +6,8 @@
 //   Encodable<T>        a class with the annotation derive_protocol whose
 //                       value has a byte image
 //   Decodable<T>        an Encodable class that decode can build
+//   Hashable<T>         an Encodable class, or a leaf of the image that is no
+//                       class, such as an integer or an enumeration
 //   encoded_size_v<T>   the count of bytes of the image of a T
 //   hash(value)         the Digest<T> of the value: 64 bits, with no key
 //   encode(value, out)  writes the image of the value into out
@@ -820,13 +822,21 @@ concept Decodable = Encodable<T> && std::is_nothrow_default_constructible_v<T> &
 template <Encodable T>
 inline constexpr std::size_t encoded_size_v = detail::image_bytes_at(^^T);
 
+// A type that hash takes: an Encodable class, and a leaf of THE IMAGE that
+// is no class: an integer, a bool, a character, an enumeration, a float or a
+// double.  The image of a leaf is its bytes, so its hash is one fold.  A
+// pointer, a C array and a floating type other than float and double have
+// no hash.
+template <class T>
+concept Hashable = Encodable<T> || (!std::is_class_v<T> && !std::is_array_v<T> && detail::has_image_at(^^T, 0));
+
 // The hash of the value (THE HASH): 64 bits with no key, the same on each
 // target.  Complexity: one fold for each 16 bytes of the image.
-template <Encodable T>
+template <Hashable T>
 [[nodiscard]] constexpr Digest<T> hash(T const& value) noexcept {
     detail::HashState state{};
     detail::hash_part_<0>(state, value);
-    if constexpr (encoded_size_v<T> % detail::hash_block_bytes != 0) state.fold_block();
+    if constexpr (detail::image_bytes_at(^^T) % detail::hash_block_bytes != 0) state.fold_block();
     return Digest<T>{state.accumulator};
 }
 

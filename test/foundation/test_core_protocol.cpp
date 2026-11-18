@@ -463,6 +463,44 @@ void test_hash_of_each_array_path() {
     CRUCIBLE_FATAL_INVARIANT(hash(Empty{}).raw() == kStartSeed);
 }
 
+// ── The hash of a leaf that is no class ────────────────────────────────
+
+// The image of a leaf is its bytes in little-endian order, which are its
+// bytes on each target of the tree.
+template <class Leaf>
+[[nodiscard]] FixedArray<std::byte, sizeof(Leaf)> image_of_leaf(Leaf leaf) noexcept {
+    return bit_cast<FixedArray<std::byte, sizeof(Leaf)>>(leaf);
+}
+
+// A leaf hashes as the image of its bytes, as a class of one part of the
+// leaf does.
+struct[[= derive_protocol{}]] HoldsWord {
+    std::uint32_t word = 0;
+};
+
+void test_hash_of_a_leaf() {
+    static_assert(::foundation::core::Hashable<std::uint32_t> && ::foundation::core::Hashable<Phase>);
+    static_assert(::foundation::core::Hashable<bool> && ::foundation::core::Hashable<double>);
+    static_assert(!::foundation::core::Hashable<int const*> && !::foundation::core::Hashable<std::uint32_t[2]>);
+    static_assert(!::foundation::core::Hashable<long double>);
+    static_assert(std::is_same_v<decltype(hash(std::uint32_t{1})), Digest<std::uint32_t>>);
+
+    ::crucible::test::PhiloxStream stream{0x4C45414648415348ULL};
+    for (int round = 0; round < 4096; ++round) {
+        std::uint32_t const word = stream.next_word();
+        CRUCIBLE_FATAL_INVARIANT(hash(word).raw() == hand_hash_of_image(image_of_leaf(word)));
+        CRUCIBLE_FATAL_INVARIANT(hash(word).raw() == hash(HoldsWord{word}).raw());
+        std::int64_t const wide = static_cast<std::int64_t>(stream.next_wide());
+        CRUCIBLE_FATAL_INVARIANT(hash(wide).raw() == hand_hash_of_image(image_of_leaf(wide)));
+    }
+    // An enumeration hashes as its underlying integer, a bool as one byte of
+    // 0 or 1, and a float by its bits, so the two zeros differ.
+    CRUCIBLE_FATAL_INVARIANT(hash(Phase::other).raw() == hash(std::uint8_t{7}).raw());
+    CRUCIBLE_FATAL_INVARIANT(hash(true).raw() == hash(std::uint8_t{1}).raw());
+    CRUCIBLE_FATAL_INVARIANT(hash(0.0).raw() != hash(-0.0).raw());
+    CRUCIBLE_FATAL_INVARIANT(hash(1.5f).raw() == hash(bit_cast<std::uint32_t>(1.5f)).raw());
+}
+
 // ── foldhash-f ──────────────────────────────────────────────────────────
 
 // The integer path of foldhash-f of Orson Peters with the seeds of THE HASH:
@@ -765,6 +803,7 @@ int main() {
     test_equal_and_order_agree_with_the_hand_forms();
     test_hash_agrees_with_the_hand_fold();
     test_hash_of_each_array_path();
+    test_hash_of_a_leaf();
     test_hash_is_foldhash_on_whole_blocks();
     test_encode_writes_the_hand_image();
     test_decode_inverts_encode();

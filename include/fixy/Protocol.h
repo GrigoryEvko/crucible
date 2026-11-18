@@ -29,5 +29,6 @@ using ::foundation::core::encode;
 using ::foundation::core::encoded_size_v;
 using ::foundation::core::format;
 using ::foundation::core::hash;
+using ::foundation::core::Hashable;
 
 }  // namespace fixy

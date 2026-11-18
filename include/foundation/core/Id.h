@@ -20,7 +20,9 @@
 //
 // Two ids of different tags do not compare, an id is no integer, and the
 // number of an id comes out only through raw().  Tag is a class type, which a
-// header can name with no definition: Id<struct SlotTag, std::uint32_t>.
+// header can name with no definition: Id<struct SlotTag, std::uint32_t>.  The
+// Tag of a Digest can also be an arithmetic type or an enumeration: the hash
+// of the Protocol family of an integer is a Digest of that integer type.
 
 #include <foundation/core/Choice.h>
 #include <foundation/core/Number.h>
@@ -57,7 +59,7 @@ struct niche<Id<Tag, Word>> {
 };
 
 template <class Tag>
-    requires std::is_class_v<Tag>
+    requires std::is_class_v<Tag> || std::is_arithmetic_v<Tag> || std::is_enum_v<Tag>
 class Digest final {
     std::uint64_t value_;
 
