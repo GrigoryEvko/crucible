@@ -1,7 +1,8 @@
 #pragma once
 
-// Partial order over a NUMA node identifier.  None names no node, Any
-// names every node, and each concrete node names only itself.
+// Partial order over a NUMA node identifier: the FlatLattice of
+// NumaNodeId.  None names no node, Any names every node, and each concrete
+// node names only itself.
 //
 // The wildcard is the top, so leq(request, claim) reads "the claim covers
 // the requested node".  Two different concrete nodes are siblings.
@@ -20,6 +21,7 @@
 // lattice at run time.
 
 #include <foundation/algebra/Lattice.h>
+#include <foundation/algebra/lattices/FlatLattice.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -45,31 +47,8 @@ inline constexpr std::size_t numa_node_id_sentinel_count = 2;
     return std::to_underlying(node) < std::to_underlying(NumaNodeId::None);
 }
 
-struct NumaNodeLattice {
-    using element_type = NumaNodeId;
-
-    // A claim that covers more requested nodes is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return NumaNodeId::None; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return NumaNodeId::Any; }
-
-    [[nodiscard]] static constexpr bool leq(element_type lhs, element_type rhs) noexcept {
-        return lhs == rhs || lhs == NumaNodeId::None || rhs == NumaNodeId::Any;
-    }
-
-    [[nodiscard]] static constexpr element_type join(element_type lhs, element_type rhs) noexcept {
-        if (leq(lhs, rhs)) return rhs;
-        if (leq(rhs, lhs)) return lhs;
-        return NumaNodeId::Any;
-    }
-
-    [[nodiscard]] static constexpr element_type meet(element_type lhs, element_type rhs) noexcept {
-        if (leq(lhs, rhs)) return lhs;
-        if (leq(rhs, lhs)) return rhs;
-        return NumaNodeId::None;
-    }
-
+// A claim that covers more requested nodes is the stronger claim.
+struct NumaNodeLattice : FlatLattice<NumaNodeId, NumaNodeId::None, NumaNodeId::Any> {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "NumaNodeLattice"; }
 };
 

@@ -5,8 +5,8 @@
 namespace foundation::algebra::lattices {
 
 static_assert(::foundation::reflect::enum_count<RecipeFamily> == 6,
-              "RecipeFamily must hold exactly six enumerators. A new family needs a place in leq, join and meet, "
-              "and an update to this count.");
+              "RecipeFamily must hold exactly six enumerators. A new family is a sibling of each other family in "
+              "FlatLattice, and it needs an update to this count.");
 
 namespace detail::recipe_family_lattice_self_test {
 

@@ -1,7 +1,8 @@
 #pragma once
 
-// A partial order, not a chain.  A kernel built for one vendor does not run on
-// another, so no two named vendors are ordered against each other.  The order
+// A partial order, not a chain: the FlatLattice of VendorBackend.  A kernel
+// built for one vendor does not run on another, so no two named vendors are
+// ordered against each other.  The order
 // runs the other way from the storage: a leq that holds reads as a consumer
 // asking for the lower claim being served by a provider meeting the higher one,
 // so Portable at the top satisfies every consumer and None at the bottom
@@ -14,6 +15,7 @@
 #include <foundation/algebra/ClaimOrientation.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/ChainLattice.h>
+#include <foundation/algebra/lattices/FlatLattice.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdint>
@@ -37,39 +39,10 @@ enum class VendorBackend : std::uint8_t {
     Portable = 255,  // one kernel that runs on every backend
 };
 
-struct VendorLattice {
-    using element_type = VendorBackend;
-
-    // A backend that runs in more places is the stronger claim.
-    static constexpr ClaimOrientation claim_orientation = ClaimOrientation::stronger_is_higher;
-
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return VendorBackend::None; }
-    [[nodiscard]] static constexpr element_type top() noexcept { return VendorBackend::Portable; }
-
-    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
-        if (a == b) return true;
-        if (a == VendorBackend::None) return true;
-        if (b == VendorBackend::Portable) return true;
-        return false;
-    }
-
-    // Two different named vendors have nothing between them, so their least
-    // upper bound can only be the top and their greatest lower bound only the
-    // bottom.
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        if (a == b) return a;
-        if (a == VendorBackend::None) return b;
-        if (b == VendorBackend::None) return a;
-        return VendorBackend::Portable;
-    }
-
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        if (a == b) return a;
-        if (a == VendorBackend::Portable) return b;
-        if (b == VendorBackend::Portable) return a;
-        return VendorBackend::None;
-    }
-
+// A backend that runs in more places is the stronger claim.  Two different
+// named vendors have nothing between them, so their least upper bound can
+// only be the top and their greatest lower bound only the bottom.
+struct VendorLattice : FlatLattice<VendorBackend, VendorBackend::None, VendorBackend::Portable> {
     [[nodiscard]] static consteval std::string_view name() noexcept { return "VendorLattice"; }
 
     template <VendorBackend B>

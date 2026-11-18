@@ -3566,10 +3566,10 @@ crucible_neg_compile_test(neg_mimic_network_backend_wrong_cog
 #     descriptor goes around the mint.
 crucible_neg_compile_test(neg_mimic_semaphore_backend_none
   "no matching function for call to .mint_device_semaphore<foundation::algebra::lattices::VendorBackend::None>\\(crucible::mimic::SemaphoreCounter&, int\\)."
-  "the expression .Backend != foundation::algebra::lattices::VendorLattice::bottom\\(\\)\\(\\) \\[with Backend = foundation::algebra::lattices::VendorBackend::None\\]. evaluated to .false.")
+  "the expression .Backend != foundation::algebra::lattices::FlatLattice<foundation::algebra::lattices::VendorBackend, foundation::algebra::lattices::VendorBackend::None, foundation::algebra::lattices::VendorBackend::Portable>::bottom\\(\\)\\(\\) \\[with Backend = foundation::algebra::lattices::VendorBackend::None\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_mimic_semaphore_backend_portable
   "template constraint failure for .template<foundation::algebra::lattices::VendorBackend Backend>  requires  SemaphoreBackend<Backend> class crucible::mimic::DeviceSemaphore."
-  "the expression .Backend != foundation::algebra::lattices::VendorLattice::top\\(\\)\\(\\) \\[with Backend = foundation::algebra::lattices::VendorBackend::Portable\\]. evaluated to .false.")
+  "the expression .Backend != foundation::algebra::lattices::FlatLattice<foundation::algebra::lattices::VendorBackend, foundation::algebra::lattices::VendorBackend::None, foundation::algebra::lattices::VendorBackend::Portable>::top\\(\\)\\(\\) \\[with Backend = foundation::algebra::lattices::VendorBackend::Portable\\]. evaluated to .false.")
 crucible_neg_compile_test(neg_mimic_semaphore_temporary_counter
   "use of deleted function .constexpr crucible::mimic::DeviceSemaphore<Backend> crucible::mimic::mint_device_semaphore\\(SemaphoreCounter&&, uint64_t\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU. SemaphoreCounter = foundation::core::Atomic<long unsigned int>. uint64_t = long unsigned int\\]."
   ".: The DeviceSemaphore borrows its counter, so a temporary counter dangles at the end of the full expression. Bind the counter to a name first.")
