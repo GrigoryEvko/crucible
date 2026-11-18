@@ -353,9 +353,16 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // One definition for both recording paths: two copies would let them write
 // different phase bits into one trace. Zero-initialized, so there is no
 // initializer to order and no guard variable on the path that reads it.
+//
+// The counter is process-wide (CRUCIBLE_PROCESS_WIDE): each thread has one
+// counter for the process, also when a second shared library compiles this
+// header.  Only libcrucible_dispatch.so compiles it today, and its C entries
+// crucible_dispatch_backward_enter and crucible_dispatch_backward_exit write
+// it.  A thread_local of a shared library takes the call of the TLS resolver
+// with each visibility, so the marker adds no call to the record of an op.
 // =====================================================================
 
-inline thread_local uint32_t backward_depth = 0;
+CRUCIBLE_PROCESS_WIDE inline thread_local uint32_t backward_depth = 0;
 
 // =====================================================================
 // Training phase
@@ -1355,6 +1362,12 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // Vigils on two threads need no other order.  On x86_64 the acquire load
     // and the release store are plain moves.  A registration costs one branch
     // per operator after the first, not one per operation.
+    //
+    // The flag is a static member of a class template, so CRUCIBLE_PROCESS_WIDE
+    // has no effect on it, and each library that instantiates the kernel holds
+    // its own flag.  That is correct: the schema tables are process-wide, and a
+    // second registration of one name in a second library finds the name there
+    // and keeps it.  Only libcrucible_dispatch.so instantiates the kernels.
     static inline ::fixy::Atomic<bool> schema_name_registered{false};
 
     [[gnu::cold, gnu::noinline]] static void register_schema_name_once(crucible::Vigil& vigil) {

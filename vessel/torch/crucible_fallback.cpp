@@ -203,6 +203,11 @@ static constexpr uint32_t SCHEMA_CACHE_CAP = 2048;
 static constexpr uint32_t SCHEMA_CACHE_MASK = SCHEMA_CACHE_CAP - 1;
 static constexpr uint32_t SCHEMA_CACHE_PROBES = 8;
 // constinit: the table has no dynamic initializer, so no access waits for one.
+// The table is one object for the process with no CRUCIBLE_PROCESS_WIDE
+// marker: only libcrucible_dispatch.so compiles this unit, and the object has
+// internal linkage, on which the marker has no effect.  A copy in a second
+// library would be correct too, because a cache that misses only computes the
+// facts again and fills its own slot.
 static constinit ::fixy::FixedArray<SchemaHashSlot, SCHEMA_CACHE_CAP> schema_cache{};
 
 // The slot of a probe.  The mask keeps it below SCHEMA_CACHE_CAP, so the
