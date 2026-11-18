@@ -234,9 +234,22 @@ static_assert(has_bits(divide(FloatBytes{6.0}, FloatByteRate{2.0}), 3.0));
 static_assert(std::same_as<decltype(divide(FloatFlopRate{1.125e15}, FloatByteRate{8.0e12})),
                            Quantity<unit::FlopPerByte, double>>);
 static_assert(has_bits(divide(FloatFlopRate{1.125e15}, FloatByteRate{8.0e12}), 140.625));
-// The sign of a zero stays.  test_core_scalar_quantity holds the NaN cases,
-// because a NaN result is no constant expression under -frounding-math.
+// The sign of a zero stays.  test_core_scalar_quantity holds the NaN cases
+// of an operation, because a NaN result is no constant expression under
+// -frounding-math.
 static_assert(has_bits(subtract(FloatBytes{-0.0}, FloatBytes{0.0}), -0.0));
+
+// A zero divisor gives the IEEE quotient with no division: the infinity with
+// the sign of the quotient, or the canonical NaN for 0 / 0.
+static_assert(has_bits(divide(FloatBytes{1.5}, 0.0), infinity_of<double>));
+static_assert(has_bits(divide(FloatBytes{-1.5}, 0.0), -infinity_of<double>));
+static_assert(has_bits(divide(FloatBytes{1.5}, -0.0), -infinity_of<double>));
+static_assert(has_bits(divide(FloatBytes{-1.5}, -0.0), infinity_of<double>));
+static_assert(has_bits(divide(FloatBytes{infinity_of<double>}, 0.0), infinity_of<double>));
+static_assert(has_bits(divide(FloatBytes{0.0}, 0.0), quiet_nan_of<double>));
+static_assert(has_bits(divide(FloatBytes{-0.0}, -0.0), quiet_nan_of<double>));
+static_assert(has_bits(divide(FloatBytes{6.0}, FloatByteRate{0.0}), infinity_of<double>));
+static_assert(has_bits(divide(Quantity<unit::Byte, float>{2.0f}, -0.0f), -infinity_of<float>));
 
 // convert of a Float Rep: one multiply for a finer unit, one divide for a
 // coarser unit, and only when the Rep holds the factor exactly.

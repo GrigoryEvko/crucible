@@ -223,6 +223,18 @@ void test_float_set_is_one_operation() {
     std::uint64_t const canonical = bits_of_number(core::quiet_nan_of<double>);
     CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::add(Bytes{signed_payload}, Bytes{1.0}).raw()) == canonical);
     CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::divide(Bytes{opaque(0.0)}, 0.0).raw()) == canonical);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::divide(Bytes{signed_payload}, opaque(-0.0)).raw()) == canonical);
+    // A zero divisor gives the infinity with the sign of the quotient, with no
+    // division: C++ leaves a division by zero undefined, and the strict
+    // sanitizer refuses one.
+    std::uint64_t const positive_infinity = bits_of_number(core::infinity_of<double>);
+    std::uint64_t const negative_infinity = bits_of_number(-core::infinity_of<double>);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::divide(Bytes{opaque(2.5)}, opaque(0.0)).raw()) == positive_infinity);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::divide(Bytes{opaque(2.5)}, opaque(-0.0)).raw()) == negative_infinity);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::divide(Bytes{opaque(-2.5)}, Rate{opaque(0.0)}).raw())
+                             == negative_infinity);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::divide(Bytes{opaque(-2.5)}, Rate{opaque(-0.0)}).raw())
+                             == positive_infinity);
     CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::convert<unit::Nanosecond>(Seconds{signed_payload}).raw())
                              == canonical);
 }

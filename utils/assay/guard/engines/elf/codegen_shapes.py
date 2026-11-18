@@ -1016,7 +1016,10 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "scalar_quantity_float_quotient",
         "divide of two float quantities is the one division of the raw form and its canonical NaN: the and of the "
-        "sign mask, one compare and one select.  The unit of the quotient costs no instruction",
+        "sign mask, one compare and one select.  The family side first tests the divisor for zero, because C++ "
+        "leaves a division by zero undefined, and gives the IEEE quotient of a zero divisor with no division, so it "
+        "has one branch that the raw form does not.  The unit of the quotient costs no instruction",
+        branches=True,
     ),
     Probe(
         "scalar_philox_generate",

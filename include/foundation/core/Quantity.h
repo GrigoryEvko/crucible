@@ -91,7 +91,10 @@
 // of the thread.  That mode is to nearest with ties to even at the start of
 // a process.  The build flag -ffp-contract=off keeps a product and a sum as
 // two operations, with no FMA.  A NaN at an output is the canonical quiet
-// NaN of fp::canonicalize_nan, as in the reductions of the base.  convert of
+// NaN of fp::canonicalize_nan, as in the reductions of the base.  C++ leaves
+// a division by zero undefined, so divide gives the IEEE quotient of a zero
+// divisor with no division: the infinity with the sign of the quotient, or
+// the canonical NaN for 0 / 0 and for a NaN dividend.  convert of
 // a Float Rep multiplies or divides by 1000^k one time.  It compiles only
 // when the Rep holds 1000^k exactly: k is at most 3 for float and at most 6
 // for double.  round_to_float is the one door from an integer quantity to a
@@ -373,6 +376,27 @@ template <class UnitTag, Float Rep>
     return Quantity<UnitTag, Rep>{fp::canonicalize_nan(value)};
 }
 
+// True for +0 and -0: the bits with no sign are zero.
+template <Float Rep>
+[[nodiscard]] constexpr bool is_float_zero(Rep value) noexcept {
+    using Word = typename FloatBits<Rep>::Word;
+    return (__builtin_bit_cast(Word, value) & static_cast<Word>(~Word{0} >> 1)) == Word{0};
+}
+
+// The IEEE 754 quotient.  C++ leaves a division by zero undefined, so a zero
+// divisor gives the IEEE result with no division: the infinity with the sign
+// of the quotient, or a NaN for 0 / 0 and for a NaN dividend.  Each other
+// divisor is one division.
+template <Float Rep>
+[[nodiscard]] constexpr Rep ieee_quotient(Rep dividend, Rep divisor) noexcept {
+    if (is_float_zero(divisor)) [[unlikely]] {
+        if (is_float_zero(dividend) || fp::is_nan(dividend)) return quiet_nan_of<Rep>;
+        Rep const sign = fp::sign_bit(dividend) == fp::sign_bit(divisor) ? Rep{1} : Rep{-1};
+        return fp::copy_sign(infinity_of<Rep>, sign);
+    }
+    return dividend / divisor;
+}
+
 // Two units of one dimension.  Their scales differ by a power of 1000.
 template <class From, class To>
 concept ConvertibleUnits = QuantityUnit<From> && QuantityUnit<To> && (From::dimension == To::dimension);
@@ -570,7 +594,7 @@ template <class UnitTag, Float Rep>
 template <class UnitTag, Float Rep>
 [[nodiscard]] constexpr Quantity<UnitTag, Rep> divide(Quantity<UnitTag, Rep> quantity,
                                                       std::type_identity_t<Rep> divisor) noexcept {
-    return detail::float_quantity_of<UnitTag>(quantity.raw() / divisor);
+    return detail::float_quantity_of<UnitTag>(detail::ieee_quotient(quantity.raw(), divisor));
 }
 
 // The arguments swap with no change of the number, and the unit is the same
@@ -584,7 +608,8 @@ multiply(Quantity<LeftUnit, Rep> left, Quantity<RightUnit, Rep> right) noexcept 
 template <class DividendUnit, class DivisorUnit, Float Rep>
 [[nodiscard]] constexpr Quantity<unit::Quotient<DividendUnit, DivisorUnit>, Rep>
 divide(Quantity<DividendUnit, Rep> dividend, Quantity<DivisorUnit, Rep> divisor) noexcept {
-    return detail::float_quantity_of<unit::Quotient<DividendUnit, DivisorUnit>>(dividend.raw() / divisor.raw());
+    return detail::float_quantity_of<unit::Quotient<DividendUnit, DivisorUnit>>(
+        detail::ieee_quotient(dividend.raw(), divisor.raw()));
 }
 
 // A finer unit multiplies by 1000^k, and a coarser unit divides by it.  The
