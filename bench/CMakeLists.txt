@@ -180,6 +180,8 @@ crucible_bench(bench_pipeline_dispatch)
 crucible_bench(bench_no_regression)
 crucible_bench(bench_mpsc_contention)
 crucible_bench(bench_permissioned_zero_cost)
+# Rows of 2 and 4 threads, one on each core of one L3 group.
+crucible_bench(bench_permissioned_channel CORES 4)
 crucible_bench(bench_permissioned_session_handle)
 crucible_bench(bench_spsc_session)
 crucible_bench(bench_metalog_session)
