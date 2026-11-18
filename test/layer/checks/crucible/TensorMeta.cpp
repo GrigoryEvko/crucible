@@ -66,4 +66,27 @@ static_assert(is_unequal_after([](TensorMeta& meta) {
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_nbytes = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.grad_fn_hash = grad_fn_hash(1); }));
 
+// The Protocol family gives a descriptor a hash, an image and a format, and no
+// decode: a byte door would skip the claims of decode_tensor_meta.
+static_assert(::fixy::Encodable<TensorMeta> && !::fixy::Decodable<TensorMeta>);
+static_assert(::fixy::encoded_size_v<TensorMeta> == 2 * 8 * sizeof(int64_t) + 8 + 8 + 4 + 8);
+
+// The hash reads no local part: two descriptors that differ only in the data
+// pointer, the storage generation or the hash of the grad_fn give one hash,
+// and a field that the image holds moves the hash.
+template <class Change>
+[[nodiscard]] consteval bool keeps_hash_after(Change change) {
+    TensorMeta changed{};
+    change(changed);
+    return ::fixy::hash(changed) == ::fixy::hash(TensorMeta{});
+}
+
+static_assert(keeps_hash_after([](TensorMeta& meta) { meta.data_ptr = external_data_ptr(static_cast<void*>(&meta)); }));
+static_assert(keeps_hash_after([](TensorMeta& meta) {
+    meta.storage_generation = StorageGeneration::known(AllocationCount{1});
+}));
+static_assert(keeps_hash_after([](TensorMeta& meta) { meta.grad_fn_hash = grad_fn_hash(1); }));
+static_assert(!keeps_hash_after([](TensorMeta& meta) { meta.sizes[7] = tensor_dim(1); }));
+static_assert(!keeps_hash_after([](TensorMeta& meta) { meta.storage_nbytes = 1; }));
+
 }  // namespace crucible

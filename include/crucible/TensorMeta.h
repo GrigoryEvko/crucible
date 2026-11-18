@@ -38,7 +38,9 @@ inline constexpr int64_t kMaxTensorDimExtent = ::fixy::max_of<int64_t> / kTensor
 
 using TensorDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorDimExtent>, int64_t>;
 
-struct TensorDimArray {
+// The lanes of the sizes or of the strides of a tensor.  The Protocol family
+// takes its equality, hash and codec from the private block of lanes.
+struct[[= ::fixy::derive_protocol{}]] TensorDimArray {
     // The index of one lane.
     using LaneIndex = ::fixy::Index<kMaxTensorNDim>;
 
@@ -93,7 +95,7 @@ public:
     // Two blocks are equal when each lane holds the same value, the lanes
     // past ndim too.
     [[nodiscard]] friend constexpr bool operator==(TensorDimArray const& left, TensorDimArray const& right) noexcept {
-        return left.lanes_ == right.lanes_;
+        return ::fixy::equal(left, right);
     }
 };
 
@@ -122,7 +124,15 @@ inline constexpr uint8_t IS_NEG = 1 << 4;
 inline constexpr uint8_t IS_CONJ = 1 << 5;
 }  // namespace meta_flags
 
-struct TensorMeta {
+// The descriptor of one tensor.  The Protocol family derives its equality from
+// its parts, and its hash, image and format from the parts that are not local
+// to the process: the data pointer, the storage generation and the hash of
+// the grad_fn are local parts.  A descriptor holds claims that no field type
+// holds: the rank is at most kMaxTensorNDim, and each lane past the rank is
+// zero.  So no byte door makes one: no_start_over_bytes refuses decode of the
+// family, decode of the Scalar family and a lifetime start over bytes, and
+// decode_tensor_meta is the one door from bytes of outside.
+struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] TensorMeta {
     // The lanes past ndim must start at zero, and the reason is the wire
     // image rather than any hash. write_meta in Serialize.h writes both
     // blocks at their full width, so a tail lane holding anything but zero
@@ -139,7 +149,7 @@ struct TensorMeta {
     // Removing the braces at a holder saves nothing.
     TensorDimArray sizes{};
     TensorDimArray strides{};
-    ExternalDataPtr data_ptr{};
+    [[= ::fixy::local_part{}]] ExternalDataPtr data_ptr{};
     uint8_t ndim = 0;
     ScalarType dtype = ScalarType::Undefined;
     DeviceType device_type = DeviceType::CPU;
@@ -165,26 +175,18 @@ struct TensorMeta {
     // unknown in a period of the allocator (StorageGeneration).  It is local
     // to the process, as data_ptr is, so the image of Serialize.h and the
     // record of a trace file do not hold it, and no hash folds it.
-    StorageGeneration storage_generation{};
+    [[= ::fixy::local_part{}]] StorageGeneration storage_generation{};
     // The size of the storage in bytes, which a view does not span.  A
     // storage of 4 GiB or more is usual for a large model, so the field has
     // 64 bits.
     uint64_t storage_nbytes = 0;
-    GradFnHash grad_fn_hash{};  // 0 means no grad_fn
+    [[= ::fixy::local_part{}]] GradFnHash grad_fn_hash{};  // 0 means no grad_fn
 
-    // Two descriptors are equal when each field holds the same value.  The
-    // type has no padding, so the result is the result of a compare of the
-    // bytes.  A Tagged field has no compare of its own, so the compare reads
-    // its value, and the compare cannot be defaulted.  A new field needs a
-    // term here.
+    // Two descriptors are equal when each field holds the same value, a
+    // local part too: equal of the Protocol family reads each field in
+    // declaration order, so a new field takes part with no new term.
     [[nodiscard]] friend constexpr bool operator==(TensorMeta const& left, TensorMeta const& right) noexcept {
-        return left.sizes == right.sizes && left.strides == right.strides
-            && left.data_ptr.value() == right.data_ptr.value() && left.ndim == right.ndim && left.dtype == right.dtype
-            && left.device_type == right.device_type && left.device_idx == right.device_idx
-            && left.layout == right.layout && left.requires_grad == right.requires_grad && left.flags == right.flags
-            && left.output_nr == right.output_nr && left.storage_offset == right.storage_offset
-            && left.version == right.version && left.storage_generation == right.storage_generation
-            && left.storage_nbytes == right.storage_nbytes && left.grad_fn_hash.value() == right.grad_fn_hash.value();
+        return ::fixy::equal(left, right);
     }
 };
 

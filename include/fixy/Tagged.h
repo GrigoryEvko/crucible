@@ -50,6 +50,7 @@
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/TrustLattice.h>
+#include <foundation/core/Equatable.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/reflect/Instance.h>
 
@@ -326,6 +327,17 @@ public:
     }
 
     [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
+
+    // Two values under one tag are equal when their values are equal by
+    // equal of the Protocol family (foundation/core/Equatable.h).  A Tagged
+    // of a pointer compares the addresses, so a record that holds one, such
+    // as the data pointer of a tensor, derives its equality.  A Tagged under
+    // another tag has another type and no compare.
+    [[nodiscard]] friend constexpr bool operator==(Tagged const& left, Tagged const& right) noexcept
+        requires ::foundation::core::Equatable<T>
+    {
+        return ::foundation::core::equal(left.value(), right.value());
+    }
 
     // There is no value_mut().  The substrate admits mutation for an
     // empty grade, and this grade is empty, but a mutable reference
