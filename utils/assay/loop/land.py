@@ -621,6 +621,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import secrets
 import sys
 import tempfile
@@ -734,6 +735,8 @@ DROPPED = "dropped"
 # The replacement of the directory of the logs of a run, when the batch compares the problems of two runs (THE RUN OF
 # THE BASE).
 LOGS_MARK = "LOGS"
+# The name of the directory of a run of the gate in the text of a verdict (THE LOGS of assay.loop.gate).
+CITED_RUN = re.compile(rf"{gate.RUN_MARK}\d{{{gate.RUN_WIDTH}}}")
 # The start of a line of the verdict of a request that names a flaky test (THE FLAKY TESTS).
 FLAKY_MARK = "loop land: FLAKY, "
 # The directory of the ledgers and their suffix (THE MERGE).
@@ -2877,6 +2880,24 @@ def queue_of(work: Path, root: Path) -> Path:
     return work / QUEUE / hashlib.sha256(common.encode("utf-8")).hexdigest()[:KEY_LENGTH]
 
 
+def cited_runs(work: Path) -> frozenset[str]:
+    """Return the name of each run of the gate that a verdict or a journal in a queue of the work directory cites.
+
+    A verdict stays in the queue until the process of its request reads it and leaves the queue (remove_request()).
+    So the sweep of the runs keeps the logs of each such run for that read (THE LOGS of assay.loop.gate).  A file that
+    does not read cites no run.  Complexity: linear in the bytes of the verdicts and the journals.
+    """
+    found: set[str] = set()
+    for queue in paths.listing(work / QUEUE):
+        for path in (*paths.listing(queue, f"*{VERDICT_SUFFIX}"), *paths.listing(queue, f"*{JOURNAL_SUFFIX}")):
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            found.update(CITED_RUN.findall(text))
+    return frozenset(found)
+
+
 def queue_file(queue: Path, number: int, suffix: str) -> Path:
     """Return the path of one file of a request in the queue: the number in NUMBER_WIDTH digits, and the suffix."""
     return queue / f"{number:0{NUMBER_WIDTH}d}{suffix}"
@@ -3343,7 +3364,8 @@ def held_gate(
     jobs = min(item.options.jobs for item in batch)
     is_every = any(item.options.is_every for item in batch)
     repository = repository_of(batch[0])
-    planned = gate.Gate(heavy.main_work_tree(repository), work, jobs, is_every, lane=lane)
+    cited = functools.partial(cited_runs, work)
+    planned = gate.Gate(heavy.main_work_tree(repository), work, jobs, is_every, lane=lane, cited=cited)
     return planned.check_in_run, heavy.gate_session(repository)
 
 

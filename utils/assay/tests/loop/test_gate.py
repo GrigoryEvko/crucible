@@ -2281,6 +2281,52 @@ def lock_cases(expect: testing.Expect) -> None:
         )
 
 
+def cited_run_cases(expect: testing.Expect) -> None:
+    """Hold the ended runs that a verdict cites: they stay past RUNS_KEPT in the bounds of age and bytes (THE LOGS)."""
+
+    def ended_runs(land: Path, count: int, size: int) -> list[str]:
+        """Make `count` ended runs from run 1, each with one log of `size` bytes, and give their names."""
+        names = [f"{gate.RUN_MARK}{number:0{gate.RUN_WIDTH}d}" for number in range(1, count + 1)]
+        for name in names:
+            (land / gate.LOGS / name).mkdir(parents=True)
+            (land / gate.LOGS / name / "default.test.log").write_bytes(b"x" * size)
+        return names
+
+    def kept(land: Path) -> set[str]:
+        """Give the name of each run directory that stays."""
+        return {path.name for path in paths.listing(land / gate.LOGS, f"{gate.RUN_MARK}*")}
+
+    with tempfile.TemporaryDirectory(prefix="gate-cited-") as work_text:
+        land = Path(work_text) / "land"
+        names = ended_runs(land, gate.RUNS_KEPT + 2, 10)
+        with gate.hold_run(land, frozenset({names[0]})):
+            stays = kept(land)
+        expect(
+            "an ended run that a verdict cites stays past the last RUNS_KEPT ended runs, and the run after it goes",
+            names[0] in stays and names[1] not in stays,
+        )
+        with gate.hold_run(land, frozenset()):
+            stays = kept(land)
+        expect("after the read of the verdict, the next sweep removes the run", names[0] not in stays)
+    with tempfile.TemporaryDirectory(prefix="gate-cited-age-") as work_text:
+        land = Path(work_text) / "land"
+        names = ended_runs(land, gate.RUNS_KEPT + 1, 10)
+        past = time.time() - gate.CITED_RUN_AGE_S - 3600.0
+        os.utime(land / gate.LOGS / names[0], (past, past))
+        with gate.hold_run(land, frozenset({names[0]})):
+            stays = kept(land)
+        expect("a cited run older than CITED_RUN_AGE_S goes", names[0] not in stays)
+    with tempfile.TemporaryDirectory(prefix="gate-cited-bytes-") as work_text:
+        land = Path(work_text) / "land"
+        names = ended_runs(land, gate.RUNS_KEPT + 2, 1000)
+        with gate.hold_run(land, frozenset(names[:2]), max_bytes=1500):
+            stays = kept(land)
+        expect(
+            "over the byte bound of the cited runs, the oldest cited run goes first, and the next one stays",
+            names[0] not in stays and names[1] in stays,
+        )
+
+
 def live_run_cases(expect: testing.Expect) -> None:
     """Hold a run live through a burst of short runs: its logs stay, and they go as an ended run after it (THE LOGS)."""
     with tempfile.TemporaryDirectory(prefix="gate-live-") as work_text:
@@ -2386,5 +2432,6 @@ def main(argv: list[str]) -> int:
             careful_cases,
             lock_cases,
             live_run_cases,
+            cited_run_cases,
         ),
     )

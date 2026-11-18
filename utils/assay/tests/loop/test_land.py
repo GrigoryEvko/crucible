@@ -2540,6 +2540,43 @@ def waiting(
         yield queued
 
 
+def cited_log_cases(expect: testing.Expect) -> None:
+    """Hold the logs of a verdict: the run that an unread verdict cites survives the sweep of the runs until the read.
+
+    The holder writes a verdict that names the logs of the first run, and then more than RUNS_KEPT runs end.  The
+    process of the request reads the verdict later and leaves the queue (THE LOGS of assay.loop.gate).
+    """
+    with tempfile.TemporaryDirectory(prefix="land-cited-") as work_text:
+        work = Path(work_text) / "work"
+        root = Path(work_text) / "repo"
+        planted_repository(root)
+        queue = land.queue_of(work, root)
+        with gate.hold_run(work) as cited:
+            pass
+        logs = work / gate.LOGS / cited
+        with waiting(queue, root, request_of(("Add r1",), own=("r1.txt",))) as queued:
+            refusal = land.refused(
+                ExitCode.FINDINGS, f"loop land: REJECTED, tsan: red alone too: guard_plugin, see {logs}"
+            )
+            land.write_decision(queue, queued, refusal)
+            for _ in range(gate.RUNS_KEPT + 2):
+                with gate.hold_run(work, land.cited_runs(work)):
+                    pass
+            is_kept = logs.is_dir() and land.cited_runs(work) == frozenset({cited})
+            decision = land.read_decision(queue, queued.number, queued.token)
+        with gate.hold_run(work, land.cited_runs(work)):
+            pass
+        expect(
+            "the run that an unread verdict cites survives the sweep of more than RUNS_KEPT later runs, the process "
+            "then reads the verdict with its logs, and after it leaves the queue the next sweep removes the run",
+            is_kept
+            and decision is not None
+            and str(logs) in decision.lines[0].content
+            and land.cited_runs(work) == frozenset()
+            and not logs.exists(),
+        )
+
+
 def queue_cases(expect: testing.Expect) -> None:
     """Hold the files of the queue, the numbers, the tokens, the liveness of a request, and the verdicts."""
     with tempfile.TemporaryDirectory(prefix="land-queue-") as work_text:
@@ -3394,6 +3431,7 @@ def main(argv: list[str]) -> int:
             series_words_cases,
             series_cost_cases,
             queue_cases,
+            cited_log_cases,
             error_cases,
             defect_cases,
             queue_defect_cases,

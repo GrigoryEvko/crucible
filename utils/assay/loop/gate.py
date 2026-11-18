@@ -520,7 +520,14 @@ THE LOGS
     hold_run() also removes each ended run, other than the last RUNS_KEPT
     ended runs.  An ended run is a directory whose file LIVE no process
     holds, or a directory with no file LIVE.  A burst of short runs then
-    does not remove the logs of a long run that is live.  The lock file
+    does not remove the logs of a long run that is live.
+    A verdict names the logs of its run, and its process can read it hours
+    later, such as after its own work as the holder of a different lane.
+    Thus an ended run that a verdict in the queue cites stays past RUNS_KEPT
+    until the process reads the verdict and leaves the queue (Gate.cited,
+    cited_runs() of assay.loop.land).  Two bounds hold such runs: an age of
+    CITED_RUN_AGE_S, and CITED_RUNS_BYTES for all of them together, with the
+    oldest run the first to go (removed_runs()).  The lock file
     RUNS_LOCK of the work directory lets one landing at a time make a run
     and remove the ended runs.  A different landing then never sees a new
     run before its lock.
@@ -572,7 +579,7 @@ import shutil
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
@@ -607,6 +614,11 @@ RUN_MARK = "run-"
 RUN_WIDTH = 6
 RUNS_KEPT = 24
 LIVE = ".live"
+# An ended run that an unread verdict cites stays past RUNS_KEPT while it is younger than CITED_RUN_AGE_S, and while
+# the cited runs that stay hold CITED_RUNS_BYTES or less together (THE LOGS).  On 2026-11-18, the lanes made about 16
+# runs in an hour, of a median of 7.8 MB.
+CITED_RUN_AGE_S = 24 * 3600.0
+CITED_RUNS_BYTES = 2 << 30
 # The mark after the name of the configuration in the name of a log of the round after THE REDUCE (THE LOGS).
 AGAIN_MARK = ".again"
 # The step name of the copy of the report of the suite, which holds the output of each red test (THE LOGS).
@@ -1454,6 +1466,11 @@ def built_commit(root: Path, commit: str, files: Mapping[str, bytes | None]) -> 
 # ── The gate ───────────────────────────────────────────────────────────────
 
 
+def no_cited_runs() -> frozenset[str]:
+    """Return no name of a run: a gate with no queue keeps no ended run for a verdict (THE LOGS)."""
+    return frozenset()
+
+
 @dataclass(frozen=True, slots=True)
 class Gate:
     """The gate of one session: the repository, the work directory, the jobs, --all-configurations, and the memory.
@@ -1463,7 +1480,8 @@ class Gate:
     `run` names the directory of the logs of one run in LOGS, or it is "" for LOGS itself (THE LOGS).  `pool` is the
     slot pool of the leases, or None for the pool of the host (THE JOBSERVER).  `lane` names the warm tree (THE
     LANES).  `vessel` is the configuration of the vessel, or None for a gate with no vessel (THE VESSEL).  `oom_kills`
-    gives the count of the kills of the kernel for lack of memory (THE KILL FOR MEMORY).
+    gives the count of the kills of the kernel for lack of memory (THE KILL FOR MEMORY).  `cited` gives the name of each
+    ended run that an unread verdict cites, which the sweep of the runs keeps (THE LOGS).
     """
 
     root: Path
@@ -1476,6 +1494,7 @@ class Gate:
     lane: int = 0
     vessel: Configuration | None = VESSEL_CONFIGURATION
     oom_kills: Callable[[], int] = heavy.oom_kills
+    cited: Callable[[], frozenset[str]] = no_cited_runs
 
     @property
     def slice(self) -> int:
@@ -1757,7 +1776,7 @@ class Gate:
             git.GitError: If a git command fails
             OSError: If the directory of the run or its lock cannot be made
         """
-        with hold_run(self.work) as run:
+        with hold_run(self.work, self.cited()) as run:
             return replace(self, run=run).check(candidate, is_retry)
 
 
@@ -2561,14 +2580,65 @@ def make_run(logs: Path, runs: Sequence[Path]) -> str:
             number += 1
 
 
+def run_bytes(run: Path) -> int:
+    """Return the bytes of the files of the directory of a run.  A file that goes during the walk counts as 0 bytes.
+
+    Complexity: one stat of each file of the run.
+    """
+    total = 0
+    for directory, _, files in os.walk(run):
+        for name in files:
+            with contextlib.suppress(OSError):
+                total += os.lstat(os.path.join(directory, name)).st_size
+    return total
+
+
+def removed_runs(ended: Sequence[Path], cited: Collection[str], max_age_s: float, max_bytes: int) -> list[Path]:
+    """Return the ended runs that the sweep removes, from the oldest (THE LOGS).
+
+    `ended` gives the ended runs from the oldest.  The last RUNS_KEPT of them stay.  Of the older runs, a run that a
+    verdict cites stays while it is younger than `max_age_s`, and while the cited runs that stay hold `max_bytes` or
+    less together.  Over the bytes, the oldest cited runs go first.  Complexity: linear in the runs, with one walk of
+    each cited run that is younger than the bound.
+    """
+    older = ended[: max(0, len(ended) - RUNS_KEPT)]
+    now = time.time()
+    removed: list[Path] = []
+    kept: list[tuple[Path, int]] = []
+    for path in older:
+        if path.name not in cited:
+            removed.append(path)
+            continue
+        try:
+            age = now - path.stat().st_mtime
+        except OSError:
+            continue
+        if age > max_age_s:
+            removed.append(path)
+        else:
+            kept.append((path, run_bytes(path)))
+    total = sum(size for _, size in kept)
+    for path, size in kept:
+        if total <= max_bytes:
+            break
+        removed.append(path)
+        total -= size
+    return removed
+
+
 @contextlib.contextmanager
-def hold_run(work: Path) -> Iterator[str]:
+def hold_run(
+    work: Path,
+    cited: Collection[str] = frozenset(),
+    max_age_s: float = CITED_RUN_AGE_S,
+    max_bytes: int = CITED_RUNS_BYTES,
+) -> Iterator[str]:
     """Make the directory of the logs of a new run, hold it live for the block, and give its name (THE LOGS).
 
     The block holds an exclusive lock of flock(2) on the file LIVE of the directory.  The function also removes each
-    ended run, other than the last RUNS_KEPT ended runs.  It holds the lock of RUNS_LOCK while it makes the run and
-    removes the ended runs.  Thus no landing sees a run before its lock.  Complexity: linear in the directories of the
-    runs.
+    ended run, other than the last RUNS_KEPT ended runs and the runs of `cited` in the bounds of removed_runs().  It
+    holds the lock of RUNS_LOCK while it makes the run and removes the ended runs.  Thus no landing sees a run before
+    its lock.  Complexity: linear in the directories of the runs.
     """
     logs = work / LOGS
     logs.mkdir(parents=True, exist_ok=True)
@@ -2579,7 +2649,7 @@ def hold_run(work: Path) -> Iterator[str]:
             ended = [path for path in runs if not heavy.is_held(path / LIVE)]
             name = make_run(logs, runs)
             fcntl.flock(held.enter_context(open(logs / name / LIVE, "a", encoding="ascii")), fcntl.LOCK_EX)
-            for old in ended[: max(0, len(ended) - RUNS_KEPT)]:
+            for old in removed_runs(ended, cited, max_age_s, max_bytes):
                 shutil.rmtree(old, ignore_errors=True)
         yield name
 
