@@ -52,11 +52,11 @@ void test_find_and_scans() {
     auto const is_even = [](int value) noexcept { return value % 2 == 0; };
     auto const is_odd = [](int value) noexcept { return value % 2 != 0; };
     assert(::foundation::core::find_if(numbers.view(), is_odd).expect("15 is odd") == 2);
-    assert(::foundation::core::count_if(numbers.view(), is_even) == 4);
-    assert(::foundation::core::any_of(numbers.view(), is_odd));
-    assert(!::foundation::core::all_of(numbers.view(), is_even));
+    assert(numbers.view().walk().filter(is_even).count() == 4);
+    assert(numbers.view().walk().any_of(is_odd));
+    assert(!numbers.view().walk().all_of(is_even));
     auto const below_fifty = [](int value) noexcept { return value < 50; };
-    assert(::foundation::core::all_of(numbers.view(), below_fifty));
+    assert(numbers.view().walk().all_of(below_fifty));
 }
 
 void test_find_lower_bound_by_key() {
@@ -186,8 +186,8 @@ void test_view_scans_agree_with_std() {
         for (std::size_t const found : found_small) {
             assert(found == small_position);
         }
-        assert(::foundation::core::count_if(window, is_small) == model_count);
-        assert(::foundation::core::any_of(window, is_small) == is_small_found);
+        assert(window.walk().filter(is_small).count() == model_count);
+        assert(window.walk().any_of(is_small) == is_small_found);
     }
 }
 

@@ -15,7 +15,6 @@
 //                              the first run of the characters of needle
 //   find_if(view, predicate)   the position of the first element that the
 //                              predicate accepts, or no value
-//   all_of, any_of, count_if   a scan of each element with a predicate
 //   starts_with, ends_with     a text that begins or ends with a second text
 //   find_lower_bound_by_key(view, key, probe)
 //                              the first position whose key is not below the
@@ -28,6 +27,11 @@
 // Each operation is total: a search that finds nothing gives an empty
 // Option, and no operation ends the process.  A predicate and a key do not
 // throw, and a scan calls each one time for each element, in order.
+//
+// A test of each element or of one element, and a count with a test, are
+// terminals of a walk (foundation/core/Walk.h):
+// view.walk().any_of(holds), view.walk().all_of(holds) and
+// view.walk().filter(keep).count().
 
 #include <foundation/core/Choice.h>
 #include <foundation/core/Equatable.h>
@@ -185,42 +189,6 @@ template <class T, std::size_t Extent, class Predicate>
         if (predicate(first[index])) return Option<std::size_t>::some(index);
     }
     return none;
-}
-
-// True when predicate accepts each element.  An empty View gives true.
-// The scan stops at the first element that predicate refuses.
-template <class T, std::size_t Extent, class Predicate>
-    requires detail::ElementPredicate<Predicate, std::remove_const_t<T>>
-[[nodiscard]] constexpr bool all_of(View<T, Extent> view, Predicate predicate) noexcept {
-    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
-    for (std::size_t index = 0; index < view.size(); ++index) {
-        if (!predicate(first[index])) return false;
-    }
-    return true;
-}
-
-// True when predicate accepts at least one element.  An empty View gives
-// false.  The scan stops at the first element that predicate accepts.
-template <class T, std::size_t Extent, class Predicate>
-    requires detail::ElementPredicate<Predicate, std::remove_const_t<T>>
-[[nodiscard]] constexpr bool any_of(View<T, Extent> view, Predicate predicate) noexcept {
-    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
-    for (std::size_t index = 0; index < view.size(); ++index) {
-        if (predicate(first[index])) return true;
-    }
-    return false;
-}
-
-// The count of the elements that predicate accepts.  Complexity: O(n).
-template <class T, std::size_t Extent, class Predicate>
-    requires detail::ElementPredicate<Predicate, std::remove_const_t<T>>
-[[nodiscard]] constexpr std::size_t count_if(View<T, Extent> view, Predicate predicate) noexcept {
-    std::remove_const_t<T> const* const first = first_of_(detail::ViewDoor::key(), view);
-    std::size_t count = 0;
-    for (std::size_t index = 0; index < view.size(); ++index) {
-        if (predicate(first[index])) ++count;
-    }
-    return count;
 }
 
 // True when text begins with the characters of prefix.  An empty prefix

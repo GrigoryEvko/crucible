@@ -161,7 +161,7 @@ using ::foundation::core::mint_sole_writer;
 using ::foundation::core::SoleWriter;
 using ::foundation::core::Tally;
 
-// The scans all_of and any_of of the Region family stay in foundation::core:
+// The scans of a run are the terminals any_of and all_of of a walk:
 // fixy::all_of and fixy::any_of are the combinators of the refinement
 // predicates of fixy/Predicates.h.
 using ::foundation::core::BitId;
@@ -171,7 +171,6 @@ using ::foundation::core::BrandedView;
 using ::foundation::core::ByteImageable;
 using ::foundation::core::bytes;
 using ::foundation::core::copy;
-using ::foundation::core::count_if;
 using ::foundation::core::dynamic_extent;
 using ::foundation::core::ends_with;
 using ::foundation::core::equal;

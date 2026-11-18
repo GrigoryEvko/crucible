@@ -108,16 +108,12 @@ constexpr auto is_large = [](int value) noexcept { return value > 40; };
 constexpr auto is_negative = [](int value) noexcept { return value < 0; };
 static_assert(find_if(view_of(numbers), is_large).expect("42 is large") == 5);
 static_assert(find_if(view_of(numbers), is_negative).is_none());
-static_assert(count_if(view_of(numbers), is_even) == 4);
-static_assert(any_of(view_of(numbers), is_large) && !any_of(view_of(numbers), is_negative));
-static_assert(!all_of(view_of(numbers), is_even) && all_of(View<int const>{}, is_negative));
-static_assert(!any_of(View<int const>{}, is_even));
 
 // A predicate that can throw, or that gives no bool, is refused.
 constexpr auto throwing_predicate = [](int) { return true; };
 constexpr auto counting_predicate = [](int value) noexcept { return value; };
 template <class Predicate>
-constexpr bool scan_accepts = requires(View<int const> view, Predicate predicate) { count_if(view, predicate); };
+constexpr bool scan_accepts = requires(View<int const> view, Predicate predicate) { find_if(view, predicate); };
 static_assert(scan_accepts<decltype(is_even)>);
 static_assert(!scan_accepts<decltype(throwing_predicate)>);
 static_assert(!scan_accepts<decltype(counting_predicate)>);

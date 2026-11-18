@@ -74,8 +74,7 @@ namespace {
 }
 
 [[nodiscard]] bool has_fingerprint(MtlsSha256Fingerprint const& fingerprint) noexcept {
-    return ::foundation::core::any_of(fingerprint.bytes.view(),
-                                      [](std::byte value) noexcept { return value != std::byte{0}; });
+    return fingerprint.bytes.view().walk().any_of([](std::byte value) noexcept { return value != std::byte{0}; });
 }
 
 }  // namespace
