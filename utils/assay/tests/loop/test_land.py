@@ -2162,6 +2162,54 @@ def stack_cases(expect: testing.Expect) -> None:
         )
 
 
+def lost_run_cases(expect: testing.Expect) -> None:
+    """Hold THE RULE OF ONE LOST RUN of THE STACK: a batch whose base left the stack waits for an accepted base.
+
+    The batch below composes again two times, each time on a new commit with no verdict, and then the gate accepts its
+    last commit.  The batch on the top loses its first run, waits for that verdict, and runs one more time.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-lost-run-") as work_text:
+        root, queue = Path(work_text) / "repo", Path(work_text) / "queue"
+        queue.mkdir(parents=True)
+        tip = planted_repository(root)
+        branch = land.branch_of(root)
+        first = side_commit(root, tip, "a.txt", "a\n")
+        second = side_commit(root, tip, "a.txt", "a2\n")
+        third = side_commit(root, tip, "a.txt", "a3\n")
+        below = OtherEntry(queue, branch, 1, tip, first)
+        seen: list[tuple[gate.Candidate, bool]] = []
+        steps: list[str] = []
+
+        def below_composes_again(seconds: float) -> None:
+            """Move the batch below to a new commit two times, then mark its commit accepted, then land it."""
+            if seconds != land.POLL_S:
+                return
+            if not steps:
+                below.move(tip, second)
+                steps.append("second")
+            elif steps[-1] == "second":
+                below.move(tip, third)
+                steps.append("third")
+            elif steps[-1] == "third":
+                below.move(tip, third, is_accepted=True)
+                steps.append("accepted")
+            elif steps[-1] == "accepted":
+                land.swap(root, branch, third, tip, "Below")
+                below.leave()
+                steps.append("landed")
+
+        decisions, printed = right_batch(root, queue, 3, passing(seen), below_composes_again)
+        expect(
+            "a batch whose base left the stack runs again only on a base with a verdict: it waits while the batch below "
+            "composes again on a commit with no verdict, runs one time on the accepted commit, and lands on it",
+            decisions[3].status == 0
+            and [candidate.head for candidate, _ in seen] == [first, third]
+            and git.parent(root, "HEAD") == third
+            and "the base of the batch left the stack" in printed
+            and "waits before its run for the verdicts of the stack: 00000001" in printed,
+        )
+
+
 def stack_thread_cases(expect: testing.Expect) -> None:
     """Hold THE STACK with three real batches in threads: the top one ends its run first, and they land in order."""
     with tempfile.TemporaryDirectory(prefix="land-stack-threads-") as work_text:
@@ -3340,6 +3388,7 @@ def main(argv: list[str]) -> int:
             store_cases,
             right_cases,
             stack_cases,
+            lost_run_cases,
             stack_thread_cases,
             series_cases,
             series_words_cases,

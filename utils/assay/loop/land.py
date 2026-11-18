@@ -486,6 +486,19 @@ THE STACK
     After STACK_ATTEMPTS such rounds, the batch composes only on the branch.
     After a wait for the stack that gets to STACK_WAIT_S, the next round
     composes on the branch too.
+      * THE RULE OF ONE LOST RUN.  The first round of a batch can compose on
+        an entry with no verdict, so its run overlaps the run below it.  A
+        batch whose run on the stack is red, or whose base leaves the stack,
+        stacks from then on only on entries that the gate accepted.  Before
+        such a round, the batch waits until each entry of the stack below it
+        has the mark accepted, or until the stack is empty.  The round then
+        composes on the accepted part of the stack (accepted_part()).  An
+        accepted entry changes its commit only when its swap is refused, or
+        when the batch below it lands a different commit.  Thus a run that
+        a recomposition below can waste is the first run of a batch, and
+        not one run for each new commit of a batch below.  The rule only
+        selects a base: the swap is the same compare-and-swap, so no landing
+        reverts a different commit.
     A batch that holds a right of way composes only on the branch.  Thus it
     never waits for a batch below it, and the batches below it never wait
     for its right of way while it waits for them.  It goes first on the
@@ -2031,6 +2044,19 @@ class Stack:
         return heavy.is_held(queue_file(self.queue, number, RIGHT_SUFFIX))
 
 
+def accepted_part(below: Sequence[StackEntry]) -> list[StackEntry]:
+    """Return the entries of a stack from the branch up to the first entry that the gate did not accept (THE STACK).
+
+    Complexity: linear in the entries.
+    """
+    kept: list[StackEntry] = []
+    for item in below:
+        if not item.is_accepted:
+            break
+        kept.append(item)
+    return kept
+
+
 def stack_path(tip: str, base: str, entries: Sequence[StackEntry]) -> list[StackEntry] | None:
     """Return the entries of a path from the branch to a base, each on the commit of the one before, or None.
 
@@ -2073,6 +2099,7 @@ class BatchLanding:
         "is_alive",
         "is_check",
         "is_cut",
+        "is_on_accepted",
         "is_publishing",
         "is_stack_stuck",
         "journal",
@@ -2121,6 +2148,7 @@ class BatchLanding:
         self.release: Release = release if release is not None else (lambda _queued: None)
         self.is_publishing = False
         self.is_stack_stuck = False
+        self.is_on_accepted = False
         self.is_cut = False
         self.base = ""
         self.base_run = -1
@@ -2569,12 +2597,15 @@ class BatchLanding:
             entries = stack.entries(self.branch) if is_stacking and stack is not None else []
             tip = self.tip()
             below = stack.top(tip, entries)[: STACK_DEPTH - 1] if is_stacking and stack is not None else []
+            if self.is_on_accepted:
+                below = accepted_part(below)
             self.base = below[-1].commit if below else tip
             self.base_run = -1
             if below:
                 pending, accepted, run, is_on_branch = self.stacked_round(pending, below)
                 if not accepted:
                     restacks += 1
+                    self.is_on_accepted = True
                     continue
             else:
                 self.is_publishing = stack is not None
@@ -2607,6 +2638,7 @@ class BatchLanding:
             pending = [link.queued for link in accepted]
             if below:
                 restacks += 1
+                self.is_on_accepted = True
                 check_report.write_line(
                     f"loop land: the base of the batch left the stack, and the batch composes its {len(pending)} "
                     "accepted requests again"
@@ -2714,7 +2746,8 @@ class BatchLanding:
             tip = self.tip()
             if step == RUN_STEP:
                 below = self.stack.top(tip, entries) if is_stacking and self.stack is not None else []
-                is_held_by_stack = len(below) >= STACK_DEPTH
+                is_top_open = self.is_on_accepted and any(not item.is_accepted for item in below)
+                is_held_by_stack = len(below) >= STACK_DEPTH or is_top_open
             else:
                 path = stack_path(tip, self.base, entries)
                 if path is None:
@@ -2748,7 +2781,9 @@ class BatchLanding:
             new_below = sorted(numbers - stack_shown) if is_held_by_stack else []
             if new_below:
                 names = " ".join(f"{number:0{NUMBER_WIDTH}d}" for number in new_below)
-                where = "the full stack" if step == RUN_STEP else "the batches below it in the stack"
+                where = "the batches below it in the stack"
+                if step == RUN_STEP:
+                    where = "the full stack" if len(below) >= STACK_DEPTH else "the verdicts of the stack"
                 check_report.write_line(f"loop land: the batch waits before its {step} for {where}: {names}")
                 stack_shown.update(new_below)
             self.pause(POLL_S)

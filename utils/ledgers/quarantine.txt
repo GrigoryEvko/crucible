@@ -89,9 +89,9 @@ reason vessel/ | The unit vessel of section 14.1 of the plan misc/01_10_2026_qua
 @build/ | region | 34 | ABI: bpf_object__open_mem of libbpf reads the bytes of a BPF object in place, as a pointer and a length | -
 @build/test/fixy/armed_roster/ | c-array-object | 1 | - | -
 @build/test/fuzz/generated/ | std-object | 14 | - | -
-bench/ | c-array-object | 68 | - | -
-bench/ | c-library-call | 423 | - | -
-bench/ | c-library-object | 10 | - | -
+bench/ | c-array-object | 66 | - | -
+bench/ | c-library-call | 412 | - | -
+bench/ | c-library-object | 9 | - | -
 bench/ | compiler-builtin | 12 | - | -
 bench/ | door-header | 2 | - | -
 bench/ | inline-asm | 3 | - | -
@@ -107,7 +107,7 @@ bench/ | opted-out | 3 | MEASURE: the raw loop over two strides is the baseline 
 bench/ | opted-out | 24 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | raw-function-pointer | 1 | - | -
 bench/ | raw-new-delete | 2 | - | -
-bench/ | raw-pointer-object | 86 | - | -
+bench/ | raw-pointer-object | 85 | - | -
 bench/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | -
 bench/ | region | 1 | MEASURE: a plain thread_local is the reference of one access of ThreadLocalRef | a plain thread_local of an inline function is the reference of one access of ThreadLocalRef in bench_thread_local_ref
 bench/ | region | 1 | MEASURE: the doors of the pinned references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
@@ -121,8 +121,8 @@ bench/ | region | 1 | MEASURE: the raw loop over two strides is the baseline of 
 bench/ | region | 1 | MEASURE: the sorts of libstdc++ are the floor references of the sorts of the base | the reference rows of bench_core_sort: std::stable_sort and std::sort of libstdc++, the pinned fluxsort of scandum and the pinned x86-simd-sort of numpy (utils/pins.txt), and the doors of the units of the pinned sources, a raw measurement of a bench of the class MEASURE of CLAUDE.md section XXII
 bench/ | replace-pending:<limits> | 1 | - | -
 bench/ | replace-pending:std::bit_cast | 8 | - | -
-bench/ | std-entity | 587 | - | -
-bench/ | std-object | 197 | - | -
+bench/ | std-entity | 564 | - | -
+bench/ | std-object | 191 | - | -
 examples/fn/ | c-array-object | 9 | - | -
 examples/fn/ | c-library-call | 12 | - | -
 examples/fn/ | raw-pointer-object | 7 | - | -
