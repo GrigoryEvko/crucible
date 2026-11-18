@@ -351,12 +351,14 @@ namespace side = ::foundation::core::side;
 
 using ::foundation::core::Philox4x32;
 
-// The arithmetic of a Quantity is a set of overloads of checked_*, wrapping_*
-// and saturating_* in foundation::core, which argument-dependent lookup
-// finds.  The units, Product and Quotient keep their namespace unit.
+// The arithmetic of a Quantity is a set of overloads in foundation::core,
+// which argument-dependent lookup finds: checked_*, wrapping_* and
+// saturating_* for an Integer Rep, and add, subtract, multiply and divide for
+// a Float Rep.  The units, Product and Quotient keep their namespace unit.
 using ::foundation::core::convert;
 using ::foundation::core::Quantity;
 using ::foundation::core::QuantityUnit;
+using ::foundation::core::round_to_float;
 namespace unit = ::foundation::core::unit;
 
 // The object swap stays in an inline namespace, because classes of namespace

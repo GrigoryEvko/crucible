@@ -1014,6 +1014,11 @@ PROBES: tuple[Probe, ...] = (
         "of the product costs no instruction, and the Option comes back in one register",
     ),
     Probe(
+        "scalar_quantity_float_quotient",
+        "divide of two float quantities is the one division of the raw form and its canonical NaN: the and of the "
+        "sign mask, one compare and one select.  The unit of the quotient costs no instruction",
+    ),
+    Probe(
         "scalar_philox_generate",
         "Philox4x32::generate is the ten rounds of the std::array form, two 64-bit products and four xor operations "
         "in each round, and the at() reads of a FixedArray block are the subscripts of the raw form",

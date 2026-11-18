@@ -195,4 +195,78 @@ static_assert(!converts<unit::Element, Bytes> && !converts<Kibibyte, Bytes>);
 static_assert(!converts<unit::FlopPerSecond, ByteRate>
               && !converts<unit::Second, Quantity<unit::Cycle, std::uint64_t>>);
 
+// The number of a float quantity has the bits of the expected number.  The
+// key of the total order is one key for each bit pattern.
+template <class UnitTag, class Rep>
+[[nodiscard]] consteval bool has_bits(Quantity<UnitTag, Rep> quantity, Rep expected) {
+    return fp::total_key(quantity.raw()) == fp::total_key(expected);
+}
+
+// The integer to float door: one IEEE conversion, and the unit stays.
+static_assert(std::same_as<decltype(round_to_float<double>(Bytes{3})), Quantity<unit::Byte, double>>);
+static_assert(has_bits(round_to_float<double>(Bytes{3}), 3.0));
+static_assert(has_bits(round_to_float<float>(Bytes{(std::uint64_t{1} << 24) + 1}), 16777216.0f));
+
+// ── The float set ───────────────────────────────────────────────────
+
+using FloatBytes = Quantity<unit::Byte, double>;
+using FloatSeconds = Quantity<unit::Second, double>;
+using FloatByteRate = Quantity<unit::BytePerSecond, double>;
+using FloatFlopRate = Quantity<unit::FlopPerSecond, double>;
+
+static_assert(sizeof(FloatBytes) == 8 && std::is_trivially_copyable_v<FloatBytes>);
+static_assert(!std::is_default_constructible_v<FloatBytes> && !std::is_convertible_v<double, FloatBytes>);
+static_assert(std::same_as<decltype(FloatBytes{1.0} <=> FloatBytes{2.0}), std::partial_ordering>);
+static_assert(FloatBytes{1.5} == FloatBytes{1.5} && FloatBytes{1.0} < FloatBytes{2.0});
+static_assert(!std::equality_comparable_with<FloatByteRate, FloatFlopRate>);
+static_assert(!std::equality_comparable_with<FloatBytes, Bytes>);
+
+// Each operation is one IEEE operation.
+static_assert(has_bits(add(FloatBytes{1.5}, FloatBytes{2.25}), 3.75));
+static_assert(has_bits(subtract(FloatBytes{1.5}, FloatBytes{2.25}), -0.75));
+static_assert(has_bits(multiply(FloatBytes{1.5}, 4.0), 6.0) && has_bits(divide(FloatBytes{1.5}, 4.0), 0.375));
+static_assert(std::same_as<decltype(multiply(FloatByteRate{2.0}, FloatSeconds{3.0})), FloatBytes>);
+static_assert(has_bits(multiply(FloatByteRate{2.0}, FloatSeconds{3.0}), 6.0));
+static_assert(std::same_as<decltype(divide(FloatBytes{6.0}, FloatByteRate{2.0})), FloatSeconds>);
+static_assert(has_bits(divide(FloatBytes{6.0}, FloatByteRate{2.0}), 3.0));
+// The ridge point of a part of 1.125 * 10^15 flops per second and 8 * 10^12
+// bytes per second is 140.625 flops per byte, exactly.
+static_assert(std::same_as<decltype(divide(FloatFlopRate{1.125e15}, FloatByteRate{8.0e12})),
+                           Quantity<unit::FlopPerByte, double>>);
+static_assert(has_bits(divide(FloatFlopRate{1.125e15}, FloatByteRate{8.0e12}), 140.625));
+// The sign of a zero stays.  test_core_scalar_quantity holds the NaN cases,
+// because a NaN result is no constant expression under -frounding-math.
+static_assert(has_bits(subtract(FloatBytes{-0.0}, FloatBytes{0.0}), -0.0));
+
+// convert of a Float Rep: one multiply for a finer unit, one divide for a
+// coarser unit, and only when the Rep holds the factor exactly.
+static_assert(std::same_as<decltype(convert<unit::Nanosecond>(FloatSeconds{1.5})), Quantity<unit::Nanosecond, double>>);
+static_assert(has_bits(convert<unit::Nanosecond>(FloatSeconds{1.5}), 1.5e9));
+static_assert(has_bits(convert<unit::Second>(Quantity<unit::Millisecond, double>{1500.0}), 1.5));
+static_assert(has_bits(convert<BytePerNanosecond>(FloatByteRate{8.0e12}), 8000.0));
+static_assert(has_bits(convert<unit::Second>(FloatSeconds{2.5}), 2.5));
+// A float holds 1000^3 exactly and not 1000^4.  A double holds 1000^6
+// exactly, and 1000^7 does not fit in 64 bits.
+static_assert(converts<unit::Nanosecond, Quantity<unit::Second, float>>);
+static_assert(converts<unit::Nanosecond, Quantity<unit::Millisecond, float>>);
+static_assert(converts<unit::Second, Quantity<Gigasecond, float>>);
+static_assert(!converts<unit::Millisecond, Quantity<Gigasecond, float>>);
+static_assert(converts<unit::Nanosecond, Quantity<Gigasecond, double>>);
+static_assert(!converts<unit::Nanosecond, Quantity<Terasecond, double>>);
+static_assert(!converts<BytePerNanosecond, Quantity<unit::Byte, float>>);
+
+// The integer set takes no float quantity, the float set takes no integer
+// quantity, and no operation takes the two together.
+template <class Left, class Right>
+inline constexpr bool adds_checked = requires(Left left, Right right) { checked_add(left, right); };
+template <class Left, class Right>
+inline constexpr bool adds = requires(Left left, Right right) { add(left, right); };
+template <class Left, class Right>
+inline constexpr bool divides = requires(Left left, Right right) { divide(left, right); };
+static_assert(adds_checked<Bytes, Bytes> && !adds_checked<FloatBytes, FloatBytes>);
+static_assert(adds<FloatBytes, FloatBytes> && !adds<Bytes, Bytes> && !adds<FloatBytes, Bytes>);
+static_assert(!adds_checked<FloatBytes, Bytes> && !adds_checked<Bytes, FloatBytes>);
+static_assert(divides<FloatBytes, FloatByteRate> && !divides<FloatBytes, ByteRate>);
+static_assert(!multiplies<FloatByteRate, FloatSeconds> && !multiplies<ByteRate, FloatSeconds>);
+
 }  // namespace foundation::core::detail::quantity_checks

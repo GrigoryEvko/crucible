@@ -4,10 +4,13 @@
 // finer unit and back gives the number again.  The arithmetic of two
 // quantities and of a quantity and a plain number agrees with the
 // arithmetic of their numbers, and keeps the unit or gives the product or
-// the quotient of the units.
+// the quotient of the units.  Each operation of the float set and
+// round_to_float is one IEEE operation on the numbers, bit for bit, with the
+// canonical quiet NaN.
 
 #include <foundation/core/Array.h>
 #include <foundation/core/Quantity.h>
+#include <foundation/core/Scalar.h>
 
 #include <foundation/Platform.h>
 
@@ -179,6 +182,62 @@ void test_products_of_two_quantities() {
     CRUCIBLE_FATAL_INVARIANT(core::checked_div(lowest, Seconds{opaque(std::int32_t{0})}).is_none());
 }
 
+[[nodiscard]] std::uint64_t bits_of_number(double value) noexcept { return core::bit_cast<std::uint64_t>(value); }
+
+// The bits that one IEEE operation gives, with the canonical quiet NaN.
+[[nodiscard]] std::uint64_t canonical_bits(double value) noexcept {
+    return bits_of_number(core::fp::canonicalize_nan(value));
+}
+
+// Each operation of the float set is one IEEE operation on the numbers, bit
+// for bit, and a NaN result is the canonical quiet NaN.  The draws are bit
+// patterns, so they reach each NaN payload, each infinity and the
+// subnormal numbers.
+void test_float_set_is_one_operation() {
+    using Bytes = core::Quantity<unit::Byte, double>;
+    using Rate = core::Quantity<unit::BytePerSecond, double>;
+    using Seconds = core::Quantity<unit::Second, double>;
+    using Nanoseconds = core::Quantity<unit::Nanosecond, double>;
+    ::crucible::test::PhiloxStream stream{84};
+    for (int index = 0; index < 100000; ++index) {
+        double const left = opaque(core::bit_cast<double>(stream.next_wide()));
+        double const right = opaque(core::bit_cast<double>(stream.next_wide()));
+        Bytes const bytes{left};
+        Bytes const other{right};
+        CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::add(bytes, other).raw()) == canonical_bits(left + right));
+        CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::subtract(bytes, other).raw()) == canonical_bits(left - right));
+        CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::multiply(bytes, right).raw()) == canonical_bits(left * right));
+        CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::divide(bytes, right).raw()) == canonical_bits(left / right));
+        CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::multiply(Rate{left}, Seconds{right}).raw())
+                                 == canonical_bits(left * right));
+        CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::divide(bytes, Rate{right}).raw())
+                                 == canonical_bits(left / right));
+        CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::convert<unit::Nanosecond>(Seconds{left}).raw())
+                                 == canonical_bits(left * 1e9));
+        CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::convert<unit::Microsecond>(Nanoseconds{left}).raw())
+                                 == canonical_bits(left / 1e3));
+    }
+    // A NaN of a negative sign and a payload, and the NaN of 0 / 0, give the
+    // canonical quiet NaN.
+    double const signed_payload = opaque(core::bit_cast<double>(std::uint64_t{0xFFF0000000000001}));
+    std::uint64_t const canonical = bits_of_number(core::quiet_nan_of<double>);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::add(Bytes{signed_payload}, Bytes{1.0}).raw()) == canonical);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::divide(Bytes{opaque(0.0)}, 0.0).raw()) == canonical);
+    CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::convert<unit::Nanosecond>(Seconds{signed_payload}).raw())
+                             == canonical);
+}
+
+// round_to_float is one IEEE conversion of the number.
+void test_round_to_float_is_one_conversion() {
+    ::crucible::test::PhiloxStream stream{85};
+    for (int index = 0; index < 100000; ++index) {
+        auto const wide = opaque(stream.next_wide() >> stream.below(64));
+        core::Quantity<unit::Flop, std::uint64_t> const flops{wide};
+        CRUCIBLE_FATAL_INVARIANT(bits_of_number(core::round_to_float<double>(flops).raw())
+                                 == bits_of_number(static_cast<double>(wide)));
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -186,5 +245,7 @@ int main() {
     test_convert_round_trips();
     test_arithmetic_keeps_the_unit();
     test_products_of_two_quantities();
+    test_float_set_is_one_operation();
+    test_round_to_float_is_one_conversion();
     return 0;
 }

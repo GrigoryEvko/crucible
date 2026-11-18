@@ -1093,6 +1093,12 @@ scalar_quantity_product(fixy::Quantity<fixy::unit::BytePerSecond, std::uint32_t>
     return checked_mul(rate, seconds);
 }
 
+[[gnu::used]] fixy::Quantity<fixy::unit::FlopPerByte, double>
+scalar_quantity_float_quotient(fixy::Quantity<fixy::unit::FlopPerSecond, double> peak,
+                               fixy::Quantity<fixy::unit::BytePerSecond, double> bandwidth) noexcept {
+    return divide(peak, bandwidth);
+}
+
 [[gnu::used]] std::uint32_t scalar_philox_generate(std::uint64_t offset, std::uint64_t key) noexcept {
     fixy::Philox4x32::Counter const block = fixy::Philox4x32::generate(offset, key);
     return block.at(fixy::index<0>()) ^ block.at(fixy::index<1>()) ^ block.at(fixy::index<2>())
@@ -1897,6 +1903,13 @@ struct RawBounds final {
     std::uint32_t product = 0;
     if (__builtin_mul_overflow(rate, seconds, &product)) return std::nullopt;
     return product;
+}
+
+// The one division, and the canonical NaN of the mask of the sign bit.
+[[gnu::used]] double scalar_quantity_float_quotient_raw(double peak, double bandwidth) noexcept {
+    double const quotient = peak / bandwidth;
+    auto const magnitude = std::bit_cast<std::uint64_t>(quotient) & ~(std::uint64_t{1} << 63);
+    return magnitude > std::uint64_t{0x7FF0000000000000} ? std::numeric_limits<double>::quiet_NaN() : quotient;
 }
 
 // The ten rounds of Philox4x32-10 over a std::array counter and key, with

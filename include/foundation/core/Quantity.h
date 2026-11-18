@@ -2,20 +2,29 @@
 
 // The Scalar family: a number with a unit.
 //
-//   Quantity<UnitTag, Rep>       an Integer Rep in the unit UnitTag
+//   Quantity<UnitTag, Rep>       a number of Rep in the unit UnitTag.  Rep is
+//                                an Integer or a Float
 //   raw()                        the number
 //   unit::Product<Left, Right>   the unit of a product of two quantities
 //   unit::Quotient<Left, Right>  the unit of a quotient of two quantities
 //   convert<ToUnit>(quantity)    the quantity in a different unit of the
 //                                same dimension
 //
-// The integer set:
+// The integer set, for an Integer Rep:
 //
 //   checked_add, checked_sub     two quantities of one unit: the exact sum or
 //   wrapping_add, wrapping_sub   difference as an Option, the modular one, or
 //   saturating_add, saturating_sub   the clamp
 //   checked_mul, wrapping_mul, saturating_mul, checked_div
 //                                a quantity and a plain number of its Rep,
+//                                with the same unit, or two quantities, with
+//                                the product or the quotient of their units
+//   round_to_float<F>(quantity)  the quantity with the Float Rep F
+//
+// The float set, for a Float Rep:
+//
+//   add, subtract                two quantities of one unit
+//   multiply, divide             a quantity and a plain number of its Rep,
 //                                with the same unit, or two quantities, with
 //                                the product or the quotient of their units
 //
@@ -58,7 +67,9 @@
 // A Quantity has no operator other than the compare, and no default
 // constructor, so each Quantity states its number.  Two quantities compare
 // only in one unit and with one Rep.  Thus a compare of bytes per second
-// with flops per second does not compile.
+// with flops per second does not compile.  The compare of a Float Rep is the
+// compare of the Rep, a partial order.  No operation takes a float quantity
+// and an integer quantity together.
 //
 // THE INTEGER SET.  It has no + and no -, so each overflow is a choice at the
 // call site.  The operations of two quantities take one Rep, and the sum and
@@ -69,10 +80,28 @@
 // value.  A coarser unit gives no value when the number is not a whole
 // number of the coarser unit: 1500 milliseconds is no whole number of
 // seconds.  When Rep cannot hold 1000^k, 0 is the one number that converts.
+//
+// THE FLOAT SET.  Section 11.7 of misc/01_10_2026_quarantine.md approved an
+// Integer Rep only, because the integer set states each overflow.  A float
+// has no overflow to choose: IEEE 754 gives each operation one result.  The
+// cost models, the precision planner and the costs of Forge compute rates in
+// floating point.  Thus the float set gives their rates a unit.
+//
+// Each operation of the float set is one IEEE operation in the rounding mode
+// of the thread.  That mode is to nearest with ties to even at the start of
+// a process.  The build flag -ffp-contract=off keeps a product and a sum as
+// two operations, with no FMA.  A NaN at an output is the canonical quiet
+// NaN of fp::canonicalize_nan, as in the reductions of the base.  convert of
+// a Float Rep multiplies or divides by 1000^k one time.  It compiles only
+// when the Rep holds 1000^k exactly: k is at most 3 for float and at most 6
+// for double.  round_to_float is the one door from an integer quantity to a
+// float quantity.  It is one IEEE conversion, which is exact for each number
+// with no more significant bits than the significand of the Float.
 
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Compare.h>
+#include <foundation/core/Float.h>
 #include <foundation/core/Number.h>
 
 #include <compare>
@@ -298,7 +327,7 @@ using Quotient = typename detail::CombinedUnit<Left, Right, detail::UnitOperatio
 
 }  // namespace unit
 
-template <QuantityUnit UnitTag, Integer Rep>
+template <QuantityUnit UnitTag, Arithmetic Rep>
 class Quantity final {
     Rep value_{};
 
@@ -308,10 +337,11 @@ public:
     [[nodiscard]] constexpr Rep raw() const noexcept { return value_; }
 
     [[nodiscard]] friend constexpr bool operator==(Quantity left, Quantity right) noexcept = default;
-    [[nodiscard]] friend constexpr std::strong_ordering operator<=>(Quantity left, Quantity right) noexcept = default;
+    [[nodiscard]] friend constexpr auto operator<=>(Quantity left, Quantity right) noexcept = default;
 
     // The four orders compare the numbers, so a caller reads no ordering
-    // type of the standard library.
+    // type of the standard library.  For a Float Rep each one is false when
+    // a number is a NaN, as the compare of the Rep is.
     [[nodiscard]] friend constexpr bool operator<(Quantity left, Quantity right) noexcept {
         return left.value_ < right.value_;
     }
@@ -337,6 +367,12 @@ template <class UnitTag, Integer Rep>
         []() noexcept { return Measured{none}; });
 }
 
+// The quantity of the result of one IEEE operation, with a canonical NaN.
+template <class UnitTag, Float Rep>
+[[nodiscard]] constexpr Quantity<UnitTag, Rep> float_quantity_of(Rep value) noexcept {
+    return Quantity<UnitTag, Rep>{fp::canonicalize_nan(value)};
+}
+
 // Two units of one dimension.  Their scales differ by a power of 1000.
 template <class From, class To>
 concept ConvertibleUnits = QuantityUnit<From> && QuantityUnit<To> && (From::dimension == To::dimension);
@@ -355,6 +391,16 @@ inline constexpr int kWidestScaleStep = 6;
     for (int step = 0; step < steps; ++step)
         factor *= 1000;
     return factor;
+}
+
+// True when Rep holds 1000^steps exactly, so one multiply or one divide
+// converts with one rounding.
+template <Float Rep>
+[[nodiscard]] consteval bool holds_power_of_1000(int steps) noexcept {
+    int const magnitude = steps < 0 ? -steps : steps;
+    if (magnitude > kWidestScaleStep) return false;
+    std::uint64_t const factor = power_of_1000(magnitude);
+    return static_cast<std::uint64_t>(static_cast<Rep>(factor)) == factor;
 }
 
 // The quantity 0 of a unit, when Rep cannot hold the factor 1000^k: each
@@ -490,6 +536,72 @@ template <QuantityUnit ToUnit, class FromUnit, Integer Rep>
             if (static_cast<Rep>(quotient * divisor) != value) return none;
             return Converted::some(Quantity<ToUnit, Rep>{quotient});
         }
+    }
+}
+
+// One IEEE conversion of the number to the Float To.  The unit stays.
+template <Float To, class UnitTag, Integer Rep>
+[[nodiscard]] constexpr Quantity<UnitTag, To> round_to_float(Quantity<UnitTag, Rep> quantity) noexcept {
+    return Quantity<UnitTag, To>{static_cast<To>(quantity.raw())};
+}
+
+// ── The float set ───────────────────────────────────────────────────
+
+// The arguments swap with no change of the result.
+template <class UnitTag, Float Rep>
+[[nodiscard]] constexpr Quantity<UnitTag, Rep> add(Quantity<UnitTag, Rep> left, Quantity<UnitTag, Rep> right) noexcept {
+    return detail::float_quantity_of<UnitTag>(left.raw() + right.raw());
+}
+
+template <class UnitTag, Float Rep>
+[[nodiscard]] constexpr Quantity<UnitTag, Rep> subtract(Quantity<UnitTag, Rep> minuend,
+                                                        Quantity<UnitTag, Rep> subtrahend) noexcept {
+    return detail::float_quantity_of<UnitTag>(minuend.raw() - subtrahend.raw());
+}
+
+// The factor is a plain number of the Rep of the quantity, and the unit
+// stays.
+template <class UnitTag, Float Rep>
+[[nodiscard]] constexpr Quantity<UnitTag, Rep> multiply(Quantity<UnitTag, Rep> quantity,
+                                                        std::type_identity_t<Rep> factor) noexcept {
+    return detail::float_quantity_of<UnitTag>(quantity.raw() * factor);
+}
+
+template <class UnitTag, Float Rep>
+[[nodiscard]] constexpr Quantity<UnitTag, Rep> divide(Quantity<UnitTag, Rep> quantity,
+                                                      std::type_identity_t<Rep> divisor) noexcept {
+    return detail::float_quantity_of<UnitTag>(quantity.raw() / divisor);
+}
+
+// The arguments swap with no change of the number, and the unit is the same
+// up to the order of the factors.
+template <class LeftUnit, class RightUnit, Float Rep>
+[[nodiscard]] constexpr Quantity<unit::Product<LeftUnit, RightUnit>, Rep>
+multiply(Quantity<LeftUnit, Rep> left, Quantity<RightUnit, Rep> right) noexcept {
+    return detail::float_quantity_of<unit::Product<LeftUnit, RightUnit>>(left.raw() * right.raw());
+}
+
+template <class DividendUnit, class DivisorUnit, Float Rep>
+[[nodiscard]] constexpr Quantity<unit::Quotient<DividendUnit, DivisorUnit>, Rep>
+divide(Quantity<DividendUnit, Rep> dividend, Quantity<DivisorUnit, Rep> divisor) noexcept {
+    return detail::float_quantity_of<unit::Quotient<DividendUnit, DivisorUnit>>(dividend.raw() / divisor.raw());
+}
+
+// A finer unit multiplies by 1000^k, and a coarser unit divides by it.  The
+// divide keeps one rounding, where a multiply by the inverse has two.
+template <QuantityUnit ToUnit, class FromUnit, Float Rep>
+    requires detail::ConvertibleUnits<FromUnit, ToUnit>
+          && (detail::holds_power_of_1000<Rep>(detail::scale_steps<FromUnit, ToUnit>))
+[[nodiscard]] constexpr Quantity<ToUnit, Rep> convert(Quantity<FromUnit, Rep> quantity) noexcept {
+    constexpr int steps = detail::scale_steps<FromUnit, ToUnit>;
+    if constexpr (steps == 0) {
+        return Quantity<ToUnit, Rep>{quantity.raw()};
+    } else if constexpr (steps > 0) {
+        constexpr Rep factor = static_cast<Rep>(detail::power_of_1000(steps));
+        return detail::float_quantity_of<ToUnit>(quantity.raw() * factor);
+    } else {
+        constexpr Rep divisor = static_cast<Rep>(detail::power_of_1000(-steps));
+        return detail::float_quantity_of<ToUnit>(quantity.raw() / divisor);
     }
 }
 
