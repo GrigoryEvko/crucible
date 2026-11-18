@@ -24,6 +24,9 @@ constexpr std::array<std::uint64_t, 8> kRowClusterSlotBases{
 };
 constexpr std::uint64_t kRowsPerCluster = 128;
 
+// The tag of Nondet of each lookup and each insert of the bench.
+constexpr ::foundation::effects::cap::Nondet kNondet = ::foundation::effects::testing::test().nondet;
+
 struct FakeKernel {
     std::uint64_t id = 0;
 };
@@ -52,8 +55,10 @@ public:
     RawKernelCache(RawKernelCache&&) = delete;
     RawKernelCache& operator=(RawKernelCache&&) = delete;
 
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] CompiledKernel* lookup(ContentHash content_hash,
-                                                                                RowHash row_hash) const noexcept
+    // The raw table takes the tag of Nondet that the typed cache takes, so one
+    // body of the bench calls the two caches.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] CompiledKernel*
+    lookup(::foundation::effects::cap::Nondet /*nondet*/, ContentHash content_hash, RowHash row_hash) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(content_hash.raw() != 0);
         const std::uint64_t lookup_hash = content_hash.raw();
@@ -83,7 +88,8 @@ public:
 
     // The typed cache takes the same kernel reference, so one seed serves the
     // two caches.  The raw table keeps the address of the kernel.
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, InsertError> insert(ContentHash content_hash, RowHash row_hash,
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, InsertError> insert(::foundation::effects::cap::Nondet /*nondet*/,
+                                                                   ContentHash content_hash, RowHash row_hash,
                                                                    KernelCache::KernelRef kernel_ref) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(content_hash.raw() != 0);
@@ -150,8 +156,8 @@ template <typename Cache>
 void seed_cache(Cache& cache, std::span<FakeKernel> kernels) {
     for (std::size_t i = 0; i < kernels.size(); ++i) {
         kernels[i].id = i + 1;
-        auto inserted =
-            cache.insert(ContentHash{0x1000 + static_cast<std::uint64_t>(i)}, RowHash{0}, kernel_ref(kernels[i]));
+        auto inserted = cache.insert(kNondet, ContentHash{0x1000 + static_cast<std::uint64_t>(i)}, RowHash{0},
+                                     kernel_ref(kernels[i]));
         CRUCIBLE_BENCH_CHECK(inserted.is_ok());
     }
 }
@@ -166,8 +172,9 @@ void seed_row_siblings(Cache& cache, std::span<FakeKernel> kernels) {
         const std::uint64_t content = 0xABC00000ULL | kRowClusterSlotBases[cluster];
         for (std::uint64_t row = 0; row < kRowsPerCluster; ++row) {
             kernels[cursor].id = 0xA000 + cursor;
-            auto inserted = cache.insert(ContentHash{content}, RowHash{0x200 + (cluster * kRowsPerCluster) + row},
-                                         kernel_ref(kernels[cursor]));
+            auto inserted =
+                cache.insert(kNondet, ContentHash{content}, RowHash{0x200 + (cluster * kRowsPerCluster) + row},
+                             kernel_ref(kernels[cursor]));
             CRUCIBLE_BENCH_CHECK(inserted.is_ok());
             ++cursor;
         }
@@ -179,7 +186,7 @@ template <typename Cache>
     std::uint64_t i = 0;
     return bench::Run{name}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
         const std::uint64_t idx = (i++ & 1023U);
-        auto hit = cache.lookup(ContentHash{0x1000 + idx}, RowHash{0});
+        auto hit = cache.lookup(kNondet, ContentHash{0x1000 + idx}, RowHash{0});
         bench::do_not_optimize(hit);
     });
 }
@@ -191,7 +198,7 @@ template <typename Cache>
         const std::uint64_t idx = i++ & 1023U;
         const std::uint64_t cluster = idx / kRowsPerCluster;
         const std::uint64_t row = idx % kRowsPerCluster;
-        auto hit = cache.lookup(ContentHash{0xABC00000ULL | kRowClusterSlotBases[cluster]},
+        auto hit = cache.lookup(kNondet, ContentHash{0xABC00000ULL | kRowClusterSlotBases[cluster]},
                                 RowHash{0x200 + (cluster * kRowsPerCluster) + row});
         bench::do_not_optimize(hit);
     });
@@ -201,7 +208,7 @@ template <typename Cache>
 [[nodiscard]] bench::Report bench_clean_miss(char const* name, Cache& cache) {
     std::uint64_t i = 0;
     return bench::Run{name}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
-        auto miss = cache.lookup(ContentHash{0x90000000ULL + 1024 + (i++ & 255U)}, RowHash{0xFF});
+        auto miss = cache.lookup(kNondet, ContentHash{0x90000000ULL + 1024 + (i++ & 255U)}, RowHash{0xFF});
         bench::do_not_optimize(miss);
     });
 }

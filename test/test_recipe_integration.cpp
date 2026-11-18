@@ -251,29 +251,30 @@ inline void mk_ops(::foundation::core::FixedArray<TraceEntry, kOpsCount>& buf) n
             const char* tag;
         };
         FakeKernel kernel_tc{"f16_tc-compiled"};
-        auto ins = cache.insert(region_tc.content_hash, RowHash{0}, kernel_ref(kernel_tc));
+        auto ins = cache.insert(g_test.nondet, region_tc.content_hash, RowHash{0}, kernel_ref(kernel_tc));
         assert(ins.is_ok());
-        assert(is_found(cache.lookup(region_tc.content_hash, RowHash{0}), kernel_tc));
+        CRUCIBLE_FATAL_INVARIANT(is_found(cache.lookup(g_test.nondet, region_tc.content_hash, RowHash{0}), kernel_tc));
 
         // A lookup under the second recipe must miss.  Were the two sharing
         // a slot, the first recipe's kernel would serve the second recipe's
         // work.
-        assert(cache.lookup(region_ord.content_hash, RowHash{0}).is_none());
+        CRUCIBLE_FATAL_INVARIANT(cache.lookup(g_test.nondet, region_ord.content_hash, RowHash{0}).is_none());
 
         // The third recipe is isolated the same way.
-        assert(cache.lookup(region_bf16_tc.content_hash, RowHash{0}).is_none());
+        CRUCIBLE_FATAL_INVARIANT(cache.lookup(g_test.nondet, region_bf16_tc.content_hash, RowHash{0}).is_none());
 
         // The first recipe still finds its own kernel.
-        assert(is_found(cache.lookup(region_tc.content_hash, RowHash{0}), kernel_tc));
+        CRUCIBLE_FATAL_INVARIANT(is_found(cache.lookup(g_test.nondet, region_tc.content_hash, RowHash{0}), kernel_tc));
 
         // Two kernels under two recipes coexist, each reachable only
         // through its own key.
         FakeKernel kernel_ord{"f16_ordered-compiled"};
-        auto ins2 = cache.insert(region_ord.content_hash, RowHash{0}, kernel_ref(kernel_ord));
+        auto ins2 = cache.insert(g_test.nondet, region_ord.content_hash, RowHash{0}, kernel_ref(kernel_ord));
         assert(ins2.is_ok());
-        assert(is_found(cache.lookup(region_tc.content_hash, RowHash{0}), kernel_tc));
-        assert(is_found(cache.lookup(region_ord.content_hash, RowHash{0}), kernel_ord));
-        assert(cache.lookup(region_bf16_tc.content_hash, RowHash{0}).is_none());
+        CRUCIBLE_FATAL_INVARIANT(is_found(cache.lookup(g_test.nondet, region_tc.content_hash, RowHash{0}), kernel_tc));
+        CRUCIBLE_FATAL_INVARIANT(
+            is_found(cache.lookup(g_test.nondet, region_ord.content_hash, RowHash{0}), kernel_ord));
+        CRUCIBLE_FATAL_INVARIANT(cache.lookup(g_test.nondet, region_bf16_tc.content_hash, RowHash{0}).is_none());
     }
 
     // The search run of prop_content_hash_recipe_disambiguates with the seed

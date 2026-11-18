@@ -10,6 +10,7 @@
 #include <crucible/Types.h>
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
+#include <fixy/os/SpinBudget.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
@@ -54,6 +55,15 @@ namespace crucible {
 // continues.  A stalled claim at one probe position must not mask a valid
 // match further along the chain.  The worst case is a second slot for one
 // pair, which wastes space and loses nothing.
+//
+// The budget is a time, kClaimedSpinBudget, so it is the same on each core.
+// The end of the spin decides the answer: a miss, or a second slot for one
+// pair.  Under a concurrent insert, the answer thus depends on the timing of
+// another thread.  So lookup, insert and the doors of the three levels take
+// the bare tag of Nondet, and a replay or kernel context, which holds no
+// Nondet, cannot call them.  A miss or a second slot costs a compile and some
+// space, and it changes no bit of a result: the content hash holds the
+// recipe, and each kernel of one recipe gives the same bits (DetSafe).
 class CRUCIBLE_OWNER KernelCache {
 public:
     // A slot write touches only the slot's three atomics in memory, so the
@@ -259,15 +269,17 @@ public:
     KernelCache(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
     KernelCache& operator=(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
 
-    // Spin iterations a reader tolerates on a CLAIMED slot before treating it
-    // as foreign.
-    static constexpr uint32_t kClaimedSpinBudget = 64;
+    // The time that a lookup or an insert waits on a CLAIMED slot before it
+    // takes the slot as foreign.  A claim and its publish are a compare and
+    // two release stores, so a longer wait means that the thread of the claim
+    // was preempted.
+    static constexpr ::fixy::time::SpinBudget kClaimedSpinBudget{2000};
 
     // A lookup of the zero hash would walk the entire table: it matches no
     // slot and terminates on no empty one.  The row needs no such guard,
     // because RowHash{0} is a real key that can coexist with any other.
-    [[nodiscard, gnu::hot]] FoundKernel lookup(ContentHash content_hash, RowHash row_hash) const noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard, gnu::hot]] FoundKernel lookup(::foundation::effects::cap::Nondet nondet, ContentHash content_hash,
+                                               RowHash row_hash) const noexcept CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         const uint64_t lookup_hash = content_hash.raw();
         const uint64_t lookup_row = row_hash.raw();
@@ -281,7 +293,7 @@ public:
             // pair on the kernel is what makes the published row visible.
             FoundKernel kernel = entry.kernel_.load_acquire();
             if (kernel.is_none()) [[unlikely]] {
-                kernel = await_claimed_(entry);
+                kernel = await_claimed_(nondet, entry);
                 if (kernel.is_none()) [[unlikely]] {
                     // One content hash can occupy several slots, one per row,
                     // so a stalled claim here must not hide a matching slot
@@ -307,8 +319,8 @@ public:
     // Zero collides with the EMPTY marker, and UINT64_MAX is reserved as the
     // end-of-region marker, so neither can be a key.  The row again needs no
     // guard: RowHash{0} is a real key.
-    [[nodiscard]] InsertResult insert(ContentHash content_hash, RowHash row_hash, KernelRef kernel)
-        CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard]] InsertResult insert(::foundation::effects::cap::Nondet nondet, ContentHash content_hash,
+                                      RowHash row_hash, KernelRef kernel) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
         const uint64_t lookup_hash = content_hash.raw();
@@ -336,9 +348,8 @@ public:
                 // kernel, never on the row: a CLAIMED slot reads row 0, which
                 // is indistinguishable from a published row of 0.
                 bool is_published = entry.kernel_.load_acquire().is_some();
-                for (uint32_t spin = 0; spin < kClaimedSpinBudget && !is_published; ++spin) {
-                    CRUCIBLE_SPIN_PAUSE;
-                    is_published = entry.kernel_.load_acquire().is_some();
+                if (!is_published) [[unlikely]] {
+                    is_published = await_claimed_(nondet, entry).is_some();
                 }
                 if (is_published) {
                     // A published kernel makes the row visible too.
@@ -371,25 +382,27 @@ public:
     // handed to a path that requires another.  The level is where the value
     // came from, not how near it is to the core, so it is a provenance tag
     // and not a residency class.
-    [[nodiscard, gnu::hot]] AtLevel<VendorNeutralLevel, FoundKernel> lookup_l1(ContentHash content_hash,
-                                                                               RowHash row_hash) const noexcept
+    [[nodiscard, gnu::hot]] AtLevel<VendorNeutralLevel, FoundKernel>
+    lookup_l1(::foundation::effects::cap::Nondet nondet, ContentHash content_hash, RowHash row_hash) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
-        return ::fixy::mint_tagged<VendorNeutralLevel>(lookup(content_hash, row_hash));
+        return ::fixy::mint_tagged<VendorNeutralLevel>(lookup(nondet, content_hash, row_hash));
     }
 
-    // The preconditions on the two levels below match L1's even though the
-    // bodies ignore their arguments: a backing store added later inherits the
-    // contract, whereas relaxing it later would have to be renegotiated at
-    // every call site.
-    [[nodiscard]] AtLevel<VendorFamilyLevel, FoundKernel> lookup_l2(ContentHash content_hash,
+    // The preconditions and the tag of Nondet on the two levels below match
+    // L1's even though the bodies ignore their arguments: a backing store
+    // added later inherits the contract, whereas relaxing it later would have
+    // to be renegotiated at every call site.
+    [[nodiscard]] AtLevel<VendorFamilyLevel, FoundKernel> lookup_l2(::foundation::effects::cap::Nondet /*nondet*/,
+                                                                    ContentHash content_hash,
                                                                     RowHash /*row_hash*/) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         return ::fixy::mint_tagged<VendorFamilyLevel>(FoundKernel{});
     }
 
-    [[nodiscard]] AtLevel<ChipLevel, FoundKernel> lookup_l3(ContentHash content_hash,
+    [[nodiscard]] AtLevel<ChipLevel, FoundKernel> lookup_l3(::foundation::effects::cap::Nondet /*nondet*/,
+                                                            ContentHash content_hash,
                                                             RowHash /*row_hash*/) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
@@ -403,15 +416,17 @@ public:
     // Both hash guards are needed here and on the two levels below: UINT64_MAX
     // is non-zero, and zero is not the reserved sentinel.
     [[nodiscard]]
-    AtLevel<VendorNeutralLevel, InsertResult> publish_l1(ContentHash content_hash, RowHash row_hash, KernelRef kernel)
+    AtLevel<VendorNeutralLevel, InsertResult> publish_l1(::foundation::effects::cap::Nondet nondet,
+                                                         ContentHash content_hash, RowHash row_hash, KernelRef kernel)
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
-        return ::fixy::mint_tagged<VendorNeutralLevel>(insert(content_hash, row_hash, kernel));
+        return ::fixy::mint_tagged<VendorNeutralLevel>(insert(nondet, content_hash, row_hash, kernel));
     }
 
     [[nodiscard]]
-    AtLevel<VendorFamilyLevel, InsertResult> publish_l2(ContentHash content_hash, RowHash /*row_hash*/,
+    AtLevel<VendorFamilyLevel, InsertResult> publish_l2(::foundation::effects::cap::Nondet /*nondet*/,
+                                                        ContentHash content_hash, RowHash /*row_hash*/,
                                                         KernelRef /*kernel*/) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
@@ -419,8 +434,8 @@ public:
     }
 
     [[nodiscard]]
-    AtLevel<ChipLevel, InsertResult> publish_l3(ContentHash content_hash, RowHash /*row_hash*/,
-                                                KernelRef /*kernel*/) noexcept {
+    AtLevel<ChipLevel, InsertResult> publish_l3(::foundation::effects::cap::Nondet /*nondet*/, ContentHash content_hash,
+                                                RowHash /*row_hash*/, KernelRef /*kernel*/) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
         return ::fixy::mint_tagged<ChipLevel>(InsertResult{::fixy::err(InsertError::NotYetImplemented)});
@@ -444,16 +459,18 @@ private:
     }
 
     // Outlined so that the hot lookup body stays compact.
-    // The kernel of a claimed slot, or no value when the spin budget runs
-    // out first.
+    // The kernel of a claimed slot, or no value when kClaimedSpinBudget
+    // passes first.
     [[gnu::cold, gnu::noinline]]
-    static FoundKernel await_claimed_(const KernelCacheSlot& entry) noexcept {
-        for (uint32_t spin = 0; spin < kClaimedSpinBudget; ++spin) {
-            CRUCIBLE_SPIN_PAUSE;
-            const FoundKernel kernel = entry.kernel_.load_acquire();
-            if (kernel.is_some()) return kernel;
-        }
-        return ::fixy::none;
+    static FoundKernel await_claimed_(::foundation::effects::cap::Nondet nondet,
+                                      const KernelCacheSlot& entry) noexcept {
+        FoundKernel kernel{};
+        const ::fixy::time::SpinDeadline deadline = ::fixy::time::SpinDeadline::after(nondet, kClaimedSpinBudget);
+        static_cast<void>(::fixy::time::spin_until(nondet, deadline, [&entry, &kernel]() noexcept {
+            kernel = entry.kernel_.load_acquire();
+            return kernel.is_some();
+        }));
+        return kernel;
     }
 
     // A writer token for one slot write.  The handle names its token type
@@ -483,11 +500,12 @@ private:
 // So this is the one parameter on this signature that cannot be defaulted.
 // It has no caller today -- this whole function does not -- and a default
 // would hand the first one a wrong-kernel path it never had to think about.
-[[nodiscard]] inline ::fixy::Ref<BranchNode> add_branch(::foundation::effects::Alloc a, ::fixy::BumpArena& arena,
-                                                        KernelCache& kernel_cache, TraceNode& divergence_point,
-                                                        ::fixy::View<TraceEntry> new_ops, int64_t old_guard_value,
-                                                        int64_t new_guard_value, Guard guard, TraceLink existing_suffix,
-                                                        RecipeChoice const& recipe) {
+[[nodiscard]] inline ::fixy::Ref<BranchNode> add_branch(::foundation::effects::Alloc a,
+                                                        ::foundation::effects::cap::Nondet nondet,
+                                                        ::fixy::BumpArena& arena, KernelCache& kernel_cache,
+                                                        TraceNode& divergence_point, ::fixy::View<TraceEntry> new_ops,
+                                                        int64_t old_guard_value, int64_t new_guard_value, Guard guard,
+                                                        TraceLink existing_suffix, RecipeChoice const& recipe) {
     CRUCIBLE_PRE(old_guard_value != new_guard_value);
     CRUCIBLE_PRE(is_foldable_recipe(recipe));
     const ::fixy::Ref<RegionNode> new_region = recipe.match(
@@ -508,7 +526,7 @@ private:
     //
     // The content hash half of the key carries the recipe, because the region
     // above was built under it.
-    kernel_cache.lookup(new_region->content_hash, RowHash{0})
+    kernel_cache.lookup(nondet, new_region->content_hash, RowHash{0})
         .match([new_region](KernelCache::KernelRef kernel) noexcept { new_region->compiled.publish(&*kernel); },
                []() noexcept {});
 

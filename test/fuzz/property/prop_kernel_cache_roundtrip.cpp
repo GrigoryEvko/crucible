@@ -52,6 +52,7 @@ int main(int argc, char** argv) {
         },
         [](const auto& b) {
             KernelCache cache{::foundation::effects::testing::test().alloc};
+            constexpr ::foundation::effects::cap::Nondet nondet = ::foundation::effects::testing::test().nondet;
             constexpr unsigned N = 64;
 
             // The cache never reads a kernel, so the address of a fake
@@ -71,14 +72,14 @@ int main(int argc, char** argv) {
                 // insert.  insert() returns
                 // KernelCache::InsertResult, and table-full is the only
                 // error.
-                auto ins = cache.insert(b.hashes[index.raw()], RowHash{}, kernel_of(index));
+                auto ins = cache.insert(nondet, b.hashes[index.raw()], RowHash{}, kernel_of(index));
                 if (ins.is_err()) return false;
             }
 
             // Lookup each — must return the SAME kernel.
             for (const ::fixy::Index<N> index : fakes.indices()) {
                 const std::size_t i = index.raw();
-                const KernelCache::FoundKernel actual = cache.lookup(b.hashes[i], RowHash{});
+                const KernelCache::FoundKernel actual = cache.lookup(nondet, b.hashes[i], RowHash{});
                 // Two paths the lookup can return a "wrong" kernel:
                 //   1. Returned someone else's kernel (probe bug)
                 //   2. Returned no kernel (table-full or lost insert)
