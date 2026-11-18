@@ -43,9 +43,8 @@
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/concurrent/PermissionFork.h>
-#include <fixy/concurrent/PermissionedMpscBoxChannel.h>
+#include <fixy/concurrent/PermissionedBoxChannel.h>
 #include <fixy/concurrent/PermissionedChannel.h>
-#include <fixy/concurrent/PermissionedSpscBoxChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/RingValue.h>
 #include <fixy/concurrent/Spawn.h>
@@ -685,9 +684,11 @@ using SpscWitness = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::
 using MpscWitness = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::merge, int, 8,
                                                             MpscWitnessTag, ChannelWitnessBrand>;
 struct SpscBoxWitnessTag {};
-using SpscBoxWitness = ::fixy::concurrent::PermissionedSpscBoxChannel<int, 8, SpscBoxWitnessTag, ChannelWitnessBrand>;
+using SpscBoxWitness = ::fixy::concurrent::PermissionedBoxChannel<::fixy::concurrent::ChannelForm::wire, int, 8,
+                                                                  SpscBoxWitnessTag, ChannelWitnessBrand>;
 struct MpscBoxWitnessTag {};
-using MpscBoxWitness = ::fixy::concurrent::PermissionedMpscBoxChannel<int, 8, MpscBoxWitnessTag, ChannelWitnessBrand>;
+using MpscBoxWitness = ::fixy::concurrent::PermissionedBoxChannel<::fixy::concurrent::ChannelForm::merge, int, 8,
+                                                                  MpscBoxWitnessTag, ChannelWitnessBrand>;
 struct PureRegionBrand {};
 using SwmrWitness =
     ::fixy::channels::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
@@ -818,8 +819,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::MpscRing, ^^::fixy::concurrent::MpscRing<int, 8>},
     {^^::fixy::concurrent::SpscRing, ^^::fixy::concurrent::SpscRing<int, 8>},
     {^^::fixy::concurrent::PermissionedChannel, ^^SpscWitness},
-    {^^::fixy::concurrent::PermissionedSpscBoxChannel, ^^SpscBoxWitness},
-    {^^::fixy::concurrent::PermissionedMpscBoxChannel, ^^MpscBoxWitness},
+    {^^::fixy::concurrent::PermissionedBoxChannel, ^^SpscBoxWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
     {^^::fixy::channels::swmr_session::SwmrSession, ^^SwmrWitness},
     {^^::fixy::concurrent::Stage, ^^StageWitness},

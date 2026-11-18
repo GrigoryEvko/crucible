@@ -16,7 +16,7 @@
 #include <fixy/Refined.h>
 #include <fixy/concurrent/ChannelEnd.h>
 #include <fixy/concurrent/EventCount.h>
-#include <fixy/concurrent/PermissionedSpscBoxChannel.h>
+#include <fixy/concurrent/PermissionedBoxChannel.h>
 #include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Pipeline.h>
 #include <fixy/concurrent/Stage.h>
@@ -227,13 +227,13 @@ struct BackgroundThread::Pipeline {
     using StartChannel = ::fixy::concurrent::channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
     // A Box owns each message of the three channels after the start, and the
     // channel moves the Box from one stage to the next (THE OWNERS of
-    // fixy/concurrent/PermissionedSpscBoxChannel.h).
+    // fixy/concurrent/PermissionedBoxChannel.h).
     using TraceBatchChannel =
-        ::fixy::concurrent::spsc_box_channel_t<BgTraceBatch, 64, decltype(detail::bg_pipeline::trace_batch_root())>;
+        ::fixy::concurrent::box_channel_t<BgTraceBatch, 64, decltype(detail::bg_pipeline::trace_batch_root())>;
     using BuildWorkChannel =
-        ::fixy::concurrent::spsc_box_channel_t<BgBuildWork, 64, decltype(detail::bg_pipeline::build_work_root())>;
+        ::fixy::concurrent::box_channel_t<BgBuildWork, 64, decltype(detail::bg_pipeline::build_work_root())>;
     using GraphPublishChannel =
-        ::fixy::concurrent::spsc_box_channel_t<BgGraphPublish, 64, decltype(detail::bg_pipeline::graph_publish_root())>;
+        ::fixy::concurrent::box_channel_t<BgGraphPublish, 64, decltype(detail::bg_pipeline::graph_publish_root())>;
 
     // The consumer end of a stage, together with the thread the stage
     // serves, the context of the run and the event counts of the channels.

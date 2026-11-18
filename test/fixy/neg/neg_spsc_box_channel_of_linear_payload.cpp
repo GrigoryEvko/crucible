@@ -2,7 +2,7 @@
 // the Box of each claim ends its object.  The end of a linear object drops
 // it, so a Box channel holds no linear payload.  A Hole is linear.
 
-#include <fixy/concurrent/PermissionedSpscBoxChannel.h>
+#include <fixy/concurrent/PermissionedBoxChannel.h>
 
 #include <foundation/core/Ref.h>
 #include <foundation/permissions/Permission.h>
@@ -14,7 +14,6 @@ struct CreditTag {};
 int main() {
     auto root = ::foundation::permissions::mint_permission_root<
         ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::wire, CreditTag>>();
-    return ::fixy::concurrent::spsc_box_channel_t<::foundation::core::Hole<8, 8>, 2, decltype(root)>::capacity() == 2
-             ? 0
-             : 1;
+    return ::fixy::concurrent::box_channel_t<::foundation::core::Hole<8, 8>, 2, decltype(root)>::capacity() == 2 ? 0
+                                                                                                                 : 1;
 }

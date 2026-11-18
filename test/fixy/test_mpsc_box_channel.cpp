@@ -16,7 +16,7 @@
 #include <fixy/check/Check.h>
 #include <fixy/concurrent/ChannelEnd.h>
 #include <fixy/concurrent/HandleTraits.h>
-#include <fixy/concurrent/PermissionedMpscBoxChannel.h>
+#include <fixy/concurrent/PermissionedBoxChannel.h>
 #include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/os/ThreadTasks.h>
 
@@ -79,7 +79,7 @@ template <class Channel>
 void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, ParcelTag>>();
-        using Channel = c::mpsc_box_channel_t<Parcel, 2, decltype(root)>;
+        using Channel = c::box_channel_t<Parcel, 2, decltype(root)>;
         // The two handles have the shapes that a stage reads, with a Box as
         // the payload, and they name one channel.
         static_assert(c::is_producer_handle_v<Channel::ProducerHandle>);
@@ -127,7 +127,7 @@ void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
 void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept {
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, ParcelTag>>();
-        using Channel = c::mpsc_box_channel_t<Parcel, 4, decltype(root)>;
+        using Channel = c::box_channel_t<Parcel, 4, decltype(root)>;
         auto [producer_root, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
         Channel channel{std::move(producer_root)};
@@ -159,7 +159,7 @@ void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept 
 void end_of_channel_ends_each_object(fixy::TestRunnerCtx const& test) noexcept {
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, ParcelTag>>();
-        using Channel = c::mpsc_box_channel_t<Parcel, 4, decltype(root)>;
+        using Channel = c::box_channel_t<Parcel, 4, decltype(root)>;
         auto [producer_root, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
         Channel channel{std::move(producer_root)};
@@ -209,7 +209,7 @@ void drain_gives_each_item_in_order(fixy::TestRunnerCtx const& test) noexcept {
     end_count = 0;
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, WordTag>>();
-        using Channel = c::mpsc_box_channel_t<Entry, 4, decltype(root)>;
+        using Channel = c::box_channel_t<Entry, 4, decltype(root)>;
         auto [producer_root, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
         Channel channel{std::move(producer_root)};
@@ -244,7 +244,7 @@ void drain_refuses_a_live_handle(fixy::TestRunnerCtx const& test) noexcept {
         test,
         []() noexcept {
             auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, WordTag>>();
-            using Channel = c::mpsc_box_channel_t<Parcel, 4, decltype(root)>;
+            using Channel = c::box_channel_t<Parcel, 4, decltype(root)>;
             auto [producer_root, consumer_perm] =
                 perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
             fixy::Box<Channel> channel = fixy::mint_box<Channel>(eff::testing::test().alloc, std::move(producer_root));
@@ -347,7 +347,7 @@ void three_threads_move_many_boxes(fixy::TestRunnerCtx const& test) noexcept {
     std::uint64_t out_of_order = 0;
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, BulkTag>>();
-        using BulkChannel = c::mpsc_box_channel_t<Parcel, 64, decltype(root)>;
+        using BulkChannel = c::box_channel_t<Parcel, 64, decltype(root)>;
         auto [producer_root, consumer_perm] =
             perm::mint_permission_split<BulkChannel::producer_tag, BulkChannel::consumer_tag>(std::move(root));
         BulkChannel channel{std::move(producer_root)};

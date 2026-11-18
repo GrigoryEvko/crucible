@@ -162,14 +162,16 @@ struct channel_form_parts<ChannelForm::merge, T, Capacity, ProducerTag, Brand> {
     static constexpr std::size_t consumer_lines = 4;
 };
 
-// The pops of a consumer handle.  Each form gives one declaration of each
-// pop, so fixy/concurrent/HandleTraits.h reads the consumer pole and its
-// payload off the address of the member.  The handle gives the body of each
-// pop in pop_ and receive_.
-template <ChannelForm Form, RingValue T, typename Handle>
+// The pops of a consumer handle of payload T.  Each form gives one
+// declaration of each pop, so fixy/concurrent/HandleTraits.h reads the
+// consumer pole and its payload off the address of the member.  The handle
+// gives the body of each pop in its private pop_ and receive_, and it
+// befriends its own specialization of this base.  The consumer handle of a
+// Box channel has the same shape in fixy/concurrent/PermissionedBoxChannel.h.
+template <ChannelForm Form, typename T, typename Handle>
 class consumer_pops;
 
-template <RingValue T, typename Handle>
+template <typename T, typename Handle>
 class consumer_pops<ChannelForm::wire, T, Handle> {
 public:
     // The oldest item, or no value when the ring is empty.  It does not tell
@@ -191,7 +193,7 @@ public:
 // sequences.  Thus each pop takes the bare tag of Nondet, and only a context
 // whose row holds Nondet gives one.  The tag is an empty value, so the call
 // costs what a pop with no argument costs.
-template <RingValue T, typename Handle>
+template <typename T, typename Handle>
 class consumer_pops<ChannelForm::merge, T, Handle> {
 public:
     // The pops of the wire form, with the tag of Nondet.
@@ -335,8 +337,8 @@ public:
         friend class PermissionedChannel;
         friend class detail::consumer_pops<Form, T, ConsumerHandle>;
 
-        // The bodies of the pops of detail::consumer_pops.  The pack holds the
-        // tag of Nondet for a merge and no value for a wire.
+        // The bodies of the pops of detail::consumer_pops.  The pack holds
+        // the tag of Nondet for a merge and no value for a wire.
         template <typename... PopTag>
         [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_(PopTag... tag) noexcept {
             return ch_->ring_.try_pop(tag...);

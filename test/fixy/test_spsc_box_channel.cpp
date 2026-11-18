@@ -12,7 +12,7 @@
 #include <fixy/check/Check.h>
 #include <fixy/concurrent/ChannelEnd.h>
 #include <fixy/concurrent/HandleTraits.h>
-#include <fixy/concurrent/PermissionedSpscBoxChannel.h>
+#include <fixy/concurrent/PermissionedBoxChannel.h>
 #include <fixy/os/ThreadTasks.h>
 
 #include <foundation/Linear.h>
@@ -66,7 +66,7 @@ inline constexpr std::uint64_t kNoLabel = ~std::uint64_t{0};
 void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, ParcelTag>>();
-        using Channel = c::spsc_box_channel_t<Parcel, 2, decltype(root)>;
+        using Channel = c::box_channel_t<Parcel, 2, decltype(root)>;
         // The two handles have the shapes that a stage reads, with a Box as
         // the payload, and they name one channel.
         static_assert(c::is_producer_handle_v<Channel::ProducerHandle>);
@@ -108,7 +108,7 @@ void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
 void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept {
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, ParcelTag>>();
-        using Channel = c::spsc_box_channel_t<Parcel, 2, decltype(root)>;
+        using Channel = c::box_channel_t<Parcel, 2, decltype(root)>;
         Channel channel{};
         auto [producer_perm, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
@@ -132,7 +132,7 @@ void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept 
 void end_of_channel_ends_each_object(fixy::TestRunnerCtx const& test) noexcept {
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, ParcelTag>>();
-        using Channel = c::spsc_box_channel_t<Parcel, 2, decltype(root)>;
+        using Channel = c::box_channel_t<Parcel, 2, decltype(root)>;
         Channel channel{};
         auto [producer_perm, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
@@ -202,7 +202,7 @@ void two_threads_move_many_boxes(fixy::TestRunnerCtx const& test) noexcept {
     std::uint64_t out_of_order = 0;
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, BulkTag>>();
-        using BulkChannel = c::spsc_box_channel_t<Parcel, 64, decltype(root)>;
+        using BulkChannel = c::box_channel_t<Parcel, 64, decltype(root)>;
         BulkChannel channel{};
         auto [producer_perm, consumer_perm] =
             perm::mint_permission_split<BulkChannel::producer_tag, BulkChannel::consumer_tag>(std::move(root));
