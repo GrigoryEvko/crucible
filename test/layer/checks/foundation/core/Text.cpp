@@ -107,9 +107,9 @@ static_assert(FormsText<0>);
 static_assert(!FormsText<1>);
 
 // A constant expression builds a name and gives it by value in a Result.
-[[nodiscard]] constexpr Result<FixedText<4>, Truncated> build_name(TextView name) noexcept {
+[[nodiscard]] constexpr Result<FixedText<4>, Full<char>> build_name(TextView name) noexcept {
     FixedText<4> text{};
-    if (text.append(name).is_err()) return err(Truncated{});
+    if (text.append(name).is_err()) return err(Full<char>{});
     return text;
 }
 [[nodiscard]] consteval bool builds_a_name_in_a_result() noexcept {
@@ -118,13 +118,13 @@ static_assert(!FormsText<1>);
 }
 static_assert(builds_a_name_in_a_result());
 
-// push() refuses the character past the capacity.  A refused append()
-// keeps the characters that the buffer held.
+// append() of a character refuses the character past the capacity.  A
+// refused append() of a text keeps the characters that the buffer held.
 [[nodiscard]] consteval bool fills_and_refuses() noexcept {
     FixedText<2> pair{};
-    bool const is_first_kept = pair.push('a').is_ok();
-    bool const is_second_kept = pair.push('b').is_ok();
-    bool const is_third_refused = pair.push('c').is_err();
+    bool const is_first_kept = pair.append('a').is_ok();
+    bool const is_second_kept = pair.append('b').is_ok();
+    bool const is_third_refused = pair.append('c').is_err();
     FixedText<4> name{"ab"};
     bool const is_long_refused = name.append("cde").is_err();
     bool const is_name_kept = name.view() == TextView{"ab"};
@@ -133,6 +133,13 @@ static_assert(builds_a_name_in_a_result());
         && is_name_kept && is_joined;
 }
 static_assert(fills_and_refuses());
+
+// The one verb of a character is append, and its error is Full<char>.
+template <class Text>
+concept HasPush = requires(Text& text) { text.push('a'); };
+static_assert(!HasPush<FixedText<2>>);
+static_assert(std::is_same_v<decltype(std::declval<FixedText<2>&>().append('a')), Result<Unit, Full<char>>>);
+static_assert(std::is_same_v<decltype(std::declval<FixedText<2>&>().append(TextView{"a"})), Result<Unit, Full<char>>>);
 
 // append_hex writes the low digits with the zeros that lead, and refuses
 // digits past the capacity with no change.

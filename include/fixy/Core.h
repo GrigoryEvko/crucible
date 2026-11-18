@@ -69,7 +69,6 @@ using ::foundation::core::ParseErrorKind;
 using ::foundation::core::report;
 using ::foundation::core::Sink;
 using ::foundation::core::Site;
-using ::foundation::core::Truncated;
 using ::foundation::core::unreachable;
 
 // The door foreign_c_str of a CText stays in foundation::core.  A call stands

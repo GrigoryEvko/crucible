@@ -158,7 +158,7 @@ private:
             *regions_.get(position).expect("the search found the region at the position") = region;
             return true;
         }
-        return regions_.push(region).is_ok();
+        return regions_.append(region).is_ok();
     }
 
     // Moves the last region into the place of the withdrawn region.  The

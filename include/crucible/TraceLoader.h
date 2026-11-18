@@ -636,7 +636,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
             if (detail::read_exact_(io, trace_file, name_read).is_err()) break;
             ::fixy::FixedText<SCHEMA_NAME_LEN_MAX> name_text{};
             for (const std::byte name_byte : name_read) {
-                name_text.push(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");
+                name_text.append(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");
             }
             // Bounded here, which is what lets the bytes cross from untrusted
             // file content into the table.  The table copies the characters

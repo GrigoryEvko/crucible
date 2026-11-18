@@ -391,7 +391,7 @@ public:
                 if (z >= threshold || stats.lost != 0 || stats.rejected != 0) {
                     // The report holds one entry for each pair, so the push
                     // cannot find the report full.
-                    static_cast<void>(report.entries.push(PingmeshAnomaly{
+                    static_cast<void>(report.entries.append(PingmeshAnomaly{
                         .stats = stats,
                         .zscore_milli = z,
                         .anomalous = true,

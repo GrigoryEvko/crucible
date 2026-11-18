@@ -179,7 +179,7 @@ private:
         // A full table ends the process.  A dropped registration leaves
         // classify() at OPAQUE for that one schema, and that shows only much
         // later, at replay, on the trace that uses it.
-        if (entries_.push(carried).is_err()) [[unlikely]] {
+        if (entries_.append(carried).is_err()) [[unlikely]] {
             ::fixy::fatal("crucible: the kernel table holds CKERNEL_TABLE_CAP schemas.  Raise CKERNEL_TABLE_CAP in "
                           "crucible/CKernel.h, or register fewer schemas");
         }

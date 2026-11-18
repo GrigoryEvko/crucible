@@ -541,8 +541,8 @@ PROBES: tuple[Probe, ...] = (
     Probe("view_windows_sum", "a loop over windows<2>() of a View is the loop of a raw pointer over each run"),
     Probe("view_chunks_sum", "a loop over chunks<4>() of a View is the loop of a raw pointer with a step of four"),
     Probe(
-        "fixed_list_push",
-        "a push into a FixedList is the compare of the count, the store and the step of a raw list, with no call.  "
+        "fixed_list_append",
+        "an append into a FixedList is the compare of the count, the store and the step of a raw list, with no call.  "
         "At -O1, is_ok() reads the tag of the Result, and the path of a full list jumps back to the shared tail",
         branches=True,
     ),

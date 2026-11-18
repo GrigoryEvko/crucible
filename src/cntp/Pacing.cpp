@@ -54,7 +54,7 @@ template <class T>
         if (character == '\0') {
             break;
         }
-        if (kind.push(character).is_err()) {
+        if (kind.append(character).is_err()) {
             return Qdisc::Other;
         }
     }
@@ -174,7 +174,7 @@ qdisc_of_attributes(::fixy::View<std::byte const> attributes) noexcept {
         if (character == ' ' || character == '\n') {
             break;
         }
-        is_long_kind = is_long_kind || kind.push(character).is_err();
+        is_long_kind = is_long_kind || kind.append(character).is_err();
     }
     if (is_long_kind) {
         return Qdisc::Other;

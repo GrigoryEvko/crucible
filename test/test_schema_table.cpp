@@ -257,7 +257,7 @@ static void test_name_ends_at_its_first_zero() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     ::fixy::FixedText<16> name{"aten::mm"};
-    name.push('\0').expect("the name fits");
+    name.append('\0').expect("the name fits");
     name.append("tail").expect("the name fits");
     reg(t, mv, H(0x78), S(name.view()));
     assert(eq(t.lookup(H(0x78)), "aten::mm"));

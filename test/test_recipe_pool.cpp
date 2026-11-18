@@ -186,7 +186,8 @@ using MintedArenaBorrow = decltype(::fixy::mint_borrowed_ref(std::declval<BumpAr
         ::fixy::FixedList<RecipeRef, N> interned{};
 
         for (const NumericalRecipe& key : keys) {
-            (void)interned.push(pool.intern(alloc_cap(), key)).expect("the list holds one Ref for each key");
+            static_cast<void>(
+                interned.append(pool.intern(alloc_cap(), key)).expect("the list holds one Ref for each key"));
         }
 
         assert(pool.capacity() >= 32);

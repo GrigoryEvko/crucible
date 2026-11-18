@@ -326,7 +326,7 @@ public:
         requires CtxFitsNicTelemetryRecord<Ctx>
     [[nodiscard]] constexpr NicTelemetryError record(Ctx const&, NicTelemetrySnapshot const& snapshot) noexcept {
         if (snapshots_.size() < Window) {
-            static_cast<void>(snapshots_.push(snapshot));
+            static_cast<void>(snapshots_.append(snapshot));
         } else {
             *snapshots_.get(next_).expect("a full history holds a snapshot at each position") = snapshot;
         }

@@ -25,10 +25,11 @@
 // so no pointer that a caller holds and no bytes become a TextView.
 //
 // A FixedText starts empty, or holds the characters of a literal that fits
-// it.  push(), append() and the free append_hex<Digits>() put characters
-// after the last one, and format()
-// of foundation/core/Format.h writes a text into it from its start.  A write
-// that does not fit gives Truncated.  A FixedText never holds more than N
+// it.  append() of a character or of a text and the free append_hex<Digits>()
+// put characters after the last one, and format() of
+// foundation/core/Format.h writes a text into it from its start.  A write
+// that does not fit gives Full<char> of foundation/core/Full.h, the error of
+// each full owner of the Region family.  A FixedText never holds more than N
 // characters, and no operation reads past its count.
 //
 // THE READS OF THE CHARACTERS
@@ -59,6 +60,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Cursor.h>
+#include <foundation/core/Full.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
@@ -72,10 +74,6 @@ class CText;
 template <std::size_t Capacity>
     requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(__PTRDIFF_MAX__))
 class FixedText;
-
-// The error of a write into a FixedText whose characters need more than its
-// capacity: a push(), an append() or a format() of foundation/core/Format.h.
-struct Truncated final {};
 
 namespace detail {
 
@@ -294,11 +292,11 @@ public:
     // The buffer then holds no character.
     constexpr void clear() noexcept { size_ = 0; }
 
-    // Puts character after the last character, or gives Truncated when the
+    // Puts character after the last character, or gives Full<char> when the
     // buffer holds Capacity characters.  One compare.
-    [[nodiscard]] constexpr Result<Unit, Truncated> push(char character) & noexcept {
+    [[nodiscard]] constexpr Result<Unit, Full<char>> append(char character) & noexcept {
         if (size_ == Capacity) [[unlikely]] {
-            return err(Truncated{});
+            return err(Full<char>{});
         }
         bytes_[size_] = character;
         ++size_;
@@ -306,12 +304,12 @@ public:
     }
 
     // Puts each character of text after the last character.  When they do
-    // not fit, it gives Truncated, and the buffer keeps the characters that it
-    // held.  One compare, and one copy for each character.
-    [[nodiscard]] constexpr Result<Unit, Truncated> append(TextView text) & noexcept {
+    // not fit, it gives Full<char>, and the buffer keeps the characters that
+    // it held.  One compare, and one copy for each character.
+    [[nodiscard]] constexpr Result<Unit, Full<char>> append(TextView text) & noexcept {
         std::size_t const count = text.size();
         if (count > Capacity - size()) [[unlikely]] {
-            return err(Truncated{});
+            return err(Full<char>{});
         }
         for (std::size_t index = 0; index < count; ++index) {
             bytes_[size_ + index] = text.first_[index];
@@ -384,14 +382,14 @@ constexpr void put_hex_digits_(std::uint64_t value, std::size_t count, char* out
 
 // Puts the low Digits hexadecimal digits of value after the last character
 // of text, the most significant first, in lower case and with the zeros
-// that lead.  When they do not fit, it gives Truncated, and text keeps the
+// that lead.  When they do not fit, it gives Full<char>, and text keeps the
 // characters that it held.  One compare and Digits stores.
 template <std::size_t Digits, std::size_t Capacity>
     requires(Digits >= 1 && Digits <= 16)
-[[nodiscard]] constexpr Result<Unit, Truncated> append_hex(FixedText<Capacity>& text, std::uint64_t value) noexcept {
+[[nodiscard]] constexpr Result<Unit, Full<char>> append_hex(FixedText<Capacity>& text, std::uint64_t value) noexcept {
     std::size_t const size = text.size();
     if (Digits > Capacity - size) [[unlikely]] {
-        return err(Truncated{});
+        return err(Full<char>{});
     }
     detail::put_hex_digits_(value, Digits, detail::text_bytes_(text) + size);
     detail::text_resize_(text, size + Digits);

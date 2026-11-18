@@ -98,7 +98,9 @@ public:
 
     [[nodiscard]] constexpr bool full() const noexcept { return statuses_.size() >= max_statuses; }
 
-    [[nodiscard]] constexpr bool push(DiscoverySourceStatus status) noexcept { return statuses_.push(status).is_ok(); }
+    [[nodiscard]] constexpr bool push(DiscoverySourceStatus status) noexcept {
+        return statuses_.append(status).is_ok();
+    }
 
 private:
     ::fixy::FixedList<DiscoverySourceStatus, max_statuses> statuses_{};

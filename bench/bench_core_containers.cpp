@@ -433,7 +433,7 @@ int main() {
     std::uint32_t pattern = 0x9E3779B9u;
     for (std::size_t step = 0; step < kOperations; ++step) {
         pattern = pattern * 1664525u + 1013904223u;
-        static_cast<void>(positions.push(fixy::Index<kOperations>::check(pattern >> 20).value_or(fixy::index<0>()))
+        static_cast<void>(positions.append(fixy::Index<kOperations>::check(pattern >> 20).value_or(fixy::index<0>()))
                               .expect("the list holds 4096 positions"));
     }
 

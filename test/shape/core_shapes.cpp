@@ -406,10 +406,10 @@ using BrandedColumn = fixy::BrandedView<std::uint32_t const, BrandedProbeBrand>;
     }
 }
 
-// A push into a FixedList: one compare of the count, the store of the
+// An append into a FixedList: one compare of the count, the store of the
 // element, and the step of the count.
-[[gnu::used]] bool fixed_list_push(fixy::FixedList<std::uint32_t, 64>& list, std::uint32_t value) noexcept {
-    return list.push(value).is_ok();
+[[gnu::used]] bool fixed_list_append(fixy::FixedList<std::uint32_t, 64>& list, std::uint32_t value) noexcept {
+    return list.append(value).is_ok();
 }
 
 // The last element of a FixedList, or zero for an empty list.
@@ -1423,7 +1423,7 @@ struct RawColumn final {
     }
 }
 
-[[gnu::used]] bool fixed_list_push_raw(RawList& list, std::uint32_t value) noexcept {
+[[gnu::used]] bool fixed_list_append_raw(RawList& list, std::uint32_t value) noexcept {
     if (list.count == 64) {
         return false;
     }

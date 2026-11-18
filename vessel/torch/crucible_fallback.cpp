@@ -281,8 +281,9 @@ CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fix
     // The tables refuse a name longer than SCHEMA_NAME_MAX characters, and so
     // does the text below.
     ::fixy::FixedText<crucible::SCHEMA_NAME_MAX> full_name{};
-    const bool is_named = full_name.append(base_name).is_ok()
-                       && (overload.size() == 0 || (full_name.push('.').is_ok() && full_name.append(overload).is_ok()));
+    const bool is_named =
+        full_name.append(base_name).is_ok()
+        && (overload.size() == 0 || (full_name.append('.').is_ok() && full_name.append(overload).is_ok()));
     if (!is_named) [[unlikely]] {
         ::fixy::fatal("crucible: a schema name is longer than SCHEMA_NAME_MAX characters.  Raise SCHEMA_NAME_MAX in "
                       "crucible/SchemaTable.h");

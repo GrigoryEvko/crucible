@@ -142,7 +142,7 @@ public:
             attach_failures_.bump();
             return false;
         }
-        if (links_.push(HeldLink{.link = link}).is_err()) {
+        if (links_.append(HeldLink{.link = link}).is_err()) {
             bpf_link__destroy(link);
             attach_failures_.bump();
             return false;

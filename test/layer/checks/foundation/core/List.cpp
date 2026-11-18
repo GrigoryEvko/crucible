@@ -69,10 +69,13 @@ template <class List>
 concept Clears = requires(List& list) { list.clear(); };
 static_assert(Clears<FixedList<int, 2>> && !Clears<FixedList<LinearToken, 2>>);
 
-// A push, a take, a view and a loop of a temporary list are refused.  A
-// list has no subscript, no data() and no indices().
+// An append, a take, a view and a loop of a temporary list are refused.  A
+// list has no subscript, no data() and no indices().  The one verb of an
+// element is append: a list has no push.
 template <class List>
-concept PushesTemporary = requires { std::declval<List>().push(std::declval<typename List::element_type>()); };
+concept AppendsToTemporary = requires { std::declval<List>().append(std::declval<typename List::element_type>()); };
+template <class List>
+concept HasPush = requires(List& list) { list.push(std::declval<typename List::element_type>()); };
 template <class List>
 concept TakesFromTemporary = requires { std::declval<List>().take_last(); };
 template <class List>
@@ -81,18 +84,20 @@ template <class List>
 concept HasSubscript = requires(List& list) { list[0]; };
 template <class List>
 concept HasIndices = requires(List& list) { list.indices(); };
-static_assert(!PushesTemporary<FixedList<int, 2>> && !TakesFromTemporary<FixedList<int, 2>>);
+static_assert(!AppendsToTemporary<FixedList<int, 2>> && !TakesFromTemporary<FixedList<int, 2>>);
+static_assert(!HasPush<FixedList<int, 2>>);
 static_assert(!ViewsTemporary<FixedList<int, 2>> && !ViewsTemporary<FixedList<int, 2> const>);
 static_assert(!HasSubscript<FixedList<int, 2>> && !HasIndices<FixedList<int, 2>>);
 
-// Push, get, take and clear in a constant evaluation.  A push into a full
-// list gives Full, and each read below the count sees the pushed value.
-[[nodiscard]] consteval int push_take_get() noexcept {
+// Append, get, take and clear in a constant evaluation.  An append into a
+// full list gives Full, and each read below the count sees the appended
+// value.
+[[nodiscard]] consteval int append_take_get() noexcept {
     FixedList<int, 3> list;
-    int total = *list.push(1).expect("the list has room");
-    static_cast<void>(list.push(2).expect("the list has room"));
-    static_cast<void>(list.push(3).expect("the list has room"));
-    bool const is_refused = list.push(4).is_err();
+    int total = *list.append(1).expect("the list has room");
+    static_cast<void>(list.append(2).expect("the list has room"));
+    static_cast<void>(list.append(3).expect("the list has room"));
+    bool const is_refused = list.append(4).is_err();
     total += *list.get(1).expect("1 is below the count");
     total += list.take_last().expect("the list holds an element");
     total += static_cast<int>(list.size());
@@ -103,15 +108,15 @@ static_assert(!HasSubscript<FixedList<int, 2>> && !HasIndices<FixedList<int, 2>>
     bool const is_empty = list.size() == 0 && list.get(0).is_none() && list.take_last().is_none();
     return is_refused && is_empty ? total : -1;
 }
-static_assert(push_take_get() == 1 + 2 + 3 + 2 + (1 + 2));
+static_assert(append_take_get() == 1 + 2 + 3 + 2 + (1 + 2));
 
 // The copy of a list of an element with a user-provided copy copies each
 // element, and the move gives each element to the target and leaves the
 // source empty.
 [[nodiscard]] consteval int copy_and_move_each_element() noexcept {
     FixedList<Owner, 3> source;
-    static_cast<void>(source.push(Owner{1}).expect("the list has room"));
-    static_cast<void>(source.push(Owner{2}).expect("the list has room"));
+    static_cast<void>(source.append(Owner{1}).expect("the list has room"));
+    static_cast<void>(source.append(Owner{2}).expect("the list has room"));
     FixedList<Owner, 3> const copied{source};
     FixedList<Owner, 3> const moved{std::move(source)};
     int total = 0;

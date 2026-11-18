@@ -286,7 +286,7 @@ public:
                 return false;
             }
         }
-        static_cast<void>(g.locked_.push(bytes).expect("the test above found a free entry for the region"));
+        static_cast<void>(g.locked_.append(bytes).expect("the test above found a free entry for the region"));
         return true;
     }
 

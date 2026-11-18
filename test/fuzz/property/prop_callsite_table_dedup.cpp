@@ -109,7 +109,7 @@ using Ident = ::fixy::FixedText<kMaxIdentChars>;
     const uint32_t len = min_len + rng.next_below(max_len - min_len + 1);
     Ident s{};
     for (uint32_t i = 0; i < len; ++i) {
-        s.push(kAlphabet[rng.next_below(kAlphabetLen)]).expect("a name holds at most kMaxIdentChars characters");
+        s.append(kAlphabet[rng.next_below(kAlphabetLen)]).expect("a name holds at most kMaxIdentChars characters");
     }
     return s;
 }

@@ -260,7 +260,7 @@ private:
         for (SchemaEntry& entry : entries_) {
             if (carried.hash < entry.hash) ::fixy::swap(entry, carried);
         }
-        const bool is_pushed = entries_.push(static_cast<SchemaEntry&&>(carried)).is_ok();
+        const bool is_pushed = entries_.append(static_cast<SchemaEntry&&>(carried)).is_ok();
         CRUCIBLE_FATAL_INVARIANT(is_pushed);
         CRUCIBLE_POST(0, is_registered_(hash));
         return ::fixy::none;

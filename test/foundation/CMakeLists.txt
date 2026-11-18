@@ -2119,7 +2119,7 @@ foundation_neg_compile_test(neg_core_format_temporary_text
   "use of deleted function .void foundation::core::format\\(FixedText<Capacity>&&, const Fmt<typename std::type_identity<[A-Za-z]+>::type ...>&, Args ...\\) \\[with long unsigned int Capacity = 16. Args = \\{int\\}\\]"
   "format\\(\\) gives a view of its FixedText, and a temporary FixedText ends with the full expression")
 foundation_neg_compile_test(neg_core_format_result_dropped
-  "ignoring return value of .foundation::core::Result<foundation::core::TextView, foundation::core::Truncated> foundation::core::format\\("
+  "ignoring return value of .foundation::core::Result<foundation::core::TextView, foundation::core::Full<char> > foundation::core::format\\("
   "declared with attribute .nodiscard.")
 foundation_neg_compile_test(neg_core_format_argument_long_double
   "no matching function for call to .format\\(foundation::core::FixedText<32>&, const char \\[16\\], long double\\)."
@@ -3349,8 +3349,8 @@ foundation_neg_compile_test(neg_core_owner_state_mark_no_release
   "template constraint failure for .template<class State>  requires  OwnerState<State> class foundation::core::detail::OwnerCore."
   "required for the satisfaction of .GivesOwnerOperations<State>. \\[with State = <unnamed>::MarkedRecordWithNoRelease\\]")
 
-# A FixedList holds at most N elements, and a push into a full list gives
-# Full, which holds the value of a linear element.  Each element ends one
+# A FixedList holds at most N elements, and an append into a full list
+# gives Full, which holds the value of a linear element.  Each element ends one
 # time, and the model of a FixedArray and a count agrees with each step.
 foundation_test(test_core_list)
 
@@ -3712,11 +3712,11 @@ foundation_neg_compile_test(neg_core_pointwise_nan_rule_of_bool
   "cannot convert .const bool. to .foundation::core::NanRule. in return"
   "CanonicalNanOp<\\{anonymous\\}::Copy, float>")
 
-# A push into or a view of a temporary list is refused, and a list of a
+# An append into or a view of a temporary list is refused, and a list of a
 # linear element has no clear().
-foundation_neg_compile_test(neg_core_fixed_list_push_of_temporary
-  "use of deleted function .void foundation::core::FixedList<T, N>::push\\(T\\) && \\[with T = int; long unsigned int N = 4\\]."
-  "a push into a temporary FixedList gives a Ref that dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_fixed_list_append_to_temporary
+  "use of deleted function .void foundation::core::FixedList<T, N>::append\\(T\\) && \\[with T = int; long unsigned int N = 4\\]."
+  "an append into a temporary FixedList gives a Ref that dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_fixed_list_clear_of_linear
   "no matching function for call to .foundation::core::FixedList<Token, 2>::clear\\(\\)."
   "required for the satisfaction of .DroppablePayload<T>. \\[with T = Token\\]")
@@ -3815,9 +3815,9 @@ foundation_neg_compile_test(neg_core_heap_array_get_brand_from_target_type
 foundation_neg_compile_test(neg_core_heap_array_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::HeapArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) const &")
-foundation_neg_compile_test(neg_core_fixed_list_push_brand_from_target_type
-  "no matches converting function .push. to type .using Pick = class foundation::core::Result<foundation::core::Ref<int, \\{anonymous\\}::Held>, foundation::core::Full<int> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(int\\) & noexcept."
-  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type>, foundation::core::Full<T> > foundation::core::FixedList<T, N>::push\\(T\\) &")
+foundation_neg_compile_test(neg_core_fixed_list_append_brand_from_target_type
+  "no matches converting function .append. to type .using Pick = class foundation::core::Result<foundation::core::Ref<int, \\{anonymous\\}::Held>, foundation::core::Full<int> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(int\\) & noexcept."
+  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type>, foundation::core::Full<T> > foundation::core::FixedList<T, N>::append\\(T\\) &")
 foundation_neg_compile_test(neg_core_fixed_list_get_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) &")

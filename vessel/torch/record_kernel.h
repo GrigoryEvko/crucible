@@ -456,13 +456,13 @@ public:
     // name of a row, or a part of it, fits the capacity.
     QualifiedOpName(::fixy::TextView name, ::fixy::TextView overload) noexcept {
         for (const char character : name)
-            text_.push(character).expect("the capacity holds the longest name");
+            text_.append(character).expect("the capacity holds the longest name");
         if (overload.size() != 0) {
-            text_.push('.').expect("the capacity holds the longest name");
+            text_.append('.').expect("the capacity holds the longest name");
             for (const char character : overload)
-                text_.push(character).expect("the capacity holds the longest name");
+                text_.append(character).expect("the capacity holds the longest name");
         }
-        text_.push('\0').expect("the capacity holds the longest name and its zero");
+        text_.append('\0').expect("the capacity holds the longest name and its zero");
     }
 
     // The name as a C text.  The constructor puts one zero after the name.

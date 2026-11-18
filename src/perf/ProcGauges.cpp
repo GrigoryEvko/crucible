@@ -203,7 +203,7 @@ ProcGauges ProcGauges::init(::fixy::InitLoadCtx const& init) noexcept {
                 return ::foundation::os::Visit::proceed;
             }
             if (!is_readable(path.c_text())) return ::foundation::os::Visit::proceed;
-            static_cast<void>(gauges.block_stat_paths_.push(path).expect("the list has room for one more path"));
+            static_cast<void>(gauges.block_stat_paths_.append(path).expect("the list has room for one more path"));
             return ::foundation::os::Visit::proceed;
         }));
 

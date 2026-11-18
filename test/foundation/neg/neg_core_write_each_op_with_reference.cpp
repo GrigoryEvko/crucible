@@ -10,8 +10,8 @@
 int main() {
     ::foundation::core::FixedList<int, 4> out{};
     ::foundation::core::FixedList<int, 4> input{};
-    static_cast<void>(out.push(1).expect("the list has room"));
-    static_cast<void>(input.push(2).expect("the list has room"));
+    static_cast<void>(out.append(1).expect("the list has room"));
+    static_cast<void>(input.append(2).expect("the list has room"));
     out = ::foundation::core::with_mut(std::move(out), [&input](auto out_view) noexcept {
         auto const& held = out_view;
         static_cast<void>(::foundation::core::write_each(

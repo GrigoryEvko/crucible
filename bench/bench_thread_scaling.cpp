@@ -328,7 +328,7 @@ template <OpKind Kind>
                     run_producer<Kind>(state, line);
                 }
             }).expect("the thread door starts a worker of a row");
-        static_cast<void>(workers.push(std::move(worker)).expect("a row has at most kMaxThreads threads"));
+        static_cast<void>(workers.append(std::move(worker)).expect("a row has at most kMaxThreads threads"));
     }
     while (state.ready.value.load_acquire() + 1 < threads.raw())
         CRUCIBLE_SPIN_PAUSE;
@@ -426,7 +426,7 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
     for (ThreadCount const threads : counts) {
         // A row of mpsc push needs a producer beside its consumer.
         if (producers_of<Kind>(threads) == 0) continue;
-        static_cast<void>(rows.push(run_row<Kind>(spread, threads)).expect("an op has at most kMaxRows rows"));
+        static_cast<void>(rows.append(run_row<Kind>(spread, threads)).expect("an op has at most kMaxRows rows"));
     }
     if (rows.size() == 0) return;
     RowResult const& first = *rows.get(0).expect("the test above found a row");
@@ -448,7 +448,7 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
             ::fixy::fatal("a row of {} threads is larger than the {} slots of the run, or than {}", threads.raw(),
                           spread.count(), kMaxThreads);
         }
-        static_cast<void>(counts.push(threads).expect("a run has at most kMaxRows counts"));
+        static_cast<void>(counts.append(threads).expect("a run has at most kMaxRows counts"));
     };
     add(ThreadCount{1});
     if (spread.count() >= 2) add(ThreadCount{2});

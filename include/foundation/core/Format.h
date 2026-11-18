@@ -4,12 +4,12 @@
 //
 //   format(out, fmt, args...)   writes the text with the arguments into out,
 //                               from its start, and gives a Result: the
-//                               TextView of the text, or Truncated when the
+//                               TextView of the text, or Full<char> when the
 //                               text needs more than the capacity of out
 //
 // The text and the arguments obey the rules of foundation/core/Report.h,
 // and the bytes are the bytes that report() writes for the same call.  On
-// Truncated, out holds the first characters of the text, as many as its
+// Full<char>, out holds the first characters of the text, as many as its
 // capacity, and the caller can read them through out.view().  The text and
 // the view never leave the buffer of out.
 //
@@ -26,8 +26,8 @@ namespace foundation::core {
 
 template <std::size_t Capacity, class... Args>
     requires(Formattable<Args> && ...)
-[[nodiscard]] Result<TextView, Truncated> format(FixedText<Capacity>& out,
-                                                 Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) noexcept {
+[[nodiscard]] Result<TextView, Full<char>>
+format(FixedText<Capacity>& out, Fmt<std::type_identity_t<Args>...> const& fmt, Args... args) noexcept {
     std::size_t length = 0;
     if constexpr (sizeof...(Args) == 0) {
         length = detail::format_window_(detail::text_bytes_(out), Capacity, 0, detail::fmt_text_(fmt), nullptr, 0);
@@ -37,7 +37,7 @@ template <std::size_t Capacity, class... Args>
                                         sizeof...(Args));
     }
     detail::text_resize_(out, length);
-    if (length > Capacity) return err(Truncated{});
+    if (length > Capacity) return err(Full<char>{});
     return out.view();
 }
 

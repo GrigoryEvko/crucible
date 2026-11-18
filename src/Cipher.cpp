@@ -1013,7 +1013,7 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     // HEAD at an earlier commit, and the open takes the head from the log.
     ::fixy::FixedText<17> head_line{};
     head_line.append(hash_digits.view()).expect("sixteen digits fit the HEAD line");
-    head_line.push('\n').expect("the newline fits the HEAD line");
+    head_line.append('\n').expect("the newline fits the HEAD line");
     const bool is_head_written = with_file_ctx_(
         file_ctx, [&](auto const& ctx) { return replace_entry_at_(ctx, root_dirfd_, "HEAD", head_line.view()); });
 
@@ -1081,7 +1081,7 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
 
     resident_cache_bytes_ += bytes.size();
     const bool is_full = resident_cache_
-                             .push(CachedObjectBytes{
+                             .append(CachedObjectBytes{
                                  .hash = hash,
                                  .bytes = copy_bytes_(allocation_, bytes),
                              })

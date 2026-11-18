@@ -273,10 +273,10 @@ void run_level(Level const& level, RowNames names, Placement const& placement,
         ::fixy::FixedArray<std::size_t, 2> const strides{level.side, 1};
         auto unique = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
                           .expect("a dense plane has no overlap");
-        static_cast<void>(reports.push(measure_shards<1>(std::move(names.one), walk, unique)));
-        static_cast<void>(reports.push(measure_shards<2>(std::move(names.two), walk, unique)));
-        static_cast<void>(reports.push(measure_shards<4>(std::move(names.four), walk, unique)));
-        static_cast<void>(reports.push(measure_shards<8>(std::move(names.eight), walk, unique)));
+        static_cast<void>(reports.append(measure_shards<1>(std::move(names.one), walk, unique)));
+        static_cast<void>(reports.append(measure_shards<2>(std::move(names.two), walk, unique)));
+        static_cast<void>(reports.append(measure_shards<4>(std::move(names.four), walk, unique)));
+        static_cast<void>(reports.append(measure_shards<8>(std::move(names.eight), walk, unique)));
     });
 
     reference.print_text();

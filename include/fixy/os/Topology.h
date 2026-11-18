@@ -246,8 +246,8 @@ public:
     // Writes the summary of the topology into out, from its start: the
     // source, the CPU, the cores, the caches, the L3 groups, the NUMA nodes
     // and the memory, one subject on each line.  The view of the text, or
-    // Truncated with the first characters of the text in out.
-    [[nodiscard]] Result<TextView, Truncated> format_summary(FixedText<summary_capacity>& out) const noexcept;
+    // Full<char> with the first characters of the text in out.
+    [[nodiscard]] Result<TextView, Full<char>> format_summary(FixedText<summary_capacity>& out) const noexcept;
 
     // Writes the summary to standard error through the sink write of the
     // Report family, with one system call, so the summary of one call

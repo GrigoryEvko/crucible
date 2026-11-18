@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
                 // canonical compute_recipe_hash, ignoring any
                 // pre-set hash on the input.
                 if (stored->hash != compute_recipe_hash(recipe)) return false;
-                (void)interned.push(stored).expect("the list holds one Ref for each recipe");
+                static_cast<void>(interned.append(stored).expect("the list holds one Ref for each recipe"));
             }
 
             // Phase 2: pairwise iff invariant.  semantic_equal is

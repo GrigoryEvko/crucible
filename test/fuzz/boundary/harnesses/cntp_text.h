@@ -37,7 +37,7 @@ inline void run_cntp_text(std::span<const std::uint8_t> bytes) {
             // The output of tc qdisc show is some short lines, so the harness
             // gives the parser at most 4096 characters of it.
             ::fixy::FixedText<4096> shown{};
-            while (!cursor.is_empty() && shown.push(cursor.take<char>()).is_ok()) {}
+            while (!cursor.is_empty() && shown.append(cursor.take<char>()).is_ok()) {}
             (void)cntp::parse_tc_qdisc_show(shown.view());
             break;
         }
@@ -53,9 +53,9 @@ inline void run_cntp_text(std::span<const std::uint8_t> bytes) {
                 if (!is_past_split && character == '\x1f') {
                     is_past_split = true;
                 } else if (is_past_split) {
-                    static_cast<void>(tx.push(character).is_ok());
+                    static_cast<void>(tx.append(character).is_ok());
                 } else {
-                    static_cast<void>(rx.push(character).is_ok());
+                    static_cast<void>(rx.append(character).is_ok());
                 }
             }
             (void)cntp::parse_pfc_pause_counters(rx.view(), tx.view());
@@ -65,7 +65,7 @@ inline void run_cntp_text(std::span<const std::uint8_t> bytes) {
             // The product reads at most available_cc_capacity characters of
             // the list, so the harness gives the parser at most as many.
             ::fixy::FixedText<cntp::detail::available_cc_capacity> listed{};
-            while (!cursor.is_empty() && listed.push(cursor.take<char>()).is_ok()) {}
+            while (!cursor.is_empty() && listed.append(cursor.take<char>()).is_ok()) {}
             (void)cntp::parse_available_congestion_control(listed.view());
             break;
         }

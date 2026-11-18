@@ -4,15 +4,16 @@
 // count that changes.
 //
 //   FixedList<T, N>     at most N elements in the object itself, in the order
-//                       of their pushes
-//   Full<T>             the error of a push into a full list.  For a linear T
-//                       it holds the value, so the caller gets the value back.
-//                       For each other T it is empty, and the value ends with
-//                       the refusal
+//                       of their appends
+//   Full<T>             the error of an append into a full list
+//                       (foundation/core/Full.h).  For a linear T it holds
+//                       the value, so the caller gets the value back.  For
+//                       each other T it is empty, and the value ends with the
+//                       refusal
 //
 // THE OPERATIONS
 //   size()              the count of elements, at most N
-//   push(value)         puts the value after the last element, and gives a Ref
+//   append(value)       puts the value after the last element, and gives a Ref
 //                       to it, or Full<T> when the list holds N elements: one
 //                       compare.  An element does not move while the list
 //                       lives and holds it
@@ -35,7 +36,7 @@
 //                       and the door gives the list back
 //                       (foundation/core/Frame.h)
 //
-// Each Ref of one call of push() or get() has the fresh brand of that call.
+// Each Ref of one call of append() or get() has the fresh brand of that call.
 //
 // A slot past size() holds no element: no code reads it, and the destructor
 // ends only the elements below size().  A list of a trivially copyable
@@ -50,6 +51,7 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
+#include <foundation/core/Full.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
@@ -61,37 +63,6 @@
 
 namespace foundation::core {
 
-// The error of a push into a full owner.  The owner holds no more room, so
-// the value of the push did not become an element.  An empty Full ends the
-// value with the refusal.
-template <class T>
-struct Full final {
-    [[nodiscard]] friend constexpr bool operator==(Full, Full) noexcept = default;
-};
-
-// The Full of a linear value holds the value, so the caller of the push gets
-// the value back and consumes it.  take() moves the value out of a Full that
-// the caller gives up.  The move operations are those of the value, and a
-// linear value has a user-provided move assignment, so the Full is not
-// trivially copyable either.
-template <class T>
-    requires(::foundation::linear::is_linear_type(^^T))
-class[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] Full<T> final {
-    T value_;
-
-public:
-    constexpr explicit Full(T value) noexcept : value_{static_cast<T&&>(value)} {}
-
-    constexpr Full(Full&&) noexcept = default;
-    constexpr Full& operator=(Full&&) noexcept = default;
-    Full(Full const&) = delete("a Full holds a linear value, and a copy of the Full would copy the value");
-    Full& operator=(Full const&) = delete("a Full holds a linear value, and a copy of the Full would copy the value");
-    constexpr ~Full() = default;
-
-    [[nodiscard]] constexpr T take() && noexcept { return static_cast<T&&>(value_); }
-    T take() & = delete("take() of a Full that the caller keeps would leave a moved value in it");
-};
-
 template <class T, std::size_t N>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_move_constructible_v<T>
 class FixedList;
@@ -99,7 +70,7 @@ class FixedList;
 namespace detail {
 
 // The slots of a FixedList: N elements, each of which starts its lifetime at
-// a push and ends it at a take or at the end of the list.  For an element
+// an append and ends it at a take or at the end of the list.  For an element
 // that is trivially default constructible, the union value-initializes each
 // slot, so no read of a slot past the count can see an indeterminate value.
 // For each other element the union starts no element, so its constructor
@@ -267,7 +238,7 @@ public:
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Result<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>, Full<T>>
-    push(T value) & noexcept {
+    append(T value) & noexcept {
         if (count_ == N) [[unlikely]] {
             if constexpr (::foundation::linear::is_linear_type(^^T)) {
                 return err(Full<T>{static_cast<T&&>(value)});
@@ -279,8 +250,8 @@ public:
         ++count_;
         return detail::RefDoor::lend<Fresh>(*element);
     }
-    void
-    push(T) && = delete("a push into a temporary FixedList gives a Ref that dangles at the end of the full expression");
+    void append(T) && =
+        delete("an append into a temporary FixedList gives a Ref that dangles at the end of the full expression");
 
     // Moves the last element out, or gives no value for an empty list.  One
     // compare.
@@ -303,7 +274,7 @@ public:
         end_each_();
     }
 
-    // The View of the elements.  It borrows this list, and a push or a take
+    // The View of the elements.  It borrows this list, and an append or a take
     // ends what it borrows.  The count is at most N, and the first count
     // slots hold the elements, so the View comes through the door of the
     // base layer, with no check and no test of a null pointer.  A constant

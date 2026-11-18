@@ -187,7 +187,7 @@ static_assert(std::is_same_v<::fixy::Philox4x32, ::foundation::core::Philox4x32>
 template <class Sum>
 concept SealedSumOfBytes = ::foundation::core::detail::TrivialCopyShape<Sum> && std::is_nothrow_move_assignable_v<Sum>
                         && !std::is_trivially_copyable_v<Sum>;
-static_assert(SealedSumOfBytes<::fixy::Result<::fixy::TextView, ::fixy::Truncated>>);
+static_assert(SealedSumOfBytes<::fixy::Result<::fixy::TextView, ::fixy::Full<char>>>);
 static_assert(SealedSumOfBytes<::fixy::Option<::fixy::CText>>);
 static_assert(SealedSumOfBytes<::fixy::Result<::fixy::Ref<int, CoreCheckBrand>, ::fixy::Full<int>>>
               && sizeof(::fixy::Result<::fixy::Ref<int, CoreCheckBrand>, ::fixy::Full<int>>) == 16);

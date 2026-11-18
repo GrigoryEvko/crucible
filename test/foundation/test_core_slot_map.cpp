@@ -136,7 +136,7 @@ void test_generation_wrap_retires_the_slot() {
     for (int turn = 0; turn < 128; ++turn) {
         Key const key = map.insert(turn).expect("the map has a free slot");
         CRUCIBLE_FATAL_INVARIANT(index_of(key) == 0 && generation_of(key) == static_cast<std::uint64_t>(2 * turn + 1));
-        static_cast<void>(keys.push(key).expect("the list holds 128 keys"));
+        static_cast<void>(keys.append(key).expect("the list holds 128 keys"));
         CRUCIBLE_FATAL_INVARIANT(map.remove(key).expect("the key is live") == turn);
     }
     Key const next = map.insert(500).expect("the second slot is free");
@@ -235,7 +235,7 @@ struct Logged final {
     Logged& operator=(Logged const&) = delete;
     ~Logged() {
         if (is_live) {
-            static_cast<void>((*log).push(label).expect("the log has room"));
+            static_cast<void>((*log).append(label).expect("the log has room"));
         }
     }
 };

@@ -101,7 +101,7 @@ template <std::size_t MaxLive>
         const std::uint32_t death = s.death_op.raw();
         if (birth <= t && t <= death) {
             if (!::foundation::decide::no_overflow_sum(s.offset_bytes, s.nbytes)) return false;
-            const bool is_full = live.push(SlotBytes{.lo = s.offset_bytes, .hi = s.offset_bytes + s.nbytes}).is_err();
+            const bool is_full = live.append(SlotBytes{.lo = s.offset_bytes, .hi = s.offset_bytes + s.nbytes}).is_err();
             if (is_full) return false;
         }
     }
@@ -1157,7 +1157,7 @@ inline void recompute_merkle(TraceNode& node) {
     while (walk.is_some()) {
         const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
         if (node->kind != TraceNodeKind::REGION) break;
-        if (existing_regions.push(node->expect_region()).is_err()) break;
+        if (existing_regions.append(node->expect_region()).is_err()) break;
         walk = node->next;
     }
 

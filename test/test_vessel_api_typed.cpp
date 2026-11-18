@@ -244,7 +244,7 @@ using Ranks = ::fixy::FixedList<uint8_t, crucible::kMaxOpRecords>;
 [[nodiscard]] Ranks ranks_of(::fixy::View<const crucible::TensorMeta> records) noexcept {
     Ranks ranks{};
     for (const crucible::TensorMeta& record : records) {
-        EXPECT(ranks.push(record.ndim).is_ok(), "a View of the slots holds at most kMaxOpRecords records");
+        EXPECT(ranks.append(record.ndim).is_ok(), "a View of the slots holds at most kMaxOpRecords records");
     }
     return ranks;
 }

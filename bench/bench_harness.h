@@ -464,7 +464,7 @@ enum class SlotOrder : std::uint8_t {
         for (CpuId const held : order) {
             if (held == parsed) return ::fixy::none;
         }
-        if (order.push(parsed).is_err()) return ::fixy::none;
+        if (order.append(parsed).is_err()) return ::fixy::none;
     }
     return ::fixy::some(order);
 }
@@ -492,7 +492,7 @@ public:
                 is_held = is_held || held == cpu;
             }
             if (is_held || !cores.set_.contains(cpu.raw())) continue;
-            static_cast<void>(cores.slots_.push(cpu));
+            static_cast<void>(cores.slots_.append(cpu));
             cores.source_ = SlotOrder::Claim;
         }
         for (int const cpu : cores.set_) {
@@ -501,7 +501,7 @@ public:
                 is_named = is_named || named.raw() == cpu;
             }
             if (is_named) continue;
-            if (cores.slots_.push(CpuId{cpu}).is_err()) break;
+            if (cores.slots_.append(CpuId{cpu}).is_err()) break;
         }
         return cores;
     }
@@ -647,7 +647,7 @@ public:
         Spread spread{};
         spread.source_ = SpreadSource::Claim;
         for (CpuId const cpu : cores.slots()) {
-            if (spread.order_.push(cpu).is_err()) break;
+            if (spread.order_.append(cpu).is_err()) break;
         }
         return spread;
     }
@@ -683,16 +683,16 @@ public:
             }
             deepest = rank > deepest ? rank : deepest;
             Turn const turn = cpu == 0 || group.contains(0) ? Turn::Last : Turn::First;
-            if (ranked.push(RankedCpu{.cpu = CpuId{cpu}, .rank = rank, .turn = turn}).is_err()) break;
+            if (ranked.append(RankedCpu{.cpu = CpuId{cpu}, .rank = rank, .turn = turn}).is_err()) break;
         }
         Spread spread{};
         spread.source_ = SpreadSource::Topology;
         for (std::size_t rank = 0; rank <= deepest; ++rank) {
             for (RankedCpu const& each : ranked) {
-                if (each.rank == rank && each.turn == Turn::First) static_cast<void>(spread.order_.push(each.cpu));
+                if (each.rank == rank && each.turn == Turn::First) static_cast<void>(spread.order_.append(each.cpu));
             }
             for (RankedCpu const& each : ranked) {
-                if (each.rank == rank && each.turn == Turn::Last) static_cast<void>(spread.order_.push(each.cpu));
+                if (each.rank == rank && each.turn == Turn::Last) static_cast<void>(spread.order_.append(each.cpu));
             }
         }
         return spread;
@@ -1153,7 +1153,7 @@ inline void read_thread_delays(::fixy::FixedList<ThreadDelay, kPauseThreads>& de
         if (found.is_none()) return ::foundation::os::Visit::proceed;
         ThreadDelay delay = std::move(found).value_or(ThreadDelay{});
         delay.tid = ::fixy::process::ThreadId{::fixy::narrow<std::uint32_t>(std::move(tid).value_or(0)).value_or(0)};
-        return delays.push(delay).is_ok() ? ::foundation::os::Visit::proceed : ::foundation::os::Visit::stop;
+        return delays.append(delay).is_ok() ? ::foundation::os::Visit::proceed : ::foundation::os::Visit::stop;
     }));
 }
 
@@ -2434,7 +2434,7 @@ public:
                 // part of the time of the window, so the check costs no read.
                 if (taken + 1 >= kMinWindowSamples && t1 > bound.deadline_tsc) break;
             }
-            static_cast<void>(window.ends.push(filled));
+            static_cast<void>(window.ends.append(filled));
             close_window_(window);
         }
         return close_(std::move(opening), window, std::move(ns_samples), filled, batch, wall0);
@@ -2558,7 +2558,7 @@ private:
         for (std::size_t done = 0; done < count; ++done) {
             std::size_t const share = base + (done < extra ? std::size_t{1} : std::size_t{0});
             std::uint64_t const deadline = is_timed ? start_tsc + span_tsc * (done + 1) : UINT64_MAX;
-            static_cast<void>(plan.bounds.push(WindowBound{.samples = share, .deadline_tsc = deadline}));
+            static_cast<void>(plan.bounds.append(WindowBound{.samples = share, .deadline_tsc = deadline}));
         }
         return plan;
     }
@@ -2569,7 +2569,7 @@ private:
     // regions.
     [[gnu::noinline]] static void close_window_(SampleWindow& window) noexcept {
         WindowClock const clock = detail::read_window_clock();
-        static_cast<void>(window.lost_ns.push(detail::lost_between(
+        static_cast<void>(window.lost_ns.append(detail::lost_between(
             ::fixy::side_as<side::ReadingBefore>(window.clock_last), ::fixy::side_as<side::ReadingAfter>(clock))));
         window.clock_last = clock;
     }
@@ -2636,7 +2636,7 @@ private:
                 std::vector<double> part(ns_samples.begin() + static_cast<std::ptrdiff_t>(window_begin),
                                          ns_samples.begin() + static_cast<std::ptrdiff_t>(window_end));
                 std::sort(part.begin(), part.end());
-                static_cast<void>(window_medians.push(percentile_interp(part, 0.5)));
+                static_cast<void>(window_medians.append(percentile_interp(part, 0.5)));
             }
             window_begin = window_end;
         }
@@ -3239,7 +3239,7 @@ inline void emit_reports(::fixy::View<const Report> reports, JsonTail tail) noex
 template <std::size_t Capacity>
 void add_report(::fixy::FixedList<Report, Capacity>& reports, Report report) noexcept {
     static_cast<void>(
-        reports.push(std::move(report)).expect("the list of the reports of a bench has room for each row"));
+        reports.append(std::move(report)).expect("the list of the reports of a bench has room for each row"));
 }
 
 // ── Setup checks ───────────────────────────────────────────────────

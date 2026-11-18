@@ -314,8 +314,8 @@ int check_mint_of_base_runs() {
     if (of_view.size() != 3 || of_view.data() != of_array.data()) return 83;
 
     ::fixy::FixedList<int, 4> list{};
-    static_cast<void>(list.push(5).expect("the list has room"));
-    static_cast<void>(list.push(6).expect("the list has room"));
+    static_cast<void>(list.append(5).expect("the list has room"));
+    static_cast<void>(list.append(6).expect("the list has room"));
     auto of_list = ::fixy::mint_borrowed<OwnerA>(list);
     if (of_list.size() != 2 || of_list[1] != 6) return 84;
 

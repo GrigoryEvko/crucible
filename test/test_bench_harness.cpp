@@ -992,8 +992,8 @@ constexpr ::fixy::process::ThreadId kOtherTid{7};
 [[nodiscard]] bench::PauseReading with_threads(bench::PauseReading reading) {
     reading.basis = bench::PauseBasis::LostTime;
     reading.own.tid = kMeasuringTid;
-    static_cast<void>(reading.others.push(reading.own));
-    static_cast<void>(reading.others.push(bench::ThreadDelay{.tid = kOtherTid}));
+    static_cast<void>(reading.others.append(reading.own));
+    static_cast<void>(reading.others.append(bench::ThreadDelay{.tid = kOtherTid}));
     return reading;
 }
 
@@ -1003,7 +1003,7 @@ constexpr ::fixy::process::ThreadId kOtherTid{7};
     for (bench::ThreadDelay& thread : reading.others) {
         if (thread.tid == delay.tid) thread = delay;
     }
-    if (delay.tid != kOtherTid && delay.tid != kMeasuringTid) static_cast<void>(reading.others.push(delay));
+    if (delay.tid != kOtherTid && delay.tid != kMeasuringTid) static_cast<void>(reading.others.append(delay));
     return reading;
 }
 

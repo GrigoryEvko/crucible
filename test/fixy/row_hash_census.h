@@ -996,8 +996,6 @@ inline constexpr StatedZero kZeros[] = {
      "characters hold"},
     {^^::foundation::core::FixedText,
      "an owned buffer of characters: it holds storage and makes no claim about what the characters hold"},
-    {^^::foundation::core::Truncated,
-     "the error of a format() whose text needs more than its buffer: it holds nothing"},
     {^^::foundation::core::ParseError,
      "the error of a parse() of a text: a kind and a position in the text, and never a value in a kernel "
      "signature"},

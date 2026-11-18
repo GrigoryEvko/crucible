@@ -190,13 +190,11 @@ static_assert(noexcept(unreachable()));
 // the API table, and the enumeration and the two members kind and position
 // of ParseError.
 inline constexpr TextView report_names{
-    "Site Fmt report Sink fatal unreachable format Truncated Formattable parse ParseError ParseErrorKind kind "
-    "position"};
+    "Site Fmt report Sink fatal unreachable format Formattable parse ParseError ParseErrorKind kind position"};
 CRUCIBLE_CLOSED_SURFACE(report_names, Site);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<>);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<int, TextView, bool>);
 CRUCIBLE_CLOSED_SURFACE(report_names, Fmt<float, double>);
-CRUCIBLE_CLOSED_SURFACE(report_names, Truncated);
 CRUCIBLE_CLOSED_SURFACE(report_names, ParseError);
 
 }  // namespace detail::report_checks

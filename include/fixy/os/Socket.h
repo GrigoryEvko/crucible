@@ -189,7 +189,7 @@ set_tcp_congestion(Ctx const&, NonNegative<int> socket, ::foundation::core::Text
     if (name.size() > congestion_name_bytes) return ::foundation::core::err(::foundation::os::Errno::enametoolong);
     ::foundation::core::FixedText<congestion_name_bytes + 1> bytes{};
     bytes.append(name).expect("the name fits below the capacity");
-    bytes.push('\0').expect("the zero fits after the name");
+    bytes.append('\0').expect("the zero fits after the name");
     return detail::set_tcp_option_(socket.value(), TcpOption::congestion,
                                    ::foundation::core::detail::text_first_(bytes.view()),
                                    static_cast<std::uint32_t>(bytes.size()));

@@ -134,7 +134,7 @@ void test_fixed_list() {
     {
         FixedList<Element, 4> list{};
         for (int label = 1; label <= 3; ++label) {
-            static_cast<void>(list.push(Element{counter, label}).expect("the list has room"));
+            static_cast<void>(list.append(Element{counter, label}).expect("the list has room"));
         }
         ends = 0;
         auto taken = with_mut(std::move(through(list)), [&list](auto out) noexcept {

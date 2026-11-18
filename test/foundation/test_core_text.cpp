@@ -19,10 +19,10 @@ namespace {
 using ::foundation::core::FixedText;
 using ::foundation::core::format;
 using ::foundation::core::TextView;
-using ::foundation::core::Truncated;
+using ::foundation::core::Full;
 
 // The text of a format() that fits its buffer.
-[[nodiscard]] TextView text_of(::foundation::core::Result<TextView, Truncated> result) {
+[[nodiscard]] TextView text_of(::foundation::core::Result<TextView, Full<char>> result) {
     return std::move(result).expect("the text fits the buffer of the test");
 }
 
@@ -79,19 +79,19 @@ void test_fixed_text_loop_and_clear() {
     assert(text.size() == 0 && text.view() == TextView{});
 }
 
-// A FixedText from a literal, from push() and from append() at run time.  A
-// refused write keeps the characters of the buffer.
+// A FixedText from a literal, and from append() of a character and of a text
+// at run time.  A refused write keeps the characters of the buffer.
 void test_fixed_text_builds_from_characters() {
     FixedText<8> text{"cub"};
     char volatile letter = 'i';
-    assert(text.push(letter).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(text.append(letter).is_ok());
     assert(text.append(TextView{"c"}).is_ok());
     assert(text.view() == TextView{"cubic"});
     assert(text.append(TextView{"_wide"}).is_err());
     assert(text.view() == TextView{"cubic"});
     assert(text.append(TextView{"bbr"}).is_ok());
     assert(text.size() == 8);
-    assert(text.push(letter).is_err());
+    CRUCIBLE_FATAL_INVARIANT(text.append(letter).is_err());
     assert(text.view() == TextView{"cubicbbr"});
 }
 
@@ -163,7 +163,7 @@ void test_format_writes_escapes_and_braces_of_arguments() {
 }
 
 // A text that fills the buffer exactly fits.  A text one character longer
-// gives Truncated, and the buffer holds the first characters of the text.
+// gives Full<char>, and the buffer holds the first characters of the text.
 void test_format_refuses_a_text_that_does_not_fit() {
     FixedText<5> text;
     assert(text_of(format(text, "{}", 12345)) == TextView{"12345"});

@@ -62,7 +62,7 @@ struct IntervalSet {
                 carried = moved;
             }
         }
-        static_cast<void>(occupied.push(carried).expect("occupied holds at most the intervals of the set"));
+        static_cast<void>(occupied.append(carried).expect("occupied holds at most the intervals of the set"));
     }
     std::uint64_t end_of_last = 0;
     bool has_last = false;
@@ -78,7 +78,7 @@ struct IntervalSet {
 [[nodiscard]] Intervals reversed(Intervals const& intervals) noexcept {
     Intervals result{};
     for (Interval const& interval : intervals.view().reverse()) {
-        static_cast<void>(result.push(interval).expect("the reverse holds the same count"));
+        static_cast<void>(result.append(interval).expect("the reverse holds the same count"));
     }
     return result;
 }
@@ -112,7 +112,7 @@ int main() {
                     interval.lo = rng.next_below(128);
                     interval.hi = rng.next_below(128);
                 }
-                static_cast<void>(set.intervals.push(interval).expect("a set holds at most kMaxIntervals intervals"));
+                static_cast<void>(set.intervals.append(interval).expect("a set holds at most kMaxIntervals intervals"));
             }
             if (set.is_disjoint_by_construction && is_reversed) set.intervals = reversed(set.intervals);
             return set;

@@ -802,7 +802,7 @@ namespace {
 
 }  // namespace
 
-Result<TextView, Truncated> Topology::format_summary(FixedText<summary_capacity>& out) const noexcept {
+Result<TextView, Full<char>> Topology::format_summary(FixedText<summary_capacity>& out) const noexcept {
     return format(out,
                   "fixy::Topology(source={}):\n"
                   "  CPU:    vendor=\"{}\" model=\"{}\"\n"

@@ -1,4 +1,4 @@
-// Tests of the FixedList of the Region family: push, take_last, clear, get,
+// Tests of the FixedList of the Region family: append, take_last, clear, get,
 // the copy and the move, the end of each element, and the Full of a linear
 // element.  The property compares a list with a model: a FixedArray and a
 // count.
@@ -56,15 +56,15 @@ struct[[= ::foundation::linear::linear{}]] Token final {
     Token(Token const&) = delete;
 };
 
-void test_push_until_full() {
+void test_append_until_full() {
     FixedList<int, 4> list;
     for (int value = 1; value <= 4; ++value) {
-        int& element = *list.push(value).expect("the list has room");
+        int& element = *list.append(value).expect("the list has room");
         assert(element == value);
         element *= 10;
     }
     assert(list.size() == 4);
-    assert(list.push(5).is_err());
+    CRUCIBLE_FATAL_INVARIANT(list.append(5).is_err());
     assert(list.size() == 4);
     int expected = 10;
     for (int const element : list) {
@@ -77,15 +77,15 @@ void test_push_until_full() {
 void test_take_last_and_clear() {
     FixedList<int, 3> list;
     assert(list.take_last().is_none());
-    static_cast<void>(list.push(1).expect("the list has room"));
-    static_cast<void>(list.push(2).expect("the list has room"));
-    static_cast<void>(list.push(3).expect("the list has room"));
+    static_cast<void>(list.append(1).expect("the list has room"));
+    static_cast<void>(list.append(2).expect("the list has room"));
+    static_cast<void>(list.append(3).expect("the list has room"));
     assert(list.take_last().expect("the list holds three elements") == 3);
     assert(list.take_last().expect("the list holds two elements") == 2);
     assert(list.size() == 1);
     list.clear();
     assert(list.size() == 0 && list.view().size() == 0 && list.take_last().is_none());
-    static_cast<void>(list.push(7).expect("a cleared list has room"));
+    static_cast<void>(list.append(7).expect("a cleared list has room"));
     assert(*list.get(0).expect("0 is below the count") == 7);
 }
 
@@ -99,7 +99,7 @@ void test_each_element_ends_once() {
     {
         FixedList<Element, 4> list;
         for (int turn = 0; turn < 3; ++turn) {
-            static_cast<void>(list.push(Element{counter}).expect("the list has room"));
+            static_cast<void>(list.append(Element{counter}).expect("the list has room"));
         }
         assert(ends == 0);
         {
@@ -117,12 +117,12 @@ void test_each_element_ends_once() {
     assert(ends == 5);
 }
 
-// A push into a full list of a linear element gives the value back in its
+// An append into a full list of a linear element gives the value back in its
 // Full, and the caller consumes each value.
 void test_full_gives_a_linear_value_back() {
     FixedList<Token, 1> list;
-    static_cast<void>(list.push(Token{1}).expect("the list has room"));
-    auto refused = list.push(Token{2});
+    static_cast<void>(list.append(Token{1}).expect("the list has room"));
+    auto refused = list.append(Token{2});
     assert(refused.is_err());
     Token back = std::move(refused).err().expect("the list is full").take();
     assert(back.id == 2);
@@ -134,8 +134,8 @@ void test_full_gives_a_linear_value_back() {
     ::foundation::linear::drop(std::move(list));
 }
 
-// The property: for random pushes and takes, the list holds the elements of
-// the model, in order, and refuses a push exactly when the model is full.
+// The property: for random appends and takes, the list holds the elements of
+// the model, in order, and refuses an append exactly when the model is full.
 void test_list_agrees_with_the_model() {
     constexpr std::size_t capacity = 16;
     ::crucible::test::PhiloxStream stream{0x0F1E2D3C4B5A6978u};
@@ -145,9 +145,9 @@ void test_list_agrees_with_the_model() {
     for (int step = 0; step < 4096; ++step) {
         if (stream.below(3) != 0) {
             std::uint64_t const value = stream.next_wide();
-            bool const is_pushed = list.push(value).is_ok();
-            assert(is_pushed == (count < capacity));
-            if (is_pushed) {
+            bool const is_appended = list.append(value).is_ok();
+            CRUCIBLE_FATAL_INVARIANT(is_appended == (count < capacity));
+            if (is_appended) {
                 model.at(Index<capacity>::check(count).expect("the count is below the capacity")) = value;
                 ++count;
             }
@@ -167,7 +167,7 @@ void test_list_agrees_with_the_model() {
 void test_iteration_verbs_of_a_list() {
     FixedList<int, 5> list;
     for (int value = 1; value <= 5; ++value) {
-        static_cast<void>(list.push(value).expect("the list has room"));
+        static_cast<void>(list.append(value).expect("the list has room"));
     }
     int expected = 5;
     for (int const element : list.reverse()) {
@@ -187,7 +187,7 @@ void test_iteration_verbs_of_a_list() {
 constexpr FixedList<int, 4> list_of(int count) noexcept {
     FixedList<int, 4> list;
     for (int value = 1; value <= count; ++value) {
-        static_cast<void>(list.push(value).expect("the list has room"));
+        static_cast<void>(list.append(value).expect("the list has room"));
     }
     return list;
 }
@@ -219,7 +219,7 @@ void test_view_of_a_static_list_is_constant() {
 }  // namespace
 
 int main() {
-    test_push_until_full();
+    test_append_until_full();
     test_take_last_and_clear();
     test_each_element_ends_once();
     test_full_gives_a_linear_value_back();
