@@ -45,12 +45,15 @@ static_assert(!::fixy::ArrayArena<Arena, ::foundation::permissions::Permission<D
               "the arena must not start the lifetime of a proof type over its bytes");
 
 // The door refuses a proof type, and an aggregate that holds one, also for an
-// allocator that puts no constraint on its element.
+// allocator that puts no constraint on its element.  The proof has a brand of
+// its own, so the check names no erased identity.
+struct ProofBrand final {};
+using BrandedProof = ::foundation::permissions::Permission<DataA, ProofBrand>;
 struct HoldsPermission {
-    ::foundation::permissions::Permission<DataA> proof;
+    BrandedProof proof;
 };
 static_assert(::fixy::ArrayArena<UncheckedArena, float>);
-static_assert(!::fixy::ArrayArena<UncheckedArena, ::foundation::permissions::Permission<DataA>>,
+static_assert(!::fixy::ArrayArena<UncheckedArena, BrandedProof>,
               "the door must refuse a proof type also for an allocator that puts no constraint on it");
 static_assert(!::fixy::ArrayArena<UncheckedArena, HoldsPermission>,
               "the door must refuse an aggregate that holds a proof type also for an allocator that puts no "

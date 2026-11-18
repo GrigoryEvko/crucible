@@ -22,8 +22,10 @@ struct Proofs {
     using permission_row = ::foundation::effects::Row<>;
 };
 
+struct ProofsBrand final {};
+
 struct HoldsProof {
-    ::foundation::permissions::Permission<Proofs> proof;
+    ::foundation::permissions::Permission<Proofs, ProofsBrand> proof;
 };
 
 }  // namespace

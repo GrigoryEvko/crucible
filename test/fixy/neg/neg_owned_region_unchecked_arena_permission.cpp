@@ -21,12 +21,13 @@ struct Cache {
 struct Proofs {
     using permission_row = ::foundation::effects::Row<>;
 };
+struct ProofsBrand final {};
 
 }  // namespace
 
 int main() {
     test_owned_region::UncheckedArena arena{};
-    auto region = ::fixy::mint_owned_region<::foundation::permissions::Permission<Proofs>>(
+    auto region = ::fixy::mint_owned_region<::foundation::permissions::Permission<Proofs, ProofsBrand>>(
         ::foundation::effects::testing::test().alloc, arena, std::size_t{2},
         ::foundation::permissions::mint_permission_root<Cache>());
     auto token = std::move(region).release();

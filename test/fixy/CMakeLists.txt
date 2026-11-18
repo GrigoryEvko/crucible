@@ -6341,7 +6341,7 @@ fixy_neg_compile_test(neg_owned_region_does_not_erase_its_brand
 # allocator that puts no constraint on its element.
 fixy_neg_compile_test(neg_owned_region_unchecked_arena_permission
   "no matching function for call to .mint_owned_region<foundation::permissions::Permission<\\{anonymous\\}::Proofs"
-  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::permissions::Permission<<unnamed>::Proofs, foundation::brand::DefaultBrand>\\]")
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::permissions::Permission<<unnamed>::Proofs, <unnamed>::ProofsBrand>\\]")
 fixy_neg_compile_test(neg_owned_region_unchecked_arena_holds_permission
   "no matching function for call to .mint_owned_region<\\{anonymous\\}::HoldsProof>"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = <unnamed>::HoldsProof\\]")
