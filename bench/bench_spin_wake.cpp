@@ -20,6 +20,22 @@
 //   reference runs again at the end, and its ratio to the first run gives
 //   the drift of the host.
 //
+// THE PARK
+//   A row of a park waits with an event count of fixy/concurrent/EventCount.h,
+//   and its writer notifies the count after each store.  The delay of the
+//   writer is about 18 to 53 microseconds, so a waiter with the budget 0 sleeps
+//   in the kernel before the store.  The reference is a futex wait on the word
+//   itself through the futex door, and a wake of one waiter after each store,
+//   the least work of a park on Linux.  A second row spins for 1 ms before its
+//   park, so it never parks, and its reference is the plain pause loop.
+//
+// THE NOTIFY
+//   A notify of an event count with no waiter is a fence and a load.  The
+//   reference is the notify of folly, a fetch-add of the epoch and a test of
+//   the bits of the waiters, and the signal of the park of the pipeline
+//   before the event count, an exchange of a word.  bench::run gives the
+//   percentiles of one call.
+//
 // THE WRITER
 //   The writer adds to a second word in the cache line of the word of the
 //   wait, while a reader waits on that word with one arm of the spin-hint
@@ -40,6 +56,8 @@
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/concurrent/EventCount.h>
+#include <fixy/os/Futex.h>
 #include <fixy/os/SpinBudget.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Platform.h>
@@ -56,6 +74,7 @@
 
 namespace {
 
+namespace cc = ::fixy::concurrent;
 namespace core = ::foundation::core;
 namespace eff = ::foundation::effects;
 namespace os = ::foundation::os;
@@ -128,9 +147,21 @@ void pin_to(::fixy::Option<bench::CpuId> const& core) noexcept {
 // that saw the store.
 [[nodiscard]] std::uint64_t read_ordered_counter() noexcept { return bench::rdtsc_end(); }
 
-// The delay of the writer before its store in a round: from 2000 to 5999
-// ticks, about 1 to 3 microseconds on a counter of 2 GHz.
-[[nodiscard]] std::uint64_t delay_ticks_of(Round round) noexcept { return 2000U + (round.raw() * 7919U) % 4000U; }
+// The window of the delay of the writer before its store in a round.
+enum class DelayWindow : std::uint8_t {
+    // From 2000 to 5999 ticks, about 1 to 3 microseconds on a counter of
+    // 2 GHz: a spin waits through it.
+    spin,
+    // From 40000 to 119980 ticks, about 18 to 53 microseconds: a waiter
+    // with no spin budget sleeps in the kernel before the store.
+    park,
+};
+
+// The delay of the writer before its store in a round.
+[[nodiscard]] std::uint64_t delay_ticks_of(Round round, DelayWindow window) noexcept {
+    std::uint64_t const spread = (round.raw() * 7919U) % 4000U;
+    return window == DelayWindow::spin ? 2000U + spread : 40000U + spread * 20U;
+}
 
 // Spins with CRUCIBLE_SPIN_PAUSE for DELAY.
 void spin_for(spin::CounterTicks delay) noexcept {
@@ -195,15 +226,60 @@ struct ArmWait final {
     }
 };
 
+// wait_for of an event count with the policy POLICY (THE PARK).
+template <class Policy>
+struct EventCountWait final {
+    ::fixy::BgLoadCtx const& ctx;
+    cc::EventCount& events;
+
+    [[gnu::noinline, gnu::aligned(64)]] void wait(Line const& line, Round round) const noexcept {
+        cc::wait_for<Policy>(ctx, events,
+                             [&line, round]() noexcept { return line.word.load_acquire() == round.raw(); });
+    }
+};
+
+// The reference of a park: a futex wait on the word itself through the futex
+// door (THE PARK).
+struct FutexWait final {
+    ::fixy::BgLoadCtx const& ctx;
+
+    [[gnu::noinline, gnu::aligned(64)]] void wait(Line const& line, Round round) const noexcept {
+        std::uint32_t const before = round.raw() - 1U;
+        while (line.word.load_acquire() == before) {
+            static_cast<void>(
+                ::fixy::futex::wait(ctx, line.word, before).expect("the futex wait of the bench on its own word"));
+        }
+    }
+};
+
 // The writer of a spin row does nothing after its store.
 struct NoNotify final {
     void notify(Line const& /*line*/) const noexcept {}
 };
 
+// The writer of a row of an event count notifies one waiter.
+struct EventCountNotify final {
+    ::fixy::BgLoadCtx const& ctx;
+    cc::EventCount& events;
+
+    void notify(Line const& /*line*/) const noexcept { events.notify_one(ctx); }
+};
+
+// The writer of the reference of a park wakes one waiter of the word.
+struct FutexWake final {
+    ::fixy::BgLoadCtx const& ctx;
+
+    void notify(Line const& line) const noexcept {
+        static_cast<void>(
+            ::fixy::futex::wake_one(ctx, line.word).expect("the futex wake of the bench on its own word"));
+    }
+};
+
 // The wake latencies of kSamples rounds of FORM, in ticks of the counter.
 template <class Form, class Notify>
 [[nodiscard]] HeapArray<std::uint64_t> measure_wake(::fixy::BgLoadCtx const& ctx, RowCores const& cores,
-                                                    Form const& form, Notify const& after_store) noexcept {
+                                                    Form const& form, Notify const& after_store,
+                                                    DelayWindow window) noexcept {
     Line line{};
     Handshake handshake{};
     HeapArray<std::uint64_t> latencies = core::mint_heap_array(kAlloc, kSamples, std::uint64_t{0});
@@ -224,7 +300,7 @@ template <class Form, class Notify>
             while (handshake.ready.load_acquire() != number) {
                 CRUCIBLE_SPIN_PAUSE;
             }
-            spin_for(spin::CounterTicks{delay_ticks_of(Round{number})});
+            spin_for(spin::CounterTicks{delay_ticks_of(Round{number}, window)});
             handshake.stamp.store_release(read_ordered_counter());
             line.word.store_release(number);
             after_store.notify(line);
@@ -306,10 +382,11 @@ struct RowMedians {
 // measurement and a line of the spread.
 template <class Form, class Notify>
 [[nodiscard]] RowMedians report_wake_row(::fixy::BgLoadCtx const& ctx, RowCores const& cores, ::fixy::TextView name,
-                                         Form const& form, Notify const& after_store) noexcept {
+                                         Form const& form, Notify const& after_store,
+                                         DelayWindow window = DelayWindow::spin) noexcept {
     RowMedians row{.name = name};
     for (std::size_t repeat = 0; repeat < kRepeats; ++repeat) {
-        HeapArray<std::uint64_t> const ascending = sorted(measure_wake(ctx, cores, form, after_store));
+        HeapArray<std::uint64_t> const ascending = sorted(measure_wake(ctx, cores, form, after_store, window));
         std::uint64_t const median = sample_at(ascending, Permille{500});
         std::uint64_t const trimmed_mean = trimmed_mean_picoseconds(ascending);
         *row.medians.view().get(repeat).expect("the repeat is in the row") = median;
@@ -433,6 +510,57 @@ void print_writer_row(::fixy::TextView name, WriterPair const& pair) noexcept {
                  static_cast<std::uint64_t>(pair.measured.pct.max * 1000.0 + 0.5), ratio);
 }
 
+// A row of one call and its reference row.
+struct CallPair final {
+    ::fixy::TextView name;
+    bench::Report const& measured;
+    ::fixy::TextView reference_name;
+    bench::Report const& reference;
+};
+
+// Writes one line of a row of one call, and its ratio to its reference.
+void print_call_row(CallPair const& pair) noexcept {
+    double const base = pair.reference.pct.p50;
+    std::uint64_t const ratio =
+        base > 0.0 ? static_cast<std::uint64_t>(pair.measured.pct.p50 / base * 1000.0 + 0.5) : 0;
+    fixy::report(fixy::Sink::Out, "{}  p50={} ps  p99={} ps  max={} ps  ratio to {}={} permille\n", pair.name,
+                 static_cast<std::uint64_t>(pair.measured.pct.p50 * 1000.0 + 0.5),
+                 static_cast<std::uint64_t>(pair.measured.pct.p99 * 1000.0 + 0.5),
+                 static_cast<std::uint64_t>(pair.measured.pct.max * 1000.0 + 0.5), pair.reference_name, ratio);
+}
+
+// THE NOTIFY: a notify of an event count with no waiter, the notify of folly
+// with no waiter, and the signal of the park before the event count.
+void report_notify_rows(::fixy::BgLoadCtx const& ctx) noexcept {
+    // The bits of the waiters in the word of folly, below the epoch.
+    constexpr std::uint64_t kFollyWaiterMask = 0xFFFFFFFFU;
+    constexpr std::uint64_t kFollyAddEpoch = std::uint64_t{1} << 32;
+    cc::EventCount events{};
+    core::Atomic<std::uint64_t> folly_word{0};
+    core::Atomic<std::uint32_t> park_word{0};
+    bench::Report const notify = bench::run("EventCount::notify_one", [&] { events.notify_one(ctx); });
+    bench::Report const folly = bench::run("folly notify", [&] {
+        std::uint64_t const before = folly_word.fetch_add_acq_rel(kFollyAddEpoch);
+        bench::do_not_optimize(before & kFollyWaiterMask);
+    });
+    bench::Report const exchange = bench::run("park signal", [&] {
+        std::uint32_t const before = park_word.exchange_acq_rel(0);
+        bench::do_not_optimize(before);
+    });
+    print_call_row(CallPair{.name = "folly notify, no waiter: fetch-add of the epoch",
+                            .measured = folly,
+                            .reference_name = "itself",
+                            .reference = folly});
+    print_call_row(CallPair{.name = "park signal: exchange of a word",
+                            .measured = exchange,
+                            .reference_name = "folly notify",
+                            .reference = folly});
+    print_call_row(CallPair{.name = "EventCount::notify_one, no waiter: fence and load",
+                            .measured = notify,
+                            .reference_name = "folly notify",
+                            .reference = folly});
+}
+
 // THE RATE: the ticks of one second at the rate of the budget and at the
 // calibration of the harness, and their difference in parts per million.
 void report_rate(::fixy::BgLoadCtx const& ctx) noexcept {
@@ -470,6 +598,20 @@ int main() {
         RowMedians const of_arm = report_wake_row(ctx, row_cores, name_of(arm), ArmWait{.arm = arm}, NoNotify{});
         print_ratio(RowPair{.row = of_arm, .reference = plain});
     }
+    // THE PARK.
+    cc::EventCount events{};
+    RowMedians const event_spin =
+        report_wake_row(ctx, row_cores, "EventCount spin then park, 1 ms",
+                        EventCountWait<cc::SpinThenPark<1000000>>{.ctx = ctx, .events = events},
+                        EventCountNotify{.ctx = ctx, .events = events});
+    print_ratio(RowPair{.row = event_spin, .reference = plain});
+    RowMedians const futex_park =
+        report_wake_row(ctx, row_cores, "futex wait and wake", FutexWait{ctx}, FutexWake{ctx}, DelayWindow::park);
+    RowMedians const event_park = report_wake_row(ctx, row_cores, "EventCount park",
+                                                  EventCountWait<cc::SpinThenPark<0>>{.ctx = ctx, .events = events},
+                                                  EventCountNotify{.ctx = ctx, .events = events}, DelayWindow::park);
+    print_ratio(RowPair{.row = event_park, .reference = futex_park});
+    report_notify_rows(ctx);
     // The reference again, at the end: its ratio to the first run shows the
     // drift of the host during the bench.
     RowMedians const plain_again =
