@@ -124,10 +124,10 @@ public:
     [[nodiscard]] constexpr std::size_t size() const noexcept { return slots_.size(); }
     [[nodiscard]] constexpr bool is_empty() const noexcept { return slots_.is_empty(); }
 
-    // The slots of the nodes of the mask.  numa_node_of_slot gives the node
-    // of a slot.
-    [[nodiscard]] constexpr BitSet<numa_concrete_node_count> const& slots() const& noexcept { return slots_; }
-    void slots() const&& = delete("the slots of a temporary mask end with the full expression");
+    // A copy of the slots of the nodes of the mask.  numa_node_of_slot gives
+    // the node of a slot.  The copy is 32 bytes, and no reference to the
+    // storage of the mask goes out.
+    [[nodiscard]] constexpr BitSet<numa_concrete_node_count> slots() const noexcept { return slots_; }
 
     [[nodiscard]] friend constexpr bool operator==(NumaNodeMask const& left, NumaNodeMask const& right) noexcept {
         return left.slots_ == right.slots_;
@@ -353,9 +353,8 @@ public:
 
     ~NumaPolicyPlacement() = default;
 
-    // The nodes of the policy.  The empty mask after a move.
-    [[nodiscard]] NumaNodeMask const& nodes() const& noexcept { return nodes_; }
-    void nodes() const&& = delete("the mask of a temporary proof ends with the full expression");
+    // A copy of the nodes of the policy.  The empty mask after a move.
+    [[nodiscard]] NumaNodeMask nodes() const noexcept { return nodes_; }
 
     // A borrow.  The proof keeps the region, so the caller must not unmap
     // the returned address.

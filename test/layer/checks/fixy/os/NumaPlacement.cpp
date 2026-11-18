@@ -58,6 +58,10 @@ static_assert(!std::is_trivially_copyable_v<Interleaved> && !std::is_aggregate_v
               "std::bit_cast and aggregate initialization must not build a policy proof");
 static_assert(Interleaved::policy == NumaPolicy::interleave);
 
+// The proof gives its nodes as a value, so no reference to its storage goes
+// out.
+static_assert(std::is_same_v<decltype(std::declval<Interleaved const&>().nodes()), NumaNodeMask>);
+
 }  // namespace fixy::detail::numa_placement_invariants
 
 namespace fixy::detail::numa_mask_invariants {
@@ -72,6 +76,11 @@ static_assert(sentinel_insert_is_refused(), "a mask holds no sentinel node");
 static_assert(fixy::make_numa_node_mask(NumaNodeId::None).is_none()
               && fixy::make_numa_node_mask(NumaNodeId{253}).is_some());
 static_assert(numa_node_of_slot(NumaNodeMask::Slot::check(7).expect("7 is a slot")) == NumaNodeId{7});
+
+// The mask gives its slots as a copy of 32 bytes, so no reference to its
+// storage goes out.
+static_assert(std::is_same_v<decltype(std::declval<NumaNodeMask const&>().slots()), BitSet<numa_concrete_node_count>>);
+static_assert(sizeof(BitSet<numa_concrete_node_count>) == 32);
 
 // The node list of the kernel.
 [[nodiscard]] consteval NumaNodeMask nodes_of(TextView text) {
