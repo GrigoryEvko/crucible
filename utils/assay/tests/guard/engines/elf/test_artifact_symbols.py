@@ -271,7 +271,24 @@ def class_cases(expect: testing.Expect) -> None:
         ]
         == [artifact_symbols.ALLOW, artifact_symbols.ALLOW, artifact_symbols.RATCHET, artifact_symbols.RATCHET],
     )
-    support = frozenset({"__udivti3", "__popcountdi2", "__floatuntidf", "_Unwind_Resume", "__cpu_indicator_init"})
+    support = frozenset(
+        {
+            "__udivti3",
+            "__popcountdi2",
+            "__floatuntidf",
+            "__umodti3",
+            "__ashlti3",
+            "__ashrti3",
+            "__lshrti3",
+            "__cmpti2",
+            "__ucmpti2",
+            "__aarch64_cas8_acq",
+            "__aarch64_ldadd4_relax",
+            "__negti2",
+            "_Unwind_Resume",
+            "__cpu_indicator_init",
+        }
+    )
     module = artifact_symbols
     for library, symbol, family, wanted in (
         ("foundation", "memcpy", module.RUNTIME, module.NO_ROW),
@@ -281,6 +298,17 @@ def class_cases(expect: testing.Expect) -> None:
         ("foundation", "__udivti3", module.RUNTIME, module.NO_ROW),
         ("crucible_vigil", "__popcountdi2", module.RUNTIME, module.NO_ROW),
         ("crucible", "__floatuntidf", module.RUNTIME, module.NO_ROW),
+        ("foundation", "__umodti3", module.RUNTIME, module.NO_ROW),
+        ("fixy", "__ashlti3", module.RUNTIME, module.NO_ROW),
+        ("fixy", "__ashrti3", module.RUNTIME, module.NO_ROW),
+        ("crucible", "__lshrti3", module.RUNTIME, module.NO_ROW),
+        ("crucible", "__cmpti2", module.RUNTIME, module.NO_ROW),
+        ("crucible_vigil", "__ucmpti2", module.RUNTIME, module.NO_ROW),
+        ("fixy", "__aarch64_cas8_acq", module.RUNTIME, module.NO_ROW),
+        ("crucible", "__aarch64_ldadd4_relax", module.RUNTIME, module.NO_ROW),
+        ("crucible", "__negti2", module.RUNTIME, module.LIBC_ALLOW),
+        ("crucible", "__umod_planted", module.RUNTIME, module.LIBC_RATCHET),
+        ("crucible", "__aarch64_planted", module.RUNTIME, module.LIBC_RATCHET),
         ("crucible", "_Unwind_Resume", module.RUNTIME, module.LIBC_ALLOW),
         ("crucible", "__cpu_indicator_init", module.RUNTIME, module.LIBC_ALLOW),
         ("crucible", "__stack_chk_fail", module.RUNTIME, module.LIBC_ALLOW),

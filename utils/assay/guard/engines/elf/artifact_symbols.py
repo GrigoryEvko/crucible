@@ -159,8 +159,12 @@ THE CALLS OF THE COMPILER
         with a family of EMITTED_HELPER_FAMILIES: the counts of bits
         (__popcount, __clz, __ctz, __ffs, __parity), the swap of bytes
         (__bswap), the integer arithmetic that the target has no
-        instruction for (__mul, __div, __mod, __udiv), and the float
-        conversions (__float, __fix, __extend, __trunc).
+        instruction for (__mul, __div, __mod, __udiv, __umod), the shifts
+        and the compares of a 128-bit integer (__ashl, __ashr, __lshr,
+        __cmp, __ucmp), the float conversions (__float, __fix, __extend,
+        __trunc), and the outline atomics of aarch64 (__aarch64_).  GCC
+        calls an outline atomic, such as __aarch64_cas8_acq, for an atomic
+        operation at a level with no LSE instruction.
     The import comes from the runtime (THE PROVIDERS).  The rule
     c-library-call of the quarantine plugin judges a call of one of the
     four functions of the C library that the source spells.  Each other
@@ -440,10 +444,17 @@ EMITTED_HELPER_FAMILIES = (
     "__div",
     "__mod",
     "__udiv",
+    "__umod",
+    "__ashl",
+    "__ashr",
+    "__lshr",
+    "__cmp",
+    "__ucmp",
     "__float",
     "__fix",
     "__extend",
     "__trunc",
+    "__aarch64_",
 )
 # The calls of the C library that GCC makes itself, which each library can reference (rule R5).
 COMPILER_CALLS = EMITTED_CALLS | {"__stack_chk_fail", "__tls_get_addr"}
