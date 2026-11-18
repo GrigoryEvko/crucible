@@ -363,6 +363,7 @@ test/fixy/ | opted-out | 11 | PROBE: the seal test forges each payload view, gat
 test/fixy/ | opted-out | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 2 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
+test/fixy/ | opted-out | 1 | PROBE: the test reads the dumpable flag that the child door gave the child | test_child_process reads the dumpable flag of a child with prctl, to check that the child door makes each child not dumpable
 test/fixy/ | opted-out | 5 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
@@ -393,6 +394,7 @@ test/fixy/ | region | 1 | PROBE: the seal test forges each payload view, gate an
 test/fixy/ | region | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test forges the wire word of a keyed step and of a branch of a keyed choice | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test plants an atom in a shipped family, and IsAtom must refuse it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
+test/fixy/ | region | 1 | PROBE: the test reads the dumpable flag that the child door gave the child | test_child_process reads the dumpable flag of a child with prctl, to check that the child door makes each child not dumpable
 test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 14 | - | -
