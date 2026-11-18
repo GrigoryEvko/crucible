@@ -258,6 +258,27 @@ template <ScopedEnum E, char Separator>
     return NameChars{words.data(), words.size()};
 }
 
+// The identifier of Entity.  Its return type is deduced, so a call of it
+// has a type that depends on Entity (foundation/reflect/Anchor.h).
+template <std::meta::info Entity>
+[[nodiscard]] consteval auto identifier_text_() {
+    return std::meta::identifier_of(Entity);
+}
+
+// The parts of the identifier of a declared entity, such as a data member.
+// The characters have static storage, so a run-time reader can keep them.
+// The text has a type that depends on Entity, so only a unit that names the
+// identifier instantiates the static string.
+template <std::meta::info Entity>
+[[nodiscard]] consteval NameChars identifier_chars() {
+    char const* const first = std::define_static_string(detail::identifier_text_<Entity>());
+    std::size_t size = 0;
+    while (first[size] != '\0') {
+        ++size;
+    }
+    return NameChars{first, size};
+}
+
 }  // namespace detail
 
 }  // namespace foundation::reflect

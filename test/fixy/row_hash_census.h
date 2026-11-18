@@ -959,6 +959,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::local_part,
      "the annotation of a member whose value is local to one process: it holds nothing"},
     {^^::foundation::core::pad_part, "the annotation of a member of explicit padding: it holds nothing"},
+    {^^::foundation::core::DecodeFault,
+     "the error of a decode of an image: a reason and a byte offset, and never a value in a kernel signature"},
     {^^::foundation::core::Unit, "the value of a Result that holds no value: it holds nothing"},
     {^^::foundation::core::OneOf,
      "one value of a closed set of types: the result of a call, never a value in a kernel signature"},

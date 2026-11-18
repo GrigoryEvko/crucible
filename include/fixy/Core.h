@@ -40,6 +40,7 @@
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Parse.h>
 #include <foundation/core/Philox.h>
+#include <foundation/core/Protocol.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
@@ -107,9 +108,17 @@ using ::foundation::reflect::pack_size_v;
 using ::foundation::reflect::pack_unique_v;
 
 // The Protocol family.  equal of a View, of a text and of a value is one
-// overload set, as is order.
+// overload set, as is order.  decode of the bits of a value and of an image,
+// and format of a Fmt and of a value, are each one overload set too.
+using ::foundation::core::Decodable;
+using ::foundation::core::DecodeFault;
+using ::foundation::core::DecodeRefusal;
 using ::foundation::core::derive_protocol;
+using ::foundation::core::Encodable;
+using ::foundation::core::encode;
+using ::foundation::core::encoded_size_v;
 using ::foundation::core::Equatable;
+using ::foundation::core::hash;
 using ::foundation::core::local_part;
 using ::foundation::core::order;
 using ::foundation::core::Orderable;

@@ -2509,6 +2509,33 @@ foundation_neg_compile_test(neg_core_surface_not_class
 foundation_test(test_core_record)
 foundation_test(test_core_record_oracle)
 
+# ── The Protocol family ───────────────────────────────────────────────
+#
+# equal, order, hash, encode, decode and format of a class that derives them
+# from its parts, against hand forms of each operation over the same fields.
+# The walk refuses a named bit-field.  order refuses a pointer, and the image
+# refuses a pointer, a base with one, and a part with no annotation.  decode
+# refuses a const member.
+foundation_test(test_core_protocol)
+foundation_neg_compile_test(neg_core_protocol_equal_bit_field
+  "no matching function for call to .equal\\(const HoldsBitField&, const HoldsBitField&\\)."
+  "required for the satisfaction of .Equatable<T>. \\[with T = HoldsBitField\\]")
+foundation_neg_compile_test(neg_core_protocol_order_pointer
+  "no matching function for call to .order\\(const HoldsAddress<const int\\*>&, const HoldsAddress<const int\\*>&\\)."
+  "required for the satisfaction of .Orderable<T>. \\[with T = HoldsAddress<const int\\*>\\]")
+foundation_neg_compile_test(neg_core_protocol_hash_pointer_part
+  "no matching function for call to .hash\\(const HoldsAddress<const int\\*>&\\)."
+  "required for the satisfaction of .Encodable<T>. \\[with T = HoldsAddress<const int\\*>\\]")
+foundation_neg_compile_test(neg_core_protocol_hash_pointer_in_base
+  "no matching function for call to .hash\\(const DerivedFromView&\\)."
+  "required for the satisfaction of .Encodable<T>. \\[with T = DerivedFromView\\]")
+foundation_neg_compile_test(neg_core_protocol_encode_unmarked_part
+  "no matching function for call to .encode\\(const HoldsUnmarked&, foundation::core::View<std::byte, 4>\\)."
+  "required for the satisfaction of .Encodable<T>. \\[with T = HoldsUnmarked\\]")
+foundation_neg_compile_test(neg_core_protocol_decode_const_member
+  "no matching function for call to .decode<HoldsConst>\\(foundation::core::View<const std::byte, 4>\\)."
+  "required for the satisfaction of .Decodable<T>. \\[with T = HoldsConst\\]")
+
 foundation_neg_compile_test(neg_core_record_reference_part
   "template constraint failure for .template<class ... Ts>  requires \\(... && RecordElement<Ts>\\) struct foundation::core::Record."
   "the expression .\\(... && RecordElement<Ts>\\) \\[with Ts = \\{int&, int\\}\\]. evaluated to .false.")
