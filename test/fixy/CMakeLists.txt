@@ -4278,6 +4278,20 @@ fixy_neg_compile_test(neg_ring_capacity_not_power_of_two
   "fixy::concurrent::SpscRing<T, Capacity>: Capacity must be a power"
   "index modulo Capacity")
 
+# Only the owner of a ring makes the proof of the one writer of a side, and a
+# ring with no owner has no proven form.  So no caller publishes an index with
+# no check unless a type proves its one writer.
+fixy_neg_compile_test(neg_sole_writer_proof_outside_owner
+  "is private within this context"
+  "SoleWriterProof")
+fixy_neg_compile_test(neg_spsc_ring_proven_push_without_owner
+  "no matching function for call to"
+  "try_push_proven")
+# A counter of many writers takes no proof of one writer.
+fixy_neg_compile_test(neg_sole_writer_proof_many_writers
+  "use of deleted function"
+  "a counter of many writers has no one writer for a proof")
+
 # A cell is overwritten in place and never destroyed, so a value that
 # owns anything leaks once per slot per lap.
 fixy_neg_compile_test(neg_ring_value_owns_a_resource

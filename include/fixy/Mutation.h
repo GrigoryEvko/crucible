@@ -706,6 +706,29 @@ enum class CounterWriters : std::uint8_t {
 template <CounterWriters Writers>
 concept SoleWriterCounter = Writers == CounterWriters::sole;
 
+// THE PROOF OF THE ONE WRITER
+//   A SoleWriterProof<Owner, Role> proves by type that its holder is the one
+//   writer of a counter of the role Role that Owner holds.  Only Owner makes a
+//   proof: the constructor is private, and Owner is the one friend.  An owner
+//   whose own types keep one writer of the counter makes the proof for that
+//   writer, such as a channel whose producer handle holds a linear permission
+//   and the claim of its role.  advance_sole_writer_by_proof then publishes
+//   from the copy of the writer and loads nothing from the counter: the type
+//   carries the check that advance_sole_writer_from makes at run time.  A
+//   proof does not copy or move, so a holder cannot keep it past the call
+//   that the owner made it for.
+template <class Owner, class Role>
+class [[nodiscard]] SoleWriterProof final {
+    constexpr SoleWriterProof() noexcept = default;
+    friend Owner;
+
+public:
+    SoleWriterProof(SoleWriterProof const&) = delete("a proof of the one writer lives for the call of its owner");
+    SoleWriterProof& operator=(SoleWriterProof const&) = delete("a proof of the one writer lives for the call of its "
+                                                                "owner");
+    ~SoleWriterProof() = default;
+};
+
 template <typename T, CounterWriters Writers = CounterWriters::many, typename Cmp = std::less<T>>
     requires std::is_trivially_copyable_v<T>
 class AtomicMonotonic;
@@ -837,6 +860,30 @@ public:
     = delete("AtomicMonotonic::advance_sole_writer_from: a counter of many writers has no one writer, and a second "
              "writer can pass the new value between the check and the store.  Use advance, or name "
              "CounterWriters::sole for a counter of one writer");
+
+    // The publish of the one writer that holds a proof of its role (THE
+    // PROOF OF THE ONE WRITER).  own is the copy of the counter that the
+    // writer keeps on a line of its own, and it holds the value of the
+    // counter.  The step check compares own and new_value in registers, in
+    // each build, and the advance of own checks the order again.  The store is
+    // a plain release, and the call loads nothing from the counter, so a
+    // reader that polls the line of the counter costs the writer no transfer
+    // of that line.
+    template <class Owner, class Role>
+    void advance_sole_writer_by_proof(SoleWriterProof<Owner, Role> const& /*proof*/, Monotonic<T, Cmp>& own,
+                                      T new_value) noexcept
+        requires SoleWriterCounter<Writers>
+    {
+        CRUCIBLE_PRE(Cmp{}(own.get(), new_value));
+        own.advance(new_value);
+        value_.store(new_value, std::memory_order_release);
+    }
+    template <class Owner, class Role>
+    void advance_sole_writer_by_proof(SoleWriterProof<Owner, Role> const& /*proof*/, Monotonic<T, Cmp>& own,
+                                      T new_value) noexcept
+        requires(!SoleWriterCounter<Writers>)
+    = delete("AtomicMonotonic::advance_sole_writer_by_proof: a counter of many writers has no one writer for a proof "
+             "to name.  Use advance, or name CounterWriters::sole for a counter of one writer");
 
     // delta is a magnitude, not a signed step. Cmp fixes the direction:
     // std::less adds and std::greater subtracts. A negative delta would

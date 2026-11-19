@@ -295,6 +295,96 @@ using MpscWide = c::MpscRing<int, 128>;
     return ring.empty_approx(kNondet) ? 0 : 1;
 }
 
+// The owner of the rings of the proven tests (THE PROVEN FORM of
+// fixy/concurrent/SpscRing.h).  Each test runs one producer and one consumer,
+// so the owner makes the proof of each side.
+struct ProvenOwner final {
+    using Ring = c::SpscRing<int, 8, ProvenOwner>;
+
+    [[nodiscard]] static constexpr auto producer() noexcept { return Ring::producer_proof{}; }
+    [[nodiscard]] static constexpr auto consumer() noexcept { return Ring::consumer_proof{}; }
+};
+
+// The checked calls and the proven calls keep the same copies of each side,
+// so one ring takes each form on each call.  The walk crosses the wrap, fills
+// the ring and drains it in each form.
+[[nodiscard]] int spsc_proven_and_checked_calls_share_one_ring() {
+    ProvenOwner::Ring ring{};
+    const auto fail = [](fixy::TextView what) {
+        fixy::report(fixy::Sink::Err, "SPSC proven form: {}\n", what);
+        return 1;
+    };
+    int next_in = 0;
+    int next_out = 0;
+    for (int round = 0; round < 5; ++round) {
+        for (int i = 0; i < 8; ++i) {
+            const bool is_pushed = (i % 2 == 0) ? ring.try_push_proven(ProvenOwner::producer(), next_in)
+                                                : ring.try_push(next_in);
+            if (!is_pushed) return fail(fixy::TextView{"a push below capacity was refused"});
+            ++next_in;
+        }
+        if (ring.try_push_proven(ProvenOwner::producer(), -1) || ring.try_push(-1)) {
+            return fail(fixy::TextView{"a push into a full ring was accepted"});
+        }
+        for (int i = 0; i < 8; ++i) {
+            fixy::Option<int> item = (i % 3 == 0) ? ring.try_pop() : ring.try_pop_proven(ProvenOwner::consumer());
+            if (std::move(item).value_or(-1) != next_out) {
+                return fail(fixy::TextView{"an item came back out of order"});
+            }
+            ++next_out;
+        }
+        if (ring.try_pop_proven(ProvenOwner::consumer()).is_some() || ring.try_pop().is_some()) {
+            return fail(fixy::TextView{"a drained ring gave an item"});
+        }
+        // A batch between the single calls keeps the copies too.
+        Run<int, 3> three{};
+        for (std::size_t i = 0; i < 3; ++i)
+            three.at(i) = next_in + static_cast<int>(i);
+        if (ring.try_push_batch(three.first(3)) != 3) return fail(fixy::TextView{"a batch push"});
+        next_in += 3;
+        for (int i = 0; i < 3; ++i) {
+            if (ring.try_pop_proven(ProvenOwner::consumer()).value_or(-1) != next_out) {
+                return fail(fixy::TextView{"a proven pop after a batch push"});
+            }
+            ++next_out;
+        }
+    }
+    return ring.empty_approx(kNondet) ? 0 : fail(fixy::TextView{"the ring is not empty at the end"});
+}
+
+// The proven calls on two threads: one producer and one consumer, each with
+// the proof of its side.  The stream keeps its order and loses no item.
+// Under TSan, a publish that does not release the cell is a data race.
+[[nodiscard]] int spsc_proven_two_threads() {
+    constexpr int kItems = 20000;
+    using Starter = ::foundation::effects::ExecCtx<
+        ::foundation::effects::Bg,
+        ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>;
+    ProvenOwner::Ring proven{};
+    ::fixy::thread::OwnedThread producer =
+        ::fixy::thread::mint_owned_thread(Starter{::foundation::effects::testing::bg()},
+                                          ::fixy::thread::ThreadOptions{},
+                                          [&proven]() noexcept {
+                                              for (int i = 0; i < kItems;) {
+                                                  if (proven.try_push_proven(ProvenOwner::producer(), i)) ++i;
+                                              }
+                                          })
+            .expect("the thread door starts the producer");
+    int next_expected = 0;
+    while (next_expected < kItems) {
+        fixy::Option<int> item = proven.try_pop_proven(ProvenOwner::consumer());
+        if (item.is_none()) continue;
+        if (std::move(item).value_or(-1) != next_expected) break;
+        ++next_expected;
+    }
+    std::move(producer).join();
+    if (next_expected != kItems) {
+        fixy::report(fixy::Sink::Err, "SPSC proven form gave item {} out of order\n", next_expected);
+        return 1;
+    }
+    return 0;
+}
+
 [[nodiscard]] int mpsc_single_threaded() {
     Mpsc ring{};
     if (!ring.empty_approx(kNondet) || ring.try_pop(kNondet).is_some()) {
@@ -756,6 +846,8 @@ int main() {
     if (const int rc = spsc_single_threaded(); rc != 0) return rc;
     if (const int rc = spsc_caches_follow_the_other_side(); rc != 0) return rc;
     if (const int rc = spsc_roles_move_between_threads(); rc != 0) return rc;
+    if (const int rc = spsc_proven_and_checked_calls_share_one_ring(); rc != 0) return rc;
+    if (const int rc = spsc_proven_two_threads(); rc != 0) return rc;
     if (const int rc = mpsc_single_threaded(); rc != 0) return rc;
     if (const int rc = mpsc_bitmap_widths(); rc != 0) return rc;
     if (const int rc = mpsc_batch_paths_each_capacity(); rc != 0) return rc;

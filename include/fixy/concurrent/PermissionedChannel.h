@@ -130,13 +130,14 @@ struct no_producer_pool {};
 
 // What a form chooses: the ring, the share that a producer handle holds, the
 // pool of the producer side, the row disciplines, and the cache lines of one
-// call of each handle.
-template <ChannelForm Form, RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand>
+// call of each handle.  Owner is the channel.  The ring of a wire names it,
+// so only the channel makes the proofs of the two sides of that ring.
+template <ChannelForm Form, RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand, typename Owner>
 struct channel_form_parts;
 
-template <RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand>
-struct channel_form_parts<ChannelForm::wire, T, Capacity, ProducerTag, Brand> {
-    using ring_type = SpscRing<T, Capacity>;
+template <RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand, typename Owner>
+struct channel_form_parts<ChannelForm::wire, T, Capacity, ProducerTag, Brand, Owner> {
+    using ring_type = SpscRing<T, Capacity, Owner>;
     // The producer handle holds the linear token, and the claim of the
     // producer role keeps one live producer handle.
     using producer_share = ::foundation::permissions::Permission<ProducerTag, Brand>;
@@ -144,15 +145,17 @@ struct channel_form_parts<ChannelForm::wire, T, Capacity, ProducerTag, Brand> {
     using channel_discipline = ::fixy::row_discipline::spsc_channel;
     using producer_discipline = ::fixy::row_discipline::spsc_producer;
     using consumer_discipline = ::fixy::row_discipline::spsc_consumer;
-    // A push reads the head and the tail.  A pop reads the head, the tail
-    // and the roster of the producers, which try_receive reads when the ring
-    // is empty.
+    // A push reads the head and the line of the copies of the producer.  A
+    // pop reads the tail, the line of the copies of the consumer, and the
+    // roster of the producers, which try_receive reads when the ring is empty.
+    // Each side reads the index of the other side only when its cache says
+    // that the ring is full or empty.
     static constexpr std::size_t producer_lines = 2;
     static constexpr std::size_t consumer_lines = 3;
 };
 
-template <RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand>
-struct channel_form_parts<ChannelForm::merge, T, Capacity, ProducerTag, Brand> {
+template <RingValue T, std::size_t Capacity, typename ProducerTag, typename Brand, typename Owner>
+struct channel_form_parts<ChannelForm::merge, T, Capacity, ProducerTag, Brand, Owner> {
     using ring_type = MpscRing<T, Capacity>;
     // The producer handle holds one share of the pool, which parks the
     // producer token.
@@ -226,7 +229,8 @@ concept ChannelValue = RingValue<T> && ::foundation::transfer::Sendable<T>;
 template <ChannelForm Form, ChannelValue T, std::size_t Capacity, typename UserTag,
           ::foundation::brand::IsFreshBrand Brand>
 class PermissionedChannel : public ::foundation::Pinned<PermissionedChannel<Form, T, Capacity, UserTag, Brand>> {
-    using parts = detail::channel_form_parts<Form, T, Capacity, channel_tag::Producer<Form, UserTag>, Brand>;
+    using parts =
+        detail::channel_form_parts<Form, T, Capacity, channel_tag::Producer<Form, UserTag>, Brand, PermissionedChannel>;
 
 public:
     using value_type = T;
@@ -332,8 +336,17 @@ public:
 
         // The value comes by reference to const, which is the shape of a
         // producer pole in fixy/concurrent/HandleTraits.h.  A value parameter
-        // hides the pole, and no stage can then feed the channel.
-        [[nodiscard, gnu::hot]] bool try_push(T const& item) noexcept { return ch_->ring_.try_push(item); }
+        // hides the pole, and no stage can then feed the channel.  The handle
+        // of a wire holds the linear producer token and the claim of its
+        // role, so the channel gives it the proof of the one producer of the
+        // ring (THE PROVEN FORM of fixy/concurrent/SpscRing.h).
+        [[nodiscard, gnu::hot]] bool try_push(T const& item) noexcept {
+            if constexpr (Form == ChannelForm::wire) {
+                return ch_->ring_.try_push_proven(PermissionedChannel::prove_producer_(), item);
+            } else {
+                return ch_->ring_.try_push(item);
+            }
+        }
 
         // Snapshots.  Sound for telemetry and for deciding whether to keep
         // retrying, never for a correctness invariant.  Each takes the bare
@@ -364,19 +377,33 @@ public:
         friend class detail::consumer_pops<Form, T, ConsumerHandle>;
 
         // The bodies of the pops of detail::consumer_pops.  The pack holds
-        // the tag of Nondet for a merge and no value for a wire.
+        // the tag of Nondet for a merge and no value for a wire.  The handle
+        // of a wire holds the linear consumer token and the claim of its role,
+        // so a wire pops with the proof of the one consumer of the ring.
         template <typename... PopTag>
         [[nodiscard, gnu::always_inline]] ::foundation::core::Option<T> pop_(PopTag... tag) noexcept {
-            return ch_->ring_.try_pop(tag...);
+            if constexpr (Form == ChannelForm::wire) {
+                return ch_->ring_.try_pop_proven(PermissionedChannel::prove_consumer_());
+            } else {
+                return ch_->ring_.try_pop(tag...);
+            }
         }
 
         template <typename... PopTag>
         [[nodiscard, gnu::always_inline]] ::foundation::core::Result<T, NoItem> receive_(PopTag... tag) noexcept {
-            ::foundation::core::Option<T> item = ch_->ring_.try_pop(tag...);
-            if (item.is_some()) [[likely]] {
-                return std::move(item).ok_or(NoItem::Empty);
+            if constexpr (Form == ChannelForm::wire) {
+                ::foundation::core::Option<T> item = ch_->ring_.try_pop_proven(PermissionedChannel::prove_consumer_());
+                if (item.is_some()) [[likely]] {
+                    return std::move(item).ok_or(NoItem::Empty);
+                }
+                return ch_->receive_after_empty_(tag...);
+            } else {
+                ::foundation::core::Option<T> item = ch_->ring_.try_pop(tag...);
+                if (item.is_some()) [[likely]] {
+                    return std::move(item).ok_or(NoItem::Empty);
+                }
+                return ch_->receive_after_empty_(tag...);
             }
-            return ch_->receive_after_empty_(tag...);
         }
 
     public:
@@ -600,6 +627,27 @@ public:
     [[nodiscard]] bool is_closed() const noexcept { return producers_.is_closed(); }
 
 private:
+    // The proofs of the two sides of the ring of a wire (THE PROVEN FORM of
+    // fixy/concurrent/SpscRing.h).  The ring names this channel as its owner,
+    // so only this channel makes them.  Only the producer handle and the
+    // consumer handle call them, and each one holds the linear token and the
+    // claim of its role, so the one writer of each side is a fact of the
+    // types.  A drain and a recombined access use the checked calls of the
+    // ring.
+    // The return types are deduced, because the ring of a merge has no proof
+    // types to name in a declaration.
+    [[nodiscard]] static constexpr auto prove_producer_() noexcept
+        requires(Form == ChannelForm::wire)
+    {
+        return typename ring_type::producer_proof{};
+    }
+
+    [[nodiscard]] static constexpr auto prove_consumer_() noexcept
+        requires(Form == ChannelForm::wire)
+    {
+        return typename ring_type::consumer_proof{};
+    }
+
     // The end of a producer handle with its token or its share.  The last one
     // closes the channel.  A wire gives its producer role back.  A handle ends
     // one time, so the end is cold, and a stage that holds the handle keeps one

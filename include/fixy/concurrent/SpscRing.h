@@ -1,13 +1,15 @@
 #pragma once
 
-// One producer thread is the sole writer of head_, of cached_tail_ and of
-// the slots in [tail, head).  One consumer thread is the sole writer of
-// tail_ and of cached_head_, and the sole reader of those slots.  Nothing
-// enforces this at run time.  A second producer or a second consumer
-// corrupts the ring silently.  A new owner of a side reads the caches of
-// that side only after the last owner of the side ended, with a
-// synchronization between the two, such as the claim of a role of
-// fixy/concurrent/PermissionedChannel.h.
+// One producer thread is the sole writer of head_, of own_head_, of
+// cached_tail_ and of the slots in [tail, head).  One consumer thread is
+// the sole writer of tail_, of own_tail_ and of cached_head_, and the sole
+// reader of those slots.  A second producer or a second consumer corrupts
+// the ring.  The checked calls compare the published index with the copy of
+// their side at each publish, so a second writer of one side ends the
+// process at the next publish of the first writer.  A new owner of a side
+// reads the copies of that side only after the last owner of the side
+// ended, with a synchronization between the two, such as the claim of a role
+// of fixy/concurrent/PermissionedChannel.h.
 //
 // THE CACHES
 //   Each side keeps the last value of the index of the other side that it
@@ -23,6 +25,21 @@
 //   of the other side.  That load and its update of the cache are in a cold
 //   function out of line, so the path of a push with room and a pop with an
 //   item holds no call.
+//
+// THE OWN INDEX
+//   Each side also keeps its own index on the same private line, and it
+//   reads its position there.  The other side polls the published index, so
+//   each load of that line by its writer can wait for a transfer of the
+//   line.  A checked publish still loads the published index one time, for
+//   its check.
+//
+// THE PROVEN FORM
+//   A ring with an Owner also gives try_push_proven and try_pop_proven.
+//   Each takes a SoleWriterProof of fixy/Mutation.h for its side, and only
+//   Owner makes one: the type proves the one writer, so the publish loads
+//   nothing from the published index (advance_sole_writer_by_proof).  A ring
+//   with no Owner has no proven form.  The two forms keep the same copies,
+//   so one ring can take each form on each call.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
@@ -38,6 +55,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
 // The claims the carriers in this header make that no lattice grades.
 // foundation/diag/RowHash.h folds each identity, so every carrier here
@@ -48,13 +66,21 @@ struct spsc_ring;
 
 namespace fixy::concurrent {
 
-template <RingValue T, std::size_t Capacity>
-class SpscRing : public ::foundation::Pinned<SpscRing<T, Capacity>> {
+// The roles of the two proofs of the one writer of a ring (THE PROVEN FORM).
+struct SpscProducerRole final {};
+struct SpscConsumerRole final {};
+
+template <RingValue T, std::size_t Capacity, class Owner = void>
+class SpscRing : public ::foundation::Pinned<SpscRing<T, Capacity, Owner>> {
 public:
     using value_type = T;
     static constexpr std::size_t channel_capacity = Capacity;
     using row_discipline = ::fixy::row_discipline::spsc_ring;
     using row_payload = T;
+    using owner_type = Owner;
+    // The proofs of the two sides, which only Owner makes (THE PROVEN FORM).
+    using producer_proof = ::fixy::SoleWriterProof<Owner, SpscProducerRole>;
+    using consumer_proof = ::fixy::SoleWriterProof<Owner, SpscConsumerRole>;
 
     static_assert(std::has_single_bit(Capacity), "fixy::concurrent::SpscRing<T, Capacity>: Capacity must be a power "
                                                  "of two.  The position-to-slot map is a bitwise AND with "
@@ -76,12 +102,26 @@ public:
     // races with nothing.  The cached tail is at most the tail, so the
     // test on the cached tail implies the test on the tail (THE CACHES).
     [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-        const std::uint64_t h = head_.peek_relaxed();
+        const std::uint64_t h = own_head_.get();
         if (h - cached_tail_.get() >= Capacity) [[unlikely]] {
             if (free_after_tail_load_() == 0) return false;
         }
         buffer_[h & MASK] = item;
         head_.advance_sole_writer_from(h, h + 1);
+        own_head_.advance(h + 1);
+        return true;
+    }
+
+    // The push of the one producer that the proof names (THE PROVEN FORM).
+    [[nodiscard, gnu::hot]] bool try_push_proven(producer_proof const& proof, const T& item) noexcept
+        requires(!std::is_void_v<Owner>)
+    {
+        const std::uint64_t h = own_head_.get();
+        if (h - cached_tail_.get() >= Capacity) [[unlikely]] {
+            if (free_after_tail_load_() == 0) return false;
+        }
+        buffer_[h & MASK] = item;
+        head_.advance_sole_writer_by_proof(proof, own_head_, h + 1);
         return true;
     }
 
@@ -91,12 +131,26 @@ public:
     // cached head synchronizes with the release of the producer that
     // published the cell, so the cell read below sees the item.
     [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop() noexcept {
-        const std::uint64_t t = tail_.peek_relaxed();
+        const std::uint64_t t = own_tail_.get();
         if (cached_head_.get() <= t) [[unlikely]] {
             if (items_after_head_load_() == 0) return ::foundation::core::none;
         }
         const T result = buffer_[t & MASK];
         tail_.advance_sole_writer_from(t, t + 1);
+        own_tail_.advance(t + 1);
+        return ::foundation::core::Option<T>::some(result);
+    }
+
+    // The pop of the one consumer that the proof names (THE PROVEN FORM).
+    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop_proven(consumer_proof const& proof) noexcept
+        requires(!std::is_void_v<Owner>)
+    {
+        const std::uint64_t t = own_tail_.get();
+        if (cached_head_.get() <= t) [[unlikely]] {
+            if (items_after_head_load_() == 0) return ::foundation::core::none;
+        }
+        const T result = buffer_[t & MASK];
+        tail_.advance_sole_writer_by_proof(proof, own_tail_, t + 1);
         return ::foundation::core::Option<T>::some(result);
     }
 
@@ -112,7 +166,7 @@ public:
     [[nodiscard, gnu::hot]] std::size_t try_push_batch(::foundation::core::View<T const> items) noexcept {
         if (items.size() == 0) [[unlikely]]
             return 0;
-        const std::uint64_t h = head_.peek_relaxed();
+        const std::uint64_t h = own_head_.get();
         std::uint64_t free_slots = Capacity - (h - cached_tail_.get());
         if (free_slots < items.size()) [[unlikely]] {
             free_slots = free_after_tail_load_();
@@ -133,6 +187,7 @@ public:
         }
 
         head_.advance_sole_writer_from(h, h + count);
+        own_head_.advance(h + count);
         return count;
     }
 
@@ -142,7 +197,7 @@ public:
     [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::core::View<T> out) noexcept {
         if (out.size() == 0) [[unlikely]]
             return 0;
-        const std::uint64_t t = tail_.peek_relaxed();
+        const std::uint64_t t = own_tail_.get();
         std::uint64_t available = cached_head_.get() - t;
         if (available < out.size()) [[unlikely]] {
             available = items_after_head_load_();
@@ -163,6 +218,7 @@ public:
         }
 
         tail_.advance_sole_writer_from(t, t + count);
+        own_tail_.advance(t + count);
         return count;
     }
 
@@ -204,7 +260,7 @@ private:
     // cache.
     [[nodiscard]] CRUCIBLE_COLD std::uint64_t free_after_tail_load_() noexcept {
         cached_tail_.advance(tail_.get());
-        return Capacity - (head_.peek_relaxed() - cached_tail_.get());
+        return Capacity - (own_head_.get() - cached_tail_.get());
     }
 
     // The items of the ring after a fresh acquire load of the head into the
@@ -212,7 +268,7 @@ private:
     // few items.  Only the consumer calls it, for the reason of the push.
     [[nodiscard]] CRUCIBLE_COLD std::uint64_t items_after_head_load_() noexcept {
         cached_head_.advance(head_.get());
-        return cached_head_.get() - tail_.peek_relaxed();
+        return cached_head_.get() - own_tail_.get();
     }
 
     // head_ and tail_ occupy separate cache lines.  On one shared line
@@ -222,28 +278,28 @@ private:
     // its own header; repeating alignas(64) here would read as though
     // the ring were what establishes it.
     //
-    // Each side reads its own index with peek_relaxed: that index is
-    // written by this thread alone, so no ordering is needed to observe
-    // the latest value.  The other side's index is read with get, which
-    // acquires, and published with advance_sole_writer_from, which
-    // releases.  That pair is what carries the cell contents across.  Each
-    // index has one writer, so the publish is a plain store and not a
-    // locked instruction.  The writer hands in the value it read, so the
-    // step check compares registers and loads nothing.
+    // The other side's index is read with get, which acquires, and
+    // published with advance_sole_writer_from or advance_sole_writer_by_proof,
+    // which release.  That pair is what carries the cell contents across.
+    // Each index has one writer, so the publish is a plain store and not a
+    // locked instruction.  The writer hands in the value of its own copy, so
+    // the step check compares registers.
     //
-    // Each cache is a plain value on a line of its own, next to the index of
-    // its side (THE CACHES).  Only its side reads and writes it, so the other
-    // core never pulls that line.  The order of the members keeps the lines
-    // of the producer together and the lines of the consumer together.
+    // The own index and the cache of each side are plain values on one line
+    // of their own, next to the index of their side (THE CACHES, THE OWN
+    // INDEX).  Only their side reads and writes them, so the other core
+    // never pulls that line.
 
     ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> head_ =
         ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
-    // The producer is the one reader and the one writer.
-    alignas(64)::fixy::Monotonic<std::uint64_t> cached_tail_ = ::fixy::mint_monotonic<std::uint64_t>(0);
+    // The producer is the one reader and the one writer of the two.
+    alignas(64)::fixy::Monotonic<std::uint64_t> own_head_ = ::fixy::mint_monotonic<std::uint64_t>(0);
+    ::fixy::Monotonic<std::uint64_t> cached_tail_ = ::fixy::mint_monotonic<std::uint64_t>(0);
     ::fixy::AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> tail_ =
         ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
-    // The consumer is the one reader and the one writer.
-    alignas(64)::fixy::Monotonic<std::uint64_t> cached_head_ = ::fixy::mint_monotonic<std::uint64_t>(0);
+    // The consumer is the one reader and the one writer of the two.
+    alignas(64)::fixy::Monotonic<std::uint64_t> own_tail_ = ::fixy::mint_monotonic<std::uint64_t>(0);
+    ::fixy::Monotonic<std::uint64_t> cached_head_ = ::fixy::mint_monotonic<std::uint64_t>(0);
 
     alignas(64) std::array<T, Capacity> buffer_{};
 };
