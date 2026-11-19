@@ -37,7 +37,6 @@
 #include <foundation/permissions/Permission.h>
 
 #include <array>
-#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -838,8 +837,8 @@ struct TokenWire {
 // fixy/session/Watch.h.
 
 struct Mailbox {
-    std::atomic<int> value{0};
-    std::atomic<bool> full{false};
+    ::fixy::Atomic<int> value{0};
+    ::fixy::Atomic<bool> full{false};
 };
 
 struct Pipe : ::foundation::Pinned<Pipe> {
@@ -858,17 +857,17 @@ struct PeerEnd {
 
 // A trying write: the one slot takes a value only while it is empty.
 [[nodiscard]] bool put(Mailbox& box, int value) noexcept {
-    if (box.full.load(std::memory_order_acquire)) return false;
-    box.value.store(value, std::memory_order_relaxed);
-    box.full.store(true, std::memory_order_release);
+    if (box.full.load_acquire()) return false;
+    box.value.store_release(value);
+    box.full.store_release(true);
     return true;
 }
 
 // A polling read: no value while the slot is empty.
 [[nodiscard]] ::fixy::Option<int> try_take(Mailbox& box) noexcept {
-    if (!box.full.load(std::memory_order_acquire)) return ::fixy::none;
-    const int value = box.value.load(std::memory_order_relaxed);
-    box.full.store(false, std::memory_order_release);
+    if (!box.full.load_acquire()) return ::fixy::none;
+    const int value = box.value.load_acquire();
+    box.full.store_release(false);
     return ::fixy::some(value);
 }
 
@@ -962,7 +961,7 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
 [[nodiscard]] int walk_forked_channel() {
     using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
     Pipe pipe{};
-    std::atomic<int> seen_pong{0};
+    ::fixy::Atomic<int> seen_pong{0};
     const BgCtx ctx{::foundation::effects::testing::bg()};
     auto whole = ::foundation::permissions::mint_permission_root<channel_tags::Whole>();
 
@@ -973,7 +972,7 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
                 Ping{20}, [](SelfEnd& e, Ping& p) noexcept { return put(e.pipe->to_peer, p.value); });
             auto [pong, done] =
                 std::move(waits).recv([](SelfEnd& e) noexcept { return try_take_as<Pong>(e.pipe->to_self); });
-            seen_pong.store(pong.value, std::memory_order_release);
+            seen_pong.store_release(pong.value);
             return std::move(done);
         },
         [](auto head, auto const& /*peer_view*/, BgCtx const&) noexcept {
@@ -984,7 +983,7 @@ static_assert(s::CtxFitsTestChannel<ChannelTestCtx, SendsIo>);
         });
     ::foundation::linear::drop(std::move(back));
 
-    if (seen_pong.load(std::memory_order_acquire) != 21) {
+    if (seen_pong.load_acquire() != 21) {
         std::fprintf(stderr, "the forked channel did not carry the reply\n");
         return 1;
     }
@@ -1049,13 +1048,13 @@ void policy_runs(::fixy::TestRunnerCtx const& test) {
 
 // A resource that can tell the peer that its side stops.  The counter
 // stands in for the message a real transport would send.
-std::atomic<int> g_cancellations{0};
+::fixy::Atomic<int> g_cancellations{0};
 
 struct CancelWire {
     int last_sent = 0;
 };
 
-void cancel_session(CancelWire&) noexcept { g_cancellations.fetch_add(1, std::memory_order_relaxed); }
+void cancel_session(CancelWire&) noexcept { static_cast<void>(g_cancellations.fetch_add_acq_rel(1)); }
 
 static_assert(s::CancellableResource<CancelWire>);
 static_assert(!s::CancellableResource<ValueWire>);
@@ -1063,7 +1062,7 @@ static_assert(!s::CancellableResource<ValueWire>);
 // The exit code of a child that counted COUNT cancellations: 0 when the
 // count is the expected one, and 3 when it is not.
 [[nodiscard]] std::uint8_t exit_code_of_cancellations(int expected) noexcept {
-    return g_cancellations.load(std::memory_order_relaxed) == expected ? std::uint8_t{0} : std::uint8_t{3};
+    return g_cancellations.load_acquire() == expected ? std::uint8_t{0} : std::uint8_t{3};
 }
 
 void liveness_and_cancel_run(::fixy::TestRunnerCtx const& test) {
@@ -1172,7 +1171,7 @@ void liveness_and_cancel_run(::fixy::TestRunnerCtx const& test) {
     auto cancelled = s::mint_session<Once, s::check::Cancel>(ctx, CancelWire{});
     std::move(cancelled).cancel();
     if (!live_count_is(baseline, "a cancel")) return 1;
-    g_cancellations.store(0, std::memory_order_relaxed);
+    g_cancellations.store_release(0);
 
     {
         auto unchecked = s::mint_session<Once, s::check::Off>(ctx, ValueWire{});
@@ -1199,9 +1198,9 @@ struct PollBox {
     template <typename End>
     [[nodiscard]] ::fixy::Option<int> operator()(End& end) const noexcept {
         Mailbox& box = *box_of(*end.pipe);
-        if (!box.full.load(std::memory_order_acquire)) return ::fixy::none;
-        const int value = box.value.load(std::memory_order_relaxed);
-        box.full.store(false, std::memory_order_release);
+        if (!box.full.load_acquire()) return ::fixy::none;
+        const int value = box.value.load_acquire();
+        box.full.store_release(false);
         return ::fixy::some(value);
     }
 };
@@ -1215,7 +1214,7 @@ struct PollBox {
     using Twice = s::Send<int, s::Recv<int, s::Send<int, s::Recv<int, s::End>>>>;
     constexpr auto late = std::chrono::milliseconds{120};
     Pipe pipe{};
-    std::atomic<int> total{0};
+    ::fixy::Atomic<int> total{0};
     const BgCtx ctx{::foundation::effects::testing::bg()};
     const PollBox to_self{[](Pipe& p) noexcept { return &p.to_self; }};
     const PollBox to_peer{[](Pipe& p) noexcept { return &p.to_peer; }};
@@ -1229,7 +1228,7 @@ struct PollBox {
             auto [first_reply, second_send] = std::move(first_wait).recv(to_self);
             auto second_wait = std::move(second_send).send(first_reply + 1, send_to_peer);
             auto [second_reply, done] = std::move(second_wait).recv(to_self);
-            total.store(second_reply, std::memory_order_release);
+            total.store_release(second_reply);
             return std::move(done);
         },
         [&](auto head, auto const& /*peer_view*/, BgCtx const&) noexcept {
@@ -1241,8 +1240,8 @@ struct PollBox {
             return std::move(second_answer).send(second + 1, send_to_self);
         });
     ::foundation::linear::drop(std::move(back));
-    if (total.load(std::memory_order_acquire) != 4) {
-        std::fprintf(stderr, "the polling channel carried %d, not 4\n", total.load(std::memory_order_acquire));
+    if (total.load_acquire() != 4) {
+        std::fprintf(stderr, "the polling channel carried %d, not 4\n", total.load_acquire());
         return 1;
     }
     return 0;
