@@ -39,7 +39,11 @@
 //   Owner makes one: the type proves the one writer, so the publish loads
 //   nothing from the published index (advance_sole_writer_by_proof).  A ring
 //   with no Owner has no proven form.  The two forms keep the same copies,
-//   so one ring can take each form on each call.
+//   so one ring can take each form on each call.  The two proven calls
+//   always inline into their caller.  In the producer loop of the scaling
+//   bench, GCC kept the push as an out-of-line call, and that call decreased
+//   the throughput in one L3 cache by approximately 14%.  The checked calls
+//   showed no such loss, so the compiler decides for them.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
@@ -113,7 +117,7 @@ public:
     }
 
     // The push of the one producer that the proof names (THE PROVEN FORM).
-    [[nodiscard, gnu::hot]] bool try_push_proven(producer_proof const& proof, const T& item) noexcept
+    [[nodiscard]] CRUCIBLE_HOT bool try_push_proven(producer_proof const& proof, const T& item) noexcept
         requires(!std::is_void_v<Owner>)
     {
         const std::uint64_t h = own_head_.get();
@@ -142,7 +146,7 @@ public:
     }
 
     // The pop of the one consumer that the proof names (THE PROVEN FORM).
-    [[nodiscard, gnu::hot]] ::foundation::core::Option<T> try_pop_proven(consumer_proof const& proof) noexcept
+    [[nodiscard]] CRUCIBLE_HOT ::foundation::core::Option<T> try_pop_proven(consumer_proof const& proof) noexcept
         requires(!std::is_void_v<Owner>)
     {
         const std::uint64_t t = own_tail_.get();
