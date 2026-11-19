@@ -241,10 +241,15 @@
 //   on the copy, so the compiler keeps one result for each net that some
 //   checks read.  explain_fault is a template on the capacity class too, and
 //   it puts each name through helpers that are no templates.
-//   This header includes two headers of the base: the mixer
-//   foundation/reflect/Mix.h, which includes no other, and the seal
-//   foundation/ByteSeal.h, which includes foundation/Platform.h.  It includes
-//   no <meta>.  So a light header can include it.
+//   This header includes two headers of the base, and no other.  The mixer
+//   foundation/reflect/Mix.h gives the fold of the hash, and it includes only
+//   <cstdint>.  The seal foundation/ByteSeal.h has one reason: a sealed net is
+//   a proof, and a proof must not come from bytes.  byte_seal is the member
+//   of the base that closes the two byte routes, std::bit_cast and a lifetime
+//   start over bytes, and it keeps the copy constructor of a sealed net
+//   trivial.  ByteSeal.h holds only the seal and two marks, and it includes
+//   only foundation/Platform.h, which includes <type_traits>.  This header
+//   includes no <meta>, so a light header can include it.
 //
 // SOURCES
 //   Lafont, Interaction nets, POPL 1990.  Lafont, Interaction combinators,
