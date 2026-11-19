@@ -34,8 +34,17 @@
 //
 // The layout: the pointer of each run in the order of the runs, then the
 // counts.  A set owns nothing, so its runs dangle when their owner ends.
+//
+// The first element of each run states refers{} (foundation/Transfer.h), so
+// the walk of the transfer facts reads a run of T as a reference to T.  A
+// copy of a set refers to the same runs, and a View of a set that is not
+// const writes them.  So two threads can read a set of runs of T only when
+// two threads can write a T.  A run of const elements gives only const
+// elements, also through a copy, so two threads can read a set of such runs
+// when two threads can read each element.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Number.h>
@@ -53,7 +62,7 @@ namespace foundation::core {
 // A run of a RunSet: elements of type T, with the count at index Slot of
 // the table of counts.
 template <class T, std::size_t Slot>
-    requires ViewElement<T> && (!std::is_const_v<T>)
+    requires ViewElement<T>
 struct RunOf final {
     using element_type = T;
     static constexpr std::size_t slot = Slot;
@@ -69,9 +78,10 @@ inline constexpr bool is_run_of_<RunOf<T, Slot>> = true;
 
 // The first element of the run at index I, or the null pointer when the set
 // holds no elements for the run.  The index keeps two runs of one element
-// type in two distinct bases.
-template <std::size_t I, class T>
-struct RunFirst_ {
+// type in two distinct bases.  The pointer refers to the elements of the run
+// as a reference does, so the class states refers{} over its first argument.
+template <class T, std::size_t I>
+struct[[= ::foundation::transfer::refers{}]] RunFirst_ {
     T* first_ = nullptr;
 };
 
@@ -81,7 +91,7 @@ struct RunFirsts_;
 // One base for each run, in the order of the runs.  So the pointers come
 // first in the layout, and the counts after them.
 template <std::size_t... Positions, class... Runs>
-struct RunFirsts_<std::index_sequence<Positions...>, Runs...> : RunFirst_<Positions, typename Runs::element_type>... {};
+struct RunFirsts_<std::index_sequence<Positions...>, Runs...> : RunFirst_<typename Runs::element_type, Positions>... {};
 
 // The count of slots: one more than the largest slot of a run.
 template <class... Runs>
@@ -122,7 +132,7 @@ public:
 
 private:
     template <std::size_t I>
-    using First_ = detail::RunFirst_<I, element_t<I>>;
+    using First_ = detail::RunFirst_<element_t<I>, I>;
 
     // Drops the elements of each run of the slot.
     template <std::size_t Slot, std::size_t... Positions>

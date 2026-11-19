@@ -7,6 +7,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/RunSet.h>
 #include <foundation/core/Strided.h>
 #include <foundation/reflect/TypeComponents.h>
 
@@ -79,6 +80,27 @@ static_assert(!Sendable<PointerRun> && !Shareable<PointerRun>);
 static_assert(!Sendable<IntRun const&> && !Sendable<IntRun&>);
 static_assert(first_refusal(^^IntRun, Property::Share) == std::meta::dealias(^^IntRun));
 static_assert(first_refusal(^^PointerRun, Property::Send) == ^^int*);
+
+// Rule 1 for each run of a RunSet: the first element of a run states
+// refers{}.  A copy of a set refers to the same runs, and a set that is not
+// const writes them, so a set of runs of plain ints holds no property.  A set
+// of runs of const elements gives only const elements, also through a copy,
+// so it holds each property when two threads can read each element.
+struct HoldsAddress {
+    int* address = nullptr;
+};
+using WritableRuns =
+    ::foundation::core::RunSet<unsigned short, ::foundation::core::RunOf<int, 0>, ::foundation::core::RunOf<double, 1>>;
+using ReadRuns = ::foundation::core::RunSet<unsigned short, ::foundation::core::RunOf<int const, 0>,
+                                            ::foundation::core::RunOf<double const, 1>>;
+using AddressRuns = ::foundation::core::RunSet<unsigned short, ::foundation::core::RunOf<HoldsAddress const, 0>>;
+using CellRuns =
+    ::foundation::core::RunSet<unsigned short, ::foundation::core::RunOf<::foundation::core::Atomic<int>, 0>>;
+static_assert(!Shareable<WritableRuns> && !Sendable<WritableRuns> && !SendableBeside<WritableRuns>);
+static_assert(Shareable<ReadRuns> && Sendable<ReadRuns> && !SendableBeside<ReadRuns>);
+static_assert(Shareable<CellRuns> && Sendable<CellRuns> && SendableBeside<CellRuns>);
+static_assert(!Shareable<AddressRuns> && first_refusal(^^AddressRuns, Property::Share) == ^^int*);
+static_assert(!Synchronized<ReadRuns>, "two threads cannot write the counts of one set");
 
 // Rule 7: a lambda with no capture holds each property.  A capture by
 // reference of a plain int holds none: a compiler that hides the capture

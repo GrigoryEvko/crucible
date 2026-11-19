@@ -42,11 +42,11 @@ static_assert(std::is_nothrow_default_constructible_v<Mixed> && std::is_triviall
 static_assert(std::is_nothrow_copy_constructible_v<Mixed> && std::is_nothrow_copy_assignable_v<Mixed>);
 static_assert(!std::is_trivially_copyable_v<Mixed>);
 
-// A run takes an element that a View takes, with no const.  A set takes an
-// unsigned count and runs only.
+// A run takes an element that a View takes.  A run of const elements gives
+// only const elements.  A set takes an unsigned count and runs only.
 template <class T>
 concept CanRun = requires { typename RunOf<T, 0>; };
-static_assert(CanRun<Wide> && !CanRun<Wide const> && !CanRun<int[2]> && !CanRun<int&>);
+static_assert(CanRun<Wide> && CanRun<Wide const> && !CanRun<int[2]> && !CanRun<int&>);
 template <class Count, class... Runs>
 concept CanSet = requires { typename RunSet<Count, Runs...>; };
 static_assert(CanSet<std::uint16_t, RunOf<int, 0>> && CanSet<std::size_t, RunOf<int, 2>>);
