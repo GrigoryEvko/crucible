@@ -29,6 +29,16 @@
 //       uint64   schema hash
 //       uint16   name length, terminator excluded
 //       char     the name itself, not terminated in the file
+//
+// THE FIRST FORMAT.  The loader reads the version 1 too, the format of the
+// traces that the vessel recorded first.  Its op records have 80 bytes: the
+// first 80 bytes of an op record of today, with no depth, no tags and no data
+// slots.  Each op then has the depth 0, the tag INT on each scalar slot, and
+// no data slot.  Its metadata records have 168 bytes: the bytes of today up to
+// the version, then the storage size in 32 bits at byte 156, and the hash of
+// the gradient function at byte 160.  The shape hash of a version 1 op is not
+// the guard word of today, so it compares with no live op.  A trace of the
+// version 1 serves an offline pass, such as the phases of bench_phases.
 
 #include <cstddef>
 #include <cstdint>
@@ -120,7 +130,7 @@ enum class TraceLoadError : uint8_t {
     HeaderTruncated,
     // The file does not start with the magic CRTR.
     WrongMagic,
-    // The version is not TRACE_FORMAT_VERSION.
+    // The version is not TRACE_FORMAT_VERSION and not TRACE_FORMAT_FIRST_VERSION.
     WrongVersion,
     // A count of the header is past its limit.
     CountPastLimit,
@@ -155,12 +165,19 @@ inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 // bits and the storage offset of each input (pack_tensor_word).  Version 7 has
 // the data slots of each op, and a guard word that reads the tag of a data
 // slot but not its value.  A word of an earlier version compares with no live
-// op.  The loader refuses each other version.
+// op.  The writer writes this version.  The loader reads it and the first
+// version (THE FIRST FORMAT), and it refuses each other version.
 inline constexpr uint32_t TRACE_FORMAT_VERSION = 7;
 
 // The length of each metadata record.  A count whose records would not fit
 // in the bytes that remain is refused before any array is sized from it.
 inline constexpr uint64_t TRACE_META_BYTES = sizeof(TensorMeta);
+
+// The first version of the format, and the lengths of its op records and its
+// metadata records (THE FIRST FORMAT).
+inline constexpr uint32_t TRACE_FORMAT_FIRST_VERSION = 1;
+inline constexpr std::size_t TRACE_FIRST_OP_BYTES = 80;
+inline constexpr std::size_t TRACE_FIRST_META_BYTES = 168;
 
 // The magic at the start of each trace file.
 inline constexpr ::fixy::FixedArray<std::byte, 4> TRACE_MAGIC{std::byte{'C'}, std::byte{'R'}, std::byte{'T'},
@@ -253,10 +270,15 @@ read_records_(Ctx const& io, TraceFileRef file, uint32_t count, OnRecord&& on_re
 // Fills the ring entry, the metadata start, the scope hash and the callsite
 // hash of op i of trace from its record, and moves meta_cursor past the
 // tensors of the op.  An op whose metadata runs past the metadata count gives
-// MetaRunPastCount.
+// MetaRunPastCount.  A record of the first version is the first
+// TRACE_FIRST_OP_BYTES bytes of a record of today, so the op takes the depth
+// 0, the tag 0 on each scalar slot and no data slot (THE FIRST FORMAT).
+template <std::size_t RecordBytes>
+    requires(RecordBytes == sizeof(TraceOpRecord) || RecordBytes == TRACE_FIRST_OP_BYTES)
 [[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
-decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record, uint32_t i, LoadedTrace& trace,
+decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t i, LoadedTrace& trace,
                  uint32_t& meta_cursor) noexcept {
+    constexpr bool is_first_format = RecordBytes == TRACE_FIRST_OP_BYTES;
     TraceRing::Entry& entry = *trace.entries.get(i).expect("an op index is below the op count");
     entry.schema_hash = SchemaHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, schema_hash)>(op_record)};
     entry.shape_hash = ShapeHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, shape_hash)>(op_record)};
@@ -264,7 +286,14 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
     const auto num_outputs = read_record_field_<uint16_t, offsetof(TraceOpRecord, num_outputs)>(op_record);
     const auto num_scalars = read_record_field_<uint16_t, offsetof(TraceOpRecord, num_scalars)>(op_record);
     const auto grad_enabled = read_record_field_<uint8_t, offsetof(TraceOpRecord, grad_enabled)>(op_record);
-    const auto data_bits = read_record_field_<uint8_t, offsetof(TraceOpRecord, data_slots)>(op_record);
+    uint8_t data_bits = 0;
+    uint16_t scalar_types = 0;
+    OpDepth depth{};
+    if constexpr (!is_first_format) {
+        data_bits = read_record_field_<uint8_t, offsetof(TraceOpRecord, data_slots)>(op_record);
+        scalar_types = read_record_field_<uint16_t, offsetof(TraceOpRecord, scalar_types)>(op_record);
+        depth = OpDepth{read_record_field_<uint16_t, offsetof(TraceOpRecord, depth)>(op_record)};
+    }
     // An entry holds at most kScalarSlots scalars, and a data slot is one of
     // them.  The build of a region ends the process on a larger count, so
     // the load refuses it first, and a data slot past the inline slots or
@@ -291,11 +320,11 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
     }
     // After the flags, because the tag of slot 4 is in the two high bits of
     // op_flags.
-    entry.set_packed_scalar_types(read_record_field_<uint16_t, offsetof(TraceOpRecord, scalar_types)>(op_record));
+    entry.set_packed_scalar_types(scalar_types);
     uint16_t lane = 0;
     const auto scalar_block = record_block_<offsetof(TraceOpRecord, scalar_values), kTraceScalarBlockBytes>(op_record);
     using ScalarLane = ::fixy::Index<decltype(entry.scalar_values)::size()>;
-    for (::fixy::View<std::byte const, sizeof(int64_t)> scalar : scalar_block.chunks<sizeof(int64_t)>()) {
+    for (::fixy::View<std::byte const, sizeof(int64_t)> scalar : scalar_block.template chunks<sizeof(int64_t)>()) {
         if (lane == num_scalars) break;
         entry.scalar_values.at(ScalarLane::check(lane).expect("the scalar block holds one chunk for each lane")) =
             read_record_field_<int64_t, 0>(scalar);
@@ -333,8 +362,7 @@ decode_trace_op_(::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record,
         ScopeHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, scope_hash)>(op_record)};
     *trace.callsite_hashes.get(i).expect("an op index is below the op count") =
         CallsiteHash{read_record_field_<uint64_t, offsetof(TraceOpRecord, callsite_hash)>(op_record)};
-    *trace.depths.get(i).expect("an op index is below the op count") =
-        OpDepth{read_record_field_<uint16_t, offsetof(TraceOpRecord, depth)>(op_record)};
+    *trace.depths.get(i).expect("an op index is below the op count") = depth;
     return ::fixy::Unit{};
 }
 
@@ -388,6 +416,100 @@ decode_trace_meta(::fixy::View<std::byte const, sizeof(TensorMeta)> raw) noexcep
     fields.grad_fn_hash = read_record_field_<uint64_t, offsetof(TensorMeta, grad_fn_hash)>(raw);
     return decode_tensor_meta(fields, ExternalDataPtr{});
 }
+
+namespace detail {
+
+// The offsets of the fields of a metadata record of the first version (THE
+// FIRST FORMAT).  They are fixed numbers, so a change of the layout of
+// TensorMeta does not move them.
+inline constexpr std::size_t kFirstMetaSizesAt = 0;
+inline constexpr std::size_t kFirstMetaStridesAt = 64;
+inline constexpr std::size_t kFirstMetaNdimAt = 136;
+inline constexpr std::size_t kFirstMetaDtypeAt = 137;
+inline constexpr std::size_t kFirstMetaDeviceTypeAt = 138;
+inline constexpr std::size_t kFirstMetaDeviceIdxAt = 139;
+inline constexpr std::size_t kFirstMetaLayoutAt = 140;
+inline constexpr std::size_t kFirstMetaRequiresGradAt = 141;
+inline constexpr std::size_t kFirstMetaFlagsAt = 142;
+inline constexpr std::size_t kFirstMetaOutputNrAt = 143;
+inline constexpr std::size_t kFirstMetaStorageOffsetAt = 144;
+inline constexpr std::size_t kFirstMetaVersionAt = 152;
+inline constexpr std::size_t kFirstMetaStorageBytesAt = 156;
+inline constexpr std::size_t kFirstMetaGradFnHashAt = 160;
+
+// Builds one metadata record of the first version through decode_tensor_meta,
+// as decode_trace_meta builds a record of today.  The storage size has 32
+// bits there.
+[[nodiscard]] inline ::fixy::Option<TensorMeta>
+decode_first_trace_meta_(::fixy::View<std::byte const, TRACE_FIRST_META_BYTES> raw) noexcept {
+    using Lanes = ::fixy::FixedArray<int64_t, kMaxTensorNDim>;
+    UncheckedTensorMeta fields{};
+    fields.sizes = read_record_field_<Lanes, kFirstMetaSizesAt>(raw);
+    fields.strides = read_record_field_<Lanes, kFirstMetaStridesAt>(raw);
+    fields.ndim = read_record_field_<uint8_t, kFirstMetaNdimAt>(raw);
+    fields.dtype = read_record_field_<int8_t, kFirstMetaDtypeAt>(raw);
+    fields.device_type = read_record_field_<int8_t, kFirstMetaDeviceTypeAt>(raw);
+    fields.device_idx = read_record_field_<int8_t, kFirstMetaDeviceIdxAt>(raw);
+    fields.layout = read_record_field_<int8_t, kFirstMetaLayoutAt>(raw);
+    fields.requires_grad = read_record_field_<uint8_t, kFirstMetaRequiresGradAt>(raw);
+    fields.flags = read_record_field_<uint8_t, kFirstMetaFlagsAt>(raw);
+    fields.output_nr = read_record_field_<uint8_t, kFirstMetaOutputNrAt>(raw);
+    fields.storage_offset = read_record_field_<int64_t, kFirstMetaStorageOffsetAt>(raw);
+    fields.version = read_record_field_<uint32_t, kFirstMetaVersionAt>(raw);
+    fields.storage_nbytes = read_record_field_<uint32_t, kFirstMetaStorageBytesAt>(raw);
+    fields.grad_fn_hash = read_record_field_<uint64_t, kFirstMetaGradFnHashAt>(raw);
+    return decode_tensor_meta(fields, ExternalDataPtr{});
+}
+
+// One metadata record of the format of MetaBytes: of today, or of the first
+// version.
+template <std::size_t MetaBytes>
+    requires(MetaBytes == TRACE_META_BYTES || MetaBytes == TRACE_FIRST_META_BYTES)
+[[nodiscard]] inline ::fixy::Option<TensorMeta>
+decode_meta_record_(::fixy::View<std::byte const, MetaBytes> raw) noexcept {
+    if constexpr (MetaBytes == TRACE_META_BYTES) {
+        return decode_trace_meta(raw);
+    } else {
+        return decode_first_trace_meta_(raw);
+    }
+}
+
+// Reads the op records and then the metadata records of trace, of the format
+// of OpBytes and MetaBytes, and fills trace.  The first error ends the reads.
+// Complexity: linear in the records.
+template <std::size_t OpBytes, std::size_t MetaBytes, CtxFitsTraceLoad Ctx>
+[[nodiscard]] inline ::fixy::Result<::fixy::Unit, TraceLoadError>
+read_trace_records_(Ctx const& io, TraceFileRef source, LoadedTrace& trace) noexcept {
+    using Step = ::fixy::Result<::fixy::Unit, TraceLoadError>;
+    uint32_t meta_cursor = 0;
+    CRUCIBLE_TRY(
+        _, read_records_<OpBytes>(
+               io, source, trace.num_ops,
+               [&trace, &meta_cursor](uint32_t i, ::fixy::View<std::byte const, OpBytes> op_record) noexcept -> Step {
+                   return decode_trace_op_<OpBytes>(op_record, i, trace, meta_cursor);
+               }));
+
+    // Each record is read into a buffer of its full length and decoded from
+    // there, so no byte of the file reaches a TensorMeta unchecked.
+    return read_records_<MetaBytes>(
+        io, source, trace.num_metas,
+        [&trace](uint32_t i, ::fixy::View<std::byte const, MetaBytes> raw) noexcept -> Step {
+            return decode_meta_record_<MetaBytes>(raw).match(
+                [&trace, i](TensorMeta meta) noexcept -> Step {
+                    *trace.metas.get(i).expect("a metadata index is below the metadata count") = meta;
+                    return ::fixy::Unit{};
+                },
+                [i]() noexcept -> Step {
+                    ::fixy::report(::fixy::Sink::Err,
+                                   "load_trace: the metadata record {} breaks a claim of its type, so the trace is "
+                                   "corrupt\n",
+                                   i);
+                    return ::fixy::err(TraceLoadError::MetaCorrupt);
+                });
+        });
+}
+
+}  // namespace detail
 
 // THE WRITER
 //   The encoders below put each field of a record at the offset that the
@@ -531,9 +653,11 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
         return ::fixy::err(TraceLoadError::WrongMagic);
     }
     const auto version = read_record_field_<uint32_t, 4>(header_bytes);
-    if (version != TRACE_FORMAT_VERSION) {
-        ::fixy::report(::fixy::Sink::Err, "load_trace: the trace file has the version {}, and the loader reads {}\n",
-                       version, TRACE_FORMAT_VERSION);
+    const bool is_first_format = version == TRACE_FORMAT_FIRST_VERSION;
+    if (version != TRACE_FORMAT_VERSION && !is_first_format) {
+        ::fixy::report(::fixy::Sink::Err,
+                       "load_trace: the trace file has the version {}, and the loader reads {} and {}\n", version,
+                       TRACE_FORMAT_VERSION, TRACE_FORMAT_FIRST_VERSION);
         return ::fixy::err(TraceLoadError::WrongVersion);
     }
 
@@ -556,8 +680,10 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     // small file that claims millions of records allocates nothing.  The
     // size check above keeps the subtraction from a wrap.
     const uint64_t after_header = file_bytes - TRACE_HEADER_BYTES;
-    const uint64_t op_bytes = uint64_t{num_ops} * sizeof(TraceOpRecord);
-    if (op_bytes > after_header || uint64_t{num_metas} * TRACE_META_BYTES > after_header - op_bytes) {
+    const uint64_t op_record_bytes = is_first_format ? TRACE_FIRST_OP_BYTES : sizeof(TraceOpRecord);
+    const uint64_t meta_record_bytes = is_first_format ? TRACE_FIRST_META_BYTES : TRACE_META_BYTES;
+    const uint64_t op_bytes = uint64_t{num_ops} * op_record_bytes;
+    if (op_bytes > after_header || uint64_t{num_metas} * meta_record_bytes > after_header - op_bytes) {
         ::fixy::report(::fixy::Sink::Err,
                        "load_trace: the header counts do not fit in the file "
                        "(num_ops={} num_metas={}, {} bytes after the header)\n",
@@ -575,34 +701,11 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     trace.depths = ::fixy::mint_heap_array(io.cap().alloc, num_ops, OpDepth{});
     trace.metas = ::fixy::mint_heap_array(io.cap().alloc, num_metas, TensorMeta{});
 
-    using Step = ::fixy::Result<::fixy::Unit, TraceLoadError>;
-    uint32_t meta_cursor = 0;
-    CRUCIBLE_TRY(
-        _, detail::read_records_<sizeof(TraceOpRecord)>(
-               io, source, num_ops,
-               [&trace, &meta_cursor](uint32_t i,
-                                      ::fixy::View<std::byte const, sizeof(TraceOpRecord)> op_record) noexcept -> Step {
-                   return detail::decode_trace_op_(op_record, i, trace, meta_cursor);
-               }));
-
-    // Each record is read into a buffer of its full length and decoded from
-    // there, so no byte of the file reaches a TensorMeta unchecked.
-    CRUCIBLE_TRY(_, detail::read_records_<TRACE_META_BYTES>(
-                        io, source, num_metas,
-                        [&trace](uint32_t i, ::fixy::View<std::byte const, TRACE_META_BYTES> raw) noexcept -> Step {
-                            return decode_trace_meta(raw).match(
-                                [&trace, i](TensorMeta meta) noexcept -> Step {
-                                    *trace.metas.get(i).expect("a metadata index is below the metadata count") = meta;
-                                    return ::fixy::Unit{};
-                                },
-                                [i]() noexcept -> Step {
-                                    ::fixy::report(::fixy::Sink::Err,
-                                                   "load_trace: the metadata record {} breaks a claim of its type, "
-                                                   "so the trace is corrupt\n",
-                                                   i);
-                                    return ::fixy::err(TraceLoadError::MetaCorrupt);
-                                });
-                        }));
+    if (is_first_format) {
+        CRUCIBLE_TRY(_, (detail::read_trace_records_<TRACE_FIRST_OP_BYTES, TRACE_FIRST_META_BYTES>(io, source, trace)));
+    } else {
+        CRUCIBLE_TRY(_, (detail::read_trace_records_<sizeof(TraceOpRecord), TRACE_META_BYTES>(io, source, trace)));
+    }
 
     // The name table is optional and sits after the metadata.  A failed read
     // in the table ends the table, as a malformed tail does, and the trace

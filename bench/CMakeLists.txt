@@ -180,13 +180,13 @@ crucible_bench(bench_merkle_dag)
 crucible_bench(bench_meta_log)
 crucible_bench(bench_net_checks)
 crucible_bench(bench_phases)
-# Default trace for bench_phases: SD1.5 U-Net (36499 ops) — real-world
-# production-scale baseline. 10k+ DAG ops is the minimum meaningful
-# signal for the build_trace pipeline; resnet18 (1386) shows <100 µs
-# noise, vit_b (~15k) is borderline. SD1.5's 3 ms full pipeline gives
-# the phase breakdown clean percentages without sub-phase quantization.
+# The default trace of bench_phases is in the tree: a training loop of a
+# MiniGPT on the CPU, which the vessel recorded, 1091 ops in the trace format
+# 1, which the loader reads too (crucible/TraceLoader.h).  A trace of more ops, such as the 36499 ops of an
+# SD1.5 U-Net, gives the phases a cleaner split.  Give its path as the first
+# argument of the bench.
 target_compile_definitions(bench_phases PRIVATE
-  CRUCIBLE_BENCH_DEFAULT_TRACE="${CMAKE_SOURCE_DIR}/vessel/torch/examples/traces/sd15_unet.crtrace")
+  CRUCIBLE_BENCH_DEFAULT_TRACE="${CMAKE_SOURCE_DIR}/test/data/minigpt_cpu.crtrace")
 crucible_bench(bench_perf_loader)
 crucible_bench(bench_philox)
 crucible_bench(bench_pool_allocator)

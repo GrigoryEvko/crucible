@@ -20,4 +20,14 @@ static_assert(std::is_standard_layout_v<TraceOpRecord>);
 static_assert(std::is_standard_layout_v<TensorMeta>, "the record offsets below come from offsetof");
 static_assert(offsetof(TensorMeta, output_nr) < 144, "the shortest record must carry every byte-sized field");
 
+// An op record of the first format is the start of an op record of today, up
+// to the depth, so the fields that the two formats share have one offset.  A
+// metadata record of the first format holds eight lanes of sizes and eight of
+// strides, as TensorMeta does.
+static_assert(TRACE_FIRST_OP_BYTES == offsetof(TraceOpRecord, depth), "the first op record ends before the depth");
+static_assert(kMaxTensorNDim * sizeof(int64_t) == detail::kFirstMetaStridesAt - detail::kFirstMetaSizesAt,
+              "a first metadata record holds the lanes of the sizes of today");
+static_assert(detail::kFirstMetaGradFnHashAt + sizeof(uint64_t) == TRACE_FIRST_META_BYTES,
+              "the hash of the gradient function ends the first metadata record");
+
 }  // namespace crucible

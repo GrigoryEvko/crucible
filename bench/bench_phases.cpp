@@ -675,10 +675,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     print_phase_table(phases, 8, sum, iters);
 }
 
-// Default trace baked at configure time — see bench/CMakeLists.txt.
-// SD1.5 U-Net (36499 ops) is the minimum meaningful production-scale
-// signal for the build_trace pipeline. resnet18 (1386 ops) under-samples
-// every per-op phase; vit_b (~15k) is borderline.
+// The default trace comes from the configure step (bench/CMakeLists.txt): the
+// recorded MiniGPT trace of the tree, 1091 ops.  A trace of more ops, such as
+// the 36499 ops of an SD1.5 U-Net, gives the phases a cleaner split.
 #ifdef CRUCIBLE_BENCH_DEFAULT_TRACE
 constexpr const char* kDefaultTrace = CRUCIBLE_BENCH_DEFAULT_TRACE;
 #else

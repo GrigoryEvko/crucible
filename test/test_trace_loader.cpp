@@ -322,6 +322,129 @@ static void test_encoders_round_trip_through_the_loader() {
     ::fixy::check::pass(kTest, "  test_encoders_round_trip:       PASSED\n");
 }
 
+// The load of an image of a trace file, written in the working directory of
+// the test under the name kFileName and removed after the load.
+template <std::size_t Bytes>
+static ::fixy::Result<LoadedTrace, TraceLoadError> load_image(::fixy::FixedArray<std::byte, Bytes> const& image,
+                                                              ::fixy::CText const& file_name) {
+    const auto checked = [](::fixy::TextView text) noexcept {
+        return ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(text))
+            .expect("a plain relative path passes the check");
+    };
+    const ::fixy::fs::DirectoryHandle here =
+        ::fixy::fs::open_directory(kTestIo, checked(::fixy::TextView{"."})).expect("the working directory opens");
+    using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
+    using TraceFile = ::fixy::fs::FileOf<WriteTruncate>;
+    const bool is_written = ::fixy::fs::mint_file_at<WriteTruncate>(kTestIo, here.ref(), file_name)
+                                .match(
+                                    [&image](::fixy::Linear<TraceFile> opened) noexcept {
+                                        const TraceFile file = std::move(opened).consume();
+                                        return ::fixy::fs::write_full(kTestIo, file.ref(), image.view()).is_ok();
+                                    },
+                                    [](::foundation::os::Errno) noexcept { return false; });
+    CRUCIBLE_TEST_ASSERT(kTest, is_written);
+    ::fixy::Result<LoadedTrace, TraceLoadError> loaded = load_trace(kTestIo, checked(file_name.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::unlink_at(kTestIo, here.ref(), file_name).is_ok());
+    return loaded;
+}
+
+// A trace of the first format (THE FIRST FORMAT of crucible/TraceLoader.h):
+// an op record of 80 bytes with no depth, no tags and no data slots, and a
+// metadata record of 168 bytes with a storage size of 32 bits at byte 156 and
+// the hash of the gradient function at byte 160.  The image writes each field
+// at the offset of that format, and the loader reads each field back.  The
+// old loader refused the version: "the trace file has the version 1, and the
+// loader reads 7".
+static void test_first_format_loads() {
+    using crucible::detail::write_record_field_;
+    constexpr size_t kOpAt = TRACE_HEADER_BYTES;
+    constexpr size_t kMetaAt = kOpAt + TRACE_FIRST_OP_BYTES;
+    constexpr size_t kBytes = kMetaAt + TRACE_FIRST_META_BYTES + sizeof(uint32_t);
+    constexpr uint64_t kSchema = 0xAABBCCDDEEFF0011ULL;
+    constexpr uint64_t kShape = 0x1122334455667788ULL;
+    constexpr uint64_t kScope = 0xDEADBEEFCAFEBABEULL;
+    constexpr uint64_t kCallsite = 0xFEEDFACE000000ADULL;
+    constexpr uint64_t kGradFnHash = 0x0123456789ABCDEFULL;
+    ::fixy::FixedArray<std::byte, kBytes> image{};
+
+    const ::fixy::View<std::byte, TRACE_HEADER_BYTES> header =
+        image.view().window<TRACE_HEADER_BYTES>(0).expect("the header fits the image");
+    write_record_field_<0>(header, TRACE_MAGIC);
+    write_record_field_<4>(header, TRACE_FORMAT_FIRST_VERSION);
+    write_record_field_<8>(header, uint32_t{1});
+    write_record_field_<12>(header, uint32_t{1});
+
+    const ::fixy::View<std::byte, TRACE_FIRST_OP_BYTES> op =
+        image.view().window<TRACE_FIRST_OP_BYTES>(kOpAt).expect("the op fits the image");
+    write_record_field_<0>(op, kSchema);
+    write_record_field_<8>(op, kShape);
+    write_record_field_<16>(op, kScope);
+    write_record_field_<24>(op, kCallsite);
+    write_record_field_<32>(op, int64_t{-9});
+    write_record_field_<72>(op, uint16_t{0});
+    write_record_field_<74>(op, uint16_t{1});
+    write_record_field_<76>(op, uint16_t{1});
+    write_record_field_<78>(op, uint8_t{1});
+
+    const ::fixy::View<std::byte, TRACE_FIRST_META_BYTES> meta =
+        image.view().window<TRACE_FIRST_META_BYTES>(kMetaAt).expect("the meta fits the image");
+    write_record_field_<0>(meta, int64_t{3});
+    write_record_field_<8>(meta, int64_t{4});
+    write_record_field_<64>(meta, int64_t{4});
+    write_record_field_<72>(meta, int64_t{1});
+    write_record_field_<136>(meta, uint8_t{2});
+    write_record_field_<137>(meta, std::to_underlying(ScalarType::Float));
+    write_record_field_<138>(meta, std::to_underlying(DeviceType::CPU));
+    write_record_field_<139>(meta, int8_t{-1});
+    write_record_field_<140>(meta, std::to_underlying(Layout::Strided));
+    write_record_field_<141>(meta, uint8_t{1});
+    write_record_field_<143>(meta, uint8_t{1});
+    write_record_field_<144>(meta, int64_t{5});
+    write_record_field_<152>(meta, uint32_t{7});
+    write_record_field_<156>(meta, uint32_t{64});
+    write_record_field_<160>(meta, kGradFnHash);
+
+    const LoadedTrace trace =
+        load_image(image, ::fixy::CText{"crtrace-first-format.bin"}).expect("a trace of the first format loads");
+    CRUCIBLE_TEST_ASSERT(kTest, trace.num_ops == 1 && trace.num_metas == 1);
+    const TraceRing::Entry& entry = *trace.entries.get(0).expect("the trace holds one op");
+    CRUCIBLE_TEST_ASSERT(kTest, entry.schema_hash.raw() == kSchema && entry.shape_hash.raw() == kShape);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.num_inputs == 0 && entry.num_outputs == 1 && entry.num_scalar_args == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.scalar_values.at(::fixy::index<0>()) == -9);
+    CRUCIBLE_TEST_ASSERT(kTest, (entry.op_flags & op_flag::GRAD_ENABLED) != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.packed_scalar_types() == 0 && entry.get_scalar_type(0) == ScalarType2::INT);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.data_slots()
+                                        .expect("the loader keeps a word of the inline slots")
+                                        .role(crucible::ScalarSlot{::fixy::index<0>()})
+                                    != crucible::ScalarRole::DATA);
+    CRUCIBLE_TEST_ASSERT(kTest, trace.scope_hashes.get(0).expect("the trace holds one op")->raw() == kScope);
+    CRUCIBLE_TEST_ASSERT(kTest, trace.callsite_hashes.get(0).expect("the trace holds one op")->raw() == kCallsite);
+    CRUCIBLE_TEST_ASSERT(kTest, trace.depths.get(0).expect("the trace holds one op")->is_top());
+
+    const TensorMeta& loaded = *trace.metas.get(0).expect("the trace holds one meta");
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.ndim == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.sizes[0].value() == 3 && loaded.sizes[1].value() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.strides[0].value() == 4 && loaded.strides[1].value() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.dtype == ScalarType::Float && loaded.requires_grad && loaded.output_nr == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.storage_offset == 5 && loaded.version == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.storage_nbytes == 64);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.grad_fn_hash.value() == kGradFnHash);
+    ::fixy::check::pass(kTest, "  test_first_format_loads:        PASSED\n");
+}
+
+// The recorded trace of the tree in the first format, the default trace of
+// bench_phases, loads whole: 1091 ops and 2369 metadata records, each op at
+// the depth 0.
+static void test_recorded_first_format_trace_loads() {
+    const LoadedTrace trace = load_trace(kTestIo, sanitized(CRUCIBLE_TEST_FIRST_FORMAT_TRACE))
+                                  .expect("the recorded trace of the first format loads");
+    CRUCIBLE_TEST_ASSERT(kTest, trace.num_ops == 1091 && trace.num_metas == 2369);
+    for (const OpDepth depth : trace.depths) {
+        CRUCIBLE_TEST_ASSERT(kTest, depth.is_top());
+    }
+    ::fixy::check::pass(kTest, "  test_recorded_first_format:     PASSED\n");
+}
+
 // The load of a trace of one op record with no tensor and an empty name
 // table, through the encoders.
 static ::fixy::Result<LoadedTrace, TraceLoadError> load_one_op(TraceOpRecord const& record) {
@@ -816,6 +939,8 @@ int main() {
     test_adversarial_num_ops_rejected();
     test_round_trip_single_op();
     test_encoders_round_trip_through_the_loader();
+    test_first_format_loads();
+    test_recorded_first_format_trace_loads();
     test_op_with_scalars_past_the_slots_is_refused();
     test_schema_name_table_round_trip();
     test_schema_name_table_corrupt_zero_len();
@@ -825,6 +950,6 @@ int main() {
     test_meta_count_uint16_overflow_rejected();
     test_meta_bytes_break_no_claim_of_the_type();
     test_names_on_a_sealed_table_are_skipped();
-    ::fixy::check::pass(kTest, "test_trace_loader: 19 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_trace_loader: 21 groups, all passed\n");
     return 0;
 }

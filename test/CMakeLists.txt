@@ -258,6 +258,10 @@ crucible_test(test_cntp_fountain)
 crucible_test(test_cntp_gossip_multicast)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
+# The recorded trace of the tree in the first format, which bench_phases reads
+# by default.  The test loads it whole.
+target_compile_definitions(test_trace_loader PRIVATE
+  CRUCIBLE_TEST_FIRST_FORMAT_TRACE="${CMAKE_SOURCE_DIR}/test/data/minigpt_cpu.crtrace")
 crucible_test(test_schema_table)
 crucible_test(test_iteration_detector)
 crucible_test(test_iteration_detector_window)
