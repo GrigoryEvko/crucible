@@ -205,7 +205,9 @@ namespace {
             }
         }
 
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: libbpf gives the program of an object by its C name as a raw pointer")
         bpf_program* const prog = loaded.object.find_program(event.prog_name.abi);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         if (prog == nullptr) {
             loaded.object.settle(nullptr);
             if (verbose()) {
