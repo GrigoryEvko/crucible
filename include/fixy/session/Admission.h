@@ -436,20 +436,19 @@ concept SessionResource = OwnedSessionResource<Resource> || PinnedSessionResourc
 // which takes the two protocols of the channel from the pole table of the
 // channel (below, after the relation of the two sides).
 //
-// The walk instantiates nothing.  It reads the members of each class that
-// it reaches by value, and of each complete class that is no specialization
-// of a template.  Each pole of fixy/concurrent, of fixy/channels and of the
-// MetaLog is a member class of its channel, which is no specialization, so
-// the walk sees it behind a pointer or a reference too.  The walk tells a
-// ChannelBinding by its template, so a binding that it reaches anywhere,
-// also behind a pointer, a reference or a template argument, reaches a
-// channel.  A pole that is a specialization of a template, and that the
-// Resource names only through a pointer, a reference or a template argument,
-// is not seen.  No mark of the template can name such a pole for the walk:
-// GCC 16 gives no annotation of a class template, and it reads the
-// annotations of a specialization only after it instantiates the
-// specialization.  A class that holds a channel and neither names it with
-// channel_type nor binds it is no pole, so this rule does not see it either.
+// The walk reads each class that it reaches.  A class that the Resource
+// holds by value is complete.  A class that the Resource reaches through a
+// pointer, a reference or a template argument, the walk reads with the
+// instantiating read of foundation/reflect/TypeComponents.h.  That read
+// instantiates a specialization of a class template, so the walk sees a pole
+// that is a specialization there too.  The walk tells a ChannelBinding by its
+// template, before it reads the binding.  A class that the walk cannot read
+// stops the build: a class with no definition in the unit, or a
+// specialization of a template with no definition in the unit.  Such a class
+// could be a pole in a unit that defines it and no pole in this unit, and the
+// two units would then hold different answers.  A class that holds a channel
+// and neither names it with channel_type nor binds it is no pole, so this
+// rule does not see it either.
 
 namespace detail {
 
@@ -489,15 +488,27 @@ namespace detail {
     return pole_channel_of(type) != std::meta::info{};
 }
 
-// True when the walk of foundation/reflect/TypeComponents.h reaches a pole
-// of a channel from the type.  A node is a pole when the walk may read its
-// members and the class names its channel.  The walk visits each node once,
+// Called in a constant evaluation only when the walk of a Resource reaches a
+// class that it cannot read, so the call is the diagnostic.
+void a_resource_reaches_a_class_that_the_pole_walk_cannot_read() noexcept;
+
+// True for a class or union whose members the walk cannot read: the
+// instantiating read left it incomplete.
+[[nodiscard]] consteval bool is_unreadable_class(const ::foundation::reflect::TypeNode& node) {
+    const std::meta::info type = ::foundation::reflect::bare_type(node.type);
+    return (std::meta::is_class_type(type) || std::meta::is_union_type(type)) && !node.may_read_members;
+}
+
+// True when the walk of foundation/reflect/TypeComponents.h, with the
+// instantiating read, reaches a pole of a channel from the type.  The walk
+// stops the build at a class that it cannot read.  It visits each node once,
 // as first_component_satisfying of that header does.  The function is no
 // template, so GCC builds its body once in each includer.  Complexity:
 // linear in the distinct nodes, times the scan of the visited nodes.
 [[nodiscard]] consteval bool reaches_a_channel_pole(std::meta::info root) {
     namespace rf = ::foundation::reflect;
     namespace tr = ::fixy::session::transition;
+    constexpr rf::SpecializationRead read = rf::SpecializationRead::Instantiating;
     tr::stack<rf::TypeNode> pending{};
     tr::stack<rf::TypeNode> visited{};
     tr::push(pending, rf::TypeNode{rf::bare_type(root), true});
@@ -514,10 +525,11 @@ namespace detail {
         if (was_visited) continue;
         tr::push(visited, node);
         if (is_channel_binding(node.type)) return true;
+        if (is_unreadable_class(node)) a_resource_reaches_a_class_that_the_pole_walk_cannot_read();
         if (node.may_read_members && is_channel_pole(node.type)) return true;
-        for (const rf::TypeNode& part : rf::member_components_of(node))
+        for (const rf::TypeNode& part : rf::member_components_of(node, read))
             tr::push(pending, part);
-        for (const rf::TypeNode& part : rf::argument_components_of(node))
+        for (const rf::TypeNode& part : rf::argument_components_of(node, read))
             tr::push(pending, part);
     }
     return false;

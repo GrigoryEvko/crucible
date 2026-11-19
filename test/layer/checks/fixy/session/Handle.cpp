@@ -39,10 +39,31 @@ struct NamesNoChannelType {
     [[no_unique_address]] MoveOnlyResource move_only{};
     static constexpr int channel_type = 0;
 };
+// A pole that is a specialization of a template is seen behind a reference,
+// in a template argument and behind the pointer member of a Box, because the
+// walk reads each specialization with the instantiating read.
+template <class Payload>
+struct TemplatePole {
+    using channel_type = SomeChannel;
+    Payload last{};
+};
+template <class Named>
+struct NamesAType {};
+struct RefersToATemplatePole {
+    TemplatePole<int>& pole;
+};
+struct NamesATemplatePole {
+    NamesAType<TemplatePole<long>> pole{};
+};
+struct BoxesATemplatePole {
+    ::fixy::Box<TemplatePole<short>> pole;
+};
 
 static_assert(ChannelPole<Pole> && !ChannelPole<Pole&> && !ChannelPole<HoldsAPole>);
 static_assert(ReachesAChannelPole<Pole> && ReachesAChannelPole<HoldsAPole> && ReachesAChannelPole<MayHoldAPole>
               && ReachesAChannelPole<RefersToAPole>);
+static_assert(ReachesAChannelPole<RefersToATemplatePole> && ReachesAChannelPole<NamesATemplatePole>
+              && ReachesAChannelPole<BoxesATemplatePole>);
 static_assert(!PlainSessionResource<Pole> && !PlainSessionResource<HoldsAPole>);
 static_assert(PlainSessionResource<Plain> && PlainSessionResource<NamesNoChannelType>);
 // No table of this unit knows the pole, so the pole door refuses it too.

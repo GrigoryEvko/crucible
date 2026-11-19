@@ -4644,6 +4644,15 @@ fixy_neg_compile_test(neg_sess_session_over_a_held_channel_pole
 fixy_neg_compile_test(neg_sess_session_over_a_channel_binding
   "no matching function for call to .mint_session<fixy::session::Send<int, fixy::session::End> >"
   "ReachesAChannelPole<Resource>. .with Resource = binding_fixture::BindsALog<")
+# The walk reads a specialization behind a pointer, a reference or a template
+# argument with the instantiating read, so a pole that is a specialization is
+# seen there.  A class that the walk cannot read stops the build.
+fixy_neg_compile_test(neg_sess_session_over_a_template_pole_in_an_argument
+  "no matching function for call to .mint_session<fixy::session::Send<int, fixy::session::End> >"
+  "ReachesAChannelPole<Resource>. .with Resource = template_pole_fixture::NamesAPole<")
+fixy_neg_compile_test(neg_sess_session_over_an_unreadable_class
+  "call to non-.constexpr. function .void fixy::session::detail::a_resource_reaches_a_class_that_the_pole_walk_cannot_read"
+  "no matching function for call to .mint_session<fixy::session::Send<int, fixy::session::End> >")
 # Each other door that takes a protocol from its caller refuses a pole too:
 # the permissioned mint, the callback, the test channel, the asynchronous
 # fork and the rewind of a handle at End.
