@@ -349,6 +349,18 @@ THE STOP
     master with no such step.  Its children run in process groups of their
     own, and they then go on in the warm tree.
 
+THE HANG GUARD
+    ctest gives each test of the gate the wall guard TEST_TIMEOUT_S with
+    --timeout: in `loop test` (after --), in the run of the red tests alone,
+    and in the run of the vessel tests.  With no such option, ctest gives a
+    test a limit of 10,000,000 s, and the 300 s of the test presets apply
+    only to `ctest --preset`.  The guard judges no test.  It only bounds a
+    hang, so a hang holds a lane for at most that time.  A test that gets to
+    it is red, and it is a defect to correct, because a test judges its
+    work and not the wall time.  A test with the property TIMEOUT, such as
+    a test of the vessel, keeps its own limit.  On 2026-11-19 the slowest
+    test of a loaded run took about 75 s.
+
 THE KILL FOR MEMORY
     The kernel can end a process when the host or its control group runs
     out of memory, and the process then exits 137.  Such a kill tells that
@@ -740,10 +752,12 @@ RED = frozenset({ctest_reader.TestStatus.FAIL, ctest_reader.TestStatus.NOTRUN})
 SKIPPED = ctest_reader.TestStatus.SKIPPED
 RAN = ctest_reader.TestStatus.RUN
 DISABLED = ctest_reader.TestStatus.DISABLED
-# The limit of one call of `loop test`, of one configure, and of one test in the run of the red tests, in seconds.
+# The limit of one call of `loop test` and of one configure, in seconds.
 TEST_RUN_S = 2 * proc.BUILD_S
 CONFIGURE_S = proc.TOOL_S
-ALONE_S = 1500.0
+# The one wall guard of a test in the gate, in seconds (THE HANG GUARD).  It is no judge of a test.  It only bounds a
+# hang, and a test that gets to it is red and is a defect to correct.
+TEST_TIMEOUT_S = 1800
 # The bytes of the output of one red test that the report of the run alone keeps.  The default of ctest is 300 KB
 # (THE FAILING ITEMS).
 ALONE_OUTPUT_BYTES = 64 * 1024 * 1024
@@ -1536,7 +1550,8 @@ class Gate:
     slot pool of the leases, or None for the pool of the host (THE JOBSERVER).  `lane` names the warm tree (THE
     LANES).  `vessel` is the configuration of the vessel, or None for a gate with no vessel (THE VESSEL).  `oom_kills`
     gives the count of the kills of the kernel for lack of memory (THE KILL FOR MEMORY).  `cited` gives the name of each
-    ended run that an unread verdict cites, which the sweep of the runs keeps (THE LOGS).
+    ended run that an unread verdict cites, which the sweep of the runs keeps (THE LOGS).  `test_timeout_s` is the wall
+    guard of one test (THE HANG GUARD).
     """
 
     root: Path
@@ -1550,6 +1565,12 @@ class Gate:
     vessel: Configuration | None = VESSEL_CONFIGURATION
     oom_kills: Callable[[], int] = heavy.oom_kills
     cited: Callable[[], frozenset[str]] = no_cited_runs
+    test_timeout_s: int = TEST_TIMEOUT_S
+
+    @property
+    def guard_words(self) -> list[str]:
+        """The words that give ctest the wall guard of one test (THE HANG GUARD)."""
+        return ["--timeout", str(self.test_timeout_s)]
 
     @property
     def slice(self) -> int:
@@ -2361,9 +2382,9 @@ class Step:
         """Run each red test one more time apart from the suite, and return the names of the tests that are red again.
 
         The tests run at the same time, in one run of ctest with the jobs of the lease (THE RUN OF A CONFIGURATION).
-        The report of that run gives the status of each test.  A test with no status in the report is red.  The limit
-        of the run is ALONE_S for each test, the time of the tests one after the other.  The files of the run have the
-        name of its round (log_name()).
+        The report of that run gives the status of each test.  A test with no status in the report is red.  Each test
+        has the wall guard of THE HANG GUARD, and the limit of the run is that guard for each test, the time of the
+        tests one after the other.  The files of the run have the name of its round (log_name()).
 
         Raises:
             GateError: If the CMake cache of the build names no ctest
@@ -2379,9 +2400,10 @@ class Step:
         selection.write_text("".join(f"{name}\n" for name in names), encoding="utf-8")
         report.unlink(missing_ok=True)
         command = [ctest, "--test-dir", str(build), "--tests-from-file", str(selection), "-j", str(share.jobs)]
-        command += ["--timeout", str(int(ALONE_S)), "--output-on-failure", "--output-junit", str(report)]
+        command += [*self.gate.guard_words, "--output-on-failure", "--output-junit", str(report)]
         command += ["--test-output-size-failed", str(ALONE_OUTPUT_BYTES)]
-        self.run_logged(command, log_name(configuration, "alone.log", is_again), share, ALONE_S * len(names))
+        limit_s = self.gate.test_timeout_s * len(names)
+        self.run_logged(command, log_name(configuration, "alone.log", is_again), share, limit_s)
         try:
             statuses = ctest_reader.results(report)
         except ctest_reader.CtestError:
@@ -2429,6 +2451,7 @@ class Step:
         logs = self.gate.logs
         log = log_name(configuration, "test.log", is_again)
         command = [*self.gate.master("loop"), "test", str(build), "-j", str(share.jobs), *words]
+        command += ["--", *self.gate.guard_words]
         status = self.run_logged(command, log, share, TEST_RUN_S)
         statuses: dict[str, ctest_reader.TestStatus] = {}
         if report.is_file():
@@ -2531,7 +2554,7 @@ class Step:
             words = ["--tests-from-file", str(selection)]
         log = log_name(configuration, "test.log", is_again)
         command = [configured_program(build, "ctest"), "--test-dir", str(build), *words, "-j", str(share.jobs)]
-        command += ["--output-on-failure", "--output-junit", str(report)]
+        command += [*self.gate.guard_words, "--output-on-failure", "--output-junit", str(report)]
         status = self.run_logged(command, log, share, TEST_RUN_S)
         if not report.is_file():
             return [f"{configuration.name}: ctest exits {status} and writes no report, see {logs / log}"], (), ()

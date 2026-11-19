@@ -51,6 +51,7 @@ from assay.loop import gate, heavy, syntax
 from assay.loop import inputs as guard_inputs
 from assay.readers import cmake as cmake_reader
 from assay.readers import ninja as ninja_reader
+from assay.setup import pins as cmake_pin
 
 # The registry of the planted repository: one measured rule, one counted rule that a parse configuration checks, and a
 # rule that reads the build.  It also holds the other rules that a parse configuration checks.  The counted rule home
@@ -122,7 +123,8 @@ with open(build / "configures.txt", "a", encoding="utf-8") as handle:
 # The planted master loop: `syntax --changed` names no preset, `heal BUILD NAME` finds a stale compiler only in a build
 # with stale.txt, and `test
 # BUILD` writes the report of the mode of the build directory.  The mode build gives a build that fails, and the mode late gives an error after a green run.  The
-# master writes MAKEFLAGS to makeflags.txt, and the times of its start and its end to times.txt.  The mode hang runs
+# master writes MAKEFLAGS to makeflags.txt, the words of the mode to words.txt, the words for ctest after -- to
+# ctest-words.txt, and the times of its start and its end to times.txt.  The mode hang runs
 # until a stop ends it.  The mode plugin makes the test guard_plugin red.
 # `derive TARGET --write --build-dir BUILD` writes inventory.txt of the build into the tree as the
 # mint inventory, or writes nothing for a build with no inventory.txt.  In the mode overlap, it first waits for
@@ -200,8 +202,11 @@ with open(build / "calls.txt", "a") as handle:
 began = time.monotonic()
 (build / "base.txt").write_text(os.environ.get("CRUCIBLE_CHANGE_BASE", "-"))
 (build / "makeflags.txt").write_text(os.environ.get("MAKEFLAGS", "-"))
+split = words.index("--") if "--" in words else len(words)
 with open(build / "words.txt", "a") as handle:
-    handle.write(" ".join(words[2:]) + "\\n")
+    handle.write(" ".join(words[2:split]) + "\\n")
+with open(build / "ctest-words.txt", "a") as handle:
+    handle.write(" ".join(words[split + 1:]) + "\\n")
 mode = (build / "mode.txt").read_text().strip()
 if mode == "killed-once" and not (build / "killed.txt").is_file():
     (build / "killed.txt").write_text("1")
@@ -422,6 +427,10 @@ PLANTED_JOBS = 1
 # lease then stay in its jobserver until its job reads them.  The tokens that go back to the pool after IDLE_TICKS are a
 # rule of time, and the test of assay.loop.heavy holds it (THE POOL of assay.loop.heavy).
 NO_IDLE_RETURN_TICKS = 10**9
+# The wall guard of a test of the gate of the case of the hang, and the sleep of its test that never ends, in seconds
+# (THE HANG GUARD of assay.loop.gate).  The verdict reads the status of the test, and not a time.
+HANG_GUARD_S = 2
+HANG_SLEEP_S = 600
 
 
 def planted_repository(root: Path, files: Mapping[str, str] | None = None) -> str:
@@ -789,6 +798,51 @@ def parse_heal_cases(expect: testing.Expect) -> None:
             and not (unconfigured / "configures.txt").exists()
             and verdict.is_accepted
             and verdict.configurations == ("default",),
+        )
+
+
+def hang_guard_cases(expect: testing.Expect) -> None:
+    """Hold THE HANG GUARD: ctest stops a test that never ends at the guard, and the gate reads the test as red.
+
+    The gate of the case has a guard of HANG_GUARD_S.  The run of the red tests alone uses the pinned ctest on a planted
+    build whose test test_hang sleeps for HANG_SLEEP_S, far past the guard, and whose test test_quick ends at once.  The
+    planted loop master of a full run gets the guard after -- too.
+    """
+    with tempfile.TemporaryDirectory(prefix="gate-hang-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        head = planted_repository(root)
+        commit = commit_change(root, "notes.txt", "a change of the notes\n")
+        tree = work / "land" / gate.TREE
+        gate.move_tree(root, tree, head)
+        planted = replace(planted_gate(work, root, tree, "clean"), test_timeout_s=HANG_GUARD_S)
+        candidate = gate.Candidate(head, commit, ("notes.txt",))
+        verdict, _ = testing.captured(lambda: planted.check(candidate, False))
+        build = tree / "build"
+        words = (build / "ctest-words.txt").read_text(encoding="utf-8").splitlines()
+        expect(
+            f"`loop test` of a run gets the guard of the gate after --: {words}",
+            verdict.is_accepted and words == [f"--timeout {HANG_GUARD_S}"],
+        )
+        sleeper = f'"{sys.executable}" "-c" "import time; time.sleep({HANG_SLEEP_S})"'
+        (build / "CTestTestfile.cmake").write_text(
+            f'add_test(test_hang {sleeper})\nadd_test(test_quick "{sys.executable}" "-c" "pass")\n', encoding="utf-8"
+        )
+        cmake_reader.plant(build, cache={"CMAKE_CTEST_COMMAND": cmake_pin.pinned_program("ctest")})
+        step = gate.Step(planted, candidate, proc.environment())
+        always = next(item for item in gate.CONFIGURATIONS if item.name == gate.ALWAYS)
+
+        def alone() -> list[str]:
+            with step.leased() as share:
+                return step.red_alone(always, ["test_hang", "test_quick"], share)
+
+        began = time.monotonic()
+        red, _ = testing.captured(alone)
+        elapsed_s = time.monotonic() - began
+        expect(
+            f"a test that never ends stops at the guard of {HANG_GUARD_S} s and is red, and a test that ends is green: "
+            f"red {red} after {elapsed_s:.1f} s",
+            red == ["test_hang"] and elapsed_s < HANG_SLEEP_S,
         )
 
 
@@ -2502,6 +2556,7 @@ def main(argv: list[str]) -> int:
             repair_cases,
             plan_cases,
             parse_heal_cases,
+            hang_guard_cases,
             change_cases,
             run_cases,
             reduce_cases,
