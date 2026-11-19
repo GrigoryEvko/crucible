@@ -2524,13 +2524,13 @@ fixy_neg_compile_test(neg_sess_compatible_client_wrong_role
 # witnesses in test/layer/checks/fixy/session/Refinement.cpp.
 fixy_neg_compile_test(neg_sess_payload_rule_after_seal
   "a_registration_stands_outside_its_seal"
-  "family_registrations_v<.*fixy::session::combinators::core .*payload_rule>")
+  "family_reading_v<.*fixy::session::combinators::core .*payload_rule>")
 fixy_neg_compile_test(neg_sess_payload_rule_before_seal
   "a_registration_stands_outside_its_seal"
-  "family_registrations_v<.*fixy::session::combinators::core .*payload_rule>")
+  "family_reading_v<.*fixy::session::combinators::core .*payload_rule>")
 fixy_neg_compile_test(neg_sess_axiom_after_seal
   "a_registration_stands_outside_its_seal"
-  "family_registrations_v<.*fixy::session::payload_axioms::core .*subsort_axiom>")
+  "family_reading_v<.*fixy::session::payload_axioms::core .*subsort_axiom>")
 fixy_neg_compile_test(neg_sess_combinator_registered_twice
   "a_registration_stands_outside_the_file_of_its_shape"
   "combinator_lookup_v<.*fixy::session::combinators .*struct fixy::session::Send>")
@@ -2553,10 +2553,15 @@ fixy_neg_compile_test(neg_sess_family_declared_before_its_header
   "combinator_lookup_v<.*struct fixy::session::Send>")
 fixy_neg_compile_test(neg_sess_family_without_seal
   "a_family_holds_a_registration_with_no_seal"
-  "family_registrations_v<.*fixy::session::combinators::unsealed .*combinator>")
+  "family_reading_v<.*fixy::session::combinators::unsealed .*combinator>")
 fixy_neg_compile_test(neg_sess_registered_class_without_definition
   "a_registered_class_has_no_definition_here"
   "combinator_lookup_v<.*Halt>")
+# The rule of a payload stands in the header that defines the payload, so
+# a payload class that is only declared has no rule that the unit can read.
+fixy_neg_compile_test(neg_sess_payload_without_definition
+  "a_payload_class_has_no_definition_here"
+  "Declared")
 
 # No trait of fixy/session/Protocol.h, Delegate.h, Crash.h or
 # Checkpoint.h is a template that a user can specialize.  A class
@@ -2667,7 +2672,7 @@ fixy_neg_compile_test(neg_sess_sync_verdict_specialized
 # is not a template, so an explicit specialization that forges an answer
 # matches no template.
 fixy_neg_compile_test(neg_sess_delegation_weakens_specialized
-  "template-id .delegation_weakens<>. for .consteval bool fixy::session::detail::payload_order::delegation_weakens\\(std::meta::info, std::meta::info\\). does not match any template declaration"
+  "template-id .delegation_weakens<>. for .consteval bool fixy::session::detail::delegation::delegation_weakens\\(std::meta::info, std::meta::info\\). does not match any template declaration"
   "neg_sess_delegation_weakens_specialized\\.cpp:12:[0-9]+: error:")
 fixy_neg_compile_test(neg_sess_refinement_drops_specialized
   "template-id .refinement_drops<>. for .consteval bool fixy::session::detail::payload_order::refinement_drops\\(std::meta::info\\). does not match any template declaration"

@@ -75,6 +75,7 @@
 #include <fixy/session/Registry.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <meta>
@@ -290,6 +291,48 @@ private:
     ::foundation::permissions::SharedPermissionGuard<Tag, Brand> guard_;
 };
 
+// The payload rules of the markers (fixy/session/Registry.h).  The payload
+// walk of fixy/session/Classification.h reads the tag of a marker at
+// argument 1 and its value at argument 0.  A share changes no set.  The row
+// of a marker is the row of its value, and a share carries no row.
+namespace combinators::perm {
+
+inline constexpr ::fixy::session::transition::payload_rule transferable{
+    .shape = ^^Transferable,
+    .role = ::fixy::session::transition::payload_role::moves,
+    .tag_argument = 1,
+    .value_argument = 0,
+    .row_arguments = std::uint64_t{1}};
+
+inline constexpr ::fixy::session::transition::payload_rule returned{
+    .shape = ^^Returned,
+    .role = ::fixy::session::transition::payload_role::moves,
+    .tag_argument = 1,
+    .value_argument = 0,
+    .row_arguments = std::uint64_t{1}};
+
+inline constexpr ::fixy::session::transition::payload_rule borrowed{
+    .shape = ^^Borrowed,
+    .role = ::fixy::session::transition::payload_role::lends,
+    .tag_argument = 1,
+    .value_argument = 0,
+    .row_arguments = std::uint64_t{1}};
+
+inline constexpr ::fixy::session::transition::payload_rule released{
+    .shape = ^^Released,
+    .role = ::fixy::session::transition::payload_role::releases,
+    .tag_argument = 1,
+    .value_argument = 0,
+    .row_arguments = std::uint64_t{1}};
+
+inline constexpr ::fixy::session::transition::payload_rule shared_reader{
+    .shape = ^^SharedReader, .role = ::fixy::session::transition::payload_role::share};
+
+inline constexpr ::fixy::session::transition::seal payload_rule_seal{
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 5};
+
+}  // namespace combinators::perm
+
 // ── The delta ───────────────────────────────────────────────────────
 //
 // The permission accounting of one payload.  The handle applies it:
@@ -415,9 +458,12 @@ consteval void collect_named_peers(std::meta::info protocol, stack<std::meta::in
     stack<std::meta::info> visited{};
     auto collect = [&peers](const tr::node& view) consteval {
         if (!view.is_registered) return true;
-        if (view.entry.kind == tr::shape_kind::step && payload_family_is(view.payload, ^^PeerMsg)) {
-            const std::meta::info peer = std::meta::dealias(std::meta::template_arguments_of(view.payload)[0]);
-            if (!holds_type(peers, peer)) push(peers, peer);
+        if (view.entry.kind == tr::shape_kind::step) {
+            const payload_lookup rule = message_rule_of(view.payload);
+            if (rule.is_found && rule.entry.peer_argument != tr::npos) {
+                const std::meta::info peer = rule_argument_of(view.payload, rule.entry.peer_argument);
+                if (!holds_type(peers, peer)) push(peers, peer);
+            }
         }
         if (view.annotation != std::meta::info{} && payload_family_is(view.annotation, ^^Sender)) {
             const std::meta::info role = std::meta::dealias(std::meta::template_arguments_of(view.annotation)[0]);
@@ -437,13 +483,14 @@ consteval void collect_named_peers(std::meta::info protocol, stack<std::meta::in
     auto check = [&is_found](const tr::node& view) consteval {
         const bool is_send = view.is_registered && view.entry.kind == tr::shape_kind::step
                           && view.entry.direction == tr::polarity::output;
-        if (!is_send || !payload_family_is(view.payload, ^^PeerMsg)) return true;
-        const std::vector<std::meta::info> parts = std::meta::template_arguments_of(view.payload);
-        const std::meta::info* const part = parts.data();
-        const std::meta::info receiver = std::meta::dealias(part[0]);
-        for (const std::meta::info carried : payload_facts_of(part[2]).hand_offs()) {
+        if (!is_send) return true;
+        const payload_lookup rule = message_rule_of(view.payload);
+        if (!rule.is_found || rule.entry.peer_argument == tr::npos) return true;
+        const std::meta::info receiver = rule_argument_of(view.payload, rule.entry.peer_argument);
+        for (const std::meta::info carried :
+             payload_facts_of(rule_argument_of(view.payload, rule.entry.value_argument)).hand_offs()) {
             stack<std::meta::info> peers{};
-            collect_named_peers(std::meta::template_arguments_of(carried)[0], peers);
+            collect_named_peers(hand_off_protocol_of(carried), peers);
             if (holds_type(peers, receiver)) {
                 is_found = true;
                 return false;
@@ -569,7 +616,7 @@ consteval void walk_delivered_regions(std::meta::info protocol, DeliveryWalk& wa
             if (!holds_type(walk.regions, region)) push(walk.regions, region);
         }
         for (const std::meta::info carried : facts.hand_offs()) {
-            walk_delivered_regions(std::meta::template_arguments_of(carried)[0], walk);
+            walk_delivered_regions(hand_off_protocol_of(carried), walk);
         }
         return !delivery_is_refused(walk.verdict);
     };
@@ -720,10 +767,8 @@ namespace detail {
     namespace tr = ::fixy::session::transition;
     if (moves_nothing(payload_facts_of(payload))) return SlotForm::Plain;
     std::meta::info message = std::meta::dealias(payload);
-    if (payload_family_is(message, ^^PeerMsg) || payload_family_is(message, ^^Labelled)) {
-        const tr::static_run<std::meta::info> keyed = tr::template_arguments_run(message);
-        message = std::meta::dealias(keyed[keyed.size() - 1]);
-    }
+    const payload_lookup keyed = message_rule_of(message);
+    if (keyed.is_found) message = rule_argument_of(message, keyed.entry.value_argument);
     if (!std::meta::has_template_arguments(message)) return SlotForm::Outside;
     const tr::static_run<std::meta::info> argument = tr::template_arguments_run(message);
     const bool is_value_plain = moves_nothing(payload_facts_of(argument[0]));
@@ -1404,11 +1449,11 @@ struct PlainMessage {
 
 template <>
 struct foundation::contracts::armed_cell<::fixy::session::detail::payload_conveys_delegation> {
-    using accepts = witnesses<
-        ::fixy::session::DelegatedSession<::fixy::session::End, ::fixy::session::detail::delegation_armed_witness::Wire,
-                                          void, ::foundation::permissions::EmptyPermSet>,
-        ::fixy::session::detail::delegation_armed_witness::HoldsEndpoint,
-        ::fixy::session::detail::delegation_armed_witness::NamesItsProtocol*, void*>;
+    // A hand-off delegates too.  Its family stands in
+    // fixy/session/Delegate.h, which this header does not include, so the
+    // check file of that header asserts it.
+    using accepts = witnesses<::fixy::session::detail::delegation_armed_witness::HoldsEndpoint,
+                              ::fixy::session::detail::delegation_armed_witness::NamesItsProtocol*, void*>;
     using refuses =
         witnesses<int, ::fixy::session::detail::delegation_armed_witness::PlainMessage,
                   ::fixy::session::Send<int, ::fixy::session::End>,

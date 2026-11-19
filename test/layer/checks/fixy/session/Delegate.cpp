@@ -20,6 +20,13 @@ using InLoop = SessionHandle<End, Wire, Loop<Send<int, Continue>>, DefaultAbando
 }  // namespace fixy::session::detail::delegatable_armed_witness
 
 static_assert(::fixy::session::DelegatableHandle<::fixy::session::detail::delegatable_armed_witness::Loose>);
+
+// A hand-off delegates, by the role of its payload rule.  The armed cell
+// of the query in fixy/session/Flow.h cannot name the hand-off, because
+// that header does not include this one.
+static_assert(::fixy::session::payload_conveys_delegation_v<::fixy::session::DelegatedSession<
+                  ::fixy::session::End, ::fixy::session::detail::delegatable_armed_witness::Wire,
+                  ::fixy::session::DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>>);
 static_assert(!::fixy::session::DelegatableHandle<int>
               && !::fixy::session::DelegatableHandle<::fixy::session::detail::delegatable_armed_witness::Branded>
               && !::fixy::session::DelegatableHandle<::fixy::session::detail::delegatable_armed_witness::InLoop>);

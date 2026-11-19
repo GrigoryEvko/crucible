@@ -5,7 +5,7 @@
 // label well-formed.
 //
 // Expected diagnostic: a specialization of an alias template.
-#include <fixy/session/Protocol.h>
+#include <fixy/session/Crash.h>
 
 #include <type_traits>
 

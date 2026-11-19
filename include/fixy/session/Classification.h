@@ -176,20 +176,6 @@ struct LentOut {};
 template <class Tag>
 struct BorrowedIn {};
 
-// The markers that fixy/session/Flow.h defines.  The walk reads a marker
-// by its family and by its template arguments, so no definition is
-// necessary here.
-template <class T, class Tag>
-struct Transferable;
-template <class T, class Tag>
-struct Returned;
-template <class T, class Tag>
-struct Borrowed;
-template <class T, class Tag>
-struct Released;
-template <class Tag, class Brand>
-class SharedReader;
-
 // The first component of a payload that gives authority over a session
 // endpoint, as the head of this header states it.  None means that the
 // payload delegates nothing.  A class that the query cannot read is a
@@ -296,6 +282,59 @@ inline constexpr std::meta::info payload_type_erasure_families[] = {
     return holds_type(types.items, types.top, type);
 }
 
+// ── The rule of a family ────────────────────────────────────────────
+//
+// A payload family of the session layer states its rule in the family of
+// its own header (fixy/session/Registry.h, section Payload rules).  The
+// walk reads the rule of each specialization that it reaches, and it
+// names no family of an extension.  A specialization with no rule is read
+// by its members.
+
+using ::fixy::session::transition::payload_lookup;
+using ::fixy::session::transition::payload_role;
+
+// The rule of the family of one component, or a lookup that found none.  A
+// specialization that the unit cannot complete has no rule here, and the
+// walk refuses it as a class that it cannot read.  Complexity: one cached
+// read of the registry for each shape.
+[[nodiscard]] consteval payload_lookup payload_rule_of(std::meta::info type) {
+    const std::meta::info bare = std::meta::dealias(type);
+    if (!payload_is_specialization(bare) || !std::meta::is_complete_type(bare)) return {};
+    return ::fixy::session::transition::lookup_payload_rule(protocol_registry, bare);
+}
+
+// The rule of a keyed message, or a lookup that found none.
+[[nodiscard]] consteval payload_lookup message_rule_of(std::meta::info type) {
+    const payload_lookup rule = payload_rule_of(type);
+    if (!rule.is_found || rule.entry.role != payload_role::message) return {};
+    return rule;
+}
+
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_payload_rule_names_an_argument_that_the_payload_lacks() noexcept;
+
+// The template argument at `place` of the `count` arguments at `argument`,
+// which a rule names.  A place past the arguments stops the build.
+[[nodiscard]] consteval std::meta::info rule_argument(const std::meta::info* argument, std::size_t count,
+                                                      std::size_t place) {
+    if (place >= count) a_payload_rule_names_an_argument_that_the_payload_lacks();
+    return argument[place];
+}
+
+// The template argument at `place` of a specialization, which a rule names.
+[[nodiscard]] consteval std::meta::info rule_argument_of(std::meta::info type, std::size_t place) {
+    const ::fixy::session::transition::static_run<std::meta::info> arguments =
+        ::fixy::session::transition::template_arguments_run(std::meta::dealias(type));
+    return std::meta::dealias(rule_argument(arguments.data, arguments.size(), place));
+}
+
+// The protocol of the endpoint of a hand-off, the value that its rule
+// names.
+[[nodiscard]] consteval std::meta::info hand_off_protocol_of(std::meta::info hand_off) {
+    return rule_argument_of(hand_off, payload_rule_of(hand_off).entry.value_argument);
+}
+
 // ── What delegates ──────────────────────────────────────────────────
 
 // True when the type is a session protocol: its head is a combinator
@@ -319,10 +358,11 @@ inline constexpr std::meta::info payload_type_erasure_families[] = {
 // What one component of a payload carries, or no value for a class that
 // the walk cannot read.  The walk instantiates each specialization it
 // reaches, so such a class has no definition here.
-[[nodiscard]] consteval std::optional<DelegationCarrier> delegation_carrier_of(::foundation::reflect::TypeNode node) {
+[[nodiscard]] consteval std::optional<DelegationCarrier> delegation_carrier_of(::foundation::reflect::TypeNode node,
+                                                                               const payload_lookup& rule) {
     const std::meta::info type = node.type;
     if (type == std::meta::info{}) return DelegationCarrier::None;
-    if (payload_family_is(type, ^^DelegatedSession)) return DelegationCarrier::HandOff;
+    if (rule.is_found && rule.entry.role == payload_role::hand_off) return DelegationCarrier::HandOff;
     if (payload_family_is_on(type, payload_type_erasure_families) || type == ^^std::any) {
         return DelegationCarrier::TypeErasure;
     }
@@ -347,36 +387,55 @@ inline constexpr std::meta::info payload_type_erasure_families[] = {
 
 // ── The walk ────────────────────────────────────────────────────────
 
-// The families that the walk reads by name.  The walk does not read the
-// members of such a family, so a family that another header defines needs
-// no definition here.  None of them is an endpoint.
+// The families that the walk reads by their rule or by name.  The walk
+// does not read the members of such a family.  None of them is an
+// endpoint.  The walk names only the families that a layer below the
+// session layer defines: the token, the classified value and the proofs.
+// Each other family comes from the role of its payload rule.
 enum class PayloadFamily : std::uint8_t {
     Other,
     Token,  // Permission<Tag>
-    Moves,  // Transferable<T, Tag>, Returned<T, Tag>
-    Lends,  // Borrowed<T, Tag>
-    Releases,  // Released<T, Tag>
-    Share,  // SharedReader<Tag, Brand>
-    Keyed,  // PeerMsg<Q, L, U>, Labelled<L, U>
-    Declassified,  // DeclassifyOnSend<T, Policy>
-    ConstantTime,  // CTPayload<T>
+    Moves,  // the role moves: Transferable<T, Tag>, Returned<T, Tag>
+    Lends,  // the role lends: Borrowed<T, Tag>
+    Releases,  // the role releases: Released<T, Tag>
+    Share,  // the role share: SharedReader<Tag, Brand>
+    Keyed,  // the role message: PeerMsg<Q, L, U>, Labelled<L, U>
+    Declassified,  // the role declassified: DeclassifyOnSend<T, Policy>
+    ConstantTime,  // the role constant_time: CTPayload<T>
     Classified,  // fixy::Secret<T>
     Proof,  // a family of payload_proof_families
 };
 
-[[nodiscard]] consteval PayloadFamily payload_family_of(std::meta::info type) {
+[[nodiscard]] consteval PayloadFamily payload_family_of(std::meta::info type, const payload_lookup& rule) {
     if (!payload_is_specialization(type)) return PayloadFamily::Other;
     const std::meta::info family = std::meta::template_of(std::meta::dealias(type));
     if (family == ^^::foundation::permissions::Permission) return PayloadFamily::Token;
-    if (family == ^^Transferable || family == ^^Returned) return PayloadFamily::Moves;
-    if (family == ^^Borrowed) return PayloadFamily::Lends;
-    if (family == ^^Released) return PayloadFamily::Releases;
-    if (family == ^^SharedReader) return PayloadFamily::Share;
-    if (family == ^^PeerMsg || family == ^^Labelled) return PayloadFamily::Keyed;
-    if (family == ^^DeclassifyOnSend) return PayloadFamily::Declassified;
-    if (family == ^^CTPayload) return PayloadFamily::ConstantTime;
     if (family == ^^::fixy::Secret) return PayloadFamily::Classified;
     if (payload_family_is_on(type, payload_proof_families)) return PayloadFamily::Proof;
+    if (!rule.is_found) return PayloadFamily::Other;
+    switch (rule.entry.role) {
+        case payload_role::moves:
+            return PayloadFamily::Moves;
+        case payload_role::lends:
+            return PayloadFamily::Lends;
+        case payload_role::releases:
+            return PayloadFamily::Releases;
+        case payload_role::share:
+            return PayloadFamily::Share;
+        case payload_role::message:
+            return PayloadFamily::Keyed;
+        case payload_role::declassified:
+            return PayloadFamily::Declassified;
+        case payload_role::constant_time:
+            return PayloadFamily::ConstantTime;
+        // A hand-off is a carrier of delegation, which the walk reads where
+        // it reads every other carrier.
+        case payload_role::members:
+        case payload_role::hand_off:
+            return PayloadFamily::Other;
+        default:
+            break;
+    }
     return PayloadFamily::Other;
 }
 
@@ -530,15 +589,17 @@ consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node
 // union or in an array is refused: it travels by value, one time, so that
 // one recipient holds the endpoint and its tokens.  The first token of a
 // hand-off is the hand-off, when its set holds a tag.  `argument` points to
-// the template arguments of the hand-off.
+// the `count` template arguments of the hand-off, and the rule names the
+// argument of the set.
 [[nodiscard]] consteval std::meta::info take_hand_off(PayloadWalk& walk, const PayloadNode& node,
-                                                      const std::meta::info* argument) {
+                                                      const std::meta::info* argument, std::size_t count,
+                                                      const payload_lookup& rule) {
     if (node.reach == PayloadReach::Named) return {};
     if (node.reach != PayloadReach::Owned) {
         refuse_payload(walk, PayloadRefusal::HandOffNotOwned, node.type);
         return {};
     }
-    const std::meta::info inner_set = std::meta::dealias(argument[3]);
+    const std::meta::info inner_set = std::meta::dealias(rule_argument(argument, count, rule.entry.set_argument));
     const std::vector<std::meta::info> inner_tags = std::meta::template_arguments_of(inner_set);
     const std::meta::info* const tag = inner_tags.data();
     const std::size_t tag_count = inner_tags.size();
@@ -549,15 +610,17 @@ consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node
 }
 
 // A marker records its tag, and the value that it carries is a by-value
-// member of the marker.  `argument` points to the template arguments of
-// the marker.
+// member of the marker.  `argument` points to the `count` template
+// arguments of the marker, and the rule names the tag and the value.
 [[nodiscard]] consteval std::meta::info take_marker(PayloadWalk& walk, const PayloadNode& node,
-                                                    const std::meta::info* argument,
+                                                    const std::meta::info* argument, std::size_t count,
+                                                    const payload_lookup& rule,
                                                     stack<std::meta::info> PayloadCensus::* into) {
     if (!is_owned_or_refused(walk, node)) return {};
-    record_payload_tag(walk, into, argument[1], node.type);
+    record_payload_tag(walk, into, rule_argument(argument, count, rule.entry.tag_argument), node.type);
     static_cast<void>(visit_payload_node(
-        walk, PayloadNode{::foundation::reflect::bare_type(argument[0]), true, PayloadReach::Owned}));
+        walk, PayloadNode{::foundation::reflect::bare_type(rule_argument(argument, count, rule.entry.value_argument)),
+                          true, PayloadReach::Owned}));
     return node.type;
 }
 
@@ -596,19 +659,21 @@ consteval std::meta::info visit_payload_node(PayloadWalk& walk, PayloadNode node
 }
 
 // The argument that names the value a family carries, or no argument.
-// A token, a share and a proof carry no value that can hold an endpoint.
+// The rule of a family names its value, and a classified value is the
+// first argument of its Secret.  A token, a share and a proof carry no
+// value that can hold an endpoint.
 [[nodiscard]] consteval std::optional<std::size_t> carried_value_argument(PayloadFamily family,
-                                                                          std::size_t argument_count) noexcept {
+                                                                          const payload_lookup& rule) noexcept {
     switch (family) {
         case PayloadFamily::Moves:
         case PayloadFamily::Lends:
         case PayloadFamily::Releases:
         case PayloadFamily::Declassified:
         case PayloadFamily::ConstantTime:
+        case PayloadFamily::Keyed:
+            return rule.entry.value_argument;
         case PayloadFamily::Classified:
             return 0;
-        case PayloadFamily::Keyed:
-            return argument_count - 1;
         case PayloadFamily::Other:
         case PayloadFamily::Token:
         case PayloadFamily::Share:
@@ -648,29 +713,32 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
     constexpr refl::SpecializationRead instantiating = refl::SpecializationRead::Instantiating;
     const std::meta::info type = node.type;
     const PayloadReach reach = node.reach;
-    const PayloadFamily family = payload_family_of(type);
+    const payload_lookup rule = payload_rule_of(type);
+    const PayloadFamily family = payload_family_of(type, rule);
     std::vector<std::meta::info> arguments;
     if (payload_is_specialization(type)) arguments = std::meta::template_arguments_of(type);
     const std::meta::info* const argument = arguments.data();
     const std::size_t argument_count = arguments.size();
 
     if (family != PayloadFamily::Other) {
-        // A family that the walk reads by name is no endpoint.  A named one
-        // is read for the value that it carries, and for nothing else.
-        const std::optional<std::size_t> carried = carried_value_argument(family, argument_count);
+        // A family that the walk reads by its rule or by name is no
+        // endpoint.  A named one is read for the value that it carries, and
+        // for nothing else.
+        const std::optional<std::size_t> carried = carried_value_argument(family, rule);
         if (reach == PayloadReach::Named) {
-            if (carried.has_value()) visit_named_argument(walk, argument[*carried]);
+            if (carried.has_value()) visit_named_argument(walk, rule_argument(argument, argument_count, *carried));
             return {};
         }
     } else {
         // Each other component says what it delegates, at every reach.
-        const std::optional<DelegationCarrier> carrier = delegation_carrier_of(refl::TypeNode{type, node.readable});
+        const std::optional<DelegationCarrier> carrier =
+            delegation_carrier_of(refl::TypeNode{type, node.readable}, rule);
         note_carrier(walk, carrier, type);
         if (!carrier.has_value()) {
             refuse_payload(walk, PayloadRefusal::IncompleteType, type);
             return {};
         }
-        if (*carrier == DelegationCarrier::HandOff) return take_hand_off(walk, node, argument);
+        if (*carrier == DelegationCarrier::HandOff) return take_hand_off(walk, node, argument, argument_count, rule);
         if (*carrier != DelegationCarrier::None) {
             const PayloadRefusal refusal = payload_refusal_for_carrier(*carrier);
             if (refusal != PayloadRefusal::None) refuse_payload(walk, refusal, type);
@@ -688,11 +756,11 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
             record_payload_tag(walk, &PayloadCensus::moved, argument[0], type);
             return type;
         case PayloadFamily::Moves:
-            return take_marker(walk, node, argument, &PayloadCensus::moved);
+            return take_marker(walk, node, argument, argument_count, rule, &PayloadCensus::moved);
         case PayloadFamily::Lends:
-            return take_marker(walk, node, argument, &PayloadCensus::lent);
+            return take_marker(walk, node, argument, argument_count, rule, &PayloadCensus::lent);
         case PayloadFamily::Releases:
-            return take_marker(walk, node, argument, &PayloadCensus::released);
+            return take_marker(walk, node, argument, argument_count, rule, &PayloadCensus::released);
         case PayloadFamily::Share:
             if (is_owned_or_refused(walk, node)) walk.census.carries_share = true;
             return {};
@@ -702,14 +770,19 @@ consteval void visit_named_argument(PayloadWalk& walk, std::meta::info argument)
         // class, so it adds nothing.
         case PayloadFamily::Keyed:
             return visit_payload_node(
-                walk, PayloadNode{refl::bare_type(argument[argument_count - 1]), true, reach, node.in_ct_carrier});
+                walk, PayloadNode{refl::bare_type(rule_argument(argument, argument_count, rule.entry.value_argument)),
+                                  true, reach, node.in_ct_carrier});
         // The carrier declassifies at the transport, so the Secret it holds
         // is not read.  The value it will hand over is, for the tokens in
         // it.
         case PayloadFamily::Declassified:
-            return visit_payload_node(walk, PayloadNode{refl::bare_type(argument[0]), true, reach});
+            return visit_payload_node(
+                walk, PayloadNode{refl::bare_type(rule_argument(argument, argument_count, rule.entry.value_argument)),
+                                  true, reach});
         case PayloadFamily::ConstantTime:
-            return visit_payload_node(walk, PayloadNode{refl::bare_type(argument[0]), true, reach, true});
+            return visit_payload_node(
+                walk, PayloadNode{refl::bare_type(rule_argument(argument, argument_count, rule.entry.value_argument)),
+                                  true, reach, true});
         // The walk still reads the classified value for delegation, so the
         // carrier of the payload stays exact.
         case PayloadFamily::Classified:

@@ -1,10 +1,12 @@
 // The peer unit of test_session_wire_word.cpp.  It includes the session
-// headers in another order than that file, and never includes
-// fixy/session/Projection.h: the declaration of PeerMsg and its payload
-// rule stand in fixy/session/Protocol.h.
+// headers in another order than that file: the family of PeerMsg, in
+// fixy/session/Projection.h, comes last, after the handle and the crash
+// family.  The registry reads its families at each query, so the payload
+// rule of PeerMsg gives the same word here.
 
 #include <fixy/session/Handle.h>
 #include <fixy/session/Crash.h>
+#include <fixy/session/Projection.h>
 
 #include <array>
 #include <cstdint>

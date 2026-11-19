@@ -5,7 +5,7 @@
 // keys of one word stays as the guard against a collision of two stable
 // ids.
 
-#include <fixy/session/Protocol.h>
+#include <fixy/session/Projection.h>
 
 namespace s = fixy::session;
 

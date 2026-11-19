@@ -55,19 +55,21 @@
 //     namespace my_layer::combinators::core { ... combinator put{...}; seal ...; }
 //     namespace my_layer::combinators::crash { ... combinator stop{...}; seal ...; }
 //
-// The header that declares a shape opens the family of that shape, next
-// to the declaration.  So an extension header registers its own
-// combinators and payload rules after the core, and a unit that does not
-// include the extension reads none of them.
+// The header that declares a shape opens the family of that shape, in one
+// block after the definitions of the shapes of the family.  So an
+// extension header registers its own combinators and payload rules after
+// the core, and a unit that does not include the extension reads none of
+// them.
 //
-// The read of a root is lazy.  A query reads the families of the root
-// when it first meets a shape, and the answer for that shape holds for
-// the unit.  The registrations of one family are read one time for each
-// unit, and that read counts them against the seals of the family.  A
-// header that opens a family again after that read adds nothing that the
-// unit reads, so the unit refuses each shape of it as unregistered, and a
-// unit that reads the family later refuses the count.  No two units give
-// one shape two answers.
+// The read of a root is lazy.  A query reads the members of the root when
+// it first meets a shape, and the answer for that shape holds for the
+// unit.  The reading of one namespace of the root for one kind is kept for
+// the unit, and that read counts the registrations against the seals of
+// the family.  A header that opens a family again after that read adds
+// nothing that the unit reads, and a unit that reads the family later
+// refuses the count.  So a family stands in one block: a block that a read
+// cannot see would give its shapes no registration and no rule in some
+// units.
 //
 // The home of a registration is the file of its shape: the file of the
 // definition of a class, or the file of the first declaration of a class
@@ -167,7 +169,11 @@
 // registration that breaks one of these rules, and each query that
 // meets the registration refuses with it.
 //
-// A payload registration names a payload template by its shape:
+// A payload registration names a payload template by its shape.  The rule
+// of a payload stands in the header that defines the payload, so a query
+// of the rule of a payload class that has no definition in the unit stops
+// the build: the unit cannot know the rule that the header states.  The
+// fields that the fold reads:
 //
 //   is_sendable  False: an output step with this payload is not
 //                well-formed.
@@ -186,6 +192,12 @@
 //                of the input choice that a keyed input step with this
 //                payload stands for.  It must name the note template of
 //                that choice.  Null: that choice has no note.
+//
+// The other fields of a payload rule are for the walks of the layer above
+// the fold: the role and the arguments of the family for the payload walk
+// of fixy/session/Classification.h, the arguments that carry an effect
+// row, and the names of the members that the node reader claims.  The
+// section on payload rules below states each.
 
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
@@ -240,14 +252,6 @@ struct combinator {
     bool absorbs_suffix = false;
     bool is_plain = true;
     bool payload_is_protocol = false;
-};
-
-struct payload_rule {
-    std::meta::info shape{};
-    bool is_sendable = true;
-    bool is_label = true;
-    std::meta::info label_key{};
-    std::meta::info input_note{};
 };
 
 // One axiom of a payload preorder.  An axiom drops a wrapper, weakens a
@@ -328,6 +332,63 @@ template <class T>
     return static_run<std::meta::info>{std::meta::extract<const std::meta::info*>(array),
                                        std::meta::extent(array_type)};
 }
+
+// ── Payload rules ─────────────────────────────────────────────────────
+
+// What a payload family is to the payload walk of
+// fixy/session/Classification.h.  A payload with no rule is walked by its
+// members, as `members` states.
+//
+//   members        the walk reads the members of each specialization
+//   moves          the token of the tag moves to the recipient, with the value
+//   lends          a read loan of the tag travels, with the value
+//   releases       a read loan of the tag comes back, with the value
+//   share          a share of a pool: no set changes
+//   message        a keyed message: the walk reads the value at the reach of
+//                  the message
+//   declassified   the walk reads the value for its tokens, and not the
+//                  secret that the family declassifies at the transport
+//   constant_time  the one place where a constant-time value travels
+//   hand_off       a live endpoint of another session, whose protocol is the
+//                  value and whose permission set is the set argument
+enum class payload_role : std::uint8_t {
+    members,
+    moves,
+    lends,
+    releases,
+    share,
+    message,
+    declassified,
+    constant_time,
+    hand_off,
+};
+
+// The rule of one payload family.  The header that defines the family
+// registers its rule in its own family of the registry
+// (fixy/session/Registry.h, section Families).  Each argument field is a
+// position among the template arguments of a specialization, or npos.
+struct payload_rule {
+    std::meta::info shape{};
+    bool is_sendable = true;
+    bool is_label = true;
+    std::meta::info label_key{};
+    std::meta::info input_note{};
+    payload_role role = payload_role::members;
+    // The tag of a token or of a loan.
+    std::size_t tag_argument = npos;
+    // The value that the family carries.
+    std::size_t value_argument = npos;
+    // The role that a message names as its receiver or its sender.
+    std::size_t peer_argument = npos;
+    // The permission set of the endpoint of a hand-off.
+    std::size_t set_argument = npos;
+    // Bit I names template argument I as an argument that can carry an
+    // effect row (fixy/concurrent/PayloadRow.h).
+    std::uint64_t row_arguments = 0;
+    // Member I is the name of the member type that stands for template
+    // argument I.  The node reader of fixy/session/Protocol.h claims each.
+    static_run<const char*> member_names{};
+};
 
 namespace detail {
 
@@ -496,6 +557,7 @@ void a_family_holds_a_registration_with_no_seal() noexcept;
 void a_registry_root_holds_a_registration_of_its_own() noexcept;
 void a_registration_stands_outside_the_file_of_its_shape() noexcept;
 void a_registered_class_has_no_definition_here() noexcept;
+void a_payload_class_has_no_definition_here() noexcept;
 
 }  // namespace detail
 
@@ -510,6 +572,14 @@ struct seal_reading {
     seal_fault fault = seal_fault::none;
     std::size_t sealed = 0;
     std::size_t found = 0;
+};
+
+// The registrations of one kind that one namespace of a root holds, in
+// static storage.  `is_family` is false for a namespace that holds no
+// registration and no seal of the kind.
+struct family_reading {
+    bool is_family = false;
+    static_run<std::meta::info> registrations{};
 };
 
 // Reads the seal of one kind in a namespace, and counts the registrations
@@ -577,47 +647,43 @@ consteval void require_seal_holds(std::meta::info registry, std::meta::info kind
 
 // The registrations of one kind in one family, read one time for each
 // unit.  A family with a registration and no seal of the kind stops the
-// build.
-[[nodiscard]] consteval static_run<std::meta::info> read_family(std::meta::info family, std::meta::info kind) {
+// build.  A namespace that holds no registration and no seal of the kind is
+// no family of that kind.
+[[nodiscard]] consteval family_reading read_family(std::meta::info family, std::meta::info kind) {
     const seal_reading reading = read_seal(family, kind);
+    if (reading.found == 0 && !reading.is_sealed) return {};
     if (reading.found != 0 && !reading.is_sealed) a_family_holds_a_registration_with_no_seal();
-    return read_own_registrations(family, kind);
+    return {true, read_own_registrations(family, kind)};
 }
 
 }  // namespace detail
 
 template <std::meta::info Family, std::meta::info Kind>
-inline constexpr static_run<std::meta::info> family_registrations_v = detail::read_family(Family, Kind);
+inline constexpr family_reading family_reading_v = detail::read_family(Family, Kind);
 
 namespace detail {
 
-// True when a member of a root is a family of the kind: a namespace that
-// holds a registration or a seal of the kind.
-[[nodiscard]] consteval bool is_family_of(std::meta::info member, std::meta::info kind) {
-    if (!std::meta::is_namespace(member) || std::meta::is_namespace_alias(member)) return false;
-    const seal_reading reading = read_seal(member, kind);
-    return reading.found != 0 || reading.is_sealed;
-}
-
 // Puts each registration of the kind that `registry` holds on `found`: the
 // own members of a flat registry, or the registrations of each family of a
-// root.  The families are read where the query stands, so a family that a
-// later header opens is read by each query after that header.
-// Complexity: linear in the members of the root and in the registrations.
+// root.  The members of the root are read where the query stands, so a
+// family that a later header opens is read by each query after that
+// header.  The reading of each family is kept for the unit.  Complexity:
+// linear in the members of the root and in the registrations.
 consteval void collect_registrations(std::meta::info registry, std::meta::info kind, stack<std::meta::info>& found) {
     bool has_family = false;
     bool has_own = false;
     for (const std::meta::info member : std::meta::members_of(registry, std::meta::access_context::current())) {
         if (is_registration_of(member, kind)) {
             has_own = true;
-        } else if (is_family_of(member, kind)) {
-            has_family = true;
-            const static_run<std::meta::info> family = std::meta::extract<static_run<std::meta::info>>(
-                std::meta::substitute(^^family_registrations_v,
-                                      {std::meta::reflect_constant(member), std::meta::reflect_constant(kind)}));
-            for (const std::meta::info registration : family)
-                push(found, registration);
+            continue;
         }
+        if (!std::meta::is_namespace(member) || std::meta::is_namespace_alias(member)) continue;
+        const family_reading family = std::meta::extract<family_reading>(std::meta::substitute(
+            ^^family_reading_v, {std::meta::reflect_constant(member), std::meta::reflect_constant(kind)}));
+        if (!family.is_family) continue;
+        has_family = true;
+        for (const std::meta::info registration : family.registrations)
+            push(found, registration);
     }
     if (has_family && has_own) a_registry_root_holds_a_registration_of_its_own();
     if (has_family) return;
@@ -711,7 +777,15 @@ inline constexpr payload_lookup payload_lookup_v = read_payload_rule(Registry, S
         ^^combinator_lookup_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(shape)}));
 }
 
+// The payload rule of a payload.  A payload class with no definition in
+// the unit stops the build, because the header that defines it can hold
+// its rule.
 [[nodiscard]] consteval payload_lookup lookup_payload_rule(std::meta::info registry, std::meta::info payload) {
+    const std::meta::info type = std::meta::dealias(payload);
+    if (std::meta::is_type(type) && (std::meta::is_class_type(type) || std::meta::is_union_type(type))
+        && !std::meta::is_complete_type(type)) {
+        detail::a_payload_class_has_no_definition_here();
+    }
     const std::meta::info shape = shape_of(payload);
     return std::meta::extract<payload_lookup>(std::meta::substitute(
         ^^payload_lookup_v, {std::meta::reflect_constant(registry), std::meta::reflect_constant(shape)}));

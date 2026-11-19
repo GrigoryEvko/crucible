@@ -10,7 +10,6 @@
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/concurrent/PermissionFork.h>
 #include <fixy/session/Classification.h>
-#include <fixy/session/ContentAddressed.h>
 #include <fixy/session/Flow.h>
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Registry.h>
@@ -472,19 +471,17 @@ concept RewindableChannelTo =
 // The walk is the payload walk of fixy/concurrent/PayloadRow.h, with the
 // rules of this layer for the families that its rosters do not name:
 //
-//   - a marker, DeclassifyOnSend and CTPayload carry their value,
-//     argument 0.  The token or the loan of a marker is no payload.
-//   - PeerMsg and Labelled carry their payload, the last argument.  The
-//     peer and the label are names.
-//   - a DelegatedSession carries the protocol of its endpoint, argument
-//     0.  Its Resource, its policy and its permission set are not
-//     messages of that protocol.
-//   - a SharedReader, a crash record and a bare Permission carry no row.
+//   - each payload family carries the arguments that its payload rule
+//     names in row_arguments (fixy/session/Registry.h).  A marker,
+//     DeclassifyOnSend and CTPayload carry their value, a keyed message
+//     its payload, and a hand-off the protocol of its endpoint.  A share
+//     and a crash record carry no row.
+//   - a bare Permission carries no row.
 //   - a named state carries the protocol of its name, and not the class of
 //     the name.
-//   - each other combinator of the registry of fixy/session/Protocol.h
-//     carries each of its type arguments, and the note of a choice carries
-//     none, because its role is a name.
+//   - each other combinator of the registry carries each of its type
+//     arguments, and the note of a choice carries none, because its role
+//     is a name.
 //
 // A payload that the walk cannot classify stops the build, and the text
 // names it.  The walk stands here and not in
@@ -513,28 +510,24 @@ namespace detail {
 [[nodiscard]] consteval std::vector<::fixy::concurrent::payload_family_rule>
 session_payload_rules(std::meta::info registry, [[maybe_unused]] std::meta::info protocol) {
     using Rule = ::fixy::concurrent::payload_family_rule;
-    constexpr std::uint64_t carries_first = std::uint64_t{1};
     constexpr std::uint64_t carries_nothing = std::uint64_t{0};
     constexpr std::uint64_t carries_every = ~std::uint64_t{0};
+    // A bare Permission is a family that a layer below this one defines, and
+    // a named state carries the protocol of its name.
     const Rule named[] = {
-        Rule{^^Transferable, carries_first},
-        Rule{^^Returned, carries_first},
-        Rule{^^Borrowed, carries_first},
-        Rule{^^Released, carries_first},
-        Rule{^^DeclassifyOnSend, carries_first},
-        Rule{^^CTPayload, carries_first},
-        Rule{^^PeerMsg, std::uint64_t{1} << 2},
-        Rule{^^Labelled, std::uint64_t{1} << 1},
-        Rule{^^ContentAddressed, carries_first},
-        Rule{^^DelegatedSession, carries_first},
-        Rule{^^SharedReader, carries_nothing},
-        Rule{^^Crash, carries_nothing},
         Rule{^^::foundation::permissions::Permission, carries_nothing},
         Rule{^^Named, carries_nothing, ^^named_state_protocol_t},
     };
     stack<Rule> rules{};
     for (const Rule& rule : named)
         push(rules, rule);
+    // Each payload family states the arguments that carry its row in its
+    // rule, in the family of its own header.
+    for (const std::meta::info member :
+         ::fixy::session::transition::registrations_of(registry, ^^::fixy::session::transition::payload_rule)) {
+        const auto entry = std::meta::extract<::fixy::session::transition::payload_rule>(member);
+        push(rules, Rule{entry.shape, entry.row_arguments});
+    }
     const auto has_rule = [&rules](std::meta::info family) consteval {
         const Rule* const rule = rules.items;
         for (std::size_t place = 0; place < rules.top; ++place) {

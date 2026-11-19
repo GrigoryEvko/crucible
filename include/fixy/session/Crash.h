@@ -148,6 +148,16 @@ namespace fixy::session {
 // time holds it, and no handle stands at it.
 struct Stop {};
 
+// ── The crash label and its metadata ─────────────────────────────────
+
+// The value the survivor receives on a crash branch.  Peer is the
+// crashed role.  The cause is the metadata of fixy/session/CrashCause.h.
+template <typename Peer>
+struct Crash {
+    using peer = Peer;
+    CrashCause cause = CrashCause::Unknown;
+};
+
 namespace combinators::crash {
 
 // Stop is a terminal that absorbs a suffix: a crashed endpoint never
@@ -162,17 +172,19 @@ inline constexpr ::fixy::session::transition::combinator stop{.shape = ^^Stop,
 inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
                                                                    .count = 1};
 
+// The member that stands for the argument of a crash label.
+inline constexpr const char* crash_label_members[] = {"peer"};
+
+// The crash label is a payload that no endpoint sends (rule 1) and that
+// is no label a peer can send (rule 2), as the rules below state.  It holds
+// its cause, and no token, so the payload walk reads its members.
+inline constexpr ::fixy::session::transition::payload_rule crash_label{
+    .shape = ^^Crash, .is_sendable = false, .is_label = false, .member_names = {crash_label_members, 1}};
+
+inline constexpr ::fixy::session::transition::seal payload_rule_seal{
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 1};
+
 }  // namespace combinators::crash
-
-// ── The crash label and its metadata ─────────────────────────────────
-
-// The value the survivor receives on a crash branch.  Peer is the
-// crashed role.  The cause is the metadata of fixy/session/CrashCause.h.
-template <typename Peer>
-struct Crash {
-    using peer = Peer;
-    CrashCause cause = CrashCause::Unknown;
-};
 
 namespace detail::crash {
 

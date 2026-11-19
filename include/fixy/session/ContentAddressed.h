@@ -14,12 +14,12 @@
 // way, since it records a guarantee one side has and the other does
 // not.  Here neither side gains or loses anything, so a protocol that
 // takes up the marking stays equivalent to the one that did not.  The
-// axiom that says so stands with the other axioms of the payload order,
-// in fixy/session/Subtype.h.
+// axiom that says so stands in the family `content` of the axioms of the
+// payload order, below.
 //
-// This header holds only the marker and its relation, so that the payload
-// order and the payload walk can both name the marker without either
-// one reaching the other.
+// This header holds the marker, its relation, its payload rule and its
+// axiom, so that the payload order and the payload walk read the marker
+// through the registry (fixy/session/Registry.h) and name it nowhere else.
 //
 // Each answer about the marker is a function at namespace scope that is
 // not a template, so no translation unit can specialize an answer.  The
@@ -27,7 +27,9 @@
 // can specialize a concept or an alias template either.
 
 #include <fixy/Predicates.h>
+#include <fixy/session/Registry.h>
 
+#include <cstdint>
 #include <meta>
 
 namespace fixy::session {
@@ -84,5 +86,28 @@ using content_addressed_underlying_t = typename[:peel_content_address(^^T):];
 
 template <typename T>
 using unwrap_content_addressed_t = typename[:unwrap_content_addressed(^^T):];
+
+// The payload rule of the marker (fixy/session/Registry.h).  The payload
+// walk reads its members, and its row is the row of the payload it marks.
+namespace combinators::content {
+
+inline constexpr ::fixy::session::transition::payload_rule content_addressed{.shape = ^^ContentAddressed,
+                                                                             .row_arguments = std::uint64_t{1}};
+
+inline constexpr ::fixy::session::transition::seal payload_rule_seal{
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 1};
+
+}  // namespace combinators::content
+
+// A payload and its content-addressed form are below each other, at any
+// depth of the marker.
+namespace payload_axioms::content {
+
+inline constexpr ::fixy::session::transition::subsort_axiom content_addressed{.weakens = ^^ContentAddressedEquivalent};
+
+inline constexpr ::fixy::session::transition::seal axiom_seal{.kind = ^^::fixy::session::transition::subsort_axiom,
+                                                              .count = 1};
+
+}  // namespace payload_axioms::content
 
 }  // namespace fixy::session

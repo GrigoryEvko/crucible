@@ -182,76 +182,16 @@ struct Named : Name::protocol {
     using protocol = typename Name::protocol;
 };
 
-// The payloads that the registry below has a rule for.  Each is defined
-// in the header of its layer: Crash in fixy/session/Crash.h, and PeerMsg
-// and Labelled in fixy/session/Projection.h.
-template <typename Peer>
-struct Crash;
-
-template <typename Peer, typename Label, typename Payload>
-struct PeerMsg;
-
-template <typename Label, typename Payload>
-struct Labelled;
-
-// A payload that carries a live endpoint of another session.  It is
-// defined in fixy/session/Delegate.h.  The payload walk of
-// fixy/session/Classification.h and the payload order of
-// fixy/session/Subtype.h name it here.
-template <typename InnerProto, typename Resource, typename Policy, typename InnerPS>
-class DelegatedSession;
+// The core names no payload family of an extension.  Each payload family
+// states its rule in the family of its own header (fixy/session/Registry.h,
+// section Payload rules): the crash label in fixy/session/Crash.h, the
+// keyed messages in fixy/session/Projection.h, the hand-off in
+// fixy/session/Delegate.h, and the markers in fixy/session/Flow.h.
 
 namespace detail {
 
 template <VendorBackend V>
 inline constexpr bool vendor_is_named_v = V != VendorBackend::None;
-
-// The label key of a message is its label alone, the key of the binary
-// view.  Each endpoint names the other role as the peer, so a key that
-// held the peer would differ between a choice and its dual, and the two
-// would put different words on one wire.  With the label alone, a
-// PeerMsg choice, its dual and its stripped view put one word on the
-// wire.  The peer stays exact in the payload order (the axiom
-// peer_message of fixy/session/Subtype.h), so a message to another peer
-// refines nothing.  A choice of the paper has one peer, so two branches
-// that name one label are not well-formed, whatever their peers, as two
-// branches of one Comm with the same label are not (fixy/session/Global.h).
-namespace peer_message {
-template <typename T>
-struct label_of;
-template <typename Peer, typename Label, typename Payload>
-struct label_of<PeerMsg<Peer, Label, Payload>> {
-    using type = Labelled<Label, void>;
-};
-template <typename T>
-using label_of_t = typename label_of<T>::type;
-
-// The sender of a received message signals the Offer that its keyed
-// Recv stands for.
-template <typename T>
-struct note_of;
-template <typename Peer, typename Label, typename Payload>
-struct note_of<PeerMsg<Peer, Label, Payload>> {
-    using type = Sender<Peer>;
-};
-template <typename T>
-using note_of_t = typename note_of<T>::type;
-}  // namespace peer_message
-
-// The label key of a message of the binary view is its label without the
-// payload.  A binary view has one peer, so the label alone tells its
-// branches apart, as the peer and the label do in the local type that the
-// view strips.
-namespace labelled {
-template <typename T>
-struct label_of;
-template <typename Label, typename Payload>
-struct label_of<Labelled<Label, Payload>> {
-    using type = Labelled<Label, void>;
-};
-template <typename T>
-using label_of_t = typename label_of<T>::type;
-}  // namespace labelled
 
 }  // namespace detail
 
@@ -334,25 +274,10 @@ inline constexpr ::fixy::session::transition::combinator named_state{
 inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
                                                                    .count = 9};
 
-// The crash label is a payload that no endpoint sends (rule 1) and that
-// is no label a peer can send (rule 2).  fixy/session/Crash.h states why.
-inline constexpr ::fixy::session::transition::payload_rule crash_label{
-    .shape = ^^Crash, .is_sendable = false, .is_label = false};
-
-// A keyed Recv of a message from Peer is the Offer that Peer signals, so
-// it takes the note Sender<Peer>, as the projection writes that Offer.
-inline constexpr ::fixy::session::transition::payload_rule peer_message{.shape = ^^PeerMsg,
-                                                                        .label_key = ^^detail::peer_message::label_of_t,
-                                                                        .input_note =
-                                                                            ^^detail::peer_message::note_of_t};
-
-// A message of the binary view names a label key too, so a choice of the
-// binary view is keyed, and the handle sends the label word.
-inline constexpr ::fixy::session::transition::payload_rule labelled{.shape = ^^Labelled,
-                                                                    .label_key = ^^detail::labelled::label_of_t};
-
+// The core has no payload rule, and the seal states it: a rule that a
+// different header adds to this family stops the build at the first read.
 inline constexpr ::fixy::session::transition::seal payload_rule_seal{
-    .kind = ^^::fixy::session::transition::payload_rule, .count = 3};
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 0};
 
 }  // namespace combinators::core
 
@@ -443,26 +368,20 @@ inline constexpr std::string_view specialized_prefix = "fixy::session::diagnosti
 consteval void session_node_members(std::meta::info type, ::fixy::session::transition::node_members& result) {
     namespace tr = ::fixy::session::transition;
     using tr::member_claim;
-    // A payload with a rule of the registry is read by its members too:
-    // the peer of a crash label, and the peer, label and payload of a
-    // keyed message.
-    if (std::meta::is_type(type) && std::meta::has_template_arguments(type)) {
-        const std::meta::info family = std::meta::template_of(type);
-        if (family == ^^Crash || family == ^^PeerMsg || family == ^^Labelled) {
-            const tr::static_run<std::meta::info> argument = tr::template_arguments_run(type);
-            result.is_node = true;
-            if (family == ^^Crash) {
-                tr::push(result.claims, member_claim{"peer", argument[0]});
-            } else if (family == ^^PeerMsg) {
-                tr::push(result.claims, member_claim{"peer", argument[0]});
-                tr::push(result.claims, member_claim{"label", argument[1]});
-                tr::push(result.claims, member_claim{"payload", argument[2]});
-            } else {
-                tr::push(result.claims, member_claim{"label", argument[0]});
-                tr::push(result.claims, member_claim{"payload", argument[1]});
-            }
-            return;
-        }
+    // A payload whose rule names its members is read by those members too,
+    // as the peer of a crash label, and the peer, label and payload of a
+    // keyed message.  A type whose shape is a combinator is no payload.
+    const bool is_payload_family = std::meta::is_type(type) && std::meta::has_template_arguments(type)
+                                && (std::meta::is_class_type(type) || std::meta::is_union_type(type))
+                                && !tr::lookup_combinator(protocol_registry, tr::shape_of(type)).is_found;
+    if (is_payload_family) {
+        const tr::payload_lookup rule = tr::lookup_payload_rule(protocol_registry, type);
+        if (!rule.is_found || rule.entry.member_names.empty()) return;
+        const tr::static_run<std::meta::info> argument = tr::template_arguments_run(type);
+        result.is_node = true;
+        for (std::size_t place = 0; place < rule.entry.member_names.size() && place < argument.size(); ++place)
+            tr::push(result.claims, member_claim{rule.entry.member_names[place], argument[place]});
+        return;
     }
     const tr::node view = tr::decompose(protocol_registry, type);
     if (!view.is_registered) return;

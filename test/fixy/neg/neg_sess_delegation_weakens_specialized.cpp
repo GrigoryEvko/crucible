@@ -4,12 +4,12 @@
 // delegation_weakens.  delegation_weakens is a function at namespace scope
 // that is not a template, so no specialization matches it.
 
-#include <fixy/session/Subtype.h>
+#include <fixy/session/Delegate.h>
 
 #include <meta>
 
 template <>
-consteval bool fixy::session::detail::payload_order::delegation_weakens(std::meta::info, std::meta::info) {
+consteval bool fixy::session::detail::delegation::delegation_weakens(std::meta::info, std::meta::info) {
     return true;
 }
 

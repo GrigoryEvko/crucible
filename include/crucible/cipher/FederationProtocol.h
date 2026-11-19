@@ -72,6 +72,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/session/ContentAddressed.h>
 #include <fixy/session/Global.h>
+#include <fixy/session/Projection.h>
 #include <fixy/session/Protocol.h>
 #include <foundation/core/KeyedHash.h>
 #include <foundation/effects/Effect.h>

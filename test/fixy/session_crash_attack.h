@@ -10,6 +10,7 @@
 #include <fixy/session/CrashTransport.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/EventLog.h>
+#include <fixy/session/Projection.h>
 #include <fixy/session/Recording.h>
 
 #include <foundation/effects/Ctx.h>

@@ -143,11 +143,84 @@ struct PeerMsg {
     using payload = Payload;
 };
 
-// The payload rule of a message is peer_message in
-// fixy/session/Protocol.h: the label of a message is its peer and its
-// label.  The payload order lifts through a message by the axiom
-// peer_message in fixy/session/Subtype.h.  Each stands under the seal of
-// its header.
+// A message of the binary view, defined below.  The label key of a
+// message names it.
+template <typename Label, typename Payload>
+struct Labelled;
+
+namespace detail {
+
+// The label key of a message is its label alone, the key of the binary
+// view.  Each endpoint names the other role as the peer, so a key that
+// held the peer would differ between a choice and its dual, and the two
+// would put different words on one wire.  With the label alone, a
+// PeerMsg choice, its dual and its stripped view put one word on the
+// wire.  The peer stays exact in the payload order (the axiom
+// peer_message below), so a message to another peer refines nothing.  A
+// choice of the paper has one peer, so two branches that name one label
+// are not well-formed, whatever their peers, as two branches of one Comm
+// with the same label are not (fixy/session/Global.h).
+namespace peer_message {
+template <typename T>
+struct label_of;
+template <typename Peer, typename Label, typename Payload>
+struct label_of<PeerMsg<Peer, Label, Payload>> {
+    using type = Labelled<Label, void>;
+};
+template <typename T>
+using label_of_t = typename label_of<T>::type;
+
+// The sender of a received message signals the Offer that its keyed
+// Recv stands for.
+template <typename T>
+struct note_of;
+template <typename Peer, typename Label, typename Payload>
+struct note_of<PeerMsg<Peer, Label, Payload>> {
+    using type = Sender<Peer>;
+};
+template <typename T>
+using note_of_t = typename note_of<T>::type;
+}  // namespace peer_message
+
+}  // namespace detail
+
+// The family of the messages of a local type (fixy/session/Registry.h).
+namespace combinators::mpst {
+
+// The members that stand for the peer, the label and the payload.
+inline constexpr const char* peer_message_members[] = {"peer", "label", "payload"};
+
+// A keyed Recv of a message from Peer is the Offer that Peer signals, so
+// it takes the note Sender<Peer>, as the projection writes that Offer.  A
+// message is its label word and then its payload, so the payload walk
+// reads the payload as a member of the message, and the row of a message
+// is the row of its payload.
+inline constexpr ::fixy::session::transition::payload_rule peer_message{
+    .shape = ^^PeerMsg,
+    .label_key = ^^detail::peer_message::label_of_t,
+    .input_note = ^^detail::peer_message::note_of_t,
+    .role = ::fixy::session::transition::payload_role::message,
+    .value_argument = 2,
+    .peer_argument = 0,
+    .row_arguments = std::uint64_t{1} << 2,
+    .member_names = {peer_message_members, 3}};
+
+inline constexpr ::fixy::session::transition::seal payload_rule_seal{
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 1};
+
+}  // namespace combinators::mpst
+
+// A message is below another message when the peers are the same, the
+// labels are the same, and the payload is below in the payload order.
+// Bit 2 marks the position of Payload.
+namespace payload_axioms::mpst {
+
+inline constexpr ::fixy::session::transition::subsort_axiom peer_message{.congruence = ^^PeerMsg, .covariant = 0b100};
+
+inline constexpr ::fixy::session::transition::seal axiom_seal{.kind = ^^::fixy::session::transition::subsort_axiom,
+                                                              .count = 1};
+
+}  // namespace payload_axioms::mpst
 
 // One element of an outgoing queue: a message to To.
 template <typename To, typename Label, typename Payload>
@@ -1043,15 +1116,54 @@ consteval void ensure_associated() noexcept {
 // label on the wire would reach the wrong process.  So strip_peers_t
 // requires a local type that names at most one peer.
 
-// A message of the binary view.  The payload rule labelled in
-// fixy/session/Protocol.h gives each Labelled branch its label as the
-// label key, so a choice of the binary view is keyed, as the local type
-// that the view strips is.
+// A message of the binary view.  The payload rule labelled below gives
+// each Labelled branch its label as the label key, so a choice of the
+// binary view is keyed, as the local type that the view strips is.
 template <typename Label, typename Payload>
 struct Labelled {
     using label = Label;
     using payload = Payload;
 };
+
+namespace detail {
+
+// The label key of a message of the binary view is its label without the
+// payload.  A binary view has one peer, so the label alone tells its
+// branches apart, as the peer and the label do in the local type that the
+// view strips.
+namespace labelled {
+template <typename T>
+struct label_of;
+template <typename Label, typename Payload>
+struct label_of<Labelled<Label, Payload>> {
+    using type = Labelled<Label, void>;
+};
+template <typename T>
+using label_of_t = typename label_of<T>::type;
+}  // namespace labelled
+
+}  // namespace detail
+
+// The family of the messages of the binary view (fixy/session/Registry.h).
+namespace combinators::binary_view {
+
+// The members that stand for the label and the payload.
+inline constexpr const char* labelled_members[] = {"label", "payload"};
+
+// A message of the binary view names a label key too, so a choice of the
+// binary view is keyed, and the handle sends the label word.
+inline constexpr ::fixy::session::transition::payload_rule labelled{
+    .shape = ^^Labelled,
+    .label_key = ^^detail::labelled::label_of_t,
+    .role = ::fixy::session::transition::payload_role::message,
+    .value_argument = 1,
+    .row_arguments = std::uint64_t{1} << 1,
+    .member_names = {labelled_members, 2}};
+
+inline constexpr ::fixy::session::transition::seal payload_rule_seal{
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 1};
+
+}  // namespace combinators::binary_view
 
 namespace detail::proj {
 

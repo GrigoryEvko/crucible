@@ -34,9 +34,11 @@
 
 #include <fixy/ConstantTime.h>
 #include <fixy/Secret.h>
+#include <fixy/session/Registry.h>
 #include <foundation/core/Zeroize.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <meta>
 #include <span>
 #include <type_traits>
@@ -146,5 +148,29 @@ template <class T>
 [[nodiscard]] bool eq(const CTPayload<T>& lhs, const CTPayload<T>& rhs) noexcept {
     return ::fixy::ct::eq(lhs.bytes(), rhs.bytes());
 }
+
+// The payload rules of the two carriers (fixy/session/Registry.h).  The
+// payload walk of fixy/session/Classification.h reads the value of a
+// DeclassifyOnSend for its tokens, and not the Secret that it holds.  The
+// value of a CTPayload is the one place where a constant-time value can
+// travel.  The row of each carrier is the row of its value.
+namespace combinators::classified {
+
+inline constexpr ::fixy::session::transition::payload_rule declassify_on_send{
+    .shape = ^^DeclassifyOnSend,
+    .role = ::fixy::session::transition::payload_role::declassified,
+    .value_argument = 0,
+    .row_arguments = std::uint64_t{1}};
+
+inline constexpr ::fixy::session::transition::payload_rule constant_time_payload{
+    .shape = ^^CTPayload,
+    .role = ::fixy::session::transition::payload_role::constant_time,
+    .value_argument = 0,
+    .row_arguments = std::uint64_t{1}};
+
+inline constexpr ::fixy::session::transition::seal payload_rule_seal{
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 2};
+
+}  // namespace combinators::classified
 
 }  // namespace fixy::session

@@ -196,7 +196,6 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
-#include <fixy/session/ContentAddressed.h>
 #include <fixy/session/Fold.h>
 #include <fixy/session/Protocol.h>
 #include <fixy/session/Refinement.h>
@@ -268,17 +267,6 @@ namespace detail::payload_order {
     return std::meta::is_type(argument) ? std::meta::dealias(argument) : argument;
 }
 
-// A delegated endpoint weakens to another one when the Resource, the policy
-// and the set are the same and the protocol of the other refines its
-// protocol.
-[[nodiscard]] consteval bool delegation_weakens(std::meta::info sub, std::meta::info super) {
-    if (!is_unqualified_of(sub, ^^DelegatedSession) || !is_unqualified_of(super, ^^DelegatedSession)) return false;
-    for (std::size_t index = 1; index < 4; ++index) {
-        if (argument_at(sub, index) != argument_at(super, index)) return false;
-    }
-    return ::fixy::session::detail::subtype::sync_verdict(argument_at(super, 0), argument_at(sub, 0)).holds;
-}
-
 // An open refinement drops to its value type.  A sealed refinement keeps
 // its predicate, because it has no door that returns the value.
 [[nodiscard]] consteval bool refinement_drops(std::meta::info type) {
@@ -344,9 +332,6 @@ namespace detail::payload_order {
         && ::foundation::algebra::lattices::ToleranceLattice::leq(tier_of(super), tier_of(sub));
 }
 
-template <typename T, typename U>
-concept DelegationWeakens = delegation_weakens(^^T, ^^U);
-
 template <typename T>
 concept RefinementDrops = refinement_drops(^^T);
 
@@ -384,24 +369,12 @@ inline constexpr ::fixy::session::transition::subsort_axiom tagged_drops{
 inline constexpr ::fixy::session::transition::subsort_axiom tier_weakens{.weakens =
                                                                              ^^detail::payload_order::TierWeakens};
 
-// A message is below another message when the peers are the same, the
-// labels are the same, and the payload is below in the payload order.
-// Bit 2 marks the position of Payload.
-inline constexpr ::fixy::session::transition::subsort_axiom peer_message{.congruence = ^^PeerMsg, .covariant = 0b100};
-
-// A delegated endpoint is below another when its protocol is refined by
-// the protocol of the other, and the Resource, the policy and the set are
-// the same.
-inline constexpr ::fixy::session::transition::subsort_axiom delegation_contravariant{
-    .weakens = ^^detail::payload_order::DelegationWeakens};
-
-// A payload and its content-addressed form are below each other, at any
-// depth of the marker.
-inline constexpr ::fixy::session::transition::subsort_axiom content_addressed{
-    .weakens = ^^::fixy::session::ContentAddressedEquivalent};
-
+// The axioms of a payload family of an extension stand in the family of its
+// own header: the message axiom in fixy/session/Projection.h, the hand-off
+// axiom in fixy/session/Delegate.h, and the content-addressed axiom in
+// fixy/session/ContentAddressed.h.
 inline constexpr ::fixy::session::transition::seal axiom_seal{.kind = ^^::fixy::session::transition::subsort_axiom,
-                                                              .count = 7};
+                                                              .count = 4};
 
 }  // namespace payload_axioms::core
 

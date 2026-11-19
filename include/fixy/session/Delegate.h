@@ -71,6 +71,8 @@
 #include <foundation/NoObject.h>
 #include <foundation/contracts/Armed.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <meta>
@@ -96,34 +98,6 @@ struct Accept {
     using delegated_proto = T;
     using next = K;
 };
-
-// The family of the delegation heads (fixy/session/Registry.h).  A
-// delegation head is a step, and the protocol of the endpoint is its
-// payload.  The payload is invariant, so this layer states no refinement
-// between two delegated protocols at a head.  The payload order of
-// fixy/session/Subtype.h orders the DelegatedSession that a Send carries.
-// The delegated protocol becomes a session of its own, so it is
-// well-formed outside every Loop, and an empty choice in it is found.
-namespace combinators::delegation {
-
-inline constexpr ::fixy::session::transition::combinator delegate{.shape = ^^Delegate,
-                                                                  .kind = ::fixy::session::transition::shape_kind::step,
-                                                                  .direction =
-                                                                      ::fixy::session::transition::polarity::output,
-                                                                  .dual = ^^Accept,
-                                                                  .payload_is_protocol = true};
-
-inline constexpr ::fixy::session::transition::combinator accept{.shape = ^^Accept,
-                                                                .kind = ::fixy::session::transition::shape_kind::step,
-                                                                .direction =
-                                                                    ::fixy::session::transition::polarity::input,
-                                                                .dual = ^^Delegate,
-                                                                .payload_is_protocol = true};
-
-inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
-                                                                   .count = 2};
-
-}  // namespace combinators::delegation
 
 namespace detail {
 
@@ -222,6 +196,83 @@ public:
         return handle_type{std::move(handle_)};
     }
 };
+
+// The family of the delegation heads and of the hand-off
+// (fixy/session/Registry.h).  A delegation head is a step, and the protocol
+// of the endpoint is its payload.  The payload is invariant, so this layer
+// states no refinement between two delegated protocols at a head.  The
+// payload order orders the DelegatedSession that a Send carries, by the
+// axiom below.  The delegated protocol becomes a session of its own, so it
+// is well-formed outside every Loop, and an empty choice in it is found.
+//
+// The payload walk of fixy/session/Classification.h reads the permission
+// set of the endpoint of a hand-off at argument 3, and the row of a
+// hand-off is the row of the protocol of its endpoint, argument 0.
+namespace combinators::delegation {
+
+inline constexpr ::fixy::session::transition::combinator delegate{.shape = ^^Delegate,
+                                                                  .kind = ::fixy::session::transition::shape_kind::step,
+                                                                  .direction =
+                                                                      ::fixy::session::transition::polarity::output,
+                                                                  .dual = ^^Accept,
+                                                                  .payload_is_protocol = true};
+
+inline constexpr ::fixy::session::transition::combinator accept{.shape = ^^Accept,
+                                                                .kind = ::fixy::session::transition::shape_kind::step,
+                                                                .direction =
+                                                                    ::fixy::session::transition::polarity::input,
+                                                                .dual = ^^Delegate,
+                                                                .payload_is_protocol = true};
+
+inline constexpr ::fixy::session::transition::seal combinator_seal{.kind = ^^::fixy::session::transition::combinator,
+                                                                   .count = 2};
+
+inline constexpr ::fixy::session::transition::payload_rule delegated_session{
+    .shape = ^^DelegatedSession,
+    .role = ::fixy::session::transition::payload_role::hand_off,
+    .value_argument = 0,
+    .set_argument = 3,
+    .row_arguments = std::uint64_t{1}};
+
+inline constexpr ::fixy::session::transition::seal payload_rule_seal{
+    .kind = ^^::fixy::session::transition::payload_rule, .count = 1};
+
+}  // namespace combinators::delegation
+
+namespace detail::delegation {
+
+// A delegated endpoint weakens to another one when the Resource, the policy
+// and the set are the same and the protocol of the other refines its
+// protocol.
+[[nodiscard]] consteval bool delegation_weakens(std::meta::info sub, std::meta::info super) {
+    namespace order = ::fixy::session::detail::payload_order;
+    if (!order::is_unqualified_of(sub, ^^DelegatedSession) || !order::is_unqualified_of(super, ^^DelegatedSession)) {
+        return false;
+    }
+    for (std::size_t index = 1; index < 4; ++index) {
+        if (order::argument_at(sub, index) != order::argument_at(super, index)) return false;
+    }
+    return ::fixy::session::detail::subtype::sync_verdict(order::argument_at(super, 0), order::argument_at(sub, 0))
+        .holds;
+}
+
+template <typename T, typename U>
+concept DelegationWeakens = delegation_weakens(^^T, ^^U);
+
+}  // namespace detail::delegation
+
+// A delegated endpoint is below another when its protocol is refined by
+// the protocol of the other, and the Resource, the policy and the set are
+// the same.
+namespace payload_axioms::delegation {
+
+inline constexpr ::fixy::session::transition::subsort_axiom delegation_contravariant{
+    .weakens = ^^detail::delegation::DelegationWeakens};
+
+inline constexpr ::fixy::session::transition::seal axiom_seal{.kind = ^^::fixy::session::transition::subsort_axiom,
+                                                              .count = 1};
+
+}  // namespace payload_axioms::delegation
 
 namespace detail {
 

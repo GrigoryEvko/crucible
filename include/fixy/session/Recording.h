@@ -129,23 +129,30 @@ struct is_crash_send_shape<CrashSend<Next, T>> : std::true_type {
     using payload = T;
 };
 
-// The payload families a recorder knows.  A delegated session is a
-// hand-off.  Every other payload that Classification.h accepts is a
-// message.
+// The payload families a recorder knows.  A payload whose rule has the
+// role hand_off is a hand-off (fixy/session/Registry.h).  Every other
+// payload that Classification.h accepts is a message.
+[[nodiscard]] consteval bool is_hand_off_payload(std::meta::info type) {
+    const payload_lookup rule = payload_rule_of(type);
+    return rule.is_found && rule.entry.role == payload_role::hand_off;
+}
+
 template <typename T>
-struct is_delegation_shape : std::false_type {};
-template <typename InnerProto, typename Resource, typename Policy, typename InnerPS>
-struct is_delegation_shape<DelegatedSession<InnerProto, Resource, Policy, InnerPS>> : std::true_type {
-    using protocol = InnerProto;
-    using perm_set = InnerPS;
-};
+struct is_delegation_shape : std::bool_constant<is_hand_off_payload(^^T)> {};
+
+// The protocol and the permission set of the endpoint of a hand-off, as
+// its rule names them.
+template <typename T>
+using hand_off_protocol_t = [:hand_off_protocol_of(^^T):];
+template <typename T>
+using hand_off_set_t = [:rule_argument_of(^^T, payload_rule_of(^^T).entry.set_argument):];
 
 template <typename T>
 [[nodiscard]] constexpr SessionEvent event_for_send(RoleTagId self, RoleTagId peer, DeliveryFate fate) noexcept {
     if constexpr (is_delegation_shape<T>::value) {
         return SessionEvent::delegate_handoff(
-            self, peer, default_proto_hash<typename is_delegation_shape<T>::protocol>,
-            InnerPermSetHash{::foundation::reflect::stable_type_id(^^typename is_delegation_shape<T>::perm_set)});
+            self, peer, default_proto_hash<hand_off_protocol_t<T>>,
+            InnerPermSetHash{::foundation::reflect::stable_type_id(^^hand_off_set_t<T>)});
     } else {
         return SessionEvent::send(self, peer, default_schema_hash<T>, PayloadHash{}, fate);
     }
@@ -155,8 +162,8 @@ template <typename T>
 [[nodiscard]] constexpr SessionEvent event_for_recv(RoleTagId self, RoleTagId peer) noexcept {
     if constexpr (is_delegation_shape<T>::value) {
         return SessionEvent::accept_handoff(
-            self, peer, default_proto_hash<typename is_delegation_shape<T>::protocol>,
-            InnerPermSetHash{::foundation::reflect::stable_type_id(^^typename is_delegation_shape<T>::perm_set)});
+            self, peer, default_proto_hash<hand_off_protocol_t<T>>,
+            InnerPermSetHash{::foundation::reflect::stable_type_id(^^hand_off_set_t<T>)});
     } else {
         return SessionEvent::recv(self, peer, default_schema_hash<T>);
     }

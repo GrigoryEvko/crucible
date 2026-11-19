@@ -267,19 +267,35 @@ template <typename T, typename Resource, typename Write, typename Taken>
 // that the peer sends.
 namespace detail {
 
-// The payload of a keyed message.  Only PeerMsg and Labelled are keyed,
-// because the payload rules of fixy/session/Protocol.h are sealed.  The
-// primary has no definition, so a message of another shape stops the
-// build.
-template <typename Message>
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_keyed_step_carries_no_message() noexcept;
+
+// True when the payload rule of the family of `message` has the role
+// message (fixy/session/Registry.h).
+[[nodiscard]] consteval bool is_keyed_message(std::meta::info message) {
+    namespace tr = ::fixy::session::transition;
+    const tr::payload_lookup rule = tr::lookup_payload_rule(protocol_registry, message);
+    return rule.is_found && rule.entry.role == tr::payload_role::message;
+}
+
+// The payload of a keyed message: the value that its payload rule names.
+[[nodiscard]] consteval std::meta::info keyed_value_of(std::meta::info message) {
+    namespace tr = ::fixy::session::transition;
+    const tr::payload_lookup rule = tr::lookup_payload_rule(protocol_registry, message);
+    const tr::static_run<std::meta::info> argument = tr::template_arguments_run(std::meta::dealias(message));
+    if (rule.entry.value_argument >= argument.size()) a_keyed_step_carries_no_message();
+    return std::meta::dealias(argument[rule.entry.value_argument]);
+}
+
+// The payload of a keyed message, the value of its rule.  The primary has
+// no definition, so a message of another family has no member type, and a
+// reader that needs one stops the build.
+template <typename Message, bool IsKeyed = is_keyed_message(^^Message)>
 struct keyed_value;
-template <typename Peer, typename Label, typename Payload>
-struct keyed_value<PeerMsg<Peer, Label, Payload>> {
-    using type = Payload;
-};
-template <typename Label, typename Payload>
-struct keyed_value<Labelled<Label, Payload>> {
-    using type = Payload;
+template <typename Message>
+struct keyed_value<Message, true> {
+    using type = typename[:keyed_value_of(^^Message):];
 };
 
 // The position after the label word of a keyed step: the value step, or

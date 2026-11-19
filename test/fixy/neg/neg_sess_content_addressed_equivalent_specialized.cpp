@@ -4,7 +4,7 @@
 // is_content_addressed_equivalent.  The function stands at namespace scope
 // and is not a template, so no specialization matches it.
 
-#include <fixy/session/Subtype.h>
+#include <fixy/session/ContentAddressed.h>
 
 #include <meta>
 
