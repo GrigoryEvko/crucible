@@ -1,46 +1,73 @@
-// The scaling rows of three primitives of the base, from one thread to many.
+// The scaling rows of the primitives of the base, from one thread to many.
 //
 // THE OPS
-//   shared add  fetch_add_acq_rel of foundation/core/Atomic.h on one cell that
-//               each thread of the row writes
-//   own add     the same add on a cell of each thread, each cell on a cache
-//               line of its own: the control with no shared line
-//   mpsc push   try_push of fixy/concurrent/MpscRing.h from each thread of the
-//               row but the last, and try_pop on the last thread, the one
-//               consumer.  A push into a full ring waits for the consumer
+//   shared add         fetch_add_acq_rel of foundation/core/Atomic.h on one
+//                      cell that each thread of the row writes
+//   own add            the same add on a cell of each thread, each cell on a
+//                      cache line of its own: the control with no shared line
+//   mpsc push          try_push of fixy/concurrent/MpscRing.h from each thread
+//                      of the row but the last, and try_pop on the last
+//                      thread, the one consumer
+//   mpsc batch push    try_push_batch of kBatch items from each producer, and
+//                      try_pop_batch of up to kPopBatch items on the consumer
+//   mpsc reference     try_push and try_pop of the pinned MPMCQueue of Erik
+//                      Rigtorp (utils/pins.txt), a queue with a turn word in
+//                      each slot in the form of Dmitry Vyukov
+//   spsc push          try_push of fixy/concurrent/SpscRing.h on the main
+//                      thread, and try_pop on one consumer
+//   spsc batch push    try_push_batch of kBatch items on the main thread, and
+//                      try_pop_batch of up to kPopBatch items on the consumer
+//   spsc reference     try_push and try_pop of the pinned SPSCQueue of Erik
+//                      Rigtorp (utils/pins.txt)
+//   A push into a full ring waits for the consumer.  A pop of an empty ring
+//   waits for a producer.  Each wait spins with the spin hint.  A batch op
+//   counts each item of its batch.
+//
+// THE PLACES OF THE CONSUMER
+//   The consumer of an mpsc row is the thread of the last slot of the row.
+//   Each spsc op has two rows of two threads: one with the consumer on the
+//   CPU of slot 1, in the L3 group of the producer when the claim holds a
+//   second core of that group, and one with the consumer on the first CPU of
+//   the spread outside the L3 group of the producer.  A spread with no CPU
+//   outside that group gives no row of the second place.
 //
 // THE THREADS OF A ROW
 //   A row of N threads runs the op on N threads at the same time, one thread
 //   on the CPU of each slot 0 to N - 1 of the spread of the run (THE SPREAD
-//   OF A RUN of bench/bench_harness.h).  Slot 0 is the main thread.  Each
-//   other slot is a worker of mint_owned_thread of fixy/os/OwnedThread.h,
-//   with the CPU of its slot as its affinity.
+//   OF A RUN of bench/bench_harness.h).  Slot 0 is the main thread, a
+//   producer.  Each other slot is a worker of mint_owned_thread of
+//   fixy/os/OwnedThread.h, with the CPU of its slot as its affinity.
 //
 // THE PHASES OF A ROW
 //   1. The window: each thread runs the op and counts it for kWindowNs.  The
-//      row gives the ops of the producers of all threads in one second, and
-//      the efficiency: that throughput over the throughput of one thread
-//      times the count of the threads.  For mpsc push, the base is the row of
-//      one producer and the consumer, times the count of the producers.  The
-//      pause check of the harness reads the threads over the window.
+//      row gives the items of the producers of all threads in one second, and
+//      the efficiency: that throughput over the throughput of the first row
+//      of the op, times the ratio of the producers.  For an mpsc op, the base
+//      is the row of one producer and the consumer.  The pause check of the
+//      harness reads the threads over the window.
 //      The window is bench::kWindows consecutive windows of equal time, one
 //      phase each (THE WINDOWS of bench/bench_harness.h).  Each thread counts
-//      its ops in each window, and the row gives the median and the spread of
-//      the throughput of the windows.  Each window has the pause check of the
-//      time that the main thread lost in it.
+//      its items in each window, and the row gives the median and the spread
+//      of the throughput of the windows.  Each window has the pause check of
+//      the time that the main thread lost in it.
 //   2. The latency: the workers go on, and the main thread runs the op under
 //      Run::measure, one op in each sample.  Its report gives p50, p99 and
-//      the maximum of one op.  The harness takes the cost of the clock off
-//      each sample, so an op of a few nanoseconds reads at the resolution of
-//      the clock.  The JSON tail of the bench gives the latency report of
-//      each row, with the count of its threads in its name.
+//      the maximum of one op, with the wait for the consumer in it.  The
+//      harness takes the cost of the clock off each sample, so an op of a
+//      few nanoseconds reads at the resolution of the clock.  The JSON tail of
+//      the bench gives the latency report of each row, with the count of its
+//      threads and the place of its consumer in its name.
+//   In each row with a consumer, the consumer keeps up with the producers, so
+//   the ring is nearly empty: each pop of the consumer finds the newest items.
 //
 // THE COUNTS OF THREADS
 //   With no argument, the rows have 1, 2, 4, 8 and 16 threads, up to the
-//   count of the slots.  The bench states eight cores, so loop bench gives it
-//   one L3 group of bench.slice.  Each argument is one more count of threads
-//   after the rows of 1 and 2 threads, which are the bases of the
-//   efficiency.  A count above the slots or above kMaxThreads ends the run.
+//   count of the slots.  The bench states nine cores, so loop bench gives it
+//   the eight cores of one L3 group and one core of a second group.  The rows
+//   of 1 to 8 threads then keep one group, and the ninth core holds the
+//   consumer of the spsc rows in another group.  Each argument is one more
+//   count of threads after the rows of 1 and 2 threads, which are the bases of
+//   the efficiency.  A count above the slots or above kMaxThreads ends the run.
 //
 // THE COMMANDS
 //   1 to 8 threads, one L3 group:   python3 utils/bin/loop bench bench_thread_scaling
@@ -55,6 +82,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/MpscRing.h>
+#include <fixy/concurrent/SpscRing.h>
 #include <fixy/os/Args.h>
 #include <fixy/os/OwnedThread.h>
 #include <fixy/os/ThreadTasks.h>
@@ -77,9 +105,9 @@ using Item = std::uint64_t;
 
 // The threads of one row, at most.  The command of the owner runs 224.
 constexpr std::size_t kMaxThreads = 256;
-// The rows of one op, at most, and the latency reports of the three ops.
+// The rows of one op, at most, and the latency reports of the eight ops.
 constexpr std::size_t kMaxRows = 16;
-constexpr std::size_t kMaxReports = 3 * kMaxRows;
+constexpr std::size_t kMaxReports = 8 * kMaxRows;
 constexpr std::uint64_t kWindowNs = 500000000;
 constexpr std::size_t kLatencySamples = 1000000;
 constexpr std::size_t kLatencyWarmup = 10000;
@@ -89,10 +117,126 @@ constexpr std::size_t kLatencyMs = 1000;
 constexpr std::uint64_t kOpsPerCheck = 64;
 constexpr std::uint64_t kOpsPerClock = 1024;
 constexpr std::size_t kRingCapacity = 4096;
+// The items of one batch push, and the items of one batch pop at most.
+constexpr std::size_t kBatch = 16;
+constexpr std::size_t kPopBatch = 64;
+
+}  // namespace
+
+// ── The pinned references ───────────────────────────────────────────────
+//
+// Each reference gives try_push and try_pop in the shape of the ring that it
+// measures.  The wrappers are in line in this unit, so each op of a reference
+// row inlines into its loop, as the op of the ring does.  A build with no
+// pinned source gives a wrapper that the rows never call, and the bench omits
+// the rows of that reference.
+
+#if defined(CRUCIBLE_BENCH_RIGTORP_SPSC)
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the pinned SPSCQueue of Erik Rigtorp is the reference of the SPSC ring")
+
+#include <rigtorp/SPSCQueue.h>
+
+namespace {
+
+inline constexpr bool kHasSpscReference = true;
+
+struct SpscReference {
+    rigtorp::SPSCQueue<Item> queue{kRingCapacity};
+
+    [[nodiscard, gnu::always_inline]] bool try_push(Item const& item) noexcept { return queue.try_push(item); }
+
+    [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_pop() noexcept {
+        Item* const front = queue.front();
+        if (front == nullptr) return ::fixy::none;
+        Item const item = *front;
+        queue.pop();
+        return ::fixy::some(item);
+    }
+};
+
+}  // namespace
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+#else
+namespace {
+
+inline constexpr bool kHasSpscReference = false;
+
+struct SpscReference {
+    [[nodiscard]] bool try_push(Item const& /*item*/) noexcept { return true; }
+    [[nodiscard]] ::fixy::Option<Item> try_pop() noexcept { return ::fixy::none; }
+};
+
+}  // namespace
+#endif
+
+#if defined(CRUCIBLE_BENCH_RIGTORP_MPMC)
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the pinned MPMCQueue of Erik Rigtorp is the reference of the MPSC ring")
+
+#include <rigtorp/MPMCQueue.h>
+
+namespace {
+
+inline constexpr bool kHasMpscReference = true;
+
+struct MpscReference {
+    rigtorp::MPMCQueue<Item> queue{kRingCapacity};
+
+    [[nodiscard, gnu::always_inline]] bool try_push(Item const& item) noexcept { return queue.try_push(item); }
+
+    [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_pop() noexcept {
+        Item item = 0;
+        if (!queue.try_pop(item)) return ::fixy::none;
+        return ::fixy::some(item);
+    }
+};
+
+}  // namespace
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+#else
+namespace {
+
+inline constexpr bool kHasMpscReference = false;
+
+struct MpscReference {
+    [[nodiscard]] bool try_push(Item const& /*item*/) noexcept { return true; }
+    [[nodiscard]] ::fixy::Option<Item> try_pop() noexcept { return ::fixy::none; }
+};
+
+}  // namespace
+#endif
+
+namespace {
+
 enum class OpKind : std::uint8_t {
     SharedAdd,
     OwnAdd,
     MpscPush,
+    MpscBatchPush,
+    MpscReferencePush,
+    SpscPush,
+    SpscBatchPush,
+    SpscReferencePush,
+};
+
+// True for an op with one consumer on the thread of a slot.
+template <OpKind Kind>
+inline constexpr bool kHasConsumer = Kind != OpKind::SharedAdd && Kind != OpKind::OwnAdd;
+
+// True for an op of the SPSC ring or of its reference.
+template <OpKind Kind>
+inline constexpr bool kIsSpsc =
+    Kind == OpKind::SpscPush || Kind == OpKind::SpscBatchPush || Kind == OpKind::SpscReferencePush;
+
+// The items of one op.
+template <OpKind Kind>
+inline constexpr std::uint64_t kItemsPerOp = Kind == OpKind::MpscBatchPush || Kind == OpKind::SpscBatchPush ? kBatch : 1;
+
+// Where the consumer of a row runs (THE PLACES OF THE CONSUMER).
+enum class ConsumerPlace : std::uint8_t {
+    LastSlot,
+    OtherL3,
 };
 
 // The phase of a row (THE PHASES OF A ROW).  The main thread writes it.  The
@@ -136,8 +280,8 @@ enum class Role : std::uint8_t {
 struct ThreadCountTag final {};
 using ThreadCount = ::fixy::Id<ThreadCountTag, std::uint32_t>;
 
-// The line that one thread writes: its own cell, its ops in each window, and
-// whether it published them.
+// The line that one thread writes: its own cell, its items in each window,
+// and whether it published them.
 struct alignas(64) ThreadLine {
     ::fixy::Atomic<std::uint64_t> cell{};
     ::fixy::FixedArray<::fixy::Atomic<std::uint64_t>, bench::kWindows> window_ops{};
@@ -153,14 +297,20 @@ struct alignas(64) CountLine {
 };
 
 // The state that the threads of one row share.  The main thread owns it, and
-// it outlives each worker of the row.
+// it outlives each worker of the row.  Each row builds each ring and each
+// reference, and it uses the one of its op.
 struct RowState {
     PhaseLine phase{};
     // The workers that wait for the window.
     CountLine ready{};
     CountLine shared{};
     ::fixy::FixedArray<ThreadLine, kMaxThreads> lines{};
-    ::fixy::concurrent::MpscRing<Item, kRingCapacity> ring{};
+    ::fixy::concurrent::MpscRing<Item, kRingCapacity> mpsc{};
+    ::fixy::concurrent::SpscRing<Item, kRingCapacity> spsc{};
+    MpscReference mpsc_reference{};
+    SpscReference spsc_reference{};
+    // The items of each batch push.  No thread writes them after the start.
+    ::fixy::FixedArray<Item, kBatch> batch{};
 };
 
 [[nodiscard]] Phase read_phase(RowState const& state) noexcept { return state.phase.phase.load_acquire(); }
@@ -169,25 +319,57 @@ struct RowState {
     return *state.lines.get(slot.raw()).expect("a slot of a row is below kMaxThreads");
 }
 
-// One op of a producer.  A push into a full ring waits, and it stops when the
-// row stops, so no producer waits for a consumer that ended.
+// One push that waits while its ring is full, and that stops when the row
+// stops, so no producer waits for a consumer that ended.
+template <class Push>
+[[gnu::always_inline]] inline void push_waiting(RowState const& state, Push const& push) noexcept {
+    while (!push()) {
+        if (read_phase(state) == Phase::Stop) return;
+        CRUCIBLE_SPIN_PAUSE;
+    }
+}
+
+// The batch push of the SPSC ring, which can take a part of the batch: it
+// pushes the rest until the whole batch went in, or the row stops.
+[[gnu::always_inline]] inline void push_spsc_batch(RowState& state) noexcept {
+    std::size_t pushed = 0;
+    while (pushed < kBatch) {
+        std::size_t const taken = state.spsc.try_push_batch(
+            state.batch.view().window(pushed, kBatch - pushed).expect("the rest of a batch lies inside it"));
+        pushed += taken;
+        if (taken != 0) continue;
+        if (read_phase(state) == Phase::Stop) return;
+        CRUCIBLE_SPIN_PAUSE;
+    }
+}
+
+// One op of a producer (THE OPS).
 template <OpKind Kind>
 [[gnu::always_inline]] inline void run_op(RowState& state, ThreadLine& line) noexcept {
     if constexpr (Kind == OpKind::SharedAdd) {
         static_cast<void>(state.shared.value.fetch_add_acq_rel(1));
     } else if constexpr (Kind == OpKind::OwnAdd) {
         static_cast<void>(line.cell.fetch_add_acq_rel(1));
+    } else if constexpr (Kind == OpKind::MpscPush) {
+        push_waiting(state, [&state]() noexcept { return state.mpsc.try_push(Item{1}); });
+    } else if constexpr (Kind == OpKind::MpscBatchPush) {
+        // The batch of the MPSC ring is all or nothing.
+        push_waiting(state, [&state]() noexcept { return state.mpsc.try_push_batch(state.batch.view()) == kBatch; });
+    } else if constexpr (Kind == OpKind::MpscReferencePush) {
+        push_waiting(state, [&state]() noexcept { return state.mpsc_reference.try_push(Item{1}); });
+    } else if constexpr (Kind == OpKind::SpscPush) {
+        push_waiting(state, [&state]() noexcept { return state.spsc.try_push(Item{1}); });
+    } else if constexpr (Kind == OpKind::SpscBatchPush) {
+        push_spsc_batch(state);
     } else {
-        while (!state.ring.try_push(Item{1})) {
-            if (read_phase(state) == Phase::Stop) return;
-            CRUCIBLE_SPIN_PAUSE;
-        }
+        push_waiting(state, [&state]() noexcept { return state.spsc_reference.try_push(Item{1}); });
     }
 }
 
-// The loop of a producer worker: the ops of each window, which it publishes,
-// then the ops of the latency phase until the stop.  A run of kOpsPerCheck
-// ops counts in the window of the phase that the worker read before it.
+// The loop of a producer worker: the items of each window, which it
+// publishes, then the ops of the latency phase until the stop.  A run of
+// kOpsPerCheck ops counts in the window of the phase that the worker read
+// before it.
 template <OpKind Kind>
 void run_producer(RowState& state, ThreadLine& line) noexcept {
     static_cast<void>(state.ready.value.fetch_add_acq_rel(1));
@@ -199,7 +381,7 @@ void run_producer(RowState& state, ThreadLine& line) noexcept {
         for (std::uint64_t op = 0; op < kOpsPerCheck; ++op)
             run_op<Kind>(state, line);
         for (WindowIndex const index : window)
-            ops.at(index) += kOpsPerCheck;
+            ops.at(index) += kOpsPerCheck * kItemsPerOp<Kind>;
     }
     for (WindowIndex const index : ops.indices())
         line.window_ops.at(index).store_release(ops.at(index));
@@ -210,22 +392,42 @@ void run_producer(RowState& state, ThreadLine& line) noexcept {
     }
 }
 
-// The loop of the consumer of mpsc push: it pops until the stop, and it
-// counts no op of the window.
-void run_consumer(RowState& state, ThreadLine& line) noexcept {
+// One pop of the consumer of an op: true when it took an item.
+template <OpKind Kind>
+[[gnu::always_inline]] inline bool pop_once(RowState& state, [[maybe_unused]] ::fixy::View<Item> out) noexcept {
     // A pop of an MPSC ring is a merge of the producers, so it takes Nondet.
-    eff::cap::Nondet const merge = eff::testing::test().nondet;
+    [[maybe_unused]] eff::cap::Nondet const merge = eff::testing::test().nondet;
+    if constexpr (Kind == OpKind::MpscPush) {
+        return state.mpsc.try_pop(merge).is_some();
+    } else if constexpr (Kind == OpKind::MpscBatchPush) {
+        return state.mpsc.try_pop_batch(merge, out) != 0;
+    } else if constexpr (Kind == OpKind::MpscReferencePush) {
+        return state.mpsc_reference.try_pop().is_some();
+    } else if constexpr (Kind == OpKind::SpscPush) {
+        return state.spsc.try_pop().is_some();
+    } else if constexpr (Kind == OpKind::SpscBatchPush) {
+        return state.spsc.try_pop_batch(out) != 0;
+    } else {
+        return state.spsc_reference.try_pop().is_some();
+    }
+}
+
+// The loop of the consumer of an op: it pops until the stop, and it counts
+// no item of the window.
+template <OpKind Kind>
+void run_consumer(RowState& state, ThreadLine& line) noexcept {
+    ::fixy::FixedArray<Item, kPopBatch> out{};
     line.is_published.store_release(true);
     static_cast<void>(state.ready.value.fetch_add_acq_rel(1));
     while (read_phase(state) != Phase::Stop) {
         for (std::uint64_t pop = 0; pop < kOpsPerCheck; ++pop) {
-            if (state.ring.try_pop(merge).is_none()) CRUCIBLE_SPIN_PAUSE;
+            if (!pop_once<Kind>(state, out.view())) CRUCIBLE_SPIN_PAUSE;
         }
     }
 }
 
-// What the window of the main thread measured: its ops, its wall time and the
-// time that it lost in each window, and the pause of the whole window.
+// What the window of the main thread measured: its items, its wall time and
+// the time that it lost in each window, and the pause of the whole window.
 struct Window {
     ::fixy::FixedArray<std::uint64_t, bench::kWindows> ops{};
     ::fixy::FixedArray<std::uint64_t, bench::kWindows> wall_ns{};
@@ -258,7 +460,7 @@ template <OpKind Kind>
         while (end - start < kWindowNs / bench::kWindows) {
             for (std::uint64_t op = 0; op < kOpsPerClock; ++op)
                 run_op<Kind>(state, line);
-            ops += kOpsPerClock;
+            ops += kOpsPerClock * kItemsPerOp<Kind>;
             end = now();
         }
         bench::WindowClock const window_end = bench::detail::read_window_clock();
@@ -280,9 +482,10 @@ template <OpKind Kind>
 // The result of one row.
 struct RowResult {
     ThreadCount threads{1};
-    // The ops of the producers in one second, in hundredths of a million.
+    ConsumerPlace place = ConsumerPlace::LastSlot;
+    // The items of the producers in one second, in hundredths of a million.
     std::uint64_t centi_mops = 0;
-    // The throughput of the producers in each window, in millions of ops in
+    // The throughput of the producers in each window, in millions of items in
     // one second, summed up by its median and its spread, and the count of
     // the windows in which the main thread lost more than the bound of the
     // pause check (THE WINDOWS of bench/bench_harness.h).
@@ -292,41 +495,77 @@ struct RowResult {
     bench::Report latency{};
 };
 
-// The name of the latency report of an op in a row, with the count of the
-// threads of the row, such as "shared add [latency of one op, 4 threads]".
-// Each row gives a report, so each report of the JSON tail has a name of its
-// own.
+// The name of an op.
 template <OpKind Kind>
-[[nodiscard]] bench::Run run_of(ThreadCount threads) {
-    ::fixy::TextView const op = Kind == OpKind::SharedAdd ? ::fixy::TextView{"shared add"}
-                              : Kind == OpKind::OwnAdd    ? ::fixy::TextView{"own add"}
-                                                          : ::fixy::TextView{"mpsc push"};
-    ::fixy::FixedText<64> name{};
-    static_cast<void>(::fixy::format(name, "{} [latency of one op, {} threads]", op, threads.raw())
-                          .expect("the name of a latency report fits in 64 characters"));
+[[nodiscard]] ::fixy::TextView name_of() noexcept {
+    if constexpr (Kind == OpKind::SharedAdd) return ::fixy::TextView{"shared add"};
+    if constexpr (Kind == OpKind::OwnAdd) return ::fixy::TextView{"own add"};
+    if constexpr (Kind == OpKind::MpscPush) return ::fixy::TextView{"mpsc push"};
+    if constexpr (Kind == OpKind::MpscBatchPush) return ::fixy::TextView{"mpsc batch push"};
+    if constexpr (Kind == OpKind::MpscReferencePush) return ::fixy::TextView{"mpsc reference push"};
+    if constexpr (Kind == OpKind::SpscPush) return ::fixy::TextView{"spsc push"};
+    if constexpr (Kind == OpKind::SpscBatchPush) return ::fixy::TextView{"spsc batch push"};
+    return ::fixy::TextView{"spsc reference push"};
+}
+
+// The name of the latency report of an op in a row, with the count of the
+// threads of the row and the place of its consumer, such as
+// "spsc push [latency of one op, 2 threads, consumer in another L3]".  Each
+// row gives a report, so each report of the JSON tail has a name of its own.
+template <OpKind Kind>
+[[nodiscard]] bench::Run run_of(ThreadCount threads, ConsumerPlace place) {
+    ::fixy::TextView const where =
+        place == ConsumerPlace::OtherL3 ? ::fixy::TextView{", consumer in another L3"} : ::fixy::TextView{};
+    ::fixy::FixedText<96> name{};
+    static_cast<void>(::fixy::format(name, "{} [latency of one op, {} threads{}]", name_of<Kind>(), threads.raw(), where)
+                          .expect("the name of a latency report fits in 96 characters"));
     return bench::Run{name};
+}
+
+// The first CPU of the spread outside the L3 group of the CPU of slot 0, or
+// none when sysfs gives no group or the spread holds no such CPU.
+// Complexity: linear in the slots of the spread.
+[[nodiscard]] ::fixy::Option<bench::CpuId> other_l3_cpu_of(bench::Spread const& spread) noexcept {
+    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).value_or(bench::CpuId::none());
+    crucible::warden::CpuSet const group = bench::read_l3_group(main_cpu);
+    if (group.is_empty()) return ::fixy::none;
+    for (std::uint32_t slot = 1; slot < spread.count(); ++slot) {
+        bench::CpuId const cpu = spread.of_slot(bench::ThreadSlot{slot}).value_or(bench::CpuId::none());
+        if (cpu.is_valid() && !group.contains(cpu.raw())) return ::fixy::some(cpu);
+    }
+    return ::fixy::none;
+}
+
+// The CPU of a slot of a row.  The consumer of a row of the place OtherL3
+// runs on the CPU that other_l3_cpu_of gives.
+[[nodiscard]] bench::CpuId cpu_of_slot(bench::Spread const& spread, bench::ThreadSlot slot, Role role,
+                                       ConsumerPlace place) noexcept {
+    if (role == Role::Consumer && place == ConsumerPlace::OtherL3) {
+        return other_l3_cpu_of(spread).expect("a row of a consumer in another L3 group has such a CPU");
+    }
+    return spread.of_slot(slot).expect("a row has at most the slots of the spread");
 }
 
 // Runs one row of an op on the first threads.count slots of the spread.
 template <OpKind Kind>
-[[nodiscard]] RowResult run_row(bench::Spread const& spread, ThreadCount threads) {
+[[nodiscard]] RowResult run_row(bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
     RowState state{};
-    auto const cpu_of = [&spread](bench::ThreadSlot slot) noexcept {
-        return spread.of_slot(slot).expect("a row has at most the slots of the spread");
-    };
-    std::uint32_t const consumer_slot = Kind == OpKind::MpscPush ? threads.raw() - 1 : threads.raw();
+    for (::fixy::Index<kBatch> const index : state.batch.indices())
+        state.batch.at(index) = Item{index.raw() + 1};
+    std::uint32_t const consumer_slot = kHasConsumer<Kind> ? threads.raw() - 1 : threads.raw();
     ::fixy::FixedList<::fixy::thread::OwnedThread, kMaxThreads> workers{};
     for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
         Role const role = slot == consumer_slot ? Role::Consumer : Role::Producer;
         ThreadLine& line = line_of(state, bench::ThreadSlot{slot});
         ::fixy::thread::ThreadOptions const options{
             .name = "scaling-worker",
-            .affinity = ::fixy::AffinityMask::single(static_cast<std::uint16_t>(cpu_of(bench::ThreadSlot{slot}).raw())),
+            .affinity = ::fixy::AffinityMask::single(
+                static_cast<std::uint16_t>(cpu_of_slot(spread, bench::ThreadSlot{slot}, role, place).raw())),
         };
         ::fixy::thread::OwnedThread worker =
             ::fixy::thread::mint_owned_thread(Starter{eff::testing::bg()}, options, [&state, &line, role]() noexcept {
                 if (role == Role::Consumer) {
-                    run_consumer(state, line);
+                    run_consumer<Kind>(state, line);
                 } else {
                     run_producer<Kind>(state, line);
                 }
@@ -337,7 +576,7 @@ template <OpKind Kind>
         CRUCIBLE_SPIN_PAUSE;
 
     ThreadLine& own = line_of(state, bench::kMeasuringSlot);
-    bench::CpuId const main_cpu = cpu_of(bench::kMeasuringSlot);
+    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
     Window const window = run_window<Kind>(state, own, main_cpu);
     ::fixy::FixedArray<std::uint64_t, bench::kWindows> ops = window.ops;
     for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
@@ -360,11 +599,12 @@ template <OpKind Kind>
     }
 
     RowResult result{.threads = threads,
+                     .place = place,
                      .centi_mops = all_wall_ns == 0 ? 0 : all_ops * 100000 / all_wall_ns,
                      .windows = bench::spread_of_windows(window_mops.view()),
                      .paused_windows = bench::detail::paused_windows_of(window.lost_ns.view(), window.pause.basis),
                      .window_pause = window.pause};
-    result.latency = run_of<Kind>(threads)
+    result.latency = run_of<Kind>(threads, place)
                          .core(main_cpu.raw())
                          .batch(1)
                          .samples(kLatencySamples)
@@ -379,24 +619,25 @@ template <OpKind Kind>
     return result;
 }
 
-// The producers of a row: each thread, but the consumer of mpsc push.
+// The producers of a row: each thread, but the consumer of an op with one.
 template <OpKind Kind>
 [[nodiscard]] std::uint64_t producers_of(ThreadCount threads) noexcept {
-    return Kind == OpKind::MpscPush ? threads.raw() - 1 : threads.raw();
+    return kHasConsumer<Kind> ? threads.raw() - 1 : threads.raw();
 }
 
 // The row that the efficiency of each row of an op compares with: its
-// producers and its throughput in hundredths of a million ops in a second.
+// producers and its throughput in hundredths of a million items in a second.
 struct EfficiencyBase {
     std::uint64_t producers = 1;
     std::uint64_t centi_mops = 0;
 };
 
-// Prints one row: its threads, its throughput, its efficiency over the base
-// times the ratio of the producers, the median and the spread of the
-// throughput of its windows, its pause, and the report of its latency.  The
-// ratios print with two decimals, and the spread with one.  A pause of the
-// whole window or of one window over the bound makes the row not valid.
+// Prints one row: its threads, the place of its consumer, its throughput, its
+// efficiency over the base times the ratio of the producers, the median and
+// the spread of the throughput of its windows, its pause, and the report of
+// its latency.  The ratios print with two decimals, and the spread with one.
+// A pause of the whole window or of one window over the bound makes the row
+// not valid.
 template <OpKind Kind>
 void print_row(RowResult const& row, EfficiencyBase const& base) noexcept {
     std::uint64_t const ideal = base.centi_mops * producers_of<Kind>(row.threads) / base.producers;
@@ -404,9 +645,11 @@ void print_row(RowResult const& row, EfficiencyBase const& base) noexcept {
     auto const median = static_cast<std::uint64_t>(row.windows.median * 100.0 + 0.5);
     auto const spread = static_cast<std::uint64_t>(row.windows.spread * 1000.0 + 0.5);
     bool const is_paused = row.window_pause.is_over_bound() || row.paused_windows > 0;
+    ::fixy::TextView const where =
+        row.place == ConsumerPlace::OtherL3 ? ::fixy::TextView{", consumer in another L3"} : ::fixy::TextView{};
     // The rows of the harness go through stdio, and report() does not.
     bench::detail::flush_standard_output();
-    ::fixy::report(::fixy::Sink::Out, "  {} threads: {}.{}{} Mops/s, efficiency {}.{}{}", row.threads.raw(),
+    ::fixy::report(::fixy::Sink::Out, "  {} threads{}: {}.{}{} Mops/s, efficiency {}.{}{}", row.threads.raw(), where,
                    row.centi_mops / 100, row.centi_mops % 100 / 10, row.centi_mops % 10, efficiency / 100,
                    efficiency % 100 / 10, efficiency % 10);
     ::fixy::report(::fixy::Sink::Out, ", {} windows: median {}.{}{} Mops/s, spread {}.{}%", row.windows.windows,
@@ -417,19 +660,31 @@ void print_row(RowResult const& row, EfficiencyBase const& base) noexcept {
     row.latency.print_text();
 }
 
-// The rows of one op, then the line of each row.  The first row is the base
-// of the efficiency.  The latency report of each row goes to reports, for the
-// JSON tail of the bench.
+// The rows of one op: one row for each count of threads, or the two rows of
+// the two places of an spsc op.  Then the line of each row.  The first row is
+// the base of the efficiency.  The latency report of each row goes to
+// reports, for the JSON tail of the bench.
 template <OpKind Kind>
 void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> counts, ::fixy::TextView title,
                  ::fixy::FixedList<bench::Report, kMaxReports>& reports) {
     bench::detail::flush_standard_output();
     ::fixy::report(::fixy::Sink::Out, "\n=== {} ===\n", title);
     ::fixy::FixedList<RowResult, kMaxRows> rows{};
-    for (ThreadCount const threads : counts) {
-        // A row of mpsc push needs a producer beside its consumer.
-        if (producers_of<Kind>(threads) == 0) continue;
-        static_cast<void>(rows.append(run_row<Kind>(spread, threads)).expect("an op has at most kMaxRows rows"));
+    if constexpr (kIsSpsc<Kind>) {
+        if (spread.count() < 2) return;
+        static_cast<void>(rows.append(run_row<Kind>(spread, ThreadCount{2}, ConsumerPlace::LastSlot))
+                              .expect("an op has at most kMaxRows rows"));
+        if (other_l3_cpu_of(spread).is_some()) {
+            static_cast<void>(rows.append(run_row<Kind>(spread, ThreadCount{2}, ConsumerPlace::OtherL3))
+                                  .expect("an op has at most kMaxRows rows"));
+        }
+    } else {
+        for (ThreadCount const threads : counts) {
+            // A row of an op with a consumer needs a producer beside its consumer.
+            if (producers_of<Kind>(threads) == 0) continue;
+            static_cast<void>(rows.append(run_row<Kind>(spread, threads, ConsumerPlace::LastSlot))
+                                  .expect("an op has at most kMaxRows rows"));
+        }
     }
     if (rows.size() == 0) return;
     RowResult const& first = *rows.get(0).expect("the test above found a row");
@@ -493,6 +748,8 @@ int run_bench(::fixy::os::Args const& arguments) {
                        "SMT siblings, and other work can use them, so each row is noisy\n",
                        spread.count());
     }
+    ::fixy::report(::fixy::Sink::Out, "  the consumer in another L3 group: cpu{}\n",
+                   other_l3_cpu_of(spread).value_or(bench::CpuId::none()).raw());
     for (ThreadCount const threads : counts) {
         if (threads.raw() > bench::kPauseThreads) {
             ::fixy::report(::fixy::Sink::Out,
@@ -504,6 +761,19 @@ int run_bench(::fixy::os::Args const& arguments) {
     run_op_rows<OpKind::SharedAdd>(spread, counts.view(), "shared add: one cell for all threads", reports);
     run_op_rows<OpKind::OwnAdd>(spread, counts.view(), "own add: one cell on its own line for each thread", reports);
     run_op_rows<OpKind::MpscPush>(spread, counts.view(), "mpsc push: the last thread is the one consumer", reports);
+    run_op_rows<OpKind::MpscBatchPush>(spread, counts.view(),
+                                       "mpsc batch push: batches of 16, and batch pops of up to 64", reports);
+    if (kHasMpscReference) {
+        run_op_rows<OpKind::MpscReferencePush>(spread, counts.view(),
+                                               "mpsc reference push: the pinned MPMCQueue of Erik Rigtorp", reports);
+    }
+    run_op_rows<OpKind::SpscPush>(spread, counts.view(), "spsc push: the main thread produces", reports);
+    run_op_rows<OpKind::SpscBatchPush>(spread, counts.view(),
+                                       "spsc batch push: batches of 16, and batch pops of up to 64", reports);
+    if (kHasSpscReference) {
+        run_op_rows<OpKind::SpscReferencePush>(spread, counts.view(),
+                                               "spsc reference push: the pinned SPSCQueue of Erik Rigtorp", reports);
+    }
     bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
 }

@@ -132,8 +132,12 @@ endif()
 crucible_bench(bench_core_strided)
 # Nine threads: eight shards, each on its own core, and the measuring thread.
 crucible_bench(bench_parallel_pointwise CORES 9)
-# Rows of 1 to 8 threads, one on each core of one L3 group.  --cores 16 adds the row of 16 threads.
-crucible_bench(bench_thread_scaling CORES 8)
+# Rows of 1 to 8 threads, one on each core of one L3 group, and one core of a second group for the consumer of the
+# spsc rows in another L3 group.  --cores 16 adds the row of 16 threads.  The pinned queues of Erik Rigtorp are the
+# references of the two rings.
+crucible_bench(bench_thread_scaling CORES 9)
+crucible_bench_reference(bench_thread_scaling rigtorp-spscqueue CRUCIBLE_BENCH_RIGTORP_SPSC)
+crucible_bench_reference(bench_thread_scaling rigtorp-mpmcqueue CRUCIBLE_BENCH_RIGTORP_MPMC)
 crucible_bench(bench_decide_compile_time)
 crucible_bench(bench_dispatch)
 crucible_bench(bench_fp_control)
