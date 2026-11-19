@@ -16,19 +16,29 @@
 // symbolic run refuses it.  A sort net with the inputs of its first cmp
 // crossed sorts the keys, and the tie test refuses it.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/algebra/net/Net.h>
 #include <foundation/algebra/net/Rules.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/core/Scan.h>
 #include <foundation/core/Sort.h>
+#include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 #include "reductions_net.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -701,7 +711,7 @@ int main() {
     bool const is_stable = does_each_comparator_arm_follow<300>(0x7E570A01u)
                         && does_radix_follow_comparator<float, 300>(0x7E570A02u)
                         && does_radix_follow_comparator<double, 300>(0x7E570A03u);
-    assert(is_sort);
-    assert(is_stable);
+    CRUCIBLE_TEST_ASSERT(kTest, is_sort);
+    CRUCIBLE_TEST_ASSERT(kTest, is_stable);
     return 0;
 }

@@ -5,16 +5,26 @@
 
 #include <foundation/core/List.h>
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Ref.h>
+#include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -60,33 +70,33 @@ void test_append_until_full() {
     FixedList<int, 4> list;
     for (int value = 1; value <= 4; ++value) {
         int& element = *list.append(value).expect("the list has room");
-        assert(element == value);
+        CRUCIBLE_TEST_ASSERT(kTest, element == value);
         element *= 10;
     }
-    assert(list.size() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 4);
     CRUCIBLE_FATAL_INVARIANT(list.append(5).is_err());
-    assert(list.size() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 4);
     int expected = 10;
     for (int const element : list) {
-        assert(element == expected);
+        CRUCIBLE_TEST_ASSERT(kTest, element == expected);
         expected += 10;
     }
-    assert(list.get(3).is_some() && list.get(4).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, list.get(3).is_some() && list.get(4).is_none());
 }
 
 void test_take_last_and_clear() {
     FixedList<int, 3> list;
-    assert(list.take_last().is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().is_none());
     static_cast<void>(list.append(1).expect("the list has room"));
     static_cast<void>(list.append(2).expect("the list has room"));
     static_cast<void>(list.append(3).expect("the list has room"));
-    assert(list.take_last().expect("the list holds three elements") == 3);
-    assert(list.take_last().expect("the list holds two elements") == 2);
-    assert(list.size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().expect("the list holds three elements") == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().expect("the list holds two elements") == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 1);
     list.clear();
-    assert(list.size() == 0 && list.view().size() == 0 && list.take_last().is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 0 && list.view().size() == 0 && list.take_last().is_none());
     static_cast<void>(list.append(7).expect("a cleared list has room"));
-    assert(*list.get(0).expect("0 is below the count") == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, *list.get(0).expect("0 is below the count") == 7);
 }
 
 // Each element ends exactly one time: at a take, at a clear, or at the end of
@@ -101,20 +111,20 @@ void test_each_element_ends_once() {
         for (int turn = 0; turn < 3; ++turn) {
             static_cast<void>(list.append(Element{counter}).expect("the list has room"));
         }
-        assert(ends == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, ends == 0);
         {
             Element const last = list.take_last().expect("the list holds three elements");
-            assert(last.is_live && ::foundation::core::same_object(last.ends, counter));
+            CRUCIBLE_TEST_ASSERT(kTest, last.is_live && ::foundation::core::same_object(last.ends, counter));
         }
-        assert(ends == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, ends == 1);
         FixedList<Element, 4> const copied{list};
-        assert(copied.size() == 2 && ends == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, copied.size() == 2 && ends == 1);
         FixedList<Element, 4> moved{std::move(list)};
-        assert(moved.size() == 2 && ends == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, moved.size() == 2 && ends == 1);
         moved.clear();
-        assert(ends == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, ends == 3);
     }
-    assert(ends == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, ends == 5);
 }
 
 // An append into a full list of a linear element gives the value back in its
@@ -123,14 +133,14 @@ void test_full_gives_a_linear_value_back() {
     FixedList<Token, 1> list;
     static_cast<void>(list.append(Token{1}).expect("the list has room"));
     auto refused = list.append(Token{2});
-    assert(refused.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, refused.is_err());
     Token back = std::move(refused).err().expect("the list is full").take();
-    assert(back.id == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, back.id == 2);
     ::foundation::linear::drop(std::move(back));
     Token first = list.take_last().expect("the list holds the first token");
-    assert(first.id == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, first.id == 1);
     ::foundation::linear::drop(std::move(first));
-    assert(list.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 0);
     ::foundation::linear::drop(std::move(list));
 }
 
@@ -153,14 +163,14 @@ void test_list_agrees_with_the_model() {
             }
         } else {
             bool const is_taken = list.take_last().is_some();
-            assert(is_taken == (count != 0));
+            CRUCIBLE_TEST_ASSERT(kTest, is_taken == (count != 0));
             if (is_taken) {
                 --count;
             }
         }
         View<std::uint64_t const> const expected = model.view().window(0, count).expect("the count fits");
-        assert(list.size() == count);
-        assert(::foundation::core::equal(list.view(), expected));
+        CRUCIBLE_TEST_ASSERT(kTest, list.size() == count);
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(list.view(), expected));
     }
 }
 
@@ -171,16 +181,17 @@ void test_iteration_verbs_of_a_list() {
     }
     int expected = 5;
     for (int const element : list.reverse()) {
-        assert(element == expected);
+        CRUCIBLE_TEST_ASSERT(kTest, element == expected);
         --expected;
     }
     int windows = 0;
     for (View<int, 2> const run : list.windows<2>()) {
-        assert(run.at(::foundation::core::index<1>()) == run.at(::foundation::core::index<0>()) + 1);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             run.at(::foundation::core::index<1>()) == run.at(::foundation::core::index<0>()) + 1);
         ++windows;
     }
-    assert(windows == 4);
-    assert(list.chunks<2>().rest().size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, windows == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, list.chunks<2>().rest().size() == 1);
 }
 
 // A list of the first count numbers from 1, for a constant evaluation.
@@ -212,8 +223,8 @@ void test_view_of_a_static_list_is_constant() {
     static constexpr int sum = sum_of(three);
     static constexpr int empty_sum = sum_of(none);
     static_assert(sum == 6 && empty_sum == 0);
-    assert(sum_of(three) == 6 && sum_of(none) == 0);
-    assert(none.view().size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, sum_of(three) == 6 && sum_of(none) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, none.view().size() == 0);
 }
 
 }  // namespace
@@ -226,6 +237,6 @@ int main() {
     test_list_agrees_with_the_model();
     test_iteration_verbs_of_a_list();
     test_view_of_a_static_list_is_constant();
-    crucible::test::pass("test_core_list: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_list: all tests passed\n");
     return 0;
 }

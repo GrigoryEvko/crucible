@@ -6,17 +6,27 @@
 // a class, the private members too, in the order of the declarations.
 // for_each_base reads each direct base of a class in the same order.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/Quarantine.h>
 #include <foundation/core/Convert.h>
 #include <foundation/core/Scalar.h>
+#include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -117,10 +127,11 @@ template <class T>
 template <class E, class Underlying>
 void expect_names(Underlying raw, bool is_enumerator) {
     auto const named = enum_from<E>(opaque(static_cast<std::underlying_type_t<E>>(raw)));
-    assert(named.is_some() == is_enumerator);
+    CRUCIBLE_TEST_ASSERT(kTest, named.is_some() == is_enumerator);
     if (is_enumerator) {
-        assert(std::to_underlying(enum_from<E>(static_cast<std::underlying_type_t<E>>(raw)).value_or(E{}))
-               == static_cast<std::underlying_type_t<E>>(raw));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             std::to_underlying(enum_from<E>(static_cast<std::underlying_type_t<E>>(raw)).value_or(E{}))
+                                 == static_cast<std::underlying_type_t<E>>(raw));
     }
 }
 
@@ -148,8 +159,9 @@ void test_enum_from_gives_exactly_the_enumerators() {
 void test_decode_bool_takes_only_zero_and_one() {
     for (unsigned raw = 0; raw <= 255; ++raw) {
         auto const decoded = decode<bool>(opaque(static_cast<std::uint8_t>(raw)));
-        assert(decoded.is_some() == (raw <= 1));
-        if (raw <= 1) assert(decode<bool>(static_cast<std::uint8_t>(raw)).value_or(raw == 0) == (raw == 1));
+        CRUCIBLE_TEST_ASSERT(kTest, decoded.is_some() == (raw <= 1));
+        if (raw <= 1)
+            CRUCIBLE_TEST_ASSERT(kTest, decode<bool>(static_cast<std::uint8_t>(raw)).value_or(raw == 0) == (raw == 1));
     }
 }
 
@@ -157,7 +169,7 @@ void test_decode_bool_takes_only_zero_and_one() {
 void test_decode_refuses_a_value_between_enumerators() {
     for (unsigned raw = 0; raw <= 255; ++raw) {
         bool const is_enumerator = raw == 1 || raw == 5 || raw == 64;
-        assert(decode<Gapped>(opaque(static_cast<std::uint8_t>(raw))).is_some() == is_enumerator);
+        CRUCIBLE_TEST_ASSERT(kTest, decode<Gapped>(opaque(static_cast<std::uint8_t>(raw))).is_some() == is_enumerator);
     }
 }
 
@@ -168,7 +180,7 @@ void test_decode_checks_each_part_of_a_class() {
         unsigned const flag = raw & 0xFFU;
         unsigned const phase = raw >> 8;
         bool const is_value = flag <= 1 && phase >= 3 && phase <= 5;
-        assert(decode<Flagged>(opaque(static_cast<std::uint16_t>(raw))).is_some() == is_value);
+        CRUCIBLE_TEST_ASSERT(kTest, decode<Flagged>(opaque(static_cast<std::uint16_t>(raw))).is_some() == is_value);
     }
 }
 
@@ -176,71 +188,72 @@ void test_decode_checks_each_part_of_a_class() {
 // keeps each byte.
 void test_decode_checks_a_base_and_a_nested_member() {
     Nested const nested = decode<Nested>(opaque(Triple{0x09FE, 0x0501, 0x1234})).expect("each part names a value");
-    assert(nested.level == Shifted::middle);
-    assert(nested.count == 9);
-    assert(nested.flags.is_ready);
-    assert(nested.flags.phase == Contiguous::third);
-    assert(nested.word == 0x1234);
+    CRUCIBLE_TEST_ASSERT(kTest, nested.level == Shifted::middle);
+    CRUCIBLE_TEST_ASSERT(kTest, nested.count == 9);
+    CRUCIBLE_TEST_ASSERT(kTest, nested.flags.is_ready);
+    CRUCIBLE_TEST_ASSERT(kTest, nested.flags.phase == Contiguous::third);
+    CRUCIBLE_TEST_ASSERT(kTest, nested.word == 0x1234);
     // A level of 5 in the base, a bool of 3, and a phase of 6 in the member.
-    assert(decode<Nested>(opaque(Triple{0x0905, 0x0501, 0x1234})).is_none());
-    assert(decode<Nested>(opaque(Triple{0x09FE, 0x0503, 0x1234})).is_none());
-    assert(decode<Nested>(opaque(Triple{0x09FE, 0x0601, 0x1234})).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<Nested>(opaque(Triple{0x0905, 0x0501, 0x1234})).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<Nested>(opaque(Triple{0x09FE, 0x0503, 0x1234})).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<Nested>(opaque(Triple{0x09FE, 0x0601, 0x1234})).is_none());
     // The count and the word take each value.
-    assert(decode<Nested>(opaque(Triple{0xFFFE, 0x0300, 0xFFFF})).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<Nested>(opaque(Triple{0xFFFE, 0x0300, 0xFFFF})).is_some());
 }
 
 // Each element of an array is checked: an array of enumerations, and an
 // array of classes.
 void test_decode_checks_each_element_of_an_array() {
     Lanes const lanes = decode<Lanes>(opaque(std::uint32_t{0x05040303})).expect("each lane names an enumerator");
-    assert(lanes.lanes[0] == Contiguous::first && lanes.lanes[1] == Contiguous::first);
-    assert(lanes.lanes[2] == Contiguous::second && lanes.lanes[3] == Contiguous::third);
+    CRUCIBLE_TEST_ASSERT(kTest, lanes.lanes[0] == Contiguous::first && lanes.lanes[1] == Contiguous::first);
+    CRUCIBLE_TEST_ASSERT(kTest, lanes.lanes[2] == Contiguous::second && lanes.lanes[3] == Contiguous::third);
     for (std::uint32_t lane = 0; lane < 4; ++lane) {
         std::uint32_t const shift = 8 * lane;
         std::uint32_t const others = std::uint32_t{0x05040303} & ~(std::uint32_t{0xFF} << shift);
         for (std::uint32_t raw = 0; raw <= 255; ++raw) {
             bool const is_enumerator = raw >= 3 && raw <= 5;
-            assert(decode<Lanes>(opaque(others | (raw << shift))).is_some() == is_enumerator);
+            CRUCIBLE_TEST_ASSERT(kTest, decode<Lanes>(opaque(others | (raw << shift))).is_some() == is_enumerator);
         }
     }
     // Bytes: is_ready, phase, is_ready, phase.
-    assert(decode<FlaggedPair>(opaque(std::uint32_t{0x04010300})).is_some());
-    assert(decode<FlaggedPair>(opaque(std::uint32_t{0x04020300})).is_none());
-    assert(decode<FlaggedPair>(opaque(std::uint32_t{0x07010300})).is_none());
-    assert(decode<FlaggedPair>(opaque(std::uint32_t{0x04010200})).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<FlaggedPair>(opaque(std::uint32_t{0x04010300})).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<FlaggedPair>(opaque(std::uint32_t{0x04020300})).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<FlaggedPair>(opaque(std::uint32_t{0x07010300})).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<FlaggedPair>(opaque(std::uint32_t{0x04010200})).is_none());
 }
 
 // A type with no bool and no enumeration takes each bit pattern, and keeps
 // it.
 void test_decode_keeps_each_bit_pattern_of_a_plain_type() {
     Words const words = decode<Words>(opaque(Words{0x0123456789ABCDEF, 0xFEDCBA9876543210})).expect("two words");
-    assert(words.low == 0x0123456789ABCDEF && words.high == 0xFEDCBA9876543210);
+    CRUCIBLE_TEST_ASSERT(kTest, words.low == 0x0123456789ABCDEF && words.high == 0xFEDCBA9876543210);
     // The steps reach each sign, zero, denormals, infinities and NaN payloads.
     for (std::uint32_t step = 0; step < 4096; ++step) {
-        assert(decode<float>(opaque(step * std::uint32_t{0x00100401})).is_some());
-        assert(decode<double>(opaque(std::uint64_t{step} * std::uint64_t{0x0010040100100401})).is_some());
+        CRUCIBLE_TEST_ASSERT(kTest, decode<float>(opaque(step * std::uint32_t{0x00100401})).is_some());
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             decode<double>(opaque(std::uint64_t{step} * std::uint64_t{0x0010040100100401})).is_some());
     }
-    assert(decode<float>(opaque(std::uint32_t{0x7FC00001})).is_some());
-    assert(decode<double>(opaque(std::uint64_t{0x7FF0000000000001})).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<float>(opaque(std::uint32_t{0x7FC00001})).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<double>(opaque(std::uint64_t{0x7FF0000000000001})).is_some());
 }
 
 // The empty value of a niche gives no value, as the whole To and as a part,
 // and each other value of the word decodes.  The bool beside the part is
 // checked too.
 void test_decode_refuses_the_empty_value_of_a_niche() {
-    assert(decode<NicheWord>(opaque(std::uint32_t{0xFFFFFFFFu})).is_none());
-    assert(decode<NicheWord>(opaque(std::uint32_t{0xFFFFFFFEu})).is_some());
-    assert(decode<NicheWord>(opaque(std::uint32_t{0})).expect("0 is no empty value").value == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, decode<NicheWord>(opaque(std::uint32_t{0xFFFFFFFFu})).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<NicheWord>(opaque(std::uint32_t{0xFFFFFFFEu})).is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<NicheWord>(opaque(std::uint32_t{0})).expect("0 is no empty value").value == 0);
     ::crucible::test::PhiloxStream stream{90};
     for (int index = 0; index < 100000; ++index) {
         std::uint32_t const word = stream.next_word();
         std::uint64_t const flag = stream.below(3);
         std::uint64_t const bits = (flag << 32) | word;
         bool const is_value = flag <= 1 && word != 0xFFFFFFFFu;
-        assert(decode<FlaggedWord>(opaque(bits)).is_some() == is_value);
+        CRUCIBLE_TEST_ASSERT(kTest, decode<FlaggedWord>(opaque(bits)).is_some() == is_value);
     }
-    assert(decode<FlaggedWord>(opaque(std::uint64_t{0x00000001FFFFFFFF})).is_none());
-    assert(decode<FlaggedWord>(opaque(std::uint64_t{0x00000000FFFFFFFF})).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<FlaggedWord>(opaque(std::uint64_t{0x00000001FFFFFFFF})).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, decode<FlaggedWord>(opaque(std::uint64_t{0x00000000FFFFFFFF})).is_none());
 }
 
 // bit_cast keeps each bit, and a float source is a source: each pattern
@@ -252,9 +265,10 @@ void test_bit_cast_keeps_each_bit() {
         auto const narrow = static_cast<std::uint32_t>(wide);
         double const as_double = bit_cast<double>(opaque(wide));
         float const as_float = bit_cast<float>(opaque(narrow));
-        assert(bit_cast<std::uint64_t>(opaque(as_double)) == wide);
-        assert(bit_cast<std::uint32_t>(opaque(as_float)) == narrow);
-        assert(decode<std::uint64_t>(opaque(as_double)).expect("each bit of a double is a value bit") == wide);
+        CRUCIBLE_TEST_ASSERT(kTest, bit_cast<std::uint64_t>(opaque(as_double)) == wide);
+        CRUCIBLE_TEST_ASSERT(kTest, bit_cast<std::uint32_t>(opaque(as_float)) == narrow);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, decode<std::uint64_t>(opaque(as_double)).expect("each bit of a double is a value bit") == wide);
     }
 }
 
@@ -314,19 +328,19 @@ template <class T>
 void test_for_each_field_reads_private_members_in_order() {
     std::size_t calls = 0;
     PrivateTriple const first{opaque(std::uint32_t{7}), opaque(std::uint16_t{9}), opaque(true)};
-    assert(fold_fields(first, calls) == 7009001);
-    assert(calls == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, fold_fields(first, calls) == 7009001);
+    CRUCIBLE_TEST_ASSERT(kTest, calls == 3);
     calls = 0;
     PrivateTriple const second{opaque(std::uint32_t{9}), opaque(std::uint16_t{7}), opaque(false)};
-    assert(fold_fields(second, calls) == 9007000);
-    assert(calls == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, fold_fields(second, calls) == 9007000);
+    CRUCIBLE_TEST_ASSERT(kTest, calls == 3);
 }
 
 // A class with no member gives no call.
 void test_for_each_field_gives_no_call_for_an_empty_class() {
     std::size_t calls = 0;
-    assert(fold_fields(Empty{}, calls) == 0);
-    assert(calls == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, fold_fields(Empty{}, calls) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, calls == 0);
 }
 
 // A member of a base is no member of the class.  A bit-field gives its
@@ -337,14 +351,14 @@ void test_for_each_field_reads_own_members_and_bit_fields() {
     object.low = 1;
     object.high = 2;
     object.tail = opaque(std::uint8_t{3});
-    assert(fold_fields(object, calls) == 3);
-    assert(calls == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, fold_fields(object, calls) == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, calls == 1);
     calls = 0;
     HalvesOfAWord halves{};
     halves.low = opaque(std::uint16_t{5});
     halves.high = opaque(std::uint16_t{6});
-    assert(fold_fields(halves, calls) == 5006);
-    assert(calls == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, fold_fields(halves, calls) == 5006);
+    CRUCIBLE_TEST_ASSERT(kTest, calls == 2);
 }
 
 // The walk of the bases reads each direct base one time, in the order of the
@@ -361,12 +375,12 @@ void test_for_each_base_reads_each_base_in_order() {
         fold = fold * 10000000 + fold_fields(base, calls);
         ++bases;
     });
-    assert(fold == std::uint64_t{1002} * 10000000 + 7009001);
-    assert(bases == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, fold == std::uint64_t{1002} * 10000000 + 7009001);
+    CRUCIBLE_TEST_ASSERT(kTest, bases == 2);
     bases = 0;
     for_each_base(PrivateTriple{opaque(std::uint32_t{1}), opaque(std::uint16_t{2}), opaque(false)},
                   [&](auto const&) noexcept { ++bases; });
-    assert(bases == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, bases == 0);
 }
 
 }  // namespace
@@ -385,6 +399,6 @@ int main() {
     test_for_each_field_gives_no_call_for_an_empty_class();
     test_for_each_field_reads_own_members_and_bit_fields();
     test_for_each_base_reads_each_base_in_order();
-    crucible::test::pass("test_core_scalar: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_scalar: all tests passed\n");
     return 0;
 }

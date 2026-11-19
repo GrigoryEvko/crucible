@@ -2,11 +2,14 @@
 // predicate, the lower bound of a key and the bytes of an object, over the
 // View of a FixedArray, and the text forms over a TextView.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/Quarantine.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Array.h>
+#include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
@@ -15,6 +18,13 @@
 #include <algorithm>
 #include <cstring>
 #include <string_view>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -37,36 +47,41 @@ void test_equal_of_views() {
     FixedArray<std::uint32_t, 5> const first{1, 2, 3, 4, 5};
     FixedArray<std::uint32_t, 5> const second{1, 2, 3, 4, 5};
     FixedArray<std::uint32_t, 5> const third{1, 2, 3, 4, 6};
-    assert(::foundation::core::equal(first.view(), second.view()));
-    assert(!::foundation::core::equal(first.view(), third.view()));
-    assert(!::foundation::core::equal(first.view(), first.view().window(0, 4).expect("four elements fit")));
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(first.view(), second.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, !::foundation::core::equal(first.view(), third.view()));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !::foundation::core::equal(first.view(), first.view().window(0, 4).expect("four elements fit")));
     FixedArray<Shade, 3> const shades{Shade::dark, Shade::bright, Shade::light};
     FixedArray<Shade, 3> const same_shades{Shade::dark, Shade::bright, Shade::light};
-    assert(::foundation::core::equal(shades.view(), same_shades.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(shades.view(), same_shades.view()));
 }
 
 void test_find_and_scans() {
     FixedArray<int, 6> const numbers{4, 8, 15, 16, 23, 42};
-    assert(::foundation::core::find(numbers.view(), 16).expect("16 is in the run") == 3);
-    assert(::foundation::core::find(numbers.view(), 5).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::find(numbers.view(), 16).expect("16 is in the run") == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::find(numbers.view(), 5).is_none());
     auto const is_even = [](int value) noexcept { return value % 2 == 0; };
     auto const is_odd = [](int value) noexcept { return value % 2 != 0; };
-    assert(::foundation::core::find_if(numbers.view(), is_odd).expect("15 is odd") == 2);
-    assert(numbers.view().walk().filter(is_even).count() == 4);
-    assert(numbers.view().walk().any_of(is_odd));
-    assert(!numbers.view().walk().all_of(is_even));
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::find_if(numbers.view(), is_odd).expect("15 is odd") == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, numbers.view().walk().filter(is_even).count() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, numbers.view().walk().any_of(is_odd));
+    CRUCIBLE_TEST_ASSERT(kTest, !numbers.view().walk().all_of(is_even));
     auto const below_fifty = [](int value) noexcept { return value < 50; };
-    assert(numbers.view().walk().all_of(below_fifty));
+    CRUCIBLE_TEST_ASSERT(kTest, numbers.view().walk().all_of(below_fifty));
 }
 
 void test_find_lower_bound_by_key() {
     FixedArray<Record, 5> const records{Record{2, 0, 0}, Record{4, 0, 0}, Record{4, 1, 0}, Record{9, 0, 0},
                                         Record{12, 0, 0}};
     auto const key_of = [](Record const& record) noexcept { return record.key; };
-    assert(::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{4}) == 1);
-    assert(::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{5}) == 3);
-    assert(::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{1}) == 0);
-    assert(::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{13}) == 5);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{4}) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{5}) == 3);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{1}) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::foundation::core::find_lower_bound_by_key(records.view(), key_of, std::uint64_t{13}) == 5);
 }
 
 // The bytes of a plain record are its bytes in memory, in order.
@@ -79,22 +94,24 @@ void test_bytes_of_a_record() {
     std::memcpy(copied, &record, sizeof(Record));
     std::size_t position = 0;
     for (std::byte const byte : image) {
-        assert(static_cast<unsigned char>(byte) == copied[position]);
+        CRUCIBLE_TEST_ASSERT(kTest, static_cast<unsigned char>(byte) == copied[position]);
         ++position;
     }
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    assert(position == sizeof(Record));
+    CRUCIBLE_TEST_ASSERT(kTest, position == sizeof(Record));
 }
 
 void test_text_search() {
     TextView const path{"/sys/devices/system/node/node3/cpulist"};
-    assert(::foundation::core::find(path, '/').expect("the path holds a slash") == 0);
-    assert(::foundation::core::find(path, TextView{"node3"}).expect("the path names the node") == 25);
-    assert(::foundation::core::find(path, TextView{"node9"}).is_none());
-    assert(::foundation::core::starts_with(path, TextView{"/sys/"}));
-    assert(::foundation::core::ends_with(path, TextView{"cpulist"}));
-    assert(!::foundation::core::ends_with(path, TextView{"cpumap"}));
-    assert(::foundation::core::equal(path.window(1, 3).expect("the window fits"), TextView{"sys"}));
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::find(path, '/').expect("the path holds a slash") == 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::foundation::core::find(path, TextView{"node3"}).expect("the path names the node") == 25);
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::find(path, TextView{"node9"}).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::starts_with(path, TextView{"/sys/"}));
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::ends_with(path, TextView{"cpulist"}));
+    CRUCIBLE_TEST_ASSERT(kTest, !::foundation::core::ends_with(path, TextView{"cpumap"}));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::foundation::core::equal(path.window(1, 3).expect("the window fits"), TextView{"sys"}));
 }
 
 // The letters of the property.  The ORACLE region holds the same text as a
@@ -111,7 +128,7 @@ void test_text_operations_agree_with_std() {
         "cabacbbbacaccbabcabcbaabcbcacbbaacbcbacabcaabbcbacbacbcabcaabcbcabbcaacbabcbacbaacb";
     std::size_t const model_size = model_letters.size();
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    assert(letters.size() == model_size);
+    CRUCIBLE_TEST_ASSERT(kTest, letters.size() == model_size);
     ::crucible::test::PhiloxStream stream{0x7E57F1ED0000C003u};
     for (int trial = 0; trial < 4096; ++trial) {
         std::size_t const offset = stream.below(letters.size() + 1);
@@ -132,18 +149,18 @@ void test_text_operations_agree_with_std() {
         bool const is_model_text_found = model_text != std::string_view::npos;
         CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         auto const found_char = ::foundation::core::find(text, 'b');
-        assert(found_char.is_some() == is_model_char_found);
+        CRUCIBLE_TEST_ASSERT(kTest, found_char.is_some() == is_model_char_found);
         for (std::size_t const position : found_char) {
-            assert(position == model_char);
+            CRUCIBLE_TEST_ASSERT(kTest, position == model_char);
         }
         auto const found_text = ::foundation::core::find(text, needle);
-        assert(found_text.is_some() == is_model_text_found);
+        CRUCIBLE_TEST_ASSERT(kTest, found_text.is_some() == is_model_text_found);
         for (std::size_t const position : found_text) {
-            assert(position == model_text);
+            CRUCIBLE_TEST_ASSERT(kTest, position == model_text);
         }
-        assert(::foundation::core::starts_with(text, needle) == model_starts);
-        assert(::foundation::core::ends_with(text, needle) == model_ends);
-        assert(::foundation::core::equal(text, needle) == model_equal);
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::starts_with(text, needle) == model_starts);
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::ends_with(text, needle) == model_ends);
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(text, needle) == model_equal);
     }
 }
 
@@ -177,17 +194,17 @@ void test_view_scans_agree_with_std() {
         auto const small_position = static_cast<std::size_t>(model_small - model_first);
         CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         auto const found_three = ::foundation::core::find(window, 3u);
-        assert(found_three.is_some() == is_three_found);
+        CRUCIBLE_TEST_ASSERT(kTest, found_three.is_some() == is_three_found);
         for (std::size_t const found : found_three) {
-            assert(found == three_position);
+            CRUCIBLE_TEST_ASSERT(kTest, found == three_position);
         }
         auto const found_small = ::foundation::core::find_if(window, is_small);
-        assert(found_small.is_some() == is_small_found);
+        CRUCIBLE_TEST_ASSERT(kTest, found_small.is_some() == is_small_found);
         for (std::size_t const found : found_small) {
-            assert(found == small_position);
+            CRUCIBLE_TEST_ASSERT(kTest, found == small_position);
         }
-        assert(window.walk().filter(is_small).count() == model_count);
-        assert(window.walk().any_of(is_small) == is_small_found);
+        CRUCIBLE_TEST_ASSERT(kTest, window.walk().filter(is_small).count() == model_count);
+        CRUCIBLE_TEST_ASSERT(kTest, window.walk().any_of(is_small) == is_small_found);
     }
 }
 
@@ -201,6 +218,6 @@ int main() {
     test_text_search();
     test_text_operations_agree_with_std();
     test_view_scans_agree_with_std();
-    crucible::test::pass("test_core_algorithms: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_algorithms: all tests passed\n");
     return 0;
 }

@@ -6,17 +6,24 @@
 // order that is not a strict weak order, the radix sort and the orders by key
 // against the comparator form, and the ordered searches against a scan.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/core/Sort.h>
 #include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -32,7 +39,7 @@ using ::foundation::core::View;
 [[nodiscard]] std::uint64_t wire_word(std::size_t wire, std::uint64_t base) noexcept {
     ::fixy::FixedArray<std::uint64_t, 6> const low_wires{0xAAAAAAAAAAAAAAAAu, 0xCCCCCCCCCCCCCCCCu, 0xF0F0F0F0F0F0F0F0u,
                                                          0xFF00FF00FF00FF00u, 0xFFFF0000FFFF0000u, 0xFFFFFFFF00000000u};
-    if (wire < 6) return ::crucible::test::element_at(low_wires, wire);
+    if (wire < 6) return *low_wires.get(wire).expect("a test reads an element at or past the count of its array");
     return ((base >> wire) & 1u) != 0 ? ~std::uint64_t{0} : std::uint64_t{0};
 }
 
@@ -47,18 +54,23 @@ template <std::size_t N>
     View<std::uint64_t> const wire_view = wires.view();
     for (std::uint64_t base = 0; base < inputs; base += 64) {
         for (std::size_t wire = 0; wire < N; ++wire) {
-            ::crucible::test::element_at(wire_view, wire) = wire_word(wire, base);
+            *wire_view.get(wire).expect("a test reads an element at or past the count of its View") =
+                wire_word(wire, base);
         }
         for (::foundation::core::Comparator const step : plan) {
-            std::uint64_t& low = ::crucible::test::element_at(wire_view, step.low);
-            std::uint64_t& high = ::crucible::test::element_at(wire_view, step.high);
+            std::uint64_t& low =
+                *wire_view.get(step.low).expect("a test reads an element at or past the count of its View");
+            std::uint64_t& high =
+                *wire_view.get(step.high).expect("a test reads an element at or past the count of its View");
             std::uint64_t const minimum = low & high;
             high = low | high;
             low = minimum;
         }
         for (std::size_t wire = 0; wire + 1 < N; ++wire) {
-            std::uint64_t const below = ::crucible::test::element_at(wire_view, wire);
-            std::uint64_t const above = ::crucible::test::element_at(wire_view, wire + 1);
+            std::uint64_t const below =
+                *wire_view.get(wire).expect("a test reads an element at or past the count of its View");
+            std::uint64_t const above =
+                *wire_view.get(wire + 1).expect("a test reads an element at or past the count of its View");
             if ((below & ~above & lanes) != 0) return false;
         }
     }
@@ -70,7 +82,9 @@ template <std::size_t... N>
     return (network_sorts_each_binary_input<N + 2>() && ...);
 }
 
-void test_networks_sort_each_binary_input() { assert(networks_sort(std::make_index_sequence<19>{})); }
+void test_networks_sort_each_binary_input() {
+    CRUCIBLE_TEST_ASSERT(kTest, networks_sort(std::make_index_sequence<19>{}));
+}
 
 // A float of each class: a NaN of each sign and some payloads, an infinity,
 // a zero of each sign, a subnormal, and a normal number.
@@ -96,22 +110,24 @@ void test_networks_sort_each_binary_input() { assert(networks_sort(std::make_ind
 // The naive sort: an insertion sort of the total order, by its key.
 void naive_sort(View<float> values) noexcept {
     for (std::size_t index = 1; index < values.size(); ++index) {
-        float const moving = ::crucible::test::element_at(values, index);
+        float const moving = *values.get(index).expect("a test reads an element at or past the count of its View");
         std::size_t position = index;
         while (position > 0
                && ::foundation::core::encode_total_order_key(moving) < ::foundation::core::encode_total_order_key(
-                      ::crucible::test::element_at(values, position - 1))) {
-            ::crucible::test::element_at(values, position) = ::crucible::test::element_at(values, position - 1);
+                      *values.get(position - 1).expect("a test reads an element at or past the count of its View"))) {
+            *values.get(position).expect("a test reads an element at or past the count of its View") =
+                *values.get(position - 1).expect("a test reads an element at or past the count of its View");
             --position;
         }
-        ::crucible::test::element_at(values, position) = moving;
+        *values.get(position).expect("a test reads an element at or past the count of its View") = moving;
     }
 }
 
 [[nodiscard]] bool same_bits(View<float const> left, View<float const> right) noexcept {
     if (left.size() != right.size()) return false;
     for (std::size_t index = 0; index < left.size(); ++index) {
-        if (bits_of(::crucible::test::element_at(left, index)) != bits_of(::crucible::test::element_at(right, index))) {
+        if (bits_of(*left.get(index).expect("a test reads an element at or past the count of its View"))
+            != bits_of(*right.get(index).expect("a test reads an element at or past the count of its View"))) {
             return false;
         }
     }
@@ -131,7 +147,7 @@ void check_network_on_floats(::crucible::test::PhiloxStream& stream) noexcept {
         naive_sort(View<float>{expected.view()});
         values = ::foundation::core::with_mut(
             std::move(values), [](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
-        assert(same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
 }
 
@@ -187,17 +203,20 @@ void test_sort_stably_is_stable() {
             record = Keyed{static_cast<std::uint32_t>(stream.below(1 + count / 4)), position};
             ++position;
         }
-        assert(sort_through_frames(records, scratch, by_key));
+        CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(records, scratch, by_key));
         HeapArray<std::uint8_t> seen = ::foundation::core::mint_heap_array(test_alloc(), count, std::uint8_t{0});
         View<Keyed> const sorted = records.view();
         for (std::size_t index = 0; index < count; ++index) {
-            Keyed const record = ::crucible::test::element_at(sorted, index);
-            std::uint8_t& mark = ::crucible::test::element_at(seen.view(), record.position);
-            assert(mark == 0);
+            Keyed const record = *sorted.get(index).expect("a test reads an element at or past the count of its View");
+            std::uint8_t& mark =
+                *seen.view().get(record.position).expect("a test reads an element at or past the count of its View");
+            CRUCIBLE_TEST_ASSERT(kTest, mark == 0);
             mark = 1;
             if (index == 0) continue;
-            Keyed const before = ::crucible::test::element_at(sorted, index - 1);
-            assert(before.key < record.key || (before.key == record.key && before.position < record.position));
+            Keyed const before =
+                *sorted.get(index - 1).expect("a test reads an element at or past the count of its View");
+            CRUCIBLE_TEST_ASSERT(kTest, before.key < record.key
+                                            || (before.key == record.key && before.position < record.position));
         }
     };
     for (std::size_t count = 0; count <= 300; ++count) {
@@ -223,8 +242,8 @@ void test_sort_stably_agrees_with_the_naive_sort() {
             ::foundation::core::mint_heap_array_copy<float>(test_alloc(), View<float const>{values.view()});
         naive_sort(expected.view());
         HeapArray<float> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
-        assert(sort_through_frames(values, scratch));
-        assert(same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
+        CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(values, scratch));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
 }
 
@@ -244,10 +263,10 @@ void test_sort_stably_of_ordered_runs() {
             record = Keyed{position / 3, position};
             ++position;
         }
-        assert(sort_through_frames(records, scratch, by_key));
+        CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(records, scratch, by_key));
         position = 0;
         for (Keyed const record : records) {
-            assert(record.key == position / 3 && record.position == position);
+            CRUCIBLE_TEST_ASSERT(kTest, record.key == position / 3 && record.position == position);
             ++position;
         }
         auto const last = static_cast<std::uint32_t>(count - 1);
@@ -256,12 +275,14 @@ void test_sort_stably_of_ordered_runs() {
             record = Keyed{(last - position) / 3, position};
             ++position;
         }
-        assert(sort_through_frames(records, scratch, by_key));
+        CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(records, scratch, by_key));
         View<Keyed const> const sorted{records.view()};
         for (std::size_t index = 1; index < count; ++index) {
-            Keyed const before = ::crucible::test::element_at(sorted, index - 1);
-            Keyed const record = ::crucible::test::element_at(sorted, index);
-            assert(before.key < record.key || (before.key == record.key && before.position < record.position));
+            Keyed const before =
+                *sorted.get(index - 1).expect("a test reads an element at or past the count of its View");
+            Keyed const record = *sorted.get(index).expect("a test reads an element at or past the count of its View");
+            CRUCIBLE_TEST_ASSERT(kTest, before.key < record.key
+                                            || (before.key == record.key && before.position < record.position));
         }
     }
 }
@@ -271,13 +292,14 @@ void test_sort_stably_of_ordered_runs() {
 [[nodiscard]] bool is_stable_order(View<Keyed const> sorted) noexcept {
     HeapArray<std::uint8_t> seen = ::foundation::core::mint_heap_array(test_alloc(), sorted.size(), std::uint8_t{0});
     for (std::size_t index = 0; index < sorted.size(); ++index) {
-        Keyed const record = ::crucible::test::element_at(sorted, index);
+        Keyed const record = *sorted.get(index).expect("a test reads an element at or past the count of its View");
         if (record.position >= sorted.size()) return false;
-        std::uint8_t& mark = ::crucible::test::element_at(seen.view(), record.position);
+        std::uint8_t& mark =
+            *seen.view().get(record.position).expect("a test reads an element at or past the count of its View");
         if (mark != 0) return false;
         mark = 1;
         if (index == 0) continue;
-        Keyed const before = ::crucible::test::element_at(sorted, index - 1);
+        Keyed const before = *sorted.get(index - 1).expect("a test reads an element at or past the count of its View");
         if (before.key > record.key || (before.key == record.key && before.position > record.position)) return false;
     }
     return true;
@@ -311,12 +333,12 @@ void test_sort_stably_of_few_keys() {
     for (std::size_t const count : counts) {
         HeapArray<Keyed> two =
             draw_records(count, [&](std::uint32_t) noexcept { return static_cast<std::uint32_t>(stream.below(2)); });
-        assert(sorts_stably(two));
+        CRUCIBLE_TEST_ASSERT(kTest, sorts_stably(two));
         HeapArray<Keyed> four =
             draw_records(count, [&](std::uint32_t) noexcept { return static_cast<std::uint32_t>(stream.below(4)); });
-        assert(sorts_stably(four));
+        CRUCIBLE_TEST_ASSERT(kTest, sorts_stably(four));
         HeapArray<Keyed> one = draw_records(count, [](std::uint32_t) noexcept { return std::uint32_t{7}; });
-        assert(sorts_stably(one));
+        CRUCIBLE_TEST_ASSERT(kTest, sorts_stably(one));
     }
 }
 
@@ -329,16 +351,16 @@ void test_sort_stably_of_input_runs() {
         auto const last = static_cast<std::uint32_t>(count);
         HeapArray<Keyed> descending =
             draw_records(count, [&](std::uint32_t position) noexcept { return last - position; });
-        assert(sorts_stably(descending));
+        CRUCIBLE_TEST_ASSERT(kTest, sorts_stably(descending));
         HeapArray<Keyed> alternate = draw_records(count, [&](std::uint32_t position) noexcept {
             return (position / 500) % 2 == 0 ? position : last - position;
         });
-        assert(sorts_stably(alternate));
+        CRUCIBLE_TEST_ASSERT(kTest, sorts_stably(alternate));
         HeapArray<Keyed> saw = draw_records(count, [](std::uint32_t position) noexcept { return position % 97; });
-        assert(sorts_stably(saw));
+        CRUCIBLE_TEST_ASSERT(kTest, sorts_stably(saw));
         HeapArray<Keyed> almost = draw_records(
             count, [&](std::uint32_t position) noexcept { return position == last / 2 ? std::uint32_t{0} : position; });
-        assert(sorts_stably(almost));
+        CRUCIBLE_TEST_ASSERT(kTest, sorts_stably(almost));
     }
 }
 
@@ -358,13 +380,16 @@ class QuicksortAdversary {
 public:
     explicit QuicksortAdversary(View<std::uint32_t> keys) noexcept : keys_{keys}, gas_{keys.size()} {
         for (std::size_t index = 0; index < keys.size(); ++index) {
-            ::crucible::test::element_at(keys_, index) = index % 2 == 0 ? static_cast<std::uint32_t>(gas_) : solid_++;
+            *keys_.get(index).expect("a test reads an element at or past the count of its View") =
+                index % 2 == 0 ? static_cast<std::uint32_t>(gas_) : solid_++;
         }
     }
 
     [[nodiscard]] bool is_below(Keyed const& left, Keyed const& right) noexcept {
-        std::uint32_t& left_key = ::crucible::test::element_at(keys_, left.position);
-        std::uint32_t& right_key = ::crucible::test::element_at(keys_, right.position);
+        std::uint32_t& left_key =
+            *keys_.get(left.position).expect("a test reads an element at or past the count of its View");
+        std::uint32_t& right_key =
+            *keys_.get(right.position).expect("a test reads an element at or past the count of its View");
         if (left_key == gas_ && right_key == gas_) {
             if (left.position == candidate_) {
                 left_key = solid_++;
@@ -384,7 +409,7 @@ public:
     // the positions.
     void freeze_each() noexcept {
         for (std::size_t index = 0; index < keys_.size(); ++index) {
-            std::uint32_t& key = ::crucible::test::element_at(keys_, index);
+            std::uint32_t& key = *keys_.get(index).expect("a test reads an element at or past the count of its View");
             if (key == gas_) key = solid_++;
         }
     }
@@ -412,20 +437,21 @@ void test_sort_stably_bounds_the_adversary() {
     auto const by_adversary = [&](Keyed const& left, Keyed const& right) noexcept {
         return adversary.is_below(left, right);
     };
-    assert(sort_through_frames(probe, probe_scratch, by_adversary));
+    CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(probe, probe_scratch, by_adversary));
     adversary.freeze_each();
     View<std::uint32_t const> const frozen{keys.view()};
-    HeapArray<Keyed> records = draw_records(
-        count, [&](std::uint32_t position) noexcept { return ::crucible::test::element_at(frozen, position); });
+    HeapArray<Keyed> records = draw_records(count, [&](std::uint32_t position) noexcept {
+        return *frozen.get(position).expect("a test reads an element at or past the count of its View");
+    });
     std::size_t compares = 0;
     auto const by_counted_key = [&](Keyed const& left, Keyed const& right) noexcept {
         ++compares;
         return left.key < right.key;
     };
     HeapArray<Keyed> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
-    assert(sort_through_frames(records, scratch, by_counted_key));
-    assert(is_stable_order(View<Keyed const>{records.view()}));
-    assert(compares <= 3 * count * 16);
+    CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(records, scratch, by_counted_key));
+    CRUCIBLE_TEST_ASSERT(kTest, is_stable_order(View<Keyed const>{records.view()}));
+    CRUCIBLE_TEST_ASSERT(kTest, compares <= 3 * count * 16);
 }
 
 // An enumeration of a signed base, and one of an unsigned base, for the keys
@@ -505,14 +531,19 @@ void check_radix_against_merge(::crucible::test::PhiloxStream& stream) noexcept 
         }
         HeapArray<T> merged = ::foundation::core::mint_heap_array_copy<T>(test_alloc(), View<T const>{radix.view()});
         HeapArray<T> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, T{});
-        assert(sort_through_frames(radix, scratch));
-        assert(sort_through_frames(merged, scratch, by_order));
+        CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(radix, scratch));
+        CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(merged, scratch, by_order));
         View<T const> const radix_view{radix.view()};
         View<T const> const merged_view{merged.view()};
         for (std::size_t index = 0; index < count; ++index) {
-            T const value = ::crucible::test::element_at(radix_view, index);
-            assert(word_of_element(value) == word_of_element(::crucible::test::element_at(merged_view, index)));
-            if (index > 0) assert(!by_order(value, ::crucible::test::element_at(radix_view, index - 1)));
+            T const value = *radix_view.get(index).expect("a test reads an element at or past the count of its View");
+            CRUCIBLE_TEST_ASSERT(kTest, word_of_element(value)
+                                            == word_of_element(*merged_view.get(index).expect(
+                                                "a test reads an element at or past the count of its View")));
+            if (index > 0)
+                CRUCIBLE_TEST_ASSERT(kTest,
+                                     !by_order(value, *radix_view.get(index - 1).expect(
+                                                          "a test reads an element at or past the count of its View")));
         }
     }
 }
@@ -578,8 +609,8 @@ struct KeyedRecord {
 [[nodiscard]] bool has_same_records(View<KeyedRecord const> left, View<KeyedRecord const> right) noexcept {
     if (left.size() != right.size()) return false;
     for (std::size_t index = 0; index < left.size(); ++index) {
-        KeyedRecord const one = ::crucible::test::element_at(left, index);
-        KeyedRecord const other = ::crucible::test::element_at(right, index);
+        KeyedRecord const one = *left.get(index).expect("a test reads an element at or past the count of its View");
+        KeyedRecord const other = *right.get(index).expect("a test reads an element at or past the count of its View");
         if (bits_of(one.key) != bits_of(other.key) || one.short_key != other.short_key
             || one.position != other.position) {
             return false;
@@ -596,9 +627,10 @@ void check_order_by_key(HeapArray<KeyedRecord> const& input, Order order, Compar
     HeapArray<KeyedRecord> by_key = ::foundation::core::mint_heap_array_copy<KeyedRecord>(test_alloc(), source);
     HeapArray<KeyedRecord> by_comparator = ::foundation::core::mint_heap_array_copy<KeyedRecord>(test_alloc(), source);
     HeapArray<KeyedRecord> scratch = ::foundation::core::mint_heap_array(test_alloc(), input.size(), KeyedRecord{});
-    assert(sort_through_frames(by_key, scratch, order));
-    assert(sort_through_frames(by_comparator, scratch, comparator));
-    assert(has_same_records(View<KeyedRecord const>{by_key.view()}, View<KeyedRecord const>{by_comparator.view()}));
+    CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(by_key, scratch, order));
+    CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(by_comparator, scratch, comparator));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, has_same_records(View<KeyedRecord const>{by_key.view()}, View<KeyedRecord const>{by_comparator.view()}));
 }
 
 // order_by_key and order_by_key_descending give the records of the comparator
@@ -652,18 +684,20 @@ void test_searches_agree_with_a_scan() {
         for (std::int32_t probe = -22; probe <= next + 2; ++probe) {
             std::size_t first_not_below = count;
             for (std::size_t index = 0; index < count; ++index) {
-                if (::crucible::test::element_at(sorted, index) >= probe) {
+                if (*sorted.get(index).expect("a test reads an element at or past the count of its View") >= probe) {
                     first_not_below = index;
                     break;
                 }
             }
-            assert(::foundation::core::find_lower_bound(sorted, probe) == first_not_below);
+            CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::find_lower_bound(sorted, probe) == first_not_below);
             bool const is_present =
-                first_not_below < count && ::crucible::test::element_at(sorted, first_not_below) == probe;
+                first_not_below < count
+                && *sorted.get(first_not_below).expect("a test reads an element at or past the count of its View")
+                       == probe;
             auto const found = ::foundation::core::find_equivalent(sorted, probe);
-            assert(found.is_some() == is_present);
+            CRUCIBLE_TEST_ASSERT(kTest, found.is_some() == is_present);
             for (std::size_t const position : found) {
-                assert(position == first_not_below);
+                CRUCIBLE_TEST_ASSERT(kTest, position == first_not_below);
             }
         }
     }
@@ -685,6 +719,6 @@ int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_sort_stably_ends_on_a_random_order(test);
     test_searches_agree_with_a_scan();
-    crucible::test::pass("test_core_sort: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_sort: all tests passed\n");
     return 0;
 }

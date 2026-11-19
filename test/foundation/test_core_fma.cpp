@@ -14,16 +14,26 @@
 // two signs, the infinities and the NaNs, and random values from a fixed
 // Philox seed.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Float.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/os/X86Level.h>
 
 #include "../exact_sum.h"
-#include "../test_assert.h"
 #include "fma_units.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -81,11 +91,11 @@ void check_case(T left, T right, T addend, Counts& counts) noexcept {
                        bits_of_value(left), bits_of_value(right), bits_of_value(addend), bits_of_value(computed),
                        bits_of_value(expected));
     }
-    assert(agree(computed, expected));
+    CRUCIBLE_TEST_ASSERT(kTest, agree(computed, expected));
     ++counts.cases;
     if (::crucible::test::is_wide_unit_fused() && can_run_wide_unit()) {
         T const fused = ::crucible::test::fma_of_wide_unit(left, right, addend);
-        assert(agree(fused, expected));
+        CRUCIBLE_TEST_ASSERT(kTest, agree(fused, expected));
         ++counts.fused;
     }
     if (::crucible::test::is_baseline_unit_exact()) {
@@ -95,7 +105,7 @@ void check_case(T left, T right, T addend, Counts& counts) noexcept {
                            bits_of_value(left), bits_of_value(right), bits_of_value(addend), bits_of_value(exact),
                            bits_of_value(expected));
         }
-        assert(agree(exact, expected));
+        CRUCIBLE_TEST_ASSERT(kTest, agree(exact, expected));
         ++counts.exact;
     }
 }
@@ -223,8 +233,8 @@ void test_fixed_cases(Counts& counts) noexcept {
         check_case(first, second, third, counts);
         check_case(-first, second, -third, counts);
         check_case(first, -second, -third, counts);
-        assert(bits_of_value(::foundation::core::fp::fma(first, second, third))
-               == bits_of_value(T{1} + T{0x1p-22} + T{0x1p-31} + T{0x1p-52}));
+        CRUCIBLE_TEST_ASSERT(kTest, bits_of_value(::foundation::core::fp::fma(first, second, third))
+                                        == bits_of_value(T{1} + T{0x1p-22} + T{0x1p-31} + T{0x1p-52}));
     }
     // The infinities and the NaNs.
     check_case(infinity, zero, one, counts);
@@ -288,10 +298,10 @@ int main() {
     test_fixed_cases<double>(double_counts);
     test_random_cases<float>(0xF3A0000000000001u, float_counts);
     test_random_cases<double>(0xF3A0000000000002u, double_counts);
-    ::crucible::test::pass(
-        "test_core_fma: {} float cases and {} double cases agree with the exact oracle, {} and {} "
-        "with the instruction of the wide unit, {} and {} with the exact form of the baseline unit\n",
-        float_counts.cases, double_counts.cases, float_counts.fused, double_counts.fused, float_counts.exact,
-        double_counts.exact);
+    ::fixy::check::pass(kTest,
+                        "test_core_fma: {} float cases and {} double cases agree with the exact oracle, {} and {} "
+                        "with the instruction of the wide unit, {} and {} with the exact form of the baseline unit\n",
+                        float_counts.cases, double_counts.cases, float_counts.fused, double_counts.fused,
+                        float_counts.exact, double_counts.exact);
     return 0;
 }

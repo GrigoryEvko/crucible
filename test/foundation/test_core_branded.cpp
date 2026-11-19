@@ -5,15 +5,22 @@
 
 #include <foundation/core/Branded.h>
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -44,8 +51,8 @@ void test_scope_reads_each_element() {
         }
         return view.index(4).is_none() ? sum : -1;
     });
-    assert(total == 3 + 4 + 5 + 6);
-    assert(values == (FixedArray<int, 6>{1, 2, 3, 8, 15, 24}));
+    CRUCIBLE_TEST_ASSERT(kTest, total == 3 + 4 + 5 + 6);
+    CRUCIBLE_TEST_ASSERT(kTest, values == (FixedArray<int, 6>{1, 2, 3, 8, 15, 24}));
 }
 
 void test_scope_of_an_empty_view() {
@@ -57,7 +64,7 @@ void test_scope_of_an_empty_view() {
         }
         return view.index(0).is_none() && view.size() == 0 ? count : std::size_t{1};
     });
-    assert(turns == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, turns == 0);
 }
 
 // A parallel array of the same count takes the brand of the scope, so one
@@ -79,15 +86,15 @@ void test_parallel_view_shares_the_index() {
         }
         return sum;
     });
-    assert(total == 1 * 10 + 2 * 20 + 3 * 30 + 4 * 40);
-    assert(values == (FixedArray<std::uint64_t, 4>{11, 21, 31, 41}));
+    CRUCIBLE_TEST_ASSERT(kTest, total == 1 * 10 + 2 * 20 + 3 * 30 + 4 * 40);
+    CRUCIBLE_TEST_ASSERT(kTest, values == (FixedArray<std::uint64_t, 4>{11, 21, 31, 41}));
 
     View<int const> const empty{};
     bool const is_parallel = mint_branded_scope(empty, [](auto view) noexcept {
         View<std::uint64_t const> const other_empty{};
         return view.parallel(other_empty).is_some();
     });
-    assert(is_parallel);
+    CRUCIBLE_TEST_ASSERT(kTest, is_parallel);
 }
 
 // The property: for random runs and random windows, each index of the scope
@@ -112,7 +119,7 @@ void test_scope_agrees_with_the_index_model() {
             }
             return equal && position == size && view.index(size).is_none();
         });
-        assert(is_equal);
+        CRUCIBLE_TEST_ASSERT(kTest, is_equal);
     }
 }
 
@@ -147,7 +154,7 @@ void test_cursors_at_the_end_abort(::fixy::TestRunnerCtx const& test) {
             ::fixy::TextView{"foundation: fatal: a step past the end cursor of an enumerate loop over a branded view"});
         return view.size();
     });
-    assert(count == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, count == 3);
 }
 
 }  // namespace
@@ -159,6 +166,6 @@ int main() {
     test_parallel_view_shares_the_index();
     test_scope_agrees_with_the_index_model();
     test_cursors_at_the_end_abort(test);
-    crucible::test::pass("test_core_branded: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_branded: all tests passed\n");
     return 0;
 }

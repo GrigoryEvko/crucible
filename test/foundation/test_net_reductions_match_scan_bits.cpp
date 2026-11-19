@@ -5,16 +5,26 @@
 // on Philox draws.  The sum scans run on SIMD lanes at run time, so main runs
 // these tests.  The nets come from reductions_net.h.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Scan.h>
 #include <foundation/core/Sort.h>
+#include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 #include "reductions_net.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -121,8 +131,8 @@ int main() {
                        && does_grain_sum_scan_follow<float, core::ScanKind::Exclusive>(0x7E570902u)
                        && does_grain_sum_scan_follow<double, core::ScanKind::Inclusive>(0x7E570903u)
                        && does_grain_sum_scan_follow<double, core::ScanKind::Exclusive>(0x7E570904u);
-    assert(is_inclusive);
-    assert(is_exclusive);
-    assert(is_grain);
+    CRUCIBLE_TEST_ASSERT(kTest, is_inclusive);
+    CRUCIBLE_TEST_ASSERT(kTest, is_exclusive);
+    CRUCIBLE_TEST_ASSERT(kTest, is_grain);
     return 0;
 }

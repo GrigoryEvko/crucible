@@ -31,7 +31,11 @@
 
 #include "decide_oracle.h"
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/contracts/Decide.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstdint>
@@ -42,7 +46,13 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -197,6 +207,6 @@ int main() {
         std::fprintf(stderr, "test_decide_fuzz: WARNING — sink is 0; harness may have been DCE'd\n");
         return 1;
     }
-    crucible::test::pass("test_decide_fuzz: all {} × 2 = {} iterations passed\n", kIterations, kIterations * 2);
+    ::fixy::check::pass(kTest, "test_decide_fuzz: all {} × 2 = {} iterations passed\n", kIterations, kIterations * 2);
     return 0;
 }

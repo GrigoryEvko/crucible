@@ -8,16 +8,26 @@
 // A control shows that the bit test can refuse a wrong net: the net of a left
 // fold gives bits that sum_by_tree does not give.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/core/Sort.h>
+#include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 #include "reductions_net.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -170,11 +180,11 @@ int main() {
     bool const is_runs = does_runs_sum_follow<float, 6>(0x7E570701u) && does_runs_sum_follow<float, 13>(0x7E570702u)
                       && does_runs_sum_follow<double, 6>(0x7E570703u);
     bool const is_segment = does_segment_sum_follow<float>(0x7E570801u) && does_segment_sum_follow<double>(0x7E570802u);
-    assert(is_tree_float);
-    assert(is_tree_double);
-    assert(is_fold_apart);
-    assert(is_grain);
-    assert(is_runs);
-    assert(is_segment);
+    CRUCIBLE_TEST_ASSERT(kTest, is_tree_float);
+    CRUCIBLE_TEST_ASSERT(kTest, is_tree_double);
+    CRUCIBLE_TEST_ASSERT(kTest, is_fold_apart);
+    CRUCIBLE_TEST_ASSERT(kTest, is_grain);
+    CRUCIBLE_TEST_ASSERT(kTest, is_runs);
+    CRUCIBLE_TEST_ASSERT(kTest, is_segment);
     return 0;
 }

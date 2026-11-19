@@ -10,6 +10,9 @@
 // negative fixture under test/foundation/neg/, registered beside this
 // test.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Modality.h>
 #include <foundation/algebra/lattices/DualLattice.h>
@@ -18,6 +21,7 @@
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/effects/ImageRead.h>
 
 #include <array>
@@ -30,7 +34,13 @@
 #include <limits>
 #include <string_view>
 #include <type_traits>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -611,6 +621,6 @@ int main() {
         std::fprintf(stderr, "test_counter_clock_attacks: %d case(s) failed\n", g_failures);
         return 1;
     }
-    crucible::test::pass("test_counter_clock_attacks: ok\n");
+    ::fixy::check::pass(kTest, "test_counter_clock_attacks: ok\n");
     return 0;
 }

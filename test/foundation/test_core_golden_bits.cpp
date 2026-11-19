@@ -11,12 +11,14 @@
 // each new digest from two builds of different vector widths, and only when
 // the two builds agree.  The digest comes from golden_digest.h.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/core/Scan.h>
 #include <foundation/core/Sort.h>
 #include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "golden_digest.h"
 #include "nan_outputs.h"
 #include "philox_stream.h"
@@ -27,12 +29,18 @@
 
 namespace {
 
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
+
+namespace {
+
 using ::fixy::FixedArray;
 using ::fixy::HeapArray;
 using ::fixy::TextView;
 using ::fixy::View;
 using ::fixy::with_mut;
-using ::crucible::test::element_at;
 using ::crucible::test::PhiloxStream;
 using ::crucible::test::golden::fold_bytes;
 using ::crucible::test::golden::fold_output;
@@ -194,7 +202,8 @@ inline constexpr std::size_t kRunCount = 61;
 [[nodiscard]] std::uint64_t digest_run_sums(View<float const> elements) noexcept {
     FixedArray<View<float const>, kRuns> runs{};
     for (std::size_t run = 0; run < kRuns; ++run) {
-        element_at(runs, run) = elements.window(run * kRunCount, kRunCount).expect("the run fits");
+        *runs.get(run).expect("a test reads an element at or past the count of its array") =
+            elements.window(run * kRunCount, kRunCount).expect("the run fits");
     }
     std::uint64_t digest = kFnvOffset;
     for (std::size_t first_runs = 1; first_runs <= kRuns; ++first_runs) {
@@ -204,7 +213,7 @@ inline constexpr std::size_t kRunCount = 61;
         auto [is_summed, written] = with_mut(std::move(sums), [&](auto out) noexcept {
             return ::foundation::core::sum_runs_by_tree(chosen, std::move(out)).is_ok();
         });
-        assert(is_summed);
+        CRUCIBLE_TEST_ASSERT(kTest, is_summed);
         digest = fold_outputs(digest, View<float const>{written.view()});
     }
     return digest;
@@ -220,7 +229,7 @@ inline constexpr std::size_t kSegments = 80;
     std::size_t end = 0;
     for (std::size_t segment = 1; segment <= kSegments; ++segment) {
         end += stream.below(49);
-        element_at(offsets.view(), segment) = end;
+        *offsets.view().get(segment).expect("a test reads an element at or past the count of its View") = end;
     }
     HeapArray<float> const elements = draw_run<float>(end, seed + 1);
     HeapArray<float> sums = ::fixy::mint_heap_array(test_alloc(), kSegments, 0.0f);
@@ -229,7 +238,7 @@ inline constexpr std::size_t kSegments = 80;
                                                         View<std::size_t const>{offsets.view()}, std::move(out))
             .is_ok();
     });
-    assert(is_summed);
+    CRUCIBLE_TEST_ASSERT(kTest, is_summed);
     return fold_outputs(kFnvOffset, View<float const>{written.view()});
 }
 
@@ -244,7 +253,7 @@ template <class T>
     auto [is_exclusive, exclusive_back] = with_mut(std::move(exclusive), [&](auto out) noexcept {
         return ::foundation::core::scan_exclusive_sums(in, std::move(out)).is_ok();
     });
-    assert(is_inclusive && is_exclusive);
+    CRUCIBLE_TEST_ASSERT(kTest, is_inclusive && is_exclusive);
     std::uint64_t const digest = fold_outputs(kFnvOffset, View<T const>{inclusive_back.view()});
     return fold_outputs(digest, View<T const>{exclusive_back.view()});
 }
@@ -260,7 +269,7 @@ template <class T>
     auto [is_exclusive, exclusive_back] = with_mut(std::move(exclusive), [&](auto out) noexcept {
         return ::foundation::core::scan_exclusive(words, std::move(out), std::uint64_t{0x5CA9u}, Mix{}).is_ok();
     });
-    assert(is_inclusive && is_exclusive);
+    CRUCIBLE_TEST_ASSERT(kTest, is_inclusive && is_exclusive);
     std::uint64_t const digest = fold_outputs(kFnvOffset, View<std::uint64_t const>{inclusive_back.view()});
     return fold_outputs(digest, View<std::uint64_t const>{exclusive_back.view()});
 }
@@ -280,7 +289,7 @@ struct AddFloats {
     std::size_t end = 0;
     for (std::size_t segment = 1; segment <= kSegments; ++segment) {
         end += stream.below(49);
-        element_at(offsets.view(), segment) = end;
+        *offsets.view().get(segment).expect("a test reads an element at or past the count of its View") = end;
     }
     HeapArray<float> const elements = draw_run<float>(end, seed + 1);
     HeapArray<float> sums = ::fixy::mint_heap_array(test_alloc(), kSegments, 0.0f);
@@ -290,7 +299,7 @@ struct AddFloats {
                                                            0.0f, AddFloats{})
             .is_ok();
     });
-    assert(is_reduced);
+    CRUCIBLE_TEST_ASSERT(kTest, is_reduced);
     return fold_outputs(kFnvOffset, View<float const>{written.view()});
 }
 
@@ -320,7 +329,7 @@ template <class T>
     carries = with_mut(std::move(carries), [&](auto out) noexcept {
         is_scanned = ::foundation::core::scan_exclusive_sums(View<T const>{sums.view()}, std::move(out)).is_ok();
     });
-    assert(is_scanned);
+    CRUCIBLE_TEST_ASSERT(kTest, is_scanned);
     return carries;
 }
 
@@ -340,7 +349,7 @@ template <class T>
                                                         std::uint64_t{0x5CA9u}, Mix{})
                          .is_ok();
     });
-    assert(is_scanned);
+    CRUCIBLE_TEST_ASSERT(kTest, is_scanned);
     View<std::uint64_t const> const carried{carries.view()};
     HeapArray<std::uint64_t> inclusive = ::fixy::mint_heap_array(test_alloc(), words.size(), std::uint64_t{0});
     HeapArray<std::uint64_t> exclusive = ::fixy::mint_heap_array(test_alloc(), words.size(), std::uint64_t{0});
@@ -362,7 +371,7 @@ template <class T, class... Less>
     HeapArray<T> scratch = ::fixy::mint_heap_array(test_alloc(), elements.size(), T{});
     std::size_t position = 0;
     for (T& value : sorted) {
-        value = element_at(elements, position++);
+        value = *elements.get(position++).expect("a test reads an element at or past the count of its View");
     }
     bool is_sorted = false;
     sorted = with_mut(std::move(sorted), [&](auto out) noexcept {
@@ -370,7 +379,7 @@ template <class T, class... Less>
             is_sorted = ::foundation::core::sort_stably(std::move(out), std::move(room), less...).is_ok();
         });
     });
-    assert(is_sorted);
+    CRUCIBLE_TEST_ASSERT(kTest, is_sorted);
     return fold_outputs(kFnvOffset, View<T const>{sorted.view()});
 }
 
@@ -428,8 +437,8 @@ void test_golden_bits() {
     HeapArray<std::uint64_t> const keyed = draw_keyed(1000, 0x601D000Au);
     HeapArray<float> sort_floats = draw_run<float>(1000, 0x601D000Bu);
     ::crucible::test::put_specials(sort_floats.view(), 0x601D000Cu);
-    element_at(sort_floats.view(), 0) = -0.0f;
-    element_at(sort_floats.view(), 1) = 0.0f;
+    *sort_floats.view().get(0).expect("a test reads an element at or past the count of its View") = -0.0f;
+    *sort_floats.view().get(1).expect("a test reads an element at or past the count of its View") = 0.0f;
 
     View<float const> const float_view{floats.view()};
     View<float const> const special_float_view{special_floats.view()};
@@ -441,7 +450,7 @@ void test_golden_bits() {
 
     // The digest sees the association of a sum: the left fold gives another
     // digest than the tree.
-    assert(digest_left_folds(float_view) != digest_tree_sums(float_view));
+    CRUCIBLE_TEST_ASSERT(kTest, digest_left_folds(float_view) != digest_tree_sums(float_view));
 
     // Each form prints its digest when it differs, so one run gives each
     // digest that differs.
@@ -497,19 +506,19 @@ void test_golden_bits() {
 
     auto const inclusive_in_four_lanes = [](auto in, auto out) noexcept {
         bool const is_scanned = ::foundation::core::scan_inclusive_sums_in_lanes<4>(in, std::move(out)).is_ok();
-        assert(is_scanned);
+        CRUCIBLE_TEST_ASSERT(kTest, is_scanned);
     };
     auto const exclusive_in_four_lanes = [](auto in, auto out) noexcept {
         bool const is_scanned = ::foundation::core::scan_exclusive_sums_in_lanes<4>(in, std::move(out)).is_ok();
-        assert(is_scanned);
+        CRUCIBLE_TEST_ASSERT(kTest, is_scanned);
     };
     auto const inclusive_in_sixteen_lanes = [](auto in, auto out) noexcept {
         bool const is_scanned = ::foundation::core::scan_inclusive_sums_in_lanes<16>(in, std::move(out)).is_ok();
-        assert(is_scanned);
+        CRUCIBLE_TEST_ASSERT(kTest, is_scanned);
     };
     auto const exclusive_in_sixteen_lanes = [](auto in, auto out) noexcept {
         bool const is_scanned = ::foundation::core::scan_exclusive_sums_in_lanes<16>(in, std::move(out)).is_ok();
-        assert(is_scanned);
+        CRUCIBLE_TEST_ASSERT(kTest, is_scanned);
     };
     auto const inclusive_by_grains = [](auto in, auto out) noexcept {
         auto const carries = sum_carries_of_grains(in);
@@ -539,13 +548,13 @@ void test_golden_bits() {
             0x85C650B5059457A4u);
     compare("sort_stably of float", digest_stable_sort(View<float const>{sort_floats.view()}), 0xE43981347DE9CFCBu);
     compare("sort_by_network", digest_network_sorts(0x601D000Du), 0x88F4B8269182E8FFu);
-    assert(differences == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, differences == 0);
 }
 
 }  // namespace
 
 int main() {
     test_golden_bits();
-    crucible::test::pass("test_core_golden_bits: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_golden_bits: all tests passed\n");
     return 0;
 }

@@ -3,15 +3,24 @@
 // 1, 2, 4, 8 and 64 shards in drawn orders, the error bound, and the plan of
 // larger scans.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Scan.h>
 #include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "nan_outputs.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -111,18 +120,22 @@ void test_sum_scans_agree_with_the_naive_fold() {
             View<float const>{inclusive.view()}.window(0, count).expect("the part fits");
         View<float const> const exclusive_part =
             View<float const>{exclusive.view()}.window(0, count).expect("the part fits");
-        assert(scan_into(inclusive, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums(part, std::move(out));
-        }));
-        assert(scan_into(exclusive, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_exclusive_sums(part, std::move(out));
-        }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(inclusive, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(exclusive, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_exclusive_sums(part, std::move(out));
+                             }));
         for (std::size_t position = 0; position < count; ++position) {
             float const prefix = naive_prefix(part, position);
-            float const value = ::crucible::test::element_at(part, position);
+            float const value = *part.get(position).expect("a test reads an element at or past the count of its View");
             float const inclusive_value = position == 0 ? value : prefix + value;
-            assert(same_bits(::crucible::test::element_at(exclusive_part, position), prefix));
-            assert(same_bits(::crucible::test::element_at(inclusive_part, position), inclusive_value));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(*exclusive_part.get(position).expect(
+                                                      "a test reads an element at or past the count of its View"),
+                                                  prefix));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(*inclusive_part.get(position).expect(
+                                                      "a test reads an element at or past the count of its View"),
+                                                  inclusive_value));
         }
     };
     for (std::size_t count = 0; count <= 300; ++count) {
@@ -146,48 +159,48 @@ void test_sum_scan_lanes_agree_with_the_recursion() {
         View<float const> const part = all.window(0, count).expect("the part fits the run");
         View<float const> const want_view = View<float const>{expected.view()}.window(0, count).expect("the part fits");
         View<float const> const out_view = View<float const>{got.view()}.window(0, count).expect("the part fits");
-        assert(scan_into(expected, count, [&](auto want) noexcept {
-            return ::foundation::core::scan_inclusive(part, std::move(want), add);
-        }));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums_in_lanes<2>(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums_in_lanes<4>(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums_in_lanes<8>(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums_in_lanes<16>(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums_in_lanes<32>(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(expected, count, [&](auto want) noexcept {
-            return ::foundation::core::scan_exclusive(part, std::move(want), 0.0f, add);
-        }));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_exclusive_sums(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_exclusive_sums_in_lanes<2>(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_exclusive_sums_in_lanes<16>(part, std::move(out));
-        }));
-        assert(same_runs(want_view, out_view));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(expected, count, [&](auto want) noexcept {
+                                 return ::foundation::core::scan_inclusive(part, std::move(want), add);
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, out_view));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums_in_lanes<2>(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, out_view));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums_in_lanes<4>(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, out_view));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums_in_lanes<8>(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, out_view));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums_in_lanes<16>(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, out_view));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums_in_lanes<32>(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, out_view));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(expected, count, [&](auto want) noexcept {
+                                 return ::foundation::core::scan_exclusive(part, std::move(want), 0.0f, add);
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_exclusive_sums(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, out_view));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_exclusive_sums_in_lanes<2>(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, out_view));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_exclusive_sums_in_lanes<16>(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, out_view));
     };
     for (std::size_t count = 0; count <= 600; ++count) {
         check_count(count);
@@ -250,32 +263,32 @@ void test_sum_scan_lanes_keep_the_sign_of_zero() {
             HeapArray<float> got = zeros(count);
             View<float const> const want_view{want.view()};
             View<float const> const got_view{got.view()};
-            assert(scan_into(want, count, [&](auto out) noexcept {
-                return ::foundation::core::scan_inclusive(in, std::move(out), add);
-            }));
-            assert(scan_into(got, count, [&](auto out) noexcept {
-                return ::foundation::core::scan_inclusive_sums_in_lanes<4>(in, std::move(out));
-            }));
-            assert(same_runs(want_view, got_view));
-            assert(scan_into(got, count, [&](auto out) noexcept {
-                return ::foundation::core::scan_inclusive_sums_in_lanes<16>(in, std::move(out));
-            }));
-            assert(same_runs(want_view, got_view));
-            assert(scan_into(want, count, [&](auto out) noexcept {
-                return ::foundation::core::scan_exclusive(in, std::move(out), 0.0f, add);
-            }));
-            assert(scan_into(got, count, [&](auto out) noexcept {
-                return ::foundation::core::scan_exclusive_sums_in_lanes<8>(in, std::move(out));
-            }));
-            assert(same_runs(want_view, got_view));
-            assert(scan_into(got, count, [&](auto out) noexcept {
-                return ::foundation::core::scan_exclusive_sums(in, std::move(out));
-            }));
-            assert(same_runs(want_view, got_view));
+            CRUCIBLE_TEST_ASSERT(kTest, scan_into(want, count, [&](auto out) noexcept {
+                                     return ::foundation::core::scan_inclusive(in, std::move(out), add);
+                                 }));
+            CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                     return ::foundation::core::scan_inclusive_sums_in_lanes<4>(in, std::move(out));
+                                 }));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, got_view));
+            CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                     return ::foundation::core::scan_inclusive_sums_in_lanes<16>(in, std::move(out));
+                                 }));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, got_view));
+            CRUCIBLE_TEST_ASSERT(kTest, scan_into(want, count, [&](auto out) noexcept {
+                                     return ::foundation::core::scan_exclusive(in, std::move(out), 0.0f, add);
+                                 }));
+            CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                     return ::foundation::core::scan_exclusive_sums_in_lanes<8>(in, std::move(out));
+                                 }));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, got_view));
+            CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                     return ::foundation::core::scan_exclusive_sums(in, std::move(out));
+                                 }));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(want_view, got_view));
             if (count == 0) continue;
             float const tree = ::foundation::core::reduce_by_tree(in, add).expect("the run has elements");
-            assert(same_bits(::foundation::core::sum_by_tree(in), tree));
-            assert(same_bits(::foundation::core::sum_by_tree_in_lanes<16>(in), tree));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(::foundation::core::sum_by_tree(in), tree));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(::foundation::core::sum_by_tree_in_lanes<16>(in), tree));
         }
     }
 }
@@ -286,33 +299,37 @@ void test_scan_in_place_and_under_append() {
     HeapArray<float> const run = draw_floats(3000, 0x5CA40002u);
     View<float const> const all{run.view()};
     HeapArray<float> out = zeros(3000);
-    assert(scan_into(
-        out, 3000, [&](auto part) noexcept { return ::foundation::core::scan_inclusive_sums(all, std::move(part)); }));
+    CRUCIBLE_TEST_ASSERT(kTest, scan_into(out, 3000, [&](auto part) noexcept {
+                             return ::foundation::core::scan_inclusive_sums(all, std::move(part));
+                         }));
     HeapArray<float> in_place = ::foundation::core::mint_heap_array_copy<float>(test_alloc(), all);
     in_place = ::foundation::core::with_mut(std::move(in_place), [](auto whole) noexcept {
         View<float const> const in{whole.view()};
-        assert(::foundation::core::scan_inclusive_sums(in, std::move(whole)).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::scan_inclusive_sums(in, std::move(whole)).is_ok());
     });
-    assert(same_runs(View<float const>{out.view()}, View<float const>{in_place.view()}));
+    CRUCIBLE_TEST_ASSERT(kTest, same_runs(View<float const>{out.view()}, View<float const>{in_place.view()}));
     HeapArray<float> shorter = zeros(1777);
-    assert(scan_into(shorter, 1777, [&](auto part) noexcept {
-        return ::foundation::core::scan_inclusive_sums(all.window(0, 1777).expect("the part fits"), std::move(part));
-    }));
-    assert(same_runs(View<float const>{shorter.view()},
-                     View<float const>{out.view()}.window(0, 1777).expect("the part fits")));
+    CRUCIBLE_TEST_ASSERT(kTest, scan_into(shorter, 1777, [&](auto part) noexcept {
+                             return ::foundation::core::scan_inclusive_sums(all.window(0, 1777).expect("the part fits"),
+                                                                            std::move(part));
+                         }));
+    CRUCIBLE_TEST_ASSERT(kTest, same_runs(View<float const>{shorter.view()},
+                                          View<float const>{out.view()}.window(0, 1777).expect("the part fits")));
 }
 
 [[nodiscard]] HeapArray<std::size_t> draw_order(std::size_t count, ::crucible::test::PhiloxStream& stream) noexcept {
     HeapArray<std::size_t> order = ::foundation::core::mint_heap_array(test_alloc(), count, std::size_t{0});
     View<std::size_t> const slots = order.view();
     for (std::size_t index = 0; index < count; ++index) {
-        ::crucible::test::element_at(slots, index) = index;
+        *slots.get(index).expect("a test reads an element at or past the count of its View") = index;
     }
     for (std::size_t index = count; index > 1; --index) {
         std::size_t const other = stream.below(index);
-        std::size_t const kept = ::crucible::test::element_at(slots, index - 1);
-        ::crucible::test::element_at(slots, index - 1) = ::crucible::test::element_at(slots, other);
-        ::crucible::test::element_at(slots, other) = kept;
+        std::size_t const kept =
+            *slots.get(index - 1).expect("a test reads an element at or past the count of its View");
+        *slots.get(index - 1).expect("a test reads an element at or past the count of its View") =
+            *slots.get(other).expect("a test reads an element at or past the count of its View");
+        *slots.get(other).expect("a test reads an element at or past the count of its View") = kept;
     }
     return order;
 }
@@ -348,7 +365,7 @@ template <std::size_t Grain>
     }
     carries = ::foundation::core::with_mut(std::move(carries), [](auto whole) noexcept {
         View<float const> const in{whole.view()};
-        assert(::foundation::core::scan_exclusive_sums(in, std::move(whole)).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::scan_exclusive_sums(in, std::move(whole)).is_ok());
     });
     HeapArray<float> out = zeros(run.size());
     HeapArray<std::size_t> const shard_order = draw_order(shards, stream);
@@ -391,12 +408,12 @@ void test_grains_give_the_bits_of_the_scan() {
         View<float const> const part = all.window(0, count).expect("the part fits the run");
         HeapArray<float> inclusive = zeros(count);
         HeapArray<float> exclusive = zeros(count);
-        assert(scan_into(inclusive, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums(part, std::move(out));
-        }));
-        assert(scan_into(exclusive, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_exclusive_sums(part, std::move(out));
-        }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(inclusive, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums(part, std::move(out));
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(exclusive, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_exclusive_sums(part, std::move(out));
+                             }));
         View<float const> const whole_inclusive{inclusive.view()};
         View<float const> const whole_exclusive{exclusive.view()};
         for (std::size_t const shards : shard_counts) {
@@ -409,12 +426,12 @@ void test_grains_give_the_bits_of_the_scan() {
                 scan_by_shards<16>(part, ScanKind::Inclusive, shards, stream, GrainForm::Sum);
             HeapArray<float> const sum_by_page =
                 scan_by_shards<4096>(part, ScanKind::Exclusive, shards, stream, GrainForm::Sum);
-            assert(same_runs(whole_inclusive, View<float const>{by_single.view()}));
-            assert(same_runs(whole_inclusive, View<float const>{by_sixteen.view()}));
-            assert(same_runs(whole_inclusive, View<float const>{by_page.view()}));
-            assert(same_runs(whole_exclusive, View<float const>{exclusive_by_grains.view()}));
-            assert(same_runs(whole_inclusive, View<float const>{sum_by_sixteen.view()}));
-            assert(same_runs(whole_exclusive, View<float const>{sum_by_page.view()}));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(whole_inclusive, View<float const>{by_single.view()}));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(whole_inclusive, View<float const>{by_sixteen.view()}));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(whole_inclusive, View<float const>{by_page.view()}));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(whole_exclusive, View<float const>{exclusive_by_grains.view()}));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(whole_inclusive, View<float const>{sum_by_sixteen.view()}));
+            CRUCIBLE_TEST_ASSERT(kTest, same_runs(whole_exclusive, View<float const>{sum_by_page.view()}));
         }
     }
 }
@@ -429,28 +446,33 @@ void test_scan_error_stays_inside_the_bound() {
     View<double> const wide_view = wide.view();
     std::size_t position = 0;
     for (float const value : run) {
-        ::crucible::test::element_at(wide_view, position) = static_cast<double>(value);
+        *wide_view.get(position).expect("a test reads an element at or past the count of its View") =
+            static_cast<double>(value);
         ++position;
     }
     HeapArray<float> out = zeros(kCount);
     HeapArray<double> exact = ::foundation::core::mint_heap_array(test_alloc(), kCount, 0.0);
-    assert(scan_into(out, kCount, [&](auto part) noexcept {
-        return ::foundation::core::scan_inclusive_sums(View<float const>{run.view()}, std::move(part));
-    }));
-    assert(scan_into(exact, kCount, [&](auto part) noexcept {
-        return ::foundation::core::scan_inclusive_sums(View<double const>{wide_view}, std::move(part));
-    }));
+    CRUCIBLE_TEST_ASSERT(kTest, scan_into(out, kCount, [&](auto part) noexcept {
+                             return ::foundation::core::scan_inclusive_sums(View<float const>{run.view()},
+                                                                            std::move(part));
+                         }));
+    CRUCIBLE_TEST_ASSERT(kTest, scan_into(exact, kCount, [&](auto part) noexcept {
+                             return ::foundation::core::scan_inclusive_sums(View<double const>{wide_view},
+                                                                            std::move(part));
+                         }));
     double absolute_sum = 0.0;
     double const unit = 1.0 / 16777216.0;
     for (std::size_t index = 0; index < kCount; ++index) {
-        double const value = ::crucible::test::element_at(wide_view, index);
+        double const value = *wide_view.get(index).expect("a test reads an element at or past the count of its View");
         absolute_sum += value < 0.0 ? -value : value;
         double const depth = ::foundation::core::count_inclusive_scan_depth(index);
         double const gamma = depth * unit / (1.0 - depth * unit);
-        double const computed = static_cast<double>(::crucible::test::element_at(out.view(), index));
-        double const model = ::crucible::test::element_at(exact.view(), index);
+        double const computed = static_cast<double>(
+            *out.view().get(index).expect("a test reads an element at or past the count of its View"));
+        double const model =
+            *exact.view().get(index).expect("a test reads an element at or past the count of its View");
         double const error = computed > model ? computed - model : model - computed;
-        assert(error <= gamma * absolute_sum * (1.0 + 1.0e-6));
+        CRUCIBLE_TEST_ASSERT(kTest, error <= gamma * absolute_sum * (1.0 + 1.0e-6));
     }
 }
 
@@ -479,7 +501,8 @@ void test_large_plans_agree_with_the_scans() {
                 ::foundation::core::mint_heap_array(test_alloc(), count, ::foundation::core::PlanNode{});
             steps = ::foundation::core::with_mut(std::move(steps), [&](auto step_out) noexcept {
                 outputs = ::foundation::core::with_mut(std::move(outputs), [&](auto output_out) noexcept {
-                    assert(
+                    CRUCIBLE_TEST_ASSERT(
+                        kTest,
                         ::foundation::core::write_scan_plan(kind, std::move(step_out), std::move(output_out)).is_ok());
                 });
             });
@@ -493,9 +516,10 @@ void test_large_plans_agree_with_the_scans() {
             View<::foundation::core::PlanNode const> const output_view{outputs.view()};
             scratch = ::foundation::core::with_mut(std::move(scratch), [&](auto scratch_out) noexcept {
                 from_plan = ::foundation::core::with_mut(std::move(from_plan), [&](auto plan_out) noexcept {
-                    assert(::foundation::core::evaluate_scan_plan(step_view, output_view, in, std::move(scratch_out),
-                                                                  std::move(plan_out), std::uint64_t{0}, mix)
-                               .is_ok());
+                    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::evaluate_scan_plan(
+                                                    step_view, output_view, in, std::move(scratch_out),
+                                                    std::move(plan_out), std::uint64_t{0}, mix)
+                                                    .is_ok());
                 });
             });
             bool const is_scanned = scan_into(from_scan, count, [&](auto out) noexcept {
@@ -504,8 +528,8 @@ void test_large_plans_agree_with_the_scans() {
                 }
                 return ::foundation::core::scan_exclusive(in, std::move(out), std::uint64_t{0}, mix);
             });
-            assert(is_scanned);
-            assert(::foundation::core::equal(from_plan.view(), from_scan.view()));
+            CRUCIBLE_TEST_ASSERT(kTest, is_scanned);
+            CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(from_plan.view(), from_scan.view()));
         }
     }
 }
@@ -517,7 +541,7 @@ void test_large_plans_agree_with_the_scans() {
 // value.
 void check_scan_outputs(View<float const> want, View<float const> out) noexcept {
     for (auto const [model, output] : want.walk().try_zip(out.walk()).expect("the two runs have one count")) {
-        assert(::crucible::test::float_bits(*output) == ::crucible::test::output_bits(*model));
+        CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::float_bits(*output) == ::crucible::test::output_bits(*model));
     }
 }
 
@@ -529,9 +553,12 @@ void check_scan_outputs(View<float const> want, View<float const> out) noexcept 
 void test_nan_outputs_of_the_scans_are_canonical() {
     HeapArray<float> run = draw_floats(2100, 0x5CA40040u);
     ::crucible::test::put_specials(run.view(), 0x5CA40041u);
-    ::crucible::test::element_at(run.view(), 0) = ::fixy::bit_cast<float>(0x7F800001u);
-    ::crucible::test::element_at(run.view(), 1) = ::fixy::bit_cast<float>(0x7F800000u);
-    ::crucible::test::element_at(run.view(), 2) = ::fixy::bit_cast<float>(0xFF800000u);
+    *run.view().get(0).expect("a test reads an element at or past the count of its View") =
+        ::fixy::bit_cast<float>(0x7F800001u);
+    *run.view().get(1).expect("a test reads an element at or past the count of its View") =
+        ::fixy::bit_cast<float>(0x7F800000u);
+    *run.view().get(2).expect("a test reads an element at or past the count of its View") =
+        ::fixy::bit_cast<float>(0xFF800000u);
     View<float const> const all{run.view()};
     HeapArray<float> expected = zeros(run.size());
     HeapArray<float> got = zeros(run.size());
@@ -540,31 +567,31 @@ void test_nan_outputs_of_the_scans_are_canonical() {
         View<float const> const part = all.window(first, count).expect("the part fits the run");
         View<float const> const want_view = View<float const>{expected.view()}.window(0, count).expect("the part fits");
         View<float const> const out_view = View<float const>{got.view()}.window(0, count).expect("the part fits");
-        assert(scan_into(expected, count, [&](auto want) noexcept {
-            return ::foundation::core::scan_inclusive(part, std::move(want), add);
-        }));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums(part, std::move(out));
-        }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(expected, count, [&](auto want) noexcept {
+                                 return ::foundation::core::scan_inclusive(part, std::move(want), add);
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums(part, std::move(out));
+                             }));
         check_scan_outputs(want_view, out_view);
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums_in_lanes<2>(part, std::move(out));
-        }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums_in_lanes<2>(part, std::move(out));
+                             }));
         check_scan_outputs(want_view, out_view);
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_inclusive_sums_in_lanes<16>(part, std::move(out));
-        }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_inclusive_sums_in_lanes<16>(part, std::move(out));
+                             }));
         check_scan_outputs(want_view, out_view);
-        assert(scan_into(expected, count, [&](auto want) noexcept {
-            return ::foundation::core::scan_exclusive(part, std::move(want), 0.0f, add);
-        }));
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_exclusive_sums(part, std::move(out));
-        }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(expected, count, [&](auto want) noexcept {
+                                 return ::foundation::core::scan_exclusive(part, std::move(want), 0.0f, add);
+                             }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_exclusive_sums(part, std::move(out));
+                             }));
         check_scan_outputs(want_view, out_view);
-        assert(scan_into(got, count, [&](auto out) noexcept {
-            return ::foundation::core::scan_exclusive_sums_in_lanes<4>(part, std::move(out));
-        }));
+        CRUCIBLE_TEST_ASSERT(kTest, scan_into(got, count, [&](auto out) noexcept {
+                                 return ::foundation::core::scan_exclusive_sums_in_lanes<4>(part, std::move(out));
+                             }));
         check_scan_outputs(want_view, out_view);
     };
     for (std::size_t count = 1; count <= 300; ++count) {
@@ -574,13 +601,15 @@ void test_nan_outputs_of_the_scans_are_canonical() {
     check_count(2100, 0);
     ::crucible::test::PhiloxStream stream{0x5CA40042u};
     HeapArray<float> whole = zeros(all.size());
-    assert(scan_into(whole, all.size(),
-                     [&](auto out) noexcept { return ::foundation::core::scan_inclusive_sums(all, std::move(out)); }));
+    CRUCIBLE_TEST_ASSERT(kTest, scan_into(whole, all.size(), [&](auto out) noexcept {
+                             return ::foundation::core::scan_inclusive_sums(all, std::move(out));
+                         }));
     HeapArray<float> const by_grains =
         scan_by_shards<16>(all, ::foundation::core::ScanKind::Inclusive, 4, stream, GrainForm::Sum);
-    assert(same_runs(View<float const>{whole.view()}, View<float const>{by_grains.view()}));
-    assert(::crucible::test::float_bits(::crucible::test::element_at(whole.view(), 0))
-           == ::crucible::test::kCanonicalFloatNan);
+    CRUCIBLE_TEST_ASSERT(kTest, same_runs(View<float const>{whole.view()}, View<float const>{by_grains.view()}));
+    CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::float_bits(*whole.view().get(0).expect(
+                                    "a test reads an element at or past the count of its View"))
+                                    == ::crucible::test::kCanonicalFloatNan);
 }
 
 }  // namespace
@@ -594,6 +623,6 @@ int main() {
     test_scan_error_stays_inside_the_bound();
     test_large_plans_agree_with_the_scans();
     test_nan_outputs_of_the_scans_are_canonical();
-    crucible::test::pass("test_core_scan: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_scan: all tests passed\n");
     return 0;
 }

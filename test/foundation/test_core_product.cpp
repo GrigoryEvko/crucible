@@ -19,14 +19,16 @@
 //     the release preset (the native target) give one digest
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/Reductions.h>
+#include <fixy/check/Check.h>
 
 #include <foundation/Simd.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/os/X86Level.h>
 
 #include "../exact_sum.h"
 #include "../product_rig.h"
-#include "../test_assert.h"
 #include "philox_stream.h"
 #include "product_forms.h"
 #include "product_units.h"
@@ -34,6 +36,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -46,7 +55,6 @@ inline constexpr ::fixy::FixedArray<LaneCount, 6> kLaneCounts{
     LaneCount::Native, LaneCount::Two, LaneCount::Four, LaneCount::Eight, LaneCount::Sixteen, LaneCount::ThirtyTwo};
 
 using ::crucible::test::BoundRecord;
-using ::crucible::test::element_at;
 using ::crucible::test::ExactSum;
 using ::crucible::test::Layout;
 using ::crucible::test::make_matrix;
@@ -140,8 +148,8 @@ template <class T>
     std::size_t differ = 0;
     for (LaneCount const lanes : kLaneCounts) {
         Matrix<T> out = make_matrix<T>(MatrixShape{rows, columns}, out_layout, 1);
-        assert(multiply_into(out, left.view(), right.view(), lanes).is_ok());
-        assert(has_model_bits(out, left, right));
+        CRUCIBLE_TEST_ASSERT(kTest, multiply_into(out, left.view(), right.view(), lanes).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, has_model_bits(out, left, right));
         if (lanes == LaneCount::Native) differ = count_left_folds_that_differ(out, left, right);
     }
     return differ;
@@ -168,10 +176,11 @@ void test_products_have_the_bits_of_the_model() {
             ++cases;
         }
     }
-    assert(differ > 0);
-    ::crucible::test::pass("test_core_product: {} drawn products of {} bytes in each layout and each count of lanes "
-                           "have the bits of the model, and a left fold differs at {} outputs\n",
-                           cases, sizeof(T), differ);
+    CRUCIBLE_TEST_ASSERT(kTest, differ > 0);
+    ::fixy::check::pass(kTest,
+                        "test_core_product: {} drawn products of {} bytes in each layout and each count of lanes "
+                        "have the bits of the model, and a left fold differs at {} outputs\n",
+                        cases, sizeof(T), differ);
 }
 
 // The outputs are inside the a priori bound against the exact sum, for
@@ -191,7 +200,7 @@ void test_products_are_inside_the_bound() {
         ::crucible::test::fill_matrix(left, stream, spread);
         ::crucible::test::fill_matrix(right, stream, spread);
         Matrix<T> out = make_matrix<T>(MatrixShape{rows, columns}, draw_layout(stream), 0);
-        assert(multiply_into(out, left.view(), right.view(), LaneCount::Native).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, multiply_into(out, left.view(), right.view(), LaneCount::Native).is_ok());
         for (std::size_t row = 0; row < rows; ++row) {
             for (std::size_t column = 0; column < columns; ++column) {
                 auto const [exact, magnitude] = ::crucible::test::exact_product(left, right, row, column);
@@ -199,9 +208,10 @@ void test_products_are_inside_the_bound() {
             }
         }
     }
-    ::crucible::test::pass("test_core_product: {} outputs of {} bytes are inside the bound, the largest error is {} "
-                           "of the bound\n",
-                           record.outputs, sizeof(T), record.largest_ratio);
+    ::fixy::check::pass(kTest,
+                        "test_core_product: {} outputs of {} bytes are inside the bound, the largest error is {} "
+                        "of the bound\n",
+                        record.outputs, sizeof(T), record.largest_ratio);
 }
 
 // A product of one row and one column with the drawn terms.
@@ -212,22 +222,35 @@ template <class T>
     Matrix<T> left = make_matrix<T>(MatrixShape{1, depth}, Layout::RowMajor, 0);
     Matrix<T> right = make_matrix<T>(MatrixShape{depth, 1}, Layout::ColumnMajor, 0);
     for (std::size_t inner = 0; inner < depth; ++inner) {
-        element_at(left.values.view(), left.position(0, inner)) = element_at(firsts, inner);
-        element_at(right.values.view(), right.position(inner, 0)) = element_at(seconds, inner);
+        *left.values.view()
+             .get(left.position(0, inner))
+             .expect("a test reads an element at or past the count of its View") =
+            *firsts.get(inner).expect("a test reads an element at or past the count of its View");
+        *right.values.view()
+             .get(right.position(inner, 0))
+             .expect("a test reads an element at or past the count of its View") =
+            *seconds.get(inner).expect("a test reads an element at or past the count of its View");
     }
     Matrix<T> out = make_matrix<T>(MatrixShape{1, 1}, Layout::RowMajor, 0);
-    assert(multiply_into(out, left.view(), right.view(), lanes).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, multiply_into(out, left.view(), right.view(), lanes).is_ok());
     T const dot = out.at(0, 0);
     // The same terms on the row path and on the scalar path.
     Matrix<T> spread_left = make_matrix<T>(MatrixShape{1, depth}, Layout::Spread, 0);
     Matrix<T> row_right = make_matrix<T>(MatrixShape{depth, 1}, Layout::RowMajor, 0);
     for (std::size_t inner = 0; inner < depth; ++inner) {
-        element_at(spread_left.values.view(), spread_left.position(0, inner)) = element_at(firsts, inner);
-        element_at(row_right.values.view(), row_right.position(inner, 0)) = element_at(seconds, inner);
+        *spread_left.values.view()
+             .get(spread_left.position(0, inner))
+             .expect("a test reads an element at or past the count of its View") =
+            *firsts.get(inner).expect("a test reads an element at or past the count of its View");
+        *row_right.values.view()
+             .get(row_right.position(inner, 0))
+             .expect("a test reads an element at or past the count of its View") =
+            *seconds.get(inner).expect("a test reads an element at or past the count of its View");
     }
     Matrix<T> row_out = make_matrix<T>(MatrixShape{1, 1}, Layout::RowMajor, 0);
-    assert(multiply_into(row_out, spread_left.view(), row_right.view(), lanes).is_ok());
-    assert(::crucible::test::bits_of_float(row_out.at(0, 0)) == ::crucible::test::bits_of_float(dot));
+    CRUCIBLE_TEST_ASSERT(kTest, multiply_into(row_out, spread_left.view(), row_right.view(), lanes).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::crucible::test::bits_of_float(row_out.at(0, 0)) == ::crucible::test::bits_of_float(dot));
     return dot;
 }
 
@@ -250,40 +273,48 @@ void test_the_hard_cases() {
             value = one;
         ::fixy::View<T const> const zeros_view{negative_zeros.view()};
         ::fixy::View<T const> const ones_view{ones.view()};
-        assert(bits_of_float(product_of_terms(zeros_view, ones_view, lanes)) == bits_of_float(-zero));
-        element_at(negative_zeros, 17) = zero;
-        assert(bits_of_float(product_of_terms(zeros_view, ones_view, lanes)) == bits_of_float(zero));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             bits_of_float(product_of_terms(zeros_view, ones_view, lanes)) == bits_of_float(-zero));
+        *negative_zeros.get(17).expect("a test reads an element at or past the count of its array") = zero;
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             bits_of_float(product_of_terms(zeros_view, ones_view, lanes)) == bits_of_float(zero));
         // An infinity gives itself, and two infinities of the two signs give
         // the canonical NaN.
         FixedArray<T, 37> mixed{};
         for (T& value : mixed)
             value = one;
         ::fixy::View<T const> const mixed_view{mixed.view()};
-        element_at(mixed, 3) = infinity;
-        assert(bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(infinity));
-        element_at(mixed, 30) = -infinity;
-        assert(bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
+        *mixed.get(3).expect("a test reads an element at or past the count of its array") = infinity;
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(infinity));
+        *mixed.get(30).expect("a test reads an element at or past the count of its array") = -infinity;
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
         // A product of an infinity and a zero is a NaN, and each NaN of a
         // payload, a sign or a signaling bit gives the canonical NaN.
-        element_at(mixed, 30) = one;
-        element_at(mixed, 3) = infinity;
-        element_at(negative_zeros, 3) = zero;
-        assert(bits_of_float(product_of_terms(mixed_view, zeros_view, lanes)) == bits_of_float(canonical));
-        element_at(mixed, 3) = payload_nan<T>();
-        assert(bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
-        element_at(mixed, 3) = ::fixy::signaling_nan_of<T>;
-        assert(bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
+        *mixed.get(30).expect("a test reads an element at or past the count of its array") = one;
+        *mixed.get(3).expect("a test reads an element at or past the count of its array") = infinity;
+        *negative_zeros.get(3).expect("a test reads an element at or past the count of its array") = zero;
+        CRUCIBLE_TEST_ASSERT(kTest, bits_of_float(product_of_terms(mixed_view, zeros_view, lanes))
+                                        == bits_of_float(canonical));
+        *mixed.get(3).expect("a test reads an element at or past the count of its array") = payload_nan<T>();
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
+        *mixed.get(3).expect("a test reads an element at or past the count of its array") = ::fixy::signaling_nan_of<T>;
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
         // A cancellation: x0 * 1 + ... with the pairs x and -x, and one small
         // term, gives the small term exactly.
         FixedArray<T, 37> pairs{};
         for (std::size_t index = 0; index < 36; index += 2) {
             T const value = T{3} * static_cast<T>(index + 1);
-            element_at(pairs, index) = value;
-            element_at(pairs, index + 1) = -value;
+            *pairs.get(index).expect("a test reads an element at or past the count of its array") = value;
+            *pairs.get(index + 1).expect("a test reads an element at or past the count of its array") = -value;
         }
-        element_at(pairs, 36) = tiny;
-        assert(bits_of_float(product_of_terms(::fixy::View<T const>{pairs.view()}, ones_view, lanes))
-               == bits_of_float(tiny));
+        *pairs.get(36).expect("a test reads an element at or past the count of its array") = tiny;
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             bits_of_float(product_of_terms(::fixy::View<T const>{pairs.view()}, ones_view, lanes))
+                                 == bits_of_float(tiny));
         // A product that underflows to a subnormal value keeps its bits, and
         // a sum of subnormal values is exact.
         FixedArray<T, 37> halves{};
@@ -292,13 +323,14 @@ void test_the_hard_cases() {
         FixedArray<T, 37> tinies{};
         for (T& value : tinies)
             value = tiny + tiny;
-        assert(bits_of_float(
-                   product_of_terms(::fixy::View<T const>{halves.view()}, ::fixy::View<T const>{tinies.view()}, lanes))
-               == bits_of_float(tiny * T{37}));
+        CRUCIBLE_TEST_ASSERT(kTest, bits_of_float(product_of_terms(::fixy::View<T const>{halves.view()},
+                                                                   ::fixy::View<T const>{tinies.view()}, lanes))
+                                        == bits_of_float(tiny * T{37}));
     }
-    ::crucible::test::pass("test_core_product: the zeros, the infinities, the NaNs, a cancellation and the "
-                           "subnormal products of {} bytes give their stated bits\n",
-                           sizeof(T));
+    ::fixy::check::pass(kTest,
+                        "test_core_product: the zeros, the infinities, the NaNs, a cancellation and the "
+                        "subnormal products of {} bytes give their stated bits\n",
+                        sizeof(T));
 }
 
 // The hard cases inside the bound: drawn terms with subnormal products, a
@@ -319,7 +351,9 @@ void test_the_hard_cases_are_inside_the_bound() {
                 T value = ::crucible::test::draw_spread_value<T>(stream, 30);
                 if (kind == 1) value = ::crucible::test::draw_spread_value<T>(stream, 2) * underflow_scale<T>();
                 if (kind == 2 && inner % 2 == 1) value = -left.at(row, inner - 1);
-                element_at(left.values.view(), left.position(row, inner)) = value;
+                *left.values.view()
+                     .get(left.position(row, inner))
+                     .expect("a test reads an element at or past the count of its View") = value;
             }
             for (std::size_t column = 0; column < 3; ++column) {
                 // Kind 3: the products spread over more than 200 binades, and
@@ -328,23 +362,27 @@ void test_the_hard_cases_are_inside_the_bound() {
                 T value = ::crucible::test::draw_spread_value<T>(stream, spread);
                 if (kind == 1) value = ::crucible::test::draw_spread_value<T>(stream, 2) * underflow_scale<T>();
                 if (kind == 2 && inner % 2 == 1) value = right.at(inner - 1, column);
-                element_at(right.values.view(), right.position(inner, column)) = value;
+                *right.values.view()
+                     .get(right.position(inner, column))
+                     .expect("a test reads an element at or past the count of its View") = value;
             }
         }
         Matrix<T> out = make_matrix<T>(MatrixShape{2, 3}, Layout::RowMajor, 0);
-        assert(multiply_into(out, left.view(), right.view(), LaneCount::Native).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, multiply_into(out, left.view(), right.view(), LaneCount::Native).is_ok());
         for (std::size_t row = 0; row < 2; ++row) {
             for (std::size_t column = 0; column < 3; ++column) {
                 auto const [exact, magnitude] = ::crucible::test::exact_product(left, right, row, column);
                 ::crucible::test::check_bound(exact, magnitude, depth, 1, out.at(row, column), record);
-                assert(::crucible::test::bits_of_float(out.at(row, column))
-                       == ::crucible::test::bits_of_float(::crucible::test::model_product(left, right, row, column)));
+                CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::bits_of_float(out.at(row, column))
+                                                == ::crucible::test::bits_of_float(
+                                                    ::crucible::test::model_product(left, right, row, column)));
             }
         }
     }
-    ::crucible::test::pass("test_core_product: {} hard outputs of {} bytes are inside the bound, the largest error "
-                           "is {} of the bound\n",
-                           record.outputs, sizeof(T), record.largest_ratio);
+    ::fixy::check::pass(kTest,
+                        "test_core_product: {} hard outputs of {} bytes are inside the bound, the largest error "
+                        "is {} of the bound\n",
+                        record.outputs, sizeof(T), record.largest_ratio);
 }
 
 // A split of the output into blocks of rows, as threads take them, gives the
@@ -361,7 +399,7 @@ void test_a_split_of_the_rows_changes_no_bit() {
     ::crucible::test::fill_matrix(left, stream, 12);
     ::crucible::test::fill_matrix(right, stream, 12);
     Matrix<T> whole = make_matrix<T>(MatrixShape{rows, columns}, Layout::RowMajor, 0);
-    assert(multiply_into(whole, left.view(), right.view(), LaneCount::Native).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, multiply_into(whole, left.view(), right.view(), LaneCount::Native).is_ok());
     FixedArray<std::size_t, 5> const block_rows{1, 2, 5, 8, 23};
     for (std::size_t const block : block_rows) {
         ::fixy::HeapArray<T> parts = ::fixy::mint_heap_array(::crucible::test::rig_alloc(), rows * columns, T{});
@@ -380,20 +418,25 @@ void test_a_split_of_the_rows_changes_no_bit() {
                 auto const rows_of_block = left.view()
                                                .slice(::fixy::index<0>(), first_row, count)
                                                .expect("the block is inside the left factor");
-                assert(::fixy::multiply_by_tree(target, ::fixy::side_as<::fixy::side::LeftFactor>(rows_of_block),
-                                                ::fixy::side_as<::fixy::side::RightFactor>(right.view()))
-                           .is_ok());
+                CRUCIBLE_TEST_ASSERT(
+                    kTest, ::fixy::multiply_by_tree(target, ::fixy::side_as<::fixy::side::LeftFactor>(rows_of_block),
+                                                    ::fixy::side_as<::fixy::side::RightFactor>(right.view()))
+                               .is_ok());
                 first_row += count;
             }
         });
         for (std::size_t position = 0; position < rows * columns; ++position) {
-            assert(::crucible::test::bits_of_float(element_at(parts.view(), position))
-                   == ::crucible::test::bits_of_float(element_at(whole.values.view(), position)));
+            CRUCIBLE_TEST_ASSERT(kTest,
+                                 ::crucible::test::bits_of_float(*parts.view().get(position).expect(
+                                     "a test reads an element at or past the count of its View"))
+                                     == ::crucible::test::bits_of_float(*whole.values.view().get(position).expect(
+                                         "a test reads an element at or past the count of its View")));
         }
     }
-    ::crucible::test::pass("test_core_product: each split of the rows of a product of {} bytes into blocks gives "
-                           "the bits of one call\n",
-                           sizeof(T));
+    ::fixy::check::pass(kTest,
+                        "test_core_product: each split of the rows of a product of {} bytes into blocks gives "
+                        "the bits of one call\n",
+                        sizeof(T));
 }
 
 // The errors come before the first write.
@@ -405,11 +448,11 @@ void test_the_errors_write_nothing() {
     ::crucible::test::fill_matrix(right, stream, 4);
     Matrix<float> out = make_matrix<float>(MatrixShape{3, 2}, Layout::RowMajor, 0);
     auto const shape_error = multiply_into(out, left.view(), right.view(), LaneCount::Native);
-    assert(shape_error.is_err());
-    assert(shape_error.err().value_or(::fixy::ProductError::OutputOverlapsInput)
-           == ::fixy::ProductError::ShapeMismatch);
+    CRUCIBLE_TEST_ASSERT(kTest, shape_error.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, shape_error.err().value_or(::fixy::ProductError::OutputOverlapsInput)
+                                    == ::fixy::ProductError::ShapeMismatch);
     for (float const value : out.values) {
-        assert(::crucible::test::bits_of_float(value) == 0u);
+        CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::bits_of_float(value) == 0u);
     }
     // The output is the left factor itself.
     Matrix<float> square = make_matrix<float>(MatrixShape{4, 4}, Layout::RowMajor, 0);
@@ -430,14 +473,17 @@ void test_the_errors_write_nothing() {
                                         ::fixy::side_as<::fixy::side::RightFactor>(other.view()));
     });
     square.values = std::move(back);
-    assert(overlap.is_err());
-    assert(overlap.err().value_or(::fixy::ProductError::ShapeMismatch) == ::fixy::ProductError::OutputOverlapsInput);
+    CRUCIBLE_TEST_ASSERT(kTest, overlap.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, overlap.err().value_or(::fixy::ProductError::ShapeMismatch)
+                                    == ::fixy::ProductError::OutputOverlapsInput);
     for (std::size_t position = 0; position < 16; ++position) {
-        assert(::crucible::test::bits_of_float(element_at(square.values.view(), position))
-               == ::crucible::test::bits_of_float(element_at(before.view(), position)));
+        CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::bits_of_float(*square.values.view().get(position).expect(
+                                        "a test reads an element at or past the count of its View"))
+                                        == ::crucible::test::bits_of_float(*before.view().get(position).expect(
+                                            "a test reads an element at or past the count of its View")));
     }
-    ::crucible::test::pass("test_core_product: a shape that does not agree and an output over a factor give their "
-                           "error and write nothing\n");
+    ::fixy::check::pass(kTest, "test_core_product: a shape that does not agree and an output over a factor give their "
+                               "error and write nothing\n");
 }
 
 // Each sum of runs has the bits of the model in each layout and for each
@@ -454,10 +500,11 @@ void test_sums_of_runs() {
             Layout const out_layout = stream.below(2) == 0 ? Layout::RowMajor : Layout::Spread;
             for (LaneCount const lanes : kLaneCounts) {
                 Matrix<T> out = make_matrix<T>(MatrixShape{1, outputs}, out_layout, 1);
-                assert(sum_runs_into(out, runs.view(), lanes).is_ok());
+                CRUCIBLE_TEST_ASSERT(kTest, sum_runs_into(out, runs.view(), lanes).is_ok());
                 for (std::size_t column = 0; column < outputs; ++column) {
-                    assert(::crucible::test::bits_of_float(out.at(0, column))
-                           == ::crucible::test::bits_of_float(::crucible::test::model_runs(runs, column)));
+                    CRUCIBLE_TEST_ASSERT(
+                        kTest, ::crucible::test::bits_of_float(out.at(0, column))
+                                   == ::crucible::test::bits_of_float(::crucible::test::model_runs(runs, column)));
                     if (lanes != LaneCount::Native) continue;
                     ExactSum<T> exact{};
                     ExactSum<T> magnitude{};
@@ -471,9 +518,10 @@ void test_sums_of_runs() {
             ++cases;
         }
     }
-    ::crucible::test::pass("test_core_product: {} sums of runs of {} bytes have the bits of the model, and {} "
-                           "outputs are inside the bound, the largest error is {} of the bound\n",
-                           cases, sizeof(T), record.outputs, record.largest_ratio);
+    ::fixy::check::pass(kTest,
+                        "test_core_product: {} sums of runs of {} bytes have the bits of the model, and {} "
+                        "outputs are inside the bound, the largest error is {} of the bound\n",
+                        cases, sizeof(T), record.outputs, record.largest_ratio);
 }
 
 // sum_products_by_tree has the bits of the model, for each count to 300 and
@@ -493,7 +541,8 @@ void test_dot_products() {
         T expected = T{};
         if (count > 0) {
             auto const leaf = [&](std::size_t index) noexcept {
-                T const product = element_at(left, index) * element_at(right, index);
+                T const product = *left.get(index).expect("a test reads an element at or past the count of its View")
+                                * *right.get(index).expect("a test reads an element at or past the count of its View");
                 return product;
             };
             expected = ::crucible::test::model_tree<T>(leaf, 0, count);
@@ -502,20 +551,21 @@ void test_dot_products() {
             return ::crucible::test::bits_of_float(std::move(result).value_or(::fixy::quiet_nan_of<T>));
         };
         auto const expected_bits = ::crucible::test::bits_of_float(expected);
-        assert(bits(::fixy::sum_products_by_tree(left, right)) == expected_bits);
-        assert(bits(::fixy::sum_products_by_tree(right, left)) == expected_bits);
-        assert(bits(::fixy::sum_products_by_tree_in_lanes<2>(left, right)) == expected_bits);
-        assert(bits(::fixy::sum_products_by_tree_in_lanes<4>(left, right)) == expected_bits);
-        assert(bits(::fixy::sum_products_by_tree_in_lanes<8>(left, right)) == expected_bits);
-        assert(bits(::fixy::sum_products_by_tree_in_lanes<16>(left, right)) == expected_bits);
-        assert(bits(::fixy::sum_products_by_tree_in_lanes<32>(left, right)) == expected_bits);
+        CRUCIBLE_TEST_ASSERT(kTest, bits(::fixy::sum_products_by_tree(left, right)) == expected_bits);
+        CRUCIBLE_TEST_ASSERT(kTest, bits(::fixy::sum_products_by_tree(right, left)) == expected_bits);
+        CRUCIBLE_TEST_ASSERT(kTest, bits(::fixy::sum_products_by_tree_in_lanes<2>(left, right)) == expected_bits);
+        CRUCIBLE_TEST_ASSERT(kTest, bits(::fixy::sum_products_by_tree_in_lanes<4>(left, right)) == expected_bits);
+        CRUCIBLE_TEST_ASSERT(kTest, bits(::fixy::sum_products_by_tree_in_lanes<8>(left, right)) == expected_bits);
+        CRUCIBLE_TEST_ASSERT(kTest, bits(::fixy::sum_products_by_tree_in_lanes<16>(left, right)) == expected_bits);
+        CRUCIBLE_TEST_ASSERT(kTest, bits(::fixy::sum_products_by_tree_in_lanes<32>(left, right)) == expected_bits);
     }
     ::fixy::View<T const> const longer = ::fixy::View<T const>{firsts.view()}.window(0, 5).expect("fits");
     ::fixy::View<T const> const shorter = ::fixy::View<T const>{seconds.view()}.window(0, 4).expect("fits");
-    assert(::fixy::sum_products_by_tree(longer, shorter).is_err());
-    ::crucible::test::pass("test_core_product: the dot products of {} bytes to 300 terms have the bits of the model "
-                           "for each count of lanes\n",
-                           sizeof(T));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::sum_products_by_tree(longer, shorter).is_err());
+    ::fixy::check::pass(kTest,
+                        "test_core_product: the dot products of {} bytes to 300 terms have the bits of the model "
+                        "for each count of lanes\n",
+                        sizeof(T));
 }
 
 // The digests of the fixed draws of product_forms.h, which each build gives.
@@ -536,7 +586,7 @@ inline constexpr std::uint64_t kDoubleDigest = 3087225960675716927u;
 // The digests of this unit, and of the units of x86-64-v3 and x86-64-v4 that
 // the build has on a host of their level, hold.
 void test_the_digests_hold() {
-    assert(agree_with_the_constants(::crucible::test::digests_of_this_unit()));
+    CRUCIBLE_TEST_ASSERT(kTest, agree_with_the_constants(::crucible::test::digests_of_this_unit()));
     std::size_t units = 1;
 #if defined(__x86_64__)
     namespace os = ::foundation::os;
@@ -547,20 +597,21 @@ void test_the_digests_hold() {
     os::X86Level const host = os::x86_level_of(os::read_x86_feature_words());
     if constexpr (has_v3_unit) {
         if (host >= os::X86Level::v3) {
-            assert(agree_with_the_constants(::crucible::test::product_digests_of_v3_unit()));
+            CRUCIBLE_TEST_ASSERT(kTest, agree_with_the_constants(::crucible::test::product_digests_of_v3_unit()));
             ++units;
         }
     }
     if constexpr (has_v4_unit) {
         if (host >= os::X86Level::v4) {
-            assert(agree_with_the_constants(::crucible::test::product_digests_of_v4_unit()));
+            CRUCIBLE_TEST_ASSERT(kTest, agree_with_the_constants(::crucible::test::product_digests_of_v4_unit()));
             ++units;
         }
     }
 #endif
-    ::crucible::test::pass("test_core_product: the digests of the fixed draws hold in {} units of {} vector bytes "
-                           "and more\n",
-                           units, ::foundation::simd::native_vector_bytes);
+    ::fixy::check::pass(kTest,
+                        "test_core_product: the digests of the fixed draws hold in {} units of {} vector bytes "
+                        "and more\n",
+                        units, ::foundation::simd::native_vector_bytes);
 }
 
 }  // namespace

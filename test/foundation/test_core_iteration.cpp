@@ -5,15 +5,22 @@
 
 #include <foundation/core/Array.h>
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -42,15 +49,15 @@ void test_reverse_reads_from_the_last_element() {
     FixedArray<int, 5> const values{1, 2, 3, 4, 5};
     int expected = 5;
     for (int const value : values.reverse()) {
-        assert(value == expected);
+        CRUCIBLE_TEST_ASSERT(kTest, value == expected);
         --expected;
     }
-    assert(expected == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, expected == 0);
     FixedArray<int, 3> numbers{1, 2, 3};
     for (int& value : numbers.reverse()) {
         value *= 10;
     }
-    assert(numbers == (FixedArray<int, 3>{10, 20, 30}));
+    CRUCIBLE_TEST_ASSERT(kTest, numbers == (FixedArray<int, 3>{10, 20, 30}));
 }
 
 void test_windows_and_chunks_of_an_array() {
@@ -61,31 +68,32 @@ void test_windows_and_chunks_of_an_array() {
         first_total += run.at(index<0>());
         ++count;
     }
-    assert(count == 3 && first_total == 1 + 2 + 3);
+    CRUCIBLE_TEST_ASSERT(kTest, count == 3 && first_total == 1 + 2 + 3);
     auto const runs = values.view().chunks<4>();
     int chunk_count = 0;
     for (View<int const, 4> const run : runs) {
-        assert(run.at(index<3>()) == 4);
+        CRUCIBLE_TEST_ASSERT(kTest, run.at(index<3>()) == 4);
         ++chunk_count;
     }
-    assert(chunk_count == 1);
-    assert(::foundation::core::equal(runs.rest(), values.view().window(4, 2).expect("two elements fit")));
+    CRUCIBLE_TEST_ASSERT(kTest, chunk_count == 1);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::foundation::core::equal(runs.rest(), values.view().window(4, 2).expect("two elements fit")));
 }
 
 void test_enumerate_gives_each_index_with_its_element() {
     FixedArray<int, 5> const values{10, 20, 30, 40, 50};
     std::size_t expected_position = 0;
     for (auto const [position, element] : values.enumerate()) {
-        assert(position.raw() == expected_position);
-        assert(*element == values.at(position));
+        CRUCIBLE_TEST_ASSERT(kTest, position.raw() == expected_position);
+        CRUCIBLE_TEST_ASSERT(kTest, *element == values.at(position));
         ++expected_position;
     }
-    assert(expected_position == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, expected_position == 5);
     FixedArray<int, 4> numbers{};
     for (auto const [position, element] : numbers.enumerate()) {
         *element = static_cast<int>(position.raw()) * 3;
     }
-    assert(numbers == (FixedArray<int, 4>{0, 3, 6, 9}));
+    CRUCIBLE_TEST_ASSERT(kTest, numbers == (FixedArray<int, 4>{0, 3, 6, 9}));
 }
 
 void test_zip_of_one_fixed_extent() {
@@ -95,12 +103,12 @@ void test_zip_of_one_fixed_extent() {
     for (auto const [first, second] : left.view().walk().zip(right.view().walk())) {
         total += *first * *second;
     }
-    assert(total == 10 + 40 + 90 + 160);
+    CRUCIBLE_TEST_ASSERT(kTest, total == 10 + 40 + 90 + 160);
     FixedArray<int, 4> target{};
     for (auto const [destination, source] : target.view().walk().zip(left.view().walk())) {
         *destination = *source + 1;
     }
-    assert(target == (FixedArray<int, 4>{2, 3, 4, 5}));
+    CRUCIBLE_TEST_ASSERT(kTest, target == (FixedArray<int, 4>{2, 3, 4, 5}));
 }
 
 void test_zip_of_a_dynamic_extent_compares_the_counts() {
@@ -108,21 +116,22 @@ void test_zip_of_a_dynamic_extent_compares_the_counts() {
     View<int const> const head = values.view().window(0, 3).expect("three elements fit");
     View<int const> const tail = values.view().window(3, 3).expect("three elements fit");
     View<int const> const longer = values.view().window(1, 4).expect("four elements fit");
-    assert(head.walk().try_zip(longer.walk()).is_err());
-    assert(values.view().walk().try_zip(head.walk()).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, head.walk().try_zip(longer.walk()).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, values.view().walk().try_zip(head.walk()).is_err());
     auto const pairs = head.walk().try_zip(tail.walk()).expect("the two windows hold three elements");
-    assert(pairs.size() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, pairs.size() == 3);
     int total = 0;
     for (auto const [first, second] : pairs) {
-        assert(*second == *first + 3);
+        CRUCIBLE_TEST_ASSERT(kTest, *second == *first + 3);
         total += *first;
     }
-    assert(total == 1 + 2 + 3);
+    CRUCIBLE_TEST_ASSERT(kTest, total == 1 + 2 + 3);
     bool const mismatch_matched =
         head.walk().try_zip(longer.walk()).match([](auto) { return false; }, [](LengthMismatch) { return true; });
-    assert(mismatch_matched);
+    CRUCIBLE_TEST_ASSERT(kTest, mismatch_matched);
     View<int const> const empty{};
-    assert(empty.walk().try_zip(empty.walk()).expect("two empty Views hold zero elements").size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         empty.walk().try_zip(empty.walk()).expect("two empty Views hold zero elements").size() == 0);
 }
 
 // The property: for random runs and random counts, reverse() visits the
@@ -140,37 +149,39 @@ void test_verbs_agree_with_the_index_model() {
         std::size_t position = size;
         for (std::uint64_t const value : elements.reverse()) {
             --position;
-            assert(value == element_at(run, position));
+            CRUCIBLE_TEST_ASSERT(kTest, value == element_at(run, position));
         }
-        assert(position == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, position == 0);
 
         std::size_t start = 0;
         for (View<std::uint64_t const, 4> const window : elements.windows<4>()) {
-            assert(window.at(index<0>()) == element_at(run, start));
-            assert(window.at(index<3>()) == element_at(run, start + 3));
+            CRUCIBLE_TEST_ASSERT(kTest, window.at(index<0>()) == element_at(run, start));
+            CRUCIBLE_TEST_ASSERT(kTest, window.at(index<3>()) == element_at(run, start + 3));
             ++start;
         }
-        assert(start == (size < 4 ? 0 : size - 3));
+        CRUCIBLE_TEST_ASSERT(kTest, start == (size < 4 ? 0 : size - 3));
 
         auto const chunks = elements.chunks<5>();
         std::size_t chunk_start = 0;
         for (View<std::uint64_t const, 5> const chunk : chunks) {
             for (Index<5> const offset : chunk.indices()) {
-                assert(chunk.at(offset) == element_at(run, chunk_start + offset.raw()));
+                CRUCIBLE_TEST_ASSERT(kTest, chunk.at(offset) == element_at(run, chunk_start + offset.raw()));
             }
             chunk_start += 5;
         }
-        assert(chunk_start == size - size % 5);
-        assert(chunks.rest().size() == size % 5);
-        assert(::foundation::core::equal(
-            chunks.rest(), elements.window(chunk_start, size % 5).expect("the rest is the tail of the run")));
+        CRUCIBLE_TEST_ASSERT(kTest, chunk_start == size - size % 5);
+        CRUCIBLE_TEST_ASSERT(kTest, chunks.rest().size() == size % 5);
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            ::foundation::core::equal(
+                chunks.rest(), elements.window(chunk_start, size % 5).expect("the rest is the tail of the run")));
 
         std::size_t enumerated = 0;
         for (auto const [offset, element] : run.enumerate()) {
-            assert(offset.raw() == enumerated && *element == element_at(run, enumerated));
+            CRUCIBLE_TEST_ASSERT(kTest, offset.raw() == enumerated && *element == element_at(run, enumerated));
             ++enumerated;
         }
-        assert(enumerated == run_size);
+        CRUCIBLE_TEST_ASSERT(kTest, enumerated == run_size);
 
         std::size_t const shift = stream.below(run_size - size + 1);
         View<std::uint64_t const> const shifted =
@@ -178,13 +189,14 @@ void test_verbs_agree_with_the_index_model() {
         std::size_t paired = 0;
         for (auto const [first, second] :
              elements.walk().try_zip(shifted.walk()).expect("the two windows hold size elements")) {
-            assert(*first == element_at(run, paired) && *second == element_at(run, shift + paired));
+            CRUCIBLE_TEST_ASSERT(kTest,
+                                 *first == element_at(run, paired) && *second == element_at(run, shift + paired));
             ++paired;
         }
-        assert(paired == size);
+        CRUCIBLE_TEST_ASSERT(kTest, paired == size);
         if (size != 0) {
             View<std::uint64_t const> const shorter = elements.window(1, size - 1).expect("the tail of a window fits");
-            assert(elements.walk().try_zip(shorter.walk()).is_err());
+            CRUCIBLE_TEST_ASSERT(kTest, elements.walk().try_zip(shorter.walk()).is_err());
         }
     }
 }
@@ -265,6 +277,6 @@ int main() {
     test_zip_of_a_dynamic_extent_compares_the_counts();
     test_verbs_agree_with_the_index_model();
     test_cursors_at_the_end_abort(test);
-    crucible::test::pass("test_core_iteration: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_iteration: all tests passed\n");
     return 0;
 }

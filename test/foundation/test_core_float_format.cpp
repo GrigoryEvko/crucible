@@ -11,16 +11,26 @@
 // integers above the last exact integer, and the floats near each power of
 // ten.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Format.h>
 #include <foundation/core/Scalar.h>
+#include <foundation/effects/Effect.h>
 
 #include <foundation/Quarantine.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstdint>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -183,41 +193,42 @@ void expect_float(std::uint32_t bits) { expect_oracle(float_of(bits), bits); }
 // The edge values and their exact texts.
 void test_edge_values_have_their_texts() {
     FixedText<float_text_capacity> text;
-    assert(text_of(text, 0.0) == TextView{"0"});
-    assert(text_of(text, -0.0) == TextView{"-0"});
-    assert(text_of(text, double_of(0x7FF0000000000000ULL)) == TextView{"inf"});
-    assert(text_of(text, double_of(0xFFF0000000000000ULL)) == TextView{"-inf"});
-    assert(text_of(text, double_of(0x7FF8000000000000ULL)) == TextView{"nan"});
-    assert(text_of(text, double_of(0xFFF8000000000000ULL)) == TextView{"-nan"});
-    assert(text_of(text, double_of(0x7FF0000000000001ULL)) == TextView{"nan"});
-    assert(text_of(text, double_of(0x7FF4000000ABCDEFULL)) == TextView{"nan"});
-    assert(text_of(text, double_of(0x0000000000000001ULL)) == TextView{"5e-324"});
-    assert(text_of(text, double_of(0x000FFFFFFFFFFFFFULL)) == TextView{"2.225073858507201e-308"});
-    assert(text_of(text, double_of(0x0010000000000000ULL)) == TextView{"2.2250738585072014e-308"});
-    assert(text_of(text, double_of(0x7FEFFFFFFFFFFFFFULL)) == TextView{"1.7976931348623157e+308"});
-    assert(text_of(text, double_of(0xFFEFFFFFFFFFFFFFULL)) == TextView{"-1.7976931348623157e+308"});
-    assert(text_of(text, 0.1) == TextView{"0.1"});
-    assert(text_of(text, 1.0 / 3.0) == TextView{"0.3333333333333333"});
-    assert(text_of(text, 9.5e-5) == TextView{"9.5e-05"});
-    assert(text_of(text, 1e-4) == TextView{"1e-04"});
-    assert(text_of(text, 0.001) == TextView{"0.001"});
-    assert(text_of(text, 1e15) == TextView{"1e+15"});
-    assert(text_of(text, 1e22) == TextView{"1e+22"});
-    assert(text_of(text, 1e23) == TextView{"1e+23"});
-    assert(text_of(text, 123456789.0) == TextView{"123456789"});
-    assert(text_of(text, 9007199254740993.0) == TextView{"9007199254740992"});
-    assert(text_of(text, 123456789012345680000.0) == TextView{"123456789012345683968"});
-    assert(text_of(text, 1.5e300) == TextView{"1.5e+300"});
-    assert(text_of(text, 0.0f) == TextView{"0"});
-    assert(text_of(text, -0.0f) == TextView{"-0"});
-    assert(text_of(text, float_of(0x00000001U)) == TextView{"1e-45"});
-    assert(text_of(text, float_of(0x7F7FFFFFU)) == TextView{"3.4028235e+38"});
-    assert(text_of(text, float_of(0x7F800000U)) == TextView{"inf"});
-    assert(text_of(text, float_of(0xFFC00000U)) == TextView{"-nan"});
-    assert(text_of(text, 0.1f) == TextView{"0.1"});
-    assert(text_of(text, 1e7f) == TextView{"1e+07"});
-    assert(text_of(text, 16777217.0f) == TextView{"16777216"});
-    assert(text_of(text, 12345679360.0f) == TextView{"12345679872"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 0.0) == TextView{"0"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, -0.0) == TextView{"-0"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0x7FF0000000000000ULL)) == TextView{"inf"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0xFFF0000000000000ULL)) == TextView{"-inf"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0x7FF8000000000000ULL)) == TextView{"nan"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0xFFF8000000000000ULL)) == TextView{"-nan"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0x7FF0000000000001ULL)) == TextView{"nan"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0x7FF4000000ABCDEFULL)) == TextView{"nan"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0x0000000000000001ULL)) == TextView{"5e-324"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0x000FFFFFFFFFFFFFULL)) == TextView{"2.225073858507201e-308"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0x0010000000000000ULL)) == TextView{"2.2250738585072014e-308"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, double_of(0x7FEFFFFFFFFFFFFFULL)) == TextView{"1.7976931348623157e+308"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         text_of(text, double_of(0xFFEFFFFFFFFFFFFFULL)) == TextView{"-1.7976931348623157e+308"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 0.1) == TextView{"0.1"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 1.0 / 3.0) == TextView{"0.3333333333333333"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 9.5e-5) == TextView{"9.5e-05"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 1e-4) == TextView{"1e-04"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 0.001) == TextView{"0.001"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 1e15) == TextView{"1e+15"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 1e22) == TextView{"1e+22"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 1e23) == TextView{"1e+23"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 123456789.0) == TextView{"123456789"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 9007199254740993.0) == TextView{"9007199254740992"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 123456789012345680000.0) == TextView{"123456789012345683968"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 1.5e300) == TextView{"1.5e+300"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 0.0f) == TextView{"0"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, -0.0f) == TextView{"-0"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, float_of(0x00000001U)) == TextView{"1e-45"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, float_of(0x7F7FFFFFU)) == TextView{"3.4028235e+38"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, float_of(0x7F800000U)) == TextView{"inf"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, float_of(0xFFC00000U)) == TextView{"-nan"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 0.1f) == TextView{"0.1"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 1e7f) == TextView{"1e+07"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 16777217.0f) == TextView{"16777216"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(text, 12345679360.0f) == TextView{"12345679872"});
 }
 
 // A float in a longer text: format() and report() take a float as each other
@@ -225,7 +236,7 @@ void test_edge_values_have_their_texts() {
 void test_float_mixes_with_other_arguments() {
     FixedText<64> text;
     TextView const mixed = format(text, "{} of {} at {}", 0.25, 3, 2.5f).expect("the text fits 64 characters");
-    assert(mixed == TextView{"0.25 of 3 at 2.5"});
+    CRUCIBLE_TEST_ASSERT(kTest, mixed == TextView{"0.25 of 3 at 2.5"});
     ::fixy::report(::fixy::Sink::Out, "test_core_float_format: a ratio of {} and {}\n", 0.5, -1.25f);
 }
 
@@ -308,6 +319,6 @@ int main() {
     test_each_binade_agrees_with_the_oracle();
     test_subnormals_and_wide_integers_agree_with_the_oracle();
     test_powers_of_ten_agree_with_the_oracle();
-    crucible::test::pass("test_core_float_format: {} values agree with std::to_chars\n", agreed_values);
+    ::fixy::check::pass(kTest, "test_core_float_format: {} values agree with std::to_chars\n", agreed_values);
     return 0;
 }

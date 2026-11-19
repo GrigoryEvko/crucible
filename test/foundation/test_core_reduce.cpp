@@ -3,15 +3,24 @@
 // power of two; the split into grains in random orders and for 1, 2, 4, 8
 // and 64 shards; the error bound; the sum of runs and the segments.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "nan_outputs.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -72,7 +81,7 @@ using ::foundation::core::with_mut;
 // the bit operations of the header.
 template <class T>
 [[nodiscard]] T naive_tree(View<T const> run) noexcept {
-    if (run.size() == 1) return ::crucible::test::element_at(run, 0);
+    if (run.size() == 1) return *run.get(0).expect("a test reads an element at or past the count of its View");
     std::size_t split = 1;
     while (split * 2 < run.size()) {
         split *= 2;
@@ -115,17 +124,18 @@ void test_sum_by_tree_agrees_with_the_naive_tree() {
         View<float const> const part = all.window(0, count).expect("the part fits the run");
         float const sum = ::foundation::core::sum_by_tree(part);
         if (count == 0) {
-            assert(same_bits(sum, 0.0f));
-            assert(::foundation::core::reduce_by_tree(part, add).is_none());
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, 0.0f));
+            CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::reduce_by_tree(part, add).is_none());
             return;
         }
-        assert(same_bits(sum, naive_tree(part)));
-        assert(same_bits(sum, ::foundation::core::reduce_by_tree(part, add).expect("the part has elements")));
-        assert(same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<2>(part)));
-        assert(same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<4>(part)));
-        assert(same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<8>(part)));
-        assert(same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<16>(part)));
-        assert(same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<32>(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, naive_tree(part)));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, same_bits(sum, ::foundation::core::reduce_by_tree(part, add).expect("the part has elements")));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<2>(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<4>(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<8>(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<16>(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<32>(part)));
     });
 }
 
@@ -136,14 +146,14 @@ void test_sum_by_tree_of_doubles_agrees_with_the_naive_tree() {
         View<double const> const part = all.window(0, count).expect("the part fits the run");
         double const sum = ::foundation::core::sum_by_tree(part);
         if (count == 0) {
-            assert(same_bits(sum, 0.0));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, 0.0));
             return;
         }
-        assert(same_bits(sum, naive_tree(part)));
-        assert(same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<2>(part)));
-        assert(same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<4>(part)));
-        assert(same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<8>(part)));
-        assert(same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<16>(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, naive_tree(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<2>(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<4>(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<8>(part)));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, ::foundation::core::sum_by_tree_in_lanes<16>(part)));
     });
 }
 
@@ -153,7 +163,7 @@ void test_sum_by_tree_of_doubles_agrees_with_the_naive_tree() {
 void test_left_fold_differs_from_the_tree() {
     HeapArray<float> const run = draw_floats(std::size_t{1} << 20, 0x7E570003u);
     View<float const> const all{run.view()};
-    assert(!same_bits(left_fold(all), ::foundation::core::sum_by_tree(all)));
+    CRUCIBLE_TEST_ASSERT(kTest, !same_bits(left_fold(all), ::foundation::core::sum_by_tree(all)));
 }
 
 // The positions 0 to count - 1 in an order that the stream draws.
@@ -161,13 +171,15 @@ void test_left_fold_differs_from_the_tree() {
     HeapArray<std::size_t> order = ::foundation::core::mint_heap_array(test_alloc(), count, std::size_t{0});
     View<std::size_t> const slots = order.view();
     for (std::size_t index = 0; index < count; ++index) {
-        ::crucible::test::element_at(slots, index) = index;
+        *slots.get(index).expect("a test reads an element at or past the count of its View") = index;
     }
     for (std::size_t index = count; index > 1; --index) {
         std::size_t const other = stream.below(index);
-        std::size_t const kept = ::crucible::test::element_at(slots, index - 1);
-        ::crucible::test::element_at(slots, index - 1) = ::crucible::test::element_at(slots, other);
-        ::crucible::test::element_at(slots, other) = kept;
+        std::size_t const kept =
+            *slots.get(index - 1).expect("a test reads an element at or past the count of its View");
+        *slots.get(index - 1).expect("a test reads an element at or past the count of its View") =
+            *slots.get(other).expect("a test reads an element at or past the count of its View");
+        *slots.get(other).expect("a test reads an element at or past the count of its View") = kept;
     }
     return order;
 }
@@ -199,7 +211,8 @@ template <std::size_t Grain>
             one = with_mut(std::move(one), [&](auto own) noexcept {
                 ::foundation::core::sum_grains_by_tree<Grain>(run, first + offset, std::move(own));
             });
-            ::crucible::test::element_at(slots, first + offset) = ::crucible::test::element_at(one, 0);
+            *slots.get(first + offset).expect("a test reads an element at or past the count of its View") =
+                *one.get(0).expect("a test reads an element at or past the count of its array");
         }
     }
     return ::foundation::core::sum_by_tree(View<float const>{slots});
@@ -218,10 +231,10 @@ void test_grains_split_the_tree_at_its_nodes() {
         View<float const> const part = all.window(0, count).expect("the part fits the run");
         float const sum = ::foundation::core::sum_by_tree(part);
         for (std::size_t const shards : shard_counts) {
-            assert(same_bits(sum, sum_by_shards<1>(part, shards, stream)));
-            assert(same_bits(sum, sum_by_shards<16>(part, shards, stream)));
-            assert(same_bits(sum, sum_by_shards<256>(part, shards, stream)));
-            assert(same_bits(sum, sum_by_shards<4096>(part, shards, stream)));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, sum_by_shards<1>(part, shards, stream)));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, sum_by_shards<16>(part, shards, stream)));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, sum_by_shards<256>(part, shards, stream)));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(sum, sum_by_shards<4096>(part, shards, stream)));
         }
     }
 }
@@ -250,7 +263,7 @@ void test_generic_grains_keep_the_order_of_operands() {
         });
         std::uint64_t const split =
             ::foundation::core::reduce_by_tree(View<std::uint64_t const>{partials.view()}, mix).expect("one grain");
-        assert(whole == split);
+        CRUCIBLE_TEST_ASSERT(kTest, whole == split);
     }
 }
 
@@ -266,7 +279,8 @@ void test_error_stays_inside_the_bound() {
         double absolute_sum = 0.0;
         std::size_t position = 0;
         for (float const value : run) {
-            ::crucible::test::element_at(wide_view, position) = static_cast<double>(value);
+            *wide_view.get(position).expect("a test reads an element at or past the count of its View") =
+                static_cast<double>(value);
             absolute_sum += value < 0.0f ? -static_cast<double>(value) : static_cast<double>(value);
             ++position;
         }
@@ -276,7 +290,7 @@ void test_error_stays_inside_the_bound() {
         double const unit = 1.0 / 16777216.0;
         double const gamma = depth * unit / (1.0 - depth * unit);
         double const error = computed > exact ? computed - exact : exact - computed;
-        assert(error <= gamma * absolute_sum * (1.0 + 1.0e-6));
+        CRUCIBLE_TEST_ASSERT(kTest, error <= gamma * absolute_sum * (1.0 + 1.0e-6));
     });
 }
 
@@ -301,25 +315,30 @@ void test_sum_of_runs_takes_the_tree_of_the_runs() {
         View<View<float const> const> const some_runs =
             View<View<float const> const>{runs.view()}.window(0, used).expect("the runs fit");
         sums = with_mut(std::move(sums), [&](auto out) noexcept {
-            assert(::foundation::core::sum_runs_by_tree(some_runs, std::move(out)).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::sum_runs_by_tree(some_runs, std::move(out)).is_ok());
         });
         HeapArray<float> column = ::foundation::core::mint_heap_array(test_alloc(), used, 0.0f);
         View<float> const column_view = column.view();
         for (std::size_t offset = 0; offset < kCount; ++offset) {
             for (std::size_t run = 0; run < used; ++run) {
-                ::crucible::test::element_at(column_view, run) =
-                    ::crucible::test::element_at(::crucible::test::element_at(some_runs, run), offset);
+                *column_view.get(run).expect("a test reads an element at or past the count of its View") =
+                    *some_runs.get(run)
+                         .expect("a test reads an element at or past the count of its View")
+                         ->get(offset)
+                         .expect("a test reads an element at or past the count of its View");
             }
-            assert(same_bits(::crucible::test::element_at(sums.view(), offset),
-                             naive_tree(View<float const>{column_view})));
+            CRUCIBLE_TEST_ASSERT(kTest, same_bits(*sums.view().get(offset).expect(
+                                                      "a test reads an element at or past the count of its View"),
+                                                  naive_tree(View<float const>{column_view})));
         }
     }
     HeapArray<float> const short_run = draw_floats(kCount - 1, 0x7E570017u);
     ::fixy::FixedArray<View<float const>, 2> const uneven{View<float const>{first.view()},
                                                           View<float const>{short_run.view()}};
     sums = with_mut(std::move(sums), [&](auto out) noexcept {
-        assert(::foundation::core::sum_runs_by_tree(View<View<float const> const>{uneven.view()}, std::move(out))
-                   .is_err());
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ::foundation::core::sum_runs_by_tree(View<View<float const> const>{uneven.view()}, std::move(out))
+                       .is_err());
     });
 }
 
@@ -330,22 +349,29 @@ void test_segments_take_the_tree_of_their_window() {
     ::fixy::FixedArray<std::size_t, 7> const offsets{3, 3, 20, 1044, 1045, 4096, 5000};
     HeapArray<float> sums = ::foundation::core::mint_heap_array(test_alloc(), std::size_t{6}, 1.0f);
     sums = with_mut(std::move(sums), [&](auto out) noexcept {
-        assert(::foundation::core::sum_segments_by_tree(all, View<std::size_t const>{offsets.view()}, std::move(out))
-                   .is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::sum_segments_by_tree(
+                                        all, View<std::size_t const>{offsets.view()}, std::move(out))
+                                        .is_ok());
     });
     for (std::size_t segment = 0; segment < 6; ++segment) {
-        std::size_t const start = ::crucible::test::element_at(offsets, segment);
-        std::size_t const end = ::crucible::test::element_at(offsets, segment + 1);
+        std::size_t const start =
+            *offsets.get(segment).expect("a test reads an element at or past the count of its array");
+        std::size_t const end =
+            *offsets.get(segment + 1).expect("a test reads an element at or past the count of its array");
         float const expected =
             ::foundation::core::sum_by_tree(all.window(start, end - start).expect("the segment fits the run"));
-        assert(same_bits(::crucible::test::element_at(sums.view(), segment), expected));
+        CRUCIBLE_TEST_ASSERT(kTest, same_bits(*sums.view().get(segment).expect(
+                                                  "a test reads an element at or past the count of its View"),
+                                              expected));
     }
-    assert(same_bits(::crucible::test::element_at(sums.view(), 0), 0.0f));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, same_bits(*sums.view().get(0).expect("a test reads an element at or past the count of its View"), 0.0f));
     ::fixy::FixedArray<std::size_t, 3> const past_end{0, 10, 5001};
     sums = with_mut(std::move(sums), [&](auto out) noexcept {
         auto [two, rest] = ::foundation::core::split_at(std::move(out), 2).expect("two sums fit");
-        assert(::foundation::core::sum_segments_by_tree(all, View<std::size_t const>{past_end.view()}, std::move(two))
-                   .is_err());
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::sum_segments_by_tree(
+                                        all, View<std::size_t const>{past_end.view()}, std::move(two))
+                                        .is_err());
         static_cast<void>(rest.size());
     });
 }
@@ -382,22 +408,27 @@ void test_sum_of_runs_refuses_a_partial_overlap() {
     HeapArray<float> buffer = draw_floats(kCount + 2, 0x7E570040u);
     HeapArray<float> const other = draw_floats(kCount, 0x7E570041u);
     HeapArray<float> before = ::foundation::core::mint_heap_array(test_alloc(), kCount + 2, 0.0f);
-    assert(::foundation::core::copy(before.view(), View<float const>{buffer.view()}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::copy(before.view(), View<float const>{buffer.view()}).is_ok());
     View<float> const run_view = buffer.view().window(1, kCount).expect("the run fits the buffer");
     ::fixy::FixedArray<View<float const>, 2> const runs{View<float const>{run_view}, View<float const>{other.view()}};
     View<View<float const> const> const both{runs.view()};
     using ::foundation::core::RunsError;
-    assert(is_refused_with(sum_runs_into(buffer, both, 2, kCount), RunsError::PartialOverlap));
-    assert(is_refused_with(sum_runs_into(buffer, both, 0, kCount), RunsError::PartialOverlap));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_with(sum_runs_into(buffer, both, 2, kCount), RunsError::PartialOverlap));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_with(sum_runs_into(buffer, both, 0, kCount), RunsError::PartialOverlap));
     for (std::size_t position = 0; position < kCount + 2; ++position) {
-        assert(same_bits(::crucible::test::element_at(buffer.view(), position),
-                         ::crucible::test::element_at(before.view(), position)));
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
+            same_bits(*buffer.view().get(position).expect("a test reads an element at or past the count of its View"),
+                      *before.view().get(position).expect("a test reads an element at or past the count of its View")));
     }
-    assert(sum_runs_into(buffer, both, 1, kCount).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, sum_runs_into(buffer, both, 1, kCount).is_ok());
     for (std::size_t offset = 0; offset < kCount; ++offset) {
-        float const expected = ::crucible::test::element_at(before.view(), 1 + offset)
-                             + ::crucible::test::element_at(other.view(), offset);
-        assert(same_bits(::crucible::test::element_at(run_view, offset), expected));
+        float const expected =
+            *before.view().get(1 + offset).expect("a test reads an element at or past the count of its View")
+            + *other.view().get(offset).expect("a test reads an element at or past the count of its View");
+        CRUCIBLE_TEST_ASSERT(
+            kTest, same_bits(*run_view.get(offset).expect("a test reads an element at or past the count of its View"),
+                             expected));
     }
 }
 
@@ -410,11 +441,11 @@ using ::crucible::test::output_bits;
 template <class T>
 void check_sum_outputs(View<T const> part) noexcept {
     auto const expected = output_bits(naive_tree(part));
-    assert(float_bits(::foundation::core::sum_by_tree(part)) == expected);
-    assert(float_bits(::foundation::core::sum_by_tree_in_lanes<2>(part)) == expected);
-    assert(float_bits(::foundation::core::sum_by_tree_in_lanes<4>(part)) == expected);
-    assert(float_bits(::foundation::core::sum_by_tree_in_lanes<8>(part)) == expected);
-    assert(float_bits(::foundation::core::sum_by_tree_in_lanes<16>(part)) == expected);
+    CRUCIBLE_TEST_ASSERT(kTest, float_bits(::foundation::core::sum_by_tree(part)) == expected);
+    CRUCIBLE_TEST_ASSERT(kTest, float_bits(::foundation::core::sum_by_tree_in_lanes<2>(part)) == expected);
+    CRUCIBLE_TEST_ASSERT(kTest, float_bits(::foundation::core::sum_by_tree_in_lanes<4>(part)) == expected);
+    CRUCIBLE_TEST_ASSERT(kTest, float_bits(::foundation::core::sum_by_tree_in_lanes<8>(part)) == expected);
+    CRUCIBLE_TEST_ASSERT(kTest, float_bits(::foundation::core::sum_by_tree_in_lanes<16>(part)) == expected);
 }
 
 // The short runs whose sum is a NaN with other bits on x86 without the rule:
@@ -433,7 +464,8 @@ void check_short_runs(Word infinity, Word sign, Word quiet) noexcept {
     check_sum_outputs(View<T const>{signaling.view()});
     check_sum_outputs(View<T const>{negative.view()});
     check_sum_outputs(View<T const>{infinite.view()});
-    assert(float_bits(::foundation::core::sum_by_tree(View<T const>{infinite.view()})) == infinity);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         float_bits(::foundation::core::sum_by_tree(View<T const>{infinite.view()})) == infinity);
 }
 
 // Each output of a sum form that is a NaN is the canonical NaN, and each
@@ -443,7 +475,8 @@ void test_nan_outputs_are_canonical() {
     check_short_runs<float>(std::uint32_t{0x7F800000u}, std::uint32_t{0x80000000u}, std::uint32_t{0x7FC00000u});
     check_short_runs<double>(std::uint64_t{0x7FF0000000000000u}, std::uint64_t{0x8000000000000000u},
                              std::uint64_t{0x7FF8000000000000u});
-    assert(float_bits(::foundation::core::quiet_nan_of<float>) == ::crucible::test::kCanonicalFloatNan);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         float_bits(::foundation::core::quiet_nan_of<float>) == ::crucible::test::kCanonicalFloatNan);
     HeapArray<float> run = draw_floats(4099, 0x7E570030u);
     ::crucible::test::put_specials(run.view(), 0x7E570031u);
     HeapArray<double> wide = draw_doubles(1000, 0x7E570032u);
@@ -460,14 +493,19 @@ void test_nan_outputs_are_canonical() {
     ::fixy::FixedArray<std::size_t, 8> const offsets{0, 1, 2, 17, 64, 300, 1100, 4099};
     HeapArray<float> sums = ::foundation::core::mint_heap_array(test_alloc(), std::size_t{7}, 0.0f);
     sums = with_mut(std::move(sums), [&](auto out) noexcept {
-        assert(::foundation::core::sum_segments_by_tree(all, View<std::size_t const>{offsets.view()}, std::move(out))
-                   .is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::sum_segments_by_tree(
+                                        all, View<std::size_t const>{offsets.view()}, std::move(out))
+                                        .is_ok());
     });
     for (std::size_t segment = 0; segment < 7; ++segment) {
-        std::size_t const start = ::crucible::test::element_at(offsets, segment);
-        std::size_t const end = ::crucible::test::element_at(offsets, segment + 1);
+        std::size_t const start =
+            *offsets.get(segment).expect("a test reads an element at or past the count of its array");
+        std::size_t const end =
+            *offsets.get(segment + 1).expect("a test reads an element at or past the count of its array");
         float const expected = naive_tree(all.window(start, end - start).expect("the segment fits the run"));
-        assert(float_bits(::crucible::test::element_at(sums.view(), segment)) == output_bits(expected));
+        CRUCIBLE_TEST_ASSERT(kTest, float_bits(*sums.view().get(segment).expect(
+                                        "a test reads an element at or past the count of its View"))
+                                        == output_bits(expected));
     }
     std::size_t const grains = ::foundation::core::count_tree_grains<16>(all.size());
     HeapArray<float> partials = ::foundation::core::mint_heap_array(test_alloc(), grains, 0.0f);
@@ -477,20 +515,27 @@ void test_nan_outputs_are_canonical() {
         std::size_t const start = grain * 16;
         std::size_t const size = all.size() - start < 16 ? all.size() - start : 16;
         float const expected = naive_tree(all.window(start, size).expect("the grain fits the run"));
-        assert(float_bits(::crucible::test::element_at(partials.view(), grain)) == output_bits(expected));
+        CRUCIBLE_TEST_ASSERT(kTest, float_bits(*partials.view().get(grain).expect(
+                                        "a test reads an element at or past the count of its View"))
+                                        == output_bits(expected));
     }
     ::fixy::FixedArray<View<float const>, 3> const runs{all.window(0, 1000).expect("a run fits"),
                                                         all.window(1000, 1000).expect("a run fits"),
                                                         all.window(2000, 1000).expect("a run fits")};
     HeapArray<float> run_sums = ::foundation::core::mint_heap_array(test_alloc(), std::size_t{1000}, 0.0f);
     run_sums = with_mut(std::move(run_sums), [&](auto out) noexcept {
-        assert(
+        CRUCIBLE_TEST_ASSERT(
+            kTest,
             ::foundation::core::sum_runs_by_tree(View<View<float const> const>{runs.view()}, std::move(out)).is_ok());
     });
     for (std::size_t offset = 0; offset < 1000; ++offset) {
-        float const pair = ::crucible::test::element_at(all, offset) + ::crucible::test::element_at(all, 1000 + offset);
-        float const expected = pair + ::crucible::test::element_at(all, 2000 + offset);
-        assert(float_bits(::crucible::test::element_at(run_sums.view(), offset)) == output_bits(expected));
+        float const pair = *all.get(offset).expect("a test reads an element at or past the count of its View")
+                         + *all.get(1000 + offset).expect("a test reads an element at or past the count of its View");
+        float const expected =
+            pair + *all.get(2000 + offset).expect("a test reads an element at or past the count of its View");
+        CRUCIBLE_TEST_ASSERT(kTest, float_bits(*run_sums.view().get(offset).expect(
+                                        "a test reads an element at or past the count of its View"))
+                                        == output_bits(expected));
     }
 }
 
@@ -507,6 +552,6 @@ int main() {
     test_segments_take_the_tree_of_their_window();
     test_nan_outputs_are_canonical();
     test_sum_of_runs_refuses_a_partial_overlap();
-    crucible::test::pass("test_core_reduce: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_reduce: all tests passed\n");
     return 0;
 }

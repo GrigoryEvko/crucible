@@ -14,16 +14,23 @@
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -102,11 +109,11 @@ template <class T>
 void test_append_across_growths() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowList<std::uint32_t> list = mint_grow_list<std::uint32_t>(100000);
-    assert(list.size() == 0 && count_of(list) == 0 && element_at(list, 0).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 0 && count_of(list) == 0 && element_at(list, 0).is_none());
     for (std::uint32_t value = 0; value < 5000; ++value) {
         list.append(alloc, value * 3).expect("the list is below its maximum");
     }
-    assert(list.size() == 5000 && count_of(list) == 5000);
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 5000 && count_of(list) == 5000);
     std::uint32_t const in_order = list.with_view([](View<std::uint32_t> view) noexcept {
         std::uint32_t expected = 0;
         for (std::uint32_t const element : view) {
@@ -115,9 +122,9 @@ void test_append_across_growths() {
         }
         return expected;
     });
-    assert(in_order == 5000);
-    assert(element_at(list, 4999).expect("4999 is below the count") == 4999 * 3);
-    assert(element_at(list, 5000).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, in_order == 5000);
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(list, 4999).expect("4999 is below the count") == 4999 * 3);
+    CRUCIBLE_TEST_ASSERT(kTest, element_at(list, 5000).is_none());
     bool const is_written = list.with_element(
         7,
         [](std::uint32_t& element) noexcept {
@@ -125,13 +132,13 @@ void test_append_across_growths() {
             return true;
         },
         [] noexcept { return false; });
-    assert(is_written && element_at(list, 7).expect("7 is below the count") == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, is_written && element_at(list, 7).expect("7 is below the count") == 1);
 
     // clear() keeps the storage, and the next appends reuse it.
     list.clear();
-    assert(list.size() == 0 && element_at(list, 0).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 0 && element_at(list, 0).is_none());
     list.append(alloc, 9).expect("a cleared list is below its maximum");
-    assert(list.size() == 1 && element_at(list, 0).expect("0 is below the count") == 9);
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 1 && element_at(list, 0).expect("0 is below the count") == 9);
 }
 
 // An append at the maximum gives Full and changes nothing.
@@ -141,11 +148,11 @@ void test_refusal_at_the_maximum() {
     for (int value = 1; value <= 3; ++value) {
         list.append(alloc, value).expect("the list is below its maximum");
     }
-    assert(list.append(alloc, 4).is_err());
-    assert(list.size() == 3 && element_at(list, 2).expect("2 is below the count") == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, list.append(alloc, 4).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 3 && element_at(list, 2).expect("2 is below the count") == 3);
 
     GrowList<int> none_fit = mint_grow_list<int>(0);
-    assert(none_fit.append(alloc, 1).is_err() && none_fit.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, none_fit.append(alloc, 1).is_err() && none_fit.size() == 0);
 }
 
 // The Full of a linear element gives the value back, and a growth moves each
@@ -157,9 +164,9 @@ void test_full_gives_a_linear_value_back() {
         list.append(alloc, Token{id}).expect("the list is below its maximum");
     }
     auto refused = list.append(alloc, Token{99});
-    assert(refused.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, refused.is_err());
     Token back = std::move(refused).err().expect("the list is full").take();
-    assert(back.id == 99);
+    CRUCIBLE_TEST_ASSERT(kTest, back.id == 99);
     ::foundation::linear::drop(std::move(back));
     int const in_order = list.with_view([](View<Token> view) noexcept {
         int expected = 0;
@@ -169,7 +176,7 @@ void test_full_gives_a_linear_value_back() {
         }
         return expected;
     });
-    assert(in_order == 40);
+    CRUCIBLE_TEST_ASSERT(kTest, in_order == 40);
     ::foundation::linear::drop(std::move(list));
 }
 
@@ -186,7 +193,7 @@ void test_each_element_ends_once() {
         for (int label = 0; label < 300; ++label) {
             list.append(alloc, Element{counter, label}).expect("the list is below its maximum");
         }
-        assert(ends == 0 && list.size() == 300);
+        CRUCIBLE_TEST_ASSERT(kTest, ends == 0 && list.size() == 300);
         int const in_order = list.with_view([](View<Element> view) noexcept {
             int expected = 0;
             for (Element const& element : view) {
@@ -195,16 +202,16 @@ void test_each_element_ends_once() {
             }
             return expected;
         });
-        assert(in_order == 300);
+        CRUCIBLE_TEST_ASSERT(kTest, in_order == 300);
         GrowList<Element> moved{std::move(list)};
-        assert(moved.size() == 300 && ends == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, moved.size() == 300 && ends == 0);
         moved.clear();
-        assert(ends == 300);
+        CRUCIBLE_TEST_ASSERT(kTest, ends == 300);
         for (int label = 0; label < 5; ++label) {
             moved.append(alloc, Element{counter, label}).expect("the list is below its maximum");
         }
     }
-    assert(ends == 305);
+    CRUCIBLE_TEST_ASSERT(kTest, ends == 305);
 }
 
 // A list of lists grows, and each inner list keeps its elements.
@@ -228,7 +235,7 @@ void test_nested_lists() {
         }
         return pool;
     });
-    assert(in_order == 20);
+    CRUCIBLE_TEST_ASSERT(kTest, in_order == 20);
 }
 
 // A text grows through many appends of each kind, and refuses an append that
@@ -236,16 +243,16 @@ void test_nested_lists() {
 void test_text_appends() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     GrowText text = mint_grow_text(4096);
-    assert(text.size() == 0 && holds(text, TextView{}));
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 0 && holds(text, TextView{}));
     text.append(alloc, "crucible").expect("the text is below its maximum");
     text.append(alloc, '/').expect("the text is below its maximum");
     FixedArray<char, 3> const letters{'a', 'b', 'c'};
     text.append(alloc, letters.view()).expect("the text is below its maximum");
-    assert(holds(text, TextView{"crucible/abc"}));
+    CRUCIBLE_TEST_ASSERT(kTest, holds(text, TextView{"crucible/abc"}));
     for (int turn = 0; turn < 200; ++turn) {
         text.append(alloc, "0123456789").expect("the text is below its maximum");
     }
-    assert(text.size() == 12 + 2000);
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 12 + 2000);
     std::size_t const digits = text.with_view([](TextView characters) noexcept {
         std::size_t found = 0;
         for (char const character : characters) {
@@ -253,18 +260,18 @@ void test_text_appends() {
         }
         return found;
     });
-    assert(digits == 2000);
+    CRUCIBLE_TEST_ASSERT(kTest, digits == 2000);
 
     GrowText small = mint_grow_text(5);
-    assert(small.append(alloc, "abcdef").is_err() && small.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, small.append(alloc, "abcdef").is_err() && small.size() == 0);
     small.append(alloc, "abc").expect("three characters fit below five");
-    assert(small.append(alloc, "abc").is_err() && holds(small, TextView{"abc"}));
+    CRUCIBLE_TEST_ASSERT(kTest, small.append(alloc, "abc").is_err() && holds(small, TextView{"abc"}));
     small.append(alloc, "de").expect("two characters fit below five");
-    assert(holds(small, TextView{"abcde"}) && small.append(alloc, 'f').is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, holds(small, TextView{"abcde"}) && small.append(alloc, 'f').is_err());
     small.clear();
-    assert(small.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, small.size() == 0);
     small.append(alloc, "xyz").expect("a cleared text is below its maximum");
-    assert(holds(small, TextView{"xyz"}));
+    CRUCIBLE_TEST_ASSERT(kTest, holds(small, TextView{"xyz"}));
 }
 
 // append_self copies the characters of the text before the growth gives the
@@ -278,15 +285,15 @@ void test_text_appends_itself() {
     for (int turn = 0; turn < 12; ++turn) {
         text.append_self(alloc, 0, text.size()).expect("the text is below its maximum");
     }
-    assert(text.size() == std::size_t{2} << 12);
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == std::size_t{2} << 12);
     GrowText window = mint_grow_text(64);
     window.append(alloc, "crucible").expect("the text is below its maximum");
     window.append_self(alloc, 2, 3).expect("the text is below its maximum");
     window.append_self(alloc, 0, 0).expect("an empty window fits");
-    assert(holds(window, TextView{"crucibleuci"}));
+    CRUCIBLE_TEST_ASSERT(kTest, holds(window, TextView{"crucibleuci"}));
     GrowText full = mint_grow_text(4);
     full.append(alloc, "abc").expect("the text is below its maximum");
-    assert(full.append_self(alloc, 0, 2).is_err() && holds(full, TextView{"abc"}));
+    CRUCIBLE_TEST_ASSERT(kTest, full.append_self(alloc, 0, 2).is_err() && holds(full, TextView{"abc"}));
     std::size_t const in_order = text.with_view([](TextView characters) noexcept {
         std::size_t position = 0;
         for (char const character : characters) {
@@ -295,13 +302,13 @@ void test_text_appends_itself() {
         }
         return position;
     });
-    assert(in_order == std::size_t{2} << 12);
+    CRUCIBLE_TEST_ASSERT(kTest, in_order == std::size_t{2} << 12);
     GrowText moved = std::move(text);
-    assert(moved.size() == std::size_t{2} << 12);
+    CRUCIBLE_TEST_ASSERT(kTest, moved.size() == std::size_t{2} << 12);
     GrowText other = mint_grow_text(8);
     other.append(alloc, "q").expect("the text is below its maximum");
     other = std::move(moved);
-    assert(other.size() == std::size_t{2} << 12);
+    CRUCIBLE_TEST_ASSERT(kTest, other.size() == std::size_t{2} << 12);
 }
 
 // A frame door gives its body the elements or the characters, and gives the
@@ -321,7 +328,7 @@ void test_frame_doors() {
         }
         return total;
     });
-    assert(sum == std::uint64_t{299} * 300 / 2);
+    CRUCIBLE_TEST_ASSERT(kTest, sum == std::uint64_t{299} * 300 / 2);
     bool const is_written = list.with_element(
         7,
         [](std::uint32_t& element) noexcept {
@@ -331,14 +338,14 @@ void test_frame_doors() {
         [] noexcept { return false; });
     bool const is_past_end =
         list.with_element(300, [](std::uint32_t&) noexcept { return false; }, [] noexcept { return true; });
-    assert(is_written && is_past_end);
+    CRUCIBLE_TEST_ASSERT(kTest, is_written && is_past_end);
     GrowList<std::uint32_t> const& fixed = list;
     std::uint32_t const seventh = fixed.with_element(
         7, [](std::uint32_t const& element) noexcept { return element; }, [] noexcept { return std::uint32_t{0}; });
     std::size_t const count = fixed.with_view([](View<std::uint32_t const> view) noexcept { return view.size(); });
-    assert(seventh == 70 && count == 300);
+    CRUCIBLE_TEST_ASSERT(kTest, seventh == 70 && count == 300);
     list.append(alloc, 300).expect("the list is below its maximum");
-    assert(list.size() == 301);
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 301);
 
     GrowText text = mint_grow_text(64);
     text.append(alloc, "aten::mm").expect("the text is below its maximum");
@@ -349,9 +356,9 @@ void test_frame_doors() {
         }
         return found;
     });
-    assert(colons == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, colons == 2);
     text.append(alloc, '\0').expect("the text is below its maximum");
-    assert(text.size() == 9);
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 9);
 }
 
 // A freeze gives the characters to a HeapText with no copy, and leaves the
@@ -362,19 +369,19 @@ void test_freeze() {
     GrowText text = mint_grow_text(8);
     text.append(alloc, "crucible").expect("the text is below its maximum");
     ::foundation::core::HeapText const frozen = freeze(std::move(through(text)));
-    assert(frozen.size() == 8 && frozen.view() == TextView{"crucible"});
-    assert(text.size() == 0 && holds(text, TextView{}));
+    CRUCIBLE_TEST_ASSERT(kTest, frozen.size() == 8 && frozen.view() == TextView{"crucible"});
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 0 && holds(text, TextView{}));
     text.append(alloc, "12345678").expect("a frozen text keeps its maximum");
-    assert(text.append(alloc, '9').is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, text.append(alloc, '9').is_err());
     std::size_t letters = 0;
     for (char const character : frozen) {
         letters += character >= 'a' && character <= 'z' ? 1 : 0;
     }
-    assert(letters == 8 && frozen.view() == TextView{"crucible"});
+    CRUCIBLE_TEST_ASSERT(kTest, letters == 8 && frozen.view() == TextView{"crucible"});
     ::foundation::core::HeapText moved = freeze(std::move(through(text)));
-    assert(moved.view() == TextView{"12345678"});
+    CRUCIBLE_TEST_ASSERT(kTest, moved.view() == TextView{"12345678"});
     moved = freeze(mint_grow_text(4));
-    assert(moved.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, moved.size() == 0);
 }
 
 // The property: random appends to a list and a text agree with a model of a
@@ -393,7 +400,7 @@ void test_agrees_with_a_model() {
             std::uint64_t const value = stream.next_wide();
             bool const is_refused = list.append(alloc, value).is_err();
             bool const is_text_refused = text.append(alloc, 'x').is_err();
-            assert(is_refused == (model_count == maximum) && is_text_refused == is_refused);
+            CRUCIBLE_TEST_ASSERT(kTest, is_refused == (model_count == maximum) && is_text_refused == is_refused);
             if (!is_refused) {
                 model_sum += value;
                 ++model_count;
@@ -406,7 +413,7 @@ void test_agrees_with_a_model() {
             }
             return total;
         });
-        assert(sum == model_sum && list.size() == model_count && text.size() == model_count);
+        CRUCIBLE_TEST_ASSERT(kTest, sum == model_sum && list.size() == model_count && text.size() == model_count);
     }
 }
 
@@ -415,11 +422,12 @@ void test_agrees_with_a_model() {
 void test_foreign_doors() {
     FixedArray<float, 4> const numbers{1.0f, 2.0f, 3.0f, 4.0f};
     View<float const> const view = ::foundation::core::mint_foreign_view(&*numbers.get(0).expect("4 elements"), 4);
-    assert(view.size() == 4 && *view.get(3).expect("3 is below the count") > 3.5f);
+    CRUCIBLE_TEST_ASSERT(kTest, view.size() == 4 && *view.get(3).expect("3 is below the count") > 3.5f);
     FixedArray<char, 2> const letters{'o', 'k'};
     TextView const text = ::foundation::core::mint_foreign_text(&*letters.get(0).expect("2 elements"), 2);
-    assert(text == TextView{"ok"});
-    assert(::foundation::core::mint_foreign_view(static_cast<float const*>(nullptr), 0).size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, text == TextView{"ok"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::foundation::core::mint_foreign_view(static_cast<float const*>(nullptr), 0).size() == 0);
     // A null pointer with a count ends the process.  Each call runs in a
     // child through expect_dies of the Check family.
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
@@ -443,40 +451,42 @@ void test_c_text_doors() {
     GrowText growing = mint_grow_text(64);
     growing.append(alloc, "aten::mm").expect("the text is below its maximum");
     // A view with no zero at its end.
-    assert(growing.with_view(
-        [](TextView characters) noexcept { return ::foundation::core::mint_c_text(characters).is_none(); }));
+    CRUCIBLE_TEST_ASSERT(kTest, growing.with_view([](TextView characters) noexcept {
+        return ::foundation::core::mint_c_text(characters).is_none();
+    }));
     growing.append(alloc, '\0').expect("the text is below its maximum");
     // A valid name: the zero is the last character of the view.  The name is
     // frozen, so its CText lives as long as the HeapText.
     ::foundation::core::HeapText const name = freeze(std::move(growing));
     CText const c_text = ::foundation::core::mint_c_text(name.view()).expect("one zero ends the view");
-    assert(c_text.size() == 8 && c_text.view() == TextView{"aten::mm"});
-    assert(::foundation::core::foreign_c_str(c_text)[0] == 'a');
-    assert(::foundation::core::foreign_c_str(c_text)[7] == 'm');
-    assert(::foundation::core::foreign_c_str(c_text)[8] == '\0');
+    CRUCIBLE_TEST_ASSERT(kTest, c_text.size() == 8 && c_text.view() == TextView{"aten::mm"});
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::foreign_c_str(c_text)[0] == 'a');
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::foreign_c_str(c_text)[7] == 'm');
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::foreign_c_str(c_text)[8] == '\0');
     // The zero after a view is no part of it, so the view of the characters
     // before the zero gives no value.
     TextView const before_zero = name.view().window(0, 8).expect("8 characters fit");
-    assert(::foundation::core::mint_c_text(before_zero).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::mint_c_text(before_zero).is_none());
     // An empty view.
-    assert(::foundation::core::mint_c_text(TextView{}).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::mint_c_text(TextView{}).is_none());
     // A view with a zero inside.
     GrowText inner = mint_grow_text(64);
     inner.append(alloc, "aten").expect("the text is below its maximum");
     inner.append(alloc, '\0').expect("the text is below its maximum");
     inner.append(alloc, "mm").expect("the text is below its maximum");
     inner.append(alloc, '\0').expect("the text is below its maximum");
-    assert(inner.with_view(
-        [](TextView characters) noexcept { return ::foundation::core::mint_c_text(characters).is_none(); }));
+    CRUCIBLE_TEST_ASSERT(kTest, inner.with_view([](TextView characters) noexcept {
+        return ::foundation::core::mint_c_text(characters).is_none();
+    }));
     // A view of one zero gives the empty CText.
     GrowText zero = mint_grow_text(4);
     zero.append(alloc, '\0').expect("the text is below its maximum");
     std::size_t const empty_size = zero.with_view([](TextView characters) noexcept {
         return ::foundation::core::mint_c_text(characters).expect("one zero ends the view").size();
     });
-    assert(empty_size == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, empty_size == 0);
     // The CText of a literal.
-    assert(::foundation::core::foreign_c_str(CText{"ok"})[2] == '\0');
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::foreign_c_str(CText{"ok"})[2] == '\0');
 }
 
 }  // namespace

@@ -4,7 +4,11 @@
 // brand refuses by identity where a deleted twin refuses by value
 // category.  The erasure runs one way, and a brand costs no bytes.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/Brand.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/ReadView.h>
 
@@ -12,7 +16,13 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -145,6 +155,6 @@ int main() {
     if (const int rc = one_site_is_one_brand(); rc != 0) return rc;
     if (const int rc = door_and_brand_refuse_differently(); rc != 0) return rc;
     if (const int rc = erasure_one_way_and_free(); rc != 0) return rc;
-    crucible::test::pass("test_brand: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_brand: ALL PASSED\n");
     return 0;
 }

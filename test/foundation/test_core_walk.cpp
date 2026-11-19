@@ -4,15 +4,22 @@
 
 #include <foundation/core/Array.h>
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -50,8 +57,8 @@ void test_float_fold_runs_left_to_right() {
         plain += value;
     }
     using ::foundation::core::bit_cast;
-    assert(bit_cast<std::uint32_t>(folded) == bit_cast<std::uint32_t>(plain));
-    assert(bit_cast<std::uint32_t>(folded) == bit_cast<std::uint32_t>(1.0f));
+    CRUCIBLE_TEST_ASSERT(kTest, bit_cast<std::uint32_t>(folded) == bit_cast<std::uint32_t>(plain));
+    CRUCIBLE_TEST_ASSERT(kTest, bit_cast<std::uint32_t>(folded) == bit_cast<std::uint32_t>(1.0f));
 }
 
 // The cursor loop over a walk of a View of mutable elements writes each one.
@@ -60,13 +67,13 @@ void test_cursor_loop_writes_through_the_walk() {
     for (int& value : values.view().walk().skip(ElementCount{1}).limit(ElementCount{3})) {
         value *= 10;
     }
-    assert(values == (FixedArray<int, 5>{1, 20, 30, 40, 5}));
+    CRUCIBLE_TEST_ASSERT(kTest, values == (FixedArray<int, 5>{1, 20, 30, 40, 5}));
     FixedArray<int, 3> target{};
     FixedArray<int, 3> const source{7, 8, 9};
     for (auto const [destination, origin] : target.view().walk().zip(source.view().walk())) {
         *destination = *origin + 1;
     }
-    assert(target == (FixedArray<int, 3>{8, 9, 10}));
+    CRUCIBLE_TEST_ASSERT(kTest, target == (FixedArray<int, 3>{8, 9, 10}));
 }
 
 void test_try_zip_compares_the_counts() {
@@ -74,22 +81,23 @@ void test_try_zip_compares_the_counts() {
     View<int const> const head = values.view().window(0, 3).expect("three elements fit");
     View<int const> const tail = values.view().window(3, 3).expect("three elements fit");
     View<int const> const longer = values.view().window(1, 4).expect("four elements fit");
-    assert(head.walk().try_zip(longer.walk()).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, head.walk().try_zip(longer.walk()).is_err());
     bool const is_mismatch =
         head.walk()
             .try_zip(longer.walk())
             .match([](auto) noexcept { return false; }, [](LengthMismatch) noexcept { return true; });
-    assert(is_mismatch);
+    CRUCIBLE_TEST_ASSERT(kTest, is_mismatch);
     auto const pairs = head.walk().try_zip(tail.walk()).expect("the two windows hold three elements");
-    assert(pairs.size() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, pairs.size() == 3);
     int total = 0;
     for (auto const [first, second] : pairs) {
-        assert(*second == *first + 3);
+        CRUCIBLE_TEST_ASSERT(kTest, *second == *first + 3);
         total += *first;
     }
-    assert(total == 1 + 2 + 3);
+    CRUCIBLE_TEST_ASSERT(kTest, total == 1 + 2 + 3);
     View<int const> const empty{};
-    assert(empty.walk().try_zip(empty.walk()).expect("two empty runs hold zero elements").size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         empty.walk().try_zip(empty.walk()).expect("two empty runs hold zero elements").size() == 0);
 }
 
 // The property: for random runs and counts, each chain gives the value of the
@@ -132,45 +140,51 @@ void test_chains_agree_with_the_index_model() {
             is_each_below = is_each_below && value < wanted;
         }
 
-        assert(elements.walk()
-                   .map([](std::uint64_t const& value) noexcept { return value * value; })
-                   .fold(std::uint64_t{0},
-                         [](std::uint64_t acc, std::uint64_t square) noexcept { return acc * 31 + square; })
-               == model_squares);
-        assert(elements.walk().filter(is_kept).count() == model_kept);
-        assert(elements.walk()
-                   .filter(is_kept)
-                   .limit(ElementCount{limit})
-                   .fold(std::uint64_t{0},
-                         [](std::uint64_t acc, std::uint64_t const& value) noexcept { return acc * 7 + value; })
-               == model_kept_prefix);
-        assert(elements.walk()
-                   .skip(ElementCount{skipped})
-                   .fold(std::uint64_t{0},
-                         [](std::uint64_t acc, std::uint64_t const& value) noexcept { return acc + value; })
-               == model_skipped);
-        assert(elements.walk().limit(ElementCount{limit}).size() == (limit < size ? limit : size));
-        assert(
-            elements.walk()
-                .try_zip(others.walk())
-                .expect("the two windows hold size elements")
-                .map([](auto const& pair) noexcept {
-                    auto const& [first, second] = pair;
-                    return *first * *second;
-                })
-                .fold(std::uint64_t{0}, [](std::uint64_t acc, std::uint64_t product) noexcept { return acc + product; })
-            == model_dot);
-        assert(elements.walk().any_of([wanted](std::uint64_t const& value) noexcept { return value == wanted; })
-               == is_wanted_found);
-        assert(elements.walk().all_of([wanted](std::uint64_t const& value) noexcept { return value < wanted; })
-               == is_each_below);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, elements.walk()
+                           .map([](std::uint64_t const& value) noexcept { return value * value; })
+                           .fold(std::uint64_t{0},
+                                 [](std::uint64_t acc, std::uint64_t square) noexcept { return acc * 31 + square; })
+                       == model_squares);
+        CRUCIBLE_TEST_ASSERT(kTest, elements.walk().filter(is_kept).count() == model_kept);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, elements.walk()
+                           .filter(is_kept)
+                           .limit(ElementCount{limit})
+                           .fold(std::uint64_t{0},
+                                 [](std::uint64_t acc, std::uint64_t const& value) noexcept { return acc * 7 + value; })
+                       == model_kept_prefix);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, elements.walk()
+                           .skip(ElementCount{skipped})
+                           .fold(std::uint64_t{0},
+                                 [](std::uint64_t acc, std::uint64_t const& value) noexcept { return acc + value; })
+                       == model_skipped);
+        CRUCIBLE_TEST_ASSERT(kTest, elements.walk().limit(ElementCount{limit}).size() == (limit < size ? limit : size));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, elements.walk()
+                           .try_zip(others.walk())
+                           .expect("the two windows hold size elements")
+                           .map([](auto const& pair) noexcept {
+                               auto const& [first, second] = pair;
+                               return *first * *second;
+                           })
+                           .fold(std::uint64_t{0},
+                                 [](std::uint64_t acc, std::uint64_t product) noexcept { return acc + product; })
+                       == model_dot);
+        CRUCIBLE_TEST_ASSERT(kTest, elements.walk().any_of([wanted](std::uint64_t const& value) noexcept {
+            return value == wanted;
+        }) == is_wanted_found);
+        CRUCIBLE_TEST_ASSERT(kTest, elements.walk().all_of([wanted](std::uint64_t const& value) noexcept {
+            return value < wanted;
+        }) == is_each_below);
 
         std::size_t cursor_kept = 0;
         for (std::uint64_t const value : elements.walk().filter(is_kept)) {
-            assert(is_kept(value));
+            CRUCIBLE_TEST_ASSERT(kTest, is_kept(value));
             ++cursor_kept;
         }
-        assert(cursor_kept == model_kept);
+        CRUCIBLE_TEST_ASSERT(kTest, cursor_kept == model_kept);
 
         // flat_map: each element gives the run of its first value % 8
         // elements of the other run.
@@ -179,12 +193,12 @@ void test_chains_agree_with_the_index_model() {
             model_flat += element_at(run, position) % 8;
         }
         View<std::uint64_t const> const pool = other.view();
-        assert(elements.walk()
-                   .flat_map([pool](std::uint64_t const& value) noexcept {
-                       return pool.window(0, value % 8).expect("a prefix fits").walk();
-                   })
-                   .count()
-               == model_flat);
+        CRUCIBLE_TEST_ASSERT(kTest, elements.walk()
+                                            .flat_map([pool](std::uint64_t const& value) noexcept {
+                                                return pool.window(0, value % 8).expect("a prefix fits").walk();
+                                            })
+                                            .count()
+                                        == model_flat);
     }
 }
 
@@ -246,6 +260,6 @@ int main() {
     test_try_zip_compares_the_counts();
     test_chains_agree_with_the_index_model();
     test_cursors_at_the_end_abort(test);
-    crucible::test::pass("test_core_walk: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_walk: all tests passed\n");
     return 0;
 }

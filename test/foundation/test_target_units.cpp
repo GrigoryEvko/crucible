@@ -14,10 +14,20 @@
 
 #include <foundation/os/X86Level.h>
 
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -33,10 +43,10 @@ void test_each_unit_keeps_its_bodies() {
     bool const is_fixed_copy_shared = baseline_unit_bodies.fixed_copy_body == wide_unit_bodies.fixed_copy_body;
     bool const is_fma_exact_shared = baseline_unit_bodies.fma_exact_body == wide_unit_bodies.fma_exact_body;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    assert(!is_sum_by_tree_shared);
-    assert(!is_sum_scan_shared);
-    assert(!is_fixed_copy_shared);
-    assert(!is_fma_exact_shared);
+    CRUCIBLE_TEST_ASSERT(kTest, !is_sum_by_tree_shared);
+    CRUCIBLE_TEST_ASSERT(kTest, !is_sum_scan_shared);
+    CRUCIBLE_TEST_ASSERT(kTest, !is_fixed_copy_shared);
+    CRUCIBLE_TEST_ASSERT(kTest, !is_fma_exact_shared);
 }
 
 // Each unit reads the vector width of its own target: 16 bytes for x86-64,
@@ -46,8 +56,8 @@ void test_each_unit_keeps_its_constants() {
     std::size_t const baseline_vector = *baseline_unit_bodies.vector_bytes;
     std::size_t const wide_vector = *wide_unit_bodies.vector_bytes;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    assert(baseline_vector == 16);
-    assert(wide_vector == 64);
+    CRUCIBLE_TEST_ASSERT(kTest, baseline_vector == 16);
+    CRUCIBLE_TEST_ASSERT(kTest, wide_vector == 64);
 }
 
 // The sum of each unit has the same bits.  The wide unit runs only on a
@@ -59,7 +69,7 @@ void test_each_unit_keeps_its_constants() {
         ::foundation::os::x86_level_of(::foundation::os::read_x86_feature_words()) == ::foundation::os::X86Level::v4;
     std::uint32_t const wide_bits = is_wide_host ? wide_unit_bodies.sum_bits_body() : baseline_bits;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    assert(wide_bits == baseline_bits);
+    CRUCIBLE_TEST_ASSERT(kTest, wide_bits == baseline_bits);
     return is_wide_host;
 }
 
@@ -69,11 +79,12 @@ int main() {
     test_each_unit_keeps_its_bodies();
     test_each_unit_keeps_its_constants();
     if (test_the_sums_agree()) {
-        ::crucible::test::pass("test_target_units: two units of two targets keep their own bodies, and their "
-                               "sums agree\n");
+        ::fixy::check::pass(kTest, "test_target_units: two units of two targets keep their own bodies, and their "
+                                   "sums agree\n");
     } else {
-        ::crucible::test::pass("test_target_units: two units of two targets keep their own bodies.  The host has no "
-                               "x86-64-v4, so the sum of the wide unit did not run\n");
+        ::fixy::check::pass(kTest,
+                            "test_target_units: two units of two targets keep their own bodies.  The host has no "
+                            "x86-64-v4, so the sum of the wide unit did not run\n");
     }
     return 0;
 }

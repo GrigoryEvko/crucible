@@ -13,15 +13,25 @@
 //   - Philox-seeded values of each Integer type, in the two bases
 //   - Philox-seeded texts of digits, signs, prefixes and other characters.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Format.h>
 #include <foundation/core/Parse.h>
+#include <foundation/effects/Effect.h>
 
 #include <foundation/Quarantine.h>
 
-#include "../test_assert.h"
 #include "philox_stream.h"
 
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -591,9 +601,9 @@ void test_random_texts_agree_with_the_reference_and_the_oracle() {
 void test_parse_reads_a_formatted_text() {
     FixedText<32> text;
     TextView const written = format(text, "{}", -9223372036854775807LL - 1).expect("the text fits 32 characters");
-    assert(parse<std::int64_t>(written).value_or(0) == min_of<std::int64_t>);
+    CRUCIBLE_TEST_ASSERT(kTest, parse<std::int64_t>(written).value_or(0) == min_of<std::int64_t>);
     ParseError const unsigned_error = parse<std::uint64_t>(written).err().value_or(ParseError{});
-    assert(unsigned_error == (ParseError{ParseErrorKind::sign_on_unsigned, 0}));
+    CRUCIBLE_TEST_ASSERT(kTest, unsigned_error == (ParseError{ParseErrorKind::sign_on_unsigned, 0}));
     ::fixy::report(::fixy::Sink::Out, "test_core_parse: \"{}\" reads back\n", written);
 }
 
@@ -602,16 +612,18 @@ void test_parse_reads_a_formatted_text() {
 void test_parse_hex_reads_bare_digits() {
     std::uint64_t volatile hash = 0xfedcba9876543210ULL;
     FixedText<16> text;
-    assert(append_hex<16>(text, hash).is_ok());
-    assert(parse_hex<std::uint64_t>(text.view()).value_or(0) == hash);
-    assert(parse_hex<std::uint64_t>("00FF").value_or(0) == 0xFFU);
-    assert(parse_hex<std::uint8_t>("ff").value_or(0) == 0xFFU);
-    assert((parse_hex<std::uint64_t>("0x1F").err().value_or(ParseError{})
-            == ParseError{ParseErrorKind::unexpected_character, 1}));
-    assert((parse_hex<std::uint64_t>("-1").err().value_or(ParseError{})
-            == ParseError{ParseErrorKind::unexpected_character, 0}));
-    assert((parse_hex<std::uint64_t>("").err().value_or(ParseError{}) == ParseError{ParseErrorKind::no_digit, 0}));
-    assert((parse_hex<std::uint8_t>("100").err().value_or(ParseError{}) == ParseError{ParseErrorKind::overflow, 2}));
+    CRUCIBLE_TEST_ASSERT(kTest, append_hex<16>(text, hash).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, parse_hex<std::uint64_t>(text.view()).value_or(0) == hash);
+    CRUCIBLE_TEST_ASSERT(kTest, parse_hex<std::uint64_t>("00FF").value_or(0) == 0xFFU);
+    CRUCIBLE_TEST_ASSERT(kTest, parse_hex<std::uint8_t>("ff").value_or(0) == 0xFFU);
+    CRUCIBLE_TEST_ASSERT(kTest, (parse_hex<std::uint64_t>("0x1F").err().value_or(ParseError{})
+                                 == ParseError{ParseErrorKind::unexpected_character, 1}));
+    CRUCIBLE_TEST_ASSERT(kTest, (parse_hex<std::uint64_t>("-1").err().value_or(ParseError{})
+                                 == ParseError{ParseErrorKind::unexpected_character, 0}));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, (parse_hex<std::uint64_t>("").err().value_or(ParseError{}) == ParseError{ParseErrorKind::no_digit, 0}));
+    CRUCIBLE_TEST_ASSERT(kTest, (parse_hex<std::uint8_t>("100").err().value_or(ParseError{})
+                                 == ParseError{ParseErrorKind::overflow, 2}));
 }
 
 static_assert(alphabet_character(21) == 'F' && alphabet_character(22) == 'x');
@@ -625,7 +637,7 @@ int main() {
     test_each_short_value_reads_back();
     test_random_values_read_back();
     test_random_texts_agree_with_the_reference_and_the_oracle();
-    crucible::test::pass("test_core_parse: {} texts agree with the reference, and {} with std::from_chars\n",
-                         agreed_texts, oracle_texts);
+    ::fixy::check::pass(kTest, "test_core_parse: {} texts agree with the reference, and {} with std::from_chars\n",
+                        agreed_texts, oracle_texts);
     return 0;
 }

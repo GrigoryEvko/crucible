@@ -6,13 +6,20 @@
 #include <foundation/core/Format.h>
 #include <foundation/core/Region.h>
 
-#include "../test_assert.h"
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -28,19 +35,19 @@ using ::foundation::core::Full;
 
 void test_text_view_compares_its_characters() {
     TextView const queue{"queue"};
-    assert(queue.size() == 5);
-    assert(queue == TextView{"queue"});
-    assert(!(queue == TextView{"queues"}));
-    assert(!(queue == TextView{"quell"}));
-    assert(TextView{} == TextView{""});
-    assert(TextView{}.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, queue.size() == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, queue == TextView{"queue"});
+    CRUCIBLE_TEST_ASSERT(kTest, !(queue == TextView{"queues"}));
+    CRUCIBLE_TEST_ASSERT(kTest, !(queue == TextView{"quell"}));
+    CRUCIBLE_TEST_ASSERT(kTest, TextView{} == TextView{""});
+    CRUCIBLE_TEST_ASSERT(kTest, TextView{}.size() == 0);
 }
 
 void test_fixed_text_starts_empty() {
     FixedText<8> const text;
-    assert(text.size() == 0);
-    assert(text.view() == TextView{""});
-    assert(FixedText<8>::capacity == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, text.view() == TextView{""});
+    CRUCIBLE_TEST_ASSERT(kTest, FixedText<8>::capacity == 8);
 }
 
 // The loop reads each character of a text one time, in order, and a window
@@ -53,30 +60,30 @@ void test_text_view_reads_its_characters() {
         if (character >= '0' && character <= '9') ++digits;
         ++position;
     }
-    assert(digits == 3 && position == 5);
-    assert(list.window(2, 3).expect("the window fits") == TextView{"3,8"});
-    assert(list.window(5, 0).expect("the empty window fits") == TextView{});
-    assert(list.window(5, 1).is_none());
-    assert(list.window(6, 0).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, digits == 3 && position == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, list.window(2, 3).expect("the window fits") == TextView{"3,8"});
+    CRUCIBLE_TEST_ASSERT(kTest, list.window(5, 0).expect("the empty window fits") == TextView{});
+    CRUCIBLE_TEST_ASSERT(kTest, list.window(5, 1).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, list.window(6, 0).is_none());
     int turns = 0;
     for ([[maybe_unused]] char const character : TextView{}) {
         ++turns;
     }
-    assert(turns == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, turns == 0);
 }
 
 // A FixedText gives the loop over the characters that it holds, and clear()
 // empties it.
 void test_fixed_text_loop_and_clear() {
     FixedText<16> text;
-    assert(format(text, "{}{}", 12, TextView{"ab"}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, format(text, "{}{}", 12, TextView{"ab"}).is_ok());
     std::size_t count = 0;
     for ([[maybe_unused]] char const character : text) {
         ++count;
     }
-    assert(count == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, count == 4);
     text.clear();
-    assert(text.size() == 0 && text.view() == TextView{});
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 0 && text.view() == TextView{});
 }
 
 // A FixedText from a literal, and from append() of a character and of a text
@@ -85,14 +92,14 @@ void test_fixed_text_builds_from_characters() {
     FixedText<8> text{"cub"};
     char volatile letter = 'i';
     CRUCIBLE_FATAL_INVARIANT(text.append(letter).is_ok());
-    assert(text.append(TextView{"c"}).is_ok());
-    assert(text.view() == TextView{"cubic"});
-    assert(text.append(TextView{"_wide"}).is_err());
-    assert(text.view() == TextView{"cubic"});
-    assert(text.append(TextView{"bbr"}).is_ok());
-    assert(text.size() == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, text.append(TextView{"c"}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, text.view() == TextView{"cubic"});
+    CRUCIBLE_TEST_ASSERT(kTest, text.append(TextView{"_wide"}).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, text.view() == TextView{"cubic"});
+    CRUCIBLE_TEST_ASSERT(kTest, text.append(TextView{"bbr"}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 8);
     CRUCIBLE_FATAL_INVARIANT(text.append(letter).is_err());
-    assert(text.view() == TextView{"cubicbbr"});
+    CRUCIBLE_TEST_ASSERT(kTest, text.view() == TextView{"cubicbbr"});
 }
 
 enum class Lane : std::uint8_t {
@@ -106,12 +113,13 @@ enum class Lane : std::uint8_t {
 void test_enum_name_text_at_run_time() {
     std::uint8_t volatile raw = 1;
     Lane const queue = static_cast<Lane>(raw);
-    assert(::foundation::core::enum_name_text(queue) == TextView{"ReceiveQueue"});
-    assert((::foundation::core::enum_words_text<Lane, '_'>(queue) == TextView{"receive_queue"}));
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::enum_name_text(queue) == TextView{"ReceiveQueue"});
+    CRUCIBLE_TEST_ASSERT(kTest, (::foundation::core::enum_words_text<Lane, '_'>(queue) == TextView{"receive_queue"}));
     raw = 7;
     Lane const unknown = static_cast<Lane>(raw);
-    assert(::foundation::core::enum_name_text(unknown) == TextView{"<unknown Lane>"});
-    assert((::foundation::core::enum_words_text<Lane, '-'>(unknown) == TextView{"<unknown Lane>"}));
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::enum_name_text(unknown) == TextView{"<unknown Lane>"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         (::foundation::core::enum_words_text<Lane, '-'>(unknown) == TextView{"<unknown Lane>"}));
 }
 
 // A cursor of a text never leaves the text: a read at the end and a step
@@ -135,53 +143,56 @@ void test_text_cursor_at_the_end_aborts(::fixy::TestRunnerCtx const& test) {
 
 void test_format_writes_integers_in_decimal() {
     FixedText<96> text;
-    assert(text_of(format(text, "{} {} {} {}", 0, 7, -7, 123456789)) == TextView{"0 7 -7 123456789"});
-    assert(text_of(format(text, "{} {}", INT64_MIN, INT64_MAX))
-           == TextView{"-9223372036854775808 9223372036854775807"});
-    assert(text_of(format(text, "{}", UINT64_MAX)) == TextView{"18446744073709551615"});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         text_of(format(text, "{} {} {} {}", 0, 7, -7, 123456789)) == TextView{"0 7 -7 123456789"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{} {}", INT64_MIN, INT64_MAX))
+                                    == TextView{"-9223372036854775808 9223372036854775807"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{}", UINT64_MAX)) == TextView{"18446744073709551615"});
     std::int8_t const small_signed = -128;
     std::uint8_t const small_unsigned = 255;
     unsigned short const short_value = 65535;
-    assert(text_of(format(text, "{}|{}|{}", small_signed, small_unsigned, short_value)) == TextView{"-128|255|65535"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{}|{}|{}", small_signed, small_unsigned, short_value))
+                                    == TextView{"-128|255|65535"});
 }
 
 void test_format_writes_bools_and_texts() {
     FixedText<64> text;
-    assert(text_of(format(text, "{} {}", true, false)) == TextView{"true false"});
-    assert(text_of(format(text, "[{}]", TextView{"the queue"})) == TextView{"[the queue]"});
-    assert(text_of(format(text, "[{}]", TextView{})) == TextView{"[]"});
-    assert(text_of(format(text, "{} holds {} of {}", TextView{"ring"}, 3, 4)) == TextView{"ring holds 3 of 4"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{} {}", true, false)) == TextView{"true false"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "[{}]", TextView{"the queue"})) == TextView{"[the queue]"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "[{}]", TextView{})) == TextView{"[]"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{} holds {} of {}", TextView{"ring"}, 3, 4))
+                                    == TextView{"ring holds 3 of 4"});
 }
 
 // A brace in an argument is written as it is, and `{{` and `}}` write one
 // brace each.
 void test_format_writes_escapes_and_braces_of_arguments() {
     FixedText<64> text;
-    assert(text_of(format(text, "{{}}")) == TextView{"{}"});
-    assert(text_of(format(text, "{{{}}}", 5)) == TextView{"{5}"});
-    assert(text_of(format(text, "{}", TextView{"{}"})) == TextView{"{}"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{{}}")) == TextView{"{}"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{{{}}}", 5)) == TextView{"{5}"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{}", TextView{"{}"})) == TextView{"{}"});
 }
 
 // A text that fills the buffer exactly fits.  A text one character longer
 // gives Full<char>, and the buffer holds the first characters of the text.
 void test_format_refuses_a_text_that_does_not_fit() {
     FixedText<5> text;
-    assert(text_of(format(text, "{}", 12345)) == TextView{"12345"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{}", 12345)) == TextView{"12345"});
     auto const longer = format(text, "{}", 123456);
-    assert(longer.is_err());
-    assert(text.size() == 5);
-    assert(text.view() == TextView{"12345"});
+    CRUCIBLE_TEST_ASSERT(kTest, longer.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, text.view() == TextView{"12345"});
     auto const much_longer = format(text, "the queue holds {} items", 3);
-    assert(much_longer.is_err());
-    assert(text.view() == TextView{"the q"});
+    CRUCIBLE_TEST_ASSERT(kTest, much_longer.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, text.view() == TextView{"the q"});
 }
 
 // A second format() writes from the start of the buffer.
 void test_format_writes_from_the_start() {
     FixedText<16> text;
-    assert(text_of(format(text, "a long text")) == TextView{"a long text"});
-    assert(text_of(format(text, "{}", 1)) == TextView{"1"});
-    assert(text.size() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "a long text")) == TextView{"a long text"});
+    CRUCIBLE_TEST_ASSERT(kTest, text_of(format(text, "{}", 1)) == TextView{"1"});
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 1);
 }
 
 // A text longer than one window of the cold formatter keeps each byte.
@@ -190,8 +201,8 @@ void test_format_keeps_a_long_text() {
     TextView const tens{"0123456789"};
     auto const result = format(text, "{}{}{}{}{}{}{}{}{}{}|{}{}{}{}{}{}{}{}{}{}", tens, tens, tens, tens, tens, tens,
                                tens, tens, tens, tens, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
-    assert(result.is_ok());
-    assert(text.size() == 112);
+    CRUCIBLE_TEST_ASSERT(kTest, result.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, text.size() == 112);
 }
 
 }  // namespace
@@ -210,6 +221,6 @@ int main() {
     test_format_refuses_a_text_that_does_not_fit();
     test_format_writes_from_the_start();
     test_format_keeps_a_long_text();
-    crucible::test::pass("test_core_text: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_core_text: all tests passed\n");
     return 0;
 }

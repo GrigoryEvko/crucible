@@ -6,6 +6,9 @@
 // writes the active alternative in place.  The frames of two call sites have
 // two brands, and a ViewMut keeps the call ABI of two registers.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
@@ -16,11 +19,16 @@
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
-#include "../test_assert.h"
-
 #include <cstddef>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -86,14 +94,14 @@ struct Counted final {
 void test_fixed_array() {
     FixedArray<int, 4> array{1, 2, 3, 4};
     array = with_mut(std::move(array), [](auto out) noexcept {
-        assert(out.size() == 4);
+        CRUCIBLE_TEST_ASSERT(kTest, out.size() == 4);
         for (int& element : out) {
             element *= 10;
         }
     });
-    assert(sum_of(array) == 100);
+    CRUCIBLE_TEST_ASSERT(kTest, sum_of(array) == 100);
     auto [total, back] = with_mut(std::move(array), [](auto out) noexcept { return sum_of(out); });
-    assert(total == 100 && sum_of(back) == 100);
+    CRUCIBLE_TEST_ASSERT(kTest, total == 100 && sum_of(back) == 100);
 }
 
 // A HeapArray gives its storage to the frame, so the name that the caller
@@ -101,28 +109,28 @@ void test_fixed_array() {
 void test_heap_array() {
     HeapArray<int> array = ::foundation::core::mint_heap_array(allocation(), 1000, 1);
     array = with_mut(std::move(through(array)), [&array](auto out) noexcept {
-        assert(through(array).size() == 0);
-        assert(out.size() == 1000);
+        CRUCIBLE_TEST_ASSERT(kTest, through(array).size() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, out.size() == 1000);
         int next = 0;
         for (int& element : out) {
             element = next++;
         }
     });
-    assert(array.size() == 1000 && sum_of(array) == 999 * 1000 / 2);
+    CRUCIBLE_TEST_ASSERT(kTest, array.size() == 1000 && sum_of(array) == 999 * 1000 / 2);
     auto [first, back] = with_mut(std::move(array), [](auto out) noexcept {
         return out.get(0).match([](auto element) noexcept { return *element; }, [] noexcept { return -1; });
     });
-    assert(first == 0 && back.size() == 1000);
+    CRUCIBLE_TEST_ASSERT(kTest, first == 0 && back.size() == 1000);
 }
 
 // A MaskedArray moves its storage as a HeapArray does.
 void test_masked_array() {
     MaskedArray<int> array = ::foundation::core::mint_masked_array<int>(allocation(), 8);
     array = with_mut(std::move(through(array)), [&array](auto out) noexcept {
-        assert(through(array).size() == 0 && out.size() == 8);
+        CRUCIBLE_TEST_ASSERT(kTest, through(array).size() == 0 && out.size() == 8);
         ::foundation::core::fill(out.view(), 3);
     });
-    assert(array.at_masked(7) == 3 && array.at_masked(8 + 2) == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, array.at_masked(7) == 3 && array.at_masked(8 + 2) == 3);
 }
 
 // A FixedList moves each element into the frame and back.  Each element
@@ -138,19 +146,19 @@ void test_fixed_list() {
         }
         ends = 0;
         auto taken = with_mut(std::move(through(list)), [&list](auto out) noexcept {
-            assert(through(list).size() == 0 && out.size() == 3);
+            CRUCIBLE_TEST_ASSERT(kTest, through(list).size() == 0 && out.size() == 3);
             for (Element& element : out) {
                 element.label *= 2;
             }
         });
-        assert(ends == 0 && taken.size() == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, ends == 0 && taken.size() == 3);
         int labels = 0;
         for (Element const& element : taken) {
             labels += element.label;
         }
-        assert(labels == 12);
+        CRUCIBLE_TEST_ASSERT(kTest, labels == 12);
     }
-    assert(ends == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, ends == 3);
 }
 
 // A GrowList gives its storage to the frame and lends it for the time of the
@@ -161,7 +169,7 @@ void test_grow_list() {
         list.append(allocation(), value).expect("the list is below its maximum");
     }
     list = with_mut(std::move(through(list)), [&list](auto out) noexcept {
-        assert(through(list).size() == 0 && out.size() == 100);
+        CRUCIBLE_TEST_ASSERT(kTest, through(list).size() == 0 && out.size() == 100);
         for (int& element : out) {
             element = -element;
         }
@@ -170,7 +178,7 @@ void test_grow_list() {
         list.append(allocation(), 1).expect("the list is below its maximum");
     }
     int const total = list.with_view([](View<int const> elements) noexcept { return sum_of(elements); });
-    assert(list.size() == 1000 && total == 900 - 99 * 100 / 2);
+    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 1000 && total == 900 - 99 * 100 / 2);
 }
 
 // The frame door of an Option runs the arm of its state in place.  A full
@@ -179,11 +187,11 @@ void test_grow_list() {
 // the RefMut of the Box.
 void test_option() {
     Option<int> full = ::foundation::core::some(41);
-    full.with_mut([](auto value) noexcept { *value += 1; }, [] noexcept { assert(false); });
-    assert(full == ::foundation::core::some(42));
+    full.with_mut([](auto value) noexcept { *value += 1; }, [] noexcept { CRUCIBLE_TEST_ASSERT(kTest, false); });
+    CRUCIBLE_TEST_ASSERT(kTest, full == ::foundation::core::some(42));
     Option<int> empty{::foundation::core::none};
     bool const is_none = empty.with_mut([](auto) noexcept { return false; }, [] noexcept { return true; });
-    assert(is_none && empty.is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, is_none && empty.is_none());
     Option<::foundation::core::Box<int>> boxed =
         ::foundation::core::some(::foundation::core::mint_box<int>(allocation(), 3));
     int const read = boxed.with_mut(
@@ -192,28 +200,29 @@ void test_option() {
             return **box;
         },
         [] noexcept { return -1; });
-    assert(read == 21);
+    CRUCIBLE_TEST_ASSERT(kTest, read == 21);
 }
 
 // The frame door of a Result runs the arm of its state in place, with the
 // RefMut of the value or of the error.
 void test_result() {
     Result<int, LengthMismatch> value = 5;
-    value.with_mut([](auto held) noexcept { *held *= 3; }, [](auto) noexcept { assert(false); });
-    assert(std::move(value).expect("the frame keeps the value") == 15);
+    value.with_mut([](auto held) noexcept { *held *= 3; }, [](auto) noexcept { CRUCIBLE_TEST_ASSERT(kTest, false); });
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(value).expect("the frame keeps the value") == 15);
     Result<int, LengthMismatch> error = ::foundation::core::err(LengthMismatch{});
     bool const is_error = error.with_mut([](auto) noexcept { return false; }, [](auto) noexcept { return true; });
-    assert(is_error && error.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, is_error && error.is_err());
 }
 
 // The frame door of a OneOf runs the arm of the active alternative in place.
 void test_one_of() {
     OneOf<int, LengthMismatch> alternative = 7;
-    alternative.with_mut([](auto held) noexcept { *held += 1; }, [](auto) noexcept { assert(false); });
-    assert(std::move(alternative).expect<int>("the frame keeps the alternative") == 8);
+    alternative.with_mut([](auto held) noexcept { *held += 1; },
+                         [](auto) noexcept { CRUCIBLE_TEST_ASSERT(kTest, false); });
+    CRUCIBLE_TEST_ASSERT(kTest, std::move(alternative).expect<int>("the frame keeps the alternative") == 8);
     OneOf<int, LengthMismatch> other = LengthMismatch{};
     int const index = other.with_mut([](auto) noexcept { return 0; }, [](auto) noexcept { return 1; });
-    assert(index == 1 && other.is<LengthMismatch>());
+    CRUCIBLE_TEST_ASSERT(kTest, index == 1 && other.is<LengthMismatch>());
 }
 
 // True when each element of a run holds the value that expected gives for its
@@ -251,7 +260,7 @@ void test_brands_and_shape() {
             }
         });
     });
-    assert(sum_of(inner) == 3 + 3 + 2 * 3);
+    CRUCIBLE_TEST_ASSERT(kTest, sum_of(inner) == 3 + 3 + 2 * 3);
 }
 
 // A split at an offset gives the two parts of the run, each with the brand of
@@ -268,21 +277,21 @@ void test_splits() {
         auto [low, high] = split_at(std::move(whole), 4).expect("the offset is inside the run");
         static_assert(std::is_same_v<typename decltype(low)::brand_type, typename Whole::brand_type>);
         static_assert(std::is_same_v<decltype(high), Whole>);
-        assert(low.size() == 4 && high.size() == 6);
+        CRUCIBLE_TEST_ASSERT(kTest, low.size() == 4 && high.size() == 6);
         for (int& element : low) {
             element = 1;
         }
         auto [empty, rest] = split_at(std::move(high), 0).expect("the offset zero is inside each run");
-        assert(empty.size() == 0 && rest.size() == 6);
+        CRUCIBLE_TEST_ASSERT(kTest, empty.size() == 0 && rest.size() == 6);
         for (int& element : rest) {
             element = 2;
         }
         auto [all, nothing] = split_at(std::move(rest), 6).expect("the count is inside the run");
-        assert(all.size() == 6 && nothing.size() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, all.size() == 6 && nothing.size() == 0);
         bool const is_refused = split_at(std::move(low), 5).is_none();
-        assert(is_refused);
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused);
     });
-    assert(holds_each(run, [](std::size_t position) noexcept { return position < 4 ? 1 : 2; }));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, [](std::size_t position) noexcept { return position < 4 ? 1 : 2; }));
 
     FixedArray<int, 6> fixed{};
     fixed = with_mut(std::move(fixed), [](auto whole) noexcept {
@@ -294,24 +303,25 @@ void test_splits() {
             element = 5;
         }
         ViewMut<int, typename Whole::brand_type> const dynamic{std::move(high)};
-        assert(dynamic.size() == 4);
+        CRUCIBLE_TEST_ASSERT(kTest, dynamic.size() == 4);
     });
-    assert(holds_each(fixed, [](std::size_t position) noexcept { return position < 2 ? 5 : 0; }));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(fixed, [](std::size_t position) noexcept { return position < 2 ? 5 : 0; }));
 
     HeapArray<int> chunked = ::foundation::core::mint_heap_array(allocation(), 10, 0);
     chunked = with_mut(std::move(chunked), [](auto whole) noexcept {
         auto chunks = split_chunks(std::move(whole), 4);
-        assert(chunks.size() == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, chunks.size() == 3);
         for (int mark = 1; mark <= 3; ++mark) {
             auto part = chunks.next().expect("the run holds three chunks");
-            assert(part.size() == (mark == 3 ? 2u : 4u));
+            CRUCIBLE_TEST_ASSERT(kTest, part.size() == (mark == 3 ? 2u : 4u));
             for (int& element : part) {
                 element = mark;
             }
         }
-        assert(chunks.size() == 0 && chunks.next().is_none());
+        CRUCIBLE_TEST_ASSERT(kTest, chunks.size() == 0 && chunks.next().is_none());
     });
-    assert(holds_each(chunked, [](std::size_t position) noexcept { return 1 + static_cast<int>(position / 4); }));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, holds_each(chunked, [](std::size_t position) noexcept { return 1 + static_cast<int>(position / 4); }));
 }
 
 // The ops of the doors of a kernel.  Each holds no state.
@@ -344,26 +354,29 @@ void test_write_each() {
             });
         });
     });
-    assert(holds_each(out, [](std::size_t position) noexcept { return 3 + static_cast<int>(position); }));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         holds_each(out, [](std::size_t position) noexcept { return 3 + static_cast<int>(position); }));
 
     out = with_mut(std::move(out), [&right](auto out_view) noexcept {
         ::foundation::core::write_each(std::move(out_view), AddOp{}, right.view(), right.view())
             .expect("the three runs have one count");
     });
-    assert(holds_each(out, [](std::size_t position) noexcept { return 2 * static_cast<int>(position); }));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         holds_each(out, [](std::size_t position) noexcept { return 2 * static_cast<int>(position); }));
 
     out = with_mut(std::move(out), [](auto out_view) noexcept {
         ::foundation::core::write_each(std::move(through(out_view)), TwiceOp{}, out_view)
             .expect("the run has its own count");
     });
-    assert(holds_each(out, [](std::size_t position) noexcept { return 4 * static_cast<int>(position); }));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         holds_each(out, [](std::size_t position) noexcept { return 4 * static_cast<int>(position); }));
 
     HeapArray<int> shorter = ::foundation::core::mint_heap_array(allocation(), 10, 7);
     shorter = with_mut(std::move(shorter), [&right](auto out_view) noexcept {
         bool const is_refused = ::foundation::core::write_each(std::move(out_view), TwiceOp{}, right.view()).is_err();
-        assert(is_refused);
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused);
     });
-    assert(holds_each(shorter, [](std::size_t) noexcept { return 7; }));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(shorter, [](std::size_t) noexcept { return 7; }));
 }
 
 // The door copy between two frames is one memcpy, and from a View or from the
@@ -378,25 +391,28 @@ void test_copy_between_frames() {
             ::foundation::core::copy(std::move(target_view), source_view).expect("the two runs have one count");
         });
     });
-    assert(holds_each(target, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, holds_each(target, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
 
     HeapArray<int> again = ::foundation::core::mint_heap_array(allocation(), 50, 0);
     again = with_mut(std::move(again), [&target](auto again_view) noexcept {
         ::foundation::core::copy(std::move(again_view), target.view()).expect("the two runs have one count");
     });
-    assert(holds_each(again, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, holds_each(again, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
 
     again = with_mut(std::move(again), [](auto again_view) noexcept {
         ::foundation::core::copy(std::move(through(again_view)), again_view).expect("the run has its own count");
     });
-    assert(holds_each(again, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, holds_each(again, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
 
     HeapArray<int> shorter = ::foundation::core::mint_heap_array(allocation(), 5, 1);
     shorter = with_mut(std::move(shorter), [&again](auto shorter_view) noexcept {
         bool const is_refused = ::foundation::core::copy(std::move(shorter_view), again.view()).is_err();
-        assert(is_refused);
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused);
     });
-    assert(holds_each(shorter, [](std::size_t) noexcept { return 1; }));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(shorter, [](std::size_t) noexcept { return 1; }));
 }
 
 }  // namespace

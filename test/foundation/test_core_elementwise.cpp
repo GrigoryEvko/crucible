@@ -24,7 +24,18 @@
 
 #include "elementwise_rig.h"
 
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
 #include <cstddef>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -65,14 +76,15 @@ void test_the_scaled_product_is_inside_its_bound() {
                                + 0x1p-150 * (1.0 + 0x1p-24) * ::fixy::fp::abs(factor) + 0x1p-150
                                + 0x1p-51 * ::fixy::fp::abs(expected);
             double const error = ::fixy::fp::abs(static_cast<double>(output) - expected);
-            assert(error <= bound);
+            CRUCIBLE_TEST_ASSERT(kTest, error <= bound);
             if (bound > 0.0 && error / bound > largest_ratio) largest_ratio = error / bound;
             ++checked;
         }
     }
-    ::crucible::test::pass("test_core_elementwise: {} scaled products of a difference are inside the bound, the "
-                           "largest error is {} of the bound\n",
-                           checked, largest_ratio);
+    ::fixy::check::pass(kTest,
+                        "test_core_elementwise: {} scaled products of a difference are inside the bound, the "
+                        "largest error is {} of the bound\n",
+                        checked, largest_ratio);
 }
 
 }  // namespace

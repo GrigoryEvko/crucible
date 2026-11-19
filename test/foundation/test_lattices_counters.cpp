@@ -7,6 +7,9 @@
 // same lattice under four tags must take four slots, or a value graded on
 // the epoch would share a cache entry with one graded on the generation.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/DualLattice.h>
 #include <foundation/algebra/lattices/HappensBefore.h>
@@ -14,6 +17,7 @@
 #include <foundation/algebra/lattices/StrongCounterLattice.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/effects/ImageRead.h>
 
 #include <array>
@@ -24,7 +28,13 @@
 #include <cstdlib>
 #include <limits>
 #include <type_traits>
-#include "../test_assert.h"
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -201,6 +211,6 @@ int main() {
     for (std::size_t i = 0; i < kCarrierHashes.size(); ++i) {
         if (kCarrierHashes[i] == 0) fail("a counter carrier folded to the zero slot");
     }
-    crucible::test::pass("test_lattices_counters: ok\n");
+    ::fixy::check::pass(kTest, "test_lattices_counters: ok\n");
     return 0;
 }
