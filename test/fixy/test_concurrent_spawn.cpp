@@ -7,9 +7,11 @@
 // a recombined region still describes the same storage.
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/concurrent/Spawn.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/Futex.h>
+#include <fixy/os/Process.h>
 #include <foundation/Linear.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/permissions/Permission.h>
@@ -108,26 +110,25 @@ namespace {
 // thread, and a set past L3 runs each body on a thread of its own.
 [[nodiscard]] int spawn_arm_follows_the_budget() {
     BgCtx ctx{eff::testing::bg()};
-    const std::thread::id caller = std::this_thread::get_id();
+    ::fixy::process::ThreadId const caller = ::fixy::process::current_thread(::fixy::BgLoadCtx{eff::testing::bg()});
 
-    std::array<std::thread::id, 2> inline_ids{};
-    auto after_inline = spawn::mint_spawn<spawn::BodyCoupling::Independent, Left, Right>(
-        ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, perm::mint_permission_root<Whole>(),
-        [&inline_ids](auto const&, BgCtx const&) noexcept { inline_ids[0] = std::this_thread::get_id(); },
-        [&inline_ids](auto const&, BgCtx const&) noexcept { inline_ids[1] = std::this_thread::get_id(); });
+    // Each body gives back the thread that ran it, beside the parent.
+    auto const thread_of_body = [](auto const&, BgCtx const&) noexcept {
+        return ::fixy::process::current_thread(::fixy::BgLoadCtx{eff::testing::bg()});
+    };
+    auto [inline_left, inline_right, after_inline] = spawn::mint_spawn<spawn::BodyCoupling::Independent, Left, Right>(
+        ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, perm::mint_permission_root<Whole>(), thread_of_body,
+        thread_of_body);
     (void)after_inline;
-    if (inline_ids[0] != caller || inline_ids[1] != caller) {
+    if (inline_left != caller || inline_right != caller) {
         std::fprintf(stderr, "mint_spawn: a 64-byte budget must run both bodies on the calling thread\n");
         return 1;
     }
 
-    std::array<std::thread::id, 2> spawned_ids{};
-    auto after_spawn = spawn::mint_spawn<spawn::BodyCoupling::Independent, Left, Right>(
-        ctx, dram_bound_budget(), perm::mint_permission_root<Whole>(),
-        [&spawned_ids](auto const&, BgCtx const&) noexcept { spawned_ids[0] = std::this_thread::get_id(); },
-        [&spawned_ids](auto const&, BgCtx const&) noexcept { spawned_ids[1] = std::this_thread::get_id(); });
+    auto [spawned_left, spawned_right, after_spawn] = spawn::mint_spawn<spawn::BodyCoupling::Independent, Left, Right>(
+        ctx, dram_bound_budget(), perm::mint_permission_root<Whole>(), thread_of_body, thread_of_body);
     (void)after_spawn;
-    if (spawned_ids[0] == caller || spawned_ids[1] == caller || spawned_ids[0] == spawned_ids[1]) {
+    if (spawned_left == caller || spawned_right == caller || spawned_left == spawned_right) {
         std::fprintf(stderr, "mint_spawn: a budget past L3 must run each body on a thread of its own\n");
         return 1;
     }
