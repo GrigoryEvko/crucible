@@ -52,6 +52,7 @@
 // it at all.  The check finds such an owner only when a probe names it.
 
 #include <fixy/os/OwnedMmap.h>
+#include <fixy/os/OwnedThread.h>
 #include <foundation/AlignedBytes.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
@@ -955,6 +956,60 @@ struct OwnedMmapProbe {
     }
 };
 
+// ── The owned thread ────────────────────────────────────────────────────
+
+// The context that starts the threads of the probe: it owns Bg, which starts
+// threads, and Alloc for the frame of the thread.
+using ThreadStarterCtx = ::foundation::effects::ExecCtx<
+    ::foundation::effects::Bg,
+    ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>;
+
+// An owned thread whose body does nothing.
+::fixy::thread::OwnedThread start_idle_thread() {
+    return ::fixy::thread::mint_owned_thread(ThreadStarterCtx{::foundation::effects::testing::bg()},
+                                             ::fixy::thread::ThreadOptions{}, [] noexcept {})
+        .expect("the thread door starts a thread with the default options");
+}
+
+// An owned thread has no element, so it has no child move and no linear
+// hazard.  Its move assignment is deleted, because an assignment over a live
+// owner would join its thread at a line that shows no join, so it has no
+// self-move.  test/fixy/test_os_owned_thread.cpp runs its joins.
+struct OwnedThreadProbe {
+    using Owner = ::fixy::thread::OwnedThread;
+
+    static void self_move() { static_assert(!MoveAssignable<Owner>); }
+
+    static void child_move() {}
+
+    // MOVED-FROM: the target takes the thread and joins it.
+    static void moved_from() {
+        Owner source = start_idle_thread();
+        Owner taken{static_cast<Owner&&>(source)};
+        CRUCIBLE_FATAL_INVARIANT(taken.holds_thread());
+        static_cast<Owner&&>(taken).join();
+    }
+
+    static void linear() {}
+
+    // EMPTY: a moved-from owner holds no thread, and its join ends the
+    // process.
+    static void empty() {
+        ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+        Owner source = start_idle_thread();
+        Owner target{static_cast<Owner&&>(through(source))};
+        CRUCIBLE_FATAL_INVARIANT(target.holds_thread());
+        CRUCIBLE_FATAL_INVARIANT(!through(source).holds_thread());
+        // The target joins first, so the child of the death test starts from a
+        // process with no other thread.
+        static_cast<Owner&&>(target).join();
+        expect_dies(
+            test, [&source] noexcept { static_cast<Owner&&>(through(source)).join(); },
+            ::foundation::core::TextView{
+                "foundation: fatal: a join of an OwnedThread that holds no thread: a move or a join emptied it"});
+    }
+};
+
 // Runs each hazard of one probe.  Each hazard ends with no live node.
 template <class Probe>
 void run_probe() {
@@ -979,9 +1034,9 @@ struct ProbeList {
     static void run() { (run_probe<Probes>(), ...); }
 };
 
-using AllProbes =
-    ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe, HeapTextProbe,
-              SmallListProbe, AlignedBytesProbe, HeapBitSetProbe, SlotMapProbe, SwissTableBufferProbe, OwnedMmapProbe>;
+using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
+                            HeapTextProbe, SmallListProbe, AlignedBytesProbe, HeapBitSetProbe, SlotMapProbe,
+                            SwissTableBufferProbe, OwnedMmapProbe, OwnedThreadProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "

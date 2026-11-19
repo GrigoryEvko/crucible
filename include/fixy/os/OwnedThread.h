@@ -27,11 +27,12 @@
 //     payload when it takes a value, so it needs no move assignment.  A class
 //     that holds an OwnedThread puts it last, so it joins first.
 //
-//     The owner keeps its fields in the order of foundation/core/Owner.h: a
-//     move reads the source and then empties it, and an end empties the owner
-//     before it joins.  The owner does not derive from OwnerCore, so the
-//     roster of the owner probe, which reads only the states of the core,
-//     does not hold it.
+//     The owner keeps its fields in a state of the owner core of
+//     foundation/core/Owner.h, so a move reads the source and then empties
+//     it.  The end of the owner and a join empty the owner before the join,
+//     as the reset of the core does, so the end of the frame sees an empty
+//     owner.  The state is in the home of the owner states of fixy, so the
+//     roster of the owner probe holds it.
 //
 // THE GATE
 //     The mint takes a context that owns Bg or Init, the authority to start
@@ -51,6 +52,7 @@
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Report.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -118,42 +120,74 @@ private:
 
 }  // namespace detail
 
+}  // namespace fixy::thread
+
+namespace fixy::detail::owner {
+
+// The fields of an owned thread: the handle of the thread, the frame that the
+// thread reads, and the function that ends the frame.  An emptied state holds
+// no thread, and its release does nothing.
+struct OwnedThreadState {
+    using owner_state_mark = ::foundation::core::OwnerStateMark;
+
+    std::uint64_t handle = 0;
+    void* frame = nullptr;
+    void (*end_frame)(void*) noexcept = nullptr;
+
+    [[nodiscard]] static constexpr OwnedThreadState emptied(OwnedThreadState const& /*state*/) noexcept {
+        return OwnedThreadState{};
+    }
+
+    // Waits for the end of the body, and then ends the frame and the body on
+    // the thread that joins.
+    static void release(OwnedThreadState const& state) noexcept {
+        if (state.frame == nullptr) return;
+        ::fixy::thread::detail::join_thread_task(state.handle);
+        state.end_frame(state.frame);
+    }
+};
+
+}  // namespace fixy::detail::owner
+
+namespace fixy::thread {
+
 // The owner of one thread that the base started (THE OWNER).  An owner can
 // move to another thread, which then joins the thread and ends the frame and
 // its body (foundation/Transfer.h).  The body runs on the owned thread, so it
 // is on a thread other than its mint in any case.  The frame fields are
 // pointers that only the holder of the owner reads.
-class [[nodiscard]][[= ::foundation::transfer::sendable{}]] OwnedThread final {
+class [[nodiscard]][[= ::foundation::transfer::sendable{}]] OwnedThread final
+    : public ::foundation::core::OwnerCore<::fixy::detail::owner::OwnedThreadState> {
+    using State = ::fixy::detail::owner::OwnedThreadState;
+    using Core = ::foundation::core::OwnerCore<State>;
+
 public:
     OwnedThread(OwnedThread const&) = delete("one thread has one owner of its join.  A copy would join it two times");
     OwnedThread&
     operator=(OwnedThread const&) = delete("one thread has one owner of its join.  A copy would join it two times");
 
-    // The move takes the source first, so the source holds no thread when
-    // the target holds it.
-    OwnedThread(OwnedThread&& other) noexcept
-        : handle_{other.handle_}, frame_{other.frame_}, end_frame_{other.end_frame_} {
-        other.handle_ = 0;
-        other.frame_ = nullptr;
-        other.end_frame_ = nullptr;
-    }
+    // The move of the core takes the source first, so the source holds no
+    // thread when the target holds it.
+    OwnedThread(OwnedThread&&) noexcept = default;
 
     OwnedThread& operator=(OwnedThread&&) = delete(
         "an assignment over a live owner would join its thread at a line that shows no join.  Join the old "
         "owner with join() first");
 
-    ~OwnedThread() { join_and_end_(); }
+    // The reset empties the owner before the join, so the release of the
+    // core at its end finds no thread.
+    ~OwnedThread() { this->reset_(); }
 
     // Waits for the end of the body, and ends the frame and the owner.
     void join() && noexcept {
-        if (frame_ == nullptr) [[unlikely]] {
+        if (this->state_.frame == nullptr) [[unlikely]] {
             ::foundation::core::fatal("a join of an OwnedThread that holds no thread: a move or a join emptied it");
         }
-        join_and_end_();
+        this->reset_();
     }
 
     // True when the owner holds a thread that it has not joined.
-    [[nodiscard]] bool holds_thread() const noexcept { return frame_ != nullptr; }
+    [[nodiscard]] bool holds_thread() const noexcept { return this->state_.frame != nullptr; }
 
 private:
     // The door of the mint.  A Result of an OwnedThread needs the complete
@@ -161,25 +195,7 @@ private:
     friend struct detail::owned_thread_door;
 
     OwnedThread(std::uint64_t handle, void* frame, void (*end_frame)(void*) noexcept) noexcept
-        : handle_{handle}, frame_{frame}, end_frame_{end_frame} {}
-
-    // The owner is empty before the join starts, as an owner of
-    // foundation/core/Owner.h is before its release.
-    void join_and_end_() noexcept {
-        if (frame_ == nullptr) return;
-        std::uint64_t const handle = handle_;
-        void* const frame = frame_;
-        void (*const end_frame)(void*) noexcept = end_frame_;
-        handle_ = 0;
-        frame_ = nullptr;
-        end_frame_ = nullptr;
-        detail::join_thread_task(handle);
-        end_frame(frame);
-    }
-
-    std::uint64_t handle_ = 0;
-    void* frame_ = nullptr;
-    void (*end_frame_)(void*) noexcept = nullptr;
+        : Core{State{handle, frame, end_frame}} {}
 };
 
 namespace detail {

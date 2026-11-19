@@ -46,6 +46,10 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(::foundation::transfer::Sendable<::fixy::thread::OwnedThread>
               && !::foundation::transfer::Shareable<::fixy::thread::OwnedThread>);
 
+// The owner holds the handle, the frame and the end of the frame, and the
+// owner core adds no byte.
+static_assert(sizeof(::fixy::thread::OwnedThread) == sizeof(std::uint64_t) + 2 * sizeof(void*));
+
 namespace {
 
 namespace eff = ::foundation::effects;
