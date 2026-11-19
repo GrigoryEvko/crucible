@@ -43,7 +43,6 @@
 #include <foundation/core/Id.h>
 
 #include <array>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
 
@@ -63,12 +62,13 @@ enum class CellTurn : std::uint8_t {
 
 template <RingValue T, std::size_t Capacity>
 class SequenceCells : public ::foundation::Pinned<SequenceCells<T, Capacity>> {
-    static_assert(std::has_single_bit(Capacity), "fixy::concurrent::SequenceCells<T, Capacity>: Capacity must be a "
-                                                 "power of two.  The cell of a ticket is its low bits, and the round "
-                                                 "of a ticket is its high bits.");
+    static_assert(Capacity != 0 && (Capacity & (Capacity - 1)) == 0,
+                  "fixy::concurrent::SequenceCells<T, Capacity>: Capacity must be a power of two.  The cell of a "
+                  "ticket is its low bits, and the round of a ticket is its high bits.");
 
     static constexpr std::uint64_t MASK = std::uint64_t{Capacity - 1};
-    static constexpr int ROUND_SHIFT = std::countr_zero(Capacity);
+    // The count of the low bits of a ticket that name its cell.
+    static constexpr int ROUND_SHIFT = __builtin_ctzll(Capacity);
 
     // The word and the value of one cell.  The cells stay packed: a writer
     // and a reader of one cell touch its line, and a write of a word is a
