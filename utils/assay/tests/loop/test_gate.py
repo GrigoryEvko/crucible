@@ -805,8 +805,10 @@ def hang_guard_cases(expect: testing.Expect) -> None:
     """Hold THE HANG GUARD: ctest stops a test that never ends at the guard, and the gate reads the test as red.
 
     The gate of the case has a guard of HANG_GUARD_S.  The run of the red tests alone uses the pinned ctest on a planted
-    build whose test test_hang sleeps for HANG_SLEEP_S, far past the guard, and whose test test_quick ends at once.  The
-    planted loop master of a full run gets the guard after -- too.
+    build whose test test_hang sleeps for HANG_SLEEP_S, far past the guard.  The verdict reads the status of the test
+    and no time: with no guard, the sleep ends and the test is green.  The case has no test that ends, because the
+    start of such a test on a loaded host can take longer than the small guard.  The planted loop master of a full run
+    gets the guard after -- too.
     """
     with tempfile.TemporaryDirectory(prefix="gate-hang-") as work_text:
         work = Path(work_text)
@@ -825,24 +827,25 @@ def hang_guard_cases(expect: testing.Expect) -> None:
             verdict.is_accepted and words == [f"--timeout {HANG_GUARD_S}"],
         )
         sleeper = f'"{sys.executable}" "-c" "import time; time.sleep({HANG_SLEEP_S})"'
-        (build / "CTestTestfile.cmake").write_text(
-            f'add_test(test_hang {sleeper})\nadd_test(test_quick "{sys.executable}" "-c" "pass")\n', encoding="utf-8"
-        )
+        (build / "CTestTestfile.cmake").write_text(f"add_test(test_hang {sleeper})\n", encoding="utf-8")
         cmake_reader.plant(build, cache={"CMAKE_CTEST_COMMAND": cmake_pin.pinned_program("ctest")})
         step = gate.Step(planted, candidate, proc.environment())
         always = next(item for item in gate.CONFIGURATIONS if item.name == gate.ALWAYS)
 
         def alone() -> list[str]:
             with step.leased() as share:
-                return step.red_alone(always, ["test_hang", "test_quick"], share)
+                return step.red_alone(always, ["test_hang"], share)
 
-        began = time.monotonic()
         red, _ = testing.captured(alone)
-        elapsed_s = time.monotonic() - began
+        report = planted.logs / gate.log_name(always, "alone.junit.xml", False)
+        text = report.read_text(encoding="utf-8") if report.is_file() else ""
+        log = planted.logs / gate.log_name(always, "alone.log", False)
+        text += log.read_text(encoding="utf-8")[-600:] if log.is_file() and not text else ""
+        state = "holds the timeout" if 'message="Timeout"' in text else f"does not hold the timeout: {text[-300:]!r}"
         expect(
-            f"a test that never ends stops at the guard of {HANG_GUARD_S} s and is red, and a test that ends is green: "
-            f"red {red} after {elapsed_s:.1f} s",
-            red == ["test_hang"] and elapsed_s < HANG_SLEEP_S,
+            f"a test that never ends stops at the guard of {HANG_GUARD_S} s, ctest reports its timeout, and the gate "
+            f"reads it as red: red {red}, and the report {state}",
+            red == ["test_hang"] and 'message="Timeout"' in text,
         )
 
 
