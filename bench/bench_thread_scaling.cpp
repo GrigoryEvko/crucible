@@ -15,6 +15,8 @@
 //                      each slot in the form of Dmitry Vyukov
 //   spsc push          try_push of fixy/concurrent/SpscRing.h on the main
 //                      thread, and try_pop on one consumer
+//   spsc proven push   try_push_proven and try_pop_proven of a ring that the
+//                      bench owns, the calls of the handles of a wire channel
 //   spsc batch push    try_push_batch of kBatch items on the main thread, and
 //                      try_pop_batch of up to kPopBatch items on the consumer
 //   spsc reference     try_push and try_pop of the pinned SPSCQueue of Erik
@@ -59,6 +61,8 @@
 //      threads and the place of its consumer in its name.
 //   In each row with a consumer, the consumer keeps up with the producers, so
 //   the ring is nearly empty: each pop of the consumer finds the newest items.
+//   The consumer adds each item that it pops into a sum, and it stores the sum
+//   at its end, so it reads each cell, as a consumer that uses its items does.
 //
 // THE COUNTS OF THREADS
 //   With no argument, the rows have 1, 2, 4, 8 and 16 threads, up to the
@@ -222,8 +226,20 @@ enum class OpKind : std::uint8_t {
     MpscBatchPush,
     MpscReferencePush,
     SpscPush,
+    SpscProvenPush,
     SpscBatchPush,
     SpscReferencePush,
+};
+
+// The owner of the ring of the proven rows (THE PROVEN FORM of
+// fixy/concurrent/SpscRing.h).  A row runs one producer and one consumer of
+// that ring, so the bench makes the proof of each side, as the channel of a
+// wire makes it for its handles.
+struct ProvenOwner final {
+    using Ring = ::fixy::concurrent::SpscRing<Item, kRingCapacity, ProvenOwner>;
+
+    [[nodiscard]] static constexpr auto producer() noexcept { return Ring::producer_proof{}; }
+    [[nodiscard]] static constexpr auto consumer() noexcept { return Ring::consumer_proof{}; }
 };
 
 // True for an op with one consumer on the thread of a slot.
@@ -232,8 +248,8 @@ inline constexpr bool kHasConsumer = Kind != OpKind::SharedAdd && Kind != OpKind
 
 // True for an op of the SPSC ring or of its reference.
 template <OpKind Kind>
-inline constexpr bool kIsSpsc =
-    Kind == OpKind::SpscPush || Kind == OpKind::SpscBatchPush || Kind == OpKind::SpscReferencePush;
+inline constexpr bool kIsSpsc = Kind == OpKind::SpscPush || Kind == OpKind::SpscProvenPush
+                             || Kind == OpKind::SpscBatchPush || Kind == OpKind::SpscReferencePush;
 
 // The items of one op.
 template <OpKind Kind>
@@ -313,6 +329,7 @@ struct RowState {
     ::fixy::FixedArray<ThreadLine, kMaxThreads> lines{};
     ::fixy::concurrent::MpscRing<Item, kRingCapacity> mpsc{};
     ::fixy::concurrent::SpscRing<Item, kRingCapacity> spsc{};
+    ProvenOwner::Ring spsc_proven{};
     MpscReference mpsc_reference{};
     SpscReference spsc_reference{};
     // The items of each batch push.  No thread writes them after the start.
@@ -365,6 +382,9 @@ template <OpKind Kind>
         push_waiting(state, [&state]() noexcept { return state.mpsc_reference.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::SpscPush) {
         push_waiting(state, [&state]() noexcept { return state.spsc.try_push(Item{1}); });
+    } else if constexpr (Kind == OpKind::SpscProvenPush) {
+        push_waiting(state,
+                     [&state]() noexcept { return state.spsc_proven.try_push_proven(ProvenOwner::producer(), Item{1}); });
     } else if constexpr (Kind == OpKind::SpscBatchPush) {
         push_spsc_batch(state);
     } else {
@@ -398,38 +418,68 @@ void run_producer(RowState& state, ThreadLine& line) noexcept {
     }
 }
 
-// One pop of the consumer of an op: true when it took an item.
+// The sum of the items that a pop took: one item, or each item of a batch.
+// The consumer adds each popped item into its sum, so the read of each cell
+// stays in the code, as in a consumer that uses its items.
+[[gnu::always_inline]] inline std::uint64_t sum_of(::fixy::Option<Item> item) noexcept {
+    return std::move(item).value_or(Item{0});
+}
+
+[[gnu::always_inline]] inline std::uint64_t sum_of(::fixy::View<Item> out, std::size_t count) noexcept {
+    std::uint64_t sum = 0;
+    for (Item const item : out.window(0, count).expect("a batch pop gives at most the count of its View"))
+        sum += item;
+    return sum;
+}
+
+// One pop of the consumer of an op: true when it took an item.  It adds
+// the items that it took into sum.
 template <OpKind Kind>
-[[gnu::always_inline]] inline bool pop_once(RowState& state, [[maybe_unused]] ::fixy::View<Item> out) noexcept {
+[[gnu::always_inline]] inline bool pop_once(RowState& state, [[maybe_unused]] ::fixy::View<Item> out,
+                                            std::uint64_t& sum) noexcept {
     // A pop of an MPSC ring is a merge of the producers, so it takes Nondet.
     [[maybe_unused]] eff::cap::Nondet const merge = eff::testing::test().nondet;
+    auto const take_one = [&sum](::fixy::Option<Item> item) noexcept {
+        bool const has_item = item.is_some();
+        sum += sum_of(std::move(item));
+        return has_item;
+    };
+    auto const take_batch = [&sum, out](std::size_t count) noexcept {
+        sum += sum_of(out, count);
+        return count != 0;
+    };
     if constexpr (Kind == OpKind::MpscPush) {
-        return state.mpsc.try_pop(merge).is_some();
+        return take_one(state.mpsc.try_pop(merge));
     } else if constexpr (Kind == OpKind::MpscBatchPush) {
-        return state.mpsc.try_pop_batch(merge, out) != 0;
+        return take_batch(state.mpsc.try_pop_batch(merge, out));
     } else if constexpr (Kind == OpKind::MpscReferencePush) {
-        return state.mpsc_reference.try_pop().is_some();
+        return take_one(state.mpsc_reference.try_pop());
     } else if constexpr (Kind == OpKind::SpscPush) {
-        return state.spsc.try_pop().is_some();
+        return take_one(state.spsc.try_pop());
+    } else if constexpr (Kind == OpKind::SpscProvenPush) {
+        return take_one(state.spsc_proven.try_pop_proven(ProvenOwner::consumer()));
     } else if constexpr (Kind == OpKind::SpscBatchPush) {
-        return state.spsc.try_pop_batch(out) != 0;
+        return take_batch(state.spsc.try_pop_batch(out));
     } else {
-        return state.spsc_reference.try_pop().is_some();
+        return take_one(state.spsc_reference.try_pop());
     }
 }
 
 // The loop of the consumer of an op: it pops until the stop, and it counts
-// no item of the window.
+// no item of the window.  It stores the sum of its items into its line at
+// the end, so no read of a cell is dead code.
 template <OpKind Kind>
 void run_consumer(RowState& state, ThreadLine& line) noexcept {
     ::fixy::FixedArray<Item, kPopBatch> out{};
+    std::uint64_t sum = 0;
     line.is_published.store_release(true);
     static_cast<void>(state.ready.value.fetch_add_acq_rel(1));
     while (read_phase(state) != Phase::Stop) {
         for (std::uint64_t pop = 0; pop < kOpsPerCheck; ++pop) {
-            if (!pop_once<Kind>(state, out.view())) CRUCIBLE_SPIN_PAUSE;
+            if (!pop_once<Kind>(state, out.view(), sum)) CRUCIBLE_SPIN_PAUSE;
         }
     }
+    line.cell.store_release(sum);
 }
 
 // What the window of the main thread measured: its items, its wall time and
@@ -510,6 +560,7 @@ template <OpKind Kind>
     if constexpr (Kind == OpKind::MpscBatchPush) return ::fixy::TextView{"mpsc batch push"};
     if constexpr (Kind == OpKind::MpscReferencePush) return ::fixy::TextView{"mpsc reference push"};
     if constexpr (Kind == OpKind::SpscPush) return ::fixy::TextView{"spsc push"};
+    if constexpr (Kind == OpKind::SpscProvenPush) return ::fixy::TextView{"spsc proven push"};
     if constexpr (Kind == OpKind::SpscBatchPush) return ::fixy::TextView{"spsc batch push"};
     return ::fixy::TextView{"spsc reference push"};
 }
@@ -823,6 +874,8 @@ int run_bench(::fixy::os::Args const& arguments) {
     }
     if (has_group(OpGroup::Spsc)) {
         run_op_rows<OpKind::SpscPush>(spread, counts.view(), "spsc push: the main thread produces", reports);
+        run_op_rows<OpKind::SpscProvenPush>(spread, counts.view(),
+                                            "spsc proven push: the calls that take the proof of each side", reports);
         run_op_rows<OpKind::SpscBatchPush>(spread, counts.view(),
                                            "spsc batch push: batches of 16, and batch pops of up to 64", reports);
         if (kHasSpscReference) {
