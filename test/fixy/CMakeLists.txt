@@ -5894,6 +5894,13 @@ fixy_neg_compile_test(neg_thread_run_joined_from_the_foreground
 fixy_neg_compile_test(neg_thread_run_joined_body_of_another_parameter
   "no matching function for call to .run_joined"
   "the expression .\\(JoinedBody<Bodies, Ctx> && \\.\\.\\.\\) \\[with Bodies = \\{main::")
+# Only a test calls the raw probe, and its reason is a string literal.
+fixy_neg_compile_test(neg_thread_raw_probe_without_the_test_atom
+  "no matching function for call to .run_joined_raw_probe"
+  "required for the satisfaction of .CtxRunsRawProbes<TestCtx>.")
+fixy_neg_compile_test(neg_thread_raw_probe_reason_of_no_literal
+  "no matching function for call to .run_joined_raw_probe"
+  "cannot convert .built. \\(type .const foundation::core::TextView.\\) to type .fixy::thread::RawProbeReason.")
 # The value of a body is Sendable.
 fixy_neg_compile_test(neg_thread_run_joined_body_gives_an_owner_thread_value
   "no matching function for call to .run_joined"

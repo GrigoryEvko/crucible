@@ -102,6 +102,17 @@
 //     fixy/concurrent/Spawn.h, the pipeline of fixy/concurrent/Pipeline.h and
 //     the mint of fixy/os/OwnedThread.h.  run_in_fork_child changes the process
 //     for each fork after it, so it takes a context that owns Init.
+//
+// THE RAW PROBE
+//     run_joined_raw_probe is run_joined for a test that probes raw behavior,
+//     such as the memory orders of an atomic.  Its bodies share plain state,
+//     and the order of the probe publishes it.  No type can state that, so the
+//     door does not ask the transfer facts of the state that its bodies share.
+//     It still refuses a captured context and a borrow that outlives the call
+//     (foundation/Closure.h).  The second context owns Test, which only the
+//     testing door of foundation/effects/Effect.h gives, so code that ships
+//     cannot call it.  The reason is a string literal, which names the probe
+//     at the call.
 
 #include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/Transfer.h>
@@ -382,6 +393,37 @@ template <typename Ctx, typename... Bodies>
     requires CtxStartsThreads<Ctx> && (sizeof...(Bodies) > 0) && (JoinedBody<Bodies, Ctx> && ...)
 [[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
 run_joined(Ctx const& ctx, ThreadOptions const& options, Bodies&... bodies) noexcept {
+    return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, bodies...);
+}
+
+// The reason of a raw probe (THE RAW PROBE).  Only a string literal that is
+// not empty gives one, so the reason names the probe at the call.
+class RawProbeReason {
+public:
+    template <std::size_t Length>
+        requires(Length > 1)
+    consteval RawProbeReason(char const (&literal)[Length]) noexcept : text_{literal} {}
+
+    [[nodiscard]] constexpr ::foundation::core::TextView text() const noexcept { return text_; }
+
+private:
+    ::foundation::core::TextView text_{};
+};
+
+// A context that is the authority of a raw probe: one that owns Test (THE
+// RAW PROBE).
+template <typename TestCtx>
+concept CtxRunsRawProbes = ::foundation::effects::CtxOwnsCapability<TestCtx, ::foundation::effects::Effect::Test>;
+
+// run_joined for a test that probes raw behavior, with the reason of the
+// probe (THE RAW PROBE).  The bodies, the values and the errors are those of
+// run_joined.
+template <typename Ctx, typename TestCtx, typename... Bodies>
+    requires CtxStartsThreads<Ctx> && CtxRunsRawProbes<TestCtx> && (sizeof...(Bodies) > 0)
+          && (JoinedBody<Bodies, Ctx> && ...)
+[[nodiscard]] ::foundation::core::Result<joined_values_t<Ctx, Bodies...>, ::foundation::os::Errno>
+run_joined_raw_probe(Ctx const& ctx, TestCtx const& /*test*/, RawProbeReason /*reason*/, ThreadOptions const& options,
+                     Bodies&... bodies) noexcept {
     return detail::run_joined_(ctx, options, std::index_sequence_for<Bodies...>{}, bodies...);
 }
 
