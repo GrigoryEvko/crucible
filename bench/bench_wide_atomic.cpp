@@ -157,6 +157,29 @@ struct RowCores final {
     ::fixy::Option<bench::CpuId> second{};
 };
 
+// The thread of a shared load row that measures.  It keeps its report, which
+// the caller reads after the join.
+template <class Cell>
+struct MeasureSharedLoad {
+    Cell& cell;
+    RowCores const& cores;
+    ::fixy::Atomic<std::uint32_t> const& is_second_ready;
+    ::fixy::Atomic<std::uint32_t>& is_done;
+    bench::Report measured{};
+
+    void operator()() noexcept {
+        pin_to(cores.measured);
+        while (is_second_ready.load_acquire() == 0) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+        measured = bench::run("wide shared load", [this] {
+            Generation const value = load_once(cell);
+            bench::do_not_optimize(value);
+        });
+        is_done.store_release(1);
+    }
+};
+
 // The load of one thread while a second thread loads the same cell.
 template <class Cell>
 [[nodiscard]] bench::Report measure_shared_load(::fixy::BgLoadCtx const& ctx, RowCores const& cores) noexcept {
@@ -164,19 +187,9 @@ template <class Cell>
     Cell& cell = *line;
     ::fixy::CacheLine<::fixy::Atomic<std::uint32_t>> is_second_ready{std::uint32_t{0}};
     ::fixy::CacheLine<::fixy::Atomic<std::uint32_t>> is_done{std::uint32_t{0}};
-    bench::Report measured{};
-    auto measuring = [&]() noexcept {
-        pin_to(cores.measured);
-        while (is_second_ready->load_acquire() == 0) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
-        measured = bench::run("wide shared load", [&] {
-            Generation const value = load_once(cell);
-            bench::do_not_optimize(value);
-        });
-        is_done->store_release(1);
-    };
-    auto second = [&]() noexcept {
+    MeasureSharedLoad<Cell> measuring{
+        .cell = cell, .cores = cores, .is_second_ready = *is_second_ready, .is_done = *is_done};
+    auto second = [&cell, &cores, &is_second_ready, &is_done]() noexcept {
         pin_to(cores.second);
         is_second_ready->store_release(1);
         while (is_done->load_acquire() == 0) {
@@ -186,7 +199,7 @@ template <class Cell>
     };
     ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, measuring, second)
         .expect("the two threads of a shared load row start and join");
-    return measured;
+    return std::move(measuring.measured);
 }
 
 }  // namespace
@@ -195,8 +208,10 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: libatomic is the reference of each atomi
 namespace {
 
 // The cell of the reference: a value of 16 bytes that each operation reaches
-// through the __atomic builtins, which GCC sends to libatomic.
-class LibatomicCell final {
+// through the __atomic builtins, which GCC sends to libatomic.  Each access is
+// atomic, so the cell states shareable: two threads can read and write it at
+// the same time.
+class[[= ::foundation::transfer::shareable{}]] LibatomicCell final {
     __extension__ using Word = unsigned __int128;
 
     alignas(16) Word word_ = 0;
