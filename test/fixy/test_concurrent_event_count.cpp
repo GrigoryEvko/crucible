@@ -131,7 +131,7 @@ void expect_no_lost_wake(::fixy::BgLoadCtx const& ctx, std::uint64_t seed) {
     EventCount events{};
     core::Atomic<std::uint32_t> published{0};
     core::Atomic<std::uint32_t> late_rounds{0};
-    auto producer = [&](::fixy::BgLoadCtx const& thread_ctx) noexcept {
+    auto producer = [&published, &events, seed](::fixy::BgLoadCtx const& thread_ctx) noexcept {
         ::crucible::test::PhiloxStream delays{seed};
         for (std::uint32_t round = 1; round <= kRounds; ++round) {
             std::uint64_t const draw = delays.below(100);
@@ -166,7 +166,7 @@ void expect_no_lost_wake_of_two_waiters(::fixy::BgLoadCtx const& ctx, std::uint6
     EventCount events{};
     core::Atomic<std::uint32_t> published{0};
     core::Atomic<std::uint32_t> late_rounds{0};
-    auto producer = [&](::fixy::BgLoadCtx const& thread_ctx) noexcept {
+    auto producer = [&published, &events, seed](::fixy::BgLoadCtx const& thread_ctx) noexcept {
         ::crucible::test::PhiloxStream delays{seed};
         for (std::uint32_t round = 1; round <= kRounds; ++round) {
             for (std::uint64_t turn = delays.below(3000); turn > 0; --turn) {
