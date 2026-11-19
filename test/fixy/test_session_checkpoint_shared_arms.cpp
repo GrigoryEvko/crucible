@@ -96,6 +96,19 @@ static_assert(s::checkpoint_verdict_of(^^s::Select<s::Roll, s::Send<int, s::Roll
                                        ^^s::Offer<s::Roll, s::Recv<int, s::Roll>>)
               == s::CheckpointVerdict::NotCheckpointShaped);
 
+// Two labels of one choice are one edge only when the labels and their
+// continuations are equal.  Equal labels that are not next to each other and
+// lead to one continuation are compliant.  Equal labels that lead to two
+// different continuations are ambiguous, also when each continuation by
+// itself would be compliant.
+using Again = s::Send<int, s::Continue>;
+using AgainLater = s::Loop<s::Select<Again, s::End, Again>>;
+using AgainLaterFollower = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::End, s::Recv<int, s::Continue>>>;
+static_assert(s::checkpoint_verdict_of(^^AgainLater, ^^AgainLaterFollower) == s::CheckpointVerdict::Compliant);
+using InnerAgain = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::End, s::Recv<int, s::Continue>>>;
+using AgainInner = s::Loop<s::Offer<s::Recv<int, s::Continue>, s::End, s::Recv<int, InnerAgain>>>;
+static_assert(s::checkpoint_verdict_of(^^AgainLater, ^^AgainInner) == s::CheckpointVerdict::AmbiguousLabels);
+
 // The display text of a choice of a row holds one name for each label, and
 // the dual keeps the names.  A text that spelled a row in full would be
 // longer than the limit of a constant evaluation.

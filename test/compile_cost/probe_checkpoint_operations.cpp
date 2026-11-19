@@ -12,8 +12,8 @@
 // flags.  A loop over eight chains of a hundred sends then met the operation
 // limit in the Debug build and not in the Release build.
 //
-// measured: 8.767 G instructions
-// operations: 421917
+// measured: 8.791 G instructions
+// operations: 423773
 
 #include <fixy/session/Checkpoint.h>
 

@@ -3665,6 +3665,12 @@ fixy_neg_compile_test(neg_sess_checkpoint_labels_disagree
   "no matching function for call to .mint_checkpoint_session"
   "!= fixy::session::CheckpointVerdict::LabelsDisagree")
 
+# Two equal labels of one choice that lead to two different branches of the
+# peer name no one continuation, so the walk refuses the choice.
+fixy_neg_compile_test(neg_sess_checkpoint_ambiguous_labels
+  "no matching function for call to .mint_checkpoint_session<neg_sess_checkpoint_ambiguous_labels_types::Decide"
+  "!= fixy::session::CheckpointVerdict::AmbiguousLabels")
+
 fixy_neg_compile_test(neg_sess_checkpoint_both_choose
   "no matching function for call to .mint_checkpoint_session"
   "!= fixy::session::CheckpointVerdict::Stuck")

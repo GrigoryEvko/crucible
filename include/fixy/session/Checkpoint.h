@@ -59,8 +59,11 @@
 // The check uses the synchronous semantics of Fig. 11.  It explores
 // every configuration it can reach and refuses the pair when one of
 // them is stuck before both ends, when a label is Commit on one side
-// and not on the other, when a Roll finds an imposed checkpoint, or
-// when the model grows past its bound.
+// and not on the other, when two equal labels of one choice lead to two
+// different branches of the peer, when a Roll finds an imposed
+// checkpoint, or when the model grows past its bound.  The check treats
+// two labels of one choice as one edge only when the labels and their
+// continuations are equal.
 //
 // ── What a rollback reverts ─────────────────────────────────────────
 //
@@ -247,6 +250,10 @@ enum class CheckpointVerdict : std::uint8_t {
     // Label i is a primitive on one side and something else on the
     // other, or a different primitive.
     LabelsDisagree,
+    // Two labels of one choice are one branch on the selecting side and two
+    // different branches on the other side, so a label names no one
+    // continuation.
+    AmbiguousLabels,
     // TS-Rll2: the rolling party does not own its checkpoint.
     RollToImposedCheckpoint,
     // A Continue with no loop, or a loop whose body never reaches a head.
@@ -258,8 +265,8 @@ enum class CheckpointVerdict : std::uint8_t {
 // The bound of the work of the compliance check of one pair, when the caller
 // gives none.  The check counts admit_work units for each node of the shape
 // that it visits and for each edge of the model that it admits, and one
-// unit for each kept answer and each configuration that it compares.  A
-// check past its bound gives TooManyConfigurations, and the gate refuses
+// unit for each kept answer, each configuration and each label that it
+// compares.  A check past its bound gives TooManyConfigurations, and the gate refuses
 // the pair with the diagnostic Checkpoint_Work_Bound.  A caller with a
 // larger pair gives the gate and the mint a larger bound, the template
 // argument WorkBound.
@@ -274,9 +281,9 @@ enum class CheckpointVerdict : std::uint8_t {
 // own.)  A count of configurations cannot bound both, because one
 // configuration of the row admits an edge for each label, and one
 // configuration of the chain admits one edge.  The chain of about 800
-// configurations needs 479548 units, and the pair of 321 configurations of
-// the tests needs 116188.  The walk counts the same operations in each build
-// (the section on the head of a position below).  A bound past the
+// configurations needs 479576 units, and the pair of 321 configurations of
+// the tests needs 116216.  The walk counts the same operations in each build
+// (the section on the reads of a position below).  A bound past the
 // operation limit gives the error of the operation limit, which names the
 // flag that raises it.
 inline constexpr std::size_t checkpoint_work_bound = 196608;
@@ -671,11 +678,41 @@ consteval CheckpointVerdict choose(Exploration& run, const Party& active, const 
     if (label_count > accepted.size()) return CheckpointVerdict::LabelOutOfRange;
     const info* const label = labels.begin();
     const info* const acceptance = accepted.begin();
+    // The label and the accepted branch of each index, under their pins and
+    // names, for the search of an equal label.
+    tr::stack<info> bare_labels{};
+    tr::stack<info> bare_acceptances{};
     for (std::size_t index = 0; index < label_count; ++index) {
         // A label whose branch and accepted branch are those of the label
         // before it is the same edge, with the same verdict and the same next
-        // configuration, so the walk admits it one time.
-        if (index != 0 && label[index] == label[index - 1] && acceptance[index] == acceptance[index - 1]) continue;
+        // configuration, so the walk admits it one time.  The labels and the
+        // continuations are equal, so the two branches are one edge, and the
+        // search below found the label before it.
+        if (index != 0 && label[index] == label[index - 1] && acceptance[index] == acceptance[index - 1]) {
+            const info same_label = bare_labels.items[index - 1];
+            const info same_acceptance = bare_acceptances.items[index - 1];
+            tr::push(bare_labels, same_label);
+            tr::push(bare_acceptances, same_acceptance);
+            continue;
+        }
+        // Two labels that are one branch on the selecting side must be one
+        // branch on the other side too.  The search stops at the nearest
+        // equal label, because that label was compared with each equal label
+        // before it.  Each compare is one unit of work.
+        const info bare_label = strip(label[index]);
+        const info bare_acceptance = strip(acceptance[index]);
+        for (std::size_t place = index; place != 0; --place) {
+            ++run.work;
+            if (run.work > run.bound) {
+                run.verdict = CheckpointVerdict::TooManyConfigurations;
+                return run.verdict;
+            }
+            if (bare_labels.items[place - 1] != bare_label) continue;
+            if (bare_acceptances.items[place - 1] != bare_acceptance) return CheckpointVerdict::AmbiguousLabels;
+            break;
+        }
+        tr::push(bare_labels, bare_label);
+        tr::push(bare_acceptances, bare_acceptance);
         const CheckpointVerdict step = exchange(run, active, passive, label[index], acceptance[index], active_start,
                                                 passive_start, active_is_left);
         if (step != CheckpointVerdict::Compliant) return step;
@@ -781,7 +818,7 @@ consteval bool walk_fits_bound(info left_protocol, info right_protocol, std::siz
             u8"fixy::session::diagnostic [Checkpoint_Work_Bound]: the compliance check of the checkpoint pair needs "
             u8"more work than its bound, the template argument WorkBound.  The check counts admit_work units for each "
             u8"node of the shape that it visits and for each edge of the model that it admits, and one unit for each "
-            u8"kept answer and each configuration that it compares.  The default bound is "
+            u8"kept answer, each configuration and each label that it compares.  The default bound is "
             u8"fixy::session::checkpoint_work_bound.  Give a larger bound for this pair: "
             u8"mint_checkpoint_session<Proto, PeerProto, Policy, WorkBound>.",
             left_protocol);
@@ -847,6 +884,7 @@ concept CheckpointSessionAdmissible =
     && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::Stuck
     && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::LabelOutOfRange
     && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::LabelsDisagree
+    && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::AmbiguousLabels
     && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound)
            != CheckpointVerdict::RollToImposedCheckpoint
     && detail::checkpoint::cached_verdict_of(^^Proto, ^^PeerProto, WorkBound) != CheckpointVerdict::LoopUnresolved
