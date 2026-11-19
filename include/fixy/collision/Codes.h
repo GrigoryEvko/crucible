@@ -660,8 +660,7 @@ struct pending_rule {
 // atoms of Sync.h, Syscall.h and Os.h lift to, B001 reads Observe.h,
 // V201, V202 and V203 read Hw.h, V301 reads Barrier.h, V401 reads
 // Scope.h, V101 and V402 read Simd.h, and F101 and F102 read Fp.h.  Each
-// is a live_rules member of fixy/Collision.h and a Live row in
-// rule_corpus.  Three of
+// is a row of the rule table above and a Live row in rule_corpus.  Three of
 // them read more than one family: W001 a tier AND a lifted row, V401 a
 // scope AND a strength, V402 a scope AND a pinned ISA.
 //
@@ -687,15 +686,15 @@ inline constexpr std::size_t pending_rule_count = pending_rules.size();
 // absence.  A pin such as `live == roster - pending` is arithmetic rather
 // than a measurement.
 //
-// The pins in the check files of this header and of
-// fixy/collision/Report.h compare this list against the RuleCode enum and
-// against the members live_rules actually defines, so no one of the three
-// can drift without one of the others reporting it.
+// The pins in the check file of this header compare this list against the
+// RuleCode enum, and the enum against the rows of the rule table, so no
+// one of the three can drift without one of the others reporting it.
 //
-// The specification names 54 codes, and this file adds three.
+// The specification names 54 codes, and this file adds five: B002, R004,
+// W003, A001 and W004.
 
 enum class Disposition : std::uint8_t {
-    Live,  // implemented in live_rules of fixy/Collision.h, and able to fire today
+    Live,  // a row of the rule table, and able to fire today
     Pending,  // kept as a theorem, waiting on an axis that has no atom
     Absent,  // not implemented; the note names what is missing
     Retired,  // needs no rule, and the note says why
@@ -822,7 +821,7 @@ inline constexpr corpus_entry rule_corpus[] = {
      "reads a linear in_region binding that holds no Permission for its region. The Permission is an argument "
      "at the call, and a binding sees no call. in_region names its region by a value and Permission by a type"},
 
-    // Three hold across several bindings.  rules_of is handed one binding,
+    // Three hold across several bindings.  The verdict reads one binding,
     // so a relation over a set of bindings has no place here.
     {"F001", Disposition::Absent,
      "every binding in one frame names the same Security grade. A Stage names a function pointer and a "
