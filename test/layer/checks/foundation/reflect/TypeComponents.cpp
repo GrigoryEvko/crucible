@@ -112,6 +112,40 @@ static_assert(!holds_unreadable_state(TypeNode{^^int, true}));
 static_assert(!holds_unreadable_state(TypeNode{^^HoldsOnlyAnUnnamedBitField, false}),
               "a node whose members the walk may not read is not read");
 
+// Each data member node names its member, in declaration order, also a
+// private one.  A member that is a reference gives its referent and
+// was_reference.  A base node names no member and comes first.  A lambda with
+// a capture shows its field exactly when its state is readable, so the pin
+// holds on a compiler that shows no capture too.
+class CountsCalls {
+    int calls_ = 0;
+    Needle const& held_;
+
+public:
+    explicit constexpr CountsCalls(Needle const& held) noexcept : held_{held} {}
+    constexpr int operator()() noexcept { return ++calls_; }
+};
+struct DerivesCountsCalls : CountsCalls {
+    long extra = 0;
+};
+consteval bool names_each_member() {
+    const TypeNodeList counts = member_components_of(TypeNode{^^CountsCalls, true});
+    const TypeNodeList derived = member_components_of(TypeNode{^^DerivesCountsCalls, true});
+    const TypeNode first = *counts.begin();
+    const TypeNode second = *(counts.begin() + 1);
+    const bool is_capture_shown = member_components_of(TypeNode{^^decltype(captures_needle), true}).size() == 1;
+    const bool is_first_a_value = (first.type == ^^int)&&first.is_held_by_value;
+    const bool is_second_a_reference = (std::meta::type_of(second.member) == ^^Needle const&)
+                                    && (second.type == ^^Needle) && second.was_reference && second.was_const;
+    const bool is_base_first = derived.size() == 2 && (derived.begin()->member == std::meta::info{})
+                            && std::meta::is_nonstatic_data_member((derived.begin() + 1)->member);
+    return counts.size() == 2 && std::meta::is_nonstatic_data_member(first.member) && is_first_a_value
+        && is_second_a_reference && !second.is_held_by_value && is_base_first
+        && member_components_of(TypeNode{^^decltype(captures_nothing), true}).empty()
+        && is_capture_shown != holds_unreadable_state(TypeNode{^^decltype(captures_needle), true});
+}
+static_assert(names_each_member());
+
 static_assert(!any_component_satisfies<is_needle>(^^int));
 static_assert(!any_component_satisfies<is_needle>(^^Unrelated));
 static_assert(!any_component_satisfies<is_needle>(^^SelfReferential), "a cycle through a pointer ends the walk");

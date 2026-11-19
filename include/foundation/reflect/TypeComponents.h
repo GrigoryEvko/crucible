@@ -99,7 +99,8 @@ namespace foundation::reflect {
 // reference, the element of a pointer, or the type itself), a member
 // declared mutable, and the type of a value argument of a specialization
 // in place of a type argument.  The rules of foundation/Transfer.h read
-// them.
+// them.  A node of a data member names the member, and each other node
+// names none.
 struct TypeNode {
     std::meta::info type{};
     bool may_read_members = false;
@@ -108,6 +109,7 @@ struct TypeNode {
     bool was_const = false;
     bool is_mutable = false;
     bool is_value_argument = false;
+    std::meta::info member{};
 };
 
 // The nodes that one step of the walk lists, in a growable array.
@@ -324,9 +326,15 @@ argument_components_of(TypeNode node, SpecializationRead read = SpecializationRe
 }
 
 // The bases and the non-static data members of a class or union whose
-// members the walk may read.  For a specialization this read
-// instantiates the class, so the caller must know it is complete.
-// Complexity: linear in the number of bases and members.
+// members the walk may read: first each base, and then each data member in
+// declaration order, as a node that names its member.  This is the one read
+// of the members of a class.  The read is unchecked: it sees a private
+// member, and the capture fields of a closure show only to an unchecked
+// access, so no splice from outside the closure reads or writes a capture
+// (the sixth patch of GCC).  foundation/Closure.h reads the captures of a
+// lambda through it.  For a specialization this read instantiates the
+// class, so the caller must know it is complete.  Complexity: linear in the
+// number of bases and members.
 [[nodiscard]] consteval TypeNodeList member_components_of(TypeNode node,
                                                           SpecializationRead read = SpecializationRead::ArgumentsOnly) {
     TypeNodeList components;
@@ -340,12 +348,19 @@ argument_components_of(TypeNode node, SpecializationRead read = SpecializationRe
     for (const std::meta::info member :
          std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
         const std::meta::info member_type = std::meta::type_of(member);
+        TypeNode part{};
         if (std::meta::is_reference_type(member_type)) {
-            components.push_back(node_reached_indirectly(member_type, read));
+            part = node_reached_indirectly(member_type, read);
         } else {
-            components.push_back(TypeNode{bare_type(member_type), true, true, false,
-                                          std::meta::is_const_type(member_type), std::meta::is_mutable_member(member)});
+            part = TypeNode{bare_type(member_type),
+                            true,
+                            true,
+                            false,
+                            std::meta::is_const_type(member_type),
+                            std::meta::is_mutable_member(member)};
         }
+        part.member = member;
+        components.push_back(part);
     }
     return components;
 }
