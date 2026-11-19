@@ -134,6 +134,38 @@ void rollback_while_regions_are_in_flight() {
     if (!vigil.rollback()) fail("a rollback with a superseded transaction restored nothing");
 }
 
+// The publish stage sweeps the store of regions at each publication, and a
+// rollback gives its region to the foreground between two publications.  Each
+// round feeds a region, so the stage publishes and sweeps while the
+// foreground rolls back, and then the foreground reads each op of the region
+// that it holds.  THE LIFE OF A REGION of BackgroundThread.h keeps the region
+// in the store until the foreground writes its holders again.  A read of a
+// freed region shows under the address sanitizer, and a race of the sweep and
+// the read shows under the thread sanitizer preset.
+void rollback_reads_its_region_while_the_store_sweeps() {
+    crucible::Vigil vigil;
+    feed_one_region(vigil, 0);
+    crucible::test::flush_and_wait_region_published(vigil);
+    feed_one_region(vigil, 4);
+    crucible::test::flush_and_wait_region_published(vigil);
+
+    constexpr uint32_t kRounds = 32;
+    uint32_t restored = 0;
+    for (uint32_t round = 2; round < 2 + kRounds; ++round) {
+        feed_one_region(vigil, round * 4);
+        if (!vigil.rollback()) continue;
+        ++restored;
+        for (const ::fixy::Ref<const crucible::RegionNode> region : vigil.active_region()) {
+            for (const crucible::TraceEntry& op : region->ops) {
+                const uint64_t schema = op.schema_hash.raw();
+                if (schema < 0x300 || schema >= 0x300 + kOps) fail("a region read after a rollback holds a foreign op");
+            }
+        }
+    }
+    vigil.flush();
+    if (restored == 0) fail("no rollback restored a region while regions were in flight");
+}
+
 void rollback_on_a_fresh_vigil() {
     crucible::Vigil vigil;
     if (vigil.rollback()) fail("a rollback on an empty log restored a transaction");
@@ -207,6 +239,7 @@ int main() {
                                ::fixy::TextView{"foundation: contract violation: stage_held_by_this_thread_"});
     rollback_on_a_fresh_vigil();
     rollback_while_regions_are_in_flight();
+    rollback_reads_its_region_while_the_store_sweeps();
     job_runs_on_the_stage_while_it_runs();
     ::fixy::check::pass(test, "test_transaction_owner: passed\n");
     return 0;
