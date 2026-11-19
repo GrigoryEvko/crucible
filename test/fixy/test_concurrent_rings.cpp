@@ -8,6 +8,7 @@
 // ordering claim, and it is the half that means anything under TSan.
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/os/OwnedThread.h>
@@ -255,36 +256,31 @@ using MpscWide = c::MpscRing<int, 128>;
     int next_expected = 0;
     for (int turn = 0; turn < kTurns; ++turn) {
         const int first = turn * kPerTurn;
-        ::fixy::thread::OwnedThread producer =
-            ::fixy::thread::mint_owned_thread(Starter{::foundation::effects::testing::bg()},
-                                              ::fixy::thread::ThreadOptions{},
-                                              [&ring, first]() noexcept {
-                                                  for (int i = first; i < first + kPerTurn;) {
-                                                      if (ring.try_push(i)) {
-                                                          ++i;
-                                                      } else {
-                                                          CRUCIBLE_SPIN_PAUSE;
-                                                      }
-                                                  }
-                                              })
-                .expect("the thread door starts the producer of a turn");
-        ::fixy::thread::OwnedThread consumer =
-            ::fixy::thread::mint_owned_thread(
-                Starter{::foundation::effects::testing::bg()}, ::fixy::thread::ThreadOptions{},
-                [&ring, &next_expected, first]() noexcept {
-                    while (next_expected < first + kPerTurn) {
-                        ::fixy::Option<int> item = ring.try_pop();
-                        if (item.is_none()) {
-                            CRUCIBLE_SPIN_PAUSE;
-                            continue;
-                        }
-                        if (std::move(item).expect("the test above found an item") != next_expected) return;
-                        ++next_expected;
-                    }
-                })
-                .expect("the thread door starts the consumer of a turn");
-        std::move(producer).join();
-        std::move(consumer).join();
+        auto producer = [&ring, first]() noexcept {
+            for (int i = first; i < first + kPerTurn;) {
+                if (ring.try_push(i)) {
+                    ++i;
+                } else {
+                    CRUCIBLE_SPIN_PAUSE;
+                }
+            }
+        };
+        auto consumer = [&ring, &next_expected, first]() noexcept {
+            while (next_expected < first + kPerTurn) {
+                ::fixy::Option<int> item = ring.try_pop();
+                if (item.is_none()) {
+                    CRUCIBLE_SPIN_PAUSE;
+                    continue;
+                }
+                if (std::move(item).expect("the test above found an item") != next_expected) return;
+                ++next_expected;
+            }
+        };
+        ::fixy::thread::run_joined_raw_probe(Starter{::foundation::effects::testing::bg()},
+                                             ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+                                             "the bare ring is the state under test", ::fixy::thread::ThreadOptions{},
+                                             producer, consumer)
+            .expect("the thread door starts the producer and the consumer of a turn");
         if (next_expected != first + kPerTurn) {
             fixy::report(fixy::Sink::Err, "SPSC gave item {} out of order after a move of the roles\n", next_expected);
             return 1;
@@ -359,30 +355,31 @@ struct ProvenOwner final {
         ::foundation::effects::Bg,
         ::foundation::effects::Row<::foundation::effects::Effect::Bg, ::foundation::effects::Effect::Alloc>>;
     ProvenOwner::Ring proven{};
-    ::fixy::thread::OwnedThread producer =
-        ::fixy::thread::mint_owned_thread(Starter{::foundation::effects::testing::bg()},
-                                          ::fixy::thread::ThreadOptions{},
-                                          [&proven]() noexcept {
-                                              for (int i = 0; i < kItems;) {
-                                                  if (proven.try_push_proven(ProvenOwner::producer(), i)) {
-                                                      ++i;
-                                                  } else {
-                                                      CRUCIBLE_SPIN_PAUSE;
-                                                  }
-                                              }
-                                          })
-            .expect("the thread door starts the producer");
-    int next_expected = 0;
-    while (next_expected < kItems) {
-        fixy::Option<int> item = proven.try_pop_proven(ProvenOwner::consumer());
-        if (item.is_none()) {
-            CRUCIBLE_SPIN_PAUSE;
-            continue;
+    auto producer = [&proven]() noexcept {
+        for (int i = 0; i < kItems;) {
+            if (proven.try_push_proven(ProvenOwner::producer(), i)) {
+                ++i;
+            } else {
+                CRUCIBLE_SPIN_PAUSE;
+            }
         }
-        if (std::move(item).value_or(-1) != next_expected) break;
-        ++next_expected;
-    }
-    std::move(producer).join();
+    };
+    int next_expected = 0;
+    auto consumer = [&proven, &next_expected]() noexcept {
+        while (next_expected < kItems) {
+            fixy::Option<int> item = proven.try_pop_proven(ProvenOwner::consumer());
+            if (item.is_none()) {
+                CRUCIBLE_SPIN_PAUSE;
+                continue;
+            }
+            if (std::move(item).value_or(-1) != next_expected) return;
+            ++next_expected;
+        }
+    };
+    ::fixy::thread::run_joined_raw_probe(
+        Starter{::foundation::effects::testing::bg()}, ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+        "the bare ring is the state under test", ::fixy::thread::ThreadOptions{}, producer, consumer)
+        .expect("the thread door starts the producer and the consumer");
     if (next_expected != kItems) {
         fixy::report(fixy::Sink::Err, "SPSC proven form gave item {} out of order\n", next_expected);
         return 1;
