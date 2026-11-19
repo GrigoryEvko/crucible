@@ -4639,6 +4639,11 @@ fixy_neg_compile_test(neg_sess_plain_session_over_a_channel_pole
 fixy_neg_compile_test(neg_sess_session_over_a_held_channel_pole
   "no matching function for call to .mint_session<fixy::session::Loop<fixy::session::Send<long int"
   "ReachesAChannelPole<Resource>. .with Resource = held_pole_fixture::HeldPole")
+# A class that binds a channel is a pole too, and the walk sees a binding
+# behind a reference by its template, with no instantiation.
+fixy_neg_compile_test(neg_sess_session_over_a_channel_binding
+  "no matching function for call to .mint_session<fixy::session::Send<int, fixy::session::End> >"
+  "ReachesAChannelPole<Resource>. .with Resource = binding_fixture::BindsALog<")
 fixy_neg_compile_test(neg_sess_crash_session_over_a_channel_pole
   "no matching function for call to .mint_crash_session<Proto, crash_pole_fixture::Alice, crash_pole_fixture::Bob>"
   "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<")

@@ -1475,6 +1475,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::channels::handle_for, kMetafunction},
     {^^::fixy::channels::bridged_pole_protocols, kMetafunction},
     {^^::fixy::channels::swmr_session::swmr_pole_protocols, kMetafunction},
+    {^^::fixy::channels::log_pole_protocols, kMetafunction},
     {^^::fixy::channels::Endpoint,
      "a builder that binds a channel handle to a context once: a stage mint or a session mint consumes it, the "
      "stage or the session handle that comes out folds, and an endpoint is never a template argument of a kernel "

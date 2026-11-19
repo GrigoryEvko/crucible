@@ -419,9 +419,10 @@ concept SessionResource = OwnedSessionResource<Resource> || PinnedSessionResourc
 //
 // A pole of a channel is a class that names its channel with a public
 // member type channel_type, as each handle of fixy/concurrent and of
-// fixy/channels does.  The binding inside such a handle
-// (foundation::ChannelBinding) names the channel too, but it moves no value,
-// so it is no pole.
+// fixy/channels does, or a class that binds its channel with a member of the
+// type foundation::ChannelBinding, as each handle of the MetaLog does.  The
+// binding itself moves no value, so it is no pole.  The channel of a pole is
+// its channel_type, or the channel of its binding.
 //
 // The protocol of a channel is one value for the channel.  A mint of one
 // end takes the protocol of that end from its caller, and the peer end of
@@ -437,29 +438,55 @@ concept SessionResource = OwnedSessionResource<Resource> || PinnedSessionResourc
 //
 // The walk instantiates nothing.  It reads the members of each class that
 // it reaches by value, and of each complete class that is no specialization
-// of a template.  Each pole of fixy/concurrent and of fixy/channels is a
-// member class of its channel, which is no specialization, so the walk sees
-// it behind a pointer or a reference too.  A pole that is a specialization of
-// a template, and that the Resource names only through a pointer, a
-// reference or a template argument, is not seen.  A class that holds a
-// channel and does not name it with channel_type is no pole, so this rule
-// does not see it either.
+// of a template.  Each pole of fixy/concurrent, of fixy/channels and of the
+// MetaLog is a member class of its channel, which is no specialization, so
+// the walk sees it behind a pointer or a reference too.  The walk tells a
+// ChannelBinding by its template, so a binding that it reaches anywhere,
+// also behind a pointer, a reference or a template argument, reaches a
+// channel.  A pole that is a specialization of a template, and that the
+// Resource names only through a pointer, a reference or a template argument,
+// is not seen.  No mark of the template can name such a pole for the walk:
+// GCC 16 gives no annotation of a class template, and it reads the
+// annotations of a specialization only after it instantiates the
+// specialization.  A class that holds a channel and neither names it with
+// channel_type nor binds it is no pole, so this rule does not see it either.
 
 namespace detail {
 
-// True when the type is a pole of a channel.  The caller reads the members
-// of a complete class only.  The answer is a function at namespace scope
-// that is not a template, so no translation unit can specialize it.
-[[nodiscard]] consteval bool is_channel_pole(std::meta::info type) {
-    if (!std::meta::is_class_type(type)) return false;
-    if (std::meta::has_template_arguments(type)) {
-        const std::meta::info family = std::meta::template_of(type);
-        if (std::meta::parent_of(family) == ^^::foundation&& std::meta::identifier_of(family) == "ChannelBinding") {
-            return false;
-        }
-    }
+// True when the type is a specialization of foundation::ChannelBinding.  The
+// test reads the template of the type, so it instantiates nothing.
+[[nodiscard]] consteval bool is_channel_binding(std::meta::info type) {
+    if (!std::meta::is_type(type) || !std::meta::has_template_arguments(type)) return false;
+    const std::meta::info family = std::meta::template_of(type);
+    return std::meta::parent_of(family) == ^^::foundation&& std::meta::identifier_of(family) == "ChannelBinding";
+}
+
+// The channel that the type names with channel_type, or null.
+[[nodiscard]] consteval std::meta::info named_channel_of(std::meta::info type) {
     const std::meta::info member = ::foundation::reflect::member_named(type, "channel_type");
-    return member != std::meta::info{} && std::meta::is_type(member);
+    return member != std::meta::info{} && std::meta::is_type(member) ? std::meta::dealias(member) : std::meta::info{};
+}
+
+// The channel of a pole: the channel that it names with channel_type, or the
+// channel of its ChannelBinding member.  Null for a class that is no pole.
+// The caller reads the members of a complete class only.  Complexity: linear
+// in the members of the class.
+[[nodiscard]] consteval std::meta::info pole_channel_of(std::meta::info type) {
+    if (!std::meta::is_class_type(type) || is_channel_binding(type)) return {};
+    const std::meta::info named = named_channel_of(type);
+    if (named != std::meta::info{}) return named;
+    namespace rf = ::foundation::reflect;
+    for (const rf::TypeNode& part : rf::member_components_of(rf::TypeNode{type, true})) {
+        if (is_channel_binding(part.type)) return named_channel_of(part.type);
+    }
+    return {};
+}
+
+// True when the type is a pole of a channel.  The answer is a function at
+// namespace scope that is not a template, so no translation unit can
+// specialize it.
+[[nodiscard]] consteval bool is_channel_pole(std::meta::info type) {
+    return pole_channel_of(type) != std::meta::info{};
 }
 
 // True when the walk of foundation/reflect/TypeComponents.h reaches a pole
@@ -486,6 +513,7 @@ namespace detail {
         }
         if (was_visited) continue;
         tr::push(visited, node);
+        if (is_channel_binding(node.type)) return true;
         if (node.may_read_members && is_channel_pole(node.type)) return true;
         for (const rf::TypeNode& part : rf::member_components_of(node))
             tr::push(pending, part);
@@ -500,6 +528,10 @@ namespace detail {
 // The Resource is a pole of a channel, held by value.
 template <typename Resource>
 concept ChannelPole = !std::is_reference_v<Resource> && detail::is_channel_pole(^^Resource);
+
+// The channel of a pole.
+template <ChannelPole Pole>
+using pole_channel_t = typename[:detail::pole_channel_of(^^Pole):];
 
 // The Resource is a pole, or holds or names one.
 template <typename Resource>

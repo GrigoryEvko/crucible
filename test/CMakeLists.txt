@@ -4317,6 +4317,11 @@ crucible_neg_compile_test(neg_metalog_session_consumer_lvalue_handle
     "no matching function for call to .mint_metalog_consumer_session<"
     "satisfaction of .same_as<Handle, typename Log::ConsumerHandle>. .with Handle = crucible::PermissionedMetaLog<consumer_lvalue_fixture::Tag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle&"
     "satisfaction of .CtxFitsMetaLogConsumerSession<Ctx, Log, Handle>.")
+# A handle of the log binds the log, so it is a pole of a channel, and no
+# mint that names its own protocol admits it.
+crucible_neg_compile_test(neg_metalog_plain_session_over_a_handle
+    "no matching function for call to .mint_session<fixy::session::Loop<fixy::session::Send<crucible::TensorMeta"
+    "ReachesAChannelPole<Resource>. .with Resource = crucible::PermissionedMetaLog<plain_handle_fixture::Tag, foundation::permissions::\\._anon_[0-9]+>::ProducerHandle")
 crucible_neg_compile_test(neg_metalog_session_producer_wrong_role
     "no matching function for call to .mint_metalog_producer_session<"
     "satisfaction of .same_as<Handle, typename Log::ProducerHandle>. .with Handle = crucible::PermissionedMetaLog<producer_wrong_role_fixture::Tag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle"

@@ -279,9 +279,9 @@ void test_empty_drain() {
     CRUCIBLE_TEST_REQUIRE(consumer.head_index() == 0);
 }
 
-// The producer holds its session through the mint.  The consumer lends its
-// handle to a body through with_session.  Each side stops by its own choice
-// and gets its handle back.
+// Each side holds its session through its mint, stops by its own choice and
+// gets its handle back.  A handle of the log is a pole of a channel, so no
+// callback session that names its own protocol admits it.
 //
 // A MetaLog handle refuses move-assignment, so a session over it refuses
 // move-assignment too.  Each loop keeps its current session in an optional
@@ -294,7 +294,7 @@ void test_typed_session_round_trip() {
     constexpr int kCount = 128;
     std::atomic<bool> producer_done{false};
     std::atomic<bool> producer_handle_back{false};
-    std::vector<::crucible::TensorMeta> received(kCount);
+    int matched_count = 0;
     bool consumer_handle_back = false;
 
     std::jthread prod_thread{[&producer, &producer_done, &producer_handle_back](auto) mutable {
@@ -309,19 +309,15 @@ void test_typed_session_round_trip() {
         producer_done.store(true, std::memory_order_release);
     }};
 
-    std::jthread cons_thread{[&consumer, &received, &consumer_handle_back](auto) mutable {
+    std::jthread cons_thread{[&consumer, &matched_count, &consumer_handle_back](auto) mutable {
         const BgCtx ctx{::foundation::effects::testing::bg()};
-        auto back = ::fixy::session::with_session<ms::ConsumerProto>(
-            ctx, std::move(consumer), [&received](auto first) noexcept {
-                std::optional head{std::move(first)};
-                for (int i = 0; i < kCount; ++i) {
-                    auto [meta, next] =
-                        std::move(*head).template select<0>(::fixy::session::no_label).recv(ms::drain_one);
-                    received[static_cast<std::size_t>(i)] = meta;
-                    head.emplace(std::move(next));
-                }
-                return std::move(*head).template select<1>(::fixy::session::no_label);
-            });
+        std::optional head{ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(consumer))};
+        for (int i = 0; i < kCount; ++i) {
+            auto [meta, next] = std::move(*head).select<0>(::fixy::session::no_label).recv(ms::drain_one);
+            matched_count += same_meta(meta, make_meta(i + 10)) ? 1 : 0;
+            head.emplace(std::move(next));
+        }
+        auto back = std::move(*head).select<1>(::fixy::session::no_label).close();
         consumer_handle_back = back.tail_index() == static_cast<std::uint32_t>(kCount);
     }};
 
@@ -331,9 +327,7 @@ void test_typed_session_round_trip() {
     CRUCIBLE_TEST_REQUIRE(producer_done.load(std::memory_order_acquire));
     CRUCIBLE_TEST_REQUIRE(producer_handle_back.load(std::memory_order_acquire));
     CRUCIBLE_TEST_REQUIRE(consumer_handle_back);
-    for (std::size_t i = 0; i < received.size(); ++i) {
-        CRUCIBLE_TEST_REQUIRE(same_meta(received[i], make_meta(static_cast<int>(i) + 10)));
-    }
+    CRUCIBLE_TEST_REQUIRE(matched_count == kCount);
 }
 
 // A session that ends at once gives back a handle that still reaches the
