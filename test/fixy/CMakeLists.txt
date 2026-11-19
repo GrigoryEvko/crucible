@@ -134,6 +134,32 @@ fixy_neg_compile_test(neg_collision_verdict_cell_of_another_binding
 fixy_neg_compile_test(neg_collision_verdict_view_specialized
   "static assertion failed: fixy::fn<Type, Atoms...> \\[tier 5\\]: the combination is refused"
   "Collision rule\\(s\\) L002")
+# The record of a pack, the premises of a pack and the premises of a payload
+# are sealed cells under a key, as the verdict is.  A cell of another key
+# stops the read, and a cache cannot hold a value that the build did not
+# give.  The verdict cell holds the premises of a binding, and no other
+# cache of them exists.
+fixy_neg_compile_test(neg_collision_record_cell_of_another_pack
+  "a_cache_cell_stands_for_another_key"
+  "neg_collision_record_cell_of_another_pack\\.cpp:17:[0-9]+: error:")
+fixy_neg_compile_test(neg_collision_record_value_forged
+  "pack_record_cell::pack_record_cell\\(\\). is private within this context"
+  "neg_collision_record_value_forged\\.cpp:13:[0-9]+: error:")
+fixy_neg_compile_test(neg_collision_pack_premises_cell_of_another_pack
+  "a_cache_cell_stands_for_another_key"
+  "neg_collision_pack_premises_cell_of_another_pack\\.cpp:18:[0-9]+: error:")
+fixy_neg_compile_test(neg_collision_pack_premises_value_forged
+  "pack_premises_cell::pack_premises_cell\\(\\). is private within this context"
+  "neg_collision_pack_premises_value_forged\\.cpp:13:[0-9]+: error:")
+fixy_neg_compile_test(neg_collision_payload_premises_cell_of_another_payload
+  "a_cache_cell_stands_for_another_key"
+  "neg_collision_payload_premises_cell_of_another_payload\\.cpp:24:[0-9]+: error:")
+fixy_neg_compile_test(neg_collision_payload_premises_value_forged
+  "payload_premises_cell::payload_premises_cell\\(\\). is private within this context"
+  "neg_collision_payload_premises_value_forged\\.cpp:18:[0-9]+: error:")
+fixy_neg_compile_test(neg_collision_binding_premises_specialized
+  "binding_premises_v. has not been declared in .fixy::collision."
+  "neg_collision_binding_premises_specialized\\.cpp:10:[0-9]+: error:")
 # Each grade reader of the premises is a concept, a function that is not a
 # template, or a deduction in a class that is not a template.  One fixture
 # stands on each form, and each tries to give a grade another answer.

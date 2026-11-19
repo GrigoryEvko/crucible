@@ -114,7 +114,7 @@ static_assert(detail::reject::first_failing_tier_<void, not_an_atom>() == detail
 // The duplicate walk answers with an axis, and the tag it selects names
 // that axis.  Two atoms on one axis is the case; two atoms on two axes
 // is not.
-static_assert(detail::reject::first_duplicated_axis_<>() == ::fixy::axis_count);
+static_assert(detail::reject::first_duplicated_axis_(^^::fixy::collision::pack_key<>) == ::fixy::axis_count);
 static_assert(std::is_same_v<duplicate_tag_or_void_t<>, void>);
 static_assert(std::is_same_v<malformed_tag_or_void_t<>, void>);
 static_assert(std::is_same_v<malformed_tag_or_void_t<not_an_atom>, malformed_atom<not_an_atom>>);

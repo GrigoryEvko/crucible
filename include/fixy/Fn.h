@@ -190,7 +190,11 @@ public:
     // hide.
     template <Axis A>
     static constexpr bool mentions_axis =
-        ::fixy::collision::detail::pack_record_v<Atoms...>.atoms_on[::fixy::collision::detail::axis_slot_<A>()] > 0;
+        ::fixy::collision::detail::record_of_(
+            ::fixy::collision::detail::pack_record_cell_v<::fixy::collision::pack_key<Atoms...>>,
+            ^^::fixy::collision::pack_key<Atoms...>)
+            .atoms_on[::fixy::collision::detail::axis_slot_<A>()]
+        > 0;
 
     static constexpr std::size_t atom_count = sizeof...(Atoms);
 

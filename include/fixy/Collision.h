@@ -68,6 +68,7 @@
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
 #include <fixy/Bands.h>
+#include <fixy/Predicates.h>
 #include <fixy/atoms/Barrier.h>
 #include <fixy/atoms/Ctrl.h>
 #include <fixy/atoms/Dispatch.h>
@@ -125,23 +126,43 @@ struct subprocess;
 namespace collision {
 
 // ---------------------------------------------------------------------
+// The key of a binding.
+//
+// The key names the payload and the pack of one binding.  The class is
+// declared and never defined, so a key states nothing but its arguments.
+// The pack-only view keys its verdict with the payload void.  Each rule
+// that reads the payload stands down under void, so a cell written against
+// the pack alone means what it says: this pack, with any payload, is or is
+// not a contradiction.  Each cache of this header keys its cell by a key,
+// and each read of a cache refuses a cell of another key.
+template <class Payload, class... Atoms>
+struct verdict_key;
+
+template <class... Atoms>
+using pack_key = verdict_key<void, Atoms...>;
+
+// ---------------------------------------------------------------------
 // The pack as a grade lookup.
 
 namespace detail {
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-
-// The pack as reflections.  define_static_array gives each element a
-// constant address.  `template for` binds the element as constexpr only
-// with that address, and a splice names its type with it.  fixy/Reject.h
-// also walks the pack through this helper.
-template <class... Atoms>
-[[nodiscard]] consteval auto pack_entries_() {
-    using entry_list =
-        ::foundation::reflect::anchored_t<std::meta::reflect_constant(sizeof...(Atoms)), std::vector<std::meta::info>>;
-    return std::define_static_array(entry_list{^^Atoms...});
+// The first template argument of a specialization.  Each reader below that
+// takes the one argument of a family reads it here.
+[[nodiscard]] consteval std::meta::info first_template_argument_(std::meta::info specialization) {
+    return ::fixy::refined::argument_of(std::meta::dealias(specialization), 0);
 }
+
+// The key of the pack of a binding, and the key of its payload.  Each is an
+// alias template, so no unit can give a key another pack.
+template <class Payload, class... Atoms>
+using pack_key_of_t = pack_key<Atoms...>;
+
+template <class Payload, class... Atoms>
+using payload_key_of_t = verdict_key<Payload>;
+
+// Has no constant definition.  A call to it stops the constant evaluation,
+// and the diagnostic names it.
+void a_cache_cell_stands_for_another_key() noexcept;
 
 // The row of an atom of a Row axis, and the atom of a Row axis over a row.
 //
@@ -209,9 +230,10 @@ struct pack_record {
     // True when the grade of the axis is not its strict pole.
     bool names_axis[::fixy::axis_count]{};
     std::size_t atoms_on[::fixy::axis_count]{};
-    // The union of the rows of the atoms on a Row axis, as a canonical Row.
-    // It is the pole Row<> when no atom names the axis, and null on an axis
-    // of each other shape.
+    // The row of the atoms on a Row axis: the pole Row<> when no atom names
+    // the axis, the row of the one atom in the order of its arguments, and the
+    // union of two or more atoms as a canonical Row.  It is null on an axis of
+    // each other shape.
     std::meta::info row[::fixy::axis_count]{};
     // True when tier 4 refuses the axis: a Row axis that the pack names with
     // one atom twice, or an axis of each other shape that carries two atoms.
@@ -219,11 +241,46 @@ struct pack_record {
     std::meta::info first_malformed = ^^void;
 };
 
-// The walk.  It runs one time for each pack, because pack_record_v keeps
-// its answer.  Complexity: the axis count plus the pack size, and the
-// square of the pack size for the copies of an atom on a Row axis.
-template <class... Atoms>
-[[nodiscard]] consteval pack_record read_pack_() noexcept {
+// The axis that an atom states.  The read goes through an alias template, so
+// no unit can give an atom another axis.  The box is declared and never
+// defined, and the read takes only its one argument, which no
+// specialization of the box can change.
+template <Axis A>
+struct axis_box;
+
+template <class Atom>
+using atom_axis_box_t = axis_box<Atom::axis>;
+
+[[nodiscard]] consteval Axis atom_axis_of_(std::meta::info atom) {
+    return std::meta::extract<Axis>(
+        first_template_argument_(std::meta::substitute(^^atom_axis_box_t, {std::meta::dealias(atom)})));
+}
+
+// True when an entry of a pack is an atom of the closed catalog.  The read is
+// the concept of fixy/Atom.h, and a concept has no specialization.
+[[nodiscard]] consteval bool is_atom_(std::meta::info entry) {
+    return std::meta::extract<bool>(std::meta::substitute(^^::fixy::atom::IsAtom, {entry}));
+}
+
+// The count of the arguments of a key that are the entry.  Complexity: the
+// size of the pack.
+[[nodiscard]] consteval std::size_t copies_in_key_(std::meta::info key, std::meta::info entry) {
+    std::size_t copies = 0;
+    const std::size_t arguments = ::fixy::refined::argument_count_of(key);
+    for (std::size_t index = 0; index < arguments; ++index)
+        copies += ::fixy::refined::argument_of(key, index) == entry ? 1U : 0U;
+    return copies;
+}
+
+// The walk of the pack that a key names.  The function is not a template, so
+// no unit can give a pack another record.  The first argument of the key is
+// the payload, and the walk reads only the arguments after it.  Complexity:
+// the axis count plus the pack size, and the square of the pack size for the
+// copies of an atom on a Row axis.
+[[nodiscard]] consteval pack_record read_pack_of_key_(std::meta::info pack_key) {
+    // An alias of a key, such as pack_key<Atoms...>, has the arguments of the
+    // alias, so the walk reads the key that the alias names.
+    const std::meta::info key = std::meta::dealias(pack_key);
     pack_record record{};
     std::meta::info pole[::fixy::axis_count]{};
     for (std::size_t place = 0; place < ::fixy::axis_count; ++place) {
@@ -232,29 +289,33 @@ template <class... Atoms>
         record.grade[place] = pole[place];
         if (axis.shape == Shape::Row) record.row[place] = pole[place];
     }
-    static constexpr auto entries = pack_entries_<Atoms...>();
-    template for (constexpr auto entry : entries) {
-        using Candidate = [:entry:];
-        if constexpr (::fixy::atom::IsAtom<Candidate>) {
-            constexpr std::size_t place = std::to_underlying(Candidate::axis);
-            ++record.atoms_on[place];
-            if constexpr (axis_record(Candidate::axis).shape == Shape::Row) {
-                // A copy of an atom states nothing that the atom does not
-                // state, so a pack that writes one atom twice is refused.
-                constexpr std::size_t copies = ((^^Atoms == entry ? 1U : 0U) + ...);
-                record.is_graded_twice[place] = record.is_graded_twice[place] || copies > 1;
-                record.row[place] = std::meta::dealias(
-                    std::meta::substitute(^^::foundation::effects::row_union_t,
-                                          {record.row[place], row_of_row_atom_(Candidate::axis, entry)}));
-                record.grade[place] = record.atoms_on[place] == 1
-                                        ? std::meta::dealias(entry)
-                                        : row_axis_atom_over_(Candidate::axis, record.row[place]);
-            } else {
-                record.is_graded_twice[place] = record.atoms_on[place] > 1;
-                record.grade[place] = std::meta::dealias(entry);
-            }
-        } else {
+    // The argument at index 0 is the payload.
+    const std::size_t arguments = ::fixy::refined::argument_count_of(key);
+    for (std::size_t index = 1; index < arguments; ++index) {
+        const std::meta::info entry = ::fixy::refined::argument_of(key, index);
+        if (!is_atom_(entry)) {
             if (record.first_malformed == ^^void) record.first_malformed = entry;
+            continue;
+        }
+        const Axis axis = atom_axis_of_(entry);
+        const std::size_t place = std::to_underlying(axis);
+        ++record.atoms_on[place];
+        if (axis_record(axis).shape == Shape::Row) {
+            // A copy of an atom states nothing that the atom does not state,
+            // so a pack that writes one atom twice is refused.
+            record.is_graded_twice[place] = record.is_graded_twice[place] || copies_in_key_(key, entry) > 1;
+            // The row of one atom needs no union, and the grade of one atom is
+            // the atom as the pack spells it.
+            record.row[place] =
+                record.atoms_on[place] == 1
+                    ? row_of_row_atom_(axis, entry)
+                    : std::meta::dealias(std::meta::substitute(^^::foundation::effects::row_union_t,
+                                                               {record.row[place], row_of_row_atom_(axis, entry)}));
+            record.grade[place] =
+                record.atoms_on[place] == 1 ? std::meta::dealias(entry) : row_axis_atom_over_(axis, record.row[place]);
+        } else {
+            record.is_graded_twice[place] = record.atoms_on[place] > 1;
+            record.grade[place] = std::meta::dealias(entry);
         }
     }
     for (std::size_t place = 0; place < ::fixy::axis_count; ++place)
@@ -262,10 +323,58 @@ template <class... Atoms>
     return record;
 }
 
-#pragma GCC diagnostic pop
+class pack_record_cell;
 
-template <class... Atoms>
-inline constexpr pack_record pack_record_v = read_pack_<Atoms...>();
+[[nodiscard]] consteval pack_record_cell build_pack_record_cell(std::meta::info key);
+
+// The record of one pack, with the key of the pack that it answers.  The cell
+// is the value of pack_record_cell_v, so GCC walks each pack one time.  The two
+// constructors are private and user-provided, and the build is their one
+// friend.  The build is not a template, and it walks the pack that its key
+// names.  So a specialization of pack_record_cell_v can hold only the cell of
+// a pack that the build walked, and each read refuses the cell of another
+// pack.  No specialization changes a record.
+class pack_record_cell {
+public:
+    [[nodiscard]] consteval std::meta::info key() const noexcept { return key_; }
+    [[nodiscard]] consteval const pack_record& record() const noexcept { return record_; }
+
+private:
+    consteval pack_record_cell() noexcept {}
+    consteval pack_record_cell(const pack_record_cell& other) noexcept : key_{other.key_}, record_{other.record_} {}
+
+    std::meta::info key_{};
+    pack_record record_{};
+
+    friend consteval pack_record_cell build_pack_record_cell(std::meta::info key);
+};
+
+[[nodiscard]] consteval pack_record_cell build_pack_record_cell(std::meta::info key) {
+    pack_record_cell cell{};
+    cell.key_ = std::meta::dealias(key);
+    cell.record_ = read_pack_of_key_(cell.key_);
+    return cell;
+}
+
+// The record of the pack that a key pack_key<Atoms...> names, computed one
+// time for each pack.
+template <class Key>
+inline constexpr pack_record_cell pack_record_cell_v = build_pack_record_cell(^^Key);
+
+// The record in a cell, for the pack that the reader names by its key.  It
+// refuses a cell that answers another pack.
+[[nodiscard]] consteval const pack_record& record_of_(const pack_record_cell& cell, std::meta::info key) {
+    if (cell.key() != std::meta::dealias(key)) a_cache_cell_stands_for_another_key();
+    return cell.record();
+}
+
+// The record of the pack that a key names, such as
+// record_of_key_(^^pack_key<Atoms...>).  The function is not a template, so
+// no unit can specialize it.
+[[nodiscard]] consteval const pack_record& record_of_key_(std::meta::info key) {
+    return record_of_(std::meta::extract<const pack_record_cell&>(std::meta::substitute(^^pack_record_cell_v, {key})),
+                      key);
+}
 
 // The slot of an axis.  A value outside the enum has no row in the axis
 // table, so it has no pole.  Only a cast produces such a value, and a cast
@@ -280,7 +389,7 @@ template <Axis A>
 
 // The grade of the pack on one axis, as a type.
 template <Axis A, class... Atoms>
-using grade_on_t = [:pack_record_v<Atoms...>.grade[axis_slot_<A>()]:];
+using grade_on_t = [:record_of_(pack_record_cell_v<pack_key<Atoms...>>, ^^pack_key<Atoms...>).grade[axis_slot_<A>()]:];
 
 }  // namespace detail
 
@@ -304,7 +413,9 @@ struct grades {
     using on = detail::grade_on_t<A, Atoms...>;
 
     template <Axis A>
-    static constexpr bool mentions = detail::pack_record_v<Atoms...>.names_axis[detail::axis_slot_<A>()];
+    static constexpr bool mentions =
+        detail::record_of_(detail::pack_record_cell_v<pack_key<Atoms...>>, ^^pack_key<Atoms...>)
+            .names_axis[detail::axis_slot_<A>()];
 };
 
 // An Observability atom in its canonical spelling: the surface over its row,
@@ -460,12 +571,27 @@ namespace detail {
 // this set there and cannot be left out here.  Bg is left out because the
 // rules that read a Bg row, L007 and R003 among them, carry its theorem.
 //
-// The reader takes a Row.  The pass of the premises gives it the row of the
-// binding, which is a canonical Row.  A type that is not a Row matches no
-// parameter, so it does not read as a row with no observable effect.
-template <::foundation::effects::Effect... Es>
-[[nodiscard]] consteval bool names_observable_effect_without_bg_(::foundation::effects::Row<Es...>) noexcept {
-    return ((::foundation::effects::is_observable<Es>() && Es != ::foundation::effects::Effect::Bg) || ...);
+// The set is a concept over one effect, and a concept has no
+// specialization.
+template <::foundation::effects::Effect E>
+concept IsObservableWithoutBg = ::foundation::effects::is_observable<E>() && E != ::foundation::effects::Effect::Bg;
+
+// The reader takes the reflection of a Row.  The pass of the premises gives
+// it the row of the binding, which is a canonical Row.  The function is not a
+// template, so no unit can give a row another answer.  It reads the mask of
+// the row, and it asks the concept about each effect of the mask.
+// Complexity: the count of the enumerators of Effect.
+[[nodiscard]] consteval bool names_observable_effect_without_bg_(std::meta::info row) {
+    namespace fe = ::foundation::effects;
+    const fe::EffectRowLattice::element_type effects = fe::row_descriptor(row);
+    for (std::uint8_t bit = 0; bit < fe::effect_count; ++bit) {
+        const fe::Effect effect = static_cast<fe::Effect>(bit);
+        if (!fe::EffectRowLattice::contains(effects, effect)) continue;
+        if (std::meta::extract<bool>(
+                std::meta::substitute(^^IsObservableWithoutBg, {std::meta::reflect_constant(effect)})))
+            return true;
+    }
+    return false;
 }
 
 // The payload's replay claim.
@@ -667,12 +793,6 @@ concept StatesWaitStrategy = requires {
 [[nodiscard]] consteval bool is_grade_of_family_(std::meta::info grade, std::meta::info family) {
     const std::meta::info named = std::meta::dealias(grade);
     return std::meta::has_template_arguments(named) && std::meta::template_of(named) == family;
-}
-
-// The first template argument of a specialization.  Each reader below that
-// takes the one argument of a family reads it here.
-[[nodiscard]] consteval std::meta::info first_template_argument_(std::meta::info specialization) {
-    return std::meta::template_arguments_of(std::meta::dealias(specialization))[0];
 }
 
 // The function type a call family names, read in one structural step.
@@ -933,7 +1053,7 @@ using expected_error_t = typename Payload::error_type;
     const std::meta::info family = std::meta::template_of(named);
     if (family == ^^::foundation::core::Result) {
         // The error type is the second argument of the Result.
-        const std::meta::info error = std::meta::template_arguments_of(named)[1];
+        const std::meta::info error = ::fixy::refined::argument_of(named, 1);
         return ReturnedFailure{.fails = true, .carries_error = true, .error_is_secret = is_secret_type_(error)};
     }
     if (family == ^^::foundation::core::Option) return ReturnedFailure{.fails = true};
@@ -1065,9 +1185,8 @@ namespace detail {
 
 // The level of the Trust grade of a binding, with one message for a grade
 // that trust_level_of_ does not name.  The reader gives the null reflection
-// for such a grade, and T001 reads it as a grade that is not Unverified, so
-// the message is the stop.  A specialization of the template skips the
-// message and still gives no level.
+// for such a grade, and the pass of the premises stops the build on it.  A
+// specialization of the template skips the message and still gives no level.
 template <class G>
 [[nodiscard]] consteval std::meta::info trust_level_or_refuse_() noexcept {
     static_assert(::fixy::collision::IsTrustGrade<G>,
@@ -1080,154 +1199,6 @@ template <class G>
     return pack.names_axis[std::to_underlying(axis)];
 }
 
-// The premises that the pack states.  The pass runs one time for each
-// pack, because pack_premises_v keeps its answer, and only a pack that
-// tiers 1 to 4 admit reaches it.
-template <class... Atoms>
-[[nodiscard]] consteval rule_premises read_pack_premises_() noexcept {
-    constexpr const pack_record& pack = pack_record_v<Atoms...>;
-    constexpr auto grade_of = [](Axis axis) consteval noexcept {
-        return pack_record_v<Atoms...>.grade[std::to_underlying(axis)];
-    };
-    using Usage = grade_on_t<Axis::Usage, Atoms...>;
-    using CallShape = grade_on_t<Axis::CallShape, Atoms...>;
-    using MemoryScope = grade_on_t<Axis::MemoryScope, Atoms...>;
-    using BarrierStrength = grade_on_t<Axis::BarrierStrength, Atoms...>;
-    using HwInstruction = grade_on_t<Axis::HwInstruction, Atoms...>;
-    using SimdIsa = grade_on_t<Axis::SimdIsa, Atoms...>;
-    using FpMode = grade_on_t<Axis::FpMode, Atoms...>;
-    using Synchronization = grade_on_t<Axis::Synchronization, Atoms...>;
-    using Security = grade_on_t<Axis::Security, Atoms...>;
-    using Observability = grade_on_t<Axis::Observability, Atoms...>;
-    constexpr ReturnedFailure thrown = thrown_failure_of(pack.grade[std::to_underlying(Axis::ControlFlow)]);
-    namespace fe = ::foundation::effects;
-    namespace lat = ::foundation::algebra::lattices;
-
-    // The rows of the binding.  The row joins the Effect grade with the
-    // lifts of the atoms of the pack, through the relation of fixy/Atom.h
-    // that fixy/Fn.h also reads for context admission.  Each rule that
-    // asks what the binding does reads this row.  A binding can state a
-    // futex call or a park and leave its Effect grade empty, and a rule
-    // that reads only the grade admits that binding.
-    using binding_row = ::fixy::atom::binding_row_of_t<grade_on_t<Axis::Effect, Atoms...>, Atoms...>;
-    constexpr std::meta::info row = ^^binding_row;
-
-    rule_premises premise{};
-    premise.borrow = std::is_same_v<Usage, ::fixy::atom::borrow>;
-    premise.ghost = std::is_same_v<Usage, ::fixy::atom::ghost>;
-    premise.capability = std::is_same_v<Usage, ::fixy::atom::capability_usage>;
-    // A binding says nothing about Usage when it takes the strict pole,
-    // which on this axis is the linear grade: consumed exactly once.
-    premise.linear = !names_axis_(pack, Axis::Usage);
-    premise.monotonic = std::is_same_v<grade_on_t<Axis::Mutation, Atoms...>, ::fixy::atom::mut_monotonic>;
-    premise.unverified =
-        trust_level_or_refuse_<grade_on_t<Axis::Trust, Atoms...>>() == ^^::fixy::tags::trust::Unverified;
-
-    // "Unstated" is the strict pole on Complexity, so an unstated cost is
-    // the absence of a grade rather than a grade of its own.  A cost and a
-    // space are facts about the binding, and an unstated grade puts no
-    // bound on it.
-    premise.cost_unstated = !names_axis_(pack, Axis::Complexity);
-    premise.unbounded_cost = std::is_same_v<grade_on_t<Axis::Complexity, Atoms...>, ::fixy::atom::cost_unbounded>;
-    premise.may_run_unbounded = premise.cost_unstated || premise.unbounded_cost || !names_axis_(pack, Axis::Space)
-                             || std::is_same_v<grade_on_t<Axis::Space, Atoms...>, ::fixy::atom::space_unbounded>;
-
-    premise.row_bg = fe::row_contains(row, fe::Effect::Bg);
-    premise.row_observable = names_observable_effect_without_bg_(binding_row{});
-    premise.allocates = fe::row_contains(row, fe::Effect::Alloc);
-    premise.row_alloc_or_io = premise.allocates || fe::row_contains(row, fe::Effect::IO);
-    premise.row_init = fe::row_contains(row, fe::Effect::Init);
-    premise.blocks = fe::row_contains(row, fe::Effect::Block);
-
-    // The concurrency premise that several rules share.  A coroutine
-    // suspends and a Bg row runs elsewhere, and either makes the body
-    // concurrent with respect to the frame of the caller.  A suspension
-    // can be written on Reentrancy or on ControlFlow, and the premise reads
-    // both, so a pack cannot avoid a rule by writing the suspension on the
-    // other axis.
-    premise.coroutine = std::is_same_v<grade_on_t<Axis::Reentrancy, Atoms...>, ::fixy::atom::coroutine>;
-    // ctrl::coroutine<Policy> is the same suspension that atom::coroutine
-    // states on Reentrancy, written on the axis of the ways a frame is left.
-    premise.suspends_in_control_flow =
-        is_grade_of_family_(grade_of(Axis::ControlFlow), ^^::fixy::atom::ctrl::coroutine);
-    premise.suspends = premise.coroutine || premise.suspends_in_control_flow;
-    premise.concurrent = premise.suspends || premise.row_bg;
-
-    // Observability names which part of the row of the binding is
-    // observation.  observes_within_the_row holds when the surface names
-    // only effects of that row.
-    premise.observes_something = names_axis_(pack, Axis::Observability);
-    premise.observes_within_the_row = fe::Subrow<observability_row_t<Observability>, binding_row>;
-
-    premise.atomic_repr =
-        std::is_same_v<grade_on_t<Axis::Representation, Atoms...>, ::fixy::atom::repr<::fixy::pole::ReprKind::Atomic>>;
-    premise.thread_local_state =
-        is_grade_of_family_(grade_of(Axis::GlobalState), ^^::fixy::atom::global::thread_local_);
-    premise.longjmp_unsafe = is_grade_of_family_(grade_of(Axis::ControlFlow), ^^::fixy::atom::ctrl::longjmp_unsafe);
-    // A recursion with a proven depth bound has a bounded stack, so D002
-    // reads only the recursion that states no depth bound.
-    premise.recurses_unbounded = std::is_same_v<CallShape, ::fixy::atom::dispatch::recurses_unbounded>;
-    // A store that a thread-local slot publishes past its own thread has a
-    // reader on another thread.  The scope of the binding states how far
-    // the store reaches, and the scope thread, the shared bottom, reaches
-    // no other thread.
-    premise.publishes_past_the_thread =
-        names_axis_(pack, Axis::MemoryScope) && !std::is_same_v<MemoryScope, ::fixy::atom::scope::thread>;
-    // A CallShape grade or a Protocol grade with no reading stops the build
-    // with one message, and the reader then gives the answer that refuses.
-    [[maybe_unused]] constexpr CallShapeReading call_shape_reading = call_shape_reading_or_refuse_<CallShape>();
-    [[maybe_unused]] constexpr ProtocolReading protocol_reading =
-        protocol_reading_or_refuse_<grade_on_t<Axis::Protocol, Atoms...>>();
-    premise.indirect_call_may_throw = indirect_call_throws_(grade_of(Axis::CallShape));
-    premise.spawn_outlives_the_frame = spawn_outlives_frame_(grade_of(Axis::Protocol));
-    // A call through the vDSO and a deliberate leak lift the empty row, but
-    // each atom still states an emitting surface on one of these two axes.
-    premise.emits_outside_the_row = names_axis_(pack, Axis::Stdio) || names_axis_(pack, Axis::SyscallSurface);
-
-    premise.hot = std::is_same_v<grade_on_t<Axis::Regime, Atoms...>, ::fixy::atom::regime::hot>;
-    // pred::True is the Refinement strict pole, again an absence.
-    premise.no_witness_floor = !names_axis_(pack, Axis::Refinement);
-    premise.states_stdio = names_axis_(pack, Axis::Stdio);
-    premise.core_burning_spin = BurnsTheCore<Synchronization>;
-    premise.states_a_wait = StatesWaitStrategy<Synchronization>;
-
-    premise.hw_nondeterministic =
-        HasHwTierAtOrAbove<HwInstruction, ::fixy::atom::hw::HwInstruction::NonDeterministicTsc>;
-    premise.hw_privileged = HasHwTierAtOrAbove<HwInstruction, ::fixy::atom::hw::HwInstruction::PrivilegedMsr>;
-    premise.barrier_seq_cst_or_above = HasBarrierAtOrAbove<BarrierStrength, lat::BarrierStrength::SeqCst>;
-    premise.barrier_acq_rel_or_above = HasBarrierAtOrAbove<BarrierStrength, lat::BarrierStrength::AcqRel>;
-    premise.scope_cluster_or_above = HasScopeAtOrAbove<MemoryScope, lat::MemoryScope::Cluster>;
-    premise.scope_pinned = HasPinnedScopeTrunk<MemoryScope>;
-    premise.isa_pinned = HasPinnedIsaTrunk<SimdIsa>;
-    premise.trunks_cohere = HasScopeOnHostTrunk<MemoryScope> && HasIsaOnArmTrunk<SimdIsa>;
-
-    premise.fp_rewrites_without_bound = NamesFpSetting<FpMode, ::fixy::atom::fp::FpReassociate::UnrestrictedRewrite>;
-    premise.fp_reassociates =
-        premise.fp_rewrites_without_bound || NamesFpSetting<FpMode, ::fixy::atom::fp::FpReassociate::BoundedTreeDepth>;
-    premise.fp_contracts_across_statements = NamesFpSetting<FpMode, ::fixy::atom::fp::FpContract::Fast>;
-    premise.fp_mode_stated = names_axis_(pack, Axis::FpMode);
-    premise.fp_flushes_denormal_inputs = NamesFpSetting<FpMode, ::foundation::core::FpDenormalInput::DenormalsAreZero>;
-    premise.fp_flushes_subnormal_results = NamesFpSetting<FpMode, ::foundation::core::FpFtz::FlushToZero>;
-
-    // A declassification discharges a rule only on a channel that the mask
-    // of its policy names, in fixy/Atom.h.  The send is an export through
-    // IO.  No policy licenses the failure channel.
-    premise.constant_time = security_class_or_refuse_<Security>() == ::fixy::atom::SecurityClass::ConstantTime;
-    premise.classified_on_send = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::IO>;
-    premise.classified_on_failure = ::fixy::atom::IsClassifiedOn<Security, ::fixy::atom::DischargeAxis::Failure>;
-    premise.states_staleness = names_axis_(pack, Axis::Staleness);
-    premise.session_protocol = is_session_protocol_(grade_of(Axis::Protocol));
-    // The Protocol grade states that the frame holds a live handle.
-    premise.has_live_handle = is_grade_of_family_(grade_of(Axis::Protocol), ^^::fixy::atom::session::live_handle);
-
-    premise.fails = thrown.fails;
-    premise.fails_with_plain_error = thrown.carries_error && !thrown.error_is_secret;
-    return premise;
-}
-
-template <class... Atoms>
-inline constexpr rule_premises pack_premises_v = read_pack_premises_<Atoms...>();
-
 // The premises that the payload states, read through its bands.  The
 // premises of void, the payload of the pack-only view, are all false.
 struct payload_premises {
@@ -1237,21 +1208,6 @@ struct payload_premises {
     bool owes_a_protocol{};
     ReturnedFailure returned_failure{};
 };
-
-template <class Payload>
-[[nodiscard]] consteval payload_premises read_payload_premises_() {
-    constexpr std::meta::info payload = ^^Payload;
-    return payload_premises{
-        .replay_deterministic = outermost_band_claims_(payload, ^^IsDetSafeBand, ^^ClaimsReplay),
-        .claims_no_allocation = outermost_band_claims_(payload, ^^IsAllocClassBand, ^^ClaimsNoAllocation),
-        .claims_user_space_wait = outermost_band_claims_(payload, ^^IsWaitBand, ^^ClaimsUserSpaceWait),
-        .owes_a_protocol = std::meta::extract<bool>(std::meta::substitute(
-            ^^OwesAProtocol, {std::meta::dealias(std::meta::remove_cvref(unbanded_of(payload)))})),
-        .returned_failure = returned_failure_of(unbanded_of(payload))};
-}
-
-template <class Payload>
-inline constexpr payload_premises payload_premises_v = read_payload_premises_<Payload>();
 
 // The premises of one binding: the premises of its pack, with the facts of
 // its payload added.  A failure comes from the payload or from a throw,
@@ -1267,14 +1223,425 @@ inline constexpr payload_premises payload_premises_v = read_payload_premises_<Pa
     return pack;
 }
 
-}  // namespace detail
+// ---------------------------------------------------------------------
+// The sealed caches of the premises.
+//
+// Each pass below is a function that is not a template.  It reads the pack
+// or the payload that a key names through reflections, and through concepts
+// and functions that are not templates.  Each cache holds a cell with the
+// key that it answers, and each read refuses a cell of another key.  So no
+// specialization of a cache changes a premise.
 
-// The premises of a binding with this payload and this pack.  The pass
-// over the pack runs one time for each pack, and the pass over the payload
-// one time for each payload.
+// Have no constant definition.  A call to one stops the constant evaluation,
+// and the diagnostic names it.  trust_level_or_refuse_ and
+// security_class_or_refuse_ give the message of the same stop.
+void a_trust_grade_has_no_level_in_trust_level_of_() noexcept;
+void a_security_grade_has_no_class_in_security_class_of_() noexcept;
+
+[[nodiscard]] consteval std::meta::info grade_of_(const pack_record& pack, Axis axis) noexcept {
+    return pack.grade[std::to_underlying(axis)];
+}
+
+// True when the grade of the axis is the atom.  Each grade is a type and
+// never an alias, so two reflections of one grade compare equal.
+[[nodiscard]] consteval bool grade_is_(const pack_record& pack, Axis axis, std::meta::info atom) {
+    return grade_of_(pack, axis) == std::meta::dealias(atom);
+}
+
+// The answer of a concept over one grade, and over a grade and a floor.
+[[nodiscard]] consteval bool satisfies_(std::meta::info concept_of_grade, std::meta::info grade) {
+    return std::meta::extract<bool>(std::meta::substitute(concept_of_grade, {grade}));
+}
+
+// The floor is a value of its own type, one overload for each type that a
+// floor reader takes.  Each overload is a function that is not a template, so
+// no unit can specialize one.
+[[nodiscard]] consteval bool satisfies_floor_(std::meta::info concept_of_grade, std::meta::info grade,
+                                              std::meta::info floor) {
+    return std::meta::extract<bool>(std::meta::substitute(concept_of_grade, {grade, floor}));
+}
+
+[[nodiscard]] consteval bool satisfies_at_(std::meta::info concept_of_grade, std::meta::info grade,
+                                           ::fixy::atom::hw::HwInstruction floor) {
+    return satisfies_floor_(concept_of_grade, grade, std::meta::reflect_constant(floor));
+}
+
+[[nodiscard]] consteval bool satisfies_at_(std::meta::info concept_of_grade, std::meta::info grade,
+                                           ::foundation::algebra::lattices::BarrierStrength floor) {
+    return satisfies_floor_(concept_of_grade, grade, std::meta::reflect_constant(floor));
+}
+
+[[nodiscard]] consteval bool satisfies_at_(std::meta::info concept_of_grade, std::meta::info grade,
+                                           ::foundation::algebra::lattices::MemoryScope floor) {
+    return satisfies_floor_(concept_of_grade, grade, std::meta::reflect_constant(floor));
+}
+
+[[nodiscard]] consteval bool satisfies_at_(std::meta::info concept_of_grade, std::meta::info grade,
+                                           ::fixy::atom::fp::FpReassociate floor) {
+    return satisfies_floor_(concept_of_grade, grade, std::meta::reflect_constant(floor));
+}
+
+[[nodiscard]] consteval bool satisfies_at_(std::meta::info concept_of_grade, std::meta::info grade,
+                                           ::fixy::atom::fp::FpContract floor) {
+    return satisfies_floor_(concept_of_grade, grade, std::meta::reflect_constant(floor));
+}
+
+[[nodiscard]] consteval bool satisfies_at_(std::meta::info concept_of_grade, std::meta::info grade,
+                                           ::foundation::core::FpDenormalInput floor) {
+    return satisfies_floor_(concept_of_grade, grade, std::meta::reflect_constant(floor));
+}
+
+[[nodiscard]] consteval bool satisfies_at_(std::meta::info concept_of_grade, std::meta::info grade,
+                                           ::foundation::core::FpFtz floor) {
+    return satisfies_floor_(concept_of_grade, grade, std::meta::reflect_constant(floor));
+}
+
+[[nodiscard]] consteval bool satisfies_at_(std::meta::info concept_of_grade, std::meta::info grade,
+                                           ::fixy::atom::DischargeAxis floor) {
+    return satisfies_floor_(concept_of_grade, grade, std::meta::reflect_constant(floor));
+}
+
+// The row of the binding that a key names: the Effect grade joined with the
+// lifts of the atoms of the pack, through the relation of fixy/Atom.h that
+// fixy/Fn.h also reads for context admission.
 template <class Payload, class... Atoms>
-inline constexpr rule_premises binding_premises_v =
-    detail::join_premises_(detail::pack_premises_v<Atoms...>, detail::payload_premises_v<Payload>);
+using binding_row_of_key_t = ::fixy::atom::binding_row_of_t<grade_on_t<Axis::Effect, Atoms...>, Atoms...>;
+
+// The sealed premises of the pack that a key names, defined below its cell.
+[[nodiscard]] consteval const rule_premises& pack_premises_of_key_(std::meta::info key);
+
+// The premises that the pack of a key states.  Only a pack that tiers 1 to
+// 4 admit reaches the pass.  Complexity: the axis count, plus the size of
+// the row for each question about the row.
+[[nodiscard]] consteval rule_premises premises_of_pack_(std::meta::info pack_key) {
+    namespace at = ::fixy::atom;
+    namespace fe = ::foundation::effects;
+    namespace lat = ::foundation::algebra::lattices;
+    const std::meta::info key = std::meta::dealias(pack_key);
+    const pack_record& pack = record_of_key_(key);
+
+    // Each rule that asks what the binding does reads the row of the
+    // binding.  A binding can state a futex call or a park and leave its
+    // Effect grade empty, and a rule that reads only the grade admits it.
+    const std::meta::info row =
+        std::meta::dealias(std::meta::substitute(^^binding_row_of_key_t, std::meta::template_arguments_of(key)));
+
+    // A premise that reads one axis through a concept gives the answer of the
+    // strict pole when the pack does not name the axis.  So a pack with an
+    // atom takes each such answer from the sealed premises of the empty pack,
+    // and the pass asks the concept only for an axis that the pack names.  The
+    // empty pack asks each concept of its poles.
+    std::size_t atoms = 0;
+    for (std::size_t place = 0; place < ::fixy::axis_count; ++place)
+        atoms += pack.atoms_on[place];
+    const bool is_empty_pack = atoms == 0;
+    // The key of the empty pack is the pack key of this key with no atom.
+    const rule_premises pole =
+        is_empty_pack ? rule_premises{}
+                      : pack_premises_of_key_(std::meta::substitute(^^pack_key_of_t, {first_template_argument_(key)}));
+    const auto reads = [&](Axis axis) consteval { return is_empty_pack || names_axis_(pack, axis); };
+
+    rule_premises premise{};
+    premise.borrow = grade_is_(pack, Axis::Usage, ^^at::borrow);
+    premise.ghost = grade_is_(pack, Axis::Usage, ^^at::ghost);
+    premise.capability = grade_is_(pack, Axis::Usage, ^^at::capability_usage);
+    // A binding says nothing about Usage when it takes the strict pole, which
+    // on this axis is the linear grade: consumed exactly once.
+    premise.linear = !names_axis_(pack, Axis::Usage);
+    premise.monotonic = grade_is_(pack, Axis::Mutation, ^^at::mut_monotonic);
+    const std::meta::info trust_level = trust_level_of_(grade_of_(pack, Axis::Trust));
+    if (trust_level == std::meta::info{}) a_trust_grade_has_no_level_in_trust_level_of_();
+    premise.unverified = trust_level == ^^::fixy::tags::trust::Unverified;
+
+    // "Unstated" is the strict pole on Complexity, so an unstated cost is the
+    // absence of a grade rather than a grade of its own.
+    premise.cost_unstated = !names_axis_(pack, Axis::Complexity);
+    premise.unbounded_cost = grade_is_(pack, Axis::Complexity, ^^at::cost_unbounded);
+    premise.may_run_unbounded = premise.cost_unstated || premise.unbounded_cost || !names_axis_(pack, Axis::Space)
+                             || grade_is_(pack, Axis::Space, ^^at::space_unbounded);
+
+    // One walk of the row gives its mask, and each question about one effect
+    // reads the mask.
+    const fe::EffectRowLattice::element_type effects = fe::row_descriptor(row);
+    premise.row_bg = fe::EffectRowLattice::contains(effects, fe::Effect::Bg);
+    premise.row_observable = names_observable_effect_without_bg_(row);
+    premise.allocates = fe::EffectRowLattice::contains(effects, fe::Effect::Alloc);
+    premise.row_alloc_or_io = premise.allocates || fe::EffectRowLattice::contains(effects, fe::Effect::IO);
+    premise.row_init = fe::EffectRowLattice::contains(effects, fe::Effect::Init);
+    premise.blocks = fe::EffectRowLattice::contains(effects, fe::Effect::Block);
+
+    // A coroutine suspends and a Bg row runs elsewhere, and either makes the
+    // body concurrent with respect to the frame of the caller.  A suspension
+    // can be written on Reentrancy or on ControlFlow, and the premise reads
+    // both, so a pack cannot avoid a rule by writing it on the other axis.
+    premise.coroutine = grade_is_(pack, Axis::Reentrancy, ^^at::coroutine);
+    premise.suspends_in_control_flow = is_grade_of_family_(grade_of_(pack, Axis::ControlFlow), ^^at::ctrl::coroutine);
+    premise.suspends = premise.coroutine || premise.suspends_in_control_flow;
+    premise.concurrent = premise.suspends || premise.row_bg;
+
+    // Observability names which part of the row of the binding is
+    // observation.  observes_within_the_row holds when the surface names only
+    // effects of that row.
+    premise.observes_something = names_axis_(pack, Axis::Observability);
+    premise.observes_within_the_row =
+        reads(Axis::Observability) ? fe::is_subrow(std::meta::dealias(std::meta::substitute(
+                                                       ^^observability_row_t, {grade_of_(pack, Axis::Observability)})),
+                                                   row)
+                                   : pole.observes_within_the_row;
+
+    premise.atomic_repr = grade_is_(pack, Axis::Representation, ^^at::repr<::fixy::pole::ReprKind::Atomic>);
+    premise.thread_local_state = is_grade_of_family_(grade_of_(pack, Axis::GlobalState), ^^at::global::thread_local_);
+    premise.longjmp_unsafe = is_grade_of_family_(grade_of_(pack, Axis::ControlFlow), ^^at::ctrl::longjmp_unsafe);
+    // A recursion with a proven depth bound has a bounded stack, so D002 reads
+    // only the recursion that states no depth bound.
+    premise.recurses_unbounded = grade_is_(pack, Axis::CallShape, ^^at::dispatch::recurses_unbounded);
+    // The scope thread, the shared bottom, reaches no other thread.
+    premise.publishes_past_the_thread =
+        names_axis_(pack, Axis::MemoryScope) && !grade_is_(pack, Axis::MemoryScope, ^^at::scope::thread);
+    // A CallShape grade or a Protocol grade with no reading stops the build.
+    premise.indirect_call_may_throw = indirect_call_throws_(grade_of_(pack, Axis::CallShape));
+    premise.spawn_outlives_the_frame = spawn_outlives_frame_(grade_of_(pack, Axis::Protocol));
+    // A call through the vDSO and a deliberate leak lift the empty row, but
+    // each atom still states an emitting surface on one of these two axes.
+    premise.emits_outside_the_row = names_axis_(pack, Axis::Stdio) || names_axis_(pack, Axis::SyscallSurface);
+
+    premise.hot = grade_is_(pack, Axis::Regime, ^^at::regime::hot);
+    // pred::True is the Refinement strict pole, again an absence.
+    premise.no_witness_floor = !names_axis_(pack, Axis::Refinement);
+    premise.states_stdio = names_axis_(pack, Axis::Stdio);
+    // Each premise below reads one axis, or two, through a concept.  It starts
+    // at the answer of the poles, and the pass asks the concept only for an
+    // axis that the pack names.
+    premise.core_burning_spin = pole.core_burning_spin;
+    premise.states_a_wait = pole.states_a_wait;
+    if (reads(Axis::Synchronization)) {
+        const std::meta::info wait = grade_of_(pack, Axis::Synchronization);
+        premise.core_burning_spin = satisfies_(^^BurnsTheCore, wait);
+        premise.states_a_wait = satisfies_(^^StatesWaitStrategy, wait);
+    }
+
+    premise.hw_nondeterministic = pole.hw_nondeterministic;
+    premise.hw_privileged = pole.hw_privileged;
+    if (reads(Axis::HwInstruction)) {
+        const std::meta::info tier = grade_of_(pack, Axis::HwInstruction);
+        premise.hw_nondeterministic =
+            satisfies_at_(^^HasHwTierAtOrAbove, tier, at::hw::HwInstruction::NonDeterministicTsc);
+        premise.hw_privileged = satisfies_at_(^^HasHwTierAtOrAbove, tier, at::hw::HwInstruction::PrivilegedMsr);
+    }
+
+    premise.barrier_seq_cst_or_above = pole.barrier_seq_cst_or_above;
+    premise.barrier_acq_rel_or_above = pole.barrier_acq_rel_or_above;
+    if (reads(Axis::BarrierStrength)) {
+        const std::meta::info fence = grade_of_(pack, Axis::BarrierStrength);
+        premise.barrier_seq_cst_or_above = satisfies_at_(^^HasBarrierAtOrAbove, fence, lat::BarrierStrength::SeqCst);
+        premise.barrier_acq_rel_or_above = satisfies_at_(^^HasBarrierAtOrAbove, fence, lat::BarrierStrength::AcqRel);
+    }
+
+    const std::meta::info scope = grade_of_(pack, Axis::MemoryScope);
+    const std::meta::info isa = grade_of_(pack, Axis::SimdIsa);
+    premise.scope_cluster_or_above = pole.scope_cluster_or_above;
+    premise.scope_pinned = pole.scope_pinned;
+    premise.isa_pinned = pole.isa_pinned;
+    premise.trunks_cohere = pole.trunks_cohere;
+    if (reads(Axis::MemoryScope)) {
+        premise.scope_cluster_or_above = satisfies_at_(^^HasScopeAtOrAbove, scope, lat::MemoryScope::Cluster);
+        premise.scope_pinned = satisfies_(^^HasPinnedScopeTrunk, scope);
+    }
+    if (reads(Axis::SimdIsa)) premise.isa_pinned = satisfies_(^^HasPinnedIsaTrunk, isa);
+    if (reads(Axis::MemoryScope) || reads(Axis::SimdIsa)) {
+        premise.trunks_cohere = satisfies_(^^HasScopeOnHostTrunk, scope) && satisfies_(^^HasIsaOnArmTrunk, isa);
+    }
+
+    premise.fp_rewrites_without_bound = pole.fp_rewrites_without_bound;
+    premise.fp_reassociates = pole.fp_reassociates;
+    premise.fp_contracts_across_statements = pole.fp_contracts_across_statements;
+    premise.fp_flushes_denormal_inputs = pole.fp_flushes_denormal_inputs;
+    premise.fp_flushes_subnormal_results = pole.fp_flushes_subnormal_results;
+    if (reads(Axis::FpMode)) {
+        const std::meta::info fp = grade_of_(pack, Axis::FpMode);
+        premise.fp_rewrites_without_bound =
+            satisfies_at_(^^NamesFpSetting, fp, at::fp::FpReassociate::UnrestrictedRewrite);
+        premise.fp_reassociates = premise.fp_rewrites_without_bound
+                               || satisfies_at_(^^NamesFpSetting, fp, at::fp::FpReassociate::BoundedTreeDepth);
+        premise.fp_contracts_across_statements = satisfies_at_(^^NamesFpSetting, fp, at::fp::FpContract::Fast);
+        premise.fp_flushes_denormal_inputs =
+            satisfies_at_(^^NamesFpSetting, fp, ::foundation::core::FpDenormalInput::DenormalsAreZero);
+        premise.fp_flushes_subnormal_results =
+            satisfies_at_(^^NamesFpSetting, fp, ::foundation::core::FpFtz::FlushToZero);
+    }
+    premise.fp_mode_stated = names_axis_(pack, Axis::FpMode);
+
+    // A declassification discharges a rule only on a channel that the mask of
+    // its policy names, in fixy/Atom.h.  The send is an export through IO.  No
+    // policy licenses the failure channel.
+    premise.constant_time = pole.constant_time;
+    premise.classified_on_send = pole.classified_on_send;
+    premise.classified_on_failure = pole.classified_on_failure;
+    if (reads(Axis::Security)) {
+        const std::meta::info security = grade_of_(pack, Axis::Security);
+        if (!satisfies_(^^at::IsSecurityGrade, security)) a_security_grade_has_no_class_in_security_class_of_();
+        premise.constant_time = at::security_class_of(security) == at::SecurityClass::ConstantTime;
+        premise.classified_on_send = satisfies_at_(^^at::IsClassifiedOn, security, at::DischargeAxis::IO);
+        premise.classified_on_failure = satisfies_at_(^^at::IsClassifiedOn, security, at::DischargeAxis::Failure);
+    }
+    premise.states_staleness = names_axis_(pack, Axis::Staleness);
+    premise.session_protocol = is_session_protocol_(grade_of_(pack, Axis::Protocol));
+    // The Protocol grade states that the frame holds a live handle.
+    premise.has_live_handle = is_grade_of_family_(grade_of_(pack, Axis::Protocol), ^^at::session::live_handle);
+
+    const ReturnedFailure thrown = thrown_failure_of(grade_of_(pack, Axis::ControlFlow));
+    premise.fails = thrown.fails;
+    premise.fails_with_plain_error = thrown.carries_error && !thrown.error_is_secret;
+    return premise;
+}
+
+class pack_premises_cell;
+
+[[nodiscard]] consteval pack_premises_cell build_pack_premises_cell(std::meta::info key);
+
+// The premises of one pack, with the key of the pack that they answer.  The
+// cell is sealed as pack_record_cell is: the two constructors are private,
+// and the build, which is not a template, is their one friend.
+class pack_premises_cell {
+public:
+    [[nodiscard]] consteval std::meta::info key() const noexcept { return key_; }
+    [[nodiscard]] consteval const rule_premises& premises() const noexcept { return premises_; }
+
+private:
+    consteval pack_premises_cell() noexcept {}
+    consteval pack_premises_cell(const pack_premises_cell& other) noexcept
+        : key_{other.key_}, premises_{other.premises_} {}
+
+    std::meta::info key_{};
+    rule_premises premises_{};
+
+    friend consteval pack_premises_cell build_pack_premises_cell(std::meta::info key);
+};
+
+[[nodiscard]] consteval pack_premises_cell build_pack_premises_cell(std::meta::info key) {
+    pack_premises_cell cell{};
+    cell.key_ = std::meta::dealias(key);
+    cell.premises_ = premises_of_pack_(cell.key_);
+    return cell;
+}
+
+// The cell of the premises of a pack, after the message of each grade that a
+// closed relation does not name.  The build stops on such a grade too, so a
+// specialization of this template changes only the message, and it can give
+// only a cell that the build made.
+//
+// The check file of this header pins a reading of each strict pole, so the
+// message is asked only for an axis that the pack names.
+template <class Key>
+[[nodiscard]] consteval pack_premises_cell checked_pack_premises_cell_() {
+    constexpr const pack_record& pack = record_of_key_(^^Key);
+    if constexpr (pack.names_axis[std::to_underlying(Axis::Trust)]) {
+        using Trust = [:pack.grade[std::to_underlying(Axis::Trust)]:];
+        [[maybe_unused]] constexpr std::meta::info trust_level = trust_level_or_refuse_<Trust>();
+    }
+    if constexpr (pack.names_axis[std::to_underlying(Axis::CallShape)]) {
+        using CallShape = [:pack.grade[std::to_underlying(Axis::CallShape)]:];
+        [[maybe_unused]] constexpr CallShapeReading call_shape_reading = call_shape_reading_or_refuse_<CallShape>();
+    }
+    if constexpr (pack.names_axis[std::to_underlying(Axis::Protocol)]) {
+        using Protocol = [:pack.grade[std::to_underlying(Axis::Protocol)]:];
+        [[maybe_unused]] constexpr ProtocolReading protocol_reading = protocol_reading_or_refuse_<Protocol>();
+    }
+    if constexpr (pack.names_axis[std::to_underlying(Axis::Security)]) {
+        using Security = [:pack.grade[std::to_underlying(Axis::Security)]:];
+        [[maybe_unused]] constexpr ::fixy::atom::SecurityClass security_class = security_class_or_refuse_<Security>();
+    }
+    return build_pack_premises_cell(^^Key);
+}
+
+// The premises of the pack that a key pack_key<Atoms...> names, computed one
+// time for each pack.
+template <class Key>
+inline constexpr pack_premises_cell pack_premises_cell_v = checked_pack_premises_cell_<Key>();
+
+// The premises in a cell, for the pack that the reader names by its key.  It
+// refuses a cell that answers another pack.
+[[nodiscard]] consteval const rule_premises& pack_premises_in_(const pack_premises_cell& cell, std::meta::info key) {
+    if (cell.key() != std::meta::dealias(key)) a_cache_cell_stands_for_another_key();
+    return cell.premises();
+}
+
+[[nodiscard]] consteval const rule_premises& pack_premises_of_key_(std::meta::info key) {
+    return pack_premises_in_(
+        std::meta::extract<const pack_premises_cell&>(std::meta::substitute(^^pack_premises_cell_v, {key})), key);
+}
+
+// The premises that a payload states, read through its bands.  The premises
+// of void, the payload of the pack-only view, are all false.
+[[nodiscard]] consteval payload_premises premises_of_payload_(std::meta::info payload) {
+    return payload_premises{
+        .replay_deterministic = outermost_band_claims_(payload, ^^IsDetSafeBand, ^^ClaimsReplay),
+        .claims_no_allocation = outermost_band_claims_(payload, ^^IsAllocClassBand, ^^ClaimsNoAllocation),
+        .claims_user_space_wait = outermost_band_claims_(payload, ^^IsWaitBand, ^^ClaimsUserSpaceWait),
+        .owes_a_protocol =
+            satisfies_(^^OwesAProtocol, std::meta::dealias(std::meta::remove_cvref(unbanded_of(payload)))),
+        .returned_failure = returned_failure_of(unbanded_of(payload))};
+}
+
+class payload_premises_cell;
+
+[[nodiscard]] consteval payload_premises_cell build_payload_premises_cell(std::meta::info key);
+
+// The premises of one payload, with the key verdict_key<Payload> that they
+// answer.  The cell is sealed as pack_record_cell is.
+class payload_premises_cell {
+public:
+    [[nodiscard]] consteval std::meta::info key() const noexcept { return key_; }
+    [[nodiscard]] consteval const payload_premises& premises() const noexcept { return premises_; }
+
+private:
+    consteval payload_premises_cell() noexcept {}
+    consteval payload_premises_cell(const payload_premises_cell& other) noexcept
+        : key_{other.key_}, premises_{other.premises_} {}
+
+    std::meta::info key_{};
+    payload_premises premises_{};
+
+    friend consteval payload_premises_cell build_payload_premises_cell(std::meta::info key);
+};
+
+[[nodiscard]] consteval payload_premises_cell build_payload_premises_cell(std::meta::info key) {
+    payload_premises_cell cell{};
+    cell.key_ = std::meta::dealias(key);
+    cell.premises_ = premises_of_payload_(first_template_argument_(cell.key_));
+    return cell;
+}
+
+// The premises of the payload that a key verdict_key<Payload> names,
+// computed one time for each payload.
+template <class Key>
+inline constexpr payload_premises_cell payload_premises_cell_v = build_payload_premises_cell(^^Key);
+
+[[nodiscard]] consteval const payload_premises& payload_premises_in_(const payload_premises_cell& cell,
+                                                                     std::meta::info key) {
+    if (cell.key() != std::meta::dealias(key)) a_cache_cell_stands_for_another_key();
+    return cell.premises();
+}
+
+[[nodiscard]] consteval const payload_premises& payload_premises_of_key_(std::meta::info key) {
+    return payload_premises_in_(
+        std::meta::extract<const payload_premises_cell&>(std::meta::substitute(^^payload_premises_cell_v, {key})), key);
+}
+
+// The premises of the binding that a key verdict_key<Payload, Atoms...>
+// names: the sealed premises of its pack, with the sealed premises of its
+// payload.  The pass over the pack runs one time for each pack, and the pass
+// over the payload one time for each payload.
+[[nodiscard]] consteval rule_premises premises_of_binding_(std::meta::info key) {
+    const std::meta::info named = std::meta::dealias(key);
+    const std::meta::info pack =
+        std::meta::dealias(std::meta::substitute(^^pack_key_of_t, std::meta::template_arguments_of(named)));
+    const std::meta::info payload =
+        std::meta::dealias(std::meta::substitute(^^payload_key_of_t, std::meta::template_arguments_of(named)));
+    return join_premises_(pack_premises_of_key_(pack), payload_premises_of_key_(payload));
+}
+
+}  // namespace detail
 
 // The verdict of each rule on one binding: the premises, and one bit for
 // each code whose rule refuses the binding.  The bit of a code is the
@@ -1329,17 +1696,8 @@ namespace detail {
 // ---------------------------------------------------------------------
 // The sealed record of the verdicts.
 //
-// The key of a verdict names the payload and the pack of one binding.  The
-// class is declared and never defined, so a key states nothing but its
-// arguments.  The pack-only view keys its verdict with the payload void.
-// Each rule that reads the payload stands down under void, so a cell written
-// against the pack alone means what it says: this pack, with any payload,
-// is or is not a contradiction.
-template <class Payload, class... Atoms>
-struct verdict_key;
-
-template <class... Atoms>
-using pack_key = verdict_key<void, Atoms...>;
+// The key of a verdict is the key of the binding, verdict_key at the head
+// of this header.
 
 // Has no constant definition.  A call to it stops the constant evaluation,
 // and the diagnostic names it.
@@ -1371,13 +1729,12 @@ private:
     friend consteval verdict_cell build_verdict_cell(std::meta::info key);
 };
 
-// The build reads the premises of the binding that the key names, and it
-// applies each row of the rule table to them.
+// The build reads the sealed premises of the binding that the key names, and
+// it applies each row of the rule table to them.
 [[nodiscard]] consteval verdict_cell build_verdict_cell(std::meta::info key) {
     verdict_cell cell{};
     cell.key_ = std::meta::dealias(key);
-    cell.verdict_ = detail::judge_(std::meta::extract<const rule_premises&>(
-        std::meta::substitute(^^binding_premises_v, std::meta::template_arguments_of(cell.key_))));
+    cell.verdict_ = detail::judge_(detail::premises_of_binding_(cell.key_));
     return cell;
 }
 

@@ -90,30 +90,32 @@ namespace detail::reject {
 // walk may read, so the walk counts no axis for it.  Tier 2 refuses it,
 // and tier 4 must not add a second error.
 
-// The first axis that the pack grades twice, or axis_count when the pack
-// grades each axis at most one time.  The walk is over the axes rather
+// The first axis that the pack of a key grades twice, or axis_count when the
+// pack grades each axis at most one time.  The walk is over the axes rather
 // than over the pack, so the answer is an axis and the diagnostic can name
-// it.  Complexity: the axis count.
-template <class... Atoms>
-[[nodiscard]] consteval std::size_t first_duplicated_axis_() noexcept {
+// it.  The function is not a template, and it reads the sealed record with
+// the key, so no unit can change an answer.  Complexity: the axis count.
+[[nodiscard]] consteval std::size_t first_duplicated_axis_(std::meta::info key) {
+    const ::fixy::collision::detail::pack_record& record = ::fixy::collision::detail::record_of_key_(key);
     for (std::size_t place = 0; place < ::fixy::axis_count; ++place) {
-        if (::fixy::collision::detail::pack_record_v<Atoms...>.is_graded_twice[place]) return place;
+        if (record.is_graded_twice[place]) return place;
     }
     return ::fixy::axis_count;
 }
 
-// The first pack entry that is not an atom, as a reflection, or the
-// reflection of void when every entry is one.  void is not an atom and
-// is not nameable as one, so it cannot collide with a real answer.
-template <class... Atoms>
-[[nodiscard]] consteval std::meta::info first_malformed_atom_() noexcept {
-    return ::fixy::collision::detail::pack_record_v<Atoms...>.first_malformed;
+// The first entry of the pack of a key that is not an atom, as a
+// reflection, or the reflection of void when every entry is one.  void is
+// not an atom and is not nameable as one, so it cannot collide with a real
+// answer.
+[[nodiscard]] consteval std::meta::info first_malformed_atom_(std::meta::info key) {
+    return ::fixy::collision::detail::record_of_key_(key).first_malformed;
 }
 
 }  // namespace detail::reject
 
 template <class... Atoms>
-concept UniqueAtomPerAxis = (detail::reject::first_duplicated_axis_<Atoms...>() == ::fixy::axis_count);
+concept UniqueAtomPerAxis =
+    (detail::reject::first_duplicated_axis_(^^::fixy::collision::pack_key<Atoms...>) == ::fixy::axis_count);
 
 // ---------------------------------------------------------------------
 // Tier 5: the collision rules and the corpus.
@@ -289,7 +291,7 @@ namespace detail::reject {
 
 template <class... Atoms>
 [[nodiscard]] consteval std::meta::info duplicate_tag_or_void_() noexcept {
-    constexpr std::size_t offender = first_duplicated_axis_<Atoms...>();
+    constexpr std::size_t offender = first_duplicated_axis_(^^::fixy::collision::pack_key<Atoms...>);
     if constexpr (offender == ::fixy::axis_count) {
         return ^^void;
     } else {
@@ -299,7 +301,7 @@ template <class... Atoms>
 
 template <class... Atoms>
 [[nodiscard]] consteval std::meta::info malformed_tag_or_void_() noexcept {
-    constexpr std::meta::info offender = first_malformed_atom_<Atoms...>();
+    constexpr std::meta::info offender = first_malformed_atom_(^^::fixy::collision::pack_key<Atoms...>);
     if constexpr (offender == ^^void) {
         return ^^void;
     } else {
@@ -377,7 +379,9 @@ template <class T, class... Atoms>
     if constexpr (failed == Tier::Payload) {
         return ^^unholdable_payload<T>;
     } else if constexpr (failed == Tier::Malformed) {
-        return first_malformed_atom_<Atoms...>() == ^^void ? ^^void : malformed_tag_or_void_<Atoms...>();
+        return first_malformed_atom_(^^::fixy::collision::pack_key<Atoms...>) == ^^void
+                 ? ^^void
+                 : malformed_tag_or_void_<Atoms...>();
     } else if constexpr (failed == Tier::Duplicate) {
         return duplicate_tag_or_void_<Atoms...>();
     } else if constexpr (failed == Tier::Composition) {
@@ -408,7 +412,7 @@ template <class T, class... Atoms>
 // same reason tier5_message_ opens with one.
 template <class... Atoms>
 [[nodiscard]] consteval std::string_view tier4_message_() noexcept {
-    constexpr std::size_t offender = first_duplicated_axis_<Atoms...>();
+    constexpr std::size_t offender = first_duplicated_axis_(^^::fixy::collision::pack_key<Atoms...>);
     if constexpr (offender == ::fixy::axis_count) {
         return "fixy::fn<Type, Atoms...> [tier 4]: not reached — no axis carries two grades.";
     } else {
@@ -432,7 +436,7 @@ template <class... Atoms>
 // says tier 2 was not reached.
 template <class... Atoms>
 [[nodiscard]] consteval std::string_view tier2_message_() noexcept {
-    constexpr std::meta::info offender = first_malformed_atom_<Atoms...>();
+    constexpr std::meta::info offender = first_malformed_atom_(^^::fixy::collision::pack_key<Atoms...>);
     if constexpr (offender == ^^void) {
         return "fixy::fn<Type, Atoms...> [tier 2]: not reached — every entry in the pack is an atom.";
     } else {

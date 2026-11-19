@@ -146,11 +146,12 @@ static_assert(atoms_without_an_answer_().empty(),
             constexpr std::meta::info empty = cd::row_axis_atom_over_(axis, ^^::foundation::effects::Row<>);
             using Empty = [:empty:];
             is_each_answered = is_each_answered
-                            && cd::pack_record_v<Empty>.row[std::to_underlying(axis)]
+                            && cd::record_of_key_(^^::fixy::collision::pack_key<Empty>).row[std::to_underlying(axis)]
                                    == std::meta::dealias(^^::foundation::effects::Row<>);
         } else {
-            is_each_answered =
-                is_each_answered && cd::pack_record_v<>.row[std::to_underlying(axis)] == std::meta::info{};
+            is_each_answered = is_each_answered
+                            && cd::record_of_key_(^^::fixy::collision::pack_key<>).row[std::to_underlying(axis)]
+                                   == std::meta::info{};
         }
     }
     return is_each_answered && row_axes == count_axes_of_shape(Shape::Row);
@@ -517,22 +518,81 @@ inline constexpr reader_cell cell_axis_has_an_atom_{
     .refuses = each_false<cd::axis_has_an_atom_<Axis::Type>()>};
 
 inline constexpr reader_cell cell_names_axis_{
-    .accepts = each_true<cd::names_axis_(cd::pack_record_v<at::copy>, Axis::Usage),
-                         cd::names_axis_(cd::pack_record_v<at::with<>>, Axis::Effect)>,
-    .refuses = each_false<cd::names_axis_(cd::pack_record_v<>, Axis::Usage),
-                          cd::names_axis_(cd::pack_record_v<at::copy>, Axis::Effect)>};
+    .accepts = each_true<cd::names_axis_(cd::record_of_key_(^^col::pack_key<at::copy>), Axis::Usage),
+                         cd::names_axis_(cd::record_of_key_(^^col::pack_key<at::with<>>), Axis::Effect)>,
+    .refuses = each_false<cd::names_axis_(cd::record_of_key_(^^col::pack_key<>), Axis::Usage),
+                          cd::names_axis_(cd::record_of_key_(^^col::pack_key<at::copy>), Axis::Effect)>};
+
+// The record of a pack: the walk of the key, the sealed cell, and the reads
+// that refuse a cell of another key.  Each atom states its axis, and a type
+// that is not an atom states none.
+inline constexpr reader_cell cell_atom_axis_of_{
+    .accepts =
+        each_true<(cd::atom_axis_of_(^^at::copy) == Axis::Usage), (cd::atom_axis_of_(^^at::with_io) == Axis::Effect)>,
+    .refuses = each_false<(cd::atom_axis_of_(^^at::copy) == Axis::Effect)>};
+
+inline constexpr reader_cell cell_is_atom_{
+    .accepts = each_true<cd::is_atom_(^^at::copy), cd::is_atom_(^^at::observe::surface<Effect::IO>)>,
+    .refuses = each_false<cd::is_atom_(^^int), cd::is_atom_(^^names_no_strategy)>};
+
+inline constexpr reader_cell cell_copies_in_key_{
+    .accepts = each_true<(cd::copies_in_key_(std::meta::dealias(^^col::pack_key<at::copy, at::copy>), ^^at::copy) == 2),
+                         (cd::copies_in_key_(std::meta::dealias(^^col::pack_key<at::copy>), ^^at::copy) == 1)>,
+    .refuses = each_false<(cd::copies_in_key_(std::meta::dealias(^^col::pack_key<at::copy>), ^^at::affine) != 0)>};
+
+// The walk reads the arguments after the payload, and an alias of a key
+// reads as the key that it names.
+inline constexpr reader_cell cell_read_pack_of_key_{
+    .accepts = each_true<
+        cd::read_pack_of_key_(^^col::pack_key<at::copy>).names_axis[std::to_underlying(Axis::Usage)],
+        cd::read_pack_of_key_(^^col::pack_key<at::copy, at::affine>).is_graded_twice[std::to_underlying(Axis::Usage)],
+        (cd::read_pack_of_key_(^^col::pack_key<int>).first_malformed == ^^int),
+        (cd::read_pack_of_key_(^^col::verdict_key<int, at::copy>).atoms_on[std::to_underlying(Axis::Usage)] == 1)>,
+    .refuses = each_false<cd::read_pack_of_key_(^^col::pack_key<>).names_axis[std::to_underlying(Axis::Usage)],
+                          cd::read_pack_of_key_(^^col::pack_key<at::with_io, at::with_bg>)
+                              .is_graded_twice[std::to_underlying(Axis::Effect)],
+                          (cd::read_pack_of_key_(^^col::pack_key<at::copy>).first_malformed != ^^void)>};
+
+inline constexpr reader_cell cell_build_pack_record_cell{
+    .accepts = each_true<
+        (cd::build_pack_record_cell(^^col::pack_key<at::copy>).key() == std::meta::dealias(^^col::pack_key<at::copy>)),
+        cd::build_pack_record_cell(^^col::pack_key<at::copy>).record().names_axis[std::to_underlying(Axis::Usage)]>,
+    .refuses =
+        each_false<cd::build_pack_record_cell(^^col::pack_key<>).record().names_axis[std::to_underlying(Axis::Usage)]>};
+
+inline constexpr reader_cell cell_record_of_{
+    .accepts = each_true<cd::record_of_(cd::pack_record_cell_v<col::pack_key<at::copy>>, ^^col::pack_key<at::copy>)
+                             .names_axis[std::to_underlying(Axis::Usage)]>,
+    .refuses = each_false<cd::record_of_(cd::pack_record_cell_v<col::pack_key<>>, ^^col::pack_key<>)
+                              .names_axis[std::to_underlying(Axis::Usage)]>};
+
+inline constexpr reader_cell cell_record_of_key_{
+    .accepts =
+        each_true<cd::record_of_key_(^^col::pack_key<at::copy>).names_axis[std::to_underlying(Axis::Usage)],
+                  (cd::record_of_key_(^^col::pack_key<at::copy, at::affine>).atoms_on[std::to_underlying(Axis::Usage)]
+                   == 2)>,
+    .refuses = each_false<cd::record_of_key_(^^col::pack_key<>).names_axis[std::to_underlying(Axis::Usage)]>};
+
+// The set of P010 is the observable effects of Effect.h without Bg.
+inline constexpr reader_cell cell_IsObservableWithoutBg{
+    .accepts = each_true<cd::IsObservableWithoutBg<Effect::Alloc>, cd::IsObservableWithoutBg<Effect::IO>,
+                         cd::IsObservableWithoutBg<Effect::Block>, cd::IsObservableWithoutBg<Effect::Div>>,
+    .refuses = each_false<cd::IsObservableWithoutBg<Effect::Bg>, cd::IsObservableWithoutBg<Effect::Init>,
+                          cd::IsObservableWithoutBg<Effect::Test>, cd::IsObservableWithoutBg<Effect::Nondet>>};
 
 // The observable reader of P010 reads a canonical Row, and it leaves Bg out
 // of its set.  A stated with<IO> answers as the row Row<IO> does.
 inline constexpr reader_cell cell_names_observable_effect_without_bg_{
-    .accepts = each_true<cd::names_observable_effect_without_bg_(Row<Effect::Alloc>{}),
-                         cd::names_observable_effect_without_bg_(Row<Effect::IO>{}),
-                         cd::names_observable_effect_without_bg_(Row<Effect::Block>{}),
-                         cd::names_observable_effect_without_bg_(at::effect_row_of_t<at::with_io>{})>,
-    .refuses = each_false<cd::names_observable_effect_without_bg_(Row<Effect::Bg>{}),
-                          cd::names_observable_effect_without_bg_(Row<>{}),
-                          cd::names_observable_effect_without_bg_(at::effect_row_of_t<at::with_bg>{}),
-                          cd::names_observable_effect_without_bg_(at::effect_row_of_t<at::with<>>{})>};
+    .accepts =
+        each_true<cd::names_observable_effect_without_bg_(std::meta::dealias(^^Row<Effect::Alloc>)),
+                  cd::names_observable_effect_without_bg_(std::meta::dealias(^^Row<Effect::IO>)),
+                  cd::names_observable_effect_without_bg_(std::meta::dealias(^^Row<Effect::Block>)),
+                  cd::names_observable_effect_without_bg_(std::meta::dealias(^^at::effect_row_of_t<at::with_io>))>,
+    .refuses =
+        each_false<cd::names_observable_effect_without_bg_(std::meta::dealias(^^Row<Effect::Bg>)),
+                   cd::names_observable_effect_without_bg_(std::meta::dealias(^^Row<>)),
+                   cd::names_observable_effect_without_bg_(std::meta::dealias(^^at::effect_row_of_t<at::with_bg>)),
+                   cd::names_observable_effect_without_bg_(std::meta::dealias(^^at::effect_row_of_t<at::with<>>))>};
 
 // ── The bands of the payload ───────────────────────────────────────
 //
@@ -940,10 +1000,85 @@ inline constexpr reader_cell cell_join_premises_{
     .refuses = each_false<cd::join_premises_(col::rule_premises{}, cd::payload_premises{}).has_live_handle,
                           cd::join_premises_(col::rule_premises{}, cd::payload_premises{}).fails>};
 
+// A floor reader over a grade, one overload for each type of floor.
+inline constexpr reader_cell cell_satisfies_at_{
+    .accepts =
+        each_true<cd::satisfies_at_(^^cd::HasHwTierAtOrAbove, ^^at::hw::privileged_msr, Tier::NonDeterministicTsc),
+                  cd::satisfies_at_(^^cd::HasBarrierAtOrAbove, ^^at::barrier::seq_cst, lat::BarrierStrength::AcqRel),
+                  cd::satisfies_at_(^^cd::NamesFpSetting, ^^Fast, at::fp::FpContract::Fast),
+                  cd::satisfies_at_(^^at::IsClassifiedOn, ^^at::as_secret, at::DischargeAxis::IO)>,
+    .refuses =
+        each_false<cd::satisfies_at_(^^cd::HasBarrierAtOrAbove, ^^at::barrier::acq_rel, lat::BarrierStrength::SeqCst),
+                   cd::satisfies_at_(^^cd::HasScopeAtOrAbove, ^^at::scope::inner, lat::MemoryScope::Cluster),
+                   cd::satisfies_at_(^^at::IsClassifiedOn, ^^at::as_public, at::DischargeAxis::IO)>};
+
+// The sealed caches of the premises: the pass of a pack, the pass of a
+// payload, their cells, and the reads that refuse a cell of another key.
+inline constexpr reader_cell cell_premises_of_pack_{
+    .accepts = each_true<cd::premises_of_pack_(^^col::pack_key<at::borrow>).borrow,
+                         cd::premises_of_pack_(^^col::pack_key<>).linear,
+                         cd::premises_of_pack_(^^col::pack_key<at::coroutine>).concurrent>,
+    .refuses = each_false<cd::premises_of_pack_(^^col::pack_key<>).borrow,
+                          cd::premises_of_pack_(^^col::pack_key<at::copy>).linear>};
+
+inline constexpr reader_cell cell_build_pack_premises_cell{
+    .accepts = each_true<(cd::build_pack_premises_cell(^^col::pack_key<at::borrow>).key()
+                          == std::meta::dealias(^^col::pack_key<at::borrow>)),
+                         cd::build_pack_premises_cell(^^col::pack_key<at::borrow>).premises().borrow>,
+    .refuses = each_false<cd::build_pack_premises_cell(^^col::pack_key<>).premises().borrow>};
+
+inline constexpr reader_cell cell_pack_premises_in_{
+    .accepts = each_true<
+        cd::pack_premises_in_(cd::pack_premises_cell_v<col::pack_key<at::borrow>>, ^^col::pack_key<at::borrow>).borrow>,
+    .refuses = each_false<cd::pack_premises_in_(cd::pack_premises_cell_v<col::pack_key<>>, ^^col::pack_key<>).borrow>};
+
+inline constexpr reader_cell cell_pack_premises_of_key_{
+    .accepts = each_true<cd::pack_premises_of_key_(^^col::pack_key<at::borrow>).borrow,
+                         cd::pack_premises_of_key_(^^col::pack_key<at::ghost, at::with_io>).row_observable>,
+    .refuses = each_false<cd::pack_premises_of_key_(^^col::pack_key<at::copy>).borrow,
+                          cd::pack_premises_of_key_(^^col::pack_key<at::with_bg>).row_observable>};
+
+inline constexpr reader_cell cell_premises_of_payload_{
+    .accepts = each_true<cd::premises_of_payload_(^^Pure<int>).replay_deterministic,
+                         cd::premises_of_payload_(^^Pure<HandleSend>).owes_a_protocol,
+                         cd::premises_of_payload_(^^Option).returned_failure.fails>,
+    .refuses = each_false<cd::premises_of_payload_(^^void).replay_deterministic,
+                          cd::premises_of_payload_(^^HandleEnd).owes_a_protocol,
+                          cd::premises_of_payload_(^^int).returned_failure.fails>};
+
+inline constexpr reader_cell cell_build_payload_premises_cell{
+    .accepts =
+        each_true<(cd::build_payload_premises_cell(^^col::verdict_key<Pure<int>>).key()
+                   == std::meta::dealias(^^col::verdict_key<Pure<int>>)),
+                  cd::build_payload_premises_cell(^^col::verdict_key<Pure<int>>).premises().replay_deterministic>,
+    .refuses = each_false<cd::build_payload_premises_cell(^^col::verdict_key<int>).premises().replay_deterministic>};
+
+inline constexpr reader_cell cell_payload_premises_in_{
+    .accepts = each_true<cd::payload_premises_in_(cd::payload_premises_cell_v<col::verdict_key<Pure<int>>>,
+                                                  ^^col::verdict_key<Pure<int>>)
+                             .replay_deterministic>,
+    .refuses =
+        each_false<cd::payload_premises_in_(cd::payload_premises_cell_v<col::verdict_key<int>>, ^^col::verdict_key<int>)
+                       .replay_deterministic>};
+
+inline constexpr reader_cell cell_payload_premises_of_key_{
+    .accepts = each_true<cd::payload_premises_of_key_(^^col::verdict_key<Pure<int>>).replay_deterministic,
+                         cd::payload_premises_of_key_(^^col::verdict_key<HandleSend>).owes_a_protocol>,
+    .refuses = each_false<cd::payload_premises_of_key_(^^col::verdict_key<void>).replay_deterministic,
+                          cd::payload_premises_of_key_(^^col::verdict_key<HandleEnd>).owes_a_protocol>};
+
+// The premises of a binding join the premises of its pack and of its payload.
+inline constexpr reader_cell cell_premises_of_binding_{
+    .accepts = each_true<cd::premises_of_binding_(^^col::verdict_key<HandleSend, at::borrow>).has_live_handle,
+                         cd::premises_of_binding_(^^col::verdict_key<int, at::borrow>).borrow,
+                         cd::premises_of_binding_(^^col::verdict_key<Option>).fails>,
+    .refuses = each_false<cd::premises_of_binding_(^^col::verdict_key<int, at::borrow>).has_live_handle,
+                          cd::premises_of_binding_(^^col::pack_key<at::borrow>).fails>};
+
 // The premises of the empty pack with a borrow, and with a borrow across a
 // suspension, so that the table judges a record that a pack can give.
 [[nodiscard]] consteval col::rule_premises borrow_premises_() {
-    col::rule_premises premises = cd::pack_premises_v<>;
+    col::rule_premises premises = cd::pack_premises_of_key_(^^col::pack_key<>);
     premises.borrow = true;
     return premises;
 }
@@ -955,7 +1090,8 @@ inline constexpr reader_cell cell_join_premises_{
 }
 
 inline constexpr reader_cell cell_judge_{
-    .accepts = each_true<cd::judge_(cd::pack_premises_v<>).is_valid(), cd::judge_(borrow_premises_()).is_valid(),
+    .accepts = each_true<cd::judge_(cd::pack_premises_of_key_(^^col::pack_key<>)).is_valid(),
+                         cd::judge_(borrow_premises_()).is_valid(),
                          cd::judge_(borrow_across_a_suspension_premises_()).admits(col::RuleCode::M012)>,
     .refuses = each_false<cd::judge_(borrow_across_a_suspension_premises_()).admits(col::RuleCode::L002),
                           cd::judge_(borrow_across_a_suspension_premises_()).is_valid()>};
@@ -993,12 +1129,15 @@ static_assert(std::is_same_v<col::pack_key<at::borrow>, col::verdict_key<void, a
 //
 // The walked entities that read no grade of their own.  Each row says why.
 inline constexpr std::array walk_helpers = {
-    // The passes over the pack and the payload.  Each cell of a verdict in
-    // this file reads them.
-    ^^cd::pack_entries_,
-    ^^cd::read_pack_,
-    ^^cd::read_pack_premises_,
-    ^^cd::read_payload_premises_,
+    // The plumbing of the pass of the premises: a grade of the record, and a
+    // concept over a grade.  Each premise cell of this file reads them.
+    ^^cd::grade_of_,
+    ^^cd::grade_is_,
+    ^^cd::satisfies_,
+    ^^cd::satisfies_floor_,
+    // The cell of the premises after the message of each grade with no
+    // reading.  A fixture holds each message.
+    ^^cd::checked_pack_premises_cell_,
     // The slot of an axis, and the axes of a roster.  The cells of grades and
     // of axis_has_an_atom_ read them.
     ^^cd::axis_slot_,
@@ -1011,6 +1150,9 @@ inline constexpr std::array walk_helpers = {
     ^^cd::a_row_axis_has_no_family_of_atoms,
     ^^cd::a_call_shape_grade_has_no_reading_in_call_shape_reading_,
     ^^cd::a_protocol_grade_has_no_reading_in_protocol_reading_,
+    ^^cd::a_trust_grade_has_no_level_in_trust_level_of_,
+    ^^cd::a_security_grade_has_no_class_in_security_class_of_,
+    ^^cd::a_cache_cell_stands_for_another_key,
     ^^col::a_verdict_cell_stands_for_another_binding,
 };
 
