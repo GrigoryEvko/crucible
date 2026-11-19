@@ -108,7 +108,7 @@ ReplayStatus walk_advance_only(ReplayEngine& engine, ::fixy::View<const TraceEnt
     engine.reset(av);
     ReplayStatus last = ReplayStatus::MATCH;
     for (const TraceEntry& op : ops) {
-        last = engine.advance(op.schema_hash, op.shape_hash, av);
+        last = engine.advance(op.schema_hash, op.shape_hash, av).status();
     }
     return last;
 }

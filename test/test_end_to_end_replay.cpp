@@ -84,7 +84,7 @@ void test_pipeline_basic() {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);
+        const ReplayStatus s = ctx.advance(SCHEMA[i], SHAPE[i], cv).status();
         if (i < NUM_OPS - 1) {
             CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         } else {
@@ -96,7 +96,7 @@ void test_pipeline_basic() {
 
     // No explicit reset: the first advance after COMPLETE rewinds.
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);
+        const ReplayStatus s = ctx.advance(SCHEMA[i], SHAPE[i], cv).status();
         if (i < NUM_OPS - 1) {
             CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         } else {
@@ -137,10 +137,10 @@ void test_pipeline_divergence() {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     for (uint32_t i = 0; i < 3; i++) {
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[i], SHAPE[i], cv) == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[i], SHAPE[i], cv).status() == ReplayStatus::MATCH);
     }
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xBAD}, SHAPE[3], cv) == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xBAD}, SHAPE[3], cv).status() == ReplayStatus::DIVERGED);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
     // A divergence does not switch modes.  Choosing a fallback is the
     // caller's decision, not the context's.
@@ -148,7 +148,7 @@ void test_pipeline_divergence() {
 
     // The position did not move, so op 3 is still the one under test.
     // This time the schema matches and the shape does not.
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[3], ShapeHash{0xBAD}, cv) == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[3], ShapeHash{0xBAD}, cv).status() == ReplayStatus::DIVERGED);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 2);
 
     ctx.deactivate();

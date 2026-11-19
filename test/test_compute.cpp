@@ -254,20 +254,20 @@ int main() {
     for (int iter = 0; iter < 100; iter++) {
         // The trailing names below say which slot each index reaches,
         // which the index alone does not.
-        auto s = ctx.advance(H_MM1, S_MM1, cv);
+        auto s = ctx.advance(H_MM1, S_MM1, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // X
                 host_ptr<const float>(ctx.input_ptr(1, cv)),  // W1
                 host_ptr<float>(ctx.output_ptr(0, cv)),  // mm1_out
                 BATCH, HIDDEN, IN_DIM);
 
-        s = ctx.advance(H_RELU, S_RELU, cv);
+        s = ctx.advance(H_RELU, S_RELU, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         cpu::relu(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm1_out
                   host_ptr<float>(ctx.output_ptr(0, cv)),  // relu_out
                   BATCH * HIDDEN);
 
-        s = ctx.advance(H_MM2, S_MM2, cv);
+        s = ctx.advance(H_MM2, S_MM2, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // relu_out
                 host_ptr<const float>(ctx.input_ptr(1, cv)),  // W2
@@ -276,7 +276,7 @@ int main() {
 
         // The last operation of an iteration completes it rather
         // than matching.
-        s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv);
+        s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
         cpu::softmax(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)),  // mm2_out
                      host_ptr<float>(ctx.output_ptr(0, cv)),  // softmax_out

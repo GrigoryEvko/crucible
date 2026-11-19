@@ -340,11 +340,11 @@ public:
         // only from inside this branch.
         if (replay_.context().is_compiled()) [[likely]] {
             auto compiled_view = replay_.context().mint_compiled_view(fg);
-            auto status = replay_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
-            if (status == ReplayStatus::DIVERGED) [[unlikely]]
+            const ReplayStep step = replay_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
+            if (step.status() == ReplayStatus::DIVERGED) [[unlikely]]
                 return handle_divergence_(fg, op);
-            bind_inputs_(op, status, compiled_view);
-            return compiled_result_(status);
+            bind_inputs_(op, step, compiled_view);
+            return compiled_result_(step);
         }
 
         // The acquire load pairs with the release store on the background
@@ -995,9 +995,9 @@ private:
     // external and has no data slot costs four compares.  The cursors go back
     // to the start at op 0 and when the iteration completes.  O(1) for each
     // op, and O(the reads and the slots) for the iteration.
-    CRUCIBLE_INLINE void bind_inputs_(const ValidatedOp& op, ReplayStatus status,
+    CRUCIBLE_INLINE void bind_inputs_(const ValidatedOp& op, ReplayStep step,
                                       CrucibleContext::CompiledView const& compiled_view) {
-        const uint32_t matched = replay_.context().engine().matched_op_index().value().raw();
+        const uint32_t matched = step.matched_op_index().value().raw();
         // A new iteration starts the cursors again.  The COMPLETE below does
         // that too, but the switch of a region advances the engine with no
         // call here, so a rewind can pass this function by.
@@ -1021,7 +1021,7 @@ private:
             if (bound.op.raw() == matched) bound.value = op.entry().scalar_values.at(bound.slot.value());
             ++next_bound_scalar_;
         }
-        if (status == ReplayStatus::COMPLETE) {
+        if (step.status() == ReplayStatus::COMPLETE) {
             next_external_read_ = 0;
             next_bound_scalar_ = 0;
         }
@@ -1042,12 +1042,12 @@ private:
     }
 
     // The result of an op that the replay matched: the status of its guard
-    // and the position of the op in the region.  The reset at the end of an
-    // iteration keeps the matched op, so a COMPLETE gives the last op of the
-    // region.  The two COMPILED results of dispatch_op and of the switch
-    // after a divergence come from this one door.
-    [[nodiscard]] CRUCIBLE_INLINE DispatchResult compiled_result_(ReplayStatus status) const noexcept {
-        return DispatchResult::compiled(status, replay_.context().engine().matched_op_index().value());
+    // and the position of the op in the region, from the step of the advance
+    // (ReplayStep).  A COMPLETE gives the last op of the region.  The two
+    // COMPILED results of dispatch_op and of the switch after a divergence
+    // come from this one door.
+    [[nodiscard]] CRUCIBLE_INLINE static DispatchResult compiled_result_(ReplayStep step) noexcept {
+        return DispatchResult::compiled(step.status(), step.matched_op_index().value());
     }
 
     // The cold dispatch paths below are noinline so the hot path needs no
@@ -1106,11 +1106,11 @@ private:
             // The switch leaves the context compiled, so advance past the
             // divergent op.
             auto compiled_view = replay_.context().mint_compiled_view(fg);
-            auto status = replay_.advance(schema_hash, shape_hash, compiled_view);
-            if (status != ReplayStatus::DIVERGED) {
-                bind_inputs_(op, status, compiled_view);
+            const ReplayStep step = replay_.advance(schema_hash, shape_hash, compiled_view);
+            if (step.status() != ReplayStatus::DIVERGED) {
+                bind_inputs_(op, step, compiled_view);
                 publish_held_regions_();
-                return compiled_result_(status);
+                return compiled_result_(step);
             }
             // Diverging twice in a row falls through to the reset below.
         }
@@ -1296,7 +1296,8 @@ private:
             // The matched ops already executed eagerly, so the engine has
             // to skip them for the next op to check against the right entry.
             for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
-                auto status = replay_.advance(region.op_at(i).schema_hash, region.op_at(i).shape_hash);
+                const ReplayStatus status =
+                    replay_.advance(region.op_at(i).schema_hash, region.op_at(i).shape_hash).status();
                 // The hashes fed in here are the region's own, and alignment
                 // already compared each one against the same entry, so a
                 // mismatch means that the cursor of the engine is out of
@@ -1638,12 +1639,12 @@ private:
             return true;
         }
 
-        [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash,
-                                                                      CrucibleContext::CompiledView const& view) {
+        [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash,
+                                                                    CrucibleContext::CompiledView const& view) {
             return ctx_.advance(schema_hash, shape_hash, view);
         }
 
-        [[nodiscard]] ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash) {
+        [[nodiscard]] ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash) {
             return ctx_.advance(schema_hash, shape_hash);
         }
 

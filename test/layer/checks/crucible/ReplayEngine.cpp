@@ -12,4 +12,11 @@ static_assert(sizeof(ReplayEngine) == 72, "ReplayEngine: 16 guard + 16 cursor + 
 // would let it escape.
 static_assert(::fixy::no_scoped_view_field_check<ReplayEngine>());
 
+// A step is eight trivially copyable bytes, so an advance gives it back in
+// one register.  Only the engine makes a step: it has no public constructor
+// apart from the copy and the move.
+static_assert(sizeof(ReplayStep) == 8 && std::is_trivially_copyable_v<ReplayStep>);
+static_assert(!std::is_default_constructible_v<ReplayStep>);
+static_assert(!std::is_constructible_v<ReplayStep, ReplayStatus, OpIndex>);
+
 }  // namespace crucible

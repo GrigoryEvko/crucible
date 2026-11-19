@@ -58,6 +58,37 @@ struct Matched {};
 struct Diverged {};
 }  // namespace op_role
 
+// The result of one advance: the status of the guard and the position of
+// the op that it matched.  A MATCH or a COMPLETE matched the op at the
+// cursor that the advance read, so the advance gives that position from the
+// cursor in its registers, and no reader loads the cursor that it stored.  A
+// DIVERGED step matched no op, so it has no matched position.  Only the
+// engine makes a step.  The step is eight bytes, so it comes back in one
+// register.
+class ReplayStep {
+public:
+    [[nodiscard]] constexpr ReplayStatus status() const noexcept { return status_; }
+
+    // The position of the matched op in the region.  A COMPLETE matched the
+    // last op of the region.  A read of a DIVERGED step ends the process in
+    // each build.  The member is read into a local, so no contract reads a
+    // member through this.
+    [[nodiscard]] constexpr ::fixy::Tagged<OpIndex, op_role::Matched> matched_op_index() const noexcept {
+        const ReplayStatus status = status_;
+        CRUCIBLE_PRE(status != ReplayStatus::DIVERGED);
+        return ::fixy::mint_tagged<op_role::Matched>(matched_);
+    }
+
+private:
+    friend struct ReplayEngine;
+
+    constexpr ReplayStep(ReplayStatus status, OpIndex matched) noexcept : status_{status}, matched_{matched} {}
+
+    ReplayStatus status_ = ReplayStatus::DIVERGED;
+    ::fixy::FixedArray<uint8_t, 3> pad_{};
+    OpIndex matched_{};
+};
+
 struct ReplayEngine {
     using PoolBorrow = ::fixy::BorrowedRef<const PoolAllocator>;
 
@@ -116,17 +147,20 @@ struct ReplayEngine {
     // The completion of the last operation is reported by this call itself.
     // The caller resets before advancing again: the read of the cursor ends
     // the process at the end of the region, in each build, before the guard
-    // compares a hash.
-    [[nodiscard]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash) {
+    // compares a hash.  The step holds the position of the matched op, which
+    // this call computes from the cursor that it read (ReplayStep).
+    [[nodiscard]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash) {
         const TraceEntry& entry = *cursor_;
 
         if (schema_hash != expected_schema_) [[unlikely]]
-            return ReplayStatus::DIVERGED;
+            return ReplayStep{ReplayStatus::DIVERGED, OpIndex{}};
 
         if (shape_hash != expected_shape_) [[unlikely]]
-            return ReplayStatus::DIVERGED;
+            return ReplayStep{ReplayStatus::DIVERGED, OpIndex{}};
 
         current_ = ::fixy::WeakRef<const TraceEntry>{entry};
+        // The position of the entry, before the step of the cursor.
+        const OpIndex matched{ops_matched()};
 
         // The pointers of the slot ids and their counts end on the line after
         // the hashes of this entry, and the caller asks for them almost
@@ -138,7 +172,7 @@ struct ReplayEngine {
         ++cursor_;
 
         if (cursor_.is_at_end()) [[unlikely]]
-            return ReplayStatus::COMPLETE;
+            return ReplayStep{ReplayStatus::COMPLETE, matched};
 
         // The next operation's guard values, loaded here so the comparison
         // that opens the next call reads them from this object. The load can
@@ -149,7 +183,7 @@ struct ReplayEngine {
         const TraceEntry& next = *cursor_;
         expected_schema_ = next.schema_hash;
         expected_shape_ = next.shape_hash;
-        return ReplayStatus::MATCH;
+        return ReplayStep{ReplayStatus::MATCH, matched};
     }
 
     // The address of the slot of one of the last matched operation's
@@ -255,7 +289,7 @@ struct ReplayEngine {
     // there is one body to fix rather than two that can drift apart. Their
     // preconditions live in the body they delegate to, so repeating them here
     // would only duplicate a check.
-    [[nodiscard]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash, ActiveView const&) {
+    [[nodiscard]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash, ActiveView const&) {
         return advance(schema_hash, shape_hash);
     }
 

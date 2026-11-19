@@ -132,7 +132,7 @@ struct CrucibleContext {
         deactivate();
     }
 
-    [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash) {
+    [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash) {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         return advance_(schema_hash, shape_hash);
     }
@@ -191,7 +191,7 @@ struct CrucibleContext {
         // where the old one diverged.
         auto av = engine_.active_view_();
         for (uint32_t i = 0; i < div_pos; i++) {
-            auto s = engine_.advance(alt.op_at(i).schema_hash, alt.op_at(i).shape_hash, av);
+            const ReplayStatus s = engine_.advance(alt.op_at(i).schema_hash, alt.op_at(i).shape_hash, av).status();
             // The engine was just pointed at alt, and these are alt's own
             // hashes read back in order, so anything but a match means that
             // the cursor of the engine is out of step.  The data is not bad.
@@ -231,8 +231,8 @@ struct CrucibleContext {
     // because activation initialises the two together, so the inner proofs
     // can be minted from the outer one.
 
-    [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus advance(SchemaHash schema_hash, ShapeHash shape_hash,
-                                                                  CompiledView const&) {
+    [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash,
+                                                                CompiledView const&) {
         return advance_(schema_hash, shape_hash);
     }
 
@@ -284,10 +284,11 @@ private:
     // The one body of both advance overloads.  A switch rather than a chain
     // of tests, so that a status added later has to be given a meaning here
     // instead of silently counting as a divergence.
-    [[gnu::always_inline]] ReplayStatus advance_(SchemaHash schema_hash, ShapeHash shape_hash) {
-        switch (engine_.advance(schema_hash, shape_hash)) {
+    [[gnu::always_inline]] ReplayStep advance_(SchemaHash schema_hash, ShapeHash shape_hash) {
+        const ReplayStep step = engine_.advance(schema_hash, shape_hash);
+        switch (step.status()) {
             case ReplayStatus::MATCH:
-                return ReplayStatus::MATCH;
+                return step;
             case ReplayStatus::COMPLETE:
                 compiled_iterations_.bump();
                 // The rewind keeps the current operation, so the output and
@@ -295,10 +296,10 @@ private:
                 // status COMPLETE proves the cursor at the end of the region,
                 // so the rewind needs no test of the end.
                 engine_.rewind_after_complete_();
-                return ReplayStatus::COMPLETE;
+                return step;
             case ReplayStatus::DIVERGED:
                 diverged_count_.bump();
-                return ReplayStatus::DIVERGED;
+                return step;
             default:
                 ::fixy::unreachable();
         }

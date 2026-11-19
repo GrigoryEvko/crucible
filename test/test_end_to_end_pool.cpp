@@ -49,11 +49,11 @@ void test_pipeline_data_flow() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[0], SHAPE[0], cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[0], SHAPE[0], cv).status() == ReplayStatus::MATCH);
     std::memset(crucible::test::host_ptr(ctx.output_ptr(0, cv)), 0x11, 4096);
 
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[i], SHAPE[i], cv) == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[i], SHAPE[i], cv).status() == ReplayStatus::MATCH);
 
         auto* in_data = crucible::test::host_ptr<uint8_t>(ctx.input_ptr(0, cv));
         uint8_t expected = static_cast<uint8_t>(0x11 + i - 1);
@@ -64,7 +64,7 @@ void test_pipeline_data_flow() {
         std::memset(crucible::test::host_ptr(ctx.output_ptr(0, cv)), static_cast<int>(0x11 + i), 4096);
     }
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[7], SHAPE[7], cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[7], SHAPE[7], cv).status() == ReplayStatus::COMPLETE);
     auto* in_last = crucible::test::host_ptr<uint8_t>(ctx.input_ptr(0, cv));
     uint8_t expected_last = static_cast<uint8_t>(0x11 + NUM_OPS - 2);
     for (uint32_t b = 0; b < 4096; b++) {

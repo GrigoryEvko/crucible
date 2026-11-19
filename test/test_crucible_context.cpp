@@ -168,11 +168,11 @@ static void test_full_replay() {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv).status() == ReplayStatus::MATCH);
     const ::fixy::Option<::fixy::RunAddress> p0 = ctx.output_ptr(0, cv);
     CRUCIBLE_TEST_ASSERT(kTest, p0 == ctx.pool().slot_ptr(SlotId{0}, pv));
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{101}, ShapeHash{201}, cv).status() == ReplayStatus::COMPLETE);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
     // The rewind is lazy, so after COMPLETE the position still sits on
@@ -183,8 +183,8 @@ static void test_full_replay() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
     // The rewind happens here, on the first advance after COMPLETE.
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv).status() == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{101}, ShapeHash{201}, cv).status() == ReplayStatus::COMPLETE);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 2);
 
     ::fixy::check::pass(kTest, "  test_full_replay: PASSED\n");
@@ -211,9 +211,9 @@ static void test_divergence() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv).status() == ReplayStatus::MATCH);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{999}, ShapeHash{201}, cv) == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{999}, ShapeHash{201}, cv).status() == ReplayStatus::DIVERGED);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
     // A divergence does not switch modes.  Falling back is the caller's
     // decision, which the deactivate below stands in for.
@@ -264,7 +264,7 @@ static void test_reactivate() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region_a));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::COMPLETE);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv).status() == ReplayStatus::COMPLETE);
     }
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
@@ -275,8 +275,8 @@ static void test_reactivate() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.active_region().try_get() == &region_b);
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{30}, ShapeHash{40}, cv) == ReplayStatus::MATCH);
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{31}, ShapeHash{41}, cv) == ReplayStatus::COMPLETE);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{30}, ShapeHash{40}, cv).status() == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{31}, ShapeHash{41}, cv).status() == ReplayStatus::COMPLETE);
     }
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 2);
 
@@ -336,7 +336,7 @@ static void test_external_slots() {
     alignas(256) char fake_param[128];
     ctx.register_external(SlotId{1}, crucible::test::host_data(fake_param), cv);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{50}, ShapeHash{60}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{50}, ShapeHash{60}, cv).status() == ReplayStatus::COMPLETE);
     // The registration is checked through the pool, which is where an
     // external pointer has to land for any op to resolve it.
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
@@ -426,27 +426,27 @@ static void test_integration_sweep_line() {
     ctx.register_external(SlotId{2}, crucible::test::host_data(fake_param), cv);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.output_ptr(0, cv) == ctx.pool().slot_ptr(SlotId{0}, pv));
     // The external slot resolves to registered storage, not into the pool.
     CRUCIBLE_TEST_ASSERT(kTest, crucible::test::host_ptr(ctx.input_ptr(0, cv)) == fake_param);
 
     std::memset(crucible::test::host_ptr(ctx.output_ptr(0, cv)), 0x11, 512);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv).status() == ReplayStatus::COMPLETE);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv).status() == ReplayStatus::MATCH);
     // Nothing is claimed about the bytes across iterations, only that the
     // address is stable: a real op would run eagerly and overwrite them.
     auto* p = crucible::test::host_ptr<uint8_t>(ctx.output_ptr(0, cv));
     CRUCIBLE_TEST_ASSERT(kTest, p == crucible::test::host_ptr(ctx.pool().slot_ptr(SlotId{0}, pv)));
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv).status() == ReplayStatus::COMPLETE);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 2);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xFF}, ShapeHash{0xFF}, cv) == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv).status() == ReplayStatus::MATCH);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xFF}, ShapeHash{0xFF}, cv).status() == ReplayStatus::DIVERGED);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
 
     ctx.deactivate();
@@ -479,8 +479,8 @@ static void test_divergence_counter() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{99}, ShapeHash{99}, cv) == ReplayStatus::DIVERGED);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv).status() == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{99}, ShapeHash{99}, cv).status() == ReplayStatus::DIVERGED);
     }
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
     ctx.deactivate();
@@ -490,7 +490,7 @@ static void test_divergence_counter() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{99}, ShapeHash{20}, cv) == ReplayStatus::DIVERGED);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{99}, ShapeHash{20}, cv).status() == ReplayStatus::DIVERGED);
     }
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 2);
     ctx.deactivate();
@@ -498,8 +498,8 @@ static void test_divergence_counter() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{11}, ShapeHash{21}, cv) == ReplayStatus::COMPLETE);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv).status() == ReplayStatus::MATCH);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{11}, ShapeHash{21}, cv).status() == ReplayStatus::COMPLETE);
     }
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 2);  // unchanged
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);

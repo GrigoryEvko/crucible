@@ -28,37 +28,37 @@ namespace test_compute_vit {
 void run_attention_ops(CrucibleContext& ctx, const CrucibleContext::CompiledView& cv) {
     ReplayStatus s;
 
-    s = ctx.advance(H_LN1, S_LN1, cv);
+    s = ctx.advance(H_LN1, S_LN1, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
     cpu::layer_norm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)), host_ptr<const float>(ctx.input_ptr(1, cv)),
                     host_ptr<const float>(ctx.input_ptr(2, cv)), host_ptr<float>(ctx.output_ptr(0, cv)), B * S, D);
 
-    s = ctx.advance(H_MMQ, S_MMQ, cv);
+    s = ctx.advance(H_MMQ, S_MMQ, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
     cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)), host_ptr<const float>(ctx.input_ptr(1, cv)),
             host_ptr<float>(ctx.output_ptr(0, cv)), B * S, D, D);
 
-    s = ctx.advance(H_MMK, S_MMK, cv);
+    s = ctx.advance(H_MMK, S_MMK, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
     cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)), host_ptr<const float>(ctx.input_ptr(1, cv)),
             host_ptr<float>(ctx.output_ptr(0, cv)), B * S, D, D);
 
-    s = ctx.advance(H_MMV, S_MMV, cv);
+    s = ctx.advance(H_MMV, S_MMV, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
     cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)), host_ptr<const float>(ctx.input_ptr(1, cv)),
             host_ptr<float>(ctx.output_ptr(0, cv)), B * S, D, D);
 
-    s = ctx.advance(H_SDPA, S_SDPA, cv);
+    s = ctx.advance(H_SDPA, S_SDPA, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
     cpu::sdpa(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)), host_ptr<const float>(ctx.input_ptr(1, cv)),
               host_ptr<const float>(ctx.input_ptr(2, cv)), host_ptr<float>(ctx.output_ptr(0, cv)), B, S, D);
 
-    s = ctx.advance(H_MMOUT, S_MMOUT, cv);
+    s = ctx.advance(H_MMOUT, S_MMOUT, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
     cpu::mm(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)), host_ptr<const float>(ctx.input_ptr(1, cv)),
             host_ptr<float>(ctx.output_ptr(0, cv)), B * S, D, D);
 
-    s = ctx.advance(H_ADD1, S_ADD1, cv);
+    s = ctx.advance(H_ADD1, S_ADD1, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
     cpu::add(kTest, host_ptr<const float>(ctx.input_ptr(0, cv)), host_ptr<const float>(ctx.input_ptr(1, cv)),
              host_ptr<float>(ctx.output_ptr(0, cv)), B * S * D);

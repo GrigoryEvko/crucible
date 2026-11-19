@@ -74,7 +74,7 @@ void test_pipeline_multi_iteration() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region2));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);
+        const ReplayStatus s = ctx.advance(SCHEMA[i], SHAPE[i], cv).status();
         if (i < NUM_OPS - 1) {
             CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
         } else {
