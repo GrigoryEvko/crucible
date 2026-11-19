@@ -14,7 +14,7 @@ include/fixy/concurrent/ | escaped-static | 3 | - | -
 src/ | escaped-alias | 8 | - | -
 src/ | escaped-return | 4 | - | -
 test/ | escaped-alias | 6 | - | -
-test/ | escaped-container | 1 | - | -
+test/ | escaped-container | 2 | - | -
 test/ | escaped-return | 6 | - | -
 test/ | escaped-static | 1 | - | -
 test/fixy/ | escaped-alias | 24 | - | -

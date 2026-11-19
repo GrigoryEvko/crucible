@@ -15,7 +15,7 @@
 crucible/CKernel.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/DimHash.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/MerkleDag.cpp | unmeasured | unknown
-crucible/MetaLogSession.cpp | 0.2 | ::fixy::session::combinators
+crucible/MetaLogSession.cpp | 0.2 | ::fixy::session::combinators, ::fixy::session::pole_tables
 crucible/Serialize.cpp | 1.6 | ::fixy::tags::admitted_retags
 crucible/SingletonInitGraph.cpp | 0.1 | unknown
 crucible/SwissTable.cpp | 0.1 | unknown
@@ -89,6 +89,7 @@ fixy/atoms/Sync.cpp | 0.3 | ::fixy::atom::sync, unknown
 fixy/atoms/Syscall.cpp | 2.2 | ::fixy::atom::syscall, unknown
 fixy/channels/Endpoint.cpp | 0.4 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, unknown
 fixy/channels/LazyEstablishedChannel.cpp | 0.2 | ::fixy::session::combinators
+fixy/channels/LocalLogSession.cpp | unmeasured | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, unknown
 fixy/channels/StageEndpointBridge.cpp | 0.7 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, unknown
 fixy/channels/SubstrateSessionBridge.cpp | unmeasured | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, unknown
 fixy/channels/SwmrSession.cpp | unmeasured | ::fixy::session::combinators, ::fixy::session::pole_tables, unknown
