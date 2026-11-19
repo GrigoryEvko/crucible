@@ -821,7 +821,12 @@ namespace {
 
 // The window and the latency of the main thread, and the result of the row.
 // It stops the row at its end, so each worker ends its loop.  The caller then
-// joins the workers.
+// joins the workers.  The main thread runs its op while it waits for the
+// counts of a worker.  A producer worker publishes its counts only after its
+// last batch of kOpsPerCheck ops.  In a lanes op, that batch can wait for room
+// until the consumer takes the next item of the lane of the main thread (THE
+// STALL of fixy/concurrent/LaneRing.h), so a main thread that waits with no
+// push holds the row for ever.
 template <OpKind Kind, class Op>
 [[nodiscard]] RowResult finish_row(RowControl& control, ThreadCount threads, ConsumerPlace place, bench::CpuId main_cpu,
                                    Op const& op) {
@@ -830,7 +835,7 @@ template <OpKind Kind, class Op>
     for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
         ThreadLine const& line = line_of(control, bench::ThreadSlot{slot});
         while (!line.is_published.load_acquire())
-            CRUCIBLE_SPIN_PAUSE;
+            op();
         for (WindowIndex const index : ops.indices())
             ops.at(index) += line.window_ops.at(index).load_acquire();
     }
