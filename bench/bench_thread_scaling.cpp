@@ -69,6 +69,12 @@
 //   count of threads after the rows of 1 and 2 threads, which are the bases of
 //   the efficiency.  A count above the slots or above kMaxThreads ends the run.
 //
+// THE GROUPS OF OPS
+//   An argument add, mpsc or spsc selects the ops of that group: the two
+//   adds, the three mpsc ops, or the three spsc ops.  With no such argument,
+//   the run gives each group.  So two builds of one ring can run in turns:
+//       python3 utils/bin/loop bench --cores 9 --command -- BINARY spsc
+//
 // THE COMMANDS
 //   1 to 8 threads, one L3 group:   python3 utils/bin/loop bench bench_thread_scaling
 //   16 threads, two L3 groups:      python3 utils/bin/loop bench --cores 16 bench_thread_scaling
@@ -697,7 +703,42 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
     }
 }
 
-// Reads the counts of the rows (THE COUNTS OF THREADS).
+// The groups of ops of a run (THE GROUPS OF OPS).
+enum class OpGroup : std::uint8_t {
+    Add,
+    Mpsc,
+    Spsc,
+};
+
+// The group that an argument names, or none for an argument that names no
+// group, such as a count of threads.
+[[nodiscard]] ::fixy::Option<OpGroup> group_of(::fixy::TextView argument) noexcept {
+    if (argument == ::fixy::TextView{"add"}) return ::fixy::some(OpGroup::Add);
+    if (argument == ::fixy::TextView{"mpsc"}) return ::fixy::some(OpGroup::Mpsc);
+    if (argument == ::fixy::TextView{"spsc"}) return ::fixy::some(OpGroup::Spsc);
+    return ::fixy::none;
+}
+
+// The groups that the arguments name, or each group when no argument names
+// one.  Complexity: linear in the arguments.
+[[nodiscard]] ::fixy::FixedArray<bool, 3> groups_of(::fixy::os::Args const& arguments) noexcept {
+    ::fixy::FixedArray<bool, 3> groups{};
+    bool is_named = false;
+    for (::fixy::CText const argument : arguments) {
+        for (OpGroup const group : group_of(argument.view())) {
+            *groups.get(static_cast<std::size_t>(group)).expect("a group is below three") = true;
+            is_named = true;
+        }
+    }
+    if (!is_named) {
+        for (bool& group : groups)
+            group = true;
+    }
+    return groups;
+}
+
+// Reads the counts of the rows (THE COUNTS OF THREADS).  An argument that
+// names a group of ops is no count.
 [[nodiscard]] ::fixy::FixedList<ThreadCount, kMaxRows> counts_of(::fixy::os::Args const& arguments,
                                                                  bench::Spread const& spread) noexcept {
     ::fixy::FixedList<ThreadCount, kMaxRows> counts{};
@@ -710,14 +751,18 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
     };
     add(ThreadCount{1});
     if (spread.count() >= 2) add(ThreadCount{2});
-    if (arguments.size() <= 1) {
+    std::size_t groups = 0;
+    for (::fixy::CText const argument : arguments) {
+        if (group_of(argument.view()).is_some()) ++groups;
+    }
+    if (arguments.size() <= 1 + groups) {
         for (std::uint32_t threads = 4; threads <= 16 && threads <= spread.count(); threads *= 2)
             add(ThreadCount{threads});
         return counts;
     }
     bool is_program = true;
     for (::fixy::CText const argument : arguments) {
-        if (is_program) {
+        if (is_program || group_of(argument.view()).is_some()) {
             is_program = false;
             continue;
         }
@@ -757,22 +802,33 @@ int run_bench(::fixy::os::Args const& arguments) {
                            threads.raw(), bench::kPauseThreads);
         }
     }
+    ::fixy::FixedArray<bool, 3> const groups = groups_of(arguments);
+    auto const has_group = [&groups](OpGroup group) noexcept {
+        return *groups.get(static_cast<std::size_t>(group)).expect("a group is below three");
+    };
     ::fixy::FixedList<bench::Report, kMaxReports> reports{};
-    run_op_rows<OpKind::SharedAdd>(spread, counts.view(), "shared add: one cell for all threads", reports);
-    run_op_rows<OpKind::OwnAdd>(spread, counts.view(), "own add: one cell on its own line for each thread", reports);
-    run_op_rows<OpKind::MpscPush>(spread, counts.view(), "mpsc push: the last thread is the one consumer", reports);
-    run_op_rows<OpKind::MpscBatchPush>(spread, counts.view(),
-                                       "mpsc batch push: batches of 16, and batch pops of up to 64", reports);
-    if (kHasMpscReference) {
-        run_op_rows<OpKind::MpscReferencePush>(spread, counts.view(),
-                                               "mpsc reference push: the pinned MPMCQueue of Erik Rigtorp", reports);
+    if (has_group(OpGroup::Add)) {
+        run_op_rows<OpKind::SharedAdd>(spread, counts.view(), "shared add: one cell for all threads", reports);
+        run_op_rows<OpKind::OwnAdd>(spread, counts.view(), "own add: one cell on its own line for each thread",
+                                    reports);
     }
-    run_op_rows<OpKind::SpscPush>(spread, counts.view(), "spsc push: the main thread produces", reports);
-    run_op_rows<OpKind::SpscBatchPush>(spread, counts.view(),
-                                       "spsc batch push: batches of 16, and batch pops of up to 64", reports);
-    if (kHasSpscReference) {
-        run_op_rows<OpKind::SpscReferencePush>(spread, counts.view(),
-                                               "spsc reference push: the pinned SPSCQueue of Erik Rigtorp", reports);
+    if (has_group(OpGroup::Mpsc)) {
+        run_op_rows<OpKind::MpscPush>(spread, counts.view(), "mpsc push: the last thread is the one consumer", reports);
+        run_op_rows<OpKind::MpscBatchPush>(spread, counts.view(),
+                                           "mpsc batch push: batches of 16, and batch pops of up to 64", reports);
+        if (kHasMpscReference) {
+            run_op_rows<OpKind::MpscReferencePush>(
+                spread, counts.view(), "mpsc reference push: the pinned MPMCQueue of Erik Rigtorp", reports);
+        }
+    }
+    if (has_group(OpGroup::Spsc)) {
+        run_op_rows<OpKind::SpscPush>(spread, counts.view(), "spsc push: the main thread produces", reports);
+        run_op_rows<OpKind::SpscBatchPush>(spread, counts.view(),
+                                           "spsc batch push: batches of 16, and batch pops of up to 64", reports);
+        if (kHasSpscReference) {
+            run_op_rows<OpKind::SpscReferencePush>(
+                spread, counts.view(), "spsc reference push: the pinned SPSCQueue of Erik Rigtorp", reports);
+        }
     }
     bench::emit_reports_json(reports.view(), bench::env_json());
     return 0;
