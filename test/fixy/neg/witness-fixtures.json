@@ -847,6 +847,16 @@
       "constructor": "\\bChildReport\\("
     },
     {
+      "name": "neg_witness_process_syscallstop_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bSyscallStop\\("
+    },
+    {
+      "name": "neg_witness_process_tracedchild_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "\\bTracedChild\\("
+    },
+    {
       "name": "neg_witness_qtt_direct_construction",
       "reason": "is private within this context",
       "constructor": "\\bQtt\\("
@@ -1899,6 +1909,14 @@
     },
     {
       "type": "fixy::process::Child",
+      "header": "fixy/os/Process.h"
+    },
+    {
+      "type": "fixy::process::TracedChild",
+      "header": "fixy/os/Process.h"
+    },
+    {
+      "type": "fixy::process::SyscallStop",
       "header": "fixy/os/Process.h"
     },
     {
