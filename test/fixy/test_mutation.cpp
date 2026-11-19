@@ -533,6 +533,20 @@ int check_atomic_monotonic() {
         if (counter.get() != 43ULL) return 193;
     }
 
+    // The checked publish of a writer that keeps a copy of the counter steps
+    // the counter and the copy to the same value.
+    {
+        AtomicMonotonic<std::uint64_t, ::fixy::CounterWriters::sole> counter =
+            ::fixy::mint_atomic_monotonic<std::uint64_t, ::fixy::CounterWriters::sole>(0);
+        Monotonic<std::uint64_t> copy = ::fixy::mint_monotonic<std::uint64_t>(0);
+
+        counter.advance_sole_writer_from(0ULL, 7ULL, copy);
+        if (counter.get() != 7ULL || copy.get() != 7ULL) return 211;
+
+        counter.advance_sole_writer_from(7ULL, 42ULL, copy);
+        if (counter.get() != 42ULL || copy.get() != 42ULL) return 212;
+    }
+
     // A failed compare-exchange writes the value it actually observed back
     // through `expected`, which is how the owner and a thief resolve their
     // race over the last element in a work-stealing deque.
@@ -789,6 +803,16 @@ int check_contracts_abort() {
         test, [&sole] noexcept { sole.advance_sole_writer_from(7, 11); },
         ::fixy::TextView{"foundation: fatal invariant failed: !Cmp{}(current, stored) && !Cmp{}(stored, current)"});
     if (sole.get() != 10 || at_top.get() != 255) return 198;
+
+    // The publish that steps a copy refuses the same steps, before it moves
+    // the counter or the copy.
+    Monotonic<std::uint64_t> sole_copy = ::fixy::mint_monotonic<std::uint64_t>(10);
+    expect_dies(
+        test, [&sole, &sole_copy] noexcept { sole.advance_sole_writer_from(10, 9, sole_copy); }, kSoleWriterStepBack);
+    expect_dies(
+        test, [&sole, &sole_copy] noexcept { sole.advance_sole_writer_from(7, 11, sole_copy); },
+        ::fixy::TextView{"foundation: fatal invariant failed: !Cmp{}(current, stored) && !Cmp{}(stored, current)"});
+    if (sole.get() != 10 || sole_copy.get() != 10) return 213;
 
     AtomicMonotonic<std::int64_t> signed_counter = ::fixy::mint_atomic_monotonic<std::int64_t>(0);
     expect_dies(

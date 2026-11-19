@@ -364,8 +364,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                                              ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
-        head.advance_sole_writer_from(h, h + 1);
-        own_head_.advance(h + 1);
+        head.advance_sole_writer_from(h, h + 1, own_head_);
     }
 
     // The commit of the producer of the Vigils, which holds the proof of the

@@ -168,10 +168,10 @@ struct CRUCIBLE_OWNER MetaLog {
     [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(::fixy::View<const TensorMeta> metas) CRUCIBLE_NO_THREAD_SAFETY {
         return fill_run_(metas).match(
             [&](MetaIndex start) noexcept {
-                // This release publishes the copy of fill_run_ to the consumer.
+                // This release publishes the copy of fill_run_ to the consumer,
+                // and the copy of the head steps from the checked value.
                 const uint64_t h = start.raw();
-                head.advance_sole_writer_from(h, h + metas.size());
-                own_head_.advance(h + metas.size());
+                head.advance_sole_writer_from(h, h + metas.size(), own_head_);
                 return start;
             },
             [] noexcept { return MetaIndex::none(); });

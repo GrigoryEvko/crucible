@@ -357,6 +357,14 @@ fixy_neg_compile_test(neg_mutation_atomic_monotonic_peek_shared
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_sole_step_shared
   "a counter of many writers has no one writer"
   "fixy::AtomicMonotonic<T, Writers, Cmp>::advance_sole_writer_from\\(T, T\\)")
+# The checked publish that steps a copy belongs to the one writer too.
+fixy_neg_compile_test(neg_mutation_atomic_monotonic_copy_step_shared
+  "a counter of many writers has no one writer for a copy to follow"
+  "fixy::AtomicMonotonic<T, Writers, Cmp>::advance_sole_writer_from\\(T, T, fixy::Monotonic<T, Cmp>&\\)")
+# The step of a copy from a named value is private to that publish.
+fixy_neg_compile_test(neg_mutation_monotonic_checked_step_outside
+  "is private within this context"
+  "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: declared private here")
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_load_with_an_order
   "use of deleted function"
   "the order of a read is in its name")

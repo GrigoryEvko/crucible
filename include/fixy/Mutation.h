@@ -34,6 +34,23 @@ class WriteOnce;
 template <typename Ptr>
 class WriteOnceNonNull;
 
+// The type of an AtomicMonotonic states how many threads write the counter.
+// The writer of a counter of one writer reads its own value with relaxed order
+// (peek_relaxed).  A counter of many writers has no such read, because a
+// writer there reads values that a different thread stored.  The type states
+// the count and proves no thread: the embedder that names
+// CounterWriters::sole states who the one writer is.
+enum class CounterWriters : std::uint8_t {
+    many = 0,
+    sole = 1,
+};
+
+// Monotonic names AtomicMonotonic as a friend, for the checked publish that
+// steps the copy of the counter (advance_sole_writer_from with a copy).
+template <typename T, CounterWriters Writers = CounterWriters::many, typename Cmp = std::less<T>>
+    requires std::is_trivially_copyable_v<T>
+class AtomicMonotonic;
+
 // The claims the carriers below make that no lattice grades.  Each is a
 // declared-only identity that foundation/diag/RowHash.h folds, so a
 // carrier here takes a cache slot of its own rather than the zero every
@@ -377,6 +394,19 @@ private:
         requires MonotoneCarrier<U, C>
     friend constexpr Monotonic<U, C> mint_monotonic(U initial) noexcept(std::is_nothrow_move_constructible_v<U>);
 
+    template <typename U, CounterWriters W, typename C>
+        requires std::is_trivially_copyable_v<U>
+    friend class AtomicMonotonic;
+
+    // The step of a copy of a counter after the checked publish of
+    // AtomicMonotonic proved that the copy holds current.  The order check
+    // compares two values in registers, so it reads the value of the copy no
+    // second time after the store of the counter.
+    constexpr void advance_from_checked_(T current, T new_value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        CRUCIBLE_PRE(lattice_type::leq(current, new_value));
+        impl_ = graded_type{std::move(new_value)};
+    }
+
 public:
     // An assignment writes any value over the current one, so it would
     // move the counter backward.  reset_under_quiescence is the one
@@ -688,19 +718,8 @@ template <typename Ptr>
 // invalidates the reader's line, so an embedder that shares that line
 // with unrelated state pays for it on every step. Placing the
 // alignment here makes an embedder that forgets it safe anyway, at a
-// cost of one cache line per counter.
-//
-// The type states how many threads write the counter.  The writer of a
-// counter of one writer reads its own value with relaxed order
-// (peek_relaxed).  A counter of many writers has no such read, because a
-// writer there reads values that a different thread stored.  The type
-// states the count and proves no thread: the embedder that names
-// CounterWriters::sole states who the one writer is.
-
-enum class CounterWriters : std::uint8_t {
-    many = 0,
-    sole = 1,
-};
+// cost of one cache line per counter.  The type states how many threads write
+// the counter (CounterWriters).
 
 // The gate of the reads and the writes of the one writer of a counter:
 // peek_relaxed and advance_sole_writer_from.  Each of the two members asks
@@ -711,10 +730,6 @@ concept SoleWriterCounter = Writers == CounterWriters::sole;
 // The proof of the one writer of a counter (THE PROOF OF THE ONE WRITER of
 // foundation/SoleWriterProof.h).  advance_sole_writer_by_proof takes it.
 using ::foundation::SoleWriterProof;
-
-template <typename T, CounterWriters Writers = CounterWriters::many, typename Cmp = std::less<T>>
-    requires std::is_trivially_copyable_v<T>
-class AtomicMonotonic;
 
 template <typename T, CounterWriters Writers = CounterWriters::many, typename Cmp = std::less<T>>
     requires std::is_trivially_copyable_v<T>
@@ -843,6 +858,25 @@ public:
     = delete("AtomicMonotonic::advance_sole_writer_from: a counter of many writers has no one writer, and a second "
              "writer can pass the new value between the check and the store.  Use advance, or name "
              "CounterWriters::sole for a counter of one writer");
+
+    // The checked publish of the one writer that keeps a copy of the counter
+    // on a line of its own, such as the producer of a ring.  own is that
+    // copy, and it holds the value of the counter, as for
+    // advance_sole_writer_by_proof.  The call checks the counter against
+    // current as the form above does, so the check proves that own holds
+    // current too.  Then own steps from current, so the step check compares
+    // two values in registers, and the call loads own no second time after
+    // the store of the counter.
+    void advance_sole_writer_from(T current, T new_value, Monotonic<T, Cmp>& own) noexcept
+        requires SoleWriterCounter<Writers>
+    {
+        advance_sole_writer_from(current, new_value);
+        own.advance_from_checked_(current, new_value);
+    }
+    void advance_sole_writer_from(T current, T new_value, Monotonic<T, Cmp>& own) noexcept
+        requires(!SoleWriterCounter<Writers>)
+    = delete("AtomicMonotonic::advance_sole_writer_from: a counter of many writers has no one writer for a copy to "
+             "follow.  Use advance, or name CounterWriters::sole for a counter of one writer");
 
     // The publish of the one writer that holds a proof of its role (THE
     // PROOF OF THE ONE WRITER of foundation/SoleWriterProof.h).  own is the
