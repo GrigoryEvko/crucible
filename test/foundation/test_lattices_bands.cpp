@@ -6,6 +6,9 @@
 // The tiers are walked by reflection rather than listed by hand, so a
 // new enumerator is covered the moment it is declared.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/algebra/lattices/AllocClassLattice.h>
@@ -29,12 +32,11 @@
 #include <foundation/algebra/lattices/ToleranceLattice.h>
 #include <foundation/algebra/lattices/VendorLattice.h>
 #include <foundation/algebra/lattices/WaitLattice.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/reflect/Enumerate.h>
 
 #include <array>
 #include <cstddef>
-#include <cstdio>
-#include <cstdlib>
 #include <iterator>
 #include <meta>
 #include <string_view>
@@ -43,6 +45,9 @@
 #include <vector>
 
 namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 namespace fa = ::foundation::algebra;
 namespace fl = ::foundation::algebra::lattices;
@@ -150,7 +155,7 @@ struct ScopeRow {
     fl::MemoryScope scope = fl::MemoryScope::Thread;
     ScopeChain chain = ScopeChain::None;
 };
-inline constexpr ScopeRow kScopeChains[] = {
+inline constexpr ::fixy::FixedArray<ScopeRow, 8> kScopeChains{
     {fl::MemoryScope::Thread, ScopeChain::None},     {fl::MemoryScope::Warp, ScopeChain::Accelerator},
     {fl::MemoryScope::Cta, ScopeChain::Accelerator}, {fl::MemoryScope::Cluster, ScopeChain::Accelerator},
     {fl::MemoryScope::Gpu, ScopeChain::Accelerator}, {fl::MemoryScope::Inner, ScopeChain::Host},
@@ -160,7 +165,7 @@ inline constexpr ScopeRow kScopeChains[] = {
 // Complexity: O(n^2) in the number of enumerators.
 [[nodiscard]] consteval bool every_scope_is_in_its_chain() noexcept {
     static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^fl::MemoryScope));
-    if (std::size(kScopeChains) != enumerators.size()) return false;
+    if (kScopeChains.view().size() != enumerators.size()) return false;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -566,17 +571,17 @@ void recipe_family_lattice_runs_at_run_time() {
     [[maybe_unused]] auto m = RecipeFamilyLattice::meet(kahan, bot);
 
     auto sib_join = RecipeFamilyLattice::join(RecipeFamily::Linear, RecipeFamily::Pairwise);
-    if (sib_join != RecipeFamily::Any) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, sib_join == RecipeFamily::Any);
 
     auto sib_meet = RecipeFamilyLattice::meet(RecipeFamily::Linear, RecipeFamily::Pairwise);
-    if (sib_meet != RecipeFamily::None) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, sib_meet == RecipeFamily::None);
 
     // A wider family is the stronger claim.  A stored family grades
     // through the order dual, and weaken() narrows it toward None.
     using RecipeGraded = Graded<ModalityKind::Absolute, DualLattice<RecipeFamilyLattice>, int>;
     RecipeGraded v{test_authority::key(), 42, RecipeFamily::Kahan};
-    if (v.grade() != RecipeFamily::Kahan || v.peek() != 42) std::abort();
-    if (v.weaken(RecipeFamily::None).grade() != RecipeFamily::None) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, v.grade() == RecipeFamily::Kahan && v.peek() == 42);
+    CRUCIBLE_TEST_ASSERT(kTest, v.weaken(RecipeFamily::None).grade() == RecipeFamily::None);
 }
 
 void barrier_strength_lattice_runs_at_run_time() {
@@ -771,7 +776,7 @@ void clock_source_lattice_runs_at_run_time() {
     auto widened = initial.weaken(boot_point);
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(ClockSourceLattice::bottom());
-    if (!(composed.grade() == boot_point) || !(rv_widen.grade() == ClockSourceLattice::bottom())) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, composed.grade() == boot_point && rv_widen.grade() == ClockSourceLattice::bottom());
 
     [[maybe_unused]] auto grade = rv_widen.grade();
     [[maybe_unused]] auto value = composed.peek().v;
@@ -790,22 +795,22 @@ void affinity_lattice_runs_at_run_time() {
     [[maybe_unused]] AffinityMask j = AffinityLattice::join(bergamo_full, bot);
     [[maybe_unused]] AffinityMask m = AffinityLattice::meet(bergamo_full, topv);
 
-    if (bergamo_full.popcount() != 192) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, bergamo_full.popcount() == 192);
 
     AffinityMask core_0 = AffinityMask::single(0);
     AffinityMask core_191 = AffinityMask::single(191);
     AffinityMask core_255 = AffinityMask::single(255);
-    if (!core_0.contains(0)) std::abort();
-    if (!core_191.contains(191)) std::abort();
-    if (!core_255.contains(255)) std::abort();
-    if (core_0.contains(1)) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, core_0.contains(0));
+    CRUCIBLE_TEST_ASSERT(kTest, core_191.contains(191));
+    CRUCIBLE_TEST_ASSERT(kTest, core_255.contains(255));
+    CRUCIBLE_TEST_ASSERT(kTest, !core_0.contains(1));
 
     AffinityMask joined = AffinityLattice::join(core_0, core_191);
-    if (!joined.contains(0)) std::abort();
-    if (!joined.contains(191)) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, joined.contains(0));
+    CRUCIBLE_TEST_ASSERT(kTest, joined.contains(191));
 
     AffinityMask intersected = AffinityLattice::meet(AffinityMask::range(0, 127), AffinityMask::range(64, 191));
-    if (intersected.popcount() != 64) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, intersected.popcount() == 64);
 
     using AffinityGraded = Graded<ModalityKind::Absolute, AffinityLattice, double>;
     AffinityGraded v{test_authority::key(), 3.14, AffinityMask::range(0, 31)};
@@ -820,18 +825,18 @@ void numa_node_lattice_runs_at_run_time() {
     using namespace fl;
     NumaNodeId const first{0};
     NumaNodeId const second{1};
-    if (NumaNodeLattice::join(first, second) != NumaNodeId::Any) std::abort();
-    if (NumaNodeLattice::meet(first, second) != NumaNodeId::None) std::abort();
-    if (!NumaNodeLattice::leq(NumaNodeLattice::bottom(), first)) std::abort();
-    if (NumaNodeLattice::leq(NumaNodeLattice::top(), first)) std::abort();
-    if (!is_concrete_numa_node(second) || is_concrete_numa_node(NumaNodeId::Any)) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, NumaNodeLattice::join(first, second) == NumaNodeId::Any);
+    CRUCIBLE_TEST_ASSERT(kTest, NumaNodeLattice::meet(first, second) == NumaNodeId::None);
+    CRUCIBLE_TEST_ASSERT(kTest, NumaNodeLattice::leq(NumaNodeLattice::bottom(), first));
+    CRUCIBLE_TEST_ASSERT(kTest, !NumaNodeLattice::leq(NumaNodeLattice::top(), first));
+    CRUCIBLE_TEST_ASSERT(kTest, is_concrete_numa_node(second) && !is_concrete_numa_node(NumaNodeId::Any));
 
     // A claim that covers more nodes is the stronger claim.  A stored node
     // grades through the order dual, and weaken() narrows it to None.
     using NumaGraded = Graded<ModalityKind::Absolute, DualLattice<NumaNodeLattice>, int>;
     NumaGraded const value{test_authority::key(), 42, NumaNodeId{2}};
-    if (value.grade() != NumaNodeId{2} || value.peek() != 42) std::abort();
-    if (value.weaken(NumaNodeId::None).grade() != NumaNodeId::None) std::abort();
+    CRUCIBLE_TEST_ASSERT(kTest, value.grade() == NumaNodeId{2} && value.peek() == 42);
+    CRUCIBLE_TEST_ASSERT(kTest, value.weaken(NumaNodeId::None).grade() == NumaNodeId::None);
 }
 
 void scheduler_policy_lattice_runs_at_run_time() {
@@ -894,12 +899,12 @@ int main() {
     volatile int raw_tier = 6;
     const auto tier = static_cast<fl::DetSafeTier>(raw_tier);
     if (fr::enum_name(tier) != "Pure") {
-        std::fprintf(stderr, "test_lattices_bands: enum_name(DetSafeTier{6}) is not Pure\n");
+        ::fixy::report(::fixy::Sink::Err, "test_lattices_bands: enum_name(DetSafeTier{{6}}) is not Pure\n");
         return 1;
     }
     volatile int raw_bad = 200;
     if (fr::enum_name(static_cast<fl::DetSafeTier>(raw_bad)) != "<unknown DetSafeTier>") {
-        std::fprintf(stderr, "test_lattices_bands: enum_name(DetSafeTier{200}) is not the sentinel\n");
+        ::fixy::report(::fixy::Sink::Err, "test_lattices_bands: enum_name(DetSafeTier{{200}}) is not the sentinel\n");
         return 1;
     }
     return 0;
