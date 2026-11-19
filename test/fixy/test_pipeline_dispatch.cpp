@@ -18,7 +18,16 @@
 #include <vector>
 
 #include <sched.h>
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cc = fixy::concurrent;
 
@@ -238,6 +247,6 @@ int main() {
     pipeline_dispatch_test::test_small_pipeline_runs_inline();
     pipeline_dispatch_test::test_large_pipeline_spawns_threads();
     pipeline_dispatch_test::test_threaded_stages_stay_in_the_caller_mask();
-    crucible::test::pass("test_pipeline_dispatch: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_pipeline_dispatch: ALL PASSED\n");
     return EXIT_SUCCESS;
 }

@@ -20,7 +20,17 @@
 #include <cstdlib>
 #include <limits>
 #include <utility>
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -190,6 +200,6 @@ void exercise_budgeted() {
 int main() {
     exercise_epoch_versioned();
     exercise_budgeted();
-    crucible::test::pass("test_versioned_budgeted: ok\n");
+    ::fixy::check::pass(kTest, "test_versioned_budgeted: ok\n");
     return 0;
 }

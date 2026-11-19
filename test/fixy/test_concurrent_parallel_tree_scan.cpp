@@ -7,10 +7,19 @@
 #include <foundation/core/Scan.h>
 
 #include "../foundation/nan_outputs.h"
-#include "../test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "parallel_tree_test.h"
 
 #include <cstddef>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -31,9 +40,9 @@ void scan_both(tree::BgCtx const& ctx, ::foundation::core::ScanKind kind, View<f
     });
     single = ::foundation::core::with_mut(std::move(single), [&](auto out) noexcept {
         if (kind == ::foundation::core::ScanKind::Inclusive) {
-            assert(::foundation::core::scan_inclusive_sums(part, std::move(out)).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::scan_inclusive_sums(part, std::move(out)).is_ok());
         } else {
-            assert(::foundation::core::scan_exclusive_sums(part, std::move(out)).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::scan_exclusive_sums(part, std::move(out)).is_ok());
         }
     });
 }
@@ -48,9 +57,11 @@ void check_scans(View<float const> all, ::fixy::FixedArray<std::size_t, Counts> 
         HeapArray<float> parallel_scan = ::foundation::core::mint_heap_array(tree::test_alloc(), count, 0.0f);
         HeapArray<float> single_scan = ::foundation::core::mint_heap_array(tree::test_alloc(), count, 0.0f);
         scan_both<Coupling, Shards>(ctx, ::foundation::core::ScanKind::Inclusive, part, parallel_scan, single_scan);
-        assert(tree::same_runs(View<float const>{parallel_scan.view()}, View<float const>{single_scan.view()}));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, tree::same_runs(View<float const>{parallel_scan.view()}, View<float const>{single_scan.view()}));
         scan_both<Coupling, Shards>(ctx, ::foundation::core::ScanKind::Exclusive, part, parallel_scan, single_scan);
-        assert(tree::same_runs(View<float const>{parallel_scan.view()}, View<float const>{single_scan.view()}));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, tree::same_runs(View<float const>{parallel_scan.view()}, View<float const>{single_scan.view()}));
     }
 }
 
@@ -70,8 +81,8 @@ void test_scans_on_each_thread_count() {
 // VALUES OUTSIDE THE BOUND of foundation/core/Reduce.h).
 void check_canonical_outputs(View<float const> parallel, View<float const> single) noexcept {
     for (auto const [left, right] : parallel.walk().try_zip(single.walk()).expect("the two runs have one count")) {
-        assert(::crucible::test::float_bits(*left) == ::crucible::test::output_bits(*right));
-        assert(::crucible::test::float_bits(*right) == ::crucible::test::output_bits(*right));
+        CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::float_bits(*left) == ::crucible::test::output_bits(*right));
+        CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::float_bits(*right) == ::crucible::test::output_bits(*right));
     }
 }
 
@@ -96,7 +107,8 @@ void check_nan_scans(View<float const> all) noexcept {
 void test_nan_scans_are_canonical() {
     HeapArray<float> run = tree::draw_floats(tree::kLongest, 0x9A4A0006u);
     ::crucible::test::put_specials(run.view(), 0x9A4A0007u);
-    ::crucible::test::element_at(run.view(), 0) = ::fixy::bit_cast<float>(0x7F800001u);
+    *run.view().get(0).expect("a test reads an element at or past the count of its View") =
+        ::fixy::bit_cast<float>(0x7F800001u);
     View<float const> const all{run.view()};
     check_nan_scans<spawn::BodyCoupling::WaitOnEachOther, 1>(all);
     check_nan_scans<spawn::BodyCoupling::WaitOnEachOther, 4>(all);
@@ -108,6 +120,6 @@ void test_nan_scans_are_canonical() {
 int main() {
     test_scans_on_each_thread_count();
     test_nan_scans_are_canonical();
-    crucible::test::pass("test_concurrent_parallel_tree_scan: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_concurrent_parallel_tree_scan: all tests passed\n");
     return 0;
 }

@@ -18,7 +18,15 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace cc = fixy::concurrent;
 
@@ -155,6 +163,6 @@ static void test_diamond_dag_runtime() {
 
 int main() {
     pipeline_dag_test::test_diamond_dag_runtime();
-    crucible::test::pass("test_pipeline_dag: ALL PASSED\n");
+    ::fixy::check::pass(kTest, "test_pipeline_dag: ALL PASSED\n");
     return EXIT_SUCCESS;
 }

@@ -10,12 +10,22 @@
 #include <foundation/algebra/GradedTrait.h>
 #include <foundation/diag/FailClosed.h>
 
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
 #include <type_traits>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -251,7 +261,7 @@ static_assert(every_edge_moves_a_value());
 
 // ── Runtime cells ───────────────────────────────────────────────────
 
-void apply_sanitized(Tagged<Config, source::Sanitized> cfg) { assert(cfg.value().port == 8080); }
+void apply_sanitized(Tagged<Config, source::Sanitized> cfg) { CRUCIBLE_TEST_ASSERT(kTest, cfg.value().port == 8080); }
 
 int check_retag_route() {
     Tagged<Config, source::External> raw = mint_tagged<source::External>(Config{8080});

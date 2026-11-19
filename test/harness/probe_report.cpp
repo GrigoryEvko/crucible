@@ -7,9 +7,17 @@
 // and its function.  The program writes the line of the assert, from
 // __LINE__, before the assert.  The program must end by SIGABRT.
 
-#include "../test_assert.h"
-
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -30,13 +38,13 @@ constexpr ::fixy::TextView long_text{"the fifty characters of one line of the lo
 }  // namespace
 
 int main() {
-    crucible::test::pass("probe_report: the pass line\n");
+    ::fixy::check::pass(kTest, "probe_report: the pass line\n");
     ::fixy::report(::fixy::Sink::Out, "{} of {} on the out sink, {}, {{braces}}\n", 3, -4, true);
     ::fixy::report(::fixy::Sink::Out, "{}", long_text);
     ::fixy::report(::fixy::Sink::Err, "[{}] on the err sink\n", ::fixy::TextView{"text"});
     int const queue_depth = 3;
     int const assert_line = __LINE__ + 2;
     ::fixy::report(::fixy::Sink::Err, "the assert is on line {}\n", assert_line);
-    assert(queue_depth == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, queue_depth == 4);
     return 0;
 }

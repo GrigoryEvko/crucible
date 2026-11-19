@@ -15,7 +15,16 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -191,6 +200,6 @@ int main() {
     if (const int rc = names_the_protocol(); rc != 0) return 300 + rc;
     if (const int rc = two_racing_observers_get_one_session(); rc != 0) return 400 + rc;
     if (const int rc = worker_polls_until_the_publish(); rc != 0) return 500 + rc;
-    crucible::test::pass("handle_lazy_channel: one session per resource, refusals, race and startup OK\n");
+    ::fixy::check::pass(kTest, "handle_lazy_channel: one session per resource, refusals, race and startup OK\n");
     return 0;
 }

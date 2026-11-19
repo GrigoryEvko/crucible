@@ -9,11 +9,19 @@
 #include <fixy/os/Process.h>
 #include <foundation/core/Reduce.h>
 
-#include "../test_assert.h"
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "parallel_tree_test.h"
 
 #include <cstddef>
 #include <cstdint>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -86,11 +94,11 @@ void check_reduce_on_stated_threads(View<std::uint64_t const> all) noexcept {
         ctx, tree::test_alloc(), run, mix);
     std::size_t const threads = threads_in(table.view());
     std::uint64_t const single = ::foundation::core::reduce_by_tree(run, mix).expect("the run has elements");
-    assert(parallel.is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, parallel.is_some());
     for (std::uint64_t const value : parallel) {
-        assert(value == single);
+        CRUCIBLE_TEST_ASSERT(kTest, value == single);
     }
-    assert(threads == (Shards == 1 ? 1 : Shards + 1));
+    CRUCIBLE_TEST_ASSERT(kTest, threads == (Shards == 1 ? 1 : Shards + 1));
 }
 
 // Each count of threads gives the value of the reduce of one thread, and
@@ -116,6 +124,6 @@ void test_reduce_on_stated_threads() {
 
 int main() {
     test_reduce_on_stated_threads();
-    crucible::test::pass("test_concurrent_reduce_by_tree_in_parallel: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_concurrent_reduce_by_tree_in_parallel: all tests passed\n");
     return 0;
 }

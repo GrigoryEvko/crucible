@@ -36,7 +36,15 @@
 #include <type_traits>
 #include <utility>
 
-#include "../test_assert.h"
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a signal interrupts a thread that sleeps in the bounded sleeper")
 #include <fcntl.h>
@@ -566,7 +574,7 @@ using PinnedC0 = fixy::CpuPinned<ml::AffinityMask::single(0), fixy::PinningPostu
     std::uint64_t low = 500;
     auto last_returned = fixy::mint_atomic_monotonic<std::uint64_t>(0);
     if (fixy::time::clamp_non_decreasing(last_returned, high) != high) {
-        crucible::test::pass("the clamp did not pass a value above the floor through\n");
+        ::fixy::check::pass(kTest, "the clamp did not pass a value above the floor through\n");
         return 1;
     }
     if (fixy::time::clamp_non_decreasing(last_returned, low) != high) {

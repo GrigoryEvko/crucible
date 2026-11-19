@@ -29,7 +29,9 @@
 
 #include "../foundation/golden_digest.h"
 #include "../foundation/reductions_net.h"
-#include "../test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "parallel_tree_test.h"
 
 #include <cstddef>
@@ -38,12 +40,18 @@
 
 namespace {
 
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
+
+namespace {
+
 using namespace ::crucible::test::reductions_net;
 
 namespace spawn = ::fixy::spawn;
 namespace tree = ::crucible::test::parallel_tree;
 
-using ::crucible::test::element_at;
 using ::crucible::test::PhiloxStream;
 using ::fixy::Atomic;
 using ::fixy::HeapArray;
@@ -91,7 +99,7 @@ template <class T>
     bool is_written = false;
     steps = ::fixy::with_mut(std::move(steps),
                              [&](auto out) noexcept { is_written = core::write_tree_plan(std::move(out)).is_ok(); });
-    assert(is_written);
+    CRUCIBLE_TEST_ASSERT(kTest, is_written);
     return steps;
 }
 
@@ -133,7 +141,7 @@ template <class T>
                                .is_ok();
         });
     });
-    assert(is_written && is_evaluated);
+    CRUCIBLE_TEST_ASSERT(kTest, is_written && is_evaluated);
     return scanned;
 }
 
@@ -156,12 +164,21 @@ struct PlanCombine {
     std::uint32_t leaves = 0;
 
     [[nodiscard]] Symbol operator()(Symbol const& left, Symbol const& right) const noexcept {
-        std::uint32_t const held = left.node < step_of_left.size() ? element_at(step_of_left, left.node) : 0;
-        if (held != 0 && static_cast<std::uint32_t>(element_at(steps, held - 1).right) == right.node) {
-            static_cast<void>(element_at(fired, held - 1).fetch_add_acq_rel(1));
+        std::uint32_t const held =
+            left.node < step_of_left.size()
+                ? *step_of_left.get(left.node).expect("a test reads an element at or past the count of its View")
+                : 0;
+        if (held != 0
+            && static_cast<std::uint32_t>(
+                   steps.get(held - 1).expect("a test reads an element at or past the count of its View")->right)
+                   == right.node) {
+            static_cast<void>(fired.get(held - 1)
+                                  .expect("a test reads an element at or past the count of its View")
+                                  ->fetch_add_acq_rel(1));
             return Symbol{leaves + held - 1};
         }
-        static_cast<void>(element_at(strays, 0).fetch_add_acq_rel(1));
+        static_cast<void>(
+            strays.get(0).expect("a test reads an element at or past the count of its View")->fetch_add_acq_rel(1));
         return Symbol{no_add};
     }
 };
@@ -176,7 +193,9 @@ struct PlanCombine {
     std::uint32_t step = 0;
     for (core::TreeStep const& one : steps) {
         ++step;
-        element_at(step_of_left.view(), static_cast<std::size_t>(one.left)) = step;
+        *step_of_left.view()
+             .get(static_cast<std::size_t>(one.left))
+             .expect("a test reads an element at or past the count of its View") = step;
     }
     auto const leaves = static_cast<std::uint32_t>(run.size());
     std::uint32_t const root = leaves + step - 1;
@@ -192,7 +211,9 @@ struct PlanCombine {
         Symbol const result =
             ::fixy::concurrent::reduce_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), run, combine)
                 .expect("the run has leaves");
-        bool is_each_fired = element_at(strays.view(), 0).load_acquire() == 0;
+        bool is_each_fired =
+            strays.view().get(0).expect("a test reads an element at or past the count of its View")->load_acquire()
+            == 0;
         for (Atomic<std::uint32_t> const& count : fired) {
             is_each_fired = is_each_fired && count.load_acquire() == 1;
         }
@@ -283,12 +304,16 @@ inline constexpr std::size_t kSegmentElements = kSegments * 2 * kGrain;
     HeapArray<std::size_t> const offsets = draw_segment_offsets(stream);
     View<std::size_t const> const checked{offsets.view()};
     View<float const> const elements =
-        View<float const>{draws.view()}.window(0, element_at(checked, kSegments)).expect("the segments fit the draws");
+        View<float const>{draws.view()}
+            .window(0, *checked.get(kSegments).expect("a test reads an element at or past the count of its View"))
+            .expect("the segments fit the draws");
     HeapArray<float> from_plan = ::fixy::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
     for (std::size_t segment = 0; segment < kSegments; ++segment) {
-        std::size_t const first = element_at(checked, segment);
-        std::size_t const count = element_at(checked, segment + 1) - first;
-        element_at(from_plan.view(), segment) =
+        std::size_t const first =
+            *checked.get(segment).expect("a test reads an element at or past the count of its View");
+        std::size_t const count =
+            *checked.get(segment + 1).expect("a test reads an element at or past the count of its View") - first;
+        *from_plan.view().get(segment).expect("a test reads an element at or past the count of its View") =
             count == 0 ? 0.0f : sum_by_plan(elements.window(first, count).expect("a segment of the run"));
     }
     return is_each_coupling([&]<spawn::BodyCoupling Coupling, std::size_t Shards>() noexcept {
@@ -359,8 +384,11 @@ inline constexpr spawn::BodyCoupling kGoldenCoupling = spawn::BodyCoupling::Wait
     HeapArray<float> segment_sums = ::fixy::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
     segment_sums = ::fixy::with_mut(std::move(segment_sums), [&](auto out) noexcept {
         ::fixy::concurrent::sum_segments_by_tree_in_parallel<kGoldenCoupling, 8>(
-            ctx, float_view.window(0, element_at(checked, kSegments)).expect("the segments fit the run"), checked,
-            std::move(out));
+            ctx,
+            float_view
+                .window(0, *checked.get(kSegments).expect("a test reads an element at or past the count of its View"))
+                .expect("the segments fit the run"),
+            checked, std::move(out));
     });
     std::uint64_t const segments = fold_outputs(kFnvOffset, View<float const>{segment_sums.view()});
 
@@ -381,10 +409,10 @@ int main() {
     bool const is_double = does_each_parallel_sum_and_scan_follow<double>(stream);
     bool const is_segment = does_parallel_segment_sum_follow(stream);
     bool const is_golden = are_parallel_digests_golden();
-    assert(is_reduce);
-    assert(is_float);
-    assert(is_double);
-    assert(is_segment);
-    assert(is_golden);
+    CRUCIBLE_TEST_ASSERT(kTest, is_reduce);
+    CRUCIBLE_TEST_ASSERT(kTest, is_float);
+    CRUCIBLE_TEST_ASSERT(kTest, is_double);
+    CRUCIBLE_TEST_ASSERT(kTest, is_segment);
+    CRUCIBLE_TEST_ASSERT(kTest, is_golden);
     return 0;
 }

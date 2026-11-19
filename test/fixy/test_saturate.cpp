@@ -17,7 +17,17 @@
 #include <cstdio>
 #include <limits>
 #include <type_traits>
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using fixy::add_sat_checked;
 using fixy::mul_sat_checked;
@@ -111,6 +121,6 @@ int main() {
         std::fprintf(stderr, "test_saturate: %d failure(s)\n", g_failures);
         return 1;
     }
-    crucible::test::pass("test_saturate: both wrapped groups passed\n");
+    ::fixy::check::pass(kTest, "test_saturate: both wrapped groups passed\n");
     return 0;
 }

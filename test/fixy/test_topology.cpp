@@ -25,10 +25,16 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
-#include "../test_assert.h"
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 using namespace fixy::topology;
 
@@ -395,9 +401,11 @@ void test_sparse_numa_node_ids(::fixy::TestRunnerCtx const& test) {
 
     // Each CPU gives the id of the node that lists it, and a CPU that no
     // node lists gives no node.
-    assert(topo.numa_node_of_cpu(0).value_or(-1) == 0 && topo.numa_node_of_cpu(1).value_or(-1) == 0);
-    assert(topo.numa_node_of_cpu(2).value_or(-1) == 2 && topo.numa_node_of_cpu(3).value_or(-1) == 2);
-    assert(topo.numa_node_of_cpu(4).is_none() && topo.numa_node_of_cpu(-1).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         topo.numa_node_of_cpu(0).value_or(-1) == 0 && topo.numa_node_of_cpu(1).value_or(-1) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         topo.numa_node_of_cpu(2).value_or(-1) == 2 && topo.numa_node_of_cpu(3).value_or(-1) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, topo.numa_node_of_cpu(4).is_none() && topo.numa_node_of_cpu(-1).is_none());
 }
 
 // A distance row whose length is not the node count is malformed, and it
@@ -444,11 +452,11 @@ void test_packages_cover_the_host() {
     std::size_t threads = 0;
     std::size_t cores = 0;
     for (Topology::Package const& package : t.packages()) {
-        assert(package.threads > 0 && package.cores > 0 && package.cores <= package.threads);
+        CRUCIBLE_TEST_ASSERT(kTest, package.threads > 0 && package.cores > 0 && package.cores <= package.threads);
         threads += package.threads;
         cores += package.cores;
     }
-    assert(t.packages().size() == 0 || (threads == t.num_smt_threads() && cores == t.num_cores()));
+    CRUCIBLE_TEST_ASSERT(kTest, t.packages().size() == 0 || (threads == t.num_smt_threads() && cores == t.num_cores()));
 }
 
 // Whether a package holds the counts that a planted tree gives it.
@@ -467,12 +475,12 @@ void test_packages_of_two_sockets() {
     const auto ctx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>{eff::testing::test()};
     const auto topo = Topology::probe_tree(ctx, TWO_PACKAGE_SYSFS_ROOT);
 
-    assert(topo.num_cores() == 4 && topo.num_smt_threads() == 6);
-    assert(topo.numa_nodes() == 3 && topo.packages().size() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, topo.num_cores() == 4 && topo.num_smt_threads() == 6);
+    CRUCIBLE_TEST_ASSERT(kTest, topo.numa_nodes() == 3 && topo.packages().size() == 2);
     std::size_t position = 0;
     for (Topology::Package const& package : topo.packages()) {
-        assert(position != 0 || is_package(package, 0, 4, 2, 2, 2));
-        assert(position != 1 || is_package(package, 2, 2, 2, 1, 1));
+        CRUCIBLE_TEST_ASSERT(kTest, position != 0 || is_package(package, 0, 4, 2, 2, 2));
+        CRUCIBLE_TEST_ASSERT(kTest, position != 1 || is_package(package, 2, 2, 2, 1, 1));
         ++position;
     }
 }
@@ -484,9 +492,9 @@ void test_split_l3_group_refuses_the_packages() {
     const auto ctx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test>>{eff::testing::test()};
     const auto topo = Topology::probe_tree(ctx, SPLIT_L3_SYSFS_ROOT);
 
-    assert(topo.source() == Topology::Source::Sysfs);
-    assert(topo.num_cores() == 2 && topo.largest_l3_group_cpus() == 2);
-    assert(topo.packages().size() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, topo.source() == Topology::Source::Sysfs);
+    CRUCIBLE_TEST_ASSERT(kTest, topo.num_cores() == 2 && topo.largest_l3_group_cpus() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, topo.packages().size() == 0);
 }
 
 // The CPU mask of a node of the planted tree of two sockets: the CPUs of the

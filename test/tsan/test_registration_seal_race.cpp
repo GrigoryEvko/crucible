@@ -33,7 +33,10 @@
 #include <crucible/SchemaTable.h>
 #include <foundation/Platform.h>
 
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <array>
 #include <cstdint>
@@ -41,6 +44,13 @@
 #include <latch>
 #include <memory>
 #include <thread>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -102,7 +112,7 @@ void run_writer(uint32_t round, uint32_t writer, Register&& register_one,
     bool was_refused_before = false;
     for (uint32_t index = 0; index < WRITES_PER_WRITER; ++index) {
         const bool was_registered = register_one(hash_of(round, writer, index));
-        assert(!(was_refused_before && was_registered));
+        CRUCIBLE_TEST_ASSERT(kTest, !(was_refused_before && was_registered));
         was_refused_before = was_refused_before || !was_registered;
         registered[index] = was_registered;
     }
@@ -131,7 +141,7 @@ struct SchemaRace {
     [[nodiscard]] static uint32_t read_sealed(Table const& table, uint32_t /*round*/) {
         const ::fixy::View<const crucible::SchemaEntry> entries = table.entries();
         for (const auto pair : entries.windows<2>())
-            assert(pair.at(::fixy::index<0>()).hash < pair.at(::fixy::index<1>()).hash);
+            CRUCIBLE_TEST_ASSERT(kTest, pair.at(::fixy::index<0>()).hash < pair.at(::fixy::index<1>()).hash);
         return static_cast<uint32_t>(entries.size());
     }
 
@@ -240,13 +250,13 @@ template <typename Race>
     for (uint32_t round = 0; round < ROUND_COUNT; ++round) {
         auto const& state = rounds[round];
         const uint32_t final_count = state.table.count();
-        assert(state.count_at_seal == final_count);
-        assert(state.count_seen_by_reader == final_count);
-        assert(count_true(state.registered) == final_count);
+        CRUCIBLE_TEST_ASSERT(kTest, state.count_at_seal == final_count);
+        CRUCIBLE_TEST_ASSERT(kTest, state.count_seen_by_reader == final_count);
+        CRUCIBLE_TEST_ASSERT(kTest, count_true(state.registered) == final_count);
         for (uint32_t writer = 0; writer < WRITER_COUNT; ++writer) {
             for (uint32_t index = 0; index < WRITES_PER_WRITER; ++index) {
                 const bool is_present = Race::is_present(state.table, hash_of(round, writer, index));
-                assert(is_present == state.registered[writer][index]);
+                CRUCIBLE_TEST_ASSERT(kTest, is_present == state.registered[writer][index]);
             }
         }
         const uint32_t refused_count = WRITER_COUNT * WRITES_PER_WRITER - final_count;

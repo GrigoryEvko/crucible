@@ -25,7 +25,16 @@
 
 #include <cstdio>
 #include <utility>
-#include "../test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a send or a write that raises SIGPIPE reaches a handler that marks its arrival")
 #include <pthread.h>
@@ -406,6 +415,6 @@ int main() {
         std::fprintf(stderr, "test_os_socket: check %d failed\n", failed);
         return failed;
     }
-    crucible::test::pass("test_os_socket: passed\n");
+    ::fixy::check::pass(kTest, "test_os_socket: passed\n");
     return 0;
 }

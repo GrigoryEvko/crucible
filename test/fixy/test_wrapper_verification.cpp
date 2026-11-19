@@ -41,7 +41,16 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -569,6 +578,6 @@ int main() {
         if (!ok) ++failed;
     }
     if (failed != 0) return EXIT_FAILURE;
-    crucible::test::pass("\nALL PASSED: 17 fixy wrappers verified uniformly (9 classes, 7 bands, RecipeSpec)\n");
+    ::fixy::check::pass(kTest, "\nALL PASSED: 17 fixy wrappers verified uniformly (9 classes, 7 bands, RecipeSpec)\n");
     return EXIT_SUCCESS;
 }

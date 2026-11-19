@@ -19,7 +19,17 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace c = fixy::concurrent;
 namespace channels = fixy::channels;
@@ -387,6 +397,6 @@ int main() {
         std::fprintf(stderr, "test_endpoint: %d check(s) failed\n", failures);
         return 1;
     }
-    crucible::test::pass("test_endpoint: all checks passed\n");
+    ::fixy::check::pass(kTest, "test_endpoint: all checks passed\n");
     return 0;
 }

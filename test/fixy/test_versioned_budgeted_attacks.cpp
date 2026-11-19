@@ -35,7 +35,17 @@
 #include <utility>
 #include <variant>
 #include <vector>
-#include "../test_assert.h"
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -582,6 +592,6 @@ int main() {
         std::fprintf(stderr, "test_versioned_budgeted_attacks: %d case(s) failed\n", g_failures);
         return 1;
     }
-    crucible::test::pass("test_versioned_budgeted_attacks: ok\n");
+    ::fixy::check::pass(kTest, "test_versioned_budgeted_attacks: ok\n");
     return 0;
 }

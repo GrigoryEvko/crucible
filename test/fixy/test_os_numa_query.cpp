@@ -14,11 +14,20 @@
 #include <fixy/os/NumaPlacement.h>
 #include <foundation/Platform.h>
 
-#include "../test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace eff = foundation::effects;
 namespace perm = foundation::permissions;
@@ -90,22 +99,23 @@ void test_census_of_a_written_range() {
 
     auto queried = fixy::numa::census_page_nodes(ctx, bytes);
     if (is_emulator_refusal(queried)) {
-        crucible::test::pass("  test_census_of_a_written_range: SKIPPED (qemu-user has no move_pages)\n");
+        ::fixy::check::pass(kTest, "  test_census_of_a_written_range: SKIPPED (qemu-user has no move_pages)\n");
         return;
     }
     fixy::numa::PageNodeCensus const census = std::move(queried).expect("the kernel gives the node of each page");
-    assert(census.pages() == 4);
-    assert(census.pages_without_node() == 0);
-    assert(pages_on_each_node(census) == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, census.pages() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, census.pages_without_node() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, pages_on_each_node(census) == 4);
     std::size_t largest = 0;
     for (int index = 0; index < 254; ++index) {
         fixy::NumaNodeId const node = fixy::numa::concrete_numa_node(index).expect("an index below 254 names a node");
-        assert(census.pages_on(node) + census.pages_off(node) == 4);
+        CRUCIBLE_TEST_ASSERT(kTest, census.pages_on(node) + census.pages_off(node) == 4);
         if (census.pages_on(node) > largest) largest = census.pages_on(node);
     }
-    assert(largest > 0);
-    assert(census.pages_on(fixy::NumaNodeId::None) == 0 && census.pages_on(fixy::NumaNodeId::Any) == 0);
-    crucible::test::pass("  test_census_of_a_written_range: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, largest > 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         census.pages_on(fixy::NumaNodeId::None) == 0 && census.pages_on(fixy::NumaNodeId::Any) == 0);
+    ::fixy::check::pass(kTest, "  test_census_of_a_written_range: PASSED\n");
 }
 
 // A page that nothing touched has no frame, and a page that the range only
@@ -117,13 +127,15 @@ void test_census_of_untouched_and_read_ranges() {
     fixy::View<std::byte const> untouched = untouched_region.view<std::byte const>().expect("a mapping holds bytes");
     auto untouched_queried = fixy::numa::census_page_nodes(ctx, untouched);
     if (is_emulator_refusal(untouched_queried)) {
-        crucible::test::pass("  test_census_of_untouched_and_read_ranges: SKIPPED (qemu-user has no move_pages)\n");
+        ::fixy::check::pass(kTest,
+                            "  test_census_of_untouched_and_read_ranges: SKIPPED (qemu-user has no move_pages)\n");
         return;
     }
     fixy::numa::PageNodeCensus const untouched_census =
         std::move(untouched_queried).expect("the kernel gives the node of each page");
-    assert(untouched_census.pages() == 3 && untouched_census.pages_without_node() == 3);
-    assert(!untouched_census.is_all_on(fixy::numa::concrete_numa_node(0).expect("node 0 has an id")));
+    CRUCIBLE_TEST_ASSERT(kTest, untouched_census.pages() == 3 && untouched_census.pages_without_node() == 3);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         !untouched_census.is_all_on(fixy::numa::concrete_numa_node(0).expect("node 0 has an id")));
 
     auto read_region = map_pages(ctx, owner, 2 * page_bytes());
     fixy::View<std::byte const> read_bytes = read_region.view<std::byte const>().expect("a mapping holds bytes");
@@ -131,11 +143,11 @@ void test_census_of_untouched_and_read_ranges() {
     for (std::byte const value : read_bytes) {
         if (value != std::byte{0}) ++nonzero_bytes;
     }
-    assert(nonzero_bytes == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, nonzero_bytes == 0);
     fixy::numa::PageNodeCensus const read_census =
         fixy::numa::census_page_nodes(ctx, read_bytes).expect("the kernel gives the node of each page");
-    assert(read_census.pages() == 2 && read_census.pages_without_node() == 2);
-    crucible::test::pass("  test_census_of_untouched_and_read_ranges: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, read_census.pages() == 2 && read_census.pages_without_node() == 2);
+    ::fixy::check::pass(kTest, "  test_census_of_untouched_and_read_ranges: PASSED\n");
 }
 
 // An empty range has no page.  A range that is not page-aligned counts each
@@ -144,16 +156,17 @@ void test_census_of_empty_and_unaligned_ranges() {
     IoBlockCtx const ctx{eff::testing::test()};
     fixy::numa::PageNodeCensus const empty =
         fixy::numa::census_page_nodes(ctx, fixy::View<std::byte const>{}).expect("an empty range needs no query");
-    assert(empty.pages() == 0 && empty.pages_without_node() == 0);
-    assert(!empty.is_all_on(fixy::numa::concrete_numa_node(0).expect("node 0 has an id")));
+    CRUCIBLE_TEST_ASSERT(kTest, empty.pages() == 0 && empty.pages_without_node() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, !empty.is_all_on(fixy::numa::concrete_numa_node(0).expect("node 0 has an id")));
 
     auto const owner = perm::mint_permission_root<ScratchRegion>();
     auto region = map_pages(ctx, owner, 3 * page_bytes());
     fixy::View<std::byte> bytes = region.view<std::byte>().expect("a mapping holds bytes");
     touch_each_page(bytes);
     if (is_emulator_refusal(fixy::numa::census_page_nodes(ctx, bytes))) {
-        crucible::test::pass("  test_census_of_empty_and_unaligned_ranges: the unaligned ranges SKIPPED (qemu-user has "
-                             "no move_pages)\n");
+        ::fixy::check::pass(kTest,
+                            "  test_census_of_empty_and_unaligned_ranges: the unaligned ranges SKIPPED (qemu-user has "
+                            "no move_pages)\n");
         return;
     }
     std::size_t const page = page_bytes();
@@ -162,13 +175,13 @@ void test_census_of_empty_and_unaligned_ranges() {
             .expect("the kernel gives the node of each page")
             .pages();
     };
-    assert(census_of(100, page) == 2);
-    assert(census_of(page, 1) == 1);
-    assert(census_of(page - 1, 2) == 2);
-    assert(census_of(page - 1, page + 2) == 3);
-    assert(census_of(0, 3 * page) == 3);
-    assert(census_of(2 * page, 0) == 0);
-    crucible::test::pass("  test_census_of_empty_and_unaligned_ranges: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, census_of(100, page) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, census_of(page, 1) == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, census_of(page - 1, 2) == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, census_of(page - 1, page + 2) == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, census_of(0, 3 * page) == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, census_of(2 * page, 0) == 0);
+    ::fixy::check::pass(kTest, "  test_census_of_empty_and_unaligned_ranges: PASSED\n");
 }
 
 // The counters of a node of this host are readable, and no counter goes
@@ -180,17 +193,20 @@ void test_counters_of_a_node_of_this_host() {
     auto first_read = fixy::numa::read_allocation_counters(ctx, node);
     if (first_read.is_err()) {
         fixy::numa::NumaQueryError const error = first_read.err().expect("the read failed");
-        assert(error.step == fixy::numa::NumaQueryStep::CounterRead);
-        crucible::test::pass("  test_counters_of_a_node_of_this_host: SKIPPED (the kernel gives no numastat file)\n");
+        CRUCIBLE_TEST_ASSERT(kTest, error.step == fixy::numa::NumaQueryStep::CounterRead);
+        ::fixy::check::pass(kTest,
+                            "  test_counters_of_a_node_of_this_host: SKIPPED (the kernel gives no numastat file)\n");
         return;
     }
     fixy::numa::NodeAllocationCounters const before = std::move(first_read).expect("the read succeeded");
     fixy::numa::NodeAllocationCounters const after =
         fixy::numa::read_allocation_counters(ctx, node).expect("a second read of the same file succeeds");
-    assert(before.hit + before.miss > 0);
-    assert(after.hit >= before.hit && after.miss >= before.miss && after.foreign >= before.foreign);
-    assert(after.interleave_hit >= before.interleave_hit && after.local >= before.local && after.other >= before.other);
-    crucible::test::pass("  test_counters_of_a_node_of_this_host: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, before.hit + before.miss > 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         after.hit >= before.hit && after.miss >= before.miss && after.foreign >= before.foreign);
+    CRUCIBLE_TEST_ASSERT(kTest, after.interleave_hit >= before.interleave_hit && after.local >= before.local
+                                    && after.other >= before.other);
+    ::fixy::check::pass(kTest, "  test_counters_of_a_node_of_this_host: PASSED\n");
 }
 
 // A sentinel names no counter file, and a concrete node that the host lacks
@@ -201,14 +217,16 @@ void test_counters_of_nodes_with_no_file() {
         fixy::numa::read_allocation_counters(ctx, fixy::NumaNodeId::None).err().expect("None has no counters");
     fixy::numa::NumaQueryError const any_error =
         fixy::numa::read_allocation_counters(ctx, fixy::NumaNodeId::Any).err().expect("Any has no counters");
-    assert(none_error.step == fixy::numa::NumaQueryStep::NodeNotConcrete && none_error.error_number == 0);
-    assert(any_error.step == fixy::numa::NumaQueryStep::NodeNotConcrete && any_error.error_number == 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         none_error.step == fixy::numa::NumaQueryStep::NodeNotConcrete && none_error.error_number == 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         any_error.step == fixy::numa::NumaQueryStep::NodeNotConcrete && any_error.error_number == 0);
     fixy::numa::NumaQueryError const missing =
         fixy::numa::read_allocation_counters(ctx, fixy::numa::concrete_numa_node(253).expect("node 253 has an id"))
             .err()
             .expect("no shipped host has node 253");
-    assert(missing.step == fixy::numa::NumaQueryStep::CounterRead && missing.error_number != 0);
-    crucible::test::pass("  test_counters_of_nodes_with_no_file: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, missing.step == fixy::numa::NumaQueryStep::CounterRead && missing.error_number != 0);
+    ::fixy::check::pass(kTest, "  test_counters_of_nodes_with_no_file: PASSED\n");
 }
 
 // The parse takes the six counters in any order, skips a line with another
@@ -218,14 +236,14 @@ void test_parse_of_counter_texts() {
         fixy::numa::parse_allocation_counters("numa_hit 1\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\n"
                                               "local_node 5\nother_node 6\n")
             .expect("a full text parses");
-    assert(counters.hit == 1 && counters.miss == 2 && counters.foreign == 3);
-    assert(counters.interleave_hit == 4 && counters.local == 5 && counters.other == 6);
+    CRUCIBLE_TEST_ASSERT(kTest, counters.hit == 1 && counters.miss == 2 && counters.foreign == 3);
+    CRUCIBLE_TEST_ASSERT(kTest, counters.interleave_hit == 4 && counters.local == 5 && counters.other == 6);
 
     fixy::numa::NodeAllocationCounters const reordered =
         fixy::numa::parse_allocation_counters("other_node 6\nnew_counter 9\nlocal_node 5\n\ninterleave_hit 4\n"
                                               "numa_foreign 18446744073709551615\nnuma_miss 2\nnuma_hit 1")
             .expect("a text with another counter, an empty line and no final line break parses");
-    assert(reordered.foreign == 18446744073709551615u && reordered.other == 6);
+    CRUCIBLE_TEST_ASSERT(kTest, reordered.foreign == 18446744073709551615u && reordered.other == 6);
 
     auto const is_format_error =
         [](fixy::Result<fixy::numa::NodeAllocationCounters, fixy::numa::NumaQueryError> const& parsed) {
@@ -235,30 +253,36 @@ void test_parse_of_counter_texts() {
                 },
                 [] { return false; });
         };
-    assert(is_format_error(fixy::numa::parse_allocation_counters("")));
-    assert(is_format_error(fixy::numa::parse_allocation_counters(
-        "numa_hit 1\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\n")));
-    assert(is_format_error(fixy::numa::parse_allocation_counters(
-        "numa_hit 1\nnuma_hit 1\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\nother_node 6\n")));
-    assert(is_format_error(fixy::numa::parse_allocation_counters(
-        "numa_hit 18446744073709551616\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\nother_node 6\n")));
-    assert(is_format_error(fixy::numa::parse_allocation_counters(
-        "numa_hit\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\nother_node 6\n")));
-    assert(is_format_error(fixy::numa::parse_allocation_counters(
-        "numa_hit 1 2\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\nother_node 6\n")));
-    crucible::test::pass("  test_parse_of_counter_texts: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, is_format_error(fixy::numa::parse_allocation_counters("")));
+    CRUCIBLE_TEST_ASSERT(kTest, is_format_error(fixy::numa::parse_allocation_counters(
+                                    "numa_hit 1\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\n")));
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        is_format_error(fixy::numa::parse_allocation_counters(
+            "numa_hit 1\nnuma_hit 1\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\nother_node 6\n")));
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        is_format_error(fixy::numa::parse_allocation_counters(
+            "numa_hit 18446744073709551616\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\nother_node 6\n")));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         is_format_error(fixy::numa::parse_allocation_counters(
+                             "numa_hit\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\nother_node 6\n")));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, is_format_error(fixy::numa::parse_allocation_counters(
+                   "numa_hit 1 2\nnuma_miss 2\nnuma_foreign 3\ninterleave_hit 4\nlocal_node 5\nother_node 6\n")));
+    ::fixy::check::pass(kTest, "  test_parse_of_counter_texts: PASSED\n");
 }
 
 }  // namespace
 
 int main() {
-    crucible::test::pass("test_os_numa_query:\n");
+    ::fixy::check::pass(kTest, "test_os_numa_query:\n");
     test_census_of_a_written_range();
     test_census_of_untouched_and_read_ranges();
     test_census_of_empty_and_unaligned_ranges();
     test_counters_of_a_node_of_this_host();
     test_counters_of_nodes_with_no_file();
     test_parse_of_counter_texts();
-    crucible::test::pass("test_os_numa_query: 6 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_os_numa_query: 6 groups, all passed\n");
     return 0;
 }

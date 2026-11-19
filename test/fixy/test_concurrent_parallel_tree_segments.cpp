@@ -6,10 +6,19 @@
 #include <fixy/concurrent/ParallelTree.h>
 #include <foundation/core/Reduce.h>
 
-#include "../test_assert.h"
+#include <fixy/Ctx.h>
+#include <fixy/check/Check.h>
+#include <foundation/effects/Effect.h>
 #include "parallel_tree_test.h"
 
 #include <cstddef>
+
+namespace {
+
+// The context of the test, which each check of the Check family takes.
+constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+}  // namespace
 
 namespace {
 
@@ -30,10 +39,12 @@ void check_segments(View<float const> all, ::crucible::test::PhiloxStream& strea
     View<std::size_t> const offset_view = offsets.view();
     std::size_t position = 0;
     for (std::size_t segment = 0; segment <= kSegments; ++segment) {
-        ::crucible::test::element_at(offset_view, segment) = position;
+        *offset_view.get(segment).expect("a test reads an element at or past the count of its View") = position;
         position += stream.below(4) == 0 ? 0 : stream.below(9000);
     }
-    View<float const> const part = all.window(0, ::crucible::test::element_at(offset_view, kSegments)).expect("fits");
+    View<float const> const part =
+        all.window(0, *offset_view.get(kSegments).expect("a test reads an element at or past the count of its View"))
+            .expect("fits");
     HeapArray<float> parallel = ::foundation::core::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
     HeapArray<float> single = ::foundation::core::mint_heap_array(tree::test_alloc(), kSegments, 0.0f);
     View<std::size_t const> const checked{offset_view};
@@ -41,9 +52,9 @@ void check_segments(View<float const> all, ::crucible::test::PhiloxStream& strea
         ::fixy::concurrent::sum_segments_by_tree_in_parallel<Coupling, Shards>(ctx, part, checked, std::move(out));
     });
     single = ::foundation::core::with_mut(std::move(single), [&](auto out) noexcept {
-        assert(::foundation::core::sum_segments_by_tree(part, checked, std::move(out)).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::sum_segments_by_tree(part, checked, std::move(out)).is_ok());
     });
-    assert(tree::same_runs(View<float const>{parallel.view()}, View<float const>{single.view()}));
+    CRUCIBLE_TEST_ASSERT(kTest, tree::same_runs(View<float const>{parallel.view()}, View<float const>{single.view()}));
 }
 
 void test_segments_on_each_thread_count() {
@@ -62,6 +73,6 @@ void test_segments_on_each_thread_count() {
 
 int main() {
     test_segments_on_each_thread_count();
-    crucible::test::pass("test_concurrent_parallel_tree_segments: all tests passed\n");
+    ::fixy::check::pass(kTest, "test_concurrent_parallel_tree_segments: all tests passed\n");
     return 0;
 }
