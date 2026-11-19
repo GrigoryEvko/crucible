@@ -221,14 +221,15 @@ void a_row_axis_has_no_family_of_atoms() noexcept;
 //
 // The record also counts the atoms on each axis and names the first entry
 // that is not an atom.  So tier 2, tier 4, the grade lookup and the
-// question whether a pack names an axis read one walk.  An entry that is
-// not an atom states no axis, and the walk does not read one from it.
+// question whether a pack names an axis read one walk.  A pack names an axis
+// when an atom of the pack states it: the count is the one answer.  No
+// strict pole is an atom, and the check file of this header pins it, so a
+// pack names an axis exactly when its grade is not the pole.  An entry that
+// is not an atom states no axis, and the walk does not read one from it.
 // When two atoms name an axis that is not a Row axis, the slot holds the
 // last of them, and tier 4 refuses the pack.
 struct pack_record {
     std::meta::info grade[::fixy::axis_count]{};
-    // True when the grade of the axis is not its strict pole.
-    bool names_axis[::fixy::axis_count]{};
     std::size_t atoms_on[::fixy::axis_count]{};
     // The row of the atoms on a Row axis: the pole Row<> when no atom names
     // the axis, the row of the one atom in the order of its arguments, and the
@@ -282,12 +283,11 @@ using atom_axis_box_t = axis_box<Atom::axis>;
     // alias, so the walk reads the key that the alias names.
     const std::meta::info key = std::meta::dealias(pack_key);
     pack_record record{};
-    std::meta::info pole[::fixy::axis_count]{};
     for (std::size_t place = 0; place < ::fixy::axis_count; ++place) {
         const AxisRecord axis = axis_record(static_cast<Axis>(place));
-        pole[place] = axis.strict == std::meta::info{} ? ^^void : std::meta::dealias(axis.strict);
-        record.grade[place] = pole[place];
-        if (axis.shape == Shape::Row) record.row[place] = pole[place];
+        const std::meta::info pole = axis.strict == std::meta::info{} ? ^^void : std::meta::dealias(axis.strict);
+        record.grade[place] = pole;
+        if (axis.shape == Shape::Row) record.row[place] = pole;
     }
     // The argument at index 0 is the payload.
     const std::size_t arguments = ::fixy::refined::argument_count_of(key);
@@ -318,8 +318,6 @@ using atom_axis_box_t = axis_box<Atom::axis>;
             record.grade[place] = std::meta::dealias(entry);
         }
     }
-    for (std::size_t place = 0; place < ::fixy::axis_count; ++place)
-        record.names_axis[place] = record.grade[place] != pole[place];
     return record;
 }
 
@@ -376,6 +374,13 @@ inline constexpr pack_record_cell pack_record_cell_v = build_pack_record_cell(^^
                       key);
 }
 
+// True when an atom of the pack states the axis.  This is the one answer to
+// the question: the collision rules, grades::mentions and fn::mentions_axis
+// read it.
+[[nodiscard]] consteval bool names_axis_(const pack_record& pack, Axis axis) noexcept {
+    return pack.atoms_on[std::to_underlying(axis)] > 0;
+}
+
 // The slot of an axis.  A value outside the enum has no row in the axis
 // table, so it has no pole.  Only a cast produces such a value, and a cast
 // into the resolver is a mistake and not a question.
@@ -413,9 +418,8 @@ struct grades {
     using on = detail::grade_on_t<A, Atoms...>;
 
     template <Axis A>
-    static constexpr bool mentions =
-        detail::record_of_(detail::pack_record_cell_v<pack_key<Atoms...>>, ^^pack_key<Atoms...>)
-            .names_axis[detail::axis_slot_<A>()];
+    static constexpr bool mentions = detail::names_axis_(
+        detail::record_of_(detail::pack_record_cell_v<pack_key<Atoms...>>, ^^pack_key<Atoms...>), A);
 };
 
 // An Observability atom in its canonical spelling: the surface over its row,
@@ -1195,10 +1199,6 @@ template <class G>
     return trust_level_of_(^^G);
 }
 
-[[nodiscard]] consteval bool names_axis_(const pack_record& pack, Axis axis) noexcept {
-    return pack.names_axis[std::to_underlying(axis)];
-}
-
 // The premises that the payload states, read through its bands.  The
 // premises of void, the payload of the pack-only view, are all false.
 struct payload_premises {
@@ -1546,19 +1546,19 @@ private:
 template <class Key>
 [[nodiscard]] consteval pack_premises_cell checked_pack_premises_cell_() {
     constexpr const pack_record& pack = record_of_key_(^^Key);
-    if constexpr (pack.names_axis[std::to_underlying(Axis::Trust)]) {
+    if constexpr (names_axis_(pack, Axis::Trust)) {
         using Trust = [:pack.grade[std::to_underlying(Axis::Trust)]:];
         [[maybe_unused]] constexpr std::meta::info trust_level = trust_level_or_refuse_<Trust>();
     }
-    if constexpr (pack.names_axis[std::to_underlying(Axis::CallShape)]) {
+    if constexpr (names_axis_(pack, Axis::CallShape)) {
         using CallShape = [:pack.grade[std::to_underlying(Axis::CallShape)]:];
         [[maybe_unused]] constexpr CallShapeReading call_shape_reading = call_shape_reading_or_refuse_<CallShape>();
     }
-    if constexpr (pack.names_axis[std::to_underlying(Axis::Protocol)]) {
+    if constexpr (names_axis_(pack, Axis::Protocol)) {
         using Protocol = [:pack.grade[std::to_underlying(Axis::Protocol)]:];
         [[maybe_unused]] constexpr ProtocolReading protocol_reading = protocol_reading_or_refuse_<Protocol>();
     }
-    if constexpr (pack.names_axis[std::to_underlying(Axis::Security)]) {
+    if constexpr (names_axis_(pack, Axis::Security)) {
         using Security = [:pack.grade[std::to_underlying(Axis::Security)]:];
         [[maybe_unused]] constexpr ::fixy::atom::SecurityClass security_class = security_class_or_refuse_<Security>();
     }

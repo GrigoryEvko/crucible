@@ -187,14 +187,14 @@ public:
     // Whether the pack says anything about an axis.  A reader asking
     // "is this binding deliberate here, or did it take the default?"
     // gets an answer, which the silent-default design would otherwise
-    // hide.
+    // hide.  The answer is the one answer of fixy/Collision.h, which the
+    // collision rules and the grade lookup read too.
     template <Axis A>
-    static constexpr bool mentions_axis =
+    static constexpr bool mentions_axis = ::fixy::collision::detail::names_axis_(
         ::fixy::collision::detail::record_of_(
             ::fixy::collision::detail::pack_record_cell_v<::fixy::collision::pack_key<Atoms...>>,
-            ^^::fixy::collision::pack_key<Atoms...>)
-            .atoms_on[::fixy::collision::detail::axis_slot_<A>()]
-        > 0;
+            ^^::fixy::collision::pack_key<Atoms...>),
+        A);
 
     static constexpr std::size_t atom_count = sizeof...(Atoms);
 

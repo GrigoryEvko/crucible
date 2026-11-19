@@ -129,6 +129,45 @@ static_assert(atoms_without_an_answer_().empty(),
                   + ".  Name each one in trust_level_of_, call_shape_reading_ or protocol_reading_, and decide "
                     "how T001, D001 or L003 reads it.")});
 
+// A pack names an axis when an atom of the pack states it, and the record
+// counts those atoms.  The count gives the grade lookup, the rules and fn one
+// answer, and it agrees with the question whether the grade is the strict
+// pole only when no strict pole is an atom.  The first part of the pin covers
+// each instantiation of each parametric atom, because each atom of the
+// catalog is an atom and no pole is one.  The second part asks each atom of
+// the roster about the pole of its own axis.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+
+[[nodiscard]] consteval std::string poles_that_are_atoms_() {
+    namespace cd = ::fixy::collision::detail;
+    std::string offenders;
+    for (std::size_t place = 0; place < ::fixy::axis_count; ++place) {
+        const std::meta::info strict = axis_record(static_cast<Axis>(place)).strict;
+        if (strict == std::meta::info{} || !cd::is_atom_(strict)) continue;
+        if (!offenders.empty()) offenders += ", ";
+        offenders += std::meta::display_string_of(strict);
+    }
+    template for (constexpr auto member : ::fixy::atom::detail::roster_members_v<::fixy::collision::all_atom_roster>) {
+        using Atom = [:member:];
+        const std::meta::info strict = axis_record(Atom::axis).strict;
+        if (strict != std::meta::info{} && std::meta::dealias(member) == std::meta::dealias(strict)) {
+            if (!offenders.empty()) offenders += ", ";
+            offenders += std::meta::display_string_of(member);
+        }
+    }
+    return offenders;
+}
+
+#pragma GCC diagnostic pop
+
+static_assert(poles_that_are_atoms_().empty(),
+              std::string_view{std::define_static_string(
+                  "fixy/Collision.h: these strict poles are atoms, or these atoms are the strict pole of their axis: "
+                  + poles_that_are_atoms_()
+                  + ".  A pack that names such an atom states its axis and leaves the grade at the pole, so the "
+                    "count of the atoms on an axis no longer says whether the grade is the pole.")});
+
 // Each Row axis of the table has an atom over a row, so the walk of a pack
 // can give the union of two atoms on it.  An axis of each other shape has
 // no row in the record.
@@ -544,11 +583,11 @@ inline constexpr reader_cell cell_copies_in_key_{
 // reads as the key that it names.
 inline constexpr reader_cell cell_read_pack_of_key_{
     .accepts = each_true<
-        cd::read_pack_of_key_(^^col::pack_key<at::copy>).names_axis[std::to_underlying(Axis::Usage)],
+        cd::read_pack_of_key_(^^col::pack_key<at::copy>).atoms_on[std::to_underlying(Axis::Usage)] == 1,
         cd::read_pack_of_key_(^^col::pack_key<at::copy, at::affine>).is_graded_twice[std::to_underlying(Axis::Usage)],
         (cd::read_pack_of_key_(^^col::pack_key<int>).first_malformed == ^^int),
         (cd::read_pack_of_key_(^^col::verdict_key<int, at::copy>).atoms_on[std::to_underlying(Axis::Usage)] == 1)>,
-    .refuses = each_false<cd::read_pack_of_key_(^^col::pack_key<>).names_axis[std::to_underlying(Axis::Usage)],
+    .refuses = each_false<cd::read_pack_of_key_(^^col::pack_key<>).atoms_on[std::to_underlying(Axis::Usage)] == 1,
                           cd::read_pack_of_key_(^^col::pack_key<at::with_io, at::with_bg>)
                               .is_graded_twice[std::to_underlying(Axis::Effect)],
                           (cd::read_pack_of_key_(^^col::pack_key<at::copy>).first_malformed != ^^void)>};
@@ -556,22 +595,25 @@ inline constexpr reader_cell cell_read_pack_of_key_{
 inline constexpr reader_cell cell_build_pack_record_cell{
     .accepts = each_true<
         (cd::build_pack_record_cell(^^col::pack_key<at::copy>).key() == std::meta::dealias(^^col::pack_key<at::copy>)),
-        cd::build_pack_record_cell(^^col::pack_key<at::copy>).record().names_axis[std::to_underlying(Axis::Usage)]>,
+        cd::build_pack_record_cell(^^col::pack_key<at::copy>).record().atoms_on[std::to_underlying(Axis::Usage)] == 1>,
     .refuses =
-        each_false<cd::build_pack_record_cell(^^col::pack_key<>).record().names_axis[std::to_underlying(Axis::Usage)]>};
+        each_false<cd::build_pack_record_cell(^^col::pack_key<>).record().atoms_on[std::to_underlying(Axis::Usage)]
+                   == 1>};
 
 inline constexpr reader_cell cell_record_of_{
     .accepts = each_true<cd::record_of_(cd::pack_record_cell_v<col::pack_key<at::copy>>, ^^col::pack_key<at::copy>)
-                             .names_axis[std::to_underlying(Axis::Usage)]>,
+                             .atoms_on[std::to_underlying(Axis::Usage)]
+                         == 1>,
     .refuses = each_false<cd::record_of_(cd::pack_record_cell_v<col::pack_key<>>, ^^col::pack_key<>)
-                              .names_axis[std::to_underlying(Axis::Usage)]>};
+                              .atoms_on[std::to_underlying(Axis::Usage)]
+                          == 1>};
 
 inline constexpr reader_cell cell_record_of_key_{
     .accepts =
-        each_true<cd::record_of_key_(^^col::pack_key<at::copy>).names_axis[std::to_underlying(Axis::Usage)],
+        each_true<cd::record_of_key_(^^col::pack_key<at::copy>).atoms_on[std::to_underlying(Axis::Usage)] == 1,
                   (cd::record_of_key_(^^col::pack_key<at::copy, at::affine>).atoms_on[std::to_underlying(Axis::Usage)]
                    == 2)>,
-    .refuses = each_false<cd::record_of_key_(^^col::pack_key<>).names_axis[std::to_underlying(Axis::Usage)]>};
+    .refuses = each_false<cd::record_of_key_(^^col::pack_key<>).atoms_on[std::to_underlying(Axis::Usage)] == 1>};
 
 // The set of P010 is the observable effects of Effect.h without Bg.
 inline constexpr reader_cell cell_IsObservableWithoutBg{
